@@ -210,7 +210,7 @@ export default function App() {
               </Text>
               <Text style={styles.meta}>
                 電池: {bleData.battery_mv ?? '-'} mV | {bleData.battery_pct ?? '-'}%
-                {' '}({bleData.battery_valid ? '有效' : '無效'})
+                {' '}({bleData.battery_valid || (bleData.battery_mv > 0 && bleData.battery_pct >= 0 && bleData.battery_pct <= 100) ? '有效' : '無效'})
               </Text>
               <Text style={styles.meta}>
                 封包: type {bleData.type ?? '-'} | seq {bleData.seq ?? '-'} | len {bleData.len ?? '-'}
