@@ -188,10 +188,13 @@ export default function App() {
           >
             <Text style={styles.buttonText}>掃描並連線 DogGPS-Master3</Text>
           </Pressable>
-          {bleData?.lat !== undefined ? (
+          {bleData?.lat !== undefined || bleData?.slave_lat !== undefined ? (
             <View>
               <Text style={styles.meta}>
-                GPS: {bleData.lat}, {bleData.lon}
+                Slave GPS: {bleData.slave_lat ?? bleData.lat}, {bleData.slave_lon ?? bleData.lon}
+              </Text>
+              <Text style={styles.meta}>
+                Master GPS: {bleData.master_lat ?? '-'}, {bleData.master_lon ?? '-'}
               </Text>
               <Text style={styles.meta}>
                 距離: {bleData.distance_m ?? '-'} m | 速度: {bleData.speed_kmh ?? '-'} km/h
