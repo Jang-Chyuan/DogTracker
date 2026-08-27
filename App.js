@@ -18,24 +18,13 @@ const BLE_DEVICE_NAME = 'DogGPS-Master3';
 const BLE_SERVICE_UUID = '7f510001-6d9e-4e2f-a671-8f3f2d49a001';
 const BLE_DATA_UUID = '7f510002-6d9e-4e2f-a671-8f3f2d49a001';
 
-const seedPoints = [
-  { id: '1', lat: 25.0344, lng: 121.5645, speed: 12, time: '09:10:30' },
-  { id: '2', lat: 25.0358, lng: 121.5659, speed: 18, time: '09:12:05' },
-  { id: '3', lat: 25.0372, lng: 121.5674, speed: 10, time: '09:13:41' },
-];
-
 export default function App() {
   const [bleManager] = useState(() => new BleManager());
   const blePayloadBuffer = useRef('');
   const bleReadTimer = useRef(null);
-  const lastBleSequence = useRef(null);
   const [bleStatus, setBleStatus] = useState('未連線');
   const [bleData, setBleData] = useState(null);
   const [blePayloadText, setBlePayloadText] = useState('');
-  const [isRunning, setIsRunning] = useState(true);
-  const [counter, setCounter] = useState(0);
-  const [lastUpdate, setLastUpdate] = useState(new Date());
-  const [points, setPoints] = useState(seedPoints);
 
   useEffect(() => () => {
     if (bleReadTimer.current) clearInterval(bleReadTimer.current);
@@ -106,7 +95,6 @@ export default function App() {
           const connectedDevice = await device.connect();
           await connectedDevice.discoverAllServicesAndCharacteristics();
           blePayloadBuffer.current = '';
-          lastBleSequence.current = null;
           setBleStatus(`已連線: ${BLE_DEVICE_NAME}`);
 
           const initialCharacteristic = await connectedDevice.readCharacteristicForService(
@@ -124,23 +112,6 @@ export default function App() {
             try {
               const nextData = JSON.parse(payload);
               setBleData(nextData);
-              if (
-                typeof nextData.lat === 'number' &&
-                typeof nextData.lon === 'number' &&
-                nextData.seq !== lastBleSequence.current
-              ) {
-                lastBleSequence.current = nextData.seq;
-                setPoints((previous) => [
-                  {
-                    id: `${nextData.seq}-${Date.now()}`,
-                    lat: nextData.lat,
-                    lng: nextData.lon,
-                    speed: nextData.speed_kmh ?? 0,
-                    time: new Date().toLocaleTimeString('zh-TW', { hour12: false }),
-                  },
-                  ...previous,
-                ].slice(0, 6));
-              }
             } catch (parseError) {
               setBleStatus(`BLE 資料格式錯誤: ${parseError.message}`);
             }
@@ -183,23 +154,6 @@ export default function App() {
                 setBlePayloadText(blePayloadBuffer.current);
                 blePayloadBuffer.current = '';
                 setBleData(nextData);
-                if (
-                  typeof nextData.lat === 'number' &&
-                  typeof nextData.lon === 'number' &&
-                  nextData.seq !== lastBleSequence.current
-                ) {
-                  lastBleSequence.current = nextData.seq;
-                  setPoints((previous) => [
-                    {
-                      id: `${nextData.seq}-${Date.now()}`,
-                      lat: nextData.lat,
-                      lng: nextData.lon,
-                      speed: nextData.speed_kmh ?? 0,
-                      time: new Date().toLocaleTimeString('zh-TW', { hour12: false }),
-                    },
-                    ...previous,
-                  ].slice(0, 6));
-                }
               } catch (parseError) {
                 blePayloadBuffer.current = '';
                 setBleStatus(`BLE 資料格式錯誤: ${parseError.message}`);
@@ -212,41 +166,6 @@ export default function App() {
       },
     );
   };
-
-  useEffect(() => {
-    if (!isRunning) return;
-
-    const timer = setInterval(() => {
-      setCounter((prev) => prev + 1);
-      setLastUpdate(new Date());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isRunning]);
-
-  const addPoint = () => {
-    const baseLat = 25.0344 + (Math.random() - 0.5) * 0.01;
-    const baseLng = 121.5645 + (Math.random() - 0.5) * 0.01;
-    const speed = Math.floor(5 + Math.random() * 20);
-
-    const newPoint = {
-      id: String(Date.now()),
-      lat: Number(baseLat.toFixed(5)),
-      lng: Number(baseLng.toFixed(5)),
-      speed,
-      time: new Date().toLocaleTimeString('zh-TW', { hour12: false }),
-    };
-
-    setPoints((prev) => [newPoint, ...prev].slice(0, 6));
-  };
-
-  const resetData = () => {
-    setCounter(0);
-    setLastUpdate(new Date());
-    setPoints(seedPoints);
-  };
-
-  const statusText = isRunning ? 'Tracking' : 'Paused';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -299,66 +218,6 @@ export default function App() {
           ) : null}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>狀態</Text>
-          <Text style={styles.value}>{statusText}</Text>
-          <Text style={styles.meta}>更新時間: {lastUpdate.toLocaleTimeString('zh-TW', { hour12: false })}</Text>
-          <Text style={styles.meta}>計數器: {counter}s</Text>
-        </View>
-
-        <View style={styles.buttonRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              styles.primaryButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={() => setIsRunning((prev) => !prev)}
-          >
-            <Text style={styles.buttonText}>{isRunning ? '暫停' : '開始'}</Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              styles.secondaryButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={addPoint}
-          >
-            <Text style={styles.buttonText}>新增座標</Text>
-          </Pressable>
-        </View>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.resetButton,
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={resetData}
-        >
-          <Text style={styles.resetText}>重置</Text>
-        </Pressable>
-
-        <View style={styles.listHeader}>
-          <Text style={styles.sectionTitle}>最近位置</Text>
-          <Text style={styles.sectionHint}>{points.length} 筆</Text>
-        </View>
-
-        <View style={styles.list}>
-          {points.map((item) => (
-            <View key={item.id} style={styles.row}>
-              <View>
-                <Text style={styles.rowTitle}>Lat: {item.lat}</Text>
-                <Text style={styles.rowText}>Lng: {item.lng}</Text>
-              </View>
-              <View style={styles.rowRight}>
-                <Text style={styles.speed}>{item.speed} km/h</Text>
-                <Text style={styles.time}>{item.time}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
