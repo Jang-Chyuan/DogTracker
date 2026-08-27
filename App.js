@@ -21,13 +21,12 @@ const BLE_DATA_UUID = '7f510002-6d9e-4e2f-a671-8f3f2d49a001';
 export default function App() {
   const [bleManager] = useState(() => new BleManager());
   const blePayloadBuffer = useRef('');
-  const bleReadTimer = useRef(null);
   const [bleStatus, setBleStatus] = useState('未連線');
   const [bleData, setBleData] = useState(null);
   const [blePayloadText, setBlePayloadText] = useState('');
+  const [bleUpdatedAt, setBleUpdatedAt] = useState('尚未收到資料');
 
   useEffect(() => () => {
-    if (bleReadTimer.current) clearInterval(bleReadTimer.current);
     bleManager.destroy();
   }, [bleManager]);
 
@@ -93,6 +92,7 @@ export default function App() {
 
         try {
           const connectedDevice = await device.connect();
+          await connectedDevice.requestMTU(247);
           await connectedDevice.discoverAllServicesAndCharacteristics();
           blePayloadBuffer.current = '';
           setBleStatus(`已連線: ${BLE_DEVICE_NAME}`);
@@ -110,26 +110,21 @@ export default function App() {
             setBlePayloadText(payload);
 
             try {
-              const nextData = JSON.parse(payload);
+              const payloadStart = payload.indexOf('{');
+              const payloadEnd = payload.lastIndexOf('}');
+              if (payloadStart < 0 || payloadEnd < payloadStart) return;
+
+              const nextData = JSON.parse(
+                payload.slice(payloadStart, payloadEnd + 1),
+              );
               setBleData(nextData);
+              setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
             } catch (parseError) {
               setBleStatus(`BLE 資料格式錯誤: ${parseError.message}`);
             }
           };
 
           updateFromCharacteristic(initialCharacteristic);
-
-          if (bleReadTimer.current) clearInterval(bleReadTimer.current);
-          bleReadTimer.current = setInterval(async () => {
-            try {
-              const latestCharacteristic = await connectedDevice.readCharacteristicForService(
-                BLE_SERVICE_UUID,
-                BLE_DATA_UUID,
-              );
-              updateFromCharacteristic(latestCharacteristic);
-            } catch {
-            }
-          }, 2000);
 
           connectedDevice.monitorCharacteristicForService(
             BLE_SERVICE_UUID,
@@ -146,14 +141,21 @@ export default function App() {
                 const decodedPayload = decodeBase64(characteristic.value)
                   .replace(/\0/g, '')
                   .trim();
-                blePayloadBuffer.current += decodedPayload;
+                const combinedPayload = blePayloadBuffer.current + decodedPayload;
+                const payloadStart = combinedPayload.indexOf('{');
+                const payloadEnd = combinedPayload.indexOf('}', payloadStart);
+                if (payloadStart < 0 || payloadEnd < payloadStart) {
+                  blePayloadBuffer.current = combinedPayload;
+                  return;
+                }
 
-                if (!blePayloadBuffer.current.endsWith('}')) return;
-
-                const nextData = JSON.parse(blePayloadBuffer.current);
-                setBlePayloadText(blePayloadBuffer.current);
-                blePayloadBuffer.current = '';
+                const nextData = JSON.parse(
+                  combinedPayload.slice(payloadStart, payloadEnd + 1),
+                );
+                setBlePayloadText(combinedPayload.slice(payloadStart, payloadEnd + 1));
+                blePayloadBuffer.current = combinedPayload.slice(payloadEnd + 1);
                 setBleData(nextData);
+                setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
               } catch (parseError) {
                 blePayloadBuffer.current = '';
                 setBleStatus(`BLE 資料格式錯誤: ${parseError.message}`);
@@ -178,6 +180,7 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.label}>BLE 裝置</Text>
           <Text style={styles.value}>{bleStatus}</Text>
+          <Text style={styles.meta}>最後更新: {bleUpdatedAt}</Text>
           <Pressable
             style={({ pressed }) => [
               styles.button,
@@ -188,32 +191,35 @@ export default function App() {
           >
             <Text style={styles.buttonText}>掃描並連線 DogGPS-Master3</Text>
           </Pressable>
-          {bleData?.lat !== undefined || bleData?.slave_lat !== undefined ? (
+          {bleData?.lat !== undefined || bleData?.slave_lat !== undefined || bleData?.slat !== undefined ? (
             <View>
               <Text style={styles.meta}>
-                Slave GPS: {bleData.slave_lat ?? bleData.lat}, {bleData.slave_lon ?? bleData.lon}
+                Slave GPS: {bleData.slave_lat ?? bleData.lat ?? bleData.slat}, {bleData.slave_lon ?? bleData.lon ?? bleData.slon}
               </Text>
               <Text style={styles.meta}>
-                Master GPS: {bleData.master_lat ?? '-'}, {bleData.master_lon ?? '-'}
+                Master GPS: {bleData.master_lat ?? bleData.mlat ?? '-'}, {bleData.master_lon ?? bleData.mlon ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                距離: {bleData.distance_m ?? '-'} m | 速度: {bleData.speed_kmh ?? '-'} km/h
+                距離: {bleData.distance_m ?? bleData.dst ?? '-'} m | 速度: {bleData.speed_kmh ?? bleData.spd ?? '-'} km/h
               </Text>
               <Text style={styles.meta}>
-                衛星: {bleData.sat ?? '-'} | HDOP: {bleData.hdop ?? '-'}
+                衛星: {bleData.sat ?? '-'} | HDOP: {bleData.hdop ?? bleData.hd ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                活動: {bleData.activity ?? '-'} | 有效: {bleData.activity_valid ? '是' : '否'}
+                活動: {bleData.activity ?? bleData.act ?? '-'} | 有效: {(bleData.activity_valid ?? bleData.av) ? '是' : '否'}
               </Text>
               <Text style={styles.meta}>
-                GPS 時間: {bleData.gps_time ?? '-'} | 活動時間: {bleData.activity_time ?? '-'}
+                GPS 時間: {bleData.gps_time ?? bleData.gt ?? '-'} | 活動時間: {bleData.activity_time ?? bleData.at ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                電池: {bleData.battery_mv ?? '-'} mV | {bleData.battery_pct ?? '-'}%
-                {' '}({bleData.battery_valid || (bleData.battery_mv > 0 && bleData.battery_pct >= 0 && bleData.battery_pct <= 100) ? '有效' : '無效'})
+                電池: {bleData.battery_mv ?? bleData.bmv ?? '-'} mV | {bleData.battery_pct ?? bleData.bp ?? '-'}%
+                {' '}({bleData.battery_valid || bleData.bv || ((bleData.battery_mv ?? bleData.bmv) > 0 && (bleData.battery_pct ?? bleData.bp) >= 0 && (bleData.battery_pct ?? bleData.bp) <= 100) ? '有效' : '無效'})
               </Text>
               <Text style={styles.meta}>
-                封包: type {bleData.type ?? '-'} | seq {bleData.seq ?? '-'} | len {bleData.len ?? '-'}
+                RSSI: {bleData.rssi ?? '-'} | SNR: {bleData.snr ?? '-'}
+              </Text>
+              <Text style={styles.meta}>
+                封包: type {bleData.type ?? '-'} | seq {bleData.seq ?? '-'} | len {bleData.len ?? '-'} | OLED {bleData.s ? '是' : '否'}
               </Text>
             </View>
           ) : blePayloadText ? (
