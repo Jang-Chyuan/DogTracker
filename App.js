@@ -80,6 +80,10 @@ export default function App() {
                 {' '}({bleData.batteryValid ? '有效' : '無效'})
               </Text>
               <Text style={styles.meta}>
+                Master 電池: {bleData.masterBatteryMillivolts ?? '-'} mV | {bleData.masterBatteryPercentage ?? '-'}%
+                {' '}({bleData.masterBatteryValid ? '有效' : '無效'})
+              </Text>
+              <Text style={styles.meta}>
                 RSSI: {bleData.rssi ?? '-'} | SNR: {bleData.snr ?? '-'}
               </Text>
               <Text style={styles.meta}>
