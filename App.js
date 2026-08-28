@@ -1,7 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  PermissionsAndroid,
-  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -10,161 +8,27 @@ import {
   Text,
   View,
 } from 'react-native';
-import { decode as decodeBase64 } from 'base-64';
-import { BleManager } from 'react-native-ble-plx';
+import { createBleService } from './src/ble/BleService';
+import { emptyDogStatus } from './src/models/DogStatus';
 
 const FONT_SCALE = 1.4;
-const BLE_DEVICE_NAME = 'DogGPS-Master3';
-const BLE_SERVICE_UUID = '7f510001-6d9e-4e2f-a671-8f3f2d49a001';
-const BLE_DATA_UUID = '7f510002-6d9e-4e2f-a671-8f3f2d49a001';
 
 export default function App() {
-  const [bleManager] = useState(() => new BleManager());
-  const blePayloadBuffer = useRef('');
+  const [bleService] = useState(() => createBleService());
   const [bleStatus, setBleStatus] = useState('未連線');
-  const [bleData, setBleData] = useState(null);
+  const [bleData, setBleData] = useState(emptyDogStatus);
   const [blePayloadText, setBlePayloadText] = useState('');
   const [bleUpdatedAt, setBleUpdatedAt] = useState('尚未收到資料');
 
-  useEffect(() => () => {
-    bleManager.destroy();
-  }, [bleManager]);
-
-  const requestBlePermissions = async () => {
-    if (Platform.OS !== 'android') return true;
-
-    if (Platform.Version < 31) {
-      const locationPermission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        {
-          title: '需要位置權限',
-          message: 'Android 8.1 需要位置權限才能掃描附近的 BLE 裝置。',
-          buttonPositive: '允許',
-          buttonNegative: '拒絕',
-        },
-      );
-
-      return locationPermission === PermissionsAndroid.RESULTS.GRANTED;
-    }
-
-    const permissions = await PermissionsAndroid.requestMultiple([
-      PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-      PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-    ]);
-
-    return Object.values(permissions).every(
-      (permission) => permission === PermissionsAndroid.RESULTS.GRANTED,
-    );
-  };
+  useEffect(() => () => bleService.disconnect(), [bleService]);
 
   const connectToDogGps = async () => {
-    const permissionsGranted = await requestBlePermissions();
-    if (!permissionsGranted) {
-      setBleStatus('未授予 BLE 掃描權限');
-      return;
-    }
-
-    setBleStatus('掃描中...');
-    bleManager.stopDeviceScan();
-
-    const scanTimeout = setTimeout(() => {
-      bleManager.stopDeviceScan();
-      setBleStatus('找不到裝置');
-    }, 10000);
-
-    bleManager.startDeviceScan(
-      [BLE_SERVICE_UUID],
-      null,
-      async (error, device) => {
-        if (error) {
-          clearTimeout(scanTimeout);
-          setBleStatus(`掃描失敗: ${error.message}`);
-          return;
-        }
-
-        if (!device || (device.name !== BLE_DEVICE_NAME && device.localName !== BLE_DEVICE_NAME)) {
-          return;
-        }
-
-        clearTimeout(scanTimeout);
-        bleManager.stopDeviceScan();
-        setBleStatus('連線中...');
-
-        try {
-          const connectedDevice = await device.connect();
-          await connectedDevice.requestMTU(247);
-          await connectedDevice.discoverAllServicesAndCharacteristics();
-          blePayloadBuffer.current = '';
-          setBleStatus(`已連線: ${BLE_DEVICE_NAME}`);
-
-          const initialCharacteristic = await connectedDevice.readCharacteristicForService(
-            BLE_SERVICE_UUID,
-            BLE_DATA_UUID,
-          );
-          const updateFromCharacteristic = (characteristic) => {
-            if (!characteristic?.value) return;
-
-            const payload = decodeBase64(characteristic.value)
-              .replace(/\0/g, '')
-              .trim();
-            setBlePayloadText(payload);
-
-            try {
-              const payloadStart = payload.indexOf('{');
-              const payloadEnd = payload.lastIndexOf('}');
-              if (payloadStart < 0 || payloadEnd < payloadStart) return;
-
-              const nextData = JSON.parse(
-                payload.slice(payloadStart, payloadEnd + 1),
-              );
-              setBleData(nextData);
-              setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
-            } catch (parseError) {
-              setBleStatus(`BLE 資料格式錯誤: ${parseError.message}`);
-            }
-          };
-
-          updateFromCharacteristic(initialCharacteristic);
-
-          connectedDevice.monitorCharacteristicForService(
-            BLE_SERVICE_UUID,
-            BLE_DATA_UUID,
-            (monitorError, characteristic) => {
-              if (monitorError) {
-                setBleStatus(`通知失敗: ${monitorError.message}`);
-                return;
-              }
-
-              if (!characteristic?.value) return;
-
-              try {
-                const decodedPayload = decodeBase64(characteristic.value)
-                  .replace(/\0/g, '')
-                  .trim();
-                const combinedPayload = blePayloadBuffer.current + decodedPayload;
-                const payloadStart = combinedPayload.indexOf('{');
-                const payloadEnd = combinedPayload.indexOf('}', payloadStart);
-                if (payloadStart < 0 || payloadEnd < payloadStart) {
-                  blePayloadBuffer.current = combinedPayload;
-                  return;
-                }
-
-                const nextData = JSON.parse(
-                  combinedPayload.slice(payloadStart, payloadEnd + 1),
-                );
-                setBlePayloadText(combinedPayload.slice(payloadStart, payloadEnd + 1));
-                blePayloadBuffer.current = combinedPayload.slice(payloadEnd + 1);
-                setBleData(nextData);
-                setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
-              } catch (parseError) {
-                blePayloadBuffer.current = '';
-                setBleStatus(`BLE 資料格式錯誤: ${parseError.message}`);
-              }
-            },
-          );
-        } catch (connectionError) {
-          setBleStatus(`連線失敗: ${connectionError.message}`);
-        }
+    await bleService.connect(
+      setBleStatus,
+      (nextData, payload) => {
+        setBleData(nextData);
+        setBlePayloadText(payload);
+        setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
       },
     );
   };
@@ -191,35 +55,35 @@ export default function App() {
           >
             <Text style={styles.buttonText}>掃描並連線 DogGPS-Master3</Text>
           </Pressable>
-          {bleData?.lat !== undefined || bleData?.slave_lat !== undefined || bleData?.slat !== undefined ? (
+          {bleData.slaveLat !== null ? (
             <View>
               <Text style={styles.meta}>
-                Slave GPS: {bleData.slave_lat ?? bleData.lat ?? bleData.slat}, {bleData.slave_lon ?? bleData.lon ?? bleData.slon}
+                Slave GPS: {bleData.slaveLat}, {bleData.slaveLon}
               </Text>
               <Text style={styles.meta}>
-                Master GPS: {bleData.master_lat ?? bleData.mlat ?? '-'}, {bleData.master_lon ?? bleData.mlon ?? '-'}
+                Master GPS: {bleData.masterLat ?? '-'}, {bleData.masterLon ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                距離: {bleData.distance_m ?? bleData.dst ?? '-'} m | 速度: {bleData.speed_kmh ?? bleData.spd ?? '-'} km/h
+                距離: {bleData.distanceMeters ?? '-'} m | 速度: {bleData.speedKmh ?? '-'} km/h
               </Text>
               <Text style={styles.meta}>
-                衛星: {bleData.sat ?? '-'} | HDOP: {bleData.hdop ?? bleData.hd ?? '-'}
+                衛星: {bleData.satellites ?? '-'} | HDOP: {bleData.hdop ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                活動: {bleData.activity ?? bleData.act ?? '-'} | 有效: {(bleData.activity_valid ?? bleData.av) ? '是' : '否'}
+                活動: {bleData.activity ?? '-'} | 有效: {bleData.activityValid ? '是' : '否'}
               </Text>
               <Text style={styles.meta}>
-                GPS 時間: {bleData.gps_time ?? bleData.gt ?? '-'} | 活動時間: {bleData.activity_time ?? bleData.at ?? '-'}
+                GPS 時間: {bleData.gpsTime ?? '-'} | 活動時間: {bleData.activityTime ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                電池: {bleData.battery_mv ?? bleData.bmv ?? '-'} mV | {bleData.battery_pct ?? bleData.bp ?? '-'}%
-                {' '}({bleData.battery_valid || bleData.bv || ((bleData.battery_mv ?? bleData.bmv) > 0 && (bleData.battery_pct ?? bleData.bp) >= 0 && (bleData.battery_pct ?? bleData.bp) <= 100) ? '有效' : '無效'})
+                電池: {bleData.batteryMillivolts ?? '-'} mV | {bleData.batteryPercentage ?? '-'}%
+                {' '}({bleData.batteryValid ? '有效' : '無效'})
               </Text>
               <Text style={styles.meta}>
                 RSSI: {bleData.rssi ?? '-'} | SNR: {bleData.snr ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                封包: type {bleData.type ?? '-'} | seq {bleData.seq ?? '-'} | len {bleData.len ?? '-'} | OLED {bleData.s ? '是' : '否'}
+                封包: type {bleData.type ?? '-'} | seq {bleData.sequence ?? '-'} | len {bleData.length ?? '-'} | OLED {bleData.source === 'oled' ? '是' : '否'}
               </Text>
             </View>
           ) : blePayloadText ? (
