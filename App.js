@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   SafeAreaView,
@@ -9,18 +9,33 @@ import {
   View,
 } from 'react-native';
 import { createBleService } from './src/ble/BleService';
+import { createDogDatabase } from './src/database/DogDatabase';
 import { emptyDogStatus } from './src/models/DogStatus';
 
 const FONT_SCALE = 1.4;
+const DATABASE_SAVE_INTERVAL_MS = 1000;
 
 export default function App() {
   const [bleService] = useState(() => createBleService());
+  const [dogDatabase] = useState(() => createDogDatabase());
+  const databaseReadyRef = useRef(null);
+  const lastSavedAtRef = useRef(0);
   const [bleStatus, setBleStatus] = useState('未連線');
   const [bleData, setBleData] = useState(emptyDogStatus);
   const [blePayloadText, setBlePayloadText] = useState('');
   const [bleUpdatedAt, setBleUpdatedAt] = useState('尚未收到資料');
 
-  useEffect(() => () => bleService.disconnect(), [bleService]);
+  useEffect(() => {
+    databaseReadyRef.current = dogDatabase.initialize();
+    databaseReadyRef.current.catch(error => {
+      console.error('SQLite 初始化失敗:', error);
+    });
+
+    return () => {
+      bleService.disconnect();
+      dogDatabase.close();
+    };
+  }, [bleService, dogDatabase]);
 
   const connectToDogGps = async () => {
     await bleService.connect(
@@ -29,6 +44,19 @@ export default function App() {
         setBleData(nextData);
         setBlePayloadText(payload);
         setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+
+        const now = Date.now();
+        if (now - lastSavedAtRef.current >= DATABASE_SAVE_INTERVAL_MS) {
+          lastSavedAtRef.current = now;
+          databaseReadyRef.current
+            ?.then(() => dogDatabase.saveStatus(nextData, payload))
+            .then(insertId => {
+              console.log('SQLite 寫入成功:', insertId);
+            })
+            .catch(error => {
+              console.error('儲存 BLE dataset 失敗:', error);
+            });
+        }
       },
     );
   };
