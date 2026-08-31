@@ -62,6 +62,7 @@ gpsTime, activityTime, type, sequence, length
 | Device name | `DogGPS-Master3` |
 | Service UUID | `7f510001-6d9e-4e2f-a671-8f3f2d49a001` |
 | Data Characteristic UUID | `7f510002-6d9e-4e2f-a671-8f3f2d49a001` |
+| Wi-Fi Config Characteristic UUID | `7f510003-6d9e-4e2f-a671-8f3f2d49a001` |
 | Direction | Master Notify to phone |
 
 The Master sends a compact OLED dataset. Current compact keys include:
@@ -80,6 +81,9 @@ gt/at       GPS and activity timestamps
 ```
 
 The BLE Characteristic must have one publisher. The current Master publishes the complete OLED dataset from its OLED task to prevent competing long and short JSON notifications.
+
+Wi-Fi settings use a write-with-response characteristic. The phone sends
+`{"action":"upsert","ssid":"network-name","password":"network-password"}` as Base64-encoded UTF-8 JSON. The Master3 firmware exposes the Wi-Fi Config Characteristic as writable.
 
 ## Development
 

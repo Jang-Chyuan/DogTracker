@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  BackHandler,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -11,6 +12,7 @@ import {
 import { createBleService } from './src/ble/BleService';
 import { createDogDatabase } from './src/database/DogDatabase';
 import { emptyDogStatus } from './src/models/DogStatus';
+import WifiSettingsScreen from './src/screens/WifiSettingsScreen';
 
 const FONT_SCALE = 1.4;
 const DATABASE_SAVE_INTERVAL_MS = 1000;
@@ -23,6 +25,7 @@ export default function App() {
   const [bleStatus, setBleStatus] = useState('未連線');
   const [bleData, setBleData] = useState(emptyDogStatus);
   const [blePayloadText, setBlePayloadText] = useState('');
+  const [screen, setScreen] = useState('home');
   const [bleUpdatedAt, setBleUpdatedAt] = useState('尚未收到資料');
 
   useEffect(() => {
@@ -36,6 +39,17 @@ export default function App() {
       dogDatabase.close();
     };
   }, [bleService, dogDatabase]);
+
+  useEffect(() => {
+    if (screen !== 'wifi') return undefined;
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setScreen('home');
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [screen]);
 
   const connectToDogGps = async () => {
     await bleService.connect(
@@ -66,6 +80,10 @@ export default function App() {
       <StatusBar barStyle="light-content" backgroundColor="#111827" />
 
       <ScrollView contentContainerStyle={styles.container}>
+        {screen === 'wifi' ? (
+          <WifiSettingsScreen bleService={bleService} onBack={() => setScreen('home')} />
+        ) : (
+          <>
         <Text style={styles.title}>DogTracker Test</Text>
         <Text style={styles.subtitle}>LoRa GPS + BLE 即時資料</Text>
 
@@ -122,6 +140,15 @@ export default function App() {
             <Text style={styles.meta}>資料: {blePayloadText}</Text>
           ) : null}
         </View>
+
+        <Pressable
+          style={({ pressed }) => [styles.wifiButton, pressed && styles.buttonPressed]}
+          onPress={() => setScreen('wifi')}
+        >
+          <Text style={styles.buttonText}>Master3 Wi-Fi 設定</Text>
+        </Pressable>
+          </>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -215,6 +242,12 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.8,
+  },
+  wifiButton: {
+    alignItems: 'center',
+    backgroundColor: '#2563eb',
+    borderRadius: 12,
+    paddingVertical: 14,
   },
   listHeader: {
     flexDirection: 'row',
