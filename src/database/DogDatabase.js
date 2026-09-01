@@ -14,6 +14,8 @@ export function createDogDatabase() {
         CREATE TABLE IF NOT EXISTS dog_status (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           received_at INTEGER NOT NULL,
+          master_id INTEGER,
+          slave_id INTEGER,
 
           slave_lat REAL,
           slave_lon REAL,
@@ -77,6 +79,17 @@ export function createDogDatabase() {
           LIMIT ${MAX_STATUS_RECORDS}
         )
       `);
+
+      const tableInfo = await db.executeAsync('PRAGMA table_info(dog_status)');
+      const columnNames = new Set(
+        (tableInfo.results || []).map(column => column.name),
+      );
+      if (!columnNames.has('master_id')) {
+        await db.executeAsync('ALTER TABLE dog_status ADD COLUMN master_id INTEGER');
+      }
+      if (!columnNames.has('slave_id')) {
+        await db.executeAsync('ALTER TABLE dog_status ADD COLUMN slave_id INTEGER');
+      }
     },
 
     async saveStatus(status, rawPayload = null) {
@@ -85,6 +98,8 @@ export function createDogDatabase() {
       const result = await db.executeAsync(
         `INSERT INTO dog_status (
           received_at,
+          master_id,
+          slave_id,
           slave_lat,
           slave_lon,
           master_lat,
@@ -112,10 +127,12 @@ export function createDogDatabase() {
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?
         )`,
         [
           receivedAt,
+          status.masterId,
+          status.slaveId,
           status.slaveLat,
           status.slaveLon,
           status.masterLat,

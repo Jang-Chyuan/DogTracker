@@ -114,6 +114,9 @@ export default function App() {
           {bleData.slaveLat !== null ? (
             <View>
               <Text style={styles.meta}>
+                Master ID: {bleData.masterId ?? '-'} | Slave ID: {bleData.slaveId ?? '-'}
+              </Text>
+              <Text style={styles.meta}>
                 Slave GPS: {bleData.slaveLat}, {bleData.slaveLon}
               </Text>
               <Text style={styles.meta}>

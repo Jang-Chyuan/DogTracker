@@ -1,5 +1,7 @@
 export const emptyDogStatus = {
   source: null,
+  masterId: null,
+  slaveId: null,
   statusFresh: false,
   slaveLat: null,
   slaveLon: null,
@@ -30,6 +32,8 @@ export function toDogStatus(data) {
   const value = data || {};
   return {
     source: value.source ?? null,
+    masterId: value.master_id ?? value.mid ?? null,
+    slaveId: value.slave_id ?? value.sid ?? null,
     statusFresh: Boolean(value.status_fresh ?? value.s),
     slaveLat: value.slave_lat ?? value.slat ?? value.lat ?? null,
     slaveLon: value.slave_lon ?? value.slon ?? value.lon ?? null,

@@ -47,7 +47,7 @@ Each Task should modify its own directory. Cross-task data must pass through `sr
 BLE data is normalized by `toDogStatus()` in `src/models/DogStatus.js`. UI, GPS and database modules should use the normalized camelCase fields, not raw BLE keys.
 
 ```text
-slaveLat, slaveLon, masterLat, masterLon
+masterId, slaveId, slaveLat, slaveLon, masterLat, masterLon
 distanceMeters, speedKmh, satellites, hdop
 activity, activityValid, rssi, snr
 batteryMillivolts, batteryPercentage, batteryValid
