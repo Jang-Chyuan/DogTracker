@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 export default function WifiSettingsScreen({ bleService, onBack }) {
   const [ssid, setSsid] = useState('');
@@ -7,6 +7,7 @@ export default function WifiSettingsScreen({ bleService, onBack }) {
   const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deletingSsid, setDeletingSsid] = useState('');
   const [wifiList, setWifiList] = useState([]);
   const [activeSsid, setActiveSsid] = useState('');
   const [message, setMessage] = useState('');
@@ -52,6 +53,37 @@ export default function WifiSettingsScreen({ bleService, onBack }) {
     }
   };
 
+  const removeWifi = network => {
+    Alert.alert(
+      '刪除 Wi-Fi',
+      `確定要從 Master3 刪除「${network}」嗎？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '刪除',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingSsid(network);
+            setMessage('');
+            try {
+              await bleService.removeWifi(network);
+              if (ssid === network) {
+                setSsid('');
+                setPassword('');
+              }
+              setWifiList(current => current.filter(item => item !== network));
+              setMessage(`已刪除 ${network}`);
+            } catch (error) {
+              setMessage(`刪除失敗：${error.message}`);
+            } finally {
+              setDeletingSsid('');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -73,12 +105,24 @@ export default function WifiSettingsScreen({ bleService, onBack }) {
       {loading ? <ActivityIndicator color="#93c5fd" style={styles.loader} /> : null}
       {!loading && wifiList.length === 0 ? <Text style={styles.empty}>尚無已儲存的 Wi-Fi</Text> : null}
       {wifiList.map(network => (
-        <Pressable key={network} onPress={() => setSsid(network)} style={styles.networkRow}>
-          <Text style={styles.networkName}>{network}</Text>
-          <Text style={network === activeSsid ? styles.activeBadge : styles.selectText}>
-            {network === activeSsid ? '使用中' : '選用'}
-          </Text>
-        </Pressable>
+        <View key={network} style={styles.networkRow}>
+          <Pressable onPress={() => setSsid(network)} style={styles.networkSelect}>
+            <Text style={styles.networkName}>{network}</Text>
+            <Text style={network === activeSsid ? styles.activeBadge : styles.selectText}>
+              {network === activeSsid ? '使用中' : '選用'}
+            </Text>
+          </Pressable>
+          <Pressable
+            disabled={deletingSsid !== ''}
+            hitSlop={8}
+            onPress={() => removeWifi(network)}
+            style={styles.deleteButton}
+          >
+            {deletingSsid === network
+              ? <ActivityIndicator color="#fca5a5" size="small" />
+              : <Text style={styles.deleteText}>刪除</Text>}
+          </Pressable>
+        </View>
       ))}
       <Text style={styles.label}>Wi-Fi 名稱（SSID）</Text>
       <TextInput autoCapitalize="none" autoCorrect={false} onChangeText={setSsid} placeholder="輸入 SSID" placeholderTextColor="#64748b" style={styles.input} value={ssid} />
@@ -102,7 +146,8 @@ const styles = StyleSheet.create({
   title: { color: '#f8fafc', fontSize: 22, fontWeight: '700' }, link: { color: '#93c5fd', fontSize: 15 },
   status: { borderRadius: 8, marginBottom: 18, padding: 10 }, connected: { backgroundColor: '#14532d', color: '#bbf7d0' }, disconnected: { backgroundColor: '#7f1d1d', color: '#fecaca' },
   listHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }, sectionTitle: { color: '#f8fafc', fontSize: 16, fontWeight: '700' },
-  loader: { marginVertical: 12 }, empty: { color: '#94a3b8', marginBottom: 18 }, networkRow: { alignItems: 'center', backgroundColor: '#1f2937', borderRadius: 8, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, padding: 11 }, networkName: { color: '#e2e8f0', flex: 1 }, selectText: { color: '#93c5fd', marginLeft: 12 },
+  loader: { marginVertical: 12 }, empty: { color: '#94a3b8', marginBottom: 18 }, networkRow: { alignItems: 'center', backgroundColor: '#1f2937', borderRadius: 8, flexDirection: 'row', marginBottom: 8 }, networkSelect: { alignItems: 'center', flex: 1, flexDirection: 'row', padding: 11 }, networkName: { color: '#e2e8f0', flex: 1 }, selectText: { color: '#93c5fd', marginLeft: 12 },
+  deleteButton: { alignItems: 'center', borderLeftColor: '#4b5563', borderLeftWidth: 1, justifyContent: 'center', minHeight: 48, paddingHorizontal: 12 }, deleteText: { color: '#fca5a5', fontWeight: '700' },
   activeNetwork: { color: '#86efac', marginBottom: 12 }, activeBadge: { backgroundColor: '#166534', borderRadius: 8, color: '#bbf7d0', marginLeft: 12, overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 3 },
   label: { color: '#cbd5e1', fontSize: 14, marginBottom: 7, marginTop: 8 }, input: { backgroundColor: '#1f2937', borderColor: '#4b5563', borderRadius: 10, borderWidth: 1, color: '#fff', fontSize: 16, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 12 },
   passwordRow: { flexDirection: 'row' }, passwordInput: { flex: 1 }, showButton: { alignItems: 'center', height: 48, justifyContent: 'center', marginLeft: 8, paddingHorizontal: 12 },

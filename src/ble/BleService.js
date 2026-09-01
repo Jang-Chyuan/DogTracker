@@ -65,6 +65,19 @@ export function createBleService(manager = new BleManager()) {
       );
     },
 
+    async removeWifi(ssid) {
+      if (!device || !(await device.isConnected())) {
+        device = null;
+        throw new Error('BLE 已斷線，請返回主畫面重新連線');
+      }
+      const payload = JSON.stringify({ action: 'remove', ssid });
+      await device.writeCharacteristicWithResponseForService(
+        BLE_SERVICE_UUID,
+        BLE_WIFI_CONFIG_UUID,
+        encodeUtf8Base64(payload),
+      );
+    },
+
     async getWifiList() {
       if (!device || !(await device.isConnected())) {
         device = null;
