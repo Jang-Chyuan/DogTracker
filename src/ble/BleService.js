@@ -1,4 +1,4 @@
-import { PermissionsAndroid, Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { decode as decodeBase64, encode as encodeBase64 } from 'base-64';
 import { parseBlePayload } from './BleParser';
@@ -34,6 +34,9 @@ async function requestPermissions() {
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
     ];
+  if (Platform.Version >= 33 && PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS) {
+    permissions.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+  }
   const result = await PermissionsAndroid.requestMultiple(permissions);
   return Object.values(result).every(
     permission => permission === PermissionsAndroid.RESULTS.GRANTED,
@@ -45,7 +48,22 @@ export function createBleService(manager = new BleManager()) {
   let cancelScan = null;
   let monitorSubscription = null;
   let disconnectSubscription = null;
+  let reconnectTimer = null;
+  let reconnectAttempt = 0;
+  let reconnecting = false;
+  let manualDisconnect = false;
+  let lastDevice = null;
+  let lastOnStatus = () => {};
+  let lastOnData = () => {};
   let buffer = '';
+
+  const startBackgroundService = status => {
+    if (Platform.OS === 'android') NativeModules.BleBackground?.start(status);
+  };
+
+  const stopBackgroundService = () => {
+    if (Platform.OS === 'android') NativeModules.BleBackground?.stop();
+  };
 
   const handleValue = (value, onData, onStatus = () => {}) => {
     if (!value) return;
@@ -67,6 +85,72 @@ export function createBleService(manager = new BleManager()) {
     }
   };
 
+  let connectInternal;
+
+  const scheduleReconnect = () => {
+    if (manualDisconnect || reconnectTimer || !lastDevice) return;
+    const delay = Math.min(2000 * (2 ** reconnectAttempt), 30000);
+    reconnectAttempt += 1;
+    lastOnStatus(`BLE 已斷線，${Math.round(delay / 1000)} 秒後自動重連`);
+    startBackgroundService('BLE 已斷線，等待自動重連');
+    reconnectTimer = setTimeout(async () => {
+      reconnectTimer = null;
+      if (manualDisconnect || reconnecting) return;
+      reconnecting = true;
+      lastOnStatus(`自動重連中（第 ${reconnectAttempt} 次）...`);
+      const ok = await connectInternal(lastDevice, lastOnStatus, lastOnData, true);
+      reconnecting = false;
+      if (!ok) scheduleReconnect();
+    }, delay);
+  };
+
+  connectInternal = async (foundDevice, onStatus, onData, isReconnect = false) => {
+    try {
+      onStatus(isReconnect ? '自動重連中...' : '連線中...');
+      device = isReconnect
+        ? await manager.connectToDevice(foundDevice.id)
+        : await foundDevice.connect();
+      await device.requestMTU(320);
+      await device.discoverAllServicesAndCharacteristics();
+      disconnectSubscription?.remove();
+      disconnectSubscription = manager.onDeviceDisconnected(device.id, error => {
+        device = null;
+        monitorSubscription?.remove();
+        monitorSubscription = null;
+        if (!manualDisconnect) {
+          lastOnStatus(error ? `BLE 已斷線：${error.message}` : 'BLE 已斷線');
+          scheduleReconnect();
+        }
+      });
+      buffer = '';
+      reconnectAttempt = 0;
+      onStatus(`已連線並訂閱：${device.name || device.localName || device.id}`);
+      startBackgroundService('BLE 已連線，背景接收資料中');
+      const initial = await device.readCharacteristicForService(
+        BLE_SERVICE_UUID,
+        BLE_DATA_UUID,
+      );
+      handleValue(initial?.value, onData, onStatus);
+      monitorSubscription?.remove();
+      monitorSubscription = device.monitorCharacteristicForService(
+        BLE_SERVICE_UUID,
+        BLE_DATA_UUID,
+        (error, characteristic) => {
+          if (error) {
+            onStatus(`訂閱錯誤：${error.message}`);
+            return;
+          }
+          handleValue(characteristic?.value, onData, onStatus);
+        },
+      );
+      return true;
+    } catch (error) {
+      device = null;
+      onStatus(`${isReconnect ? '自動重連' : '連線'}失敗：${error.message}`);
+      return false;
+    }
+  };
+
   return {
     isConnected() {
       return device !== null;
@@ -78,7 +162,7 @@ export function createBleService(manager = new BleManager()) {
         onFinished?.();
         return;
       }
-      if (cancelScan) cancelScan();
+      cancelScan?.();
       onStatus('掃描中...');
       cancelScan = scanForDevices(
         manager,
@@ -94,47 +178,15 @@ export function createBleService(manager = new BleManager()) {
     },
 
     async connect(foundDevice, onStatus, onData) {
-      try {
-        if (cancelScan) cancelScan();
-        onStatus('連線中...');
-        device = await foundDevice.connect();
-        await device.requestMTU(320);
-        await device.discoverAllServicesAndCharacteristics();
-        disconnectSubscription?.remove();
-        disconnectSubscription = manager.onDeviceDisconnected(
-          device.id,
-          error => {
-            device = null;
-            monitorSubscription?.remove();
-            monitorSubscription = null;
-            onStatus(error ? `BLE 已斷線：${error.message}` : 'BLE 已斷線');
-          },
-        );
-        buffer = '';
-        onStatus(`已連線並訂閱：${device.name || device.localName || device.id}`);
-        const initial = await device.readCharacteristicForService(
-          BLE_SERVICE_UUID,
-          BLE_DATA_UUID,
-        );
-        handleValue(initial?.value, onData, onStatus);
-        monitorSubscription?.remove();
-        monitorSubscription = device.monitorCharacteristicForService(
-          BLE_SERVICE_UUID,
-          BLE_DATA_UUID,
-          (error, characteristic) => {
-            if (error) {
-              onStatus(`訂閱錯誤：${error.message}`);
-              return;
-            }
-            handleValue(characteristic?.value, onData, onStatus);
-          },
-        );
-        return true;
-      } catch (error) {
-        device = null;
-        onStatus(`連線失敗：${error.message}`);
-        return false;
-      }
+      cancelScan?.();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      manualDisconnect = false;
+      reconnectAttempt = 0;
+      lastDevice = foundDevice;
+      lastOnStatus = onStatus;
+      lastOnData = onData;
+      return connectInternal(foundDevice, onStatus, onData);
     },
 
     async configureWifi(ssid, password) {
@@ -142,41 +194,38 @@ export function createBleService(manager = new BleManager()) {
         device = null;
         throw new Error('請先連線 DogGPS-Master3');
       }
-      const payload = JSON.stringify({ action: 'upsert', ssid, password });
       await device.writeCharacteristicWithResponseForService(
         BLE_SERVICE_UUID,
         BLE_WIFI_CONFIG_UUID,
-        encodeUtf8Base64(payload),
+        encodeUtf8Base64(JSON.stringify({ action: 'upsert', ssid, password })),
       );
     },
 
     async removeWifi(ssid) {
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('BLE 已斷線，請重新連線');
+        throw new Error('BLE 已斷線，請等待自動重連');
       }
-      const payload = JSON.stringify({ action: 'remove', ssid });
       await device.writeCharacteristicWithResponseForService(
         BLE_SERVICE_UUID,
         BLE_WIFI_CONFIG_UUID,
-        encodeUtf8Base64(payload),
+        encodeUtf8Base64(JSON.stringify({ action: 'remove', ssid })),
       );
     },
 
     async getWifiList() {
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('BLE 已斷線，請重新連線');
+        throw new Error('BLE 已斷線，請等待自動重連');
       }
       const ssids = [];
       let activeSsid = '';
       let offset = 0;
       do {
-        const payload = JSON.stringify({ action: 'list', offset });
         await device.writeCharacteristicWithResponseForService(
           BLE_SERVICE_UUID,
           BLE_WIFI_CONFIG_UUID,
-          encodeUtf8Base64(payload),
+          encodeUtf8Base64(JSON.stringify({ action: 'list', offset })),
         );
         const response = await device.readCharacteristicForService(
           BLE_SERVICE_UUID,
@@ -194,11 +243,15 @@ export function createBleService(manager = new BleManager()) {
     },
 
     disconnect() {
+      manualDisconnect = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
       cancelScan?.();
       monitorSubscription?.remove();
       disconnectSubscription?.remove();
       device?.cancelConnection();
       device = null;
+      stopBackgroundService();
       manager.destroy();
     },
   };

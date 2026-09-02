@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   View,
+  NativeModules,
 } from 'react-native';
 import { createBleService } from './src/ble/BleService';
 import { createDogDatabase } from './src/database/DogDatabase';
@@ -37,17 +38,13 @@ export default function App() {
   useEffect(() => {
     databaseReadyRef.current = dogDatabase.initialize();
     databaseReadyRef.current.catch(error => console.error('SQLite 初始化失敗', error));
-    return () => {
-      bleService.disconnect();
-      dogDatabase.close();
-    };
   }, [bleService, dogDatabase]);
 
   useEffect(() => {
-    if (screen === 'scan') return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (screen === 'wifi' || screen === 'data') setScreen('menu');
-      else setScreen('scan');
+      else if (screen === 'connect' || screen === 'menu') setScreen('scan');
+      else NativeModules.BleBackground?.moveToBackground();
       return true;
     });
     return () => subscription.remove();
@@ -83,6 +80,7 @@ export default function App() {
     const ok = await bleService.connect(selectedDevice, status => {
       setBleStatus(status);
       if (status.startsWith('BLE 已斷線')) setConnected(false);
+      if (status.startsWith('已連線並訂閱')) setConnected(true);
     }, receiveData);
     setConnecting(false);
     setConnected(ok);
@@ -166,6 +164,12 @@ export default function App() {
                 <Text style={styles.menuTitle}>Wi-Fi 設定</Text>
                 <Text style={styles.menuDescription}>查看、新增或刪除 Master3 Wi-Fi</Text>
               </Pressable>
+              <Pressable
+                onPress={() => NativeModules.BleBackground?.moveToBackground()}
+                style={styles.backgroundButton}
+              >
+                <Text style={styles.buttonText}>切到背景執行</Text>
+              </Pressable>
               <Pressable onPress={() => setScreen('scan')} style={styles.secondaryButton}>
                 <Text style={styles.secondaryText}>返回裝置掃描</Text>
               </Pressable>
@@ -210,4 +214,5 @@ const styles = StyleSheet.create({
   menuButton: { backgroundColor: '#1e3a8a', borderColor: '#3b82f6', borderRadius: 12, borderWidth: 1, marginTop: 14, padding: 16 },
   menuTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
   menuDescription: { color: '#bfdbfe', fontSize: 12, marginTop: 5 },
+  backgroundButton: { alignItems: 'center', backgroundColor: '#15803d', borderRadius: 11, marginTop: 16, padding: 14 },
 });
