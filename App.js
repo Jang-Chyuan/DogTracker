@@ -33,6 +33,7 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [backgroundRunning, setBackgroundRunning] = useState(false);
   const [bleStatus, setBleStatus] = useState('尚未掃描');
   const [bleData, setBleData] = useState(emptyDogStatus);
   const [updatedAt, setUpdatedAt] = useState('-');
@@ -42,9 +43,10 @@ export default function App() {
     databaseReadyRef.current.catch(error => console.error('SQLite 初始化失敗', error));
     NativeModules.BleBackground?.isRunning?.().then(running => {
       if (!running) return;
+      setBackgroundRunning(true);
       setConnected(true);
       setBleStatus('背景接收資料中');
-      setScreen('menu');
+      setScreen('scan');
     });
   }, [bleService, dogDatabase]);
 
@@ -88,7 +90,10 @@ export default function App() {
     const ok = await bleService.connect(selectedDevice, status => {
       setBleStatus(status);
       if (status.startsWith('BLE 已斷線')) setConnected(false);
-      if (status.startsWith('已連線並訂閱')) setConnected(true);
+      if (status.startsWith('已連線並訂閱')) {
+        setConnected(true);
+        setBackgroundRunning(true);
+      }
     }, receiveData);
     setConnecting(false);
     setConnected(ok);
@@ -98,6 +103,7 @@ export default function App() {
   const stopBackgroundReception = () => {
     bleService.disconnect();
     setConnected(false);
+    setBackgroundRunning(false);
     setBleStatus('背景接收已停止');
   };
 
@@ -139,6 +145,22 @@ export default function App() {
               <Pressable disabled={scanning} onPress={scan} style={[styles.primaryButton, scanning && styles.disabled]}>
                 <Text style={styles.buttonText}>{scanning ? '掃描中...' : '開始掃描'}</Text>
               </Pressable>
+              {backgroundRunning ? (
+                <View style={styles.backgroundDeviceRow}>
+                  <Pressable onPress={() => setScreen('menu')} style={styles.backgroundDeviceSelect}>
+                  <View style={styles.flex}>
+                    <Text style={styles.deviceName}>DogGPS-Master3</Text>
+                    <Text style={styles.backgroundDeviceStatus}>
+                      ● {connected ? '背景接收資料中' : '背景服務執行中，等待自動重連'}
+                    </Text>
+                  </View>
+                  <Text style={styles.select}>選擇 ›</Text>
+                  </Pressable>
+                  <Pressable onPress={stopBackgroundReception} style={styles.scanStopButton}>
+                    <Text style={styles.scanStopText}>停止</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               {devices.map(device => (
                 <Pressable
                   key={device.id}
@@ -152,7 +174,7 @@ export default function App() {
                   <Text style={styles.select}>選擇 ›</Text>
                 </Pressable>
               ))}
-              {!scanning && devices.length === 0 ? <Text style={styles.hint}>按下開始掃描以尋找 DogGPS 裝置。</Text> : null}
+              {!scanning && devices.length === 0 && !backgroundRunning ? <Text style={styles.hint}>按下開始掃描以尋找 DogGPS 裝置。</Text> : null}
             </View>
           ) : null}
 
@@ -232,6 +254,11 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#93c5fd', fontWeight: '600' },
   disabled: { opacity: 0.5 },
   deviceRow: { alignItems: 'center', backgroundColor: '#1f2937', borderRadius: 10, flexDirection: 'row', marginTop: 10, padding: 13 },
+  backgroundDeviceRow: { alignItems: 'center', backgroundColor: '#14532d', borderColor: '#22c55e', borderRadius: 10, borderWidth: 1, flexDirection: 'row', marginTop: 12, padding: 13 },
+  backgroundDeviceSelect: { alignItems: 'center', flex: 1, flexDirection: 'row' },
+  backgroundDeviceStatus: { color: '#86efac', fontSize: 12, marginTop: 4 },
+  scanStopButton: { borderLeftColor: '#4ade80', borderLeftWidth: 1, marginLeft: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  scanStopText: { color: '#fecaca', fontWeight: '700' },
   deviceName: { color: '#f8fafc', fontSize: 16, fontWeight: '700' },
   deviceId: { color: '#94a3b8', fontSize: 11, marginTop: 4 },
   select: { color: '#93c5fd', fontWeight: '700', marginLeft: 10 },
