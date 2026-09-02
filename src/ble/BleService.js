@@ -123,7 +123,7 @@ export function createBleService(manager = new BleManager()) {
           try {
             onStatus('連線中...');
             device = await foundDevice.connect();
-            await device.requestMTU(247);
+            await device.requestMTU(320);
             await device.discoverAllServicesAndCharacteristics();
             if (disconnectSubscription) disconnectSubscription.remove();
             disconnectSubscription = manager.onDeviceDisconnected(
