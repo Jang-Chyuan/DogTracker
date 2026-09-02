@@ -9,6 +9,19 @@ export const BLE_DEVICE_NAME = 'DogGPS-Master3';
 export const BLE_SERVICE_UUID = '7f510001-6d9e-4e2f-a671-8f3f2d49a001';
 export const BLE_DATA_UUID = '7f510002-6d9e-4e2f-a671-8f3f2d49a001';
 export const BLE_WIFI_CONFIG_UUID = '7f510003-6d9e-4e2f-a671-8f3f2d49a001';
+export const DEFAULT_BLE_CONFIG = Object.freeze({
+  bleName: BLE_DEVICE_NAME,
+  serviceUuid: BLE_SERVICE_UUID,
+});
+
+function normalizeBleConfig(config = DEFAULT_BLE_CONFIG) {
+  const bleName = config.bleName?.trim();
+  const serviceUuid = config.serviceUuid?.trim().toLowerCase();
+  if (!bleName || !serviceUuid) {
+    throw new Error('BLE 設定缺少 bleName 或 serviceUuid');
+  }
+  return { bleName, serviceUuid };
+}
 
 function encodeUtf8Base64(value) {
   const bytes = encodeURIComponent(value).replace(
@@ -56,6 +69,7 @@ export function createBleService(manager = new BleManager()) {
   let lastOnStatus = () => {};
   let lastOnData = () => {};
   let buffer = '';
+  let activeConfig = DEFAULT_BLE_CONFIG;
 
   const startBackgroundService = status => {
     if (Platform.OS === 'android') NativeModules.BleBackground?.start(status);
@@ -127,13 +141,13 @@ export function createBleService(manager = new BleManager()) {
       onStatus(`已連線並訂閱：${device.name || device.localName || device.id}`);
       startBackgroundService('BLE 已連線，背景接收資料中');
       const initial = await device.readCharacteristicForService(
-        BLE_SERVICE_UUID,
+        activeConfig.serviceUuid,
         BLE_DATA_UUID,
       );
       handleValue(initial?.value, onData, onStatus);
       monitorSubscription?.remove();
       monitorSubscription = device.monitorCharacteristicForService(
-        BLE_SERVICE_UUID,
+        activeConfig.serviceUuid,
         BLE_DATA_UUID,
         (error, characteristic) => {
           if (error) {
@@ -156,18 +170,22 @@ export function createBleService(manager = new BleManager()) {
       return device !== null;
     },
 
-    async scan(onStatus, onDevice, onFinished) {
+    async scan(config, onStatus, onDevice, onFinished) {
       if (!(await requestPermissions())) {
         onStatus('未取得 BLE 掃描權限');
         onFinished?.();
         return;
       }
+      activeConfig = normalizeBleConfig(config);
       cancelScan?.();
       onStatus('掃描中...');
       cancelScan = scanForDevices(
         manager,
-        BLE_SERVICE_UUID,
-        onDevice,
+        activeConfig.serviceUuid,
+        foundDevice => {
+          const foundName = foundDevice.name || foundDevice.localName;
+          if (foundName === activeConfig.bleName) onDevice(foundDevice);
+        },
         error => onStatus(`掃描失敗：${error.message}`),
         () => {
           cancelScan = null;
@@ -177,12 +195,13 @@ export function createBleService(manager = new BleManager()) {
       );
     },
 
-    async connect(foundDevice, onStatus, onData) {
+    async connect(foundDevice, onStatus, onData, config = activeConfig) {
       cancelScan?.();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = null;
       manualDisconnect = false;
       reconnectAttempt = 0;
+      activeConfig = normalizeBleConfig(config);
       lastDevice = foundDevice;
       lastOnStatus = onStatus;
       lastOnData = onData;
@@ -195,7 +214,7 @@ export function createBleService(manager = new BleManager()) {
         throw new Error('請先連線 DogGPS-Master3');
       }
       await device.writeCharacteristicWithResponseForService(
-        BLE_SERVICE_UUID,
+        activeConfig.serviceUuid,
         BLE_WIFI_CONFIG_UUID,
         encodeUtf8Base64(JSON.stringify({ action: 'upsert', ssid, password })),
       );
@@ -207,7 +226,7 @@ export function createBleService(manager = new BleManager()) {
         throw new Error('BLE 已斷線，請等待自動重連');
       }
       await device.writeCharacteristicWithResponseForService(
-        BLE_SERVICE_UUID,
+        activeConfig.serviceUuid,
         BLE_WIFI_CONFIG_UUID,
         encodeUtf8Base64(JSON.stringify({ action: 'remove', ssid })),
       );
@@ -223,12 +242,12 @@ export function createBleService(manager = new BleManager()) {
       let offset = 0;
       do {
         await device.writeCharacteristicWithResponseForService(
-          BLE_SERVICE_UUID,
+          activeConfig.serviceUuid,
           BLE_WIFI_CONFIG_UUID,
           encodeUtf8Base64(JSON.stringify({ action: 'list', offset })),
         );
         const response = await device.readCharacteristicForService(
-          BLE_SERVICE_UUID,
+          activeConfig.serviceUuid,
           BLE_WIFI_CONFIG_UUID,
         );
         const result = JSON.parse(decodeUtf8Base64(response.value));

@@ -29,7 +29,7 @@ const COLUMNS = [
   { key: 'sequence', label: '序號', width: 68 },
 ];
 
-const DEFAULT_COLUMNS = [
+export const DEFAULT_TABLE_COLUMNS = [
   'received_at',
   'master_id',
   'slave_id',
@@ -43,29 +43,36 @@ const renderValue = (row, column) => {
   return String(column.format ? column.format(value) : value);
 };
 
-export default function DataTableScreen({ dogDatabase, onBack }) {
+export default function DataTableScreen({ dogDatabase, onBack, profile }) {
+  const profileColumns = profile?.tableColumns || DEFAULT_TABLE_COLUMNS;
+  const historyLimit = profile?.historyLimit || 100;
+  const refreshIntervalMs = profile?.tableRefreshIntervalMs || 1000;
   const [rows, setRows] = useState([]);
-  const [selected, setSelected] = useState(DEFAULT_COLUMNS);
+  const [selected, setSelected] = useState(() => [...profileColumns]);
   const [showColumns, setShowColumns] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const loadRows = useCallback(async () => {
     try {
-      setRows(await dogDatabase.listHistory(100));
+      setRows(await dogDatabase.listHistory(historyLimit));
       setError('');
     } catch (loadError) {
       setError(`讀取 SQLite 失敗：${loadError.message}`);
     } finally {
       setLoading(false);
     }
-  }, [dogDatabase]);
+  }, [dogDatabase, historyLimit]);
 
   useEffect(() => {
     loadRows();
-    const timer = setInterval(loadRows, 1000);
+    const timer = setInterval(loadRows, refreshIntervalMs);
     return () => clearInterval(timer);
-  }, [loadRows]);
+  }, [loadRows, refreshIntervalMs]);
+
+  useEffect(() => {
+    setSelected([...profileColumns]);
+  }, [profileColumns]);
 
   const toggleColumn = key => {
     setSelected(current => {
@@ -110,7 +117,7 @@ export default function DataTableScreen({ dogDatabase, onBack }) {
               </Pressable>
             );
           })}
-          <Pressable onPress={() => setSelected(DEFAULT_COLUMNS)} style={styles.resetButton}>
+          <Pressable onPress={() => setSelected([...profileColumns])} style={styles.resetButton}>
             <Text style={styles.link}>恢復預設欄位</Text>
           </Pressable>
         </View>
