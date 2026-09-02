@@ -5,6 +5,7 @@ import android.os.Build
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.Promise
 
 class BleBackgroundModule(private val context: ReactApplicationContext) :
   ReactContextBaseJavaModule(context) {
@@ -30,5 +31,10 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   @ReactMethod
   fun moveToBackground() {
     context.currentActivity?.moveTaskToBack(true)
+  }
+
+  @ReactMethod
+  fun isRunning(promise: Promise) {
+    promise.resolve(BleForegroundService.isRunning)
   }
 }

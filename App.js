@@ -19,10 +19,12 @@ import DataTableScreen from './src/screens/DataTableScreen';
 import WifiSettingsScreen from './src/screens/WifiSettingsScreen';
 
 const DATABASE_SAVE_INTERVAL_MS = 1000;
+const sharedBleService = createBleService();
+const sharedDogDatabase = createDogDatabase();
 
 export default function App() {
-  const [bleService] = useState(() => createBleService());
-  const [dogDatabase] = useState(() => createDogDatabase());
+  const [bleService] = useState(() => sharedBleService);
+  const [dogDatabase] = useState(() => sharedDogDatabase);
   const databaseReadyRef = useRef(null);
   const lastSavedAtRef = useRef(0);
   const [screen, setScreen] = useState('scan');
@@ -38,6 +40,12 @@ export default function App() {
   useEffect(() => {
     databaseReadyRef.current = dogDatabase.initialize();
     databaseReadyRef.current.catch(error => console.error('SQLite 初始化失敗', error));
+    NativeModules.BleBackground?.isRunning?.().then(running => {
+      if (!running) return;
+      setConnected(true);
+      setBleStatus('背景接收資料中');
+      setScreen('menu');
+    });
   }, [bleService, dogDatabase]);
 
   useEffect(() => {
@@ -85,6 +93,19 @@ export default function App() {
     setConnecting(false);
     setConnected(ok);
     if (ok) setScreen('menu');
+  };
+
+  const stopBackgroundReception = () => {
+    bleService.disconnect();
+    setConnected(false);
+    setBleStatus('背景接收已停止');
+  };
+
+  const stopAndScanAgain = () => {
+    stopBackgroundReception();
+    setDevices([]);
+    setSelectedDevice(null);
+    setScreen('scan');
   };
 
   const steps = [
@@ -154,7 +175,9 @@ export default function App() {
           {screen === 'menu' ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>3. 選擇功能</Text>
-              <Text style={styles.connected}>● {connected ? 'BLE 已連線並訂閱' : 'BLE 未連線'}</Text>
+              <Text style={connected ? styles.connected : styles.disconnected}>
+                ● {connected ? '背景接收資料中' : 'BLE 未連線'}
+              </Text>
               <Text style={styles.hint}>最後資料：{updatedAt}　Master {bleData.masterId ?? '-'} / Slave {bleData.slaveId ?? '-'}</Text>
               <Pressable onPress={() => setScreen('data')} style={styles.menuButton}>
                 <Text style={styles.menuTitle}>即時資料顯示</Text>
@@ -170,8 +193,11 @@ export default function App() {
               >
                 <Text style={styles.buttonText}>切到背景執行</Text>
               </Pressable>
-              <Pressable onPress={() => setScreen('scan')} style={styles.secondaryButton}>
-                <Text style={styles.secondaryText}>返回裝置掃描</Text>
+              <Pressable onPress={stopBackgroundReception} style={styles.stopButton}>
+                <Text style={styles.buttonText}>停止背景接收</Text>
+              </Pressable>
+              <Pressable onPress={stopAndScanAgain} style={styles.secondaryButton}>
+                <Text style={styles.secondaryText}>停止並重新掃描</Text>
               </Pressable>
             </View>
           ) : null}
@@ -211,8 +237,10 @@ const styles = StyleSheet.create({
   select: { color: '#93c5fd', fontWeight: '700', marginLeft: 10 },
   hint: { color: '#94a3b8', fontSize: 12, marginTop: 12 },
   connected: { color: '#86efac', marginBottom: 4 },
+  disconnected: { color: '#fca5a5', marginBottom: 4 },
   menuButton: { backgroundColor: '#1e3a8a', borderColor: '#3b82f6', borderRadius: 12, borderWidth: 1, marginTop: 14, padding: 16 },
   menuTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
   menuDescription: { color: '#bfdbfe', fontSize: 12, marginTop: 5 },
   backgroundButton: { alignItems: 'center', backgroundColor: '#15803d', borderRadius: 11, marginTop: 16, padding: 14 },
+  stopButton: { alignItems: 'center', backgroundColor: '#b91c1c', borderRadius: 11, marginTop: 12, padding: 14 },
 });

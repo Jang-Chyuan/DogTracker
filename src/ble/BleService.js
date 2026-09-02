@@ -251,8 +251,8 @@ export function createBleService(manager = new BleManager()) {
       disconnectSubscription?.remove();
       device?.cancelConnection();
       device = null;
+      lastDevice = null;
       stopBackgroundService();
-      manager.destroy();
     },
   };
 }

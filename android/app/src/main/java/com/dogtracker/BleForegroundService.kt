@@ -12,10 +12,12 @@ class BleForegroundService : Service() {
   companion object {
     const val CHANNEL_ID = "dogtracker_ble"
     const val NOTIFICATION_ID = 3103
+    @Volatile var isRunning = false
   }
 
   override fun onCreate() {
     super.onCreate()
+    isRunning = true
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val channel = NotificationChannel(
         CHANNEL_ID,
@@ -43,4 +45,9 @@ class BleForegroundService : Service() {
   }
 
   override fun onBind(intent: Intent?): IBinder? = null
+
+  override fun onDestroy() {
+    isRunning = false
+    super.onDestroy()
+  }
 }
