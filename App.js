@@ -14,9 +14,9 @@ import {
 import { createBleService } from './src/ble/BleService';
 import { createDogDatabase } from './src/database/DogDatabase';
 import { emptyDogStatus } from './src/models/DogStatus';
+import DataTableScreen from './src/screens/DataTableScreen';
 import WifiSettingsScreen from './src/screens/WifiSettingsScreen';
 
-const FONT_SCALE = 1.4;
 const DATABASE_SAVE_INTERVAL_MS = 1000;
 
 export default function App() {
@@ -24,18 +24,19 @@ export default function App() {
   const [dogDatabase] = useState(() => createDogDatabase());
   const databaseReadyRef = useRef(null);
   const lastSavedAtRef = useRef(0);
-  const [bleStatus, setBleStatus] = useState('未連線');
+  const [screen, setScreen] = useState('scan');
+  const [devices, setDevices] = useState([]);
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [bleStatus, setBleStatus] = useState('尚未掃描');
   const [bleData, setBleData] = useState(emptyDogStatus);
-  const [blePayloadText, setBlePayloadText] = useState('');
-  const [screen, setScreen] = useState('home');
-  const [bleUpdatedAt, setBleUpdatedAt] = useState('尚未收到資料');
+  const [updatedAt, setUpdatedAt] = useState('-');
 
   useEffect(() => {
     databaseReadyRef.current = dogDatabase.initialize();
-    databaseReadyRef.current.catch(error => {
-      console.error('SQLite 初始化失敗:', error);
-    });
-
+    databaseReadyRef.current.catch(error => console.error('SQLite 初始化失敗', error));
     return () => {
       bleService.disconnect();
       dogDatabase.close();
@@ -43,278 +44,170 @@ export default function App() {
   }, [bleService, dogDatabase]);
 
   useEffect(() => {
-    if (screen !== 'wifi') return undefined;
-
+    if (screen === 'scan') return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      setScreen('home');
+      if (screen === 'wifi' || screen === 'data') setScreen('menu');
+      else setScreen('scan');
       return true;
     });
-
     return () => subscription.remove();
   }, [screen]);
 
-  const connectToDogGps = async () => {
-    await bleService.connect(
-      setBleStatus,
-      (nextData, payload) => {
-        setBleData(nextData);
-        setBlePayloadText(payload);
-        setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+  const receiveData = (nextData, payload) => {
+    setBleData(nextData);
+    setUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+    const now = Date.now();
+    if (now - lastSavedAtRef.current < DATABASE_SAVE_INTERVAL_MS) return;
+    lastSavedAtRef.current = now;
+    databaseReadyRef.current
+      ?.then(() => dogDatabase.saveStatus(nextData, payload))
+      .catch(error => console.error('儲存 BLE 資料失敗', error));
+  };
 
-        const now = Date.now();
-        if (now - lastSavedAtRef.current >= DATABASE_SAVE_INTERVAL_MS) {
-          lastSavedAtRef.current = now;
-          databaseReadyRef.current
-            ?.then(() => dogDatabase.saveStatus(nextData, payload))
-            .then(insertId => {
-              console.log('SQLite 寫入成功:', insertId);
-            })
-            .catch(error => {
-              console.error('儲存 BLE dataset 失敗:', error);
-            });
-        }
-      },
+  const scan = async () => {
+    setDevices([]);
+    setSelectedDevice(null);
+    setScanning(true);
+    await bleService.scan(
+      setBleStatus,
+      device => setDevices(current => current.some(item => item.id === device.id)
+        ? current
+        : [...current, device]),
+      () => setScanning(false),
     );
   };
 
+  const connectAndSubscribe = async () => {
+    if (!selectedDevice) return;
+    setConnecting(true);
+    const ok = await bleService.connect(selectedDevice, status => {
+      setBleStatus(status);
+      if (status.startsWith('BLE 已斷線')) setConnected(false);
+    }, receiveData);
+    setConnecting(false);
+    setConnected(ok);
+    if (ok) setScreen('menu');
+  };
+
+  const steps = [
+    { key: 'scan', number: 1, label: '掃描' },
+    { key: 'connect', number: 2, label: '連線訂閱' },
+    { key: 'menu', number: 3, label: '功能' },
+  ];
+  const activeStep = screen === 'scan' ? 1 : screen === 'connect' ? 2 : 3;
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#111827" />
+      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>DogTracker</Text>
+          <View style={styles.steps}>
+            {steps.map(step => (
+              <View key={step.key} style={styles.step}>
+                <View style={[styles.stepCircle, activeStep >= step.number && styles.stepCircleActive]}>
+                  <Text style={styles.stepNumber}>{step.number}</Text>
+                </View>
+                <Text style={[styles.stepLabel, activeStep === step.number && styles.stepLabelActive]}>{step.label}</Text>
+              </View>
+            ))}
+          </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardDismissMode="on-drag"
-        keyboardShouldPersistTaps="handled"
-      >
-        {screen === 'wifi' ? (
-          <WifiSettingsScreen bleService={bleService} onBack={() => setScreen('home')} />
-        ) : (
-          <>
-        <Text style={styles.title}>DogTracker Test</Text>
-        <Text style={styles.subtitle}>LoRa GPS + BLE 即時資料</Text>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>BLE 裝置</Text>
-          <Text style={styles.value}>{bleStatus}</Text>
-          <Text style={styles.meta}>最後更新: {bleUpdatedAt}</Text>
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              styles.bleButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={connectToDogGps}
-          >
-            <Text style={styles.buttonText}>掃描並連線 DogGPS-Master3</Text>
-          </Pressable>
-          {bleData.slaveLat !== null ? (
-            <View>
-              <Text style={styles.meta}>
-                Master ID: {bleData.masterId ?? '-'} | Slave ID: {bleData.slaveId ?? '-'}
-              </Text>
-              <Text style={styles.meta}>
-                Slave GPS: {bleData.slaveLat}, {bleData.slaveLon}
-              </Text>
-              <Text style={styles.meta}>
-                Master GPS: {bleData.masterLat ?? '-'}, {bleData.masterLon ?? '-'}
-              </Text>
-              <Text style={styles.meta}>
-                距離: {bleData.distanceMeters ?? '-'} m | 速度: {bleData.speedKmh ?? '-'} km/h
-              </Text>
-              <Text style={styles.meta}>
-                衛星: {bleData.satellites ?? '-'} | HDOP: {bleData.hdop ?? '-'}
-              </Text>
-              <Text style={styles.meta}>
-                活動: {bleData.activity ?? '-'} | 有效: {bleData.activityValid ? '是' : '否'}
-              </Text>
-              <Text style={styles.meta}>
-                GPS 時間: {bleData.gpsTime ?? '-'} | 活動時間: {bleData.activityTime ?? '-'}
-              </Text>
-              <Text style={styles.meta}>
-                電池: {bleData.batteryMillivolts ?? '-'} mV | {bleData.batteryPercentage ?? '-'}%
-                {' '}({bleData.batteryValid ? '有效' : '無效'})
-              </Text>
-              <Text style={styles.meta}>
-                Master 電池: {bleData.masterBatteryMillivolts ?? '-'} mV | {bleData.masterBatteryPercentage ?? '-'}%
-                {' '}({bleData.masterBatteryValid ? '有效' : '無效'})
-              </Text>
-              <Text style={styles.meta}>
-                RSSI: {bleData.rssi ?? '-'} | SNR: {bleData.snr ?? '-'}
-              </Text>
-              <Text style={styles.meta}>
-                封包: type {bleData.type ?? '-'} | seq {bleData.sequence ?? '-'} | len {bleData.length ?? '-'} | OLED {bleData.source === 'oled' ? '是' : '否'}
-              </Text>
+          {screen === 'scan' ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>1. 掃描 BLE 裝置</Text>
+              <Text style={styles.status}>{bleStatus}</Text>
+              <Pressable disabled={scanning} onPress={scan} style={[styles.primaryButton, scanning && styles.disabled]}>
+                <Text style={styles.buttonText}>{scanning ? '掃描中...' : '開始掃描'}</Text>
+              </Pressable>
+              {devices.map(device => (
+                <Pressable
+                  key={device.id}
+                  onPress={() => { setSelectedDevice(device); setScreen('connect'); }}
+                  style={styles.deviceRow}
+                >
+                  <View style={styles.flex}>
+                    <Text style={styles.deviceName}>{device.name || device.localName || '未命名裝置'}</Text>
+                    <Text style={styles.deviceId}>{device.id}</Text>
+                  </View>
+                  <Text style={styles.select}>選擇 ›</Text>
+                </Pressable>
+              ))}
+              {!scanning && devices.length === 0 ? <Text style={styles.hint}>按下開始掃描以尋找 DogGPS 裝置。</Text> : null}
             </View>
-          ) : blePayloadText ? (
-            <Text style={styles.meta}>資料: {blePayloadText}</Text>
           ) : null}
-        </View>
 
-        <Pressable
-          style={({ pressed }) => [styles.wifiButton, pressed && styles.buttonPressed]}
-          onPress={() => setScreen('wifi')}
-        >
-          <Text style={styles.buttonText}>Master3 Wi-Fi 設定</Text>
-        </Pressable>
-          </>
-        )}
+          {screen === 'connect' ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>2. 連線並訂閱</Text>
+              <Text style={styles.label}>選擇的裝置</Text>
+              <Text style={styles.deviceName}>{selectedDevice?.name || selectedDevice?.localName || '-'}</Text>
+              <Text style={styles.deviceId}>{selectedDevice?.id || '-'}</Text>
+              <Text style={styles.status}>{bleStatus}</Text>
+              <Pressable disabled={connecting} onPress={connectAndSubscribe} style={[styles.primaryButton, connecting && styles.disabled]}>
+                <Text style={styles.buttonText}>{connecting ? '連線中...' : '連線並訂閱資料'}</Text>
+              </Pressable>
+              <Pressable onPress={() => setScreen('scan')} style={styles.secondaryButton}>
+                <Text style={styles.secondaryText}>返回重新掃描</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
-      </ScrollView>
+          {screen === 'menu' ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>3. 選擇功能</Text>
+              <Text style={styles.connected}>● {connected ? 'BLE 已連線並訂閱' : 'BLE 未連線'}</Text>
+              <Text style={styles.hint}>最後資料：{updatedAt}　Master {bleData.masterId ?? '-'} / Slave {bleData.slaveId ?? '-'}</Text>
+              <Pressable onPress={() => setScreen('data')} style={styles.menuButton}>
+                <Text style={styles.menuTitle}>即時資料顯示</Text>
+                <Text style={styles.menuDescription}>SQLite 表格、最近 100 筆、可選欄位</Text>
+              </Pressable>
+              <Pressable onPress={() => setScreen('wifi')} style={styles.menuButton}>
+                <Text style={styles.menuTitle}>Wi-Fi 設定</Text>
+                <Text style={styles.menuDescription}>查看、新增或刪除 Master3 Wi-Fi</Text>
+              </Pressable>
+              <Pressable onPress={() => setScreen('scan')} style={styles.secondaryButton}>
+                <Text style={styles.secondaryText}>返回裝置掃描</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {screen === 'data' ? <DataTableScreen dogDatabase={dogDatabase} onBack={() => setScreen('menu')} /> : null}
+          {screen === 'wifi' ? <WifiSettingsScreen bleService={bleService} onBack={() => setScreen('menu')} /> : null}
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  container: {
-    padding: 20,
-    paddingBottom: 36,
-    backgroundColor: '#0f172a',
-  },
-  title: {
-    fontSize: 28 * FONT_SCALE,
-    fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14 * FONT_SCALE,
-    color: '#94a3b8',
-    marginBottom: 18,
-  },
-  card: {
-    backgroundColor: '#111827',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#374151',
-    marginBottom: 18,
-  },
-  label: {
-    color: '#9ca3af',
-    fontSize: 12 * FONT_SCALE,
-    marginBottom: 6,
-  },
-  value: {
-    color: '#f8fafc',
-    fontSize: 26 * FONT_SCALE,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  meta: {
-    color: '#cbd5e1',
-    fontSize: 13 * FONT_SCALE,
-    marginTop: 2,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 14,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButton: {
-    backgroundColor: '#2563eb',
-  },
-  secondaryButton: {
-    backgroundColor: '#16a34a',
-  },
-  bleButton: {
-    backgroundColor: '#f97316',
-    flex: 0,
-    marginTop: 8,
-  },
-  resetButton: {
-    backgroundColor: '#374151',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15 * FONT_SCALE,
-  },
-  resetText: {
-    color: '#f8fafc',
-    fontWeight: '700',
-    fontSize: 15 * FONT_SCALE,
-  },
-  buttonPressed: {
-    opacity: 0.8,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  wifiButton: {
-    alignItems: 'center',
-    backgroundColor: '#2563eb',
-    borderRadius: 12,
-    paddingVertical: 14,
-  },
-  listHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    color: '#f8fafc',
-    fontSize: 18 * FONT_SCALE,
-    fontWeight: '700',
-  },
-  sectionHint: {
-    color: '#94a3b8',
-    fontSize: 12 * FONT_SCALE,
-  },
-  list: {
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#374151',
-    marginBottom: 10,
-  },
-  rowTitle: {
-    color: '#f8fafc',
-    fontWeight: '600',
-    fontSize: 14 * FONT_SCALE,
-  },
-  rowText: {
-    color: '#cbd5e1',
-    fontSize: 13 * FONT_SCALE,
-    marginTop: 4,
-  },
-  rowRight: {
-    alignItems: 'flex-end',
-  },
-  speed: {
-    color: '#93c5fd',
-    fontWeight: '700',
-    fontSize: 14 * FONT_SCALE,
-  },
-  time: {
-    color: '#94a3b8',
-    fontSize: 12 * FONT_SCALE,
-    marginTop: 4,
-  },
+  safeArea: { backgroundColor: '#0f172a', flex: 1 },
+  flex: { flex: 1 },
+  container: { backgroundColor: '#0f172a', flexGrow: 1, padding: 18, paddingBottom: 36 },
+  title: { color: '#f8fafc', fontSize: 28, fontWeight: '800', marginBottom: 18 },
+  steps: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 },
+  step: { alignItems: 'center', flex: 1 },
+  stepCircle: { alignItems: 'center', backgroundColor: '#334155', borderRadius: 16, height: 32, justifyContent: 'center', width: 32 },
+  stepCircleActive: { backgroundColor: '#2563eb' },
+  stepNumber: { color: '#fff', fontWeight: '700' },
+  stepLabel: { color: '#64748b', fontSize: 12, marginTop: 5 },
+  stepLabelActive: { color: '#bfdbfe', fontWeight: '700' },
+  card: { backgroundColor: '#111827', borderColor: '#374151', borderRadius: 16, borderWidth: 1, padding: 18 },
+  cardTitle: { color: '#f8fafc', fontSize: 21, fontWeight: '700', marginBottom: 14 },
+  status: { color: '#cbd5e1', marginBottom: 14 },
+  label: { color: '#94a3b8', fontSize: 12, marginBottom: 4 },
+  primaryButton: { alignItems: 'center', backgroundColor: '#2563eb', borderRadius: 11, padding: 14 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  secondaryButton: { alignItems: 'center', marginTop: 14, padding: 10 },
+  secondaryText: { color: '#93c5fd', fontWeight: '600' },
+  disabled: { opacity: 0.5 },
+  deviceRow: { alignItems: 'center', backgroundColor: '#1f2937', borderRadius: 10, flexDirection: 'row', marginTop: 10, padding: 13 },
+  deviceName: { color: '#f8fafc', fontSize: 16, fontWeight: '700' },
+  deviceId: { color: '#94a3b8', fontSize: 11, marginTop: 4 },
+  select: { color: '#93c5fd', fontWeight: '700', marginLeft: 10 },
+  hint: { color: '#94a3b8', fontSize: 12, marginTop: 12 },
+  connected: { color: '#86efac', marginBottom: 4 },
+  menuButton: { backgroundColor: '#1e3a8a', borderColor: '#3b82f6', borderRadius: 12, borderWidth: 1, marginTop: 14, padding: 16 },
+  menuTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  menuDescription: { color: '#bfdbfe', fontSize: 12, marginTop: 5 },
 });

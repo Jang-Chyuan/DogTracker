@@ -1,26 +1,34 @@
-export function scanForDevice(bleManager, deviceName, serviceUuid, onDevice, onError) {
+export function scanForDevices(
+  bleManager,
+  serviceUuid,
+  onDevice,
+  onError,
+  onFinished,
+  timeoutMs = 10000,
+) {
   bleManager.stopDeviceScan();
-  const timeout = setTimeout(() => {
-    bleManager.stopDeviceScan();
-    onError(new Error('找不到裝置'));
-  }, 10000);
+  const seen = new Set();
+  let finished = false;
 
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timeout);
+    bleManager.stopDeviceScan();
+    onFinished?.();
+  };
+
+  const timeout = setTimeout(finish, timeoutMs);
   bleManager.startDeviceScan([serviceUuid], null, (error, device) => {
     if (error) {
-      clearTimeout(timeout);
+      finish();
       onError(error);
       return;
     }
-
-    if (!device || (device.name !== deviceName && device.localName !== deviceName)) return;
-
-    clearTimeout(timeout);
-    bleManager.stopDeviceScan();
+    if (!device || seen.has(device.id)) return;
+    seen.add(device.id);
     onDevice(device);
   });
 
-  return () => {
-    clearTimeout(timeout);
-    bleManager.stopDeviceScan();
-  };
+  return finish;
 }

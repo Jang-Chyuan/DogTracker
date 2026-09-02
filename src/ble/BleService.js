@@ -1,9 +1,9 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
-import { parseBlePayload } from './BleParser';
-import { toDogStatus } from '../models/DogStatus';
-import { scanForDevice } from './BleScanner';
 import { decode as decodeBase64, encode as encodeBase64 } from 'base-64';
+import { parseBlePayload } from './BleParser';
+import { scanForDevices } from './BleScanner';
+import { toDogStatus } from '../models/DogStatus';
 
 export const BLE_DEVICE_NAME = 'DogGPS-Master3';
 export const BLE_SERVICE_UUID = '7f510001-6d9e-4e2f-a671-8f3f2d49a001';
@@ -36,7 +36,7 @@ async function requestPermissions() {
     ];
   const result = await PermissionsAndroid.requestMultiple(permissions);
   return Object.values(result).every(
-    (permission) => permission === PermissionsAndroid.RESULTS.GRANTED,
+    permission => permission === PermissionsAndroid.RESULTS.GRANTED,
   );
 }
 
@@ -47,9 +47,94 @@ export function createBleService(manager = new BleManager()) {
   let disconnectSubscription = null;
   let buffer = '';
 
+  const handleValue = (value, onData, onStatus = () => {}) => {
+    if (!value) return;
+    try {
+      const parsed = parseBlePayload(value);
+      const combined = buffer + parsed.payload;
+      const start = combined.indexOf('{');
+      const end = combined.indexOf('}', start);
+      if (start < 0 || end < start) {
+        buffer = combined;
+        return;
+      }
+      const payload = combined.slice(start, end + 1);
+      buffer = combined.slice(end + 1);
+      onData(toDogStatus(JSON.parse(payload)), payload);
+    } catch (error) {
+      buffer = '';
+      onStatus(`BLE 資料解析錯誤：${error.message}`);
+    }
+  };
+
   return {
     isConnected() {
       return device !== null;
+    },
+
+    async scan(onStatus, onDevice, onFinished) {
+      if (!(await requestPermissions())) {
+        onStatus('未取得 BLE 掃描權限');
+        onFinished?.();
+        return;
+      }
+      if (cancelScan) cancelScan();
+      onStatus('掃描中...');
+      cancelScan = scanForDevices(
+        manager,
+        BLE_SERVICE_UUID,
+        onDevice,
+        error => onStatus(`掃描失敗：${error.message}`),
+        () => {
+          cancelScan = null;
+          onStatus('掃描完成');
+          onFinished?.();
+        },
+      );
+    },
+
+    async connect(foundDevice, onStatus, onData) {
+      try {
+        if (cancelScan) cancelScan();
+        onStatus('連線中...');
+        device = await foundDevice.connect();
+        await device.requestMTU(320);
+        await device.discoverAllServicesAndCharacteristics();
+        disconnectSubscription?.remove();
+        disconnectSubscription = manager.onDeviceDisconnected(
+          device.id,
+          error => {
+            device = null;
+            monitorSubscription?.remove();
+            monitorSubscription = null;
+            onStatus(error ? `BLE 已斷線：${error.message}` : 'BLE 已斷線');
+          },
+        );
+        buffer = '';
+        onStatus(`已連線並訂閱：${device.name || device.localName || device.id}`);
+        const initial = await device.readCharacteristicForService(
+          BLE_SERVICE_UUID,
+          BLE_DATA_UUID,
+        );
+        handleValue(initial?.value, onData, onStatus);
+        monitorSubscription?.remove();
+        monitorSubscription = device.monitorCharacteristicForService(
+          BLE_SERVICE_UUID,
+          BLE_DATA_UUID,
+          (error, characteristic) => {
+            if (error) {
+              onStatus(`訂閱錯誤：${error.message}`);
+              return;
+            }
+            handleValue(characteristic?.value, onData, onStatus);
+          },
+        );
+        return true;
+      } catch (error) {
+        device = null;
+        onStatus(`連線失敗：${error.message}`);
+        return false;
+      }
     },
 
     async configureWifi(ssid, password) {
@@ -68,7 +153,7 @@ export function createBleService(manager = new BleManager()) {
     async removeWifi(ssid) {
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('BLE 已斷線，請返回主畫面重新連線');
+        throw new Error('BLE 已斷線，請重新連線');
       }
       const payload = JSON.stringify({ action: 'remove', ssid });
       await device.writeCharacteristicWithResponseForService(
@@ -81,7 +166,7 @@ export function createBleService(manager = new BleManager()) {
     async getWifiList() {
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('BLE 已斷線，請返回主畫面重新連線');
+        throw new Error('BLE 已斷線，請重新連線');
       }
       const ssids = [];
       let activeSsid = '';
@@ -108,90 +193,11 @@ export function createBleService(manager = new BleManager()) {
       return { ssids, activeSsid };
     },
 
-    async connect(onStatus, onData) {
-      if (!(await requestPermissions())) {
-        onStatus('未授予 BLE 掃描權限');
-        return;
-      }
-
-      onStatus('掃描中...');
-      cancelScan = scanForDevice(
-        manager,
-        BLE_DEVICE_NAME,
-        BLE_SERVICE_UUID,
-        async (foundDevice) => {
-          try {
-            onStatus('連線中...');
-            device = await foundDevice.connect();
-            await device.requestMTU(320);
-            await device.discoverAllServicesAndCharacteristics();
-            if (disconnectSubscription) disconnectSubscription.remove();
-            disconnectSubscription = manager.onDeviceDisconnected(
-              device.id,
-              (error) => {
-                device = null;
-                if (monitorSubscription) {
-                  monitorSubscription.remove();
-                  monitorSubscription = null;
-                }
-                onStatus(error
-                  ? `BLE 已斷線：${error.message}`
-                  : 'BLE 已斷線，請重新連線');
-              },
-            );
-            buffer = '';
-            onStatus(`已連線: ${BLE_DEVICE_NAME}`);
-
-            const initial = await device.readCharacteristicForService(
-              BLE_SERVICE_UUID,
-              BLE_DATA_UUID,
-            );
-            this._handleValue(initial?.value, onData);
-
-            monitorSubscription = device.monitorCharacteristicForService(
-              BLE_SERVICE_UUID,
-              BLE_DATA_UUID,
-              (error, characteristic) => {
-                if (error) {
-                  onStatus(`通知失敗: ${error.message}`);
-                  return;
-                }
-                this._handleValue(characteristic?.value, onData, onStatus);
-              },
-            );
-          } catch (error) {
-            onStatus(`連線失敗: ${error.message}`);
-          }
-        },
-        (error) => onStatus(error.message),
-      );
-    },
-
-    _handleValue(value, onData, onStatus = () => {}) {
-      if (!value) return;
-      try {
-        const parsed = parseBlePayload(value);
-        const combined = buffer + parsed.payload;
-        const start = combined.indexOf('{');
-        const end = combined.indexOf('}', start);
-        if (start < 0 || end < start) {
-          buffer = combined;
-          return;
-        }
-        const data = JSON.parse(combined.slice(start, end + 1));
-        buffer = combined.slice(end + 1);
-        onData(toDogStatus(data), combined.slice(start, end + 1));
-      } catch (error) {
-        buffer = '';
-        onStatus(`BLE 資料格式錯誤: ${error.message}`);
-      }
-    },
-
     disconnect() {
-      if (cancelScan) cancelScan();
-      if (monitorSubscription) monitorSubscription.remove();
-      if (disconnectSubscription) disconnectSubscription.remove();
-      if (device) device.cancelConnection();
+      cancelScan?.();
+      monitorSubscription?.remove();
+      disconnectSubscription?.remove();
+      device?.cancelConnection();
       device = null;
       manager.destroy();
     },
