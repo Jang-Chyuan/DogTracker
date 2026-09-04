@@ -36,6 +36,7 @@ export default function App() {
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [backgroundRunning, setBackgroundRunning] = useState(false);
+  const [activeMasterName, setActiveMasterName] = useState('DogGPS Master');
   const [bleStatus, setBleStatus] = useState('尚未掃描');
   const [bleData, setBleData] = useState(emptyDogStatus);
   const [updatedAt, setUpdatedAt] = useState('-');
@@ -44,13 +45,16 @@ export default function App() {
   useEffect(() => {
     databaseReadyRef.current = dogDatabase.initialize();
     databaseReadyRef.current.catch(error => console.error('SQLite 初始化失敗', error));
-    NativeModules.BleBackground?.isRunning?.().then(running => {
-      if (!running) return;
-      setBackgroundRunning(true);
-      setConnected(true);
-      setBleStatus('背景接收資料中');
+    bleService.restoreBackground(handleConnectionStatus, receiveData).then(state => {
+      if (!state?.enabled) return;
+      setActiveMasterName(state.deviceName || 'DogGPS Master');
+      setBackgroundRunning(state.running);
+      setConnected(state.connected);
+      setBleStatus(state.lastStatus || '背景 BLE 正在恢復');
       setScreen('scan');
-    });
+    }).catch(error => console.error('恢復背景 BLE 狀態失敗', error));
+    // Initialization intentionally runs once for the shared service instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bleService, dogDatabase]);
 
   useEffect(() => {
@@ -117,6 +121,7 @@ export default function App() {
     try {
       const config = parseMasterQr(await NativeModules.QrScanner.scan());
       applyProfile(config.profile);
+      setActiveMasterName(config.bleName);
       setDevices([]);
       setSelectedDevice(null);
       setScanning(true);
@@ -170,6 +175,9 @@ export default function App() {
 
   const connectAndSubscribe = async () => {
     if (!selectedDevice) return;
+    setActiveMasterName(
+      selectedDevice.name || selectedDevice.localName || 'DogGPS Master',
+    );
     setConnecting(true);
     const ok = await bleService.connect(selectedDevice, handleConnectionStatus, receiveData);
     setConnecting(false);
@@ -236,7 +244,7 @@ export default function App() {
                 <View style={styles.backgroundDeviceRow}>
                   <Pressable onPress={() => setScreen('menu')} style={styles.backgroundDeviceSelect}>
                   <View style={styles.flex}>
-                    <Text style={styles.deviceName}>DogGPS-Master3</Text>
+                    <Text style={styles.deviceName}>{activeMasterName}</Text>
                     <Text style={styles.backgroundDeviceStatus}>
                       ● {connected ? '背景接收資料中' : '背景服務執行中，等待自動重連'}
                     </Text>
@@ -294,7 +302,7 @@ export default function App() {
               </Pressable>
               <Pressable onPress={() => setScreen('wifi')} style={styles.menuButton}>
                 <Text style={styles.menuTitle}>Wi-Fi 設定</Text>
-                <Text style={styles.menuDescription}>查看、新增或刪除 Master3 Wi-Fi</Text>
+                <Text style={styles.menuDescription}>查看、新增或刪除 {activeMasterName} Wi-Fi</Text>
               </Pressable>
               <Pressable
                 onPress={() => NativeModules.BleBackground?.moveToBackground()}
@@ -318,7 +326,13 @@ export default function App() {
               profile={activeProfile}
             />
           ) : null}
-          {screen === 'wifi' ? <WifiSettingsScreen bleService={bleService} onBack={() => setScreen('menu')} /> : null}
+          {screen === 'wifi' ? (
+            <WifiSettingsScreen
+              bleService={bleService}
+              masterName={activeMasterName}
+              onBack={() => setScreen('menu')}
+            />
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

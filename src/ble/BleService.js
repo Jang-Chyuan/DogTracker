@@ -1,4 +1,4 @@
-import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
+import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { decode as decodeBase64, encode as encodeBase64 } from 'base-64';
 import { parseBlePayload } from './BleParser';
@@ -21,6 +21,12 @@ function normalizeBleConfig(config = DEFAULT_BLE_CONFIG) {
     throw new Error('BLE 設定缺少 bleName 或 serviceUuid');
   }
   return { bleName, serviceUuid };
+}
+
+function normalizeDeviceName(value) {
+  return typeof value === 'string'
+    ? value.toLowerCase().replace(/[^a-z0-9]/g, '')
+    : '';
 }
 
 function encodeUtf8Base64(value) {
@@ -70,6 +76,7 @@ export function createBleService(manager = new BleManager()) {
   let lastOnData = () => {};
   let buffer = '';
   let activeConfig = DEFAULT_BLE_CONFIG;
+  const nativeBle = Platform.OS === 'android' ? NativeModules.BleBackground : null;
 
   const startBackgroundService = status => {
     if (Platform.OS === 'android') NativeModules.BleBackground?.start(status);
@@ -98,6 +105,14 @@ export function createBleService(manager = new BleManager()) {
       onStatus(`BLE 資料解析錯誤：${error.message}`);
     }
   };
+
+  const nativeEmitter = nativeBle ? new NativeEventEmitter(nativeBle) : null;
+  nativeEmitter?.addListener('BleBackgroundStatus', status => {
+    lastOnStatus(status);
+  });
+  nativeEmitter?.addListener('BleBackgroundData', value => {
+    handleValue(value, lastOnData, lastOnStatus);
+  });
 
   let connectInternal;
 
@@ -139,7 +154,16 @@ export function createBleService(manager = new BleManager()) {
       buffer = '';
       reconnectAttempt = 0;
       onStatus(`已連線並訂閱：${device.name || device.localName || device.id}`);
-      startBackgroundService('BLE 已連線，背景接收資料中');
+      if (nativeBle?.connect) {
+        await nativeBle.connect(
+          device.id,
+          device.name || device.localName || 'DogGPS Master',
+          activeConfig.serviceUuid,
+          BLE_DATA_UUID,
+        );
+      } else {
+        startBackgroundService('BLE 已連線，背景接收資料中');
+      }
       const initial = await device.readCharacteristicForService(
         activeConfig.serviceUuid,
         BLE_DATA_UUID,
@@ -170,13 +194,24 @@ export function createBleService(manager = new BleManager()) {
       return device !== null;
     },
 
+    async restoreBackground(onStatus, onData) {
+      if (!nativeBle?.getState) return null;
+      lastOnStatus = onStatus;
+      lastOnData = onData;
+      const state = await nativeBle.getState();
+      if (state.lastPayload) handleValue(state.lastPayload, onData, onStatus);
+      return state;
+    },
+
     async scan(config, onStatus, onDevice, onFinished) {
       if (!(await requestPermissions())) {
         onStatus('未取得 BLE 掃描權限');
         onFinished?.();
         return;
       }
+      const manualMasterScan = config === DEFAULT_BLE_CONFIG;
       activeConfig = normalizeBleConfig(config);
+      const expectedName = normalizeDeviceName(activeConfig.bleName);
       cancelScan?.();
       onStatus('掃描中...');
       cancelScan = scanForDevices(
@@ -184,7 +219,20 @@ export function createBleService(manager = new BleManager()) {
         activeConfig.serviceUuid,
         foundDevice => {
           const foundName = foundDevice.name || foundDevice.localName;
-          if (foundName === activeConfig.bleName) onDevice(foundDevice);
+          const normalizedName = normalizeDeviceName(foundName);
+          console.info('BLE 廣播', {
+            id: foundDevice.id,
+            name: foundName || null,
+            localName: foundDevice.localName || null,
+            serviceUUIDs: foundDevice.serviceUUIDs || [],
+          });
+          const isDogGpsMaster = /^doggpsmaster[0-9]+$/.test(normalizedName);
+          if (
+            (manualMasterScan && isDogGpsMaster) ||
+            (!manualMasterScan && normalizedName === expectedName)
+          ) {
+            onDevice(foundDevice);
+          }
         },
         error => onStatus(`掃描失敗：${error.message}`),
         () => {
@@ -211,7 +259,7 @@ export function createBleService(manager = new BleManager()) {
     async configureWifi(ssid, password) {
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('請先連線 DogGPS-Master3');
+        throw new Error('請先連線 DogGPS Master 裝置');
       }
       await device.writeCharacteristicWithResponseForService(
         activeConfig.serviceUuid,

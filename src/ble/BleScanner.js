@@ -1,6 +1,6 @@
 export function scanForDevices(
   bleManager,
-  serviceUuid,
+  _serviceUuid,
   onDevice,
   onError,
   onFinished,
@@ -19,7 +19,10 @@ export function scanForDevices(
   };
 
   const timeout = setTimeout(finish, timeoutMs);
-  bleManager.startDeviceScan([serviceUuid], null, (error, device) => {
+  // Some compatible Masters advertise only their local name and expose the
+  // service UUID after connecting. Scan without an OS-level service filter;
+  // BleService still applies the exact QR-provided device name before use.
+  bleManager.startDeviceScan(null, null, (error, device) => {
     if (error) {
       finish();
       onError(error);
