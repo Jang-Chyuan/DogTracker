@@ -27,7 +27,7 @@ export default function App() {
   const [bleService] = useState(() => sharedBleService);
   const [dogDatabase] = useState(() => sharedDogDatabase);
   const databaseReadyRef = useRef(null);
-  const lastSavedAtRef = useRef(0);
+  const lastSavedAtBySlaveRef = useRef(new Map());
   const [screen, setScreen] = useState('scan');
   const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
@@ -66,9 +66,14 @@ export default function App() {
   const receiveData = (nextData, payload) => {
     setBleData(nextData);
     setUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+
+    const slaveId = Number(nextData.slaveId);
+    if (!Number.isInteger(slaveId) || slaveId <= 0) return;
+
     const now = Date.now();
-    if (now - lastSavedAtRef.current < activeProfile.databaseSaveIntervalMs) return;
-    lastSavedAtRef.current = now;
+    const lastSavedAt = lastSavedAtBySlaveRef.current.get(slaveId) ?? 0;
+    if (now - lastSavedAt < activeProfile.databaseSaveIntervalMs) return;
+    lastSavedAtBySlaveRef.current.set(slaveId, now);
     databaseReadyRef.current
       ?.then(() => dogDatabase.saveStatus(nextData, payload))
       .catch(error => console.error('儲存 BLE 資料失敗', error));
