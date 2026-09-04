@@ -1,12 +1,39 @@
 import { open } from 'react-native-nitro-sqlite';
 
-const MAX_STATUS_RECORDS = 10000;
+const MAX_STATUS_RECORDS_PER_SLAVE = 10000;
+const CLEANUP_INTERVAL_INSERTS = 100;
 
 export function createDogDatabase() {
   const db = open({
     name: 'dogtracker.sqlite',
     location: 'databases',
   });
+  let insertsSinceCleanup = 0;
+
+  async function cleanupOldRecords() {
+    const slaves = await db.executeAsync(`
+      SELECT DISTINCT slave_id
+      FROM dog_status
+      WHERE slave_id IS NOT NULL
+    `);
+
+    for (const { slave_id: slaveId } of slaves.results || []) {
+      await db.executeAsync(
+        `DELETE FROM dog_status
+         WHERE slave_id = ?
+           AND id NOT IN (
+             SELECT id
+             FROM dog_status
+             WHERE slave_id = ?
+             ORDER BY id DESC
+             LIMIT ?
+           )`,
+        [slaveId, slaveId, MAX_STATUS_RECORDS_PER_SLAVE],
+      );
+    }
+
+    insertsSinceCleanup = 0;
+  }
 
   return {
     async initialize() {
@@ -56,29 +83,9 @@ export function createDogDatabase() {
         ON dog_status(received_at DESC)
       `);
 
-      await db.executeAsync(`
-        CREATE TRIGGER IF NOT EXISTS trim_dog_status_after_insert
-        AFTER INSERT ON dog_status
-        BEGIN
-          DELETE FROM dog_status
-          WHERE id NOT IN (
-            SELECT id
-            FROM dog_status
-            ORDER BY id DESC
-            LIMIT ${MAX_STATUS_RECORDS}
-          );
-        END
-      `);
-
-      await db.executeAsync(`
-        DELETE FROM dog_status
-        WHERE id NOT IN (
-          SELECT id
-          FROM dog_status
-          ORDER BY id DESC
-          LIMIT ${MAX_STATUS_RECORDS}
-        )
-      `);
+      // Remove the legacy trigger, which capped all slaves at 10,000 rows in
+      // total. Cleanup is now batched and applies the limit independently.
+      await db.executeAsync('DROP TRIGGER IF EXISTS trim_dog_status_after_insert');
 
       const tableInfo = await db.executeAsync('PRAGMA table_info(dog_status)');
       const columnNames = new Set(
@@ -90,6 +97,13 @@ export function createDogDatabase() {
       if (!columnNames.has('slave_id')) {
         await db.executeAsync('ALTER TABLE dog_status ADD COLUMN slave_id INTEGER');
       }
+
+      await db.executeAsync(`
+        CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received
+        ON dog_status(slave_id, received_at DESC)
+      `);
+
+      await cleanupOldRecords();
     },
 
     async saveStatus(status, rawPayload = null) {
@@ -160,6 +174,11 @@ export function createDogDatabase() {
         ],
       );
 
+      insertsSinceCleanup += 1;
+      if (insertsSinceCleanup >= CLEANUP_INTERVAL_INSERTS) {
+        await cleanupOldRecords();
+      }
+
       return result.insertId;
     },
 
@@ -179,7 +198,10 @@ export function createDogDatabase() {
 
     async deleteAll() {
       await db.executeAsync('DELETE FROM dog_status');
+      insertsSinceCleanup = 0;
     },
+
+    cleanupOldRecords,
 
     close() {
       db.close();
