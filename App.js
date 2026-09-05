@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -61,11 +62,22 @@ export default function App() {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (screen === 'wifi' || screen === 'data') setScreen('menu');
       else if (screen === 'connect' || screen === 'menu') setScreen('scan');
-      else NativeModules.BleBackground?.moveToBackground();
+      else if (connected || backgroundRunning) {
+        NativeModules.BleBackground?.moveToBackground();
+      } else {
+        Alert.alert(
+          '退出 DogTracker',
+          '目前沒有 BLE 背景連線，確定要退出 App 嗎？',
+          [
+            { text: '取消', style: 'cancel' },
+            { text: '退出', style: 'destructive', onPress: () => BackHandler.exitApp() },
+          ],
+        );
+      }
       return true;
     });
     return () => subscription.remove();
-  }, [screen]);
+  }, [backgroundRunning, connected, screen]);
 
   const receiveData = (nextData, payload) => {
     setBleData(nextData);
