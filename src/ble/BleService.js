@@ -77,6 +77,33 @@ export function createBleService(manager = new BleManager()) {
   let buffer = '';
   let activeConfig = DEFAULT_BLE_CONFIG;
   const nativeBle = Platform.OS === 'android' ? NativeModules.BleBackground : null;
+  let nativeConnected = false;
+  let lastNativeReceivedAt = 0;
+  let lastNativePayload = null;
+  let nativeSessionId = null;
+  let connectionGeneration = 0;
+
+  const handleNativeValue = (value, receivedAt) => {
+    if (!value || !receivedAt || (receivedAt === lastNativeReceivedAt && value === lastNativePayload)) return;
+    try {
+      const payload = decodeUtf8Base64(value);
+      const status = toDogStatus(JSON.parse(payload));
+      lastNativeReceivedAt = receivedAt;
+      lastNativePayload = value;
+      lastOnData(status, payload, { receivedAt, persistedNatively: true });
+    } catch (error) {
+      lastOnStatus(`BLE 資料解析錯誤：${error.message}`);
+    }
+  };
+
+  const getBackgroundState = async () => {
+    if (!nativeBle?.getState) return null;
+    const state = await nativeBle.getState();
+    if (nativeSessionId && state.sessionId !== nativeSessionId) return null;
+    nativeConnected = Boolean(state.running && state.connected && state.enabled);
+    handleNativeValue(state.lastPayload, state.lastReceivedAt);
+    return state;
+  };
 
   const startBackgroundService = status => {
     if (Platform.OS === 'android') NativeModules.BleBackground?.start(status);
@@ -111,7 +138,13 @@ export function createBleService(manager = new BleManager()) {
     lastOnStatus(status);
   });
   nativeEmitter?.addListener('BleBackgroundData', value => {
-    handleValue(value, lastOnData, lastOnStatus);
+    try {
+      const event = JSON.parse(value);
+      if (manualDisconnect || (nativeSessionId && event.sessionId !== nativeSessionId)) return;
+      handleNativeValue(event.value, event.receivedAt);
+    } catch (error) {
+      lastOnStatus(`BLE 資料事件錯誤：${error.message}`);
+    }
   });
 
   let connectInternal;
@@ -191,16 +224,16 @@ export function createBleService(manager = new BleManager()) {
 
   return {
     isConnected() {
-      return device !== null;
+      return nativeBle?.connect ? nativeConnected : device !== null;
     },
+
+    getBackgroundState,
 
     async restoreBackground(onStatus, onData) {
       if (!nativeBle?.getState) return null;
       lastOnStatus = onStatus;
       lastOnData = onData;
-      const state = await nativeBle.getState();
-      if (state.lastPayload) handleValue(state.lastPayload, onData, onStatus);
-      return state;
+      return getBackgroundState();
     },
 
     async scan(config, onStatus, onDevice, onFinished) {
@@ -253,10 +286,49 @@ export function createBleService(manager = new BleManager()) {
       lastDevice = foundDevice;
       lastOnStatus = onStatus;
       lastOnData = onData;
+      if (nativeBle?.connect) {
+        const generation = ++connectionGeneration;
+        nativeConnected = false;
+        lastNativeReceivedAt = 0;
+        lastNativePayload = null;
+        nativeSessionId = 'pending';
+        onStatus('正在啟動原生 BLE 連線...');
+        try {
+          const sessionId = await nativeBle.connect(
+            foundDevice.id,
+            foundDevice.name || foundDevice.localName || 'DogGPS Master',
+            activeConfig.serviceUuid,
+            BLE_DATA_UUID,
+            config.masterId || 0,
+          );
+          if (generation !== connectionGeneration) return false;
+          nativeSessionId = sessionId;
+          // Only the UI awaits readiness. Reception and retries run natively.
+          for (let attempt = 0; attempt < 70; attempt += 1) {
+            if (generation !== connectionGeneration) return false;
+            const state = await getBackgroundState();
+            if (state?.sessionId === sessionId) {
+              onStatus(state.lastStatus);
+              if (!state.enabled) return false;
+              if (state.running && state.connected) return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          onStatus('BLE 尚未連線，原生背景服務會繼續重試');
+        } catch (error) {
+          nativeSessionId = null;
+          onStatus(`BLE 連線啟動失敗：${error.message}`);
+        }
+        return false;
+      }
       return connectInternal(foundDevice, onStatus, onData);
     },
 
     async configureWifi(ssid, password) {
+      if (nativeBle?.wifiCommand) {
+        await nativeBle.wifiCommand(JSON.stringify({ action: 'upsert', ssid, password }), false);
+        return;
+      }
       if (!device || !(await device.isConnected())) {
         device = null;
         throw new Error('請先連線 DogGPS Master 裝置');
@@ -269,6 +341,10 @@ export function createBleService(manager = new BleManager()) {
     },
 
     async removeWifi(ssid) {
+      if (nativeBle?.wifiCommand) {
+        await nativeBle.wifiCommand(JSON.stringify({ action: 'remove', ssid }), false);
+        return;
+      }
       if (!device || !(await device.isConnected())) {
         device = null;
         throw new Error('BLE 已斷線，請等待自動重連');
@@ -281,6 +357,24 @@ export function createBleService(manager = new BleManager()) {
     },
 
     async getWifiList() {
+      if (nativeBle?.wifiCommand) {
+        const ssids = [];
+        const visited = new Set();
+        let activeSsid = '';
+        let offset = 0;
+        do {
+          if (visited.has(offset) || visited.size >= 100) throw new Error('Wi-Fi 清單分頁錯誤');
+          visited.add(offset);
+          const result = JSON.parse(await nativeBle.wifiCommand(
+            JSON.stringify({ action: 'list', offset }), true,
+          ));
+          if (!result.ok || !Array.isArray(result.ssids)) throw new Error(result.error || '無法讀取 Wi-Fi 清單');
+          ssids.push(...result.ssids);
+          if (typeof result.active === 'string') activeSsid = result.active;
+          offset = Number.isInteger(result.next) ? result.next : null;
+        } while (offset !== null);
+        return { ssids, activeSsid };
+      }
       if (!device || !(await device.isConnected())) {
         device = null;
         throw new Error('BLE 已斷線，請等待自動重連');
@@ -310,6 +404,9 @@ export function createBleService(manager = new BleManager()) {
     },
 
     disconnect() {
+      connectionGeneration += 1;
+      nativeConnected = false;
+      nativeSessionId = null;
       manualDisconnect = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = null;

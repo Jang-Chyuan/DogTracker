@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -37,6 +38,8 @@ export default function App() {
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [backgroundRunning, setBackgroundRunning] = useState(false);
+  const [receiving, setReceiving] = useState(false);
+  const [storageError, setStorageError] = useState('');
   const [activeMasterName, setActiveMasterName] = useState('DogGPS Master');
   const [bleStatus, setBleStatus] = useState('尚未掃描');
   const [bleData, setBleData] = useState(emptyDogStatus);
@@ -59,6 +62,46 @@ export default function App() {
   }, [bleService, dogDatabase]);
 
   useEffect(() => {
+    let disposed = false;
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing || AppState.currentState !== 'active') return;
+      refreshing = true;
+      try {
+        const state = await bleService.getBackgroundState();
+        if (disposed || !state) return;
+        setBackgroundRunning(Boolean(state.running && state.enabled));
+        setConnected(Boolean(state.running && state.enabled && state.connected));
+        setReceiving(Boolean(state.running && state.enabled && state.receiving));
+        setStorageError(state.storageError || '');
+        if (state.enabled) {
+          setActiveMasterName(state.deviceName || 'DogGPS Master');
+          if (!scanning && !connecting && !qrScanning) {
+            setBleStatus(state.running ? state.lastStatus : '背景服務已停止，請重新連線');
+          }
+        }
+        setUpdatedAt(state.lastReceivedAt
+          ? new Date(state.lastReceivedAt).toLocaleString('zh-TW', { hour12: false })
+          : '-');
+      } catch (error) {
+        console.error('讀取背景狀態失敗', error);
+      } finally {
+        refreshing = false;
+      }
+    };
+    refresh();
+    const timer = setInterval(refresh, 2000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') refresh();
+    });
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [bleService, scanning, connecting, qrScanning]);
+
+  useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (screen === 'wifi' || screen === 'data') setScreen('menu');
       else if (screen === 'connect' || screen === 'menu') setScreen('scan');
@@ -79,9 +122,10 @@ export default function App() {
     return () => subscription.remove();
   }, [backgroundRunning, connected, screen]);
 
-  const receiveData = (nextData, payload) => {
+  const receiveData = (nextData, payload, metadata) => {
     setBleData(nextData);
-    setUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+    setUpdatedAt(new Date(metadata?.receivedAt || Date.now()).toLocaleString('zh-TW', { hour12: false }));
+    if (metadata?.persistedNatively) return;
 
     const slaveId = Number(nextData.slaveId);
     if (!Number.isInteger(slaveId) || slaveId <= 0) return;
@@ -104,7 +148,7 @@ export default function App() {
   const handleConnectionStatus = status => {
     setBleStatus(status);
     if (status.startsWith('BLE 已斷線')) setConnected(false);
-    if (status.startsWith('已連線並訂閱')) {
+    if (!NativeModules.BleBackground?.getState && status.startsWith('已連線並訂閱')) {
       setConnected(true);
       setBackgroundRunning(true);
     }
@@ -150,7 +194,7 @@ export default function App() {
           setSelectedDevice(device);
           setConnecting(true);
 
-          const onQrData = (nextData, payload) => {
+          const onQrData = (nextData, payload, metadata) => {
             if (nextData.masterId !== null && nextData.masterId !== config.masterId) {
               setBleStatus(`Master ID 不符合：QR=${config.masterId}，BLE=${nextData.masterId}`);
               bleService.disconnect();
@@ -158,7 +202,7 @@ export default function App() {
               setBackgroundRunning(false);
               return;
             }
-            receiveData(nextData, payload);
+            receiveData(nextData, payload, metadata);
           };
 
           const ok = await bleService.connect(
@@ -204,6 +248,7 @@ export default function App() {
     bleService.disconnect();
     setConnected(false);
     setBackgroundRunning(false);
+    setReceiving(false);
     setBleStatus('背景接收已停止');
   };
 
@@ -258,8 +303,11 @@ export default function App() {
                   <View style={styles.flex}>
                     <Text style={styles.deviceName}>{activeMasterName}</Text>
                     <Text style={styles.backgroundDeviceStatus}>
-                      ● {connected ? '背景接收資料中' : '背景服務執行中，等待自動重連'}
+                      ● {connected
+                        ? (receiving ? '背景接收資料中' : 'BLE 已連線，等待新資料')
+                        : '背景服務執行中，尚未連線'}
                     </Text>
+                    <Text style={styles.hint}>最後資料：{updatedAt}</Text>
                   </View>
                   <Text style={styles.select}>選擇 ›</Text>
                   </Pressable>
@@ -285,6 +333,8 @@ export default function App() {
             </View>
           ) : null}
 
+          {storageError ? <Text style={styles.status}>{storageError}</Text> : null}
+
           {screen === 'connect' ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>2. 連線並訂閱</Text>
@@ -305,8 +355,9 @@ export default function App() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>3. 選擇功能</Text>
               <Text style={connected ? styles.connected : styles.disconnected}>
-                ● {connected ? '背景接收資料中' : 'BLE 未連線'}
+                ● {connected ? (receiving ? '背景接收資料中' : 'BLE 已連線，等待新資料') : 'BLE 未連線'}
               </Text>
+              <Text style={styles.status}>{bleStatus}</Text>
               <Text style={styles.hint}>最後資料：{updatedAt}　Master {bleData.masterId ?? '-'} / Slave {bleData.slaveId ?? '-'}</Text>
               <Pressable onPress={() => setScreen('data')} style={styles.menuButton}>
                 <Text style={styles.menuTitle}>即時資料顯示</Text>

@@ -135,7 +135,7 @@ BLE Data Characteristic 應只有一個 publisher。Master 端由 OLED task 發�
 
 ## BLE 連線與程序復原
 
-正常連線期間，React Native BLE 層負責掃描、連線、初次讀取、Notify 及 Wi-Fi 指令；同時將裝置 ID、顯示名稱、Service UUID 與 Data UUID 傳給 Kotlin 前景服務保存。
+Android 的 React Native BLE 層只負責掃描。選定裝置後，Kotlin 前景服務負責 GATT 連線、Notify、Wi-Fi 指令、重連及 SQLite 存檔，不依賴 JS 存活。畫面分別讀取服務執行、訂閱連線、最近資料狀態，並顯示實際接收時間；詳見 [背景 BLE 實作與驗證](BACKGROUND_BLE.md)。
 
 前景服務採用 `START_STICKY`。Android 殺死並重建程序／服務後，服務會讀取已保存的工作階段，直接依裝置 ID 建立 GATT、探索服務、寫入 CCCD 並恢復 Notify。失敗或斷線時會以 2、4、8、16、30 秒（上限 30 秒）持續重試；藍牙關閉時每 30 秒重試。
 
@@ -155,7 +155,7 @@ BLE Data Characteristic 應只有一個 publisher。Master 端由 OLED task 發�
 
 ## Wi-Fi 指令
 
-Wi-Fi Config Characteristic 使用 write-with-response，內容為 Base64 編碼的 UTF-8 JSON：
+Wi-Fi Config Characteristic 使用 write-with-response，裝置收到 UTF-8 JSON；原生直接傳送位元組，BLE PLX 備援路徑以 Base64 傳給函式庫再解碼送出：
 
 ```json
 {"action":"upsert","ssid":"network-name","password":"network-password"}
@@ -169,9 +169,9 @@ Wi-Fi Config Characteristic 使用 write-with-response，內容為 Base64 編碼
 
 - 資料庫：`dogtracker.sqlite`
 - 資料表：`dog_status`
-- 預設每 1 秒最多保存一次（由 device profile 控制）。
+- Android 原生每隻 Slave 每 1 秒最多保存一次；JS 備援由 device profile 控制。
 - 每個 Slave 最多保留 10,000 筆狀態。
-- 每累積 100 次寫入後執行一次舊資料清理。
+- Android 原生每次寫入交易內清理該 Slave 的超額紀錄；JS 備援每 100 次寫入清理一次。
 - 查詢筆數限制為 1 至 1,000 筆。
 
 ## Android 權限

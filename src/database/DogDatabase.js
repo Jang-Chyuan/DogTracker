@@ -1,9 +1,24 @@
 import { open } from 'react-native-nitro-sqlite';
+import { NativeModules, Platform } from 'react-native';
 
 const MAX_STATUS_RECORDS_PER_SLAVE = 10000;
 const CLEANUP_INTERVAL_INSERTS = 100;
 
 export function createDogDatabase() {
+  const native = Platform.OS === 'android' ? NativeModules.BleBackground : null;
+  if (native?.initializeDatabase) {
+    return {
+      initialize: () => native.initializeDatabase(),
+      listHistory: async (limit = 100) => JSON.parse(await native.listHistory(
+        Math.floor(Math.max(1, Math.min(Number(limit) || 100, 1000))),
+      )),
+      deleteAll: () => native.deleteHistory(),
+      // Android persists in the BLE service, before sending UI events.
+      saveStatus: async () => undefined,
+      cleanupOldRecords: async () => undefined,
+      close: () => {},
+    };
+  }
   const db = open({
     name: 'dogtracker.sqlite',
     location: 'databases',
