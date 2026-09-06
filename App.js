@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -13,34 +14,71 @@ import {
 } from 'react-native';
 import { createBleService } from './src/ble/BleService';
 import { createDogDatabase } from './src/database/DogDatabase';
-import { emptyDogStatus } from './src/models/DogStatus';
+import { emptyTrackingPoint } from './src/models/TrackingPoint';
+import { createRealTrackingRepository } from './src/repositories/RealTrackingRepository';
 import WifiSettingsScreen from './src/screens/WifiSettingsScreen';
+import { createTrackingFeed } from './src/tracking/TrackingFeed';
 
 const FONT_SCALE = 1.4;
 const DATABASE_SAVE_INTERVAL_MS = 1000;
 
+function canReadTracking(appState) {
+  return appState === 'active' || appState === 'unknown' || appState == null;
+}
+
 export default function App() {
   const [bleService] = useState(() => createBleService());
   const [dogDatabase] = useState(() => createDogDatabase());
+  const [trackingRepository] = useState(
+    () => createRealTrackingRepository(dogDatabase),
+  );
   const databaseReadyRef = useRef(null);
   const lastSavedAtRef = useRef(0);
   const [bleStatus, setBleStatus] = useState('未連線');
-  const [bleData, setBleData] = useState(emptyDogStatus);
-  const [blePayloadText, setBlePayloadText] = useState('');
+  const [trackingData, setTrackingData] = useState(emptyTrackingPoint);
   const [screen, setScreen] = useState('home');
-  const [bleUpdatedAt, setBleUpdatedAt] = useState('尚未收到資料');
 
   useEffect(() => {
-    databaseReadyRef.current = dogDatabase.initialize();
-    databaseReadyRef.current.catch(error => {
+    let databaseReady = false;
+    let disposed = false;
+    const trackingFeed = createTrackingFeed(trackingRepository, {
+      onRows(rows) {
+        if (!disposed) setTrackingData(rows[rows.length - 1]);
+      },
+      onError(error) {
+        console.error('讀取 SQLite tracking 資料失敗:', error);
+      },
+    });
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      nextAppState => {
+        if (canReadTracking(nextAppState) && databaseReady) {
+          trackingFeed.start();
+        } else {
+          trackingFeed.stop();
+        }
+      },
+    );
+
+    const initialization = dogDatabase.initialize();
+    databaseReadyRef.current = initialization;
+    initialization.then(() => {
+      databaseReady = true;
+      if (!disposed && canReadTracking(AppState.currentState)) {
+        trackingFeed.start();
+      }
+    }).catch(error => {
       console.error('SQLite 初始化失敗:', error);
     });
 
     return () => {
+      disposed = true;
+      appStateSubscription.remove();
+      trackingFeed.stop();
       bleService.disconnect();
       dogDatabase.close();
     };
-  }, [bleService, dogDatabase]);
+  }, [bleService, dogDatabase, trackingRepository]);
 
   useEffect(() => {
     if (screen !== 'wifi') return undefined;
@@ -57,10 +95,6 @@ export default function App() {
     await bleService.connect(
       setBleStatus,
       (nextData, payload) => {
-        setBleData(nextData);
-        setBlePayloadText(payload);
-        setBleUpdatedAt(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
-
         const now = Date.now();
         if (now - lastSavedAtRef.current >= DATABASE_SAVE_INTERVAL_MS) {
           lastSavedAtRef.current = now;
@@ -76,6 +110,12 @@ export default function App() {
       },
     );
   };
+
+  const trackingUpdatedAt = trackingData.receivedAt === null
+    ? '尚未收到資料'
+    : new Date(trackingData.receivedAt).toLocaleTimeString('zh-TW', {
+      hour12: false,
+    });
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -95,12 +135,12 @@ export default function App() {
         ) : (
           <>
         <Text style={styles.title}>DogTracker Test</Text>
-        <Text style={styles.subtitle}>LoRa GPS + BLE 即時資料</Text>
+        <Text style={styles.subtitle}>LoRa GPS + SQLite 即時資料</Text>
 
         <View style={styles.card}>
           <Text style={styles.label}>BLE 裝置</Text>
           <Text style={styles.value}>{bleStatus}</Text>
-          <Text style={styles.meta}>最後更新: {bleUpdatedAt}</Text>
+          <Text style={styles.meta}>資料庫最後更新: {trackingUpdatedAt}</Text>
           <Pressable
             style={({ pressed }) => [
               styles.button,
@@ -111,46 +151,44 @@ export default function App() {
           >
             <Text style={styles.buttonText}>掃描並連線 DogGPS-Master3</Text>
           </Pressable>
-          {bleData.slaveLat !== null ? (
+          {trackingData.id !== null ? (
             <View>
               <Text style={styles.meta}>
-                Master ID: {bleData.masterId ?? '-'} | Slave ID: {bleData.slaveId ?? '-'}
+                Master ID: {trackingData.masterId ?? '-'} | Slave ID: {trackingData.slaveId ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                Slave GPS: {bleData.slaveLat}, {bleData.slaveLon}
+                Slave GPS: {trackingData.slaveLat ?? '-'}, {trackingData.slaveLon ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                Master GPS: {bleData.masterLat ?? '-'}, {bleData.masterLon ?? '-'}
+                Master GPS: {trackingData.masterLat ?? '-'}, {trackingData.masterLon ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                距離: {bleData.distanceMeters ?? '-'} m | 速度: {bleData.speedKmh ?? '-'} km/h
+                距離: {trackingData.distanceMeters ?? '-'} m | 速度: {trackingData.speedKmh ?? '-'} km/h
               </Text>
               <Text style={styles.meta}>
-                衛星: {bleData.satellites ?? '-'} | HDOP: {bleData.hdop ?? '-'}
+                衛星: {trackingData.satellites ?? '-'} | HDOP: {trackingData.hdop ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                活動: {bleData.activity ?? '-'} | 有效: {bleData.activityValid ? '是' : '否'}
+                活動: {trackingData.activity ?? '-'} | 有效: {trackingData.activityValid ? '是' : '否'}
               </Text>
               <Text style={styles.meta}>
-                GPS 時間: {bleData.gpsTime ?? '-'} | 活動時間: {bleData.activityTime ?? '-'}
+                GPS 時間: {trackingData.gpsTime ?? '-'} | 活動時間: {trackingData.activityTime ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                電池: {bleData.batteryMillivolts ?? '-'} mV | {bleData.batteryPercentage ?? '-'}%
-                {' '}({bleData.batteryValid ? '有效' : '無效'})
+                電池: {trackingData.batteryMillivolts ?? '-'} mV | {trackingData.batteryPercentage ?? '-'}%
+                {' '}({trackingData.batteryValid ? '有效' : '無效'})
               </Text>
               <Text style={styles.meta}>
-                Master 電池: {bleData.masterBatteryMillivolts ?? '-'} mV | {bleData.masterBatteryPercentage ?? '-'}%
-                {' '}({bleData.masterBatteryValid ? '有效' : '無效'})
+                Master 電池: {trackingData.masterBatteryMillivolts ?? '-'} mV | {trackingData.masterBatteryPercentage ?? '-'}%
+                {' '}({trackingData.masterBatteryValid ? '有效' : '無效'})
               </Text>
               <Text style={styles.meta}>
-                RSSI: {bleData.rssi ?? '-'} | SNR: {bleData.snr ?? '-'}
+                RSSI: {trackingData.rssi ?? '-'} | SNR: {trackingData.snr ?? '-'}
               </Text>
               <Text style={styles.meta}>
-                封包: type {bleData.type ?? '-'} | seq {bleData.sequence ?? '-'} | len {bleData.length ?? '-'} | OLED {bleData.source === 'oled' ? '是' : '否'}
+                封包: type {trackingData.type ?? '-'} | seq {trackingData.sequence ?? '-'} | len {trackingData.length ?? '-'}
               </Text>
             </View>
-          ) : blePayloadText ? (
-            <Text style={styles.meta}>資料: {blePayloadText}</Text>
           ) : null}
         </View>
 
