@@ -77,7 +77,7 @@ export default function App() {
         if (state.enabled) {
           setActiveMasterName(state.deviceName || 'DogGPS Master');
           if (!scanning && !connecting && !qrScanning) {
-            setBleStatus(state.running ? state.lastStatus : '背景服務已停止，請重新連線');
+            setBleStatus(state.running ? state.lastStatus : (state.resumeError || '背景服務已停止，請重新連線'));
           }
         }
         setUpdatedAt(state.lastReceivedAt

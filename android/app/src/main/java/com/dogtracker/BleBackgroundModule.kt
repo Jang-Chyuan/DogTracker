@@ -81,6 +81,7 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
       putString("deviceId", prefs.getString("deviceId", ""))
       putDouble("lastReceivedAt", prefs.getLong("lastReceivedAt", 0).toDouble())
       putString("storageError", prefs.getString("storageError", ""))
+      putString("resumeError", prefs.getString("resumeError", ""))
       putString("deviceName", prefs.getString("deviceName", "DogGPS Master"))
       putString("lastStatus", prefs.getString("lastStatus", ""))
       putString("lastPayload", prefs.getString("lastPayload", ""))

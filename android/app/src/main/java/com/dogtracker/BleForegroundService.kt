@@ -23,6 +23,7 @@ class BleForegroundService : Service() {
     const val EVENT_DATA = "BleBackgroundData"
     const val ACTION_CONNECT = "com.dogtracker.ble.CONNECT"
     const val ACTION_STOP = "com.dogtracker.ble.STOP"
+    const val ACTION_RESUME = "com.dogtracker.ble.RESUME"
     const val EXTRA_DEVICE_ID = "deviceId"
     const val EXTRA_DEVICE_NAME = "deviceName"
     const val EXTRA_SERVICE_UUID = "serviceUuid"
@@ -87,12 +88,15 @@ class BleForegroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // Repeated Activity resumes must not reset an active GATT session.
+    if (intent?.action == ACTION_RESUME && isRunning) return START_STICKY
     if (intent?.action == ACTION_STOP) {
       handler.post { stopSession() }
       return START_NOT_STICKY
     }
     startForeground(NOTIFICATION_ID, notification("正在準備 BLE 連線"))
     isRunning = true
+    prefs.edit().remove("resumeError").apply()
     handler.post {
       if (intent?.action == ACTION_CONNECT) {
         closeGatt()

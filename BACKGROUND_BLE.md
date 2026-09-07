@@ -8,6 +8,12 @@ Android 的掃描使用 BLE PLX；選定裝置後，由 `BleForegroundService` �
 
 畫面在前景每 2 秒及返回 App 時讀取服務狀態。`running`、`connected`、`receiving` 分開判斷；最後資料顯示真正接收時間，恢復快取不會刷新時間或再存一次。`START_STICKY` 重建服務會讀回連線設定；使用者停止則關閉自動恢復。
 
+`MainActivity.onResume()` 在使用者重新開啟或返回 App 時檢查保存的 `enabled` 旗標。若仍啟用、BLE 位址及 UUID 完整，且服務尚未執行，便送出 `ACTION_RESUME`，直接使用既有設定重連；保留 Master ID 驗證、sessionId、最後資料與接收時間。已執行的服務不重複啟動，手動停止後不會自動恢復。Android 12+ 恢復前檢查藍牙連線權限；權限不足時顯示恢復錯誤。
+
+2026-09-07 在 OPPO CPH1920 設定 DogTracker：耗電保護改為「允許背景執行」、開啟「允許自動啟動」、最近使用 App 卡片設為「鎖定」（已確認卡片鎖頭）。這些是手機端設定，不會隨 APK 自動套用到其他手機，也不保證攔下所有系統強制停止。
+
+同日實測強制停止後重新啟動 App，系統確認 `com.dogtracker.ble.RESUME` 前景服務自動建立，沿用 Master5，最後資料時間仍為 03:24:57，沒有把快取當成新資料。當時掃描僅找到 Master3，Master5 尚未重新連上；本次不宣稱完成 Master5 收資料或整夜清理保護驗證。
+
 驗證：
 
 ```powershell
