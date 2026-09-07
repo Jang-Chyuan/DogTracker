@@ -2,6 +2,14 @@
   "name": "DogTracker",
   "version": "0.0.1",
   "private": true,
+  "codegenConfig": {
+    "name": "DogTrackerPlatformSpec",
+    "type": "modules",
+    "jsSrcsDir": "specs",
+    "android": {
+      "javaPackageName": "com.dogtracker"
+    }
+  },
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
@@ -15,6 +23,7 @@
     "react": "19.2.3",
     "react-native": "0.87.0",
     "react-native-ble-plx": "^3.5.1",
+    "react-native-maps": "1.28.2",
     "react-native-nitro-modules": "^0.37.1",
     "react-native-nitro-sqlite": "^9.7.0",
     "react-native-safe-area-context": "^5.5.2"
