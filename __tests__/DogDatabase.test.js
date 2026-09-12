@@ -8,7 +8,7 @@ describe('DogDatabase tracking reads', () => {
     mockDatabase.executeAsync.mockResolvedValue({insertId: 1, results: []});
   });
 
-  test('removes legacy App-owned retention without deleting tracking rows', async () => {
+  test('replaces the global trigger without an unconditional history wipe', async () => {
     const database = createDogDatabase();
 
     await database.initialize();
@@ -28,6 +28,19 @@ describe('DogDatabase tracking reads', () => {
     expect(statements.join('\n')).not.toMatch(
       /CREATE TRIGGER|DELETE FROM dog_status|LIMIT 10000/,
     );
+  });
+
+  test('fallback retention applies 10,000 rows independently to each Slave', async () => {
+    mockDatabase.executeAsync.mockImplementation(async sql => ({
+      results: sql.includes('SELECT DISTINCT slave_id') ? [{slave_id: 1}, {slave_id: 2}] : [],
+    }));
+    await createDogDatabase().initialize();
+    const deletes = mockDatabase.executeAsync.mock.calls.filter(([sql]) =>
+      sql.includes('DELETE FROM dog_status'),
+    );
+    expect(deletes.map(([, params]) => params)).toEqual([[1, 1, 10000], [2, 2, 10000]]);
+    expect(deletes.every(([sql]) => sql.includes('WHERE slave_id = ?'))).toBe(true);
+    expect(mockDatabase.executeAsync.mock.calls.join(' ')).not.toContain('demo_dog_status');
   });
 
   test('reads the latest dog_status row', async () => {

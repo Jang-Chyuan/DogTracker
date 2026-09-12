@@ -21,6 +21,13 @@ function isForeground(state) {
 // BLE state, or each other's physical tables.
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
+  // Stable diagnostics adapter; it borrows this owner's real DB and cannot
+  // open/close another Nitro connection or access Demo/settings tables.
+  const [hardwareDatabase] = useState(() => ({
+    initialize: () => controlsRef.current?.initializeReal() ?? Promise.reject(new Error('Tracking session is closed')),
+    listHistory: limit => controlsRef.current?.listRealHistory(limit) ?? Promise.reject(new Error('Tracking session is closed')),
+    saveStatus: (status, payload) => controlsRef.current?.saveRealStatus(status, payload) ?? Promise.reject(new Error('Tracking session is closed')),
+  }));
   const [mode, setMode] = useState(DEFAULT_TRACKING_PREFERENCES.mode);
   const [points, setPoints] = useState({
     real: emptyTrackingPoint,
@@ -36,6 +43,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   });
   const [errors, setErrors] = useState({ real: null, demo: null });
   const [realWriteError, setRealWriteError] = useState(null);
+  const [nativeWriteError, setNativeWriteError] = useState(null);
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoError, setDemoError] = useState(null);
   const [demoSummary, setDemoSummary] = useState(null);
@@ -59,6 +67,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     });
     setErrors({ real: null, demo: null });
     setRealWriteError(null);
+    setNativeWriteError(null);
     setDemoBusy(false);
     setDemoError(null);
     setDemoSummary(null);
@@ -219,6 +228,12 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       }
 
       controlsRef.current = {
+        initializeReal: () => initialization.real,
+        listRealHistory(limit) {
+          const task = initialization.real.then(() => databases.real.listHistory(limit));
+          commands.add(task);
+          return task.finally(() => commands.delete(task));
+        },
         saveTrackingPreferences: trackingPreferences.save,
         retryTrackingPreferences: trackingPreferences.load,
         resetTrackingPreferences: trackingPreferences.reset,
@@ -315,6 +330,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   }, [createDatabases]);
 
   return {
+    hardwareDatabase,
     mode,
     point: points[mode],
     demoPoint: points.demo,
@@ -327,7 +343,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       controlsRef.current?.resetTrackingPreferences(),
     ready,
     errors,
-    realWriteError,
+    realWriteError: [nativeWriteError, realWriteError].filter(Boolean).join('\n') || null,
+    reportNativeWriteError: setNativeWriteError,
     demoBusy,
     demoError,
     demoSummary,

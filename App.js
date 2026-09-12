@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -16,15 +16,13 @@ import {
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
 import { useTrackingSession } from './src/app/useTrackingSession';
-import { createBleService } from './src/ble/BleService';
+import HardwareScreen from './src/screens/HardwareScreen';
+import { handleRootBack } from './src/app/handleRootBack';
 import { ui } from './src/components/ScreenUI';
 import DemoScreen from './src/demo/DemoScreen';
 import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import WifiSettingsScreen from './src/screens/WifiSettingsScreen';
-import { getErrorMessage } from './src/utils/errors';
 
-const DATABASE_SAVE_INTERVAL_MS = 1000;
 const TABS = [
   { name: 'map', label: '地圖' },
   { name: 'settings', label: '設定' },
@@ -39,53 +37,23 @@ export default function App() {
 }
 
 function TrackerApp() {
-  const [bleService] = useState(createBleService);
-  const [bleStatus, setBleStatus] = useState('未連線');
-  const lastSavedAtRef = useRef(0);
   const tracking = useTrackingSession();
   const [route, setRoute] = useState({ name: 'map', parent: null });
   const navigate = (name, parent = null) => setRoute({ name, parent });
 
-  useEffect(
-    () => () => {
-      try {
-        bleService.disconnect();
-      } catch (error) {
-        console.error('BLE 關閉失敗:', error);
-      }
-    },
-    [bleService],
-  );
-
   useEffect(() => {
-    if (route.name === 'map') return undefined;
+    // HardwareScreen owns its nested scan/connect/menu back stack.
+    if (route.name === 'hardware') return undefined;
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        setRoute({ name: route.parent || 'map', parent: null });
+        if (route.name === 'map') handleRootBack();
+        else setRoute({ name: route.parent || 'map', parent: null });
         return true;
       },
     );
     return () => subscription.remove();
   }, [route]);
-
-  const connectToDogGps = async () => {
-    try {
-      await bleService.connect(setBleStatus, (nextData, payload) => {
-        const now = Date.now();
-        if (now - lastSavedAtRef.current >= DATABASE_SAVE_INTERVAL_MS) {
-          lastSavedAtRef.current = now;
-          tracking
-            .saveRealStatus(nextData, payload)
-            .then(insertId => console.log('SQLite 寫入成功:', insertId))
-            .catch(error => console.error('儲存 BLE dataset 失敗:', error));
-        }
-      });
-    } catch (error) {
-      setBleStatus(`連線失敗：${getErrorMessage(error)}`);
-      console.error('BLE 連線失敗:', error);
-    }
-  };
 
   let content;
   switch (route.name) {
@@ -102,20 +70,13 @@ function TrackerApp() {
       content = (
         <SettingsScreen
           tracking={tracking}
-          bleStatus={bleStatus}
-          onConnect={connectToDogGps}
-          onWifi={() => navigate('wifi', 'settings')}
+          onHardware={() => navigate('hardware', 'settings')}
           onDemo={() => navigate('demo', 'settings')}
         />
       );
       break;
-    case 'wifi':
-      content = (
-        <WifiSettingsScreen
-          bleService={bleService}
-          onBack={() => navigate('settings')}
-        />
-      );
+    case 'hardware':
+      content = null;
       break;
     default:
       content = <MapScreen tracking={tracking} />;
@@ -140,7 +101,15 @@ function TrackerApp() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView
+        {tracking.ready.real && (
+          <HardwareScreen
+            dogDatabase={tracking.hardwareDatabase}
+            onStorageError={tracking.reportNativeWriteError}
+            active={route.name === 'hardware'}
+            onBack={() => navigate('settings')}
+          />
+        )}
+        {route.name !== 'hardware' && <ScrollView
           key={route.name}
           contentContainerStyle={styles.container}
           keyboardDismissMode="on-drag"
@@ -157,7 +126,7 @@ function TrackerApp() {
             </View>
           ) : null}
           {content}
-        </ScrollView>
+        </ScrollView>}
       </KeyboardAvoidingView>
       <View style={styles.tabs} accessibilityRole="tablist">
         {TABS.map(tab => {

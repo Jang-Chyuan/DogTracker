@@ -1,101 +1,111 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# DogTracker
 
-# Getting Started
+DogTracker 是一個 React Native Android App，透過 BLE 連接相容的 Heltec V4 `DogGPS-MasterN` 裝置，接收並顯示 Master 與 Slave 的定位、距離、活動、訊號及電池資料。
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+目前可搭配 Master 3、Master 5，以及遵循相同 QR 設定與 BLE 通訊協定的其他 `DogGPS-MasterN` 裝置。裝置名稱與連線參數由 QR Code 提供，不在畫面或連線流程中綁定特定 Master 編號。
 
-## Step 1: Start Metro
+## 主要功能
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- 使用 App 內建 CameraX 相機與 bundled ML Kit 掃描 QR Code，不需另外安裝掃描 App。
+- ML Kit 僅辨識 `FORMAT_QR_CODE`，辨識結果會立即交由 `parseMasterQr()` 驗證。
+- 支援依 QR 設定自動尋找裝置，以及手動掃描相容的 `DogGPS-MasterN` BLE 裝置。
+- 訂閱 BLE GATT Notify，顯示 Master／Slave GPS、距離、速度、衛星、HDOP、活動、RSSI、SNR 與電池狀態。
+- 透過 Kotlin connected-device 前景服務維持長期 BLE GATT 連線。
+- App 程序遭系統重建後，可由前景服務恢復裝置連線、GATT 探索與 Notify 訂閱，並以退避機制自動重連。
+- 透過 BLE 查看、新增與刪除裝置的 Wi-Fi 設定。
+- 將收到的狀態資料寫入本機 SQLite，並提供資料表檢視。
+- BLE 已連線或背景服務運行時，首頁返回鍵會把 App 切到背景；未連線時會顯示退出確認。
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## 系統需求
 
-```sh
-# Using npm
+- Windows 開發環境
+- Node.js `>= 22.11.0`
+- JDK 與 Android SDK／Platform Tools
+- Android 實機（需支援 BLE）
+- React Native `0.87.0`
+
+## 安裝相依套件
+
+```powershell
+npm install
+```
+
+## 開發執行
+
+啟動 Metro：
+
+```powershell
 npm start
-
-# OR using Yarn
-yarn start
 ```
 
-## Step 2: Build and run your app
+在另一個終端確認手機、設定連接埠並安裝 Debug 版本：
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
+```powershell
+adb devices
+adb reverse tcp:8081 tcp:8081
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+Debug 版本需要 Metro。若要安裝不依賴 USB 或 Metro 的版本，請使用下方 Release APK 流程。
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## 檢查與測試
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```powershell
+npm run lint
+npm test -- --runInBand
 ```
 
-Then, and every time you update your native dependencies, run:
+## 建置及安裝 Release APK
 
-```sh
-bundle exec pod install
+```powershell
+cd android
+.\gradlew assembleRelease
+cd ..
+adb install -r android\app\build\outputs\apk\release\app-release.apk
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+APK 輸出位置：
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+```text
+android\app\build\outputs\apk\release\app-release.apk
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況下啟動。首次使用時仍須允許 App 所要求的相機、附近裝置、藍牙及對應 Android 版本所需權限。
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+## 使用流程
 
-## Step 3: Modify your app
+1. 開啟 App 並允許必要權限。
+2. 點選「自動 BLE QR Code 掃描」，將裝置 QR Code 對準相機；也可以選擇「手動 BLE 掃描」。
+3. App 驗證 QR 內容後，依其中的 Master ID、BLE 名稱與 UUID 尋找並連接裝置。
+4. 連線成功後查看即時資料，或進入 Wi-Fi 設定及資料表畫面。
+5. 需要長期接收時選擇「切到背景執行」。若要停止自動恢復與背景接收，請在 App 內選擇「停止背景接收」。
 
-Now that you have successfully run the app, let's make changes!
+> 若 BLE 掃描持續找不到裝置，請先確認 Master 已開機、正在廣播且未被其他手機連線；必要時重新啟動或重設 Master 後再掃描。
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+## BLE 通訊協定
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+| 項目 | 值 |
+| --- | --- |
+| 裝置名稱 | `DogGPS-MasterN`，由裝置 QR 設定提供 |
+| Service UUID | `7f510001-6d9e-4e2f-a671-8f3f2d49a001` |
+| Data Characteristic UUID | `7f510002-6d9e-4e2f-a671-8f3f2d49a001` |
+| Wi-Fi Config Characteristic UUID | `7f510003-6d9e-4e2f-a671-8f3f2d49a001` |
+| 資料方向 | Master Notify 至手機 |
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+Wi-Fi 設定透過 write-with-response 傳送 Base64 編碼的 UTF-8 JSON；相容韌體必須提供可寫入的 Wi-Fi Config Characteristic。
 
-## Congratulations! :tada:
+## 主要程式位置
 
-You've successfully run and modified your React Native App. :partying_face:
+```text
+App.js                              App 畫面流程與即時 BLE 狀態
+src/ble/                            BLE 掃描、連線與資料解析
+src/qr/MasterQrParser.js            Master QR 設定驗證
+src/screens/                        Wi-Fi 與資料畫面
+src/database/                       SQLite 儲存
+src/models/DogStatus.js             共用資料模型
+android/app/src/main/java/com/dogtracker/
+  BleForegroundService.kt           BLE 前景服務及程序復原
+  QrScannerActivity.kt              CameraX／ML Kit QR 掃描器
+```
 
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
-
-## Project Documentation
-
-See [PROJECT_GUIDE.md](PROJECT_GUIDE.md) for the current BLE protocol, module ownership, development commands, Release APK process and Git collaboration rules.
+更完整的 BLE 協定、模組分工與協作規則請參閱 [PROJECT_GUIDE.md](PROJECT_GUIDE.md)。

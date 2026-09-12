@@ -109,6 +109,26 @@ describe('tracking session and connection lifetime', () => {
     expect(db.real.saveStatus).not.toHaveBeenCalled();
   });
 
+  test('hardware diagnostics borrow the real DB and drain reads before close', async () => {
+    const db = databases();
+    const read = deferred();
+    db.real.listHistory = jest.fn(() => read.promise);
+    await mount(db);
+    const adapter = session.hardwareDatabase;
+    await adapter.initialize();
+    const pending = adapter.listHistory(100);
+    await act(async () => {});
+    expect(db.real.listHistory).toHaveBeenCalledWith(100);
+    await act(async () => renderer.unmount());
+    renderer = null;
+    expect(db.close).not.toHaveBeenCalled();
+    read.resolve([dogStatusRow]);
+    await expect(pending).resolves.toEqual([dogStatusRow]);
+    await act(async () => {});
+    expect(db.close).toHaveBeenCalledTimes(1);
+    await expect(adapter.listHistory(1)).rejects.toThrow('closed');
+  });
+
   test('effect replay drains old hardware writes and closes before reopening', async () => {
     const first = databases();
     const second = databases();

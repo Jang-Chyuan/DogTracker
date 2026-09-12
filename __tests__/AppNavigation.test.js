@@ -8,7 +8,15 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
-jest.mock('../src/ble/BleService', () => ({ createBleService: jest.fn() }));
+jest.mock('../src/ble/BleService', () => ({
+  createBleService: jest.fn(() => ({
+    connect: jest.fn(async () => true),
+    disconnect: jest.fn(),
+    isConnected: jest.fn(() => false),
+    restoreBackground: jest.fn(async () => null),
+    getBackgroundState: jest.fn(async () => null),
+  })),
+}));
 let connection, renderer, ble, onBack;
 const text = () => JSON.stringify(renderer.toJSON());
 const rows = table =>
@@ -53,12 +61,8 @@ beforeEach(async () => {
     .mockImplementation(connection.executeBatchAsync);
   mockDatabase.close.mockClear();
   open.mockImplementation(() => mockDatabase);
-  ble = {
-    connect: jest.fn(async () => {}),
-    disconnect: jest.fn(),
-    isConnected: jest.fn(() => false),
-  };
-  createBleService.mockReturnValue(ble);
+  ble = createBleService.mock.results[0].value;
+  ble.disconnect.mockClear();
   Object.defineProperty(AppState, 'currentState', {
     configurable: true,
     value: 'active',
@@ -95,6 +99,26 @@ test('defaults to three seeded Demo rows with no automatic writes', async () => 
   expect(rows('demo_dog_status')).toHaveLength(3);
   expect(text()).not.toContain('開始 Demo');
 });
+test('restored native events never duplicate SQLite rows or change Demo mode', async () => {
+  const before = rows('dog_status');
+  const receive = ble.restoreBackground.mock.calls.at(-1)[1];
+  await act(async () => receive(trackingPoint, 'native replay', {
+    receivedAt: Date.now(), persistedNatively: true,
+  }));
+  expect(rows('dog_status')).toEqual(before);
+  expect(rows('demo_dog_status')).toHaveLength(3);
+  expect(text()).toContain('DEMO · 模擬資料');
+});
+test('native write failures are reported outside the hardware page and recover independently', async () => {
+  ble.getBackgroundState.mockResolvedValue({ storageError: 'native disk full' });
+  await act(async () => jest.advanceTimersByTimeAsync(2000));
+  expect(text()).toContain('native disk full');
+  await press('設定', 'tab');
+  expect(text()).toContain('native disk full');
+  ble.getBackgroundState.mockResolvedValue({ storageError: '' });
+  await act(async () => jest.advanceTimersByTimeAsync(2000));
+  expect(text()).not.toContain('native disk full');
+});
 test('two tabs and nested Demo return to Settings; hardware Wi-Fi remains available', async () => {
   const tabs = renderer.root.findAll(
     node =>
@@ -107,11 +131,14 @@ test('two tabs and nested Demo return to Settings; hardware Wi-Fi remains availa
   ]);
   await demoPage();
   await act(async () => expect(onBack()).toBe(true));
-  expect(text()).toContain('掃描並連線 DogGPS-Master3');
-  await press('Master3 Wi-Fi 設定');
-  expect(text()).toContain('Wi-Fi');
+  expect(text()).toContain('BLE／QR 與 Master 設定');
+  await press('BLE／QR 與 Master 設定');
+  expect(text()).toContain('自動 BLE QR Code 掃描');
+  expect(text()).toContain('手動 BLE 掃描');
+  expect(rows('demo_dog_status')).toHaveLength(3);
   await act(async () => onBack());
   expect(text()).toContain('Demo 設定');
+  expect(ble.disconnect).not.toHaveBeenCalled();
 });
 test('preset menu appends exactly one chosen DB row without switching the current mode', async () => {
   await demoPage();
