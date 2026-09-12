@@ -1,4 +1,12 @@
+const executeAsync = jest.fn(async () => ({ insertId: 1, results: [] }));
+const close = jest.fn();
+
 export const open = jest.fn(() => ({
-  executeAsync: jest.fn(async () => ({ results: [], insertId: 1 })),
-  close: jest.fn(),
+  close,
+  executeAsync,
 }));
+
+export const mockDatabase = {
+  close,
+  executeAsync,
+};

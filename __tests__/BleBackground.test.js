@@ -16,6 +16,8 @@ beforeEach(() => {
     initializeDatabase: jest.fn(async () => true),
     listHistory: jest.fn(async () => '[{"id":1,"received_at":123}]'),
     deleteHistory: jest.fn(async () => true),
+    executeDatabase: jest.fn(async () => '{"results":[]}'),
+    executeDatabaseBatch: jest.fn(async () => true),
   };
   NativeModules.BleBackground = native;
 });
@@ -90,7 +92,11 @@ test('Android history shares native storage and never duplicates native inserts 
   await db.saveStatus({ slaveId: 1 });
   expect(await db.listHistory(9000)).toEqual([{ id: 1, received_at: 123 }]);
   expect(native.listHistory).toHaveBeenCalledWith(1000);
+  // Never open a second SQLite engine on this file in the same Android process.
   expect(open).not.toHaveBeenCalled();
+  expect(native.initializeDatabase).toHaveBeenCalledTimes(1);
+  expect(native.executeDatabase.mock.calls.map(([sql]) => sql).join('\n'))
+    .not.toMatch(/INSERT INTO dog_status|DELETE FROM dog_status/);
   await db.deleteAll();
   expect(native.deleteHistory).toHaveBeenCalledTimes(1);
 });

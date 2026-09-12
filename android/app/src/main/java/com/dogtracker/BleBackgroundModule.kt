@@ -117,6 +117,15 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   @ReactMethod
   fun deleteHistory(promise: Promise) = databaseTask(promise) { it.clear(); true }
 
+  // Internal App SQL only; BLE payloads continue through typed ContentValues.
+  @ReactMethod
+  fun executeDatabase(sql: String, parameters: String, promise: Promise) =
+    databaseTask(promise) { it.executeSql(sql, org.json.JSONArray(parameters)).toString() }
+
+  @ReactMethod
+  fun executeDatabaseBatch(commands: String, promise: Promise) =
+    databaseTask(promise) { it.executeBatch(org.json.JSONArray(commands)); true }
+
   @ReactMethod
   fun addListener(eventName: String) = Unit
 
