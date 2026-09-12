@@ -91,7 +91,7 @@ export default function WifiSettingsScreen({ bleService, masterName = 'DogGPS Ma
         <Pressable onPress={onBack} hitSlop={12}><Text style={styles.link}>返回</Text></Pressable>
       </View>
       <Text style={[styles.status, connected ? styles.connected : styles.disconnected]}>
-        {connected ? 'BLE 已連線' : 'BLE 尚未連線，請先返回主畫面連線'}
+        {connected ? 'BLE 已連線' : 'BLE 尚未連線，請先返回設定頁連線'}
       </Text>
       <View style={styles.listHeader}>
         <Text style={styles.sectionTitle}>{masterName} 現有網路</Text>
