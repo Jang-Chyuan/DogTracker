@@ -4,6 +4,7 @@ import {
   Alert,
   AppState,
   BackHandler,
+  NativeModules,
   PermissionsAndroid,
   Platform,
   Switch,
@@ -17,7 +18,15 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
-jest.mock('../src/ble/BleService', () => ({ createBleService: jest.fn() }));
+jest.mock('../src/ble/BleService', () => ({
+  createBleService: jest.fn(() => ({
+    connect: jest.fn(async () => true),
+    disconnect: jest.fn(),
+    isConnected: jest.fn(() => false),
+    restoreBackground: jest.fn(async () => null),
+    getBackgroundState: jest.fn(async () => null),
+  })),
+}));
 let connection, renderer, ble, onAppState, onBack;
 const originalOS = Platform.OS;
 const text = () => JSON.stringify(renderer.toJSON());
@@ -94,12 +103,9 @@ beforeEach(async () => {
   // the next mount; the SQLite test engine itself closes in afterEach.
   open.mockClear();
   open.mockImplementation(() => mockDatabase);
-  ble = {
-    connect: jest.fn(async () => {}),
-    disconnect: jest.fn(),
-    isConnected: jest.fn(() => false),
-  };
-  createBleService.mockReturnValue(ble);
+  ble = createBleService.mock.results[0].value;
+  ble.disconnect.mockClear();
+  ble.connect.mockClear();
   Object.defineProperty(AppState, 'currentState', {
     configurable: true,
     value: 'active',
@@ -166,10 +172,12 @@ test('only map/settings tabs remain; Demo and original Wi-Fi preserve correct ba
   expect(button('Demo 設定')).toBeDefined();
   expect(button('登入')).toBeUndefined();
   expect(text()).not.toContain('允許手機定位');
-  await press('Master3 Wi-Fi 設定');
-  expect(text()).toContain('請先返回設定頁連線');
+  await press('BLE／QR 與 Master 設定');
+  expect(text()).toContain('自動 BLE QR Code 掃描');
+  expect(text()).toContain('手動 BLE 掃描');
   await act(async () => expect(onBack()).toBe(true));
   expect(text()).toContain('硬體連線');
+  expect(ble.disconnect).not.toHaveBeenCalled();
   await demoPage();
   await press('‹ 設定');
   expect(button('Demo 設定')).toBeDefined();
@@ -186,8 +194,23 @@ test('page changes keep the same native map, source and saved switches', async (
   expect(renderer.root.findByType(MapView)).toBe(map);
   expect(text()).toContain('DEMO · 模擬資料');
 });
+test('native BLE replay does not write again or move Demo map markers', async () => {
+  await mount();
+  const before = rows('dog_status');
+  const markerCoordinates = () => renderer.root.findAllByType(Marker).map(node => node.props.coordinate);
+  const markers = markerCoordinates();
+  const receive = ble.restoreBackground.mock.calls.at(-1)[1];
+  await act(async () => receive(trackingPoint, 'native replay', {
+    receivedAt: Date.now(), persistedNatively: true,
+  }));
+  await advance();
+  expect(rows('dog_status')).toEqual(before);
+  expect(rows('demo_dog_status')).toHaveLength(3);
+  expect(markerCoordinates()).toEqual(markers);
+});
 test('manual A/B writes update latest DB markers; common paths stay off until explicitly enabled', async () => {
   await mount();
+
   await demoPage();
   await press('寫入 1 筆到 Demo DB');
   expect(rows('demo_dog_status')).toHaveLength(4);
@@ -397,8 +420,7 @@ test('a summary read failure after commit does not report a failed insert or enc
 test('hardware callback still writes only real rows in Demo, and failed hardware writes remain visible', async () => {
   await mount();
   await press('設定', 'tab');
-  await press('掃描並連線 DogGPS-Master3');
-  const onData = ble.connect.mock.calls[0][1];
+  const onData = ble.restoreBackground.mock.calls.at(-1)[1];
   await act(async () =>
     onData({ ...trackingPoint, slaveLon: 120 }, 'hardware'),
   );
@@ -426,9 +448,8 @@ test('a Demo migration failure cannot block the hardware writer or switching to 
   );
   await mount();
   await press('設定', 'tab');
-  await press('掃描並連線 DogGPS-Master3');
   await act(async () =>
-    ble.connect.mock.calls[0][1](trackingPoint, 'hardware'),
+    ble.restoreBackground.mock.calls.at(-1)[1](trackingPoint, 'hardware'),
   );
   expect(rows('dog_status')).toHaveLength(2);
   await press('Demo 設定');
@@ -436,4 +457,51 @@ test('a Demo migration failure cannot block the hardware writer or switching to 
   await setMode(false);
   await press('回到地圖');
   expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
+});
+
+test('native disk failures remain visible on map/settings and clear on recovery', async () => {
+  await mount();
+  ble.getBackgroundState.mockResolvedValue({ storageError: 'native disk full' });
+  await advance(2000);
+  expect(text()).toContain('native disk full');
+  await press('設定', 'tab');
+  expect(text()).toContain('native disk full');
+  ble.getBackgroundState.mockResolvedValue({ storageError: '' });
+  await advance(2000);
+  expect(text()).not.toContain('native disk full');
+});
+
+test('Android map and Demo use the native SQL adapter without opening Nitro', async () => {
+  Platform.OS = 'android';
+  const execute = jest.fn(async (sql, params) =>
+    JSON.stringify(await connection.executeAsync(sql, JSON.parse(params))),
+  );
+  NativeModules.BleBackground = {
+    initializeDatabase: async () => true,
+    executeDatabase: execute,
+    executeDatabaseBatch: commands => connection.executeBatchAsync(JSON.parse(commands)),
+  };
+  try {
+    await mount();
+    expect(open).not.toHaveBeenCalled();
+    expect(rows('demo_dog_status')).toHaveLength(3);
+    expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
+    await demoPage();
+    await setMode(false);
+    await press('回到地圖');
+    // Independent native writer inserts a DB row, never a BLE-to-map callback.
+    connection.sqlite.prepare(
+      'INSERT INTO dog_status (received_at, master_id, slave_id, master_lat, master_lon, slave_lat, slave_lon) VALUES (?,3,7,25.02,121.32,25.03,121.33)',
+    ).run(Date.now());
+    await advance();
+    expect(renderer.root.findAllByType(Marker).map(node => node.props.coordinate)).toEqual([
+      { latitude: 25.02, longitude: 121.32 },
+      { latitude: 25.03, longitude: 121.33 },
+    ]);
+    expect(execute.mock.calls.some(([sql]) => sql.includes('WHERE id > ?'))).toBe(true);
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    renderer = null;
+    delete NativeModules.BleBackground;
+  }
 });

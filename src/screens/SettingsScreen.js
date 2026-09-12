@@ -4,9 +4,7 @@ import { ActionButton, ui } from '../components/ScreenUI';
 
 export default function SettingsScreen({
   tracking,
-  bleStatus,
-  onConnect,
-  onWifi,
+  onHardware,
   onDemo,
 }) {
   return (
@@ -24,12 +22,11 @@ export default function SettingsScreen({
       </View>
       <View style={ui.card}>
         <Text style={ui.heading}>硬體連線</Text>
-        <Text style={ui.text}>BLE 裝置：{bleStatus}</Text>
         <Text style={ui.hint}>
-          真實硬體資料仍由既有 BLE 模組寫入 dog_status。Demo 不控制 BLE 連線。
+          Android 原生服務接收並儲存正式資料。Demo 不控制 BLE 連線。
         </Text>
-        <ActionButton title="掃描並連線 DogGPS-Master3" onPress={onConnect} />
-        <ActionButton title="Master3 Wi-Fi 設定" onPress={onWifi} secondary />
+        {tracking.errors.real ? <Text style={ui.error}>{tracking.errors.real}</Text> : null}
+        <ActionButton title="BLE／QR 與 Master 設定" onPress={onHardware} disabled={!tracking.ready.real} />
       </View>
     </View>
   );

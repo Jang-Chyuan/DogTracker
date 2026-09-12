@@ -48,7 +48,7 @@ export default function MapScreen({
       tracking.preferences.value.showSlaveMarker)
   )
     messages.push(
-      '首頁路徑已達繪圖上限，僅顯示較新的部分；DB 原始資料未刪除。',
+      '首頁路徑已達繪圖上限，僅顯示較新的部分；此繪圖限制不會刪除 DB 資料。',
     );
   if (tracking.errors[mode])
     messages.push(

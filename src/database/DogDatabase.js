@@ -1,19 +1,52 @@
-import { open } from 'react-native-nitro-sqlite';
+import { openTrackingDatabase } from './TrackingDatabaseConnection';
+import { NativeModules, Platform } from 'react-native';
+
+const MAX_STATUS_RECORDS_PER_SLAVE = 10000;
+const CLEANUP_INTERVAL_INSERTS = 100;
 
 function rowsFromResult(result) {
   return result.results || result.rows?._array || [];
 }
 
 export function createDogDatabase(connection) {
-  const db =
-    connection ||
-    open({
-      name: 'dogtracker.sqlite',
-      location: 'databases',
-    });
+  const db = connection || openTrackingDatabase();
+
+  let insertsSinceCleanup = 0;
+
+  async function cleanupOldRecords() {
+    const slaves = await db.executeAsync(`
+      SELECT DISTINCT slave_id
+      FROM dog_status
+      WHERE slave_id IS NOT NULL
+    `);
+
+    for (const { slave_id: slaveId } of slaves.results || []) {
+      await db.executeAsync(
+        `DELETE FROM dog_status
+         WHERE slave_id = ?
+           AND id NOT IN (
+             SELECT id
+             FROM dog_status
+             WHERE slave_id = ?
+             ORDER BY id DESC
+             LIMIT ?
+           )`,
+        [slaveId, slaveId, MAX_STATUS_RECORDS_PER_SLAVE],
+      );
+    }
+
+    insertsSinceCleanup = 0;
+  }
+
+
+  const native = Platform.OS === 'android' ? NativeModules.BleBackground : null;
 
   return {
     async initialize() {
+      // Android queries and writes share DogStatusStore's SQLite engine.
+      // Other platforms retain the Nitro fallback and upstream retention.
+      await db.executeAsync('PRAGMA busy_timeout=5000');
+      if (native?.initializeDatabase) await native.initializeDatabase();
       await db.executeAsync(`
         CREATE TABLE IF NOT EXISTS dog_status (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,9 +98,7 @@ export function createDogDatabase(connection) {
       // not pay for two equivalent index writes forever.
       await db.executeAsync('DROP INDEX IF EXISTS idx_dog_status_received_at');
 
-      // Retention is owned by the hardware/storage policy, not this UI App.
-      // Remove the legacy trigger from databases initialized by older builds;
-      // omitting CREATE TRIGGER alone would leave that trigger active forever.
+      // Replace the legacy all-slaves trigger with upstream per-slave retention.
       await db.executeAsync(
         'DROP TRIGGER IF EXISTS trim_dog_status_after_insert',
       );
@@ -86,9 +117,12 @@ export function createDogDatabase(connection) {
           'ALTER TABLE dog_status ADD COLUMN slave_id INTEGER',
         );
       }
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)');
+      if (!native?.initializeDatabase) await cleanupOldRecords();
     },
 
     async saveStatus(status, rawPayload = null) {
+      if (native?.initializeDatabase) return undefined;
       const receivedAt = Date.now();
 
       const result = await db.executeAsync(
@@ -156,6 +190,8 @@ export function createDogDatabase(connection) {
         ],
       );
 
+      insertsSinceCleanup += 1;
+      if (insertsSinceCleanup >= CLEANUP_INTERVAL_INSERTS) await cleanupOldRecords();
       return result.insertId;
     },
 
@@ -341,6 +377,11 @@ export function createDogDatabase(connection) {
     },
 
     async listHistory(limit = 100) {
+      if (native?.listHistory) {
+        return JSON.parse(await native.listHistory(
+          Math.floor(Math.max(1, Math.min(Number(limit) || 100, 1000))),
+        ));
+      }
       const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 1000));
 
       const result = await db.executeAsync(
@@ -355,6 +396,8 @@ export function createDogDatabase(connection) {
     },
 
     async deleteAll() {
+      if (native?.deleteHistory) return native.deleteHistory();
+      insertsSinceCleanup = 0;
       await db.executeAsync('DELETE FROM dog_status');
     },
 

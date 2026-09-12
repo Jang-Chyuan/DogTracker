@@ -333,7 +333,7 @@ export default function TrackingSheet({
         <Text style={styles.hint}>距離採用資料庫回報值。</Text>
         <Text style={styles.hint}>
           參考圈半徑 1 公里，跟隨領犬員眼睛。路徑採 1 公尺誤差上限簡化，DB
-          原始資料不變。
+          原始座標不會因簡化而改寫。
         </Text>
         <View style={styles.divider} />
         <Text style={styles.label}>硬體回報的定位與活動</Text>
