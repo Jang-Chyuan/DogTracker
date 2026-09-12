@@ -1,26 +1,37 @@
-export function scanForDevice(bleManager, deviceName, serviceUuid, onDevice, onError) {
+export function scanForDevices(
+  bleManager,
+  _serviceUuid,
+  onDevice,
+  onError,
+  onFinished,
+  timeoutMs = 10000,
+) {
   bleManager.stopDeviceScan();
-  const timeout = setTimeout(() => {
-    bleManager.stopDeviceScan();
-    onError(new Error('找不到裝置'));
-  }, 10000);
+  const seen = new Set();
+  let finished = false;
 
-  bleManager.startDeviceScan([serviceUuid], null, (error, device) => {
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timeout);
+    bleManager.stopDeviceScan();
+    onFinished?.();
+  };
+
+  const timeout = setTimeout(finish, timeoutMs);
+  // Some compatible Masters advertise only their local name and expose the
+  // service UUID after connecting. Scan without an OS-level service filter;
+  // BleService still applies the exact QR-provided device name before use.
+  bleManager.startDeviceScan(null, null, (error, device) => {
     if (error) {
-      clearTimeout(timeout);
+      finish();
       onError(error);
       return;
     }
-
-    if (!device || (device.name !== deviceName && device.localName !== deviceName)) return;
-
-    clearTimeout(timeout);
-    bleManager.stopDeviceScan();
+    if (!device || seen.has(device.id)) return;
+    seen.add(device.id);
     onDevice(device);
   });
 
-  return () => {
-    clearTimeout(timeout);
-    bleManager.stopDeviceScan();
-  };
+  return finish;
 }

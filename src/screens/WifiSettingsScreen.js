@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-export default function WifiSettingsScreen({ bleService, onBack }) {
+export default function WifiSettingsScreen({ bleService, masterName = 'DogGPS Master', onBack }) {
   const [ssid, setSsid] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -44,7 +44,7 @@ export default function WifiSettingsScreen({ bleService, onBack }) {
     setMessage('');
     try {
       await bleService.configureWifi(trimmedSsid, password);
-      setMessage('Wi-Fi 設定已傳送至 Master3');
+      setMessage(`Wi-Fi 設定已傳送至 ${masterName}`);
       await loadWifiList();
     } catch (error) {
       setMessage(`傳送失敗：${error.message}`);
@@ -56,7 +56,7 @@ export default function WifiSettingsScreen({ bleService, onBack }) {
   const removeWifi = network => {
     Alert.alert(
       '刪除 Wi-Fi',
-      `確定要從 Master3 刪除「${network}」嗎？`,
+      `確定要從 ${masterName} 刪除「${network}」嗎？`,
       [
         { text: '取消', style: 'cancel' },
         {
@@ -87,14 +87,14 @@ export default function WifiSettingsScreen({ bleService, onBack }) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.title}>Master3 Wi-Fi 設定</Text>
+        <Text style={styles.title}>{masterName} Wi-Fi 設定</Text>
         <Pressable onPress={onBack} hitSlop={12}><Text style={styles.link}>返回</Text></Pressable>
       </View>
       <Text style={[styles.status, connected ? styles.connected : styles.disconnected]}>
         {connected ? 'BLE 已連線' : 'BLE 尚未連線，請先返回主畫面連線'}
       </Text>
       <View style={styles.listHeader}>
-        <Text style={styles.sectionTitle}>Master3 現有網路</Text>
+        <Text style={styles.sectionTitle}>{masterName} 現有網路</Text>
         <Pressable disabled={!connected || loading} onPress={loadWifiList}>
           <Text style={styles.link}>{loading ? '讀取中…' : '重新整理'}</Text>
         </Pressable>
@@ -135,7 +135,7 @@ export default function WifiSettingsScreen({ bleService, onBack }) {
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>傳送設定</Text>}
       </Pressable>
       {message ? <Text style={styles.message}>{message}</Text> : null}
-      <Text style={styles.hint}>只讀取網路名稱，Master3 不會傳回已儲存的密碼。</Text>
+      <Text style={styles.hint}>只讀取網路名稱，{masterName} 不會傳回已儲存的密碼。</Text>
     </View>
   );
 }
