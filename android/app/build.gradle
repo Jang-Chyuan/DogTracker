@@ -72,6 +72,13 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// The key stays in the build environment or ignored android/local.properties.
+// JavaScript receives only the configured flag, never the credential itself.
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) localPropertiesFile.withInputStream { localProperties.load(it) }
+def googleMapsApiKey = (System.getenv('GOOGLE_MAPS_ANDROID_API_KEY') ?: localProperties.getProperty('GOOGLE_MAPS_ANDROID_API_KEY', '')).trim()
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -84,6 +91,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        manifestPlaceholders.googleMapsApiKey = googleMapsApiKey
+        buildConfigField 'boolean', 'GOOGLE_MAPS_CONFIGURED', (!googleMapsApiKey.isEmpty()).toString()
     }
     signingConfigs {
         debug {

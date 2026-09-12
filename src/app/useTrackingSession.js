@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
 import { databaseSessions } from '../database/DatabaseSession';
@@ -10,8 +10,12 @@ import {
 } from '../tracking/TrackingPreferences';
 import { createRealTrackingRepository } from '../repositories/RealTrackingRepository';
 import { createTrackingFeed } from '../tracking/TrackingFeed';
+import { selectStatusRows } from '../tracking/RouteSamples';
 import { getErrorMessage } from '../utils/errors';
-import { emptyTrackingPoint } from '../models/TrackingPoint';
+import {
+  createTrackingSourceState,
+  trackingSourceReducer,
+} from '../tracking/TrackingSourceState';
 
 function isForeground(state) {
   return state === 'active' || state === 'unknown' || state == null;
@@ -29,11 +33,11 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     saveStatus: (status, payload) => controlsRef.current?.saveRealStatus(status, payload) ?? Promise.reject(new Error('Tracking session is closed')),
   }));
   const [mode, setMode] = useState(DEFAULT_TRACKING_PREFERENCES.mode);
-  const [points, setPoints] = useState({
-    real: emptyTrackingPoint,
-    demo: emptyTrackingPoint,
-  });
-  const [ready, setReady] = useState({ real: false, demo: false });
+  const [trackingSources, dispatchTracking] = useReducer(
+    trackingSourceReducer,
+    undefined,
+    createTrackingSourceState,
+  );
   const [preferences, setPreferences] = useState({
     value: DEFAULT_TRACKING_PREFERENCES,
     ready: false,
@@ -56,8 +60,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     let disposed = false;
     // Disable old controls while waiting for the prior owner or a failed reopen.
     setMode(DEFAULT_TRACKING_PREFERENCES.mode);
-    setPoints({ real: emptyTrackingPoint, demo: emptyTrackingPoint });
-    setReady({ real: false, demo: false });
+    dispatchTracking({ type: 'reset-all' });
     setPreferences({
       value: DEFAULT_TRACKING_PREFERENCES,
       ready: false,
@@ -102,12 +105,46 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       };
       const createFeed = (source, repository) =>
         createTrackingFeed(repository, {
+          includeHistory: true,
+          onRefreshing() {
+            if (!disposed) dispatchTracking({ type: 'refreshing', source });
+          },
+          onCaughtUp() {
+            if (!disposed) dispatchTracking({ type: 'caught-up', source });
+          },
+          onLatest(point) {
+            if (!disposed) dispatchTracking({ type: 'latest', source, point });
+          },
+          onPositionContext(rows) {
+            if (!disposed)
+              dispatchTracking({ type: 'position-context', source, rows });
+          },
+          onInitialSnapshotReady() {
+            if (!disposed)
+              dispatchTracking({ type: 'initial-snapshot-ready', source });
+          },
+          onRoute(route) {
+            if (!disposed)
+              dispatchTracking({
+                type: 'route',
+                source,
+                route,
+              });
+          },
+          onHistoryLoading() {
+            if (!disposed)
+              dispatchTracking({ type: 'history-loading', source });
+          },
+          onHistoryLoaded() {
+            if (!disposed) dispatchTracking({ type: 'history-loaded', source });
+          },
           onRows(rows) {
             if (!disposed)
-              setPoints(current => ({
-                ...current,
-                [source]: rows[rows.length - 1],
-              }));
+              dispatchTracking({
+                type: 'rows',
+                source,
+                rows: selectStatusRows(rows),
+              });
           },
           onSuccess() {
             reportedReadErrors[source] = null;
@@ -180,7 +217,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           .then(() => {
             if (disposed) return;
             initialized[source] = true;
-            setReady(current => ({ ...current, [source]: true }));
+            dispatchTracking({ type: 'ready', source });
             if (source === selectedMode) resumeFeed();
           })
           .catch(error => reportError(source, error));
@@ -190,6 +227,10 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         if (!disposed) setForeground(active);
         if (active) resumeFeed();
         else {
+          if (!disposed) {
+            dispatchTracking({ type: 'refreshing', source: 'real' });
+            dispatchTracking({ type: 'refreshing', source: 'demo' });
+          }
           feeds.real.stop();
           feeds.demo.stop();
         }
@@ -220,6 +261,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       }
 
       function selectMode(source) {
+        dispatchTracking({ type: 'refreshing', source: 'real' });
+        dispatchTracking({ type: 'refreshing', source: 'demo' });
         feeds.real.stop();
         feeds.demo.stop();
         selectedMode = source;
@@ -285,10 +328,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
               await databases.demo.resetToSeed(createDemoSeed());
               if (!disposed) {
                 setDemoError(null);
-                setPoints(current => ({
-                  ...current,
-                  demo: emptyTrackingPoint,
-                }));
+                dispatchTracking({ type: 'reset-source', source: 'demo' });
                 // Replace this source's cursor only after the atomic reset
                 // commits. Old queries cannot repopulate pre-reset markers.
                 feeds.demo = createFeed('demo', repositories.demo);
@@ -332,8 +372,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   return {
     hardwareDatabase,
     mode,
-    point: points[mode],
-    demoPoint: points.demo,
+    caughtUp: trackingSources[mode].caughtUp,
+    point: trackingSources[mode].point,
+    demoPoint: trackingSources.demo.point,
+    route: trackingSources[mode].route,
+    positionSamples: trackingSources[mode].positionSamples,
+    historyLoaded: trackingSources[mode].historyLoaded,
+    initialSnapshotReady: trackingSources[mode].initialSnapshotReady,
     preferences,
     saveTrackingPreferences: patch =>
       controlsRef.current?.saveTrackingPreferences(patch),
@@ -341,7 +386,10 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       controlsRef.current?.retryTrackingPreferences(),
     resetTrackingPreferences: () =>
       controlsRef.current?.resetTrackingPreferences(),
-    ready,
+    ready: {
+      real: trackingSources.real.ready,
+      demo: trackingSources.demo.ready,
+    },
     errors,
     realWriteError: [nativeWriteError, realWriteError].filter(Boolean).join('\n') || null,
     reportNativeWriteError: setNativeWriteError,

@@ -5,7 +5,8 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -21,6 +22,7 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <meta-data android:name="com.google.android.geo.API_KEY" android:value="${googleMapsApiKey}" />
       <activity
         android:name=".QrScannerActivity"
         android:exported="false"

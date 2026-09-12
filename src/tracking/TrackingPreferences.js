@@ -2,6 +2,9 @@ import { getErrorMessage } from '../utils/errors';
 
 export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   mode: 'demo',
+  showMasterMarker: true,
+  showSlaveMarker: true,
+  showTrails: false,
 });
 
 export function validateTrackingPreferences(value) {
@@ -10,7 +13,18 @@ export function validateTrackingPreferences(value) {
   const settings = { ...DEFAULT_TRACKING_PREFERENCES, ...value };
   if (!['demo', 'real'].includes(settings.mode))
     throw new Error('資料模式設定格式錯誤');
-  return { mode: settings.mode };
+  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails']) {
+    if (typeof settings[key] !== 'boolean')
+      throw new Error('地圖顯示設定格式錯誤');
+  }
+  // Old per-role trail settings have different semantics; only missing new
+  // fields receive defaults. Malformed saved JSON still fails explicitly.
+  return {
+    mode: settings.mode,
+    showMasterMarker: settings.showMasterMarker,
+    showSlaveMarker: settings.showSlaveMarker,
+    showTrails: settings.showTrails,
+  };
 }
 
 // Connection lifetime is owned by the tracking session. Writes are applied to

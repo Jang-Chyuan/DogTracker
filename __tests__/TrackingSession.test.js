@@ -271,8 +271,8 @@ describe('tracking session and connection lifetime', () => {
     await tick();
     expect(session.errors.real).toBe('temporary lock');
     await tick();
-    // B reads the latest row only at startup; history backfill belongs to C.
-    expect(db.real.listStatusRowsAfterId).toHaveBeenCalledTimes(2);
+    // One initial history query plus the failed and recovered live queries.
+    expect(db.real.listStatusRowsAfterId).toHaveBeenCalledTimes(3);
     expect(session.errors.real).toBeNull();
     expect(session.point.id).toBe(dogStatusRow.id);
   });
@@ -299,7 +299,7 @@ describe('tracking session and connection lifetime', () => {
     const logged = console.error.mock.calls.length;
     await tick();
     expect(console.error).toHaveBeenCalledTimes(logged);
-    db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
+    db.real.getLatestStatusRow.mockResolvedValue(null);
     await tick();
     expect(session.errors.real).toBeNull();
     db.real.listStatusRowsAfterId.mockRejectedValue('disk unavailable');
@@ -468,6 +468,49 @@ describe('tracking session and connection lifetime', () => {
       await expect(session.setDemoMode(false)).resolves.toBe(true);
     });
     expect(session.mode).toBe('real');
+  });
+  test('route backfill cannot rewind latest state, and reset clears only the Demo route', async () => {
+    const db = databases();
+    db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
+    db.real.listLatestStatusRowsByTimeCursor.mockResolvedValueOnce([
+      { ...dogStatusRow, id: 40 },
+      { ...dogStatusRow, id: 41 },
+    ]);
+    const demoRow = { id: 1, ...createDemoRow(0, 1000) };
+    db.demo.getLatestRow.mockResolvedValue(demoRow);
+    db.demo.listLatestRowsByTimeCursor.mockResolvedValueOnce([demoRow]);
+    await mount(db);
+    expect(session.point.id).toBe(42);
+    expect(session.route.rawCount).toBe(2);
+    const realRoute = session.route;
+    await act(async () => session.setDemoMode(true));
+    expect(session.route.rawCount).toBe(1);
+    db.demo.getLatestRow.mockResolvedValue(null);
+    await act(async () => session.resetDemo());
+    expect(session.route.rawCount).toBe(0);
+    await act(async () => session.setDemoMode(false));
+    expect(session.route).toBe(realRoute);
+  });
+  test('live route keeps every point in the moving 24-hour window', async () => {
+    const db = databases();
+    const day = 24 * 60 * 60 * 1000;
+    db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
+    db.real.listLatestStatusRowsByTimeCursor.mockResolvedValueOnce([
+      { ...dogStatusRow, id: 40, received_at: dogStatusRow.received_at - day },
+      { ...dogStatusRow, id: 41, received_at: dogStatusRow.received_at - 1000 },
+      dogStatusRow,
+    ]);
+    await mount(db);
+    expect(session.route.rawCount).toBe(3);
+
+    db.real.listStatusRowsAfterId.mockResolvedValueOnce([
+      { ...dogStatusRow, id: 43, received_at: dogStatusRow.received_at + day },
+    ]);
+    await tick();
+
+    expect(session.route.rawCount).toBe(2);
+    expect(session.positionSamples).toHaveLength(1);
+    expect(session.positionSamples[0].id).toBe(43);
   });
   test('settings failure keeps writers ready but blocks source reads; pending saves drain before close', async () => {
     const db = databases();
