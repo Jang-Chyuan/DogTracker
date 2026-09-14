@@ -17,8 +17,10 @@ export function createSettingsDatabase(connection) {
       return rows.length ? JSON.parse(rows[0].value) : {};
     },
     async save(value) {
+      // Android 8's system SQLite predates UPSERT. This table contains only
+      // key/value settings, so replacing the matching key is safe.
       await connection.executeAsync(
-        'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+        'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
         [TRACKING_PREFERENCES_KEY, JSON.stringify(value)],
       );
     },
