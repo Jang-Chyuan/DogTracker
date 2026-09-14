@@ -127,7 +127,7 @@ export function createDemoDatabase(connection) {
         })),
         {
           query:
-            "INSERT INTO demo_metadata (key, value) VALUES ('seed_v1', 'done') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            "INSERT OR REPLACE INTO demo_metadata (key, value) VALUES ('seed_v1', 'done')",
         },
       ]);
     },
