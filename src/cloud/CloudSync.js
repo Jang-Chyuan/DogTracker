@@ -22,7 +22,8 @@ async function listMasters(client, owner, signal, check) {
   }
 }
 
-// One foreground scheduler for the whole App, independent of navigation.
+// One scheduler for the whole App, independent of navigation. Its execution
+// gate is enabled by foreground UI or an active Android background service.
 // Manual and automatic downloads share the same exclusive network/write slot.
 export function createCloudSync({ client, database, onChange = () => {}, now = Date.now }) {
   let owner = null;
