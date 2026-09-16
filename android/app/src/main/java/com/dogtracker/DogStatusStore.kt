@@ -45,6 +45,10 @@ class DogStatusStore private constructor(context: Context) {
       "$name ${if (name in textFields) "TEXT" else if (name in realFields) "REAL" else "INTEGER"}${if (name.endsWith("_valid")) " NOT NULL DEFAULT 0" else ""}"
     }
     db.execSQL("CREATE TABLE IF NOT EXISTS dog_status (id INTEGER PRIMARY KEY AUTOINCREMENT, received_at INTEGER NOT NULL, $definitions, raw_payload TEXT)")
+    // Keep downloaded cloud history separate from BLE writes and retention.
+    db.execSQL("CREATE TABLE IF NOT EXISTS supabase_dog_status (id INTEGER PRIMARY KEY AUTOINCREMENT, received_at INTEGER NOT NULL, $definitions, raw_payload TEXT)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS idx_supabase_dog_status_received_at_id ON supabase_dog_status(received_at, id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS idx_supabase_dog_status_slave_received ON supabase_dog_status(slave_id, received_at DESC)")
     val columns = mutableSetOf<String>()
     db.rawQuery("PRAGMA table_info(dog_status)", null).use { cursor ->
       while (cursor.moveToNext()) columns.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))

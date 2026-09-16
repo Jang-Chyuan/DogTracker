@@ -25,6 +25,12 @@ function isForeground(state) {
 // BLE state, or each other's physical tables.
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
+  const [cloudDatabase] = useState(() => Object.fromEntries(
+    ['initialize', 'savePage', 'listHistory', 'count'].map(method => [method,
+      (...args) => controlsRef.current?.cloudCommand(method, args) ??
+        Promise.reject(new Error('資料庫尚未就緒')),
+    ]),
+  ));
   // Stable diagnostics adapter; it borrows this owner's real DB and cannot
   // open/close another Nitro connection or access Demo/settings tables.
   const [hardwareDatabase] = useState(() => ({
@@ -270,7 +276,21 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         resumeFeed();
       }
 
+      let cloudInitialization;
       controlsRef.current = {
+        cloudCommand(method, args) {
+          if (!databases.cloud) return Promise.reject(new Error('雲端資料庫不可用'));
+          if (!cloudInitialization) {
+            cloudInitialization = initialization.real.then(() => databases.cloud.initialize());
+            cloudInitialization.catch(() => { cloudInitialization = null; });
+          }
+          const task = cloudInitialization.then(() => {
+            if (disposed) throw new Error('資料庫已關閉');
+            return method === 'initialize' ? undefined : databases.cloud[method](...args);
+          });
+          commands.add(task);
+          return task.finally(() => commands.delete(task));
+        },
         initializeReal: () => initialization.real,
         listRealHistory(limit) {
           const task = initialization.real.then(() => databases.real.listHistory(limit));
@@ -370,6 +390,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   }, [createDatabases]);
 
   return {
+    cloudDatabase,
     hardwareDatabase,
     mode,
     caughtUp: trackingSources[mode].caughtUp,

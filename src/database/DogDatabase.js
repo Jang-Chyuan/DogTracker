@@ -47,8 +47,11 @@ export function createDogDatabase(connection) {
       // Other platforms retain the Nitro fallback and upstream retention.
       await db.executeAsync('PRAGMA busy_timeout=5000');
       if (native?.initializeDatabase) await native.initializeDatabase();
-      await db.executeAsync(`
-        CREATE TABLE IF NOT EXISTS dog_status (
+      // Cloud downloads use a separate table with the same local row format.
+      // Table names are fixed here, never supplied by downloaded data.
+      for (const table of ['dog_status', 'supabase_dog_status']) {
+        await db.executeAsync(`
+        CREATE TABLE IF NOT EXISTS ${table} (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           received_at INTEGER NOT NULL,
           master_id INTEGER,
@@ -86,6 +89,16 @@ export function createDogDatabase(connection) {
 
           raw_payload TEXT
         )
+        `);
+      }
+
+      await db.executeAsync(`
+        CREATE INDEX IF NOT EXISTS idx_supabase_dog_status_received_at_id
+        ON supabase_dog_status(received_at, id)
+      `);
+      await db.executeAsync(`
+        CREATE INDEX IF NOT EXISTS idx_supabase_dog_status_slave_received
+        ON supabase_dog_status(slave_id, received_at DESC)
       `);
 
       await db.executeAsync(`

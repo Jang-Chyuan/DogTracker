@@ -1,6 +1,42 @@
 import { mockDatabase } from 'react-native-nitro-sqlite';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { dogStatusRow } from '../__fixtures__/TrackingPointFixtures';
+import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+
+test('cloud history survives initialization and clearing BLE history', async () => {
+  const connection = createMemoryConnection();
+  const database = createDogDatabase(connection);
+  try {
+    await database.initialize();
+    const columns = table => connection.sqlite
+      .prepare(`PRAGMA table_info(${table})`).all();
+    expect(columns('supabase_dog_status')).toEqual(columns('dog_status'));
+    expect(columns('supabase_dog_status')).not.toHaveLength(0);
+
+    await connection.executeAsync(
+      'INSERT INTO dog_status (received_at, slave_id, raw_payload) VALUES (?, ?, ?)',
+      [1000, 1, '{"sid":1}'],
+    );
+    await connection.executeAsync(
+      'INSERT INTO supabase_dog_status (received_at, slave_id, raw_payload) VALUES (?, ?, ?)',
+      [2000, 1, '{"sid":1,"source":"cloud"}'],
+    );
+    await database.initialize();
+    expect(await database.listHistory()).toHaveLength(1);
+    await database.deleteAll();
+    expect(await database.listHistory()).toEqual([]);
+    expect(connection.sqlite.prepare('SELECT * FROM supabase_dog_status').all())
+      .toEqual([expect.objectContaining({
+        id: 1,
+        received_at: 2000,
+        slave_id: 1,
+        raw_payload: '{"sid":1,"source":"cloud"}',
+        activity_valid: 0,
+      })]);
+  } finally {
+    connection.close();
+  }
+});
 
 describe('DogDatabase tracking reads', () => {
   beforeEach(() => {

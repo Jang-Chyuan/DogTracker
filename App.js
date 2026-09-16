@@ -22,6 +22,7 @@ import { ui } from './src/components/ScreenUI';
 import DemoScreen from './src/demo/DemoScreen';
 import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import CloudScreen from './src/cloud/CloudScreen';
 import BottomNavigation, {
   NAV_HEIGHT,
 } from './src/components/BottomNavigation';
@@ -62,6 +63,9 @@ function TrackerApp() {
 
   let content;
   switch (route.name) {
+    case 'cloud':
+      content = <CloudScreen database={tracking.cloudDatabase} />;
+      break;
     case 'demo':
       content = (
         <DemoScreen
@@ -77,6 +81,7 @@ function TrackerApp() {
           tracking={tracking}
           onHardware={() => navigate('hardware', 'settings')}
           onDemo={() => navigate('demo', 'settings')}
+          onCloud={() => navigate('cloud', 'settings')}
         />
       );
       break;

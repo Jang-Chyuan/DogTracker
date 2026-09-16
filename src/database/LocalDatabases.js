@@ -2,6 +2,7 @@ import { openTrackingDatabase } from './TrackingDatabaseConnection';
 import { createDemoDatabase } from '../demo/DemoDatabase';
 import { createDogDatabase } from './DogDatabase';
 import { createSettingsDatabase } from './SettingsDatabase';
+import { createCloudDatabase } from '../cloud/CloudDatabase';
 
 // Both tables live in dogtracker.sqlite. Only this owner closes the connection;
 // the Demo adapter cannot write to or clear the hardware-owned dog_status table.
@@ -24,6 +25,7 @@ export function createLocalDatabases() {
     real: prepare(createDogDatabase(connection)),
     demo: prepare(createDemoDatabase(connection)),
     settings: prepare(createSettingsDatabase(connection)),
+    cloud: prepare(createCloudDatabase(connection)),
     close() {
       connection.close();
     },
