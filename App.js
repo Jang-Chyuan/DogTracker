@@ -23,6 +23,7 @@ import DemoScreen from './src/demo/DemoScreen';
 import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
+import { useCloudSync } from './src/cloud/useCloudSync';
 import BottomNavigation, {
   NAV_HEIGHT,
 } from './src/components/BottomNavigation';
@@ -41,6 +42,7 @@ export default function App() {
 
 function TrackerApp() {
   const tracking = useTrackingSession();
+  const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real);
   const insets = useSafeAreaInsets();
   const [route, setRoute] = useState({ name: 'map', parent: null });
   const navigate = (name, parent = null) => setRoute({ name, parent });
@@ -64,7 +66,7 @@ function TrackerApp() {
   let content;
   switch (route.name) {
     case 'cloud':
-      content = <CloudScreen database={tracking.cloudDatabase} />;
+      content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync} />;
       break;
     case 'demo':
       content = (

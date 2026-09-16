@@ -1,4 +1,5 @@
 /* eslint-env jest */
+jest.mock('react-native-keychain');
 jest.mock('./specs/NativeTrackingPlatform', () => ({
   __esModule: true,
   default: {

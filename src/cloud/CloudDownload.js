@@ -1,7 +1,9 @@
 import { mapCloudTelemetry } from './CloudTelemetry';
 
 export async function downloadCloudHistory({ client, database, owner, startAt, endBefore,
-  masterId = null, signal, isCurrent = () => true, onProgress = () => {} }) {
+  masterId = null, signal, isCurrent = () => true, onProgress = () => {},
+  checkpoint = false }) {
+  if (checkpoint && !Number.isInteger(masterId)) throw new Error('自動同步需要 Master ID');
   const check = () => {
     if (signal?.aborted || !isCurrent()) throw new Error('下載已取消');
   };
@@ -24,14 +26,24 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
     if (error) throw new Error(`下載失敗${error.code ? ` (${error.code})` : ''}，請確認連線、登入及讀取權限`);
     if (!Array.isArray(data)) throw new Error('雲端回傳格式不正確');
     // Query to empty, not to page-size: the server may impose a smaller limit.
-    if (!data.length) return processed;
+    if (!data.length) {
+      if (checkpoint) {
+        await database.savePage(owner, [], { masterId, throughAt: endBefore, eventId: null });
+        check();
+      }
+      return processed;
+    }
     const records = data.map(mapCloudTelemetry);
     const last = records[records.length - 1];
     if (cursor?.time === last.remote_received_at && cursor?.id === last.event_id) {
       throw new Error('雲端分頁未前進，已停止下載');
     }
     check();
-    await database.savePage(owner, records);
+    if (checkpoint) {
+      await database.savePage(owner, records, {
+        masterId, throughAt: last.remote_received_at, eventId: last.event_id,
+      });
+    } else await database.savePage(owner, records);
     check();
     cursor = { time: last.remote_received_at, id: last.event_id };
     processed += records.length;

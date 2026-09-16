@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AppState, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
 import { getCloudClient } from './CloudClient';
 import { downloadCloudHistory } from './CloudDownload';
@@ -22,7 +22,7 @@ function Field({ label, ...props }) {
   </View>;
 }
 
-export default function CloudScreen({ database, clientFactory = getCloudClient }) {
+export default function CloudScreen({ database, sync, clientFactory = getCloudClient }) {
   const [connection] = useState(() => {
     try { return { client: clientFactory() }; }
     catch (configurationError) { return { error: configurationError.message }; }
@@ -72,33 +72,27 @@ export default function CloudScreen({ database, clientFactory = getCloudClient }
       if (authError) setError('無法讀取登入狀態，請重新登入');
       else receive(data.session);
     }).catch(() => { if (mounted.current) setError('無法讀取登入狀態'); });
-    const updateRefresh = state => {
-      if (state === 'active') client.auth.startAutoRefresh();
-      else client.auth.stopAutoRefresh();
-    };
-    updateRefresh(AppState.currentState);
-    const appSubscription = AppState.addEventListener('change', updateRefresh);
     return () => {
       mounted.current = false;
       generation.current += 1;
       controller.current?.abort();
       subscription.unsubscribe();
-      appSubscription.remove();
-      client.auth.stopAutoRefresh();
     };
   }, [client]);
 
   useEffect(() => {
     if (!session?.user.id) return;
+    let cancelled = false;
     const version = generation.current;
     const userId = session.user.id;
     database.initialize().then(async () => {
       const [history, total] = await Promise.all([
-        database.listHistory(userId, 0), database.count(userId),
+        database.listHistory(userId, offset), database.count(userId),
       ]);
-      if (current(version)) { setRows(history); setCount(total); setOffset(0); }
-    }).catch(() => { if (current(version)) setError('讀取本機雲端資料失敗，請按重新讀取'); });
-  }, [database, session?.user.id]);
+      if (!cancelled && current(version)) { setRows(history); setCount(total); }
+    }).catch(() => { if (!cancelled && current(version)) setError('讀取本機雲端資料失敗，請按重新讀取'); });
+    return () => { cancelled = true; };
+  }, [database, session?.user.id, sync?.revision, offset]);
 
   async function loadRows(nextOffset, version = generation.current) {
     const userId = owner.current;
@@ -141,12 +135,13 @@ export default function CloudScreen({ database, clientFactory = getCloudClient }
     setDownloading(true); setMessage('準備下載…');
     try {
       await database.initialize();
-      const processed = await downloadCloudHistory({
+      const run = leaseCurrent => downloadCloudHistory({
         client, database, owner: userId, ...range,
         masterId: masterText ? Number(masterText) : null, signal: abort.signal,
-        isCurrent: () => current(version) && owner.current === userId,
+        isCurrent: () => current(version) && owner.current === userId && leaseCurrent(),
         onProgress: value => { if (current(version)) setMessage(`已處理 ${value} 筆，下載中…`); },
       });
+      const processed = sync ? await sync.runManual(run, abort) : await run(() => true);
       if (current(version)) setMessage(processed
         ? `下載完成：處理 ${processed} 筆，重複紀錄不會新增。`
         : '此範圍沒有可讀取的雲端資料，請確認日期、Master 及授權。');
@@ -165,7 +160,7 @@ export default function CloudScreen({ database, clientFactory = getCloudClient }
     {error ? <Text accessibilityRole="alert" style={ui.error}>{error}</Text> : null}
     {!session ? <View style={ui.card}>
       <Text style={ui.heading}>登入 Supabase 帳號</Text>
-      <Text style={ui.hint}>使用已獲 Master 授權的使用者帳號。重啟 App 後需重新登入。</Text>
+      <Text style={ui.hint}>登入狀態會安全保存在手機；下次開啟自動恢復登入並補下載。</Text>
       <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" editable={!busy} />
       <Field label="密碼" value={password} onChangeText={setPassword} secureTextEntry editable={!busy} />
       <ActionButton title={busy ? '登入中…' : '登入'} onPress={login}
@@ -174,6 +169,13 @@ export default function CloudScreen({ database, clientFactory = getCloudClient }
       <View style={ui.card}>
         <Text style={ui.text}>{session.user.email}</Text>
         <Text style={ui.hint}>下載範圍由此帳號的 Master 授權決定，包含該 Master 的所有 Slave。</Text>
+        <Text style={ui.hint}>前景每 30 秒自動同步；首次取最近 24 小時。切到地圖仍會同步，背景時暫停。</Text>
+        {sync ? <Text accessibilityLiveRegion="polite" style={ui.hint}>
+          {sync.mode === 'auto' ? '自動同步中…' : sync.lastSuccess
+            ? `上次同步：${new Date(sync.lastSuccess).toLocaleTimeString('zh-TW', { hour12: false })}`
+            : '等待自動同步'}
+        </Text> : null}
+        {sync?.error ? <Text style={ui.error}>{sync.error}</Text> : null}
         <ActionButton title="登出" secondary disabled={busy} onPress={() => perform(async () => {
           const { error: signOutError } = await client.auth.signOut({ scope: 'local' });
           if (signOutError) throw new Error('登出失敗，請確認連線後重試');
@@ -192,6 +194,7 @@ export default function CloudScreen({ database, clientFactory = getCloudClient }
       </View>
       <View style={ui.card}>
         <Text style={ui.heading}>本機雲端資料</Text>
+        <Text style={ui.hint}>所有帳號合計保留最新 15,000 筆；超出範圍的較早資料會自動清除。</Text>
         <Text style={ui.hint}>此帳號共 {count} 筆；每頁 50 筆。時間依手機時區顯示。</Text>
         <ActionButton title="重新讀取本機資料" secondary disabled={busy} onPress={() => perform(() => loadRows(0))} />
         {rows.length ? <ScrollView horizontal>

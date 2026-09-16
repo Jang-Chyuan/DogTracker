@@ -26,7 +26,7 @@ function isForeground(state) {
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
   const [cloudDatabase] = useState(() => Object.fromEntries(
-    ['initialize', 'savePage', 'listHistory', 'count'].map(method => [method,
+    ['initialize', 'savePage', 'listHistory', 'count', 'loadSyncState'].map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
         Promise.reject(new Error('資料庫尚未就緒')),
     ]),
