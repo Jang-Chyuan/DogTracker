@@ -56,7 +56,9 @@ function GoogleTrackingMapRenderer({
   bottomInset,
   onStatus,
   onReadyChange,
+  onSnapshotReady,
   foreground,
+  appForeground = foreground,
   dataReady = true,
   phoneEnabled,
   onMasterPress,
@@ -84,14 +86,31 @@ function GoogleTrackingMapRenderer({
   // onMapReady can precede native layout under Fabric. onMapLoaded is the first
   // callback after which bounds-based camera commands are safe on Android.
   const usable = ready && loaded;
+  useEffect(() => {
+    onSnapshotReady?.(usable ? () => mapRef.current.takeSnapshot({ format: 'png', result: 'file' }) : null);
+    return () => onSnapshotReady?.(null);
+  }, [usable, instance, onSnapshotReady]);
   const [mountedMap, setMountedMap] = useState(false);
   const [needsFirstPositionFit, setNeedsFirstPositionFit] = useState(false);
   const interacted = useRef(false);
+  const savedView = useRef(null);
+  const cameraRead = useRef(0);
+  const wasForeground = useRef(appForeground);
+  useEffect(() => {
+    const resumed = appForeground && !wasForeground.current;
+    wasForeground.current = appForeground;
+    if (!resumed || !configured || !mountedMap) return;
+    // Recreate the native surface: a previously loaded map may lose its tiles
+    // while Android suspends the activity, without another onMapLoaded event.
+    activeInstance.current = String(attempt + 1);
+    cameraRead.current += 1;
+    setAttempt(value => value + 1);
+  }, [appForeground, configured, mountedMap, attempt]);
   useEffect(() => {
     if (!dataReady || mountedMap) return;
-    setNeedsFirstPositionFit(positions.length === 0);
+    setNeedsFirstPositionFit(positions.length === 0 || !!presentation.historyTracks);
     setMountedMap(true);
-  }, [dataReady, mountedMap, positions.length]);
+  }, [dataReady, mountedMap, positions.length, presentation.historyTracks]);
   useEffect(() => {
     onReadyChange?.(configured && usable);
   }, [configured, usable, onReadyChange]);
@@ -158,6 +177,11 @@ function GoogleTrackingMapRenderer({
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_GOOGLE}
           initialRegion={initialRegion}
+          initialCamera={
+            savedView.current?.source === source
+              ? savedView.current.camera
+              : undefined
+          }
           mapType="standard"
           moveOnMarkerPress={false}
           showsUserLocation={ready && foreground && phoneEnabled}
@@ -183,13 +207,35 @@ function GoogleTrackingMapRenderer({
             interacted.current = true;
           }}
           onRegionChangeComplete={(_, details) => {
+            if (activeInstance.current !== instance || !foreground) return;
             if (details?.isGesture) interacted.current = true;
+            const request = ++cameraRead.current;
+            mapRef.current?.getCamera?.().then(camera => {
+              if (
+                activeInstance.current === instance &&
+                cameraRead.current === request &&
+                camera
+              )
+                savedView.current = { source, camera };
+            }).catch(() => {
+              // Keep the last successful camera snapshot if native teardown
+              // races this read. A map with no snapshot uses SQLite framing.
+            });
           }}
           onMapLoaded={() => {
             if (activeInstance.current === instance)
               setLoadedInstance(instance);
           }}
         >
+          {(presentation.historyTracks || []).map(track => (
+            <React.Fragment key={track.name}>
+              {track.segments.filter(segment => segment.length > 1).map((segment, index) => (
+                <Polyline key={index} coordinates={segment} strokeColor={track.color} strokeWidth={4} geodesic={false} />
+              ))}
+              {track.latest && <Marker coordinate={track.latest} pinColor={track.color} title={track.name + ' · 最後位置'}
+                description={`${new Date(track.latest.time).toLocaleString()} · ${track.latest.speed_kmh == null ? '速度未知' : track.latest.speed_kmh.toFixed(1) + ' km/h'}`} />}
+            </React.Fragment>
+          ))}
           {slaveSegments.map((segment, index) => (
             <Polyline
               key={source + '-slave-' + index}

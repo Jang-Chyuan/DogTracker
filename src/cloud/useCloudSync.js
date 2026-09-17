@@ -7,6 +7,7 @@ import { createCloudExecution } from './CloudExecution';
 
 export function useCloudSync(database, ready, clientFactory = getCloudClient) {
   const engine = useRef(null);
+  const [ownerId, setOwnerId] = useState(null);
   const [status, setStatus] = useState({ busy: false, error: '', revision: 0 });
   useEffect(() => {
     if (!ready) return undefined;
@@ -28,12 +29,12 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient) {
     engine.current = sync;
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       eventSeen = true;
-      if (!disposed) execution.setSession(session);
+      if (!disposed) { setOwnerId(session?.user?.id || null); execution.setSession(session); }
     });
     client.auth.getSession().then(({ data, error }) => {
       if (disposed || eventSeen) return;
       if (error) setStatus(current => ({ ...current, error: '恢復登入失敗，請重新登入' }));
-      else execution.setSession(data.session);
+      else { setOwnerId(data.session?.user?.id || null); execution.setSession(data.session); }
     }).catch(() => { if (!disposed) setStatus(current => ({ ...current, error: '無法讀取安全儲存的登入狀態' })); });
     const change = state => {
       execution.setForeground(state === 'active');
@@ -51,6 +52,6 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient) {
       sync.dispose()?.catch(() => {});
     };
   }, [database, ready, clientFactory]);
-  return { ...status, runManual: (work, abort) => engine.current
+  return { ...status, ownerId, runManual: (work, abort) => engine.current
     ? engine.current.runManual(work, abort) : Promise.reject(new Error('自動同步尚未就緒')) };
 }

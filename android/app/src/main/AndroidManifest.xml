@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -25,6 +26,10 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <meta-data android:name="com.google.android.geo.API_KEY" android:value="${googleMapsApiKey}" />
+      <provider android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.historyexports" android:exported="false" android:grantUriPermissions="true">
+        <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/history_export_paths" />
+      </provider>
       <activity
         android:name=".QrScannerActivity"
         android:exported="false"
@@ -42,6 +47,10 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+      <service
+        android:name=".location.LocationTrackerService"
+        android:exported="false"
+        android:foregroundServiceType="location" />
       <service
         android:name=".CloudBackgroundService"
         android:exported="false"

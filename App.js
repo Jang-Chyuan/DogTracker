@@ -23,6 +23,8 @@ import DemoScreen from './src/demo/DemoScreen';
 import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
+import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
+import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import BottomNavigation, {
   NAV_HEIGHT,
@@ -47,6 +49,7 @@ function TrackerApp() {
   const [route, setRoute] = useState({ name: 'map', parent: null });
   const navigate = (name, parent = null) => setRoute({ name, parent });
   const isMap = route.name === 'map';
+  const history = useMapHistory(tracking.historyDatabase, tracking.ready.real, tracking.foreground && isMap, cloudSync.ownerId);
   const phone = usePhoneLocation(tracking.foreground, undefined, isMap);
 
   useEffect(() => {
@@ -65,6 +68,9 @@ function TrackerApp() {
 
   let content;
   switch (route.name) {
+    case 'locationTracker':
+      content = <LocationTrackerScreen foreground={tracking.foreground} />;
+      break;
     case 'cloud':
       content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync} />;
       break;
@@ -80,10 +86,12 @@ function TrackerApp() {
     case 'settings':
       content = (
         <SettingsScreen
+          history={history}
           tracking={tracking}
           onHardware={() => navigate('hardware', 'settings')}
           onDemo={() => navigate('demo', 'settings')}
           onCloud={() => navigate('cloud', 'settings')}
+          onLocationTracker={() => navigate('locationTracker', 'settings')}
         />
       );
       break;
@@ -129,6 +137,7 @@ function TrackerApp() {
         ]}
       >
         <MapScreen
+          history={history}
           tracking={tracking}
           phone={phone}
           active={isMap}

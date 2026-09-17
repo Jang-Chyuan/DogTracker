@@ -25,6 +25,10 @@ function isForeground(state) {
 // BLE state, or each other's physical tables.
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
+  const [historyDatabase] = useState(() => Object.fromEntries(
+    ['load', 'save', 'read'].map(method => [method, (...args) =>
+      controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error('資料庫尚未就緒'))]),
+  ));
   const [cloudDatabase] = useState(() => Object.fromEntries(
     ['initialize', 'savePage', 'listHistory', 'count', 'loadSyncState'].map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
@@ -278,6 +282,18 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
 
       let cloudInitialization;
       controlsRef.current = {
+        historyCommand(method, args) {
+          const task = initialization.real.then(async () => {
+            if (disposed || !databases.history) throw new Error('歷史資料庫尚未就緒');
+            if (method === 'read' && args[0].source === 'cloud' && args[1]) {
+              if (!cloudInitialization) cloudInitialization = databases.cloud.initialize().catch(error => { cloudInitialization = null; throw error; });
+              await cloudInitialization;
+            }
+            return databases.history[method](...args);
+          });
+          commands.add(task);
+          return task.finally(() => commands.delete(task));
+        },
         cloudCommand(method, args) {
           if (!databases.cloud) return Promise.reject(new Error('雲端資料庫不可用'));
           if (!cloudInitialization) {
@@ -391,6 +407,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
 
   return {
     cloudDatabase,
+    historyDatabase,
     hardwareDatabase,
     mode,
     caughtUp: trackingSources[mode].caughtUp,

@@ -1,16 +1,25 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
+import HistorySettings from '../mapHistory/HistorySettings';
 
 export default function SettingsScreen({
   tracking,
   onHardware,
   onDemo,
   onCloud,
+  onLocationTracker,
+  history,
 }) {
   return (
     <View>
       <Text style={ui.title}>設定</Text>
+      {history ? <HistorySettings history={history} /> : null}
+      <View style={ui.card}>
+        <Text style={ui.heading}>手機位置記錄</Text>
+        <Text style={ui.hint}>每 10 秒記錄手機位置，查看最新 80,000 筆本機資料。</Text>
+        <ActionButton title="手機位置記錄" onPress={onLocationTracker} disabled={!tracking.ready.real} />
+      </View>
       <View style={ui.card}>
         <Text style={ui.heading}>雲端資料</Text>
         <Text style={ui.hint}>登入後下載已授權 Master 的資料，儲存到手機查看。</Text>

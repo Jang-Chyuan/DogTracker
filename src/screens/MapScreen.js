@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import HistoryExportButton from '../mapHistory/HistoryExportButton';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
@@ -14,8 +15,11 @@ export default function MapScreen({
   bottomInset,
   mapProvider,
   active = true,
+  history,
 }) {
   const insets = useSafeAreaInsets();
+  const snapshot = useRef(null);
+  const onSnapshotReady = useCallback(value => { snapshot.current = value; }, []);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [mapStatus, setMapStatus] = useState(null);
   const [noticeHeight, setNoticeHeight] = useState(0);
@@ -26,7 +30,7 @@ export default function MapScreen({
   useEffect(() => {
     setMasterSelected(false);
   }, [mode, point.masterId, tracking.preferences.value.showMasterMarker]);
-  const presentation = useMemo(
+  const livePresentation = useMemo(
     () =>
       createTrackingMapPresentation(
         point,
@@ -36,8 +40,38 @@ export default function MapScreen({
       ),
     [point, positionSamples, route, tracking.preferences.value],
   );
+  const historical = !!history?.preferences.enabled;
+  const presentation = useMemo(() => {
+    if (!historical) return history?.preferences.client === false
+      ? { ...livePresentation, slave: null, slaveSegments: [],
+        cameraPositions: livePresentation.master ? [livePresentation.master.coordinate] : [] }
+      : livePresentation;
+    const data = history.data;
+    const tracks = data ? [
+      { ...data.phone, name: '手機', color: '#2563EB' },
+      { ...data.client, name: 'Client', color: '#E45756' },
+    ] : [];
+    const points = tracks.flatMap(track => track.segments.flat());
+    const cameraPositions = [];
+    if (points.length) {
+      let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+      for (const p of points) { minLat = Math.min(minLat, p.latitude); maxLat = Math.max(maxLat, p.latitude); minLon = Math.min(minLon, p.longitude); maxLon = Math.max(maxLon, p.longitude); }
+      cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
+    }
+    return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks };
+  }, [historical, history?.data, history?.preferences.client, livePresentation]);
   const { master, slave } = presentation.positions;
   const messages = [];
+  if (historical) {
+    if (history.error) messages.push(history.error);
+    else if (!history.data) messages.push('正在讀取歷史定位…');
+    else {
+      if (history.data.message) messages.push(history.data.message);
+      messages.push(`手機 ${history.data.phone.count} 筆 · Client ${history.data.client.count} 筆（藍色／紅色）`);
+      messages.push(`${new Date(history.data.since).toLocaleString()} ～ ${new Date(history.data.until).toLocaleString()}`);
+      if (history.data.phone.limited || history.data.client.limited) messages.push('軌跡已達繪圖上限，僅顯示較新的部分，原始資料仍保留。');
+    }
+  }
   if (mapStatus) messages.push(mapStatus);
   if (phone?.error)
     messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
@@ -81,23 +115,26 @@ export default function MapScreen({
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
         provider={mapProvider}
-        source={mode}
+        source={historical ? 'history:' + history.key : mode}
         presentation={presentation}
         topInset={controlsTop}
         bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
         onStatus={setMapStatus}
+        onSnapshotReady={onSnapshotReady}
         foreground={tracking.foreground && active}
+        appForeground={tracking.foreground}
         dataReady={
           tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode])
         }
-        phoneEnabled={!!phone?.enabled}
+        phoneEnabled={!historical && history?.preferences.phone !== false && !!phone?.enabled}
         onMasterPress={openMaster}
       />
+      {historical && active && <HistoryExportButton history={history} snapshot={snapshot} top={controlsTop + 8} />}
       <View style={[styles.source, { top }]}>
         <View style={[styles.statusDot, mode === 'demo' && styles.demoDot]} />
         <Text style={styles.sourceText}>
-          {!tracking.preferences.ready
+          {historical ? `歷史 · ${history.preferences.timeMode === 'fixed' ? '指定區間' : '最近'} ${history.preferences.hours} 小時` : !tracking.preferences.ready
             ? '讀取設定中…'
             : mode === 'demo'
             ? 'DEMO · 模擬資料'
@@ -122,14 +159,14 @@ export default function MapScreen({
           </ScrollView>
         </View>
       )}
-      <TrackingSheet
+      {!historical && <TrackingSheet
         tracking={tracking}
         master={master}
         slave={slave}
         bottomInset={bottomInset}
         topInset={controlsTop}
         onHeight={setSheetHeight}
-      />
+      />}
       {masterSelected && presentation.master && (
         <MasterDetails
           tracking={tracking}
