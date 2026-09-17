@@ -10,12 +10,15 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.dogtracker.MainActivity
 import com.dogtracker.R
+import org.json.JSONObject
+import java.util.UUID
 
 /** Native acquisition and storage continue without a mounted React screen. */
 class LocationTrackerService : Service(), LocationListener {
   companion object {
     @Volatile var running = false
     @Volatile var status = "尚未開始記錄"
+    @Volatile var liveJson = "{}"
     const val CHANNEL = "dogtracker_phone_location"
     const val ID = 3105
   }
@@ -23,7 +26,42 @@ class LocationTrackerService : Service(), LocationListener {
   private val worker = HandlerThread("PhoneLocationWriter")
   private lateinit var handler: Handler
   private var store: LocationTrackerStore? = null
-  private var lastSavedNanos = 0L
+  private val pipeline = LocationPipeline()
+  private val sessionId = UUID.randomUUID().toString()
+  private var saved = 0
+  private var writeErrors = 0
+  private val tick = object : Runnable {
+    override fun run() {
+      if (stopped) return
+      val now = SystemClock.elapsedRealtimeNanos()
+      val sample = pipeline.candidate(now)
+      var writeFailed = false
+      if (sample != null) {
+        try {
+          val database = store ?: LocationTrackerStore(this@LocationTrackerService).also { store = it }
+          database.save(sample, sessionId)
+          pipeline.written(sample, now); saved++
+        } catch (_: Exception) { writeErrors++; writeFailed = true; status = "Timeline 寫入失敗，下一秒重試" }
+      }
+      val latest = pipeline.latest
+      val age = latest?.let { (now - it.elapsedNanos) / 1e9 }
+      if (!writeFailed) status = if (age != null && age > 3) "等待合格新定位；最後位置已過期" else pipeline.reason
+      liveJson = JSONObject().put("running", running).put("status", status)
+        .put("received", pipeline.received).put("accepted", pipeline.accepted).put("rejected", pipeline.rejected)
+        .put("saved", saved).put("writeErrors", writeErrors).put("ageSeconds", age ?: JSONObject.NULL)
+        .put("intervalSeconds", pipeline.intervalSeconds)
+        .put("sessionId", sessionId).apply {
+          if (latest != null) put("position", JSONObject().put("latitude", latest.latitude).put("longitude", latest.longitude)
+            .put("timestamp", latest.timestamp).put("accuracy", latest.accuracy)
+            .put("speedKmh", latest.speed?.times(3.6) ?: JSONObject.NULL)
+            .put("rawSpeedKmh", latest.rawSpeed?.times(3.6) ?: JSONObject.NULL)
+            .put("speedAccuracyMps", latest.speedAccuracy ?: JSONObject.NULL)
+            .put("motionState", if (age != null && age > 3) "unknown" else latest.motionState)
+            .put("bearing", latest.bearing ?: JSONObject.NULL))
+        }.toString()
+      handler.postDelayed(this, 1000)
+    }
+  }
   @Volatile private var stopped = false
   override fun onBind(intent: Intent?) = null
   override fun onCreate() {
@@ -41,17 +79,18 @@ class LocationTrackerService : Service(), LocationListener {
       val launch = PendingIntent.getActivity(this, ID, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.mipmap.ic_launcher)
-        .setContentTitle("DogTracker 手機位置記錄").setContentText("只記錄估計精度 ≤ 5 公尺的位置；目標每 10 秒一筆")
+        .setContentTitle("DogTracker GPS Timeline").setContentText("約每秒 GPS 定位；依速度每 1～5 秒保存合格位置（≤ 30 m）")
         .setContentIntent(launch).setOngoing(true).addAction(0, "停止記錄", stop).build())
       val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-      val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        .filter { (precise || it != LocationManager.GPS_PROVIDER) && manager.isProviderEnabled(it) }
+      check(precise) { "請允許精確位置" }
+      val providers = listOf(LocationManager.GPS_PROVIDER).filter { manager.isProviderEnabled(it) }
       check(providers.isNotEmpty()) { "請開啟手機定位服務" }
-      for (provider in providers) manager.requestLocationUpdates(provider, 10000L, 0f, this, worker.looper)
+      for (provider in providers) manager.requestLocationUpdates(provider, 1000L, 0f, this, worker.looper)
       running = true
-      status = "等待估計精度 ≤ 5 公尺的新定位"
+      status = "等待估計精度 ≤ 30 公尺的新定位"
+      handler.post(tick)
     } catch (_: Exception) {
-      status = "無法開始記錄，請確認定位權限與 GPS 已開啟"
+      status = "無法開始記錄，請允許精確位置並開啟 GPS"
       stopSelf()
     }
     return START_NOT_STICKY
@@ -59,20 +98,14 @@ class LocationTrackerService : Service(), LocationListener {
   override fun onLocationChanged(location: Location) {
     if (stopped) return
     val now = SystemClock.elapsedRealtimeNanos()
-    val time = location.elapsedRealtimeNanos
-    if (time <= 0 || time > now || now - time > 30_000_000_000L) return
-    if (!acceptsLocationAccuracy(location.hasAccuracy(), location.accuracy)) {
-      status = "等待高精度定位（需 ≤ 5 公尺），本次未寫入"
-      return
-    }
-    if (lastSavedNanos > 0 && time - lastSavedNanos < 10_000_000_000L) return
-    if (!location.latitude.isFinite() || !location.longitude.isFinite() || location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0) return
-    try {
-      val database = store ?: LocationTrackerStore(this).also { store = it }
-      database.save(location)
-      lastSavedNanos = time
-      status = "記錄中"
-    } catch (_: Exception) { status = "位置寫入失敗，下一次定位會重試" }
+    pipeline.accept(LocationSample(location.latitude, location.longitude,
+      if (location.hasAccuracy()) location.accuracy else Float.NaN, location.elapsedRealtimeNanos, location.time,
+      if (location.hasSpeed() && location.speed.isFinite() && location.speed >= 0) location.speed else null,
+      if (location.hasBearing() && location.bearing.isFinite()) location.bearing else null,
+      if (location.hasAltitude() && location.altitude.isFinite()) location.altitude else null,
+      speedAccuracy = if (Build.VERSION.SDK_INT >= 26 && location.hasSpeedAccuracy() &&
+        location.speedAccuracyMetersPerSecond.isFinite() && location.speedAccuracyMetersPerSecond >= 0)
+        location.speedAccuracyMetersPerSecond else null), now)
   }
   override fun onProviderDisabled(provider: String) { status = "定位來源已關閉，等待恢復" }
   override fun onProviderEnabled(provider: String) { status = "等待新定位" }
@@ -80,6 +113,8 @@ class LocationTrackerService : Service(), LocationListener {
   override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
   override fun onDestroy() {
     stopped = true
+    handler.removeCallbacks(tick)
+    liveJson = "{}"
     manager.removeUpdates(this)
     worker.quitSafely()
     if (running) status = "已停止記錄"

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryExportButton from '../mapHistory/HistoryExportButton';
+import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
@@ -41,6 +42,7 @@ export default function MapScreen({
     [point, positionSamples, route, tracking.preferences.value],
   );
   const historical = !!history?.preferences.enabled;
+  const livePhone = useLiveLocation(active && tracking.foreground && !historical);
   const presentation = useMemo(() => {
     if (!historical) return history?.preferences.client === false
       ? { ...livePresentation, slave: null, slaveSegments: [],
@@ -121,6 +123,7 @@ export default function MapScreen({
         bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
         onStatus={setMapStatus}
         onSnapshotReady={onSnapshotReady}
+        livePhone={history?.preferences.phone !== false && !historical ? livePhone : null}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
         dataReady={

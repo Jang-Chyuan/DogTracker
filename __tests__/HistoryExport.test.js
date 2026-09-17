@@ -38,3 +38,27 @@ test('raw export queries full selected interval, not the capped or simplified ma
     expect(serializeHistory('gpx', raw).match(/<trkpt /g)).toHaveLength(4100);
   } finally { connection.close(); }
 });
+
+test('phone Timeline reads migrated provenance and splits separate recording sessions', async () => {
+  const connection = createMemoryConnection();
+  try {
+    connection.sqlite.exec(`CREATE TABLE myLocationTracker (
+      id INTEGER PRIMARY KEY, recorded_at INTEGER, location_at INTEGER,
+      latitude REAL, longitude REAL, speed_kmh REAL, accuracy_meters REAL,
+      altitude_meters REAL, heading_degrees REAL, raw_latitude REAL, raw_longitude REAL, session_id TEXT);
+      INSERT INTO myLocationTracker VALUES
+        (1,1000,900,25,121,0,20,NULL,NULL,25.00001,121,'first'),
+        (2,6000,5900,25.001,121,0,20,NULL,NULL,25.00101,121,'second'),
+        (3,11000,10900,25.002,121,0,20,NULL,NULL,25.00201,121,'second');`);
+    const history = createHistoryDatabase(connection);
+    const settings = { ...HISTORY_DEFAULTS, client: false };
+    const bounds = { since: 1000, until: 11000 };
+    const raw = await history.read(settings, null, 0, () => true, true, bounds);
+    expect(raw.phone).toHaveLength(2);
+    expect(raw.phone[0].raw_latitude).toBe(25.00001);
+    expect(serializeHistory('csv', raw)).toContain('"25.00001","121","first"');
+    expect(serializeHistory('gpx', raw).match(/<trkseg>/g)).toHaveLength(2);
+    const map = await history.read(settings, null, 0, () => true, false, bounds);
+    expect(map.phone.segments).toHaveLength(2);
+  } finally { connection.close(); }
+});

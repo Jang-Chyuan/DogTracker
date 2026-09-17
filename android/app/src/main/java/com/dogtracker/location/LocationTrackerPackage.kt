@@ -12,6 +12,10 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
   private val executor = Executors.newSingleThreadExecutor()
   private val store by lazy { LocationTrackerStore(context) }
   override fun getName() = "LocationTracker"
+  @ReactMethod fun live(promise: Promise) {
+    promise.resolve(org.json.JSONObject(LocationTrackerService.liveJson)
+      .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status).toString())
+  }
   @ReactMethod fun start(promise: Promise) {
     try {
       check(context.lifecycleState == LifecycleState.RESUMED) { "請在 App 前景開始記錄" }

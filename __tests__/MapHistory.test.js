@@ -1,8 +1,25 @@
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createHistoryDatabase, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
+import { createHistoryDatabase, expireHistory, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
 import { historyWindow, parseHistoryStart } from '../src/mapHistory/HistoryTime';
+
+test('recent history expires cached lines and markers without new data; fixed ranges remain', () => {
+  const track = historyGeometry([1000, 6000, 11000].map(time => ({ time, latitude: 25, longitude: 121 })));
+  const data = { since: 0, until: 12000, phone: track, client: track };
+  const preferences = { ...HISTORY_DEFAULTS, hours: 1 };
+  const partial = expireHistory(data, preferences, 3606000);
+  expect(partial.phone.count).toBe(2);
+  expect(partial.phone.segments.flat().every(point => point.time >= 6000)).toBe(true);
+  const empty = expireHistory(data, preferences, 3611001);
+  for (const source of ['phone', 'client']) {
+    expect(empty[source].count).toBe(0);
+    expect(empty[source].segments).toEqual([]);
+    expect(empty[source].latest).toBeNull();
+  }
+  expect(expireHistory(data, { ...preferences, timeMode: 'fixed' }, 99999999)).toBe(data);
+  expect(data.phone.count).toBe(3);
+});
 
 test('fixed date and time remain stable, support crossing midnight and reject invalid dates', () => {
   const p = { ...HISTORY_DEFAULTS, timeMode: 'fixed', startDate: '2026-09-16', startTime: '23:30', hours: 2 };

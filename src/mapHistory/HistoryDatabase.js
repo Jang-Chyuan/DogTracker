@@ -30,9 +30,13 @@ export function createHistoryDatabase(db) {
       const { since, until } = bounds || historyWindow(p, now);
       async function scan(table, time, extra, params, lat, lon) {
         let cursor = since, id = 0, all = [];
+        const columns = table === 'myLocationTracker'
+          ? new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(column => column.name)) : new Set();
+        const provenance = ['session_id', ...(raw ? ['raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state'] : [])]
+          .filter(column => columns.has(column)).map(column => ', ' + column).join('');
         while (alive()) {
           const extras = raw && table === 'myLocationTracker' ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
-          const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${lat} AS latitude, ${lon} AS longitude, speed_kmh ${extras} FROM ${table}
+          const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${lat} AS latitude, ${lon} AS longitude, speed_kmh ${extras} ${provenance} FROM ${table}
             WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
             ORDER BY ${time},id LIMIT 1000`, [since, until, ...params, cursor, cursor, id]));
           if (!page.length) break;
@@ -62,7 +66,7 @@ export function historyGeometry(points) {
   let segments = [], segment = [], last = null;
   for (const point of points) {
     const valid = Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180;
-    if (!valid || (last && (point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180))) {
+    if (!valid || (last && (point.session_id !== last.session_id || point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180))) {
       if (segment.length) segments.push(segment);
       segment = [];
     }
@@ -79,5 +83,20 @@ export function historyGeometry(points) {
     const part = segments[i].slice(-budget); kept.unshift(part); budget -= part.length;
   }
   const validPoints = points.filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180);
-  return { segments: kept, latest: validPoints[validPoints.length - 1] || null, count: validPoints.length, limited };
+  return { segments: kept, latest: validPoints[validPoints.length - 1] || null, count: validPoints.length, limited,
+    times: validPoints.map(point => point.time) };
+}
+
+// Expire cached drawings even when the database has no new rows or a read fails.
+export function expireHistory(data, preferences, now) {
+  if (!data || preferences.timeMode === 'fixed') return data;
+  const since = Math.max(data.since, historyWindow(preferences, now).since);
+  const clip = track => {
+    const times = track.times.filter(time => time >= since);
+    return { ...track, times, count: times.length,
+      segments: track.segments.map(segment => segment.filter(point => point.time >= since)).filter(segment => segment.length),
+      latest: track.latest?.time >= since ? track.latest : null,
+      limited: times.length > 0 && track.limited };
+  };
+  return { ...data, since, until: Math.max(data.until, since), phone: clip(data.phone), client: clip(data.client) };
 }

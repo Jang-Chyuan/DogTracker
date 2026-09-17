@@ -4,10 +4,11 @@ const cell = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
 export function serializeHistory(format, data) {
   const tracks = [['phone', data.phone], ['client', data.client]];
   if (format === 'csv') {
-    const lines = ['source,id,recorded_at,location_at,latitude,longitude,accuracy_meters,altitude_meters,speed_kmh,heading_degrees'];
+    const lines = ['source,id,recorded_at,location_at,latitude,longitude,accuracy_meters,altitude_meters,speed_kmh,heading_degrees,raw_latitude,raw_longitude,session_id,raw_speed_kmh,speed_accuracy_mps,motion_state'];
     for (const [source, points] of tracks) for (const p of points) lines.push([
       source, p.id, iso(p.time), p.location_at == null ? '' : iso(p.location_at), p.latitude, p.longitude,
-      p.accuracy_meters, p.altitude_meters, p.speed_kmh, p.heading_degrees,
+      p.accuracy_meters, p.altitude_meters, p.speed_kmh, p.heading_degrees, p.raw_latitude, p.raw_longitude, p.session_id,
+      p.raw_speed_kmh, p.speed_accuracy_mps, p.motion_state,
     ].map(cell).join(','));
     return '\uFEFF' + lines.join('\r\n') + '\r\n';
   }
@@ -19,7 +20,7 @@ export function serializeHistory(format, data) {
     let last = null, open = false;
     for (const p of points) {
       const valid = Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180;
-      if (!valid || (last && (p.time - last.time > 120000 || Math.abs(p.longitude - last.longitude) > 180))) {
+      if (!valid || (last && (p.session_id !== last.session_id || p.time - last.time > 120000 || Math.abs(p.longitude - last.longitude) > 180))) {
         if (open) output.push('</trkseg>');
         open = false; last = null;
       }

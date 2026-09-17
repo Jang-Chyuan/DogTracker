@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { HISTORY_DEFAULTS } from './HistoryDatabase';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { expireHistory, HISTORY_DEFAULTS } from './HistoryDatabase';
 
 export function useMapHistory(database, ready, foreground, owner) {
   const db = useRef(null);
@@ -9,9 +9,18 @@ export function useMapHistory(database, ready, foreground, owner) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [clock, setClock] = useState(Date.now);
   const key = JSON.stringify(preferences) + ':' + (owner || '');
   const currentKey = useRef(key);
   currentKey.current = key;
+  useEffect(() => {
+    if (!foreground || !preferences.enabled || preferences.timeMode === 'fixed') return undefined;
+    setClock(Date.now());
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [foreground, preferences.enabled, preferences.timeMode]);
+  const data = useMemo(() => expireHistory(result?.key === key ? result.value : null,
+    preferences, Math.max(clock, Date.now())), [result, key, preferences, clock]);
   useEffect(() => {
     if (!ready) return undefined;
     let alive = true;
@@ -35,12 +44,12 @@ export function useMapHistory(database, ready, foreground, owner) {
   }, [loaded, foreground, preferences, owner, key]);
   return {
     preferences, loaded, error, busy, key,
-    data: result?.key === key ? result.value : null,
+    data,
     async exportRows() {
-      if (!result || result.key !== key) throw new Error('請等待歷史資料載入');
+      if (!data) throw new Error('請等待歷史資料載入');
       const alive = () => currentKey.current === key && !!db.current;
       const value = await db.current.read(preferences, owner, Date.now(), alive, true,
-        { since: result.value.since, until: result.value.until });
+        { since: data.since, until: data.until });
       if (!alive()) throw new Error('帳號或篩選條件已變更，請重新匯出');
       if (value.message) throw new Error(value.message);
       return value;

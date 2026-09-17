@@ -17,7 +17,7 @@ export default function SettingsScreen({
       {history ? <HistorySettings history={history} /> : null}
       <View style={ui.card}>
         <Text style={ui.heading}>手機位置記錄</Text>
-        <Text style={ui.hint}>每 10 秒記錄手機位置，查看最新 80,000 筆本機資料。</Text>
+        <Text style={ui.hint}>GPS Timeline：約每秒定位與平滑，依速度每 1～5 秒保存，最多保留 80,000 筆。</Text>
         <ActionButton title="手機位置記錄" onPress={onLocationTracker} disabled={!tracking.ready.real} />
       </View>
       <View style={ui.card}>

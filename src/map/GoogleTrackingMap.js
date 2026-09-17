@@ -61,6 +61,7 @@ function GoogleTrackingMapRenderer({
   appForeground = foreground,
   dataReady = true,
   phoneEnabled,
+  livePhone,
   onMasterPress,
   supported,
   configured,
@@ -184,7 +185,7 @@ function GoogleTrackingMapRenderer({
           }
           mapType="standard"
           moveOnMarkerPress={false}
-          showsUserLocation={ready && foreground && phoneEnabled}
+          showsUserLocation={ready && foreground && phoneEnabled && !livePhone?.running}
           userLocationPriority="high"
           userLocationUpdateInterval={5000}
           toolbarEnabled={false}
@@ -227,6 +228,10 @@ function GoogleTrackingMapRenderer({
               setLoadedInstance(instance);
           }}
         >
+          {livePhone?.running && livePhone.position && <Marker identifier="phone-timeline-live"
+            coordinate={livePhone.position} pinColor={livePhone.ageSeconds > 3 ? '#64748b' : '#2563EB'}
+            title={livePhone.ageSeconds > 3 ? '手機 · 最後合格位置（已過期）' : '手機 · 即時平滑位置'}
+            description={`估計精度 ${livePhone.position.accuracy.toFixed(1)} m · ${new Date(livePhone.position.timestamp).toLocaleTimeString()}`} />}
           {(presentation.historyTracks || []).map(track => (
             <React.Fragment key={track.name}>
               {track.segments.filter(segment => segment.length > 1).map((segment, index) => (
