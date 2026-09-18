@@ -1,4 +1,5 @@
 import { simplifyRoute } from '../tracking/SimplifyRoute';
+import { coordinate } from '../tracking/RouteSamples';
 import { historyWindow, parseHistoryStart } from './HistoryTime';
 
 export const HISTORY_DEFAULTS = { enabled: false, phone: true, client: true, source: 'ble', hours: 3, master: 7, slave: 4, timeMode: 'recent', startDate: '', startTime: '00:00' };
@@ -74,7 +75,8 @@ export function createHistoryDatabase(db) {
 export function historyGeometry(points) {
   let segments = [], segment = [], last = null;
   for (const point of points) {
-    const valid = Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180;
+    // Same rule as the live map, including 0,0 meaning no GPS fix.
+    const valid = !!coordinate(point.latitude, point.longitude);
     if (!valid || (last && (point.session_id !== last.session_id || point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180))) {
       if (segment.length) segments.push(segment);
       segment = [];
@@ -91,7 +93,7 @@ export function historyGeometry(points) {
   for (let i = segments.length - 1; i >= 0 && budget > 0; i -= 1) {
     const part = segments[i].slice(-budget); kept.unshift(part); budget -= part.length;
   }
-  const validPoints = points.filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180);
+  const validPoints = points.filter(p => coordinate(p.latitude, p.longitude));
   return { segments: kept, latest: validPoints[validPoints.length - 1] || null, count: validPoints.length, limited,
     times: validPoints.map(point => point.time) };
 }

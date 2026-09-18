@@ -27,8 +27,11 @@ test.each([
 ])('rejects invalid coordinate %p, %p', (lat, lon) =>
   expect(coordinate(lat, lon)).toBeNull(),
 );
-test('accepts zero and exact geographic bounds', () => {
-  expect(coordinate(0, 0)).toEqual({ latitude: 0, longitude: 0 });
+test('rejects the no-fix position and accepts exact geographic bounds', () => {
+  // 0,0 is what the hardware reports without a GPS fix, not Null Island.
+  expect(coordinate(0, 0)).toBeNull();
+  expect(coordinate(0, 121.5)).not.toBeNull();
+  expect(coordinate(25.03, 0)).not.toBeNull();
   expect(coordinate(-90, 180)).not.toBeNull();
 });
 test('route samples retain geometry, not payloads; status queues at most three rows', () => {

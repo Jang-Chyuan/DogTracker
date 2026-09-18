@@ -1,3 +1,4 @@
+import { coordinate } from '../tracking/RouteSamples';
 const xml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 const iso = time => new Date(time).toISOString();
 const cell = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
@@ -19,7 +20,7 @@ export function serializeHistory(format, data) {
     output.push(`<trk><name>${source}</name>`);
     let last = null, open = false;
     for (const p of points) {
-      const valid = Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180;
+      const valid = !!coordinate(p.latitude, p.longitude);
       if (!valid || (last && (p.session_id !== last.session_id || p.time - last.time > 120000 || Math.abs(p.longitude - last.longitude) > 180))) {
         if (open) output.push('</trkseg>');
         open = false; last = null;

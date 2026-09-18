@@ -3,6 +3,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase, expireHistory, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
 import { historyWindow, parseHistoryStart } from '../src/mapHistory/HistoryTime';
+import { serializeHistory } from '../src/mapHistory/HistoryExport';
 
 test('recent history expires cached lines and markers without new data; fixed ranges remain', () => {
   const track = historyGeometry([1000, 6000, 11000].map(time => ({ time, latitude: 25, longitude: 121 })));
@@ -111,3 +112,21 @@ test('route geometry breaks at missing fixes and long gaps, retains latest marke
   expect(() => validateHistory({ hours: -1 })).toThrow();
   expect(() => validateHistory({ master: 1.5 })).toThrow();
 });
+
+test('history lines and exports skip rows with no GPS fix', () => {
+  // 0,0 is what the tracker sends without a fix; drawing it stretches the line
+  // from Taoyuan to the Gulf of Guinea and puts a marker there.
+  const rows = [
+    { id: 1, time: 1000, latitude: 25.03, longitude: 121.56, speed_kmh: 1 },
+    { id: 2, time: 2000, latitude: 0, longitude: 0, speed_kmh: 0 },
+    { id: 3, time: 3000, latitude: 25.04, longitude: 121.57, speed_kmh: 2 },
+  ];
+  const geometry = historyGeometry(rows);
+  expect(geometry.count).toBe(2);
+  expect(geometry.segments.flat().every(point => point.latitude !== 0)).toBe(true);
+  expect(geometry.latest).toMatchObject({ id: 3 });
+  const gpx = serializeHistory('gpx', { phone: rows, client: [], since: 1000, until: 4000 });
+  expect(gpx).not.toContain('lat="0"');
+  expect(gpx.match(/<trkpt /g)).toHaveLength(2);
+});
+
