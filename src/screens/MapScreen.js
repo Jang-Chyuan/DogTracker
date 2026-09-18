@@ -42,7 +42,7 @@ export default function MapScreen({
     [point, positionSamples, route, tracking.preferences.value],
   );
   const historical = !!history?.preferences.enabled;
-  const livePhone = useLiveLocation(active && tracking.foreground && !historical);
+  const livePhone = useLiveLocation(active && tracking.foreground);
   const presentation = useMemo(() => {
     if (!historical) return history?.preferences.client === false
       ? { ...livePresentation, slave: null, slaveSegments: [],
@@ -123,14 +123,14 @@ export default function MapScreen({
         bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
         onStatus={setMapStatus}
         onSnapshotReady={onSnapshotReady}
-        livePhone={history?.preferences.phone !== false && !historical ? livePhone : null}
+        livePhone={livePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
         dataReady={
           tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode])
         }
-        phoneEnabled={!historical && history?.preferences.phone !== false && !!phone?.enabled}
+        phoneEnabled={!!phone?.enabled}
         onMasterPress={openMaster}
       />
       {historical && active && <HistoryExportButton history={history} snapshot={snapshot} top={controlsTop + 8} />}

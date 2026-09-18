@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DrivingPipelineTest {
+  @Test fun fastLowerPrecisionFixesProduceFreshPointsEverySecond() {
+    val pipeline = LocationPipeline()
+    for (t in 1L..10L) {
+      val sample = point(t, t * 10.0, 36.0, 49f)
+      assertTrue(pipeline.accept(sample, sample.elapsedNanos))
+      val saved = pipeline.candidate(sample.elapsedNanos)!!
+      assertEquals(sample.timestamp, saved.timestamp)
+      assertEquals(sample.speed, saved.speed)
+      pipeline.written(saved, sample.elapsedNanos)
+      assertNull(pipeline.candidate(sample.elapsedNanos))
+    }
+  }
   private fun point(t: Long, meters: Double, kmh: Double, accuracy: Float = 3f) =
     LocationSample(25 + meters / 111195, 121.0, accuracy, t * 1_000_000_000L,
       t * 1000, (kmh / 3.6).toFloat(), speedAccuracy = 0.2f)
@@ -23,7 +35,7 @@ class DrivingPipelineTest {
           saved.add(it); pipeline.written(it, sample.elapsedNanos)
         }
       }
-      val interval = if (kmh > 60) 1 else 3
+      val interval = if (kmh > 20) 1 else 3
       assertEquals(60 / interval + 1, saved.size)
       assertTrue(saved.zipWithNext().all { (a, b) -> b.timestamp - a.timestamp == interval * 1000L })
       assertEquals(0, pipeline.rejected)
@@ -57,7 +69,7 @@ class DrivingPipelineTest {
     assertEquals("unknown", pipeline.latest!!.motionState)
     assertEquals(first.speed, pipeline.latest!!.speed)
     pipeline.written(pipeline.candidate(first.elapsedNanos)!!, first.elapsedNanos)
-    val poor = point(6, 83.3, 60.0, 31f)
+    val poor = point(6, 83.3, 60.0, 50f)
     assertFalse(pipeline.accept(poor, poor.elapsedNanos))
     assertNull(pipeline.candidate(poor.elapsedNanos))
     val recovered = point(40, 650.0, 60.0)

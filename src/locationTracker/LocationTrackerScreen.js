@@ -14,8 +14,8 @@ export default function LocationTrackerScreen({ foreground }) {
     <View style={ui.card}>
       <Text style={ui.heading}>myLocationTracker</Text>
       <Text style={ui.text}>{live?.status || tracker.status}</Text>
-      <Text style={ui.hint}>約每秒取得高精度 GPS，以最近 3 個有效點平滑，超過 10 km/h 時偏重最新位置。依原始速度保存：≤ 10 km/h 每 5 秒、10～60 km/h 每 3 秒、> 60 km/h 每 1 秒。最多保留 80,000 筆，只存本機。</Text>
-      <Text style={ui.hint}>原始估計精度 ≤ 30 公尺才接受。沒有新定位時不補點，平滑不代表精度提升。</Text>
+      <Text style={ui.hint}>約每秒取得高精度 GPS，以最近 3 個有效點平滑，超過 10 km/h 時偏重最新位置。依原始速度保存：≤ 10 km/h 每 5 秒、> 10 且 ≤ 20 km/h 每 3 秒、> 20 km/h 每 1 秒。最多保留 80,000 筆，只存本機。</Text>
+      <Text style={ui.hint}>原始速度 > 20 km/h 時接受估計精度小於 50 公尺；其餘情況需 ≤ 30 公尺。沒有新定位時不補點，平滑不代表精度提升。</Text>
       <Text style={ui.hint}>確認靜止後速度歸零，座標鎖定於確認時的平滑位置；恢復移動或有效樣本中斷超過 3 秒後重新判定。原始座標仍保留。</Text>
       {live?.running && <Text style={ui.text}>本次接收 {live.received || 0} · 合格 {live.accepted || 0} · 略過 {live.rejected || 0} · 已存 {live.saved || 0} · 寫入失敗 {live.writeErrors || 0}</Text>}
       {live?.running && <Text style={ui.text}>目前保存間隔：{live.intervalSeconds || 5} 秒</Text>}

@@ -27,7 +27,7 @@ internal class LocationPipeline {
   val intervalSeconds: Int get() {
     val speed = latest?.rawSpeed?.takeIf { it.isFinite() && it >= 0 } ?: return 5
     return when {
-      speed > 60f / 3.6f -> 1
+      isFastLocation(speed) -> 1
       speed > 10f / 3.6f -> 3
       else -> 5
     }
@@ -40,7 +40,8 @@ internal class LocationPipeline {
     if (sample.elapsedNanos <= newest) return reject("略過重複或倒序定位")
     if (!sample.latitude.isFinite() || !sample.longitude.isFinite() || abs(sample.latitude) > 90 || abs(sample.longitude) > 180)
       return reject("定位座標無效")
-    if (!acceptsLocationAccuracy(true, sample.accuracy)) return reject("等待合格定位（需 ≤ 30 公尺）")
+    if (!acceptsLocationAccuracy(true, sample.accuracy, sample.rawSpeed))
+      return reject(if (isFastLocation(sample.rawSpeed)) "等待合格定位（需 < 50 公尺）" else "等待合格定位（需 ≤ 30 公尺）")
     val previous = latest
     val dt = if (previous == null) 0.0 else (sample.elapsedNanos - previous.elapsedNanos) / 1e9
     val reset = previous == null || dt > 30

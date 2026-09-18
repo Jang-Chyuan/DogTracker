@@ -19,7 +19,7 @@ export default function HistorySettings({ history }) {
     {[['enabled', '顯示歷史地圖'], ['phone', '手機定位'], ['client', 'Client（Slave）定位']].map(([key, label]) => <View key={key}>
       <Text style={ui.text}>{label}</Text><Switch accessibilityLabel={label} value={draft[key]} onValueChange={value => patch({ [key]: value })} />
     </View>)}
-    <Text style={ui.hint}>手機與 Client 開關同時適用於即時與歷史地圖，不影響位置記錄。變更後請按下方「套用地圖設定」。關閉歷史地圖可回到即時／Demo 地圖。</Text>
+    <Text style={ui.hint}>手機開關控制歷史軌跡，目前手機位置仍會顯示。Client 開關適用於即時與歷史地圖，不影響位置記錄。變更後請按下方「套用地圖設定」。關閉歷史地圖可回到即時／Demo 地圖。</Text>
     <Text style={ui.text}>Client 來源：{draft.source === 'ble' ? 'BLE 本機資料' : 'Supabase 已下載資料'}</Text>
     <ActionButton title="選用 BLE" secondary onPress={() => patch({ source: 'ble' })} />
     <ActionButton title="選用 Supabase" secondary onPress={() => patch({ source: 'cloud' })} />

@@ -185,9 +185,9 @@ function GoogleTrackingMapRenderer({
           }
           mapType="standard"
           moveOnMarkerPress={false}
-          showsUserLocation={ready && foreground && phoneEnabled && !livePhone?.running}
+          showsUserLocation={ready && foreground && phoneEnabled && !(livePhone?.running && livePhone.position)}
           userLocationPriority="high"
-          userLocationUpdateInterval={5000}
+          userLocationUpdateInterval={1000}
           toolbarEnabled={false}
           showsMyLocationButton={false}
           // Google SDK handles rotation/tilt visibility and tap-to-north.

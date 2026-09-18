@@ -29,7 +29,7 @@ class LocationPipelineTest {
     assertNull(pipe.candidate(20_000_000_000L))
   }
   @Test fun adaptiveBoundariesAccelerationAndDeceleration() {
-    for ((kmh, interval) in listOf(0f to 5, 10f to 5, 10.1f to 3, 60f to 3, 60.1f to 1)) {
+    for ((kmh, interval) in listOf(0f to 5, 10f to 5, 10.1f to 3, 20f to 3, 20.1f to 1, 60f to 1)) {
       val pipe = LocationPipeline()
       pipe.accept(sample(1, speed = kmh / 3.6f), 1_000_000_000L)
       assertEquals(interval, pipe.intervalSeconds)

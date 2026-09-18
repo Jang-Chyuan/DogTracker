@@ -79,7 +79,7 @@ class LocationTrackerService : Service(), LocationListener {
       val launch = PendingIntent.getActivity(this, ID, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.mipmap.ic_launcher)
-        .setContentTitle("DogTracker GPS Timeline").setContentText("約每秒 GPS 定位；依速度每 1～5 秒保存合格位置（≤ 30 m）")
+        .setContentTitle("DogTracker GPS Timeline").setContentText("約每秒 GPS 定位；> 20 km/h 時每秒保存，精度需 < 50 m")
         .setContentIntent(launch).setOngoing(true).addAction(0, "停止記錄", stop).build())
       val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
       check(precise) { "請允許精確位置" }
@@ -87,7 +87,7 @@ class LocationTrackerService : Service(), LocationListener {
       check(providers.isNotEmpty()) { "請開啟手機定位服務" }
       for (provider in providers) manager.requestLocationUpdates(provider, 1000L, 0f, this, worker.looper)
       running = true
-      status = "等待估計精度 ≤ 30 公尺的新定位"
+      status = "等待合格定位：≤ 30 m；> 20 km/h 時 < 50 m"
       handler.post(tick)
     } catch (_: Exception) {
       status = "無法開始記錄，請允許精確位置並開啟 GPS"
