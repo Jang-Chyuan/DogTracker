@@ -48,15 +48,18 @@ jobs:
   release-apk:
     name: Build release APK
     needs: checks
-    # Build on push/merge to main and on a manual run; a pull request just runs
-    # the checks above.
-    if: github.event_name != 'pull_request'
+    # TEMPORARY (reverted before merge): also build on pull_request, to check the
+    # commit-count version reaches the APK. The intended trigger is push/manual.
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The patch number counts the commits on main, so this job needs the
+          # whole history, not the single commit a default checkout brings.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
@@ -112,26 +115,30 @@ jobs:
         run: npm ci
 
       - name: Resolve release version
-        # CI owns the version: each main build takes the next patch of whatever
-        # main currently holds, tags it, and writes it back at the end. Reading
-        # from origin/main rather than the checked-out commit keeps two merges
-        # landing close together from resolving to the same version.
+        # MAJOR.MINOR comes from package.json and the patch is the number of
+        # commits on main, which rises on its own with every merge. Nothing has
+        # to be committed back to the repository to move the version along.
+        # To open a new MAJOR or MINOR line, edit package.json in a pull request.
         id: version
         run: |
           set -euo pipefail
-          git fetch --depth=1 origin main
-          current="$(git show origin/main:package.json | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
-          next="$(node -e '
-            const current = process.argv[1];
-            const parsed = /^(\d+)\.(\d+)\.(\d+)$/.exec(current);
+          base="$(node -e '
+            const version = require("./package.json").version;
+            const parsed = /^(\d+)\.(\d+)\./.exec(version);
             if (!parsed) {
-              console.error(`version on main is not MAJOR.MINOR.PATCH: ${current}`);
+              console.error(`package.json version is not MAJOR.MINOR.PATCH: ${version}`);
               process.exit(1);
             }
-            console.log(`${parsed[1]}.${parsed[2]}.${Number(parsed[3]) + 1}`);
-          ' "$current")"
-          echo "$current on main -> releasing $next"
-          echo "next=$next" >> "$GITHUB_OUTPUT"
+            console.log(`${parsed[1]}.${parsed[2]}`);
+          ')"
+          count="$(git rev-list --count HEAD)"
+          if [ "$count" -lt 2 ]; then
+            echo "history holds only $count commit(s); the checkout needs fetch-depth: 0" >&2
+            exit 1
+          fi
+          echo "releasing $base.$count (versionCode $count)"
+          echo "name=$base.$count" >> "$GITHUB_OUTPUT"
+          echo "code=$count" >> "$GITHUB_OUTPUT"
 
       - name: Assemble release APK
         # Without the GOOGLE_MAPS_ANDROID_API_KEY secret the build still
@@ -141,7 +148,8 @@ jobs:
         working-directory: android
         env:
           GOOGLE_MAPS_ANDROID_API_KEY: ${{ secrets.GOOGLE_MAPS_ANDROID_API_KEY }}
-          APP_VERSION_NAME: ${{ steps.version.outputs.next }}
+          APP_VERSION_NAME: ${{ steps.version.outputs.name }}
+          APP_VERSION_CODE: ${{ steps.version.outputs.code }}
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK artifact
@@ -157,9 +165,11 @@ jobs:
 
       - name: Publish release
         # A direct .apk link a phone can open, without signing in to GitHub.
+        # TEMPORARY (reverted before merge): never release from a pull request.
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.next }}
+          VERSION: ${{ steps.version.outputs.name }}
         run: |
           set -euo pipefail
           tag="v$VERSION"
@@ -182,32 +192,3 @@ jobs:
               --title "DogTracker v$VERSION" \
               --notes "$notes"
           fi
-
-      - name: Record the released version on main
-        # Only after the release exists, so a failed build never bumps anything.
-        # The commit is built on origin/main rather than on the commit that was
-        # checked out, so it never conflicts with a merge that landed meanwhile.
-        # A push made with GITHUB_TOKEN does not trigger workflows; [skip ci] is
-        # belt and braces in case this ever runs with a different token.
-        env:
-          VERSION: ${{ steps.version.outputs.next }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          for attempt in 1 2 3; do
-            git fetch --depth=1 origin main
-            git checkout -B version-bump origin/main
-            npm version "$VERSION" --no-git-tag-version --allow-same-version > /dev/null
-            if git diff --quiet -- package.json package-lock.json; then
-              echo "main already records $VERSION, nothing to push."
-              exit 0
-            fi
-            git commit -qam "chore(release): v$VERSION [skip ci]"
-            if git push origin HEAD:main; then
-              exit 0
-            fi
-            echo "main moved while building, retrying ($attempt of 3)"
-          done
-          echo "Could not record v$VERSION on main" >&2
-          exit 1
