@@ -13,15 +13,27 @@ import MasterDetails from '../map/MasterDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 
-// With no BLE pair there is nothing local to frame, so the cloud dogs are what
-// the map is for.
-function homeCameraPositions(base, dogs) {
+// The first fit frames what this handler is working with: the connected pair
+// and the path inside the chosen window. Framing every cloud dog as well zoomed
+// the map out to the whole county, where the path is a dot. With no BLE pair
+// there is nothing local to frame, so the cloud dogs are what the map is for.
+function homeCameraPositions(base, dogs, dogsVisible) {
   const drawn = [
     ...base.cameraPositions,
     ...base.masterSegments.flat(),
     ...base.slaveSegments.flat(),
   ];
-  return drawn.length ? drawn : dogs.map(dog => dog.coordinate);
+  if (drawn.length) return drawn;
+  return dogsVisible ? dogs.map(dog => dog.coordinate) : [];
+}
+
+// Roughly 150 m around a point, as a two-corner box for the camera fit.
+const FRAME_DEGREES = 0.0015;
+function framedCoordinates({ latitude, longitude }) {
+  return [
+    { latitude: latitude - FRAME_DEGREES, longitude: longitude - FRAME_DEGREES },
+    { latitude: latitude + FRAME_DEGREES, longitude: longitude + FRAME_DEGREES },
+  ];
 }
 
 export default function MapScreen({
@@ -62,28 +74,43 @@ export default function MapScreen({
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows. Demo positions stay isolated, so cloud dogs only join in real mode.
+  // The eye hides the markers, not the list: the card must still say which dogs
+  // reported and when.
   const dogs = useMemo(
-    () => (mode === 'real' && tracking.preferences.value.showSlaveMarker
+    () => (mode === 'real'
       ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows, now,
         windowMs: tracking.preferences.value.windowMinutes * 60000 })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, tracking.preferences.value.showSlaveMarker,
+    [mode, point, positionSamples, cloudDogs?.rows,
       tracking.preferences.value.windowMinutes, now],
   );
+  const focusSlaveId = tracking.preferences.value.focusSlaveId;
+  const dogsVisible = tracking.preferences.value.showSlaveMarker;
   const livePresentation = useMemo(() => {
     if (!dogs.length) return basePresentation;
+    // Following a dog means the camera reads that dog; the others stay drawn.
+    // A followed dog that is not reporting is ignored rather than forgotten, so
+    // the camera returns to it when its next row arrives. Hiding the markers
+    // does not cancel following: the card still lists the dogs, and a card that
+    // says 跟隨中 while the map ignores it would be a lie.
+    const focused = dogs.find(dog => dog.slaveId === focusSlaveId) || null;
+    const marked = focused
+      ? dogs.map(dog => (dog === focused ? { ...dog, focused: true } : dog))
+      : dogs;
     return {
       ...basePresentation,
       // dogs replaces the single slave marker; positions stays untouched so the
       // card and camera keep reading the connected pair.
       slave: null,
-      dogs,
-      // The first fit frames what this handler is working with: the connected
-      // pair and the path inside the chosen window. Including every cloud dog
-      // zoomed the map out to the whole county, where no path is visible.
-      cameraPositions: homeCameraPositions(basePresentation, dogs),
+      dogs: dogsVisible ? marked : [],
+      follow: focused && { slaveId: focused.slaveId, coordinate: focused.coordinate },
+      // A single coordinate makes a degenerate box, which Android fits at
+      // maximum zoom; frame a small square around the dog instead.
+      cameraPositions: focused
+        ? framedCoordinates(focused.coordinate)
+        : homeCameraPositions(basePresentation, dogs, dogsVisible),
     };
-  }, [basePresentation, dogs]);
+  }, [basePresentation, dogs, dogsVisible, focusSlaveId]);
   const historical = !!history?.preferences.enabled;
   const livePhone = useLiveLocation(active && tracking.foreground);
   const presentation = useMemo(() => {
@@ -220,6 +247,7 @@ export default function MapScreen({
         tracking={tracking}
         master={master}
         slave={slave}
+        dogs={dogs}
         bottomInset={bottomInset}
         topInset={controlsTop}
         onHeight={setSheetHeight}

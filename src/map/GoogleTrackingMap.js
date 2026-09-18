@@ -25,9 +25,16 @@ const EMPTY_REGION = {
 };
 function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
   // A position older than the selected window is drawn faded, so it reads as
-  // "last seen here", not as where the dog is now.
+  // "last seen here", not as where the dog is now. The followed dog gets a ring
+  // so the camera's target is visible on the map, not only in the card.
   const faded = !!position.stale;
+  const focused = !!position.focused;
   const marker = useRef(null);
+  // The marker view is not tracked for changes (that would redraw it on every
+  // frame), so fading and the follow ring have to ask for one redraw each.
+  useEffect(() => {
+    marker.current?.redraw?.();
+  }, [faded, focused]);
   return (
     <Marker
       ref={marker}
@@ -44,7 +51,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
     >
       <View
         collapsable={false}
-        style={[styles.marker, faded && styles.fadedMarker]}
+        style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
         onLayout={() => marker.current?.redraw()}
       >
         <TrackingAvatar role={role} size={40} />
@@ -151,6 +158,21 @@ function GoogleTrackingMapRenderer({
     mountedMap,
     onStatus,
   ]);
+  // Following a dog re-centres the map on each new position of that dog, at the
+  // user's own zoom. Panning in between is left alone — the next position pulls
+  // the camera back — and the card's dog row is what ends following.
+  const follow = presentation.follow || null;
+  const followed = useRef('');
+  useEffect(() => {
+    if (!usable || !follow) {
+      followed.current = '';
+      return;
+    }
+    const key = `${follow.slaveId}:${follow.coordinate.latitude},${follow.coordinate.longitude}`;
+    if (followed.current === key) return;
+    followed.current = key;
+    mapRef.current?.animateCamera({ center: follow.coordinate }, { duration: 400 });
+  }, [usable, follow]);
   const priorSource = useRef(source);
   const sourceToFit = useRef(null);
   useEffect(() => {
@@ -379,6 +401,12 @@ const styles = StyleSheet.create({
   },
   retryText: { color: colors.ink, fontWeight: '600' },
   fadedMarker: { opacity: 0.45 },
+  focusedMarker: {
+    borderRadius: 23,
+    borderWidth: 3,
+    borderColor: colors.dog,
+    backgroundColor: '#FFFFFFAA',
+  },
   marker: {
     width: 46,
     height: 46,

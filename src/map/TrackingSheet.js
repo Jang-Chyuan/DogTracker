@@ -11,7 +11,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { floatingShadow, mapColors as colors } from './MapTheme';
+import { formatTime, positionLabel } from './MapFormat';
 import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
+import DogList from './DogList';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
 import {
@@ -24,16 +26,8 @@ import {
 export const windowLabel = minutes =>
   (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小時`);
 
-export function positionLabel(position) {
-  if (!position) return '尚無有效座標';
-  const { latitude, longitude } = position.coordinate;
-  return latitude.toFixed(6) + ', ' + longitude.toFixed(6);
-}
-export function formatTime(value) {
-  return Number.isFinite(value)
-    ? new Date(value).toLocaleString('zh-TW', { hour12: false })
-    : '尚無資料';
-}
+// Re-exported for the existing callers of the sheet.
+export { formatTime, positionLabel };
 export function Position({ role, position, visibilityControl }) {
   return (
     <View style={styles.positionRow}>
@@ -74,6 +68,7 @@ export default function TrackingSheet({
   tracking,
   master,
   slave,
+  dogs = [],
   bottomInset,
   topInset = 100,
   onHeight,
@@ -181,6 +176,22 @@ export default function TrackingSheet({
   // Only a card that has not loaded yet is disabled. Dimming everything while
   // a write is in flight made every eye tap flash the whole card.
   const disabled = !preferences.ready;
+  // Demo mode never merges dogs, so it keeps the single-dog row.
+  const showDogList = tracking.mode === 'real';
+  const dogVisibility = (
+    <VisibilityButton
+      role="slave"
+      // In the list header this one eye covers every dog, not just one row.
+      subject={showDogList ? '所有狗' : undefined}
+      visible={preferences.value.showSlaveMarker}
+      disabled={disabled}
+      onPress={() =>
+        tracking.saveTrackingPreferences({
+          showSlaveMarker: !preferences.value.showSlaveMarker,
+        })
+      }
+    />
+  );
   return (
     <Animated.View
       style={[styles.sheet, { bottom: bottomInset, height: animation }]}
@@ -252,26 +263,29 @@ export default function TrackingSheet({
               : '等待硬體寫入資料；不會自動使用假資料。'}
           </Text>
         )}
-        <Position
-          role="slave"
-          position={slave}
-          visibilityControl={
-            <VisibilityButton
-              role="slave"
-              visible={preferences.value.showSlaveMarker}
-              disabled={disabled}
-              onPress={() =>
-                tracking.saveTrackingPreferences({
-                  showSlaveMarker: !preferences.value.showSlaveMarker,
-                })
-              }
-            />
-          }
-        />
+        {showDogList ? (
+          <DogList
+            dogs={dogs}
+            selectedSlaveId={preferences.value.focusSlaveId}
+            disabled={disabled}
+            onSelect={focusSlaveId =>
+              tracking.saveTrackingPreferences({ focusSlaveId })
+            }
+            control={dogVisibility}
+          />
+        ) : (
+          <Position role="slave" position={slave} visibilityControl={dogVisibility} />
+        )}
         <View style={styles.metrics}>
-          <Text style={styles.metric}>狗速度 {point.speedKmh ?? '—'} km/h</Text>
+          {/* Speed and battery come from the BLE feed of the connected pair,
+              so they describe that dog only, never a cloud one. */}
           <Text style={styles.metric}>
-            狗裝置電量 {battery(point.batteryValid, point.batteryPercentage)}
+            {showDogList && point.slaveId != null ? `狗 ${point.slaveId} 速度` : '狗速度'}{' '}
+            {point.speedKmh ?? '—'} km/h
+          </Text>
+          <Text style={styles.metric}>
+            {showDogList && point.slaveId != null ? `狗 ${point.slaveId} 裝置電量` : '狗裝置電量'}{' '}
+            {battery(point.batteryValid, point.batteryPercentage)}
           </Text>
         </View>
         <Position

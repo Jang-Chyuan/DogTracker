@@ -353,7 +353,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
     renderer.root.findAllByProps({ testID: 'tracking-sheet' }).length,
   ).toBeGreaterThan(0);
   expect(JSON.stringify(renderer.toJSON())).toContain('Master ID: ');
-  expect(JSON.stringify(renderer.toJSON())).toContain('狗速度 ');
+  // Real mode lists the dogs instead of one 狗 row; speed still comes from the
+  // BLE feed and is now labelled with that dog's number.
+  expect(JSON.stringify(renderer.toJSON())).toContain('狗 7 速度');
   expect(JSON.stringify(renderer.toJSON())).toContain('領犬員裝置電量');
   expect(JSON.stringify(renderer.toJSON())).toContain('LoRa 訊號品質');
   expect(JSON.stringify(renderer.toJSON())).toContain('硬體回報的定位與活動');

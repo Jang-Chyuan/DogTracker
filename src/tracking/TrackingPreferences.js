@@ -11,6 +11,8 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   showSlaveMarker: true,
   showTrails: false,
   windowMinutes: 10,
+  // Which dog the map camera follows; null follows every visible device.
+  focusSlaveId: null,
 });
 
 export function validateTrackingPreferences(value) {
@@ -25,6 +27,11 @@ export function validateTrackingPreferences(value) {
   }
   if (!WINDOW_PRESETS.includes(settings.windowMinutes))
     throw new Error('時間視窗設定格式錯誤');
+  // A dog that is not on the map is not an error: the selection is kept so the
+  // camera follows it again when that dog reports, but it must be an id.
+  if (settings.focusSlaveId !== null &&
+    !(Number.isInteger(settings.focusSlaveId) && settings.focusSlaveId >= 0))
+    throw new Error('跟隨的狗設定格式錯誤');
   // Old per-role trail settings have different semantics; only missing new
   // fields receive defaults. Malformed saved JSON still fails explicitly.
   return {
@@ -33,6 +40,7 @@ export function validateTrackingPreferences(value) {
     showSlaveMarker: settings.showSlaveMarker,
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
+    focusSlaveId: settings.focusSlaveId,
   };
 }
 
