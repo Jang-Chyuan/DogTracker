@@ -171,10 +171,11 @@ test('first use seeds three rows and shows C markers, circle, no routes or autom
   expect(rows('demo_dog_status')).toHaveLength(3);
   expect(ble.connect).not.toHaveBeenCalled();
 });
-test('only map/settings tabs remain; Demo and original Wi-Fi preserve correct back destinations', async () => {
+test('map/history/settings tabs; Demo and original Wi-Fi preserve correct back destinations', async () => {
   await mount();
   expect(button('Demo', 'tab')).toBeUndefined();
-  expect(button('歷史', 'tab')).toBeUndefined();
+  // History is a tab of its own since 2026-09-18; Demo never was one.
+  expect(button('歷史軌跡', 'tab')).toBeDefined();
   await demoPage();
   expect(text()).toContain('手動逐筆');
   expect(button('開始 Demo')).toBeUndefined();
@@ -192,6 +193,34 @@ test('only map/settings tabs remain; Demo and original Wi-Fi preserve correct ba
   await demoPage();
   await press('‹ 設定');
   expect(button('Demo 設定')).toBeDefined();
+});
+
+test('the history tab keeps the same map, carries its own card, and back returns home', async () => {
+  await mount();
+  expect(renderer.root.findAllByProps({ testID: 'history-sheet' })).toHaveLength(0);
+  const map = renderer.root.findByType(MapView);
+  await press('歷史軌跡', 'tab');
+  // The same native map is reused; only the card and its parameters change.
+  expect(renderer.root.findByType(MapView)).toBe(map);
+  expect(renderer.root.findAllByProps({ testID: 'history-sheet' }).length)
+    .toBeGreaterThan(0);
+  expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
+  expect(text()).toContain('歷史軌跡');
+  // The card's sections are folded until opened, so it stays about a screen high.
+  expect(button('雲端下載的（Supabase）')).toBeUndefined();
+  await press('資料來源');
+  expect(button('雲端下載的（Supabase）')).toBeDefined();
+  expect(button('重新查詢')).toBeDefined();
+  expect(button('匯出')).toBeDefined();
+  // The settings page only points at the tab now.
+  await press('設定', 'tab');
+  expect(button('顯示歷史地圖', 'switch')).toBeUndefined();
+  expect(button('套用地圖設定')).toBeUndefined();
+  expect(text()).toContain('移到下方的「歷史」分頁');
+  await press('歷史軌跡', 'tab');
+  await act(async () => expect(onBack()).toBe(true));
+  expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' }).length)
+    .toBeGreaterThan(0);
 });
 test('page changes keep the same native map, source and saved switches', async () => {
   await mount();
@@ -441,7 +470,7 @@ test('hardware callback still writes only real rows in Demo, and failed hardware
   );
   await advance();
   await act(async () => onData(trackingPoint, 'failed'));
-  for (const label of ['地圖', '設定']) {
+  for (const label of ['即時位置', '設定']) {
     await press(label, 'tab');
     expect(text()).toContain('hardware disk full');
   }

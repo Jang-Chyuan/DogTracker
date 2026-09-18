@@ -1,10 +1,15 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import TrackingAvatar from '../map/TrackingAvatar';
 import { appColors as colors, floatingShadow } from '../theme/AppTheme';
 
 export const NAV_HEIGHT = 68;
+// The first tab is live positions, not "the map": both map tabs are maps, and
+// what separates them is now vs. the past. History carries the dog face, since
+// what it holds is where the dogs have been.
 const TABS = [
-  { name: 'map', label: '地圖', symbol: '⌖' },
+  { name: 'map', label: '即時位置', symbol: '⌖' },
+  { name: 'history', label: '歷史軌跡', dog: true },
   { name: 'settings', label: '設定', symbol: '⚙' },
 ];
 
@@ -38,12 +43,18 @@ export default function BottomNavigation({
             pressed && styles.pressed,
           ]}
         >
-          <Text
-            accessible={false}
-            style={[styles.icon, selected === tab.name && styles.active]}
-          >
-            {tab.symbol}
-          </Text>
+          {tab.dog ? (
+            <View style={styles.dogIcon}>
+              <TrackingAvatar role="slave" size={22} />
+            </View>
+          ) : (
+            <Text
+              accessible={false}
+              style={[styles.icon, selected === tab.name && styles.active]}
+            >
+              {tab.symbol}
+            </Text>
+          )}
           <Text
             accessible={false}
             style={[styles.label, selected === tab.name && styles.active]}
@@ -81,6 +92,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontWeight: '600',
   },
+  dogIcon: { height: 26, justifyContent: 'center' },
   label: { fontSize: 11, fontWeight: '700', color: colors.muted },
   active: { color: '#C94D4A' },
 });

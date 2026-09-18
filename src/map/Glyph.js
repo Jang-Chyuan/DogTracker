@@ -22,9 +22,12 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           {...stroke} />
       )}
       {name === 'speed' && (
+        // A gauge with a needle and a pivot: the bare arc alone read as a
+        // scribble at 15 px.
         <>
-          <Path d="M4 17a8 8 0 1 1 16 0" {...stroke} />
-          <Line x1={12} y1={17} x2={16} y2={10} {...stroke} />
+          <Path d="M3.5 18a8.5 8.5 0 1 1 17 0" {...stroke} />
+          <Line x1={12} y1={18} x2={15.5} y2={12} {...stroke} />
+          <Circle cx={12} cy={18} r={1.6} fill={color} />
         </>
       )}
       {name === 'battery' && (

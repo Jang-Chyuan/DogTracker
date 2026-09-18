@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
 import { CLOUD_DATABASE_METHODS } from '../cloud/CloudDatabase';
+import { HISTORY_DATABASE_METHODS } from '../mapHistory/HistoryDatabase';
 import { databaseSessions } from '../database/DatabaseSession';
 import { createDemoTrackingRepository } from '../demo/DemoTrackingRepository';
 import { createDemoPresetRow, createDemoSeed } from '../demo/DemoPresets';
@@ -27,7 +28,7 @@ function isForeground(state) {
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
   const [historyDatabase] = useState(() => Object.fromEntries(
-    ['load', 'save', 'read'].map(method => [method, (...args) =>
+    HISTORY_DATABASE_METHODS.map(method => [method, (...args) =>
       controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error('資料庫尚未就緒'))]),
   ));
   const [cloudDatabase] = useState(() => Object.fromEntries(

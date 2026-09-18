@@ -1,39 +1,51 @@
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+// A history read now returns one client track per selected dog.
+const trackOf = (data, source) =>
+  (source === 'phone' ? data.phone : data.clients[0]);
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createHistoryDatabase, expireHistory, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
-import { historyWindow, parseHistoryStart } from '../src/mapHistory/HistoryTime';
+import { createHistoryDatabase, expireHistory, HISTORY_DATABASE_METHODS, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
+import { historyWindow, parseHistoryRange } from '../src/mapHistory/HistoryTime';
 import { serializeHistory } from '../src/mapHistory/HistoryExport';
 
 test('recent history expires cached lines and markers without new data; fixed ranges remain', () => {
   const track = historyGeometry([1000, 6000, 11000].map(time => ({ time, latitude: 25, longitude: 121 })));
-  const data = { since: 0, until: 12000, phone: track, client: track };
+  const data = { since: 0, until: 12000, phone: track,
+    clients: [{ slaveId: 4, ...track }] };
   const preferences = { ...HISTORY_DEFAULTS, hours: 1 };
   const partial = expireHistory(data, preferences, 3606000);
   expect(partial.phone.count).toBe(2);
   expect(partial.phone.segments.flat().every(point => point.time >= 6000)).toBe(true);
   const empty = expireHistory(data, preferences, 3611001);
   for (const source of ['phone', 'client']) {
-    expect(empty[source].count).toBe(0);
-    expect(empty[source].segments).toEqual([]);
-    expect(empty[source].latest).toBeNull();
+    expect(trackOf(empty, source).count).toBe(0);
+    expect(trackOf(empty, source).segments).toEqual([]);
+    expect(trackOf(empty, source).latest).toBeNull();
   }
   expect(expireHistory(data, { ...preferences, timeMode: 'fixed' }, 99999999)).toBe(data);
   expect(data.phone.count).toBe(3);
 });
 
-test('fixed date and time remain stable, support crossing midnight and reject invalid dates', () => {
-  const p = { ...HISTORY_DEFAULTS, timeMode: 'fixed', startDate: '2026-09-16', startTime: '23:30', hours: 2 };
+test('a fixed range is two timestamps, and old saved queries convert to one', () => {
+  const start = new Date(2026, 8, 16, 23, 30).getTime();
+  const p = { ...HISTORY_DEFAULTS, timeMode: 'fixed', startAt: start, endAt: start + 7200000 };
   const first = historyWindow(p, 1);
+  // A fixed range does not move with the clock.
   expect(historyWindow(p, 999999999)).toEqual(first);
   expect(new Date(first.until).getDate()).toBe(17);
   expect(new Date(first.until).getHours()).toBe(1);
-  expect(first.until - first.since).toBe(7200000);
-  expect(() => parseHistoryStart('2026-02-30', '08:00')).toThrow();
-  expect(() => parseHistoryStart('2026-09-17', '24:00')).toThrow();
-  expect(() => parseHistoryStart('2026-09-17', '08:60')).toThrow();
-  expect(() => parseHistoryStart('2026-09-17', '8:00')).toThrow();
+  expect(() => parseHistoryRange(start, start)).toThrow('晚於');
+  expect(() => parseHistoryRange(start, start + 241 * 3600000)).toThrow('240');
+  expect(() => parseHistoryRange(null, start)).toThrow('選擇');
+  // The card used to store a typed date, a typed time and a duration.
+  const converted = validateHistory({ timeMode: 'fixed', startDate: '2026-09-16',
+    startTime: '23:30', hours: 2 });
+  expect(converted.startAt).toBe(start);
+  expect(converted.endAt).toBe(start + 7200000);
+  expect(converted.startDate).toBeUndefined();
   expect(validateHistory({ hours: 3 }).timeMode).toBe('recent');
+  // Only the offered presets are kept, since the card no longer takes typing.
+  expect(validateHistory({ hours: 7 }).hours).toBe(3);
 });
 
 test('fixed SQL window includes start and excludes end, and survives saved settings reload', async () => {
@@ -42,14 +54,16 @@ test('fixed SQL window includes start and excludes end, and survives saved setti
     await createDogDatabase(connection).initialize();
     const history = createHistoryDatabase(connection);
     await history.load();
-    const p = { ...HISTORY_DEFAULTS, phone: false, timeMode: 'fixed', startDate: '2026-09-16', startTime: '08:00', hours: 3 };
+    const start = new Date(2026, 8, 16, 8, 0).getTime();
+    const p = { ...HISTORY_DEFAULTS, phone: false, timeMode: 'fixed',
+      startAt: start, endAt: start + 3 * 3600000 };
     await history.save(p);
     expect(await history.load()).toEqual(p);
     const { since, until } = historyWindow(p);
     const insert = connection.sqlite.prepare('INSERT INTO dog_status(received_at,master_id,slave_id,slave_lat,slave_lon) VALUES(?,7,4,25,121)');
     [since - 1, since, until - 1, until].forEach(time => insert.run(time));
     const result = await history.read(p, null, until + 86400000);
-    expect(result.client.count).toBe(2);
+    expect(trackOf(result, 'client').count).toBe(2);
     expect(result.since).toBe(since);
     expect(result.until).toBe(until);
   } finally { connection.close(); }
@@ -62,7 +76,7 @@ test('history isolates cloud owners and devices, respects time bounds and indepe
     await createCloudDatabase(connection).initialize();
     const history = createHistoryDatabase(connection);
     expect(await history.load()).toEqual(HISTORY_DEFAULTS);
-    const prefs = { ...HISTORY_DEFAULTS, enabled: true, source: 'cloud', hours: 1 };
+    const prefs = { ...HISTORY_DEFAULTS, source: 'cloud', hours: 1 };
     await history.save(prefs);
     expect(await history.load()).toEqual(prefs);
     const sql = connection.sqlite;
@@ -76,11 +90,11 @@ test('history isolates cloud owners and devices, respects time bounds and indepe
     insert.run(1, 'alice', 7, 4);
     insert.run(9000000, 'alice', 7, 4);
     const result = await history.read(prefs, 'alice', 6000000);
-    expect(result.client.count).toBe(1);
+    expect(trackOf(result, 'client').count).toBe(1);
     expect(result.phone.count).toBe(1);
-    expect((await history.read(prefs, null, 6000000)).client.count).toBe(0);
+    expect(trackOf(await history.read(prefs, null, 6000000), 'client').count).toBe(0);
     const off = await history.read({ ...prefs, phone: false, client: false }, 'alice', 6000000);
-    expect(off.phone.count + off.client.count).toBe(0);
+    expect(off.phone.count + trackOf(off, 'client').count).toBe(0);
   } finally { connection.close(); }
 });
 
@@ -95,8 +109,8 @@ test('keyset query preserves records sharing a timestamp across pages', async ()
     for (let i = 0; i < 1002; i += 1) insert.run();
     connection.sqlite.exec('COMMIT');
     const result = await history.read({ ...HISTORY_DEFAULTS, hours: 1, phone: false }, null, 6000000);
-    expect(result.client.count).toBe(1002);
-    expect(result.client.latest.id).toBe(1002);
+    expect(trackOf(result, 'client').count).toBe(1002);
+    expect(trackOf(result, 'client').latest.id).toBe(1002);
   } finally { connection.close(); }
 });
 
@@ -109,7 +123,7 @@ test('route geometry breaks at missing fixes and long gaps, retains latest marke
   expect(many.limited).toBe(true);
   expect(many.segments.flat()).toHaveLength(4000);
   expect(many.latest.time).toBe(4999 * 130000);
-  expect(() => validateHistory({ hours: -1 })).toThrow();
+  expect(validateHistory({ hours: -1 }).hours).toBe(3);
   expect(() => validateHistory({ master: 1.5 })).toThrow();
 });
 
@@ -130,3 +144,39 @@ test('history lines and exports skip rows with no GPS fix', () => {
   expect(gpx.match(/<trkpt /g)).toHaveLength(2);
 });
 
+test('every history database method is bound by the app composition', () => {
+  // A method missing from the list is undefined only on a phone: the screens
+  // call the adapter, the tests call the repository.
+  const connection = createMemoryConnection();
+  try {
+    expect([...HISTORY_DATABASE_METHODS].sort())
+      .toEqual(Object.keys(createHistoryDatabase(connection)).sort());
+  } finally { connection.close(); }
+});
+
+test('the card is offered the Master/Slave pairs this phone actually holds', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    await createCloudDatabase(connection).initialize();
+    const history = createHistoryDatabase(connection);
+    await history.load();
+    const ble = connection.sqlite.prepare(
+      'INSERT INTO dog_status(received_at,master_id,slave_id,slave_lat,slave_lon) VALUES(?,?,?,25,121)');
+    ble.run(1000, 3, 7); ble.run(2000, 3, 7); ble.run(3000, 5, 2);
+    const cloud = connection.sqlite.prepare(
+      'INSERT INTO supabase_dog_status(received_at,owner_user_id,master_id,slave_id,slave_lat,slave_lon) VALUES(?,?,?,?,25,121)');
+    cloud.run(1000, 'alice', 7, 4); cloud.run(2000, 'alice', 5, 4); cloud.run(3000, 'bob', 9, 9);
+    // A Master-only row carries no slave id; Number(null) is 0, it sorted
+    // first, and the card offered it as "狗 0".
+    ble.run(4000, 3, null);
+    expect(await history.listDevices('ble')).toEqual([
+      { master: 5, slave: 2 }, { master: 3, slave: 7 },
+    ]);
+    expect(await history.listDevices('cloud', 'alice')).toEqual([
+      { master: 5, slave: 4 }, { master: 7, slave: 4 },
+    ]);
+    // Another account's rows are never offered, and no account means no list.
+    expect(await history.listDevices('cloud')).toEqual([]);
+  } finally { connection.close(); }
+});

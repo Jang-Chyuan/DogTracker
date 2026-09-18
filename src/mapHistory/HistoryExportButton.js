@@ -34,12 +34,16 @@ export default function HistoryExportButton({ history, snapshot, top }) {
     } catch (e) { Alert.alert('匯出失敗', e.message); }
     finally { lock.current = false; setBusy(false); }
   }
+  // The button lives inside the history card; `top` is only used when a screen
+  // still floats it over the map.
   return <>
-    <View style={[styles.button, { top }]}><ActionButton title="匯出" disabled={!history.data || busy} onPress={() => setOpen(true)} /></View>
+    <View style={top == null ? null : [styles.button, { top }]}>
+      <ActionButton title="匯出" disabled={!history.data || busy} onPress={() => setOpen(true)} />
+    </View>
     <Modal visible={open} transparent onRequestClose={() => { if (!busy) setOpen(false); }}>
       <View style={styles.shade}><View style={[ui.card, styles.dialog]}>
         <Text style={ui.heading}>匯出歷史地圖</Text>
-        <Text style={ui.hint}>PNG：目前可見地圖與軌跡。GPX／CSV：所選區間及來源的完整定位資料。分享後由你選擇接收對象。</Text>
+        <Text style={ui.hint}>PNG：目前歷史地圖畫面與軌跡。GPX／CSV：所選區間及來源的完整定位資料。分享後由你選擇接收對象。</Text>
         {['png', 'gpx', 'csv'].map(value => <ActionButton key={value} title={(value === format ? '✓ ' : '') + value.toUpperCase()} secondary={value !== format} disabled={busy} onPress={() => setFormat(value)} />)}
         <ActionButton title={busy ? '處理中…' : '儲存檔案'} disabled={busy} onPress={() => run('save')} />
         <ActionButton title="分享" disabled={busy} onPress={() => run('share')} />

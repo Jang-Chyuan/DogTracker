@@ -256,27 +256,31 @@ test('new DB rows never refit the camera after panning', async () => {
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(count);
   expect(mockCamera.animateToRegion).not.toHaveBeenCalled();
 });
-test('Client switch hides slave while current phone position remains visible in live and history modes', async () => {
+test('the live map ignores the history tab parameters and only obeys its own card', async () => {
   const tracking = {
     mode: 'real', point: trackingPoint, route: emptyLiveRoute(),
     ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
     preferences: { ready: true, value: DEFAULT_TRACKING_PREFERENCES },
     saveTrackingPreferences: jest.fn(),
   };
-  const screen = (client, enabled = false) => <MapScreen tracking={tracking} phone={{ enabled: true }} bottomInset={80}
-    mapProvider={GOOGLE_MAP_PROVIDER} history={{ preferences: { enabled, client, phone: client } }} />;
+  // History settings used to reach into the live map and hide the dog; since
+  // the history tab exists they describe that tab only.
+  const screen = client => <MapScreen tracking={tracking} phone={{ enabled: true }} bottomInset={80}
+    mapProvider={GOOGLE_MAP_PROVIDER} history={{ preferences: { client, phone: client } }} />;
   await act(async () => { renderer = Renderer.create(screen(true)); });
   await readyMap();
-  // The dog marker now carries its own number and source (see DogMerge).
   const dogShown = () => renderer.root.findAllByType(Marker)
     .some(node => ['real-dog-7', 'real-slave'].includes(node.props.identifier));
   expect(dogShown()).toBe(true);
   await act(async () => renderer.update(screen(false)));
+  expect(dogShown()).toBe(true);
+  expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
+  // The card's own eye is what hides it.
+  await act(async () => renderer.update(
+    <MapScreen tracking={{ ...tracking, preferences: { ready: true,
+      value: { ...DEFAULT_TRACKING_PREFERENCES, showSlaveMarker: false } } }}
+      phone={{ enabled: true }} bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />));
   expect(dogShown()).toBe(false);
-  expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
-  await act(async () => renderer.update(screen(false, true)));
-  await readyMap();
-  expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
 });
 
 test('map starts collapsed, the sheet owns visibility controls and Master details contain information only', async () => {

@@ -50,10 +50,16 @@ function TrackerApp() {
   const [route, setRoute] = useState({ name: 'map', parent: null });
   const navigate = (name, parent = null) => setRoute({ name, parent });
   const isMap = route.name === 'map';
-  const history = useMapHistory(tracking.historyDatabase, tracking.ready.real, tracking.foreground && isMap, cloudSync.ownerId);
-  const phone = usePhoneLocation(tracking.foreground, undefined, isMap);
+  const isHistory = route.name === 'history';
+  // Both tabs draw on the same persistent map layer; only one of them is live.
+  const showsMap = isMap || isHistory;
+  const history = useMapHistory(tracking.historyDatabase, tracking.ready.real,
+    tracking.foreground && isHistory, cloudSync.ownerId);
+  const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
+  // Kept reading while the history tab is open: disabling it empties the rows,
+  // so the cloud dogs would blink off the home map on every visit.
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
-    tracking.ready.real && tracking.foreground && isMap && tracking.mode === 'real',
+    tracking.ready.real && tracking.foreground && showsMap && tracking.mode === 'real',
     undefined,
     // The cloud dogs' path is only read while the card is drawing paths.
     tracking.preferences.value.showTrails
@@ -93,7 +99,6 @@ function TrackerApp() {
     case 'settings':
       content = (
         <SettingsScreen
-          history={history}
           tracking={tracking}
           onHardware={() => navigate('hardware', 'settings')}
           onDemo={() => navigate('demo', 'settings')}
@@ -101,6 +106,10 @@ function TrackerApp() {
           onLocationTracker={() => navigate('locationTracker', 'settings')}
         />
       );
+      break;
+    case 'history':
+      // The history card is drawn over the map layer, like the live card.
+      content = null;
       break;
     case 'hardware':
       content = null;
@@ -112,10 +121,10 @@ function TrackerApp() {
   return (
     <SafeAreaView
       style={styles.safeArea}
-      edges={isMap ? [] : ['top', 'bottom', 'left', 'right']}
+      edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
     >
-      <StatusBar barStyle={isMap ? 'dark-content' : 'light-content'} />
-      {!isMap && (
+      <StatusBar barStyle={showsMap ? 'dark-content' : 'light-content'} />
+      {!showsMap && (
         <View style={styles.header}>
           <Text style={styles.brand}>DogTracker</Text>
           <Text
@@ -134,13 +143,13 @@ function TrackerApp() {
       )}
       <View
         testID="persistent-map-layer"
-        pointerEvents={isMap ? 'auto' : 'none'}
-        accessibilityElementsHidden={!isMap}
-        importantForAccessibility={isMap ? 'auto' : 'no-hide-descendants'}
+        pointerEvents={showsMap ? 'auto' : 'none'}
+        accessibilityElementsHidden={!showsMap}
+        importantForAccessibility={showsMap ? 'auto' : 'no-hide-descendants'}
         style={[
           StyleSheet.absoluteFill,
           styles.mapLayer,
-          !isMap && styles.hiddenMapLayer,
+          !showsMap && styles.hiddenMapLayer,
         ]}
       >
         <MapScreen
@@ -148,7 +157,8 @@ function TrackerApp() {
           tracking={tracking}
           phone={phone}
           cloudDogs={cloudDogs}
-          active={isMap}
+          historical={isHistory}
+          active={showsMap}
           bottomInset={insets.bottom + NAV_HEIGHT + 20}
           mapProvider={GOOGLE_MAP_PROVIDER}
         />
@@ -163,7 +173,7 @@ function TrackerApp() {
           onBack={() => navigate('settings')}
         />
       )}
-      {!isMap && route.name !== 'hardware' && (
+      {!showsMap && route.name !== 'hardware' && (
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
@@ -191,7 +201,7 @@ function TrackerApp() {
       <BottomNavigation
         selected={route.parent || route.name}
         onNavigate={navigate}
-        floating={isMap}
+        floating={showsMap}
         bottomInset={insets.bottom}
       />
     </SafeAreaView>

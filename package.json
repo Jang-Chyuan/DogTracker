@@ -18,6 +18,7 @@
     "test": "node --experimental-sqlite node_modules/jest/bin/jest.js"
   },
   "dependencies": {
+    "@react-native-community/datetimepicker": "^9.2.1",
     "@react-native/new-app-screen": "0.87.0",
     "@supabase/supabase-js": "^2.116.0",
     "base-64": "^1.0.0",

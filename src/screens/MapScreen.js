@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import HistoryExportButton from '../mapHistory/HistoryExportButton';
+import HistorySheet, { shortRangeLabel } from '../mapHistory/HistorySheet';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,7 +7,6 @@ import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers } from '../map/DogMerge';
 import { cloudTracks, dogColor } from '../map/CloudTracks';
-import { coverageNotice } from '../mapHistory/HistoryCoverage';
 import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
@@ -45,6 +44,7 @@ export default function MapScreen({
   mapProvider,
   active = true,
   history,
+  historical = false,
   cloudDogs,
 }) {
   const insets = useSafeAreaInsets();
@@ -59,6 +59,7 @@ export default function MapScreen({
   const closeDetails = useCallback(() => setSelected(null), []);
   const openMaster = useCallback(() => setSelected({ kind: 'master' }), []);
   const openDog = useCallback(slaveId => setSelected({ kind: 'dog', slaveId }), []);
+  const openTrack = useCallback(name => setSelected({ kind: 'track', name }), []);
   const { point, route, positionSamples, mode } = tracking;
   // Ageing is measured against this clock, not against the newest row: a silent
   // collar changes nothing else on this screen.
@@ -133,19 +134,26 @@ export default function MapScreen({
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
   }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds]);
-  const historical = !!history?.preferences.enabled;
   const livePhone = useLiveLocation(active && tracking.foreground);
   const presentation = useMemo(() => {
-    // The Client switch hides every dog, including the ones merged from the
-    // cloud copy; leaving `dogs` in place would keep drawing them.
-    if (!historical) return history?.preferences.client === false
-      ? { ...livePresentation, slave: null, dogs: [], slaveSegments: [],
-        cameraPositions: livePresentation.master ? [livePresentation.master.coordinate] : [] }
-      : livePresentation;
+    // The live map is live only: what it draws is decided by the card's own
+    // eyes and time window, never by the history tab's parameters.
+    if (!historical) return livePresentation;
     const data = history.data;
+    // One track per dog, each with its own colour, plus this phone's own trace.
     const tracks = data ? [
-      { ...data.phone, name: '手機', color: '#2563EB' },
-      { ...data.client, name: 'Client', color: '#E45756' },
+      { ...data.phone, name: '手機', color: '#2563EB', role: 'phone',
+        sourceLabel: '來源：這支手機自己的定位記錄' },
+      // Each dog's position in this window wears the same face as on the live
+      // map, instead of an anonymous map pin.
+      ...(data.clients || []).map((track, index) => ({
+        ...track,
+        name: `狗 ${track.slaveId}`,
+        color: dogColor(track.slaveId, index),
+        role: 'slave',
+        sourceLabel: history.preferences.source === 'cloud'
+          ? '來源：雲端下載的資料' : '來源：這支手機用 BLE 收到的資料',
+      })),
     ] : [];
     const points = tracks.flatMap(track => track.segments.flat());
     const cameraPositions = [];
@@ -155,29 +163,27 @@ export default function MapScreen({
       cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
     }
     return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks };
-  }, [historical, history?.data, history?.preferences.client, livePresentation]);
+  }, [historical, history?.data, history?.preferences.source, livePresentation]);
   const { master, slave } = presentation.positions;
   // A panel closes itself when its subject leaves the map: a dog that stopped
   // reporting, or the handler's marker being hidden.
   const detailSubject = useMemo(() => {
-    if (!selected || historical) return null;
+    if (!selected) return null;
+    if (historical) {
+      if (selected.kind !== 'track') return null;
+      const track = (presentation.historyTracks || [])
+        .find(item => item.name === selected.name);
+      return track ? { kind: 'track', track } : null;
+    }
     if (selected.kind === 'master') return master ? { kind: 'master' } : null;
     const dog = dogs.find(item => item.slaveId === selected.slaveId);
     return dog ? { kind: 'dog', dog } : null;
-  }, [selected, historical, master, dogs]);
+  }, [selected, historical, master, dogs, presentation.historyTracks]);
+  // History notices live in the history card, next to the controls that cause
+  // them; the map keeps only what belongs to the map itself.
+  // The card names the colours next to the eyes that control them; a banner
+  // over the map only covered the map.
   const messages = [];
-  if (historical) {
-    if (history.error) messages.push(history.error);
-    else if (!history.data) messages.push('正在讀取歷史定位…');
-    else {
-      if (history.data.message) messages.push(history.data.message);
-      const notice = coverageNotice(history.data);
-      if (notice) messages.push(notice);
-      messages.push(`手機 ${history.data.phone.count} 筆 · Client ${history.data.client.count} 筆（藍色／紅色）`);
-      messages.push(`${new Date(history.data.since).toLocaleString()} ～ ${new Date(history.data.until).toLocaleString()}`);
-      if (history.data.phone.limited || history.data.client.limited) messages.push('軌跡已達繪圖上限，僅顯示較新的部分，原始資料仍保留。');
-    }
-  }
   if (mapStatus) messages.push(mapStatus);
   if (!historical && cloudDogs?.error)
     messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
@@ -241,12 +247,14 @@ export default function MapScreen({
         phoneEnabled={!!phone?.enabled}
         onMasterPress={openMaster}
         onDogPress={openDog}
+        onTrackPress={openTrack}
       />
-      {historical && active && <HistoryExportButton history={history} snapshot={snapshot} top={controlsTop + 8} />}
       <View style={[styles.source, { top }]}>
         <View style={[styles.statusDot, mode === 'demo' && styles.demoDot]} />
         <Text style={styles.sourceText}>
-          {historical ? `歷史 · ${history.preferences.timeMode === 'fixed' ? '指定區間' : '最近'} ${history.preferences.hours} 小時` : !tracking.preferences.ready
+          {historical
+            ? `歷史 · ${shortRangeLabel(history.preferences)}`
+            : !tracking.preferences.ready
             ? '讀取設定中…'
             : mode === 'demo'
             ? 'DEMO · 模擬資料'
@@ -271,15 +279,25 @@ export default function MapScreen({
           </ScrollView>
         </View>
       )}
-      {!historical && <TrackingSheet
-        tracking={tracking}
-        master={master}
-        slave={slave}
-        dogs={dogs}
-        bottomInset={bottomInset}
-        topInset={controlsTop}
-        onHeight={setSheetHeight}
-      />}
+      {historical ? (
+        <HistorySheet
+          history={history}
+          snapshot={snapshot}
+          bottomInset={bottomInset}
+          topInset={controlsTop}
+          onHeight={setSheetHeight}
+        />
+      ) : (
+        <TrackingSheet
+          tracking={tracking}
+          master={master}
+          slave={slave}
+          dogs={dogs}
+          bottomInset={bottomInset}
+          topInset={controlsTop}
+          onHeight={setSheetHeight}
+        />
+      )}
       {detailSubject && (
         <DeviceDetails
           tracking={tracking}

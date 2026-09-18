@@ -6,7 +6,7 @@ import { createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/Histo
 
 const NOW = Date.parse('2026-09-18T12:00:00Z');
 const HOUR = 60 * 60 * 1000;
-const preferences = extra => ({ ...HISTORY_DEFAULTS, enabled: true, phone: false,
+const preferences = extra => ({ ...HISTORY_DEFAULTS, phone: false,
   client: true, master: 7, slave: 4, hours: 3, ...extra });
 const cloudRow = (eventId, receivedAt) => ({
   event_id: eventId, master_id: 7, slave_id: 4, received_at: receivedAt,
@@ -54,7 +54,7 @@ test('reading history reports what the phone actually stores for the selected de
     const covered = await history.read(preferences({ source: 'cloud' }), 'account-a', NOW);
     expect(covered.coverage).toEqual({ source: 'cloud', rows: 2, from: NOW - 2 * HOUR });
     expect(coverageNotice(covered)).toContain('本機雲端副本最早只到');
-    expect(covered.client.count).toBe(2);
+    expect(covered.clients[0].count).toBe(2);
     // Another account's copy must not count as coverage for this one.
     const other = await history.read(preferences({ source: 'cloud' }), 'account-b', NOW);
     expect(other.coverage).toEqual({ source: 'cloud', rows: 0, from: null });
