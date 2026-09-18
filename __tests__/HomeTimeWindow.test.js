@@ -169,8 +169,11 @@ test('the map draws the window line and fades a dog seen before it', async () =>
       bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
   });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  const dog = renderer.root.findAllByType(Marker).find(node => node.props.title === '狗 7');
-  expect(dog.props.description).toContain('早於所選時間範圍');
+  const dog = renderer.root.findAllByType(Marker)
+    .find(node => node.props.identifier === 'real-dog-7');
+  // The marker has no bubble of its own; the reason is on the view for screen
+  // readers and in the card's row.
+  expect(dog.props.children.props.accessibilityLabel).toContain('早於所選時間範圍');
   // Nothing inside the window, so no line is drawn for it.
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await act(async () => { renderer.unmount(); });
@@ -205,17 +208,19 @@ test('the home map keeps ageing while the collar is silent', async () => {
       bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
   });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  const dog = () => renderer.root.findAllByType(Marker).find(node => node.props.title === '狗 7');
-  expect(dog().props.description).not.toContain('早於所選時間範圍');
+  const label = node => node.props.children.props.accessibilityLabel;
+  const dog = () => renderer.root.findAllByType(Marker)
+    .find(node => node.props.identifier === 'real-dog-7');
+  expect(label(dog())).not.toContain('早於所選時間範圍');
   // Ten minutes later the same row is outside the window.
   await act(async () => jest.advanceTimersByTime(10 * MINUTE));
-  expect(dog().props.description).toContain('早於所選時間範圍');
+  expect(label(dog())).toContain('早於所選時間範圍');
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   // A day later it leaves the home map altogether.
   await act(async () => jest.advanceTimersByTime(MAX_AGE_MS));
   expect(dog()).toBeUndefined();
   expect(renderer.root.findAllByType(Marker)
-    .some(node => node.props.title === '狗 · Slave')).toBe(false);
+    .some(node => node.props.identifier === 'real-slave')).toBe(false);
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();

@@ -29,6 +29,7 @@
     "react-native-nitro-modules": "^0.37.1",
     "react-native-nitro-sqlite": "^9.7.0",
     "react-native-safe-area-context": "^5.5.2",
+    "react-native-svg": "^15.15.5",
     "react-native-url-polyfill": "^4.0.0"
   },
   "devDependencies": {

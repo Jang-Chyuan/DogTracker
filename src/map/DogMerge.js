@@ -3,7 +3,6 @@ import { coordinate as toCoordinate } from '../tracking/RouteSamples';
 // A slave_id identifies the same dog across the whole team, whichever Master
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
 // per dog and takes the newest row of all sources.
-export const FRESH_MS = 10 * 60 * 1000;
 export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const MAX_DOGS = 20;
 
@@ -23,8 +22,18 @@ function bleCandidate(point, samples) {
   if (point?.slaveId == null) return null;
   const base = { slaveId: point.slaveId, masterId: point.masterId ?? null, source: 'ble' };
   const direct = toCoordinate(point.slaveLat, point.slaveLon);
+  // The pair's distance belongs to this dog, not to the card as a whole: with
+  // several dogs on the map "狗與領犬員距離" cannot say which one it means.
+  const distanceMeters = Number.isFinite(point.distanceMeters) ? point.distanceMeters : null;
+  const readings = {
+    speedKmh: Number.isFinite(point.speedKmh) ? point.speedKmh : null,
+    batteryPercentage: point.batteryValid && Number.isFinite(point.batteryPercentage)
+      ? point.batteryPercentage : null,
+    distanceMeters,
+  };
   if (hasFix(direct)) {
-    return { ...base, coordinate: direct, receivedAt: point.receivedAt, retained: false };
+    return { ...base, coordinate: direct, receivedAt: point.receivedAt,
+      retained: false, ...readings };
   }
   let previous = null;
   for (const sample of samples) {
@@ -32,7 +41,8 @@ function bleCandidate(point, samples) {
     if (!previous || (sample.receivedAt ?? 0) > (previous.receivedAt ?? 0)) previous = sample;
   }
   return previous
-    ? { ...base, coordinate: previous.slave, receivedAt: previous.receivedAt, retained: true }
+    ? { ...base, coordinate: previous.slave, receivedAt: previous.receivedAt,
+      retained: true, ...readings }
     : null;
 }
 
@@ -42,25 +52,20 @@ function bleCandidate(point, samples) {
  * @param cloudRows newest downloaded row per dog: one row per slave_id
  * @returns markers sorted by dog, each carrying where its position came from
  *
- * While a Master is connected only the dogs it reports are shown; a dog that
- * exists in the cloud alone stays hidden until the user picks it. Without a
- * connection the cloud copy is the only source, so every dog in it is shown.
+ * Every dog the phone knows about is shown, from both sources at once, each at
+ * its newest row (confirmed 2026-09-16, re-confirmed 2026-09-18): a handler
+ * wants to see the whole team, not only the dogs of the Master this phone
+ * happens to be holding. The source is written on the marker and in the card,
+ * and dogs that are not wanted can be hidden one by one.
  */
 export function mergeDogMarkers({ point, samples = [], cloudRows = [],
-  now = Date.now(), freshMs = FRESH_MS, maxAgeMs = MAX_AGE_MS, windowMs = null }) {
+  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null }) {
   const local = bleCandidate(point, samples);
-  // "Connected" means this phone is still receiving over BLE, not that the
-  // Bluetooth adapter is on: a stale row must not hide the cloud copy. A live
-  // row without a fix still counts as connected, so the dogs of other Masters
-  // stay hidden while this handler is working.
-  const receiving = point?.receivedAt != null && now - point.receivedAt <= freshMs;
-  const connected = receiving && point?.slaveId != null;
   const dogs = new Map();
   if (local) dogs.set(local.slaveId, local);
   for (const row of cloudRows) {
     const position = cloudCoordinate(row);
     if (!position || !Number.isFinite(row.received_at)) continue;
-    if (connected && row.slave_id !== point.slaveId) continue;
     const current = dogs.get(row.slave_id);
     // A tie keeps the BLE row: it is timed by this phone, while a cloud row
     // carries the Master's clock.
@@ -69,6 +74,11 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [],
       slaveId: row.slave_id, masterId: row.master_id ?? null,
       coordinate: position, receivedAt: row.received_at,
       retained: false, source: 'cloud',
+      // The downloaded row carries these too, so a cloud dog reads the same as
+      // a BLE one instead of being a thinner row.
+      speedKmh: Number.isFinite(row.speed_kmh) ? row.speed_kmh : null,
+      batteryPercentage: Number.isFinite(row.battery_percentage)
+        ? row.battery_percentage : null,
     });
   }
   return [...dogs.values()]

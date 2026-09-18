@@ -74,6 +74,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showTrails: true,
     windowMinutes: 10,
     focusSlaveId: null,
+    hiddenSlaveIds: [],
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -126,6 +127,7 @@ test('every setting survives a new controller and shares no tracking-row writes'
       showTrails: true,
       windowMinutes: 30,
       focusSlaveId: 4,
+      hiddenSlaveIds: [6],
     };
     await first.save(value);
     await first.close();
@@ -176,5 +178,15 @@ test('the home window only accepts the confirmed presets and survives a reload',
   // falling back: the home map is capped at 24 hours.
   for (const invalid of [0, -10, 5, 2880, '10', null]) {
     expect(() => validateTrackingPreferences({ windowMinutes: invalid })).toThrow('時間視窗');
+  }
+});
+
+test('per-dog eyes are stored sorted, without repeats, and reject junk', () => {
+  expect(validateTrackingPreferences({}).hiddenSlaveIds).toEqual([]);
+  expect(validateTrackingPreferences({ hiddenSlaveIds: [6, 2, 6] }).hiddenSlaveIds)
+    .toEqual([2, 6]);
+  for (const invalid of [null, 4, ['4'], [1.5], [-1]]) {
+    expect(() => validateTrackingPreferences({ hiddenSlaveIds: invalid }))
+      .toThrow('隱藏的狗');
   }
 });

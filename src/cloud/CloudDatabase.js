@@ -7,7 +7,8 @@ const TRIM_HISTORY = `DELETE FROM supabase_dog_status WHERE id IN (
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
-  'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'listHistory', 'count'];
+  'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
+  'listHistory', 'count'];
 
 export function createCloudDatabase(connection) {
   const rows = result => result.results || result.rows?._array || [];
@@ -124,6 +125,22 @@ export function createCloudDatabase(connection) {
     // a position cannot place a marker, so they are not candidates; 0,0 is what
     // the hardware sends with no GPS fix. SQLite fills the bare columns from the
     // row that matched MAX(received_at).
+    /**
+     * Every downloaded position of every dog since a moment, for the home map's
+     * path: the live feed only holds the pair this phone is connected to, so
+     * without this the dogs that arrived through the cloud had markers and no
+     * line. Ordered per dog so the caller can cut it into segments.
+     */
+    async trackBySlave(owner, sinceMs, limit = 6000) {
+      requireOwner(owner);
+      return rows(await connection.executeAsync(`SELECT slave_id, master_id, received_at,
+          slave_lat, slave_lon
+        FROM supabase_dog_status
+        WHERE owner_user_id = ? AND received_at >= ?
+          AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+          AND NOT (slave_lat = 0 AND slave_lon = 0)
+        ORDER BY slave_id, received_at LIMIT ?`, [owner, sinceMs, Math.floor(limit)]));
+    },
     async latestBySlave(owner, sinceMs) {
       requireOwner(owner);
       return rows(await connection.executeAsync(`SELECT slave_id, master_id,
