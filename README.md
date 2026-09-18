@@ -80,6 +80,9 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 | --- | --- |
 | 對 `main` 開 PR | `npm ci`、`npm test -- --runInBand`、`npx eslint src __tests__ App.js` |
 | push／merge 到 `main` | 同上，全部通過後再 `cd android && ./gradlew assembleRelease` |
+| 手動（Actions 頁的 Run workflow） | 同 push；用於補跑沒有觸發到的建置 |
+
+> commit 訊息若含有 `[skip ci]` 標記，GitHub 會跳過整個 workflow。squash 合併會把被 squash 的 commit 訊息併進 `main` 的 commit，所以連「在說明裡提到這個標記」都會讓那次合併不建置 —— 這時用手動觸發補跑。
 
 `main` 建置成功後會產出兩份相同的 APK：
 
