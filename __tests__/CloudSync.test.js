@@ -10,30 +10,46 @@ let engine;
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(NOW); });
 afterEach(async () => { engine?.dispose(); engine = null; jest.useRealTimers(); });
 
-function fixture() {
+// Hourly count checks share the telemetry table; they are head requests.
+const isCount = query => !!query.filters.select?.[1]?.head;
+const downloads = queries => queries.filter(q => q.table === 'dog_telemetry' && !isCount(q));
+const counts = queries => queries.filter(q => q.table === 'dog_telemetry' && isCount(q));
+
+function fixture(cloudCounts = {}) {
   const queries = [];
   const states = new Map();
+  const buckets = new Map();
   const database = {
     initialize: jest.fn(async () => {}),
     loadSyncState: jest.fn(async (owner, master) => states.get(`${owner}:${master}`) || null),
     savePage: jest.fn(async (owner, _rows, checkpoint) => {
       if (checkpoint) states.set(`${owner}:${checkpoint.masterId}`, { through_at: checkpoint.throughAt });
     }),
+    loadBuckets: jest.fn(async (owner, master) => buckets.get(`${owner}:${master}`) || []),
+    saveBucket: jest.fn(async (owner, master, start, count) => {
+      const key = `${owner}:${master}`;
+      buckets.set(key, [...(buckets.get(key) || []).filter(b => b.bucket_start !== start),
+        { bucket_start: start, cloud_count: count }]);
+    }),
+    countRange: jest.fn(async () => 0),
   };
   const client = { from: jest.fn(table => {
     const query = { table, filters: {} };
     for (const method of ['select', 'eq', 'gte', 'lt', 'order', 'range', 'limit', 'or']) {
       query[method] = jest.fn((...args) => { query.filters[method] = args; return query; });
     }
-    query.abortSignal = jest.fn(async () => ({ data: table === 'device_members' && query.filters.range[0] === 0
-      ? [{ gateway_id: 'master_7', slave_id: 4 }, { gateway_id: 'master_7', slave_id: 1 },
-        { gateway_id: 'master_5', slave_id: 4 }] : [] }));
+    query.abortSignal = jest.fn(async () => {
+      if (isCount(query)) return { count: cloudCounts[Date.parse(query.filters.gte[1])] ?? 0 };
+      return { data: table === 'device_members' && query.filters.range[0] === 0
+        ? [{ gateway_id: 'master_7', slave_id: 4 }, { gateway_id: 'master_7', slave_id: 1 },
+          { gateway_id: 'master_5', slave_id: 4 }] : [] };
+    });
     queries.push(query);
     return query;
   }) };
   const changed = jest.fn();
   engine = createCloudSync({ client, database, onChange: changed });
-  return { client, database, changed, queries, states };
+  return { client, database, changed, queries, states, buckets, cloudCounts };
 }
 const flush = () => jest.advanceTimersByTimeAsync(1);
 
@@ -41,21 +57,19 @@ test('immediate first-day sync, 30-second cadence, and restart catch-up per acco
   const { queries, states, client, database } = fixture();
   engine.setForeground(true); engine.setSession(account('a'));
   await flush();
-  const first = queries.filter(q => q.table === 'dog_telemetry');
+  const first = downloads(queries);
   expect(first).toHaveLength(2);
   expect(first[0].filters.gte).toEqual(['received_at', '2026-09-16T12:00:00.000Z']);
   expect(states.get('a:7').through_at).toBe('2026-09-17T12:00:00.000Z');
   await jest.advanceTimersByTimeAsync(30000);
-  expect(queries.filter(q => q.table === 'dog_telemetry')).toHaveLength(4);
-  expect(queries.filter(q => q.table === 'dog_telemetry')[2].filters.gte[1])
-    .toBe('2026-09-17T11:55:00.000Z');
+  expect(downloads(queries)).toHaveLength(4);
+  expect(downloads(queries)[2].filters.gte[1]).toBe('2026-09-17T11:55:00.000Z');
   await engine.dispose();
   jest.setSystemTime(NOW + 3 * 86400000);
   engine = createCloudSync({ client, database });
   engine.setForeground(true); engine.setSession(account('a'));
   await flush();
-  expect(queries.filter(q => q.table === 'dog_telemetry')[4].filters.gte[1])
-    .toBe('2026-09-17T11:55:30.000Z');
+  expect(downloads(queries)[4].filters.gte[1]).toBe('2026-09-17T11:55:30.000Z');
 });
 
 test('background and logout stop schedules; foreground resumes immediately', async () => {
@@ -171,4 +185,31 @@ test('secure sessions survive adapter recreation and logout removes them', async
   expect(await reopened.getItem('project-auth-token')).toBeNull();
   vault.setGenericPassword.mockResolvedValueOnce(false);
   await expect(reopened.setItem('project-auth-token', 'data')).rejects.toThrow('安全保存');
+});
+
+test('the hourly count check runs every ten minutes and only fetches what changed', async () => {
+  const hour = Date.parse('2026-09-17T11:00:00Z');
+  const { queries, states, buckets, cloudCounts } = fixture({ [hour]: 2 });
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  // 24 closed hours per Master. The incremental pass has just walked them, so
+  // the first sweep records the counts instead of downloading the day again.
+  expect(counts(queries)).toHaveLength(48);
+  expect(downloads(queries).filter(q => q.filters.gte[1] === '2026-09-17T11:00:00.000Z')).toHaveLength(0);
+  expect(buckets.get('a:7')).toContainEqual({ bucket_start: hour, cloud_count: 2 });
+  const swept = counts(queries).length;
+  await jest.advanceTimersByTimeAsync(9 * 60000);
+  expect(counts(queries)).toHaveLength(swept);
+  // A Master uploads two more rows into that hour: now the count differs from
+  // the verified one, so that hour - and only that hour - is fetched again.
+  cloudCounts[hour] = 4;
+  await jest.advanceTimersByTimeAsync(60000);
+  expect(counts(queries).length).toBeGreaterThan(swept);
+  expect(downloads(queries).filter(q => q.filters.gte[1] === '2026-09-17T11:00:00.000Z')).toHaveLength(2);
+  expect(buckets.get('a:7')).toContainEqual({ bucket_start: hour, cloud_count: 4 });
+  // The sweep must never move the incremental checkpoint: its pages carry no
+  // checkpoint at all, so progress only follows the 30-second pass (which by
+  // now has reached 12:10, ten minutes of ticks later).
+  // A sweep checkpoint would have written an hour boundary; progress instead
+  // follows the 30-second pass, which by now has reached 12:10.
+  expect(states.get('a:7').through_at).toBe('2026-09-17T12:10:00.000Z');
 });
