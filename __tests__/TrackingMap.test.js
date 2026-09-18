@@ -312,7 +312,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
         .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
         .props.onAccessibilityAction({ nativeEvent: { actionName } }),
     );
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+  // One switch only: whether the path is drawn. Everything else on the card is
+  // a tap target of its own.
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(1);
   expect(
     StyleSheet.flatten(
       renderer.root.findByProps({ testID: 'fullscreen-map-screen' }).props
@@ -362,7 +364,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
       .find(node => node.props.identifier === 'real-master')
       .props.onPress(),
   );
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+  // One switch only: whether the path is drawn. Everything else on the card is
+  // a tap target of its own.
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(1);
   const detailsLayer = StyleSheet.flatten(
     renderer.root.findByProps({ testID: 'master-details' }).props.style,
   );

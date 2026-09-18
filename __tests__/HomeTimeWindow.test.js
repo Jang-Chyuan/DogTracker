@@ -1,7 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { Platform } from 'react-native';
+import { Platform, Switch } from 'react-native';
 import NativePlatform from '../specs/NativeTrackingPlatform';
 import MapScreen from '../src/screens/MapScreen';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
@@ -128,12 +128,12 @@ test('the sheet offers the confirmed presets and saves the one that is tapped', 
   // deep: false keeps the Pressable itself, not the View it renders with the
   // same accessibility props.
   const chips = renderer.root.findAll(
-    node => node.props.accessibilityLabel?.startsWith('時間範圍 '),
+    node => node.props.accessibilityLabel?.startsWith('過去 '),
     { deep: false },
   );
   expect(chips.map(node => node.props.accessibilityLabel)).toEqual([
-    '時間範圍 1 分', '時間範圍 10 分', '時間範圍 30 分',
-    '時間範圍 1 小時', '時間範圍 6 小時', '時間範圍 24 小時',
+    '過去 1 分', '過去 10 分', '過去 30 分',
+    '過去 1 小時', '過去 6 小時', '過去 24 小時',
   ]);
   expect(chips).toHaveLength(WINDOW_PRESETS.length);
   expect(chips[1].props.accessibilityState.selected).toBe(true);
@@ -216,6 +216,40 @@ test('the home map keeps ageing while the collar is silent', async () => {
   expect(dog()).toBeUndefined();
   expect(renderer.root.findAllByType(Marker)
     .some(node => node.props.title === '狗 · Slave')).toBe(false);
+  await act(async () => { renderer.unmount(); });
+  Platform.OS = originalOS;
+  jest.useRealTimers();
+});
+
+test('the path switch and the window live in one section and the switch saves', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(NOW);
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  NativePlatform.isMapConfigured.mockReturnValue(true);
+  const saveTrackingPreferences = jest.fn();
+  const rows = [row(1, 20), row(2, 2)];
+  const tracking = {
+    mode: 'real', point: rows[1], route: routeOf(rows), positionSamples: [],
+    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: preferences({ showTrails: false }) },
+    saveTrackingPreferences,
+  };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }}
+      bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
+  });
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  await act(async () => renderer.root
+    .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
+    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+  // A real switch, not a row of text that has to be read to know its state.
+  const toggle = renderer.root.findAllByType(Switch)[0];
+  expect(toggle.props.accessibilityLabel).toBe('顯示移動路徑');
+  expect(toggle.props.value).toBe(false);
+  await act(async () => toggle.props.onValueChange(true));
+  expect(saveTrackingPreferences).toHaveBeenCalledWith({ showTrails: true });
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();
