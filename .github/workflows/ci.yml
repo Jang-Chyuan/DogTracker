@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -49,19 +49,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Install Android SDK packages
         # 版本一律從 android/build.gradle 讀，不在這裡複製一份會過期的數字。
@@ -111,9 +111,11 @@ jobs:
         run: sh ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: app-release-apk
+          # archive: false 直接上傳單一檔案，下載到的就是 app-release.apk 本身，
+          # 不是還要解開的 zip。artifact 名稱會變成檔名，name 參數會被忽略。
+          archive: false
           path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
           if-no-files-found: error
