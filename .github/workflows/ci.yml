@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  # PR 連續推送時取消舊的 run；main 的建置不取消，避免遺失 APK。
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Test and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Jest
+        # npm script 已帶 node --experimental-sqlite；--runInBand 避免平行執行搶 SQLite。
+        run: npm test -- --runInBand
+
+      - name: ESLint
+        # 不加 --max-warnings：src/mapHistory/HistorySettings.js 目前有 2 個既有的
+        # react-native/no-inline-styles warning，只有 error 才擋 CI。
+        run: npx eslint src __tests__ App.js
+
+  release-apk:
+    name: Build release APK
+    needs: checks
+    # 只在 push／merge 到 main 時建置；PR 只跑上面的測試與 lint。
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android SDK packages
+        # 版本一律從 android/build.gradle 讀，不在這裡複製一份會過期的數字。
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          sdkmanager="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$sdkmanager" ]; then
+            echo "找不到 sdkmanager：$sdkmanager" >&2
+            exit 1
+          fi
+          read_ext() { grep -oP "^\s*$1\s*=\s*\"?\K[^\"[:space:]]+" android/build.gradle | head -1; }
+          compile_sdk="$(read_ext compileSdkVersion)"
+          build_tools="$(read_ext buildToolsVersion)"
+          ndk="$(read_ext ndkVersion)"
+          echo "platforms;android-$compile_sdk / build-tools;$build_tools / ndk;$ndk"
+          yes | "$sdkmanager" --licenses > /dev/null
+          "$sdkmanager" "platforms;android-$compile_sdk" "build-tools;$build_tools" "ndk;$ndk"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Assemble release APK
+        # gradlew 在 repo 裡沒有執行權限，必須用 sh 呼叫。
+        # 沒有設 GOOGLE_MAPS_ANDROID_API_KEY secret 時建置照樣成功，
+        # 只是 BuildConfig.GOOGLE_MAPS_CONFIGURED=false，App 內地圖不能用。
+        working-directory: android
+        env:
+          GOOGLE_MAPS_ANDROID_API_KEY: ${{ secrets.GOOGLE_MAPS_ANDROID_API_KEY }}
+        run: sh ./gradlew assembleRelease --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish pre-release
+        # 讓手機可以直接點連結下載 .apk，不必登入 GitHub 再解 artifact 的 zip。
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short HEAD)"
+          tag="main-$short_sha"
+          asset="DogTracker-$tag.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$asset"
+          notes="$(printf '%s\n' \
+            "由 GitHub Actions 自動建置，commit \`$GITHUB_SHA\`：" \
+            "" \
+            "> $(git log -1 --pretty=%s)" \
+            "" \
+            "簽章使用 repo 內的 debug keystore，僅供內部測試，不可上架。" \
+            "手機安裝前可能需要允許「安裝未知來源的應用程式」。")"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" "$asset" --clobber
+          else
+            gh release create "$tag" "$asset" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title "DogTracker main $short_sha" \
+              --notes "$notes"
+          fi
