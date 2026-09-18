@@ -5,6 +5,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
+import { describeDogSource, mergeDogMarkers } from '../map/DogMerge';
 import TrackingSheet from '../map/TrackingSheet';
 import MasterDetails from '../map/MasterDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
@@ -17,6 +18,7 @@ export default function MapScreen({
   mapProvider,
   active = true,
   history,
+  cloudDogs,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
@@ -31,7 +33,7 @@ export default function MapScreen({
   useEffect(() => {
     setMasterSelected(false);
   }, [mode, point.masterId, tracking.preferences.value.showMasterMarker]);
-  const livePresentation = useMemo(
+  const basePresentation = useMemo(
     () =>
       createTrackingMapPresentation(
         point,
@@ -41,6 +43,26 @@ export default function MapScreen({
       ),
     [point, positionSamples, route, tracking.preferences.value],
   );
+  // One marker per dog: the newest of the BLE feed and the downloaded cloud
+  // rows. Demo positions stay isolated, so cloud dogs only join in real mode.
+  const dogs = useMemo(
+    () => (mode === 'real' && tracking.preferences.value.showSlaveMarker
+      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows })
+      : []),
+    [mode, point, positionSamples, cloudDogs?.rows, tracking.preferences.value.showSlaveMarker],
+  );
+  const livePresentation = useMemo(() => {
+    if (!dogs.length) return basePresentation;
+    return {
+      ...basePresentation,
+      // dogs replaces the single slave marker; positions stays untouched so the
+      // card and camera keep reading the connected pair.
+      slave: null,
+      dogs,
+      cameraPositions: [...basePresentation.cameraPositions,
+        ...dogs.map(dog => dog.coordinate)],
+    };
+  }, [basePresentation, dogs]);
   const historical = !!history?.preferences.enabled;
   const livePhone = useLiveLocation(active && tracking.foreground);
   const presentation = useMemo(() => {
@@ -75,6 +97,13 @@ export default function MapScreen({
     }
   }
   if (mapStatus) messages.push(mapStatus);
+  if (!historical && cloudDogs?.error)
+    messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
+  const fromCloud = historical ? [] : dogs.filter(dog => dog.source === 'cloud');
+  if (fromCloud.length)
+    messages.push(`${fromCloud
+      .map(dog => `狗 ${dog.slaveId}：${describeDogSource(dog)}`)
+      .join('、')}。`);
   if (phone?.error)
     messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
   if (

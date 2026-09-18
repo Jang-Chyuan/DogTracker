@@ -26,6 +26,7 @@ import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { useCloudSync } from './src/cloud/useCloudSync';
+import { useCloudDogs } from './src/cloud/useCloudDogs';
 import BottomNavigation, {
   NAV_HEIGHT,
 } from './src/components/BottomNavigation';
@@ -51,6 +52,8 @@ function TrackerApp() {
   const isMap = route.name === 'map';
   const history = useMapHistory(tracking.historyDatabase, tracking.ready.real, tracking.foreground && isMap, cloudSync.ownerId);
   const phone = usePhoneLocation(tracking.foreground, undefined, isMap);
+  const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
+    tracking.ready.real && tracking.foreground && isMap && tracking.mode === 'real');
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.
@@ -140,6 +143,7 @@ function TrackerApp() {
           history={history}
           tracking={tracking}
           phone={phone}
+          cloudDogs={cloudDogs}
           active={isMap}
           bottomInset={insets.bottom + NAV_HEIGHT + 20}
           mapProvider={GOOGLE_MAP_PROVIDER}
