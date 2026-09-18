@@ -13,6 +13,7 @@ import MapView, {
   PROVIDER_GOOGLE,
 } from 'react-native-maps';
 import { floatingShadow, mapColors as colors } from './MapTheme';
+import { describeDogSource } from './DogMerge';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import TrackingAvatar from './TrackingAvatar';
 
@@ -22,20 +23,20 @@ const EMPTY_REGION = {
   latitudeDelta: 4,
   longitudeDelta: 4,
 };
-function DeviceMarker({ source, role, position, onPress }) {
+function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
   const marker = useRef(null);
   return (
     <Marker
       ref={marker}
-      identifier={source + '-' + role}
+      identifier={identifier || source + '-' + role}
       coordinate={position.coordinate}
       anchor={{ x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       zIndex={role === 'slave' ? 20 : 10}
-      title={role === 'master' ? '領犬員 · Master' : '狗 · Slave'}
-      description={
+      title={title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave')}
+      description={description || (
         position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
-      }
+      )}
       onPress={onPress}
     >
       <View
@@ -286,6 +287,18 @@ function GoogleTrackingMapRenderer({
               position={slave}
             />
           )}
+          {(presentation.dogs || []).map(dog => (
+            <DeviceMarker
+              key={source + '-dog-' + dog.slaveId}
+              identifier={source + '-dog-' + dog.slaveId}
+              source={source}
+              role="slave"
+              position={dog}
+              title={'狗 ' + dog.slaveId}
+              description={describeDogSource(dog) + ' · '
+                + new Date(dog.receivedAt).toLocaleTimeString()}
+            />
+          ))}
         </MapView>
       ) : (
         <View style={styles.unavailable}>
