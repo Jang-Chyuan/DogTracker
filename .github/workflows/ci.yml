@@ -42,8 +42,8 @@ jobs:
   release-apk:
     name: Build release APK
     needs: checks
-    # 只在 push／merge 到 main 時建置；PR 只跑上面的測試與 lint。
-    if: github.event_name == 'push'
+    # TEMP（合併前還原）：本 PR 暫時也在 pull_request 上建置，用來驗證 runner 的
+    # JDK／Android SDK／NDK 設定與 gradlew 真的能跑完。正式行為是只在 push 到 main。
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -103,6 +103,8 @@ jobs:
 
       - name: Publish pre-release
         # 讓手機可以直接點連結下載 .apk，不必登入 GitHub 再解 artifact 的 zip。
+        # TEMP（合併前還原）：PR 上不發 release，只驗證建置。
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
