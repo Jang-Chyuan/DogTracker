@@ -105,6 +105,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve release version
+        # CI owns the version: each main build takes the next patch of whatever
+        # main currently holds, tags it, and writes it back at the end. Reading
+        # from origin/main rather than the checked-out commit keeps two merges
+        # landing close together from resolving to the same version.
+        id: version
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin main
+          current="$(git show origin/main:package.json | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
+          next="$(node -e '
+            const current = process.argv[1];
+            const parsed = /^(\d+)\.(\d+)\.(\d+)$/.exec(current);
+            if (!parsed) {
+              console.error(`version on main is not MAJOR.MINOR.PATCH: ${current}`);
+              process.exit(1);
+            }
+            console.log(`${parsed[1]}.${parsed[2]}.${Number(parsed[3]) + 1}`);
+          ' "$current")"
+          echo "$current on main -> releasing $next"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+
       - name: Assemble release APK
         # Without the GOOGLE_MAPS_ANDROID_API_KEY secret the build still
         # succeeds, but BuildConfig.GOOGLE_MAPS_CONFIGURED stays false and the
@@ -113,6 +135,7 @@ jobs:
         working-directory: android
         env:
           GOOGLE_MAPS_ANDROID_API_KEY: ${{ secrets.GOOGLE_MAPS_ANDROID_API_KEY }}
+          APP_VERSION_NAME: ${{ steps.version.outputs.next }}
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK artifact
@@ -126,15 +149,15 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Publish pre-release
+      - name: Publish release
         # A direct .apk link a phone can open, without signing in to GitHub.
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.next }}
         run: |
           set -euo pipefail
-          short_sha="$(git rev-parse --short HEAD)"
-          tag="main-$short_sha"
-          asset="DogTracker-$tag.apk"
+          tag="v$VERSION"
+          asset="DogTracker-$VERSION.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "$asset"
           # Release notes are user-facing copy, so they stay in Chinese.
           notes="$(printf '%s\n' \
@@ -150,6 +173,35 @@ jobs:
             gh release create "$tag" "$asset" \
               --prerelease \
               --target "$GITHUB_SHA" \
-              --title "DogTracker main $short_sha" \
+              --title "DogTracker v$VERSION" \
               --notes "$notes"
           fi
+
+      - name: Record the released version on main
+        # Only after the release exists, so a failed build never bumps anything.
+        # The commit is built on origin/main rather than on the commit that was
+        # checked out, so it never conflicts with a merge that landed meanwhile.
+        # A push made with GITHUB_TOKEN does not trigger workflows; [skip ci] is
+        # belt and braces in case this ever runs with a different token.
+        env:
+          VERSION: ${{ steps.version.outputs.next }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch --depth=1 origin main
+            git checkout -B version-bump origin/main
+            npm version "$VERSION" --no-git-tag-version --allow-same-version > /dev/null
+            if git diff --quiet -- package.json package-lock.json; then
+              echo "main already records $VERSION, nothing to push."
+              exit 0
+            fi
+            git commit -qam "chore(release): v$VERSION [skip ci]"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "main moved while building, retrying ($attempt of 3)"
+          done
+          echo "Could not record v$VERSION on main" >&2
+          exit 1

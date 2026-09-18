@@ -83,10 +83,18 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 
 `main` 建置成功後會產出兩份相同的 APK：
 
-- workflow artifact `app-release-apk`：在該次 run 的頁面下載，保留 30 天（zip 包，需登入 GitHub）。
-- GitHub pre-release `main-<短 SHA>`：附檔名為 `DogTracker-main-<短 SHA>.apk`，手機可直接點連結下載安裝。
+- workflow artifact `app-release.apk`：在該次 run 的頁面下載，保留 30 天。
+- GitHub pre-release `v<版本>`：附檔名為 `DogTracker-<版本>.apk`，手機可直接點連結下載安裝。
 
 兩者都沿用 repo 內的 debug keystore 簽章，僅供內部測試，不可上架。
+
+### 版本號
+
+版本號的唯一來源是 `package.json` 的 `version`，格式為 SemVer 的 `MAJOR.MINOR.PATCH`。
+
+每次 push／merge 到 `main`，CI 會把 `main` 上目前的版本 **PATCH 加一** 當成這次的版本：建置時以 `APP_VERSION_NAME` 傳進 Gradle，讓 APK 的 `versionName` 和 release tag 一致，發完 release 再把新版本 commit 回 `main`（`chore(release): v<版本>`）。要跳 MINOR 或 MAJOR（例如 0.0.9 之後想發 0.1.0），在 PR 裡改 `package.json` 的 `version` 即可，CI 會從你寫的版本繼續往下加。
+
+`versionCode` 由版本號推算（`MAJOR * 1000000 + MINOR * 1000 + PATCH`，例如 `1.2.3` 為 `1002003`），確保升級時不會倒退。本機建置不帶 `APP_VERSION_NAME`，直接使用 `package.json` 的版本。
 
 CI 會讀取 repository secret `GOOGLE_MAPS_ANDROID_API_KEY`（對應本機的 `android/local.properties`）。未設定時建置仍會成功，但 `BuildConfig.GOOGLE_MAPS_CONFIGURED` 為 `false`，App 內的 Google 地圖不能使用。金鑰不會寫進 repo。
 
