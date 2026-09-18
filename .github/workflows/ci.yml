@@ -81,7 +81,22 @@ jobs:
           echo "platforms;android-$compile_sdk / build-tools;$build_tools / ndk;$ndk"
           # 同理不用 yes | sdkmanager：改餵固定份量的 y，避免 SIGPIPE。
           "$sdkmanager" --licenses > /dev/null <<< "$(printf 'y\n%.0s' $(seq 50))"
-          "$sdkmanager" "platforms;android-$compile_sdk" "build-tools;$build_tools" "ndk;$ndk"
+          # API 37 起 platform 套件帶次版號（platforms;android-37.0），API 36 以前沒有，
+          # 所以先試不帶的、再試 .0，不要寫死其中一種。
+          platform=""
+          for candidate in "platforms;android-$compile_sdk" "platforms;android-$compile_sdk.0"; do
+            if "$sdkmanager" "$candidate"; then
+              platform="$candidate"
+              break
+            fi
+            echo "SDK repository 沒有 $candidate，試下一個候選。"
+          done
+          if [ -z "$platform" ]; then
+            echo "找不到 compileSdk $compile_sdk 對應的 platform 套件" >&2
+            exit 1
+          fi
+          echo "使用 $platform"
+          "$sdkmanager" "build-tools;$build_tools" "ndk;$ndk"
 
       - name: Install dependencies
         run: npm ci
