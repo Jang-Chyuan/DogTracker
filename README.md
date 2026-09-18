@@ -79,7 +79,7 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 | 觸發 | 執行內容 |
 | --- | --- |
 | 對 `main` 開 PR | `npm ci`、`npm test -- --runInBand`、`npx eslint src __tests__ App.js` |
-| push／merge 到 `main` | 同上，全部通過後再 `cd android && sh ./gradlew assembleRelease` |
+| push／merge 到 `main` | 同上，全部通過後再 `cd android && ./gradlew assembleRelease` |
 
 `main` 建置成功後會產出兩份相同的 APK：
 

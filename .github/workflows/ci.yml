@@ -106,7 +106,6 @@ jobs:
         run: npm ci
 
       - name: Assemble release APK
-        # gradlew has no execute bit in the repository, so it runs through sh.
         # Without the GOOGLE_MAPS_ANDROID_API_KEY secret the build still
         # succeeds, but BuildConfig.GOOGLE_MAPS_CONFIGURED stays false and the
         # in-app map is unusable. Note that a run created before the secret
@@ -114,7 +113,7 @@ jobs:
         working-directory: android
         env:
           GOOGLE_MAPS_ANDROID_API_KEY: ${{ secrets.GOOGLE_MAPS_ANDROID_API_KEY }}
-        run: sh ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
