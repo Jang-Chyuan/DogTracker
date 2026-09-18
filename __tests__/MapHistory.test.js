@@ -125,6 +125,8 @@ test('history lines and exports skip rows with no GPS fix', () => {
   expect(geometry.count).toBe(2);
   expect(geometry.segments.flat().every(point => point.latitude !== 0)).toBe(true);
   expect(geometry.latest).toMatchObject({ id: 3 });
-  expect(serializeHistory('gpx', { phone: rows, client: [] })).not.toContain('lat="0"');
+  const gpx = serializeHistory('gpx', { phone: rows, client: [], since: 1000, until: 4000 });
+  expect(gpx).not.toContain('lat="0"');
+  expect(gpx.match(/<trkpt /g)).toHaveLength(2);
 });
 
