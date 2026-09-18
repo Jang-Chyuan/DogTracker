@@ -43,9 +43,8 @@ jobs:
   release-apk:
     name: Build release APK
     needs: checks
-    # TEMPORARY (reverted before merge): also build on pull_request, to prove the
-    # runner's JDK / Android SDK / NDK setup and gradlew really get through.
-    # The intended trigger is push to main only.
+    # Build only on push/merge to main; a pull request just runs the checks above.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -130,9 +129,6 @@ jobs:
 
       - name: Publish pre-release
         # A direct .apk link a phone can open, without signing in to GitHub.
-        # TEMPORARY (reverted before merge): gated on push, so a pull request
-        # verifies the build without creating a release.
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
