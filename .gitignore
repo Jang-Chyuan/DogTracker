@@ -81,3 +81,6 @@ yarn-error.log
 
 # Local SQLite snapshots exported from Android devices
 /dogtracker.sqlite
+
+# Claude Code worktrees (.claude/worktrees/*)
+.claude/

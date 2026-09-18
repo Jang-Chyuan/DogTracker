@@ -72,6 +72,24 @@ android\app\build\outputs\apk\release\app-release.apk
 
 Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況下啟動。首次使用時仍須允許 App 所要求的相機、附近裝置、藍牙及對應 Android 版本所需權限。
 
+## 持續整合（GitHub Actions）
+
+工作流程定義在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
+
+| 觸發 | 執行內容 |
+| --- | --- |
+| 對 `main` 開 PR | `npm ci`、`npm test -- --runInBand`、`npx eslint src __tests__ App.js` |
+| push／merge 到 `main` | 同上，全部通過後再 `cd android && ./gradlew assembleRelease` |
+
+`main` 建置成功後會產出兩份相同的 APK：
+
+- workflow artifact `app-release-apk`：在該次 run 的頁面下載，保留 30 天（zip 包，需登入 GitHub）。
+- GitHub pre-release `main-<短 SHA>`：附檔名為 `DogTracker-main-<短 SHA>.apk`，手機可直接點連結下載安裝。
+
+兩者都沿用 repo 內的 debug keystore 簽章，僅供內部測試，不可上架。
+
+CI 會讀取 repository secret `GOOGLE_MAPS_ANDROID_API_KEY`（對應本機的 `android/local.properties`）。未設定時建置仍會成功，但 `BuildConfig.GOOGLE_MAPS_CONFIGURED` 為 `false`，App 內的 Google 地圖不能使用。金鑰不會寫進 repo。
+
 ## 使用流程
 
 1. 開啟 App 並允許必要權限。

@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  # Supersede an outdated PR run, but never cancel a main build and lose its APK.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Test and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Jest
+        # The npm script already passes node --experimental-sqlite;
+        # --runInBand keeps parallel workers off the same SQLite files.
+        run: npm test -- --runInBand
+
+      - name: ESLint
+        # No --max-warnings: src/mapHistory/HistorySettings.js has two existing
+        # react-native/no-inline-styles warnings, and only errors should fail CI.
+        run: npx eslint src __tests__ App.js
+
+  release-apk:
+    name: Build release APK
+    needs: checks
+    # Build only on push/merge to main; a pull request just runs the checks above.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Android SDK packages
+        # Read the versions out of android/build.gradle rather than keeping a
+        # second copy here that silently goes stale.
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          sdkmanager="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$sdkmanager" ]; then
+            echo "sdkmanager not found at $sdkmanager" >&2
+            exit 1
+          fi
+          # grep -m1 rather than grep | head -1: under pipefail, grep taking
+          # SIGPIPE from head fails the whole step.
+          read_ext() { grep -oPm1 "^\s*$1\s*=\s*\"?\K[^\"[:space:]]+" android/build.gradle; }
+          compile_sdk="$(read_ext compileSdkVersion)"
+          build_tools="$(read_ext buildToolsVersion)"
+          ndk="$(read_ext ndkVersion)"
+          echo "platforms;android-$compile_sdk / build-tools;$build_tools / ndk;$ndk"
+          # Same trap, so not yes | sdkmanager: feed it a fixed number of y's.
+          "$sdkmanager" --licenses > /dev/null <<< "$(printf 'y\n%.0s' $(seq 50))"
+          # From API 37 the platform packages carry a minor version
+          # (platforms;android-37.0); API 36 and earlier do not. Try the plain id
+          # first, then the .0 one, instead of hard-coding either shape.
+          platform=""
+          for candidate in "platforms;android-$compile_sdk" "platforms;android-$compile_sdk.0"; do
+            if "$sdkmanager" "$candidate"; then
+              platform="$candidate"
+              break
+            fi
+            echo "$candidate is not in the SDK repository, trying the next candidate."
+          done
+          if [ -z "$platform" ]; then
+            echo "No platform package found for compileSdk $compile_sdk" >&2
+            exit 1
+          fi
+          echo "Using $platform"
+          "$sdkmanager" "build-tools;$build_tools" "ndk;$ndk"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Assemble release APK
+        # Without the GOOGLE_MAPS_ANDROID_API_KEY secret the build still
+        # succeeds, but BuildConfig.GOOGLE_MAPS_CONFIGURED stays false and the
+        # in-app map is unusable. Note that a run created before the secret
+        # existed keeps an empty value for its whole life.
+        working-directory: android
+        env:
+          GOOGLE_MAPS_ANDROID_API_KEY: ${{ secrets.GOOGLE_MAPS_ANDROID_API_KEY }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          # archive: false uploads the single file as is, so the download is
+          # app-release.apk itself rather than a zip to unpack on a phone. The
+          # artifact is then named after the file and the name input is ignored.
+          archive: false
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish pre-release
+        # A direct .apk link a phone can open, without signing in to GitHub.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short HEAD)"
+          tag="main-$short_sha"
+          asset="DogTracker-$tag.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$asset"
+          # Release notes are user-facing copy, so they stay in Chinese.
+          notes="$(printf '%s\n' \
+            "由 GitHub Actions 自動建置，commit \`$GITHUB_SHA\`：" \
+            "" \
+            "> $(git log -1 --pretty=%s)" \
+            "" \
+            "簽章使用 repo 內的 debug keystore，僅供內部測試，不可上架。" \
+            "手機安裝前可能需要允許「安裝未知來源的應用程式」。")"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" "$asset" --clobber
+          else
+            gh release create "$tag" "$asset" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title "DogTracker main $short_sha" \
+              --notes "$notes"
+          fi
