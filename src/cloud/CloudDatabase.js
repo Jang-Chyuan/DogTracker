@@ -4,6 +4,11 @@ const TRIM_HISTORY = `DELETE FROM supabase_dog_status WHERE id IN (
   ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET 15000
 )`;
 
+// The tracking session forwards these to the owner of the SQLite connection;
+// keep both sides in step or a caller gets `undefined is not a function`.
+export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
+  'loadBuckets', 'saveBucket', 'countRange', 'listHistory', 'count'];
+
 export function createCloudDatabase(connection) {
   const rows = result => result.results || result.rows?._array || [];
   const requireOwner = owner => {
@@ -26,10 +31,19 @@ export function createCloudDatabase(connection) {
         ON supabase_dog_status(owner_user_id, event_id)`);
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_history
         ON supabase_dog_status(owner_user_id, received_at DESC, id DESC)`);
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_master_received
+        ON supabase_dog_status(owner_user_id, master_id, received_at)`);
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_state (
         owner_user_id TEXT NOT NULL, master_id INTEGER NOT NULL,
         through_at TEXT NOT NULL, event_id TEXT, updated_at INTEGER NOT NULL,
         PRIMARY KEY (owner_user_id, master_id)
+      )`);
+      // Verified cloud row count per closed hour; see CloudReconcile.
+      await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_buckets (
+        owner_user_id TEXT NOT NULL, master_id INTEGER NOT NULL,
+        bucket_start INTEGER NOT NULL, cloud_count INTEGER NOT NULL,
+        verified_at INTEGER NOT NULL,
+        PRIMARY KEY (owner_user_id, master_id, bucket_start)
       )`);
       // Also apply retention to databases downloaded by older app versions.
       await connection.executeAsync(TRIM_HISTORY);
@@ -77,6 +91,34 @@ export function createCloudDatabase(connection) {
       commands.push({ query: TRIM_HISTORY, params: [] });
       // Progress, retention and downloaded rows commit together.
       await connection.executeBatchAsync(commands);
+    },
+    async loadBuckets(owner, masterId, fromBucket) {
+      requireOwner(owner);
+      return rows(await connection.executeAsync(`SELECT bucket_start, cloud_count
+        FROM cloud_sync_buckets WHERE owner_user_id = ? AND master_id = ? AND bucket_start >= ?`,
+      [owner, masterId, fromBucket]));
+    },
+    async saveBucket(owner, masterId, bucketStart, cloudCount) {
+      requireOwner(owner);
+      if (![masterId, bucketStart, cloudCount].every(Number.isInteger)) {
+        throw new Error('核對紀錄格式不正確');
+      }
+      // Keep two days so a phone that was away for a day still has the previous
+      // verification to compare against; older hours are outside the window.
+      await connection.executeBatchAsync([
+        { query: `INSERT OR REPLACE INTO cloud_sync_buckets
+          (owner_user_id, master_id, bucket_start, cloud_count, verified_at) VALUES (?, ?, ?, ?, ?)`,
+        params: [owner, masterId, bucketStart, cloudCount, Date.now()] },
+        { query: 'DELETE FROM cloud_sync_buckets WHERE owner_user_id = ? AND bucket_start < ?',
+          params: [owner, bucketStart - 48 * 60 * 60 * 1000] },
+      ]);
+    },
+    async countRange(owner, masterId, fromMs, toMs) {
+      requireOwner(owner);
+      const result = rows(await connection.executeAsync(`SELECT COUNT(*) AS count
+        FROM supabase_dog_status WHERE owner_user_id = ? AND master_id = ?
+        AND received_at >= ? AND received_at < ?`, [owner, masterId, fromMs, toMs]));
+      return Number(result[0]?.count || 0);
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);

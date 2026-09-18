@@ -1,7 +1,12 @@
 import { downloadCloudHistory } from './CloudDownload';
+import { reconcileCloudWindow } from './CloudReconcile';
 
 const DAY = 24 * 60 * 60 * 1000;
 const OVERLAP = 5 * 60 * 1000;
+// The incremental pass only looks back OVERLAP, so rows uploaded later than
+// that are found by the count check instead. Sweeping every cycle would spend
+// one request per hour per Master on data that rarely changes.
+const SWEEP = 10 * 60 * 1000;
 
 async function listMasters(client, owner, signal, check) {
   const masters = new Set();
@@ -35,6 +40,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let running = null;
   let controller = null;
   let manualPending = false;
+  let sweptAt = 0;
   let state = { busy: false, mode: null, error: '', lastSuccess: null, revision: 0 };
   const publish = patch => {
     state = { ...state, ...patch };
@@ -62,6 +68,11 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         check();
         const masters = await listMasters(client, userId, abort.signal, check);
         const cutoff = now();
+        const save = async (...args) => {
+          check();
+          await database.savePage(...args);
+          if (valid(version)) publish({ revision: state.revision + 1 });
+        };
         for (const masterId of masters) {
           check();
           const saved = await database.loadSyncState(userId, masterId);
@@ -77,14 +88,24 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           }
           await downloadCloudHistory({
             client, owner: userId, masterId, checkpoint: true,
-            database: { savePage: async (...args) => {
-              check();
-              await database.savePage(...args);
-              if (valid(version)) publish({ revision: state.revision + 1 });
-            } },
+            database: { savePage: save },
             startAt: new Date(start).toISOString(), endBefore: new Date(cutoff).toISOString(),
             signal: abort.signal, isCurrent: () => valid(version),
           });
+        }
+        check();
+        if (now() - sweptAt >= SWEEP) {
+          // Set first: a failing count check waits for the next sweep instead of
+          // repeating 24 requests per Master on every 30-second tick.
+          sweptAt = now();
+          for (const masterId of masters) {
+            check();
+            await reconcileCloudWindow({
+              client, owner: userId, masterId, now: cutoff,
+              database: { ...database, savePage: save },
+              signal: abort.signal, isCurrent: () => valid(version),
+            });
+          }
         }
         check();
         publish({ lastSuccess: now() });
@@ -109,6 +130,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       const next = session?.user.id || null;
       if (owner === next) return;
       owner = next;
+      sweptAt = 0;
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, revision: state.revision + 1 });

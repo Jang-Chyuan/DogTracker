@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
+import { CLOUD_DATABASE_METHODS } from '../cloud/CloudDatabase';
 import { databaseSessions } from '../database/DatabaseSession';
 import { createDemoTrackingRepository } from '../demo/DemoTrackingRepository';
 import { createDemoPresetRow, createDemoSeed } from '../demo/DemoPresets';
@@ -30,7 +31,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error('資料庫尚未就緒'))]),
   ));
   const [cloudDatabase] = useState(() => Object.fromEntries(
-    ['initialize', 'savePage', 'listHistory', 'count', 'loadSyncState'].map(method => [method,
+    CLOUD_DATABASE_METHODS.map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
         Promise.reject(new Error('資料庫尚未就緒')),
     ]),

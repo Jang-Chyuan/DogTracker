@@ -15,7 +15,7 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
       .select('event_id,master_id,slave_id,seq,received_at,payload,rssi,snr')
       .gte('received_at', startAt).lt('received_at', endBefore)
       .order('received_at', { ascending: true }).order('event_id', { ascending: true })
-      .limit(500);
+      .limit(1000);
     if (masterId !== null) query = query.eq('master_id', masterId);
     if (cursor) {
       // Values were validated by mapCloudTelemetry; retain microsecond precision.
