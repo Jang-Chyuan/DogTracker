@@ -69,3 +69,50 @@ test('a retained BLE position says so, so a stale marker is not read as current'
   expect(dogs[0]).toMatchObject({ source: 'ble', retained: true });
   expect(describeDogSource(dogs[0])).toBe('BLE・最後有效位置，非最新定位');
 });
+
+// Seen on hardware 2026-09-18: the collar reported 0,0 with battery and speed
+// present, while the cloud copy held real positions from the same seconds.
+test('a BLE row without a GPS fix does not beat an older cloud position', () => {
+  const dogs = merge({
+    point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 },
+    cloudRows: [cloudRow(7, trackingPoint.receivedAt - 5000)],
+  });
+  expect(dogs).toHaveLength(1);
+  expect(dogs[0]).toMatchObject({ source: 'cloud', masterId: 5 });
+  expect(dogs[0].coordinate).toEqual({ latitude: 25.1, longitude: 121.6 });
+});
+
+test('without a fix the dog keeps its last BLE position and says it is not current', () => {
+  const dogs = merge({
+    point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 },
+    samples: [
+      { id: 40, slaveId: 7, slave: { latitude: 0, longitude: 0 },
+        receivedAt: trackingPoint.receivedAt - 1000 },
+      { id: 39, slaveId: 7, slave: { latitude: 25.03, longitude: 121.56 },
+        receivedAt: trackingPoint.receivedAt - 4000 },
+    ],
+  });
+  expect(dogs[0]).toMatchObject({ source: 'ble', retained: true });
+  expect(dogs[0].coordinate).toEqual({ latitude: 25.03, longitude: 121.56 });
+});
+
+test('cloud rows without a fix or out of range are not positions either', () => {
+  const now = trackingPoint.receivedAt + 11 * 60 * 1000;
+  const dogs = mergeDogMarkers({ point: null, now, cloudRows: [
+    { ...cloudRow(4, now - 1000), slave_lat: 0, slave_lon: 0 },
+    { ...cloudRow(5, now - 1000), slave_lat: 200 },
+    cloudRow(8, now - 1000),
+  ] });
+  expect(dogs.map(dog => dog.slaveId)).toEqual([8]);
+});
+
+test('no fix anywhere draws no marker, and still hides another Master\'s dog', () => {
+  // The collar is heard but has no position yet, and this phone has no earlier
+  // fix for it: an empty map is correct, and dog 4 belongs to another Master.
+  const dogs = merge({
+    point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 },
+    cloudRows: [cloudRow(4, trackingPoint.receivedAt + 1000)],
+  });
+  expect(dogs).toEqual([]);
+});
+

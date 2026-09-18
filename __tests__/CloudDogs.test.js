@@ -33,6 +33,8 @@ test('the newest downloaded row per dog, per account, with a position', async ()
       // No position: cannot place a marker, so it must not hide the older row.
       row('a4', 4, NOW - 500, 5, { slave_lat: null, slave_lon: null }),
       row('a5', 3, NOW - MAX_AGE_MS - 1000, 5),
+      // 0,0 is what the collar sends without a GPS fix: not a position.
+      row('a7', 9, NOW - 100, 5, { slave_lat: 0, slave_lon: 0 }),
       row('a6', 8, NOW - 3000, 5),
     ]);
     await database.savePage('account-b', [row('b1', 7, NOW, 5)]);
