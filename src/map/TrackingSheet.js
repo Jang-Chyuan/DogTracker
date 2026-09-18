@@ -14,6 +14,7 @@ import { floatingShadow, mapColors as colors } from './MapTheme';
 import { formatTime, positionLabel } from './MapFormat';
 import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
 import DogList from './DogList';
+import Stat from './Stat';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
 import {
@@ -267,48 +268,67 @@ export default function TrackingSheet({
           <DogList
             dogs={dogs}
             selectedSlaveId={preferences.value.focusSlaveId}
+            hiddenSlaveIds={preferences.value.hiddenSlaveIds}
             disabled={disabled}
             onSelect={focusSlaveId =>
               tracking.saveTrackingPreferences({ focusSlaveId })
             }
+            onToggle={slaveId =>
+              tracking.saveTrackingPreferences({
+                hiddenSlaveIds: preferences.value.hiddenSlaveIds.includes(slaveId)
+                  ? preferences.value.hiddenSlaveIds.filter(id => id !== slaveId)
+                  : [...preferences.value.hiddenSlaveIds, slaveId],
+                // Showing a dog again must also bring back every dog marker,
+                // otherwise its eye would say visible while nothing is drawn.
+                ...(preferences.value.showSlaveMarker ? {} : { showSlaveMarker: true }),
+              })
+            }
             control={dogVisibility}
+            linkNote={'同時顯示 BLE 直接收到的與雲端下載的位置，每隻狗取最新的一筆；'
+              + '來源寫在各列，不想看的狗可以單獨關掉眼睛。'}
           />
         ) : (
           <Position role="slave" position={slave} visibilityControl={dogVisibility} />
         )}
-        <View style={styles.metrics}>
-          {/* Speed and battery come from the BLE feed of the connected pair,
-              so they describe that dog only, never a cloud one. */}
-          <Text style={styles.metric}>
-            {showDogList && point.slaveId != null ? `狗 ${point.slaveId} 速度` : '狗速度'}{' '}
-            {point.speedKmh ?? '—'} km/h
+        {!showDogList && (
+          <View style={styles.metrics}>
+            <Stat icon="speed" label="狗速度" value={`${point.speedKmh ?? '—'} km/h`} />
+            <Stat icon="battery" label="狗電量"
+              level={point.batteryValid ? point.batteryPercentage : null}
+              value={battery(point.batteryValid, point.batteryPercentage)} />
+          </View>
+        )}
+        {/* Only one handler can be drawn: the cloud rows carry each dog's
+            position and the id of the Master that relayed it, never that
+            Master's own position (hardware question H2, still open). */}
+        {dogs.some(dog => dog.source === 'cloud') && (
+          <Text style={styles.hint}>
+            其他 Master 的位置不在雲端資料裡（雲端只有各狗的位置），所以地圖上只有這支
+            手機連線的領犬員。
           </Text>
-          <Text style={styles.metric}>
-            {showDogList && point.slaveId != null ? `狗 ${point.slaveId} 裝置電量` : '狗裝置電量'}{' '}
-            {battery(point.batteryValid, point.batteryPercentage)}
-          </Text>
-        </View>
-        <Position
-          role="master"
-          position={master}
-          visibilityControl={
-            <VisibilityButton
-              role="master"
-              visible={preferences.value.showMasterMarker}
-              disabled={disabled}
-              onPress={() =>
-                tracking.saveTrackingPreferences({
-                  showMasterMarker: !preferences.value.showMasterMarker,
-                })
-              }
-            />
-          }
-        />
-        <View style={styles.metrics}>
-          <Text style={styles.metric}>
-            領犬員裝置電量{' '}
-            {battery(point.masterBatteryValid, point.masterBatteryPercentage)}
-          </Text>
+        )}
+        <View style={!preferences.value.showMasterMarker && styles.hiddenRow}>
+          <Position
+            role="master"
+            position={master}
+            visibilityControl={
+              <VisibilityButton
+                role="master"
+                visible={preferences.value.showMasterMarker}
+                disabled={disabled}
+                onPress={() =>
+                  tracking.saveTrackingPreferences({
+                    showMasterMarker: !preferences.value.showMasterMarker,
+                  })
+                }
+              />
+            }
+          />
+          <View style={styles.metrics}>
+            <Stat icon="battery" label="領犬員電量"
+              level={point.masterBatteryValid ? point.masterBatteryPercentage : null}
+              value={battery(point.masterBatteryValid, point.masterBatteryPercentage)} />
+          </View>
         </View>
         {/* One section: whether the path is drawn, and how far back it goes.
             Two separate controls for the same line confused the reading. */}
@@ -375,34 +395,12 @@ export default function TrackingSheet({
             </Pressable>
           </View>
         )}
-        <Text style={styles.label}>
-          狗與領犬員距離 {point.distanceMeters ?? '—'} m
-        </Text>
-        <Text style={styles.hint}>距離採用資料庫回報值。</Text>
         <Text style={styles.hint}>
           參考圈半徑 1 公里，跟隨領犬員眼睛。路徑採 1 公尺誤差上限簡化，DB
           原始座標不會因簡化而改寫。
         </Text>
-        <View style={styles.divider} />
-        <Text style={styles.label}>硬體回報的定位與活動</Text>
         <Text style={styles.hint}>
-          衛星 {point.satellites ?? '—'} · HDOP {point.hdop ?? '—'}
-        </Text>
-        <Text style={styles.hint}>
-          活動：{point.activityValid ? point.activity ?? '—' : '無有效資料'}
-        </Text>
-        <Text style={styles.hint}>GPS 時間：{point.gpsTime ?? '—'}</Text>
-        <View style={styles.divider} />
-        <Text style={styles.label}>LoRa 訊號品質</Text>
-        <Text style={styles.hint}>
-          RSSI {point.rssi ?? '—'} · SNR {point.snr ?? '—'}
-        </Text>
-        <Text style={styles.hint}>
-          Master ID: {point.masterId ?? '-'} | Slave ID: {point.slaveId ?? '-'}
-        </Text>
-        <Text style={styles.hint}>
-          資料表：{tracking.mode === 'demo' ? 'demo_dog_status' : 'dog_status'}{' '}
-          · DB row ID: {point.id ?? '—'}
+          點地圖上的狗或領犬員可以看該裝置的詳細資料（距離、硬體回報、LoRa 訊號）。
         </Text>
       </ScrollView>
     </Animated.View>
@@ -449,6 +447,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   sectionTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  hiddenRow: { opacity: 0.6 },
   windowRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   window: {
     minHeight: 40,

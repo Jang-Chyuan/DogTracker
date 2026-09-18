@@ -119,9 +119,10 @@ test('Google provider, DB markers, dog trail and exactly 1000 metre circle', asy
   expect(renderer.root.findByType(Circle).props.center).toEqual(
     master.coordinate,
   );
-  expect(renderer.root.findAllByType(Marker)[1].props.description).toContain(
-    '非最新定位',
-  );
+  // The marker draws no bubble of its own; the text is on its view, where a
+  // screen reader finds it.
+  expect(renderer.root.findAllByType(Marker)[1].props.children.props
+    .accessibilityLabel).toContain('非最新定位');
 });
 test('enables the native Google compass without adding a phone location button', async () => {
   await render();
@@ -268,7 +269,7 @@ test('Client switch hides slave while current phone position remains visible in 
   await readyMap();
   // The dog marker now carries its own number and source (see DogMerge).
   const dogShown = () => renderer.root.findAllByType(Marker)
-    .some(node => node.props.title === '狗 7' || node.props.title === '狗 · Slave');
+    .some(node => ['real-dog-7', 'real-slave'].includes(node.props.identifier));
   expect(dogShown()).toBe(true);
   await act(async () => renderer.update(screen(false)));
   expect(dogShown()).toBe(false);
@@ -352,13 +353,11 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   expect(
     renderer.root.findAllByProps({ testID: 'tracking-sheet' }).length,
   ).toBeGreaterThan(0);
-  expect(JSON.stringify(renderer.toJSON())).toContain('Master ID: ');
-  // Real mode lists the dogs instead of one 狗 row; speed still comes from the
-  // BLE feed and is now labelled with that dog's number.
-  expect(JSON.stringify(renderer.toJSON())).toContain('狗 7 速度');
-  expect(JSON.stringify(renderer.toJSON())).toContain('領犬員裝置電量');
-  expect(JSON.stringify(renderer.toJSON())).toContain('LoRa 訊號品質');
-  expect(JSON.stringify(renderer.toJSON())).toContain('硬體回報的定位與活動');
+  // Real mode lists the dogs instead of one 狗 row; the hardware and LoRa
+  // readings describe one pair, so they moved to that device's panel.
+  expect(JSON.stringify(renderer.toJSON())).toContain('領犬員電量');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('LoRa 訊號品質');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('硬體回報的定位與活動');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('定位與接收資料');
   await act(async () =>
     renderer.root
@@ -370,7 +369,7 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   // a tap target of its own.
   expect(renderer.root.findAllByType(Switch)).toHaveLength(1);
   const detailsLayer = StyleSheet.flatten(
-    renderer.root.findByProps({ testID: 'master-details' }).props.style,
+    renderer.root.findByProps({ testID: 'device-details' }).props.style,
   );
   const sheetLayer = StyleSheet.flatten(
     renderer.root.findAllByProps({ testID: 'tracking-sheet' })[0].props.style,
@@ -381,7 +380,7 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   expect(detailsLayer.elevation).toBeGreaterThan(sheetLayer.elevation);
   expect(
     StyleSheet.flatten(
-      renderer.root.findByProps({ testID: 'master-details-backdrop' }).props
+      renderer.root.findByProps({ testID: 'device-details-backdrop' }).props
         .style,
     ),
   ).toMatchObject({
@@ -392,6 +391,19 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
     left: 0,
   });
   expect(JSON.stringify(renderer.toJSON())).not.toContain('顯示領犬員路徑');
+  expect(JSON.stringify(renderer.toJSON())).toContain('Master ID: ');
+  // The same tap on a dog opens the same panel, carrying what the card no
+  // longer does — for that pair only.
+  await act(async () =>
+    renderer.root.findByProps({ testID: 'device-details-backdrop' }).props.onPress());
+  await act(async () =>
+    renderer.root
+      .findAllByType(Marker)
+      .find(node => node.props.identifier === 'real-dog-7')
+      .props.onPress(),
+  );
+  expect(JSON.stringify(renderer.toJSON())).toContain('LoRa 訊號品質');
+  expect(JSON.stringify(renderer.toJSON())).toContain('硬體回報的定位與活動');
 });
 
 test('tile completion and changed padding never refit an already framed map', async () => {

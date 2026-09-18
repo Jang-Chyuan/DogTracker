@@ -28,12 +28,17 @@ test('rows of the same second keep the BLE position, which this phone timed itse
   expect(dogs[0].source).toBe('ble');
 });
 
-test('a dog only in the cloud stays hidden while a Master is connected', () => {
+test('dogs of other Masters are shown as well, whatever this phone is holding', () => {
+  // Confirmed 2026-09-18: the home map shows the whole team from both sources,
+  // each dog at its newest row, with the source written next to it. Hiding the
+  // other Masters' dogs while a link was up left the rest of the team invisible.
   const dogs = merge({ cloudRows: [cloudRow(4, trackingPoint.receivedAt + 8000)] });
-  expect(dogs.map(dog => dog.slaveId)).toEqual([7]);
+  expect(dogs.map(dog => dog.slaveId)).toEqual([4, 7]);
+  expect(dogs.find(dog => dog.slaveId === 4).source).toBe('cloud');
+  expect(dogs.find(dog => dog.slaveId === 7).source).toBe('ble');
 });
 
-test('once the BLE feed goes quiet every dog in the cloud is shown', () => {
+test('a quiet BLE feed changes nothing about which dogs are listed', () => {
   const now = trackingPoint.receivedAt + 11 * 60 * 1000;
   const dogs = mergeDogMarkers({
     point: trackingPoint, now,
@@ -106,13 +111,17 @@ test('cloud rows without a fix or out of range are not positions either', () => 
   expect(dogs.map(dog => dog.slaveId)).toEqual([8]);
 });
 
-test('no fix anywhere draws no marker, and still hides another Master\'s dog', () => {
+test('a dog heard without a fix draws no marker, while the others still do', () => {
   // The collar is heard but has no position yet, and this phone has no earlier
-  // fix for it: an empty map is correct, and dog 4 belongs to another Master.
+  // fix for it: that dog gets no marker, which is not a reason to drop the dog
+  // another Master is reporting.
   const dogs = merge({
     point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 },
     cloudRows: [cloudRow(4, trackingPoint.receivedAt + 1000)],
   });
-  expect(dogs).toEqual([]);
+  expect(dogs.map(dog => dog.slaveId)).toEqual([4]);
+  expect(merge({
+    point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 }, cloudRows: [],
+  })).toEqual([]);
 });
 

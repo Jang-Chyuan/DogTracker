@@ -13,6 +13,8 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   windowMinutes: 10,
   // Which dog the map camera follows; null follows every visible device.
   focusSlaveId: null,
+  // Dogs the user hid one by one; the list still shows them.
+  hiddenSlaveIds: [],
 });
 
 export function validateTrackingPreferences(value) {
@@ -32,6 +34,9 @@ export function validateTrackingPreferences(value) {
   if (settings.focusSlaveId !== null &&
     !(Number.isInteger(settings.focusSlaveId) && settings.focusSlaveId >= 0))
     throw new Error('跟隨的狗設定格式錯誤');
+  if (!Array.isArray(settings.hiddenSlaveIds) ||
+    !settings.hiddenSlaveIds.every(id => Number.isInteger(id) && id >= 0))
+    throw new Error('隱藏的狗設定格式錯誤');
   // Old per-role trail settings have different semantics; only missing new
   // fields receive defaults. Malformed saved JSON still fails explicitly.
   return {
@@ -41,6 +46,9 @@ export function validateTrackingPreferences(value) {
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
     focusSlaveId: settings.focusSlaveId,
+    // Stored sorted and without repeats, so the saved value cannot grow every
+    // time the same dog is hidden.
+    hiddenSlaveIds: [...new Set(settings.hiddenSlaveIds)].sort((a, b) => a - b),
   };
 }
 

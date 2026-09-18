@@ -66,13 +66,13 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
     let renderer;
     await act(async () => { renderer = Renderer.create(view()); });
     expect(database.latestBySlave).toHaveBeenCalledWith('account-a', NOW - MAX_AGE_MS);
-    expect(states.at(-1)).toEqual({ rows, error: '' });
+    expect(states.at(-1)).toEqual({ rows, track: [], error: '' });
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
-    expect(states.at(-1)).toEqual({ rows, error: 'locked' });
+    expect(states.at(-1)).toEqual({ rows, track: [], error: 'locked' });
     // Demo mode and logout stop the reads and clear the rows.
     await act(async () => { renderer.update(view({ enabled: false })); });
-    expect(states.at(-1)).toEqual({ rows: [], error: '' });
+    expect(states.at(-1)).toEqual({ rows: [], track: [], error: '' });
     const calls = database.latestBySlave.mock.calls.length;
     await act(async () => { await jest.advanceTimersByTimeAsync(3 * POLL_MS); });
     expect(database.latestBySlave).toHaveBeenCalledTimes(calls);
@@ -109,13 +109,14 @@ test('the home map draws one marker per dog and names the source', async () => {
   });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
-  const markers = renderer.root.findAllByType(Marker);
-  const dog = markers.filter(node => node.props.title === '狗 7');
+  const markers = renderer.root.findAllByType(Marker)
+    .filter(node => typeof node.props.identifier === 'string');
+  const dog = markers.filter(node => node.props.identifier === 'real-dog-7');
   expect(dog).toHaveLength(1);
-  expect(dog[0].props.description).toContain('經 Master 5・雲端');
+  expect(dog[0].props.children.props.accessibilityLabel).toContain('經 Master 5・雲端');
   expect(dog[0].props.coordinate).toEqual({ latitude: 25.2, longitude: 121.7 });
   // The single-pair marker is replaced, not drawn on top of the merged one.
-  expect(markers.some(node => node.props.title === '狗 · Slave')).toBe(false);
+  expect(markers.some(node => node.props.identifier === 'real-slave')).toBe(false);
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();

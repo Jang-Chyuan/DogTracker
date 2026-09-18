@@ -35,6 +35,10 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   useEffect(() => {
     marker.current?.redraw?.();
   }, [faded, focused]);
+  const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
+  const detail = description || (
+    position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
+  );
   return (
     <Marker
       ref={marker}
@@ -43,14 +47,15 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       anchor={{ x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       zIndex={role === 'slave' ? 20 : 10}
-      title={title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave')}
-      description={description || (
-        position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
-      )}
+      // No title or description: those draw the SDK's own bubble, and a tap
+      // already opens this device's panel. Two boxes for one tap read as a bug.
+      // The text they carried lives on the view below, for screen readers.
       onPress={onPress}
     >
       <View
         collapsable={false}
+        accessible
+        accessibilityLabel={`${name}。${detail}`}
         style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
         onLayout={() => marker.current?.redraw()}
       >
@@ -74,6 +79,7 @@ function GoogleTrackingMapRenderer({
   phoneEnabled,
   livePhone,
   onMasterPress,
+  onDogPress,
   supported,
   configured,
 }) {
@@ -312,6 +318,14 @@ function GoogleTrackingMapRenderer({
               position={slave}
             />
           )}
+          {(presentation.dogPaths || []).map(track => (
+            <React.Fragment key={source + '-dogpath-' + track.slaveId}>
+              {track.segments.map((segment, index) => (
+                <Polyline key={index} coordinates={segment} geodesic={false}
+                  strokeColor={track.color} strokeWidth={3} />
+              ))}
+            </React.Fragment>
+          ))}
           {(presentation.dogs || []).map(dog => (
             <DeviceMarker
               key={source + '-dog-' + dog.slaveId}
@@ -319,6 +333,7 @@ function GoogleTrackingMapRenderer({
               source={source}
               role="slave"
               position={dog}
+              onPress={onDogPress ? () => onDogPress(dog.slaveId) : undefined}
               title={'狗 ' + dog.slaveId}
               description={describeDogSource(dog) + ' · '
                 + new Date(dog.receivedAt).toLocaleTimeString()
