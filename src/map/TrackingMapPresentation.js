@@ -6,10 +6,23 @@ export const MASTER_RANGE_METERS = 1000;
 
 // Drawn points carry their own time (see RouteSegments), so a window change
 // clips the cached line instead of rereading SQLite. A piece is time-ordered,
-// so clipping keeps its tail plus the last point before the window: the line
-// has already been simplified, so no vertex sits exactly on the boundary, and
-// without that anchor a path that merely crosses into the window would vanish.
-// The anchor can therefore start the line slightly before the window.
+// so clipping keeps its tail, plus the point where the line crosses into the
+// window. That crossing has to be computed: the line has already been
+// simplified, so a straight or stationary stretch keeps no vertex anywhere near
+// the boundary, and using the previous vertex as-is would draw a line starting
+// hours before the chosen window. The interpolated point is display geometry
+// only — the same rule as SimplifyRoute, never used for distance or export.
+function crossing(before, after, since) {
+  const span = after.time - before.time;
+  if (!(span > 0)) return null;
+  const ratio = (since - before.time) / span;
+  return {
+    latitude: before.latitude + (after.latitude - before.latitude) * ratio,
+    longitude: before.longitude + (after.longitude - before.longitude) * ratio,
+    time: since,
+  };
+}
+
 function clipSegments(segments, since) {
   const clipped = [];
   for (const segment of segments) {
@@ -17,7 +30,11 @@ function clipSegments(segments, since) {
       point => !Number.isFinite(point.time) || point.time >= since,
     );
     if (inside < 0) continue;
-    const kept = segment.slice(Math.max(0, inside - 1));
+    const kept = segment.slice(inside);
+    if (inside > 0) {
+      const entry = crossing(segment[inside - 1], segment[inside], since);
+      if (entry) kept.unshift(entry);
+    }
     if (kept.length > 1) clipped.push(kept);
   }
   return clipped;
@@ -63,7 +80,6 @@ export function createTrackingMapPresentation(
       trails && visibility.showSlaveMarker
         ? clipSegments(route.slaveSegments, since)
         : [],
-    windowMinutes: visibility.windowMinutes ?? DEFAULT_TRACKING_PREFERENCES.windowMinutes,
     masterRangeMeters: MASTER_RANGE_METERS,
   };
 }

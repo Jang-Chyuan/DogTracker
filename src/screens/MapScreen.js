@@ -8,6 +8,7 @@ import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { describeDogSource, mergeDogMarkers } from '../map/DogMerge';
 import { coverageNotice } from '../mapHistory/HistoryCoverage';
 import TrackingSheet from '../map/TrackingSheet';
+import { useMapClock } from '../map/useMapClock';
 import MasterDetails from '../map/MasterDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
@@ -31,6 +32,9 @@ export default function MapScreen({
   const closeMaster = useCallback(() => setMasterSelected(false), []);
   const openMaster = useCallback(() => setMasterSelected(true), []);
   const { point, route, positionSamples, mode } = tracking;
+  // Ageing is measured against this clock, not against the newest row: a silent
+  // collar changes nothing else on this screen.
+  const now = useMapClock(active && tracking.foreground);
   useEffect(() => {
     setMasterSelected(false);
   }, [mode, point.masterId, tracking.preferences.value.showMasterMarker]);
@@ -41,18 +45,19 @@ export default function MapScreen({
         route,
         positionSamples,
         tracking.preferences.value,
+        now,
       ),
-    [point, positionSamples, route, tracking.preferences.value],
+    [point, positionSamples, route, tracking.preferences.value, now],
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows. Demo positions stay isolated, so cloud dogs only join in real mode.
   const dogs = useMemo(
     () => (mode === 'real' && tracking.preferences.value.showSlaveMarker
-      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
+      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows, now,
         windowMs: tracking.preferences.value.windowMinutes * 60000 })
       : []),
     [mode, point, positionSamples, cloudDogs?.rows, tracking.preferences.value.showSlaveMarker,
-      tracking.preferences.value.windowMinutes],
+      tracking.preferences.value.windowMinutes, now],
   );
   const livePresentation = useMemo(() => {
     if (!dogs.length) return basePresentation;

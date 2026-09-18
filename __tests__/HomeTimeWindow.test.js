@@ -46,12 +46,19 @@ test('the drawn line keeps only the selected window, without rereading SQLite', 
   // window, so no new query is involved.
   expect(points(10).length).toBeLessThan(points(30).length);
   expect(points(1440)).toHaveLength(4);
-  // Everything inside the window is kept, plus one anchor before it so the
-  // line still enters the window.
-  const inside = points(10).filter(point => point.time >= NOW - 10 * MINUTE);
+  // Everything inside the window is kept, plus the point where the line crosses
+  // into it: simplification leaves no vertex on the boundary, and the previous
+  // vertex can be far older than the window.
+  const inside = points(10).filter(point => point.time > NOW - 10 * MINUTE);
   expect(inside).toHaveLength(2);
   expect(points(10)).toHaveLength(3);
-  expect(points(10)[0].time).toBe(NOW - 25 * MINUTE);
+  expect(points(10)[0].time).toBe(NOW - 10 * MINUTE);
+  // The crossing sits on the line between the two rows it was computed from.
+  const [before, after] = [rows[1], rows[2]];
+  const ratio = (NOW - 10 * MINUTE - before.receivedAt)
+    / (after.receivedAt - before.receivedAt);
+  expect(points(10)[0].latitude).toBeCloseTo(
+    before.slaveLat + (after.slaveLat - before.slaveLat) * ratio, 9);
 });
 
 test('a window with no earlier row draws no line instead of a single point', () => {
@@ -166,6 +173,49 @@ test('the map draws the window line and fades a dog seen before it', async () =>
   expect(dog.props.description).toContain('早於所選時間範圍');
   // Nothing inside the window, so no line is drawn for it.
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
+  await act(async () => { renderer.unmount(); });
+  Platform.OS = originalOS;
+  jest.useRealTimers();
+});
+
+test('the home map keeps ageing while the collar is silent', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(NOW);
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  NativePlatform.isMapConfigured.mockReturnValue(true);
+  // Nothing about these props changes again: no new rows, no new cloud rows,
+  // no preference change. Only the clock moves.
+  const rows = [row(1, 20), row(2, 2)];
+  const tracking = {
+    mode: 'real',
+    point: rows[1],
+    route: routeOf(rows),
+    positionSamples: [],
+    ready: { real: true },
+    errors: {},
+    initialSnapshotReady: true,
+    foreground: true,
+    preferences: { ready: true, busy: false, value: preferences({ windowMinutes: 10 }) },
+    saveTrackingPreferences: jest.fn(),
+  };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }}
+      bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
+  });
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  const dog = () => renderer.root.findAllByType(Marker).find(node => node.props.title === '狗 7');
+  expect(dog().props.description).not.toContain('早於所選時間範圍');
+  // Ten minutes later the same row is outside the window.
+  await act(async () => jest.advanceTimersByTime(10 * MINUTE));
+  expect(dog().props.description).toContain('早於所選時間範圍');
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
+  // A day later it leaves the home map altogether.
+  await act(async () => jest.advanceTimersByTime(MAX_AGE_MS));
+  expect(dog()).toBeUndefined();
+  expect(renderer.root.findAllByType(Marker)
+    .some(node => node.props.title === '狗 · Slave')).toBe(false);
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();
