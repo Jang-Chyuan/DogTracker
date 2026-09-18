@@ -49,7 +49,7 @@ function fixture(cloudCounts = {}) {
   }) };
   const changed = jest.fn();
   engine = createCloudSync({ client, database, onChange: changed });
-  return { client, database, changed, queries, states, buckets };
+  return { client, database, changed, queries, states, buckets, cloudCounts };
 }
 const flush = () => jest.advanceTimersByTimeAsync(1);
 
@@ -187,23 +187,29 @@ test('secure sessions survive adapter recreation and logout removes them', async
   await expect(reopened.setItem('project-auth-token', 'data')).rejects.toThrow('安全保存');
 });
 
-test('the hourly count check runs every ten minutes and repairs only what it must', async () => {
+test('the hourly count check runs every ten minutes and only fetches what changed', async () => {
   const hour = Date.parse('2026-09-17T11:00:00Z');
-  const { queries, states, database, buckets } = fixture({ [hour]: 2 });
+  const { queries, states, buckets, cloudCounts } = fixture({ [hour]: 2 });
   engine.setForeground(true); engine.setSession(account('a')); await flush();
-  // 24 closed hours per Master on the first sweep; only the hour with rows the
-  // phone does not have is downloaded again.
+  // 24 closed hours per Master. The incremental pass has just walked them, so
+  // the first sweep records the counts instead of downloading the day again.
   expect(counts(queries)).toHaveLength(48);
-  const repairs = downloads(queries).filter(q => q.filters.gte[1] === '2026-09-17T11:00:00.000Z');
-  expect(repairs).toHaveLength(2);
+  expect(downloads(queries).filter(q => q.filters.gte[1] === '2026-09-17T11:00:00.000Z')).toHaveLength(0);
   expect(buckets.get('a:7')).toContainEqual({ bucket_start: hour, cloud_count: 2 });
-  // The sweep must not move the incremental checkpoint.
-  expect(states.get('a:7').through_at).toBe('2026-09-17T12:00:00.000Z');
   const swept = counts(queries).length;
   await jest.advanceTimersByTimeAsync(9 * 60000);
   expect(counts(queries)).toHaveLength(swept);
+  // A Master uploads two more rows into that hour: now the count differs from
+  // the verified one, so that hour - and only that hour - is fetched again.
+  cloudCounts[hour] = 4;
   await jest.advanceTimersByTimeAsync(60000);
   expect(counts(queries).length).toBeGreaterThan(swept);
-  // The verified hour is not fetched again once the cloud count stops changing.
-  expect(database.countRange.mock.calls).toHaveLength(48);
+  expect(downloads(queries).filter(q => q.filters.gte[1] === '2026-09-17T11:00:00.000Z')).toHaveLength(2);
+  expect(buckets.get('a:7')).toContainEqual({ bucket_start: hour, cloud_count: 4 });
+  // The sweep must never move the incremental checkpoint: its pages carry no
+  // checkpoint at all, so progress only follows the 30-second pass (which by
+  // now has reached 12:10, ten minutes of ticks later).
+  // A sweep checkpoint would have written an hour boundary; progress instead
+  // follows the 30-second pass, which by now has reached 12:10.
+  expect(states.get('a:7').through_at).toBe('2026-09-17T12:10:00.000Z');
 });

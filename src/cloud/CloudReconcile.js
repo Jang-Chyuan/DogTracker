@@ -32,6 +32,15 @@ export async function reconcileCloudWindow({ client, database, owner, masterId,
   const saved = new Map((await database.loadBuckets(owner, masterId, buckets[0]) || [])
     .map(row => [Number(row.bucket_start), Number(row.cloud_count)]));
   check();
+  // How far the incremental pass has already walked. An hour it covered was
+  // fetched in full at that moment, so the first sweep records the current
+  // count instead of downloading the hour again - otherwise a phone whose local
+  // copy has been trimmed re-downloads a whole day the first time it sweeps.
+  // Anything that lands in the hour afterwards still changes the count and is
+  // picked up by the next sweep.
+  const state = await database.loadSyncState(owner, masterId);
+  const covered = Date.parse(state?.through_at);
+  check();
   let repaired = 0;
   for (const start of buckets) {
     check();
@@ -48,9 +57,10 @@ export async function reconcileCloudWindow({ client, database, owner, masterId,
       throw new Error('無法核對雲端筆數，將於下次核對重試');
     }
     if (saved.get(start) === count) continue;
+    const walked = !saved.has(start) && Number.isFinite(covered) && covered >= end;
     // Only download when rows are actually missing; a trimmed hour is recorded
     // as verified so it is not fetched again on the next sweep.
-    const local = await database.countRange(owner, masterId, start, end);
+    const local = walked ? count : await database.countRange(owner, masterId, start, end);
     check();
     if (local < count) {
       await downloadCloudHistory({ client, database, owner, masterId,
