@@ -4,8 +4,9 @@ module.exports = {
     'node_modules/(?!((jest-)?react-native|react-native-url-polyfill|@react-native(-community)?)/)',
   ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
-  // git worktree 常被建在 <repo>/.claude/worktrees/*，它自己的 node_modules 會讓
-  // jest 在主 checkout 同時看到兩份 React，測試會炸在 useImperativeHandle 為 null。
+  // A git worktree under <repo>/.claude/worktrees/* brings its own node_modules,
+  // which makes jest see two copies of React from the main checkout and every
+  // renderer test die on useImperativeHandle being null.
   modulePathIgnorePatterns: ['<rootDir>/.claude/'],
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/'],
   moduleNameMapper: {
