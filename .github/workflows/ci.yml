@@ -73,12 +73,14 @@ jobs:
             echo "找不到 sdkmanager：$sdkmanager" >&2
             exit 1
           fi
-          read_ext() { grep -oP "^\s*$1\s*=\s*\"?\K[^\"[:space:]]+" android/build.gradle | head -1; }
+          # grep -m1 而不是 grep | head -1：pipefail 下 grep 收到 SIGPIPE 會讓 step 失敗。
+          read_ext() { grep -oPm1 "^\s*$1\s*=\s*\"?\K[^\"[:space:]]+" android/build.gradle; }
           compile_sdk="$(read_ext compileSdkVersion)"
           build_tools="$(read_ext buildToolsVersion)"
           ndk="$(read_ext ndkVersion)"
           echo "platforms;android-$compile_sdk / build-tools;$build_tools / ndk;$ndk"
-          yes | "$sdkmanager" --licenses > /dev/null
+          # 同理不用 yes | sdkmanager：改餵固定份量的 y，避免 SIGPIPE。
+          "$sdkmanager" --licenses > /dev/null <<< "$(printf 'y\n%.0s' $(seq 50))"
           "$sdkmanager" "platforms;android-$compile_sdk" "build-tools;$build_tools" "ndk;$ndk"
 
       - name: Install dependencies
