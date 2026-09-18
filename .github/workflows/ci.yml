@@ -5,6 +5,11 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Rebuild and release main on demand, for when a push produced no run at all:
+  # GitHub skips a whole workflow when the head commit message carries the
+  # skip-ci marker, and a squash merge inherits the body of the commits it
+  # squashes, so a pull request that merely writes about that marker is enough.
+  workflow_dispatch:
 
 concurrency:
   # Supersede an outdated PR run, but never cancel a main build and lose its APK.
@@ -43,8 +48,9 @@ jobs:
   release-apk:
     name: Build release APK
     needs: checks
-    # Build only on push/merge to main; a pull request just runs the checks above.
-    if: github.event_name == 'push'
+    # Build on push/merge to main and on a manual run; a pull request just runs
+    # the checks above.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
