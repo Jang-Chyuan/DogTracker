@@ -48,8 +48,9 @@ jobs:
   release-apk:
     name: Build release APK
     needs: checks
-    # TEMPORARY (reverted before merge): also build on pull_request, to check the
-    # commit-count version reaches the APK. The intended trigger is push/manual.
+    # Build on push/merge to main and on a manual run; a pull request just runs
+    # the checks above.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -165,8 +166,6 @@ jobs:
 
       - name: Publish release
         # A direct .apk link a phone can open, without signing in to GitHub.
-        # TEMPORARY (reverted before merge): never release from a pull request.
-        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.name }}
