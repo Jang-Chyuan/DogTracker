@@ -9,6 +9,12 @@ export function coordinate(latitude, longitude) {
     Math.abs(longitude) > 180
   )
     return null;
+  // The tracker sends 0,0 when it has no GPS fix: verified on hardware
+  // 2026-09-18, where battery and speed were present and the position was
+  // zeroed, while the cloud copy held real positions for the same seconds.
+  // Drawing it puts the dog, its route and the camera in the Gulf of Guinea,
+  // and no dog this app tracks is ever at Null Island.
+  if (latitude === 0 && longitude === 0) return null;
   return { latitude, longitude };
 }
 
