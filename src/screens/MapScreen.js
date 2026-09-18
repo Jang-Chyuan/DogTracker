@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistorySheet, { shortRangeLabel } from '../mapHistory/HistorySheet';
+import HistoryPlaybackControls from '../mapHistory/HistoryPlaybackControls';
+import { clipTrackTo } from '../mapHistory/HistoryPlayback';
+import { useHistoryPlayback } from '../mapHistory/useHistoryPlayback';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -135,19 +138,24 @@ export default function MapScreen({
     };
   }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds]);
   const livePhone = useLiveLocation(active && tracking.foreground);
+  const playback = useHistoryPlayback(history?.data, history?.key, historical);
+  const playbackAt = playback.at;
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is decided by the card's own
     // eyes and time window, never by the history tab's parameters.
     if (!historical) return livePresentation;
     const data = history.data;
+    // Playback draws the same tracks up to the cursor, so the map never shows a
+    // position the replayed moment did not have yet.
+    const clip = track => (Number.isFinite(playbackAt) ? clipTrackTo(track, playbackAt) : track);
     // One track per dog, each with its own colour, plus this phone's own trace.
     const tracks = data ? [
-      { ...data.phone, name: '手機', color: '#2563EB', role: 'phone',
+      { ...clip(data.phone), name: '手機', color: '#2563EB', role: 'phone',
         sourceLabel: '來源：這支手機自己的定位記錄' },
-      // Each dog's position in this window wears the same face as on the live
-      // map, instead of an anonymous map pin.
+      // Each dog's position at the replayed moment wears the same face as on
+      // the live map, instead of an anonymous map pin.
       ...(data.clients || []).map((track, index) => ({
-        ...track,
+        ...clip(track),
         name: `狗 ${track.slaveId}`,
         color: dogColor(track.slaveId, index),
         role: 'slave',
@@ -163,7 +171,8 @@ export default function MapScreen({
       cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
     }
     return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks };
-  }, [historical, history?.data, history?.preferences.source, livePresentation]);
+  }, [historical, history?.data, history?.preferences.source, livePresentation,
+    playbackAt]);
   const { master, slave } = presentation.positions;
   // A panel closes itself when its subject leaves the map: a dog that stopped
   // reporting, or the handler's marker being hidden.
@@ -184,6 +193,8 @@ export default function MapScreen({
   // The card names the colours next to the eyes that control them; a banner
   // over the map only covered the map.
   const messages = [];
+  if (historical && Number.isFinite(playbackAt))
+    messages.push(`回放中：${new Date(playbackAt).toLocaleString()}`);
   if (mapStatus) messages.push(mapStatus);
   if (!historical && cloudDogs?.error)
     messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
@@ -282,6 +293,7 @@ export default function MapScreen({
       {historical ? (
         <HistorySheet
           history={history}
+          extras={<HistoryPlaybackControls playback={playback} />}
           snapshot={snapshot}
           bottomInset={bottomInset}
           topInset={controlsTop}
