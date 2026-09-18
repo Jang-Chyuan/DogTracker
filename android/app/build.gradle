@@ -79,6 +79,25 @@ def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) localPropertiesFile.withInputStream { localProperties.load(it) }
 def googleMapsApiKey = (System.getenv('GOOGLE_MAPS_ANDROID_API_KEY') ?: localProperties.getProperty('GOOGLE_MAPS_ANDROID_API_KEY', '')).trim()
 
+// The app version lives in package.json. CI resolves the version it is about to
+// tag and passes it through APP_VERSION_NAME, so the APK carries the same number
+// as its release; a local build just uses whatever package.json currently says.
+def packageJsonVersion = new groovy.json.JsonSlurper()
+        .parseText(rootProject.file('../package.json').getText('UTF-8'))
+        .version
+def appVersionName = (System.getenv('APP_VERSION_NAME') ?: packageJsonVersion).trim()
+
+// versionCode may never go down between installs, so derive it from the version:
+// 1.2.3 becomes 1002003, which leaves room for 999 patches per minor.
+static int versionCodeOf(String versionName) {
+    def parsed = (versionName =~ /^(\d+)\.(\d+)\.(\d+)/)
+    if (!parsed) {
+        throw new org.gradle.api.GradleException(
+                "Cannot derive a versionCode from version '${versionName}'")
+    }
+    (parsed[0][1] as int) * 1000000 + (parsed[0][2] as int) * 1000 + (parsed[0][3] as int)
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -89,8 +108,8 @@ android {
         applicationId "com.dogtracker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode versionCodeOf(appVersionName)
+        versionName appVersionName
         manifestPlaceholders.googleMapsApiKey = googleMapsApiKey
         buildConfigField 'boolean', 'GOOGLE_MAPS_CONFIGURED', (!googleMapsApiKey.isEmpty()).toString()
     }
