@@ -178,7 +178,9 @@ export default function TrackingSheet({
   const point = tracking.point;
   const summary = sheetSummary(tracking);
   const { preferences } = tracking;
-  const disabled = !preferences.ready || preferences.busy;
+  // Only a card that has not loaded yet is disabled. Dimming everything while
+  // a write is in flight made every eye tap flash the whole card.
+  const disabled = !preferences.ready;
   return (
     <Animated.View
       style={[styles.sheet, { bottom: bottomInset, height: animation }]}
@@ -309,6 +311,10 @@ export default function TrackingSheet({
               trackColor={{ true: colors.master }}
             />
           </View>
+          {!preferences.value.showTrails ? (
+            <Text style={styles.hint}>開啟後可以選擇要畫多久的路徑。</Text>
+          ) : (
+            <>
           <Text style={styles.label}>顯示過去多久的路徑</Text>
           <View style={styles.windowRow}>
             {WINDOW_PRESETS.map(minutes => {
@@ -335,6 +341,8 @@ export default function TrackingSheet({
             地圖畫出這段時間內走過的路線，最多 24 小時；更早的紀錄在「歷史」。
             只畫眼睛開啟的對象。
           </Text>
+            </>
+          )}
         </View>
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (

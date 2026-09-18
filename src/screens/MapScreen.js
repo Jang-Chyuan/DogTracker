@@ -13,6 +13,17 @@ import MasterDetails from '../map/MasterDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 
+// With no BLE pair there is nothing local to frame, so the cloud dogs are what
+// the map is for.
+function homeCameraPositions(base, dogs) {
+  const drawn = [
+    ...base.cameraPositions,
+    ...base.masterSegments.flat(),
+    ...base.slaveSegments.flat(),
+  ];
+  return drawn.length ? drawn : dogs.map(dog => dog.coordinate);
+}
+
 export default function MapScreen({
   tracking,
   phone,
@@ -67,8 +78,10 @@ export default function MapScreen({
       // card and camera keep reading the connected pair.
       slave: null,
       dogs,
-      cameraPositions: [...basePresentation.cameraPositions,
-        ...dogs.map(dog => dog.coordinate)],
+      // The first fit frames what this handler is working with: the connected
+      // pair and the path inside the chosen window. Including every cloud dog
+      // zoomed the map out to the whole county, where no path is visible.
+      cameraPositions: homeCameraPositions(basePresentation, dogs),
     };
   }, [basePresentation, dogs]);
   const historical = !!history?.preferences.enabled;

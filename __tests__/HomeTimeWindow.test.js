@@ -254,3 +254,106 @@ test('the path switch and the window live in one section and the switch saves', 
   Platform.OS = originalOS;
   jest.useRealTimers();
 });
+
+test('the first fit frames the pair and its path, not distant cloud dogs', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(NOW);
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  NativePlatform.isMapConfigured.mockReturnValue(true);
+  const rows = [row(1, 20), row(2, 2)];
+  const tracking = {
+    mode: 'real', point: rows[1], route: routeOf(rows), positionSamples: [],
+    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: preferences({ windowMinutes: 1440 }) },
+    saveTrackingPreferences: jest.fn(),
+  };
+  // A dog 40 km away, downloaded from another Master's upload.
+  const cloudRows = [{ slave_id: 9, master_id: 5, received_at: NOW - MINUTE,
+    slave_lat: 25.4, slave_lon: 121.4 }];
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }}
+      cloudDogs={{ rows: cloudRows, error: '' }} bottomInset={80}
+      mapProvider={GOOGLE_MAP_PROVIDER} />);
+  });
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  const { cameraPositions } = renderer.root.findAll(
+    node => !!node.props.presentation, { deep: false })[0].props.presentation;
+  // Framing every cloud dog zoomed out to the whole county, where the path the
+  // handler is working with is a dot.
+  expect(cameraPositions.every(point => point.latitude < 25.1)).toBe(true);
+  expect(cameraPositions.length).toBeGreaterThan(1);
+  await act(async () => { renderer.unmount(); });
+  Platform.OS = originalOS;
+  jest.useRealTimers();
+});
+
+test('saving a preference does not dim the card', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(NOW);
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  NativePlatform.isMapConfigured.mockReturnValue(true);
+  const rows = [row(1, 20), row(2, 2)];
+  const tracking = {
+    mode: 'real', point: rows[1], route: routeOf(rows), positionSamples: [],
+    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
+    // A write is in flight: the card used to grey out until it finished, so
+    // every eye tap flashed.
+    preferences: { ready: true, busy: true, value: preferences() },
+    saveTrackingPreferences: jest.fn(),
+  };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }}
+      bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
+  });
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  await act(async () => renderer.root
+    .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
+    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+  const eye = renderer.root.findAll(
+    node => node.props.accessibilityLabel?.endsWith('位置') &&
+      typeof node.props.onPress === 'function', { deep: false })[0];
+  expect(eye.props.accessibilityState.disabled).toBe(false);
+  expect(JSON.stringify(eye.props.style)).not.toContain('0.45');
+  await act(async () => { renderer.unmount(); });
+  Platform.OS = originalOS;
+  jest.useRealTimers();
+});
+
+test('the window presets fold away while the path is switched off', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(NOW);
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  NativePlatform.isMapConfigured.mockReturnValue(true);
+  const rows = [row(1, 20), row(2, 2)];
+  const base = {
+    mode: 'real', point: rows[1], route: routeOf(rows), positionSamples: [],
+    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
+    saveTrackingPreferences: jest.fn(),
+  };
+  const view = showTrails => (
+    <MapScreen phone={{ enabled: true }} bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER}
+      tracking={{ ...base,
+        preferences: { ready: true, busy: false, value: preferences({ showTrails }) } }} />
+  );
+  let renderer;
+  await act(async () => { renderer = Renderer.create(view(false)); });
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  await act(async () => renderer.root
+    .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
+    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+  const presets = () => renderer.root.findAll(
+    node => node.props.accessibilityLabel?.startsWith('過去 '), { deep: false });
+  // Nothing to choose while no path is drawn.
+  expect(presets()).toHaveLength(0);
+  expect(JSON.stringify(renderer.toJSON())).toContain('開啟後可以選擇');
+  await act(async () => renderer.update(view(true)));
+  expect(presets()).toHaveLength(WINDOW_PRESETS.length);
+  await act(async () => { renderer.unmount(); });
+  Platform.OS = originalOS;
+  jest.useRealTimers();
+});
