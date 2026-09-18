@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { mapColors as colors } from './MapTheme';
 
-export default function VisibilityButton({ role, visible, disabled, onPress }) {
+export default function VisibilityButton({ role, visible, disabled, onPress, subject }) {
   const color = visible
     ? role === 'master'
       ? colors.master
@@ -13,7 +13,7 @@ export default function VisibilityButton({ role, visible, disabled, onPress }) {
       accessibilityRole="button"
       accessibilityLabel={
         (visible ? '隱藏' : '顯示') +
-        (role === 'master' ? '領犬員' : '狗') +
+        (subject || (role === 'master' ? '領犬員' : '狗')) +
         '位置'
       }
       accessibilityState={{ selected: visible, disabled }}
