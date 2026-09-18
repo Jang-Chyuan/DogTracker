@@ -46,17 +46,26 @@ export function createHistoryDatabase(db) {
         }
         return all;
       }
-      let phone = [], client = [];
+      let phone = [], client = [], coverage = null;
       if (p.phone) {
         const exists = rows(await db.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
         if (exists.length) phone = await scan('myLocationTracker', 'recorded_at', '', [], 'latitude', 'longitude');
       }
       if (p.client && (p.source === 'ble' || owner)) {
-        client = await scan(p.source === 'ble' ? 'dog_status' : 'supabase_dog_status', 'received_at',
-          'AND master_id=? AND slave_id=?' + (p.source === 'cloud' ? ' AND owner_user_id=?' : ''),
-          p.source === 'cloud' ? [p.master, p.slave, owner] : [p.master, p.slave], 'slave_lat', 'slave_lon');
+        const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
+        const extra = 'AND master_id=? AND slave_id=?' + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
+        const params = p.source === 'cloud' ? [p.master, p.slave, owner] : [p.master, p.slave];
+        client = await scan(table, 'received_at', extra, params, 'slave_lat', 'slave_lon');
+        // This screen only reads what the phone already stores: the cloud copy
+        // holds what was downloaded, and both tables are trimmed by retention.
+        // Without the oldest stored row the map cannot tell "nothing happened"
+        // from "never downloaded", and neither could the person reading it.
+        const stored = rows(await db.executeAsync(`SELECT MIN(received_at) AS from_at, COUNT(*) AS rows
+          FROM ${table} WHERE 1=1 ${extra}`, params))[0];
+        coverage = { source: p.source, rows: Number(stored?.rows || 0),
+          from: Number.isFinite(stored?.from_at) ? stored.from_at : null };
       }
-      return { phone: raw ? phone : historyGeometry(phone), client: raw ? client : historyGeometry(client), since, until,
+      return { phone: raw ? phone : historyGeometry(phone), client: raw ? client : historyGeometry(client), since, until, coverage,
         message: p.client && p.source === 'cloud' && !owner ? '請先登入雲端帳號，才能查看該帳號下載的定位。' : '' };
     },
   };
