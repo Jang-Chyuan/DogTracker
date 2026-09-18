@@ -121,8 +121,9 @@ export function createCloudDatabase(connection) {
       return Number(result[0]?.count || 0);
     },
     // Newest downloaded row per dog, whichever Master reported it. Rows without
-    // a position cannot place a marker, so they are not candidates. SQLite fills
-    // the bare columns from the row that matched MAX(received_at).
+    // a position cannot place a marker, so they are not candidates; 0,0 is what
+    // the hardware sends with no GPS fix. SQLite fills the bare columns from the
+    // row that matched MAX(received_at).
     async latestBySlave(owner, sinceMs) {
       requireOwner(owner);
       return rows(await connection.executeAsync(`SELECT slave_id, master_id,
@@ -130,6 +131,7 @@ export function createCloudDatabase(connection) {
         FROM supabase_dog_status
         WHERE owner_user_id = ? AND received_at >= ?
           AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+          AND NOT (slave_lat = 0 AND slave_lon = 0)
         GROUP BY slave_id ORDER BY slave_id`, [owner, sinceMs]));
     },
     async listHistory(owner, offset = 0) {
