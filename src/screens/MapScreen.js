@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { describeDogSource, mergeDogMarkers } from '../map/DogMerge';
+import { coverageNotice } from '../mapHistory/HistoryCoverage';
 import TrackingSheet from '../map/TrackingSheet';
 import MasterDetails from '../map/MasterDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
@@ -91,6 +92,8 @@ export default function MapScreen({
     else if (!history.data) messages.push('正在讀取歷史定位…');
     else {
       if (history.data.message) messages.push(history.data.message);
+      const notice = coverageNotice(history.data);
+      if (notice) messages.push(notice);
       messages.push(`手機 ${history.data.phone.count} 筆 · Client ${history.data.client.count} 筆（藍色／紅色）`);
       messages.push(`${new Date(history.data.since).toLocaleString()} ～ ${new Date(history.data.until).toLocaleString()}`);
       if (history.data.phone.limited || history.data.client.limited) messages.push('軌跡已達繪圖上限，僅顯示較新的部分，原始資料仍保留。');
