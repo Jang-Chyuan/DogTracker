@@ -93,13 +93,14 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 
 ### 版本號
 
-版本號的唯一來源是 `package.json` 的 `version`，格式為 SemVer 的 `MAJOR.MINOR.PATCH`。
+發出來的版本是 `MAJOR.MINOR.PATCH`：
 
-每次 push／merge 到 `main`，CI 會把 `main` 上目前的版本 **PATCH 加一** 當成這次的版本：建置時以 `APP_VERSION_NAME` 傳進 Gradle，讓 APK 的 `versionName` 和 release tag 一致，發完 release 再把新版本 commit 回 `main`（`chore(release): v<版本>`）。要跳 MINOR 或 MAJOR（例如 0.0.9 之後想發 0.1.0），在 PR 裡改 `package.json` 的 `version` 即可，CI 會從你寫的版本繼續往下加。
+- **MAJOR.MINOR** 來自 `package.json` 的 `version`，由人決定。要開新的版本線（例如 0.0 之後想進 0.1）就在 PR 裡改它。
+- **PATCH** 是 `main` 上的 commit 數，每次合併自動往上走，CI 不需要把任何東西 commit 回 repo。
 
-`versionCode` 由版本號推算（`MAJOR * 1000000 + MINOR * 1000 + PATCH`，例如 `1.2.3` 為 `1002003`），確保升級時不會倒退。本機建置不帶 `APP_VERSION_NAME`，直接使用 `package.json` 的版本。
+建置時以 `APP_VERSION_NAME` 與 `APP_VERSION_CODE` 傳進 Gradle，所以 APK 的 `versionName` 和 release tag 一致，`versionCode` 就是同一個 commit 數（單調遞增，升級不會倒退）。`package.json` 裡的 PATCH 不影響發版，只有 MAJOR.MINOR 有意義。
 
-CI 會讀取 repository secret `GOOGLE_MAPS_ANDROID_API_KEY`（對應本機的 `android/local.properties`）。未設定時建置仍會成功，但 `BuildConfig.GOOGLE_MAPS_CONFIGURED` 為 `false`，App 內的 Google 地圖不能使用。金鑰不會寫進 repo。
+本機建置不帶這兩個環境變數，直接用 `package.json` 的版本，`versionCode` 由版本推算（`MAJOR * 1000000 + MINOR * 1000 + PATCH`）。
 
 ## 使用流程
 

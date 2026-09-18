@@ -86,6 +86,9 @@ def packageJsonVersion = new groovy.json.JsonSlurper()
         .parseText(rootProject.file('../package.json').getText('UTF-8'))
         .version
 def appVersionName = (System.getenv('APP_VERSION_NAME') ?: packageJsonVersion).trim()
+// CI passes the commit count as the versionCode; a local build derives one from
+// the version name instead.
+def appVersionCode = (System.getenv('APP_VERSION_CODE') ?: '').trim()
 
 // versionCode may never go down between installs, so derive it from the version:
 // 1.2.3 becomes 1002003, which leaves room for 999 patches per minor.
@@ -108,7 +111,7 @@ android {
         applicationId "com.dogtracker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode versionCodeOf(appVersionName)
+        versionCode appVersionCode.isEmpty() ? versionCodeOf(appVersionName) : appVersionCode as int
         versionName appVersionName
         manifestPlaceholders.googleMapsApiKey = googleMapsApiKey
         buildConfigField 'boolean', 'GOOGLE_MAPS_CONFIGURED', (!googleMapsApiKey.isEmpty()).toString()
