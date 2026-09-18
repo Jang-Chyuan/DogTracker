@@ -2,6 +2,7 @@ import {
   createTrackingPreferences,
   DEFAULT_TRACKING_PREFERENCES,
   validateTrackingPreferences,
+  WINDOW_PRESETS,
 } from '../src/tracking/TrackingPreferences';
 import { createSettingsDatabase } from '../src/database/SettingsDatabase';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
@@ -71,6 +72,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showMasterMarker: false,
     showSlaveMarker: false,
     showTrails: true,
+    windowMinutes: 10,
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -109,7 +111,7 @@ test('old per-Master route and stale settings do not become new marker/path sema
     validateTrackingPreferences({ showMasterTrail: true, staleMinutes: 10 }),
   ).toEqual(DEFAULT_TRACKING_PREFERENCES);
 });
-test('all four settings survive a new controller and share no tracking-row writes', async () => {
+test('every setting survives a new controller and shares no tracking-row writes', async () => {
   const connection = createMemoryConnection();
   try {
     const database = createSettingsDatabase(connection),
@@ -121,6 +123,7 @@ test('all four settings survive a new controller and share no tracking-row write
       showMasterMarker: false,
       showSlaveMarker: true,
       showTrails: true,
+      windowMinutes: 30,
     };
     await first.save(value);
     await first.close();
@@ -159,5 +162,17 @@ test('corrupt JSON reports an error and never overwrites the saved value', async
     await controller.close();
   } finally {
     connection.close();
+  }
+});
+
+test('the home window only accepts the confirmed presets and survives a reload', () => {
+  expect(validateTrackingPreferences({}).windowMinutes).toBe(10);
+  for (const minutes of WINDOW_PRESETS) {
+    expect(validateTrackingPreferences({ windowMinutes: minutes }).windowMinutes).toBe(minutes);
+  }
+  // A window the map cannot honour must fail loudly rather than silently
+  // falling back: the home map is capped at 24 hours.
+  for (const invalid of [0, -10, 5, 2880, '10', null]) {
+    expect(() => validateTrackingPreferences({ windowMinutes: invalid })).toThrow('時間視窗');
   }
 });

@@ -47,7 +47,7 @@ function bleCandidate(point, samples) {
  * connection the cloud copy is the only source, so every dog in it is shown.
  */
 export function mergeDogMarkers({ point, samples = [], cloudRows = [],
-  now = Date.now(), freshMs = FRESH_MS, maxAgeMs = MAX_AGE_MS }) {
+  now = Date.now(), freshMs = FRESH_MS, maxAgeMs = MAX_AGE_MS, windowMs = null }) {
   const local = bleCandidate(point, samples);
   // "Connected" means this phone is still receiving over BLE, not that the
   // Bluetooth adapter is on: a stale row must not hide the cloud copy. A live
@@ -73,6 +73,10 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [],
   }
   return [...dogs.values()]
     .filter(dog => now - dog.receivedAt <= maxAgeMs)
+    // Confirmed 2026-09-16: a dog whose last position is older than the chosen
+    // window stays on the map faded and labelled, without a path, as long as it
+    // is inside 24 hours.
+    .map(dog => ({ ...dog, stale: windowMs != null && now - dog.receivedAt > windowMs }))
     .sort((left, right) => left.slaveId - right.slaveId)
     .slice(0, MAX_DOGS);
 }

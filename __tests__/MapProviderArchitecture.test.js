@@ -88,6 +88,10 @@ test('shared presentation applies fallback and route rules before rendering', ()
     routeRows[1],
     route.snapshot(),
     [toRouteSample(oldValid)],
+    // The home map drops positions older than 24 hours, so read this fixture
+    // from a clock just after its newest row.
+    undefined,
+    routeRows[1].receivedAt + 1000,
   );
 
   expect(presentation.master).toMatchObject({ retained: true });

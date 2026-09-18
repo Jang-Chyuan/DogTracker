@@ -48,9 +48,11 @@ export default function MapScreen({
   // rows. Demo positions stay isolated, so cloud dogs only join in real mode.
   const dogs = useMemo(
     () => (mode === 'real' && tracking.preferences.value.showSlaveMarker
-      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows })
+      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
+        windowMs: tracking.preferences.value.windowMinutes * 60000 })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, tracking.preferences.value.showSlaveMarker],
+    [mode, point, positionSamples, cloudDogs?.rows, tracking.preferences.value.showSlaveMarker,
+      tracking.preferences.value.windowMinutes],
   );
   const livePresentation = useMemo(() => {
     if (!dogs.length) return basePresentation;
@@ -67,8 +69,10 @@ export default function MapScreen({
   const historical = !!history?.preferences.enabled;
   const livePhone = useLiveLocation(active && tracking.foreground);
   const presentation = useMemo(() => {
+    // The Client switch hides every dog, including the ones merged from the
+    // cloud copy; leaving `dogs` in place would keep drawing them.
     if (!historical) return history?.preferences.client === false
-      ? { ...livePresentation, slave: null, slaveSegments: [],
+      ? { ...livePresentation, slave: null, dogs: [], slaveSegments: [],
         cameraPositions: livePresentation.master ? [livePresentation.master.coordinate] : [] }
       : livePresentation;
     const data = history.data;

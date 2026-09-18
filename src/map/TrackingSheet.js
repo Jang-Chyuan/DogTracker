@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { floatingShadow, mapColors as colors } from './MapTheme';
+import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
 import {
@@ -18,6 +19,9 @@ import {
   settleSheet,
   shouldDragSheet,
 } from './SheetMotion';
+
+export const windowLabel = minutes =>
+  (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小時`);
 
 export function positionLabel(position) {
   if (!position) return '尚無有效座標';
@@ -289,6 +293,30 @@ export default function TrackingSheet({
             {battery(point.masterBatteryValid, point.masterBatteryPercentage)}
           </Text>
         </View>
+        <Text style={styles.label}>時間範圍</Text>
+        <View style={styles.windowRow}>
+          {WINDOW_PRESETS.map(minutes => {
+            const selected = preferences.value.windowMinutes === minutes;
+            return (
+              <Pressable
+                key={minutes}
+                accessibilityRole="button"
+                accessibilityLabel={`時間範圍 ${windowLabel(minutes)}`}
+                accessibilityState={{ selected, disabled }}
+                disabled={disabled}
+                style={[styles.window, selected && styles.windowSelected, disabled && styles.disabled]}
+                onPress={() => tracking.saveTrackingPreferences({ windowMinutes: minutes })}
+              >
+                <Text style={[styles.windowText, selected && styles.windowTextSelected]}>
+                  {windowLabel(minutes)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.hint}>
+          地圖只畫這段時間內的路徑，最多 24 小時；更早的紀錄在歷史頁。
+        </Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="顯示路徑"
@@ -388,6 +416,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   summaryTime: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  windowRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
+  window: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: '#EAF1EC',
+  },
+  windowSelected: { backgroundColor: colors.master },
+  windowText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  windowTextSelected: { color: '#FFFFFF' },
   routeControl: {
     minHeight: 48,
     padding: 12,

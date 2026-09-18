@@ -1,10 +1,16 @@
 import { getErrorMessage } from '../utils/errors';
 
+// Home map presets, confirmed 2026-09-16: minutes for working close to the
+// dog, hours for reviewing the outing. 24 hours is the upper bound of the home
+// map; older positions belong to the history page.
+export const WINDOW_PRESETS = Object.freeze([1, 10, 30, 60, 360, 1440]);
+
 export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   mode: 'demo',
   showMasterMarker: true,
   showSlaveMarker: true,
   showTrails: false,
+  windowMinutes: 10,
 });
 
 export function validateTrackingPreferences(value) {
@@ -17,6 +23,8 @@ export function validateTrackingPreferences(value) {
     if (typeof settings[key] !== 'boolean')
       throw new Error('地圖顯示設定格式錯誤');
   }
+  if (!WINDOW_PRESETS.includes(settings.windowMinutes))
+    throw new Error('時間視窗設定格式錯誤');
   // Old per-role trail settings have different semantics; only missing new
   // fields receive defaults. Malformed saved JSON still fails explicitly.
   return {
@@ -24,6 +32,7 @@ export function validateTrackingPreferences(value) {
     showMasterMarker: settings.showMasterMarker,
     showSlaveMarker: settings.showSlaveMarker,
     showTrails: settings.showTrails,
+    windowMinutes: settings.windowMinutes,
   };
 }
 
