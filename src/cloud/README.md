@@ -98,3 +98,5 @@ npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudScreen.test.j
 同步驗收：登入後自動下載及出現常駐通知；切到地圖、桌面或鎖屏超過 30 秒後查看通知的成功同步時間及新資料；殺掉 App 重開不需輸入密碼並補下載；登出後服務與喚醒鎖停止；斷網再連線後下一週期重試；手動下載舊歷史不倒退自動進度。Android 原生服務變更需要重新建置安裝 APK；iOS 套件更新需更新 Pods 並重建。
 
 目前兩個已知帳號皆有 Master 5／7 授權，需另外使用無授權帳號驗證拒絕讀取。不能以 postgres 或 Secret Key 測試使用者 RLS。
+
+「雲端資料」頁的列表可以點任一列展開該筆的**原始雲端 JSON**（下載時就存在 `raw_payload`）。欄位表只有 App 讀得到的欄位，原始紀錄才看得出 payload 還帶了什麼——例如 Master 自己的座標（硬體問題 H2）。
