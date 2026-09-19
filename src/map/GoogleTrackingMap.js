@@ -73,17 +73,16 @@ function TrackMarker({ track, onPress }) {
   const { latest } = track;
   const detail = `${new Date(latest.time).toLocaleString()} · ${
     latest.speed_kmh == null ? '速度未知' : latest.speed_kmh.toFixed(1) + ' km/h'}`;
-  // The history map draws at most two of these, and the avatar is rebuilt
-  // whenever the query refreshes, so this marker keeps tracking its view: with
-  // it off the SDK kept a half-captured bitmap and drew an empty ring instead
-  // of the dog.
+  // The view is captured once, on layout: tracking it re-captures the bitmap on
+  // every render, and during playback that is four times a second — the marker
+  // visibly flickered while the scrubber moved.
 
   return (
     <Marker
       ref={marker}
       coordinate={latest}
       anchor={{ x: 0.5, y: 0.5 }}
-      tracksViewChanges
+      tracksViewChanges={false}
       // Like the live map: no title or description, because the tap opens this
       // device's panel and the SDK's own bubble would be a second box.
       onPress={onPress}
