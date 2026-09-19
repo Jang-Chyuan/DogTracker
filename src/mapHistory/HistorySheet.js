@@ -81,8 +81,15 @@ export function historySummary(history) {
 /** Short enough for the pill over the map. */
 export function shortRangeLabel(preferences) {
   if (preferences.timeMode !== 'fixed') return `過去 ${preferences.hours} 小時`;
-  const clock = value => new Date(value).toLocaleString('zh-TW',
-    { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  // Built by hand rather than with toLocaleString: ICU disagrees about the gap
+  // between the date and the time (a thin space U+2009 on the CI runner's
+  // Linux, a plain space on macOS), so the same query drew a different pill on
+  // different machines and the test could not pin either one.
+  const clock = value => {
+    const at = new Date(value);
+    const pad = number => String(number).padStart(2, '0');
+    return `${at.getMonth() + 1}/${at.getDate()} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  };
   return Number.isFinite(preferences.startAt) && Number.isFinite(preferences.endAt)
     ? `${clock(preferences.startAt)}–${clock(preferences.endAt)}`
     : '指定區間';
