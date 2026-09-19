@@ -3,6 +3,28 @@ import { createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/Histo
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 
+test('history and export prefer saved display coordinates and preserve raw GPS', async () => {
+  const connection = createMemoryConnection();
+  try {
+    connection.sqlite.exec(`CREATE TABLE myLocationTracker(id INTEGER PRIMARY KEY, recorded_at INTEGER,
+      location_at INTEGER, latitude REAL, longitude REAL, accuracy_meters REAL, altitude_meters REAL,
+      heading_degrees REAL, speed_kmh REAL, raw_latitude REAL, raw_longitude REAL,
+      display_latitude REAL, display_longitude REAL, display_source TEXT);
+      INSERT INTO myLocationTracker VALUES(1,1000,900,25,121,3,0,0,2,25.1,121.1,25.01,121.01,'animated');
+      INSERT INTO myLocationTracker VALUES(2,2000,1900,25.02,121.02,3,0,0,2,NULL,NULL,NULL,NULL,NULL);`);
+    const db = createHistoryDatabase(connection);
+    const settings = { ...HISTORY_DEFAULTS, client: false };
+    const result = await db.read(settings, null, 3000, () => true, true);
+    expect(result.phone[0].latitude).toBe(25.01);
+    expect(result.phone[0].raw_latitude).toBe(25.1);
+    expect(result.phone[0].display_source).toBe('animated');
+    expect(result.phone[1].latitude).toBe(25.02);
+    expect(connection.sqlite.prepare('SELECT latitude FROM myLocationTracker WHERE id=1').get().latitude).toBe(25);
+    const map = await db.read(settings, null, 3000);
+    expect(map.phone.segments[0][0].latitude).toBe(25.01);
+  } finally { connection.close(); }
+});
+
 test('CSV preserves optional precision and acquisition time, uses BOM and quotes cells', () => {
   const result = serializeHistory('csv', { phone: [{ id: 1, time: 1000, location_at: 900, latitude: 25, longitude: 121, accuracy_meters: 4.5 }], client: [] });
   expect(result.startsWith('\uFEFFsource,')).toBe(true);

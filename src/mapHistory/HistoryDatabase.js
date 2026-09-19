@@ -32,11 +32,14 @@ export function createHistoryDatabase(db) {
         let cursor = since, id = 0, all = [];
         const columns = table === 'myLocationTracker'
           ? new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(column => column.name)) : new Set();
-        const provenance = ['session_id', ...(raw ? ['raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state'] : [])]
+        const displayColumns = columns.has('display_latitude') && columns.has('display_longitude');
+        const selectedLat = displayColumns ? `COALESCE(display_latitude, ${lat})` : lat;
+        const selectedLon = displayColumns ? `COALESCE(display_longitude, ${lon})` : lon;
+        const provenance = ['session_id', ...(raw ? ['raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state', 'display_source', 'display_location_at'] : [])]
           .filter(column => columns.has(column)).map(column => ', ' + column).join('');
         while (alive()) {
           const extras = raw && table === 'myLocationTracker' ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
-          const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${lat} AS latitude, ${lon} AS longitude, speed_kmh ${extras} ${provenance} FROM ${table}
+          const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} FROM ${table}
             WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
             ORDER BY ${time},id LIMIT 1000`, [since, until, ...params, cursor, cursor, id]));
           if (!page.length) break;
@@ -84,7 +87,7 @@ export function historyGeometry(points) {
   }
   const validPoints = points.filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180);
   return { segments: kept, latest: validPoints[validPoints.length - 1] || null, count: validPoints.length, limited,
-    times: validPoints.map(point => point.time) };
+    times: validPoints.map(point => point.time), sourcePoints: points };
 }
 
 // Expire cached drawings even when the database has no new rows or a read fails.
@@ -92,11 +95,12 @@ export function expireHistory(data, preferences, now) {
   if (!data || preferences.timeMode === 'fixed') return data;
   const since = Math.max(data.since, historyWindow(preferences, now).since);
   const clip = track => {
-    const times = track.times.filter(time => time >= since);
-    return { ...track, times, count: times.length,
-      segments: track.segments.map(segment => segment.filter(point => point.time >= since)).filter(segment => segment.length),
-      latest: track.latest?.time >= since ? track.latest : null,
-      limited: times.length > 0 && track.limited };
+    // Simplified endpoints cannot be time-clipped: removing the first endpoint
+    // can erase a whole valid straight section. Always rebuild from source rows,
+    // including invalid fixes/session boundaries, before simplifying and capping.
+    const points = track.sourcePoints;
+    if (!points.length || points[0].time >= since) return track;
+    return historyGeometry(points.filter(point => point.time >= since));
   };
   return { ...data, since, until: Math.max(data.until, since), phone: clip(data.phone), client: clip(data.client) };
 }

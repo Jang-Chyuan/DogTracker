@@ -4,11 +4,12 @@ const cell = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
 export function serializeHistory(format, data) {
   const tracks = [['phone', data.phone], ['client', data.client]];
   if (format === 'csv') {
-    const lines = ['source,id,recorded_at,location_at,latitude,longitude,accuracy_meters,altitude_meters,speed_kmh,heading_degrees,raw_latitude,raw_longitude,session_id,raw_speed_kmh,speed_accuracy_mps,motion_state'];
+    const lines = ['source,id,recorded_at,location_at,latitude,longitude,accuracy_meters,altitude_meters,speed_kmh,heading_degrees,raw_latitude,raw_longitude,session_id,raw_speed_kmh,speed_accuracy_mps,motion_state,display_source,display_location_at'];
     for (const [source, points] of tracks) for (const p of points) lines.push([
       source, p.id, iso(p.time), p.location_at == null ? '' : iso(p.location_at), p.latitude, p.longitude,
       p.accuracy_meters, p.altitude_meters, p.speed_kmh, p.heading_degrees, p.raw_latitude, p.raw_longitude, p.session_id,
       p.raw_speed_kmh, p.speed_accuracy_mps, p.motion_state,
+      p.display_source, p.display_location_at == null ? '' : iso(p.display_location_at),
     ].map(cell).join(','));
     return '\uFEFF' + lines.join('\r\n') + '\r\n';
   }

@@ -16,12 +16,13 @@ class LocationTrackerStore(context: Context) {
       val columns = store.executeSql("PRAGMA table_info(myLocationTracker)", JSONArray()).getJSONArray("results")
       val names = (0 until columns.length()).map { columns.getJSONObject(it).getString("name") }.toSet()
       for ((name, type) in listOf("raw_latitude" to "REAL", "raw_longitude" to "REAL", "session_id" to "TEXT",
-        "raw_speed_kmh" to "REAL", "speed_accuracy_mps" to "REAL", "motion_state" to "TEXT"))
+        "raw_speed_kmh" to "REAL", "speed_accuracy_mps" to "REAL", "motion_state" to "TEXT",
+        "display_latitude" to "REAL", "display_longitude" to "REAL", "display_source" to "TEXT", "display_location_at" to "INTEGER"))
         if (name !in names) store.executeSql("ALTER TABLE myLocationTracker ADD COLUMN $name $type", JSONArray())
     }
   }
   private fun command(sql: String, values: JSONArray = JSONArray()) = JSONObject().put("query", sql).put("params", values)
-  internal fun save(location: LocationSample, session: String) {
+  internal fun save(location: LocationSample, session: String, display: DisplayLocation? = null) {
     val values = JSONArray().put(System.currentTimeMillis()).put(location.timestamp)
       .put(location.latitude).put(location.longitude)
       .put(location.accuracy).put(location.altitude ?: JSONObject.NULL)
@@ -31,6 +32,9 @@ class LocationTrackerStore(context: Context) {
       .put(command("UPDATE myLocationTracker SET raw_latitude=?,raw_longitude=?,session_id=?,raw_speed_kmh=?,speed_accuracy_mps=?,motion_state=? WHERE id=last_insert_rowid()",
         JSONArray().put(location.rawLatitude).put(location.rawLongitude).put(session)
           .put(location.rawSpeed?.times(3.6) ?: JSONObject.NULL).put(location.speedAccuracy ?: JSONObject.NULL).put(location.motionState)))
+      .put(command("UPDATE myLocationTracker SET display_latitude=?,display_longitude=?,display_source=?,display_location_at=? WHERE id=last_insert_rowid()",
+        JSONArray().put(display?.latitude ?: location.latitude).put(display?.longitude ?: location.longitude)
+          .put(if (display == null) "pipeline" else "animated").put(display?.fixTime ?: location.timestamp)))
       .put(command(trim)))
   }
   fun page(before: Long): JSONObject {

@@ -4,6 +4,32 @@ import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase, expireHistory, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
 import { historyWindow, parseHistoryStart } from '../src/mapHistory/HistoryTime';
 
+test('rolling cutoff preserves a straight route after its simplified start expires', () => {
+  const points = Array.from({ length: 61 }, (_, i) => ({ time: i * 1000, latitude: 25, longitude: 121 + i * 0.0001 }));
+  const track = historyGeometry(points);
+  expect(track.segments[0]).toHaveLength(2);
+  const data = { since: 0, until: 60001, phone: track, client: track };
+  const clipped = expireHistory(data, { hours: 1, timeMode: 'recent' }, 3600001);
+  for (const source of ['phone', 'client']) {
+    expect(clipped[source].count).toBe(60);
+    expect(clipped[source].segments[0]).toHaveLength(2);
+    expect(clipped[source].segments[0][0].time).toBe(1000);
+    expect(clipped[source].segments[0][1].time).toBe(60000);
+  }
+  const again = expireHistory(clipped, { hours: 1, timeMode: 'recent' }, 3605001);
+  expect(again.phone.segments[0][0].time).toBe(6000);
+  expect(track.segments[0][0].time).toBe(0);
+});
+
+test('expiry preserves invalid-fix and session breaks before simplifying', () => {
+  const point = (time, session_id = 'a', latitude = 25) => ({ time, session_id, latitude, longitude: 121 });
+  const track = historyGeometry([point(0), point(1000), point(2000), point(3000, 'a', null),
+    point(4000), point(5000), point(6000, 'b'), point(7000, 'b')]);
+  const result = expireHistory({ since: 0, until: 8000, phone: track, client: track },
+    { hours: 1, timeMode: 'recent' }, 3600001);
+  expect(result.phone.segments.map(segment => segment.map(p => p.time))).toEqual([[1000, 2000], [4000, 5000], [6000, 7000]]);
+});
+
 test('recent history expires cached lines and markers without new data; fixed ranges remain', () => {
   const track = historyGeometry([1000, 6000, 11000].map(time => ({ time, latitude: 25, longitude: 121 })));
   const data = { since: 0, until: 12000, phone: track, client: track };

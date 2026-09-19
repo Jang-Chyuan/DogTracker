@@ -12,6 +12,16 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
   private val executor = Executors.newSingleThreadExecutor()
   private val store by lazy { LocationTrackerStore(context) }
   override fun getName() = "LocationTracker"
+  @ReactMethod fun displayPosition(session: String, timestamp: Double, latitude: Double, longitude: Double) {
+    if (context.lifecycleState != LifecycleState.RESUMED || !LocationTrackerService.running ||
+      !timestamp.isFinite() || timestamp <= 0 || !latitude.isFinite() || !longitude.isFinite() ||
+      kotlin.math.abs(latitude) > 90 || kotlin.math.abs(longitude) > 180) return
+    LocationTrackerService.displayLocation = DisplayLocation(session, timestamp.toLong(), latitude, longitude,
+      android.os.SystemClock.elapsedRealtimeNanos())
+  }
+  @ReactMethod fun clearDisplayPosition(session: String) {
+    if (LocationTrackerService.displayLocation?.session == session) LocationTrackerService.displayLocation = null
+  }
   @ReactMethod fun live(promise: Promise) {
     promise.resolve(org.json.JSONObject(LocationTrackerService.liveJson)
       .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status).toString())
