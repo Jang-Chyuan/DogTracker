@@ -19,6 +19,7 @@ class LocationTrackerService : Service(), LocationListener {
     @Volatile var running = false
     @Volatile var status = "尚未開始記錄"
     @Volatile var liveJson = "{}"
+    @Volatile internal var displayLocation: DisplayLocation? = null
     const val CHANNEL = "dogtracker_phone_location"
     const val ID = 3105
   }
@@ -39,7 +40,8 @@ class LocationTrackerService : Service(), LocationListener {
       if (sample != null) {
         try {
           val database = store ?: LocationTrackerStore(this@LocationTrackerService).also { store = it }
-          database.save(sample, sessionId)
+          val display = displayLocation?.takeIf { it.usable(sessionId, sample, now) }
+          database.save(sample, sessionId, display)
           pipeline.written(sample, now); saved++
         } catch (_: Exception) { writeErrors++; writeFailed = true; status = "Timeline 寫入失敗，下一秒重試" }
       }
@@ -115,6 +117,7 @@ class LocationTrackerService : Service(), LocationListener {
     stopped = true
     handler.removeCallbacks(tick)
     liveJson = "{}"
+    displayLocation = null
     manager.removeUpdates(this)
     worker.quitSafely()
     if (running) status = "已停止記錄"

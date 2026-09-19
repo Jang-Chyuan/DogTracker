@@ -16,6 +16,8 @@ import { floatingShadow, mapColors as colors } from './MapTheme';
 import { describeDogSource } from './DogMerge';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import TrackingAvatar from './TrackingAvatar';
+import PhoneLocationOverlay from './PhoneLocationOverlay';
+import HistoryCursor from '../mapHistory/HistoryCursor';
 
 const EMPTY_REGION = {
   latitude: 23.7,
@@ -132,6 +134,10 @@ function GoogleTrackingMapRenderer({
     cameraPositions: positions,
   } = presentation;
   const mapRef = useRef(null);
+  const [cursorLayout, setCursorLayout] = useState({ width: 0, height: 0 });
+  const [cursorRevision, setCursorRevision] = useState(0);
+  const [cameraMoving, setCameraMoving] = useState(false);
+  const [cursorSelection, setCursorSelection] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [readyInstance, setReadyInstance] = useState(null);
   const [loadedInstance, setLoadedInstance] = useState(null);
@@ -242,7 +248,8 @@ function GoogleTrackingMapRenderer({
     if (needsFirstPositionFit) setNeedsFirstPositionFit(false);
   }, [usable, positions, source, needsFirstPositionFit]);
   return (
-    <View style={StyleSheet.absoluteFill} testID="tracking-map-container">
+    <View style={StyleSheet.absoluteFill} testID="tracking-map-container"
+      onLayout={event => setCursorLayout(event.nativeEvent.layout)}>
       {configured && mountedMap ? (
         <MapView
           key={instance}
@@ -279,8 +286,11 @@ function GoogleTrackingMapRenderer({
           onPanDrag={() => {
             interacted.current = true;
           }}
+          onRegionChange={() => setCameraMoving(true)}
           onRegionChangeComplete={(_, details) => {
             if (activeInstance.current !== instance || !foreground) return;
+            setCameraMoving(false);
+            setCursorRevision(value => value + 1);
             if (details?.isGesture) interacted.current = true;
             const request = ++cameraRead.current;
             mapRef.current?.getCamera?.().then(camera => {
@@ -300,17 +310,19 @@ function GoogleTrackingMapRenderer({
               setLoadedInstance(instance);
           }}
         >
-          {livePhone?.running && livePhone.position && <Marker identifier="phone-timeline-live"
-            coordinate={livePhone.position} pinColor={livePhone.ageSeconds > 3 ? '#64748b' : '#2563EB'}
-            title={livePhone.ageSeconds > 3 ? '手機 · 最後合格位置（已過期）' : '手機 · 即時平滑位置'}
-            description={`估計精度 ${livePhone.position.accuracy.toFixed(1)} m · ${new Date(livePhone.position.timestamp).toLocaleTimeString()}`} />}
+          {livePhone?.running && livePhone.position && <PhoneLocationOverlay location={livePhone} active={foreground} />}
           {(presentation.historyTracks || []).map(track => (
             <React.Fragment key={track.name}>
               {track.segments.filter(segment => segment.length > 1).map((segment, index) => (
                 <Polyline key={index} coordinates={segment} strokeColor={track.color} strokeWidth={4} geodesic={false} />
               ))}
-              {track.latest && <TrackMarker track={track}
-                onPress={onTrackPress ? () => onTrackPress(track.name) : undefined} />}
+              {track.latest && (track.role === 'phone'
+                ? <PhoneLocationOverlay key={source + ':' + (track.latest.session_id || '')} historical active={foreground}
+                  onPress={onTrackPress ? () => onTrackPress(track.name) : undefined}
+                  location={{ position: { latitude: track.latest.latitude, longitude: track.latest.longitude,
+                    timestamp: track.latest.time, rawSpeedKmh: track.latest.speed_kmh } }} />
+                : <TrackMarker track={track}
+                  onPress={onTrackPress ? () => onTrackPress(track.name) : undefined} />)}
             </React.Fragment>
           ))}
           {slaveSegments.map((segment, index) => (
@@ -389,6 +401,11 @@ function GoogleTrackingMapRenderer({
           {!configured && <Text style={styles.hint}>地圖設定尚未完成</Text>}
         </View>
       )}
+      {usable && cursorLayout.width > 0 && presentation.historyTracks?.length > 0 &&
+        <HistoryCursor key={source + ':' + instance} tracks={presentation.historyTracks} mapRef={mapRef}
+          hidden={!foreground || cameraMoving} selection={cursorSelection?.source === source ? cursorSelection.value : null}
+          onSelectionChange={value => setCursorSelection({ source, value })}
+          revision={cursorRevision} width={cursorLayout.width} height={cursorLayout.height} top={topInset} bottom={bottomInset} />}
       {configured && mountedMap && !loaded && !timedOut && (
         <View
           style={[styles.loading, { top: topInset + 56 }]}

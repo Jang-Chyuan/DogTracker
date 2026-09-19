@@ -38,6 +38,7 @@ export default function LocationTrackerScreen({ foreground }) {
       <Text style={ui.text}>精度 {row.accuracy_meters == null ? '—' : row.accuracy_meters.toFixed(1) + ' m'} · 速度 {row.speed_kmh == null ? '—' : row.speed_kmh.toFixed(1) + ' km/h'}</Text>
       <Text style={ui.hint}>海拔 {row.altitude_meters ?? '—'} m · 方向 {row.heading_degrees ?? '—'}°</Text>
       <Text style={ui.hint}>寫入時間 {new Date(row.recorded_at).toLocaleString()}</Text>
+      {row.display_latitude != null && <Text style={ui.hint}>歷史顯示位置 {row.display_latitude.toFixed(6)}, {row.display_longitude.toFixed(6)} · {row.display_source === 'animated' ? '藍點動畫' : '定位管線'}</Text>}
       <Text style={ui.hint}>{motionLabel(row.motion_state)} · 原始速度 {row.raw_speed_kmh?.toFixed(1) ?? '—'} km/h · 速度估計精度 {row.speed_accuracy_mps?.toFixed(2) ?? '—'} m/s</Text>
       {row.raw_latitude != null && <Text style={ui.hint}>原始位置 {row.raw_latitude.toFixed(6)}, {row.raw_longitude.toFixed(6)}；上方為{row.motion_state === 'stationary' ? '靜止鎖定' : '平滑'}位置</Text>}
     </View>)}
