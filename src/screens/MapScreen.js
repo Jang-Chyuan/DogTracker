@@ -49,6 +49,7 @@ export default function MapScreen({
   history,
   historical = false,
   cloudDogs,
+  historyDownload,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
@@ -293,6 +294,7 @@ export default function MapScreen({
       {historical ? (
         <HistorySheet
           history={history}
+          download={historyDownload}
           extras={<HistoryPlaybackControls playback={playback} />}
           snapshot={snapshot}
           bottomInset={bottomInset}

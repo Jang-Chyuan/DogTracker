@@ -17,7 +17,9 @@ test('a range that starts before the stored rows says so instead of drawing a ga
   const notice = coverageNotice({ since: NOW - 6 * HOUR, coverage:
     { source: 'cloud', rows: 120, from: NOW - 2 * HOUR } });
   expect(notice).toContain('本機雲端副本最早只到');
-  expect(notice).toContain('設定 → 雲端資料');
+  // The card downloads the missing range itself now, so the notice says what
+  // 套用 will do instead of naming another screen to visit.
+  expect(notice).toContain('按「套用」會自動從雲端補下載');
 });
 
 test('BLE retention is named as the reason, not the cloud page', () => {

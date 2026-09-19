@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '../components/ScreenUI';
 import BottomSheet from '../map/BottomSheet';
@@ -104,12 +104,28 @@ export function rangeLabel(draft) {
  * query.
  */
 export default function HistorySheet({
-  history, snapshot, bottomInset, topInset, onHeight, extras,
+  history, snapshot, bottomInset, topInset, onHeight, extras, download,
 }) {
   const [draft, setDraft] = useState(history.preferences);
   const [open, setOpen] = useState('');
   const [picker, setPicker] = useState(null);
   useEffect(() => setDraft(history.preferences), [history.preferences]);
+  // A cloud range this phone does not hold fetches itself. Sending someone to
+  // 設定 → 雲端資料 to type the same dates, then back here to ask again, is a
+  // detour for something the card already knows how to describe.
+  const applied = history.preferences;
+  const empty = !!history.data
+    && !list(history.data.clients).some(track => track.count > 0);
+  const missing = applied.source === 'cloud' && applied.timeMode === 'fixed' && empty;
+  const fetched = useRef('');
+  useEffect(() => {
+    if (!missing || !download?.run || download.busy) return;
+    // Once per applied query: a range the cloud genuinely has nothing for must
+    // not turn into a download every time the map refreshes.
+    if (fetched.current === history.key) return;
+    fetched.current = history.key;
+    download.run({ startAt: applied.startAt, endAt: applied.endAt, masters: applied.masters });
+  }, [missing, download, history.key, applied]);
   // Switching source changes which devices exist: a dog only the cloud has
   // would stay selected and quietly return nothing. Only a source the user just
   // changed is pruned, so simply opening the card never claims a change.
@@ -399,6 +415,12 @@ export default function HistorySheet({
         title={history.busy ? '查詢中…' : changed ? '套用（有未套用的變更）' : '重新查詢'}
         disabled={history.busy}
         onPress={() => history.save(draft)} />
+      {!!download?.message && (
+        <Text accessibilityLiveRegion="polite" style={styles.hint}>{download.message}</Text>
+      )}
+      {download?.busy && (
+        <ActionButton title="取消下載" secondary onPress={() => download.cancel?.()} />
+      )}
       {/* Later sections (playback) are handed in by the screen. */}
       {extras}
       <HistoryExportButton history={history} snapshot={snapshot} />

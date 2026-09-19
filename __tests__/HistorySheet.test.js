@@ -238,6 +238,50 @@ test('a walk the cloud cut short is said so, not shown as "nothing older"', asyn
   expect(cardText()).toContain('statement timeout');
 });
 
+test('a cloud range this phone does not hold downloads itself, once', async () => {
+  const day = new Date(2026, 8, 17).getTime();
+  const download = { run: jest.fn(), cancel: jest.fn(), busy: false, message: '' };
+  const empty = data({ clients: [{ slaveId: 4, count: 0, segments: [], limited: false }] });
+  const value = history({
+    preferences: { ...HISTORY_DEFAULTS, source: 'cloud', masters: [5, 7], slaves: [4],
+      timeMode: 'fixed', startAt: day, endAt: day + 86400000 },
+    data: empty,
+  });
+  await act(async () => {
+    renderer = Renderer.create(<HistorySheet history={value} download={download}
+      snapshot={{ current: null }} bottomInset={80} topInset={100} onHeight={() => {}} />);
+  });
+  // Sending someone to 設定 → 雲端資料 to type the same dates, then back here to
+  // ask again, is a detour for something the card can do itself.
+  expect(download.run).toHaveBeenCalledWith({
+    startAt: day, endAt: day + 86400000, masters: [5, 7],
+  });
+  // The same applied query must not download again on every map refresh.
+  await act(async () => renderer.update(<HistorySheet history={{ ...value }} download={download}
+    snapshot={{ current: null }} bottomInset={80} topInset={100} onHeight={() => {}} />));
+  expect(download.run).toHaveBeenCalledTimes(1);
+});
+
+test('a range the phone already holds, or a local source, downloads nothing', async () => {
+  const day = new Date(2026, 8, 17).getTime();
+  const download = { run: jest.fn(), cancel: jest.fn(), busy: false, message: '' };
+  const fixed = { timeMode: 'fixed', startAt: day, endAt: day + 86400000 };
+  for (const preferences of [
+    { ...HISTORY_DEFAULTS, source: 'cloud', ...fixed },            // rows already here
+    { ...HISTORY_DEFAULTS, source: 'ble', ...fixed },              // this phone's own data
+    { ...HISTORY_DEFAULTS, source: 'cloud', timeMode: 'recent' },  // a rolling window
+  ]) {
+    await act(async () => {
+      renderer = Renderer.create(<HistorySheet history={history({ preferences })}
+        download={download} snapshot={{ current: null }} bottomInset={80} topInset={100}
+        onHeight={() => {}} />);
+    });
+    await act(async () => renderer.unmount());
+  }
+  renderer = null;
+  expect(download.run).not.toHaveBeenCalled();
+});
+
 test('the card says it is still asking the cloud which days it holds', async () => {
   const day = new Date(2026, 8, 18).getTime();
   await mount(history({
