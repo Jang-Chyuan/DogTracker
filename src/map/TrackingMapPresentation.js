@@ -1,7 +1,54 @@
 import { cameraCoordinates, latestPosition } from './TrackingGeometry';
 import { DEFAULT_TRACKING_PREFERENCES } from '../tracking/TrackingPreferences';
+import { MAX_AGE_MS } from './DogMerge';
 
 export const MASTER_RANGE_METERS = 1000;
+
+// Drawn points carry their own time (see RouteSegments), so a window change
+// clips the cached line instead of rereading SQLite. A piece is time-ordered,
+// so clipping keeps its tail, plus the point where the line crosses into the
+// window. That crossing has to be computed: the line has already been
+// simplified, so a straight or stationary stretch keeps no vertex anywhere near
+// the boundary, and using the previous vertex as-is would draw a line starting
+// hours before the chosen window. The interpolated point is display geometry
+// only — the same rule as SimplifyRoute, never used for distance or export.
+function crossing(before, after, since) {
+  const span = after.time - before.time;
+  if (!(span > 0)) return null;
+  const ratio = (since - before.time) / span;
+  return {
+    latitude: before.latitude + (after.latitude - before.latitude) * ratio,
+    longitude: before.longitude + (after.longitude - before.longitude) * ratio,
+    time: since,
+  };
+}
+
+function clipSegments(segments, since) {
+  const clipped = [];
+  for (const segment of segments) {
+    const inside = segment.findIndex(
+      point => !Number.isFinite(point.time) || point.time >= since,
+    );
+    if (inside < 0) continue;
+    const kept = segment.slice(inside);
+    if (inside > 0) {
+      const entry = crossing(segment[inside - 1], segment[inside], since);
+      if (entry) kept.unshift(entry);
+    }
+    if (kept.length > 1) clipped.push(kept);
+  }
+  return clipped;
+}
+
+// Confirmed 2026-09-16: a position older than the window but inside 24 hours
+// stays on the map, faded and labelled, without its path; older than that it
+// leaves the home map altogether and belongs to the history page.
+function withAge(position, since, now) {
+  if (!position) return null;
+  const age = Number.isFinite(position.receivedAt) ? now - position.receivedAt : null;
+  if (age != null && age > MAX_AGE_MS) return null;
+  return { ...position, stale: Number.isFinite(position.receivedAt) && position.receivedAt < since };
+}
 
 /**
  * Converts provider-neutral SQLite models into one shared map presentation.
@@ -12,9 +59,13 @@ export function createTrackingMapPresentation(
   route,
   positionSamples = [],
   visibility = DEFAULT_TRACKING_PREFERENCES,
+  now = Date.now(),
 ) {
-  const master = latestPosition(point, positionSamples, 'master', true);
-  const slave = latestPosition(point, positionSamples, 'slave', true);
+  const windowMs = (visibility.windowMinutes ?? DEFAULT_TRACKING_PREFERENCES.windowMinutes) * 60000;
+  const since = now - windowMs;
+  const master = withAge(latestPosition(point, positionSamples, 'master', true), since, now);
+  const slave = withAge(latestPosition(point, positionSamples, 'slave', true), since, now);
+  const trails = visibility.showTrails;
   return {
     // Keep information/camera data available even when both eyes are closed.
     positions: { master, slave },
@@ -22,12 +73,12 @@ export function createTrackingMapPresentation(
     master: visibility.showMasterMarker ? master : null,
     slave: visibility.showSlaveMarker ? slave : null,
     masterSegments:
-      visibility.showTrails && visibility.showMasterMarker
-        ? route.masterSegments
+      trails && visibility.showMasterMarker
+        ? clipSegments(route.masterSegments, since)
         : [],
     slaveSegments:
-      visibility.showTrails && visibility.showSlaveMarker
-        ? route.slaveSegments
+      trails && visibility.showSlaveMarker
+        ? clipSegments(route.slaveSegments, since)
         : [],
     masterRangeMeters: MASTER_RANGE_METERS,
   };

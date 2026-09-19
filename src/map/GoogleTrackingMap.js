@@ -24,6 +24,9 @@ const EMPTY_REGION = {
   longitudeDelta: 4,
 };
 function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
+  // A position older than the selected window is drawn faded, so it reads as
+  // "last seen here", not as where the dog is now.
+  const faded = !!position.stale;
   const marker = useRef(null);
   return (
     <Marker
@@ -41,7 +44,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
     >
       <View
         collapsable={false}
-        style={styles.marker}
+        style={[styles.marker, faded && styles.fadedMarker]}
         onLayout={() => marker.current?.redraw()}
       >
         <TrackingAvatar role={role} size={40} />
@@ -296,7 +299,8 @@ function GoogleTrackingMapRenderer({
               position={dog}
               title={'狗 ' + dog.slaveId}
               description={describeDogSource(dog) + ' · '
-                + new Date(dog.receivedAt).toLocaleTimeString()}
+                + new Date(dog.receivedAt).toLocaleTimeString()
+                + (dog.stale ? '（早於所選時間範圍）' : '')}
             />
           ))}
         </MapView>
@@ -374,6 +378,7 @@ const styles = StyleSheet.create({
     ...floatingShadow,
   },
   retryText: { color: colors.ink, fontWeight: '600' },
+  fadedMarker: { opacity: 0.45 },
   marker: {
     width: 46,
     height: 46,

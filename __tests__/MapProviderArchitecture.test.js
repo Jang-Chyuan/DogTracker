@@ -12,6 +12,7 @@ import {
   MASTER_RANGE_METERS,
 } from '../src/map/TrackingMapPresentation';
 import { createLiveRouteWindow } from '../src/tracking/LiveRouteWindow';
+import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 import { toRouteSample } from '../src/tracking/RouteSamples';
 
 const source = file =>
@@ -88,10 +89,16 @@ test('shared presentation applies fallback and route rules before rendering', ()
     routeRows[1],
     route.snapshot(),
     [toRouteSample(oldValid)],
+    // Trails on, and read from a clock just after the newest row: the home map
+    // drops positions older than 24 hours and draws only the chosen window.
+    { ...DEFAULT_TRACKING_PREFERENCES, showTrails: true, windowMinutes: 1440 },
+    routeRows[1].receivedAt + 1000,
   );
 
   expect(presentation.master).toMatchObject({ retained: true });
   expect(presentation.slave).toMatchObject({ retained: true });
+  // Trails are on, but the newest row has no coordinates: a one-point piece is
+  // not a line, so nothing is drawn.
   expect(presentation.masterSegments).toEqual([]);
   expect(presentation.slaveSegments).toEqual([]);
   expect(presentation.masterRangeMeters).toBe(MASTER_RANGE_METERS);

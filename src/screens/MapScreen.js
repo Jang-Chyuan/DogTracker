@@ -8,9 +8,21 @@ import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { describeDogSource, mergeDogMarkers } from '../map/DogMerge';
 import { coverageNotice } from '../mapHistory/HistoryCoverage';
 import TrackingSheet from '../map/TrackingSheet';
+import { useMapClock } from '../map/useMapClock';
 import MasterDetails from '../map/MasterDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
+
+// With no BLE pair there is nothing local to frame, so the cloud dogs are what
+// the map is for.
+function homeCameraPositions(base, dogs) {
+  const drawn = [
+    ...base.cameraPositions,
+    ...base.masterSegments.flat(),
+    ...base.slaveSegments.flat(),
+  ];
+  return drawn.length ? drawn : dogs.map(dog => dog.coordinate);
+}
 
 export default function MapScreen({
   tracking,
@@ -31,6 +43,9 @@ export default function MapScreen({
   const closeMaster = useCallback(() => setMasterSelected(false), []);
   const openMaster = useCallback(() => setMasterSelected(true), []);
   const { point, route, positionSamples, mode } = tracking;
+  // Ageing is measured against this clock, not against the newest row: a silent
+  // collar changes nothing else on this screen.
+  const now = useMapClock(active && tracking.foreground);
   useEffect(() => {
     setMasterSelected(false);
   }, [mode, point.masterId, tracking.preferences.value.showMasterMarker]);
@@ -41,16 +56,19 @@ export default function MapScreen({
         route,
         positionSamples,
         tracking.preferences.value,
+        now,
       ),
-    [point, positionSamples, route, tracking.preferences.value],
+    [point, positionSamples, route, tracking.preferences.value, now],
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows. Demo positions stay isolated, so cloud dogs only join in real mode.
   const dogs = useMemo(
     () => (mode === 'real' && tracking.preferences.value.showSlaveMarker
-      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows })
+      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows, now,
+        windowMs: tracking.preferences.value.windowMinutes * 60000 })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, tracking.preferences.value.showSlaveMarker],
+    [mode, point, positionSamples, cloudDogs?.rows, tracking.preferences.value.showSlaveMarker,
+      tracking.preferences.value.windowMinutes, now],
   );
   const livePresentation = useMemo(() => {
     if (!dogs.length) return basePresentation;
@@ -60,15 +78,19 @@ export default function MapScreen({
       // card and camera keep reading the connected pair.
       slave: null,
       dogs,
-      cameraPositions: [...basePresentation.cameraPositions,
-        ...dogs.map(dog => dog.coordinate)],
+      // The first fit frames what this handler is working with: the connected
+      // pair and the path inside the chosen window. Including every cloud dog
+      // zoomed the map out to the whole county, where no path is visible.
+      cameraPositions: homeCameraPositions(basePresentation, dogs),
     };
   }, [basePresentation, dogs]);
   const historical = !!history?.preferences.enabled;
   const livePhone = useLiveLocation(active && tracking.foreground);
   const presentation = useMemo(() => {
+    // The Client switch hides every dog, including the ones merged from the
+    // cloud copy; leaving `dogs` in place would keep drawing them.
     if (!historical) return history?.preferences.client === false
-      ? { ...livePresentation, slave: null, slaveSegments: [],
+      ? { ...livePresentation, slave: null, dogs: [], slaveSegments: [],
         cameraPositions: livePresentation.master ? [livePresentation.master.coordinate] : [] }
       : livePresentation;
     const data = history.data;

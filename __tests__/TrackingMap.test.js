@@ -43,6 +43,9 @@ let renderer;
 const originalOS = Platform.OS;
 beforeEach(() => {
   jest.useFakeTimers();
+  // The fixtures carry a fixed receivedAt; the home map hides positions older
+  // than 24 hours, so run these cases from a clock right after that row.
+  jest.setSystemTime(trackingPoint.receivedAt + 60000);
   Platform.OS = 'android';
   jest.clearAllMocks();
   NativePlatform.isMapConfigured.mockReturnValue(true);
@@ -263,9 +266,12 @@ test('Client switch hides slave while current phone position remains visible in 
     mapProvider={GOOGLE_MAP_PROVIDER} history={{ preferences: { enabled, client, phone: client } }} />;
   await act(async () => { renderer = Renderer.create(screen(true)); });
   await readyMap();
-  expect(renderer.root.findAllByType(Marker).some(node => node.props.title === '狗 · Slave')).toBe(true);
+  // The dog marker now carries its own number and source (see DogMerge).
+  const dogShown = () => renderer.root.findAllByType(Marker)
+    .some(node => node.props.title === '狗 7' || node.props.title === '狗 · Slave');
+  expect(dogShown()).toBe(true);
   await act(async () => renderer.update(screen(false)));
-  expect(renderer.root.findAllByType(Marker).some(node => node.props.title === '狗 · Slave')).toBe(false);
+  expect(dogShown()).toBe(false);
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
   await act(async () => renderer.update(screen(false, true)));
   await readyMap();
@@ -306,7 +312,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
         .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
         .props.onAccessibilityAction({ nativeEvent: { actionName } }),
     );
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+  // One switch only: whether the path is drawn. Everything else on the card is
+  // a tap target of its own.
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(1);
   expect(
     StyleSheet.flatten(
       renderer.root.findByProps({ testID: 'fullscreen-map-screen' }).props
@@ -356,7 +364,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
       .find(node => node.props.identifier === 'real-master')
       .props.onPress(),
   );
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+  // One switch only: whether the path is drawn. Everything else on the card is
+  // a tap target of its own.
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(1);
   const detailsLayer = StyleSheet.flatten(
     renderer.root.findByProps({ testID: 'master-details' }).props.style,
   );

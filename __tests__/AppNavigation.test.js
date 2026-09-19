@@ -7,7 +7,6 @@ import {
   NativeModules,
   PermissionsAndroid,
   Platform,
-  Switch,
 } from 'react-native';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 import { mockDatabase, open } from 'react-native-nitro-sqlite';
@@ -53,6 +52,16 @@ async function press(label, role) {
     await control.props.onPress();
   });
 }
+// 顯示移動路徑 is a real Switch, so it is driven by its value, not by a press.
+const trailSwitch = () => renderer.root.findAll(
+  node => node.props.accessibilityLabel === '顯示移動路徑' &&
+    typeof node.props.onValueChange === 'function', { deep: false })[0];
+async function setTrails(value) {
+  const control = trailSwitch();
+  expect(control).toBeDefined();
+  if (control.props.value === value) return;
+  await act(async () => control.props.onValueChange(value));
+}
 async function mount() {
   await act(async () => {
     renderer = Renderer.create(<App />);
@@ -65,10 +74,12 @@ async function demoPage() {
   await press('設定', 'tab');
   await press('Demo 設定');
 }
+// The persistent map layer carries its own switch, so target this one by name.
+const modeSwitch = () => renderer.root.findAll(
+  node => node.props.accessibilityLabel === 'Demo 模式' &&
+    typeof node.props.onValueChange === 'function', { deep: false })[0];
 async function setMode(demo) {
-  await act(async () =>
-    renderer.root.findByType(Switch).props.onValueChange(demo),
-  );
+  await act(async () => modeSwitch().props.onValueChange(demo));
 }
 async function expand() {
   const handle = renderer.root.findAllByProps({
@@ -234,7 +245,7 @@ test('manual A/B writes update latest DB markers; common paths stay off until ex
   });
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await expand();
-  await press('顯示路徑');
+  await setTrails(true);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(2);
 });
 test('all eight visibility states gate overlays, retain card controls, and leave phone location independent', async () => {
@@ -253,8 +264,7 @@ test('all eight visibility states gate overlays, retain card controls, and leave
           if (current !== next)
             await press((current ? '隱藏' : '顯示') + role + '位置');
         }
-        if (button('顯示路徑').props.accessibilityState.selected !== showTrails)
-          await press('顯示路徑');
+        await setTrails(showTrails);
         expect(renderer.root.findAllByType(Marker)).toHaveLength(
           Number(showMasterMarker) + Number(showSlaveMarker),
         );
@@ -281,7 +291,7 @@ test('confirmed reset restores A/B/C and preserves real rows, mode and visibilit
   await mount();
   const real = rows('dog_status');
   await expand();
-  await press('顯示路徑');
+  await setTrails(true);
   await press('隱藏狗位置');
   const saved = preferences();
   await demoPage();
@@ -309,7 +319,7 @@ test('mode and all display values survive a cold remount without duplicating see
   await mount();
   await expand();
   await press('隱藏狗位置');
-  await press('顯示路徑');
+  await setTrails(true);
   await demoPage();
   await setMode(false);
   const saved = preferences();
@@ -394,11 +404,11 @@ test('mode/eye save failures do not switch sources or hide markers', async () =>
   expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
   await demoPage();
   await setMode(false);
-  expect(renderer.root.findByType(Switch).props.value).toBe(true);
+  expect(modeSwitch().props.value).toBe(true);
   expect(text()).toContain('settings locked');
   connection.sqlite.exec('DROP TRIGGER fail_settings');
   await setMode(false);
-  expect(renderer.root.findByType(Switch).props.value).toBe(false);
+  expect(modeSwitch().props.value).toBe(false);
 });
 test('a summary read failure after commit does not report a failed insert or encourage duplicate writes', async () => {
   await mount();

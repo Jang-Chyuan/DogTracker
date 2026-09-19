@@ -29,7 +29,10 @@ export function buildRoutePieces(samples, role) {
       Number.isFinite(sample.receivedAt) &&
       (!piece.length || !sameCoordinate(piece[piece.length - 1], sample[role]))
     )
-      piece.push(sample[role]);
+      // Each drawn point keeps its own time, so the map can clip the line to
+      // the selected window without rereading SQLite. Renderers read
+      // latitude/longitude and ignore the extra field.
+      piece.push({ ...sample[role], time: sample.receivedAt });
     previous = sample;
   }
   if (piece.length) pieces.push(piece);

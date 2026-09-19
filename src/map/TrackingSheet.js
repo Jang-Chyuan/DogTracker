@@ -5,11 +5,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { floatingShadow, mapColors as colors } from './MapTheme';
+import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
 import {
@@ -18,6 +20,9 @@ import {
   settleSheet,
   shouldDragSheet,
 } from './SheetMotion';
+
+export const windowLabel = minutes =>
+  (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小時`);
 
 export function positionLabel(position) {
   if (!position) return '尚無有效座標';
@@ -173,7 +178,9 @@ export default function TrackingSheet({
   const point = tracking.point;
   const summary = sheetSummary(tracking);
   const { preferences } = tracking;
-  const disabled = !preferences.ready || preferences.busy;
+  // Only a card that has not loaded yet is disabled. Dimming everything while
+  // a write is in flight made every eye tap flash the whole card.
+  const disabled = !preferences.ready;
   return (
     <Animated.View
       style={[styles.sheet, { bottom: bottomInset, height: animation }]}
@@ -289,27 +296,54 @@ export default function TrackingSheet({
             {battery(point.masterBatteryValid, point.masterBatteryPercentage)}
           </Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="顯示路徑"
-          accessibilityState={{
-            selected: preferences.value.showTrails,
-            disabled,
-          }}
-          disabled={disabled}
-          style={[styles.routeControl, disabled && styles.disabled]}
-          onPress={() =>
-            tracking.saveTrackingPreferences({
-              showTrails: !preferences.value.showTrails,
-            })
-          }
-        >
-          <Text style={styles.label}>顯示路徑</Text>
-          <Text style={styles.label}>
-            {preferences.value.showTrails ? '開啟' : '關閉'}
+        {/* One section: whether the path is drawn, and how far back it goes.
+            Two separate controls for the same line confused the reading. */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>移動路徑</Text>
+            <Switch
+              accessibilityLabel="顯示移動路徑"
+              value={preferences.value.showTrails}
+              disabled={disabled}
+              onValueChange={value =>
+                tracking.saveTrackingPreferences({ showTrails: value })
+              }
+              trackColor={{ true: colors.master }}
+            />
+          </View>
+          {!preferences.value.showTrails ? (
+            <Text style={styles.hint}>開啟後可以選擇要畫多久的路徑。</Text>
+          ) : (
+            <>
+          <Text style={styles.label}>顯示過去多久的路徑</Text>
+          <View style={styles.windowRow}>
+            {WINDOW_PRESETS.map(minutes => {
+              const selected = preferences.value.windowMinutes === minutes;
+              return (
+                <Pressable
+                  key={minutes}
+                  accessibilityRole="button"
+                  accessibilityLabel={`過去 ${windowLabel(minutes)}`}
+                  accessibilityState={{ selected, disabled }}
+                  disabled={disabled}
+                  style={[styles.window, selected && styles.windowSelected,
+                    disabled && styles.disabled]}
+                  onPress={() => tracking.saveTrackingPreferences({ windowMinutes: minutes })}
+                >
+                  <Text style={[styles.windowText, selected && styles.windowTextSelected]}>
+                    {windowLabel(minutes)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.hint}>
+            地圖畫出這段時間內走過的路線，最多 24 小時；更早的紀錄在「歷史」。
+            只畫眼睛開啟的對象。
           </Text>
-        </Pressable>
-        <Text style={styles.hint}>只顯示眼睛開啟的對象之路徑</Text>
+            </>
+          )}
+        </View>
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (
           <View>
@@ -388,6 +422,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   summaryTime: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  section: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#F3F6F4',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  sectionTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  windowRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
+  window: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: '#EAF1EC',
+  },
+  windowSelected: { backgroundColor: colors.master },
+  windowText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  windowTextSelected: { color: '#FFFFFF' },
   routeControl: {
     minHeight: 48,
     padding: 12,
