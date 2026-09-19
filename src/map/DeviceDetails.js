@@ -45,10 +45,13 @@ export default function DeviceDetails({
   }, [onClose]);
   const { point } = tracking;
   const dog = subject?.kind === 'dog' ? subject.dog : null;
+  // A history track answers a tap with the same panel as a live marker; only
+  // its content differs, because a replayed moment has no hardware feed.
+  const track = subject?.kind === 'track' ? subject.track : null;
   // Hardware fields come from this phone's BLE feed, so they only describe the
   // dog it is connected to.
   const live = dog && dog.source === 'ble' && dog.slaveId === point.slaveId;
-  const title = dog ? `狗 ${dog.slaveId}` : '領犬員資訊';
+  const title = track ? track.name : dog ? `狗 ${dog.slaveId}` : '領犬員資訊';
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]} testID="device-details">
       <Pressable
@@ -73,7 +76,22 @@ export default function DeviceDetails({
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content}>
-          {dog ? (
+          {track ? (
+            <>
+              <Text style={styles.hint}>{track.sourceLabel}</Text>
+              <Text style={styles.hint}>
+                該時刻位置：{formatTime(track.latest?.time)}
+              </Text>
+              <View style={styles.stats}>
+                <Stat icon="speed" label="速度" value={track.latest?.speed_kmh == null
+                  ? '未知' : `${track.latest.speed_kmh.toFixed(1)} km/h`} />
+                <Stat icon="clock" label="這段區間" value={`${track.count ?? 0} 筆`} />
+              </View>
+              <Text style={styles.hint}>
+                歷史只讀這支手機存下來的資料；硬體回報與 LoRa 訊號只有即時連線那一對才有。
+              </Text>
+            </>
+          ) : dog ? (
             <>
               <Text style={styles.hint}>來源：{describeDogSource(dog)}</Text>
               {/* No coordinates: the marker this panel belongs to is already

@@ -65,6 +65,46 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   );
 }
 
+// The history track's last drawn position. Same redraw dance as DeviceMarker:
+// a custom marker view that is not tracked for changes can reach the native
+// side before it has laid out, and then draws as a blank dot.
+function TrackMarker({ track, onPress }) {
+  const marker = useRef(null);
+  const { latest } = track;
+  const detail = `${new Date(latest.time).toLocaleString()} · ${
+    latest.speed_kmh == null ? '速度未知' : latest.speed_kmh.toFixed(1) + ' km/h'}`;
+  // The history map draws at most two of these, and the avatar is rebuilt
+  // whenever the query refreshes, so this marker keeps tracking its view: with
+  // it off the SDK kept a half-captured bitmap and drew an empty ring instead
+  // of the dog.
+
+  return (
+    <Marker
+      ref={marker}
+      coordinate={latest}
+      anchor={{ x: 0.5, y: 0.5 }}
+      tracksViewChanges
+      // Like the live map: no title or description, because the tap opens this
+      // device's panel and the SDK's own bubble would be a second box.
+      onPress={onPress}
+    >
+      <View
+        collapsable={false}
+        accessible
+        accessibilityLabel={`${track.name} · 該時刻位置。${detail}`}
+        style={styles.marker}
+        onLayout={() => marker.current?.redraw?.()}
+      >
+        {track.role === 'slave' ? (
+          <TrackingAvatar role="slave" size={36} />
+        ) : (
+          <View style={[styles.phoneDot, { backgroundColor: track.color }]} />
+        )}
+      </View>
+    </Marker>
+  );
+}
+
 function GoogleTrackingMapRenderer({
   source,
   presentation,
@@ -80,6 +120,7 @@ function GoogleTrackingMapRenderer({
   livePhone,
   onMasterPress,
   onDogPress,
+  onTrackPress,
   supported,
   configured,
 }) {
@@ -269,8 +310,8 @@ function GoogleTrackingMapRenderer({
               {track.segments.filter(segment => segment.length > 1).map((segment, index) => (
                 <Polyline key={index} coordinates={segment} strokeColor={track.color} strokeWidth={4} geodesic={false} />
               ))}
-              {track.latest && <Marker coordinate={track.latest} pinColor={track.color} title={track.name + ' · 最後位置'}
-                description={`${new Date(track.latest.time).toLocaleString()} · ${track.latest.speed_kmh == null ? '速度未知' : track.latest.speed_kmh.toFixed(1) + ' km/h'}`} />}
+              {track.latest && <TrackMarker track={track}
+                onPress={onTrackPress ? () => onTrackPress(track.name) : undefined} />}
             </React.Fragment>
           ))}
           {slaveSegments.map((segment, index) => (
@@ -416,6 +457,7 @@ const styles = StyleSheet.create({
   },
   retryText: { color: colors.ink, fontWeight: '600' },
   fadedMarker: { opacity: 0.45 },
+  phoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: '#FFFFFF' },
   focusedMarker: {
     borderRadius: 23,
     borderWidth: 3,

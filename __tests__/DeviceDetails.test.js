@@ -92,6 +92,37 @@ test('a dog and the handler answer a tap with the same panel', async () => {
   await act(async () => renderer.unmount());
 });
 
+test('a history marker opens the same panel, with what a past moment can say', async () => {
+  const close = jest.fn();
+  const track = {
+    name: '狗 4', count: 340, sourceLabel: '來源：雲端下載的資料',
+    latest: { time: trackingPoint.receivedAt, speed_kmh: 3.4, latitude: 25, longitude: 121 },
+  };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(
+      <DeviceDetails tracking={{ point: trackingPoint }} subject={{ kind: 'track', track }}
+        master={null} topInset={80} bottomInset={120} onClose={close} />,
+    );
+  });
+  const flatten = node => {
+    if (node == null || typeof node === 'boolean') return '';
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(flatten).join('');
+    return flatten(node.children);
+  };
+  const text = flatten(renderer.toJSON());
+  expect(text).toContain('狗 4');
+  expect(text).toContain('來源：雲端下載的資料');
+  expect(text).toContain('3.4 km/h');
+  expect(text).toContain('340 筆');
+  // A past moment has no hardware feed, and the panel says so rather than
+  // showing the connected pair's numbers under another dog's name.
+  expect(text).not.toContain('LoRa 訊號品質');
+  expect(text).toContain('硬體回報與 LoRa 訊號只有即時連線那一對才有');
+  await act(async () => renderer.unmount());
+});
+
 test('the panel keeps its title and close button while the content scrolls', async () => {
   const close = jest.fn();
   let renderer;
@@ -104,9 +135,9 @@ test('the panel keeps its title and close button while the content scrolls', asy
   // Scrolling the content away from its own close button is how a panel traps
   // someone, so the heading sits outside the scroll view.
   const scroll = renderer.root.findByType(ScrollView);
-  const heading = renderer.root.findAll(
-    node => node.props.accessibilityLabel === '關閉領犬員資訊面板', { deep: false })[0];
-  expect(heading).toBeDefined();
+  expect(renderer.root.findAll(
+    node => node.props.accessibilityLabel === '關閉領犬員資訊面板',
+    { deep: false })[0]).toBeDefined();
   expect(scroll.findAll(
     node => node.props.accessibilityLabel === '關閉領犬員資訊面板')).toHaveLength(0);
   await act(async () => renderer.unmount());

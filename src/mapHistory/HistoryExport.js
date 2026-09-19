@@ -3,7 +3,9 @@ const xml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const iso = time => new Date(time).toISOString();
 const cell = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
 export function serializeHistory(format, data) {
-  const tracks = [['phone', data.phone], ['client', data.client]];
+  // One named track per dog, so an export of several dogs stays readable.
+  const tracks = [['phone', data.phone],
+    ...(data.clients || []).map(entry => [`dog-${entry.slaveId}`, entry.rows])];
   if (format === 'csv') {
     const lines = ['source,id,recorded_at,location_at,latitude,longitude,accuracy_meters,altitude_meters,speed_kmh,heading_degrees,raw_latitude,raw_longitude,session_id,raw_speed_kmh,speed_accuracy_mps,motion_state'];
     for (const [source, points] of tracks) for (const p of points) lines.push([

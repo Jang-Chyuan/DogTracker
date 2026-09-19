@@ -1,15 +1,54 @@
 import { simplifyRoute } from '../tracking/SimplifyRoute';
 import { coordinate } from '../tracking/RouteSamples';
-import { historyWindow, parseHistoryStart } from './HistoryTime';
+import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
 
-export const HISTORY_DEFAULTS = { enabled: false, phone: true, client: true, source: 'ble', hours: 3, master: 7, slave: 4, timeMode: 'recent', startDate: '', startTime: '00:00' };
+// The single list the app composition binds; a method added here without the
+// binding would only be missing on a phone, never in a repository test.
+export const HISTORY_DATABASE_METHODS = ['load', 'save', 'read', 'listDevices', 'listDays',
+  'hasPhoneTrack'];
+// Several dogs can be out with several Masters, so both are lists.
+export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
+export const HISTORY_DEFAULTS = { phone: true, client: true, source: 'ble', hours: 3,
+  masters: [7], slaves: [4], timeMode: 'recent', startAt: null, endAt: null };
+const idList = value => (Array.isArray(value) ? value : [value])
+  .map(Number).filter(id => Number.isInteger(id) && id > 0);
 export function validateHistory(value) {
   const p = { ...HISTORY_DEFAULTS, ...value };
   if (!['recent', 'fixed'].includes(p.timeMode)) throw new Error('時間模式無效');
-  if (p.timeMode === 'fixed') parseHistoryStart(p.startDate, p.startTime);
-  if (!['enabled', 'phone', 'client'].every(key => typeof p[key] === 'boolean') ||
+  // The tab decides whether history is shown, so a stored `enabled` from an
+  // older version is dropped rather than obeyed. Single ids from an older
+  // version become one-element lists.
+  delete p.enabled;
+  // A fixed range used to be a start plus a duration typed by hand; convert it
+  // once so an upgrade does not lose the saved query.
+  if (value?.startDate && p.startAt == null) {
+    const [year, month, date] = String(value.startDate).split('-').map(Number);
+    const [hour, minute] = String(value.startTime || '00:00').split(':').map(Number);
+    const start = new Date(year, (month || 1) - 1, date || 1, hour || 0, minute || 0);
+    if (Number.isFinite(start.getTime())) {
+      p.startAt = start.getTime();
+      p.endAt = start.getTime() + (Number(value.hours) || 3) * 3600000;
+    }
+  }
+  delete p.startDate;
+  delete p.startTime;
+  if (p.timeMode !== 'fixed') { p.startAt = null; p.endAt = null; }
+  if (!HISTORY_PRESET_HOURS.includes(p.hours)) p.hours = HISTORY_DEFAULTS.hours;
+  // Checked after the conversion above, so an upgraded query is judged on the
+  // range it became.
+  if (p.timeMode === 'fixed') parseHistoryRange(p.startAt, p.endAt);
+  if (value && p.masters === HISTORY_DEFAULTS.masters && value.master !== undefined)
+    p.masters = idList(value.master);
+  if (value && p.slaves === HISTORY_DEFAULTS.slaves && value.slave !== undefined)
+    p.slaves = idList(value.slave);
+  delete p.master;
+  delete p.slave;
+  p.masters = [...new Set(idList(p.masters))].sort((a, b) => a - b);
+  p.slaves = [...new Set(idList(p.slaves))].sort((a, b) => a - b);
+  if (!['phone', 'client'].every(key => typeof p[key] === 'boolean') ||
       !['ble', 'cloud'].includes(p.source) || !Number.isFinite(p.hours) || p.hours <= 0 || p.hours > 240 ||
-      ![p.master, p.slave].every(id => Number.isInteger(id) && id > 0)) throw new Error('請輸入有效設定：時數 0～240（不含 0），裝置編號為正整數');
+      !p.masters.length || !p.slaves.length)
+    throw new Error('請輸入有效設定：時數 0～240（不含 0），並至少選一隻狗與一台 Master');
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
@@ -25,6 +64,66 @@ export function createHistoryDatabase(db) {
       const settings = validateHistory(value);
       await db.executeAsync('INSERT OR REPLACE INTO map_history_settings(id,value) VALUES(1,?)', [JSON.stringify(settings)]);
       return settings;
+    },
+    /**
+     * Which local days actually hold rows for the chosen devices, so the card
+     * can offer them instead of making the user query a day to find out it is
+     * empty. Platform date pickers cannot mark days themselves.
+     */
+    async listDays(value, owner) {
+      const p = validateHistory(value);
+      if (p.source === 'cloud' && !owner) return [];
+      const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
+      const masters = p.masters.map(() => '?').join(',');
+      const slaves = p.slaves.map(() => '?').join(',');
+      const params = p.source === 'cloud'
+        ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
+      const found = rows(await db.executeAsync(
+        `SELECT MIN(received_at) AS from_at, MAX(received_at) AS to_at, COUNT(*) AS rows
+         FROM ${table}
+         WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
+         ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}
+         GROUP BY strftime('%Y-%m-%d', received_at / 1000, 'unixepoch', 'localtime')
+         ORDER BY from_at DESC LIMIT 60`, params));
+      return found
+        .filter(row => Number.isFinite(row.from_at))
+        .map(row => ({
+          day: startOfDay(row.from_at),
+          rows: Number(row.rows || 0),
+          from: Number(row.from_at),
+          to: Number(row.to_at),
+        }));
+    },
+    /** Whether this phone has ever recorded its own position (GPS Timeline). */
+    async hasPhoneTrack() {
+      const exists = rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
+      if (!exists.length) return false;
+      const found = rows(await db.executeAsync(
+        'SELECT id FROM myLocationTracker LIMIT 1'));
+      return found.length > 0;
+    },
+    /**
+     * Which Master/Slave pairs this phone actually holds for a source. The card
+     * offers these instead of asking the user to type device numbers: both ids
+     * can take several values, and a typed number that exists nowhere looks
+     * exactly like "no data".
+     */
+    async listDevices(source, owner) {
+      const cloud = source === 'cloud';
+      if (cloud && !owner) return [];
+      const table = cloud ? 'supabase_dog_status' : 'dog_status';
+      const found = rows(await db.executeAsync(
+        `SELECT DISTINCT master_id, slave_id FROM ${table}
+         ${cloud ? 'WHERE owner_user_id=?' : ''}
+         ORDER BY slave_id, master_id LIMIT 60`, cloud ? [owner] : []));
+      return found
+        .map(row => ({ master: Number(row.master_id), slave: Number(row.slave_id) }))
+        // A row without a slave id (Number(null) is 0) is a Master-only packet,
+        // not a dog. It sorted first, so the card offered "狗 0" and fell back
+        // to it when a source switch dropped the previous pick — which then
+        // queried a dog that does not exist and looked like "no data".
+        .filter(pair => pair.master > 0 && pair.slave > 0);
     },
     async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null) {
       const p = validateHistory(value);
@@ -47,26 +146,48 @@ export function createHistoryDatabase(db) {
         }
         return all;
       }
-      let phone = [], client = [], coverage = null;
+      // Every selected dog gets an entry, with or without rows: the card lists
+      // what was asked for, and "0 筆" is an answer.
+      let phone = [], coverage = null;
+      const clients = p.slaves.map(slaveId => ({ slaveId, rows: [] }));
       if (p.phone) {
         const exists = rows(await db.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
         if (exists.length) phone = await scan('myLocationTracker', 'recorded_at', '', [], 'latitude', 'longitude');
       }
       if (p.client && (p.source === 'ble' || owner)) {
         const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
-        const extra = 'AND master_id=? AND slave_id=?' + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
-        const params = p.source === 'cloud' ? [p.master, p.slave, owner] : [p.master, p.slave];
-        client = await scan(table, 'received_at', extra, params, 'slave_lat', 'slave_lon');
+        const masters = p.masters.map(() => '?').join(',');
+        const extra = `AND master_id IN (${masters}) AND slave_id=?`
+          + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
+        // One query per dog: each keeps its own line and marker on the map, so
+        // a track can never mix two dogs.
+        for (const entry of clients) {
+          const params = p.source === 'cloud'
+            ? [...p.masters, entry.slaveId, owner] : [...p.masters, entry.slaveId];
+          entry.rows = await scan(table, 'received_at', extra, params, 'slave_lat', 'slave_lon');
+        }
+        const client = clients.flatMap(entry => entry.rows);
         // This screen only reads what the phone already stores: the cloud copy
         // holds what was downloaded, and both tables are trimmed by retention.
         // Without the oldest stored row the map cannot tell "nothing happened"
         // from "never downloaded", and neither could the person reading it.
+        const slaves = p.slaves.map(() => '?').join(',');
+        const coverageParams = p.source === 'cloud'
+          ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
         const stored = rows(await db.executeAsync(`SELECT MIN(received_at) AS from_at, COUNT(*) AS rows
-          FROM ${table} WHERE 1=1 ${extra}`, params))[0];
+          FROM ${table} WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
+          ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}`, coverageParams))[0];
         coverage = { source: p.source, rows: Number(stored?.rows || 0),
           from: Number.isFinite(stored?.from_at) ? stored.from_at : null };
+        if (raw) return { phone, client, clients, since, until, coverage, message: '' };
       }
-      return { phone: raw ? phone : historyGeometry(phone), client: raw ? client : historyGeometry(client), since, until, coverage,
+      return {
+        phone: raw ? phone : historyGeometry(phone),
+        clients: clients.map(entry => ({
+          slaveId: entry.slaveId,
+          ...(raw ? { rows: entry.rows } : historyGeometry(entry.rows)),
+        })),
+        since, until, coverage,
         message: p.client && p.source === 'cloud' && !owner ? '請先登入雲端帳號，才能查看該帳號下載的定位。' : '' };
     },
   };
@@ -109,5 +230,6 @@ export function expireHistory(data, preferences, now) {
       latest: track.latest?.time >= since ? track.latest : null,
       limited: times.length > 0 && track.limited };
   };
-  return { ...data, since, until: Math.max(data.until, since), phone: clip(data.phone), client: clip(data.client) };
+  return { ...data, since, until: Math.max(data.until, since), phone: clip(data.phone),
+    clients: (data.clients || []).map(track => ({ ...clip(track), slaveId: track.slaveId })) };
 }

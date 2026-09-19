@@ -1,7 +1,6 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
-import HistorySettings from '../mapHistory/HistorySettings';
 
 export default function SettingsScreen({
   tracking,
@@ -9,12 +8,16 @@ export default function SettingsScreen({
   onDemo,
   onCloud,
   onLocationTracker,
-  history,
 }) {
   return (
     <View>
       <Text style={ui.title}>設定</Text>
-      {history ? <HistorySettings history={history} /> : null}
+      <View style={ui.card}>
+        <Text style={ui.heading}>歷史地圖</Text>
+        <Text style={ui.hint}>
+          來源、Master／Slave 編號、查詢區間與匯出都移到下方的「歷史」分頁，設定完直接看得到地圖。首頁只顯示 24 小時內的即時位置。
+        </Text>
+      </View>
       <View style={ui.card}>
         <Text style={ui.heading}>手機位置記錄</Text>
         <Text style={ui.hint}>GPS Timeline：約每秒定位與平滑，依速度每 1～5 秒保存，最多保留 80,000 筆。</Text>
