@@ -3,7 +3,7 @@
 入口：DogTracker → 設定 → 雲端資料。
 
 1. 使用 Supabase Auth 中已建立並獲授權的 Email／密碼登入一次。
-2. 自動同步每個已授權 Master 的最近 24 小時；每 30 秒下載增量。Android 登入後啟動常駐通知服務，切到地圖、其他 App 或鎖屏仍保留同步排程。
+2. 自動同步每個已授權 Master 的最近 24 小時；**只在 App 於前景時**每 30 秒下載增量，切到其他 App 或鎖屏即暫停，回到 App 立刻補下載。
 3. 較早資料：填台灣日期範圍（可指定 Master），按「下載到手機」。每批最多 1,000 筆，直到範圍內沒有後續資料。
 4. 在下方查看本機紀錄，每頁 50 筆。重新讀取本機資料不使用網路。
 
@@ -44,9 +44,9 @@ Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，
 
 排程在 App 層執行，不依賴雲端頁。每 30 秒觸發，上一輪未完成就略過。斷網失敗下個週期重試。每輪自動同步最多執行 120 秒，逾時保留已儲存批次，下輪繼續。手動下載會先取消並等待自動下載停止，兩者不重疊。登出取消同步並清除該手機的 Session。
 
-Android 的 `CloudBackgroundService` 使用 dataSync 前景服務與一個 Headless JS 保活任務，維持同一個 JS 同步器及 Token 更新，不建立第二套下載器或資料庫。通知顯示最近成功同步時間。登入並處於前景時啟動服務；登出或 App 同步 owner 卸載時停止。Headless 任務結束時釋放喚醒鎖。服務啟動失敗時顯示錯誤並退回僅前景同步。iOS 維持僅前景同步。
+背景不同步，兩個平台都一樣。Android 曾用 dataSync 前景服務加一個 Headless JS 保活任務讓排程在鎖屏時繼續：React Native 在啟動 Headless 任務時取得 `PARTIAL_WAKE_LOCK`，而該任務只在服務結束時才結束，於是 CPU 整晚無法休眠——實機一晚耗盡電池（`batterystats`：喚醒鎖 4 小時 24 分、CPU 1 小時 47 分）。雲端的資料不會消失，因此改成離開 App 就停止排程與 Token 更新，回到 App 由 SQLite 進度補下載；缺某一天用日期範圍手動下載。
 
-Android 15+ 的 dataSync 服務受背景執行時數限制；時限到達會停止服務及背景排程，回到 App 後恢復。系統強制停止、廠商省電或 Doze 網路限制可能中斷／延遲排程；本版不提供被殺掉後的無介面自動重啟或開機啟動，下次開啟依 SQLite 進度補下載。OPPO 如限制背景運作，需在系統的 App 電池設定允許 DogTracker 背景活動。不要宣稱背景每 30 秒必定收到新資料。
+排程只在前景執行，所以系統強制停止、廠商省電或 Doze 都不再影響同步；App 被殺掉後也沒有需要重啟的背景元件。
 
 5 分鐘補查只涵蓋有限的延遲寫入。Master 離線暫存後補傳、Master 與手機時鐘不一致時，資料寫入雲端時的 `received_at` 可能已早於同步進度，這種資料改由下面的整點核對找回。
 
@@ -66,7 +66,7 @@ Android 15+ 的 dataSync 服務受背景執行時數限制；時限到達會停�
 
 ## 範圍與限制
 
-- Android 常駐通知服務運作期間可背景同步；登入後可以離線查看已下載的快取。
+- 只有 App 在前景時同步；登入後可以離線查看已下載的快取。
 - 手動下載採固定日期範圍與當次操作時間上限，較早歷史仍使用此入口。
 - 假設雲端事件為追加且不可變；相同事件重複下載不新增，不更新已下載事件，也不同步刪除。
 - 取消／失敗保留已提交批次；可再次下載相同範圍去重補齊。離開雲端頁只會取消手動下載，自動同步繼續。
@@ -88,14 +88,14 @@ BLE 是手機收到的時間、雲端是 Master 收到的時間，兩個時鐘�
 ## 驗證
 
 ```powershell
-npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudScreen.test.js __tests__/CloudSync.test.js __tests__/CloudBackground.test.js __tests__/CloudReconcile.test.js
+npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudScreen.test.js __tests__/CloudSync.test.js __tests__/CloudForeground.test.js __tests__/CloudReconcile.test.js
 ```
 
 實機驗收：已授權帳號讀取對應 Master 全部 Slave；無授權帳號下載為空；相同範圍下載兩次筆數不增加；斷網後重新讀取本機資料；取消後重試；登出與換帳號不顯示前一帳號資料。
 
 核對驗收：登入後等待首次核對完成（約 10 分鐘內），在雲端資料頁確認筆數不因核對而重複增加；讓 Master 離線後再連線補傳較早的資料，等待下一次核對，確認補傳的資料出現在本機；連續觀察數輪，確認沒有補傳時不會重複下載。
 
-同步驗收：登入後自動下載及出現常駐通知；切到地圖、桌面或鎖屏超過 30 秒後查看通知的成功同步時間及新資料；殺掉 App 重開不需輸入密碼並補下載；登出後服務與喚醒鎖停止；斷網再連線後下一週期重試；手動下載舊歷史不倒退自動進度。Android 原生服務變更需要重新建置安裝 APK；iOS 套件更新需更新 Pods 並重建。
+同步驗收：登入後自動下載並每 30 秒更新「上次同步」；切到桌面或鎖屏後沒有常駐通知，`adb shell dumpsys power | grep dogtracker` 看不到喚醒鎖，`dumpsys batterystats` 的 app 區段也不再累積 partial wake lock；回到 App 立刻補下載；殺掉 App 重開不需輸入密碼並補下載；斷網再連線後下一週期重試；手動下載舊歷史不倒退自動進度。Android 原生變更需要重新建置安裝 APK；iOS 套件更新需更新 Pods 並重建。
 
 目前兩個已知帳號皆有 Master 5／7 授權，需另外使用無授權帳號驗證拒絕讀取。不能以 postgres 或 Secret Key 測試使用者 RLS。
 

@@ -17,7 +17,6 @@ class MainApplication : Application(), ReactApplication {
           add(TrackingPlatformPackage())
           // Packages that cannot be autolinked yet can be added manually here, for example:
           add(BleBackgroundPackage())
-          add(CloudBackgroundPackage())
           add(HistoryExportPackage())
           add(com.dogtracker.location.LocationTrackerPackage())
           add(QrScannerPackage())
