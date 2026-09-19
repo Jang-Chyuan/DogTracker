@@ -41,6 +41,14 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
   const requireOwner = owner => {
     if (!owner) throw new Error('請先登入');
   };
+  // Every dog this account has downloaded, smallest id first. Reading the list
+  // first turns "the newest row of each dog" into one index seek per dog
+  // instead of one pass over the whole window; idx_cloud_owner_slave_master
+  // answers it without touching a row.
+  const slaveIds = async owner => rows(await connection.executeAsync(
+    `SELECT DISTINCT slave_id FROM supabase_dog_status
+     WHERE owner_user_id = ? AND slave_id IS NOT NULL ORDER BY slave_id`, [owner],
+  )).map(row => Number(row.slave_id)).filter(id => Number.isInteger(id) && id > 0);
   return {
     async initialize() {
       const columns = new Set(rows(await connection.executeAsync(
@@ -60,6 +68,17 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         ON supabase_dog_status(owner_user_id, received_at DESC, id DESC)`);
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_master_received
         ON supabase_dog_status(owner_user_id, master_id, received_at)`);
+      // "Which dogs did this account download?" — asked by the home map every
+      // ten seconds and by the history card on every change. No existing index
+      // held owner and slave together, so the answer cost a full scan: 201 ms
+      // at the 500 MB cap, against 0.01 ms here.
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_slave_master
+        ON supabase_dog_status(owner_user_id, slave_id, master_id)`);
+      // Only the rows that still carry their original JSON. DROP_OLD_PAYLOAD
+      // used to walk every row older than a day to find the few thousand with
+      // a payload left: 212 ms every twenty pages, against 0.01 ms with this.
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_payload
+        ON supabase_dog_status(received_at) WHERE raw_payload IS NOT NULL`);
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_state (
         owner_user_id TEXT NOT NULL, master_id INTEGER NOT NULL,
         through_at TEXT NOT NULL, event_id TEXT, updated_at INTEGER NOT NULL,
@@ -164,23 +183,45 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
      */
     async trackBySlave(owner, sinceMs, limit = 6000) {
       requireOwner(owner);
-      return rows(await connection.executeAsync(`SELECT slave_id, master_id, received_at,
-          slave_lat, slave_lon
-        FROM supabase_dog_status
-        WHERE owner_user_id = ? AND received_at >= ?
-          AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
-          AND NOT (slave_lat = 0 AND slave_lon = 0)
-        ORDER BY slave_id, received_at LIMIT ?`, [owner, sinceMs, Math.floor(limit)]));
+      const slaves = await slaveIds(owner);
+      if (!slaves.length) return [];
+      // One budget shared equally instead of one global LIMIT. Ordered by dog,
+      // a single LIMIT was spent entirely on the first dogs, so the last dog
+      // could be left without a line; and because it ordered by time ascending
+      // it kept the *oldest* rows of the window, drawing a path that ended
+      // where the dog was hours ago. Each dog now keeps its newest rows.
+      const each = Math.max(1, Math.floor(Math.max(1, Math.floor(limit)) / slaves.length));
+      const found = [];
+      for (const slaveId of slaves) {
+        const page = rows(await connection.executeAsync(`SELECT slave_id, master_id, received_at,
+            slave_lat, slave_lon
+          FROM supabase_dog_status
+          WHERE owner_user_id = ? AND slave_id = ? AND received_at >= ?
+            AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+            AND NOT (slave_lat = 0 AND slave_lon = 0)
+          ORDER BY received_at DESC LIMIT ?`, [owner, slaveId, sinceMs, each]));
+        found.push(...page.reverse());
+      }
+      return found;
     },
     async latestBySlave(owner, sinceMs) {
       requireOwner(owner);
-      return rows(await connection.executeAsync(`SELECT slave_id, master_id,
-          MAX(received_at) AS received_at, slave_lat, slave_lon, speed_kmh, battery_percentage
-        FROM supabase_dog_status
-        WHERE owner_user_id = ? AND received_at >= ?
-          AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
-          AND NOT (slave_lat = 0 AND slave_lon = 0)
-        GROUP BY slave_id ORDER BY slave_id`, [owner, sinceMs]));
+      const found = [];
+      // GROUP BY had to read every row of the window — 86,400 of them for one
+      // day of six dogs — to find six answers, and this runs every ten seconds
+      // while the map is open. Asking each dog for its own newest row reads
+      // six: 55 ms against 0.08 ms at the cap.
+      for (const slaveId of await slaveIds(owner)) {
+        const [row] = rows(await connection.executeAsync(`SELECT slave_id, master_id,
+            received_at, slave_lat, slave_lon, speed_kmh, battery_percentage
+          FROM supabase_dog_status
+          WHERE owner_user_id = ? AND slave_id = ? AND received_at >= ?
+            AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+            AND NOT (slave_lat = 0 AND slave_lon = 0)
+          ORDER BY received_at DESC LIMIT 1`, [owner, slaveId, sinceMs]));
+        if (row) found.push(row);
+      }
+      return found;
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);
@@ -202,15 +243,19 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
      * report the size of one table without the dbstat extension.
      */
     async usage() {
-      const result = rows(await connection.executeAsync(
-        `SELECT COUNT(*) AS count, MIN(received_at) AS from_at
-         FROM supabase_dog_status`));
-      const count = Number(result[0]?.count || 0);
+      // Two statements, because COUNT(*) and MIN() want different indexes and
+      // SQLite can only pick one: asked together they cost 30 ms, apart 3 ms
+      // and 0.01 ms. The oldest row is the first entry of the time index.
+      const counted = rows(await connection.executeAsync(
+        'SELECT COUNT(*) AS count FROM supabase_dog_status'))[0];
+      const oldest = rows(await connection.executeAsync(
+        'SELECT received_at FROM supabase_dog_status ORDER BY received_at LIMIT 1'))[0];
+      const count = Number(counted?.count || 0);
       return {
         rows: count,
         bytes: count * BYTES_PER_ROW,
         budget: CLOUD_BUDGET_BYTES,
-        from: Number.isFinite(result[0]?.from_at) ? Number(result[0].from_at) : null,
+        from: Number.isFinite(oldest?.received_at) ? Number(oldest.received_at) : null,
       };
     },
   };

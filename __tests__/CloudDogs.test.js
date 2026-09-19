@@ -48,6 +48,31 @@ test('the newest downloaded row per dog, per account, with a position', async ()
   } finally { connection.close(); }
 });
 
+test('每隻狗分到相同的繪圖預算，而且留下的是最新的點', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const database = createCloudDatabase(connection);
+    await database.initialize();
+    // One dog reports far more than the other. A single LIMIT ordered by dog
+    // spent the whole budget on the first dog, and because it ordered by time
+    // ascending it kept the oldest rows: the busy dog's line stopped where it
+    // was long ago, and the quiet dog had no line at all.
+    await database.savePage('account-a', [
+      ...Array.from({ length: 6 }, (_, index) =>
+        row(`x${index}`, 4, NOW - (6 - index) * 1000, 5)),
+      ...Array.from({ length: 2 }, (_, index) =>
+        row(`y${index}`, 6, NOW - (2 - index) * 1000, 5)),
+    ]);
+    const track = await database.trackBySlave('account-a', NOW - MAX_AGE_MS, 4);
+    expect(track.map(point => [point.slave_id, point.received_at])).toEqual([
+      [4, NOW - 2000], [4, NOW - 1000],
+      [6, NOW - 2000], [6, NOW - 1000],
+    ]);
+    await expect(database.trackBySlave('', 0)).rejects.toThrow('請先登入');
+  } finally { connection.close(); }
+});
+
 // A stable clock: the hook restarts its timer when `now` changes identity.
 const clock = () => NOW;
 function Probe({ database, owner, enabled, onState }) {
