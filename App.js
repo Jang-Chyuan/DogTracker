@@ -25,6 +25,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
+import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
 import BottomNavigation, {
@@ -55,6 +56,11 @@ function TrackerApp() {
   const showsMap = isMap || isHistory;
   const history = useMapHistory(tracking.historyDatabase, tracking.ready.real,
     tracking.foreground && isHistory, cloudSync.ownerId);
+  // The history card downloads a cloud range it does not hold, through the same
+  // writer and the same exclusive slot as the cloud page.
+  const historyDownload = useHistoryDownload({
+    database: tracking.cloudDatabase, sync: cloudSync, owner: cloudSync.ownerId,
+  });
   const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
   // Kept reading while the history tab is open: disabling it empties the rows,
   // so the cloud dogs would blink off the home map on every visit.
@@ -154,6 +160,7 @@ function TrackerApp() {
       >
         <MapScreen
           history={history}
+          historyDownload={historyDownload}
           tracking={tracking}
           phone={phone}
           cloudDogs={cloudDogs}
