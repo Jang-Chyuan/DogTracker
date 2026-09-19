@@ -119,9 +119,13 @@ describe('DogDatabase tracking reads', () => {
     ).resolves.toEqual([dogStatusRow]);
 
     const [sql, params] = mockDatabase.executeAsync.mock.calls[0];
-    expect(sql).toContain('(received_at > ? OR (received_at = ? AND id > ?))');
+    // The cursor is split into its two halves instead of being written as one
+    // OR, so each half can walk the index in order. Correctness of the split,
+    // including rows sharing a timestamp, is checked against real SQLite in
+    // "keyset paging returns every row exactly once, ties included".
+    expect(sql).toContain('UNION ALL');
     expect(sql).not.toContain('OFFSET');
-    expect(params).toEqual([2000, 1500, 1500, 42, 1000]);
+    expect(params).toEqual([1500, 42, 2000, 1000, 1500, 2000, 1000, 1000]);
   });
 
   test('pages newest rows backwards without OFFSET', async () => {
@@ -133,10 +137,60 @@ describe('DogDatabase tracking reads', () => {
     ).resolves.toEqual([dogStatusRow]);
 
     const [sql, params] = mockDatabase.executeAsync.mock.calls[0];
-    expect(sql).toContain('(received_at < ? OR (received_at = ? AND id < ?))');
+    expect(sql).toContain('UNION ALL');
     expect(sql).toContain('ORDER BY received_at DESC, id DESC');
     expect(sql).not.toContain('OFFSET');
-    expect(params).toEqual([1000, 1500, 1500, 42, 1000]);
+    expect(params).toEqual([1500, 42, 1000, 1000, 1000, 1500, 1000, 1000]);
+  });
+
+  test('keyset paging returns every row exactly once, ties included', async () => {
+    const connection = createMemoryConnection();
+    const database = createDogDatabase(connection);
+    try {
+      await database.initialize();
+      // Six dogs answering inside the same millisecond, twice: ties are what
+      // the id half of the cursor exists for, and what the old single OR made
+      // SQLite sort the whole window to resolve.
+      const written = [];
+      for (let step = 0; step < 4; step += 1) {
+        for (let dog = 1; dog <= 6; dog += 1) {
+          const receivedAt = 1000 + Math.floor(step / 2) * 10;
+          written.push({ receivedAt, slaveId: dog });
+          await connection.executeAsync(
+            'INSERT INTO dog_status (received_at, slave_id) VALUES (?, ?)',
+            [receivedAt, dog],
+          );
+        }
+      }
+      const ids = connection.sqlite
+        .prepare('SELECT id, received_at FROM dog_status ORDER BY id').all();
+      const page = async (read, cursor) =>
+        (cursor ? read(1000, 1010, cursor.received_at, cursor.id, 5)
+          : read(1000, 1010, null, null, 5));
+
+      const forwards = [];
+      for (let cursor = null; ;) {
+        const rows = await page(database.listStatusRowsByTimeCursor, cursor);
+        if (!rows.length) break;
+        forwards.push(...rows);
+        cursor = rows[rows.length - 1];
+      }
+      expect(forwards.map(row => row.id))
+        .toEqual(ids.map(row => row.id));
+
+      const backwards = [];
+      for (let cursor = null; ;) {
+        const rows = await page(database.listLatestStatusRowsByTimeCursor, cursor);
+        if (!rows.length) break;
+        backwards.push(...rows);
+        cursor = rows[rows.length - 1];
+      }
+      expect(backwards.map(row => row.id))
+        .toEqual([...ids].reverse().map(row => row.id));
+      expect(written).toHaveLength(ids.length);
+    } finally {
+      connection.close();
+    }
   });
 
   test('loads bounded marker fallback rows for the active device IDs', async () => {
