@@ -4,6 +4,7 @@ import { ActionButton, ui } from '../components/ScreenUI';
 import { getCloudClient } from './CloudClient';
 import { downloadCloudHistory } from './CloudDownload';
 import { taiwanDateRange } from './CloudTelemetry';
+import { CLOUD_BUDGET_BYTES } from './CloudDatabase';
 
 const today = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
 /** The stored record is the whole Supabase row, JSON encoded when it arrived. */
@@ -32,6 +33,8 @@ function Field({ label, ...props }) {
   </View>;
 }
 
+const megabytes = bytes => `${Math.round(bytes / (1024 * 1024))} MB`;
+
 export default function CloudScreen({ database, sync, clientFactory = getCloudClient }) {
   const [connection] = useState(() => {
     try { return { client: clientFactory() }; }
@@ -51,6 +54,7 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
   // record, which every row already stores.
   const [rawId, setRawId] = useState(null);
   const [count, setCount] = useState(0);
+  const [usage, setUsage] = useState(null);
   const [offset, setOffset] = useState(0);
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -101,10 +105,10 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
     const version = generation.current;
     const userId = session.user.id;
     database.initialize().then(async () => {
-      const [history, total] = await Promise.all([
-        database.listHistory(userId, offset), database.count(userId),
+      const [history, total, space] = await Promise.all([
+        database.listHistory(userId, offset), database.count(userId), database.usage(),
       ]);
-      if (!cancelled && current(version)) { setRows(history); setCount(total); }
+      if (!cancelled && current(version)) { setRows(history); setCount(total); setUsage(space); }
     }).catch(() => { if (!cancelled && current(version)) setError('讀取本機雲端資料失敗，請按重新讀取'); });
     return () => { cancelled = true; };
   }, [database, session?.user.id, sync?.revision, offset]);
@@ -113,10 +117,12 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
     const userId = owner.current;
     if (!userId) return;
     await database.initialize();
-    const [history, total] = await Promise.all([
-      database.listHistory(userId, nextOffset), database.count(userId),
+    const [history, total, space] = await Promise.all([
+      database.listHistory(userId, nextOffset), database.count(userId), database.usage(),
     ]);
-    if (current(version)) { setRows(history); setCount(total); setOffset(nextOffset); }
+    if (current(version)) {
+      setRows(history); setCount(total); setUsage(space); setOffset(nextOffset);
+    }
   }
 
   async function perform(action) {
@@ -210,7 +216,11 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
       </View>
       <View style={ui.card}>
         <Text style={ui.heading}>本機雲端資料</Text>
-        <Text style={ui.hint}>所有帳號合計保留最新 15,000 筆；超出範圍的較早資料會自動清除。</Text>
+        <Text style={ui.hint}>
+          下載過的資料會留著，直到所有帳號合計佔用超過 {megabytes(CLOUD_BUDGET_BYTES)}，
+          才從最早的開始清除{usage ? `（目前 ${usage.rows} 筆，約 ${megabytes(usage.bytes)}）` : ''}。
+          每筆的原始 JSON 只保留一天，其餘欄位不受影響。
+        </Text>
         <Text style={ui.hint}>此帳號共 {count} 筆；每頁 50 筆。時間依手機時區顯示。</Text>
         <ActionButton title="重新讀取本機資料" secondary disabled={busy} onPress={() => perform(() => loadRows(0))} />
         {rows.length ? <ScrollView horizontal>
