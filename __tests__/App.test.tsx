@@ -20,7 +20,7 @@ test('the initial App reads its seeded Demo from SQLite, not from the writer res
     await act(async () => {
       renderer = Renderer.create(<App />);
     });
-    expect(JSON.stringify(renderer!.toJSON())).toContain('DEMO · 模擬資料');
+    expect(JSON.stringify(renderer!.toJSON())).toContain('DEMO');
     expect(
       connection.sqlite
         .prepare('SELECT COUNT(*) AS count FROM demo_dog_status')

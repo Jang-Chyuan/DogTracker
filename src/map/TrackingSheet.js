@@ -4,6 +4,7 @@ import { mapColors as colors } from './MapTheme';
 import { formatTime, positionLabel } from './MapFormat';
 import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
 import BottomSheet from './BottomSheet';
+import DeviceRow from './DeviceRow';
 import DogList from './DogList';
 import Stat from './Stat';
 import TrackingAvatar from './TrackingAvatar';
@@ -39,19 +40,35 @@ function battery(valid, percentage) {
   return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
 }
 
-export function sheetSummary(tracking) {
+/**
+ * The one line of time the card shows, at the top.
+ *
+ * It reads the newest row of everything the card lists, not just the BLE feed:
+ * with the collar silent and the cloud still arriving, a header that only knew
+ * about BLE said the data was hours old while dog rows below it updated every
+ * few seconds.
+ */
+export function sheetSummary(tracking, dogs = []) {
   if (tracking.errors?.[tracking.mode]) return '資料讀取失敗 · 上滑查看';
   if (!tracking.preferences?.ready) return '正在讀取設定…';
   if (tracking.ready?.[tracking.mode] === false) return '正在準備 SQLite…';
-  if (tracking.point.id === null && !tracking.initialSnapshotReady)
-    return '正在讀取追蹤資料…';
-  if (tracking.point.id === null)
+  if (tracking.point.id === null && !dogs.length) {
+    if (!tracking.initialSnapshotReady) return '正在讀取追蹤資料…';
     return tracking.mode === 'demo' ? '尚無 Demo 資料' : '等待硬體資料';
-  return `最後更新 ${formatTime(tracking.point.receivedAt)}`;
+  }
+  // An unusable time is passed through rather than replaced by zero, so
+  // formatTime can still say 尚無資料 instead of inventing 1970.
+  const times = [tracking.point.receivedAt, ...dogs.map(dog => dog.receivedAt)]
+    .filter(Number.isFinite);
+  return `最後更新 ${formatTime(times.length
+    ? Math.max(...times) : tracking.point.receivedAt)}`;
 }
 
 export default function TrackingSheet({
   tracking,
+  onZoom,
+  onDetails,
+  onRememberDog,
   master,
   slave,
   dogs = [],
@@ -60,18 +77,17 @@ export default function TrackingSheet({
   onHeight,
 }) {
   const point = tracking.point;
-  const summary = sheetSummary(tracking);
+  const summary = sheetSummary(tracking, dogs);
   const { preferences } = tracking;
   // Only a card that has not loaded yet is disabled. Dimming everything while
   // a write is in flight made every eye tap flash the whole card.
   const disabled = !preferences.ready;
   // Demo mode never merges dogs, so it keeps the single-dog row.
   const showDogList = tracking.mode === 'real';
-  const dogVisibility = (
+  // Demo mode has one dog and no list, so it keeps a single eye of its own.
+  const demoVisibility = (
     <VisibilityButton
       role="slave"
-      // In the list header this one eye covers every dog, not just one row.
-      subject={showDogList ? '所有狗' : undefined}
       visible={preferences.value.showSlaveMarker}
       disabled={disabled}
       onPress={() =>
@@ -90,9 +106,6 @@ export default function TrackingSheet({
       topInset={topInset}
       onHeight={onHeight}
     >
-        <Text style={styles.hint}>
-          資料庫最後更新：{formatTime(point.receivedAt)}
-        </Text>
         {!tracking.historyLoaded && (
           <Text style={styles.hint}>正在載入本機路徑…</Text>
         )}
@@ -106,12 +119,14 @@ export default function TrackingSheet({
         {showDogList ? (
           <DogList
             dogs={dogs}
-            selectedSlaveId={preferences.value.focusSlaveId}
             hiddenSlaveIds={preferences.value.hiddenSlaveIds}
             disabled={disabled}
-            onSelect={focusSlaveId =>
-              tracking.saveTrackingPreferences({ focusSlaveId })
-            }
+            onZoom={dog => {
+              // Where the map opens next time it is launched.
+              onRememberDog?.(dog.slaveId);
+              onZoom?.(dog.coordinate);
+            }}
+            onDetails={dog => onDetails?.({ kind: 'dog', slaveId: dog.slaveId })}
             onToggle={slaveId =>
               tracking.saveTrackingPreferences({
                 hiddenSlaveIds: preferences.value.hiddenSlaveIds.includes(slaveId)
@@ -122,12 +137,9 @@ export default function TrackingSheet({
                 ...(preferences.value.showSlaveMarker ? {} : { showSlaveMarker: true }),
               })
             }
-            control={dogVisibility}
-            linkNote={'同時顯示 BLE 直接收到的與雲端下載的位置，每隻狗取最新的一筆；'
-              + '來源寫在各列，不想看的狗可以單獨關掉眼睛。'}
           />
         ) : (
-          <Position role="slave" position={slave} visibilityControl={dogVisibility} />
+          <Position role="slave" position={slave} visibilityControl={demoVisibility} />
         )}
         {!showDogList && (
           <View style={styles.metrics}>
@@ -146,29 +158,57 @@ export default function TrackingSheet({
             手機連線的領犬員。
           </Text>
         )}
-        <View style={!preferences.value.showMasterMarker && styles.hiddenRow}>
-          <Position
+        {showDogList && (
+          // The handler is a device in the same list, read and operated like a
+          // dog: tap to go there, ⓘ for the details, eye to keep it off the map.
+          <DeviceRow
             role="master"
-            position={master}
-            visibilityControl={
-              <VisibilityButton
-                role="master"
-                visible={preferences.value.showMasterMarker}
-                disabled={disabled}
-                onPress={() =>
-                  tracking.saveTrackingPreferences({
-                    showMasterMarker: !preferences.value.showMasterMarker,
-                  })
-                }
-              />
+            title={`領犬員 · Master ${point.masterId ?? '—'}`}
+            subject="領犬員"
+            sourceIcon="ble"
+            sourceText="BLE 直接收到"
+            receivedAt={point.receivedAt}
+            hidden={!preferences.value.showMasterMarker}
+            disabled={disabled}
+            warning={master?.retained ? '最後有效位置（非最新定位）' : ''}
+            onZoom={master ? () => onZoom?.(master) : null}
+            onDetails={() => onDetails?.({ kind: 'master' })}
+            onToggle={() =>
+              tracking.saveTrackingPreferences({
+                showMasterMarker: !preferences.value.showMasterMarker,
+              })
             }
-          />
-          <View style={styles.metrics}>
-            <Stat icon="battery" label="領犬員電量"
+          >
+            <Stat icon="battery" label="電量"
               level={point.masterBatteryValid ? point.masterBatteryPercentage : null}
               value={battery(point.masterBatteryValid, point.masterBatteryPercentage)} />
+          </DeviceRow>
+        )}
+        {!showDogList && (
+          <View style={!preferences.value.showMasterMarker && styles.hiddenRow}>
+            <Position
+              role="master"
+              position={master}
+              visibilityControl={
+                <VisibilityButton
+                  role="master"
+                  visible={preferences.value.showMasterMarker}
+                  disabled={disabled}
+                  onPress={() =>
+                    tracking.saveTrackingPreferences({
+                      showMasterMarker: !preferences.value.showMasterMarker,
+                    })
+                  }
+                />
+              }
+            />
+            <View style={styles.metrics}>
+              <Stat icon="battery" label="領犬員電量"
+                level={point.masterBatteryValid ? point.masterBatteryPercentage : null}
+                value={battery(point.masterBatteryValid, point.masterBatteryPercentage)} />
+            </View>
           </View>
-        </View>
+        )}
         {/* One section: whether the path is drawn, and how far back it goes.
             Two separate controls for the same line confused the reading. */}
         <View style={styles.section}>
@@ -234,13 +274,6 @@ export default function TrackingSheet({
             </Pressable>
           </View>
         )}
-        <Text style={styles.hint}>
-          參考圈半徑 1 公里，跟隨領犬員眼睛。路徑採 1 公尺誤差上限簡化，DB
-          原始座標不會因簡化而改寫。
-        </Text>
-        <Text style={styles.hint}>
-          點地圖上的狗或領犬員可以看該裝置的詳細資料（距離、硬體回報、LoRa 訊號）。
-        </Text>
     </BottomSheet>
   );
 }

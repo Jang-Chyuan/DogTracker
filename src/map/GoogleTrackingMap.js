@@ -25,16 +25,14 @@ const EMPTY_REGION = {
 };
 function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
   // A position older than the selected window is drawn faded, so it reads as
-  // "last seen here", not as where the dog is now. The followed dog gets a ring
-  // so the camera's target is visible on the map, not only in the card.
+  // "last seen here", not as where the dog is now.
   const faded = !!position.stale;
-  const focused = !!position.focused;
   const marker = useRef(null);
   // The marker view is not tracked for changes (that would redraw it on every
-  // frame), so fading and the follow ring have to ask for one redraw each.
+  // frame), so fading has to ask for one redraw of its own.
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [faded, focused]);
+  }, [faded]);
   const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
@@ -56,7 +54,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
         collapsable={false}
         accessible
         accessibilityLabel={`${name}。${detail}`}
-        style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
+        style={[styles.marker, faded && styles.fadedMarker]}
         onLayout={() => marker.current?.redraw()}
       >
         <TrackingAvatar role={role} size={40} />
@@ -204,21 +202,18 @@ function GoogleTrackingMapRenderer({
     mountedMap,
     onStatus,
   ]);
-  // Following a dog re-centres the map on each new position of that dog, at the
-  // user's own zoom. Panning in between is left alone — the next position pulls
-  // the camera back — and the card's dog row is what ends following.
-  const follow = presentation.follow || null;
-  const followed = useRef('');
+  // Tapping a row in the card takes the camera there once, zoomed in. It is one
+  // move per tap — the id changes, not the coordinate — so a dog that keeps
+  // reporting does not drag the camera around after the user has panned away.
+  const focus = presentation.focus || null;
+  const moved = useRef(0);
   useEffect(() => {
-    if (!usable || !follow) {
-      followed.current = '';
-      return;
-    }
-    const key = `${follow.slaveId}:${follow.coordinate.latitude},${follow.coordinate.longitude}`;
-    if (followed.current === key) return;
-    followed.current = key;
-    mapRef.current?.animateCamera({ center: follow.coordinate }, { duration: 400 });
-  }, [usable, follow]);
+    if (!usable || !focus || moved.current === focus.id) return;
+    moved.current = focus.id;
+    interacted.current = true;
+    mapRef.current?.animateCamera(
+      { center: focus.coordinate, zoom: focus.zoom }, { duration: 400 });
+  }, [usable, focus]);
   const priorSource = useRef(source);
   const sourceToFit = useRef(null);
   useEffect(() => {
@@ -457,12 +452,6 @@ const styles = StyleSheet.create({
   retryText: { color: colors.ink, fontWeight: '600' },
   fadedMarker: { opacity: 0.45 },
   phoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: '#FFFFFF' },
-  focusedMarker: {
-    borderRadius: 23,
-    borderWidth: 3,
-    borderColor: colors.dog,
-    backgroundColor: '#FFFFFFAA',
-  },
   marker: {
     width: 46,
     height: 46,

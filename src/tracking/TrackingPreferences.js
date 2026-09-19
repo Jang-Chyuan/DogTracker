@@ -11,7 +11,8 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   showSlaveMarker: true,
   showTrails: false,
   windowMinutes: 10,
-  // Which dog the map camera follows; null follows every visible device.
+  // The dog tapped last, so the map opens where the handler last looked.
+  // It used to mean "follow this dog"; the camera no longer chases anything.
   focusSlaveId: null,
   // Dogs the user hid one by one; the list still shows them.
   hiddenSlaveIds: [],
@@ -29,11 +30,11 @@ export function validateTrackingPreferences(value) {
   }
   if (!WINDOW_PRESETS.includes(settings.windowMinutes))
     throw new Error('時間視窗設定格式錯誤');
-  // A dog that is not on the map is not an error: the selection is kept so the
-  // camera follows it again when that dog reports, but it must be an id.
+  // A dog that is not on the map is not an error: the choice is kept so the
+  // map opens on it again when that dog reports, but it must be an id.
   if (settings.focusSlaveId !== null &&
     !(Number.isInteger(settings.focusSlaveId) && settings.focusSlaveId >= 0))
-    throw new Error('跟隨的狗設定格式錯誤');
+    throw new Error('最後點選的狗設定格式錯誤');
   if (!Array.isArray(settings.hiddenSlaveIds) ||
     !settings.hiddenSlaveIds.every(id => Number.isInteger(id) && id >= 0))
     throw new Error('隱藏的狗設定格式錯誤');

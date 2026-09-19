@@ -114,44 +114,98 @@ test('the card lists every dog on the map with its source, time and staleness', 
   expect(text).not.toContain('25.033000');
 });
 
-test('tapping a dog follows it and tapping it again releases the camera', async () => {
-  const first = screen();
-  await expand(first.element);
+test('tapping a dog takes the map to it, and remembers it for next time', async () => {
+  const { element, tracking } = screen();
+  await expand(element);
   await act(async () => rows()[0].props.onPress());
-  expect(first.tracking.saveTrackingPreferences)
-    .toHaveBeenCalledWith({ focusSlaveId: 4 });
-
-  await act(async () => renderer.unmount());
-  const followed = screen({ focusSlaveId: 4 });
-  await expand(followed.element);
-  expect(rows()[0].props.accessibilityState.selected).toBe(true);
-  expect(cardText()).toContain('地圖跟隨中');
-  await act(async () => rows()[0].props.onPress());
-  expect(followed.tracking.saveTrackingPreferences)
-    .toHaveBeenCalledWith({ focusSlaveId: null });
-});
-
-test('the map re-centres on the followed dog and leaves the others drawn', async () => {
-  await expand(screen({ focusSlaveId: 4 }).element);
+  // One move per tap, zoomed in. Following — the camera chasing a dog until the
+  // row was tapped again — was a mode to remember on a glanceable screen.
   expect(mockCamera.animateCamera).toHaveBeenCalledWith(
-    { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 400 },
+    { center: { latitude: 25.04, longitude: 121.57 }, zoom: 17 }, { duration: 400 },
   );
-  const markers = dogMarkers();
-  expect(markers.map(node => node.props.identifier))
-    .toEqual(['real-dog-4', 'real-dog-6', 'real-dog-7']);
-  // Only the followed dog carries the ring.
-  const ringed = markers.filter(node => JSON.stringify(node.props.position).includes('"focused":true'));
-  expect(ringed.map(node => node.props.identifier)).toEqual(['real-dog-4']);
+  expect(tracking.saveTrackingPreferences).toHaveBeenCalledWith({ focusSlaveId: 4 });
+  // The dog stays as it was: no selected row, no ring on the map.
+  expect(rows()[0].props.accessibilityState.selected).toBeUndefined();
+  expect(JSON.stringify(dogMarkers().map(node => node.props.position)))
+    .not.toContain('focused');
 });
 
-test('following a dog that stopped reporting does not move the camera or crash', async () => {
-  // The choice is remembered rather than dropped, so the camera returns to that
-  // dog when its next row arrives; until then the map frames everything.
-  await expand(screen({ focusSlaveId: 99 }).element);
-  expect(mockCamera.animateCamera).not.toHaveBeenCalled();
-  expect(rows()).toHaveLength(3);
-  expect(rows().every(node => node.props.accessibilityState.selected === false))
-    .toBe(true);
+test('each row opens that device panel from its own button', async () => {
+  await expand(screen().element);
+  const details = label => renderer.root.findAll(
+    node => node.props.accessibilityLabel === label &&
+      typeof node.props.onPress === 'function', { deep: false })[0];
+  expect(details('狗 4詳細資料')).toBeDefined();
+  await act(async () => details('狗 4詳細資料').props.onPress());
+  expect(cardText()).toContain('狗 4');
+  expect(renderer.root.findAllByProps({ testID: 'device-details' }).length)
+    .toBeGreaterThan(0);
+  // The handler answers the same way, from the same kind of button.
+  expect(details('領犬員詳細資料')).toBeDefined();
+});
+
+test('the map opens on the dog last tapped, then the connected one, then the cloud',
+  async () => {
+    const frame = () => renderer.root.findAll(
+      node => !!node.props.presentation, { deep: false })[0].props.presentation
+      .cameraPositions;
+    // The camera also moves there explicitly: the framing is only read when the
+    // map mounts, and the cloud dogs arrive a moment after that, so a cold
+    // start kept the old view.
+    const openedOn = () => mockCamera.animateCamera.mock.calls.at(-1)?.[0]?.center;
+    // Remembered: dog 4 (a cloud dog at 25.04).
+    await expand(screen({ focusSlaveId: 4 }).element);
+    let box = frame();
+    expect(box).toHaveLength(2);
+    expect(box[0].latitude).toBeLessThan(25.04);
+    expect(box[1].latitude).toBeGreaterThan(25.04);
+    expect(openedOn()).toEqual({ latitude: 25.04, longitude: 121.57 });
+    await act(async () => renderer.unmount());
+    // Remembered but no longer reporting: the dog this phone hears over BLE.
+    await expand(screen({ focusSlaveId: 99 }).element);
+    box = frame();
+    expect(box[0].latitude).toBeLessThan(25.033);
+    expect(box[1].latitude).toBeGreaterThan(25.033);
+    expect(openedOn()).toEqual({ latitude: 25.033, longitude: 121.5654 });
+    await act(async () => renderer.unmount());
+    // Nothing remembered and no BLE dog: whichever dog the cloud knows about.
+    await expand(screen({ focusSlaveId: null, hiddenSlaveIds: [7] }).element);
+    box = frame();
+    expect(box[0].latitude).toBeLessThan(25.04);
+    expect(box[1].latitude).toBeGreaterThan(25.04);
+  });
+
+test('the pill says which way in is carrying data, in colour', async () => {
+  const live = colour => renderer.root.findAll(
+    node => node.props.accessibilityLabel?.includes(colour), { deep: false });
+  // The BLE row here is 40 minutes old and the newest cloud row 2 minutes old:
+  // one way in is silent, the other is not. The cloud rows come out of SQLite
+  // in snake_case, so reading `receivedAt` off them said "no data" forever.
+  await expand(screen().element);
+  expect(live('Master BLE沒有資料')).toHaveLength(1);
+  expect(live('雲端有資料進來')).toHaveLength(1);
+});
+
+test('a cold start corrects itself when the remembered dog arrives late', async () => {
+  // Only the BLE dog exists in the first render of a cold start; the cloud dogs
+  // are merged a moment later. Moving to the BLE dog and calling it done left
+  // the map somewhere the handler never asked for.
+  const { tracking } = screen({ focusSlaveId: 4 });
+  const late = cloudDogs => <MapScreen tracking={tracking} phone={{ enabled: true }}
+    bottomInset={80} cloudDogs={cloudDogs} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  await act(async () => { renderer = Renderer.create(late({ rows: [], error: '' })); });
+  // The map only takes camera commands once the native surface is ready.
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
+  const centre = () => mockCamera.animateCamera.mock.calls.at(-1)?.[0]?.center;
+  expect(centre()).toEqual({ latitude: 25.033, longitude: 121.5654 });
+  await act(async () => { renderer.update(late({ rows: cloudRows, error: '' })); });
+  await act(async () => {});
+  expect(centre()).toEqual({ latitude: 25.04, longitude: 121.57 });
+  // Only once: a later refresh of the same dogs must not pull the camera back.
+  const calls = mockCamera.animateCamera.mock.calls.length;
+  await act(async () => { renderer.update(late({ rows: [...cloudRows], error: '' })); });
+  expect(mockCamera.animateCamera.mock.calls).toHaveLength(calls);
 });
 
 test('demo mode keeps the single dog row and never lists cloud dogs', async () => {
@@ -161,33 +215,16 @@ test('demo mode keeps the single dog row and never lists cloud dogs', async () =
   expect(text).not.toContain('Master 5');
 });
 
-test('hiding the dog markers keeps the list and keeps following the chosen dog', async () => {
-  await expand(screen({ showSlaveMarker: false, focusSlaveId: 4 }).element);
+test('hiding the dog markers keeps the list, and no eye covers all of them', async () => {
+  await expand(screen({ showSlaveMarker: false }).element);
   expect(rows().map(node => node.props.accessibilityLabel))
     .toEqual(['狗 4', '狗 6', '狗 7']);
   expect(dogMarkers()).toHaveLength(0);
-  // The card says 跟隨中, so the camera has to actually follow.
-  expect(cardText()).toContain('地圖跟隨中');
-  expect(mockCamera.animateCamera).toHaveBeenCalledWith(
-    { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 400 },
-  );
-  // One eye in the header covers every dog on the map.
+  // Each dog has its own eye; a second one for "all dogs" was a control nobody
+  // needed next to three that already say the same thing.
   expect(renderer.root.findAll(
     node => node.props.accessibilityLabel === '顯示所有狗位置', { deep: false }))
-    .toHaveLength(1);
-});
-
-test('the camera frames a box around the followed dog, never a single point', async () => {
-  await expand(screen({ focusSlaveId: 4 }).element);
-  // The map fits these on a source change (Demo↔正式, or coming back from the
-  // history tab). A single coordinate is a degenerate box and Android fits it
-  // at maximum zoom, so the framing has to be a real box around the dog.
-  const { cameraPositions } = renderer.root.findAll(
-    node => !!node.props.presentation, { deep: false })[0].props.presentation;
-  expect(cameraPositions).toHaveLength(2);
-  expect(cameraPositions[0].latitude).toBeLessThan(25.04);
-  expect(cameraPositions[1].latitude).toBeGreaterThan(25.04);
-  expect(cameraPositions[0].longitude).toBeLessThan(121.57);
+    .toHaveLength(0);
 });
 
 test('each dog has its own eye: hiding one leaves the others on the map', async () => {
@@ -304,8 +341,11 @@ test('the handler row shows a battery icon too, not a bare number', async () => 
   await expand(screen().element);
   // Every reading carries its icon: the handler's battery was rendering as a
   // value with an empty box where the icon should be.
-  const stats = renderer.root.findAll(
-    node => node.props.accessibilityLabel?.startsWith('領犬員電量'), { deep: false });
+  const row = renderer.root.findAll(
+    node => node.props.accessibilityLabel === '領犬員 · Master 3' &&
+      typeof node.props.onPress === 'function', { deep: false })[0];
+  const stats = row.findAll(
+    node => node.props.accessibilityLabel?.startsWith('電量'), { deep: false });
   expect(stats).toHaveLength(1);
   // The battery outline is drawn as an SVG rect; an icon-less Stat rendered an
   // empty box next to the number.
