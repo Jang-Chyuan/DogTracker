@@ -1,16 +1,42 @@
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
-const TRIM_HISTORY = `DELETE FROM supabase_dog_status WHERE id IN (
-  SELECT id FROM supabase_dog_status
-  ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET 15000
-)`;
+
+/**
+ * How much of this phone the downloaded copy may use.
+ *
+ * Measured with this schema and its four indexes: 797 bytes a row with the
+ * original JSON, 541 without. One dog reports about 14,000 rows a day, so the
+ * old cap of 15,000 rows in total (~11 MB) held barely a day and quietly threw
+ * away days the user had downloaded on purpose.
+ */
+export const CLOUD_BUDGET_BYTES = 500 * 1024 * 1024;
+const BYTES_PER_ROW = 560;
+export const CLOUD_MAX_ROWS = Math.floor(CLOUD_BUDGET_BYTES / BYTES_PER_ROW);
+// The whole original JSON is only worth keeping while it can still explain a
+// live problem; after that its fields are already in columns of their own.
+export const CLOUD_PAYLOAD_MS = 24 * 60 * 60 * 1000;
+// Measured at the cap on 950,000 rows: the trim costs about 9 ms when there is
+// nothing to delete, so it stays on every page and keeps its place in the same
+// transaction as the rows and the progress. Clearing old payloads costs about
+// 50 ms because it has to look at the rows themselves, so it runs every 20
+// pages instead; the worst case is a day's payloads living 20,000 rows longer.
+const PAYLOAD_EVERY_PAGES = 20;
+const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
+  WHERE raw_payload IS NOT NULL AND received_at < ?`;
 
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count'];
+  'listHistory', 'count', 'usage'];
 
-export function createCloudDatabase(connection) {
+/** `maxRows` is only for tests: filling a real cap takes half a million rows. */
+export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
+  const cap = Number.isInteger(maxRows) && maxRows > 0 ? maxRows : CLOUD_MAX_ROWS;
+  const trimHistory = `DELETE FROM supabase_dog_status WHERE id IN (
+    SELECT id FROM supabase_dog_status
+    ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET ${cap}
+  )`;
+  let pagesSaved = 0;
   const rows = result => result.results || result.rows?._array || [];
   const requireOwner = owner => {
     if (!owner) throw new Error('請先登入');
@@ -47,7 +73,8 @@ export function createCloudDatabase(connection) {
         PRIMARY KEY (owner_user_id, master_id, bucket_start)
       )`);
       // Also apply retention to databases downloaded by older app versions.
-      await connection.executeAsync(TRIM_HISTORY);
+      await connection.executeAsync(trimHistory);
+      await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
     },
     async loadSyncState(owner, masterId) {
       requireOwner(owner);
@@ -89,7 +116,11 @@ export function createCloudDatabase(connection) {
       }
       // Global cap across accounts/Masters. Keep newest reception times, not
       // newest download order, so manual historical downloads cannot evict newer rows.
-      commands.push({ query: TRIM_HISTORY, params: [] });
+      commands.push({ query: trimHistory, params: [] });
+      pagesSaved += 1;
+      if (pagesSaved % PAYLOAD_EVERY_PAGES === 0) {
+        commands.push({ query: DROP_OLD_PAYLOAD, params: [now - CLOUD_PAYLOAD_MS] });
+      }
       // Progress, retention and downloaded rows commit together.
       await connection.executeBatchAsync(commands);
     },
@@ -163,6 +194,24 @@ export function createCloudDatabase(connection) {
         'SELECT COUNT(*) AS count FROM supabase_dog_status WHERE owner_user_id = ?', [owner],
       ));
       return Number(result[0]?.count || 0);
+    },
+    /**
+     * What the downloaded copy costs this phone, for the cloud page to show.
+     * Counted across accounts because the budget is the phone's, not one
+     * account's, and estimated from the measured bytes a row: SQLite cannot
+     * report the size of one table without the dbstat extension.
+     */
+    async usage() {
+      const result = rows(await connection.executeAsync(
+        `SELECT COUNT(*) AS count, MIN(received_at) AS from_at
+         FROM supabase_dog_status`));
+      const count = Number(result[0]?.count || 0);
+      return {
+        rows: count,
+        bytes: count * BYTES_PER_ROW,
+        budget: CLOUD_BUDGET_BYTES,
+        from: Number.isFinite(result[0]?.from_at) ? Number(result[0].from_at) : null,
+      };
     },
   };
 }

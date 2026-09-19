@@ -31,6 +31,8 @@ function fixtures() {
   } };
   const database = {
     initialize: jest.fn(async () => {}), count: jest.fn(async () => 2),
+    // The page also reports what the downloaded copy costs this phone.
+    usage: jest.fn(async () => ({ rows: 2, bytes: 1120, budget: 500 * 1024 * 1024, from: 1 })),
     listHistory: jest.fn(async () => [row(1), row(2, { raw_payload: null })]),
     savePage: jest.fn(async () => {}),
   };

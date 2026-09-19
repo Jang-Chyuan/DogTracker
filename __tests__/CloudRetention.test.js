@@ -1,10 +1,13 @@
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
-import { createCloudDatabase } from '../src/cloud/CloudDatabase';
+import { CLOUD_BUDGET_BYTES, CLOUD_MAX_ROWS, CLOUD_PAYLOAD_MS,
+  createCloudDatabase } from '../src/cloud/CloudDatabase';
 
-test('keeps the newest 15000 globally on upgrade and writes without changing sync progress or BLE', async () => {
+// The real cap is half a million rows, so the mechanism is checked with a small
+// one; the default is asserted separately below.
+test('keeps the newest rows globally on upgrade and writes without changing sync progress or BLE', async () => {
   const connection = createMemoryConnection();
-  const cloud = createCloudDatabase(connection);
+  const cloud = createCloudDatabase(connection, { maxRows: 15000 });
   const sql = connection.sqlite;
   try {
     await createDogDatabase(connection).initialize();
@@ -38,5 +41,36 @@ test('keeps the newest 15000 globally on upgrade and writes without changing syn
     expect(await cloud.loadSyncState('a', 7)).toMatchObject({ event_id: 'new' });
     expect(sql.prepare("SELECT id FROM supabase_dog_status WHERE event_id = 'rollback'").get()).toBeUndefined();
     expect(summary().count).toBe(15000);
+  } finally { connection.close(); }
+});
+
+test('the cap is a size budget, and the original JSON only outlives a day', async () => {
+  const connection = createMemoryConnection();
+  const sql = connection.sqlite;
+  try {
+    await createDogDatabase(connection).initialize();
+    // 500 MB at the measured 560 bytes a row. The old cap was 15,000 rows for
+    // every account together: about one day for a single dog, so a day someone
+    // downloaded on purpose was gone by the next morning.
+    expect(CLOUD_MAX_ROWS).toBe(Math.floor(CLOUD_BUDGET_BYTES / 560));
+    expect(CLOUD_MAX_ROWS).toBeGreaterThan(900000);
+    const cloud = createCloudDatabase(connection);
+    await cloud.initialize();
+    const now = Date.now();
+    const insert = sql.prepare(`INSERT INTO supabase_dog_status
+      (received_at, owner_user_id, event_id, master_id, slave_id, raw_payload)
+      VALUES (?, 'a', ?, 7, 4, '{"lat":1}')`);
+    insert.run(now - 2 * CLOUD_PAYLOAD_MS, 'old');
+    insert.run(now - 60000, 'fresh');
+    // The sweep runs on open and then every twentieth page.
+    await cloud.initialize();
+    const payload = event => sql.prepare(
+      'SELECT raw_payload FROM supabase_dog_status WHERE event_id = ?').get(event).raw_payload;
+    expect(payload('old')).toBeNull();
+    expect(payload('fresh')).toBe('{"lat":1}');
+    // Nothing is evicted while the phone is nowhere near the budget.
+    const usage = await cloud.usage();
+    expect(usage).toMatchObject({ rows: 2, budget: CLOUD_BUDGET_BYTES });
+    expect(usage.bytes).toBe(2 * 560);
   } finally { connection.close(); }
 });

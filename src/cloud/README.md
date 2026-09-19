@@ -28,7 +28,9 @@ exists (
 
 沿用 `dogtracker.sqlite` 的 `supabase_dog_status`。使用既有共享連線與 Android 原生 SQL 橋接；不開啟第二個 SQLite 引擎。
 
-整張 `supabase_dog_status` 最多保留最新 15,000 筆（所有帳號與 Master 合計），依 `received_at DESC, id DESC` 排序。初始化與每批寫入都會清除超額的較早紀錄；同步進度及 BLE 表不受影響。已達上限時，手動下載更早的紀錄可能立即被清除。
+整張 `supabase_dog_status` 以**容量**為上限：`CLOUD_BUDGET_BYTES` 500 MB，換算成 `CLOUD_MAX_ROWS`（實測此 schema 加四個索引，有原始 JSON 是 797 B／筆、沒有是 541 B／筆，取 560 B 估算，約 93 萬筆），依 `received_at DESC, id DESC` 排序保留最新的。初始化與每批寫入都會清除超額的較早紀錄，與資料及進度同一個交易；同步進度及 BLE 表不受影響。
+
+原本的上限是 15,000 筆（約 11 MB）。一隻狗一天就約 14,000 筆，等於下載過的日子隔天就被清掉——這正是使用者遇到的狀況，所以改成容量上限。`raw_payload`（整筆雲端 JSON）只保留 `CLOUD_PAYLOAD_MS` 一天，之後清成 NULL：它佔 32% 的容量，而其他欄位早就各自存成欄位了。清除 payload 每次約 50 ms（要讀資料列），所以每 20 批才做一次；清除超額資料約 9 ms，維持每批都做。`usage()` 回報目前筆數與估算容量，顯示在雲端資料頁。
 
 首次使用雲端儲存時，會增加 `owner_user_id`、`event_id`、`downloaded_at`、`remote_received_at`，並建立 `(owner_user_id, event_id)` 唯一索引。沒有帳號歸屬的舊資料不會顯示。每個帳號只顯示自己的快取。
 
@@ -60,7 +62,7 @@ Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，
 - 不同或沒有紀錄 → 比對本機該小時的筆數；本機較少才重新掃描該小時（每批 1,000 筆、以 `event_id` 去重），然後把雲端筆數記進 `cloud_sync_buckets`。
 - 沒有紀錄、但 `cloud_sync_state` 的進度已經走過那個小時 → 直接記下目前雲端筆數，不重新下載。增量同步當時已經抓過整個小時，本機筆數較少只是被保留規則刪掉；不這樣做的話，快取已滿的手機第一次核對會把整天重抓一遍。那之後才進來的資料仍會讓筆數改變，由下一輪核對補抓。
 
-`cloud_sync_buckets` 以 `(owner_user_id, master_id, bucket_start)` 為主鍵，保存**雲端**筆數，不是本機筆數：本機 15,000 筆上限會刪掉較早的資料，若拿本機筆數當基準，同一小時會每輪重複下載。保留 48 小時的核對紀錄。核對掃描不使用 checkpoint，因此不會移動 `cloud_sync_state` 的自動同步進度；取消、逾時或失敗時已記錄的小時保留，下一輪從未核對的小時繼續。
+`cloud_sync_buckets` 以 `(owner_user_id, master_id, bucket_start)` 為主鍵，保存**雲端**筆數，不是本機筆數：本機容量上限會刪掉較早的資料，若拿本機筆數當基準，同一小時會每輪重複下載。保留 48 小時的核對紀錄。核對掃描不使用 checkpoint，因此不會移動 `cloud_sync_state` 的自動同步進度；取消、逾時或失敗時已記錄的小時保留，下一輪從未核對的小時繼續。
 
 每輪每台 Master 最多 24 次筆數查詢；沒有補傳時不會下載任何資料。核對只涵蓋最近 24 小時，更早的補傳仍需在雲端資料頁手動下載該日期。
 

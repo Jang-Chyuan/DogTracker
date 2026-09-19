@@ -21,6 +21,7 @@ function fixtures() {
   } };
   const database = {
     initialize: jest.fn(async () => {}), count: jest.fn(async () => 1),
+    usage: jest.fn(async () => ({ rows: 1, bytes: 560, budget: 500 * 1024 * 1024, from: 1 })),
     listHistory: jest.fn(async () => [{ id: 1, master_id: 7, slave_id: 4,
       received_at: 1000, sequence: 'ACCOUNT_A_ONLY' }]),
     savePage: jest.fn(async () => {}),
