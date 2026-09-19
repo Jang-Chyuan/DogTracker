@@ -184,11 +184,8 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
       <View style={ui.card}>
         <Text style={ui.text}>{session.user.email}</Text>
         <Text style={ui.hint}>下載範圍由此帳號的 Master 授權決定，包含該 Master 的所有 Slave。</Text>
-        <Text style={ui.hint}>每 30 秒自動同步；首次取最近 24 小時。Android 背景同步使用常駐通知，登出即可停止。</Text>
-        {sync ? <Text style={ui.hint}>{sync.backgroundEnabled
-          ? '背景同步已啟用，可切換 App 或鎖屏。'
-          : '目前僅前景同步。'}</Text> : null}
-        {sync?.backgroundError ? <Text style={ui.error}>{sync.backgroundError}</Text> : null}
+        <Text style={ui.hint}>開著 App 時每 30 秒自動同步，首次取最近 24 小時；切到其他 App 或鎖屏就暫停，回來會立刻補下載。</Text>
+        <Text style={ui.hint}>背景不同步是為了省電：常駐的背景同步會讓手機整晚無法進入休眠。需要補某一天的資料請用下面的日期下載。</Text>
         {sync ? <Text accessibilityLiveRegion="polite" style={ui.hint}>
           {sync.mode === 'auto' ? '自動同步中…' : sync.lastSuccess
             ? `上次同步：${new Date(sync.lastSuccess).toLocaleTimeString('zh-TW', { hour12: false })}`
