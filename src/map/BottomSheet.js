@@ -167,7 +167,9 @@ export default function BottomSheet({
         >
           {title}
         </Text>
-        <Text style={styles.summaryTime} numberOfLines={1}>
+        {/* Two lines: the history summary carries a range and a count per dog,
+            and one line cut it off mid-sentence. */}
+        <Text style={styles.summaryTime} numberOfLines={2}>
           {summary}
         </Text>
       </View>

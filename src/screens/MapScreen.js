@@ -11,6 +11,7 @@ import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers } from '../map/DogMerge';
 import { cloudTracks, dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
+import Glyph from '../map/Glyph';
 import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
@@ -31,7 +32,27 @@ function homeCameraPositions(base, dogs, dogsVisible, dogPaths = []) {
   return dogsVisible ? dogs.map(dog => dog.coordinate) : [];
 }
 
-// Roughly 150 m around a point, as a two-corner box for the camera fit.
+// Close enough to read the street a dog is on.
+const FOCUS_ZOOM = 17;
+// The collar reports every few seconds over LoRa, and the cloud copy is pulled
+// every 30 seconds while the App is open; anything older than these means the
+// way in is not carrying data any more.
+const BLE_LIVE_MS = 60000;
+const CLOUD_LIVE_MS = 5 * 60000;
+
+/** Whether one of the two ways in is carrying data, drawn rather than named. */
+function LinkGlyph({ name, live, subject }) {
+  return (
+    <View
+      accessible
+      accessibilityLabel={`${subject}${live ? '有資料進來' : '沒有資料'}`}
+      style={styles.link}
+    >
+      <Glyph name={name} color={live ? colors.green : colors.muted} size={20} />
+    </View>
+  );
+}
+// Roughly 150 m around a point, as a two-corner box for the opening camera.
 const FRAME_DEGREES = 0.0015;
 function framedCoordinates({ latitude, longitude }) {
   return [
@@ -60,9 +81,33 @@ export default function MapScreen({
   // Which marker's panel is open: the handler, or one dog by id. Both markers
   // answer a tap the same way.
   const [selected, setSelected] = useState(null);
+  // Tapping a row takes the map there once. Following — the camera chasing one
+  // dog until the row was tapped again — was a mode to remember on a screen
+  // read at a glance, and it fought with panning.
+  const [focus, setFocus] = useState(null);
+  const focusId = useRef(0);
+  const zoomTo = useCallback(coordinate => {
+    if (!coordinate) return 0;
+    focusId.current += 1;
+    setFocus({ id: focusId.current, coordinate, zoom: FOCUS_ZOOM });
+    return focusId.current;
+  }, []);
   const closeDetails = useCallback(() => setSelected(null), []);
   const openMaster = useCallback(() => setSelected({ kind: 'master' }), []);
-  const openDog = useCallback(slaveId => setSelected({ kind: 'dog', slaveId }), []);
+  // Read through a ref so the callback itself never changes: the map's marker
+  // props feed effects that re-subscribe timers, and a handler with a new
+  // identity on every render makes that queue grow faster than it drains.
+  const session = useRef(tracking);
+  session.current = tracking;
+  const rememberDog = useCallback(slaveId => {
+    const current = session.current;
+    if (current.preferences.value.focusSlaveId !== slaveId)
+      current.saveTrackingPreferences({ focusSlaveId: slaveId });
+  }, []);
+  const openDog = useCallback(slaveId => {
+    rememberDog(slaveId);
+    setSelected({ kind: 'dog', slaveId });
+  }, [rememberDog]);
   const openTrack = useCallback(name => setSelected({ kind: 'track', name }), []);
   const { point, route, positionSamples, mode } = tracking;
   // Ageing is measured against this clock, not against the newest row: a silent
@@ -104,47 +149,63 @@ export default function MapScreen({
       .map(track => ({ ...track, color: dogColor(track.slaveId) }));
   }, [cloudDogs?.track, mode, now, point.slaveId,
     tracking.preferences.value.showTrails, tracking.preferences.value.windowMinutes]);
-  const focusSlaveId = tracking.preferences.value.focusSlaveId;
   const dogsVisible = tracking.preferences.value.showSlaveMarker;
+  const lastTappedSlaveId = tracking.preferences.value.focusSlaveId;
   const hiddenSlaveIds = tracking.preferences.value.hiddenSlaveIds;
+  // The map opens where the handler last looked: the dog they tapped, else the
+  // dog this phone is connected to over BLE, else one the cloud knows about.
+  // Opening on the whole working area meant finding the dog again every time.
+  const openingDog = useMemo(() => {
+    const placed = dogs.filter(dog =>
+      dog.coordinate && !hiddenSlaveIds.includes(dog.slaveId));
+    return placed.find(dog => dog.slaveId === lastTappedSlaveId)
+      || placed.find(dog => dog.source === 'ble')
+      || placed[0]
+      || null;
+  }, [dogs, hiddenSlaveIds, lastTappedSlaveId]);
+  // The framing is only read when the map mounts, and on a cold start only the
+  // BLE dog exists that early — the cloud ones arrive a second later. So the
+  // move is made explicitly, and once the remembered dog does turn up the
+  // camera is allowed to correct itself exactly once. Any move the handler
+  // makes ends it: their camera, not ours.
+  const opened = useRef({ slaveId: null, focusId: 0 });
+  useEffect(() => {
+    if (historical || !active || !openingDog) return;
+    if (focus && focus.id !== opened.current.focusId) return;
+    if (opened.current.slaveId === openingDog.slaveId) return;
+    if (opened.current.slaveId !== null && openingDog.slaveId !== lastTappedSlaveId) return;
+    opened.current = {
+      slaveId: openingDog.slaveId, focusId: zoomTo(openingDog.coordinate),
+    };
+  }, [active, focus, historical, lastTappedSlaveId, openingDog, zoomTo]);
   const livePresentation = useMemo(() => {
     if (!dogs.length) return basePresentation;
-    // Following a dog means the camera reads that dog; the others stay drawn.
-    // A followed dog that is not reporting is ignored rather than forgotten, so
-    // the camera returns to it when its next row arrives. Hiding the markers
-    // does not cancel following: the card still lists the dogs, and a card that
-    // says 跟隨中 while the map ignores it would be a lie.
-    const focused = dogs.find(dog => dog.slaveId === focusSlaveId) || null;
     // A dog hidden by its own eye leaves the map but stays in the card.
     const drawn = dogs.filter(dog => !hiddenSlaveIds.includes(dog.slaveId));
-    const marked = focused
-      ? drawn.map(dog => (dog === focused ? { ...dog, focused: true } : dog))
-      : drawn;
     return {
       ...basePresentation,
       // dogs replaces the single slave marker; positions stays untouched so the
       // card and camera keep reading the connected pair.
       slave: null,
-      dogs: dogsVisible ? marked : [],
+      dogs: dogsVisible ? drawn : [],
       // Hidden dogs take their line with them, like the markers.
       dogPaths: dogsVisible
         ? dogPaths.filter(track => !hiddenSlaveIds.includes(track.slaveId))
         : [],
-      follow: focused && { slaveId: focused.slaveId, coordinate: focused.coordinate },
       // A single coordinate makes a degenerate box, which Android fits at
       // maximum zoom; frame a small square around the dog instead.
-      cameraPositions: focused
-        ? framedCoordinates(focused.coordinate)
+      cameraPositions: dogsVisible && openingDog
+        ? framedCoordinates(openingDog.coordinate)
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds]);
+  }, [basePresentation, dogPaths, dogs, dogsVisible, hiddenSlaveIds, openingDog]);
   const livePhone = useLiveLocation(active && tracking.foreground);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is decided by the card's own
     // eyes and time window, never by the history tab's parameters.
-    if (!historical) return livePresentation;
+    if (!historical) return { ...livePresentation, focus };
     const data = history.data;
     // Playback draws the same tracks up to the cursor, so the map never shows a
     // position the replayed moment did not have yet.
@@ -171,10 +232,21 @@ export default function MapScreen({
       for (const p of points) { minLat = Math.min(minLat, p.latitude); maxLat = Math.max(maxLat, p.latitude); minLon = Math.min(minLon, p.longitude); maxLon = Math.max(maxLon, p.longitude); }
       cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
     }
-    return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks };
-  }, [historical, history?.data, history?.preferences.source, livePresentation,
+    return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks, focus };
+  }, [focus, historical, history?.data, history?.preferences.source, livePresentation,
     playbackAt]);
   const { master, slave } = presentation.positions;
+  // Read from the merged dogs, which carry the app's own camelCase model: the
+  // rows straight out of SQLite are snake_case, so `receivedAt` on them is
+  // undefined and the cloud icon was grey while the cloud was updating.
+  const newestFrom = source => Math.max(0, ...dogs
+    .filter(dog => dog.source === source)
+    .map(dog => (Number.isFinite(dog.receivedAt) ? dog.receivedAt : 0)));
+  const newestBle = Math.max(newestFrom('ble'),
+    Number.isFinite(point.receivedAt) ? point.receivedAt : 0);
+  const newestCloud = newestFrom('cloud');
+  const bleLive = newestBle > 0 && now - newestBle < BLE_LIVE_MS;
+  const cloudLive = !cloudDogs?.error && newestCloud > 0 && now - newestCloud < CLOUD_LIVE_MS;
   // A panel closes itself when its subject leaves the map: a dog that stopped
   // reporting, or the handler's marker being hidden.
   const detailSubject = useMemo(() => {
@@ -262,16 +334,21 @@ export default function MapScreen({
         onTrackPress={openTrack}
       />
       <View style={[styles.source, { top }]}>
-        <View style={[styles.statusDot, mode === 'demo' && styles.demoDot]} />
-        <Text style={styles.sourceText}>
-          {historical
-            ? `歷史 · ${shortRangeLabel(history.preferences)}`
-            : !tracking.preferences.ready
-            ? '讀取設定中…'
-            : mode === 'demo'
-            ? 'DEMO · 模擬資料'
-            : '正式 · SQLite'}
-        </Text>
+        {historical || mode === 'demo' ? (
+          <>
+            <View style={[styles.statusDot, mode === 'demo' && styles.demoDot]} />
+            <Text style={styles.sourceText}>
+              {historical ? `歷史 · ${shortRangeLabel(history.preferences)}` : 'DEMO'}
+            </Text>
+          </>
+        ) : (
+          // Which of the two ways in is alive, as icons: the words said the
+          // storage engine, which is never the question being asked.
+          <>
+            <LinkGlyph name="ble" live={bleLive} subject="Master BLE" />
+            <LinkGlyph name="cloud" live={cloudLive} subject="雲端" />
+          </>
+        )}
       </View>
       {!!messages.length && (
         <View
@@ -304,6 +381,9 @@ export default function MapScreen({
       ) : (
         <TrackingSheet
           tracking={tracking}
+          onZoom={zoomTo}
+          onDetails={setSelected}
+          onRememberDog={rememberDog}
           master={master}
           slave={slave}
           dogs={dogs}
@@ -349,6 +429,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...floatingShadow,
   },
+  link: { paddingHorizontal: 4 },
   statusDot: {
     width: 7,
     height: 7,

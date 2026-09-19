@@ -153,7 +153,7 @@ test('first use seeds three rows and shows C markers, circle, no routes or autom
   await mount();
   expect(open).toHaveBeenCalledTimes(1);
   expect(rows('demo_dog_status')).toHaveLength(3);
-  expect(text()).toContain('DEMO · 模擬資料');
+  expect(text()).toContain('DEMO');
   expect(
     renderer.root.findAllByType(Marker).map(node => node.props.coordinate),
   ).toEqual([
@@ -232,7 +232,7 @@ test('page changes keep the same native map, source and saved switches', async (
   expect(renderer.root.findByType(MapView)).toBe(map);
   await press('回到地圖');
   expect(renderer.root.findByType(MapView)).toBe(map);
-  expect(text()).toContain('DEMO · 模擬資料');
+  expect(text()).toContain('DEMO');
 });
 test('native BLE replay does not write again or move Demo map markers', async () => {
   await mount();
@@ -356,7 +356,9 @@ test('mode and all display values survive a cold remount without duplicating see
   renderer = null;
   expect(mockDatabase.close).toHaveBeenCalledTimes(1);
   await mount();
-  expect(text()).toContain('正式 · SQLite');
+  // The pill shows which way in is alive, as icons, not which database is
+  // behind it: BLE is silent here, so only its label says so.
+  expect(text()).not.toContain('正式 · SQLite');
   expect(preferences()).toEqual(saved);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   expect(rows('demo_dog_status')).toHaveLength(3);
@@ -367,7 +369,7 @@ test('mode and all display values survive a cold remount without duplicating see
   await act(async () => renderer.unmount());
   renderer = null;
   await mount();
-  expect(text()).toContain('DEMO · 模擬資料');
+  expect(text()).toContain('DEMO');
   expect(rows('demo_dog_status')).toHaveLength(3);
 });
 test('background and foreground never generate rows; real mode with empty DB remains empty', async () => {

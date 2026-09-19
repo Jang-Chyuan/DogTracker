@@ -357,9 +357,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   expect(
     renderer.root.findAllByProps({ testID: 'tracking-sheet' }).length,
   ).toBeGreaterThan(0);
-  // Real mode lists the dogs instead of one 狗 row; the hardware and LoRa
-  // readings describe one pair, so they moved to that device's panel.
-  expect(JSON.stringify(renderer.toJSON())).toContain('領犬員電量');
+  // Real mode lists the dogs and the handler as rows of the same kind; the
+  // hardware and LoRa readings describe one pair, so they live in its panel.
+  expect(JSON.stringify(renderer.toJSON())).toContain('領犬員 · Master');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('LoRa 訊號品質');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('硬體回報的定位與活動');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('定位與接收資料');

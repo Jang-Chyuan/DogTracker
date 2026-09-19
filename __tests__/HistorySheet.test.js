@@ -101,10 +101,11 @@ test('a source with nothing downloaded says so instead of offering numbers', asy
   expect(cardText()).toContain('這支手機還沒有這個來源的資料');
 });
 
-test('the card carries the coverage warning, not the map', async () => {
+test('the card states the range it will query, and no stale coverage warning', async () => {
   await mount(history());
-  // PR #6's notice: the phone holds less than the chosen range.
-  expect(cardText()).toContain('本機雲端副本最早只到');
+  // The card downloads a cloud range it does not hold, so a warning telling
+  // someone to go and fetch it themselves no longer describes what happens.
+  expect(cardText()).not.toContain('本機雲端副本最早只到');
   await act(async () => control('時間').props.onPress());
   expect(cardText()).toContain('會查：');
 });

@@ -7,7 +7,6 @@ import VisibilityButton from '../map/VisibilityButton';
 import { mapColors as colors } from '../map/MapTheme';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import HistoryExportButton from './HistoryExportButton';
-import { coverageNotice } from './HistoryCoverage';
 import { historyWindow, startOfDay } from './HistoryTime';
 
 const HOUR_PRESETS = [1, 3, 6, 12, 24];
@@ -179,7 +178,6 @@ export default function HistorySheet({
   } catch (error) {
     preview = '';
   }
-  const notice = history.data ? coverageNotice(history.data) : '';
   const changed = JSON.stringify(draft) !== JSON.stringify(history.preferences);
   const limited = history.data?.phone.limited
     || list(history.data?.clients).some(track => track.limited);
@@ -193,7 +191,6 @@ export default function HistorySheet({
       onHeight={onHeight}
     >
       {history.error ? <Text style={styles.error}>{history.error}</Text> : null}
-      {!!notice && <Text style={styles.warning}>{notice}</Text>}
       {!!history.data?.message && <Text style={styles.warning}>{history.data.message}</Text>}
 
       <Section

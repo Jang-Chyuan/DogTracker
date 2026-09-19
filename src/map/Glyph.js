@@ -47,6 +47,14 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Path d="M17 8l4 4-4 4" {...stroke} />
         </>
       )}
+      {name === 'info' && (
+        // Opens the panel with everything the row cannot hold.
+        <>
+          <Circle cx={12} cy={12} r={9} {...stroke} />
+          <Path d="M12 11v5" {...stroke} />
+          <Circle cx={12} cy={7.8} r={1} fill={color} stroke="none" />
+        </>
+      )}
       {name === 'clock' && (
         <>
           <Circle cx={12} cy={12} r={9} {...stroke} />
