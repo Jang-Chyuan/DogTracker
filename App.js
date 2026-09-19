@@ -53,7 +53,11 @@ function TrackerApp() {
   const history = useMapHistory(tracking.historyDatabase, tracking.ready.real, tracking.foreground && isMap, cloudSync.ownerId);
   const phone = usePhoneLocation(tracking.foreground, undefined, isMap);
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
-    tracking.ready.real && tracking.foreground && isMap && tracking.mode === 'real');
+    tracking.ready.real && tracking.foreground && isMap && tracking.mode === 'real',
+    undefined,
+    // The cloud dogs' path is only read while the card is drawing paths.
+    tracking.preferences.value.showTrails
+      ? tracking.preferences.value.windowMinutes * 60000 : null);
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.

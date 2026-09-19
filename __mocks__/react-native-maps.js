@@ -3,6 +3,7 @@ import { View } from 'react-native';
 export const mockCamera = {
   fitToCoordinates: jest.fn(),
   animateToRegion: jest.fn(),
+  animateCamera: jest.fn(),
   getCamera: jest.fn().mockResolvedValue(null),
 };
 const MapView = forwardRef((props, ref) => {

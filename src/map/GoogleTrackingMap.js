@@ -25,9 +25,20 @@ const EMPTY_REGION = {
 };
 function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
   // A position older than the selected window is drawn faded, so it reads as
-  // "last seen here", not as where the dog is now.
+  // "last seen here", not as where the dog is now. The followed dog gets a ring
+  // so the camera's target is visible on the map, not only in the card.
   const faded = !!position.stale;
+  const focused = !!position.focused;
   const marker = useRef(null);
+  // The marker view is not tracked for changes (that would redraw it on every
+  // frame), so fading and the follow ring have to ask for one redraw each.
+  useEffect(() => {
+    marker.current?.redraw?.();
+  }, [faded, focused]);
+  const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
+  const detail = description || (
+    position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
+  );
   return (
     <Marker
       ref={marker}
@@ -36,15 +47,16 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       anchor={{ x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       zIndex={role === 'slave' ? 20 : 10}
-      title={title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave')}
-      description={description || (
-        position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
-      )}
+      // No title or description: those draw the SDK's own bubble, and a tap
+      // already opens this device's panel. Two boxes for one tap read as a bug.
+      // The text they carried lives on the view below, for screen readers.
       onPress={onPress}
     >
       <View
         collapsable={false}
-        style={[styles.marker, faded && styles.fadedMarker]}
+        accessible
+        accessibilityLabel={`${name}。${detail}`}
+        style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
         onLayout={() => marker.current?.redraw()}
       >
         <TrackingAvatar role={role} size={40} />
@@ -67,6 +79,7 @@ function GoogleTrackingMapRenderer({
   phoneEnabled,
   livePhone,
   onMasterPress,
+  onDogPress,
   supported,
   configured,
 }) {
@@ -151,6 +164,21 @@ function GoogleTrackingMapRenderer({
     mountedMap,
     onStatus,
   ]);
+  // Following a dog re-centres the map on each new position of that dog, at the
+  // user's own zoom. Panning in between is left alone — the next position pulls
+  // the camera back — and the card's dog row is what ends following.
+  const follow = presentation.follow || null;
+  const followed = useRef('');
+  useEffect(() => {
+    if (!usable || !follow) {
+      followed.current = '';
+      return;
+    }
+    const key = `${follow.slaveId}:${follow.coordinate.latitude},${follow.coordinate.longitude}`;
+    if (followed.current === key) return;
+    followed.current = key;
+    mapRef.current?.animateCamera({ center: follow.coordinate }, { duration: 400 });
+  }, [usable, follow]);
   const priorSource = useRef(source);
   const sourceToFit = useRef(null);
   useEffect(() => {
@@ -290,6 +318,14 @@ function GoogleTrackingMapRenderer({
               position={slave}
             />
           )}
+          {(presentation.dogPaths || []).map(track => (
+            <React.Fragment key={source + '-dogpath-' + track.slaveId}>
+              {track.segments.map((segment, index) => (
+                <Polyline key={index} coordinates={segment} geodesic={false}
+                  strokeColor={track.color} strokeWidth={3} />
+              ))}
+            </React.Fragment>
+          ))}
           {(presentation.dogs || []).map(dog => (
             <DeviceMarker
               key={source + '-dog-' + dog.slaveId}
@@ -297,6 +333,7 @@ function GoogleTrackingMapRenderer({
               source={source}
               role="slave"
               position={dog}
+              onPress={onDogPress ? () => onDogPress(dog.slaveId) : undefined}
               title={'狗 ' + dog.slaveId}
               description={describeDogSource(dog) + ' · '
                 + new Date(dog.receivedAt).toLocaleTimeString()
@@ -379,6 +416,12 @@ const styles = StyleSheet.create({
   },
   retryText: { color: colors.ink, fontWeight: '600' },
   fadedMarker: { opacity: 0.45 },
+  focusedMarker: {
+    borderRadius: 23,
+    borderWidth: 3,
+    borderColor: colors.dog,
+    backgroundColor: '#FFFFFFAA',
+  },
   marker: {
     width: 46,
     height: 46,

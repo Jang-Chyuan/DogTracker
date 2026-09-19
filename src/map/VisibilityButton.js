@@ -1,8 +1,16 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import EyeIcon from './EyeIcon';
 import { mapColors as colors } from './MapTheme';
 
-export default function VisibilityButton({ role, visible, disabled, onPress }) {
+export default function VisibilityButton({
+  role,
+  visible,
+  disabled,
+  onPress,
+  subject,
+  size = 'large',
+}) {
   const color = visible
     ? role === 'master'
       ? colors.master
@@ -13,23 +21,19 @@ export default function VisibilityButton({ role, visible, disabled, onPress }) {
       accessibilityRole="button"
       accessibilityLabel={
         (visible ? '隱藏' : '顯示') +
-        (role === 'master' ? '領犬員' : '狗') +
+        (subject || (role === 'master' ? '領犬員' : '狗')) +
         '位置'
       }
       accessibilityState={{ selected: visible, disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.button, disabled && styles.disabled]}
+      style={[
+        styles.button,
+        size === 'small' && styles.small,
+        disabled && styles.disabled,
+      ]}
     >
-      <View accessible={false} style={[styles.eye, { borderColor: color }]}>
-        <View style={[styles.pupil, { backgroundColor: color }]} />
-      </View>
-      {!visible && (
-        <View
-          accessible={false}
-          style={[styles.slash, { backgroundColor: color }]}
-        />
-      )}
+      <EyeIcon color={color} open={visible} size={size === 'small' ? 22 : 26} />
     </Pressable>
   );
 }
@@ -43,20 +47,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  eye: {
-    width: 26,
-    height: 17,
-    borderWidth: 2,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pupil: { width: 7, height: 7, borderRadius: 4 },
-  slash: {
-    position: 'absolute',
-    width: 31,
-    height: 2,
-    transform: [{ rotate: '45deg' }],
-  },
+  // A per-dog eye sits inside a list row, so it is a smaller target than the
+  // section-level one, but still at the 44 pt minimum.
+  small: { width: 44, height: 44, borderRadius: 22 },
   disabled: { opacity: 0.45 },
 });
