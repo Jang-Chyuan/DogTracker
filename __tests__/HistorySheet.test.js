@@ -168,8 +168,13 @@ test('a dismissed picker changes nothing', async () => {
 test('the pill over the map states the range, not a duration it no longer has', () => {
   const start = new Date(2026, 8, 19, 9, 0).getTime();
   expect(shortRangeLabel({ ...HISTORY_DEFAULTS, hours: 6 })).toBe('過去 6 小時');
-  expect(shortRangeLabel({ ...HISTORY_DEFAULTS, timeMode: 'fixed',
-    startAt: start, endAt: start + 3600000 })).toBe('9/19 09:00–9/19 10:00');
+  const pill = shortRangeLabel({ ...HISTORY_DEFAULTS, timeMode: 'fixed',
+    startAt: start, endAt: start + 3600000 });
+  expect(pill).toBe('9/19 09:00–9/19 10:00');
+  // The only character that may sit outside ASCII is the en dash: ICU put a
+  // thin space between the date and the time on Linux and a plain one on
+  // macOS, so this test passed locally and failed in CI on the same commit.
+  expect([...pill].filter(c => c.codePointAt(0) > 0x7f)).toEqual(['–']);
 });
 
 test('a long history offers the newest days only, the rest through the picker', async () => {
