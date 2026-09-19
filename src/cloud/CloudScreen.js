@@ -1,11 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
 import { getCloudClient } from './CloudClient';
 import { downloadCloudHistory } from './CloudDownload';
 import { taiwanDateRange } from './CloudTelemetry';
 
 const today = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+/** The stored record is the whole Supabase row, JSON encoded when it arrived. */
+export function formatRaw(value) {
+  if (!value) return '這筆沒有保留原始紀錄（可能是舊版下載的）。';
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 const columns = [
   ['received_at', '雲端接收時間', 185], ['master_id', 'Master', 75],
   ['slave_id', 'Slave', 70], ['slave_lat', '緯度', 110], ['slave_lon', '經度', 110],
@@ -35,6 +45,11 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
   const [end, setEnd] = useState(today);
   const [master, setMaster] = useState('');
   const [rows, setRows] = useState([]);
+  // Which row's original Supabase JSON is open. The mapped columns only carry
+  // the fields this app reads; the question "does the payload hold anything
+  // else, such as the Master's own position" can only be answered by the raw
+  // record, which every row already stores.
+  const [rawId, setRawId] = useState(null);
   const [count, setCount] = useState(0);
   const [offset, setOffset] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -205,14 +220,28 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
           <View>
             <View style={styles.row}>{columns.map(([key, label, width]) =>
               <Text key={key} style={[styles.cell, styles.header, { width }]}>{label}</Text>)}</View>
-            {rows.map(row => <View key={row.id} style={styles.row}>
+            {rows.map(row => <Pressable key={row.id} style={styles.row}
+              accessibilityRole="button"
+              accessibilityLabel={`第 ${row.id} 筆原始資料`}
+              accessibilityState={{ expanded: rawId === row.id }}
+              onPress={() => setRawId(open => (open === row.id ? null : row.id))}>
               {columns.map(([key, , width]) => <Text key={key} style={[styles.cell, { width }]}>
                 {row[key] == null ? '—' : key === 'received_at'
                   ? new Date(row[key]).toLocaleString('zh-TW', { hour12: false }) : String(row[key])}
               </Text>)}
-            </View>)}
+            </Pressable>)}
           </View>
         </ScrollView> : <Text style={ui.hint}>尚無本機紀錄，請先下載。</Text>}
+        {rows.length ? <Text style={ui.hint}>點任何一列可以看這筆的原始雲端 JSON。</Text> : null}
+        {rawId != null && <View style={styles.raw}>
+          <Text style={ui.text}>原始雲端紀錄（第 {rawId} 筆）</Text>
+          <ScrollView horizontal>
+            <Text selectable style={styles.rawText}>
+              {formatRaw(rows.find(row => row.id === rawId)?.raw_payload)}
+            </Text>
+          </ScrollView>
+          <ActionButton title="關閉原始紀錄" secondary onPress={() => setRawId(null)} />
+        </View>}
         <Text style={ui.hint}>第 {Math.floor(offset / 50) + 1} 頁／共 {Math.max(1, Math.ceil(count / 50))} 頁</Text>
         <ActionButton title="上一頁" secondary disabled={busy || offset === 0}
           onPress={() => perform(() => loadRows(Math.max(0, offset - 50)))} />
@@ -229,4 +258,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#334155' },
   cell: { color: '#e2e8f0', padding: 8, fontSize: 12 },
   header: { fontWeight: '700', backgroundColor: '#1e3a8a' },
+  raw: { marginTop: 12, padding: 12, borderRadius: 10, backgroundColor: '#0b1220' },
+  rawText: { color: '#e2e8f0', fontSize: 11, lineHeight: 16, fontFamily: 'monospace' },
 });
