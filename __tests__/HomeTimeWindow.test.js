@@ -173,7 +173,7 @@ test('the map draws the window line and fades a dog seen before it', async () =>
     .find(node => node.props.identifier === 'real-dog-7');
   // The marker has no bubble of its own; the reason is on the view for screen
   // readers and in the card's row.
-  expect(dog.props.children.props.accessibilityLabel).toContain('早於所選時間範圍');
+  expect(dog.findAll(node => typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel).toContain('早於所選時間範圍');
   // Nothing inside the window, so no line is drawn for it.
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await act(async () => { renderer.unmount(); });
@@ -208,7 +208,7 @@ test('the home map keeps ageing while the collar is silent', async () => {
       bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
   });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  const label = node => node.props.children.props.accessibilityLabel;
+  const label = node => node.findAll(child => typeof child.props.accessibilityLabel === 'string')[0].props.accessibilityLabel;
   const dog = () => renderer.root.findAllByType(Marker)
     .find(node => node.props.identifier === 'real-dog-7');
   expect(label(dog())).not.toContain('早於所選時間範圍');
