@@ -205,6 +205,8 @@ test('the history tab keeps the same map, carries its own card, and back returns
   expect(renderer.root.findAllByProps({ testID: 'history-sheet' }).length)
     .toBeGreaterThan(0);
   expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
+  await act(async () => renderer.root.findByProps({ testID: 'history-sheet-handle' })
+    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
   expect(text()).toContain('歷史軌跡');
   // The card's sections are folded until opened, so it stays about a screen high.
   expect(button('雲端下載的（Supabase）')).toBeUndefined();

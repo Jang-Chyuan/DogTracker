@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HistorySheet, { shortRangeLabel } from '../mapHistory/HistorySheet';
 import HistoryPlaybackControls from '../mapHistory/HistoryPlaybackControls';
 import { clipTrackTo } from '../mapHistory/HistoryPlayback';
+import { dogHistoryLabel } from '../mapHistory/DogAliases';
 import { useHistoryPlayback } from '../mapHistory/useHistoryPlayback';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -144,7 +145,7 @@ export default function MapScreen({
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is decided by the card's own
     // eyes and time window, never by the history tab's parameters.
-    if (!historical) return livePresentation;
+    if (!historical) return { ...livePresentation, dogAliases: history?.preferences.dogAliases };
     const data = history.data;
     // Playback draws the same tracks up to the cursor, so the map never shows a
     // position the replayed moment did not have yet.
@@ -157,7 +158,7 @@ export default function MapScreen({
       // the live map, instead of an anonymous map pin.
       ...(data.clients || []).map((track, index) => ({
         ...clip(track),
-        name: `狗 ${track.slaveId}`,
+        name: dogHistoryLabel(track.slaveId, history.preferences.dogAliases),
         color: dogColor(track.slaveId, index),
         role: 'slave',
         sourceLabel: history.preferences.source === 'cloud'
@@ -172,7 +173,7 @@ export default function MapScreen({
       cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
     }
     return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks };
-  }, [historical, history?.data, history?.preferences.source, livePresentation,
+  }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, livePresentation,
     playbackAt]);
   const { master, slave } = presentation.positions;
   // A panel closes itself when its subject leaves the map: a dog that stopped
@@ -307,6 +308,7 @@ export default function MapScreen({
           master={master}
           slave={slave}
           dogs={dogs}
+          dogAliases={history?.preferences.dogAliases}
           bottomInset={bottomInset}
           topInset={controlsTop}
           onHeight={setSheetHeight}
@@ -316,6 +318,7 @@ export default function MapScreen({
         <DeviceDetails
           tracking={tracking}
           subject={detailSubject}
+          dogAliases={history?.preferences.dogAliases}
           master={master}
           topInset={controlsTop}
           bottomInset={bottomInset + SHEET_COLLAPSED_HEIGHT}

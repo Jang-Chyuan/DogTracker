@@ -18,6 +18,23 @@ test('label clears every route segment including lines crossing the box with end
 });
 
 // Exercise the screen overlay rather than a native draggable marker.
+test('all disjoint segments request projection without waiting for an earlier UI commit', async () => {
+  const React = require('react');
+  const Renderer = require('react-test-renderer');
+  const HistoryCursor = require('../src/mapHistory/HistoryCursor').default;
+  const finish = [];
+  const project = jest.fn(() => new Promise(resolve => finish.push(resolve)));
+  const tracks = [{ name: '手機', segments: [0, 1, 2].map(i => [{ time: i * 200000, latitude: 25, longitude: 121 }]) }];
+  let renderer;
+  try {
+    await Renderer.act(async () => { renderer = Renderer.create(React.createElement(HistoryCursor,
+      { tracks, mapRef: { current: { pointForCoordinate: project } }, width: 400, height: 800, top: 100, bottom: 100 })); });
+    expect(project).toHaveBeenCalledTimes(3);
+    await Renderer.act(async () => finish.forEach(resolve => resolve({ x: 200, y: 300 })));
+    expect(renderer.root.findByProps({ testID: 'history-cursor-handle' })).toBeDefined();
+  } finally { if (renderer) await Renderer.act(async () => renderer.unmount()); }
+});
+
 test('overlay gesture projects the cursor onto the route and updates the record time', async () => {
   const React = require('react');
   const Renderer = require('react-test-renderer');

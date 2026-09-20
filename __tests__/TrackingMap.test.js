@@ -121,8 +121,8 @@ test('Google provider, DB markers, dog trail and exactly 1000 metre circle', asy
   );
   // The marker draws no bubble of its own; the text is on its view, where a
   // screen reader finds it.
-  expect(renderer.root.findAllByType(Marker)[1].props.children.props
-    .accessibilityLabel).toContain('非最新定位');
+  expect(renderer.root.findAllByType(Marker)[1].findAll(node =>
+    node.props.accessibilityLabel?.includes('非最新定位')).length).toBeGreaterThan(0);
 });
 test('enables the native Google compass without adding a phone location button', async () => {
   await render();

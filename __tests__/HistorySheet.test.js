@@ -49,6 +49,17 @@ afterEach(async () => {
   renderer = null;
 });
 
+test('dog alias can be edited in the card and saved with Apply', async () => {
+  const value = history();
+  await mount(value);
+  await act(async () => control('狗與 Master').props.onPress());
+  await act(async () => control('狗 4 的別名').props.onChangeText('小黑'));
+  expect(control('小黑 狗 4')).toBeDefined();
+  expect(value.save).not.toHaveBeenCalled();
+  await act(async () => control('套用（有未套用的變更）').props.onPress());
+  expect(value.save).toHaveBeenCalledWith(expect.objectContaining({ dogAliases: { 4: '小黑' } }));
+});
+
 test('the card header says which window is drawn and how many rows it holds', () => {
   expect(historySummary(history())).toContain('手機 12 筆 · 狗 4 340 筆');
   expect(historySummary(history({ data: null }))).toBe('正在讀取歷史軌跡…');

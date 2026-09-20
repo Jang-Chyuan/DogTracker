@@ -37,7 +37,7 @@ export default function HistoryExportButton({ history, snapshot, top }) {
   // The button lives inside the history card; `top` is only used when a screen
   // still floats it over the map.
   return <>
-    <View style={top == null ? null : [styles.button, { top }]}>
+    <View collapsable={false} style={top == null ? styles.inlineButton : [styles.button, { top }]}>
       <ActionButton title="匯出" disabled={!history.data || busy} onPress={() => setOpen(true)} />
     </View>
     <Modal visible={open} transparent onRequestClose={() => { if (!busy) setOpen(false); }}>
@@ -53,6 +53,7 @@ export default function HistoryExportButton({ history, snapshot, top }) {
   </>;
 }
 const styles = StyleSheet.create({
+  inlineButton: { flexShrink: 0 },
   button: { position: 'absolute', right: 14, zIndex: 25 },
   shade: { flex: 1, backgroundColor: '#0009', justifyContent: 'center', padding: 20 },
   dialog: { width: '100%' },

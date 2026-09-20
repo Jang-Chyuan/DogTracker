@@ -95,13 +95,14 @@ test('a dog and the handler answer a tap with the same panel', async () => {
 test('a history marker opens the same panel, with what a past moment can say', async () => {
   const close = jest.fn();
   const track = {
-    name: '狗 4', count: 340, sourceLabel: '來源：雲端下載的資料',
+    name: 'Nana 狗 4', role: 'slave', slaveId: 4, count: 340, sourceLabel: '來源：雲端下載的資料',
     latest: { time: trackingPoint.receivedAt, speed_kmh: 3.4, latitude: 25, longitude: 121 },
   };
   let renderer;
   await act(async () => {
     renderer = Renderer.create(
       <DeviceDetails tracking={{ point: trackingPoint }} subject={{ kind: 'track', track }}
+        dogAliases={{ 4: 'Nana' }}
         master={null} topInset={80} bottomInset={120} onClose={close} />,
     );
   });
@@ -112,7 +113,7 @@ test('a history marker opens the same panel, with what a past moment can say', a
     return flatten(node.children);
   };
   const text = flatten(renderer.toJSON());
-  expect(text).toContain('狗 4');
+  expect(text).toContain('Nana(id_4)');
   expect(text).toContain('來源：雲端下載的資料');
   expect(text).toContain('3.4 km/h');
   expect(text).toContain('340 筆');

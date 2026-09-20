@@ -7,6 +7,22 @@ import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase, expireHistory, HISTORY_DATABASE_METHODS, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
 import { historyWindow, parseHistoryRange } from '../src/mapHistory/HistoryTime';
 import { serializeHistory } from '../src/mapHistory/HistoryExport';
+import { dogHistoryLabel } from '../src/mapHistory/DogAliases';
+
+test('dog aliases persist locally and clearing one restores its device label', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const db = createHistoryDatabase(connection);
+    await createDogDatabase(connection).initialize();
+    await db.load();
+    await db.save({ ...HISTORY_DEFAULTS, dogAliases: { 4: ' 小黑 ', 6: '小黑' } });
+    const loaded = await createHistoryDatabase(connection).load();
+    expect(dogHistoryLabel(4, loaded.dogAliases)).toBe('小黑 狗 4');
+    expect(dogHistoryLabel(6, loaded.dogAliases)).toBe('小黑 狗 6');
+    await db.save({ ...loaded, dogAliases: { ...loaded.dogAliases, 4: ' ' } });
+    expect(dogHistoryLabel(4, (await db.load()).dogAliases)).toBe('狗 4');
+  } finally { connection.close(); }
+});
 
 test('rolling cutoff preserves a straight route after its simplified start expires', () => {
   const points = Array.from({ length: 61 }, (_, i) => ({ time: i * 1000, latitude: 25, longitude: 121 + i * 0.0001 }));

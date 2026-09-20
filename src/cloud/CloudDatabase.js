@@ -1,4 +1,5 @@
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
+import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -43,7 +44,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
   };
   // Every dog this account has downloaded, smallest id first. Reading the list
   // first turns "the newest row of each dog" into one index seek per dog
-  // instead of one pass over the whole window; idx_cloud_owner_slave_master
+  // instead of one pass over the whole window; idx_cloud_display_stream
   // answers it without touching a row.
   const slaveIds = async owner => rows(await connection.executeAsync(
     `SELECT DISTINCT slave_id FROM supabase_dog_status
@@ -57,6 +58,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       for (const [name, type] of [
         ['owner_user_id', 'TEXT'], ['event_id', 'TEXT'],
         ['downloaded_at', 'INTEGER'], ['remote_received_at', 'TEXT'],
+        ['display_latitude', 'REAL'], ['display_longitude', 'REAL'], ['display_version', 'INTEGER'],
       ]) {
         if (!columns.has(name)) {
           await connection.executeAsync(`ALTER TABLE supabase_dog_status ADD COLUMN ${name} ${type}`);
@@ -68,17 +70,13 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         ON supabase_dog_status(owner_user_id, received_at DESC, id DESC)`);
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_master_received
         ON supabase_dog_status(owner_user_id, master_id, received_at)`);
-      // "Which dogs did this account download?" — asked by the home map every
-      // ten seconds and by the history card on every change. No existing index
-      // held owner and slave together, so the answer cost a full scan: 201 ms
-      // at the 500 MB cap, against 0.01 ms here.
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_slave_master
-        ON supabase_dog_status(owner_user_id, slave_id, master_id)`);
       // Only the rows that still carry their original JSON. DROP_OLD_PAYLOAD
       // used to walk every row older than a day to find the few thousand with
       // a payload left: 212 ms every twenty pages, against 0.01 ms with this.
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_payload
         ON supabase_dog_status(received_at) WHERE raw_payload IS NOT NULL`);
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_display_stream
+        ON supabase_dog_status(owner_user_id, master_id, slave_id, received_at, id)`);
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_state (
         owner_user_id TEXT NOT NULL, master_id INTEGER NOT NULL,
         through_at TEXT NOT NULL, event_id TEXT, updated_at INTEGER NOT NULL,
@@ -103,45 +101,57 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       ))[0] || null;
     },
     async savePage(owner, records, checkpoint = null) {
-      requireOwner(owner);
-      if (!records.length && !checkpoint) return;
-      const columns = [
-        'event_id', 'remote_received_at', 'received_at', 'master_id', 'slave_id',
-        'sequence', 'slave_lat', 'slave_lon', 'speed_kmh', 'satellites', 'hdop',
-        'activity', 'activity_valid', 'battery_mv', 'battery_percentage',
-        'battery_valid', 'gps_time', 'activity_time', 'rssi', 'snr', 'raw_payload',
-      ];
-      // Telemetry events are immutable. Ignore only already downloaded events;
-      // a failed page rolls back as a whole. Compatible with Android 8 SQLite.
-      const query = `INSERT INTO supabase_dog_status
-        (owner_user_id, downloaded_at, ${columns.join(', ')})
-        SELECT ${Array(columns.length + 2).fill('?').join(', ')}
-        WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status
-          WHERE owner_user_id = ? AND event_id = ?)`;
-      const now = Date.now();
-      const commands = records.map(record => ({
-        query,
-        params: [owner, now, ...columns.map(key => record[key] ?? null), owner, record.event_id],
-      }));
-      if (checkpoint) {
-        if (!Number.isInteger(checkpoint.masterId) || !Number.isFinite(Date.parse(checkpoint.throughAt))) {
-          throw new Error('同步進度格式不正確');
+      return withCloudDisplayLock(connection, async () => {
+        requireOwner(owner);
+        if (!records.length && !checkpoint) return;
+        const columns = [
+          'event_id', 'remote_received_at', 'received_at', 'master_id', 'slave_id',
+          'sequence', 'slave_lat', 'slave_lon', 'speed_kmh', 'satellites', 'hdop',
+          'activity', 'activity_valid', 'battery_mv', 'battery_percentage',
+          'battery_valid', 'gps_time', 'activity_time', 'rssi', 'snr', 'raw_payload',
+        ];
+        // Telemetry events are immutable. Ignore only already downloaded events;
+        // a failed page rolls back as a whole. Compatible with Android 8 SQLite.
+        const query = `INSERT INTO supabase_dog_status
+          (owner_user_id, downloaded_at, ${columns.join(', ')})
+          SELECT ${Array(columns.length + 2).fill('?').join(', ')}
+          WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status
+            WHERE owner_user_id = ? AND event_id = ?)`;
+        const now = Date.now();
+        const commands = records.flatMap(record => ([{
+          // A late insertion changes subsequent rolling windows. Invalidate in
+          // the same transaction; a duplicate download leaves saved coordinates alone.
+          query: `UPDATE supabase_dog_status SET display_latitude=NULL, display_longitude=NULL, display_version=NULL
+            WHERE id IN (SELECT id FROM supabase_dog_status
+              WHERE owner_user_id=? AND master_id=? AND slave_id=? AND received_at>?
+              ORDER BY received_at, id LIMIT 2)
+            AND display_version IS NOT NULL AND NOT EXISTS
+            (SELECT 1 FROM supabase_dog_status WHERE owner_user_id=? AND event_id=?)`,
+          params: [owner, record.master_id ?? null, record.slave_id ?? null, record.received_at ?? null, owner, record.event_id ?? null],
+        }, {
+          query,
+          params: [owner, now, ...columns.map(key => record[key] ?? null), owner, record.event_id],
+        }]));
+        if (checkpoint) {
+          if (!Number.isInteger(checkpoint.masterId) || !Number.isFinite(Date.parse(checkpoint.throughAt))) {
+            throw new Error('同步進度格式不正確');
+          }
+          commands.push({
+            query: `INSERT OR REPLACE INTO cloud_sync_state
+              (owner_user_id, master_id, through_at, event_id, updated_at) VALUES (?, ?, ?, ?, ?)`,
+            params: [owner, checkpoint.masterId, checkpoint.throughAt, checkpoint.eventId ?? null, now],
+          });
         }
-        commands.push({
-          query: `INSERT OR REPLACE INTO cloud_sync_state
-            (owner_user_id, master_id, through_at, event_id, updated_at) VALUES (?, ?, ?, ?, ?)`,
-          params: [owner, checkpoint.masterId, checkpoint.throughAt, checkpoint.eventId ?? null, now],
-        });
-      }
-      // Global cap across accounts/Masters. Keep newest reception times, not
-      // newest download order, so manual historical downloads cannot evict newer rows.
-      commands.push({ query: trimHistory, params: [] });
-      pagesSaved += 1;
-      if (pagesSaved % PAYLOAD_EVERY_PAGES === 0) {
-        commands.push({ query: DROP_OLD_PAYLOAD, params: [now - CLOUD_PAYLOAD_MS] });
-      }
-      // Progress, retention and downloaded rows commit together.
-      await connection.executeBatchAsync(commands);
+        // Global cap across accounts/Masters. Keep newest reception times, not
+        // newest download order, so manual historical downloads cannot evict newer rows.
+        commands.push({ query: trimHistory, params: [] });
+        pagesSaved += 1;
+        if (pagesSaved % PAYLOAD_EVERY_PAGES === 0) {
+          commands.push({ query: DROP_OLD_PAYLOAD, params: [now - CLOUD_PAYLOAD_MS] });
+        }
+        // Progress, retention and downloaded rows commit together.
+        await connection.executeBatchAsync(commands);
+      });
     },
     async loadBuckets(owner, masterId, fromBucket) {
       requireOwner(owner);

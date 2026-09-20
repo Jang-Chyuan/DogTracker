@@ -6,13 +6,14 @@ import Glyph from './Glyph';
 import Stat from './Stat';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
+import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 
 const percent = value => (Number.isFinite(value) ? `${value}%` : '—');
 const speed = value => (Number.isFinite(value) ? `${value} km/h` : '— km/h');
 
 export default function DogList({
   dogs, selectedSlaveId, hiddenSlaveIds = [], disabled, onSelect, onToggle, control,
-  linkNote,
+  linkNote, dogAliases,
 }) {
   return (
     <View>
@@ -25,13 +26,14 @@ export default function DogList({
       )}
       {!!linkNote && <Text style={styles.hint}>{linkNote}</Text>}
       {dogs.map(dog => {
+        const name = dogMapLabel(dogHistoryLabel(dog.slaveId, dogAliases));
         const selected = dog.slaveId === selectedSlaveId;
         const hidden = hiddenSlaveIds.includes(dog.slaveId);
         return (
           <Pressable
             key={dog.slaveId}
             accessibilityRole="button"
-            accessibilityLabel={`狗 ${dog.slaveId}`}
+            accessibilityLabel={name}
             accessibilityHint={selected ? '取消跟隨，地圖回到全部裝置' : '讓地圖跟隨這隻狗'}
             accessibilityState={{ selected, disabled }}
             disabled={disabled}
@@ -42,7 +44,7 @@ export default function DogList({
             <TrackingAvatar role="slave" size={36} />
             <View style={styles.text}>
               <Text style={styles.name}>
-                狗 {dog.slaveId}
+                {name}
                 {selected ? ' · 地圖跟隨中' : ''}
               </Text>
               {/* Every row reads the same whatever answered it: where it came
@@ -75,7 +77,7 @@ export default function DogList({
             <VisibilityButton
               role="slave"
               size="small"
-              subject={`狗 ${dog.slaveId} 的`}
+              subject={`${name} 的`}
               visible={!hidden}
               disabled={disabled}
               onPress={() => onToggle(dog.slaveId)}
