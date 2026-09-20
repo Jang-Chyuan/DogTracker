@@ -18,6 +18,8 @@ import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import TrackingAvatar from './TrackingAvatar';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
+import DogNameMarker, { DOG_NAME_ANCHOR } from './DogNameMarker';
+import { dogHistoryLabel } from '../mapHistory/DogAliases';
 
 const EMPTY_REGION = {
   latitude: 23.7,
@@ -36,7 +38,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   // frame), so fading and the follow ring have to ask for one redraw each.
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [faded, focused]);
+  }, [faded, focused, title]);
   const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
@@ -46,7 +48,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       ref={marker}
       identifier={identifier || source + '-' + role}
       coordinate={position.coordinate}
-      anchor={{ x: 0.5, y: 0.5 }}
+      anchor={role === 'slave' ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       zIndex={role === 'slave' ? 20 : 10}
       // No title or description: those draw the SDK's own bubble, and a tap
@@ -54,7 +56,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       // The text they carried lives on the view below, for screen readers.
       onPress={onPress}
     >
-      <View
+      <DogNameMarker label={role === 'slave' ? name : null}><View
         collapsable={false}
         accessible
         accessibilityLabel={`${name}。${detail}`}
@@ -62,7 +64,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
         onLayout={() => marker.current?.redraw()}
       >
         <TrackingAvatar role={role} size={40} />
-      </View>
+      </View></DogNameMarker>
     </Marker>
   );
 }
@@ -72,6 +74,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
 // side before it has laid out, and then draws as a blank dot.
 function TrackMarker({ track, onPress }) {
   const marker = useRef(null);
+  useEffect(() => { marker.current?.redraw?.(); }, [track.name]);
   const { latest } = track;
   const detail = `${new Date(latest.time).toLocaleString()} · ${
     latest.speed_kmh == null ? '速度未知' : latest.speed_kmh.toFixed(1) + ' km/h'}`;
@@ -83,13 +86,13 @@ function TrackMarker({ track, onPress }) {
     <Marker
       ref={marker}
       coordinate={latest}
-      anchor={{ x: 0.5, y: 0.5 }}
+      anchor={track.role === 'slave' ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       // Like the live map: no title or description, because the tap opens this
       // device's panel and the SDK's own bubble would be a second box.
       onPress={onPress}
     >
-      <View
+      <DogNameMarker label={track.role === 'slave' ? track.name : null}><View
         collapsable={false}
         accessible
         accessibilityLabel={`${track.name} · 該時刻位置。${detail}`}
@@ -101,7 +104,7 @@ function TrackMarker({ track, onPress }) {
         ) : (
           <View style={[styles.phoneDot, { backgroundColor: track.color }]} />
         )}
-      </View>
+      </View></DogNameMarker>
     </Marker>
   );
 }
@@ -136,7 +139,7 @@ function GoogleTrackingMapRenderer({
   const mapRef = useRef(null);
   const [cursorLayout, setCursorLayout] = useState({ width: 0, height: 0 });
   const [cursorRevision, setCursorRevision] = useState(0);
-  const [cameraMoving, setCameraMoving] = useState(false);
+  const [cursorDragging, setCursorDragging] = useState(false);
   const [cursorSelection, setCursorSelection] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [readyInstance, setReadyInstance] = useState(null);
@@ -271,8 +274,10 @@ function GoogleTrackingMapRenderer({
           showsMyLocationButton={false}
           // Google SDK handles rotation/tilt visibility and tap-to-north.
           showsCompass
-          rotateEnabled
-          pitchEnabled
+          rotateEnabled={!cursorDragging}
+          pitchEnabled={!cursorDragging}
+          scrollEnabled={!cursorDragging}
+          zoomEnabled={!cursorDragging}
           // Native padding dereferences GoogleMap. Never send it before this
           // specific map instance is ready, including retry/source replacement.
           mapPadding={
@@ -286,10 +291,8 @@ function GoogleTrackingMapRenderer({
           onPanDrag={() => {
             interacted.current = true;
           }}
-          onRegionChange={() => setCameraMoving(true)}
           onRegionChangeComplete={(_, details) => {
             if (activeInstance.current !== instance || !foreground) return;
-            setCameraMoving(false);
             setCursorRevision(value => value + 1);
             if (details?.isGesture) interacted.current = true;
             const request = ++cameraRead.current;
@@ -386,7 +389,7 @@ function GoogleTrackingMapRenderer({
               role="slave"
               position={dog}
               onPress={onDogPress ? () => onDogPress(dog.slaveId) : undefined}
-              title={'狗 ' + dog.slaveId}
+              title={dogHistoryLabel(dog.slaveId, presentation.dogAliases)}
               description={describeDogSource(dog) + ' · '
                 + new Date(dog.receivedAt).toLocaleTimeString()
                 + (dog.stale ? '（早於所選時間範圍）' : '')}
@@ -401,9 +404,10 @@ function GoogleTrackingMapRenderer({
           {!configured && <Text style={styles.hint}>地圖設定尚未完成</Text>}
         </View>
       )}
-      {usable && cursorLayout.width > 0 && presentation.historyTracks?.length > 0 &&
-        <HistoryCursor key={source + ':' + instance} tracks={presentation.historyTracks} mapRef={mapRef}
-          hidden={!foreground || cameraMoving} selection={cursorSelection?.source === source ? cursorSelection.value : null}
+      {usable && cursorLayout.width > 0 && presentation.historyTracks?.some(track => track.role === 'phone' && track.segments.length > 0) &&
+        <HistoryCursor key={source + ':' + instance} tracks={presentation.historyTracks.filter(track => track.role === 'phone')} mapRef={mapRef}
+          hidden={!foreground} selection={cursorSelection?.source === source ? cursorSelection.value : null}
+          onDraggingChange={setCursorDragging}
           onSelectionChange={value => setCursorSelection({ source, value })}
           revision={cursorRevision} width={cursorLayout.width} height={cursorLayout.height} top={topInset} bottom={bottomInset} />}
       {configured && mountedMap && !loaded && !timedOut && (

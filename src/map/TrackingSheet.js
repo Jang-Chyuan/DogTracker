@@ -55,6 +55,7 @@ export default function TrackingSheet({
   master,
   slave,
   dogs = [],
+  dogAliases,
   bottomInset,
   topInset = 100,
   onHeight,
@@ -106,6 +107,7 @@ export default function TrackingSheet({
         {showDogList ? (
           <DogList
             dogs={dogs}
+            dogAliases={dogAliases}
             selectedSlaveId={preferences.value.focusSlaveId}
             hiddenSlaveIds={preferences.value.hiddenSlaveIds}
             disabled={disabled}

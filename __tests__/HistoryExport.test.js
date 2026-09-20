@@ -2,6 +2,36 @@ import { serializeHistory } from '../src/mapHistory/HistoryExport';
 import { createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
+import { createCloudDatabase } from '../src/cloud/CloudDatabase';
+
+test('cloud export materializes smoothing before the map is opened and retains raw CSV columns', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    await createCloudDatabase(connection).initialize();
+    const insert = connection.sqlite.prepare('INSERT INTO supabase_dog_status(owner_user_id,master_id,slave_id,received_at,slave_lat,slave_lon,speed_kmh) VALUES(?,7,4,?,?,121,0)');
+    insert.run('alice', 1000, 25);
+    insert.run('alice', 2000, 25.006);
+    insert.run('alice', 3000, 0);
+    connection.sqlite.exec('UPDATE supabase_dog_status SET slave_lon=0 WHERE received_at=3000');
+    const db = createHistoryDatabase(connection);
+    const prefs = { ...HISTORY_DEFAULTS, source: 'cloud', phone: false };
+    const data = await db.read(prefs, 'alice', 4000, () => true, true);
+    const p = data.clients[0].rows[1];
+    expect(p.latitude).toBeCloseTo(25.003, 8);
+    const csv = serializeHistory('csv', data);
+    expect(csv).toContain(`"${p.latitude}","121"`);
+    expect(csv).toContain('"25.006","121"');
+    expect(csv).toContain('"cloud-smoothed-v1"');
+    const gpx = serializeHistory('gpx', data);
+    expect(gpx).toContain(`<trkpt lat="${p.latitude}" lon="121">`);
+    expect(gpx).not.toContain('lat="25.006"');
+    expect(gpx).not.toContain('lat="0"');
+    expect(gpx.match(/<trkpt /g)).toHaveLength(2);
+    const map = await db.read(prefs, 'alice', 4000);
+    expect(map.clients[0].latest.latitude).toBe(p.latitude);
+  } finally { connection.close(); }
+});
 
 test('history and export prefer saved display coordinates and preserve raw GPS', async () => {
   const connection = createMemoryConnection();
