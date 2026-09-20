@@ -24,7 +24,7 @@ export function serializeHistory(format, data) {
     let last = null, open = false;
     for (const p of points) {
       const valid = !!coordinate(p.latitude, p.longitude);
-      if (!valid || (last && (p.session_id !== last.session_id || p.time - last.time > 120000 || Math.abs(p.longitude - last.longitude) > 180))) {
+      if (!valid || (last && (p.session_id !== last.session_id || p.master_id !== last.master_id || p.time - last.time > 120000 || Math.abs(p.longitude - last.longitude) > 180))) {
         if (open) output.push('</trkseg>');
         open = false; last = null;
       }

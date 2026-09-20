@@ -31,6 +31,7 @@ export default function BottomSheet({
   topInset = 100,
   onHeight,
   children,
+  footer,
 }) {
   const { height: windowHeight, fontScale } = useWindowDimensions();
   const stops = useMemo(
@@ -172,6 +173,7 @@ export default function BottomSheet({
         </Text>
       </View>
       <ScrollView
+        style={styles.scroll}
         ref={scroll}
         contentContainerStyle={styles.content}
         nestedScrollEnabled
@@ -192,11 +194,14 @@ export default function BottomSheet({
       >
         {children}
       </ScrollView>
+      {level !== 'collapsed' && footer && <View testID={`${name}-sheet-footer`} style={styles.footer}>{footer}</View>}
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: { flex: 1 },
+  footer: { flexShrink: 0, paddingHorizontal: 18, paddingBottom: 12, backgroundColor: colors.surface },
   sheet: {
     position: 'absolute',
     zIndex: 10,

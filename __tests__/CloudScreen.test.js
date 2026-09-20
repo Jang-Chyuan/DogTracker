@@ -71,19 +71,22 @@ test('late cache reads cannot display the previous account after an auth change'
   expect(text()).toContain('b@example.test');
 });
 
-test('manual download writes a batch and renders the refreshed local table', async () => {
+test('automatic sync refreshes the local table without a manual download option', async () => {
   const { client, database } = fixtures();
-  const pending = [{ data: [{ event_id: '00000000-0000-4000-8000-000000000001',
-    received_at: '2026-09-16T00:00:00Z', master_id: 7, slave_id: 4,
-    seq: 1, payload: { slaveId: 4 }, rssi: -80, snr: 5 }] }, { data: [] }];
-  const query = {};
-  for (const key of ['select', 'gte', 'lt', 'order', 'limit', 'or']) query[key] = () => query;
-  query.abortSignal = async () => pending.shift();
-  client.from = jest.fn(() => query);
-  await act(async () => { renderer = Renderer.create(<CloudScreen database={database} clientFactory={() => client} />); });
+  const clientFactory = () => client;
+  await act(async () => { renderer = Renderer.create(<CloudScreen database={database}
+    sync={{ revision: 0, mode: 'auto' }} clientFactory={clientFactory} />); });
   await login();
-  await press('下載到手機');
-  expect(database.savePage).toHaveBeenCalledWith('account-a', [expect.objectContaining({ master_id: 7, slave_id: 4 })]);
-  expect(text()).toContain('下載完成');
+  expect(text()).toContain('自動同步中');
+  expect(text()).not.toContain('下載到手機');
+  expect(text()).not.toContain('開始日期');
+  expect(text()).not.toContain('結束日期');
   expect(text()).toContain('ACCOUNT_A_ONLY');
+  database.listHistory.mockResolvedValue([{ id: 2, sequence: 'AUTO_SYNC_NEW_ROW' }]);
+  await act(async () => renderer.update(<CloudScreen database={database}
+    sync={{ revision: 1, lastSuccess: 1000 }} clientFactory={clientFactory} />));
+  expect(text()).toContain('AUTO_SYNC_NEW_ROW');
+  expect(text()).toContain('上次同步');
+  await press('重新讀取本機資料');
+  expect(database.savePage).not.toHaveBeenCalled();
 });

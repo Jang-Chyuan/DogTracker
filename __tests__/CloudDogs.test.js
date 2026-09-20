@@ -113,7 +113,7 @@ test('the home map draws one marker per dog and names the source', async () => {
     .filter(node => typeof node.props.identifier === 'string');
   const dog = markers.filter(node => node.props.identifier === 'real-dog-7');
   expect(dog).toHaveLength(1);
-  expect(dog[0].props.children.props.accessibilityLabel).toContain('經 Master 5・雲端');
+  expect(dog[0].findAll(node => typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel).toContain('經 Master 5・雲端');
   expect(dog[0].props.coordinate).toEqual({ latitude: 25.2, longitude: 121.7 });
   // The single-pair marker is replaced, not drawn on top of the merged one.
   expect(markers.some(node => node.props.identifier === 'real-slave')).toBe(false);

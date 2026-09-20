@@ -28,6 +28,7 @@ function battery(valid, percentage) {
 export default function DeviceDetails({
   tracking,
   subject,
+  dogAliases,
   master,
   topInset,
   bottomInset,
@@ -51,7 +52,10 @@ export default function DeviceDetails({
   // Hardware fields come from this phone's BLE feed, so they only describe the
   // dog it is connected to.
   const live = dog && dog.source === 'ble' && dog.slaveId === point.slaveId;
-  const title = track ? track.name : dog ? `狗 ${dog.slaveId}` : '領犬員資訊';
+  const slaveId = dog?.slaveId ?? (track?.role === 'slave' ? track.slaveId : null);
+  const alias = slaveId != null ? dogAliases?.[slaveId]?.trim() : null;
+  const title = alias ? `${alias}(id_${slaveId})`
+    : track ? track.name : dog ? `狗 ${dog.slaveId}` : '領犬員資訊';
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]} testID="device-details">
       <Pressable
