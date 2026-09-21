@@ -319,7 +319,7 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
     );
   // One switch only: whether the path is drawn. Everything else on the card is
   // a tap target of its own.
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(1);
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
   expect(
     StyleSheet.flatten(
       renderer.root.findByProps({ testID: 'fullscreen-map-screen' }).props
@@ -371,7 +371,7 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   );
   // One switch only: whether the path is drawn. Everything else on the card is
   // a tap target of its own.
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(1);
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
   const detailsLayer = StyleSheet.flatten(
     renderer.root.findByProps({ testID: 'device-details' }).props.style,
   );

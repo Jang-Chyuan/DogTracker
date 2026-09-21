@@ -1,3 +1,4 @@
+import MapScreen from '../src/screens/MapScreen';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import {
@@ -53,14 +54,8 @@ async function press(label, role) {
   });
 }
 // 顯示移動路徑 is a real Switch, so it is driven by its value, not by a press.
-const trailSwitch = () => renderer.root.findAll(
-  node => node.props.accessibilityLabel === '顯示移動路徑' &&
-    typeof node.props.onValueChange === 'function', { deep: false })[0];
 async function setTrails(value) {
-  const control = trailSwitch();
-  expect(control).toBeDefined();
-  if (control.props.value === value) return;
-  await act(async () => control.props.onValueChange(value));
+  await act(async () => renderer.root.findByType(MapScreen).props.tracking.saveTrackingPreferences({ showTrails: value }));
 }
 async function mount() {
   await act(async () => {
@@ -250,7 +245,7 @@ test('native BLE replay does not write again or move Demo map markers', async ()
   expect(rows('demo_dog_status')).toHaveLength(3);
   expect(markerCoordinates()).toEqual(markers);
 });
-test('manual A/B writes update latest DB markers; common paths stay off until explicitly enabled', async () => {
+test('manual A/B writes update markers; legacy trail settings never draw live paths', async () => {
   await mount();
 
   await demoPage();
@@ -277,7 +272,7 @@ test('manual A/B writes update latest DB markers; common paths stay off until ex
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await expand();
   await setTrails(true);
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(2);
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
 });
 test('all eight visibility states gate overlays, retain card controls, and leave phone location independent', async () => {
   jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
@@ -303,7 +298,7 @@ test('all eight visibility states gate overlays, retain card controls, and leave
           Number(showMasterMarker),
         );
         expect(renderer.root.findAllByType(Polyline)).toHaveLength(
-          showTrails ? Number(showMasterMarker) + Number(showSlaveMarker) : 0,
+          0,
         );
         expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(
           true,
@@ -340,7 +335,7 @@ test('confirmed reset restores A/B/C and preserves real rows, mode and visibilit
   await press('回到地圖');
   await advance();
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(1);
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   expect(renderer.root.findByType(Circle).props.center).toEqual({
     latitude: 25.0181,
     longitude: 121.3257,
@@ -365,7 +360,7 @@ test('mode and all display values survive a cold remount without duplicating see
   await demoPage();
   await setMode(true);
   await press('回到地圖');
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(1);
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await act(async () => renderer.unmount());
   renderer = null;
   await mount();
@@ -537,7 +532,7 @@ test('Android map and Demo use the native SQL adapter without opening Nitro', as
     await advance();
     expect(renderer.root.findAllByType(Marker).map(node => node.props.coordinate)).toEqual([
       { latitude: 25.02, longitude: 121.32 },
-      { latitude: 25.03, longitude: 121.33 },
+      { latitude: 25.0315, longitude: 121.4477 },
     ]);
     expect(execute.mock.calls.some(([sql]) => sql.includes('WHERE id > ?'))).toBe(true);
   } finally {

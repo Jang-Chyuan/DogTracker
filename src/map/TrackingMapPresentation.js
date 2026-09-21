@@ -23,7 +23,7 @@ function crossing(before, after, since) {
   };
 }
 
-function clipSegments(segments, since) {
+export function clipSegments(segments, since) {
   const clipped = [];
   for (const segment of segments) {
     const inside = segment.findIndex(

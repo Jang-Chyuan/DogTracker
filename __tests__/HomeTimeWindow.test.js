@@ -96,7 +96,7 @@ test('the largest preset is exactly the 24-hour limit of the home map', () => {
   expect(Math.max(...WINDOW_PRESETS) * MINUTE).toBe(MAX_AGE_MS);
 });
 
-test('the sheet offers the confirmed presets and saves the one that is tapped', async () => {
+test('the live sheet hides route time presets', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -131,14 +131,8 @@ test('the sheet offers the confirmed presets and saves the one that is tapped', 
     node => node.props.accessibilityLabel?.startsWith('過去 '),
     { deep: false },
   );
-  expect(chips.map(node => node.props.accessibilityLabel)).toEqual([
-    '過去 1 分', '過去 10 分', '過去 30 分',
-    '過去 1 小時', '過去 6 小時', '過去 24 小時',
-  ]);
-  expect(chips).toHaveLength(WINDOW_PRESETS.length);
-  expect(chips[1].props.accessibilityState.selected).toBe(true);
-  await act(async () => chips[2].props.onPress());
-  expect(saveTrackingPreferences).toHaveBeenCalledWith({ windowMinutes: 30 });
+  expect(chips).toHaveLength(0);
+  expect(saveTrackingPreferences).not.toHaveBeenCalled();
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();
@@ -226,7 +220,7 @@ test('the home map keeps ageing while the collar is silent', async () => {
   jest.useRealTimers();
 });
 
-test('the path switch and the window live in one section and the switch saves', async () => {
+test('the live sheet does not offer a path switch', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -250,11 +244,8 @@ test('the path switch and the window live in one section and the switch saves', 
     .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
     .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
   // A real switch, not a row of text that has to be read to know its state.
-  const toggle = renderer.root.findAllByType(Switch)[0];
-  expect(toggle.props.accessibilityLabel).toBe('顯示移動路徑');
-  expect(toggle.props.value).toBe(false);
-  await act(async () => toggle.props.onValueChange(true));
-  expect(saveTrackingPreferences).toHaveBeenCalledWith({ showTrails: true });
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+  expect(saveTrackingPreferences).not.toHaveBeenCalled();
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();
@@ -328,7 +319,7 @@ test('saving a preference does not dim the card', async () => {
   jest.useRealTimers();
 });
 
-test('the window presets fold away while the path is switched off', async () => {
+test('legacy path preferences cannot reveal live route controls', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -355,9 +346,8 @@ test('the window presets fold away while the path is switched off', async () => 
     node => node.props.accessibilityLabel?.startsWith('過去 '), { deep: false });
   // Nothing to choose while no path is drawn.
   expect(presets()).toHaveLength(0);
-  expect(JSON.stringify(renderer.toJSON())).toContain('開啟後可以選擇');
   await act(async () => renderer.update(view(true)));
-  expect(presets()).toHaveLength(WINDOW_PRESETS.length);
+  expect(presets()).toHaveLength(0);
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();

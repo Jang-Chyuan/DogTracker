@@ -66,10 +66,7 @@ function TrackerApp() {
   // so the cloud dogs would blink off the home map on every visit.
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
     tracking.ready.real && tracking.foreground && showsMap && tracking.mode === 'real',
-    undefined,
-    // The cloud dogs' path is only read while the card is drawing paths.
-    tracking.preferences.value.showTrails
-      ? tracking.preferences.value.windowMinutes * 60000 : null);
+    undefined, null);
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.

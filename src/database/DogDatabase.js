@@ -1,5 +1,6 @@
 import { openTrackingDatabase } from './TrackingDatabaseConnection';
 import { NativeModules, Platform } from 'react-native';
+import { bleDisplayRows } from '../ble/BleDisplayCoordinates';
 
 const MAX_STATUS_RECORDS_PER_SLAVE = 10000;
 const CLEANUP_INTERVAL_INSERTS = 100;
@@ -42,6 +43,7 @@ export function createDogDatabase(connection) {
   const native = Platform.OS === 'android' ? NativeModules.BleBackground : null;
 
   return {
+    displayRows: records => bleDisplayRows(db, records),
     async initialize() {
       // Android queries and writes share DogStatusStore's SQLite engine.
       // Other platforms retain the Nitro fallback and upstream retention.
