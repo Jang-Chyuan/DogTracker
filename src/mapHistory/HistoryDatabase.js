@@ -3,6 +3,7 @@ import { coordinate } from '../tracking/RouteSamples';
 import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
 import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
+import { ensureBleDisplayColumns } from '../ble/BleDisplayCoordinates';
 
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
@@ -131,6 +132,7 @@ export function createHistoryDatabase(db) {
     async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null) {
       return withCloudDisplayLock(db, async () => {
         const p = validateHistory(value);
+        if (p.client && p.source === 'ble') await ensureBleDisplayColumns(db);
         const { since, until } = bounds || historyWindow(p, now);
         async function scan(table, time, extra, params, lat, lon) {
           let cursor = since, id = 0, all = [];
@@ -144,13 +146,14 @@ export function createHistoryDatabase(db) {
           while (alive()) {
             // `raw` requests all records for export, not unsmoothed coordinates.
             const cloudDisplay = table === 'supabase_dog_status';
-            const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + (cloudDisplay
+            const bleDisplay = table === 'dog_status';
+            const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + (cloudDisplay || bleDisplay
               ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
             const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} FROM ${table}
               WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
               ORDER BY ${time},id LIMIT 1000`, [since, until, ...params, cursor, cursor, id]));
             if (!page.length) break;
-            all.push(...(cloudDisplay ? await persistCloudDisplayCoordinates(db, page, owner) : page));
+            all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay) : page));
             const last = page[page.length - 1]; cursor = last.time; id = last.id;
             if (page.length < 1000) break;
           }

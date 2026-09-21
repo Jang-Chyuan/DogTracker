@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers } from '../map/DogMerge';
-import { cloudTracks, dogColor } from '../map/CloudTracks';
+import { dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
@@ -78,7 +78,7 @@ export default function MapScreen({
         point,
         route,
         positionSamples,
-        tracking.preferences.value,
+        { ...tracking.preferences.value, showTrails: false },
         now,
       ),
     [point, positionSamples, route, tracking.preferences.value, now],
@@ -95,21 +95,14 @@ export default function MapScreen({
     [mode, point, positionSamples, cloudDogs?.rows,
       tracking.preferences.value.windowMinutes, now],
   );
-  // The live feed only holds the pair this phone is connected to, so the dogs
-  // that arrived through the cloud draw their path from the downloaded copy.
-  const dogPaths = useMemo(() => {
-    if (!tracking.preferences.value.showTrails || mode !== 'real') return [];
-    const since = now - tracking.preferences.value.windowMinutes * 60000;
-    return cloudTracks(cloudDogs?.track, { since })
-      .filter(track => track.slaveId !== point.slaveId)
-      .map(track => ({ ...track, color: dogColor(track.slaveId) }));
-  }, [cloudDogs?.track, mode, now, point.slaveId,
-    tracking.preferences.value.showTrails, tracking.preferences.value.windowMinutes]);
+  // Each dog's recent BLE route owns its source independently. Other dogs'
+  // packets must not replace it with the cloud copy on every notification.
+  const dogPaths = useMemo(() => [], []);
   const focusSlaveId = tracking.preferences.value.focusSlaveId;
   const dogsVisible = tracking.preferences.value.showSlaveMarker;
   const hiddenSlaveIds = tracking.preferences.value.hiddenSlaveIds;
   const livePresentation = useMemo(() => {
-    if (!dogs.length) return basePresentation;
+    if (!dogs.length) return mode === 'real' ? { ...basePresentation, slaveSegments: [] } : basePresentation;
     // Following a dog means the camera reads that dog; the others stay drawn.
     // A followed dog that is not reporting is ignored rather than forgotten, so
     // the camera returns to it when its next row arrives. Hiding the markers
@@ -126,6 +119,7 @@ export default function MapScreen({
       // dogs replaces the single slave marker; positions stays untouched so the
       // card and camera keep reading the connected pair.
       slave: null,
+      slaveSegments: [],
       dogs: dogsVisible ? marked : [],
       // Hidden dogs take their line with them, like the markers.
       dogPaths: dogsVisible
@@ -138,7 +132,7 @@ export default function MapScreen({
         ? framedCoordinates(focused.coordinate)
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds]);
+  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, mode]);
   const livePhone = useLiveLocation(active && tracking.foreground);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
@@ -205,7 +199,7 @@ export default function MapScreen({
   if (phone?.error)
     messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
   if (
-    route.limited &&
+    historical && route.limited &&
     tracking.preferences.value.showTrails &&
     (tracking.preferences.value.showMasterMarker ||
       tracking.preferences.value.showSlaveMarker)
@@ -304,6 +298,7 @@ export default function MapScreen({
         />
       ) : (
         <TrackingSheet
+          showRouteControls={false}
           tracking={tracking}
           master={master}
           slave={slave}

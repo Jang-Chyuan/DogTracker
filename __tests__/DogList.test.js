@@ -243,7 +243,7 @@ test('every dog is shown from both sources at once, each at its newest row', () 
   expect(newerInCloud.map(dog => dog.source)).toEqual(['cloud']);
 });
 
-test('a dog that arrived through the cloud gets a path too', async () => {
+test('cloud dogs have markers but no paths on the live map', async () => {
   const minute = 60000;
   const track = [
     { slave_id: 4, master_id: 5, received_at: NOW - 3 * minute, slave_lat: 25.04, slave_lon: 121.57 },
@@ -269,8 +269,7 @@ test('a dog that arrived through the cloud gets a path too', async () => {
   // the cloud dogs had a marker and no line at all.
   const lines = renderer.root.findAllByProps({ testID: 'map-polyline' })
     .filter(node => Array.isArray(node.props.coordinates));
-  expect(lines.length).toBeGreaterThan(0);
-  expect(lines[0].props.coordinates).toHaveLength(3);
+  expect(lines).toHaveLength(0);
 
   // A hidden dog takes its line with it.
   await act(async () => renderer.update(

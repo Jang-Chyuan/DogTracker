@@ -71,6 +71,19 @@ export function createLiveRouteWindow({
       raw: samples,
       maxId: Math.max(...samples.map(sample => sample.id)),
     };
+    result.dogs = new Map();
+    for (const sample of samples) {
+      if (sample.slaveId == null) continue;
+      if (!result.dogs.has(sample.slaveId)) result.dogs.set(sample.slaveId, []);
+      result.dogs.get(sample.slaveId).push(sample);
+    }
+    for (const [id, dogSamples] of result.dogs) {
+      result.dogs.set(id, {
+        first: dogSamples[0], last: dogSamples[dogSamples.length - 1],
+        latestValid: [...dogSamples].reverse().find(sample => sample.slave)?.receivedAt ?? null,
+        pieces: buildRoutePieces(dogSamples, 'slave').map(piece => simplifyRoute(piece, toleranceMeters)),
+      });
+    }
     for (const role of ROLES) {
       result[role] = buildRoutePieces(samples, role).map(piece =>
         simplifyRoute(piece, toleranceMeters),
@@ -93,6 +106,8 @@ export function createLiveRouteWindow({
 
   function enforceBudget() {
     const overBudget = () =>
+      chunks.reduce((sum, chunk) => sum + [...chunk.dogs.values()].reduce(
+        (total, dog) => total + Math.max(2, dog.pieces.reduce((n, piece) => n + piece.length, 0)), 0), 0) > maxPoints ||
       ROLES.some(
         role =>
           // Even empty/constant chunks consume metadata. Charge at least two
@@ -198,6 +213,22 @@ export function createLiveRouteWindow({
     snapshot() {
       if (version === publishedVersion) return published;
       const result = emptyLiveRoute();
+      const dogs = new Map();
+      for (const chunk of chunks) {
+        for (const [slaveId, dog] of chunk.dogs) {
+          if (!dogs.has(slaveId)) dogs.set(slaveId, { slaveId, segments: [], last: null, latestValid: null });
+          const target = dogs.get(slaveId);
+          dog.pieces.forEach((piece, index) => {
+            if (index === 0 && target.segments.length && canJoinSamples(target.last, dog.first, 'slave')) {
+              const tail = target.segments[target.segments.length - 1];
+              tail.push(...piece.slice(sameCoordinate(tail[tail.length - 1], piece[0]) ? 1 : 0));
+            } else target.segments.push([...piece]);
+          });
+          target.last = dog.last;
+          if (dog.latestValid != null) target.latestValid = dog.latestValid;
+        }
+      }
+      result.dogTracks = [...dogs.values()].map(({ last, ...dog }) => dog);
       for (const role of ROLES) {
         const pieces = [];
         let previous = null;
