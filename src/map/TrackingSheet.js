@@ -55,6 +55,7 @@ export default function TrackingSheet({
   master,
   slave,
   dogs = [],
+  showRouteControls = true,
   dogAliases,
   bottomInset,
   topInset = 100,
@@ -171,9 +172,7 @@ export default function TrackingSheet({
               value={battery(point.masterBatteryValid, point.masterBatteryPercentage)} />
           </View>
         </View>
-        {/* One section: whether the path is drawn, and how far back it goes.
-            Two separate controls for the same line confused the reading. */}
-        <View style={styles.section}>
+        {showRouteControls ? <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>移動路徑</Text>
             <Switch
@@ -219,6 +218,7 @@ export default function TrackingSheet({
             </>
           )}
         </View>
+        : <Text style={styles.hint}>即時位置只顯示目前位置；查看路線請切換至「歷史軌跡」。</Text>}
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (
           <View>
@@ -237,8 +237,7 @@ export default function TrackingSheet({
           </View>
         )}
         <Text style={styles.hint}>
-          參考圈半徑 1 公里，跟隨領犬員眼睛。路徑採 1 公尺誤差上限簡化，DB
-          原始座標不會因簡化而改寫。
+          參考圈半徑 1 公里，跟隨領犬員眼睛。
         </Text>
         <Text style={styles.hint}>
           點地圖上的狗或領犬員可以看該裝置的詳細資料（距離、硬體回報、LoRa 訊號）。
