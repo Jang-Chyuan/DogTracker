@@ -37,12 +37,15 @@ export function clipTrackTo(track, at) {
   const segments = track.segments
     .map(segment => segment.filter(point => point.time <= at))
     .filter(segment => segment.length);
-  const last = segments.length ? segments[segments.length - 1] : null;
+  const latest = segments.reduce((best, part) => {
+    const last = part[part.length - 1];
+    return !best || last.time > best.time ? last : best;
+  }, null);
   return {
     ...track,
     segments,
     // The marker is where the device was at the cursor, not where it ended up.
-    latest: last ? last[last.length - 1] : null,
+    latest,
     count: segments.reduce((total, segment) => total + segment.length, 0),
   };
 }

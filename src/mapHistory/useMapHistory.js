@@ -7,6 +7,7 @@ import { getCloudClient } from '../cloud/CloudClient';
 export function useMapHistory(database, ready, active, owner) {
   const db = useRef(null);
   const saving = useRef(false);
+  const lastRead = useRef(null);
   const [preferences, setPreferences] = useState(HISTORY_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -127,11 +128,19 @@ export function useMapHistory(database, ready, active, owner) {
     async function poll() {
       try {
         const value = await db.current.read(preferences, owner, Date.now(), () => alive);
-        if (alive) { setResult({ key, value }); setError(''); }
+        if (alive) {
+          lastRead.current = { key, at: Date.now() };
+          setResult({ key, value }); setError('');
+        }
       } catch (e) { if (alive) setError(e.message); }
       finally { if (alive) timer = setTimeout(poll, 10000); }
     }
-    poll();
+    // A short background transition can reuse the result still on the map.
+    // Do not start another full window scan earlier than the normal cadence.
+    const delay = lastRead.current?.key === key
+      ? Math.max(0, 10000 - (Date.now() - lastRead.current.at)) : 0;
+    if (delay) timer = setTimeout(poll, delay);
+    else poll();
     return () => { alive = false; clearTimeout(timer); };
   }, [loaded, active, preferences, owner, key]);
   return {
