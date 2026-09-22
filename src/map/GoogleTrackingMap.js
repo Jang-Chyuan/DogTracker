@@ -118,7 +118,6 @@ function GoogleTrackingMapRenderer({
   onReadyChange,
   onSnapshotReady,
   foreground,
-  appForeground = foreground,
   dataReady = true,
   phoneEnabled,
   livePhone,
@@ -162,17 +161,9 @@ function GoogleTrackingMapRenderer({
   const interacted = useRef(false);
   const savedView = useRef(null);
   const cameraRead = useRef(0);
-  const wasForeground = useRef(appForeground);
-  useEffect(() => {
-    const resumed = appForeground && !wasForeground.current;
-    wasForeground.current = appForeground;
-    if (!resumed || !configured || !mountedMap) return;
-    // Recreate the native surface: a previously loaded map may lose its tiles
-    // while Android suspends the activity, without another onMapLoaded event.
-    activeInstance.current = String(attempt + 1);
-    cameraRead.current += 1;
-    setAttempt(value => value + 1);
-  }, [appForeground, configured, mountedMap, attempt]);
+  // Android owns pause/resume. Replacing a healthy map on every resume retains
+  // old SDK frame callbacks and duplicates all history overlays. Explicit retry
+  // below is the only path that replaces the surface.
   useEffect(() => {
     if (!dataReady || mountedMap) return;
     setNeedsFirstPositionFit(positions.length === 0 || !!presentation.historyTracks);
@@ -422,7 +413,7 @@ function GoogleTrackingMapRenderer({
           />
         </View>
       )}
-      {configured && timedOut && !loaded && (
+      {configured && foreground && (loaded || timedOut) && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="重試載入地圖"

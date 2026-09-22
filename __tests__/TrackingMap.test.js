@@ -66,7 +66,7 @@ async function readyMap() {
   await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
 }
 
-test('foreground recovery replaces the surface, restores camera and ignores old SDK events', async () => {
+test('repeated foreground recovery retains the same loaded surface and camera', async () => {
   const camera = {
     center: { latitude: 25.04, longitude: 121.24 },
     zoom: 16,
@@ -83,17 +83,13 @@ test('foreground recovery replaces the surface, restores camera and ignores old 
   expect(renderer.root.findByType(MapView)).toBe(oldMap);
   await act(async () => renderer.update(<TrackingMap {...defaults} />));
   const restored = renderer.root.findByType(MapView);
-  expect(restored).not.toBe(oldMap);
-  expect(restored.props.initialCamera).toEqual(camera);
-  expect(restored.props.mapPadding).toBeUndefined();
-  await act(async () => {
-    oldEvents.onMapReady();
-    oldEvents.onMapLoaded();
-  });
-  expect(restored.props.mapPadding).toBeUndefined();
-  await act(async () => jest.advanceTimersByTime(MAP_LOAD_TIMEOUT_MS));
-  expect(defaults.onStatus).toHaveBeenLastCalledWith(expect.stringContaining('尚未載入完成'));
-  await readyMap();
+  expect(restored).toBe(oldMap);
+  expect(restored.props.mapPadding).toBeDefined();
+  for (let i = 0; i < 4; i++) {
+    await act(async () => renderer.update(<TrackingMap {...defaults} foreground={false} />));
+    await act(async () => renderer.update(<TrackingMap {...defaults} />));
+    expect(renderer.root.findByType(MapView)).toBe(oldMap);
+  }
   expect(defaults.onStatus).toHaveBeenLastCalledWith(null);
   expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
 });

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Circle, Marker } from 'react-native-maps';
 import { locationTrackerNative } from '../locationTracker/LocationTrackerService';
+import { stablePhoneDisplay } from './PhoneDisplayPosition';
 
 // Publish only live display coordinates to native memory; the recorder owns SQLite cadence.
 export default function PhoneLocationOverlay({ location, active = true, historical = false, onPress }) {
@@ -11,6 +12,7 @@ export default function PhoneLocationOverlay({ location, active = true, historic
   const [coordinate, setCoordinate] = useState(target);
   const current = useRef(target);
   const previousTime = useRef(null);
+  const previousSession = useRef(location.sessionId);
   const marker = useRef(null);
   useEffect(() => {
     if (historical || !active || stale || !location.running || !location.sessionId) return undefined;
@@ -27,13 +29,19 @@ export default function PhoneLocationOverlay({ location, active = true, historic
   useEffect(() => {
     const destination = { latitude: position.latitude, longitude: position.longitude };
     const previous = previousTime.current;
+    const sessionChanged = previousSession.current !== location.sessionId;
+    previousSession.current = location.sessionId;
     previousTime.current = position.timestamp;
     const publish = value => { current.current = value; setCoordinate(value); };
-    if (!active || stale || position.motionState === 'stationary' || previous == null ||
+    if (!active || stale || sessionChanged || position.motionState === 'stationary' || previous == null ||
         position.timestamp - previous > (historical ? 120000 : 3000) || position.timestamp < previous) {
       publish(destination);
       return undefined;
     }
+    if (!historical) Object.assign(destination, stablePhoneDisplay(current.current, {
+      latitude: position.latitude, longitude: position.longitude,
+      rawSpeedKmh: position.rawSpeedKmh, accuracy: position.accuracy,
+    }));
     const from = current.current;
     if (from.latitude === destination.latitude && from.longitude === destination.longitude) return undefined;
     const duration = position.rawSpeedKmh > 20 ? 300 : 800;
@@ -48,7 +56,7 @@ export default function PhoneLocationOverlay({ location, active = true, historic
       if (fraction === 1) clearInterval(timer);
     }, 50);
     return () => clearInterval(timer);
-  }, [active, stale, historical, position.latitude, position.longitude, position.timestamp, position.motionState, position.rawSpeedKmh]);
+  }, [active, stale, historical, location.sessionId, position.latitude, position.longitude, position.timestamp, position.motionState, position.rawSpeedKmh, position.accuracy]);
   useEffect(() => { marker.current?.redraw?.(); }, [stale]);
   const title = historical ? '手機 · 歷史最後位置' : stale ? '手機 · 最後合格位置（已過期）'
     : position.motionState === 'stationary' ? '手機 · 靜止鎖定位置' : '手機 · 目前位置';

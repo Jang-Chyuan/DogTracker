@@ -4,6 +4,7 @@ import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/C
 import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
 import { ensureBleDisplayColumns } from '../ble/BleDisplayCoordinates';
+import { budgetHistory, groupHistoryStreams } from './HistoryGeometryBudget';
 
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
@@ -131,6 +132,7 @@ export function createHistoryDatabase(db) {
     },
     async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null) {
       return withCloudDisplayLock(db, async () => {
+        if (!alive()) return null;
         const p = validateHistory(value);
         if (p.client && p.source === 'ble') await ensureBleDisplayColumns(db);
         const { since, until } = bounds || historyWindow(p, now);
@@ -194,7 +196,8 @@ export function createHistoryDatabase(db) {
             from: Number.isFinite(stored?.from_at) ? stored.from_at : null };
           if (raw) return { phone, client, clients, since, until, coverage, message: '' };
         }
-        return {
+        if (!alive()) return null;
+        const result = {
           phone: raw ? phone : historyGeometry(phone),
           clients: clients.map(entry => ({
             slaveId: entry.slaveId,
@@ -202,6 +205,7 @@ export function createHistoryDatabase(db) {
           })),
           since, until, coverage,
           message: p.client && p.source === 'cloud' && !owner ? '請先登入雲端帳號，才能查看該帳號下載的定位。' : '' };
+        return raw ? result : budgetHistory(result);
       });
     },
   };
@@ -209,17 +213,21 @@ export function createHistoryDatabase(db) {
 
 export function historyGeometry(points) {
   let segments = [], segment = [], last = null;
-  for (const point of points) {
-    // Same rule as the live map, including 0,0 meaning no GPS fix.
-    const valid = !!coordinate(point.latitude, point.longitude);
-    if (!valid || (last && (point.session_id !== last.session_id || point.master_id !== last.master_id || point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180))) {
-      if (segment.length) segments.push(segment);
-      segment = [];
+  for (const stream of groupHistoryStreams(points)) {
+    segment = []; last = null;
+    for (const point of stream) {
+      // Preserve actual signal gaps within each receiver/session stream.
+      const valid = !!coordinate(point.latitude, point.longitude);
+      if (!valid || (last && (point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180))) {
+        if (segment.length) segments.push(segment);
+        segment = [];
+      }
+      if (valid) { segment.push(point); last = point; }
+      else last = null;
     }
-    if (valid) { segment.push(point); last = point; }
-    else last = null;
+    if (segment.length) segments.push(segment);
   }
-  if (segment.length) segments.push(segment);
+  segments.sort((a, b) => a[a.length - 1].time - b[b.length - 1].time);
   segments = segments.map(part => simplifyRoute(part, 3));
   // Keep recent segments within a native drawing budget; never join across gaps.
   let budget = 4000;
@@ -245,6 +253,6 @@ export function expireHistory(data, preferences, now) {
     if (!points.length || points[0].time >= since) return track;
     return historyGeometry(points.filter(point => point.time >= since));
   };
-  return { ...data, since, until: Math.max(data.until, since), phone: clip(data.phone),
-    clients: (data.clients || []).map(track => ({ ...clip(track), slaveId: track.slaveId })) };
+  return budgetHistory({ ...data, since, until: Math.max(data.until, since), phone: clip(data.phone),
+    clients: (data.clients || []).map(track => ({ ...clip(track), slaveId: track.slaveId })) });
 }
