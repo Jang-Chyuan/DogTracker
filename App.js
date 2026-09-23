@@ -24,6 +24,7 @@ import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
+import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLocationRecording';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
@@ -65,6 +66,7 @@ function TrackerApp() {
     database: tracking.cloudDatabase, sync: cloudSync, owner: cloudSync.ownerId,
   });
   const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
+  useDefaultLocationRecording(tracking.foreground, phone);
   // Kept reading while the history tab is open: disabling it empties the rows,
   // so the cloud dogs would blink off the home map on every visit.
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,

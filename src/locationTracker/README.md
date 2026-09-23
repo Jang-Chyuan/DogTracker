@@ -2,7 +2,9 @@
 
 另存 display_latitude/display_longitude、display_source、display_location_at。前景即時藍點每 100 ms 向原生記憶體提供動畫座標，原生 writer 依原有 1/3/5 秒節奏在同一交易另存。僅接受同 session、來源定位不晚於本筆且差距 ≤ 3 秒、快照接收時間距今 ≤ 1.5 秒的座標；無有效快照時保存定位管線位置並標示 pipeline。歷史動畫不回寫，原有 latitude/longitude 和 raw_latitude/raw_longitude 不覆寫。歷史與 CSV/GPX 優先使用 display 座標，舊資料無新欄位或為 NULL 時沿用原座標；CSV 另含來源與來源定位時間。
 
-設定 → 手機位置記錄 → 開始記錄。Android 定位前景服務使用常駐通知，離開畫面後繼續記錄；可在畫面或通知停止。預設關閉，不隨登入或地圖重建自動啟動。
+預設啟用：App 進入前景、已取得精確定位權限且 GPS 開啟後，自動啟動 Android 定位前景服務，使用常駐通知，離開畫面後繼續記錄。首次及舊版升級未有偏好時使用此預設；尚未授權時沿用 App 的定位權限流程，不額外重複要求權限。
+
+設定 → 手機位置記錄及通知的「停止記錄」都將原生 `phone_location_recording.enabled` 設為 false；停止狀態跨導航及 App 重啟保留，需手動按「開始記錄」才重新啟用。系統終止或重開機不更改使用者偏好，已啟用者在下次開啟 App 且定位可用時恢復；不會僅因手機開機就自行啟動。地圖重建不重新建立正在執行的定位服務。
 
 `myLocationTracker` 位於既有 `files/databases/dogtracker.sqlite`，透過 `DogStatusStore` 同一原生 SQLite owner 寫入，與 BLE、雲端資料共用序列化交易。建表與寫入由 `android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt` 負責。首次進入頁面或開始取得定位時初始化。
 

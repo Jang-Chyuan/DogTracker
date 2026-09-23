@@ -5,8 +5,9 @@ const pending = new WeakMap();
 
 // Keep a late download from changing predecessors between the read and save.
 export function withCloudDisplayLock(db, work) {
-  const result = (pending.get(db) || Promise.resolve()).then(work);
-  pending.set(db, result.catch(() => {}));
+  const key = db.lockKey || db;
+  const result = (pending.get(key) || Promise.resolve()).then(work);
+  pending.set(key, result.catch(() => {}));
   return result;
 }
 

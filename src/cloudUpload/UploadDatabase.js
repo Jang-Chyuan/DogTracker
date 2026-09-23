@@ -5,7 +5,15 @@ export function createUploadDatabase(db) {
       return rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='phone_id'"))[0]?.value;
     },
     async owner(owner) {
-      await db.executeAsync("INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('owner',?)", [owner || '']);
+      const commands = [];
+      if (owner) commands.push({
+        query: "INSERT OR IGNORE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,5,'phone')",
+        params: [owner],
+      });
+      commands.push({ query: "INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('owner',?)", params: [owner || ''] });
+      // Publish the receiver's account together with its initial route. Never
+      // overwrite an explicitly saved Wi-Fi choice on resume or re-login.
+      await db.executeBatchAsync(commands);
     },
     async settings(owner) {
       return rows(await db.executeAsync('SELECT * FROM ble_upload_settings WHERE owner_user_id=? ORDER BY master_id', [owner]));

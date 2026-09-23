@@ -1,19 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, NativeModules } from 'react-native';
 import { getCloudClient } from './CloudClient';
 import { createCloudSync } from './CloudSync';
 
-/**
- * Cloud sync runs only while the App is on screen.
- *
- * It used to keep a dataSync foreground service alive so a 30 second JS timer
- * could go on downloading with the screen off. React Native's headless task
- * holds a PARTIAL_WAKE_LOCK for as long as the task runs, and that task only
- * ended when the service did, so the CPU was never allowed to sleep: a night in
- * the background emptied the battery (4h24m of wake lock, 1h47m of CPU). The
- * rows stay in Supabase either way, so leaving the App now stops the scheduler
- * and coming back downloads what was missed.
- */
+// Foreground uses the existing 30-second scheduler; Android WorkManager owns
+// bounded background passes. Do not cancel durable jobs on a React unmount.
 export function useCloudSync(database, ready, clientFactory = getCloudClient) {
   const engine = useRef(null);
   const [ownerId, setOwnerId] = useState(null);
@@ -29,17 +20,25 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient) {
       setStatus(current => ({ ...current, ...value }));
     } });
     engine.current = sync;
+    const sessionChanged = session => {
+      const owner = session?.user?.id || null;
+      setOwnerId(owner);
+      sync.setSession(session);
+      NativeModules.CloudBackgroundSync?.setOwner(owner).catch(() => {
+        if (!disposed) setStatus(current => ({ ...current, error: '背景同步排程失敗，前景同步仍可使用' }));
+      });
+    };
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       eventSeen = true;
-      if (!disposed) { setOwnerId(session?.user?.id || null); sync.setSession(session); }
+      if (!disposed) sessionChanged(session);
     });
     client.auth.getSession().then(({ data, error }) => {
       if (disposed || eventSeen) return;
       if (error) setStatus(current => ({ ...current, error: '恢復登入失敗，請重新登入' }));
-      else { setOwnerId(data.session?.user?.id || null); sync.setSession(data.session); }
+      else sessionChanged(data.session);
     }).catch(() => { if (!disposed) setStatus(current => ({ ...current, error: '無法讀取安全儲存的登入狀態' })); });
-    // Token refresh follows the scheduler: refreshing in the background would
-    // be another timer keeping the runtime busy for downloads nobody is doing.
+    // Continuous token refresh follows the UI. WorkManager restores/refreshes
+    // the session only during its bounded task.
     const change = state => {
       const active = state === 'active';
       if (active) client.auth.startAutoRefresh();

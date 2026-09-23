@@ -8,7 +8,7 @@ import { createUploadService } from './UploadService';
 export function useCloudUpload(ready, owner, foreground) {
   const db = useRef(null), service = useRef(null);
   const [revision, refresh] = useState(0);
-  const [state, setState] = useState({ settings: [], masters: [], counts: [], phoneId: '', error: '' });
+  const [state, setState] = useState({ settings: [], settingsOwner: null, masters: [], counts: [], phoneId: '', error: '' });
   const supported = Platform.OS === 'android' && !!NativeModules.BleBackground?.executeDatabase;
   useEffect(() => {
     if (!ready || !supported) return undefined;
@@ -23,7 +23,8 @@ export function useCloudUpload(ready, owner, foreground) {
     let alive = true, timer;
     const database = db.current;
     // This update also controls native enqueue while the JS screen is suspended.
-    setState(s => ({ ...s, settings: [], counts: [], error: '' }));
+    setState(s => s.settingsOwner === owner ? s
+      : { ...s, settings: [], settingsOwner: null, counts: [], last: null, error: '' });
     const binding = database.owner(owner);
     async function tick() {
       try {
@@ -31,9 +32,13 @@ export function useCloudUpload(ready, owner, foreground) {
         if (!alive) return;
         const phoneId = await database.identity();
         if (!owner) { if (alive) setState(s => ({ ...s, phoneId })); return; }
+        // Show durable routes before a slow upload, including offline resumes.
+        const savedSettings = await database.settings(owner);
+        if (!alive) return;
+        setState(s => ({ ...s, phoneId, settings: savedSettings, settingsOwner: owner }));
         if (foreground) await service.current?.run(owner, () => alive);
         const [settings, summary] = await Promise.all([database.settings(owner), database.summary(owner)]);
-        if (alive) setState(s => ({ ...s, phoneId, settings, ...summary }));
+        if (alive) setState(s => ({ ...s, phoneId, settings, settingsOwner: owner, ...summary }));
       } catch (error) { if (alive) setState(s => ({ ...s, error: error.message })); }
       finally { if (alive && foreground) timer = setTimeout(tick, 10000); }
     }
@@ -54,7 +59,8 @@ export function useCloudUpload(ready, owner, foreground) {
     })();
     return () => { alive = false; };
   }, [ready, owner, foreground, supported]);
-  return { ...state, owner, supported,
+  const settingsReady = !!owner && state.settingsOwner === owner;
+  return { ...state, settings: settingsReady ? state.settings : [], settingsReady, owner, supported,
     async setMode(master, mode) {
       await db.current.setMode(owner, master, mode); refresh(n => n + 1);
     },

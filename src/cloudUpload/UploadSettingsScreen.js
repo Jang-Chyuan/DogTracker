@@ -16,11 +16,11 @@ export default function UploadSettingsScreen({ upload }) {
     {!upload.owner && <Text style={ui.hint}>請先到「雲端資料」登入。</Text>}
     {upload.error || error ? <Text style={ui.error}>{error || upload.error}</Text> : null}
     {upload.owner && [...new Set([...upload.masters, ...upload.settings.map(s => s.master_id)])].sort((a, b) => a - b).map(master => {
-      const mode = upload.settings.find(s => s.master_id === master)?.mode || 'wifi';
+      const mode = upload.settingsReady ? upload.settings.find(s => s.master_id === master)?.mode || 'wifi' : null;
       return <View style={ui.card} key={master}>
-        <Text style={ui.heading}>Master {master} · {mode === 'phone' ? '本手機 BLE' : 'Master Wi-Fi'}</Text>
-        <ActionButton title="Master Wi-Fi（本手機不轉送）" secondary disabled={busy || mode === 'wifi'} onPress={() => change(() => upload.setMode(master, 'wifi'))} />
-        <ActionButton title="本手機 BLE 轉送" disabled={busy || mode === 'phone' || !upload.masters.includes(master)} onPress={() => change(() => upload.setMode(master, 'phone'))} />
+        <Text style={ui.heading}>Master {master} · {mode === null ? '讀取設定中…' : mode === 'phone' ? '本手機 BLE' : 'Master Wi-Fi'}</Text>
+        <ActionButton title="Master Wi-Fi（本手機不轉送）" secondary disabled={busy || mode === null || mode === 'wifi'} onPress={() => change(() => upload.setMode(master, 'wifi'))} />
+        <ActionButton title="本手機 BLE 轉送" disabled={busy || mode === null || mode === 'phone' || !upload.masters.includes(master)} onPress={() => change(() => upload.setMode(master, 'phone'))} />
       </View>;
     })}
     {upload.owner && <View style={ui.card}>

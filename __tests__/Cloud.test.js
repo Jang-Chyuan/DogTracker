@@ -3,6 +3,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { mapCloudTelemetry, taiwanDateRange } from '../src/cloud/CloudTelemetry';
 import { downloadCloudHistory } from '../src/cloud/CloudDownload';
+import { downloadMasterIncremental } from '../src/cloud/CloudIncremental';
 
 const event = (suffix = '001', time = '2026-09-16T01:02:03.123456+00:00') => ({
   event_id: `00000000-0000-4000-8000-000000000${suffix}`,
@@ -75,6 +76,41 @@ function fakeClient(pages) {
 }
 const options = () => ({ owner: 'account-a', startAt: '2026-09-15T00:00:00Z',
   endBefore: '2026-09-17T00:00:00Z', signal: new AbortController().signal });
+
+test('bounded passes resume committed microsecond/UUID cursor across database reopen', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    let database = createCloudDatabase(connection); await database.initialize();
+    const client = fakeClient([{ data: [event('001')] }, { data: [event('002')] }, { data: [] }]);
+    const args = { client, owner: 'account-a', masterId: 7,
+      cutoff: Date.parse('2026-09-17T00:00:00Z'), check: () => {}, maxPages: 1 };
+    await downloadMasterIncremental({ ...args, database });
+    database = createCloudDatabase(connection); await database.initialize();
+    await downloadMasterIncremental({ ...args, database });
+    expect(client.queries[1].gte).toHaveBeenCalledWith('received_at', event().received_at);
+    expect(client.queries[1].or).toHaveBeenCalledWith(expect.stringContaining(event('001').event_id));
+    expect(await database.count('account-a')).toBe(2);
+    expect((await database.loadSyncState('account-a', 7)).event_id).toBe(event('002').event_id);
+    await downloadMasterIncremental({ ...args, database });
+    expect(await database.loadSyncState('account-a', 7)).toMatchObject({
+      through_at: '2026-09-17T00:00:00.000Z', event_id: null,
+    });
+  } finally { connection.close(); }
+});
+
+test('UI and headless wrappers serialize migrations for their shared native database', async () => {
+  const connection = createMemoryConnection();
+  const lockKey = {};
+  const ui = { ...connection, lockKey };
+  const headless = { ...connection, lockKey };
+  try {
+    await Promise.all([createDogDatabase(ui).initialize(), createDogDatabase(headless).initialize()]);
+    await Promise.all([createCloudDatabase(ui).initialize(), createCloudDatabase(headless).initialize()]);
+    await createCloudDatabase(headless).savePage('account-a', [mapCloudTelemetry(event())]);
+    expect(await createCloudDatabase(ui).count('account-a')).toBe(1);
+  } finally { connection.close(); }
+});
 
 test('downloads beyond short pages using timestamp + event UUID, without losing submilliseconds', async () => {
   const client = fakeClient([

@@ -44,7 +44,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     if (!owner) throw new Error('請先登入');
   };
   return {
-    async initialize() {
+    initialize() {
+      return withCloudDisplayLock(connection, async () => {
       const columns = new Set(rows(await connection.executeAsync(
         'PRAGMA table_info(supabase_dog_status)',
       )).map(column => column.name));
@@ -91,6 +92,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       // Also apply retention to databases downloaded by older app versions.
       await connection.executeAsync(trimHistory);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
+      });
     },
     async loadSyncState(owner, masterId) {
       requireOwner(owner);

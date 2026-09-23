@@ -20,7 +20,7 @@ export default function LocationTrackerScreen({ foreground }) {
       {live?.running && <Text style={ui.text}>本次接收 {live.received || 0} · 合格 {live.accepted || 0} · 略過 {live.rejected || 0} · 已存 {live.saved || 0} · 寫入失敗 {live.writeErrors || 0}</Text>}
       {live?.running && <Text style={ui.text}>目前保存間隔：{live.intervalSeconds || 5} 秒</Text>}
       {live?.position && <Text style={ui.hint}>最新位置 {live.position.latitude.toFixed(6)}, {live.position.longitude.toFixed(6)} · 估計精度 {live.position.accuracy.toFixed(1)} m · {Math.floor(live.ageSeconds || 0)} 秒前</Text>}
-      <Text style={ui.hint}>系統強制停止或手機重開機後，請重新開始記錄。</Text>
+      <Text style={ui.hint}>預設在開啟 App、允許精確位置並開啟 GPS 後自動開始記錄。可手動停止；停止後會保持關閉，直到再次按「開始記錄」。手機重開機後需開啟 App 才會恢復已啟用的記錄。</Text>
       {live?.running && live.position && <Text style={ui.text}>狀態：{motionLabel(live.position.motionState)} · 原始速度 {live.position.rawSpeedKmh?.toFixed(1) ?? '—'} km/h · 處理後 {live.position.speedKmh?.toFixed(1) ?? '—'} km/h</Text>}
       {tracker.error ? <Text accessibilityRole="alert" style={ui.error}>{tracker.error}</Text> : null}
       <ActionButton title={tracker.busy ? '處理中…' : tracker.running ? '停止記錄' : '開始記錄'} onPress={tracker.toggle} disabled={tracker.busy || tracker.loading} />

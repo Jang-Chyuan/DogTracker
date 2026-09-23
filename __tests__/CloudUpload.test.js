@@ -20,6 +20,25 @@ function insert(connection, event, owner = 'alice', master = 7, data = payload) 
   connection.sqlite.prepare('INSERT INTO ble_upload_queue(event_id,owner_user_id,master_id,received_at,payload_json,fingerprint) VALUES(?,?,?,?,?,?)')
     .run(event, owner, master, 1000, JSON.stringify(data), event);
 }
+test('Master 5 defaults to persisted phone relay without overriding manual routes on resume or login', async () => {
+  const { connection, database } = setup();
+  try {
+    await database.owner('alice');
+    expect(await database.settings('alice')).toEqual([
+      { owner_user_id: 'alice', master_id: 5, mode: 'phone' },
+    ]);
+    insert(connection, 'five', 'alice', 5);
+    insert(connection, 'seven', 'alice', 7);
+    expect((await database.pending('alice', Date.now())).map(r => r.master_id)).toEqual([5]);
+    await database.setMode('alice', 5, 'wifi');
+    await database.owner(null);
+    await createUploadDatabase(connection).owner('alice');
+    expect((await database.settings('alice'))[0].mode).toBe('wifi');
+    await database.owner('bob');
+    expect((await database.settings('bob'))[0].mode).toBe('phone');
+    expect((await database.settings('alice'))[0].mode).toBe('wifi');
+  } finally { connection.close(); }
+});
 test('BLE units reconstruct the Wi-Fi wire payload without substituting display coordinates', () => {
   const result = bleUploadPayload({ event_id: 'a', master_id: 7, received_at: 1000, payload_json: JSON.stringify(payload) }, 'phone');
   expect(result.payload).toEqual({ lat: 25012345, lon: 121123456, speed: 567, satellites: 8, hdop: 123,
