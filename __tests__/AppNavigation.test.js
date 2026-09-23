@@ -18,6 +18,11 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
+jest.mock('../src/auth/AuthProvider', () => ({
+  AuthProvider: ({ children }) => children,
+  useAuth: () => ({ loading: false, user: { id: 'test-account' } }),
+}));
+
 jest.mock('../src/ble/BleService', () => ({
   createBleService: jest.fn(() => ({
     connect: jest.fn(async () => true),

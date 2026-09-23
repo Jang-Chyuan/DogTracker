@@ -29,14 +29,34 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
   @ReactMethod fun start(promise: Promise) {
     try {
       check(context.lifecycleState == LifecycleState.RESUMED) { "請在 App 前景開始記錄" }
+      context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", true).apply()
       val intent = Intent(context, LocationTrackerService::class.java)
       if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
       promise.resolve(true)
     } catch (e: Exception) { promise.reject("LOCATION_START", e.message, e) }
   }
   @ReactMethod fun stop(promise: Promise) {
+    context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", false).apply()
     context.stopService(Intent(context, LocationTrackerService::class.java))
     promise.resolve(true)
+  }
+  @ReactMethod fun resumeIfEnabled(promise: Promise) {
+    try {
+      val enabled = context.getSharedPreferences("phone_location_recording", 0).getBoolean("enabled", true)
+      val precise = androidx.core.content.ContextCompat.checkSelfPermission(context,
+        android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+      val manager = context.getSystemService(android.location.LocationManager::class.java)
+      if (!enabled || LocationTrackerService.running || context.lifecycleState != LifecycleState.RESUMED ||
+        !precise || !manager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
+        promise.resolve(false); return
+      }
+      val intent = Intent(context, LocationTrackerService::class.java)
+      if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      LocationTrackerService.status = "自動開始失敗，請至手機位置記錄頁重試"
+      promise.reject("LOCATION_AUTO_START", e.message, e)
+    }
   }
   @ReactMethod fun page(before: Double, promise: Promise) {
     executor.execute {

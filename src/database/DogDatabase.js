@@ -1,6 +1,7 @@
 import { openTrackingDatabase } from './TrackingDatabaseConnection';
 import { NativeModules, Platform } from 'react-native';
 import { bleDisplayRows } from '../ble/BleDisplayCoordinates';
+import { withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
 
 const MAX_STATUS_RECORDS_PER_SLAVE = 10000;
 const CLEANUP_INTERVAL_INSERTS = 100;
@@ -44,7 +45,8 @@ export function createDogDatabase(connection) {
 
   return {
     displayRows: records => bleDisplayRows(db, records),
-    async initialize() {
+    initialize() {
+      return withCloudDisplayLock(db, async () => {
       // Android queries and writes share DogStatusStore's SQLite engine.
       // Other platforms retain the Nitro fallback and upstream retention.
       await db.executeAsync('PRAGMA busy_timeout=5000');
@@ -134,6 +136,7 @@ export function createDogDatabase(connection) {
       }
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)');
       if (!native?.initializeDatabase) await cleanupOldRecords();
+      });
     },
 
     async saveStatus(status, rawPayload = null) {

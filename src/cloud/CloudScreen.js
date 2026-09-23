@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
 import { getCloudClient } from './CloudClient';
 import { CLOUD_BUDGET_BYTES } from './CloudDatabase';
@@ -146,7 +146,10 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
       <View style={ui.card}>
         <Text style={ui.text}>{session.user.email}</Text>
         <Text style={ui.hint}>下載範圍由此帳號的 Master 授權決定，包含該 Master 的所有 Slave。</Text>
-        <Text style={ui.hint}>開著 App 時每 30 秒自動同步，首次取最近 24 小時；切到其他 App 或鎖屏就暫停，回來會立刻補下載。</Text>
+        <Text style={ui.hint}>{Platform.OS === 'android'
+          ? '前景每 30 秒同步；背景或鎖屏每 15 分鐘排程同步，實際時間依系統省電狀態調整。無網路時等待恢復；登出即取消背景同步。'
+          : '開著 App 時每 30 秒同步；回到前景立即補下載。'}</Text>
+        <Text style={ui.hint}>首次取最近 24 小時；回到前景先顯示本機歷史，同時補下載最新資料。</Text>
         <Text style={ui.hint}>已下載的資料可離線查看；較早且尚未下載的資料目前不提供手動補下載。</Text>
         {sync ? <Text accessibilityLiveRegion="polite" style={ui.hint}>
           {sync.mode === 'auto' ? '自動同步中…' : sync.lastSuccess

@@ -79,16 +79,17 @@ export function createHistoryDatabase(db) {
       const p = validateHistory(value);
       if (p.source === 'cloud' && !owner) return [];
       const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
+      const time = p.source === 'ble' ? 'received_at' : 'CAST(COALESCE(track_at, received_at) AS INTEGER)';
       const masters = p.masters.map(() => '?').join(',');
       const slaves = p.slaves.map(() => '?').join(',');
       const params = p.source === 'cloud'
         ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
       const found = rows(await db.executeAsync(
-        `SELECT MIN(received_at) AS from_at, MAX(received_at) AS to_at, COUNT(*) AS rows
+        `SELECT MIN(${time}) AS from_at, MAX(${time}) AS to_at, COUNT(*) AS rows
          FROM ${table}
          WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
          ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}
-         GROUP BY strftime('%Y-%m-%d', received_at / 1000, 'unixepoch', 'localtime')
+         GROUP BY strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')
          ORDER BY from_at DESC LIMIT 60`, params));
       return found
         .filter(row => Number.isFinite(row.from_at))
@@ -171,6 +172,7 @@ export function createHistoryDatabase(db) {
         }
         if (p.client && (p.source === 'ble' || owner)) {
           const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
+          const time = p.source === 'ble' ? 'received_at' : 'CAST(COALESCE(track_at, received_at) AS INTEGER)';
           const masters = p.masters.map(() => '?').join(',');
           const extra = `AND master_id IN (${masters}) AND slave_id=?`
             + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
@@ -179,7 +181,7 @@ export function createHistoryDatabase(db) {
           for (const entry of clients) {
             const params = p.source === 'cloud'
               ? [...p.masters, entry.slaveId, owner] : [...p.masters, entry.slaveId];
-            entry.rows = await scan(table, 'received_at', extra, params, 'slave_lat', 'slave_lon');
+            entry.rows = await scan(table, time, extra, params, 'slave_lat', 'slave_lon');
           }
           const client = clients.flatMap(entry => entry.rows);
           // This screen only reads what the phone already stores: the cloud copy
@@ -189,7 +191,7 @@ export function createHistoryDatabase(db) {
           const slaves = p.slaves.map(() => '?').join(',');
           const coverageParams = p.source === 'cloud'
             ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
-          const stored = rows(await db.executeAsync(`SELECT MIN(received_at) AS from_at, COUNT(*) AS rows
+          const stored = rows(await db.executeAsync(`SELECT MIN(${time}) AS from_at, COUNT(*) AS rows
             FROM ${table} WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
             ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}`, coverageParams))[0];
           coverage = { source: p.source, rows: Number(stored?.rows || 0),

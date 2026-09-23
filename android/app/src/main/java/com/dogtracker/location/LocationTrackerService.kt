@@ -75,7 +75,13 @@ class LocationTrackerService : Service(), LocationListener {
       .createNotificationChannel(NotificationChannel(CHANNEL, "手機位置記錄", NotificationManager.IMPORTANCE_LOW))
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == "STOP") { stopSelf(); return START_NOT_STICKY }
+    val preferences = getSharedPreferences("phone_location_recording", 0)
+    if (intent?.action == "STOP") {
+      preferences.edit().putBoolean("enabled", false).apply()
+      stopSelf(); return START_NOT_STICKY
+    }
+    // A queued automatic start must not undo a later explicit stop.
+    if (!preferences.getBoolean("enabled", true)) { stopSelf(); return START_NOT_STICKY }
     if (running) return START_NOT_STICKY
     try {
       val launch = PendingIntent.getActivity(this, ID, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

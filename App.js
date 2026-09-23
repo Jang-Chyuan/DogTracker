@@ -24,29 +24,54 @@ import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
+import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLocationRecording';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
+import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
+import UploadSettingsScreen from './src/cloudUpload/UploadSettingsScreen';
 import BottomNavigation, {
   NAV_HEIGHT,
 } from './src/components/BottomNavigation';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
+import { AuthProvider, useAuth } from './src/auth/AuthProvider';
+import LoginScreen from './src/screens/LoginScreen';
 
 
 
 export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <TrackerApp />
+      <AuthProvider>
+        <AuthGate><TrackerApp /></AuthGate>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
 
+export function AuthGate({ children }) {
+  const { loading, user } = useAuth();
+  if (loading) return <SafeAreaView style={[authStyles.container, authStyles.loading]}>
+    <Text accessibilityLiveRegion="polite" style={ui.text}>正在恢復登入狀態…</Text>
+  </SafeAreaView>;
+  if (!user) return <SafeAreaView style={authStyles.container}>
+    <LoginScreen />
+  </SafeAreaView>;
+  // Switching accounts also discards the previous account's navigation state.
+  return <React.Fragment key={user.id}>{children}</React.Fragment>;
+}
+
+const authStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0f172a' },
+  loading: { padding: 24 },
+});
+
 function TrackerApp() {
   const tracking = useTrackingSession();
   const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real);
+  const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
   const insets = useSafeAreaInsets();
   const [route, setRoute] = useState({ name: 'map', parent: null });
   const navigate = (name, parent = null) => setRoute({ name, parent });
@@ -62,6 +87,7 @@ function TrackerApp() {
     database: tracking.cloudDatabase, sync: cloudSync, owner: cloudSync.ownerId,
   });
   const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
+  useDefaultLocationRecording(tracking.foreground, phone);
   // Kept reading while the history tab is open: disabling it empties the rows,
   // so the cloud dogs would blink off the home map on every visit.
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
@@ -84,6 +110,9 @@ function TrackerApp() {
 
   let content;
   switch (route.name) {
+    case 'cloudUpload':
+      content = <UploadSettingsScreen upload={upload} />;
+      break;
     case 'locationTracker':
       content = <LocationTrackerScreen foreground={tracking.foreground} />;
       break;
@@ -106,6 +135,7 @@ function TrackerApp() {
           onHardware={() => navigate('hardware', 'settings')}
           onDemo={() => navigate('demo', 'settings')}
           onCloud={() => navigate('cloud', 'settings')}
+          onCloudUpload={() => navigate('cloudUpload', 'settings')}
           onLocationTracker={() => navigate('locationTracker', 'settings')}
         />
       );

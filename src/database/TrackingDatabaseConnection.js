@@ -1,6 +1,10 @@
 import { NativeModules, Platform } from 'react-native';
 import { open } from 'react-native-nitro-sqlite';
 
+// Multiple JS wrappers still borrow the same native database. Display cache
+// transactions must share their lock across UI and WorkManager readers.
+const androidLockKey = {};
+
 // Android must use ONE SQLite engine/owner for this file. Loading Android
 // SQLite and Nitro's bundled SQLite against it in one process is unsafe.
 // The native owner also serializes batches against BLE writes.
@@ -17,6 +21,7 @@ export function openTrackingDatabase() {
     if (closed) throw new Error('Tracking database connection is closed');
   }
   return {
+    lockKey: androidLockKey,
     async executeAsync(query, params = []) {
       requireOpen();
       return JSON.parse(await native.executeDatabase(query, JSON.stringify(params)));

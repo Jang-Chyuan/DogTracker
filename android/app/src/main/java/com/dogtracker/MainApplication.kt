@@ -20,6 +20,7 @@ class MainApplication : Application(), ReactApplication {
           add(HistoryExportPackage())
           add(com.dogtracker.location.LocationTrackerPackage())
           add(QrScannerPackage())
+          add(com.dogtracker.cloud.CloudSyncPackage())
         },
     )
   }

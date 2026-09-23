@@ -3,7 +3,7 @@
 入口：DogTracker → 設定 → 雲端資料。
 
 1. 使用 Supabase Auth 中已建立並獲授權的 Email／密碼登入一次。
-2. 自動同步每個已授權 Master 的最近 24 小時；**只在 App 於前景時**每 30 秒下載增量，切到其他 App 或鎖屏即暫停，回到 App 立刻補下載。
+2. 首次同步每個已授權 Master 的最近 24 小時；前景每 30 秒下載增量，Android 背景／鎖屏每 15 分鐘由 WorkManager 排程，回到 App 先顯示本機歷史並立即補下載。
 3. 在下方查看本機紀錄，每頁 50 筆。重新讀取本機資料不使用網路。
 4. 手動下載入口已移除；已下載的較早資料仍可查看，未下載的舊資料目前沒有日期範圍補下載入口。
 
@@ -42,13 +42,17 @@ Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，
 
 `cloud_sync_state` 以 `(owner_user_id, master_id)` 為主鍵，儲存 `through_at`、`event_id`、`updated_at`。每批事件與對應進度在同一個 SQLite transaction 提交；若該範圍已讀完，進度移至本輪查詢上限，事件 ID 為空。首次即使尚無資料也會記錄起始範圍。
 
-每輪重新讀取 `device_members`，新獲授權的 Master 首次抓最近 24 小時；原有 Master 從上次進度前 5 分鐘補查，利用事件唯一鍵去重。分頁保留微秒時間精度。中斷後再開 App 會從保存進度補下載，不只抓當天。
+每輪重新讀取 `device_members`，新獲授權的 Master 首次抓最近 24 小時。已完成的下載範圍從上次進度前 5 分鐘補查，利用事件唯一鍵去重；未完成的範圍用最後提交的微秒 `received_at` 加 `event_id` 精確續傳，避免有限批次一直停在同一頁。增量游標不使用 `phone_received_at`；歷史顯示維持修正後的 `track_at`。
 
 排程在 App 層執行，不依賴雲端頁。每 30 秒觸發，上一輪未完成就略過。斷網失敗下個週期重試。每輪自動同步最多執行 120 秒，逾時保留已儲存批次，下輪繼續。登出取消同步並清除該手機的 Session。
 
-背景不同步，兩個平台都一樣。Android 曾用 dataSync 前景服務加一個 Headless JS 保活任務讓排程在鎖屏時繼續：React Native 在啟動 Headless 任務時取得 `PARTIAL_WAKE_LOCK`，而該任務只在服務結束時才結束，於是 CPU 整晚無法休眠——實機一晚耗盡電池（`batterystats`：喚醒鎖 4 小時 24 分、CPU 1 小時 47 分）。因此改成離開 App 就停止排程與 Token 更新，回到 App 由 SQLite 進度補下載。
+Android 登入後排定唯一的 WorkManager periodic work `dogtracker-cloud-history`，15 分鐘週期、首次延遲 15 分鐘，重複 Token 更新不重設排程。`NetworkType.CONNECTED` 讓無網路時等待；執行中斷網會停止工作，保留已提交的頁面，系統允許後再續傳。暫時性錯誤採 2 分鐘起的指數退避。背景只執行增量下載，不跑前景的整點核對／舊時間修復。
 
-排程只在前景執行，所以系統強制停止、廠商省電或 Doze 都不再影響同步；App 被殺掉後也沒有需要重啟的背景元件。
+`CloudHistoryWorker` 在 ReactHost 啟動後執行一次 `DogTrackerCloudHistory` Headless JS：JS 最多 90 秒、每台 Master 最多 4 頁（每頁最多 1,000 筆），原生端另有限時等待。結束即釋放工作，不新增常駐 dataSync 服務，也不使用無限 Headless JS／常駐喚醒鎖。背景借用同一個 Android SQLite 引擎；下載、初始化及平滑快取寫入有共用鎖。
+
+WorkManager 不保存 JWT，執行時從既有安全儲存恢復並更新 Session。工作綁定帳號及排程世代，登出會取消排程與正在執行的工作，換帳號不沿用舊工作。回到前景中止背景請求，先讀本機歷史，同時啟動前景補下載；兩者共用下載鎖，不同時寫入同步進度。歷史畫面不等待網路，並維持本機 10 秒更新。
+
+15 分鐘是系統排程週期，不是精準鬧鐘：Doze、廠商省電或系統配額會延後工作。程序被回收後可由 WorkManager 重啟；使用者「強制停止」後需要重新開啟 App。iOS 仍僅前景同步。
 
 5 分鐘補查只涵蓋有限的延遲寫入。Master 離線暫存後補傳、Master 與手機時鐘不一致時，資料寫入雲端時的 `received_at` 可能已早於同步進度，這種資料改由下面的整點核對找回。
 
@@ -68,7 +72,7 @@ Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，
 
 ## 範圍與限制
 
-- 只有 App 在前景時同步；登入後可以離線查看已下載的快取。
+- 前景每 30 秒；Android 背景／鎖屏由 WorkManager 每 15 分鐘排程。登入後可以離線查看已下載的快取。
 - 雲端頁只提供登入、自動同步狀態及本機資料查閱，不提供手動下載。
 - 假設雲端事件為追加且不可變；相同事件重複下載不新增，不更新已下載事件，也不同步刪除。
 - 同步中斷／失敗保留已提交批次，下輪依進度補齊。離開雲端頁但仍在 App 前景時，自動同步繼續。
@@ -97,7 +101,7 @@ npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudScreen.test.j
 
 核對驗收：登入後等待首次核對完成（約 10 分鐘內），在雲端資料頁確認筆數不因核對而重複增加；讓 Master 離線後再連線補傳較早的資料，等待下一次核對，確認補傳的資料出現在本機；連續觀察數輪，確認沒有補傳時不會重複下載。
 
-同步驗收：登入後自動下載並每 30 秒更新「上次同步」；切到桌面或鎖屏後沒有常駐通知，`adb shell dumpsys power | grep dogtracker` 看不到喚醒鎖，`dumpsys batterystats` 的 app 區段也不再累積 partial wake lock；回到 App 立刻補下載；殺掉 App 重開不需輸入密碼並補下載；斷網再連線後下一週期重試。Android 原生變更需要重新建置安裝 APK；iOS 套件更新需更新 Pods 並重建。
+同步驗收：登入後前景每 30 秒；以 `adb shell dumpsys jobscheduler` 檢查 `com.dogtracker/androidx.work.impl.background.systemjob.SystemJobService` 的週期與網路條件。切到桌面／鎖屏後觀察工作結束（Logcat tag `CloudHistoryWorker`），本機資料增加且工作之間不持續持有喚醒鎖。斷網工作等待，恢復後續傳；回到前景即讀本機歷史並補下載；登出後排程取消。另驗收程序被系統回收後的冷啟動、帳號切換及長時間 Doze。Android 原生變更需要重新建置安裝 APK。
 
 目前兩個已知帳號皆有 Master 5／7 授權，需另外使用無授權帳號驗證拒絕讀取。不能以 postgres 或 Secret Key 測試使用者 RLS。
 
