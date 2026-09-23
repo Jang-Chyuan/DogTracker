@@ -1,3 +1,4 @@
+import { cloudTrackTime } from './CloudTrackTime';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -19,6 +20,7 @@ export function mapCloudTelemetry(row) {
     throw new Error('雲端 Slave 編號不一致，該批資料未儲存');
   }
   return {
+    ...cloudTrackTime(row), track_time_version: 1,
     event_id: row.event_id.toLowerCase(), remote_received_at: row.received_at,
     received_at: Date.parse(row.received_at), master_id: row.master_id,
     slave_id: row.slave_id, sequence: number(row.seq),

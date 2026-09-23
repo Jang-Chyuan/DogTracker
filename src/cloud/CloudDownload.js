@@ -12,7 +12,7 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
   for (;;) {
     check();
     let query = client.from('dog_telemetry')
-      .select('event_id,master_id,slave_id,seq,received_at,payload,rssi,snr')
+      .select('event_id,master_id,slave_id,seq,received_at,payload,rssi,snr,upload_source,phone_received_at')
       .gte('received_at', startAt).lt('received_at', endBefore)
       .order('received_at', { ascending: true }).order('event_id', { ascending: true })
       .limit(1000);

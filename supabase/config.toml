@@ -1,0 +1,2 @@
+[functions.ingest-phone-telemetry]
+verify_jwt = true

@@ -7,6 +7,7 @@ export default function SettingsScreen({
   onHardware,
   onDemo,
   onCloud,
+  onCloudUpload,
   onLocationTracker,
 }) {
   return (
@@ -27,6 +28,7 @@ export default function SettingsScreen({
         <Text style={ui.heading}>雲端資料</Text>
         <Text style={ui.hint}>登入後下載已授權 Master 的資料，儲存到手機查看。</Text>
         <ActionButton title="雲端資料" onPress={onCloud} disabled={!tracking.ready.real} />
+        <ActionButton title="BLE 雲端轉送設定" onPress={onCloudUpload} disabled={!tracking.ready.real} />
       </View>
       <View style={ui.card}>
         <ActionButton title="Demo 設定" onPress={onDemo} secondary />

@@ -1,5 +1,6 @@
 import { downloadCloudHistory } from './CloudDownload';
 import { reconcileCloudWindow } from './CloudReconcile';
+import { repairCloudTrackTimes } from './CloudTrackTime';
 
 const DAY = 24 * 60 * 60 * 1000;
 const OVERLAP = 5 * 60 * 1000;
@@ -94,6 +95,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           });
         }
         check();
+        await repairCloudTrackTimes({ client, database, owner: userId, signal: abort.signal, check,
+          onChange: () => publish({ revision: state.revision + 1 }) });
         if (now() - sweptAt >= SWEEP) {
           // Set first: a failing count check waits for the next sweep instead of
           // repeating 24 requests per Master on every 30-second tick.

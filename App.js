@@ -28,6 +28,8 @@ import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
+import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
+import UploadSettingsScreen from './src/cloudUpload/UploadSettingsScreen';
 import BottomNavigation, {
   NAV_HEIGHT,
 } from './src/components/BottomNavigation';
@@ -47,6 +49,7 @@ export default function App() {
 function TrackerApp() {
   const tracking = useTrackingSession();
   const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real);
+  const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
   const insets = useSafeAreaInsets();
   const [route, setRoute] = useState({ name: 'map', parent: null });
   const navigate = (name, parent = null) => setRoute({ name, parent });
@@ -84,6 +87,9 @@ function TrackerApp() {
 
   let content;
   switch (route.name) {
+    case 'cloudUpload':
+      content = <UploadSettingsScreen upload={upload} />;
+      break;
     case 'locationTracker':
       content = <LocationTrackerScreen foreground={tracking.foreground} />;
       break;
@@ -106,6 +112,7 @@ function TrackerApp() {
           onHardware={() => navigate('hardware', 'settings')}
           onDemo={() => navigate('demo', 'settings')}
           onCloud={() => navigate('cloud', 'settings')}
+          onCloudUpload={() => navigate('cloudUpload', 'settings')}
           onLocationTracker={() => navigate('locationTracker', 'settings')}
         />
       );

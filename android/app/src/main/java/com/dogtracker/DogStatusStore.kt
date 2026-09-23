@@ -59,9 +59,12 @@ class DogStatusStore private constructor(context: Context) {
     db.execSQL("DROP TRIGGER IF EXISTS trim_dog_status_after_insert")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_received_at ON dog_status(received_at DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)")
+    BleUploadQueue.initialize(db)
   }
 
   @Synchronized fun save(data: JSONObject, payload: String, receivedAt: Long) {
+    // Upload retention and identity are independent of the one-second map feed throttle.
+    BleUploadQueue.enqueue(db, data, payload, receivedAt)
     val slave = (value(data, listOf("slave_id", "sid")) as? Number)?.toDouble() ?: return
     if (slave <= 0 || slave > Int.MAX_VALUE || slave % 1.0 != 0.0) return
     val slaveId = slave.toInt()
