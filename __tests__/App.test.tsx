@@ -5,6 +5,11 @@ import { mockDatabase } from '../__mocks__/react-native-nitro-sqlite';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import App from '../App';
 
+jest.mock('../src/auth/AuthProvider', () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => children,
+  useAuth: () => ({ loading: false, user: { id: 'test-account' } }),
+}));
+
 test('the initial App reads its seeded Demo from SQLite, not from the writer result', async () => {
   Object.defineProperty(AppState, 'currentState', {
     configurable: true,

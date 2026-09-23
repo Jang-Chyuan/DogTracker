@@ -36,16 +36,37 @@ import BottomNavigation, {
 } from './src/components/BottomNavigation';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
+import { AuthProvider, useAuth } from './src/auth/AuthProvider';
+import LoginScreen from './src/screens/LoginScreen';
 
 
 
 export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <TrackerApp />
+      <AuthProvider>
+        <AuthGate><TrackerApp /></AuthGate>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
+
+export function AuthGate({ children }) {
+  const { loading, user } = useAuth();
+  if (loading) return <SafeAreaView style={[authStyles.container, authStyles.loading]}>
+    <Text accessibilityLiveRegion="polite" style={ui.text}>正在恢復登入狀態…</Text>
+  </SafeAreaView>;
+  if (!user) return <SafeAreaView style={authStyles.container}>
+    <LoginScreen />
+  </SafeAreaView>;
+  // Switching accounts also discards the previous account's navigation state.
+  return <React.Fragment key={user.id}>{children}</React.Fragment>;
+}
+
+const authStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0f172a' },
+  loading: { padding: 24 },
+});
 
 function TrackerApp() {
   const tracking = useTrackingSession();
