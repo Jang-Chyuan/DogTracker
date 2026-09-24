@@ -206,8 +206,8 @@ test('the home map keeps ageing while the collar is silent', async () => {
   const dog = () => renderer.root.findAllByType(Marker)
     .find(node => node.props.identifier === 'real-dog-7');
   expect(label(dog())).not.toContain('早於所選時間範圍');
-  // Even a saved ten-minute setting cannot override the fixed one-minute limit.
-  await act(async () => jest.advanceTimersByTime(MINUTE));
+  // Even a saved ten-minute setting cannot override the fixed two-minute limit.
+  await act(async () => jest.advanceTimersByTime(2 * MINUTE));
   expect(dog()).toBeDefined();
   await act(async () => jest.advanceTimersByTime(10000));
   expect(dog()).toBeUndefined();

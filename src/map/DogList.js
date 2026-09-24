@@ -69,7 +69,7 @@ export default function DogList({
                 )}
               </View>
               {dog.stale && (
-                <Text style={styles.warning}>未更新／最後位置。超過 1 分鐘未更新，非目前位置</Text>
+                <Text style={styles.warning}>未更新／最後位置。超過 2 分鐘未更新，非目前位置</Text>
               )}
             </View>
             {/* Each dog carries its own eye: hiding one of five dogs used to

@@ -3,14 +3,14 @@ import { getErrorMessage } from '../utils/errors';
 // Home map presets, confirmed 2026-09-16: minutes for working close to the
 // dog, hours for reviewing the outing. 24 hours is the upper bound of the home
 // map; older positions belong to the history page.
-export const WINDOW_PRESETS = Object.freeze([1, 3, 10, 30, 60, 360, 1440]);
+export const WINDOW_PRESETS = Object.freeze([1, 2, 3, 10, 30, 60, 360, 1440]);
 
 export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   mode: 'demo',
   showMasterMarker: true,
   showSlaveMarker: true,
   showTrails: false,
-  windowMinutes: 1,
+  windowMinutes: 2,
   // Which dog the map camera follows; null follows every visible device.
   focusSlaveId: null,
   // Dogs the user hid one by one; the list still shows them.

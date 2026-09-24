@@ -105,7 +105,7 @@ test('the card lists every dog on the map with its source, time and staleness', 
   // cloud rows read exactly like the BLE one.
   expect(text).toContain('Master 5');
   expect(text).toContain('BLE 直接收到');
-  expect(text).toContain('超過 1 分鐘未更新，非目前位置');
+  expect(text).toContain('超過 2 分鐘未更新，非目前位置');
   // Speed, battery and the distance to the Master are written on the row of the
   // dog this phone is receiving, each as its own labelled reading.
   expect(text).toContain('6.2 km/h');

@@ -78,7 +78,7 @@ export default function MapScreen({
         point,
         route,
         positionSamples,
-        { ...tracking.preferences.value, windowMinutes: 1, showTrails: false },
+        { ...tracking.preferences.value, windowMinutes: 2, showTrails: false },
         now,
       ),
     [point, positionSamples, route, tracking.preferences.value, now],
@@ -90,7 +90,7 @@ export default function MapScreen({
   const dogs = useMemo(
     () => (mode === 'real'
       ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows, now,
-        windowMs: 60000 })
+        windowMs: 2 * 60000 })
       : []),
     [mode, point, positionSamples, cloudDogs?.rows, now],
   );
