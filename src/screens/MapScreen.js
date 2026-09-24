@@ -89,10 +89,11 @@ export default function MapScreen({
   // reported and when.
   const dogs = useMemo(
     () => (mode === 'real'
-      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows, now,
+      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
+        packetRows: cloudDogs?.packets, now,
         windowMs: 2 * 60000 })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, now],
+    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, now],
   );
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.

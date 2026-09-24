@@ -29,7 +29,7 @@ const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -247,6 +247,30 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
           AND NOT (slave_lat = 0 AND slave_lon = 0)
         GROUP BY slave_id ORDER BY slave_id`, [owner, sinceMs]));
+    },
+    async latestStatusRows(owner, sinceMs) {
+      requireOwner(owner);
+      const cloud = rows(await connection.executeAsync(`SELECT slave_id, master_id,
+        MAX(CAST(COALESCE(track_at, received_at) AS INTEGER)) AS track_at,
+        received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid,
+        'cloud' AS source
+        FROM supabase_dog_status WHERE owner_user_id = ?
+          AND CAST(COALESCE(track_at, received_at) AS INTEGER) >= ?
+        GROUP BY slave_id`, [owner, sinceMs]));
+      // Read both the latest packet and last valid fix per local dog. No raw
+      // history pages are retained in React, including after a restart.
+      const local = rows(await connection.executeAsync(`SELECT slave_id, master_id,
+        MAX(received_at) AS track_at, received_at, slave_lat, slave_lon,
+        speed_kmh, battery_percentage, battery_valid, distance_meters, 'ble' AS source
+        FROM dog_status WHERE received_at >= ? GROUP BY slave_id
+        UNION ALL
+        SELECT slave_id, master_id, MAX(received_at) AS track_at, received_at,
+        slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid,
+        distance_meters, 'ble' AS source
+        FROM dog_status WHERE received_at >= ? AND slave_lat IS NOT NULL
+          AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
+        GROUP BY slave_id`, [sinceMs, sinceMs]));
+      return [...local, ...cloud];
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);

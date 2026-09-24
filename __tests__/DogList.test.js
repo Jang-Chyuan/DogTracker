@@ -110,7 +110,10 @@ test('the card lists every dog on the map with its source, time and staleness', 
   // dog this phone is receiving, each as its own labelled reading.
   expect(text).toContain('6.2 km/h');
   expect(text).toContain('76%');
-  expect(text).toContain('82.4 m');
+  expect(text).not.toContain('82.4 m'); // Expired locations have no current distance.
+  expect(text).toContain('最後收到封包');
+  expect(text).toContain('最後有效定位');
+  expect(text).toContain('未收到新資料');
   // The coordinates are not repeated in the card: the map draws them.
   expect(text).not.toContain('25.033000');
 });

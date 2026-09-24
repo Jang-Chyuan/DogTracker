@@ -22,7 +22,7 @@ export default function DogList({
         {control}
       </View>
       {!dogs.length && (
-        <Text style={styles.hint}>目前沒有 24 小時內的狗定位。</Text>
+        <Text style={styles.hint}>目前沒有 24 小時內的狗資料。</Text>
       )}
       {!!linkNote && <Text style={styles.hint}>{linkNote}</Text>}
       {dogs.map(dog => {
@@ -59,6 +59,9 @@ export default function DogList({
                 <Glyph name="clock" color={colors.muted} size={14} />
                 <Text style={styles.detail}>{formatTime(dog.receivedAt)}</Text>
               </View>
+              <Text style={styles.detail}>最後收到封包：{formatTime(dog.lastPacketAt ?? dog.receivedAt)}</Text>
+              <Text style={styles.detail}>最後有效定位：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
+              {!!dog.communicationStatus && <Text style={styles.detail}>{dog.communicationStatus}</Text>}
               <View style={styles.stats}>
                 <Stat icon="speed" label="速度" value={speed(dog.speedKmh)} />
                 <Stat icon="battery" label="電量" value={percent(dog.batteryPercentage)}

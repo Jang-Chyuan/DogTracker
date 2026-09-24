@@ -20,6 +20,30 @@ const row = (eventId, slaveId, receivedAt, masterId, extra = {}) => ({
   slave_lat: 25.1, slave_lon: 121.6, activity_valid: 0, battery_valid: 0, ...extra,
 });
 
+test('status reads retain local fixes and new no-fix packets, and use corrected cloud time', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const database = createCloudDatabase(connection);
+    await database.initialize();
+    await connection.executeAsync(`INSERT INTO dog_status
+      (slave_id, master_id, received_at, slave_lat, slave_lon, battery_percentage)
+      VALUES (4, 5, ?, 25, 121, 80), (4, 5, ?, 0, 0, 70), (6, 5, ?, 25, 121, 60)`,
+    [NOW - 121000, NOW, NOW]);
+    await database.savePage('a', [row('delayed', 8, NOW, 5, { track_at: NOW - 3600000 })]);
+    await database.savePage('b', [row('other-account', 9, NOW, 7)]);
+    const packets = await database.latestStatusRows('a', String(NOW - MAX_AGE_MS));
+    expect(packets.some(p => p.slave_id === 9)).toBe(false);
+    const dogs = mergeDogMarkers({ point: null, packetRows: packets, now: NOW, windowMs: 120000 });
+    expect(dogs.find(d => d.slaveId === 4)).toMatchObject({
+      stale: true, lastPositionAt: NOW - 121000, lastPacketAt: NOW,
+      communicationStatus: '有通訊／GPS 未定位',
+    });
+    expect(dogs.find(d => d.slaveId === 6).stale).toBe(false);
+    expect(dogs.find(d => d.slaveId === 8)).toMatchObject({ stale: true, lastPacketAt: NOW - 3600000 });
+  } finally { connection.close(); }
+});
+
 test('live positions use corrected time for selection and expiry while retaining ingestion time', async () => {
   const connection = createMemoryConnection();
   try {
@@ -89,13 +113,13 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
     let renderer;
     await act(async () => { renderer = Renderer.create(view()); });
     expect(database.latestBySlave).toHaveBeenCalledWith('account-a', NOW - MAX_AGE_MS);
-    expect(states.at(-1)).toEqual({ rows, track: [], error: '' });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], error: '' });
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
-    expect(states.at(-1)).toEqual({ rows, track: [], error: 'locked' });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], error: 'locked' });
     // Demo mode and logout stop the reads and clear the rows.
     await act(async () => { renderer.update(view({ enabled: false })); });
-    expect(states.at(-1)).toEqual({ rows: [], track: [], error: '' });
+    expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], error: '' });
     const calls = database.latestBySlave.mock.calls.length;
     await act(async () => { await jest.advanceTimersByTimeAsync(3 * POLL_MS); });
     expect(database.latestBySlave).toHaveBeenCalledTimes(calls);
