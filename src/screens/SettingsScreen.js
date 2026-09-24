@@ -7,7 +7,6 @@ export default function SettingsScreen({
   onHardware,
   onDemo,
   onCloud,
-  onCloudUpload,
   onLocationTracker,
 }) {
   return (
@@ -16,7 +15,7 @@ export default function SettingsScreen({
       <View style={ui.card}>
         <Text style={ui.heading}>歷史地圖</Text>
         <Text style={ui.hint}>
-          來源、Master／Slave 編號、查詢區間與匯出都移到下方的「歷史」分頁，設定完直接看得到地圖。首頁只顯示 24 小時內的即時位置。
+          來源、Master／Slave 編號、查詢區間與匯出都移到下方的「歷史」分頁。即時地圖的狗圖示超過 1 分鐘未更新就隱藏；歷史軌跡保留查詢區間內的最後位置。
         </Text>
       </View>
       <View style={ui.card}>
@@ -28,7 +27,6 @@ export default function SettingsScreen({
         <Text style={ui.heading}>雲端資料</Text>
         <Text style={ui.hint}>登入後下載已授權 Master 的資料，儲存到手機查看。</Text>
         <ActionButton title="雲端資料" onPress={onCloud} disabled={!tracking.ready.real} />
-        <ActionButton title="BLE 雲端轉送設定" onPress={onCloudUpload} disabled={!tracking.ready.real} />
       </View>
       <View style={ui.card}>
         <ActionButton title="Demo 設定" onPress={onDemo} secondary />

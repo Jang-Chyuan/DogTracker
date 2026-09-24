@@ -65,14 +65,15 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [],
   if (local) dogs.set(local.slaveId, local);
   for (const row of cloudRows) {
     const position = cloudCoordinate(row);
-    if (!position || !Number.isFinite(row.received_at)) continue;
+    const positionTime = row.track_at ?? row.received_at;
+    if (!position || !Number.isFinite(positionTime)) continue;
     const current = dogs.get(row.slave_id);
-    // A tie keeps the BLE row: it is timed by this phone, while a cloud row
-    // carries the Master's clock.
-    if (current && current.receivedAt >= row.received_at) continue;
+    // Prefer corrected position time so delayed phone uploads cannot displace
+    // a newer position. Equal times keep the direct BLE observation.
+    if (current && current.receivedAt >= positionTime) continue;
     dogs.set(row.slave_id, {
       slaveId: row.slave_id, masterId: row.master_id ?? null,
-      coordinate: position, receivedAt: row.received_at,
+      coordinate: position, receivedAt: positionTime,
       retained: false, source: 'cloud',
       // The downloaded row carries these too, so a cloud dog reads the same as
       // a BLE one instead of being a thinner row.
@@ -83,9 +84,8 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [],
   }
   return [...dogs.values()]
     .filter(dog => now - dog.receivedAt <= maxAgeMs)
-    // Confirmed 2026-09-16: a dog whose last position is older than the chosen
-    // window stays on the map faded and labelled, without a path, as long as it
-    // is inside 24 hours.
+    // Retain old positions in the detail list for up to 24 hours. The live map
+    // excludes stale markers using the selected window.
     .map(dog => ({ ...dog, stale: windowMs != null && now - dog.receivedAt > windowMs }))
     .sort((left, right) => left.slaveId - right.slaveId)
     .slice(0, MAX_DOGS);

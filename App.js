@@ -30,7 +30,6 @@ import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
 import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
-import UploadSettingsScreen from './src/cloudUpload/UploadSettingsScreen';
 import BottomNavigation, {
   NAV_HEIGHT,
 } from './src/components/BottomNavigation';
@@ -110,9 +109,6 @@ function TrackerApp() {
 
   let content;
   switch (route.name) {
-    case 'cloudUpload':
-      content = <UploadSettingsScreen upload={upload} />;
-      break;
     case 'locationTracker':
       content = <LocationTrackerScreen foreground={tracking.foreground} />;
       break;
@@ -135,7 +131,6 @@ function TrackerApp() {
           onHardware={() => navigate('hardware', 'settings')}
           onDemo={() => navigate('demo', 'settings')}
           onCloud={() => navigate('cloud', 'settings')}
-          onCloudUpload={() => navigate('cloudUpload', 'settings')}
           onLocationTracker={() => navigate('locationTracker', 'settings')}
         />
       );
@@ -201,6 +196,7 @@ function TrackerApp() {
       </View>
       {tracking.ready.real && (
         <HardwareScreen
+          upload={upload}
           dogDatabase={tracking.hardwareDatabase}
           onStorageError={tracking.reportNativeWriteError}
           active={route.name === 'hardware'}

@@ -29,10 +29,10 @@ const cloudRows = [
 ];
 const emptyRoute = createLiveRouteWindow().snapshot();
 
-function screen(overrides = {}, mode = 'real') {
+function screen(overrides = {}, mode = 'real', fresh = true) {
   const tracking = {
     mode,
-    point: blePoint,
+    point: fresh ? { ...blePoint, receivedAt: NOW - 30000 } : blePoint,
     route: emptyRoute,
     positionSamples: [],
     ready: { real: true },
@@ -49,7 +49,8 @@ function screen(overrides = {}, mode = 'real') {
   return {
     tracking,
     element: <MapScreen tracking={tracking} phone={{ enabled: true }} bottomInset={80}
-      cloudDogs={{ rows: cloudRows, error: '' }} mapProvider={GOOGLE_MAP_PROVIDER} />,
+      cloudDogs={{ rows: fresh ? cloudRows.map(row => ({ ...row, received_at: NOW - 30000 })) : cloudRows,
+        error: '' }} mapProvider={GOOGLE_MAP_PROVIDER} />,
   };
 }
 
@@ -95,7 +96,7 @@ async function expand(element) {
 }
 
 test('the card lists every dog on the map with its source, time and staleness', async () => {
-  await expand(screen().element);
+  await expand(screen({}, 'real', false).element);
   expect(rows().map(node => node.props.accessibilityLabel))
     .toEqual(['狗 4', '狗 6', '狗 7']);
   const text = cardText();
@@ -104,7 +105,7 @@ test('the card lists every dog on the map with its source, time and staleness', 
   // cloud rows read exactly like the BLE one.
   expect(text).toContain('Master 5');
   expect(text).toContain('BLE 直接收到');
-  expect(text).toContain('早於所選時間範圍，非目前位置');
+  expect(text).toContain('超過 1 分鐘未更新，非目前位置');
   // Speed, battery and the distance to the Master are written on the row of the
   // dog this phone is receiving, each as its own labelled reading.
   expect(text).toContain('6.2 km/h');

@@ -46,7 +46,7 @@ Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，
 
 排程在 App 層執行，不依賴雲端頁。每 30 秒觸發，上一輪未完成就略過。斷網失敗下個週期重試。每輪自動同步最多執行 120 秒，逾時保留已儲存批次，下輪繼續。登出取消同步並清除該手機的 Session。
 
-Android 登入後排定唯一的 WorkManager periodic work `dogtracker-cloud-history`，15 分鐘週期、首次延遲 15 分鐘，重複 Token 更新不重設排程。`NetworkType.CONNECTED` 讓無網路時等待；執行中斷網會停止工作，保留已提交的頁面，系統允許後再續傳。暫時性錯誤採 2 分鐘起的指數退避。背景只執行增量下載，不跑前景的整點核對／舊時間修復。
+Android 登入後排定唯一的 WorkManager periodic work `dogtracker-cloud-history`，15 分鐘週期、首次延遲 15 分鐘，重複 Token 更新不重設排程。`NetworkType.CONNECTED` 讓無網路時等待；執行中斷網會停止工作，保留已提交的頁面，系統允許後再續傳。暫時性錯誤採 2 分鐘起的指數退避。背景先批次轉送 BLE 待傳資料（最多 30 秒，沿用 UUID、每筆檢查登入帳號及 Master 轉送設定），再執行增量下載；整輪最多 90 秒，不跑前景的整點核對／舊時間修復。前景與背景共用上傳鎖，回到前景或登出會取消背景請求；取消後未確認的事件留待重試。排程可能受 Android 省電影響延後，並非背景即時上傳。
 
 `CloudHistoryWorker` 在 ReactHost 啟動後執行一次 `DogTrackerCloudHistory` Headless JS：JS 最多 90 秒、每台 Master 最多 4 頁（每頁最多 1,000 筆），原生端另有限時等待。結束即釋放工作，不新增常駐 dataSync 服務，也不使用無限 Headless JS／常駐喚醒鎖。背景借用同一個 Android SQLite 引擎；下載、初始化及平滑快取寫入有共用鎖。
 

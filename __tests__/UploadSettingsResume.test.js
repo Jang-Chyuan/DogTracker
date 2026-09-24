@@ -1,6 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules, Platform, Switch } from 'react-native';
 import { useCloudUpload } from '../src/cloudUpload/useCloudUpload';
 import UploadSettingsScreen from '../src/cloudUpload/UploadSettingsScreen';
 import { createUploadDatabase } from '../src/cloudUpload/UploadDatabase';
@@ -12,6 +12,23 @@ jest.mock('../src/cloudUpload/UploadService', () => ({ createUploadService: jest
 jest.mock('../src/cloud/CloudClient', () => ({ getCloudClient: () => ({ from: () => ({
   select: () => ({ eq: async () => ({ data: [{ gateway_id: 'master_5' }, { gateway_id: 'master_7' }] }) }),
 }) }) }));
+
+test('relay switches update only the selected Master and wait for saved settings', async () => {
+  const upload = { owner: 'alice', phoneId: 'phone', supported: true, settingsReady: true,
+    masters: [5, 7], settings: [{ master_id: 5, mode: 'phone' }, { master_id: 7, mode: 'wifi' }],
+    counts: [], setMode: jest.fn(async () => {}), retry: jest.fn() };
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<UploadSettingsScreen upload={upload} />); });
+  const switches = renderer.root.findAllByType(Switch);
+  expect(switches.map(s => s.props.value)).toEqual([true, false]);
+  await act(async () => switches[0].props.onValueChange(false));
+  expect(upload.setMode).toHaveBeenLastCalledWith(5, 'wifi');
+  await act(async () => switches[1].props.onValueChange(true));
+  expect(upload.setMode).toHaveBeenLastCalledWith(7, 'phone');
+  await act(async () => renderer.update(<UploadSettingsScreen upload={{ ...upload, settingsReady: false }} />));
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+  await act(async () => renderer.unmount());
+});
 
 test('resume keeps saved routes visible while uploads are slow, and account switches hide old routes', async () => {
   const previousOS = Platform.OS, previousNative = NativeModules.BleBackground;

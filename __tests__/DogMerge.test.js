@@ -8,6 +8,11 @@ const cloudRow = (slaveId, receivedAt, masterId = 5) => ({
 });
 const merge = extra => mergeDogMarkers({ point: trackingPoint, now: NOW, ...extra });
 
+test('late phone uploads do not replace a more recent BLE position', () => {
+  const dogs = merge({ cloudRows: [{ ...cloudRow(7, NOW), track_at: trackingPoint.receivedAt - 600000 }] });
+  expect(dogs[0]).toMatchObject({ source: 'ble', receivedAt: trackingPoint.receivedAt });
+});
+
 test('the dog keeps its BLE position while that is the newest row', () => {
   const dogs = merge({ cloudRows: [cloudRow(7, trackingPoint.receivedAt - 5000)] });
   expect(dogs).toHaveLength(1);

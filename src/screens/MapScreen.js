@@ -78,7 +78,7 @@ export default function MapScreen({
         point,
         route,
         positionSamples,
-        { ...tracking.preferences.value, showTrails: false },
+        { ...tracking.preferences.value, windowMinutes: 1, showTrails: false },
         now,
       ),
     [point, positionSamples, route, tracking.preferences.value, now],
@@ -90,10 +90,9 @@ export default function MapScreen({
   const dogs = useMemo(
     () => (mode === 'real'
       ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows, now,
-        windowMs: tracking.preferences.value.windowMinutes * 60000 })
+        windowMs: 60000 })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows,
-      tracking.preferences.value.windowMinutes, now],
+    [mode, point, positionSamples, cloudDogs?.rows, now],
   );
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.
@@ -108,9 +107,9 @@ export default function MapScreen({
     // the camera returns to it when its next row arrives. Hiding the markers
     // does not cancel following: the card still lists the dogs, and a card that
     // says 跟隨中 while the map ignores it would be a lie.
-    const focused = dogs.find(dog => dog.slaveId === focusSlaveId) || null;
+    const focused = dogs.find(dog => !dog.stale && dog.slaveId === focusSlaveId) || null;
     // A dog hidden by its own eye leaves the map but stays in the card.
-    const drawn = dogs.filter(dog => !hiddenSlaveIds.includes(dog.slaveId));
+    const drawn = dogs.filter(dog => !dog.stale && !hiddenSlaveIds.includes(dog.slaveId));
     const marked = focused
       ? drawn.map(dog => (dog === focused ? { ...dog, focused: true } : dog))
       : drawn;

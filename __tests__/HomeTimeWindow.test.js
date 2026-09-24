@@ -67,7 +67,8 @@ test('a window with no earlier row draws no line instead of a single point', () 
     rows[1], routeOf(rows), [], preferences({ windowMinutes: 10 }), NOW,
   );
   expect(presentation.slaveSegments).toEqual([]);
-  expect(presentation.slave).toMatchObject({ stale: true });
+  expect(presentation.slave).toBeNull();
+  expect(presentation.positions.slave).toMatchObject({ stale: true });
 });
 
 test('positions older than 24 hours leave the home map entirely', () => {
@@ -138,7 +139,7 @@ test('the live sheet hides route time presets', async () => {
   jest.useRealTimers();
 });
 
-test('the map draws the window line and fades a dog seen before it', async () => {
+test('the map hides a dog seen before the selected window', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -165,9 +166,8 @@ test('the map draws the window line and fades a dog seen before it', async () =>
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   const dog = renderer.root.findAllByType(Marker)
     .find(node => node.props.identifier === 'real-dog-7');
-  // The marker has no bubble of its own; the reason is on the view for screen
-  // readers and in the card's row.
-  expect(dog.findAll(node => typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel).toContain('早於所選時間範圍');
+  // An expired position stays in the details list, not on the map.
+  expect(dog).toBeUndefined();
   // Nothing inside the window, so no line is drawn for it.
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await act(async () => { renderer.unmount(); });
@@ -183,7 +183,7 @@ test('the home map keeps ageing while the collar is silent', async () => {
   NativePlatform.isMapConfigured.mockReturnValue(true);
   // Nothing about these props changes again: no new rows, no new cloud rows,
   // no preference change. Only the clock moves.
-  const rows = [row(1, 20), row(2, 2)];
+  const rows = [row(1, 20), row(2, 0)];
   const tracking = {
     mode: 'real',
     point: rows[1],
@@ -206,9 +206,11 @@ test('the home map keeps ageing while the collar is silent', async () => {
   const dog = () => renderer.root.findAllByType(Marker)
     .find(node => node.props.identifier === 'real-dog-7');
   expect(label(dog())).not.toContain('早於所選時間範圍');
-  // Ten minutes later the same row is outside the window.
-  await act(async () => jest.advanceTimersByTime(10 * MINUTE));
-  expect(label(dog())).toContain('早於所選時間範圍');
+  // Even a saved ten-minute setting cannot override the fixed one-minute limit.
+  await act(async () => jest.advanceTimersByTime(MINUTE));
+  expect(dog()).toBeDefined();
+  await act(async () => jest.advanceTimersByTime(10000));
+  expect(dog()).toBeUndefined();
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   // A day later it leaves the home map altogether.
   await act(async () => jest.advanceTimersByTime(MAX_AGE_MS));
@@ -257,7 +259,7 @@ test('the first fit frames the pair and its path, not distant cloud dogs', async
   const originalOS = Platform.OS;
   Platform.OS = 'android';
   NativePlatform.isMapConfigured.mockReturnValue(true);
-  const rows = [row(1, 20), row(2, 2)];
+  const rows = [row(1, 20), row(2, 0.5)];
   const tracking = {
     mode: 'real', point: rows[1], route: routeOf(rows), positionSamples: [],
     ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
@@ -344,8 +346,10 @@ test('legacy path preferences cannot reveal live route controls', async () => {
     .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
   const presets = () => renderer.root.findAll(
     node => node.props.accessibilityLabel?.startsWith('過去 '), { deep: false });
-  // Nothing to choose while no path is drawn.
+  // Neither route nor live expiry controls are offered.
   expect(presets()).toHaveLength(0);
+  expect(renderer.root.findAll(node =>
+    node.props.accessibilityLabel?.startsWith('即時位置過去 '))).toHaveLength(0);
   await act(async () => renderer.update(view(true)));
   expect(presets()).toHaveLength(0);
   await act(async () => { renderer.unmount(); });
