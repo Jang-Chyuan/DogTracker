@@ -236,10 +236,14 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     },
     async latestBySlave(owner, sinceMs) {
       requireOwner(owner);
+      // SQLite's single MAX selects the other columns from a row attaining
+      // that maximum. Rank/filter by position time, retaining received_at as
+      // the original cloud ingestion time for diagnostics and sync cursors.
       return rows(await connection.executeAsync(`SELECT slave_id, master_id,
-          MAX(received_at) AS received_at, slave_lat, slave_lon, speed_kmh, battery_percentage
+          MAX(CAST(COALESCE(track_at, received_at) AS INTEGER)) AS track_at,
+          received_at, slave_lat, slave_lon, speed_kmh, battery_percentage
         FROM supabase_dog_status
-        WHERE owner_user_id = ? AND received_at >= ?
+        WHERE owner_user_id = ? AND CAST(COALESCE(track_at, received_at) AS INTEGER) >= ?
           AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
           AND NOT (slave_lat = 0 AND slave_lon = 0)
         GROUP BY slave_id ORDER BY slave_id`, [owner, sinceMs]));

@@ -36,9 +36,17 @@ export function useCloudUpload(ready, owner, foreground) {
         const savedSettings = await database.settings(owner);
         if (!alive) return;
         setState(s => ({ ...s, phoneId, settings: savedSettings, settingsOwner: owner }));
+        let searchError = '';
+        if (foreground) {
+          try {
+            await NativeModules.CloudBackgroundSync?.configureSearch?.(
+              owner, savedSettings.some(s => s.mode === 'phone'));
+          } catch (error) { searchError = `搜尋背景轉送無法啟動：${error.message}；前景仍可上傳`; }
+        }
         if (foreground) await service.current?.run(owner, () => alive);
         const [settings, summary] = await Promise.all([database.settings(owner), database.summary(owner)]);
-        if (alive) setState(s => ({ ...s, phoneId, settings, settingsOwner: owner, ...summary }));
+        if (alive) setState(s => ({ ...s, phoneId, settings, settingsOwner: owner, ...summary,
+          error: searchError || summary.error || '' }));
       } catch (error) { if (alive) setState(s => ({ ...s, error: error.message })); }
       finally { if (alive && foreground) timer = setTimeout(tick, 10000); }
     }
@@ -62,7 +70,10 @@ export function useCloudUpload(ready, owner, foreground) {
   const settingsReady = !!owner && state.settingsOwner === owner;
   return { ...state, settings: settingsReady ? state.settings : [], settingsReady, owner, supported,
     async setMode(master, mode) {
-      await db.current.setMode(owner, master, mode); refresh(n => n + 1);
+      await db.current.setMode(owner, master, mode);
+      refresh(n => n + 1);
+      if (foreground) await NativeModules.CloudBackgroundSync?.configureSearch?.(
+        owner, (await db.current.settings(owner)).some(s => s.mode === 'phone'));
     },
     async retry() { await db.current.retry(owner); refresh(n => n + 1); },
   };

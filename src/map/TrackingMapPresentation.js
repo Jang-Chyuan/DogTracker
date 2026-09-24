@@ -40,9 +40,8 @@ export function clipSegments(segments, since) {
   return clipped;
 }
 
-// Confirmed 2026-09-16: a position older than the window but inside 24 hours
-// stays on the map, faded and labelled, without its path; older than that it
-// leaves the home map altogether and belongs to the history page.
+// Keep the last position for details for up to 24 hours. Expired positions
+// are excluded from live markers and camera framing below.
 function withAge(position, since, now) {
   if (!position) return null;
   const age = Number.isFinite(position.receivedAt) ? now - position.receivedAt : null;
@@ -69,9 +68,9 @@ export function createTrackingMapPresentation(
   return {
     // Keep information/camera data available even when both eyes are closed.
     positions: { master, slave },
-    cameraPositions: cameraCoordinates(master, slave),
-    master: visibility.showMasterMarker ? master : null,
-    slave: visibility.showSlaveMarker ? slave : null,
+    cameraPositions: cameraCoordinates(master?.stale ? null : master, slave?.stale ? null : slave),
+    master: visibility.showMasterMarker && !master?.stale ? master : null,
+    slave: visibility.showSlaveMarker && !slave?.stale ? slave : null,
     masterSegments:
       trails && visibility.showMasterMarker
         ? clipSegments(route.masterSegments, since)

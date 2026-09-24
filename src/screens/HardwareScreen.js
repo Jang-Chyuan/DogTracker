@@ -20,10 +20,11 @@ import { parseMasterQr } from '../qr/MasterQrParser';
 import { emptyTrackingPoint, mapDogStatusRow } from '../models/TrackingPoint';
 import DataTableScreen from '../screens/DataTableScreen';
 import WifiSettingsScreen from '../screens/WifiSettingsScreen';
+import UploadSettingsScreen from '../cloudUpload/UploadSettingsScreen';
 
 const sharedBleService = createBleService();
 
-export default function HardwareScreen({ dogDatabase, active = true, onBack, onStorageError }) {
+export default function HardwareScreen({ dogDatabase, upload, active = true, onBack, onStorageError }) {
   const [bleService] = useState(() => sharedBleService);
   const databaseReadyRef = useRef(null);
   const lastSavedAtBySlaveRef = useRef(new Map());
@@ -371,6 +372,12 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
               <Pressable onPress={() => setScreen('scan')} style={styles.secondaryButton}>
                 <Text style={styles.secondaryText}>返回重新掃描</Text>
               </Pressable>
+            </View>
+          ) : null}
+
+          {upload && ['scan', 'connect', 'menu'].includes(screen) ? (
+            <View style={styles.card}>
+              <UploadSettingsScreen upload={upload} />
             </View>
           ) : null}
 

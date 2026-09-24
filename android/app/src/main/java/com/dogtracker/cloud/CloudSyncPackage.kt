@@ -13,7 +13,26 @@ import com.facebook.react.module.model.ReactModuleInfoProvider
 class CloudSyncModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
   override fun getName() = NAME
 
+  @ReactMethod fun configureSearch(owner: String?, enabled: Boolean, promise: Promise) {
+    try {
+      val intent = android.content.Intent(context, SearchRelayService::class.java)
+      if (!enabled || owner.isNullOrEmpty()) context.stopService(intent)
+      else if (SearchRelayService.instance?.belongsTo(owner) == false) context.stopService(intent)
+      else if (SearchRelayService.timedOut) throw IllegalStateException("搜尋轉送已達 Android 執行時限")
+      else if (com.dogtracker.BleForegroundService.isRunning && SearchRelayService.instance == null)
+        context.startForegroundService(intent.putExtra("owner", owner))
+      promise.resolve(null)
+    } catch (error: Exception) { promise.reject("SEARCH_RELAY", "無法啟動搜尋轉送", error) }
+  }
+  @ReactMethod fun isSearchCurrent(id: String, owner: String, promise: Promise) {
+    promise.resolve(SearchRelayService.instance?.isCurrent(id, owner) == true)
+  }
+  @ReactMethod fun completeSearch(id: String, promise: Promise) {
+    context.runOnUiQueueThread { SearchRelayService.instance?.complete(id); promise.resolve(null) }
+  }
+
   @ReactMethod fun setOwner(owner: String?, promise: Promise) {
+    if (owner.isNullOrEmpty()) context.stopService(android.content.Intent(context, SearchRelayService::class.java))
     try { CloudSyncSchedule.setOwner(context, owner); promise.resolve(null) }
     catch (error: Exception) { promise.reject("CLOUD_SCHEDULE", "無法設定背景雲端同步", error) }
   }
@@ -41,6 +60,7 @@ class CloudSyncPackage : BaseReactPackage() {
 
   override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
     mapOf(CloudSyncModule.NAME to ReactModuleInfo(
-      CloudSyncModule.NAME, CloudSyncModule.NAME, false, false, false, true))
+      // This module uses ReactMethod interop, not a codegen TurboModule spec.
+      CloudSyncModule.NAME, CloudSyncModule.NAME, false, false, false, false))
   }
 }

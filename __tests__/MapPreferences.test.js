@@ -72,7 +72,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showMasterMarker: false,
     showSlaveMarker: false,
     showTrails: true,
-    windowMinutes: 10,
+    windowMinutes: 1,
     focusSlaveId: null,
     hiddenSlaveIds: [],
   });
@@ -170,7 +170,7 @@ test('corrupt JSON reports an error and never overwrites the saved value', async
 });
 
 test('the home window only accepts the confirmed presets and survives a reload', () => {
-  expect(validateTrackingPreferences({}).windowMinutes).toBe(10);
+  expect(validateTrackingPreferences({}).windowMinutes).toBe(1);
   for (const minutes of WINDOW_PRESETS) {
     expect(validateTrackingPreferences({ windowMinutes: minutes }).windowMinutes).toBe(minutes);
   }

@@ -20,13 +20,34 @@ export function createUploadDatabase(db) {
     },
     async setMode(owner, master, mode) {
       if (!owner || !Number.isInteger(master) || master < 1 || master > 65535 || !['wifi', 'phone'].includes(mode)) throw new Error('上傳設定無效');
-      await db.executeAsync('INSERT OR REPLACE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,?,?)', [owner, master, mode]);
+      await db.executeBatchAsync([
+        // Start a new relay period only when changing from disabled to enabled.
+        // These are upload copies, never the original dog_status history rows.
+        { query: `DELETE FROM ble_upload_queue WHERE owner_user_id=? AND master_id=? AND status<>'sent'
+            AND ?='phone' AND NOT EXISTS (SELECT 1 FROM ble_upload_settings
+              WHERE owner_user_id=? AND master_id=? AND mode='phone')`,
+          params: [owner, master, mode, owner, master] },
+        { query: 'INSERT OR REPLACE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,?,?)',
+          params: [owner, master, mode] },
+      ]);
+    },
+    async isPending(row) {
+      return rows(await db.executeAsync(`SELECT 1 FROM ble_upload_queue q JOIN ble_upload_settings s
+        ON s.owner_user_id=q.owner_user_id AND s.master_id=q.master_id
+        WHERE q.owner_user_id=? AND q.event_id=? AND q.status='pending' AND s.mode='phone'`,
+      [row.owner_user_id, row.event_id])).length > 0;
     },
     async pending(owner, now) {
-      return rows(await db.executeAsync(`SELECT q.* FROM ble_upload_queue q JOIN ble_upload_settings s
+      return rows(await db.executeAsync(`WITH latest AS (
+        SELECT MAX(id) id FROM ble_upload_queue WHERE owner_user_id=? AND status='pending'
+        GROUP BY master_id, slave_id
+      ) SELECT q.* FROM ble_upload_queue q JOIN ble_upload_settings s
         ON s.owner_user_id=q.owner_user_id AND s.master_id=q.master_id
+        LEFT JOIN latest l ON l.id=q.id
         WHERE q.owner_user_id=? AND s.mode='phone' AND q.status='pending' AND q.next_retry_at<=?
-        ORDER BY q.id LIMIT 20`, [owner, now]));
+        ORDER BY CASE WHEN l.id IS NOT NULL THEN 0 ELSE 1 END,
+          CASE WHEN l.id IS NOT NULL THEN q.received_at END DESC,
+          q.id LIMIT 20`, [owner, owner, now]));
     },
     async sent(row) {
       await db.executeBatchAsync([

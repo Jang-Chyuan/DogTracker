@@ -218,7 +218,7 @@ export default function TrackingSheet({
             </>
           )}
         </View>
-        : <Text style={styles.hint}>即時位置只顯示目前位置；查看路線請切換至「歷史軌跡」。</Text>}
+        : <Text style={styles.hint}>狗圖示超過 1 分鐘未更新就隱藏；歷史軌跡仍保留查詢區間內的最後位置。</Text>}
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (
           <View>

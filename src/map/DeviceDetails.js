@@ -100,12 +100,12 @@ export default function DeviceDetails({
               <Text style={styles.hint}>來源：{describeDogSource(dog)}</Text>
               {/* No coordinates: the marker this panel belongs to is already
                   on the map, and six decimals tell nobody anything. */}
-              <Text style={styles.hint}>回報時間：{formatTime(dog.receivedAt)}</Text>
+              <Text style={styles.hint}>位置時間：{formatTime(dog.receivedAt)}</Text>
               {dog.retained && (
                 <Text style={styles.warning}>最後有效位置，非最新定位</Text>
               )}
               {dog.stale && (
-                <Text style={styles.warning}>早於所選時間範圍，非目前位置</Text>
+                <Text style={styles.warning}>未更新／最後位置。超過 1 分鐘未更新，非目前位置</Text>
               )}
               {live || Number.isFinite(dog.distanceMeters) ? (
                 <View style={styles.stats}>

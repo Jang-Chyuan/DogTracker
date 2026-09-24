@@ -56,10 +56,11 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       // The text they carried lives on the view below, for screen readers.
       onPress={onPress}
     >
-      <DogNameMarker label={role === 'slave' ? name : null}><View
+      <DogNameMarker label={role === 'slave' ? name : null}
+        status={role === 'slave' && faded ? '未更新／最後位置' : null}><View
         collapsable={false}
         accessible
-        accessibilityLabel={`${name}。${detail}`}
+        accessibilityLabel={`${name}。${faded ? '未更新／最後位置。' : ''}${detail}`}
         style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
         onLayout={() => marker.current?.redraw()}
       >

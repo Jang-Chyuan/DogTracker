@@ -38,6 +38,7 @@ function fixture(telemetry = async () => ({ data: [] })) {
     return query;
   } };
   const database = { initialize: jest.fn(async () => {}), close: jest.fn(),
+    uploadDatabase: { identity: async () => 'phone', pending: jest.fn(async () => []) },
     loadSyncState: jest.fn(async () => ({ through_at: '2026-09-23T11:00:00Z', event_id: null })),
     savePage: jest.fn(async () => {}),
   };
@@ -45,7 +46,7 @@ function fixture(telemetry = async () => ({ data: [] })) {
     cancelAccount: jest.fn(async () => {}),
   };
   const deps = { native, appState, clientFactory: () => client, databaseFactory: () => database };
-  return { native, auth, database, queries,
+  return { native, auth, database, queries, client,
     run: () => runBackgroundCloudSync({ runId: 'run', owner: 'a' }, deps),
     foreground: () => { appState.currentState = 'active'; appListener('active'); },
     logout: () => authListener('SIGNED_OUT', null),
@@ -55,6 +56,83 @@ function fixture(telemetry = async () => ({ data: [] })) {
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(NOW); });
 afterEach(() => { jest.useRealTimers(); });
 const flush = () => jest.advanceTimersByTimeAsync(1);
+
+function queuedUpload(f) {
+  const event = { event_id: 'queued-event', owner_user_id: 'a', master_id: 5, received_at: NOW,
+    payload_json: JSON.stringify({ type: 3, mid: 5, sid: 4, seq: 1, lat: 25, lon: 121,
+      speed_kmh: 0, sat: 10, hdop: 1, gps_time: 100000, activity: 0, activity_valid: 1,
+      activity_time: 100000, battery_mv: 3900, battery_pct: 80, battery_valid: 1, rssi: -90, snr: 7 }) };
+  const db = f.database.uploadDatabase;
+  db.pending.mockResolvedValueOnce([event]);
+  db.settings = async () => [{ master_id: 5, mode: 'phone' }];
+  db.sent = jest.fn(async () => {});
+  db.isPending = async () => true;
+  db.failed = jest.fn(async () => {});
+  f.client.functions = { invoke: jest.fn(async () => ({ data: { ok: true, event_id: event.event_id } })) };
+  return db;
+}
+
+test('background job uploads queued BLE events then downloads history', async () => {
+  const f = fixture(), queue = queuedUpload(f);
+  await f.run();
+  expect(f.client.functions.invoke).toHaveBeenCalledWith('ingest-phone-telemetry', expect.objectContaining({
+    body: expect.objectContaining({ event_id: 'queued-event', master_id: 5 }),
+  }));
+  expect(queue.sent).toHaveBeenCalledTimes(1);
+  expect(queue.pending).toHaveBeenCalledTimes(2);
+  expect(f.queries.length).toBeGreaterThan(0);
+  expect(f.native.complete).toHaveBeenCalledWith('run', 'success');
+});
+
+test.each(['wifi', 'missing'])('background relay skips a Master with %s settings even if its event was already queued', async mode => {
+  const f = fixture(), queue = queuedUpload(f);
+  queue.settings = async () => mode === 'missing' ? [] : [{ master_id: 5, mode }];
+  await f.run();
+  expect(f.client.functions.invoke).not.toHaveBeenCalled();
+  expect(queue.sent).not.toHaveBeenCalled();
+  expect(queue.failed).not.toHaveBeenCalled();
+  expect(f.queries.length).toBeGreaterThan(0);
+  expect(f.native.complete).toHaveBeenCalledWith('run', 'success');
+});
+
+test('background upload network failure preserves the event and requests retry after downloading', async () => {
+  const f = fixture(), queue = queuedUpload(f);
+  f.client.functions.invoke.mockResolvedValue({ error: new Error('offline') });
+  await f.run();
+  expect(queue.sent).not.toHaveBeenCalled();
+  expect(queue.failed).toHaveBeenCalled();
+  expect(f.queries.length).toBeGreaterThan(0);
+  expect(f.native.complete).toHaveBeenCalledWith('run', 'retry');
+});
+
+test.each(['logout', 'foreground'])('%s aborts a background upload without acknowledging the event', async action => {
+  const f = fixture(), queue = queuedUpload(f);
+  let signal;
+  f.client.functions.invoke.mockImplementation((_, options) => new Promise(resolve => {
+    signal = options.signal;
+    signal.addEventListener('abort', () => resolve({ error: new Error('cancelled') }), { once: true });
+  }));
+  const task = f.run(); await flush();
+  f[action](); await task;
+  expect(signal.aborted).toBe(true);
+  expect(queue.sent).not.toHaveBeenCalled();
+  expect(queue.failed).not.toHaveBeenCalled();
+  expect(f.native.complete).toHaveBeenCalledWith('run', 'cancelled');
+  expect(jest.getTimerCount()).toBe(0);
+});
+
+test('upload time budget aborts a stalled request but leaves time for history', async () => {
+  const f = fixture(), queue = queuedUpload(f);
+  f.client.functions.invoke.mockImplementation((_, { signal }) => new Promise(resolve => {
+    signal.addEventListener('abort', () => resolve({ error: new Error('cancelled') }), { once: true });
+  }));
+  const task = f.run(); await flush();
+  await jest.advanceTimersByTimeAsync(30000); await task;
+  expect(queue.sent).not.toHaveBeenCalled();
+  expect(f.queries.length).toBeGreaterThan(0);
+  expect(f.native.complete).toHaveBeenCalledWith('run', 'retry');
+  expect(jest.getTimerCount()).toBe(0);
+});
 
 test('bounded background pages preserve row cursors and original phone history time', async () => {
   let n = 0;

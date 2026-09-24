@@ -7,7 +7,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { POLL_MS, useCloudDogs } from '../src/cloud/useCloudDogs';
-import { MAX_AGE_MS } from '../src/map/DogMerge';
+import { MAX_AGE_MS, mergeDogMarkers } from '../src/map/DogMerge';
 import MapScreen from '../src/screens/MapScreen';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
@@ -18,6 +18,29 @@ const NOW = trackingPoint.receivedAt + 60000;
 const row = (eventId, slaveId, receivedAt, masterId, extra = {}) => ({
   event_id: eventId, slave_id: slaveId, master_id: masterId, received_at: receivedAt,
   slave_lat: 25.1, slave_lon: 121.6, activity_valid: 0, battery_valid: 0, ...extra,
+});
+
+test('live positions use corrected time for selection and expiry while retaining ingestion time', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const database = createCloudDatabase(connection);
+    await database.initialize();
+    await database.savePage('a', [
+      row('wifi', 4, NOW - 1000, 7),
+      row('late-phone', 4, NOW, 5, { track_at: NOW - 3600000, slave_lat: 26 }),
+      row('stale-phone', 8, NOW, 5, { track_at: NOW - 3600000 }),
+      row('expired-phone', 6, NOW, 5, { track_at: NOW - MAX_AGE_MS - 1 }),
+    ]);
+    // Android rawQuery binds range parameters as strings.
+    const found = await database.latestBySlave('a', String(NOW - MAX_AGE_MS));
+    expect(found.map(r => r.slave_id)).toEqual([4, 8]);
+    expect(found[0]).toMatchObject({ master_id: 7, slave_lat: 25.1, track_at: NOW - 1000 });
+    expect(found[1]).toMatchObject({ received_at: NOW, track_at: NOW - 3600000 });
+    const dogs = mergeDogMarkers({ cloudRows: found, now: NOW, windowMs: 600000 });
+    expect(dogs[0].stale).toBe(false);
+    expect(dogs[1]).toMatchObject({ receivedAt: NOW - 3600000, stale: true });
+  } finally { connection.close(); }
 });
 
 test('the newest downloaded row per dog, per account, with a position', async () => {

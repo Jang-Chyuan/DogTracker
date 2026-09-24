@@ -6,11 +6,14 @@ import { dogMapLabel } from '../mapHistory/DogAliases';
 // anchor is the avatar centre, so the leader never changes the GPS position.
 export const DOG_NAME_ANCHOR = { x: 24 / 190, y: 78 / 104 };
 
-export default function DogNameMarker({ label, children }) {
+export default function DogNameMarker({ label, status, children }) {
   if (!label) return children;
   return <View collapsable={false} style={styles.container}>
     <View style={styles.line} />
-    <View style={styles.label}><Text numberOfLines={2} style={styles.text}>{dogMapLabel(label)}</Text></View>
+    <View style={styles.label}>
+      <Text numberOfLines={status ? 1 : 2} style={styles.text}>{dogMapLabel(label)}</Text>
+      {status ? <Text style={styles.text}>{status}</Text> : null}
+    </View>
     <View style={styles.avatar}>{children}</View>
   </View>;
 }
