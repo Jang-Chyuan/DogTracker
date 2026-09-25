@@ -23,13 +23,27 @@ export const CLOUD_PAYLOAD_MS = 24 * 60 * 60 * 1000;
 // pages instead; the worst case is a day's payloads living 20,000 rows longer.
 const PAYLOAD_EVERY_PAGES = 20;
 const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
-  WHERE raw_payload IS NOT NULL AND received_at < ?`;
+  WHERE id IN (SELECT id FROM supabase_dog_status
+    WHERE raw_payload IS NOT NULL AND received_at < ? ORDER BY received_at LIMIT 1000)`;
+
+export function latestCloudStatusQuery(validFix) {
+  const fix = validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : '';
+  return `SELECT slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
+    received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, 'cloud' AS source
+    FROM supabase_dog_status WHERE id IN (
+      SELECT (SELECT id FROM supabase_dog_status AS newest
+        WHERE newest.owner_user_id=? AND newest.slave_id=devices.slave_id ${fix}
+          AND CAST(COALESCE(track_at, received_at) AS INTEGER)>=?
+        ORDER BY CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC LIMIT 1)
+      FROM (SELECT DISTINCT slave_id FROM supabase_dog_status WHERE owner_user_id=?) AS devices)
+    ORDER BY slave_id`;
+}
 
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -67,6 +81,16 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       await connection.executeAsync('DROP INDEX IF EXISTS idx_cloud_track_stream');
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_stream_numeric
         ON supabase_dog_status(owner_user_id, master_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER), id)`);
+      // Late-insert invalidation uses raw track_at, not the expression index.
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_successors
+        ON supabase_dog_status(owner_user_id, master_id, slave_id, track_at, id)`);
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_latest_packet
+        ON supabase_dog_status(owner_user_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC)`);
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_latest_fix
+        ON supabase_dog_status(owner_user_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC)
+        WHERE slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)`);
+      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_payload_cleanup
+        ON supabase_dog_status(received_at) WHERE raw_payload IS NOT NULL`);
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_repair
         ON supabase_dog_status(owner_user_id, track_time_version, received_at DESC)`);
       await connection.executeAsync(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_owner_event
@@ -236,17 +260,25 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     },
     async latestBySlave(owner, sinceMs) {
       requireOwner(owner);
-      // SQLite's single MAX selects the other columns from a row attaining
-      // that maximum. Rank/filter by position time, retaining received_at as
-      // the original cloud ingestion time for diagnostics and sync cursors.
-      return rows(await connection.executeAsync(`SELECT slave_id, master_id,
-          MAX(CAST(COALESCE(track_at, received_at) AS INTEGER)) AS track_at,
-          received_at, slave_lat, slave_lon, speed_kmh, battery_percentage
-        FROM supabase_dog_status
-        WHERE owner_user_id = ? AND CAST(COALESCE(track_at, received_at) AS INTEGER) >= ?
-          AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
-          AND NOT (slave_lat = 0 AND slave_lon = 0)
-        GROUP BY slave_id ORDER BY slave_id`, [owner, sinceMs]));
+      return rows(await connection.executeAsync(latestCloudStatusQuery(true), [owner, sinceMs, owner]));
+    },
+    async latestStatusRows(owner, sinceMs) {
+      requireOwner(owner);
+      const cloud = rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner]));
+      // Read both the latest packet and last valid fix per local dog. No raw
+      // history pages are retained in React, including after a restart.
+      const local = rows(await connection.executeAsync(`SELECT slave_id, master_id,
+        MAX(received_at) AS track_at, received_at, slave_lat, slave_lon,
+        speed_kmh, battery_percentage, battery_valid, distance_meters, 'ble' AS source
+        FROM dog_status WHERE received_at >= ? GROUP BY slave_id
+        UNION ALL
+        SELECT slave_id, master_id, MAX(received_at) AS track_at, received_at,
+        slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid,
+        distance_meters, 'ble' AS source
+        FROM dog_status WHERE received_at >= ? AND slave_lat IS NOT NULL
+          AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
+        GROUP BY slave_id`, [sinceMs, sinceMs]));
+      return [...local, ...cloud];
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);

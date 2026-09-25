@@ -15,7 +15,7 @@ export default function SettingsScreen({
       <View style={ui.card}>
         <Text style={ui.heading}>歷史地圖</Text>
         <Text style={ui.hint}>
-          來源、Master／Slave 編號、查詢區間與匯出都移到下方的「歷史」分頁。即時地圖的狗圖示超過 1 分鐘未更新就隱藏；歷史軌跡保留查詢區間內的最後位置。
+          來源、Master／Slave 編號、查詢區間與匯出都移到下方的「歷史」分頁。即時地圖的狗圖示超過 2 分鐘未更新就隱藏；歷史軌跡保留查詢區間內的最後位置。
         </Text>
       </View>
       <View style={ui.card}>

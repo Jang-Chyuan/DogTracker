@@ -4,7 +4,7 @@ import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/C
 import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
 import { ensureBleDisplayColumns } from '../ble/BleDisplayCoordinates';
-import { budgetHistory, groupHistoryStreams } from './HistoryGeometryBudget';
+import { budgetHistory, budgetHistoryTracks, groupHistoryStreams } from './HistoryGeometryBudget';
 
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
@@ -132,12 +132,16 @@ export function createHistoryDatabase(db) {
         .filter(pair => pair.master > 0 && pair.slave > 0);
     },
     async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null) {
+      const queuedAt = Date.now();
       return withCloudDisplayLock(db, async () => {
+        const startedAt = Date.now();
+        if (startedAt - queuedAt >= 250) console.info(`[History timing] lockWaitMs=${startedAt - queuedAt}`);
         if (!alive()) return null;
         const p = validateHistory(value);
         if (p.client && p.source === 'ble') await ensureBleDisplayColumns(db);
         const { since, until } = bounds || historyWindow(p, now);
         async function scan(table, time, extra, params, lat, lon) {
+          const scanStarted = Date.now();
           let cursor = since, id = 0, all = [];
           const columns = table === 'myLocationTracker'
             ? new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(column => column.name)) : new Set();
@@ -152,14 +156,17 @@ export function createHistoryDatabase(db) {
             const bleDisplay = table === 'dog_status';
             const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + (cloudDisplay || bleDisplay
               ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
+            const queryStarted = Date.now();
             const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} FROM ${table}
               WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
               ORDER BY ${time},id LIMIT 1000`, [since, until, ...params, cursor, cursor, id]));
+            if (Date.now() - queryStarted >= 250) console.info(`[History timing] table=${table} pageMs=${Date.now() - queryStarted} rows=${page.length}`);
             if (!page.length) break;
             all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay) : page));
             const last = page[page.length - 1]; cursor = last.time; id = last.id;
             if (page.length < 1000) break;
           }
+          console.info(`[History timing] table=${table} scanMs=${Date.now() - scanStarted} rows=${all.length}`);
           return all;
         }
         // Every selected dog gets an entry, with or without rows: the card lists
@@ -207,7 +214,9 @@ export function createHistoryDatabase(db) {
           })),
           since, until, coverage,
           message: p.client && p.source === 'cloud' && !owner ? '請先登入雲端帳號，才能查看該帳號下載的定位。' : '' };
-        return raw ? result : budgetHistory(result);
+        const output = raw ? result : budgetHistory(result);
+        console.info(`[History timing] totalMs=${Date.now() - startedAt} raw=${raw}`);
+        return output;
       });
     },
   };
@@ -231,16 +240,10 @@ export function historyGeometry(points) {
   }
   segments.sort((a, b) => a[a.length - 1].time - b[b.length - 1].time);
   segments = segments.map(part => simplifyRoute(part, 3));
-  // Keep recent segments within a native drawing budget; never join across gaps.
-  let budget = 4000;
-  const limited = segments.reduce((n, part) => n + part.length, 0) > budget;
-  const kept = [];
-  for (let i = segments.length - 1; i >= 0 && budget > 0; i -= 1) {
-    const part = segments[i].slice(-budget); kept.unshift(part); budget -= part.length;
-  }
   const validPoints = points.filter(p => coordinate(p.latitude, p.longitude));
-  return { segments: kept, latest: validPoints[validPoints.length - 1] || null, count: validPoints.length, limited,
-    times: validPoints.map(point => point.time), sourcePoints: points };
+  return budgetHistoryTracks([{ segments, latest: validPoints[validPoints.length - 1] || null,
+    count: validPoints.length, limited: false,
+    times: validPoints.map(point => point.time), sourcePoints: points }])[0];
 }
 
 // Expire cached drawings even when the database has no new rows or a read fails.

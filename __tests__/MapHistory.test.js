@@ -163,7 +163,8 @@ test('route geometry breaks at missing fixes and long gaps, retains latest marke
   expect(result.latest.time).toBe(200000);
   const many = historyGeometry(Array.from({ length: 5000 }, (_, i) => p(i * 130000)));
   expect(many.limited).toBe(true);
-  expect(many.segments.flat()).toHaveLength(4000);
+  expect(many.segments.flat()).toHaveLength(120);
+  expect(many.segments[0][0].time).toBe(0);
   expect(many.latest.time).toBe(4999 * 130000);
   expect(validateHistory({ hours: -1 }).hours).toBe(3);
   expect(() => validateHistory({ master: 1.5 })).toThrow();

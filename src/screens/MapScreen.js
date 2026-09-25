@@ -78,7 +78,7 @@ export default function MapScreen({
         point,
         route,
         positionSamples,
-        { ...tracking.preferences.value, windowMinutes: 1, showTrails: false },
+        { ...tracking.preferences.value, windowMinutes: 2, showTrails: false },
         now,
       ),
     [point, positionSamples, route, tracking.preferences.value, now],
@@ -89,10 +89,11 @@ export default function MapScreen({
   // reported and when.
   const dogs = useMemo(
     () => (mode === 'real'
-      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows, now,
-        windowMs: 60000 })
+      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
+        packetRows: cloudDogs?.packets, now,
+        windowMs: 2 * 60000 })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, now],
+    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, now],
   );
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.
@@ -198,13 +199,11 @@ export default function MapScreen({
   if (phone?.error)
     messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
   if (
-    historical && route.limited &&
-    tracking.preferences.value.showTrails &&
-    (tracking.preferences.value.showMasterMarker ||
-      tracking.preferences.value.showSlaveMarker)
+    historical && (history?.data?.phone.limited ||
+      history?.data?.clients?.some(track => track.limited))
   )
     messages.push(
-      '首頁路徑已達繪圖上限，僅顯示較新的部分；此繪圖限制不會刪除 DB 資料。',
+      '歷史軌跡已簡化顯示，保留各時段代表路段；完整資料仍保留，未顯示的斷續路段不會連線。',
     );
   if (tracking.errors[mode])
     messages.push(

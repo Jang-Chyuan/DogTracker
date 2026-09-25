@@ -51,7 +51,11 @@ export async function persistCloudDisplayCoordinates(db, page, owner, ble = fals
         display_longitude: value.longitude, display_version: 1 });
     });
   }
-  if (commands.length) await db.executeBatchAsync(commands);
+  // Display values are a resumable cache, not the download checkpoint. Release
+  // the native store monitor between chunks so BLE/location writes can proceed.
+  for (let offset = 0; offset < commands.length; offset += 50) {
+    await db.executeBatchAsync(commands.slice(offset, offset + 50));
+  }
   return page.map(point => {
     const saved = output.get(point.id);
     return { ...saved, raw_latitude: point.latitude, raw_longitude: point.longitude,

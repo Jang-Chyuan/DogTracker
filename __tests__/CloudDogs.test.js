@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import NativePlatform from '../specs/NativeTrackingPlatform';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
-import { createCloudDatabase } from '../src/cloud/CloudDatabase';
+import { createCloudDatabase, latestCloudStatusQuery } from '../src/cloud/CloudDatabase';
 import { POLL_MS, useCloudDogs } from '../src/cloud/useCloudDogs';
 import { MAX_AGE_MS, mergeDogMarkers } from '../src/map/DogMerge';
 import MapScreen from '../src/screens/MapScreen';
@@ -18,6 +18,48 @@ const NOW = trackingPoint.receivedAt + 60000;
 const row = (eventId, slaveId, receivedAt, masterId, extra = {}) => ({
   event_id: eventId, slave_id: slaveId, master_id: masterId, received_at: receivedAt,
   slave_lat: 25.1, slave_lon: 121.6, activity_valid: 0, battery_valid: 0, ...extra,
+});
+
+test('latest-position seeks and late-insert successor queries use ordered indexes', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    await createCloudDatabase(connection).initialize();
+    for (const valid of [false, true]) {
+      const plan = (await connection.executeAsync('EXPLAIN QUERY PLAN ' + latestCloudStatusQuery(valid),
+        ['a', NOW - MAX_AGE_MS, 'a'])).results.map(r => r.detail).join('\n');
+      expect(plan).toContain(valid ? 'idx_cloud_latest_fix' : 'idx_cloud_latest_packet');
+    }
+    const plan = (await connection.executeAsync(`EXPLAIN QUERY PLAN SELECT id FROM supabase_dog_status
+      WHERE owner_user_id=? AND master_id=? AND slave_id=? AND track_at>?
+      ORDER BY track_at, id LIMIT 2`, ['a', 5, 4, NOW])).results.map(r => r.detail).join('\n');
+    expect(plan).toContain('idx_cloud_track_successors');
+    expect(plan).not.toContain('TEMP B-TREE');
+  } finally { connection.close(); }
+});
+
+test('status reads retain local fixes and new no-fix packets, and use corrected cloud time', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const database = createCloudDatabase(connection);
+    await database.initialize();
+    await connection.executeAsync(`INSERT INTO dog_status
+      (slave_id, master_id, received_at, slave_lat, slave_lon, battery_percentage)
+      VALUES (4, 5, ?, 25, 121, 80), (4, 5, ?, 0, 0, 70), (6, 5, ?, 25, 121, 60)`,
+    [NOW - 121000, NOW, NOW]);
+    await database.savePage('a', [row('delayed', 8, NOW, 5, { track_at: NOW - 3600000 })]);
+    await database.savePage('b', [row('other-account', 9, NOW, 7)]);
+    const packets = await database.latestStatusRows('a', String(NOW - MAX_AGE_MS));
+    expect(packets.some(p => p.slave_id === 9)).toBe(false);
+    const dogs = mergeDogMarkers({ point: null, packetRows: packets, now: NOW, windowMs: 120000 });
+    expect(dogs.find(d => d.slaveId === 4)).toMatchObject({
+      stale: true, lastPositionAt: NOW - 121000, lastPacketAt: NOW,
+      communicationStatus: '有通訊／GPS 未定位',
+    });
+    expect(dogs.find(d => d.slaveId === 6).stale).toBe(false);
+    expect(dogs.find(d => d.slaveId === 8)).toMatchObject({ stale: true, lastPacketAt: NOW - 3600000 });
+  } finally { connection.close(); }
 });
 
 test('live positions use corrected time for selection and expiry while retaining ingestion time', async () => {
@@ -89,13 +131,13 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
     let renderer;
     await act(async () => { renderer = Renderer.create(view()); });
     expect(database.latestBySlave).toHaveBeenCalledWith('account-a', NOW - MAX_AGE_MS);
-    expect(states.at(-1)).toEqual({ rows, track: [], error: '' });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], error: '' });
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
-    expect(states.at(-1)).toEqual({ rows, track: [], error: 'locked' });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], error: 'locked' });
     // Demo mode and logout stop the reads and clear the rows.
     await act(async () => { renderer.update(view({ enabled: false })); });
-    expect(states.at(-1)).toEqual({ rows: [], track: [], error: '' });
+    expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], error: '' });
     const calls = database.latestBySlave.mock.calls.length;
     await act(async () => { await jest.advanceTimersByTimeAsync(3 * POLL_MS); });
     expect(database.latestBySlave).toHaveBeenCalledTimes(calls);

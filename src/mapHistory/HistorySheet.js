@@ -444,7 +444,7 @@ export default function HistorySheet({
       {extras}
       <HistoryExportButton history={history} snapshot={snapshot} />
       {limited ? (
-        <Text style={styles.hint}>軌跡已達繪圖上限，僅顯示較新的部分，原始資料仍保留。</Text>
+        <Text style={styles.hint}>歷史軌跡已簡化顯示，保留各時段代表路段；完整資料仍保留，未顯示的斷續路段不會連線。</Text>
       ) : null}
     </BottomSheet>
   );
