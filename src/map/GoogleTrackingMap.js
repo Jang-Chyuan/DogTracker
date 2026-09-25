@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -141,7 +142,9 @@ function GoogleTrackingMapRenderer({
   const [cursorRevision, setCursorRevision] = useState(0);
   const [cursorDragging, setCursorDragging] = useState(false);
   const [cursorSelection, setCursorSelection] = useState(null);
-  const [attempt, setAttempt] = useState(0);
+  const [attempt] = useState(0);
+  const nativePhone = useRef(null);
+  const phoneCentered = useRef(false);
   const [readyInstance, setReadyInstance] = useState(null);
   const [loadedInstance, setLoadedInstance] = useState(null);
   const [timedOut, setTimedOut] = useState(false);
@@ -163,8 +166,8 @@ function GoogleTrackingMapRenderer({
   const savedView = useRef(null);
   const cameraRead = useRef(0);
   // Android owns pause/resume. Replacing a healthy map on every resume retains
-  // old SDK frame callbacks and duplicates all history overlays. Explicit retry
-  // below is the only path that replaces the surface.
+  // old SDK frame callbacks and duplicates all history overlays. Recentring
+  // the phone only moves the camera; it never replaces the map surface.
   useEffect(() => {
     if (!dataReady || mountedMap) return;
     setNeedsFirstPositionFit(positions.length === 0 || !!presentation.historyTracks);
@@ -213,8 +216,10 @@ function GoogleTrackingMapRenderer({
   useEffect(() => {
     if (!usable || !follow) {
       followed.current = '';
+      phoneCentered.current = false;
       return;
     }
+    if (phoneCentered.current) return;
     const key = `${follow.slaveId}:${follow.coordinate.latitude},${follow.coordinate.longitude}`;
     if (followed.current === key) return;
     followed.current = key;
@@ -227,6 +232,7 @@ function GoogleTrackingMapRenderer({
     priorSource.current = source;
     sourceToFit.current = source;
     interacted.current = false;
+    phoneCentered.current = false;
   }, [source]);
   // initialRegion frames the first source without a visible post-load jump.
   // A source switch, or the first position after an initially empty DB, gets
@@ -264,6 +270,10 @@ function GoogleTrackingMapRenderer({
           userLocationUpdateInterval={1000}
           toolbarEnabled={false}
           showsMyLocationButton={false}
+          onUserLocationChange={event => {
+            const value = event.nativeEvent?.coordinate;
+            if (value) nativePhone.current = { ...value, receivedAt: Date.now() };
+          }}
           // Google SDK handles rotation/tilt visibility and tap-to-north.
           showsCompass
           rotateEnabled={!cursorDragging}
@@ -417,15 +427,31 @@ function GoogleTrackingMapRenderer({
       {configured && foreground && (loaded || timedOut) && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="重試載入地圖"
+          accessibilityLabel="本機位置"
           style={[styles.retry, { top: topInset + 56 }]}
           onPress={() => {
-            // Invalidate callbacks synchronously, before the next React render.
-            activeInstance.current = String(attempt + 1);
-            setAttempt(value => value + 1);
+            const live = livePhone?.running && livePhone.ageSeconds != null && livePhone.ageSeconds <= 30
+              ? livePhone.position : null;
+            const position = live || (nativePhone.current && Date.now() - nativePhone.current.receivedAt <= 30000
+              ? nativePhone.current : null);
+            if (!position || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)
+              || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) {
+              Alert.alert('本機位置', '尚無有效的手機定位，請確認已開啟定位與定位權限。');
+              return;
+            }
+            if (!ready) {
+              Alert.alert('本機位置', '地圖尚未準備完成，請稍候再試。');
+              return;
+            }
+            interacted.current = true;
+            phoneCentered.current = true;
+            setNeedsFirstPositionFit(false);
+            mapRef.current?.animateCamera({ center: {
+              latitude: position.latitude, longitude: position.longitude,
+            } }, { duration: 400 });
           }}
         >
-          <Text style={styles.retryText}>重試地圖</Text>
+          <Text style={styles.retryText}>本機位置</Text>
         </Pressable>
       )}
     </View>

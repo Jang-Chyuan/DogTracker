@@ -58,7 +58,7 @@ function bleCandidate(point, samples) {
  * happens to be holding. The source is written on the marker and in the card,
  * and dogs that are not wanted can be hidden one by one.
  */
-export function mergeDogMarkers({ point, samples = [], cloudRows = [],
+export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
   now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null }) {
   const local = bleCandidate(point, samples);
   const dogs = new Map();
@@ -82,11 +82,59 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [],
         ? row.battery_percentage : null,
     });
   }
+  const packets = new Map();
+  const observations = [...cloudRows, ...packetRows];
+  if (point?.slaveId != null) observations.push({
+    slave_id: point.slaveId, master_id: point.masterId, source: 'ble',
+    received_at: point.receivedAt, slave_lat: point.slaveLat, slave_lon: point.slaveLon,
+    battery_percentage: point.batteryPercentage, battery_valid: point.batteryValid,
+    speed_kmh: point.speedKmh, distance_meters: point.distanceMeters,
+  });
+  for (const row of observations) {
+    const time = row.track_at ?? row.received_at;
+    if (row.slave_id == null || !Number.isFinite(time) || now - time > maxAgeMs) continue;
+    const position = cloudCoordinate(row);
+    const source = row.source ?? 'cloud';
+    const current = dogs.get(row.slave_id);
+    if (position && (!current || time > current.receivedAt || current.receivedAt == null)) {
+      dogs.set(row.slave_id, {
+        slaveId: row.slave_id, masterId: row.master_id, source,
+        coordinate: position, receivedAt: time, retained: false,
+      });
+    }
+    const old = packets.get(row.slave_id);
+    if (!old || time > old.time || (time === old.time && source === 'ble')) {
+      packets.set(row.slave_id, { row, time, position, source });
+    }
+    // Explicit status rows can represent a dog that has never obtained a fix.
+    if (!dogs.has(row.slave_id) && (packetRows.includes(row) || row.source === 'ble')) {
+      dogs.set(row.slave_id, { slaveId: row.slave_id, masterId: row.master_id,
+        source, coordinate: null, receivedAt: null, retained: true });
+    }
+  }
   return [...dogs.values()]
-    .filter(dog => now - dog.receivedAt <= maxAgeMs)
+    .filter(dog => now - (packets.get(dog.slaveId)?.time ?? dog.receivedAt) <= maxAgeMs)
     // Retain old positions in the detail list for up to 24 hours. The live map
     // excludes stale markers using the selected window.
-    .map(dog => ({ ...dog, stale: windowMs != null && now - dog.receivedAt > windowMs }))
+    .map(dog => {
+      const packet = packets.get(dog.slaveId);
+      const lastPacketAt = packet?.time ?? dog.receivedAt;
+      const stale = !dog.coordinate || (windowMs != null && now - dog.receivedAt > windowMs);
+      const communicating = now - lastPacketAt <= (windowMs ?? 120000);
+      const noFix = packet && !packet.position;
+      return { ...dog, stale, lastPacketAt, lastPositionAt: dog.receivedAt,
+        retained: dog.retained || !!noFix,
+        communicationStatus: !communicating ? '未收到新資料'
+          : noFix ? '有通訊／GPS 未定位' : '有通訊／定位正常',
+        batteryPercentage: packet
+          ? (packet.row.battery_valid !== 0 && packet.row.battery_valid !== false
+            && Number.isFinite(packet.row.battery_percentage) ? packet.row.battery_percentage : null)
+          : dog.batteryPercentage,
+        speedKmh: noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
+        distanceMeters: stale || noFix || packet?.source !== 'ble' ? null
+          : packet.row.distance_meters ?? null,
+      };
+    })
     .sort((left, right) => left.slaveId - right.slaveId)
     .slice(0, MAX_DOGS);
 }

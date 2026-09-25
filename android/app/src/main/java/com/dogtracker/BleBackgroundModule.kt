@@ -3,6 +3,7 @@ package com.dogtracker
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import java.util.UUID
 import java.util.concurrent.Executors
 import com.facebook.react.bridge.Arguments
@@ -16,7 +17,9 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   ReactContextBaseJavaModule(context) {
 
   override fun getName(): String = "BleBackground"
-  private val databaseWorker = Executors.newSingleThreadExecutor()
+  private val databaseWorker = Executors.newSingleThreadExecutor { task ->
+    Thread(task, "DogTracker-Database")
+  }
 
   init {
     BleForegroundService.eventSink = { event, value ->
@@ -101,10 +104,19 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
     }
   }
 
-  private fun databaseTask(promise: Promise, action: (DogStatusStore) -> Any?) {
+  private fun databaseTask(promise: Promise, label: String = "database", action: (DogStatusStore) -> Any?) {
+    val queuedAt = SystemClock.elapsedRealtime()
     databaseWorker.execute {
+      val startedAt = SystemClock.elapsedRealtime()
       try { promise.resolve(action(DogStatusStore.get(context))) }
       catch (error: Exception) { promise.reject("BLE_DATABASE_FAILED", error) }
+      finally {
+        val elapsed = SystemClock.elapsedRealtime() - startedAt
+        val queued = startedAt - queuedAt
+        if (elapsed >= 250 || queued >= 250) {
+          Log.w("DogTracker-Database", "$label queueMs=$queued runMs=$elapsed")
+        }
+      }
     }
   }
 
@@ -120,7 +132,10 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   // Internal App SQL only; BLE payloads continue through typed ContentValues.
   @ReactMethod
   fun executeDatabase(sql: String, parameters: String, promise: Promise) =
-    databaseTask(promise) { it.executeSql(sql, org.json.JSONArray(parameters)).toString() }
+    // Only log a statement fingerprint, never SQL values, coordinates or tokens.
+    databaseTask(promise, "sql#${sql.hashCode()} ${sql.trim().takeWhile { it.isLetter() }.take(12)}") {
+      it.executeSql(sql, org.json.JSONArray(parameters)).toString()
+    }
 
   @ReactMethod
   fun executeDatabaseBatch(commands: String, promise: Promise) =

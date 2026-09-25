@@ -8,7 +8,7 @@ import MapView, {
   mockCamera,
 } from 'react-native-maps';
 import NativePlatform from '../specs/NativeTrackingPlatform';
-import TrackingMap, { MAP_LOAD_TIMEOUT_MS } from '../src/map/TrackingMap';
+import TrackingMap from '../src/map/TrackingMap';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import MapScreen from '../src/screens/MapScreen';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
@@ -183,51 +183,23 @@ test('missing key never mounts native map and gives an explicit fallback message
     expect.stringContaining('未設定'),
   );
 });
-test('ready does not imply tiles loaded; timeout, retry and late recovery remain distinct', async () => {
-  await render();
-  expect(renderer.root.findByType(MapView).props.mapPadding).toBeUndefined();
-  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  expect(renderer.root.findByType(MapView).props.mapPadding).toMatchObject({
-    bottom: 300,
-  });
-  expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
-  await act(async () => jest.advanceTimersByTime(MAP_LOAD_TIMEOUT_MS));
-  expect(defaults.onStatus).toHaveBeenLastCalledWith(
-    expect.stringContaining('尚未載入完成'),
-  );
-  await act(async () =>
-    renderer.root
-      .findAll(
-        node =>
-          node.props.accessibilityLabel === '重試載入地圖' &&
-          typeof node.props.onPress === 'function',
-      )[0]
-      .props.onPress(),
-  );
-  expect(defaults.onStatus).toHaveBeenLastCalledWith(null);
-  await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
-  expect(defaults.onStatus).toHaveBeenLastCalledWith(null);
+test('phone button centres the live location without remounting the map', async () => {
+  await render({ livePhone: { running: true, ageSeconds: 1, position: { latitude: 24.9, longitude: 121.2, accuracy: 5, timestamp: Date.now() } } });
+  await readyMap();
+  const map = renderer.root.findByType(MapView);
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '本機位置' && typeof node.props.onPress === 'function')[0].props.onPress());
+  expect(mockCamera.animateCamera).toHaveBeenCalledWith({ center: { latitude: 24.9, longitude: 121.2 } }, { duration: 400 });
+  expect(renderer.root.findByType(MapView)).toBe(map);
 });
-test('late SDK events from a replaced map cannot mark the new map ready', async () => {
+
+test('without a valid phone fix the button never centres the dog or history position', async () => {
   await render();
-  const oldEvents = renderer.root.findByType(MapView).props;
-  await act(async () => jest.advanceTimersByTime(MAP_LOAD_TIMEOUT_MS));
-  await act(async () =>
-    renderer.root
-      .findAll(
-        node =>
-          node.props.accessibilityLabel === '重試載入地圖' &&
-          typeof node.props.onPress === 'function',
-      )[0]
-      .props.onPress(),
-  );
-  await act(async () => {
-    oldEvents.onMapReady();
-    oldEvents.onMapLoaded();
-  });
-  expect(renderer.root.findByType(MapView).props.mapPadding).toBeUndefined();
-  expect(defaults.onStatus).toHaveBeenLastCalledWith(null);
+  await readyMap();
+  mockCamera.animateCamera.mockClear();
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '本機位置' && typeof node.props.onPress === 'function')[0].props.onPress());
+  expect(mockCamera.animateCamera).not.toHaveBeenCalled();
 });
+
 test('new DB rows never refit the camera after panning', async () => {
   await render();
   await readyMap();

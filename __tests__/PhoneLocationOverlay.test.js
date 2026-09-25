@@ -41,6 +41,16 @@ test('publishes live animated coordinates but never history playback coordinates
   expect(locationTrackerNative.clearDisplayPosition).toHaveBeenCalledWith('session-a');
 });
 
+test('resume never labels the old coordinate with the fresh fix timestamp', async () => {
+  const live = { running: true, sessionId: 'a', ageSeconds: 0, position };
+  await act(async () => { renderer = Renderer.create(<PhoneLocationOverlay location={live} />); });
+  await act(async () => renderer.update(<PhoneLocationOverlay active={false} location={live} />));
+  locationTrackerNative.displayPosition.mockClear();
+  const next = { ...position, latitude: 25.03, timestamp: 70000 };
+  await act(async () => renderer.update(<PhoneLocationOverlay location={{ ...live, position: next }} />));
+  expect(locationTrackerNative.displayPosition.mock.calls[0]).toEqual(['a', 70000, next.latitude, next.longitude]);
+});
+
 test('history dot animates refreshes without stale styling or interpolating long gaps', async () => {
   const first = Object.freeze({ latitude: 25, longitude: 121, timestamp: 10000, rawSpeedKmh: 5 });
   await render(first, 3600, true, true);

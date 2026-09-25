@@ -8,6 +8,20 @@ const cloudRow = (slaveId, receivedAt, masterId = 5) => ({
 });
 const merge = extra => mergeDogMarkers({ point: trackingPoint, now: NOW, ...extra });
 
+test('no-fix packets update battery without refreshing position, then a fix restores the marker', () => {
+  const old = cloudRow(4, NOW - 121000);
+  const packet = { ...cloudRow(4, NOW), slave_lat: 0, slave_lon: 0,
+    battery_percentage: 55, battery_valid: 1, distance_meters: 999999, source: 'ble' };
+  const options = { point: null, cloudRows: [old], packetRows: [packet], now: NOW, windowMs: 120000 };
+  expect(mergeDogMarkers(options)[0]).toMatchObject({
+    lastPacketAt: NOW, lastPositionAt: NOW - 121000, stale: true,
+    batteryPercentage: 55, distanceMeters: null, communicationStatus: '有通訊／GPS 未定位',
+  });
+  expect(mergeDogMarkers({ ...options, now: NOW + 121000 })[0].communicationStatus).toBe('未收到新資料');
+  expect(mergeDogMarkers({ ...options, packetRows: [{ ...packet, slave_lat: 25, slave_lon: 121, distance_meters: 10 }] })[0])
+    .toMatchObject({ stale: false, lastPositionAt: NOW, distanceMeters: 10, communicationStatus: '有通訊／定位正常' });
+});
+
 test('late phone uploads do not replace a more recent BLE position', () => {
   const dogs = merge({ cloudRows: [{ ...cloudRow(7, NOW), track_at: trackingPoint.receivedAt - 600000 }] });
   expect(dogs[0]).toMatchObject({ source: 'ble', receivedAt: trackingPoint.receivedAt });
@@ -124,9 +138,10 @@ test('a dog heard without a fix draws no marker, while the others still do', () 
     point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 },
     cloudRows: [cloudRow(4, trackingPoint.receivedAt + 1000)],
   });
-  expect(dogs.map(dog => dog.slaveId)).toEqual([4]);
+  expect(dogs.filter(dog => !dog.stale).map(dog => dog.slaveId)).toEqual([4]);
   expect(merge({
     point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 }, cloudRows: [],
-  })).toEqual([]);
+  })).toEqual([expect.objectContaining({ slaveId: 7, coordinate: null, stale: true,
+    communicationStatus: '有通訊／GPS 未定位' })]);
 });
 
