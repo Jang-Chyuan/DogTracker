@@ -14,7 +14,7 @@ export default function PhoneLocationOverlay({ location, active = true, historic
   const previousTime = useRef(null);
   const previousSession = useRef(location.sessionId);
   const marker = useRef(null);
-  useEffect(() => {
+  const publishDisplay = () => {
     if (historical || !active || stale || !location.running || !location.sessionId) return undefined;
     const publish = () => locationTrackerNative?.displayPosition?.(location.sessionId,
       position.timestamp, current.current.latitude, current.current.longitude);
@@ -25,7 +25,7 @@ export default function PhoneLocationOverlay({ location, active = true, historic
       clearInterval(timer);
       locationTrackerNative?.clearDisplayPosition?.(location.sessionId);
     };
-  }, [historical, active, stale, location.running, location.sessionId, position.timestamp]);
+  };
   useEffect(() => {
     const destination = { latitude: position.latitude, longitude: position.longitude };
     const previous = previousTime.current;
@@ -57,6 +57,8 @@ export default function PhoneLocationOverlay({ location, active = true, historic
     }, 50);
     return () => clearInterval(timer);
   }, [active, stale, historical, location.sessionId, position.latitude, position.longitude, position.timestamp, position.motionState, position.rawSpeedKmh, position.accuracy]);
+  // Reset stale/session coordinates before attaching a new fix timestamp.
+  useEffect(publishDisplay, [historical, active, stale, location.running, location.sessionId, position.timestamp]);
   useEffect(() => { marker.current?.redraw?.(); }, [stale]);
   const title = historical ? '手機 · 歷史最後位置' : stale ? '手機 · 最後合格位置（已過期）'
     : position.motionState === 'stationary' ? '手機 · 靜止鎖定位置' : '手機 · 目前位置';

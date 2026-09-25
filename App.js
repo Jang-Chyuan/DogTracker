@@ -87,11 +87,11 @@ function TrackerApp() {
   });
   const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
   useDefaultLocationRecording(tracking.foreground, phone);
-  // Kept reading while the history tab is open: disabling it empties the rows,
-  // so the cloud dogs would blink off the home map on every visit.
+  // Cache eligibility is separate from polling visibility. Background/navigation
+  // pauses reads; logout and demo mode invalidate the account-bound cache.
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
-    tracking.ready.real && tracking.foreground && showsMap && tracking.mode === 'real',
-    undefined, null);
+    tracking.ready.real && tracking.mode === 'real',
+    undefined, null, { active: tracking.foreground && showsMap, revision: cloudSync.revision });
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.

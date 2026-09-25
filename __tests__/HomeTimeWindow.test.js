@@ -8,6 +8,7 @@ import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import { createTrackingMapPresentation } from '../src/map/TrackingMapPresentation';
 import { createLiveRouteWindow } from '../src/tracking/LiveRouteWindow';
 import { mergeDogMarkers, MAX_AGE_MS } from '../src/map/DogMerge';
+import { useMapClock } from '../src/map/useMapClock';
 import {
   DEFAULT_TRACKING_PREFERENCES,
   WINDOW_PRESETS,
@@ -15,6 +16,32 @@ import {
 
 const NOW = Date.parse('2026-09-18T12:00:00Z');
 const MINUTE = 60000;
+
+test('the first foreground render expires cached positions before effects run', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(NOW);
+  const renders = [];
+  function ClockProbe({ running }) {
+    const now = useMapClock(running);
+    renders.push(mergeDogMarkers({ now, windowMs: 120000,
+      cloudRows: [{ slave_id: 4, master_id: 5, received_at: NOW, slave_lat: 25, slave_lon: 121 }] })[0].stale);
+    return null;
+  }
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(<ClockProbe running />); });
+    expect(renders.at(-1)).toBe(false);
+    await act(async () => { renderer.update(<ClockProbe running={false} />); });
+    jest.setSystemTime(NOW + 120001);
+    renders.length = 0;
+    await act(async () => { renderer.update(<ClockProbe running />); });
+    expect(renders.length).toBeGreaterThan(0);
+    expect(renders.every(stale => stale)).toBe(true);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});
 // Zig-zag coordinates: a straight line would be simplified down to its two
 // endpoints, which says nothing about clipping.
 const row = (id, minutesAgo, extra = {}) => ({

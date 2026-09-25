@@ -1,4 +1,5 @@
 import { simplifyRoute } from '../tracking/SimplifyRoute';
+import { safePhoneHistoryCoordinate } from './PhoneHistoryCoordinates';
 import { coordinate } from '../tracking/RouteSamples';
 import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
 import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
@@ -157,12 +158,14 @@ export function createHistoryDatabase(db) {
             const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + (cloudDisplay || bleDisplay
               ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
             const queryStarted = Date.now();
-            const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} FROM ${table}
+            const recovery = displayColumns ? `, ${lat} AS pipeline_latitude, ${lon} AS pipeline_longitude${raw ? '' : ', accuracy_meters, location_at'}` : '';
+            const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} ${recovery} FROM ${table}
               WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
               ORDER BY ${time},id LIMIT 1000`, [since, until, ...params, cursor, cursor, id]));
             if (Date.now() - queryStarted >= 250) console.info(`[History timing] table=${table} pageMs=${Date.now() - queryStarted} rows=${page.length}`);
             if (!page.length) break;
-            all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay) : page));
+            all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay)
+              : page.map(safePhoneHistoryCoordinate)));
             const last = page[page.length - 1]; cursor = last.time; id = last.id;
             if (page.length < 1000) break;
           }

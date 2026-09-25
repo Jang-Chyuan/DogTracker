@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export const CLOCK_MS = 10000;
 
@@ -17,11 +17,16 @@ export const CLOCK_MS = 10000;
  */
 export function useMapClock(running, period = CLOCK_MS) {
   const [now, setNow] = useState(() => Date.now());
+  const resumed = useRef({ running, at: now });
+  if (running && !resumed.current.running) resumed.current.at = Date.now();
+  resumed.current.running = running;
   useEffect(() => {
     if (!running) return undefined;
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), period);
     return () => clearInterval(timer);
   }, [running, period]);
-  return now;
+  // The first resumed render precedes the effect: never briefly revive expired
+  // cached dogs using the clock from before the background transition.
+  return running ? Math.max(now, resumed.current.at) : now;
 }

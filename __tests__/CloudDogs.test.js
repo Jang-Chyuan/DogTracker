@@ -115,10 +115,66 @@ test('the newest downloaded row per dog, per account, with a position', async ()
 
 // A stable clock: the hook restarts its timer when `now` changes identity.
 const clock = () => NOW;
-function Probe({ database, owner, enabled, onState }) {
-  onState(useCloudDogs(database, owner, enabled, clock));
+function Probe({ database, owner, enabled, onState, active = true, revision = 0 }) {
+  onState(useCloudDogs(database, owner, enabled, clock, null, { active, revision }));
   return null;
 }
+
+test('background retains cache, resume reads immediately, and download revisions refresh it', async () => {
+  jest.useFakeTimers();
+  const rows = [row('cached', 4, NOW, 5)];
+  const database = { latestBySlave: jest.fn(async () => rows) };
+  let state, renderer, resolveRead;
+  const view = props => <Probe database={database} owner="a" enabled
+    onState={value => { state = value; }} {...props} />;
+  try {
+    await act(async () => { renderer = Renderer.create(view()); });
+    await act(async () => { renderer.update(view({ active: false })); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(60000); });
+    expect(database.latestBySlave).toHaveBeenCalledTimes(1);
+    expect(state.rows).toEqual(rows);
+    database.latestBySlave.mockImplementationOnce(() => new Promise(resolve => { resolveRead = resolve; }));
+    await act(async () => { renderer.update(view()); });
+    expect(database.latestBySlave).toHaveBeenCalledTimes(2);
+    expect(state.rows).toEqual(rows);
+    const fresh = [row('fresh', 8, NOW, 5)];
+    await act(async () => { resolveRead(fresh); });
+    expect(state.rows).toEqual(fresh);
+    await act(async () => { renderer.update(view({ revision: 1 })); });
+    expect(database.latestBySlave).toHaveBeenCalledTimes(3);
+    expect(state.rows).toEqual(rows);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});
+
+test('account changes, logout and demo clear cache and ignore old pending results', async () => {
+  const rows = [row('cached', 4, NOW, 5)];
+  const database = { latestBySlave: jest.fn(async () => rows) };
+  let renderer, resolveRead;
+  const states = [];
+  const view = props => <Probe database={database} owner="a" enabled
+    onState={value => states.push(value)} {...props} />;
+  await act(async () => { renderer = Renderer.create(view()); });
+  database.latestBySlave.mockImplementationOnce(() => new Promise(resolve => { resolveRead = resolve; }));
+  await act(async () => { renderer.update(view({ revision: 1 })); });
+  states.length = 0;
+  await act(async () => { renderer.update(view({ owner: 'b', active: false })); });
+  expect(states.every(state => state.rows.length === 0)).toBe(true);
+  await act(async () => { resolveRead(rows); });
+  expect(states.at(-1).rows).toEqual([]);
+  await act(async () => { renderer.update(view()); });
+  expect(states.at(-1).rows).toEqual(rows);
+  await act(async () => { renderer.update(view({ enabled: false })); });
+  expect(states.at(-1).rows).toEqual([]);
+  await act(async () => { renderer.update(view({ active: false })); });
+  expect(states.at(-1).rows).toEqual([]);
+  await act(async () => { renderer.update(view()); });
+  await act(async () => { renderer.update(view({ owner: null })); });
+  expect(states.at(-1).rows).toEqual([]);
+  await act(async () => { renderer.unmount(); });
+});
 
 test('the map reads the local copy on a timer and keeps the last rows when a read fails', async () => {
   jest.useFakeTimers();

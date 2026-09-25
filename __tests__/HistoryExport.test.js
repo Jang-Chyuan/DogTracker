@@ -40,18 +40,23 @@ test('history and export prefer saved display coordinates and preserve raw GPS',
       location_at INTEGER, latitude REAL, longitude REAL, accuracy_meters REAL, altitude_meters REAL,
       heading_degrees REAL, speed_kmh REAL, raw_latitude REAL, raw_longitude REAL,
       display_latitude REAL, display_longitude REAL, display_source TEXT);
-      INSERT INTO myLocationTracker VALUES(1,1000,900,25,121,3,0,0,2,25.1,121.1,25.01,121.01,'animated');
+      INSERT INTO myLocationTracker VALUES(1,1000,900,25,121,3,0,0,2,25.1,121.1,25.0001,121.0001,'animated');
       INSERT INTO myLocationTracker VALUES(2,2000,1900,25.02,121.02,3,0,0,2,NULL,NULL,NULL,NULL,NULL);`);
     const db = createHistoryDatabase(connection);
     const settings = { ...HISTORY_DEFAULTS, client: false };
     const result = await db.read(settings, null, 3000, () => true, true);
-    expect(result.phone[0].latitude).toBe(25.01);
+    expect(result.phone[0].latitude).toBe(25.0001);
     expect(result.phone[0].raw_latitude).toBe(25.1);
     expect(result.phone[0].display_source).toBe('animated');
     expect(result.phone[1].latitude).toBe(25.02);
     expect(connection.sqlite.prepare('SELECT latitude FROM myLocationTracker WHERE id=1').get().latitude).toBe(25);
     const map = await db.read(settings, null, 3000);
-    expect(map.phone.segments[0][0].latitude).toBe(25.01);
+    expect(map.phone.segments[0][0].latitude).toBe(25.0001);
+    connection.sqlite.exec('UPDATE myLocationTracker SET display_latitude=24.98 WHERE id=1');
+    const recovered = await db.read(settings, null, 3000, () => true, true);
+    expect(recovered.phone[0]).toMatchObject({ latitude: 25, longitude: 121, display_source: 'pipeline-recovered' });
+    expect((await db.read(settings, null, 3000)).phone.segments[0][0].latitude).toBe(25);
+    expect(connection.sqlite.prepare('SELECT display_latitude FROM myLocationTracker WHERE id=1').get().display_latitude).toBe(24.98);
   } finally { connection.close(); }
 });
 
