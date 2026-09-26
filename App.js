@@ -186,6 +186,7 @@ function TrackerApp() {
           tracking={tracking}
           phone={phone}
           cloudDogs={cloudDogs}
+          cloudOwner={cloudSync.ownerId}
           historical={isHistory}
           active={showsMap}
           bottomInset={insets.bottom + NAV_HEIGHT + 20}

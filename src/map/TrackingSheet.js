@@ -8,6 +8,7 @@ import DogList from './DogList';
 import Stat from './Stat';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
+import ActivityHistoryChart from './ActivityHistoryChart';
 
 export const windowLabel = minutes =>
   (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小時`);
@@ -55,6 +56,8 @@ export default function TrackingSheet({
   master,
   slave,
   dogs = [],
+  activityOwner,
+  activityActive = true,
   showRouteControls = true,
   dogAliases,
   bottomInset,
@@ -239,6 +242,9 @@ export default function TrackingSheet({
         <Text style={styles.hint}>
           參考圈半徑 1 公里，跟隨領犬員眼睛。
         </Text>
+        {tracking.mode === 'real' && <ActivityHistoryChart database={tracking.cloudDatabase} owner={activityOwner}
+          dogAliases={dogAliases}
+          active={activityActive && tracking.foreground && tracking.ready.real} />}
         <Text style={styles.hint}>
           點地圖上的狗或領犬員可以看該裝置的詳細資料（距離、硬體回報、LoRa 訊號）。
         </Text>
