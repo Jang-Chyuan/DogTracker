@@ -1,6 +1,7 @@
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
+import { readActivityHistory } from './ActivityHistory';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -43,7 +44,7 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -262,6 +263,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       requireOwner(owner);
       return rows(await connection.executeAsync(latestCloudStatusQuery(true), [owner, sinceMs, owner]));
     },
+    activityHistory: (owner, slaveId, now) => readActivityHistory(connection, owner, slaveId, now),
     async latestStatusRows(owner, sinceMs) {
       requireOwner(owner);
       const cloud = rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner]));

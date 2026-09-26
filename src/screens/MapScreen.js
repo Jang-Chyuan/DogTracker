@@ -50,6 +50,7 @@ export default function MapScreen({
   history,
   historical = false,
   cloudDogs,
+  cloudOwner,
   historyDownload,
 }) {
   const insets = useSafeAreaInsets();
@@ -296,6 +297,8 @@ export default function MapScreen({
         />
       ) : (
         <TrackingSheet
+          activityOwner={cloudOwner}
+          activityActive={active}
           showRouteControls={false}
           tracking={tracking}
           master={master}
