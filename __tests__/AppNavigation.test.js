@@ -1,4 +1,5 @@
 import MapScreen from '../src/screens/MapScreen';
+import SettingsScreen from '../src/screens/SettingsScreen';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import {
@@ -72,7 +73,8 @@ async function advance(ms = 1000) {
 }
 async function demoPage() {
   await press('設定', 'tab');
-  await press('Demo 設定');
+  // Demo has no settings button; exercise the retained internal route directly.
+  await act(async () => renderer.root.findByType(SettingsScreen).props.onDemo());
 }
 // The persistent map layer carries its own switch, so target this one by name.
 const modeSwitch = () => renderer.root.findAll(
@@ -181,7 +183,7 @@ test('map/history/settings tabs; Demo and original Wi-Fi preserve correct back d
   expect(button('開始 Demo')).toBeUndefined();
   expect(button('停止 Demo')).toBeUndefined();
   await act(async () => expect(onBack()).toBe(true));
-  expect(button('Demo 設定')).toBeDefined();
+  expect(button('Demo 設定')).toBeUndefined();
   expect(button('登入')).toBeUndefined();
   expect(text()).not.toContain('允許手機定位');
   await press('BLE／QR 與 Master 設定');
@@ -192,7 +194,7 @@ test('map/history/settings tabs; Demo and original Wi-Fi preserve correct back d
   expect(ble.disconnect).not.toHaveBeenCalled();
   await demoPage();
   await press('‹ 設定');
-  expect(button('Demo 設定')).toBeDefined();
+  expect(button('Demo 設定')).toBeUndefined();
 });
 
 test('the history tab keeps the same map, carries its own card, and back returns home', async () => {
@@ -358,7 +360,7 @@ test('mode and all display values survive a cold remount without duplicating see
   renderer = null;
   expect(mockDatabase.close).toHaveBeenCalledTimes(1);
   await mount();
-  expect(text()).toContain('正式 · SQLite');
+  expect(text()).not.toContain('正式 · SQLite');
   expect(preferences()).toEqual(saved);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   expect(rows('demo_dog_status')).toHaveLength(3);
@@ -493,7 +495,7 @@ test('a Demo migration failure cannot block the hardware writer or switching to 
     ble.restoreBackground.mock.calls.at(-1)[1](trackingPoint, 'hardware'),
   );
   expect(rows('dog_status')).toHaveLength(2);
-  await press('Demo 設定');
+  await demoPage();
   expect(text()).toContain('demo migration failed');
   await setMode(false);
   await press('回到地圖');

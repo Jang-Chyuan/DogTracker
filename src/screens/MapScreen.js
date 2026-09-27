@@ -255,18 +255,16 @@ export default function MapScreen({
         onDogPress={openDog}
         onTrackPress={openTrack}
       />
-      <View style={[styles.source, { top }]}>
+      {(historical || !tracking.preferences.ready || mode === 'demo') && <View style={[styles.source, { top }]}>
         <View style={[styles.statusDot, mode === 'demo' && styles.demoDot]} />
         <Text style={styles.sourceText}>
           {historical
             ? `歷史 · ${shortRangeLabel(history.preferences)}`
             : !tracking.preferences.ready
             ? '讀取設定中…'
-            : mode === 'demo'
-            ? 'DEMO · 模擬資料'
-            : '正式 · SQLite'}
+            : 'DEMO · 模擬資料'}
         </Text>
-      </View>
+      </View>}
       {!!messages.length && (
         <View
           onLayout={event => setNoticeHeight(event.nativeEvent.layout.height)}
@@ -297,8 +295,6 @@ export default function MapScreen({
         />
       ) : (
         <TrackingSheet
-          activityOwner={cloudOwner}
-          activityActive={active}
           showRouteControls={false}
           tracking={tracking}
           master={master}
@@ -312,6 +308,8 @@ export default function MapScreen({
       )}
       {detailSubject && (
         <DeviceDetails
+          activityOwner={cloudOwner}
+          activityActive={active}
           tracking={tracking}
           subject={detailSubject}
           dogAliases={history?.preferences.dogAliases}

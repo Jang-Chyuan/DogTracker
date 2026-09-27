@@ -12,6 +12,7 @@ import { describeDogSource } from './DogMerge';
 import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import { Position } from './TrackingSheet';
+import ActivityHistoryChart from './ActivityHistoryChart';
 
 function battery(valid, percentage) {
   return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
@@ -29,6 +30,8 @@ export default function DeviceDetails({
   tracking,
   subject,
   dogAliases,
+  activityOwner,
+  activityActive = true,
   master,
   topInset,
   bottomInset,
@@ -161,6 +164,11 @@ export default function DeviceDetails({
               </Text>
               <Text style={styles.hint}>參考圈半徑 1 公里，跟隨領犬員。</Text>
             </>
+          )}
+          {tracking.mode === 'real' && slaveId === 8 && (
+            <ActivityHistoryChart database={tracking.cloudDatabase} owner={activityOwner}
+              dogAliases={dogAliases}
+              active={activityActive && tracking.foreground && tracking.ready?.real} />
           )}
         </ScrollView>
       </View>
