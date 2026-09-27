@@ -1,4 +1,4 @@
-export const ACTIVITY_HISTORY_HOURS = 8;
+export const ACTIVITY_HISTORY_HOURS = 24;
 export const ACTIVITY_HISTORY_MINUTES = ACTIVITY_HISTORY_HOURS * 60;
 
 export async function readActivityHistory(db, owner, slaveId, now = Date.now()) {
