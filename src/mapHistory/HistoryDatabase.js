@@ -144,9 +144,9 @@ export function createHistoryDatabase(db) {
         async function scan(table, time, extra, params, lat, lon) {
           const scanStarted = Date.now();
           let cursor = since, id = 0, all = [];
-          const columns = table === 'myLocationTracker'
-            ? new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(column => column.name)) : new Set();
-          const displayColumns = columns.has('display_latitude') && columns.has('display_longitude');
+          const columns = table === 'myLocationTracker' || raw
+            ? new Set(rows(await db.executeAsync(`PRAGMA table_info(${table})`)).map(column => column.name)) : new Set();
+          const displayColumns = table === 'myLocationTracker' && columns.has('display_latitude') && columns.has('display_longitude');
           const selectedLat = displayColumns ? `COALESCE(display_latitude, ${lat})` : lat;
           const selectedLon = displayColumns ? `COALESCE(display_longitude, ${lon})` : lon;
           const provenance = ['session_id', ...(raw ? ['raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state', 'display_source', 'display_location_at'] : [])]
@@ -155,7 +155,9 @@ export function createHistoryDatabase(db) {
             // `raw` requests all records for export, not unsmoothed coordinates.
             const cloudDisplay = table === 'supabase_dog_status';
             const bleDisplay = table === 'dog_status';
-            const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + (cloudDisplay || bleDisplay
+            const quality = raw && table !== 'myLocationTracker'
+              ? ['satellites', 'hdop', 'rssi', 'snr'].filter(column => columns.has(column)).map(column => ', ' + column).join('') : '';
+            const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + quality + (cloudDisplay || bleDisplay
               ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
             const queryStarted = Date.now();
             const recovery = displayColumns ? `, ${lat} AS pipeline_latitude, ${lon} AS pipeline_longitude${raw ? '' : ', accuracy_meters, location_at'}` : '';
