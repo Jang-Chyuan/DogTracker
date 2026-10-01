@@ -32,13 +32,12 @@ test('source reducer accepts a display snapshot without rewinding latest status'
   expect(state.real.positionSamples).toHaveLength(1);
 });
 
-test('reset clears only one source while preserving its initialized state', () => {
+test('reset clears hardware state while preserving its initialized state', () => {
   let state = createTrackingSourceState();
   state = reduce(state, 'ready');
   state = reduce(state, 'initial-snapshot-ready');
   state = reduce(state, 'history-loaded');
   state = reduce(state, 'rows', { rows: [row(1)] });
-  const untouchedDemo = state.demo;
 
   state = reduce(state, 'reset-source');
 
@@ -48,7 +47,7 @@ test('reset clears only one source while preserving its initialized state', () =
     historyLoaded: false,
     route: { rawCount: 0, masterSegments: [], slaveSegments: [] },
   });
-  expect(state.demo).toBe(untouchedDemo);
+  expect(Object.keys(state)).toEqual(['real']);
 });
 
 test('backfill from another device never replaces the current device fallback', () => {

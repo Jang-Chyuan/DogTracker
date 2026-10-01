@@ -19,7 +19,6 @@ import { useTrackingSession } from './src/app/useTrackingSession';
 import HardwareScreen from './src/screens/HardwareScreen';
 import { handleRootBack } from './src/app/handleRootBack';
 import { ui } from './src/components/ScreenUI';
-import DemoScreen from './src/demo/DemoScreen';
 import MapScreen from './src/screens/MapScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
@@ -93,9 +92,9 @@ function TrackerApp() {
   const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
   useDefaultLocationRecording(tracking.foreground, phone);
   // Cache eligibility is separate from polling visibility. Background/navigation
-  // pauses reads; logout and demo mode invalidate the account-bound cache.
+  // pauses reads; logout invalidates the account-bound cache.
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
-    tracking.ready.real && tracking.mode === 'real',
+    tracking.ready.real,
     undefined, null, { active: tracking.foreground && showsMap, revision: cloudSync.revision });
 
   useEffect(() => {
@@ -120,21 +119,11 @@ function TrackerApp() {
     case 'cloud':
       content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync} />;
       break;
-    case 'demo':
-      content = (
-        <DemoScreen
-          tracking={tracking}
-          onMap={() => navigate('map')}
-          onBack={() => navigate('settings')}
-        />
-      );
-      break;
     case 'settings':
       content = (
         <SettingsScreen
           tracking={tracking}
           onHardware={() => navigate('hardware', 'settings')}
-          onDemo={() => navigate('demo', 'settings')}
           onCloud={() => navigate('cloud', 'settings')}
           onLocationTracker={() => navigate('locationTracker', 'settings')}
         />
@@ -161,15 +150,10 @@ function TrackerApp() {
         <View style={styles.header}>
           <Text style={styles.brand}>DogTracker</Text>
           <Text
-            style={[
-              styles.source,
-              tracking.mode === 'demo' && styles.demoSource,
-            ]}
+            style={styles.source}
           >
             {!tracking.preferences.ready
               ? '讀取設定中…'
-              : tracking.mode === 'demo'
-              ? 'DEMO · 模擬資料'
               : '正式 · SQLite'}
           </Text>
         </View>
@@ -258,5 +242,4 @@ const styles = StyleSheet.create({
   },
   brand: { color: '#f8fafc', fontSize: 18, fontWeight: '700' },
   source: { color: '#93c5fd', fontSize: 14, marginTop: 4 },
-  demoSource: { color: '#c4b5fd' },
 });
