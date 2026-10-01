@@ -22,13 +22,13 @@ function setup() {
     state: () => changed.mock.calls.at(-1)[0],
   };
 }
-test('first use defaults to Demo, visible markers and hidden paths', async () => {
+test('first use defaults to real, visible markers and hidden paths', async () => {
   const { controller, state } = setup();
   await controller.load();
   expect(state()).toMatchObject({
     ready: true,
     value: {
-      mode: 'demo',
+      mode: 'real',
       showMasterMarker: true,
       showSlaveMarker: true,
       showTrails: false,
@@ -58,7 +58,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
   database.load.mockRejectedValueOnce(new Error('read failed'));
   expect(await controller.load()).toBe(false);
   expect(state().ready).toBe(false);
-  expect(await controller.save({ mode: 'demo' })).toBe(false);
+  expect(await controller.save({ mode: 'real' })).toBe(false);
   expect(database.save).not.toHaveBeenCalled();
   database.load.mockResolvedValue({
     mode: 'real',
@@ -159,7 +159,7 @@ test('corrupt JSON reports an error and never overwrites the saved value', async
       ready: false,
       recoveryAvailable: true,
     });
-    expect(await controller.save({ mode: 'demo' })).toBe(false);
+    expect(await controller.save({ mode: 'real' })).toBe(false);
     expect(
       connection.sqlite.prepare('SELECT value FROM app_settings').get().value,
     ).toBe('{bad json');

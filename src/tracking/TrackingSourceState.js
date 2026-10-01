@@ -15,7 +15,7 @@ function emptySourceState() {
 }
 
 export function createTrackingSourceState() {
-  return { real: emptySourceState(), demo: emptySourceState() };
+  return { real: emptySourceState() };
 }
 
 function updateSource(state, source, update) {

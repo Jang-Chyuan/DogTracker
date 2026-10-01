@@ -27,7 +27,7 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
     }
   }
 
-  // Installation-level permission UX, separate from Demo and tracking data.
+  // Installation-level permission UX, separate from tracking data.
   override fun claimLocationPermissionPrompt(promise: Promise) {
     try {
       synchronized(this) {
