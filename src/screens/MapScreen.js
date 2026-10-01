@@ -16,6 +16,7 @@ import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
+import HomeStatus from '../map/HomeStatusBar';
 
 // The first fit frames what this handler is working with: the connected pair
 // and the path inside the chosen window. Framing every cloud dog as well zoomed
@@ -52,6 +53,10 @@ export default function MapScreen({
   cloudDogs,
   cloudOwner,
   historyDownload,
+  cloudSync,
+  onOpenReceiver,
+  onOpenCloud,
+  readReceiverState,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
@@ -59,6 +64,7 @@ export default function MapScreen({
   const [sheetHeight, setSheetHeight] = useState(0);
   const [mapStatus, setMapStatus] = useState(null);
   const [noticeHeight, setNoticeHeight] = useState(0);
+  const [statusHeight, setStatusHeight] = useState(0);
   // Which marker's panel is open: the handler, or one dog by id. Both markers
   // answer a tap the same way.
   const [selected, setSelected] = useState(null);
@@ -228,7 +234,9 @@ export default function MapScreen({
         .join('、')}顯示最後有效位置，非最新定位。`,
     );
   const top = insets.top + 12;
-  const controlsTop = top + 44 + (messages.length ? noticeHeight + 8 : 0);
+  // The live map's header is the receiver/cloud status; history keeps its range pill.
+  const headerHeight = historical ? 44 : statusHeight ? statusHeight + 8 : 0;
+  const controlsTop = top + headerHeight + (messages.length ? noticeHeight + 8 : 0);
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
@@ -251,18 +259,27 @@ export default function MapScreen({
         onDogPress={openDog}
         onTrackPress={openTrack}
       />
-      {(historical || !tracking.preferences.ready) && <View style={[styles.source, { top }]}>
+      {!historical && (
+        <HomeStatus
+          active={active && tracking.foreground}
+          cloudSync={cloudSync}
+          top={top}
+          onReceiver={onOpenReceiver}
+          onCloud={onOpenCloud}
+          onHeight={setStatusHeight}
+          readState={readReceiverState}
+        />
+      )}
+      {historical && <View style={[styles.source, { top }]}>
         <View style={styles.statusDot} />
         <Text style={styles.sourceText}>
-          {historical
-            ? `歷史 · ${shortRangeLabel(history.preferences)}`
-            : '讀取設定中…'}
+          {`歷史 · ${shortRangeLabel(history.preferences)}`}
         </Text>
       </View>}
       {!!messages.length && (
         <View
           onLayout={event => setNoticeHeight(event.nativeEvent.layout.height)}
-          style={[styles.notices, { top: top + 44 }]}
+          style={[styles.notices, { top: top + headerHeight }]}
         >
           <ScrollView nestedScrollEnabled>
             {messages.map(message => (
