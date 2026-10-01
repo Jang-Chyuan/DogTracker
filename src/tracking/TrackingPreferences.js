@@ -6,7 +6,7 @@ import { getErrorMessage } from '../utils/errors';
 export const WINDOW_PRESETS = Object.freeze([1, 2, 3, 10, 30, 60, 360, 1440]);
 
 export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
-  mode: 'demo',
+  mode: 'real',
   showMasterMarker: true,
   showSlaveMarker: true,
   showTrails: false,
@@ -40,7 +40,8 @@ export function validateTrackingPreferences(value) {
   // Old per-role trail settings have different semantics; only missing new
   // fields receive defaults. Malformed saved JSON still fails explicitly.
   return {
-    mode: settings.mode,
+    // Legacy saved preferences may select simulated data; always use hardware.
+    mode: 'real',
     showMasterMarker: settings.showMasterMarker,
     showSlaveMarker: settings.showSlaveMarker,
     showTrails: settings.showTrails,

@@ -85,16 +85,14 @@ export default function MapScreen({
     [point, positionSamples, route, tracking.preferences.value, now],
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
-  // rows. Demo positions stay isolated, so cloud dogs only join in real mode.
+  // rows.
   // The eye hides the markers, not the list: the card must still say which dogs
   // reported and when.
   const dogs = useMemo(
-    () => (mode === 'real'
-      ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
-        packetRows: cloudDogs?.packets, now,
-        windowMs: 2 * 60000 })
-      : []),
-    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, now],
+    () => mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
+      packetRows: cloudDogs?.packets, now,
+      windowMs: 2 * 60000 }),
+    [point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, now],
   );
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.
@@ -103,7 +101,7 @@ export default function MapScreen({
   const dogsVisible = tracking.preferences.value.showSlaveMarker;
   const hiddenSlaveIds = tracking.preferences.value.hiddenSlaveIds;
   const livePresentation = useMemo(() => {
-    if (!dogs.length) return mode === 'real' ? { ...basePresentation, slaveSegments: [] } : basePresentation;
+    if (!dogs.length) return { ...basePresentation, slaveSegments: [] };
     // Following a dog means the camera reads that dog; the others stay drawn.
     // A followed dog that is not reporting is ignored rather than forgotten, so
     // the camera returns to it when its next row arrives. Hiding the markers
@@ -133,7 +131,7 @@ export default function MapScreen({
         ? framedCoordinates(focused.coordinate)
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, mode]);
+  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds]);
   const livePhone = useLiveLocation(active && tracking.foreground);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
@@ -219,8 +217,6 @@ export default function MapScreen({
     messages.push(
       `正式資料儲存失敗：${tracking.realWriteError}。部分硬體資料未能儲存，不會自動重送。`,
     );
-  if (mode === 'demo' && tracking.demoError)
-    messages.push(`${tracking.demoError}。請至設定 → Demo 設定處理。`);
   if (tracking.preferences.error)
     messages.push(
       `追蹤設定失敗：${tracking.preferences.error}。請上滑卡片重試。`,
@@ -255,14 +251,12 @@ export default function MapScreen({
         onDogPress={openDog}
         onTrackPress={openTrack}
       />
-      {(historical || !tracking.preferences.ready || mode === 'demo') && <View style={[styles.source, { top }]}>
-        <View style={[styles.statusDot, mode === 'demo' && styles.demoDot]} />
+      {(historical || !tracking.preferences.ready) && <View style={[styles.source, { top }]}>
+        <View style={styles.statusDot} />
         <Text style={styles.sourceText}>
           {historical
             ? `歷史 · ${shortRangeLabel(history.preferences)}`
-            : !tracking.preferences.ready
-            ? '讀取設定中…'
-            : 'DEMO · 模擬資料'}
+            : '讀取設定中…'}
         </Text>
       </View>}
       {!!messages.length && (
@@ -353,7 +347,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.master,
     marginRight: 8,
   },
-  demoDot: { backgroundColor: colors.dog },
   sourceText: { color: colors.ink, fontSize: 13, fontWeight: '700' },
   notices: {
     position: 'absolute',

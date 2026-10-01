@@ -76,7 +76,7 @@ describe('DogDatabase tracking reads', () => {
     );
     expect(deletes.map(([, params]) => params)).toEqual([[1, 1, 10000], [2, 2, 10000]]);
     expect(deletes.every(([sql]) => sql.includes('WHERE slave_id = ?'))).toBe(true);
-    expect(mockDatabase.executeAsync.mock.calls.join(' ')).not.toContain('demo_dog_status');
+    expect(deletes.every(([sql]) => !sql.includes('supabase_dog_status'))).toBe(true);
   });
 
   test('reads the latest dog_status row', async () => {

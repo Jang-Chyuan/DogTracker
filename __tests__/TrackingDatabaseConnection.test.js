@@ -16,7 +16,7 @@ test('Android uses a single native engine for typed parameters, reads and batche
     results: [{ id: 7, master_lat: null }], insertId: 8,
   });
   expect(native.executeDatabase).toHaveBeenCalledWith('SELECT ?', '[null,25.123,"中文",true]');
-  const commands = [{ query: 'DELETE FROM demo_dog_status' }, { query: 'INSERT INTO demo_dog_status VALUES (?)', params: [42] }];
+  const commands = [{ query: 'DELETE FROM app_settings' }, { query: 'INSERT INTO app_settings VALUES (?)', params: [42] }];
   await db.executeBatchAsync(commands);
   expect(native.executeDatabaseBatch).toHaveBeenCalledWith(JSON.stringify(commands));
   expect(open).not.toHaveBeenCalled();

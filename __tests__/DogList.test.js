@@ -158,13 +158,6 @@ test('following a dog that stopped reporting does not move the camera or crash',
     .toBe(true);
 });
 
-test('demo mode keeps the single dog row and never lists cloud dogs', async () => {
-  await expand(screen({}, 'demo').element);
-  const text = cardText();
-  expect(text).toContain('狗 · Slave');
-  expect(text).not.toContain('Master 5');
-});
-
 test('hiding the dog markers keeps the list and keeps following the chosen dog', async () => {
   await expand(screen({ showSlaveMarker: false, focusSlaveId: 4 }).element);
   expect(rows().map(node => node.props.accessibilityLabel))
@@ -183,8 +176,8 @@ test('hiding the dog markers keeps the list and keeps following the chosen dog',
 
 test('the camera frames a box around the followed dog, never a single point', async () => {
   await expand(screen({ focusSlaveId: 4 }).element);
-  // The map fits these on a source change (Demo↔正式, or coming back from the
-  // history tab). A single coordinate is a degenerate box and Android fits it
+  // The map fits these on a source change when returning from the
+  // history tab. A single coordinate is a degenerate box and Android fits it
   // at maximum zoom, so the framing has to be a real box around the dog.
   const { cameraPositions } = renderer.root.findAll(
     node => !!node.props.presentation, { deep: false })[0].props.presentation;
