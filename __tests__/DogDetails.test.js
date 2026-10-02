@@ -43,3 +43,17 @@ test('renaming can be cancelled without saving', async () => {
   expect(button(renderer, '改名')).toBeDefined();
   await act(async () => renderer.unmount());
 });
+
+test('a distance from an old phone fix says how old the fix is', async () => {
+  let renderer;
+  const phone = { latitude: 25.032, longitude: 121.5654, ageSeconds: 150 };
+  await act(async () => {
+    renderer = Renderer.create(<DogDetails dog={dog} point={{}} now={now} phone={phone} />);
+  });
+  const reading = renderer.root.findAll(node => node.props.accessibilityLabel?.startsWith('方向與距離'))[0];
+  expect(reading.props.accessibilityLabel).toContain('手機位置 2 分鐘前');
+  await act(async () => renderer.update(<DogDetails dog={dog} point={{}} now={now} phone={{ ...phone, ageSeconds: 5 }} />));
+  expect(renderer.root.findAll(node => node.props.accessibilityLabel?.startsWith('方向與距離'))[0]
+    .props.accessibilityLabel).not.toContain('手機位置');
+  await act(async () => renderer.unmount());
+});

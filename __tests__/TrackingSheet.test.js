@@ -147,3 +147,30 @@ test('DB updates refresh the visible summary without changing the chosen sheet l
     jest.useRealTimers();
   }
 });
+
+test('the header says the phone is recording, and how old its own position is', async () => {
+  const label = () => renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0].props.accessibilityLabel;
+  const view = props => (
+    <TrackingSheet tracking={tracking} dogs={[cloudDog(4, 10000)]} now={NOW} bottomInset={90} {...props} />
+  );
+  let renderer;
+  await act(async () => { renderer = Renderer.create(view({ recording: true, phone: null })); });
+  expect(label()).toContain('手機記錄中');
+  expect(label()).toContain('手機無定位，無法顯示距離');
+  // An older phone fix still gives a direction; the card says its age once.
+  await act(async () => renderer.update(view({
+    recording: true, phone: { latitude: 25.001, longitude: 121, ageSeconds: 150 },
+  })));
+  expect(label()).toContain('手機位置 2 分鐘前');
+  await act(async () => renderer.update(view({
+    recording: false, phone: { latitude: 25.001, longitude: 121, ageSeconds: 5 },
+  })));
+  expect(label()).toBe('1 隻狗');
+  // The receiver row opens the receiver's panel.
+  const open = jest.fn();
+  await act(async () => renderer.update(view({ onOpenReceiver: open })));
+  await act(async () => renderer.root.findAll(node => node.props.testID === 'receiver-row'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  expect(open).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});

@@ -188,20 +188,19 @@ test('following a dog that stopped reporting does not move the camera or crash',
     .toBe(true);
 });
 
-test('hiding the dog markers keeps the list and keeps following the chosen dog', async () => {
-  await expand(screen({ showSlaveMarker: false, focusSlaveId: 4 }).element);
+test('the card follows the chosen dog, and has no switch that hides every dog', async () => {
+  await expand(screen({ focusSlaveId: 4 }).element);
   expect(rowNames())
     .toEqual(['狗 4', '狗 6', '狗 7']);
-  expect(dogMarkers()).toHaveLength(0);
   // The card says 跟隨中, so the camera has to actually follow.
   expect(cardText()).toContain('跟隨中');
   expect(mockCamera.animateCamera).toHaveBeenCalledWith(
     { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 400 },
   );
-  // One eye in the header covers every dog on the map.
+  // Dogs are hidden one by one from their panel; the all-dogs eye is gone.
   expect(renderer.root.findAll(
-    node => node.props.accessibilityLabel === '顯示所有狗位置', { deep: false }))
-    .toHaveLength(1);
+    node => /所有狗/.test(node.props.accessibilityLabel ?? ''), { deep: false }))
+    .toHaveLength(0);
 });
 
 test('the camera frames a box around the followed dog, never a single point', async () => {
@@ -233,15 +232,14 @@ test('a dog is hidden from its panel; the card keeps it at the bottom with 顯�
   expect(renderer.root.findAll(node => node.props.testID === 'dog-hidden-4', { deep: false })).toHaveLength(1);
 });
 
-test('showing a dog again also brings back the all-dogs eye', async () => {
-  const value = screen({ showSlaveMarker: false, hiddenSlaveIds: [4] });
+test('a hidden dog comes back with 顯示', async () => {
+  const value = screen({ hiddenSlaveIds: [4] });
   await expand(value.element);
   const show = renderer.root.findAll(
     node => node.props.accessibilityLabel === '顯示狗 4', { deep: false })[0];
   await act(async () => show.props.onPress());
-  // Otherwise the dog would be listed as shown while the map draws nothing.
   expect(value.tracking.saveTrackingPreferences)
-    .toHaveBeenCalledWith({ hiddenSlaveIds: [], showSlaveMarker: true });
+    .toHaveBeenCalledWith({ hiddenSlaveIds: [] });
 });
 
 test('every dog is shown from both sources at once, each at its newest row', () => {

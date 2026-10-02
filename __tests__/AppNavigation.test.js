@@ -62,6 +62,19 @@ async function press(label, role) {
 async function setTrails(value) {
   await act(async () => renderer.root.findByType(MapScreen).props.tracking.saveTrackingPreferences({ showTrails: value }));
 }
+// The receiver's map switches live in its panel, opened from its card row.
+async function openReceiver() {
+  const row = renderer.root.findAll(node => node.props.testID === 'receiver-row'
+    && typeof node.props.onPress === 'function')[0];
+  expect(row).toBeDefined();
+  await act(async () => row.props.onPress());
+}
+async function setSwitch(label, value) {
+  const control = renderer.root.findAll(node => node.props.accessibilityLabel === label
+    && typeof node.props.onValueChange === 'function')[0];
+  expect(control).toBeDefined();
+  if (control.props.value !== value) await act(async () => control.props.onValueChange(value));
+}
 async function mount() {
   await act(async () => {
     renderer = Renderer.create(<App />);
@@ -233,50 +246,34 @@ test('native BLE replay does not write again or move stored map markers', async 
   expect(markerCoordinates()).toEqual(markers);
 });
 
-test('all eight visibility states gate overlays, retain card controls, and leave phone location independent', async () => {
+test('the receiver panel switches gate its marker and circle, and leave phone location independent', async () => {
   jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
   await mount();
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   await expand();
+  await openReceiver();
   for (const showTrails of [false, true])
-    for (const showSlaveMarker of [false, true])
+    for (const showRangeCircle of [false, true])
       for (const showMasterMarker of [false, true]) {
-        for (const [next, role] of [
-          [showSlaveMarker, '所有狗'],
-          [showMasterMarker, '領犬員'],
-        ]) {
-          const current = button('隱藏' + role + '位置') !== undefined;
-          if (current !== next)
-            await press((current ? '隱藏' : '顯示') + role + '位置');
-        }
+        await setSwitch('在地圖上顯示接收器', showMasterMarker);
+        await setSwitch('1 公里參考圈', showRangeCircle);
         await setTrails(showTrails);
-        expect(renderer.root.findAllByType(Marker)).toHaveLength(
-          Number(showMasterMarker) + Number(showSlaveMarker),
-        );
+        // The dog is always drawn: the all-dogs switch is gone.
+        expect(renderer.root.findAllByType(Marker)).toHaveLength(1 + Number(showMasterMarker));
         expect(renderer.root.findAllByType(Circle)).toHaveLength(
-          Number(showMasterMarker),
+          Number(showMasterMarker && showRangeCircle),
         );
-        expect(renderer.root.findAllByType(Polyline)).toHaveLength(
-          0,
-        );
-        expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(
-          true,
-        );
-        expect(
-          button((showMasterMarker ? '隱藏' : '顯示') + '領犬員位置'),
-        ).toBeDefined();
-        expect(preferences()).toMatchObject({
-          showTrails,
-          showMasterMarker,
-          showSlaveMarker,
-        });
+        expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
+        expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
+        expect(preferences()).toMatchObject({ showTrails, showMasterMarker, showRangeCircle, showSlaveMarker: true });
       }
 });
 
 test('all display values survive a cold remount without duplicating hardware rows', async () => {
   await mount();
   await expand();
-  await press('隱藏所有狗位置');
+  await openReceiver();
+  await setSwitch('在地圖上顯示接收器', false);
   await setTrails(true);
   const saved = preferences();
   const hardwareRows = rows('dog_status');
@@ -325,17 +322,18 @@ test('first map asks permission once; denial does not affect hardware locations'
   expect(request).toHaveBeenCalledTimes(1);
 });
 
-test('eye save failures preserve markers and remain retryable', async () => {
+test('switch save failures preserve markers and remain retryable', async () => {
   await mount();
   connection.sqlite.exec(
     "CREATE TRIGGER fail_settings BEFORE INSERT ON app_settings BEGIN SELECT RAISE(ABORT, 'settings locked'); END",
   );
   await expand();
-  await press('隱藏所有狗位置');
+  await openReceiver();
+  await setSwitch('在地圖上顯示接收器', false);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
   expect(text()).toContain('settings locked');
   connection.sqlite.exec('DROP TRIGGER fail_settings');
-  await press('隱藏所有狗位置');
+  await setSwitch('在地圖上顯示接收器', false);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
 });
 

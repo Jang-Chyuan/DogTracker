@@ -4,10 +4,11 @@ import { BackHandler, ScrollView, Switch } from 'react-native';
 import DeviceDetails from '../src/map/DeviceDetails';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
-test('Master details are information-only and close by backdrop, close button or Android Back', async () => {
+test('the receiver panel shows its state and map switches, and closes by backdrop, ✕ or Back', async () => {
   let renderer, onBack;
   const close = jest.fn(),
     save = jest.fn(),
+    settings = jest.fn(),
     remove = jest.fn();
   const listener = jest
     .spyOn(BackHandler, 'addEventListener')
@@ -19,8 +20,11 @@ test('Master details are information-only and close by backdrop, close button or
     await act(async () => {
       renderer = Renderer.create(
         <DeviceDetails
-          tracking={{ point: trackingPoint, saveTrackingPreferences: save }}
+          tracking={{ point: trackingPoint, saveTrackingPreferences: save,
+            preferences: { ready: true, value: { showMasterMarker: true, showRangeCircle: true } } }}
           subject={{ kind: 'master' }}
+          onPreferences={save}
+          onOpenReceiver={settings}
           master={null}
           topInset={80}
           bottomInset={120}
@@ -28,10 +32,18 @@ test('Master details are information-only and close by backdrop, close button or
         />,
       );
     });
-    expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+    const title = `接收器 ${trackingPoint.masterId}`;
     expect(JSON.stringify(renderer.toJSON())).not.toContain('路徑');
-    expect(JSON.stringify(renderer.toJSON())).toContain('領犬員裝置電量');
-    for (const label of ['關閉領犬員資訊', '關閉領犬員資訊面板']) {
+    // The two eyes that used to sit on the card are switches here.
+    const switches = renderer.root.findAllByType(Switch);
+    expect(switches.map(node => node.props.accessibilityLabel))
+      .toEqual(['在地圖上顯示接收器', '1 公里參考圈']);
+    await act(async () => switches[1].props.onValueChange(false));
+    expect(save).toHaveBeenCalledWith({ showRangeCircle: false });
+    await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '接收器設定'
+      && typeof node.props.onPress === 'function')[0].props.onPress());
+    expect(settings).toHaveBeenCalledTimes(1);
+    for (const label of [`關閉${title}`, `關閉${title}面板`]) {
       const button = renderer.root.findAll(
         node =>
           node.props.accessibilityLabel === label &&
@@ -41,7 +53,6 @@ test('Master details are information-only and close by backdrop, close button or
     }
     expect(onBack()).toBe(true);
     expect(close).toHaveBeenCalledTimes(3);
-    expect(save).not.toHaveBeenCalled();
     await act(async () => renderer.unmount());
     renderer = null;
     expect(remove).toHaveBeenCalledTimes(1);
@@ -148,9 +159,9 @@ test('the panel keeps its title and close button while the content scrolls', asy
   // someone, so the heading sits outside the scroll view.
   const scroll = renderer.root.findByType(ScrollView);
   expect(renderer.root.findAll(
-    node => node.props.accessibilityLabel === '關閉領犬員資訊面板',
+    node => node.props.accessibilityLabel === `關閉接收器 ${trackingPoint.masterId}面板`,
     { deep: false })[0]).toBeDefined();
   expect(scroll.findAll(
-    node => node.props.accessibilityLabel === '關閉領犬員資訊面板')).toHaveLength(0);
+    node => node.props.accessibilityLabel === `關閉接收器 ${trackingPoint.masterId}面板`)).toHaveLength(0);
   await act(async () => renderer.unmount());
 });

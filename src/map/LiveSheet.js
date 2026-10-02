@@ -64,7 +64,7 @@ function FlyingAvatar({ index, id, ring, progress, stripX, listY, rows, fontScal
  * the avatars land on the rows wherever large fonts or wrapped text put them.
  */
 export default function LiveSheet({
-  title, summary, control, strip, bottomInset, topInset = 100, onHeight, onDragging, children,
+  title, summary, badge, control, strip, bottomInset, topInset = 100, onHeight, onDragging, children,
   covered = false,
 }) {
   const { height: windowHeight, fontScale } = useWindowDimensions();
@@ -85,9 +85,18 @@ export default function LiveSheet({
   // A released drag already springs on the UI thread; only taps, the
   // accessibility actions and stop changes (rotation, font size) spring here.
   const springing = useRef(false);
+  const appliedStops = useRef(stops);
   useEffect(() => {
-    if (springing.current) springing.current = false;
-    else sheet.value = withSpring(stops[level], motion.sheetSpring);
+    // A drag's own spring targets the stops it was released against. If the
+    // stops moved in the same render (a status pill appearing pushes the top
+    // down), that spring aims at the old place, so spring again here.
+    const moved = appliedStops.current !== stops;
+    appliedStops.current = stops;
+    if (springing.current && !moved) springing.current = false;
+    else {
+      springing.current = false;
+      sheet.value = withSpring(stops[level], motion.sheetSpring);
+    }
     onHeight?.(stops[level]);
   }, [level, stops, sheet, onHeight]);
 
@@ -178,7 +187,7 @@ export default function LiveSheet({
             testID="tracking-sheet-handle"
             onPress={toggle}
             accessibilityRole="adjustable"
-            accessibilityLabel={`${title}。${summary}`}
+            accessibilityLabel={[title, badge, summary].filter(Boolean).join('。')}
             accessibilityHint="點一下展開或收合狗清單"
             accessibilityValue={{ min: 0, max: 2, now: LEVELS.indexOf(level) }}
             accessibilityActions={[{ name: 'increment', label: '展開' }, { name: 'decrement', label: '收合' }]}
@@ -189,7 +198,15 @@ export default function LiveSheet({
             style={[styles.header, { minHeight: top - HANDLE_HEIGHT }]}
           >
             <View style={styles.headerText}>
-              <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={FONT_CAP}>{title}</Text>
+              <View style={styles.titleLine}>
+                <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={FONT_CAP}>{title}</Text>
+                {!!badge && (
+                  <View style={styles.badge}>
+                    <View style={styles.badgeDot} />
+                    <Text style={styles.badgeText} numberOfLines={1} maxFontSizeMultiplier={FONT_CAP}>{badge}</Text>
+                  </View>
+                )}
+              </View>
               {!!summary && <Text style={styles.summary} numberOfLines={1} maxFontSizeMultiplier={FONT_CAP}>{summary}</Text>}
             </View>
             {!collapsed && control}
@@ -273,7 +290,11 @@ const styles = StyleSheet.create({
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#D8CFCC' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SIDE, gap: space.s },
   headerText: { flex: 1 },
-  title: { ...type.status, color: colors.text },
+  title: { ...type.status, color: colors.text, flexShrink: 1 },
+  titleLine: { flexDirection: 'row', alignItems: 'center', gap: space.m },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  badgeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.ok },
+  badgeText: { ...type.caption, color: colors.ok, fontWeight: '700' },
   summary: { ...type.caption, color: colors.textMuted },
   body: { position: 'absolute', left: 0, right: 0 },
   listContent: { paddingHorizontal: 18, paddingBottom: space.xl },

@@ -6,6 +6,8 @@ import {
   movement,
   phoneFix,
   positionAge,
+  phoneNote,
+  settleMovement,
 } from '../src/map/DogReadout';
 
 const NOW = new Date(2026, 9, 2, 10, 0).getTime();
@@ -40,9 +42,15 @@ test('no direction without both positions, and the reason is kept', () => {
   expect(fromPhone({ coordinate: at }, null)).toEqual({ kind: 'no-phone' });
 });
 
-test('the phone fix is the live tracker position, only while current', () => {
-  expect(phoneFix({ running: true, ageSeconds: 3, position: at })).toBe(at);
-  expect(phoneFix({ running: true, ageSeconds: 45, position: at })).toBeNull();
+test('the phone fix is the live tracker position, usable for ten minutes and said when old', () => {
+  expect(phoneFix({ running: true, ageSeconds: 3, position: at })).toEqual({ ...at, ageSeconds: 3 });
+  expect(phoneNote(phoneFix({ running: true, ageSeconds: 3, position: at }))).toBe('');
+  // An older fix still gives a direction; the card says how old, in minutes.
+  expect(phoneFix({ running: true, ageSeconds: 45, position: at })).toEqual({ ...at, ageSeconds: 45 });
+  expect(phoneNote(phoneFix({ running: true, ageSeconds: 45, position: at }))).toBe('手機位置 1 分鐘前');
+  expect(phoneNote(phoneFix({ running: true, ageSeconds: 150, position: at }))).toBe('手機位置 2 分鐘前');
+  expect(phoneFix({ running: true, ageSeconds: 601, position: at })).toBeNull();
+  expect(phoneNote(null)).toBe('手機無定位，無法顯示距離');
   expect(phoneFix({ running: false, ageSeconds: 1, position: at })).toBeNull();
   expect(phoneFix(null)).toBeNull();
 });
@@ -67,4 +75,15 @@ test('low battery is 20 % or less, and unknown is not low', () => {
   expect(lowBattery({ batteryPercentage: 15 })).toBe(true);
   expect(lowBattery({ batteryPercentage: 21 })).toBe(false);
   expect(lowBattery({ batteryPercentage: null })).toBe(false);
+});
+
+test('moving and still settle with a margin, so walking slowly does not flicker', () => {
+  expect(settleMovement(null, 2)).toBe('moving');
+  expect(settleMovement('moving', 1.2)).toBe('moving');
+  expect(settleMovement('moving', 0.8)).toBe('moving');
+  expect(settleMovement('moving', 0.4)).toBe('still');
+  expect(settleMovement('still', 1.2)).toBe('still');
+  expect(settleMovement('still', 1.6)).toBe('moving');
+  expect(settleMovement(null, 1.2)).toBe('moving');
+  expect(settleMovement('moving', NaN)).toBeNull();
 });

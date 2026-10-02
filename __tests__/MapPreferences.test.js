@@ -31,6 +31,7 @@ test('first use defaults to real, visible markers and hidden paths', async () =>
       mode: 'real',
       showMasterMarker: true,
       showSlaveMarker: true,
+      showRangeCircle: true,
       showTrails: false,
     },
     error: null,
@@ -41,15 +42,15 @@ test('failed writes preserve every prior value and a successful retry applies th
   await controller.load();
   database.save.mockRejectedValueOnce(new Error('locked'));
   expect(
-    await controller.save({ showSlaveMarker: false, showTrails: true }),
+    await controller.save({ showRangeCircle: false, showTrails: true }),
   ).toBe(false);
   expect(state().value).toEqual(DEFAULT_TRACKING_PREFERENCES);
   expect(state().error).toBe('locked');
   expect(
-    await controller.save({ showSlaveMarker: false, showTrails: true }),
+    await controller.save({ showRangeCircle: false, showTrails: true }),
   ).toBe(true);
   expect(state().value).toMatchObject({
-    showSlaveMarker: false,
+    showRangeCircle: false,
     showTrails: true,
   });
 });
@@ -64,13 +65,17 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     mode: 'real',
     showMasterMarker: false,
     showSlaveMarker: false,
+    showRangeCircle: false,
     showTrails: true,
   });
   await controller.load();
   expect(state().value).toEqual({
     mode: 'real',
     showMasterMarker: false,
-    showSlaveMarker: false,
+    // The all-dogs switch is gone; a stored "off" must not hide every dog
+    // with no way back.
+    showSlaveMarker: true,
+    showRangeCircle: false,
     showTrails: true,
     windowMinutes: 2,
     focusSlaveId: null,
@@ -124,6 +129,7 @@ test('every setting survives a new controller and shares no tracking-row writes'
       mode: 'real',
       showMasterMarker: false,
       showSlaveMarker: true,
+      showRangeCircle: false,
       showTrails: true,
       windowMinutes: 30,
       focusSlaveId: 4,
@@ -189,4 +195,22 @@ test('per-dog eyes are stored sorted, without repeats, and reject junk', () => {
     expect(() => validateTrackingPreferences({ hiddenSlaveIds: invalid }))
       .toThrow('隱藏的狗');
   }
+});
+
+test('changes made while a write is in flight are written after it; the last choice wins', async () => {
+  const { database, controller, state } = setup();
+  await controller.load();
+  let finish;
+  database.save.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const first = controller.save({ showRangeCircle: false });
+  await Promise.resolve();
+  // Two quick taps while the first write is still on disk.
+  const second = controller.save({ showMasterMarker: false });
+  const third = controller.save({ showRangeCircle: true });
+  finish();
+  expect(await first).toBe(true);
+  expect(await second).toBe(true);
+  expect(await third).toBe(true);
+  expect(state().value).toMatchObject({ showMasterMarker: false, showRangeCircle: true });
+  expect(database.save).toHaveBeenCalledTimes(2);
 });

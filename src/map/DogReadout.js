@@ -35,7 +35,23 @@ export function formatDistance(metres) {
 export const MOVING_KMH = 1;
 export function movement(dog, freshness) {
   if (freshness !== 'fresh' || !Number.isFinite(dog?.speedKmh)) return 'unknown';
+  // A state settled over several packets (settleMovement) wins over a single
+  // reading, so a dog walking at about 1 km/h does not flicker.
+  if (dog.movementState === 'moving' || dog.movementState === 'still') return dog.movementState;
   return dog.speedKmh >= MOVING_KMH ? 'moving' : 'still';
+}
+
+// Hysteresis around MOVING_KMH: start moving above 1.5 km/h, stop below
+// 0.5 km/h; in between the previous state holds. GPS speed jitters by about
+// half a km/h when a dog stands still.
+export const START_MOVING_KMH = 1.5;
+export const STOP_MOVING_KMH = 0.5;
+export function settleMovement(previous, speedKmh) {
+  if (!Number.isFinite(speedKmh)) return null;
+  if (speedKmh >= START_MOVING_KMH) return 'moving';
+  if (speedKmh <= STOP_MOVING_KMH) return 'still';
+  if (previous === 'moving' || previous === 'still') return previous;
+  return speedKmh >= MOVING_KMH ? 'moving' : 'still';
 }
 
 export const MOVEMENT_WORDS = { moving: '移動中', still: '靜止', unknown: '狀態未知' };
@@ -83,11 +99,23 @@ export function compassWord(bearing) {
   return COMPASS[Math.round((((bearing % 360) + 360) % 360) / 45) % 8];
 }
 
-// The phone fix the rows measure from: the live tracker's, if it is current.
+// The phone fix the rows measure from: the live tracker's. Under 30 s it is
+// current; up to 10 minutes it still gives a direction, and the card says how
+// old it is ("手機位置 2 分鐘前", design 2); older than that it is no fix.
 export const PHONE_FIX_MAX_AGE_S = 30;
+export const PHONE_FIX_USABLE_S = 10 * 60;
 export function phoneFix(livePhone) {
-  if (!livePhone?.running || livePhone.ageSeconds == null || livePhone.ageSeconds > PHONE_FIX_MAX_AGE_S)
+  if (!livePhone?.running || livePhone.ageSeconds == null || livePhone.ageSeconds > PHONE_FIX_USABLE_S)
     return null;
   const position = livePhone.position;
-  return Number.isFinite(position?.latitude) && Number.isFinite(position?.longitude) ? position : null;
+  if (!Number.isFinite(position?.latitude) || !Number.isFinite(position?.longitude)) return null;
+  return { ...position, ageSeconds: livePhone.ageSeconds };
+}
+
+// What the card says once about the phone's own position, or '' when it is
+// current. Minutes only: nothing on screen counts seconds.
+export function phoneNote(phone) {
+  if (!phone) return '手機無定位，無法顯示距離';
+  if (!(phone.ageSeconds > PHONE_FIX_MAX_AGE_S)) return '';
+  return `手機位置 ${Math.max(1, Math.floor(phone.ageSeconds / 60))} 分鐘前`;
 }

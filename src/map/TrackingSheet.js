@@ -5,45 +5,20 @@ import { formatTime, positionLabel } from './MapFormat';
 import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
 import LiveSheet from './LiveSheet';
 import DogList, { describeDog } from './DogList';
+import { phoneNote } from './DogReadout';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 import { colors as tokens } from '../theme/tokens';
 import Glyph from './Glyph';
-import TrackingAvatar from './TrackingAvatar';
-import VisibilityButton from './VisibilityButton';
 
 export const windowLabel = minutes =>
   (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小時`);
 
 // Re-exported for the existing callers of the sheet.
 export { formatTime, positionLabel };
-export function Position({ role, position, visibilityControl }) {
-  return (
-    <View style={styles.positionRow}>
-      <TrackingAvatar role={role} size={36} />
-      <View style={styles.positionText}>
-        <Text style={styles.label}>
-          {role === 'master' ? '領犬員 · Master' : '狗 · Slave'}
-        </Text>
-        <Text selectable style={styles.coordinate}>
-          {positionLabel(position)}
-        </Text>
-        {position?.retained && (
-          <Text style={styles.warning}>
-            最後有效位置（非最新定位）· {formatTime(position.receivedAt)}
-          </Text>
-        )}
-      </View>
-      {visibilityControl}
-    </View>
-  );
-}
-
-const fromPhoneMissing = (dog, shown) =>
-  describeDog(dog, shown.now, shown.phone, shown.mapHeading).where.kind === 'no-phone';
 
 // The handler's own receiver, in one line: which one, its battery, and only
 // if something is wrong, what.
-function ReceiverRow({ point, position, control }) {
+function ReceiverRow({ point, position, onPress }) {
   const valid = point.masterBatteryValid && point.masterBatteryPercentage !== null;
   const problem = point.id === null ? '尚無資料'
     : !position ? '無定位'
@@ -53,11 +28,18 @@ function ReceiverRow({ point, position, control }) {
   const battery = valid ? `${point.masterBatteryPercentage}%` : point.id === null ? '' : '電量未回報';
   const name = point.masterId != null ? `接收器 ${point.masterId}` : '接收器';
   return (
-    <View style={styles.receiverRow}>
-      {/* Grouped for TalkBack without swallowing the eye button beside it. */}
-      <View style={styles.receiverInfo}
-        accessible accessibilityLabel={[name, valid ? `電量 ${battery}` : battery, problem].filter(Boolean).join('，')}>
-      <TrackingAvatar role="master" size={36} />
+    <Pressable
+      style={({ pressed }) => [styles.receiverRow, pressed && styles.pressed]}
+      onPress={onPress}
+      testID="receiver-row"
+      accessibilityRole="button"
+      accessibilityHint="打開接收器面板"
+      accessibilityLabel={[name, valid ? `電量 ${battery}` : battery, problem].filter(Boolean).join('，')}>
+      <View style={styles.receiverInfo}>
+      {/* The same numbered square as on the map. */}
+      <View style={styles.receiverBadge}>
+        <Text style={styles.receiverBadgeText} allowFontScaling={false}>{point.masterId ?? ''}</Text>
+      </View>
       <View style={styles.positionText}>
         <Text style={styles.receiverName}>{name}</Text>
         <View style={styles.receiverLine}>
@@ -68,8 +50,8 @@ function ReceiverRow({ point, position, control }) {
         </View>
       </View>
       </View>
-      {control}
-    </View>
+      <Text style={styles.chevron}>›</Text>
+    </Pressable>
   );
 }
 
@@ -98,6 +80,8 @@ export default function TrackingSheet({
   mapHeading,
   onPickDog,
   covered,
+  recording,
+  onOpenReceiver,
 }) {
   const point = tracking.point;
   const { preferences } = tracking;
@@ -117,8 +101,7 @@ export default function TrackingSheet({
   // that the avatars carry each dog's state, and the only line left is the
   // one problem every row shares: without the phone's own fix no distance
   // can be shown, said once here instead of on every row.
-  const phoneMissing = listed.some(dog => fromPhoneMissing(dog, shown));
-  const summary = !listed.length ? sheetSummary(tracking) : phoneMissing ? '手機無定位，無法顯示距離' : '';
+  const summary = !listed.length ? sheetSummary(tracking) : phoneNote(shown.phone);
   const strip = shownDogs.map(dog => {
     const said = describeDog(dog, shown.now, shown.phone, shown.mapHeading);
     // Under an avatar only a problem is written; the ring colour repeats it.
@@ -135,27 +118,14 @@ export default function TrackingSheet({
     };
   });
   // Only a card that has not loaded yet is disabled. Dimming everything while
-  // a write is in flight made every eye tap flash the whole card.
+  // a write is in flight made every tap flash the whole card.
   const disabled = !preferences.ready;
-  const dogVisibility = (
-    <VisibilityButton
-      role="slave"
-      // In the list header this one eye covers every dog, not just one row.
-      subject="所有狗"
-      visible={preferences.value.showSlaveMarker}
-      disabled={disabled}
-      onPress={() =>
-        tracking.saveTrackingPreferences({
-          showSlaveMarker: !preferences.value.showSlaveMarker,
-        })
-      }
-    />
-  );
   return (
     <LiveSheet
       title={listed.length ? `${listed.length} 隻狗` : '狗'}
       summary={summary}
-      control={dogVisibility}
+      // The phone's own track is being kept for history (design 1).
+      badge={recording ? '手機記錄中' : ''}
       strip={strip}
       bottomInset={bottomInset}
       topInset={topInset}
@@ -179,35 +149,14 @@ export default function TrackingSheet({
           onShow={slaveId =>
             tracking.saveTrackingPreferences({
               hiddenSlaveIds: preferences.value.hiddenSlaveIds.filter(id => id !== slaveId),
-              // Showing a dog again must also bring back every dog marker,
-              // otherwise the dog would be listed as shown while nothing is drawn.
-              ...(preferences.value.showSlaveMarker ? {} : { showSlaveMarker: true }),
             })
           }
-          control={dogVisibility}
         />
         {/* Below the list: the flying avatars land on rows measured from the
             list's top, so nothing may sit above it. */}
         {!tracking.historyLoaded && <Text style={styles.hint}>正在載入本機路徑…</Text>}
         {point.id === null && <Text style={styles.hint}>等待接收器資料</Text>}
-        <View>
-          <ReceiverRow
-            point={point}
-            position={master}
-            control={
-              <VisibilityButton
-                role="master"
-                visible={preferences.value.showMasterMarker}
-                disabled={disabled}
-                onPress={() =>
-                  tracking.saveTrackingPreferences({
-                    showMasterMarker: !preferences.value.showMasterMarker,
-                  })
-                }
-              />
-            }
-          />
-        </View>
+        <ReceiverRow point={point} position={master} onPress={onOpenReceiver} />
         {showRouteControls ? <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>移動路徑</Text>
@@ -332,6 +281,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: tokens.line, paddingTop: 8, marginTop: 4,
   },
   receiverInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chevron: { fontSize: 22, color: tokens.textMuted, paddingHorizontal: 8 },
+  pressed: { opacity: 0.85 },
+  receiverBadge: {
+    width: 36, height: 36, borderRadius: 10, backgroundColor: tokens.receiver,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  receiverBadgeText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   receiverName: { fontSize: 16, fontWeight: '700', color: tokens.text },
   receiverLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   receiverSub: { fontSize: 13, color: tokens.textMuted, flexShrink: 1 },
