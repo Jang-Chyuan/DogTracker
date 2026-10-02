@@ -444,9 +444,11 @@ export default function MapScreen({
         if (!dog) return null;
         const said = describeDog(dog, now, phonePosition, mapHeading);
         const followed = tracking.preferences.value.focusSlaveId === dog.slaveId;
+        // Same rule as the row: a problem and its age in words, otherwise only
+        // the distance.
         const statusLine = [
-          said.time, said.condition, said.where.kind === 'ok' && `離你 ${said.where.distance}`,
-        ].filter(Boolean).join('・');
+          said.condition, said.age, said.where.kind === 'ok' && `${said.where.compass}方 ${said.where.distance}`,
+        ].filter(Boolean).join('・') || '定位正常';
         return (
           <DogPopover
             name={dogMapLabel(dogHistoryLabel(dog.slaveId, history?.preferences.dogAliases))}

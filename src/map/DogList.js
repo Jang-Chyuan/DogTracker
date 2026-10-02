@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import TrackingAvatar from './TrackingAvatar';
+import Glyph from './Glyph';
 import { colors, space, touch, type } from '../theme/tokens';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 import { dogFreshness, FRESH_MS } from './DogFreshness';
@@ -12,7 +13,9 @@ function clock(at) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-// What a row (and the popover) says about a dog, in the same words.
+// What a row, the strip, the popover and the panel say about a dog. Only a
+// problem is written out; a current dog says nothing more than where it is.
+export const PROBLEM_WORDS = { silent: '未更新', nofix: '無定位' };
 export function describeDog(dog, now, phone, mapHeading = 0) {
   const freshness = dogFreshness(dog, now);
   const group = dogGroup(dog, now);
@@ -21,15 +24,22 @@ export function describeDog(dog, now, phone, mapHeading = 0) {
   const where = fromPhone(dog, phone, mapHeading);
   // Never call a silent collar "receiving": no packets is a different problem
   // from packets without a fix.
-  const condition = group === 'silent' ? '沒有收到新資料'
-    : group === 'nofix' ? '有收訊、沒有定位' : MOVEMENT_WORDS[state];
-  const time = !dog.coordinate || freshness.tier === 'gone' ? ''
-    : current ? '定位即時'
-    : dog.retained && freshness.tier === 'fresh' ? `最後位置 ${clock(dog.lastPositionAt)}`
-    : `最後位置 ${positionAge(dog, freshness.tier, now)}`;
-  const distanceText = where.kind === 'ok' ? where.distance
-    : where.kind === 'no-phone' ? '手機無定位' : '無定位';
-  return { freshness, group, current, condition, time, where, distanceText, low: lowBattery(dog) };
+  const condition = PROBLEM_WORDS[group] || '';
+  // How old the last position is — only when it is not current.
+  const age = current || !dog.coordinate || freshness.tier === 'gone' ? ''
+    : dog.retained && freshness.tier === 'fresh' ? clock(dog.lastPositionAt)
+    : positionAge(dog, freshness.tier, now);
+  const time = age ? `最後位置 ${age}` : '';
+  const distanceText = where.kind === 'ok' ? where.distance : '';
+  // Everything a screen reader needs, in words, even where the screen shows
+  // an icon or nothing.
+  const spoken = [
+    current ? MOVEMENT_WORDS[state] : condition,
+    // A missing phone fix is announced once by the card, not on every dog.
+    where.kind === 'ok' ? `${where.compass}方 ${where.distance}` : '',
+    time,
+  ].filter(Boolean).join('，');
+  return { freshness, group, current, state, condition, age, time, where, distanceText, spoken, low: lowBattery(dog) };
 }
 
 // Status ring around the avatar: words in the row carry the state, the ring
@@ -46,16 +56,6 @@ export function dogGroup(dog, now) {
   if (!Number.isFinite(lastPacket) || now - lastPacket > FRESH_MS) return 'silent';
   if (dog.retained || !dog.coordinate) return 'nofix';
   return dogFreshness(dog, now).tier === 'fresh' ? 'ok' : 'nofix';
-}
-
-export function groupSummary(dogs, now) {
-  const counts = { ok: 0, nofix: 0, silent: 0 };
-  dogs.forEach(dog => { counts[dogGroup(dog, now)] += 1; });
-  return [
-    counts.ok && `定位正常 ${counts.ok}`,
-    counts.nofix && `無定位 ${counts.nofix}`,
-    counts.silent && `未更新 ${counts.silent}`,
-  ].filter(Boolean).join('・');
 }
 
 function Arrow({ bearing }) {
@@ -76,14 +76,15 @@ function BatteryLow() {
 }
 
 function DogRow({ dog, name, now, phone, mapHeading, followed, onPick, onLayout, avatarHidden }) {
-  const { freshness, current, condition, time, where, distanceText, low } = describeDog(dog, now, phone, mapHeading);
-  const sub = [condition, followed && (current ? '跟隨中' : '跟隨暫停')].filter(Boolean).join('・');
-  const spoken = where.kind === 'ok' ? `${where.compass}方 ${distanceText}` : distanceText;
+  const { freshness, group, current, state, condition, age, where, distanceText, spoken, low } =
+    describeDog(dog, now, phone, mapHeading);
+  const follow = followed ? (current ? '跟隨中' : '跟隨暫停') : '';
+  const tone = current ? colors.textMuted : freshness.tier === 'recent' ? colors.warn : colors.textMuted;
   return (
     <Pressable
       testID={`dog-row-${dog.slaveId}`}
       accessibilityRole="button"
-      accessibilityLabel={`${name}，${sub}${low ? `，電量 ${dog.batteryPercentage}%` : ''}，${spoken}${time ? `，${time}` : ''}`}
+      accessibilityLabel={[name, spoken, follow, low && `電量 ${dog.batteryPercentage}%`].filter(Boolean).join('，')}
       accessibilityHint="把地圖移到這隻狗，並打開選項"
       accessibilityState={{ selected: followed }}
       onPress={event => onPick(dog, event.nativeEvent.pageY, event.nativeEvent.pageX)}
@@ -99,20 +100,25 @@ function DogRow({ dog, name, now, phone, mapHeading, followed, onPick, onLayout,
         <View style={styles.nameLine}>
           <Text style={styles.name} numberOfLines={1}>{name}</Text>
           {low && <BatteryLow />}
+          {low && <Text style={styles.lowText}>{dog.batteryPercentage}%</Text>}
         </View>
-        <Text style={styles.sub} numberOfLines={2}>
-          {sub}{low ? `・電量 ${dog.batteryPercentage}%` : ''}
-        </Text>
+        {/* Icon and a short word, so it reads in bright sun too (design 2):
+            moving or still for a current dog, the problem and its age
+            otherwise. */}
+        <View style={styles.subLine}>
+          {current ? (state !== 'unknown' && <Glyph name={state} color={tone} size={15} />)
+            : <Glyph name={group === 'silent' ? 'no-signal' : 'no-fix'} color={tone} size={15} />}
+          <Text style={[styles.sub, styles.subText, { color: tone }]} numberOfLines={2}>
+            {[current ? MOVEMENT_WORDS[state] : condition, age, follow].filter(Boolean).join('・')}
+          </Text>
+        </View>
       </View>
-      <View style={styles.right}>
+      {where.kind === 'ok' && (
         <View style={styles.distanceLine}>
-          {where.kind === 'ok' && <Arrow bearing={where.bearing} />}
-          <Text style={[styles.distance, where.kind !== 'ok' && styles.distanceMissing]}>{distanceText}</Text>
+          <Arrow bearing={where.bearing} />
+          <Text style={styles.distance}>{distanceText}</Text>
         </View>
-        <Text style={[styles.age, !current && freshness.tier === 'recent' && styles.ageRecent]}>
-          {time}
-        </Text>
-      </View>
+      )}
     </Pressable>
   );
 }
@@ -136,7 +142,6 @@ export default function DogList({
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.title}>{dogs.length} 隻狗</Text>
-            {!!dogs.length && <Text style={styles.summary}>{groupSummary(dogs, now)}</Text>}
           </View>
           {control}
         </View>
@@ -155,7 +160,7 @@ export default function DogList({
           </View>
           <View style={styles.middle}>
             <Text style={[styles.name, styles.hiddenName]}>{nameOf(dog)}</Text>
-            <Text style={styles.sub}>已隱藏，不顯示在地圖上</Text>
+            <Text style={styles.sub}>已隱藏</Text>
           </View>
           <Pressable
             accessibilityRole="button"
@@ -175,7 +180,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.s, marginBottom: space.xs },
   headerText: { flex: 1 },
   title: { ...type.status, color: colors.text },
-  summary: { ...type.caption, color: colors.textMuted },
   empty: { ...type.caption, color: colors.textMuted, marginVertical: space.s },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: space.m, minHeight: 60,
@@ -191,12 +195,11 @@ const styles = StyleSheet.create({
   nameLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   name: { ...type.status, color: colors.text, flexShrink: 1 },
   sub: { ...type.caption, color: colors.textMuted },
-  right: { alignItems: 'flex-end' },
+  subLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minWidth: 0 },
+  subText: { flexShrink: 1 },
+  lowText: { ...type.caption, color: colors.crit, fontWeight: '700' },
   distanceLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   distance: { ...type.status, color: colors.text },
-  distanceMissing: { fontSize: 13, color: colors.textMuted, fontWeight: '400' },
-  age: { ...type.caption, color: colors.textMuted },
-  ageRecent: { color: colors.warn, fontWeight: '700' },
   hiddenRow: { backgroundColor: colors.bg },
   hiddenName: { color: colors.textMuted },
   showButton: {

@@ -4,10 +4,10 @@ import { mapColors as colors } from './MapTheme';
 import { formatTime, positionLabel } from './MapFormat';
 import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
 import LiveSheet from './LiveSheet';
-import DogList, { describeDog, groupSummary } from './DogList';
+import DogList, { describeDog } from './DogList';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 import { colors as tokens } from '../theme/tokens';
-import Stat from './Stat';
+import Glyph from './Glyph';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
 
@@ -37,8 +37,40 @@ export function Position({ role, position, visibilityControl }) {
     </View>
   );
 }
-function battery(valid, percentage) {
-  return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
+
+const fromPhoneMissing = (dog, shown) =>
+  describeDog(dog, shown.now, shown.phone, shown.mapHeading).where.kind === 'no-phone';
+
+// The handler's own receiver, in one line: which one, its battery, and only
+// if something is wrong, what.
+function ReceiverRow({ point, position, control }) {
+  const valid = point.masterBatteryValid && point.masterBatteryPercentage !== null;
+  const problem = point.id === null ? '尚無資料'
+    : !position ? '無定位'
+    // A fix that stopped updating is a problem too, not only one kept from an
+    // older packet.
+    : position.retained || position.stale ? `最後位置 ${formatTime(position.receivedAt)}` : '';
+  const battery = valid ? `${point.masterBatteryPercentage}%` : point.id === null ? '' : '電量未回報';
+  const name = point.masterId != null ? `接收器 ${point.masterId}` : '接收器';
+  return (
+    <View style={styles.receiverRow}>
+      {/* Grouped for TalkBack without swallowing the eye button beside it. */}
+      <View style={styles.receiverInfo}
+        accessible accessibilityLabel={[name, valid ? `電量 ${battery}` : battery, problem].filter(Boolean).join('，')}>
+      <TrackingAvatar role="master" size={36} />
+      <View style={styles.positionText}>
+        <Text style={styles.receiverName}>{name}</Text>
+        <View style={styles.receiverLine}>
+          {valid && <Glyph name="battery" color={tokens.textMuted} level={point.masterBatteryPercentage} />}
+          <Text style={styles.receiverSub}>
+            {[battery, problem].filter(Boolean).join('・')}
+          </Text>
+        </View>
+      </View>
+      </View>
+      {control}
+    </View>
+  );
 }
 
 export function sheetSummary(tracking) {
@@ -81,18 +113,22 @@ export default function TrackingSheet({
   const hiddenIds = frozen.current.hiddenIds;
   const shown = frozen.current;
   const shownDogs = listed.filter(dog => !hiddenIds.includes(dog.slaveId));
-  // Before any dog is known, the card says what it is waiting for.
-  const summary = listed.length ? groupSummary(listed, shown.now) : sheetSummary(tracking);
+  // Before any dog is known, the card says what it is waiting for. After
+  // that the avatars carry each dog's state, and the only line left is the
+  // one problem every row shares: without the phone's own fix no distance
+  // can be shown, said once here instead of on every row.
+  const phoneMissing = listed.some(dog => fromPhoneMissing(dog, shown));
+  const summary = !listed.length ? sheetSummary(tracking) : phoneMissing ? '手機無定位，無法顯示距離' : '';
   const strip = shownDogs.map(dog => {
     const said = describeDog(dog, shown.now, shown.phone, shown.mapHeading);
-    const status = said.group === 'silent' ? '未更新'
-      : said.group === 'nofix' ? '無定位'
-      : said.current ? '即時' : said.time.replace('最後位置 ', '');
+    // Under an avatar only a problem is written; the ring colour repeats it.
+    const status = said.condition;
     const aged = said.freshness.tier === 'recent';
     return {
       id: dog.slaveId,
       name: dogMapLabel(dogHistoryLabel(dog.slaveId, dogAliases)),
       status,
+      spoken: said.condition || '定位正常',
       statusColor: said.current ? tokens.ok : aged ? tokens.warn : tokens.textMuted,
       ring: said.current ? tokens.ok : aged ? tokens.warn : '#8A948F',
       onPress: (pageY, pageX) => onPickDog?.(dog, pageY, pageX),
@@ -152,28 +188,13 @@ export default function TrackingSheet({
         />
         {/* Below the list: the flying avatars land on rows measured from the
             list's top, so nothing may sit above it. */}
-        {!tracking.historyLoaded && (
-          <Text style={styles.hint}>正在載入本機路徑…</Text>
-        )}
-        {point.id === null && (
-          <Text style={styles.hint}>
-            等待硬體寫入資料；不會自動使用假資料。
-          </Text>
-        )}
-        {/* Only one handler can be drawn: the cloud rows carry each dog's
-            position and the id of the Master that relayed it, never that
-            Master's own position (hardware question H2, still open). */}
-        {dogs.some(dog => dog.source === 'cloud') && (
-          <Text style={styles.hint}>
-            其他 Master 的位置不在雲端資料裡（雲端只有各狗的位置），所以地圖上只有這支
-            手機連線的領犬員。
-          </Text>
-        )}
-        <View style={!preferences.value.showMasterMarker && styles.hiddenRow}>
-          <Position
-            role="master"
+        {!tracking.historyLoaded && <Text style={styles.hint}>正在載入本機路徑…</Text>}
+        {point.id === null && <Text style={styles.hint}>等待接收器資料</Text>}
+        <View>
+          <ReceiverRow
+            point={point}
             position={master}
-            visibilityControl={
+            control={
               <VisibilityButton
                 role="master"
                 visible={preferences.value.showMasterMarker}
@@ -186,11 +207,6 @@ export default function TrackingSheet({
               />
             }
           />
-          <View style={styles.metrics}>
-            <Stat icon="battery" label="領犬員電量"
-              level={point.masterBatteryValid ? point.masterBatteryPercentage : null}
-              value={battery(point.masterBatteryValid, point.masterBatteryPercentage)} />
-          </View>
         </View>
         {showRouteControls ? <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -238,7 +254,7 @@ export default function TrackingSheet({
             </>
           )}
         </View>
-        : <Text style={styles.hint}>狗的定位超過 2 分鐘未更新，地圖上改成琥珀色或灰色並寫出最後位置的時間；超過 24 小時才拿掉。</Text>}
+        : null}
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (
           <View>
@@ -256,12 +272,6 @@ export default function TrackingSheet({
             </Pressable>
           </View>
         )}
-        <Text style={styles.hint}>
-          參考圈半徑 1 公里，跟隨領犬員眼睛。
-        </Text>
-        <Text style={styles.hint}>
-          點地圖上的狗或領犬員可以看該裝置的詳細資料（距離、硬體回報、LoRa 訊號）。
-        </Text>
       </>)}
     </LiveSheet>
   );
@@ -281,7 +291,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   sectionTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
-  hiddenRow: { opacity: 0.6 },
   windowRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   window: {
     minHeight: 40,
@@ -318,6 +327,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   positionText: { flex: 1 },
+  receiverRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60,
+    borderTopWidth: 1, borderTopColor: tokens.line, paddingTop: 8, marginTop: 4,
+  },
+  receiverInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  receiverName: { fontSize: 16, fontWeight: '700', color: tokens.text },
+  receiverLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  receiverSub: { fontSize: 13, color: tokens.textMuted, flexShrink: 1 },
   label: {
     color: colors.ink,
     fontSize: 14,

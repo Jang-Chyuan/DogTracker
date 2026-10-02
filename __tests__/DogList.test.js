@@ -116,14 +116,17 @@ test('the card lists every dog with only what the handler acts on', async () => 
   // Dog 6 is current; dogs 4 and 7 have sent nothing for 40 minutes.
   // TalkBack reads the state, not only the name; a silent collar is never
   // described as receiving.
-  expect(rows()[0].props.accessibilityLabel).toContain('沒有收到新資料');
-  expect(rows()[1].props.accessibilityLabel).toContain('定位即時');
+  expect(rows()[0].props.accessibilityLabel).toContain('未更新');
+  expect(rows()[0].props.accessibilityLabel).toContain('最後位置 ');
+  expect(rows()[1].props.accessibilityLabel).not.toContain('未更新');
   expect(text).toContain('3 隻狗');
-  expect(text).toContain('定位正常 1・未更新 2');
-  expect(text).toContain('定位即時');
-  expect(text).toContain('最後位置 ');
-  // Without a phone fix there is no direction, and the row says why.
-  expect(text).toContain('手機無定位');
+  // Only problems are written; a current dog gets no 「定位即時」 and the
+  // header no longer counts groups the avatars already show.
+  expect(text).toContain('未更新');
+  expect(text).not.toContain('定位即時');
+  expect(text).not.toContain('定位正常');
+  // Without a phone fix there is no direction: said once, not on every row.
+  expect(text.split('手機無定位')).toHaveLength(2);
   // Source, Master, raw speed and duplicate times moved to the dog's panel.
   expect(text).not.toContain('BLE 直接收到');
   expect(text).not.toContain('最後收到封包');
@@ -296,11 +299,11 @@ test('cloud dogs have markers but no paths on the live map', async () => {
     .filter(node => Array.isArray(node.props.coordinates))).toHaveLength(0);
 });
 
-test('the card says why only one handler is on the map', async () => {
+test('the card explains nothing the screen already shows (DESIGN.md §7.5)', async () => {
   await expand(screen().element);
-  // The cloud rows carry each dog's position and the id of the Master that
-  // relayed it — never that Master's own position.
-  expect(cardText()).toContain('其他 Master 的位置不在雲端資料裡');
+  const text = cardText();
+  for (const paragraph of ['其他 Master', '參考圈', '點地圖上的狗', '地圖上改成琥珀色'])
+    expect(text).not.toContain(paragraph);
 });
 
 test('a row gives direction and distance from the phone, movement and a low battery', async () => {
@@ -313,9 +316,11 @@ test('a row gives direction and distance from the phone, movement and a low batt
   });
   const text = cardText();
   expect(text).toContain('110 m');
+  expect(text).toContain('15%');
+  // Moving is an icon with its short word.
   expect(text).toContain('移動中');
-  expect(text).toContain('電量 15%');
-  expect(text).toContain('定位即時');
+  expect(rows()[0].props.accessibilityLabel).toContain('移動中');
+  expect(rows()[0].props.accessibilityLabel).toContain('電量 15%');
 });
 
 test('the handler row shows a battery icon too, not a bare number', async () => {
@@ -323,7 +328,7 @@ test('the handler row shows a battery icon too, not a bare number', async () => 
   // Every reading carries its icon: the handler's battery was rendering as a
   // value with an empty box where the icon should be.
   const stats = renderer.root.findAll(
-    node => node.props.accessibilityLabel?.startsWith('領犬員電量'), { deep: false });
+    node => /^接收器.*電量/.test(node.props.accessibilityLabel ?? ''), { deep: false });
   expect(stats).toHaveLength(1);
   // The battery outline is drawn as an SVG rect; an icon-less Stat rendered an
   // empty box next to the number.
