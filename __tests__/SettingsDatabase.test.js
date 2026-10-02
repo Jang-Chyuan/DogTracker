@@ -10,7 +10,7 @@ test('saving preferences repeatedly replaces only their key and survives reopeni
       'INSERT INTO app_settings (key, value) VALUES (?, ?)',
       ['unrelated', 'keep'],
     );
-    await database.save({ mode: 'demo' });
+    await database.save({ showTrails: true });
     await database.save({ mode: 'real' });
     const reopened = createSettingsDatabase(connection);
     await reopened.initialize();

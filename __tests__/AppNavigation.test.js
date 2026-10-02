@@ -1,5 +1,4 @@
 import MapScreen from '../src/screens/MapScreen';
-import SettingsScreen from '../src/screens/SettingsScreen';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import {
@@ -59,7 +58,7 @@ async function press(label, role) {
     await control.props.onPress();
   });
 }
-// 顯示移動路徑 is a real Switch, so it is driven by its value, not by a press.
+// Legacy path settings remain persisted even though the live map hides them.
 async function setTrails(value) {
   await act(async () => renderer.root.findByType(MapScreen).props.tracking.saveTrackingPreferences({ showTrails: value }));
 }
@@ -70,18 +69,6 @@ async function mount() {
 }
 async function advance(ms = 1000) {
   await act(async () => jest.advanceTimersByTimeAsync(ms));
-}
-async function demoPage() {
-  await press('設定', 'tab');
-  // Demo has no settings button; exercise the retained internal route directly.
-  await act(async () => renderer.root.findByType(SettingsScreen).props.onDemo());
-}
-// The persistent map layer carries its own switch, so target this one by name.
-const modeSwitch = () => renderer.root.findAll(
-  node => node.props.accessibilityLabel === 'Demo 模式' &&
-    typeof node.props.onValueChange === 'function', { deep: false })[0];
-async function setMode(demo) {
-  await act(async () => modeSwitch().props.onValueChange(demo));
 }
 async function expand() {
   const handle = renderer.root.findAllByProps({
@@ -151,16 +138,15 @@ afterEach(async () => {
   Platform.OS = originalOS;
 });
 
-test('first use seeds three rows and shows C markers, circle, no routes or automatic writer', async () => {
+test('first use shows stored hardware markers, circle, no routes or automatic writer', async () => {
   await mount();
   expect(open).toHaveBeenCalledTimes(1);
-  expect(rows('demo_dog_status')).toHaveLength(3);
-  expect(text()).toContain('DEMO · 模擬資料');
+  expect(rows('dog_status')).toHaveLength(1);
   expect(
     renderer.root.findAllByType(Marker).map(node => node.props.coordinate),
   ).toEqual([
-    { latitude: 25.0181, longitude: 121.3257 },
-    { latitude: 25.01765, longitude: 121.3267 },
+    { latitude: 25.0325, longitude: 121.5648 },
+    { latitude: 25.033, longitude: 121.5654 },
   ]);
   expect(renderer.root.findByType(Circle).props.radius).toBe(1000);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
@@ -170,20 +156,13 @@ test('first use seeds three rows and shows C markers, circle, no routes or autom
       .children,
   ).toBe('最新詳細資訊');
   await advance(601000);
-  expect(rows('demo_dog_status')).toHaveLength(3);
+  expect(rows('dog_status')).toHaveLength(1);
   expect(ble.connect).not.toHaveBeenCalled();
 });
-test('map/history/settings tabs; Demo and original Wi-Fi preserve correct back destinations', async () => {
+test('map/history/settings tabs and hardware preserve correct back destinations', async () => {
   await mount();
-  expect(button('Demo', 'tab')).toBeUndefined();
-  // History is a tab of its own since 2026-09-18; Demo never was one.
   expect(button('歷史軌跡', 'tab')).toBeDefined();
-  await demoPage();
-  expect(text()).toContain('手動逐筆');
-  expect(button('開始 Demo')).toBeUndefined();
-  expect(button('停止 Demo')).toBeUndefined();
-  await act(async () => expect(onBack()).toBe(true));
-  expect(button('Demo 設定')).toBeUndefined();
+  await press('設定', 'tab');
   expect(button('登入')).toBeUndefined();
   expect(text()).not.toContain('允許手機定位');
   await press('BLE／QR 與 Master 設定');
@@ -192,9 +171,6 @@ test('map/history/settings tabs; Demo and original Wi-Fi preserve correct back d
   await act(async () => expect(onBack()).toBe(true));
   expect(text()).toContain('硬體連線');
   expect(ble.disconnect).not.toHaveBeenCalled();
-  await demoPage();
-  await press('‹ 設定');
-  expect(button('Demo 設定')).toBeUndefined();
 });
 
 test('the history tab keeps the same map, carries its own card, and back returns home', async () => {
@@ -203,7 +179,7 @@ test('the history tab keeps the same map, carries its own card, and back returns
   const map = renderer.root.findByType(MapView);
   await press('歷史軌跡', 'tab');
   // The same native map is reused; only the card and its parameters change.
-  expect(renderer.root.findByType(MapView)).toBe(map);
+  expect(renderer.root.findByType(MapView) === map).toBe(true);
   expect(renderer.root.findAllByProps({ testID: 'history-sheet' }).length)
     .toBeGreaterThan(0);
   expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
@@ -228,17 +204,22 @@ test('the history tab keeps the same map, carries its own card, and back returns
 });
 test('page changes keep the same native map, source and saved switches', async () => {
   await mount();
-  const map = renderer.root.findByType(MapView),
-    props = map.props;
+  await setTrails(true);
+  const map = renderer.root.findByType(MapView);
+  const initialRegion = map.props.initialRegion;
+  const saved = preferences();
   await advance();
-  expect(renderer.root.findByType(MapView).props).toBe(props);
-  await demoPage();
-  expect(renderer.root.findByType(MapView)).toBe(map);
-  await press('回到地圖');
-  expect(renderer.root.findByType(MapView)).toBe(map);
-  expect(text()).toContain('DEMO · 模擬資料');
+  expect(renderer.root.findByType(MapView) === map).toBe(true);
+  expect(renderer.root.findByType(MapView).props.initialRegion).toEqual(initialRegion);
+  await press('設定', 'tab');
+  expect(renderer.root.findByType(MapView) === map).toBe(true);
+  expect(text()).toContain('正式 · SQLite');
+  await press('即時位置', 'tab');
+  expect(renderer.root.findByType(MapView) === map).toBe(true);
+  expect(preferences()).toEqual(saved);
+  expect(renderer.root.findByType(MapScreen).props.tracking.mode).toBe('real');
 });
-test('native BLE replay does not write again or move Demo map markers', async () => {
+test('native BLE replay does not write again or move stored map markers', async () => {
   await mount();
   const before = rows('dog_status');
   const markerCoordinates = () => renderer.root.findAllByType(Marker).map(node => node.props.coordinate);
@@ -249,38 +230,9 @@ test('native BLE replay does not write again or move Demo map markers', async ()
   }));
   await advance();
   expect(rows('dog_status')).toEqual(before);
-  expect(rows('demo_dog_status')).toHaveLength(3);
   expect(markerCoordinates()).toEqual(markers);
 });
-test('manual A/B writes update markers; legacy trail settings never draw live paths', async () => {
-  await mount();
 
-  await demoPage();
-  await press('寫入 1 筆到 Demo DB');
-  expect(rows('demo_dog_status')).toHaveLength(4);
-  expect(text()).toContain('目前 4 筆');
-  await press('回到地圖');
-  await advance();
-  expect(renderer.root.findAllByType(Marker)[1].props.coordinate).toEqual({
-    latitude: 25.01825,
-    longitude: 121.3258,
-  });
-  await demoPage();
-  await press('選擇 Demo 預設點');
-  await press('點 B', 'radio');
-  await press('寫入 1 筆到 Demo DB');
-  expect(rows('demo_dog_status')).toHaveLength(5);
-  await press('回到地圖');
-  await advance();
-  expect(renderer.root.findAllByType(Marker)[1].props.coordinate).toEqual({
-    latitude: 25.0189,
-    longitude: 121.32645,
-  });
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
-  await expand();
-  await setTrails(true);
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
-});
 test('all eight visibility states gate overlays, retain card controls, and leave phone location independent', async () => {
   jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
   await mount();
@@ -290,7 +242,7 @@ test('all eight visibility states gate overlays, retain card controls, and leave
     for (const showSlaveMarker of [false, true])
       for (const showMasterMarker of [false, true]) {
         for (const [next, role] of [
-          [showSlaveMarker, '狗'],
+          [showSlaveMarker, '所有狗'],
           [showMasterMarker, '領犬員'],
         ]) {
           const current = button('隱藏' + role + '位置') !== undefined;
@@ -320,78 +272,41 @@ test('all eight visibility states gate overlays, retain card controls, and leave
         });
       }
 });
-test('confirmed reset restores A/B/C and preserves real rows, mode and visibility values', async () => {
-  await mount();
-  const real = rows('dog_status');
-  await expand();
-  await setTrails(true);
-  await press('隱藏狗位置');
-  const saved = preferences();
-  await demoPage();
-  await press('寫入 1 筆到 Demo DB');
-  const old = rows('demo_dog_status');
-  await press('重設 Demo');
-  expect(rows('demo_dog_status')).toEqual(old);
-  const options = Alert.alert.mock.calls.at(-1)[2];
-  expect(options[0].style).toBe('cancel');
-  await act(async () => options[1].onPress());
-  expect(rows('demo_dog_status')).toHaveLength(3);
-  expect(rows('demo_dog_status')[0].id).toBeGreaterThan(old.at(-1).id);
-  expect(rows('dog_status')).toEqual(real);
-  expect(preferences()).toEqual(saved);
-  await press('回到地圖');
-  await advance();
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
-  expect(renderer.root.findByType(Circle).props.center).toEqual({
-    latitude: 25.0181,
-    longitude: 121.3257,
-  });
-});
-test('mode and all display values survive a cold remount without duplicating seed rows', async () => {
+
+test('all display values survive a cold remount without duplicating hardware rows', async () => {
   await mount();
   await expand();
-  await press('隱藏狗位置');
+  await press('隱藏所有狗位置');
   await setTrails(true);
-  await demoPage();
-  await setMode(false);
   const saved = preferences();
+  const hardwareRows = rows('dog_status');
   await act(async () => renderer.unmount());
   renderer = null;
   expect(mockDatabase.close).toHaveBeenCalledTimes(1);
   await mount();
-  expect(text()).not.toContain('正式 · SQLite');
   expect(preferences()).toEqual(saved);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
-  expect(rows('demo_dog_status')).toHaveLength(3);
-  await demoPage();
-  await setMode(true);
-  await press('回到地圖');
+  expect(rows('dog_status')).toEqual(hardwareRows);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
-  await act(async () => renderer.unmount());
-  renderer = null;
-  await mount();
-  expect(text()).toContain('DEMO · 模擬資料');
-  expect(rows('demo_dog_status')).toHaveLength(3);
 });
+
 test('background and foreground never generate rows; real mode with empty DB remains empty', async () => {
   await mount();
   await act(async () => onAppState('background'));
   await advance(600000);
   await act(async () => onAppState('active'));
   await advance();
-  expect(rows('demo_dog_status')).toHaveLength(3);
+  expect(rows('dog_status')).toHaveLength(1);
+  await act(async () => renderer.unmount());
+  renderer = null;
   connection.sqlite.exec('DELETE FROM dog_status');
-  await demoPage();
-  await setMode(false);
-  await press('回到地圖');
-  await advance();
+  await mount();
   expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
   expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
   expect(text()).toContain('等待硬體資料');
   expect(text()).not.toContain('首頁路徑已達繪圖上限');
 });
-test('first map asks permission once; denial affects neither seeded DB nor hardware locations', async () => {
+test('first map asks permission once; denial does not affect hardware locations', async () => {
   NativeTrackingPlatform.claimLocationPermissionPrompt.mockResolvedValueOnce(
     true,
   );
@@ -405,62 +320,26 @@ test('first map asks permission once; denial affects neither seeded DB nor hardw
   await mount();
   expect(request).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
-  await demoPage();
-  await press('回到地圖');
+  await press('設定', 'tab');
+  await press('即時位置', 'tab');
   expect(request).toHaveBeenCalledTimes(1);
 });
-test('write and reset failures preserve DB and expose errors; successful operations remain retryable', async () => {
-  await mount();
-  await demoPage();
-  const before = rows('demo_dog_status');
-  connection.sqlite.exec(
-    "CREATE TRIGGER fail_demo BEFORE INSERT ON demo_dog_status BEGIN SELECT RAISE(ABORT, 'demo disk full'); END",
-  );
-  await press('寫入 1 筆到 Demo DB');
-  expect(rows('demo_dog_status')).toEqual(before);
-  expect(text()).toContain('demo disk full');
-  await press('重設 Demo');
-  await act(async () => Alert.alert.mock.calls.at(-1)[2][1].onPress());
-  expect(rows('demo_dog_status')).toEqual(before);
-  expect(text()).toContain('demo disk full');
-  connection.sqlite.exec('DROP TRIGGER fail_demo');
-  await press('寫入 1 筆到 Demo DB');
-  expect(rows('demo_dog_status')).toHaveLength(4);
-});
-test('mode/eye save failures do not switch sources or hide markers', async () => {
+
+test('eye save failures preserve markers and remain retryable', async () => {
   await mount();
   connection.sqlite.exec(
     "CREATE TRIGGER fail_settings BEFORE INSERT ON app_settings BEGIN SELECT RAISE(ABORT, 'settings locked'); END",
   );
   await expand();
-  await press('隱藏狗位置');
+  await press('隱藏所有狗位置');
   expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
-  await demoPage();
-  await setMode(false);
-  expect(modeSwitch().props.value).toBe(true);
   expect(text()).toContain('settings locked');
   connection.sqlite.exec('DROP TRIGGER fail_settings');
-  await setMode(false);
-  expect(modeSwitch().props.value).toBe(false);
+  await press('隱藏所有狗位置');
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
 });
-test('a summary read failure after commit does not report a failed insert or encourage duplicate writes', async () => {
-  await mount();
-  await demoPage();
-  mockDatabase.executeAsync.mockImplementation((sql, params) =>
-    sql.includes('COUNT(*)')
-      ? Promise.reject(new Error('summary locked'))
-      : connection.executeAsync(sql, params),
-  );
-  await press('寫入 1 筆到 Demo DB');
-  expect(rows('demo_dog_status')).toHaveLength(4);
-  expect(text()).toContain('已寫入點');
-  expect(text()).toContain('請勿因此重複寫入');
-  expect(text()).not.toContain('寫入 Demo失敗');
-  mockDatabase.executeAsync.mockImplementation(connection.executeAsync);
-  await press('重新讀取筆數');
-  expect(text()).toContain('目前 4 筆');
-});
-test('hardware callback still writes only real rows in Demo, and failed hardware writes remain visible', async () => {
+
+test('hardware callback writes real rows, and failed hardware writes remain visible', async () => {
   await mount();
   await press('設定', 'tab');
   const onData = ble.restoreBackground.mock.calls.at(-1)[1];
@@ -468,7 +347,6 @@ test('hardware callback still writes only real rows in Demo, and failed hardware
     onData({ ...trackingPoint, slaveLon: 120 }, 'hardware'),
   );
   expect(rows('dog_status').at(-1).slave_lon).toBe(120);
-  expect(rows('demo_dog_status')).toHaveLength(3);
   connection.sqlite.exec(
     "CREATE TRIGGER fail_real BEFORE INSERT ON dog_status BEGIN SELECT RAISE(ABORT, 'hardware disk full'); END",
   );
@@ -483,24 +361,6 @@ test('hardware callback still writes only real rows in Demo, and failed hardware
   await act(async () => onData(trackingPoint, 'recovered'));
   expect(text()).not.toContain('hardware disk full');
 });
-test('a Demo migration failure cannot block the hardware writer or switching to real DB', async () => {
-  mockDatabase.executeAsync.mockImplementation((sql, params) =>
-    sql.includes('CREATE TABLE IF NOT EXISTS demo_dog_status')
-      ? Promise.reject(new Error('demo migration failed'))
-      : connection.executeAsync(sql, params),
-  );
-  await mount();
-  await press('設定', 'tab');
-  await act(async () =>
-    ble.restoreBackground.mock.calls.at(-1)[1](trackingPoint, 'hardware'),
-  );
-  expect(rows('dog_status')).toHaveLength(2);
-  await demoPage();
-  expect(text()).toContain('demo migration failed');
-  await setMode(false);
-  await press('回到地圖');
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
-});
 
 test('native disk failures remain visible on map/settings and clear on recovery', async () => {
   await mount();
@@ -514,7 +374,7 @@ test('native disk failures remain visible on map/settings and clear on recovery'
   expect(text()).not.toContain('native disk full');
 });
 
-test('Android map and Demo use the native SQL adapter without opening Nitro', async () => {
+test('Android map uses the native SQL adapter without opening Nitro', async () => {
   Platform.OS = 'android';
   const execute = jest.fn(async (sql, params) =>
     JSON.stringify(await connection.executeAsync(sql, JSON.parse(params))),
@@ -527,11 +387,7 @@ test('Android map and Demo use the native SQL adapter without opening Nitro', as
   try {
     await mount();
     expect(open).not.toHaveBeenCalled();
-    expect(rows('demo_dog_status')).toHaveLength(3);
     expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
-    await demoPage();
-    await setMode(false);
-    await press('回到地圖');
     // Independent native writer inserts a DB row, never a BLE-to-map callback.
     connection.sqlite.prepare(
       'INSERT INTO dog_status (received_at, master_id, slave_id, master_lat, master_lon, slave_lat, slave_lon) VALUES (?,3,7,25.02,121.32,25.03,121.33)',

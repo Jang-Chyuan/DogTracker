@@ -7,8 +7,6 @@ export const POLL_MS = 10000;
  * Reads the newest downloaded row per dog from the local cloud copy. The map
  * never queries Supabase: CloudSync owns downloading, this only reads what is
  * already on the phone, so the map keeps working offline.
- *
- * Demo mode must not see real positions, so the caller passes enabled=false.
  */
 const empty = () => ({ rows: [], packets: [], track: [], error: '' });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,

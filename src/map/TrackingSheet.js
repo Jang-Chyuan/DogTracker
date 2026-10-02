@@ -46,14 +46,13 @@ export function sheetSummary(tracking) {
   if (tracking.point.id === null && !tracking.initialSnapshotReady)
     return '正在讀取追蹤資料…';
   if (tracking.point.id === null)
-    return tracking.mode === 'demo' ? '尚無 Demo 資料' : '等待硬體資料';
+    return '等待硬體資料';
   return `最後更新 ${formatTime(tracking.point.receivedAt)}`;
 }
 
 export default function TrackingSheet({
   tracking,
   master,
-  slave,
   dogs = [],
   showRouteControls = true,
   dogAliases,
@@ -67,13 +66,11 @@ export default function TrackingSheet({
   // Only a card that has not loaded yet is disabled. Dimming everything while
   // a write is in flight made every eye tap flash the whole card.
   const disabled = !preferences.ready;
-  // Demo mode never merges dogs, so it keeps the single-dog row.
-  const showDogList = tracking.mode === 'real';
   const dogVisibility = (
     <VisibilityButton
       role="slave"
       // In the list header this one eye covers every dog, not just one row.
-      subject={showDogList ? '所有狗' : undefined}
+      subject="所有狗"
       visible={preferences.value.showSlaveMarker}
       disabled={disabled}
       onPress={() =>
@@ -100,46 +97,32 @@ export default function TrackingSheet({
         )}
         {point.id === null && (
           <Text style={styles.hint}>
-            {tracking.mode === 'demo'
-              ? '尚無 Demo 資料。'
-              : '等待硬體寫入資料；不會自動使用假資料。'}
+            等待硬體寫入資料；不會自動使用假資料。
           </Text>
         )}
-        {showDogList ? (
-          <DogList
-            dogs={dogs}
-            dogAliases={dogAliases}
-            selectedSlaveId={preferences.value.focusSlaveId}
-            hiddenSlaveIds={preferences.value.hiddenSlaveIds}
-            disabled={disabled}
-            onSelect={focusSlaveId =>
-              tracking.saveTrackingPreferences({ focusSlaveId })
-            }
-            onToggle={slaveId =>
-              tracking.saveTrackingPreferences({
-                hiddenSlaveIds: preferences.value.hiddenSlaveIds.includes(slaveId)
-                  ? preferences.value.hiddenSlaveIds.filter(id => id !== slaveId)
-                  : [...preferences.value.hiddenSlaveIds, slaveId],
-                // Showing a dog again must also bring back every dog marker,
-                // otherwise its eye would say visible while nothing is drawn.
-                ...(preferences.value.showSlaveMarker ? {} : { showSlaveMarker: true }),
-              })
-            }
-            control={dogVisibility}
-            linkNote={'同時顯示 BLE 直接收到的與雲端下載的位置，每隻狗取最新的一筆；'
-              + '來源寫在各列，不想看的狗可以單獨關掉眼睛。'}
-          />
-        ) : (
-          <Position role="slave" position={slave} visibilityControl={dogVisibility} />
-        )}
-        {!showDogList && (
-          <View style={styles.metrics}>
-            <Stat icon="speed" label="狗速度" value={`${point.speedKmh ?? '—'} km/h`} />
-            <Stat icon="battery" label="狗電量"
-              level={point.batteryValid ? point.batteryPercentage : null}
-              value={battery(point.batteryValid, point.batteryPercentage)} />
-          </View>
-        )}
+        <DogList
+          dogs={dogs}
+          dogAliases={dogAliases}
+          selectedSlaveId={preferences.value.focusSlaveId}
+          hiddenSlaveIds={preferences.value.hiddenSlaveIds}
+          disabled={disabled}
+          onSelect={focusSlaveId =>
+            tracking.saveTrackingPreferences({ focusSlaveId })
+          }
+          onToggle={slaveId =>
+            tracking.saveTrackingPreferences({
+              hiddenSlaveIds: preferences.value.hiddenSlaveIds.includes(slaveId)
+                ? preferences.value.hiddenSlaveIds.filter(id => id !== slaveId)
+                : [...preferences.value.hiddenSlaveIds, slaveId],
+              // Showing a dog again must also bring back every dog marker,
+              // otherwise its eye would say visible while nothing is drawn.
+              ...(preferences.value.showSlaveMarker ? {} : { showSlaveMarker: true }),
+            })
+          }
+          control={dogVisibility}
+          linkNote={'同時顯示 BLE 直接收到的與雲端下載的位置，每隻狗取最新的一筆；'
+            + '來源寫在各列，不想看的狗可以單獨關掉眼睛。'}
+        />
         {/* Only one handler can be drawn: the cloud rows carry each dog's
             position and the id of the Master that relayed it, never that
             Master's own position (hardware question H2, still open). */}

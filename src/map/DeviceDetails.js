@@ -143,7 +143,7 @@ export default function DeviceDetails({
                     Master ID: {point.masterId ?? '-'} | Slave ID: {point.slaveId ?? '-'}
                   </Text>
                   <Text style={styles.hint}>
-                    資料表：{tracking.mode === 'demo' ? 'demo_dog_status' : 'dog_status'}
+                    資料表：dog_status
                     {' '}· DB row ID: {point.id ?? '—'}
                   </Text>
                 </>
@@ -165,7 +165,7 @@ export default function DeviceDetails({
               <Text style={styles.hint}>參考圈半徑 1 公里，跟隨領犬員。</Text>
             </>
           )}
-          {tracking.mode === 'real' && slaveId === 8 && (
+          {slaveId === 8 && (
             <ActivityHistoryChart database={tracking.cloudDatabase} owner={activityOwner}
               dogAliases={dogAliases}
               active={activityActive && tracking.foreground && tracking.ready?.real} />
