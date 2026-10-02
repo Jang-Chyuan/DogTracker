@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification small icon: the same dog's head (design D1), white on transparent.
+     Heavier stroke and no mouth so it still reads at 24dp in the status bar. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <group android:translateX="-3.138" android:translateY="-2.709" android:scaleX="0.2523" android:scaleY="0.2523">
+        <path android:pathData="M38 37c8-7 36-7 44 0" android:strokeColor="#FFFFFFFF" android:strokeWidth="7"
+            android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M39 35C24 35 17 52 21 71c2 7 9 8 12 2 2-5 2-11 4-17" android:strokeColor="#FFFFFFFF" android:strokeWidth="7"
+            android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M81 35c15 0 22 17 18 36-2 7-9 8-12 2-2-5-2-11-4-17" android:strokeColor="#FFFFFFFF" android:strokeWidth="7"
+            android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M41 78c9 9 29 9 38 0" android:strokeColor="#FFFFFFFF" android:strokeWidth="7"
+            android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M44.4,58a4.6,4.6 0 1,0 9.2,0a4.6,4.6 0 1,0 -9.2,0" android:fillColor="#FFFFFFFF" />
+        <path android:pathData="M66.4,58a4.6,4.6 0 1,0 9.2,0a4.6,4.6 0 1,0 -9.2,0" android:fillColor="#FFFFFFFF" />
+        <path android:pathData="M54.802,66a5.1979999999999995,3.8179999999999996 0 1,0 10.395999999999999,0a5.1979999999999995,3.8179999999999996 0 1,0 -10.395999999999999,0" android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ splash icon: the dog draws itself once (strokes trim in, dots fade in,
+     tail wags), 800ms in total. Android shows the final frame when animations are off. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+            <group android:translateX="20.258" android:translateY="13.064" android:scaleX="0.4962" android:scaleY="0.4962">
+                <path android:name="head_top" android:pathData="M38 37c8-7 36-7 44 0" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                    android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                <path android:name="ear_left" android:pathData="M39 35C24 35 17 52 21 71c2 7 9 8 12 2 2-5 2-11 4-17" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                    android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                <path android:name="ear_right" android:pathData="M81 35c15 0 22 17 18 36-2 7-9 8-12 2-2-5-2-11-4-17" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                    android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                <path android:name="chin" android:pathData="M41 78c9 9 29 9 38 0" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                    android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                <path android:name="mouth" android:pathData="M54 69q3 4 6 0 3 4 6 0" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                    android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                <path android:name="leg_left" android:pathData="M42 90v32c0 6 4 9 9 9s7-3 7-8v-21" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                    android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                <path android:name="leg_right" android:pathData="M62 104v19c0 5 3 8 8 8s9-3 9-9V92" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                    android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                <!-- Tail pivots at its root so the splash can wag it once. -->
+                <group android:name="tail_group" android:pivotX="88" android:pivotY="84">
+                    <path android:name="tail" android:pathData="M88 82c10 12 13 30 8 42-2 5-6 7-12 7" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                        android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                    <!-- Two paths, not one with two contours: trimPathEnd only traces a
+                         path's first contour and then pops the rest in at the end. -->
+                    <path android:name="tail_mark_upper" android:pathData="M98 124h9" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                        android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                    <path android:name="tail_mark_lower" android:pathData="M100 129h12" android:strokeColor="#FFFFFF" android:strokeWidth="5"
+                        android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="0" />
+                </group>
+                <path android:name="eye_left" android:pathData="M45.6,58a3.4,3.4 0 1,0 6.8,0a3.4,3.4 0 1,0 -6.8,0" android:fillColor="#FFFFFF" android:fillAlpha="0" />
+                <path android:name="eye_right" android:pathData="M67.6,58a3.4,3.4 0 1,0 6.8,0a3.4,3.4 0 1,0 -6.8,0" android:fillColor="#FFFFFF" android:fillAlpha="0" />
+                <path android:name="nose" android:pathData="M56.158,64.5a3.8419999999999996,2.8219999999999996 0 1,0 7.683999999999999,0a3.8419999999999996,2.8219999999999996 0 1,0 -7.683999999999999,0" android:fillColor="#FFFFFF" android:fillAlpha="0" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="head_top">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="0" android:duration="180" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="ear_left">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="60" android:duration="240" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="ear_right">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="60" android:duration="240" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="chin">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="220" android:duration="160" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="mouth">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="330" android:duration="100" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="leg_left">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="260" android:duration="220" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="leg_right">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="300" android:duration="220" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="tail">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="380" android:duration="180" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="tail_mark_upper">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="520" android:duration="50" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="tail_mark_lower">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="570" android:duration="50" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="eye_left">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="300" android:duration="120" />
+        </aapt:attr>
+    </target>
+    <target android:name="eye_right">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="300" android:duration="120" />
+        </aapt:attr>
+    </target>
+    <target android:name="nose">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="360" android:duration="100" />
+        </aapt:attr>
+    </target>
+    <target android:name="tail_group">
+        <aapt:attr name="android:animation">
+            <set android:ordering="sequentially">
+                <objectAnimator android:propertyName="rotation" android:valueFrom="0" android:valueTo="10"
+                    android:startOffset="620" android:duration="60" android:interpolator="@android:interpolator/fast_out_slow_in" />
+                <objectAnimator android:propertyName="rotation" android:valueFrom="10" android:valueTo="-6"
+                    android:duration="70" android:interpolator="@android:interpolator/fast_out_slow_in" />
+                <objectAnimator android:propertyName="rotation" android:valueFrom="-6" android:valueTo="0"
+                    android:duration="50" android:interpolator="@android:interpolator/fast_out_slow_in" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>
