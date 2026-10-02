@@ -36,8 +36,9 @@ test('collapsed, the card is a row of avatar chips; the header opens the list', 
   const chips = renderer.root.findAll(node => node.props.testID?.startsWith?.('strip-dog-')
     && typeof node.props.onPress === 'function', { deep: false });
   // Hidden dog 6 is not in the strip; each chip says the dog and its state
+  // to TalkBack, though on screen only a problem is written
   // (dog 8 has sent nothing for four minutes).
-  expect(chips.map(chip => chip.props.accessibilityLabel)).toEqual(['狗 4，即時', '狗 8，未更新']);
+  expect(chips.map(chip => chip.props.accessibilityLabel)).toEqual(['狗 4，定位正常', '狗 8，未更新']);
   const handle = () => renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0];
   expect(handle().props.accessibilityLabel).toContain('3 隻狗');
   expect(handle().props.accessibilityValue.now).toBe(0);

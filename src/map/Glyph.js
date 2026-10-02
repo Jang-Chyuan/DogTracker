@@ -47,6 +47,34 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Path d="M17 8l4 4-4 4" {...stroke} />
         </>
       )}
+      {name === 'moving' && (
+        // Motion lines behind a forward chevron.
+        <>
+          <Path d="M3 8h6M2 12h7M3 16h6" {...stroke} />
+          <Path d="M13 6l6 6-6 6" {...stroke} />
+        </>
+      )}
+      {name === 'still' && (
+        // A dot that stays put, in a ring.
+        <>
+          <Circle cx={12} cy={12} r={8} {...stroke} />
+          <Circle cx={12} cy={12} r={3} fill={color} />
+        </>
+      )}
+      {name === 'no-signal' && (
+        // Antenna waves, struck through: no packet arrives.
+        <>
+          <Path d="M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7M5.5 18.5a9.5 9.5 0 0 1 0-13M18.5 5.5a9.5 9.5 0 0 1 0 13" {...stroke} />
+          <Line x1={3} y1={3} x2={21} y2={21} {...stroke} />
+        </>
+      )}
+      {name === 'no-fix' && (
+        // A location pin, struck through: packets but no position.
+        <>
+          <Path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z" {...stroke} />
+          <Line x1={3} y1={3} x2={21} y2={21} {...stroke} />
+        </>
+      )}
       {name === 'clock' && (
         <>
           <Circle cx={12} cy={12} r={9} {...stroke} />

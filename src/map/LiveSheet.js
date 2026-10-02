@@ -58,7 +58,8 @@ function FlyingAvatar({ index, id, ring, progress, stripX, listY, rows, fontScal
  * thread cannot make them stutter; the content stays frozen while the finger
  * is down and catches up when the card settles.
  *
- * strip: [{ id, name, status, ring, onPress(pageY) }] in list order.
+ * strip: [{ id, name, status, spoken, ring, onPress(pageY) }] in list order;
+ * status is empty for a dog with nothing wrong.
  * children({ onRowLayout }): the list; DogList reports each row's layout so
  * the avatars land on the rows wherever large fonts or wrapped text put them.
  */
@@ -237,7 +238,7 @@ export default function LiveSheet({
                   key={item.id}
                   testID={`strip-dog-${item.id}`}
                   accessibilityRole="button"
-                  accessibilityLabel={`${item.name}，${item.status}`}
+                  accessibilityLabel={`${item.name}，${item.spoken ?? item.status}`}
                   accessibilityHint="把地圖移到這隻狗，並打開選項"
                   onPress={event => item.onPress(event.nativeEvent.pageY, event.nativeEvent.pageX)}
                   style={styles.chip}
