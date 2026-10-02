@@ -19,6 +19,7 @@ import { useTrackingSession } from './src/app/useTrackingSession';
 import HardwareScreen from './src/screens/HardwareScreen';
 import { handleRootBack } from './src/app/handleRootBack';
 import { ui } from './src/components/ScreenUI';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MapScreen from './src/screens/MapScreen';
 import { useScreenFixture } from './src/dev/useScreenFixture';
 import SettingsScreen from './src/screens/SettingsScreen';
@@ -42,11 +43,14 @@ import LoginScreen from './src/screens/LoginScreen';
 
 export default function App() {
   return (
+    // Gesture Handler needs a root view above every detector (the home card).
+    <GestureHandlerRootView style={rootStyle}>
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <AuthProvider>
         <AuthGate><TrackerApp /></AuthGate>
       </AuthProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -231,6 +235,8 @@ function TrackerApp() {
     </SafeAreaView>
   );
 }
+
+const rootStyle = { flex: 1 };
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#0f172a' },

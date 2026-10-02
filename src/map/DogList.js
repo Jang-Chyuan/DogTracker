@@ -75,7 +75,7 @@ function BatteryLow() {
   );
 }
 
-function DogRow({ dog, name, now, phone, mapHeading, followed, onPick }) {
+function DogRow({ dog, name, now, phone, mapHeading, followed, onPick, onLayout, avatarHidden }) {
   const { freshness, current, condition, time, where, distanceText, low } = describeDog(dog, now, phone, mapHeading);
   const sub = [condition, followed && (current ? '跟隨中' : '跟隨暫停')].filter(Boolean).join('・');
   const spoken = where.kind === 'ok' ? `${where.compass}方 ${distanceText}` : distanceText;
@@ -86,10 +86,13 @@ function DogRow({ dog, name, now, phone, mapHeading, followed, onPick }) {
       accessibilityLabel={`${name}，${sub}${low ? `，電量 ${dog.batteryPercentage}%` : ''}，${spoken}${time ? `，${time}` : ''}`}
       accessibilityHint="把地圖移到這隻狗，並打開選項"
       accessibilityState={{ selected: followed }}
-      onPress={event => onPick(dog, event.nativeEvent.pageY)}
+      onPress={event => onPick(dog, event.nativeEvent.pageY, event.nativeEvent.pageX)}
+      onLayout={onLayout}
       style={({ pressed }) => [styles.row, followed && styles.rowFollowed, pressed && styles.pressed]}
     >
-      <View style={[styles.ring, { borderColor: RING[freshness.tier] }]}>
+      {/* While the sheet draws the flying avatars on top, the row keeps the
+          space but not the picture, so no avatar is drawn twice. */}
+      <View style={[styles.ring, { borderColor: RING[freshness.tier] }, avatarHidden && styles.invisible]}>
         <TrackingAvatar role="slave" size={34} />
       </View>
       <View style={styles.middle}>
@@ -122,24 +125,28 @@ function DogRow({ dog, name, now, phone, mapHeading, followed, onPick }) {
  */
 export default function DogList({
   dogs, now, phone, mapHeading = 0, selectedSlaveId, hiddenSlaveIds = [],
-  onPick, onShow, control, dogAliases,
+  onPick, onShow, control, dogAliases, showHeader = true, onRowLayout, avatarsHidden = false,
 }) {
   const shown = dogs.filter(dog => !hiddenSlaveIds.includes(dog.slaveId));
   const hidden = dogs.filter(dog => hiddenSlaveIds.includes(dog.slaveId));
   const nameOf = dog => dogMapLabel(dogHistoryLabel(dog.slaveId, dogAliases));
   return (
     <View>
-      <View style={styles.header}>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>{dogs.length} 隻狗</Text>
-          {!!dogs.length && <Text style={styles.summary}>{groupSummary(dogs, now)}</Text>}
+      {showHeader && (
+        <View style={styles.header}>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>{dogs.length} 隻狗</Text>
+            {!!dogs.length && <Text style={styles.summary}>{groupSummary(dogs, now)}</Text>}
+          </View>
+          {control}
         </View>
-        {control}
-      </View>
+      )}
       {!dogs.length && <Text style={styles.empty}>目前沒有 24 小時內的狗資料。</Text>}
       {shown.map(dog => (
         <DogRow key={dog.slaveId} dog={dog} name={nameOf(dog)} now={now} phone={phone}
-          mapHeading={mapHeading} followed={dog.slaveId === selectedSlaveId} onPick={onPick} />
+          mapHeading={mapHeading} followed={dog.slaveId === selectedSlaveId} onPick={onPick}
+          avatarHidden={avatarsHidden}
+          onLayout={onRowLayout ? event => onRowLayout(dog.slaveId, event.nativeEvent.layout) : undefined} />
       ))}
       {hidden.map(dog => (
         <View key={dog.slaveId} style={[styles.row, styles.hiddenRow]} testID={`dog-hidden-${dog.slaveId}`}>
@@ -179,6 +186,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.85 },
   ring: { width: 42, height: 42, borderRadius: 21, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   ringNone: { borderColor: 'transparent' },
+  invisible: { opacity: 0 },
   middle: { flex: 1, minWidth: 0 },
   nameLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   name: { ...type.status, color: colors.text, flexShrink: 1 },

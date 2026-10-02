@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { mapColors as colors } from './MapTheme';
 import { formatTime, positionLabel } from './MapFormat';
 import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
-import BottomSheet from './BottomSheet';
-import DogList from './DogList';
+import LiveSheet from './LiveSheet';
+import DogList, { describeDog, groupSummary } from './DogList';
+import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
+import { colors as tokens } from '../theme/tokens';
 import Stat from './Stat';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
@@ -65,8 +67,36 @@ export default function TrackingSheet({
   onPickDog,
 }) {
   const point = tracking.point;
-  const summary = sheetSummary(tracking);
   const { preferences } = tracking;
+  // While the finger drags the card, its content stays as it was, so no
+  // avatar's destination moves mid-flight; new rows land when it settles.
+  const [dragging, setDragging] = useState(false);
+  // Everything that decides a row's height or an avatar's destination is
+  // frozen together, not only the dogs.
+  const live = { dogs, now, phone, mapHeading, hiddenIds: preferences.value.hiddenSlaveIds };
+  const frozen = useRef(live);
+  if (!dragging) frozen.current = live;
+  const listed = frozen.current.dogs;
+  const hiddenIds = frozen.current.hiddenIds;
+  const shown = frozen.current;
+  const shownDogs = listed.filter(dog => !hiddenIds.includes(dog.slaveId));
+  // Before any dog is known, the card says what it is waiting for.
+  const summary = listed.length ? groupSummary(listed, shown.now) : sheetSummary(tracking);
+  const strip = shownDogs.map(dog => {
+    const said = describeDog(dog, shown.now, shown.phone, shown.mapHeading);
+    const status = said.group === 'silent' ? '未更新'
+      : said.group === 'nofix' ? '無定位'
+      : said.current ? '即時' : said.time.replace('最後位置 ', '');
+    const aged = said.freshness.tier === 'recent';
+    return {
+      id: dog.slaveId,
+      name: dogMapLabel(dogHistoryLabel(dog.slaveId, dogAliases)),
+      status,
+      statusColor: said.current ? tokens.ok : aged ? tokens.warn : tokens.textMuted,
+      ring: said.current ? tokens.ok : aged ? tokens.warn : '#8A948F',
+      onPress: (pageY, pageX) => onPickDog?.(dog, pageY, pageX),
+    };
+  });
   // Only a card that has not loaded yet is disabled. Dimming everything while
   // a write is in flight made every eye tap flash the whole card.
   const disabled = !preferences.ready;
@@ -85,30 +115,28 @@ export default function TrackingSheet({
     />
   );
   return (
-    <BottomSheet
-      name="tracking"
-      title="最新詳細資訊"
+    <LiveSheet
+      title={listed.length ? `${listed.length} 隻狗` : '狗'}
       summary={summary}
+      control={dogVisibility}
+      strip={strip}
       bottomInset={bottomInset}
       topInset={topInset}
       onHeight={onHeight}
+      onDragging={setDragging}
     >
-        {!tracking.historyLoaded && (
-          <Text style={styles.hint}>正在載入本機路徑…</Text>
-        )}
-        {point.id === null && (
-          <Text style={styles.hint}>
-            等待硬體寫入資料；不會自動使用假資料。
-          </Text>
-        )}
+      {({ onRowLayout }) => (<>
         <DogList
-          dogs={dogs}
-          now={now}
-          phone={phone}
-          mapHeading={mapHeading}
+          dogs={listed}
+          showHeader={false}
+          onRowLayout={onRowLayout}
+          avatarsHidden
+          now={shown.now}
+          phone={shown.phone}
+          mapHeading={shown.mapHeading}
           dogAliases={dogAliases}
           selectedSlaveId={preferences.value.focusSlaveId}
-          hiddenSlaveIds={preferences.value.hiddenSlaveIds}
+          hiddenSlaveIds={hiddenIds}
           onPick={onPickDog}
           onShow={slaveId =>
             tracking.saveTrackingPreferences({
@@ -120,6 +148,16 @@ export default function TrackingSheet({
           }
           control={dogVisibility}
         />
+        {/* Below the list: the flying avatars land on rows measured from the
+            list's top, so nothing may sit above it. */}
+        {!tracking.historyLoaded && (
+          <Text style={styles.hint}>正在載入本機路徑…</Text>
+        )}
+        {point.id === null && (
+          <Text style={styles.hint}>
+            等待硬體寫入資料；不會自動使用假資料。
+          </Text>
+        )}
         {/* Only one handler can be drawn: the cloud rows carry each dog's
             position and the id of the Master that relayed it, never that
             Master's own position (hardware question H2, still open). */}
@@ -222,7 +260,8 @@ export default function TrackingSheet({
         <Text style={styles.hint}>
           點地圖上的狗或領犬員可以看該裝置的詳細資料（距離、硬體回報、LoRa 訊號）。
         </Text>
-    </BottomSheet>
+      </>)}
+    </LiveSheet>
   );
 }
 // The card shell (motion, handle, scroll) lives in BottomSheet.

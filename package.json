@@ -25,13 +25,16 @@
     "react": "19.2.3",
     "react-native": "0.87.0",
     "react-native-ble-plx": "^3.5.1",
+    "react-native-gesture-handler": "3.3.0",
     "react-native-keychain": "^10.0.0",
     "react-native-maps": "1.28.2",
     "react-native-nitro-modules": "^0.37.1",
     "react-native-nitro-sqlite": "^9.7.0",
+    "react-native-reanimated": "4.6.0",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-svg": "^15.15.5",
-    "react-native-url-polyfill": "^4.0.0"
+    "react-native-url-polyfill": "^4.0.0",
+    "react-native-worklets": "0.12.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

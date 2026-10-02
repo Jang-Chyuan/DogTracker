@@ -305,9 +305,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   expect(JSON.stringify(renderer.toJSON())).not.toContain('手機位置');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('藍點');
   expect(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet-summary' })[0].props
-      .children,
-  ).toBe('最新詳細資訊');
+    renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0].props
+      .accessibilityLabel,
+  ).toMatch(/^(\d+ 隻)?狗。/);
   expect(
     renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0].props
       .accessibilityValue.now,

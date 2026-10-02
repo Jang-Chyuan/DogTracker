@@ -5,7 +5,7 @@ import { clipTrackTo } from '../mapHistory/HistoryPlayback';
 import { dogHistoryLabel } from '../mapHistory/DogAliases';
 import { useHistoryPlayback } from '../mapHistory/useHistoryPlayback';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
@@ -65,8 +65,11 @@ export default function MapScreen({
   fixtureName,
 }) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const snapshot = useRef(null);
   const onSnapshotReady = useCallback(value => { snapshot.current = value; }, []);
+  const mapTools = useRef(null);
+  const onMapTools = useCallback(value => { mapTools.current = value; }, []);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [mapStatus, setMapStatus] = useState(null);
   const [noticeHeight, setNoticeHeight] = useState(0);
@@ -166,8 +169,8 @@ export default function MapScreen({
   }, [basePresentation, centerOnce, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, now]);
   const livePhone = useLiveLocation(active && tracking.foreground);
   const phonePosition = phoneFix(livePhone);
-  const pickDog = useCallback((dog, anchorY) => {
-    setPicked({ slaveId: dog.slaveId, anchorY });
+  const pickDog = useCallback((dog, anchorY, anchorX) => {
+    setPicked({ slaveId: dog.slaveId, anchorY, anchorX });
     // Looking at another dog ends following the first; otherwise its next
     // fix would pull the camera straight back.
     const followedId = tracking.preferences.value.focusSlaveId;
@@ -175,6 +178,35 @@ export default function MapScreen({
       tracking.saveTrackingPreferences({ focusSlaveId: null });
     if (dog.coordinate) setCenterOnce({ key: `${dog.slaveId}:${Date.now()}`, coordinate: dog.coordinate });
   }, [tracking]);
+  // While a dog's popover is open the map behind it is blurred, except a clear
+  // circle around that dog. Taken once the camera has arrived there.
+  const [blur, setBlur] = useState(null);
+  const pickedKey = picked ? `${picked.slaveId}:${picked.anchorY}` : null;
+  // The picture is retaken whenever the picked dog moves, so the clear circle
+  // never shows it frozen at an old place while the popover is open.
+  const pickedDog = picked ? dogs.find(item => item.slaveId === picked.slaveId) : null;
+  const pickedPlace = pickedDog?.coordinate
+    ? `${pickedDog.coordinate.latitude},${pickedDog.coordinate.longitude}` : null;
+  useEffect(() => {
+    if (!pickedKey) { setBlur(null); return undefined; }
+    const dog = pickedDog;
+    const tools = mapTools.current;
+    if (!tools) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const uri = await tools.snapshot();
+        const spot = dog?.coordinate ? await tools.pointFor(dog.coordinate) : null;
+        if (!cancelled) setBlur({ uri, spot });
+      } catch {
+        // No picture, no blur: the popover still works over a sharp map.
+      }
+    // Long enough for the 300 ms camera move to finish first.
+    }, dog?.coordinate ? 650 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // A new pick or a new position of the picked dog takes a new picture.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedKey, pickedPlace]);
   // The popover belongs to the visible live map and to a dog still listed.
   const pickedListed = picked && dogs.some(dog => dog.slaveId === picked.slaveId);
   useEffect(() => {
@@ -289,6 +321,7 @@ export default function MapScreen({
         bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
         onStatus={setMapStatus}
         onSnapshotReady={onSnapshotReady}
+        onMapTools={onMapTools}
         livePhone={livePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
@@ -313,6 +346,23 @@ export default function MapScreen({
           onHeight={setStatusHeight}
           readState={readReceiverState}
         />
+      )}
+      {blur && picked && !historical && (
+        <Pressable
+          style={[StyleSheet.absoluteFill, styles.blurLayer]}
+          onPress={closePicked}
+          accessibilityLabel="關閉狗的選項"
+          testID="map-blur"
+        >
+          <Image source={{ uri: blur.uri }} style={StyleSheet.absoluteFill} blurRadius={12} />
+          <View style={[StyleSheet.absoluteFill, styles.blurDim]} />
+          {blur.spot && (
+            <View style={[styles.spot, { left: blur.spot.x - SPOT, top: blur.spot.y - SPOT }]}>
+              <Image source={{ uri: blur.uri }}
+                style={[styles.spotImage, { left: SPOT - blur.spot.x, top: SPOT - blur.spot.y, width: windowWidth, height: windowHeight }]} />
+            </View>
+          )}
+        </Pressable>
       )}
       {historical && <View style={[styles.source, { top }]}>
         <View style={styles.statusDot} />
@@ -378,6 +428,7 @@ export default function MapScreen({
             name={dogMapLabel(dogHistoryLabel(dog.slaveId, history?.preferences.dogAliases))}
             statusLine={statusLine}
             anchorY={picked.anchorY}
+            anchorX={picked.anchorX}
             followed={followed}
             followable={said.current}
             onFollow={() => {
@@ -418,7 +469,17 @@ export default function MapScreen({
     </View>
   );
 }
+// Radius of the clear circle around the picked dog on the blurred map.
+const SPOT = 70;
+
 const styles = StyleSheet.create({
+  blurLayer: { zIndex: 5 },
+  blurDim: { backgroundColor: 'rgba(20, 20, 20, 0.12)' },
+  spotImage: { position: 'absolute' },
+  spot: {
+    position: 'absolute', width: SPOT * 2, height: SPOT * 2, borderRadius: SPOT,
+    overflow: 'hidden', borderWidth: 3, borderColor: '#FFFFFF',
+  },
   // MapScreen lives in App's persistent absolute map layer. A flex-only child
   // can measure to zero under Fabric, sending bottom-anchored overlays above
   // the viewport, so make this screen an explicit inset box as well.

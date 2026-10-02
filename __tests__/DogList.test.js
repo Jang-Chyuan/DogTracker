@@ -62,8 +62,9 @@ const flatten = node => {
   return flatten(node.children);
 };
 const cardText = () => flatten(renderer.toJSON());
+// List rows only; the collapsed avatar strip names the same dogs.
 const rows = () => renderer.root.findAll(
-  node => node.props.accessibilityLabel?.startsWith('狗 ') &&
+  node => node.props.testID?.startsWith?.('dog-row-') &&
     typeof node.props.onPress === 'function', { deep: false });
 // A marker carries no title any more: tapping it opens the device panel, and a
 // native bubble on top of that was two boxes for one tap.
