@@ -1,3 +1,4 @@
+import { normalizeAvatar } from '../dogs/DogArt';
 import { simplifyRoute } from '../tracking/SimplifyRoute';
 import { safePhoneHistoryCoordinate } from './PhoneHistoryCoordinates';
 import { coordinate } from '../tracking/RouteSamples';
@@ -9,7 +10,7 @@ import { budgetHistory, budgetHistoryTracks, groupHistoryStreams } from './Histo
 
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
-export const HISTORY_DATABASE_METHODS = ['load', 'save', 'read', 'listDevices', 'listDays',
+export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar', 'read', 'listDevices', 'listDays',
   'hasPhoneTrack'];
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
@@ -65,6 +66,28 @@ export function createHistoryDatabase(db) {
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_history_client ON dog_status(master_id, slave_id, received_at, id)');
       const saved = rows(await db.executeAsync('SELECT value FROM map_history_settings WHERE id=1'))[0];
       return validateHistory(saved ? JSON.parse(saved.value) : {});
+    },
+    /**
+     * Each dog's face, by collar number, on this phone only (like its name).
+     * Separate from the history settings so a photo is not rewritten with
+     * every change of the history query.
+     */
+    async loadDogAvatars() {
+      await db.executeAsync('CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)');
+      return Object.fromEntries(rows(await db.executeAsync('SELECT slave_id, value FROM dog_avatars'))
+        // One damaged row must not hide every other dog's face.
+        .map(row => { try { return [row.slave_id, normalizeAvatar(JSON.parse(row.value))]; } catch { return [row.slave_id, null]; } })
+        .filter(([, avatar]) => avatar));
+    },
+    // null removes the dog's own face, back to the default illustration.
+    async saveDogAvatar(slaveId, avatar) {
+      if (!Number.isInteger(slaveId) || slaveId < 1) throw new Error('狗的編號格式錯誤');
+      await db.executeAsync('CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)');
+      const value = normalizeAvatar(avatar);
+      if (avatar != null && !value) throw new Error('頭像格式錯誤');
+      if (value) await db.executeAsync('INSERT OR REPLACE INTO dog_avatars(slave_id,value) VALUES(?,?)', [slaveId, JSON.stringify(value)]);
+      else await db.executeAsync('DELETE FROM dog_avatars WHERE slave_id=?', [slaveId]);
+      return value;
     },
     async save(value) {
       const settings = validateHistory(value);

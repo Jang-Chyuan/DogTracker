@@ -14,6 +14,7 @@ module.exports = {
     '^react-native-reanimated$': '<rootDir>/__mocks__/react-native-reanimated.js',
     '^react-native-worklets$': '<rootDir>/__mocks__/react-native-worklets.js',
     '^react-native-ble-plx$': '<rootDir>/__mocks__/react-native-ble-plx.js',
+    '^react-native-image-crop-picker$': '<rootDir>/__mocks__/react-native-image-crop-picker.js',
     '^react-native-nitro-sqlite$':
       '<rootDir>/__mocks__/react-native-nitro-sqlite.js',
   },

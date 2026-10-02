@@ -6,6 +6,8 @@ import { WINDOW_PRESETS } from '../tracking/TrackingPreferences';
 import LiveSheet from './LiveSheet';
 import DogList, { describeDog } from './DogList';
 import { phoneNote } from './DogReadout';
+// A clock time, like every other age on the card; never a full date.
+import { formatClock } from './HomeStatus';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 import { colors as tokens } from '../theme/tokens';
 import Glyph from './Glyph';
@@ -27,7 +29,7 @@ function ReceiverRow({ point, position, onPress, number, other }) {
     : !position ? '無定位'
     // A fix that stopped updating is a problem too, not only one kept from an
     // older packet.
-    : position.retained || position.stale ? `最後位置 ${formatTime(position.receivedAt)}` : '';
+    : position.retained || position.stale ? `最後位置 ${formatClock(position.receivedAt)}` : '';
   const battery = other || point.id === null ? '' : valid ? `${point.masterBatteryPercentage}%` : '電量未回報';
   const id = number ?? point.masterId;
   const name = id != null ? `接收器 ${id}` : '接收器';
@@ -74,6 +76,7 @@ export default function TrackingSheet({
   dogs = [],
   showRouteControls = true,
   dogAliases,
+  dogAvatars,
   bottomInset,
   topInset = 100,
   onHeight,
@@ -113,6 +116,7 @@ export default function TrackingSheet({
     return {
       id: dog.slaveId,
       name: dogMapLabel(dogHistoryLabel(dog.slaveId, dogAliases)),
+      avatar: dogAvatars?.[dog.slaveId],
       status,
       spoken: said.condition || '定位正常',
       statusColor: said.current ? tokens.ok : aged ? tokens.warn : tokens.textMuted,
@@ -146,6 +150,7 @@ export default function TrackingSheet({
           phone={shown.phone}
           mapHeading={shown.mapHeading}
           dogAliases={dogAliases}
+          dogAvatars={dogAvatars}
           selectedSlaveId={preferences.value.focusSlaveId}
           hiddenSlaveIds={hiddenIds}
           onPick={onPickDog}

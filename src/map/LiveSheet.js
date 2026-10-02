@@ -13,7 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import TrackingAvatar from './TrackingAvatar';
+import DogAvatar from '../dogs/DogAvatar';
 import { colors, motion, shadow, space, type } from '../theme/tokens';
 import {
   CHIP_GAP, CHIP_WIDTH, HANDLE_HEIGHT, SIDE, STRIP_RING,
@@ -27,7 +27,7 @@ const FONT_CAP = 1.6;
 // One avatar of the strip/list pair. It is the only avatar drawn for a shown
 // dog: in the strip, in flight, and on its list row. Never touchable; the
 // chip or row underneath takes the tap.
-function FlyingAvatar({ index, id, ring, progress, stripX, listY, rows, fontScale, reduced }) {
+function FlyingAvatar({ index, id, ring, avatar, progress, stripX, listY, rows, fontScale, reduced }) {
   const style = useAnimatedStyle(() => {
     const top = headerBottom(fontScale);
     const from = stripSlot(index, stripX.value, fontScale);
@@ -45,7 +45,7 @@ function FlyingAvatar({ index, id, ring, progress, stripX, listY, rows, fontScal
   });
   return (
     <Animated.View style={[styles.flyer, { borderColor: ring }, style]}>
-      <TrackingAvatar role="slave" size={STRIP_RING - 8} />
+      <DogAvatar avatar={avatar} size={STRIP_RING - 8} />
     </Animated.View>
   );
 }
@@ -58,7 +58,7 @@ function FlyingAvatar({ index, id, ring, progress, stripX, listY, rows, fontScal
  * thread cannot make them stutter; the content stays frozen while the finger
  * is down and catches up when the card settles.
  *
- * strip: [{ id, name, status, spoken, ring, onPress(pageY) }] in list order;
+ * strip: [{ id, name, status, spoken, ring, avatar, onPress(pageY) }] in list order;
  * status is empty for a dog with nothing wrong.
  * children({ onRowLayout }): the list; DogList reports each row's layout so
  * the avatars land on the rows wherever large fonts or wrapped text put them.
@@ -270,7 +270,7 @@ export default function LiveSheet({
 
           <View style={styles.flyers} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             {strip.map((item, index) => (
-              <FlyingAvatar key={item.id} index={index} id={item.id} ring={item.ring} progress={progress}
+              <FlyingAvatar key={item.id} index={index} id={item.id} ring={item.ring} avatar={item.avatar} progress={progress}
                 stripX={stripX} listY={listY} rows={rows} fontScale={fontScale} reduced={reduced} />
             ))}
           </View>

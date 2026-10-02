@@ -13,6 +13,7 @@ import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import ActivityHistoryChart from './ActivityHistoryChart';
 import DogDetails from './DogDetails';
+import DogAvatar from '../dogs/DogAvatar';
 import ReceiverDetails, { receiverConnection } from './ReceiverDetails';
 import { describeDog } from './DogList';
 import { colors as tokens, space, type } from '../theme/tokens';
@@ -65,7 +66,8 @@ export default function DeviceDetails({
   onFollow,
   onTodayPath,
   todayPathBusy,
-  onRename,
+  onEdit,
+  dogAvatar,
   onPanelHeight,
   receiverState,
   receiverId,
@@ -122,6 +124,7 @@ export default function DeviceDetails({
             from its own close button is how a panel traps someone. */}
         <View style={[styles.heading, sheet && styles.headingSheet]}>
           <View style={styles.titleLine}>
+            {dog && <DogAvatar avatar={dogAvatar} size={36} />}
             <Text style={styles.title} numberOfLines={1}>{title}</Text>
             {chip && <StatusChip {...chip} />}
           </View>
@@ -166,7 +169,7 @@ export default function DeviceDetails({
               onFollow={onFollow}
               onTodayPath={onTodayPath}
               todayPathBusy={todayPathBusy}
-              onRename={onRename}
+              onEdit={onEdit}
               onToggleHidden={onToggleHidden}
               chart={(
                 <ActivityHistoryChart key={`${activityOwner}-${dog.slaveId}`}

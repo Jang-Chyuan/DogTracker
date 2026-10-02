@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -22,11 +22,13 @@ import { ui } from './src/components/ScreenUI';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MapScreen from './src/screens/MapScreen';
 import { useScreenFixture } from './src/dev/useScreenFixture';
+import { fixtureActivity } from './src/dev/ScreenFixtures';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
 import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLocationRecording';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
+import { useDogAvatars } from './src/dogs/useDogAvatars';
 import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
@@ -82,6 +84,7 @@ function TrackerApp() {
   const isHistory = route.name === 'history';
   // Both tabs draw on the same persistent map layer; only one of them is live.
   const showsMap = isMap || isHistory;
+  const dogAvatars = useDogAvatars(tracking.historyDatabase, tracking.ready.real);
   const history = useMapHistory(tracking.historyDatabase, tracking.ready.real,
     tracking.foreground && isHistory, cloudSync.ownerId);
   // The history card downloads a cloud range it does not hold, through the same
@@ -99,6 +102,17 @@ function TrackerApp() {
 
   // Debug builds only: a named screen state replaces the live map inputs.
   const fixture = useScreenFixture();
+  // A debug screen fixture replaces the inputs the map takes; the fixture
+  // dogs are not in the database, so their activity chart gets a made-up day.
+  const fixtureActivityDatabase = useMemo(() => fixture && ({
+    ...tracking.cloudDatabase,
+    activityHistory: async (_, slaveId) => fixtureActivity(slaveId, Date.now()),
+  }), [fixture, tracking.cloudDatabase]);
+  const mapTracking = fixture ? {
+    ...tracking,
+    ...(fixture.point ? { point: fixture.point, positionSamples: [] } : null),
+    cloudDatabase: fixtureActivityDatabase,
+  } : tracking;
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.
@@ -174,8 +188,9 @@ function TrackerApp() {
       >
         <MapScreen
           history={history}
+          dogAvatars={dogAvatars}
           historyDownload={historyDownload}
-          tracking={fixture?.point ? { ...tracking, point: fixture.point, positionSamples: [] } : tracking}
+          tracking={mapTracking}
           phone={phone}
           cloudDogs={fixture ? fixture.cloudDogs : cloudDogs}
           cloudOwner={cloudSync.ownerId}
