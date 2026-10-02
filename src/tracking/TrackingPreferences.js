@@ -9,6 +9,8 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   mode: 'real',
   showMasterMarker: true,
   showSlaveMarker: true,
+  // The 1 km reference circle around the receiver (receiver panel switch).
+  showRangeCircle: true,
   showTrails: false,
   windowMinutes: 2,
   // Which dog the map camera follows; null follows every visible device.
@@ -23,7 +25,7 @@ export function validateTrackingPreferences(value) {
   const settings = { ...DEFAULT_TRACKING_PREFERENCES, ...value };
   if (!['demo', 'real'].includes(settings.mode))
     throw new Error('資料模式設定格式錯誤');
-  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails']) {
+  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showRangeCircle', 'showTrails']) {
     if (typeof settings[key] !== 'boolean')
       throw new Error('地圖顯示設定格式錯誤');
   }
@@ -43,7 +45,11 @@ export function validateTrackingPreferences(value) {
     // Legacy saved preferences may select simulated data; always use hardware.
     mode: 'real',
     showMasterMarker: settings.showMasterMarker,
-    showSlaveMarker: settings.showSlaveMarker,
+    // The switch that hid every dog at once is gone (dogs are hidden one by
+    // one in their panel); a phone that saved it off must not lose its dogs
+    // with no way back.
+    showSlaveMarker: true,
+    showRangeCircle: settings.showRangeCircle,
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
     focusSlaveId: settings.focusSlaveId,
@@ -65,6 +71,10 @@ export function createTrackingPreferences(database, onChange) {
   };
   let disposed = false;
   let pending = null;
+  // Changes made while a write is in flight are merged and written right
+  // after it, so the last choice wins (DESIGN.md §5.7) instead of being lost.
+  let queued = null;
+  let queuedRun = null;
   function update(patch) {
     state = { ...state, ...patch };
     if (!disposed) onChange(state);
@@ -99,17 +109,27 @@ export function createTrackingPreferences(database, onChange) {
         await database.initialize();
         return validateTrackingPreferences(await database.load());
       }, true),
-    save: patch =>
-      state.ready
-        ? run(async () => {
-            const next = validateTrackingPreferences({
-              ...state.value,
-              ...patch,
-            });
-            await database.save(next);
-            return next;
-          })
-        : Promise.resolve(false),
+    save: function save(patch) {
+      if (!state.ready || disposed) return Promise.resolve(false);
+      if (pending) {
+        queued = { ...queued, ...patch };
+        queuedRun ??= pending.then(() => {
+          const next = queued;
+          queued = null;
+          queuedRun = null;
+          return next && !disposed ? save(next) : false;
+        });
+        return queuedRun;
+      }
+      return run(async () => {
+        const next = validateTrackingPreferences({
+          ...state.value,
+          ...patch,
+        });
+        await database.save(next);
+        return next;
+      });
+    },
     reset: () =>
       run(async () => {
         await database.initialize();

@@ -187,7 +187,7 @@ test('phone button centres the live location without remounting the map', async 
   await render({ livePhone: { running: true, ageSeconds: 1, position: { latitude: 24.9, longitude: 121.2, accuracy: 5, timestamp: Date.now() } } });
   await readyMap();
   const map = renderer.root.findByType(MapView);
-  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '本機位置' && typeof node.props.onPress === 'function')[0].props.onPress());
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '我的位置' && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(mockCamera.animateCamera).toHaveBeenCalledWith({ center: { latitude: 24.9, longitude: 121.2 } }, { duration: 400 });
   expect(renderer.root.findByType(MapView)).toBe(map);
 });
@@ -196,7 +196,7 @@ test('without a valid phone fix the button never centres the dog or history posi
   await render();
   await readyMap();
   mockCamera.animateCamera.mockClear();
-  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '本機位置' && typeof node.props.onPress === 'function')[0].props.onPress());
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '我的位置' && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(mockCamera.animateCamera).not.toHaveBeenCalled();
 });
 
@@ -284,8 +284,7 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
         .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
         .props.onAccessibilityAction({ nativeEvent: { actionName } }),
     );
-  // One switch only: whether the path is drawn. Everything else on the card is
-  // a tap target of its own.
+  // The card itself has no switches.
   expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
   expect(
     StyleSheet.flatten(
@@ -338,7 +337,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   );
   // One switch only: whether the path is drawn. Everything else on the card is
   // a tap target of its own.
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
+  // The receiver's panel holds its two map switches.
+  expect(renderer.root.findAllByType(Switch).map(node => node.props.accessibilityLabel))
+    .toEqual(['在地圖上顯示接收器', '1 公里參考圈']);
   const detailsLayer = StyleSheet.flatten(
     renderer.root.findByProps({ testID: 'device-details' }).props.style,
   );
@@ -362,7 +363,8 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
     left: 0,
   });
   expect(JSON.stringify(renderer.toJSON())).not.toContain('顯示領犬員路徑');
-  expect(JSON.stringify(renderer.toJSON())).toContain('Master ID: ');
+  expect(JSON.stringify(renderer.toJSON())).toContain('接收器 3');
+  expect(JSON.stringify(renderer.toJSON())).toContain('最後收訊');
   // The same tap on a dog opens the same panel, carrying what the card no
   // longer does — for that pair only.
   await act(async () =>

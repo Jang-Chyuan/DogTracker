@@ -15,6 +15,8 @@ import MapView, {
 } from 'react-native-maps';
 import { floatingShadow, mapColors as colors } from './MapTheme';
 import { describeDogSource } from './DogMerge';
+import Glyph from './Glyph';
+import { colors as tokens } from '../theme/tokens';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import TrackingAvatar from './TrackingAvatar';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
@@ -31,7 +33,7 @@ const EMPTY_REGION = {
   latitudeDelta: 4,
   longitudeDelta: 4,
 };
-function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
+function DeviceMarker({ source, role, position, onPress, identifier, title, description, number }) {
   // An aged dog fix is drawn amber (2–10 min) or grey (older) with its age in
   // words, so it reads as "last seen here", not as where the dog is now; no
   // transparency, which disappears in sunlight. Other roles still fade when
@@ -47,8 +49,8 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   // frame), so fading and the follow ring have to ask for one redraw each.
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [faded, focused, title, status]);
-  const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
+  }, [faded, focused, title, status, number]);
+  const name = title || (role === 'master' ? (number != null ? `接收器 ${number}` : '接收器') : '狗 · Slave');
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
   );
@@ -74,8 +76,15 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
           aged === 'recent' && styles.recentMarker, aged === 'old' && styles.oldMarker]}
         onLayout={() => marker.current?.redraw()}
       >
-        <TrackingAvatar role={role} size={40} tint={aged ? AGED_TINT[aged] : undefined}
-          outline={aged === 'old' ? '#6B7470' : undefined} />
+        {role === 'master' ? (
+          // A rounded square, so the receiver never reads as one more dog.
+          <View style={styles.receiverMarker}>
+            <Text style={styles.receiverNumber} allowFontScaling={false}>{number ?? ''}</Text>
+          </View>
+        ) : (
+          <TrackingAvatar role={role} size={40} tint={aged ? AGED_TINT[aged] : undefined}
+            outline={aged === 'old' ? '#6B7470' : undefined} />
+        )}
       </View></DogNameMarker>
     </Marker>
   );
@@ -395,7 +404,7 @@ function GoogleTrackingMapRenderer({
               strokeWidth={3}
             />
           ))}
-          {master && (
+          {master && masterRangeMeters > 0 && (
             <Circle
               key={source + '-range'}
               center={master.coordinate}
@@ -411,6 +420,7 @@ function GoogleTrackingMapRenderer({
               source={source}
               role="master"
               position={master}
+              number={presentation.masterId}
               onPress={onMasterPress}
             />
           )}
@@ -472,34 +482,81 @@ function GoogleTrackingMapRenderer({
         </View>
       )}
       {configured && foreground && (loaded || timedOut) && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="本機位置"
-          style={[styles.retry, { top: topInset + 56 }]}
-          onPress={() => {
-            const live = livePhone?.running && livePhone.ageSeconds != null && livePhone.ageSeconds <= 30
-              ? livePhone.position : null;
-            const position = live || (nativePhone.current && Date.now() - nativePhone.current.receivedAt <= 30000
-              ? nativePhone.current : null);
-            if (!position || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)
-              || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) {
-              Alert.alert('本機位置', '尚無有效的手機定位，請確認已開啟定位與定位權限。');
-              return;
-            }
-            if (!ready) {
-              Alert.alert('本機位置', '地圖尚未準備完成，請稍候再試。');
-              return;
-            }
-            interacted.current = true;
-            phoneCentered.current = true;
-            setNeedsFirstPositionFit(false);
-            mapRef.current?.animateCamera({ center: {
-              latitude: position.latitude, longitude: position.longitude,
-            } }, { duration: 400 });
-          }}
-        >
-          <Text style={styles.retryText}>本機位置</Text>
-        </Pressable>
+        // Two round 48 dp buttons on the right (design 1): frame everyone in
+        // view, and move to the phone.
+        <View style={[styles.mapButtons, { top: topInset + 8 }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="框住工作區"
+            accessibilityHint="把所有狗、接收器和手機放進畫面"
+            style={({ pressed }) => [styles.roundButton, pressed && styles.roundPressed]}
+            onPress={() => {
+              // Everyone on the map, not the automatic framing: every drawn
+              // dog (cloud and aged ones too), the receiver and the phone.
+              const live = livePhone?.running && livePhone.ageSeconds != null && livePhone.ageSeconds <= 600
+                ? livePhone.position : null;
+              const points = [
+                ...(presentation.dogs || []).map(dog => dog.coordinate),
+                presentation.positions?.master?.coordinate,
+                live,
+              ].filter(point => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude))
+                .map(point => ({ latitude: point.latitude, longitude: point.longitude }));
+              if (!points.length) {
+                Alert.alert('框住工作區', '還沒有任何位置可以框住。');
+                return;
+              }
+              if (!ready) {
+                Alert.alert('框住工作區', '地圖尚未準備完成，請稍候再試。');
+                return;
+              }
+              interacted.current = true;
+              // Like 我的位置, this is the handler taking the camera: a followed
+              // dog's next fix must not pull it back.
+              phoneCentered.current = true;
+              setNeedsFirstPositionFit(false);
+              // One point is a degenerate box that Android fits at maximum zoom.
+              if (points.length === 1) {
+                mapRef.current?.animateCamera({ center: points[0] }, { duration: 400 });
+                return;
+              }
+              mapRef.current?.fitToCoordinates(points, {
+                animated: true,
+                edgePadding: { top: 72, right: 200, bottom: 24, left: 32 },
+              });
+            }}
+          >
+            <Glyph name="frame" color={tokens.text} size={22} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="我的位置"
+            accessibilityHint="把地圖移到手機的位置"
+            style={({ pressed }) => [styles.roundButton, pressed && styles.roundPressed]}
+            onPress={() => {
+              const live = livePhone?.running && livePhone.ageSeconds != null && livePhone.ageSeconds <= 30
+                ? livePhone.position : null;
+              const position = live || (nativePhone.current && Date.now() - nativePhone.current.receivedAt <= 30000
+                ? nativePhone.current : null);
+              if (!position || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)
+                || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) {
+                Alert.alert('我的位置', '尚無有效的手機定位，請確認已開啟定位與定位權限。');
+                return;
+              }
+              if (!ready) {
+                Alert.alert('我的位置', '地圖尚未準備完成，請稍候再試。');
+                return;
+              }
+              interacted.current = true;
+              phoneCentered.current = true;
+              setNeedsFirstPositionFit(false);
+              mapRef.current?.animateCamera({ center: {
+                latitude: position.latitude, longitude: position.longitude,
+              } }, { duration: 400 });
+            }}
+          >
+            <Glyph name="locate" color={tokens.phone} size={22} />
+          </Pressable>
+        </View>
       )}
     </View>
   );
@@ -531,17 +588,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...floatingShadow,
   },
-  retry: {
-    position: 'absolute',
-    left: 14,
-    padding: 12,
-    minHeight: 44,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    ...floatingShadow,
-  },
-  retryText: { color: colors.ink, fontWeight: '600' },
   fadedMarker: { opacity: 0.45 },
+  mapButtons: { position: 'absolute', right: 12, gap: 8 },
+  roundButton: {
+    width: 48, height: 48, borderRadius: 24, backgroundColor: tokens.surface,
+    alignItems: 'center', justifyContent: 'center', ...floatingShadow,
+  },
+  roundPressed: { transform: [{ scale: 0.97 }] },
+  receiverMarker: {
+    width: 34, height: 34, borderRadius: 9, backgroundColor: tokens.receiver,
+    borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+  },
+  receiverNumber: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   recentMarker: { borderRadius: 23, borderWidth: 2, borderStyle: 'dashed', borderColor: '#9A5B00' },
   oldMarker: { borderRadius: 23, borderWidth: 2, borderColor: '#6B7470' },
   phoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: '#FFFFFF' },

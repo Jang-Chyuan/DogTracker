@@ -79,6 +79,8 @@ export function createTrackingMapPresentation(
       trails && visibility.showSlaveMarker
         ? clipSegments(route.slaveSegments, since)
         : [],
-    masterRangeMeters: MASTER_RANGE_METERS,
+    // The receiver is drawn as a rounded square with its number (design 1).
+    masterId: point?.masterId ?? null,
+    masterRangeMeters: visibility.showRangeCircle === false ? 0 : MASTER_RANGE_METERS,
   };
 }

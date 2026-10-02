@@ -341,11 +341,10 @@ test('saving a preference does not dim the card', async () => {
   await act(async () => renderer.root
     .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
     .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
-  const eye = renderer.root.findAll(
-    node => node.props.accessibilityLabel?.endsWith('位置') &&
-      typeof node.props.onPress === 'function', { deep: false })[0];
-  expect(eye.props.accessibilityState.disabled).toBe(false);
-  expect(JSON.stringify(eye.props.style)).not.toContain('0.45');
+  const receiverRow = renderer.root.findAll(
+    node => node.props.testID === 'receiver-row' && typeof node.props.onPress === 'function', { deep: false })[0];
+  expect(receiverRow.props.disabled).toBeFalsy();
+  expect(JSON.stringify(receiverRow.props.style({ pressed: false }))).not.toContain('0.45');
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();

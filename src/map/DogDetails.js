@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, space, touch, type } from '../theme/tokens';
 import { describeDog } from './DogList';
-import { MOVEMENT_WORDS, movement } from './DogReadout';
+import { MOVEMENT_WORDS, movement, phoneNote } from './DogReadout';
 import { formatTime } from './MapFormat';
 
 // One reading in the 2×2 grid. A missing value says why it is missing,
@@ -49,7 +49,10 @@ export default function DogDetails({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(alias || '');
   const commit = () => { onRename?.(draft.trim()); setRenaming(false); };
-  const where = said.where.kind === 'ok' ? `${said.where.distance}・${said.where.compass}方`
+  // The card that says how old the phone's own fix is sits under this panel,
+  // so a distance from an old fix says so here too.
+  const phoneAge = said.where.kind === 'ok' ? phoneNote(phone) : '';
+  const where = said.where.kind === 'ok' ? `${said.where.distance}・${said.where.compass}方${phoneAge ? `\n${phoneAge}` : ''}`
     : said.where.kind === 'no-phone' ? '手機無定位' : '狗無定位';
   const battery = Number.isFinite(dog.batteryPercentage) ? `${dog.batteryPercentage}%`
     : dog.source === 'cloud' ? '雲端資料未提供' : '未回報';
@@ -62,7 +65,7 @@ export default function DogDetails({
       {!said.current && !!said.time && <Text style={styles.status}>{said.time}</Text>}
 
       <View style={styles.grid}>
-        <Reading label="方向與距離" value={where} missing={said.where.kind !== 'ok'} />
+        <Reading label="方向與距離" value={where} missing={said.where.kind !== 'ok' || !!phoneAge} />
         <Reading label="狀態" value={said.current ? MOVEMENT_WORDS[state] : said.condition} missing={!said.current} />
         <Reading label="電量" value={battery} missing={!Number.isFinite(dog.batteryPercentage)} />
         <Reading label="離接收器" value={toReceiver} missing={!Number.isFinite(dog.distanceMeters)} />

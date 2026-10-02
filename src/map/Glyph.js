@@ -75,6 +75,21 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Line x1={3} y1={3} x2={21} y2={21} {...stroke} />
         </>
       )}
+      {name === 'frame' && (
+        // Four corners around a dot: fit everyone in view.
+        <>
+          <Path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" {...stroke} />
+          <Circle cx={12} cy={12} r={2} fill={color} />
+        </>
+      )}
+      {name === 'locate' && (
+        // The platform's "my location" crosshair.
+        <>
+          <Circle cx={12} cy={12} r={7} {...stroke} />
+          <Circle cx={12} cy={12} r={2.5} fill={color} />
+          <Path d="M12 2v3M12 19v3M2 12h3M19 12h3" {...stroke} />
+        </>
+      )}
       {name === 'clock' && (
         <>
           <Circle cx={12} cy={12} r={9} {...stroke} />

@@ -92,12 +92,12 @@ describe('tracking session and connection lifetime', () => {
 
   test('legacy demo preferences start only the real feed and preserve display settings', async () => {
     const db = databases();
-    db.settings.load.mockResolvedValue({ mode: 'demo', showSlaveMarker: false, windowMinutes: 30 });
+    db.settings.load.mockResolvedValue({ mode: 'demo', showMasterMarker: false, windowMinutes: 30 });
     db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
     await mount(db);
     expect(session.mode).toBe('real');
     expect(session.point.id).toBe(dogStatusRow.id);
-    expect(session.preferences.value).toMatchObject({ mode: 'real', showSlaveMarker: false, windowMinutes: 30 });
+    expect(session.preferences.value).toMatchObject({ mode: 'real', showMasterMarker: false, windowMinutes: 30 });
     expect(Object.keys(session.ready)).toEqual(['real']);
   });
 

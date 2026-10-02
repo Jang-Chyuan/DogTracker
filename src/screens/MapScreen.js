@@ -19,7 +19,8 @@ import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import HomeStatus from '../map/HomeStatusBar';
 import DogPopover from '../map/DogPopover';
-import { phoneFix } from '../map/DogReadout';
+import { phoneFix, settleMovement } from '../map/DogReadout';
+import { useReceiverState } from '../map/useReceiverState';
 import { describeDog } from '../map/DogList';
 import { dogMapLabel } from '../mapHistory/DogAliases';
 
@@ -98,7 +99,7 @@ export default function MapScreen({
   const now = useMapClock(active && tracking.foreground);
   useEffect(() => {
     setSelected(null);
-  }, [mode, point.masterId, tracking.preferences.value.showMasterMarker]);
+  }, [mode, point.masterId]);
   const basePresentation = useMemo(
     () =>
       createTrackingMapPresentation(
@@ -114,12 +115,30 @@ export default function MapScreen({
   // rows.
   // The eye hides the markers, not the list: the card must still say which dogs
   // reported and when.
+  // Moving or still is settled per dog over its readings (settleMovement), so
+  // it advances once per new reading, not once per clock tick. Rendering only
+  // reads the memory; it is written after a render commits, so a render React
+  // throws away never seeds a state.
+  const settled = useRef(new Map());
   const dogs = useMemo(
     () => mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
       packetRows: cloudDogs?.packets, now,
-      windowMs: 2 * 60000 }),
+      windowMs: 2 * 60000 }).map(dog => {
+      const memory = settled.current.get(dog.slaveId);
+      const reading = `${dog.lastPositionAt}:${dog.speedKmh}`;
+      const state = memory?.reading === reading ? memory.state : settleMovement(memory?.state, dog.speedKmh);
+      return { ...dog, movementState: state, movementReading: reading };
+    }),
     [point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, now],
   );
+  useEffect(() => {
+    for (const dog of dogs) {
+      if (settled.current.get(dog.slaveId)?.reading === dog.movementReading) continue;
+      // A reading without a speed keeps the last settled state for the next.
+      const previous = settled.current.get(dog.slaveId)?.state;
+      settled.current.set(dog.slaveId, { reading: dog.movementReading, state: dog.movementState ?? previous });
+    }
+  }, [dogs]);
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.
   const dogPaths = useMemo(() => [], []);
@@ -270,20 +289,27 @@ export default function MapScreen({
         .find(item => item.name === selected.name);
       return track ? { kind: 'track', track } : null;
     }
-    if (selected.kind === 'master') return master ? { kind: 'master' } : null;
+    // The receiver panel opens from its card row too, with or without a fix.
+    if (selected.kind === 'master') return { kind: 'master' };
     const dog = dogs.find(item => item.slaveId === selected.slaveId);
     return dog ? { kind: 'dog', dog } : null;
-  }, [selected, historical, master, dogs, presentation.historyTracks]);
+  }, [selected, historical, dogs, presentation.historyTracks]);
   // Opening a dog's panel moves the map once so the dog sits above the panel
   // (the map's bottom padding follows the panel's measured height).
+  // The receiver's panel does the same for the receiver.
   const centeredFor = useRef(null);
-  const detailDog = detailSubject?.kind === 'dog' ? detailSubject.dog : null;
+  const sheetPanel = detailSubject?.kind === 'dog' || detailSubject?.kind === 'master';
+  const panelKey = detailSubject?.kind === 'dog' ? `dog:${detailSubject.dog.slaveId}`
+    : detailSubject?.kind === 'master' ? 'master' : null;
+  const panelCoordinate = detailSubject?.kind === 'dog' ? detailSubject.dog.coordinate
+    : detailSubject?.kind === 'master' ? master?.coordinate : null;
   useEffect(() => {
-    if (!detailDog) { centeredFor.current = null; return; }
-    if (!dogPanelHeight || centeredFor.current === detailDog.slaveId || !detailDog.coordinate) return;
-    centeredFor.current = detailDog.slaveId;
-    setCenterOnce({ key: `panel:${detailDog.slaveId}:${Date.now()}`, coordinate: detailDog.coordinate });
-  }, [detailDog, dogPanelHeight]);
+    if (!panelKey) { centeredFor.current = null; return; }
+    if (!dogPanelHeight || centeredFor.current === panelKey || !panelCoordinate) return;
+    centeredFor.current = panelKey;
+    setCenterOnce({ key: `panel:${panelKey}:${Date.now()}`, coordinate: panelCoordinate });
+  }, [panelKey, panelCoordinate, dogPanelHeight]);
+  const receiverState = useReceiverState(active && detailSubject?.kind === 'master', readReceiverState);
   // History notices live in the history card, next to the controls that cause
   // them; the map keeps only what belongs to the map itself.
   // The card names the colours next to the eyes that control them; a banner
@@ -340,7 +366,7 @@ export default function MapScreen({
         source={historical ? 'history:' + history.key : fixtureName ? `${mode}:${fixtureName}` : mode}
         presentation={presentation}
         topInset={controlsTop}
-        bottomInset={bottomInset + (detailSubject?.kind === 'dog' && dogPanelHeight ? dogPanelHeight
+        bottomInset={bottomInset + (sheetPanel && dogPanelHeight ? dogPanelHeight
           : sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
         onStatus={setMapStatus}
         onSnapshotReady={onSnapshotReady}
@@ -436,7 +462,9 @@ export default function MapScreen({
           phone={phonePosition}
           mapHeading={mapHeading}
           onPickDog={pickDog}
-          covered={detailSubject?.kind === 'dog'}
+          covered={sheetPanel}
+          recording={!!livePhone?.running}
+          onOpenReceiver={openMaster}
         />
       )}
       {active && !historical && picked && (() => {
@@ -475,7 +503,10 @@ export default function MapScreen({
           dogAliases={history?.preferences.dogAliases}
           master={master}
           topInset={controlsTop}
-          bottomInset={detailSubject.kind === 'dog' ? bottomInset : bottomInset + SHEET_COLLAPSED_HEIGHT}
+          bottomInset={sheetPanel ? bottomInset : bottomInset + SHEET_COLLAPSED_HEIGHT}
+          receiverState={receiverState}
+          onPreferences={tracking.saveTrackingPreferences}
+          onOpenReceiver={() => { closeDetails(); onOpenReceiver?.(); }}
           onPanelHeight={setDogPanelHeight}
           onClose={closeDetails}
           hidden={detailSubject.kind === 'dog'

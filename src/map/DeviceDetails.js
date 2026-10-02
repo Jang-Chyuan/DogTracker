@@ -11,9 +11,9 @@ import {
 import { floatingShadow, mapColors as colors } from './MapTheme';
 import { formatTime } from './MapFormat';
 import Stat from './Stat';
-import { Position } from './TrackingSheet';
 import ActivityHistoryChart from './ActivityHistoryChart';
 import DogDetails from './DogDetails';
+import ReceiverDetails, { receiverConnection } from './ReceiverDetails';
 import { describeDog } from './DogList';
 import { colors as tokens, space, type } from '../theme/tokens';
 
@@ -24,9 +24,11 @@ const maxSheet = (top, bottom) => {
 };
 
 // The dog's state in one word, coloured and written (DESIGN.md §2.3).
-function StatusChip({ said }) {
-  const tone = said.current ? 'ok' : said.freshness.tier === 'recent' ? 'warn' : 'muted';
-  const label = said.current ? '定位正常' : said.group === 'silent' ? '未更新' : '無定位';
+const dogChip = said => ({
+  tone: said.current ? 'ok' : said.freshness.tier === 'recent' ? 'warn' : 'muted',
+  label: said.current ? '定位正常' : said.group === 'silent' ? '未更新' : '無定位',
+});
+function StatusChip({ tone, label }) {
   return (
     <View style={[styles.chip, styles[`chip_${tone}`]]}>
       <Text style={[styles.chipText, styles[`chipText_${tone}`]]}>{label}</Text>
@@ -34,9 +36,6 @@ function StatusChip({ said }) {
   );
 }
 
-function battery(valid, percentage) {
-  return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
-}
 
 /**
  * One panel for whichever marker was tapped.
@@ -68,6 +67,9 @@ export default function DeviceDetails({
   todayPathBusy,
   onRename,
   onPanelHeight,
+  receiverState,
+  onPreferences,
+  onOpenReceiver,
 }) {
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -93,10 +95,12 @@ export default function DeviceDetails({
   // A live dog's panel takes the home card's place at the bottom, so the dog
   // itself stays in sight on the map above it (design 3). The handler and
   // history panels keep the floating card.
-  const sheet = !!dog;
-  const said = dog ? describeDog(dog, now, phone, mapHeading) : null;
+  const receiver = subject?.kind === 'master';
+  const sheet = !!dog || receiver;
+  const chip = dog ? dogChip(describeDog(dog, now, phone, mapHeading))
+    : receiver ? receiverConnection(receiverState, now) : null;
   const title = slaveId != null ? (alias ? `${alias}・${slaveId}` : `狗 ${slaveId}`)
-    : track ? track.name : '領犬員資訊';
+    : track ? track.name : point.masterId != null ? `接收器 ${point.masterId}` : '接收器';
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]} testID="device-details">
       <Pressable
@@ -117,7 +121,7 @@ export default function DeviceDetails({
         <View style={[styles.heading, sheet && styles.headingSheet]}>
           <View style={styles.titleLine}>
             <Text style={styles.title} numberOfLines={1}>{title}</Text>
-            {said && <StatusChip said={said} />}
+            {chip && <StatusChip {...chip} />}
           </View>
           <Pressable
             accessibilityRole="button"
@@ -170,15 +174,9 @@ export default function DeviceDetails({
               )}
             />
           ) : (
-            <>
-              <Position role="master" position={master} />
-              <Text style={styles.hint}>Master ID: {point.masterId ?? '—'}</Text>
-              <Text style={styles.hint}>
-                領犬員裝置電量：
-                {battery(point.masterBatteryValid, point.masterBatteryPercentage)}
-              </Text>
-              <Text style={styles.hint}>參考圈半徑 1 公里，跟隨領犬員。</Text>
-            </>
+            <ReceiverDetails point={point} position={master} state={receiverState} now={now}
+              preferences={tracking.preferences} onPreferences={onPreferences}
+              onOpenSettings={onOpenReceiver} />
           )}
         </ScrollView>
       </View>
@@ -234,10 +232,12 @@ const styles = StyleSheet.create({
   chip_ok: { backgroundColor: tokens.okBg },
   chip_warn: { backgroundColor: tokens.warnBg },
   chip_muted: { backgroundColor: tokens.bg },
+  chip_crit: { backgroundColor: tokens.critBg },
   chipText: { ...type.caption, fontWeight: '700' },
   chipText_ok: { color: tokens.ok },
   chipText_warn: { color: tokens.warn },
   chipText_muted: { color: tokens.textMuted },
+  chipText_crit: { color: tokens.crit },
   title: { fontSize: 18, color: colors.ink, fontWeight: '700' },
   label: { fontSize: 14, color: colors.ink, fontWeight: '600', marginTop: 10 },
   hint: { fontSize: 12, lineHeight: 19, color: colors.muted, marginTop: 8 },
