@@ -69,3 +69,11 @@ test('the cloud says nothing while it syncs, and only speaks up when it cannot',
     .toEqual({ show: true, tone: 'warn', label: '雲端｜最後同步 08:50' });
   expect(describeCloud({ ownerId: null }, NOW)).toEqual({ show: true, tone: 'idle', label: '雲端｜需登入' });
 });
+
+test('the receiver is named by its QR Master ID, or by its device name on an older build', () => {
+  const { receiverNumber } = require('../src/map/HomeStatus');
+  expect(receiverNumber({ expectedMasterId: 7, deviceName: 'DogGPS-Master3' })).toBe(7);
+  expect(receiverNumber({ expectedMasterId: 0, deviceName: 'DogGPS-Master3' })).toBe(3);
+  expect(receiverNumber({ deviceName: 'DogGPS Master' })).toBeNull();
+  expect(receiverNumber(null)).toBeNull();
+});

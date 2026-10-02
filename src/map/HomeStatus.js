@@ -20,10 +20,19 @@ export function formatClock(at) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+// Which receiver this phone is set up for: the Master ID from its QR code
+// (the service stops on packets from any other Master), or, from an older
+// build that does not report it, the number at the end of the device name.
+export function receiverNumber(state) {
+  if (state?.expectedMasterId > 0) return state.expectedMasterId;
+  const number = /(\d+)\s*$/.exec(state?.deviceName || '')?.[1];
+  return number ? Number(number) : null;
+}
+
 // "DogGPS-Master7" → "接收器 7"; a name without a number stays generic.
-export function receiverName(deviceName) {
-  const number = /(\d+)\s*$/.exec(deviceName || '')?.[1];
-  return number ? `接收器 ${number}` : '接收器';
+export function receiverName(deviceName, expectedMasterId) {
+  const number = receiverNumber({ deviceName, expectedMasterId });
+  return number != null ? `接收器 ${number}` : '接收器';
 }
 
 const HIDDEN = { show: false, tone: null, label: null, alert: null };
@@ -32,7 +41,7 @@ export function describeReceiver(state, now) {
   if (!state || !state.enabled) {
     return { show: true, tone: 'idle', label: '接收器｜未連接', alert: null };
   }
-  const name = receiverName(state.deviceName);
+  const name = receiverName(state.deviceName, state.expectedMasterId);
   const last = state.lastReceivedAt > 0 ? state.lastReceivedAt : null;
   if (!state.running) {
     return {

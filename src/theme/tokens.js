@@ -22,7 +22,9 @@ export const colors = {
   crit: '#7A1D18',
   critBg: '#FFF3F1',
   critLine: '#D64545',
-  receiver: '#2D3B45',
+  // Receiver icon (A1): white face, slate-blue ring and line drawing.
+  receiver: '#3E5A6B',
+  receiverRing: '#5B7A8C',
   phone: '#1A73E8',
 };
 

@@ -86,6 +86,8 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
       putString("storageError", prefs.getString("storageError", ""))
       putString("resumeError", prefs.getString("resumeError", ""))
       putString("deviceName", prefs.getString("deviceName", "DogGPS Master"))
+      // The Master ID from the QR code; packets from any other Master stop the session.
+      putInt("expectedMasterId", prefs.getInt("expectedMasterId", 0))
       putString("lastStatus", prefs.getString("lastStatus", ""))
       putString("lastPayload", prefs.getString("lastPayload", ""))
     }

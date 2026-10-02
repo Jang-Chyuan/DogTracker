@@ -26,6 +26,8 @@ test.each([
   ['warn status on its chip', colors.warn, colors.warnBg, 4.5],
   ['warn status on surface', colors.warn, colors.surface, 4.5],
   ['problem text on its card', colors.crit, colors.critBg, 7],
+  ['receiver drawing on its white face', colors.receiver, '#FFFFFF', 4.5],
+  ['receiver number on its tag', '#FFFFFF', colors.receiverRing, 4.5],
 ])('%s', (_, fg, bg, minimum) => {
   expect(contrast(fg, bg)).toBeGreaterThanOrEqual(minimum);
 });

@@ -122,8 +122,11 @@ const styles = StyleSheet.create({
 
 // Re-renders when the receiver poll (every 2 s) or the sync state changes;
 // nothing on screen counts seconds, so no clock of its own is needed.
-export default function HomeStatus({ active, cloudSync, top, onReceiver, onCloud, onHeight, readState }) {
-  const receiverState = useReceiverState(active, readState);
+// `state` lets the map share one receiver poll with the card and the panel;
+// without it this component polls on its own.
+export default function HomeStatus({ active, cloudSync, top, onReceiver, onCloud, onHeight, readState, state }) {
+  const polled = useReceiverState(active && state === undefined, readState);
+  const receiverState = state === undefined ? polled : state;
   const now = Date.now();
   const receiver = describeReceiver(receiverState, now);
   const cloud = describeCloud(cloudSync, now);

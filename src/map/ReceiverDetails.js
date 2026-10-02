@@ -45,12 +45,13 @@ function Row({ label, value, onChange, disabled }) {
  * eyes on the card.
  */
 export default function ReceiverDetails({
-  point, position, state, now, preferences, onPreferences, onOpenSettings,
+  point, position, state, now, preferences, onPreferences, onOpenSettings, other,
 }) {
-  const battery = point.masterBatteryValid && point.masterBatteryPercentage !== null
-    ? `${point.masterBatteryPercentage}%` : point.id === null ? '尚無資料' : '未回報';
+  // The newest packet can be from a receiver used before this one.
+  const battery = other || point.id === null ? '尚無資料'
+    : point.masterBatteryValid && point.masterBatteryPercentage !== null ? `${point.masterBatteryPercentage}%` : '未回報';
   const last = state?.lastReceivedAt > 0 ? formatClock(state.lastReceivedAt) : '尚未收到';
-  const where = point.id === null ? '尚無資料' : !position ? '無定位'
+  const where = point.id === null || other ? '尚無資料' : !position ? '無定位'
     : position.retained || position.stale ? `最後位置 ${formatTime(position.receivedAt)}` : '有定位';
   const busy = !preferences?.ready;
   const shown = preferences?.value || {};

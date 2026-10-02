@@ -68,6 +68,7 @@ export default function DeviceDetails({
   onRename,
   onPanelHeight,
   receiverState,
+  receiverId,
   onPreferences,
   onOpenReceiver,
 }) {
@@ -100,7 +101,8 @@ export default function DeviceDetails({
   const chip = dog ? dogChip(describeDog(dog, now, phone, mapHeading))
     : receiver ? receiverConnection(receiverState, now) : null;
   const title = slaveId != null ? (alias ? `${alias}・${slaveId}` : `狗 ${slaveId}`)
-    : track ? track.name : point.masterId != null ? `接收器 ${point.masterId}` : '接收器';
+    : track ? track.name : (receiverId?.number ?? point.masterId) != null
+      ? `接收器 ${receiverId?.number ?? point.masterId}` : '接收器';
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]} testID="device-details">
       <Pressable
@@ -174,7 +176,7 @@ export default function DeviceDetails({
               )}
             />
           ) : (
-            <ReceiverDetails point={point} position={master} state={receiverState} now={now}
+            <ReceiverDetails point={point} position={master} state={receiverState} now={now} other={receiverId?.other}
               preferences={tracking.preferences} onPreferences={onPreferences}
               onOpenSettings={onOpenReceiver} />
           )}
