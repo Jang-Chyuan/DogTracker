@@ -170,9 +170,9 @@ export default function HistorySheet({
   const slaves = list(draft.slaves);
   const masters = list(draft.masters);
   const dogOptions = [...new Set(devices.map(pair => pair.slave))].sort((a, b) => a - b);
-  const masterOptions = [...new Set(devices
-    .filter(pair => !slaves.length || slaves.includes(pair.slave))
-    .map(pair => pair.master))].sort((a, b) => a - b);
+  // Offer every receiver, even when the saved dog selection belongs to
+  // another Master. Otherwise a phone connected to M9 can remain stuck on M7.
+  const masterOptions = [...new Set(devices.map(pair => pair.master))].sort((a, b) => a - b);
   let preview = '';
   try {
     const window = historyWindow(draft);
@@ -271,7 +271,14 @@ export default function HistorySheet({
                   selected={masters.includes(master)} disabled={history.busy}
                   onPress={() => {
                     const next = toggle(masters, master);
-                    patch({ masters: next.length ? next : masterOptions });
+                    const selectedMasters = next.length ? next : masterOptions;
+                    const heard = [...new Set(devices
+                      .filter(pair => selectedMasters.includes(pair.master))
+                      .map(pair => pair.slave))].sort((a, b) => a - b);
+                    const keep = slaves.filter(id => heard.includes(id));
+                    // Preserve explicit multi-dog picks while at least one
+                    // matches; replace them only when the query would be empty.
+                    patch({ masters: selectedMasters, slaves: keep.length ? slaves : heard });
                   }} />
               ))}
             </View>
