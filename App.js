@@ -188,6 +188,7 @@ function TrackerApp() {
           fixtureName={fixture?.name}
           onOpenReceiver={() => navigate('hardware', 'settings')}
           onOpenCloud={() => navigate('cloud', 'settings')}
+          onOpenHistory={() => navigate('history')}
         />
 
 

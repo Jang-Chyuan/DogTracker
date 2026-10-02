@@ -64,6 +64,7 @@ function FlyingAvatar({ index, id, ring, progress, stripX, listY, rows, fontScal
  */
 export default function LiveSheet({
   title, summary, control, strip, bottomInset, topInset = 100, onHeight, onDragging, children,
+  covered = false,
 }) {
   const { height: windowHeight, fontScale } = useWindowDimensions();
   const stops = useMemo(
@@ -161,7 +162,12 @@ export default function LiveSheet({
 
   return (
     <Animated.View
-      style={[styles.sheet, { bottom: bottomInset, height: stops.expanded }, sheetStyle]}
+      // A dog's panel takes this card's place; the card keeps its state and
+      // position underneath, out of sight and out of reach.
+      style={[styles.sheet, { bottom: bottomInset, height: stops.expanded }, sheetStyle,
+        covered && styles.covered]}
+      pointerEvents={covered ? 'none' : 'auto'}
+      importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'}
       testID="tracking-sheet"
     >
       <GestureDetector gesture={headerPan}>
@@ -261,6 +267,7 @@ const styles = StyleSheet.create({
     position: 'absolute', zIndex: 10, left: 12, right: 12,
     borderRadius: 24, backgroundColor: colors.surface, overflow: 'hidden', ...shadow.floating,
   },
+  covered: { opacity: 0 },
   handleArea: { height: 22, alignItems: 'center', justifyContent: 'center' },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#D8CFCC' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SIDE, gap: space.s },

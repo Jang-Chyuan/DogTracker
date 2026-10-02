@@ -63,6 +63,7 @@ export default function MapScreen({
   onOpenCloud,
   readReceiverState,
   fixtureName,
+  onOpenHistory,
 }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -71,6 +72,8 @@ export default function MapScreen({
   const mapTools = useRef(null);
   const onMapTools = useCallback(value => { mapTools.current = value; }, []);
   const [sheetHeight, setSheetHeight] = useState(0);
+  // How tall an open dog panel is, so the map keeps the dog above it.
+  const [dogPanelHeight, setDogPanelHeight] = useState(0);
   const [mapStatus, setMapStatus] = useState(null);
   const [noticeHeight, setNoticeHeight] = useState(0);
   const [statusHeight, setStatusHeight] = useState(0);
@@ -207,6 +210,15 @@ export default function MapScreen({
     // A new pick or a new position of the picked dog takes a new picture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickedKey, pickedPlace]);
+  // Which Masters relayed this dog in the last two minutes: more than one
+  // means overlapping LoRa coverage; the list and panel show the newest.
+  const mastersSeenFor = dog => {
+    const recent = (cloudDogs?.rows || [])
+      .filter(row => row.slave_id === dog.slaveId && now - (row.track_at ?? row.received_at) <= 120000)
+      .map(row => row.master_id);
+    if (dog.source === 'ble' && point.masterId != null) recent.push(point.masterId);
+    return [...new Set(recent.filter(id => id != null))].sort((a, b) => a - b);
+  };
   // The popover belongs to the visible live map and to a dog still listed.
   const pickedListed = picked && dogs.some(dog => dog.slaveId === picked.slaveId);
   useEffect(() => {
@@ -262,6 +274,16 @@ export default function MapScreen({
     const dog = dogs.find(item => item.slaveId === selected.slaveId);
     return dog ? { kind: 'dog', dog } : null;
   }, [selected, historical, master, dogs, presentation.historyTracks]);
+  // Opening a dog's panel moves the map once so the dog sits above the panel
+  // (the map's bottom padding follows the panel's measured height).
+  const centeredFor = useRef(null);
+  const detailDog = detailSubject?.kind === 'dog' ? detailSubject.dog : null;
+  useEffect(() => {
+    if (!detailDog) { centeredFor.current = null; return; }
+    if (!dogPanelHeight || centeredFor.current === detailDog.slaveId || !detailDog.coordinate) return;
+    centeredFor.current = detailDog.slaveId;
+    setCenterOnce({ key: `panel:${detailDog.slaveId}:${Date.now()}`, coordinate: detailDog.coordinate });
+  }, [detailDog, dogPanelHeight]);
   // History notices live in the history card, next to the controls that cause
   // them; the map keeps only what belongs to the map itself.
   // The card names the colours next to the eyes that control them; a banner
@@ -318,7 +340,8 @@ export default function MapScreen({
         source={historical ? 'history:' + history.key : fixtureName ? `${mode}:${fixtureName}` : mode}
         presentation={presentation}
         topInset={controlsTop}
-        bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
+        bottomInset={bottomInset + (detailSubject?.kind === 'dog' && dogPanelHeight ? dogPanelHeight
+          : sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
         onStatus={setMapStatus}
         onSnapshotReady={onSnapshotReady}
         onMapTools={onMapTools}
@@ -413,6 +436,7 @@ export default function MapScreen({
           phone={phonePosition}
           mapHeading={mapHeading}
           onPickDog={pickDog}
+          covered={detailSubject?.kind === 'dog'}
         />
       )}
       {active && !historical && picked && (() => {
@@ -449,10 +473,50 @@ export default function MapScreen({
           dogAliases={history?.preferences.dogAliases}
           master={master}
           topInset={controlsTop}
-          bottomInset={bottomInset + SHEET_COLLAPSED_HEIGHT}
+          bottomInset={detailSubject.kind === 'dog' ? bottomInset : bottomInset + SHEET_COLLAPSED_HEIGHT}
+          onPanelHeight={setDogPanelHeight}
           onClose={closeDetails}
           hidden={detailSubject.kind === 'dog'
             && tracking.preferences.value.hiddenSlaveIds.includes(detailSubject.dog.slaveId)}
+          now={now}
+          phone={phonePosition}
+          mapHeading={mapHeading}
+          mastersSeen={detailSubject.kind === 'dog' ? mastersSeenFor(detailSubject.dog) : undefined}
+          followed={detailSubject.kind === 'dog'
+            && tracking.preferences.value.focusSlaveId === detailSubject.dog.slaveId}
+          onFollow={detailSubject.kind === 'dog' ? () => {
+            const id = detailSubject.dog.slaveId;
+            const following = tracking.preferences.value.focusSlaveId === id;
+            tracking.saveTrackingPreferences({ focusSlaveId: following ? null : id });
+          } : undefined}
+          onRename={detailSubject.kind === 'dog' && history ? name => {
+            const aliases = { ...(history.preferences.dogAliases || {}) };
+            // Empty restores 「狗 N」; HistoryDatabase normalises and drops it.
+            aliases[detailSubject.dog.slaveId] = name;
+            history.save({ ...history.preferences, dogAliases: aliases });
+          } : undefined}
+          todayPathBusy={!!history?.busy}
+          onTodayPath={detailSubject.kind === 'dog' && history ? async () => {
+            const dog = detailSubject.dog;
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            // Every receiver known to have heard this dog, so a day relayed by
+            // several Masters is not cut down to the one heard last.
+            const heard = (history.devices || []).filter(pair => pair.slave === dog.slaveId)
+              .map(pair => pair.master);
+            const masters = [...new Set([...heard, ...mastersSeenFor(dog),
+              ...(dog.masterId != null ? [dog.masterId] : [])])];
+            const saved = await history.save({
+              ...history.preferences,
+              timeMode: 'fixed', startAt: start.getTime(), endAt: Date.now(),
+              slaves: [dog.slaveId],
+              source: dog.source === 'cloud' ? 'cloud' : 'ble', client: true,
+              masters: masters.length ? masters : history.preferences.masters,
+            });
+            if (!saved) return;
+            closeDetails();
+            onOpenHistory?.();
+          } : undefined}
           onToggleHidden={detailSubject.kind === 'dog' ? () => {
             const id = detailSubject.dog.slaveId;
             const hiddenIds = tracking.preferences.value.hiddenSlaveIds;

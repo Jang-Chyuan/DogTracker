@@ -65,6 +65,7 @@ export default function TrackingSheet({
   phone,
   mapHeading,
   onPickDog,
+  covered,
 }) {
   const point = tracking.point;
   const { preferences } = tracking;
@@ -124,6 +125,7 @@ export default function TrackingSheet({
       topInset={topInset}
       onHeight={onHeight}
       onDragging={setDragging}
+      covered={covered}
     >
       {({ onRowLayout }) => (<>
         <DogList

@@ -373,8 +373,9 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
       .find(node => node.props.identifier === 'real-dog-7')
       .props.onPress(),
   );
-  expect(JSON.stringify(renderer.toJSON())).toContain('LoRa 訊號品質');
-  expect(JSON.stringify(renderer.toJSON())).toContain('硬體回報的定位與活動');
+  // The dog's own panel, with its diagnostics folded until opened.
+  expect(JSON.stringify(renderer.toJSON())).toContain('資料來源與診斷');
+  expect(JSON.stringify(renderer.toJSON())).toContain('方向與距離');
 });
 
 test('tile completion and changed padding never refit an already framed map', async () => {
