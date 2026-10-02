@@ -166,7 +166,7 @@ test('the live sheet hides route time presets', async () => {
   jest.useRealTimers();
 });
 
-test('the map hides a dog seen before the selected window', async () => {
+test('the map keeps a dog seen before the selected window as its last position', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -193,8 +193,10 @@ test('the map hides a dog seen before the selected window', async () => {
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   const dog = renderer.root.findAllByType(Marker)
     .find(node => node.props.identifier === 'real-dog-7');
-  // An expired position stays in the details list, not on the map.
-  expect(dog).toBeUndefined();
+  // A fix 35 minutes old stays on the map as the last place the dog was seen,
+  // drawn grey with the clock time of that fix.
+  const label = dog.findAll(child => typeof child.props.accessibilityLabel === 'string')[0].props.accessibilityLabel;
+  expect(label).toMatch(/最後位置 \d\d:\d\d/);
   // Nothing inside the window, so no line is drawn for it.
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await act(async () => { renderer.unmount(); });
@@ -237,7 +239,8 @@ test('the home map keeps ageing while the collar is silent', async () => {
   await act(async () => jest.advanceTimersByTime(2 * MINUTE));
   expect(dog()).toBeDefined();
   await act(async () => jest.advanceTimersByTime(10000));
-  expect(dog()).toBeUndefined();
+  // Past two minutes the dog stays, amber, saying how long ago it was there.
+  expect(label(dog())).toContain('最後位置・2 分鐘前');
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   // A day later it leaves the home map altogether.
   await act(async () => jest.advanceTimersByTime(MAX_AGE_MS));

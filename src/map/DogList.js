@@ -45,7 +45,9 @@ export default function DogList({
             <View style={styles.text}>
               <Text style={styles.name}>
                 {name}
-                {selected ? ' · 地圖跟隨中' : ''}
+                {/* The map only follows a current fix; say so instead of
+                    claiming to follow a dog it cannot place. */}
+                {selected ? (dog.stale ? ' · 跟隨暫停・等待新定位' : ' · 地圖跟隨中') : ''}
               </Text>
               {/* Every row reads the same whatever answered it: where it came
                   from as an icon, then the same readings. */}
