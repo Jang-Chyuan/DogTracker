@@ -1,7 +1,7 @@
 module.exports = {
   preset: '@react-native/jest-preset',
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|react-native-url-polyfill|@react-native(-community)?)/)',
+    'node_modules/(?!((jest-)?react-native|react-native-url-polyfill|react-native-reanimated|react-native-worklets|react-native-gesture-handler|@react-native(-community)?)/)',
   ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   // A git worktree under <repo>/.claude/worktrees/* brings its own node_modules,
@@ -11,6 +11,8 @@ module.exports = {
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/'],
   moduleNameMapper: {
     '^react-native-maps$': '<rootDir>/__mocks__/react-native-maps.js',
+    '^react-native-reanimated$': '<rootDir>/__mocks__/react-native-reanimated.js',
+    '^react-native-worklets$': '<rootDir>/__mocks__/react-native-worklets.js',
     '^react-native-ble-plx$': '<rootDir>/__mocks__/react-native-ble-plx.js',
     '^react-native-nitro-sqlite$':
       '<rootDir>/__mocks__/react-native-nitro-sqlite.js',

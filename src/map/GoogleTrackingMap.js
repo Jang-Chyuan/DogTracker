@@ -129,6 +129,7 @@ function GoogleTrackingMapRenderer({
   onStatus,
   onReadyChange,
   onSnapshotReady,
+  onMapTools,
   foreground,
   dataReady = true,
   phoneEnabled,
@@ -172,6 +173,18 @@ function GoogleTrackingMapRenderer({
     onSnapshotReady?.(usable ? () => mapRef.current.takeSnapshot({ format: 'png', result: 'file' }) : null);
     return () => onSnapshotReady?.(null);
   }, [usable, instance, onSnapshotReady]);
+  // What the dog popover needs from the map: a picture of it to blur (Google
+  // Maps draws on its own surface, so a blur view cannot sample it) and where
+  // a coordinate sits on screen, for the clear spotlight around the dog.
+  useEffect(() => {
+    onMapTools?.(usable ? {
+      // In memory, not a cache file: a file per tap would pile up unseen.
+      snapshot: () => mapRef.current.takeSnapshot({ format: 'jpg', quality: 0.6, result: 'base64' })
+        .then(data => `data:image/jpeg;base64,${data}`),
+      pointFor: coordinate => mapRef.current.pointForCoordinate(coordinate),
+    } : null);
+    return () => onMapTools?.(null);
+  }, [usable, instance, onMapTools]);
   const [mountedMap, setMountedMap] = useState(false);
   const [needsFirstPositionFit, setNeedsFirstPositionFit] = useState(false);
   const interacted = useRef(false);

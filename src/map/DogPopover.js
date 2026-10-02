@@ -12,8 +12,8 @@ const ARROW = 14;
  * avatar that opened it. Closed by ✕, by the back button, by tapping the map,
  * or replaced by tapping another dog.
  */
-export default function DogPopover({ name, statusLine, anchorY, followed, followable, onFollow, onDetails, onClose }) {
-  const { height } = useWindowDimensions();
+export default function DogPopover({ name, statusLine, anchorY, anchorX = 44, followed, followable, onFollow, onDetails, onClose }) {
+  const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [boxHeight, setBoxHeight] = useState(150);
   useEffect(() => {
@@ -29,9 +29,12 @@ export default function DogPopover({ name, statusLine, anchorY, followed, follow
   const position = above
     ? { bottom: Math.max(space.l, height - anchorY + ARROW + space.xs) }
     : { top: Math.min(anchorY + ARROW + space.xs, height - boxHeight - insets.bottom - space.s) };
+  // Horizontally the arrow sits over the tapped avatar or row.
+  const left = Math.max(space.l, Math.min(width - space.l - WIDTH, anchorX - 36));
+  const arrowLeft = Math.max(18, Math.min(WIDTH - 32, anchorX - left - ARROW / 2));
   return (
     <View
-      style={[styles.popover, position]}
+      style={[styles.popover, position, { left }]}
       accessibilityViewIsModal
       onLayout={event => setBoxHeight(event.nativeEvent.layout.height)}
       testID="dog-popover"
@@ -67,14 +70,14 @@ export default function DogPopover({ name, statusLine, anchorY, followed, follow
           <Text style={[styles.buttonText, styles.primaryText]}>詳細 ›</Text>
         </Pressable>
       </View>
-      <View style={[styles.arrow, above ? styles.arrowDown : styles.arrowUp]} />
+      <View style={[styles.arrow, { left: arrowLeft }, above ? styles.arrowDown : styles.arrowUp]} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   popover: {
-    position: 'absolute', zIndex: 40, left: space.l, width: WIDTH,
+    position: 'absolute', zIndex: 40, width: WIDTH,
     backgroundColor: colors.surface, borderRadius: 18, padding: space.m,
     ...shadow.floating, elevation: 12,
   },
@@ -95,7 +98,7 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   pressed: { transform: [{ scale: 0.97 }] },
   arrow: {
-    position: 'absolute', left: 28, width: ARROW, height: ARROW,
+    position: 'absolute', width: ARROW, height: ARROW,
     backgroundColor: colors.surface, transform: [{ rotate: '45deg' }],
   },
   arrowDown: { bottom: -ARROW / 2 },

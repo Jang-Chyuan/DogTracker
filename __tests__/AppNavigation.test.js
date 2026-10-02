@@ -152,9 +152,9 @@ test('first use shows stored hardware markers, circle, no routes or automatic wr
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   expect(text()).not.toMatch(/查看兩端|首頁路徑已達繪圖上限|失聯|通知未開啟/);
   expect(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet-summary' })[0].props
-      .children,
-  ).toBe('最新詳細資訊');
+    renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0].props
+      .accessibilityLabel,
+  ).toMatch(/^(\d+ 隻)?狗。/);
   await advance(601000);
   expect(rows('dog_status')).toHaveLength(1);
   expect(ble.connect).not.toHaveBeenCalled();

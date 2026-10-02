@@ -1,12 +1,10 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { PanResponder } from 'react-native';
 import TrackingSheet, {
   formatTime,
   sheetSummary,
 } from '../src/map/TrackingSheet';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
-import { SHEET_COLLAPSED_HEIGHT } from '../src/map/SheetMotion';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 const tracking = {
   point: trackingPoint,
@@ -16,85 +14,42 @@ const tracking = {
   preferences: { ready: true, value: DEFAULT_TRACKING_PREFERENCES },
 };
 
-test('actual pan callbacks follow finger, recover cancellation, and keep handle usable when content is scrolled', async () => {
-  jest.useFakeTimers();
-  const configurations = [];
-  const original = PanResponder.create;
-  const spy = jest.spyOn(PanResponder, 'create').mockImplementation(config => {
-    configurations.push(config);
-    return original(config);
-  });
+const NOW = Date.parse('2026-10-02T02:00:00Z');
+const cloudDog = (slaveId, ageMs) => ({
+  slaveId, masterId: 7, source: 'cloud', coordinate: { latitude: 25, longitude: 121 },
+  receivedAt: NOW - ageMs, lastPositionAt: NOW - ageMs, lastPacketAt: NOW - ageMs,
+  retained: false, speedKmh: 2, batteryPercentage: 80,
+});
+
+test('collapsed, the card is a row of avatar chips; the header opens the list', async () => {
   let renderer;
   const onHeight = jest.fn();
-  try {
-    await act(async () => {
-      renderer = Renderer.create(
-        <TrackingSheet
-          tracking={tracking}
-          master={null}
-          slave={null}
-          bottomInset={90}
-          onHeight={onHeight}
-        />,
-      );
-      jest.advanceTimersByTime(1000);
-    });
-    const [content, handle] = configurations;
-    const control = () =>
-      renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0];
-    const initialHeight = onHeight.mock.calls.at(-1)[0];
-    expect(initialHeight).toBeGreaterThanOrEqual(SHEET_COLLAPSED_HEIGHT);
-    expect(control().props.accessibilityValue.now).toBe(0);
-    expect(control().props.accessibilityLabel).toContain('最新詳細資訊');
-    expect(
-      renderer.root.findAllByProps({ testID: 'tracking-sheet-summary' })[0]
-        .props.children,
-    ).toBe('最新詳細資訊');
-    expect(
-      renderer.root.findAllByProps({ testID: 'tracking-sheet-content' })[0]
-        .props.accessibilityElementsHidden,
-    ).toBe(true);
-    await act(async () => {
-      handle.onPanResponderGrant();
-      handle.onPanResponderMove(null, { dy: 10000 });
-      handle.onPanResponderRelease(null, { vy: 0.8 });
-    });
-    await act(async () => jest.advanceTimersByTime(1000));
-    expect(onHeight).toHaveBeenLastCalledWith(initialHeight);
-    expect(control().props.accessibilityValue.now).toBe(0);
-    expect(
-      handle.onMoveShouldSetPanResponderCapture(null, { dx: 0, dy: -30 }),
-    ).toBe(true);
-    await act(async () => {
-      handle.onPanResponderGrant();
-      handle.onPanResponderMove(null, { dy: -10000 });
-      handle.onPanResponderRelease(null, { vy: -0.8 });
-    });
-    await act(async () => jest.advanceTimersByTime(1000));
-    expect(control().props.accessibilityValue.now).toBe(2);
-    expect(onHeight.mock.calls.at(-1)[0]).toBeGreaterThan(initialHeight);
-    await act(async () =>
-      renderer.root
-        .findAllByProps({ testID: 'tracking-sheet-content' })[0]
-        .props.onScroll({ nativeEvent: { contentOffset: { y: 100 } } }),
+  const onPickDog = jest.fn();
+  const prefs = { ready: true, value: { ...DEFAULT_TRACKING_PREFERENCES, hiddenSlaveIds: [6] } };
+  await act(async () => {
+    renderer = Renderer.create(
+      <TrackingSheet tracking={{ ...tracking, preferences: prefs, saveTrackingPreferences: jest.fn() }}
+        dogs={[cloudDog(4, 10000), cloudDog(6, 10000), cloudDog(8, 4 * 60000)]}
+        now={NOW} bottomInset={90} onHeight={onHeight} onPickDog={onPickDog} />,
     );
-    expect(
-      content.onMoveShouldSetPanResponderCapture(null, { dx: 0, dy: 40 }),
-    ).toBe(false);
-    expect(
-      handle.onMoveShouldSetPanResponderCapture(null, { dx: 0, dy: 40 }),
-    ).toBe(true);
-    await act(async () => {
-      handle.onPanResponderGrant();
-      handle.onPanResponderMove(null, { dy: 40 });
-      handle.onPanResponderTerminate();
-    });
-    expect(control().props.accessibilityValue.now).toBe(2);
-  } finally {
-    if (renderer) await act(async () => renderer.unmount());
-    spy.mockRestore();
-    jest.useRealTimers();
-  }
+  });
+  const chips = renderer.root.findAll(node => node.props.testID?.startsWith?.('strip-dog-')
+    && typeof node.props.onPress === 'function', { deep: false });
+  // Hidden dog 6 is not in the strip; each chip says the dog and its state
+  // (dog 8 has sent nothing for four minutes).
+  expect(chips.map(chip => chip.props.accessibilityLabel)).toEqual(['狗 4，即時', '狗 8，未更新']);
+  const handle = () => renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0];
+  expect(handle().props.accessibilityLabel).toContain('3 隻狗');
+  expect(handle().props.accessibilityValue.now).toBe(0);
+  const collapsedHeight = onHeight.mock.calls.at(-1)[0];
+  await act(async () => handle().props.onPress());
+  expect(handle().props.accessibilityValue.now).toBe(1);
+  expect(onHeight.mock.calls.at(-1)[0]).toBeGreaterThan(collapsedHeight);
+  // A chip opens that dog's popover from where it was tapped.
+  await act(async () => handle().props.onPress());
+  await act(async () => chips[1].props.onPress({ nativeEvent: { pageY: 700, pageX: 160 } }));
+  expect(onPickDog).toHaveBeenCalledWith(expect.objectContaining({ slaveId: 8 }), 700, 160);
+  await act(async () => renderer.unmount());
 });
 
 test('summary distinguishes pending preferences, empty sources and read errors without waiting for route history', () => {
