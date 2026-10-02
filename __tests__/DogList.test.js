@@ -70,6 +70,18 @@ const rows = () => renderer.root.findAll(
 const dogMarkers = () => renderer.root.findAll(
   node => node.props.identifier?.startsWith?.('real-dog-'), { deep: false });
 
+
+// Every element with an onPress whose rendered text is exactly `label`.
+const pressText = async label => {
+  const node = renderer.root.findAll(n => typeof n.props.onPress === 'function', { deep: true })
+    .find(n => n.findAll(c => typeof c.props.children === 'string' && c.props.children === label).length > 0);
+  if (!node) throw new Error(`no button "${label}"`);
+  await act(async () => node.props.onPress({ nativeEvent: { pageY: 600 } }));
+};
+// A row's spoken label starts with the dog's name, then its state.
+const rowNames = () => rows().map(node => node.props.accessibilityLabel.split('，')[0]);
+const popover = () => renderer.root.findAll(node => node.props.testID === 'dog-popover', { deep: false });
+
 let renderer;
 const originalOS = Platform.OS;
 beforeEach(() => {
@@ -95,44 +107,58 @@ async function expand(element) {
     .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
 }
 
-test('the card lists every dog on the map with its source, time and staleness', async () => {
+test('the card lists every dog with only what the handler acts on', async () => {
   await expand(screen({}, 'real', false).element);
-  expect(rows().map(node => node.props.accessibilityLabel))
+  expect(rowNames())
     .toEqual(['狗 4', '狗 6', '狗 7']);
   const text = cardText();
-  expect(text).toContain('狗（3）');
-  // Where a row came from is an icon plus the Master it came through, so the
-  // cloud rows read exactly like the BLE one.
-  expect(text).toContain('Master 5');
-  expect(text).toContain('BLE 直接收到');
-  expect(text).toContain('超過 2 分鐘未更新，非目前位置');
-  // Speed, battery and the distance to the Master are written on the row of the
-  // dog this phone is receiving, each as its own labelled reading.
-  expect(text).toContain('6.2 km/h');
-  expect(text).toContain('76%');
-  expect(text).not.toContain('82.4 m'); // Expired locations have no current distance.
-  expect(text).toContain('最後收到封包');
-  expect(text).toContain('最後有效定位');
-  expect(text).toContain('未收到新資料');
-  // The coordinates are not repeated in the card: the map draws them.
+  // Dog 6 is current; dogs 4 and 7 have sent nothing for 40 minutes.
+  // TalkBack reads the state, not only the name; a silent collar is never
+  // described as receiving.
+  expect(rows()[0].props.accessibilityLabel).toContain('沒有收到新資料');
+  expect(rows()[1].props.accessibilityLabel).toContain('定位即時');
+  expect(text).toContain('3 隻狗');
+  expect(text).toContain('定位正常 1・未更新 2');
+  expect(text).toContain('定位即時');
+  expect(text).toContain('最後位置 ');
+  // Without a phone fix there is no direction, and the row says why.
+  expect(text).toContain('手機無定位');
+  // Source, Master, raw speed and duplicate times moved to the dog's panel.
+  expect(text).not.toContain('BLE 直接收到');
+  expect(text).not.toContain('最後收到封包');
+  expect(text).not.toContain('km/h');
   expect(text).not.toContain('25.033000');
 });
 
-test('tapping a dog follows it and tapping it again releases the camera', async () => {
+test('tapping a dog moves the map there once and opens its popover; following is a button in it', async () => {
   const first = screen();
   await expand(first.element);
-  await act(async () => rows()[0].props.onPress());
-  expect(first.tracking.saveTrackingPreferences)
-    .toHaveBeenCalledWith({ focusSlaveId: 4 });
+  await act(async () => rows()[1].props.onPress({ nativeEvent: { pageY: 600 } }));
+  expect(popover()).toHaveLength(1);
+  expect(mockCamera.animateCamera).toHaveBeenCalledWith(
+    { center: { latitude: 25.05, longitude: 121.58 } }, { duration: 300 });
+  // Looking at a dog does not quietly start following it.
+  expect(first.tracking.saveTrackingPreferences).not.toHaveBeenCalled();
+  await pressText('跟隨');
+  expect(first.tracking.saveTrackingPreferences).toHaveBeenCalledWith({ focusSlaveId: 6 });
+  expect(popover()).toHaveLength(0);
 
   await act(async () => renderer.unmount());
   const followed = screen({ focusSlaveId: 4 });
   await expand(followed.element);
   expect(rows()[0].props.accessibilityState.selected).toBe(true);
-  expect(cardText()).toContain('地圖跟隨中');
-  await act(async () => rows()[0].props.onPress());
-  expect(followed.tracking.saveTrackingPreferences)
-    .toHaveBeenCalledWith({ focusSlaveId: null });
+  expect(cardText()).toContain('跟隨中');
+  await act(async () => rows()[0].props.onPress({ nativeEvent: { pageY: 600 } }));
+  await pressText('停止跟隨');
+  expect(followed.tracking.saveTrackingPreferences).toHaveBeenCalledWith({ focusSlaveId: null });
+});
+
+test('詳細 in the popover opens the dog panel', async () => {
+  await expand(screen().element);
+  await act(async () => rows()[0].props.onPress({ nativeEvent: { pageY: 600 } }));
+  await pressText('詳細 ›');
+  expect(popover()).toHaveLength(0);
+  expect(cardText()).toContain('在地圖上隱藏這隻狗');
 });
 
 test('the map re-centres on the followed dog and leaves the others drawn', async () => {
@@ -160,11 +186,11 @@ test('following a dog that stopped reporting does not move the camera or crash',
 
 test('hiding the dog markers keeps the list and keeps following the chosen dog', async () => {
   await expand(screen({ showSlaveMarker: false, focusSlaveId: 4 }).element);
-  expect(rows().map(node => node.props.accessibilityLabel))
+  expect(rowNames())
     .toEqual(['狗 4', '狗 6', '狗 7']);
   expect(dogMarkers()).toHaveLength(0);
   // The card says 跟隨中, so the camera has to actually follow.
-  expect(cardText()).toContain('地圖跟隨中');
+  expect(cardText()).toContain('跟隨中');
   expect(mockCamera.animateCamera).toHaveBeenCalledWith(
     { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 400 },
   );
@@ -187,38 +213,29 @@ test('the camera frames a box around the followed dog, never a single point', as
   expect(cameraPositions[0].longitude).toBeLessThan(121.57);
 });
 
-test('each dog has its own eye: hiding one leaves the others on the map', async () => {
+test('a dog is hidden from its panel; the card keeps it at the bottom with 顯示', async () => {
   const value = screen();
   await expand(value.element);
-  const eyes = renderer.root.findAll(
-    node => node.props.accessibilityLabel?.includes('狗 ') &&
-      node.props.accessibilityLabel?.endsWith('位置'), { deep: false });
-  expect(eyes.map(node => node.props.accessibilityLabel)).toEqual([
-    '隱藏狗 4 的位置', '隱藏狗 6 的位置', '隱藏狗 7 的位置',
-  ]);
-  await act(async () => eyes[0].props.onPress());
+  await act(async () => dogMarkers()[0].props.onPress());
+  await pressText('在地圖上隱藏這隻狗');
   expect(value.tracking.saveTrackingPreferences)
     .toHaveBeenCalledWith({ hiddenSlaveIds: [4] });
 
   await act(async () => renderer.unmount());
   await expand(screen({ hiddenSlaveIds: [4] }).element);
-  // The hidden dog leaves the map but stays in the card, with its eye closed.
   expect(dogMarkers().map(node => node.props.identifier))
     .toEqual(['real-dog-6', 'real-dog-7']);
-  expect(rows().map(node => node.props.accessibilityLabel))
-    .toEqual(['狗 4', '狗 6', '狗 7']);
-  expect(renderer.root.findAll(
-    node => node.props.accessibilityLabel === '顯示狗 4 的位置',
-    { deep: false })).toHaveLength(1);
+  expect(rowNames()).toEqual(['狗 6', '狗 7']);
+  expect(renderer.root.findAll(node => node.props.testID === 'dog-hidden-4', { deep: false })).toHaveLength(1);
 });
 
 test('showing a dog again also brings back the all-dogs eye', async () => {
   const value = screen({ showSlaveMarker: false, hiddenSlaveIds: [4] });
   await expand(value.element);
-  const eye = renderer.root.findAll(
-    node => node.props.accessibilityLabel === '顯示狗 4 的位置', { deep: false })[0];
-  await act(async () => eye.props.onPress());
-  // Otherwise the row's eye would say visible while the map draws nothing.
+  const show = renderer.root.findAll(
+    node => node.props.accessibilityLabel === '顯示狗 4', { deep: false })[0];
+  await act(async () => show.props.onPress());
+  // Otherwise the dog would be listed as shown while the map draws nothing.
   expect(value.tracking.saveTrackingPreferences)
     .toHaveBeenCalledWith({ hiddenSlaveIds: [], showSlaveMarker: true });
 });
@@ -285,15 +302,19 @@ test('the card says why only one handler is on the map', async () => {
   expect(cardText()).toContain('其他 Master 的位置不在雲端資料裡');
 });
 
-test('a cloud row reads like a BLE row: same icons, same readings', async () => {
-  await expand(screen().element);
-  const rendered = cardText();
-  // Both sources carry speed and battery; the cloud rows used to be a thinner
-  // row with only a time.
-  expect(rendered).toContain('12 km/h');
-  expect(rendered).toContain('54%');
-  // Distance is the one reading only the connected pair can have.
-  expect(rendered).toContain('82.4 m');
+test('a row gives direction and distance from the phone, movement and a low battery', async () => {
+  const DogList = require('../src/map/DogList').default;
+  const dog = { slaveId: 9, coordinate: { latitude: 25.001, longitude: 121.0 },
+    lastPositionAt: NOW - 5000, lastPacketAt: NOW - 5000, batteryPercentage: 15, speedKmh: 3 };
+  await act(async () => {
+    renderer = Renderer.create(<DogList dogs={[dog]} now={NOW}
+      phone={{ latitude: 25.0, longitude: 121.0 }} onPick={() => {}} onShow={() => {}} />);
+  });
+  const text = cardText();
+  expect(text).toContain('110 m');
+  expect(text).toContain('移動中');
+  expect(text).toContain('電量 15%');
+  expect(text).toContain('定位即時');
 });
 
 test('the handler row shows a battery icon too, not a bare number', async () => {
@@ -311,6 +332,24 @@ test('the handler row shows a battery icon too, not a bare number', async () => 
 test('following a dog whose fix has aged says the follow is paused, not following', async () => {
   // fresh=false: dog 4's cloud fix is 40 minutes old, so the map cannot follow it.
   await expand(screen({ focusSlaveId: 4 }, 'real', false).element);
-  expect(cardText()).toContain('狗 4 · 跟隨暫停・等待新定位');
-  expect(cardText()).not.toContain('狗 4 · 地圖跟隨中');
+  expect(cardText()).toContain('跟隨暫停');
+  expect(cardText()).not.toContain('跟隨中');
+});
+
+
+test('looking at another dog ends following the first, so the camera is not pulled back', async () => {
+  const value = screen({ focusSlaveId: 4 });
+  await expand(value.element);
+  await act(async () => rows()[1].props.onPress({ nativeEvent: { pageY: 600 } }));
+  expect(value.tracking.saveTrackingPreferences).toHaveBeenCalledWith({ focusSlaveId: null });
+  expect(popover()).toHaveLength(1);
+});
+
+test('hiding the followed dog also stops following it', async () => {
+  const value = screen({ focusSlaveId: 4 });
+  await expand(value.element);
+  await act(async () => dogMarkers()[0].props.onPress());
+  await pressText('在地圖上隱藏這隻狗');
+  expect(value.tracking.saveTrackingPreferences)
+    .toHaveBeenCalledWith({ hiddenSlaveIds: [4], focusSlaveId: null });
 });

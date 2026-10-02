@@ -36,6 +36,8 @@ export default function DeviceDetails({
   topInset,
   bottomInset,
   onClose,
+  hidden,
+  onToggleHidden,
 }) {
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -110,6 +112,18 @@ export default function DeviceDetails({
               {dog.stale && (
                 <Text style={styles.warning}>未更新／最後位置。超過 2 分鐘未更新，非目前位置</Text>
               )}
+              {onToggleHidden && (
+                // Hiding lives here, next to the dog it hides; the card lists
+                // hidden dogs at the bottom with a 顯示 button.
+                <Pressable
+                  onPress={onToggleHidden}
+                  accessibilityRole="button"
+                  accessibilityLabel={hidden ? '在地圖上顯示這隻狗' : '在地圖上隱藏這隻狗'}
+                  style={({ pressed }) => [styles.hideButton, pressed && { transform: [{ scale: 0.97 }] }]}
+                >
+                  <Text style={styles.hideText}>{hidden ? '在地圖上顯示這隻狗' : '在地圖上隱藏這隻狗'}</Text>
+                </Pressable>
+              )}
               {live || Number.isFinite(dog.distanceMeters) ? (
                 <View style={styles.stats}>
                   <Stat icon="speed" label="速度"
@@ -176,6 +190,11 @@ export default function DeviceDetails({
   );
 }
 const styles = StyleSheet.create({
+  hideButton: {
+    marginTop: 12, minHeight: 48, borderRadius: 999, borderWidth: 1, borderColor: '#EDE6E4',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  hideText: { color: '#222222', fontSize: 16, fontWeight: '700' },
   root: {
     zIndex: 30,
     // Raise the whole modal root above the tracking sheet for Android touches.

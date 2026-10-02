@@ -18,6 +18,10 @@ import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import HomeStatus from '../map/HomeStatusBar';
+import DogPopover from '../map/DogPopover';
+import { phoneFix } from '../map/DogReadout';
+import { describeDog } from '../map/DogList';
+import { dogMapLabel } from '../mapHistory/DogAliases';
 
 // The first fit frames what this handler is working with: the connected pair
 // and the path inside the chosen window. Framing every cloud dog as well zoomed
@@ -72,7 +76,15 @@ export default function MapScreen({
   const [selected, setSelected] = useState(null);
   const closeDetails = useCallback(() => setSelected(null), []);
   const openMaster = useCallback(() => setSelected({ kind: 'master' }), []);
-  const openDog = useCallback(slaveId => setSelected({ kind: 'dog', slaveId }), []);
+  // The popover and the panel never stack: opening the panel closes it.
+  const openDog = useCallback(slaveId => { setPicked(null); setSelected({ kind: 'dog', slaveId }); }, []);
+  // The dog whose popover is open (from the card's list), and where it was
+  // tapped so the popover can point at it.
+  const [picked, setPicked] = useState(null);
+  const closePicked = useCallback(() => setPicked(null), []);
+  // A one-off camera move to a picked dog; following stays a separate choice.
+  const [centerOnce, setCenterOnce] = useState(null);
+  const [mapHeading, setMapHeading] = useState(0);
   const openTrack = useCallback(name => setSelected({ kind: 'track', name }), []);
   const { point, route, positionSamples, mode } = tracking;
   // Ageing is measured against this clock, not against the newest row: a silent
@@ -144,14 +156,30 @@ export default function MapScreen({
         ? dogPaths.filter(track => !hiddenSlaveIds.includes(track.slaveId))
         : [],
       follow: focused && { slaveId: focused.slaveId, coordinate: focused.coordinate },
+      centerOnce,
       // A single coordinate makes a degenerate box, which Android fits at
       // maximum zoom; frame a small square around the dog instead.
       cameraPositions: focused
         ? framedCoordinates(focused.coordinate)
         : homeCameraPositions(basePresentation, framed, dogsVisible, dogPaths),
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, now]);
+  }, [basePresentation, centerOnce, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, now]);
   const livePhone = useLiveLocation(active && tracking.foreground);
+  const phonePosition = phoneFix(livePhone);
+  const pickDog = useCallback((dog, anchorY) => {
+    setPicked({ slaveId: dog.slaveId, anchorY });
+    // Looking at another dog ends following the first; otherwise its next
+    // fix would pull the camera straight back.
+    const followedId = tracking.preferences.value.focusSlaveId;
+    if (followedId != null && followedId !== dog.slaveId)
+      tracking.saveTrackingPreferences({ focusSlaveId: null });
+    if (dog.coordinate) setCenterOnce({ key: `${dog.slaveId}:${Date.now()}`, coordinate: dog.coordinate });
+  }, [tracking]);
+  // The popover belongs to the visible live map and to a dog still listed.
+  const pickedListed = picked && dogs.some(dog => dog.slaveId === picked.slaveId);
+  useEffect(() => {
+    if (picked && (!active || historical || !pickedListed)) setPicked(null);
+  }, [picked, active, historical, pickedListed]);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {
@@ -271,6 +299,8 @@ export default function MapScreen({
         phoneEnabled={!!phone?.enabled}
         onMasterPress={openMaster}
         onDogPress={openDog}
+        onMapPress={closePicked}
+        onHeading={setMapHeading}
         onTrackPress={openTrack}
       />
       {!historical && (
@@ -329,8 +359,36 @@ export default function MapScreen({
           bottomInset={bottomInset}
           topInset={controlsTop}
           onHeight={setSheetHeight}
+          now={now}
+          phone={phonePosition}
+          mapHeading={mapHeading}
+          onPickDog={pickDog}
         />
       )}
+      {active && !historical && picked && (() => {
+        const dog = dogs.find(item => item.slaveId === picked.slaveId);
+        if (!dog) return null;
+        const said = describeDog(dog, now, phonePosition, mapHeading);
+        const followed = tracking.preferences.value.focusSlaveId === dog.slaveId;
+        const statusLine = [
+          said.time, said.condition, said.where.kind === 'ok' && `離你 ${said.where.distance}`,
+        ].filter(Boolean).join('・');
+        return (
+          <DogPopover
+            name={dogMapLabel(dogHistoryLabel(dog.slaveId, history?.preferences.dogAliases))}
+            statusLine={statusLine}
+            anchorY={picked.anchorY}
+            followed={followed}
+            followable={said.current}
+            onFollow={() => {
+              tracking.saveTrackingPreferences({ focusSlaveId: followed ? null : dog.slaveId });
+              closePicked();
+            }}
+            onDetails={() => { closePicked(); openDog(dog.slaveId); }}
+            onClose={closePicked}
+          />
+        );
+      })()}
       {detailSubject && (
         <DeviceDetails
           activityOwner={cloudOwner}
@@ -342,6 +400,19 @@ export default function MapScreen({
           topInset={controlsTop}
           bottomInset={bottomInset + SHEET_COLLAPSED_HEIGHT}
           onClose={closeDetails}
+          hidden={detailSubject.kind === 'dog'
+            && tracking.preferences.value.hiddenSlaveIds.includes(detailSubject.dog.slaveId)}
+          onToggleHidden={detailSubject.kind === 'dog' ? () => {
+            const id = detailSubject.dog.slaveId;
+            const hiddenIds = tracking.preferences.value.hiddenSlaveIds;
+            const hiding = !hiddenIds.includes(id);
+            tracking.saveTrackingPreferences({
+              hiddenSlaveIds: hiding ? [...hiddenIds, id] : hiddenIds.filter(other => other !== id),
+              ...(tracking.preferences.value.showSlaveMarker ? {} : { showSlaveMarker: true }),
+              // A hidden dog cannot be followed: the camera would track nothing.
+              ...(hiding && tracking.preferences.value.focusSlaveId === id ? { focusSlaveId: null } : {}),
+            });
+          } : undefined}
         />
       )}
     </View>

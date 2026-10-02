@@ -136,6 +136,8 @@ function GoogleTrackingMapRenderer({
   onMasterPress,
   onDogPress,
   onTrackPress,
+  onMapPress,
+  onHeading,
   supported,
   configured,
 }) {
@@ -221,13 +223,28 @@ function GoogleTrackingMapRenderer({
   // Following a dog re-centres the map on each new position of that dog, at the
   // user's own zoom. Panning in between is left alone — the next position pulls
   // the camera back — and the card's dog row is what ends following.
+  // A picked dog moves the camera once; following keeps it there.
+  const centerOnce = presentation.centerOnce || null;
+  useEffect(() => {
+    if (!usable || !centerOnce) return;
+    mapRef.current?.animateCamera({ center: centerOnce.coordinate }, { duration: 300 });
+    // Keyed by the pick, so tapping the same dog again moves the map again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usable, centerOnce?.key]);
   const follow = presentation.follow || null;
   const followed = useRef('');
+  const followedSlave = useRef(null);
   useEffect(() => {
     if (!usable || !follow) {
       followed.current = '';
+      followedSlave.current = null;
       phoneCentered.current = false;
       return;
+    }
+    // Choosing to follow a dog is newer than a tap on 本機位置: it wins.
+    if (follow.slaveId !== followedSlave.current) {
+      followedSlave.current = follow.slaveId;
+      phoneCentered.current = false;
     }
     if (phoneCentered.current) return;
     const key = `${follow.slaveId}:${follow.coordinate.latitude},${follow.coordinate.longitude}`;
@@ -302,6 +319,7 @@ function GoogleTrackingMapRenderer({
           onMapReady={() => {
             if (activeInstance.current === instance) setReadyInstance(instance);
           }}
+          onPress={onMapPress}
           onPanDrag={() => {
             interacted.current = true;
           }}
@@ -315,8 +333,12 @@ function GoogleTrackingMapRenderer({
                 activeInstance.current === instance &&
                 cameraRead.current === request &&
                 camera
-              )
+              ) {
                 savedView.current = { source, camera };
+                // Inside the same check: a late answer to an older read must
+                // not turn the direction arrows the wrong way.
+                if (Number.isFinite(camera.heading)) onHeading?.(camera.heading);
+              }
             }).catch(() => {
               // Keep the last successful camera snapshot if native teardown
               // races this read. A map with no snapshot uses SQLite framing.
