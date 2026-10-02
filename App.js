@@ -20,6 +20,7 @@ import HardwareScreen from './src/screens/HardwareScreen';
 import { handleRootBack } from './src/app/handleRootBack';
 import { ui } from './src/components/ScreenUI';
 import MapScreen from './src/screens/MapScreen';
+import { useScreenFixture } from './src/dev/useScreenFixture';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
@@ -91,6 +92,9 @@ function TrackerApp() {
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
     tracking.ready.real,
     undefined, null, { active: tracking.foreground && showsMap, revision: cloudSync.revision });
+
+  // Debug builds only: a named screen state replaces the live map inputs.
+  const fixture = useScreenFixture();
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.
@@ -169,13 +173,15 @@ function TrackerApp() {
           historyDownload={historyDownload}
           tracking={tracking}
           phone={phone}
-          cloudDogs={cloudDogs}
+          cloudDogs={fixture ? fixture.cloudDogs : cloudDogs}
           cloudOwner={cloudSync.ownerId}
           historical={isHistory}
           active={showsMap}
           bottomInset={insets.bottom + NAV_HEIGHT + 20}
           mapProvider={GOOGLE_MAP_PROVIDER}
-          cloudSync={cloudSync}
+          cloudSync={fixture ? fixture.cloudSync : cloudSync}
+          readReceiverState={fixture?.readReceiverState}
+          fixtureName={fixture?.name}
           onOpenReceiver={() => navigate('hardware', 'settings')}
           onOpenCloud={() => navigate('cloud', 'settings')}
         />
