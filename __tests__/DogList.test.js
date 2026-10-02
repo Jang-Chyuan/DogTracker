@@ -159,7 +159,7 @@ test('詳細 in the popover opens the dog panel', async () => {
   await act(async () => rows()[0].props.onPress({ nativeEvent: { pageY: 600 } }));
   await pressText('詳細 ›');
   expect(popover()).toHaveLength(0);
-  expect(cardText()).toContain('在地圖上隱藏這隻狗');
+  expect(cardText()).toContain('資料來源與診斷');
 });
 
 test('the map re-centres on the followed dog and leaves the others drawn', async () => {
@@ -218,7 +218,7 @@ test('a dog is hidden from its panel; the card keeps it at the bottom with 顯�
   const value = screen();
   await expand(value.element);
   await act(async () => dogMarkers()[0].props.onPress());
-  await pressText('在地圖上隱藏這隻狗');
+  await pressText('隱藏');
   expect(value.tracking.saveTrackingPreferences)
     .toHaveBeenCalledWith({ hiddenSlaveIds: [4] });
 
@@ -350,7 +350,7 @@ test('hiding the followed dog also stops following it', async () => {
   const value = screen({ focusSlaveId: 4 });
   await expand(value.element);
   await act(async () => dogMarkers()[0].props.onPress());
-  await pressText('在地圖上隱藏這隻狗');
+  await pressText('隱藏');
   expect(value.tracking.saveTrackingPreferences)
     .toHaveBeenCalledWith({ hiddenSlaveIds: [4], focusSlaveId: null });
 });

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import {
   BackHandler,
+  Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,11 +9,30 @@ import {
   View,
 } from 'react-native';
 import { floatingShadow, mapColors as colors } from './MapTheme';
-import { describeDogSource } from './DogMerge';
 import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import { Position } from './TrackingSheet';
 import ActivityHistoryChart from './ActivityHistoryChart';
+import DogDetails from './DogDetails';
+import { describeDog } from './DogList';
+import { colors as tokens, space, type } from '../theme/tokens';
+
+const maxSheet = (top, bottom) => {
+  const { height } = Dimensions.get('window');
+  // Leave the top third of the map for the dog the panel is about.
+  return Math.max(320, Math.min(height * 0.62, height - top - bottom - 120));
+};
+
+// The dog's state in one word, coloured and written (DESIGN.md §2.3).
+function StatusChip({ said }) {
+  const tone = said.current ? 'ok' : said.freshness.tier === 'recent' ? 'warn' : 'muted';
+  const label = said.current ? '定位正常' : said.group === 'silent' ? '未更新' : '無定位';
+  return (
+    <View style={[styles.chip, styles[`chip_${tone}`]]}>
+      <Text style={[styles.chipText, styles[`chipText_${tone}`]]}>{label}</Text>
+    </View>
+  );
+}
 
 function battery(valid, percentage) {
   return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
@@ -38,6 +58,16 @@ export default function DeviceDetails({
   onClose,
   hidden,
   onToggleHidden,
+  now = Date.now(),
+  phone,
+  mapHeading,
+  mastersSeen,
+  followed,
+  onFollow,
+  onTodayPath,
+  todayPathBusy,
+  onRename,
+  onPanelHeight,
 }) {
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -59,8 +89,14 @@ export default function DeviceDetails({
   const live = dog && dog.source === 'ble' && dog.slaveId === point.slaveId;
   const slaveId = dog?.slaveId ?? (track?.role === 'slave' ? track.slaveId : null);
   const alias = slaveId != null ? dogAliases?.[slaveId]?.trim() : null;
-  const title = alias ? `${alias}(id_${slaveId})`
-    : track ? track.name : dog ? `狗 ${dog.slaveId}` : '領犬員資訊';
+  // A named dog keeps its collar number next to the name (DESIGN.md §12).
+  // A live dog's panel takes the home card's place at the bottom, so the dog
+  // itself stays in sight on the map above it (design 3). The handler and
+  // history panels keep the floating card.
+  const sheet = !!dog;
+  const said = dog ? describeDog(dog, now, phone, mapHeading) : null;
+  const title = slaveId != null ? (alias ? `${alias}・${slaveId}` : `狗 ${slaveId}`)
+    : track ? track.name : '領犬員資訊';
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]} testID="device-details">
       <Pressable
@@ -68,23 +104,31 @@ export default function DeviceDetails({
         accessibilityRole="button"
         accessibilityLabel={`關閉${title}`}
         onPress={onClose}
-        style={[StyleSheet.absoluteFill, styles.backdrop]}
+        style={[StyleSheet.absoluteFill, !sheet && styles.backdrop]}
       />
-      <View style={[styles.panel, { top: topInset, bottom: bottomInset }]}>
+      <View
+        style={sheet ? [styles.panel, styles.sheet, { bottom: bottomInset, maxHeight: maxSheet(topInset, bottomInset) }]
+          : [styles.panel, { top: topInset, bottom: bottomInset }]}
+        onLayout={sheet ? event => onPanelHeight?.(event.nativeEvent.layout.height) : undefined}
+      >
+        {sheet && <View style={styles.handleArea}><View style={styles.handle} /></View>}
         {/* The title and the close button stay put: scrolling the content away
             from its own close button is how a panel traps someone. */}
-        <View style={styles.heading}>
-          <Text style={styles.title}>{title}</Text>
+        <View style={[styles.heading, sheet && styles.headingSheet]}>
+          <View style={styles.titleLine}>
+            <Text style={styles.title} numberOfLines={1}>{title}</Text>
+            {said && <StatusChip said={said} />}
+          </View>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`關閉${title}面板`}
             onPress={onClose}
-            style={styles.close}
+            style={[styles.close, sheet && styles.closeRound]}
           >
-            <Text style={styles.title}>×</Text>
+            <Text style={styles.closeText}>✕</Text>
           </Pressable>
         </View>
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
           {track ? (
             <>
               <Text style={styles.hint}>{track.sourceLabel}</Text>
@@ -101,73 +145,30 @@ export default function DeviceDetails({
               </Text>
             </>
           ) : dog ? (
-            <>
-              <Text style={styles.hint}>來源：{describeDogSource(dog)}</Text>
-              {/* No coordinates: the marker this panel belongs to is already
-                  on the map, and six decimals tell nobody anything. */}
-              <Text style={styles.hint}>位置時間：{formatTime(dog.receivedAt)}</Text>
-              {dog.retained && (
-                <Text style={styles.warning}>最後有效位置，非最新定位</Text>
+            <DogDetails
+              key={dog.slaveId}
+              dog={dog}
+              live={live}
+              point={point}
+              now={now}
+              phone={phone}
+              mapHeading={mapHeading}
+              alias={alias}
+              mastersSeen={mastersSeen}
+              followed={followed}
+              hidden={hidden}
+              onFollow={onFollow}
+              onTodayPath={onTodayPath}
+              todayPathBusy={todayPathBusy}
+              onRename={onRename}
+              onToggleHidden={onToggleHidden}
+              chart={(
+                <ActivityHistoryChart key={`${activityOwner}-${dog.slaveId}`}
+                  database={tracking.cloudDatabase} owner={activityOwner}
+                  slaveId={dog.slaveId} dogAliases={dogAliases}
+                  active={activityActive && tracking.foreground && tracking.ready?.real} />
               )}
-              {dog.stale && (
-                <Text style={styles.warning}>未更新／最後位置。超過 2 分鐘未更新，非目前位置</Text>
-              )}
-              {onToggleHidden && (
-                // Hiding lives here, next to the dog it hides; the card lists
-                // hidden dogs at the bottom with a 顯示 button.
-                <Pressable
-                  onPress={onToggleHidden}
-                  accessibilityRole="button"
-                  accessibilityLabel={hidden ? '在地圖上顯示這隻狗' : '在地圖上隱藏這隻狗'}
-                  style={({ pressed }) => [styles.hideButton, pressed && { transform: [{ scale: 0.97 }] }]}
-                >
-                  <Text style={styles.hideText}>{hidden ? '在地圖上顯示這隻狗' : '在地圖上隱藏這隻狗'}</Text>
-                </Pressable>
-              )}
-              {live || Number.isFinite(dog.distanceMeters) ? (
-                <View style={styles.stats}>
-                  <Stat icon="speed" label="速度"
-                    value={Number.isFinite(dog.speedKmh) ? `${dog.speedKmh} km/h` : '— km/h'} />
-                  <Stat icon="battery" label="電量" level={dog.batteryPercentage}
-                    value={Number.isFinite(dog.batteryPercentage)
-                      ? `${dog.batteryPercentage}%` : '—'} />
-                  {Number.isFinite(dog.distanceMeters) && (
-                    <Stat icon="distance" label={`與 Master ${dog.masterId ?? '—'} 的距離`}
-                      value={`${dog.distanceMeters} m`} />
-                  )}
-                </View>
-              ) : null}
-              {live ? (
-                <>
-                  <View style={styles.divider} />
-                  <Text style={styles.label}>硬體回報的定位與活動</Text>
-                  <Text style={styles.hint}>
-                    衛星 {point.satellites ?? '—'} · HDOP {point.hdop ?? '—'}
-                  </Text>
-                  <Text style={styles.hint}>
-                    活動：{point.activityValid ? point.activity ?? '—' : '無有效資料'}
-                  </Text>
-                  <Text style={styles.hint}>GPS 時間：{point.gpsTime ?? '—'}</Text>
-                  <View style={styles.divider} />
-                  <Text style={styles.label}>LoRa 訊號品質</Text>
-                  <Text style={styles.hint}>
-                    RSSI {point.rssi ?? '—'} · SNR {point.snr ?? '—'}
-                  </Text>
-                  <Text style={styles.hint}>
-                    Master ID: {point.masterId ?? '-'} | Slave ID: {point.slaveId ?? '-'}
-                  </Text>
-                  <Text style={styles.hint}>
-                    資料表：dog_status
-                    {' '}· DB row ID: {point.id ?? '—'}
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.hint}>
-                  硬體細節（速度、電量、衛星、LoRa 訊號）只有這支手機正在收的那一對才有；
-                  這隻狗的資料是 Master {dog.masterId ?? '—'} 上傳到雲端後下載的。
-                </Text>
-              )}
-            </>
+            />
           ) : (
             <>
               <Position role="master" position={master} />
@@ -178,11 +179,6 @@ export default function DeviceDetails({
               </Text>
               <Text style={styles.hint}>參考圈半徑 1 公里，跟隨領犬員。</Text>
             </>
-          )}
-          {slaveId === 8 && (
-            <ActivityHistoryChart database={tracking.cloudDatabase} owner={activityOwner}
-              dogAliases={dogAliases}
-              active={activityActive && tracking.foreground && tracking.ready?.real} />
           )}
         </ScrollView>
       </View>
@@ -210,6 +206,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     ...floatingShadow,
   },
+  scroll: { flexShrink: 1 },
   content: { paddingHorizontal: 18, paddingBottom: 18 },
   heading: {
     flexDirection: 'row',
@@ -221,11 +218,26 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   close: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: 48,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headingSheet: { paddingTop: 0 },
+  closeRound: { borderRadius: 24, backgroundColor: tokens.bg },
+  closeText: { fontSize: 18, color: tokens.text, fontWeight: '700' },
+  sheet: { left: 12, right: 12, borderRadius: 24 },
+  handleArea: { height: 22, alignItems: 'center', justifyContent: 'center' },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#D8CFCC' },
+  titleLine: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.s, minWidth: 0 },
+  chip: { borderRadius: 999, paddingHorizontal: space.s, paddingVertical: 2 },
+  chip_ok: { backgroundColor: tokens.okBg },
+  chip_warn: { backgroundColor: tokens.warnBg },
+  chip_muted: { backgroundColor: tokens.bg },
+  chipText: { ...type.caption, fontWeight: '700' },
+  chipText_ok: { color: tokens.ok },
+  chipText_warn: { color: tokens.warn },
+  chipText_muted: { color: tokens.textMuted },
   title: { fontSize: 18, color: colors.ink, fontWeight: '700' },
   label: { fontSize: 14, color: colors.ink, fontWeight: '600', marginTop: 10 },
   hint: { fontSize: 12, lineHeight: 19, color: colors.muted, marginTop: 8 },

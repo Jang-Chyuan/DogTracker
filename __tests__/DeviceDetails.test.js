@@ -78,7 +78,12 @@ test('a dog and the handler answer a tap with the same panel', async () => {
   expect(text()).toContain('82.4 m');
   // No coordinates: the marker this panel belongs to is already on the map.
   expect(text()).not.toContain('25.033000');
-  expect(text()).toContain('LoRa 訊號品質');
+  // Radio and GPS diagnostics are folded away until asked for.
+  expect(text()).not.toContain('LoRa');
+  // The only folding control on the panel is the diagnostics link.
+  await act(async () => renderer.root.findAll(node => typeof node.props.onPress === 'function'
+    && node.props.accessibilityState?.expanded === false)[0].props.onPress());
+  expect(text()).toContain('LoRa：RSSI');
   expect(text()).toContain('衛星');
 
   // A cloud dog has no hardware feed, and the panel says so instead of showing
@@ -86,9 +91,15 @@ test('a dog and the handler answer a tap with the same panel', async () => {
   const cloud = { ...dog, slaveId: 4, masterId: 5, source: 'cloud' };
   await act(async () => renderer.update(view({ kind: 'dog', dog: cloud })));
   expect(text()).toContain('狗 4');
-  expect(text()).toContain('經 Master 5・雲端');
-  expect(text()).not.toContain('LoRa 訊號品質');
-  expect(text()).toContain('只有這支手機正在收的那一對才有');
+  // Another dog starts folded: nothing typed or opened for dog 7 carries over.
+  expect(text()).not.toContain('LoRa');
+  await act(async () => renderer.root.findAll(node => typeof node.props.onPress === 'function'
+    && node.props.accessibilityState?.expanded === false)[0].props.onPress());
+  expect(text()).toContain('雲端・經 Master 5');
+  expect(text()).not.toContain('LoRa：RSSI');
+  expect(text()).toContain('只有這支手機正在接收的狗才有');
+  // Missing readings say why, never a blank or a 0.
+  expect(text()).toContain('雲端資料未提供');
   await act(async () => renderer.unmount());
 });
 
@@ -113,7 +124,7 @@ test('a history marker opens the same panel, with what a past moment can say', a
     return flatten(node.children);
   };
   const text = flatten(renderer.toJSON());
-  expect(text).toContain('Nana(id_4)');
+  expect(text).toContain('Nana・4');
   expect(text).toContain('來源：雲端下載的資料');
   expect(text).toContain('3.4 km/h');
   expect(text).toContain('340 筆');

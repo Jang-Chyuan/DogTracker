@@ -4,8 +4,9 @@ import Svg, { Line, Polyline, Circle, Text as SvgText } from 'react-native-svg';
 import { ACTIVITY_HISTORY_HOURS } from '../cloud/ActivityHistory';
 
 const label = time => new Date(time).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
-export default function ActivityHistoryChart({ database, owner, active, dogAliases }) {
-  const name = dogAliases?.[8]?.trim() || 'Slave 8';
+// Any dog's activity; it used to be wired to dog 8 only.
+export default function ActivityHistoryChart({ database, owner, active, dogAliases, slaveId }) {
+  const name = dogAliases?.[slaveId]?.trim() || `狗 ${slaveId}`;
   const [zoom, setZoom] = useState(null);
   const [offset, setOffset] = useState(0);
   const maximum = ACTIVITY_HISTORY_HOURS * 60;
@@ -84,26 +85,26 @@ export default function ActivityHistoryChart({ database, owner, active, dogAlias
       onPanResponderTerminate: () => { pinch.current = null; pan.current = null; },
     });
   }, []);
-  const [state, setState] = useState({ owner, data: null, error: '' });
+  const [state, setState] = useState({ owner, slaveId, data: null, error: '' });
   useEffect(() => {
     if (!active || !database?.activityHistory) return undefined;
     let alive = true, timer;
     const refresh = async () => {
       try {
-        const data = await database.activityHistory(owner, 8, Date.now());
-        if (alive) setState({ owner, data, error: '' });
-      } catch { if (alive) setState({ owner, data: null, error: '活動量讀取失敗，稍後重試' }); }
+        const data = await database.activityHistory(owner, slaveId, Date.now());
+        if (alive) setState({ owner, slaveId, data, error: '' });
+      } catch { if (alive) setState({ owner, slaveId, data: null, error: '活動量讀取失敗，稍後重試' }); }
       finally { if (alive) timer = setTimeout(refresh, 60000); }
     };
     refresh();
     return () => { alive = false; clearTimeout(timer); };
-  }, [database, owner, active]);
-  const range = state.owner === owner ? state.data?.slice(-maximum) : null;
+  }, [database, owner, active, slaveId]);
+  // Another dog's or account's data never shows under this dog's name.
+  const mine = state.owner === owner && state.slaveId === slaveId;
+  const range = mine ? state.data?.slice(-maximum) : null;
   const end = range ? Math.max(0, range.length - endOffset) : 0;
   const data = range?.slice(Math.max(0, end - count), end);
   const rangeLabel = `最近 ${ACTIVITY_HISTORY_HOURS} 小時`;
-  const ticks = data?.length ? [...new Set(Array.from({ length: 5 }, (_, i) =>
-    Math.round(i * (data.length - 1) / 4)))] : [];
   const segments = [];
   let part = [];
   for (const [i, point] of (data || []).entries()) {
@@ -112,55 +113,55 @@ export default function ActivityHistoryChart({ database, owner, active, dogAlias
   }
   if (part.length) segments.push(part);
   const values = data?.filter(p => p.value != null) || [];
-  return <View style={styles.root} testID="slave-8-activity-chart">
-    <Text style={styles.title}>{name} 活動量 · {rangeLabel}</Text>
-    <View style={styles.ranges}>
-      {[
-        ['放大時間軸', '＋ 放大', count <= 1, () => changeZoom(count / 2)],
-        ['縮小時間軸', '－ 縮小', count >= maximum, () => changeZoom(count * 2)],
-        ['查看較早活動', '往前', endOffset >= maximum - count, () => setOffset(Math.min(maximum - count, endOffset + Math.max(1, Math.floor(count / 2))))],
-        ['查看較新活動', '往後', endOffset === 0, () => setOffset(Math.max(0, endOffset - Math.max(1, Math.floor(count / 2))))],
-        ['重設時間軸', '重設', false, () => { setZoom(null); setOffset(0); }],
-      ].map(([accessibilityLabel, text, disabled, onPress]) => <Pressable key={accessibilityLabel}
-        accessibilityRole="button" accessibilityLabel={accessibilityLabel} disabled={disabled}
-        accessibilityState={{ disabled }} onPress={onPress} style={[styles.range, disabled && styles.disabled]}>
-        <Text style={styles.rangeText}>{text}</Text>
-      </Pressable>)}
+  // Compact, as in design 3: the chart is read at a glance; its controls are
+  // icons with spoken labels, and its rules are not spelled out on screen.
+  return <View style={styles.root} testID={`activity-chart-${slaveId}`}>
+    <View style={styles.head}>
+      <Text style={styles.title}>活動量・{rangeLabel.replace('最近 ', '')}</Text>
+      {values.length > 0 && <View style={styles.ranges}>
+        {[
+          ['放大時間軸', '＋', count <= 1, () => changeZoom(count / 2)],
+          ['縮小時間軸', '－', count >= maximum, () => changeZoom(count * 2)],
+          ['查看較早活動', '‹', endOffset >= maximum - count, () => setOffset(Math.min(maximum - count, endOffset + Math.max(1, Math.floor(count / 2))))],
+          ['查看較新活動', '›', endOffset === 0, () => setOffset(Math.max(0, endOffset - Math.max(1, Math.floor(count / 2))))],
+          ['重設時間軸', '↺', count === maximum && endOffset === 0, () => { setZoom(null); setOffset(0); }],
+        ].map(([accessibilityLabel, text, disabled, onPress]) => <Pressable key={accessibilityLabel}
+          accessibilityRole="button" accessibilityLabel={accessibilityLabel} disabled={disabled}
+          accessibilityState={{ disabled }} onPress={onPress} style={[styles.range, disabled && styles.disabled]}>
+          <Text style={styles.rangeText}>{text}</Text>
+        </Pressable>)}
+      </View>}
     </View>
-    <Text style={styles.note}>雙指縮放 · 單指右滑看較早、左滑看較新 · 顯示 {count} 分鐘</Text>
-    <Text style={styles.note}>每 60 秒有效平均 · 0–1 · 空白代表無有效資料</Text>
     <View ref={surface} collapsable={false} testID="activity-zoom-surface"
       onLayout={event => { if (event.nativeEvent.layout.width > 0) bounds.current.width = event.nativeEvent.layout.width; }}
       {...responder.panHandlers}>
-    {state.owner === owner && state.error ? <Text>{state.error}</Text> : !data ? <Text>讀取活動量…</Text>
-      : !values.length ? <Text>{rangeLabel}尚無有效活動資料</Text> : <>
-        <Svg width="100%" height={120} viewBox="0 0 320 120" preserveAspectRatio="none" accessible accessibilityLabel={`${name} 活動量，${values.length} 個有效分鐘，最近有效平均 ${values.at(-1).value.toFixed(3)}`}>
-          {[12, 60, 108].map(y => <Line key={y} x1={24} x2={316} y1={y} y2={y} stroke="#CBD5E1" />)}
-          {[1, 0.5, 0].map(value => <SvgText key={value} x={0} y={112 - value * 96} fontSize={10} fill="#64748B">{value}</SvgText>)}
+    {mine && state.error ? <Text style={styles.note}>{state.error}</Text>
+      : !data ? <Text style={styles.note}>讀取活動量…</Text>
+      : !values.length ? <Text style={styles.note}>{rangeLabel}沒有活動資料</Text> : <>
+        <Svg width="100%" height={72} viewBox="0 0 320 120" preserveAspectRatio="none" accessible accessibilityLabel={`${name} 活動量，${values.length} 個有效分鐘，最近有效平均 ${values.at(-1).value.toFixed(3)}，空白代表沒有資料`}>
+          {[12, 108].map(y => <Line key={y} x1={0} x2={320} y1={y} y2={y} stroke="#EDE6E4" />)}
           {segments.map((s, i) => s.length > 1
-            ? <Polyline key={i} points={s.map(p => `${p.x},${p.y}`).join(' ')} stroke="#2563EB" strokeWidth={2} fill="none" />
-            : <Circle key={i} cx={s[0].x} cy={s[0].y} r={2} fill="#2563EB" />)}
+            ? <Polyline key={i} points={s.map(p => `${p.x},${p.y}`).join(' ')} stroke="#C94D4A" strokeWidth={2.5} fill="none" />
+            : <Circle key={i} cx={s[0].x} cy={s[0].y} r={2.5} fill="#C94D4A" />)}
         </Svg>
-        <Text style={styles.note}>最近有效平均：{values.at(-1).value.toFixed(3)}（{label(values.at(-1).time)}）</Text>
       </>}
-    {!!data?.length && <>
-      <Svg width="100%" height={22} viewBox="0 0 320 22" preserveAspectRatio="none" accessible accessibilityLabel={`時間軸：${label(data[0].time)} 至 ${label(data.at(-1).time)}`}>
-        {ticks.map((index, i) => (
-          <SvgText key={index} x={24 + index * 292 / Math.max(1, data.length - 1)} y={15}
-            textAnchor={i === 0 ? 'start' : i === ticks.length - 1 ? 'end' : 'middle'} fontSize={11} fill="#64748B">
+    {!!data?.length && !!values.length &&
+      <Svg width="100%" height={18} viewBox="0 0 320 18" preserveAspectRatio="none" accessible accessibilityLabel={`時間軸：${label(data[0].time)} 至 ${label(data.at(-1).time)}`}>
+        {[0, data.length - 1].map((index, i) => (
+          <SvgText key={i} x={i ? 316 : 24} y={13}
+            textAnchor={i ? 'end' : 'start'} fontSize={11} fill="#5E5E5E">
             {label(data[index].time)}
           </SvgText>
         ))}
-      </Svg>
-      <Text style={styles.note}>時間（手機當地時間）</Text>
-    </>}
+      </Svg>}
     </View>
-    <Text style={styles.note}>本機 BLE 優先；缺少時使用已下載的雲端資料。</Text>
   </View>;
 }
-const styles = StyleSheet.create({ root: { marginVertical: 12 }, title: { fontSize: 15, fontWeight: '700', color: '#253831' },
-  ranges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 8 },
-  range: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 12, backgroundColor: '#EAF1EC' },
-  rangeText: { color: '#253831' },
-  disabled: { opacity: 0.4 },
-  note: { fontSize: 12, color: '#64748B', marginVertical: 5 } });
+const styles = StyleSheet.create({ root: { marginVertical: 8 },
+  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 },
+  title: { fontSize: 13, fontWeight: '700', color: '#5E5E5E' },
+  ranges: { flexDirection: 'row', gap: 2 },
+  range: { minHeight: 48, minWidth: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
+  rangeText: { color: '#222222', fontSize: 18, fontWeight: '700' },
+  disabled: { opacity: 0.3 },
+  note: { fontSize: 13, color: '#5E5E5E', marginVertical: 8 } });
