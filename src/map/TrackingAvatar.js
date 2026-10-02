@@ -3,7 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { mapColors as colors } from './MapTheme';
 
 // antgo's basic person/dog visual, independent of profiles and photo storage.
-export default function TrackingAvatar({ role, size = 40 }) {
+// `tint` replaces the fill, e.g. amber or grey for a dog whose fix has aged.
+export default function TrackingAvatar({ role, size = 40, tint, outline }) {
   const person = role === 'master';
   return (
     <View
@@ -14,7 +15,8 @@ export default function TrackingAvatar({ role, size = 40 }) {
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: person ? colors.master : colors.dog,
+          backgroundColor: tint ?? (person ? colors.master : colors.dog),
+          ...(outline ? { borderColor: outline } : null),
         },
       ]}
     >

@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers } from '../map/DogMerge';
+import { dogFreshness } from '../map/DogFreshness';
 import { dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
@@ -114,10 +115,21 @@ export default function MapScreen({
     // does not cancel following: the card still lists the dogs, and a card that
     // says 跟隨中 while the map ignores it would be a lie.
     const focused = dogs.find(dog => !dog.stale && dog.slaveId === focusSlaveId) || null;
-    // A dog hidden by its own eye leaves the map but stays in the card.
-    const drawn = dogs.filter(dog => !dog.stale && !hiddenSlaveIds.includes(dog.slaveId));
+    // A dog hidden by its own eye leaves the map but stays in the card. A dog
+    // whose fix has aged stays drawn as its last position (DogFreshness), so
+    // the handler can walk towards where it was last seen.
+    const drawn = dogs
+      .filter(dog => !hiddenSlaveIds.includes(dog.slaveId))
+      .map(dog => {
+        const freshness = dogFreshness(dog, now);
+        return { ...dog, freshness: freshness.tier, freshnessLabel: freshness.label };
+      })
+      .filter(dog => dog.freshness !== 'gone');
+    // A dog a few minutes stale is still part of the working area; one last
+    // seen more than ten minutes ago must not zoom the map out to include it.
+    const framed = drawn.filter(dog => dog.freshness !== 'old');
     const marked = focused
-      ? drawn.map(dog => (dog === focused ? { ...dog, focused: true } : dog))
+      ? drawn.map(dog => (dog.slaveId === focused.slaveId ? { ...dog, focused: true } : dog))
       : drawn;
     return {
       ...basePresentation,
@@ -135,9 +147,9 @@ export default function MapScreen({
       // maximum zoom; frame a small square around the dog instead.
       cameraPositions: focused
         ? framedCoordinates(focused.coordinate)
-        : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
+        : homeCameraPositions(basePresentation, framed, dogsVisible, dogPaths),
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds]);
+  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, now]);
   const livePhone = useLiveLocation(active && tracking.foreground);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;

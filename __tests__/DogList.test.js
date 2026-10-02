@@ -307,3 +307,10 @@ test('the handler row shows a battery icon too, not a bare number', async () => 
   // empty box next to the number.
   expect(stats[0].findAllByProps({ testID: 'svg-rect' }).length).toBeGreaterThan(0);
 });
+
+test('following a dog whose fix has aged says the follow is paused, not following', async () => {
+  // fresh=false: dog 4's cloud fix is 40 minutes old, so the map cannot follow it.
+  await expand(screen({ focusSlaveId: 4 }, 'real', false).element);
+  expect(cardText()).toContain('狗 4 · 跟隨暫停・等待新定位');
+  expect(cardText()).not.toContain('狗 4 · 地圖跟隨中');
+});

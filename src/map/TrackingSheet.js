@@ -201,7 +201,7 @@ export default function TrackingSheet({
             </>
           )}
         </View>
-        : <Text style={styles.hint}>狗圖示超過 2 分鐘未更新就隱藏；歷史軌跡仍保留查詢區間內的最後位置。</Text>}
+        : <Text style={styles.hint}>狗的定位超過 2 分鐘未更新，地圖上改成琥珀色或灰色並寫出最後位置的時間；超過 24 小時才拿掉。</Text>}
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (
           <View>

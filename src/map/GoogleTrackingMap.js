@@ -22,6 +22,9 @@ import HistoryCursor from '../mapHistory/HistoryCursor';
 import DogNameMarker, { DOG_NAME_ANCHOR } from './DogNameMarker';
 import { dogHistoryLabel } from '../mapHistory/DogAliases';
 
+// Amber fill for a recent fix; an old one is hollow: white face, grey outline.
+const AGED_TINT = { recent: '#C98A2B', old: '#FFFFFF' };
+
 const EMPTY_REGION = {
   latitude: 23.7,
   longitude: 121,
@@ -29,17 +32,22 @@ const EMPTY_REGION = {
   longitudeDelta: 4,
 };
 function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
-  // A position older than the selected window is drawn faded, so it reads as
-  // "last seen here", not as where the dog is now. The followed dog gets a ring
-  // so the camera's target is visible on the map, not only in the card.
-  const faded = !!position.stale;
+  // An aged dog fix is drawn amber (2–10 min) or grey (older) with its age in
+  // words, so it reads as "last seen here", not as where the dog is now; no
+  // transparency, which disappears in sunlight. Other roles still fade when
+  // they fall outside the selected window. The followed dog gets a ring so the
+  // camera's target is visible on the map, not only in the card.
+  const aged = role === 'slave' && (position.freshness === 'recent' || position.freshness === 'old')
+    ? position.freshness : null;
+  const faded = !aged && !!position.stale;
+  const status = aged ? position.freshnessLabel : faded ? '未更新／最後位置' : null;
   const focused = !!position.focused;
   const marker = useRef(null);
   // The marker view is not tracked for changes (that would redraw it on every
   // frame), so fading and the follow ring have to ask for one redraw each.
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [faded, focused, title]);
+  }, [faded, focused, title, status]);
   const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
@@ -58,14 +66,16 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       onPress={onPress}
     >
       <DogNameMarker label={role === 'slave' ? name : null}
-        status={role === 'slave' && faded ? '未更新／最後位置' : null}><View
+        status={role === 'slave' ? status : null} tone={aged}><View
         collapsable={false}
         accessible
-        accessibilityLabel={`${name}。${faded ? '未更新／最後位置。' : ''}${detail}`}
-        style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
+        accessibilityLabel={`${name}。${status ? status + '。' : ''}${detail}`}
+        style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker,
+          aged === 'recent' && styles.recentMarker, aged === 'old' && styles.oldMarker]}
         onLayout={() => marker.current?.redraw()}
       >
-        <TrackingAvatar role={role} size={40} />
+        <TrackingAvatar role={role} size={40} tint={aged ? AGED_TINT[aged] : undefined}
+          outline={aged === 'old' ? '#6B7470' : undefined} />
       </View></DogNameMarker>
     </Marker>
   );
@@ -241,9 +251,11 @@ function GoogleTrackingMapRenderer({
     const shouldFit = sourceToFit.current === source || needsFirstPositionFit;
     if (!usable || !shouldFit || interacted.current || !positions.length)
       return;
+    // Dog name labels hang up and to the right of the marker (DogNameMarker),
+    // so a dog framed against the right edge would have its label cut off.
     mapRef.current?.fitToCoordinates(positions, {
       animated: false,
-      edgePadding: { top: 24, right: 24, bottom: 24, left: 24 },
+      edgePadding: { top: 72, right: 200, bottom: 24, left: 32 },
     });
     sourceToFit.current = null;
     if (needsFirstPositionFit) setNeedsFirstPositionFit(false);
@@ -495,6 +507,8 @@ const styles = StyleSheet.create({
   },
   retryText: { color: colors.ink, fontWeight: '600' },
   fadedMarker: { opacity: 0.45 },
+  recentMarker: { borderRadius: 23, borderWidth: 2, borderStyle: 'dashed', borderColor: '#9A5B00' },
+  oldMarker: { borderRadius: 23, borderWidth: 2, borderColor: '#6B7470' },
   phoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: '#FFFFFF' },
   focusedMarker: {
     borderRadius: 23,
