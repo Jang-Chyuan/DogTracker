@@ -2,14 +2,23 @@ package com.dogtracker
 
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    // Must run before super.onCreate: it swaps Theme.App.Starting for AppTheme.
+    // No keep-on-screen condition, so the splash never outlasts app start.
+    installSplashScreen()
+    super.onCreate(savedInstanceState)
+  }
 
   override fun onResume() {
     super.onResume()
