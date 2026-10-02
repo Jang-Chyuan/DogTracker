@@ -20,7 +20,7 @@ import Glyph from './Glyph';
 import ReceiverIcon from './ReceiverIcon';
 import { colors as tokens } from '../theme/tokens';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
-import TrackingAvatar from './TrackingAvatar';
+import DogAvatar from '../dogs/DogAvatar';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
 import DogNameMarker, { DOG_NAME_ANCHOR } from './DogNameMarker';
@@ -52,7 +52,7 @@ const EDGE = 48;
 // 54 dp slot, 52 dp icon centred in it, circle 82% of the icon from its corner.
 const RECEIVER_ANCHOR = { x: (1 + 52 * 0.41) / 54, y: (1 + 52 * 0.41) / 54 };
 
-function DeviceMarker({ source, role, position, onPress, identifier, title, description, number }) {
+function DeviceMarker({ source, role, position, onPress, identifier, title, description, number, avatar }) {
   // An aged dog fix is drawn amber (2–10 min) or grey (older) with its age in
   // words, so it reads as "last seen here", not as where the dog is now; no
   // transparency, which disappears in sunlight. Other roles still fade when
@@ -68,7 +68,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   // frame), so fading and the follow ring have to ask for one redraw each.
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [faded, focused, title, status, number]);
+  }, [faded, focused, title, status, number, avatar]);
   const name = title || (role === 'master' ? (number != null ? `接收器 ${number}` : '接收器') : '狗 · Slave');
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
@@ -102,8 +102,10 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
           // on a tag, so it never reads as one more dog.
           <ReceiverIcon number={number} size={52} />
         ) : (
-          <TrackingAvatar role={role} size={40} tint={aged ? AGED_TINT[aged] : undefined}
-            outline={aged === 'old' ? '#6B7470' : undefined} />
+          <DogAvatar avatar={avatar} size={40} tint={aged === 'recent' ? AGED_TINT.recent : undefined}
+            outline={aged === 'old' ? '#6B7470' : undefined}
+            // A photo arrives after the marker's bitmap was taken; take it again.
+            onLoad={() => marker.current?.redraw?.()} />
         )}
       </View></DogNameMarker>
     </Marker>
@@ -115,7 +117,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
 // side before it has laid out, and then draws as a blank dot.
 function TrackMarker({ track, onPress }) {
   const marker = useRef(null);
-  useEffect(() => { marker.current?.redraw?.(); }, [track.name]);
+  useEffect(() => { marker.current?.redraw?.(); }, [track.name, track.avatar]);
   const { latest } = track;
   const detail = `${new Date(latest.time).toLocaleString()} · ${
     latest.speed_kmh == null ? '速度未知' : latest.speed_kmh.toFixed(1) + ' km/h'}`;
@@ -141,7 +143,7 @@ function TrackMarker({ track, onPress }) {
         onLayout={() => marker.current?.redraw?.()}
       >
         {track.role === 'slave' ? (
-          <TrackingAvatar role="slave" size={36} />
+          <DogAvatar avatar={track.avatar} size={36} onLoad={() => marker.current?.redraw?.()} />
         ) : (
           <View style={[styles.phoneDot, { backgroundColor: track.color }]} />
         )}
@@ -478,6 +480,7 @@ function GoogleTrackingMapRenderer({
               position={dog}
               onPress={onDogPress ? () => onDogPress(dog.slaveId) : undefined}
               title={dogHistoryLabel(dog.slaveId, presentation.dogAliases)}
+              avatar={presentation.dogAvatars?.[dog.slaveId]}
               description={describeDogSource(dog) + ' · '
                 + new Date(dog.receivedAt).toLocaleTimeString()
                 + (dog.stale ? '（早於所選時間範圍）' : '')}

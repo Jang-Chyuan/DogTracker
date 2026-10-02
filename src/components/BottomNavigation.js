@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import TrackingAvatar from '../map/TrackingAvatar';
+import DogAvatar from '../dogs/DogAvatar';
 import { appColors as colors, floatingShadow } from '../theme/AppTheme';
 
 export const NAV_HEIGHT = 68;
@@ -45,7 +45,7 @@ export default function BottomNavigation({
         >
           {tab.dog ? (
             <View style={styles.dogIcon}>
-              <TrackingAvatar role="slave" size={22} />
+              <DogAvatar size={22} />
             </View>
           ) : (
             <Text

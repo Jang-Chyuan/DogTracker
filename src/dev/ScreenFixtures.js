@@ -65,6 +65,22 @@ const FIXTURES = {
   }),
 };
 
+// A day of activity for every fixture dog, so the panel's chart has
+// something to draw: rest overnight, bursts of work in the morning and
+// afternoon, and a gap where the collar was off (gaps stay empty, never 0).
+export function fixtureActivity(slaveId, now) {
+  const start = Math.floor(now / MINUTE) * MINUTE - (24 * 60 - 1) * MINUTE;
+  return Array.from({ length: 24 * 60 }, (_, i) => {
+    const time = start + i * MINUTE;
+    const hour = new Date(time).getHours() + new Date(time).getMinutes() / 60;
+    const off = hour >= 12 && hour < 13;
+    const work = (hour >= 8 && hour < 11.5) || (hour >= 14 && hour < 17);
+    const wave = (Math.sin(i / 9 + slaveId) + 1) / 2;
+    const value = off ? null : work ? 0.45 + 0.5 * wave : 0.05 + 0.1 * wave;
+    return { time, value, count: value == null ? 0 : 1, source: value == null ? null : 'cloud' };
+  });
+}
+
 export const FIXTURE_NAMES = Object.keys(FIXTURES);
 
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.

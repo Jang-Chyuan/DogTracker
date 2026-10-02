@@ -15,6 +15,7 @@ import { dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
+import DogEditor from '../dogs/DogEditor';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import HomeStatus from '../map/HomeStatusBar';
@@ -66,6 +67,8 @@ export default function MapScreen({
   readReceiverState,
   fixtureName,
   onOpenHistory,
+  // { avatars, save } from useDogAvatars: each dog's face by collar number.
+  dogAvatars,
 }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -83,6 +86,8 @@ export default function MapScreen({
   // answer a tap the same way.
   const [selected, setSelected] = useState(null);
   const closeDetails = useCallback(() => setSelected(null), []);
+  // The dog whose name and face are being edited (DogEditor).
+  const [editing, setEditing] = useState(null);
   const openMaster = useCallback(() => setSelected({ kind: 'master' }), []);
   // The popover and the panel never stack: opening the panel closes it.
   const openDog = useCallback(slaveId => { setPicked(null); setSelected({ kind: 'dog', slaveId }); }, []);
@@ -98,6 +103,7 @@ export default function MapScreen({
   // Ageing is measured against this clock, not against the newest row: a silent
   // collar changes nothing else on this screen.
   const now = useMapClock(active && tracking.foreground);
+  const avatars = useMemo(() => dogAvatars?.avatars || {}, [dogAvatars?.avatars]);
   // One receiver poll for the status pill, the card's receiver row and the
   // receiver panel, so all three name the same receiver.
   const receiverState = useReceiverState(active && tracking.foreground && !historical, readReceiverState);
@@ -265,7 +271,7 @@ export default function MapScreen({
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is decided by the card's own
     // eyes and time window, never by the history tab's parameters.
-    if (!historical) return { ...livePresentation, dogAliases: history?.preferences.dogAliases };
+    if (!historical) return { ...livePresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
     const data = history.data;
     // Playback draws the same tracks up to the cursor, so the map never shows a
     // position the replayed moment did not have yet.
@@ -279,6 +285,7 @@ export default function MapScreen({
       ...(data.clients || []).map((track, index) => ({
         ...clip(track),
         name: dogHistoryLabel(track.slaveId, history.preferences.dogAliases),
+        avatar: avatars[track.slaveId],
         color: dogColor(track.slaveId, index),
         role: 'slave',
         sourceLabel: history.preferences.source === 'cloud'
@@ -294,7 +301,7 @@ export default function MapScreen({
     }
     return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks };
   }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, livePresentation,
-    playbackAt]);
+    playbackAt, avatars]);
   const { master, slave } = presentation.positions;
   // A panel closes itself when its subject leaves the map: a dog that stopped
   // reporting, or the handler's marker being hidden.
@@ -457,6 +464,7 @@ export default function MapScreen({
       {historical ? (
         <HistorySheet
           history={history}
+          dogAvatars={avatars}
           download={historyDownload}
           extras={<HistoryPlaybackControls playback={playback} />}
           snapshot={snapshot}
@@ -472,6 +480,7 @@ export default function MapScreen({
           slave={slave}
           dogs={dogs}
           dogAliases={history?.preferences.dogAliases}
+          dogAvatars={avatars}
           bottomInset={bottomInset}
           topInset={controlsTop}
           onHeight={setSheetHeight}
@@ -541,12 +550,9 @@ export default function MapScreen({
             const following = tracking.preferences.value.focusSlaveId === id;
             tracking.saveTrackingPreferences({ focusSlaveId: following ? null : id });
           } : undefined}
-          onRename={detailSubject.kind === 'dog' && history ? name => {
-            const aliases = { ...(history.preferences.dogAliases || {}) };
-            // Empty restores 「狗 N」; HistoryDatabase normalises and drops it.
-            aliases[detailSubject.dog.slaveId] = name;
-            history.save({ ...history.preferences, dogAliases: aliases });
-          } : undefined}
+          dogAvatar={detailSubject.kind === 'dog' ? avatars[detailSubject.dog.slaveId] : undefined}
+          onEdit={detailSubject.kind === 'dog' && history && dogAvatars
+            ? () => setEditing(detailSubject.dog.slaveId) : undefined}
           todayPathBusy={!!history?.busy}
           onTodayPath={detailSubject.kind === 'dog' && history ? async () => {
             const dog = detailSubject.dog;
@@ -580,6 +586,28 @@ export default function MapScreen({
               ...(hiding && tracking.preferences.value.focusSlaveId === id ? { focusSlaveId: null } : {}),
             });
           } : undefined}
+        />
+      )}
+      {editing != null && history && dogAvatars && (
+        <DogEditor
+          slaveId={editing}
+          alias={history.preferences.dogAliases?.[editing]}
+          avatar={avatars[editing]}
+          onClose={() => setEditing(null)}
+          // Both or neither: the face is written first, and put back if the
+          // name then fails (for example while a history query is saving).
+          onSave={async ({ name, avatar }) => {
+            const before = avatars[editing] || null;
+            const faceChanged = JSON.stringify(avatar || null) !== JSON.stringify(before);
+            const nameChanged = (history.preferences.dogAliases?.[editing] || '') !== name;
+            if (faceChanged && !await dogAvatars.save(editing, avatar)) return false;
+            if (!nameChanged) return true;
+            // Empty restores 「狗 N」; HistoryDatabase normalises and drops it.
+            const aliases = { ...(history.preferences.dogAliases || {}), [editing]: name };
+            if (await history.save({ ...history.preferences, dogAliases: aliases })) return true;
+            if (faceChanged) await dogAvatars.save(editing, before);
+            return false;
+          }}
         />
       )}
     </View>

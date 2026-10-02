@@ -16,7 +16,7 @@ test('a hidden dog cannot be followed, and the path waits for a save to finish',
   let renderer;
   const view = props => (
     <DogDetails dog={dog} point={{}} now={now} onFollow={jest.fn()} onTodayPath={jest.fn()}
-      onRename={jest.fn()} onToggleHidden={jest.fn()} {...props} />
+      onEdit={jest.fn()} onToggleHidden={jest.fn()} {...props} />
   );
   await act(async () => { renderer = Renderer.create(view({})); });
   expect(button(renderer, '跟隨這隻狗').props.accessibilityState.disabled).toBe(false);
@@ -25,22 +25,20 @@ test('a hidden dog cannot be followed, and the path waits for a save to finish',
   await act(async () => renderer.update(view({ hidden: true, todayPathBusy: true })));
   expect(button(renderer, '跟隨這隻狗').props.accessibilityState.disabled).toBe(true);
   expect(button(renderer, '今天的路徑').props.accessibilityState.disabled).toBe(true);
-  // Without a history store there is nothing to rename into.
-  await act(async () => renderer.update(view({ onRename: undefined })));
-  expect(button(renderer, '改名')).toBeUndefined();
+  // Without a history store there is nothing to save a name into.
+  await act(async () => renderer.update(view({ onEdit: undefined })));
+  expect(button(renderer, '編輯名稱與頭像')).toBeUndefined();
   await act(async () => renderer.unmount());
 });
 
-test('renaming can be cancelled without saving', async () => {
-  const rename = jest.fn();
+test('編輯 opens the page for the dog name and face', async () => {
+  const edit = jest.fn();
   let renderer;
   await act(async () => {
-    renderer = Renderer.create(<DogDetails dog={dog} point={{}} now={now} onRename={rename} />);
+    renderer = Renderer.create(<DogDetails dog={dog} point={{}} now={now} onEdit={edit} />);
   });
-  await act(async () => button(renderer, '改名').props.onPress());
-  await act(async () => button(renderer, '取消').props.onPress());
-  expect(rename).not.toHaveBeenCalled();
-  expect(button(renderer, '改名')).toBeDefined();
+  await act(async () => button(renderer, '編輯名稱與頭像').props.onPress());
+  expect(edit).toHaveBeenCalledTimes(1);
   await act(async () => renderer.unmount());
 });
 

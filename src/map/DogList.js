@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import TrackingAvatar from './TrackingAvatar';
+import DogAvatar from '../dogs/DogAvatar';
 import Glyph from './Glyph';
 import { colors, space, touch, type } from '../theme/tokens';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
@@ -75,7 +75,7 @@ function BatteryLow() {
   );
 }
 
-function DogRow({ dog, name, now, phone, mapHeading, followed, onPick, onLayout, avatarHidden }) {
+function DogRow({ dog, name, avatar, now, phone, mapHeading, followed, onPick, onLayout, avatarHidden }) {
   const { freshness, group, current, state, condition, age, where, distanceText, spoken, low } =
     describeDog(dog, now, phone, mapHeading);
   const follow = followed ? (current ? '跟隨中' : '跟隨暫停') : '';
@@ -94,7 +94,7 @@ function DogRow({ dog, name, now, phone, mapHeading, followed, onPick, onLayout,
       {/* While the sheet draws the flying avatars on top, the row keeps the
           space but not the picture, so no avatar is drawn twice. */}
       <View style={[styles.ring, { borderColor: RING[freshness.tier] }, avatarHidden && styles.invisible]}>
-        <TrackingAvatar role="slave" size={34} />
+        <DogAvatar avatar={avatar} size={34} />
       </View>
       <View style={styles.middle}>
         <View style={styles.nameLine}>
@@ -131,7 +131,7 @@ function DogRow({ dog, name, now, phone, mapHeading, followed, onPick, onLayout,
  */
 export default function DogList({
   dogs, now, phone, mapHeading = 0, selectedSlaveId, hiddenSlaveIds = [],
-  onPick, onShow, control, dogAliases, showHeader = true, onRowLayout, avatarsHidden = false,
+  onPick, onShow, control, dogAliases, dogAvatars, showHeader = true, onRowLayout, avatarsHidden = false,
 }) {
   const shown = dogs.filter(dog => !hiddenSlaveIds.includes(dog.slaveId));
   const hidden = dogs.filter(dog => hiddenSlaveIds.includes(dog.slaveId));
@@ -148,7 +148,7 @@ export default function DogList({
       )}
       {!dogs.length && <Text style={styles.empty}>目前沒有 24 小時內的狗資料。</Text>}
       {shown.map(dog => (
-        <DogRow key={dog.slaveId} dog={dog} name={nameOf(dog)} now={now} phone={phone}
+        <DogRow key={dog.slaveId} dog={dog} name={nameOf(dog)} avatar={dogAvatars?.[dog.slaveId]} now={now} phone={phone}
           mapHeading={mapHeading} followed={dog.slaveId === selectedSlaveId} onPick={onPick}
           avatarHidden={avatarsHidden}
           onLayout={onRowLayout ? event => onRowLayout(dog.slaveId, event.nativeEvent.layout) : undefined} />
@@ -156,7 +156,7 @@ export default function DogList({
       {hidden.map(dog => (
         <View key={dog.slaveId} style={[styles.row, styles.hiddenRow]} testID={`dog-hidden-${dog.slaveId}`}>
           <View style={[styles.ring, styles.ringNone]}>
-            <TrackingAvatar role="slave" size={34} tint="#C9CFCC" />
+            <DogAvatar avatar={dogAvatars?.[dog.slaveId]} size={34} outline="#C9CFCC" />
           </View>
           <View style={styles.middle}>
             <Text style={[styles.name, styles.hiddenName]}>{nameOf(dog)}</Text>

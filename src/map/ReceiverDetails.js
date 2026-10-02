@@ -2,7 +2,6 @@ import React from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { colors, space, touch, type } from '../theme/tokens';
 import { describeReceiver, formatClock } from './HomeStatus';
-import { formatTime } from './MapFormat';
 
 // Connection in one word, written and coloured (DESIGN.md §2.3). The status
 // pill only appears when something is wrong; the panel always says.
@@ -52,7 +51,7 @@ export default function ReceiverDetails({
     : point.masterBatteryValid && point.masterBatteryPercentage !== null ? `${point.masterBatteryPercentage}%` : '未回報';
   const last = state?.lastReceivedAt > 0 ? formatClock(state.lastReceivedAt) : '尚未收到';
   const where = point.id === null || other ? '尚無資料' : !position ? '無定位'
-    : position.retained || position.stale ? `最後位置 ${formatTime(position.receivedAt)}` : '有定位';
+    : position.retained || position.stale ? `最後位置 ${formatClock(position.receivedAt)}` : '有定位';
   const busy = !preferences?.ready;
   const shown = preferences?.value || {};
   return (

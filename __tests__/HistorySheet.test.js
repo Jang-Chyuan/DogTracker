@@ -49,13 +49,14 @@ afterEach(async () => {
   renderer = null;
 });
 
-test('dog alias can be edited in the card and saved with Apply', async () => {
-  const value = history();
+test('names are not edited here, and applying a query keeps the names saved now', async () => {
+  // Names moved to the dog's panel (design 10): one place to change them.
+  const value = history({ preferences: { ...history().preferences, dogAliases: { 4: '小黑' } } });
   await mount(value);
   await act(async () => control('狗與 Master').props.onPress());
-  await act(async () => control('狗 4 的別名').props.onChangeText('小黑'));
+  expect(control('狗 4 的別名')).toBeUndefined();
   expect(control('小黑 狗 4')).toBeDefined();
-  expect(value.save).not.toHaveBeenCalled();
+  await act(async () => control('狗 6').props.onPress());
   await act(async () => control('套用（有未套用的變更）').props.onPress());
   expect(value.save).toHaveBeenCalledWith(expect.objectContaining({ dogAliases: { 4: '小黑' } }));
 });

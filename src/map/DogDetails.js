@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, space, touch, type } from '../theme/tokens';
 import { describeDog } from './DogList';
 import { MOVEMENT_WORDS, movement, phoneNote } from './DogReadout';
@@ -41,14 +41,11 @@ function Button({ label, onPress, primary, disabled, hint }) {
  */
 export default function DogDetails({
   dog, live, point, now, phone, mapHeading, alias, mastersSeen = [], followed, hidden,
-  onFollow, onTodayPath, todayPathBusy, onRename, onToggleHidden, chart,
+  onFollow, onTodayPath, todayPathBusy, onEdit, onToggleHidden, chart,
 }) {
   const said = describeDog(dog, now, phone, mapHeading);
   const state = said.current ? movement(dog, said.freshness.tier) : 'unknown';
   const [diagnostics, setDiagnostics] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(alias || '');
-  const commit = () => { onRename?.(draft.trim()); setRenaming(false); };
   // The card that says how old the phone's own fix is sits under this panel,
   // so a distance from an old fix says so here too.
   const phoneAge = said.where.kind === 'ok' ? phoneNote(phone) : '';
@@ -82,30 +79,13 @@ export default function DogDetails({
           hint="在歷史軌跡頁看這隻狗今天的路徑" />
       </View>
 
-      {renaming ? (
-        <View style={styles.renameRow}>
-          <TextInput
-            value={draft}
-            onChangeText={text => setDraft(text.slice(0, 20))}
-            placeholder={`狗 ${dog.slaveId}`}
-            maxLength={20}
-            autoFocus
-            accessibilityLabel={`狗 ${dog.slaveId} 的名稱`}
-            accessibilityHint={`清空就恢復成「狗 ${dog.slaveId}」，只存在這支手機`}
-            style={styles.input}
-            returnKeyType="done"
-            onSubmitEditing={commit}
-          />
-          <Button label="取消" onPress={() => setRenaming(false)} />
-          <Button label="儲存" primary onPress={commit} />
-        </View>
-      ) : null}
 
       <View style={styles.links}>
-        {!renaming && onRename && (
-          <Pressable onPress={() => { setDraft(alias || ''); setRenaming(true); }} accessibilityRole="button"
-            accessibilityLabel="改名" style={styles.link}>
-            <Text style={styles.linkText}>改名</Text>
+        {/* Name and face are edited together on one page (design 10). */}
+        {onEdit && (
+          <Pressable onPress={onEdit} accessibilityRole="button"
+            accessibilityLabel="編輯名稱與頭像" style={styles.link}>
+            <Text style={styles.linkText}>編輯</Text>
           </Pressable>
         )}
         <Pressable onPress={onToggleHidden} accessibilityRole="button" style={styles.link}
@@ -160,11 +140,6 @@ const styles = StyleSheet.create({
   primaryText: { color: colors.tonalText },
   disabled: { opacity: 0.4 },
   pressed: { transform: [{ scale: 0.97 }] },
-  renameRow: { flexDirection: 'row', gap: space.s, marginTop: space.m, alignItems: 'center' },
-  input: {
-    flex: 2, minHeight: touch.min, borderWidth: 1.5, borderColor: colors.accent, borderRadius: 12,
-    paddingHorizontal: space.m, ...type.body, color: colors.text,
-  },
   links: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: space.xs },
   spacer: { flex: 1 },
   link: { minHeight: touch.min, minWidth: touch.min, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xs },
