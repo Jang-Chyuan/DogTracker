@@ -17,7 +17,16 @@ function cloudRow(slaveId, now, ageMs, offset, extra = {}) {
 
 const receiving = now => ({
   enabled: true, running: true, connected: true, receiving: true,
-  deviceName: 'DogGPS-Master7', lastReceivedAt: now - 3000,
+  deviceName: 'DogGPS-Master7', expectedMasterId: 7, lastReceivedAt: now - 3000,
+});
+
+// The receiver's own newest packet: its position and battery, no dog in it,
+// so the receiver marker and its card row can be seen too.
+const receiverPacket = now => ({
+  id: 1, receivedAt: now - 3000, masterId: 7, slaveId: null,
+  masterLat: BASE.latitude - 0.0008, masterLon: BASE.longitude - 0.0006,
+  slaveLat: null, slaveLon: null,
+  masterBatteryValid: true, masterBatteryPercentage: 62,
 });
 
 const freshDogs = now => [
@@ -72,6 +81,9 @@ export function buildFixture(name, now = Date.now()) {
   const { receiver, cloud, rows, packets = [] } = make(now);
   return {
     name,
+    // Only where a receiver is set up; the no-receiver case keeps the phone's
+    // real stored packet.
+    point: receiver?.enabled ? receiverPacket(now) : null,
     readReceiverState: { getState: async () => receiver },
     cloudSync: cloud,
     cloudDogs: { rows, packets, error: '' },

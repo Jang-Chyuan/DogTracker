@@ -21,6 +21,7 @@ import HomeStatus from '../map/HomeStatusBar';
 import DogPopover from '../map/DogPopover';
 import { phoneFix, settleMovement } from '../map/DogReadout';
 import { useReceiverState } from '../map/useReceiverState';
+import { receiverNumber } from '../map/HomeStatus';
 import { describeDog } from '../map/DogList';
 import { dogMapLabel } from '../mapHistory/DogAliases';
 
@@ -97,19 +98,35 @@ export default function MapScreen({
   // Ageing is measured against this clock, not against the newest row: a silent
   // collar changes nothing else on this screen.
   const now = useMapClock(active && tracking.foreground);
+  // One receiver poll for the status pill, the card's receiver row and the
+  // receiver panel, so all three name the same receiver.
+  const receiverState = useReceiverState(active && tracking.foreground && !historical, readReceiverState);
+  // The newest stored packet can be from a receiver used before this one (it
+  // has not sent anything yet); it then says nothing about this receiver.
+  // The configured receiver keeps its identity while reception is stopped;
+  // a stored packet without a Master ID cannot be shown as that receiver's.
+  const connectedReceiver = receiverState ? receiverNumber(receiverState) : null;
+  const otherReceiver = connectedReceiver != null && point.id != null && point.masterId !== connectedReceiver;
   useEffect(() => {
     setSelected(null);
   }, [mode, point.masterId]);
   const basePresentation = useMemo(
-    () =>
-      createTrackingMapPresentation(
+    () => {
+      const base = createTrackingMapPresentation(
         point,
         route,
         positionSamples,
         { ...tracking.preferences.value, windowMinutes: 2, showTrails: false },
         now,
-      ),
-    [point, positionSamples, route, tracking.preferences.value, now],
+      );
+      // Another receiver's last position is not drawn as this one.
+      // Nor is it framed: the camera would aim at a place nothing is drawn.
+      return otherReceiver
+        ? { ...base, master: null, masterId: connectedReceiver, positions: { ...base.positions, master: null },
+          cameraPositions: [] }
+        : { ...base, masterId: connectedReceiver ?? base.masterId };
+    },
+    [point, positionSamples, route, tracking.preferences.value, now, otherReceiver, connectedReceiver],
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows.
@@ -309,7 +326,6 @@ export default function MapScreen({
     centeredFor.current = panelKey;
     setCenterOnce({ key: `panel:${panelKey}:${Date.now()}`, coordinate: panelCoordinate });
   }, [panelKey, panelCoordinate, dogPanelHeight]);
-  const receiverState = useReceiverState(active && detailSubject?.kind === 'master', readReceiverState);
   // History notices live in the history card, next to the controls that cause
   // them; the map keeps only what belongs to the map itself.
   // The card names the colours next to the eyes that control them; a banner
@@ -393,6 +409,7 @@ export default function MapScreen({
           onReceiver={onOpenReceiver}
           onCloud={onOpenCloud}
           onHeight={setStatusHeight}
+          state={receiverState}
           readState={readReceiverState}
         />
       )}
@@ -464,6 +481,7 @@ export default function MapScreen({
           onPickDog={pickDog}
           covered={sheetPanel}
           recording={!!livePhone?.running}
+          receiver={{ number: connectedReceiver, other: otherReceiver }}
           onOpenReceiver={openMaster}
         />
       )}
@@ -505,6 +523,7 @@ export default function MapScreen({
           topInset={controlsTop}
           bottomInset={sheetPanel ? bottomInset : bottomInset + SHEET_COLLAPSED_HEIGHT}
           receiverState={receiverState}
+          receiverId={{ number: connectedReceiver, other: otherReceiver }}
           onPreferences={tracking.saveTrackingPreferences}
           onOpenReceiver={() => { closeDetails(); onOpenReceiver?.(); }}
           onPanelHeight={setDogPanelHeight}

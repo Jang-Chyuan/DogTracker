@@ -155,7 +155,7 @@ test('the header says the phone is recording, and how old its own position is', 
   );
   let renderer;
   await act(async () => { renderer = Renderer.create(view({ recording: true, phone: null })); });
-  expect(label()).toContain('手機記錄中');
+  expect(label()).toContain('手機位置記錄中');
   expect(label()).toContain('手機無定位，無法顯示距離');
   // An older phone fix still gives a direction; the card says its age once.
   await act(async () => renderer.update(view({
@@ -172,5 +172,18 @@ test('the header says the phone is recording, and how old its own position is', 
   await act(async () => renderer.root.findAll(node => node.props.testID === 'receiver-row'
     && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(open).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});
+
+test('a packet from another receiver says nothing about the one this phone is set up for', async () => {
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<TrackingSheet tracking={tracking} dogs={[cloudDog(4, 10000)]} now={NOW}
+      bottomInset={90} receiver={{ number: 7, other: true }} onOpenReceiver={() => {}} />);
+  });
+  const row = renderer.root.findAll(node => node.props.testID === 'receiver-row'
+    && typeof node.props.onPress === 'function')[0];
+  // Named after the connected receiver, without the old one's battery.
+  expect(row.props.accessibilityLabel).toBe('接收器 7，尚無資料');
   await act(async () => renderer.unmount());
 });

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import MapView, {
   Circle,
@@ -16,6 +17,7 @@ import MapView, {
 import { floatingShadow, mapColors as colors } from './MapTheme';
 import { describeDogSource } from './DogMerge';
 import Glyph from './Glyph';
+import ReceiverIcon from './ReceiverIcon';
 import { colors as tokens } from '../theme/tokens';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import TrackingAvatar from './TrackingAvatar';
@@ -33,6 +35,23 @@ const EMPTY_REGION = {
   latitudeDelta: 4,
   longitudeDelta: 4,
 };
+// Dog labels hang to the right of their marker (DogNameMarker), so a fit
+// keeps room on the right — as much as the longest label on screen needs, at
+// most the 200 dp a 20-character name takes. Wide (Latin) characters count
+// about half a CJK one at 16 sp; the label caps font scaling at 1.2.
+export function labelRoom(labels, fontScale = 1) {
+  const width = text => [...(text || '')].reduce((sum, ch) => sum + (ch.charCodeAt(0) < 0x2e80 ? 9.5 : 16), 0);
+  const widest = Math.max(0, ...labels.map(width));
+  return Math.round(Math.min(200, Math.max(48, widest * Math.min(fontScale, 1.2) + 24)));
+}
+
+// Room below and to the left of a fit: half the receiver icon and its number
+// tag, so a receiver at the edge of the work area is drawn whole.
+const EDGE = 48;
+
+// 54 dp slot, 52 dp icon centred in it, circle 82% of the icon from its corner.
+const RECEIVER_ANCHOR = { x: (1 + 52 * 0.41) / 54, y: (1 + 52 * 0.41) / 54 };
+
 function DeviceMarker({ source, role, position, onPress, identifier, title, description, number }) {
   // An aged dog fix is drawn amber (2–10 min) or grey (older) with its age in
   // words, so it reads as "last seen here", not as where the dog is now; no
@@ -59,7 +78,9 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       ref={marker}
       identifier={identifier || source + '-' + role}
       coordinate={position.coordinate}
-      anchor={role === 'slave' ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
+      // The receiver's circle sits up and left of its number tag; the anchor
+      // is the circle's centre, not the slot's.
+      anchor={role === 'slave' ? DOG_NAME_ANCHOR : role === 'master' ? RECEIVER_ANCHOR : { x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       zIndex={role === 'slave' ? 20 : 10}
       // No title or description: those draw the SDK's own bubble, and a tap
@@ -72,15 +93,14 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
         collapsable={false}
         accessible
         accessibilityLabel={`${name}。${status ? status + '。' : ''}${detail}`}
-        style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker,
+        style={[styles.marker, role === 'master' && styles.receiverSlot, focused && styles.focusedMarker, faded && styles.fadedMarker,
           aged === 'recent' && styles.recentMarker, aged === 'old' && styles.oldMarker]}
         onLayout={() => marker.current?.redraw()}
       >
         {role === 'master' ? (
-          // A rounded square, so the receiver never reads as one more dog.
-          <View style={styles.receiverMarker}>
-            <Text style={styles.receiverNumber} allowFontScaling={false}>{number ?? ''}</Text>
-          </View>
+          // Round like the dogs, with a receiver drawn inside and its number
+          // on a tag, so it never reads as one more dog.
+          <ReceiverIcon number={number} size={52} />
         ) : (
           <TrackingAvatar role={role} size={40} tint={aged ? AGED_TINT[aged] : undefined}
             outline={aged === 'old' ? '#6B7470' : undefined} />
@@ -178,6 +198,15 @@ function GoogleTrackingMapRenderer({
   // onMapReady can precede native layout under Fabric. onMapLoaded is the first
   // callback after which bounds-based camera commands are safe on Android.
   const usable = ready && loaded;
+  const { fontScale } = useWindowDimensions();
+  const labelRight = labelRoom([
+    ...(presentation.dogs || []).flatMap(dog => [
+      dogHistoryLabel(dog.slaveId, presentation.dogAliases),
+      dog.freshness === 'recent' || dog.freshness === 'old' ? dog.freshnessLabel : null,
+    ]),
+    // History draws its own labelled tracks.
+    ...(presentation.historyTracks || []).map(track => track.name),
+  ], fontScale);
   useEffect(() => {
     onSnapshotReady?.(usable ? () => mapRef.current.takeSnapshot({ format: 'png', result: 'file' }) : null);
     return () => onSnapshotReady?.(null);
@@ -294,11 +323,11 @@ function GoogleTrackingMapRenderer({
     // so a dog framed against the right edge would have its label cut off.
     mapRef.current?.fitToCoordinates(positions, {
       animated: false,
-      edgePadding: { top: 72, right: 200, bottom: 24, left: 32 },
+      edgePadding: { top: 72, right: labelRight, bottom: EDGE, left: EDGE },
     });
     sourceToFit.current = null;
     if (needsFirstPositionFit) setNeedsFirstPositionFit(false);
-  }, [usable, positions, source, needsFirstPositionFit]);
+  }, [usable, positions, source, needsFirstPositionFit, labelRight]);
   return (
     <View style={StyleSheet.absoluteFill} testID="tracking-map-container"
       onLayout={event => setCursorLayout(event.nativeEvent.layout)}>
@@ -521,7 +550,7 @@ function GoogleTrackingMapRenderer({
               }
               mapRef.current?.fitToCoordinates(points, {
                 animated: true,
-                edgePadding: { top: 72, right: 200, bottom: 24, left: 32 },
+                edgePadding: { top: 72, right: labelRight, bottom: EDGE, left: EDGE },
               });
             }}
           >
@@ -589,17 +618,13 @@ const styles = StyleSheet.create({
     ...floatingShadow,
   },
   fadedMarker: { opacity: 0.45 },
+  receiverSlot: { width: 54, height: 54 },
   mapButtons: { position: 'absolute', right: 12, gap: 8 },
   roundButton: {
     width: 48, height: 48, borderRadius: 24, backgroundColor: tokens.surface,
     alignItems: 'center', justifyContent: 'center', ...floatingShadow,
   },
   roundPressed: { transform: [{ scale: 0.97 }] },
-  receiverMarker: {
-    width: 34, height: 34, borderRadius: 9, backgroundColor: tokens.receiver,
-    borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
-  },
-  receiverNumber: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   recentMarker: { borderRadius: 23, borderWidth: 2, borderStyle: 'dashed', borderColor: '#9A5B00' },
   oldMarker: { borderRadius: 23, borderWidth: 2, borderColor: '#6B7470' },
   phoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: '#FFFFFF' },

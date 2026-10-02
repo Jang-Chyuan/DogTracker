@@ -472,3 +472,14 @@ test('phone blue dot requires permission, ready map and foreground; never adds p
   );
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(false);
 });
+
+test('framing keeps only as much room on the right as the longest dog label needs', () => {
+  const { labelRoom } = require('../src/map/GoogleTrackingMap');
+  // Short names need little; a 20-character name gets the full 200 dp.
+  expect(labelRoom(['狗 4', '狗 6'])).toBeLessThan(80);
+  expect(labelRoom(['最後位置・4 分鐘前'])).toBeGreaterThan(labelRoom(['狗 4']));
+  expect(labelRoom(['一二三四五六七八九十一二三四五六七八九十'])).toBe(200);
+  expect(labelRoom([])).toBe(48);
+  // Large system fonts widen the label, capped like the label itself.
+  expect(labelRoom(['狗 4'], 2)).toBe(labelRoom(['狗 4'], 1.2));
+});

@@ -9,6 +9,8 @@ import { phoneNote } from './DogReadout';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 import { colors as tokens } from '../theme/tokens';
 import Glyph from './Glyph';
+import ReceiverIcon from './ReceiverIcon';
+import { ROW_RING } from './SheetGeometry';
 
 export const windowLabel = minutes =>
   (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小時`);
@@ -18,15 +20,17 @@ export { formatTime, positionLabel };
 
 // The handler's own receiver, in one line: which one, its battery, and only
 // if something is wrong, what.
-function ReceiverRow({ point, position, onPress }) {
+function ReceiverRow({ point, position, onPress, number, other }) {
   const valid = point.masterBatteryValid && point.masterBatteryPercentage !== null;
-  const problem = point.id === null ? '尚無資料'
+  // The newest packet is from a receiver used before this one.
+  const problem = point.id === null || other ? '尚無資料'
     : !position ? '無定位'
     // A fix that stopped updating is a problem too, not only one kept from an
     // older packet.
     : position.retained || position.stale ? `最後位置 ${formatTime(position.receivedAt)}` : '';
-  const battery = valid ? `${point.masterBatteryPercentage}%` : point.id === null ? '' : '電量未回報';
-  const name = point.masterId != null ? `接收器 ${point.masterId}` : '接收器';
+  const battery = other || point.id === null ? '' : valid ? `${point.masterBatteryPercentage}%` : '電量未回報';
+  const id = number ?? point.masterId;
+  const name = id != null ? `接收器 ${id}` : '接收器';
   return (
     <Pressable
       style={({ pressed }) => [styles.receiverRow, pressed && styles.pressed]}
@@ -34,16 +38,14 @@ function ReceiverRow({ point, position, onPress }) {
       testID="receiver-row"
       accessibilityRole="button"
       accessibilityHint="打開接收器面板"
-      accessibilityLabel={[name, valid ? `電量 ${battery}` : battery, problem].filter(Boolean).join('，')}>
+      accessibilityLabel={[name, battery && (valid && !other ? `電量 ${battery}` : battery), problem].filter(Boolean).join('，')}>
       <View style={styles.receiverInfo}>
-      {/* The same numbered square as on the map. */}
-      <View style={styles.receiverBadge}>
-        <Text style={styles.receiverBadgeText} allowFontScaling={false}>{point.masterId ?? ''}</Text>
-      </View>
+      {/* The same icon as on the map. */}
+      <ReceiverIcon number={id} ring={ROW_RING} />
       <View style={styles.positionText}>
         <Text style={styles.receiverName}>{name}</Text>
         <View style={styles.receiverLine}>
-          {valid && <Glyph name="battery" color={tokens.textMuted} level={point.masterBatteryPercentage} />}
+          {valid && !other && <Glyph name="battery" color={tokens.textMuted} level={point.masterBatteryPercentage} />}
           <Text style={styles.receiverSub}>
             {[battery, problem].filter(Boolean).join('・')}
           </Text>
@@ -82,6 +84,7 @@ export default function TrackingSheet({
   covered,
   recording,
   onOpenReceiver,
+  receiver,
 }) {
   const point = tracking.point;
   const { preferences } = tracking;
@@ -125,7 +128,7 @@ export default function TrackingSheet({
       title={listed.length ? `${listed.length} 隻狗` : '狗'}
       summary={summary}
       // The phone's own track is being kept for history (design 1).
-      badge={recording ? '手機記錄中' : ''}
+      badge={recording ? '手機位置記錄中' : ''}
       strip={strip}
       bottomInset={bottomInset}
       topInset={topInset}
@@ -156,7 +159,8 @@ export default function TrackingSheet({
             list's top, so nothing may sit above it. */}
         {!tracking.historyLoaded && <Text style={styles.hint}>正在載入本機路徑…</Text>}
         {point.id === null && <Text style={styles.hint}>等待接收器資料</Text>}
-        <ReceiverRow point={point} position={master} onPress={onOpenReceiver} />
+        <ReceiverRow point={point} position={master} onPress={onOpenReceiver}
+          number={receiver?.number} other={receiver?.other} />
         {showRouteControls ? <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>移動路徑</Text>
@@ -276,18 +280,15 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   positionText: { flex: 1 },
+  // Lined up with the dog rows above: same height, inset, divider and gap.
   receiverRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60,
-    borderTopWidth: 1, borderTopColor: tokens.line, paddingTop: 8, marginTop: 4,
+    paddingVertical: 8, paddingHorizontal: 8, marginHorizontal: -8,
+    borderTopWidth: 1, borderTopColor: tokens.line,
   },
   receiverInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   chevron: { fontSize: 22, color: tokens.textMuted, paddingHorizontal: 8 },
   pressed: { opacity: 0.85 },
-  receiverBadge: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: tokens.receiver,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  receiverBadgeText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   receiverName: { fontSize: 16, fontWeight: '700', color: tokens.text },
   receiverLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   receiverSub: { fontSize: 13, color: tokens.textMuted, flexShrink: 1 },

@@ -175,7 +175,7 @@ function TrackerApp() {
         <MapScreen
           history={history}
           historyDownload={historyDownload}
-          tracking={tracking}
+          tracking={fixture?.point ? { ...tracking, point: fixture.point, positionSamples: [] } : tracking}
           phone={phone}
           cloudDogs={fixture ? fixture.cloudDogs : cloudDogs}
           cloudOwner={cloudSync.ownerId}
