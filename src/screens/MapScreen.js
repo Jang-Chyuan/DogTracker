@@ -58,6 +58,7 @@ export default function MapScreen({
   onOpenReceiver,
   onOpenCloud,
   readReceiverState,
+  fixtureName,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
@@ -253,7 +254,8 @@ export default function MapScreen({
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
         provider={mapProvider}
-        source={historical ? 'history:' + history.key : mode}
+        // A debug screen fixture counts as a new source, so the map frames its dogs.
+        source={historical ? 'history:' + history.key : fixtureName ? `${mode}:${fixtureName}` : mode}
         presentation={presentation}
         topInset={controlsTop}
         bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
