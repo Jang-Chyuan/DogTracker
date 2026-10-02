@@ -378,7 +378,7 @@ class BleForegroundService : Service() {
   }
 
   private fun notification(status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-    .setContentTitle("DogTracker").setContentText(status).setSmallIcon(R.mipmap.ic_launcher)
+    .setContentTitle("DogTracker").setContentText(status).setSmallIcon(R.drawable.ic_stat_dog)
     .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     .setOngoing(true).setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()

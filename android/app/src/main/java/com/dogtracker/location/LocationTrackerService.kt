@@ -86,7 +86,7 @@ class LocationTrackerService : Service(), LocationListener {
     try {
       val launch = PendingIntent.getActivity(this, ID, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-      startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.mipmap.ic_launcher)
+      startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_dog)
         .setContentTitle("DogTracker GPS Timeline").setContentText("約每秒 GPS 定位；> 20 km/h 時每秒保存，精度需 < 50 m")
         .setContentIntent(launch).setOngoing(true).addAction(0, "停止記錄", stop).build())
       val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
