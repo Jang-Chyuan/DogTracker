@@ -59,6 +59,10 @@ export default function TrackingSheet({
   bottomInset,
   topInset = 100,
   onHeight,
+  now = Date.now(),
+  phone,
+  mapHeading,
+  onPickDog,
 }) {
   const point = tracking.point;
   const summary = sheetSummary(tracking);
@@ -89,9 +93,6 @@ export default function TrackingSheet({
       topInset={topInset}
       onHeight={onHeight}
     >
-        <Text style={styles.hint}>
-          資料庫最後更新：{formatTime(point.receivedAt)}
-        </Text>
         {!tracking.historyLoaded && (
           <Text style={styles.hint}>正在載入本機路徑…</Text>
         )}
@@ -102,26 +103,22 @@ export default function TrackingSheet({
         )}
         <DogList
           dogs={dogs}
+          now={now}
+          phone={phone}
+          mapHeading={mapHeading}
           dogAliases={dogAliases}
           selectedSlaveId={preferences.value.focusSlaveId}
           hiddenSlaveIds={preferences.value.hiddenSlaveIds}
-          disabled={disabled}
-          onSelect={focusSlaveId =>
-            tracking.saveTrackingPreferences({ focusSlaveId })
-          }
-          onToggle={slaveId =>
+          onPick={onPickDog}
+          onShow={slaveId =>
             tracking.saveTrackingPreferences({
-              hiddenSlaveIds: preferences.value.hiddenSlaveIds.includes(slaveId)
-                ? preferences.value.hiddenSlaveIds.filter(id => id !== slaveId)
-                : [...preferences.value.hiddenSlaveIds, slaveId],
+              hiddenSlaveIds: preferences.value.hiddenSlaveIds.filter(id => id !== slaveId),
               // Showing a dog again must also bring back every dog marker,
-              // otherwise its eye would say visible while nothing is drawn.
+              // otherwise the dog would be listed as shown while nothing is drawn.
               ...(preferences.value.showSlaveMarker ? {} : { showSlaveMarker: true }),
             })
           }
           control={dogVisibility}
-          linkNote={'同時顯示 BLE 直接收到的與雲端下載的位置，每隻狗取最新的一筆；'
-            + '來源寫在各列，不想看的狗可以單獨關掉眼睛。'}
         />
         {/* Only one handler can be drawn: the cloud rows carry each dog's
             position and the id of the Master that relayed it, never that
