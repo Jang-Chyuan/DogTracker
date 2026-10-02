@@ -175,6 +175,9 @@ function TrackerApp() {
           active={showsMap}
           bottomInset={insets.bottom + NAV_HEIGHT + 20}
           mapProvider={GOOGLE_MAP_PROVIDER}
+          cloudSync={cloudSync}
+          onOpenReceiver={() => navigate('hardware', 'settings')}
+          onOpenCloud={() => navigate('cloud', 'settings')}
         />
 
 
