@@ -1,3 +1,5 @@
+import { usbPresent } from '../models/UsbPresent';
+
 function number(data, key, min, max, scale = 1) {
   const value = data[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`缺少或無效欄位：${key}`);
@@ -14,9 +16,11 @@ export function bleUploadPayload(row, phoneId) {
     if (typeof d[key] !== 'number' || !Number.isFinite(d[key]) || Math.abs(d[key]) > 300) throw new Error(`訊號欄位無效：${key}`);
     return d[key];
   };
+  const usb = usbPresent(d.usbPresent ?? d.usb_present);
   return { event_id: row.event_id, phone_id: phoneId, master_id: master, slave_id: slave,
     phone_received_at: new Date(row.received_at).toISOString(), seq: number(d, 'seq', 0, 65535),
     rssi: signal('rssi'), snr: signal('snr'), payload: {
+      ...(usb === null ? {} : { usbPresent: usb }),
       lat: number(d, 'lat', -90000000, 90000000, 1000000),
       lon: number(d, 'lon', -180000000, 180000000, 1000000),
       speed: number(d, 'speed_kmh', 0, 65535, 100), satellites: number(d, 'sat', 0, 255),

@@ -1,3 +1,4 @@
+import { usbPresent } from '../models/UsbPresent';
 import { openTrackingDatabase } from './TrackingDatabaseConnection';
 import { NativeModules, Platform } from 'react-native';
 import { bleDisplayRows } from '../ble/BleDisplayCoordinates';
@@ -76,6 +77,7 @@ export function createDogDatabase(connection) {
 
           battery_mv INTEGER,
           battery_percentage INTEGER,
+          usb_present INTEGER,
           battery_valid INTEGER NOT NULL DEFAULT 0,
 
           master_battery_mv INTEGER,
@@ -94,6 +96,13 @@ export function createDogDatabase(connection) {
           raw_payload TEXT
         )
         `);
+      }
+
+      for (const table of ['dog_status', 'supabase_dog_status']) {
+        const columns = rowsFromResult(await db.executeAsync(`PRAGMA table_info(${table})`));
+        if (!columns.some(column => column.name === 'usb_present')) {
+          await db.executeAsync(`ALTER TABLE ${table} ADD COLUMN usb_present INTEGER`);
+        }
       }
 
       await db.executeAsync(`
@@ -161,6 +170,7 @@ export function createDogDatabase(connection) {
           battery_mv,
           battery_percentage,
           battery_valid,
+          usb_present,
           master_battery_mv,
           master_battery_percentage,
           master_battery_valid,
@@ -175,7 +185,7 @@ export function createDogDatabase(connection) {
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?
         )`,
         [
           receivedAt,
@@ -194,6 +204,7 @@ export function createDogDatabase(connection) {
           status.batteryMillivolts,
           status.batteryPercentage,
           status.batteryValid ? 1 : 0,
+          usbPresent(status.usbPresent),
           status.masterBatteryMillivolts,
           status.masterBatteryPercentage,
           status.masterBatteryValid ? 1 : 0,

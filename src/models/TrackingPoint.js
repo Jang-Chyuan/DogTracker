@@ -1,3 +1,4 @@
+import { usbPresent } from './UsbPresent';
 /**
  * UI-facing tracking data read from a local tracking table.
  *
@@ -50,6 +51,7 @@ export const emptyTrackingPoint = Object.freeze({
   batteryMillivolts: null,
   batteryPercentage: null,
   batteryValid: false,
+  usbPresent: null,
   masterBatteryMillivolts: null,
   masterBatteryPercentage: null,
   masterBatteryValid: false,
@@ -89,6 +91,7 @@ export function mapDogStatusRow(row) {
     activityValid: value.activity_valid === 1 || value.activity_valid === true,
     batteryMillivolts: value.battery_mv ?? null,
     batteryPercentage: value.battery_percentage ?? null,
+    usbPresent: usbPresent(value.usb_present ?? value.usbPresent),
     batteryValid: value.battery_valid === 1 || value.battery_valid === true,
     masterBatteryMillivolts: value.master_battery_mv ?? null,
     masterBatteryPercentage: value.master_battery_percentage ?? null,

@@ -1,6 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { TextInput } from 'react-native';
+import { Text, TextInput } from 'react-native';
 import CloudScreen, { formatRaw } from '../src/cloud/CloudScreen';
 
 const RAW = JSON.stringify({
@@ -10,7 +10,7 @@ const RAW = JSON.stringify({
 const row = (id, extra = {}) => ({
   id, received_at: Date.parse('2026-09-18T12:00:00Z'), master_id: 7, slave_id: 4,
   slave_lat: 25, slave_lon: 121, speed_kmh: 3, battery_percentage: 80,
-  raw_payload: RAW, ...extra,
+  raw_payload: RAW, usb_present: 1, ...extra,
 });
 
 let renderer;
@@ -72,6 +72,8 @@ test('tapping a row opens its original cloud JSON, and tapping again closes it',
   const open = id => renderer.root.findAll(
     node => node.props.accessibilityLabel === `第 ${id} 筆原始資料`, { deep: false })[0];
   expect(open(1)).toBeDefined();
+  expect(text()).toContain('usb_present');
+  expect(open(1).findAllByType(Text).map(node => node.props.children)).toContain('1');
   expect(text()).not.toContain('原始雲端紀錄');
   await act(async () => open(1).props.onPress());
   expect(text()).toContain('原始雲端紀錄');

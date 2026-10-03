@@ -1,3 +1,4 @@
+import { usbPresent } from './UsbPresent';
 export const emptyDogStatus = {
   source: null,
   masterId: null,
@@ -16,6 +17,7 @@ export const emptyDogStatus = {
   batteryMillivolts: null,
   batteryPercentage: null,
   batteryValid: false,
+  usbPresent: null,
   masterBatteryMillivolts: null,
   masterBatteryPercentage: null,
   masterBatteryValid: false,
@@ -47,6 +49,7 @@ export function toDogStatus(data) {
     activityValid: Boolean(value.activity_valid ?? value.av),
     batteryMillivolts: value.battery_mv ?? value.bmv ?? null,
     batteryPercentage: value.battery_pct ?? value.bp ?? null,
+    usbPresent: usbPresent(value.usb_present ?? value.usbPresent),
     batteryValid: Boolean(value.battery_valid ?? value.bv),
     masterBatteryMillivolts: value.master_battery_mv ?? value.mbmv ?? null,
     masterBatteryPercentage: value.master_battery_pct ?? value.mbp ?? null,

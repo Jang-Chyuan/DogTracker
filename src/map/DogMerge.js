@@ -83,12 +83,23 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
     });
   }
   const packets = new Map();
+  const environments = new Map();
+  for (const row of packetRows) {
+    const result = row.environment;
+    const old = environments.get(row.slave_id);
+    if (result && (!old || result.observedAt > old.observedAt
+      || (result.observedAt === old.observedAt && row.source === 'ble'))) {
+      environments.set(row.slave_id, result);
+    }
+  }
   const observations = [...cloudRows, ...packetRows];
   if (point?.slaveId != null) observations.push({
     slave_id: point.slaveId, master_id: point.masterId, source: 'ble',
     received_at: point.receivedAt, slave_lat: point.slaveLat, slave_lon: point.slaveLon,
     battery_percentage: point.batteryPercentage, battery_valid: point.batteryValid,
     speed_kmh: point.speedKmh, distance_meters: point.distanceMeters,
+    satellites: point.satellites, hdop: point.hdop, rssi: point.rssi, snr: point.snr,
+    usb_present: point.usbPresent,
   });
   for (const row of observations) {
     const time = row.track_at ?? row.received_at;
@@ -103,7 +114,7 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       });
     }
     const old = packets.get(row.slave_id);
-    if (!old || time > old.time || (time === old.time && source === 'ble')) {
+    if (!old || time > old.time || (time === old.time && source === 'ble' && !old.row.environment)) {
       packets.set(row.slave_id, { row, time, position, source });
     }
     // Explicit status rows can represent a dog that has never obtained a fix.
@@ -123,6 +134,7 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const communicating = now - lastPacketAt <= (windowMs ?? 120000);
       const noFix = packet && !packet.position;
       return { ...dog, stale, lastPacketAt, lastPositionAt: dog.receivedAt,
+        environment: environments.get(dog.slaveId) ?? null,
         retained: dog.retained || !!noFix,
         communicationStatus: !communicating ? '未收到新資料'
           : noFix ? '有通訊／GPS 未定位' : '有通訊／定位正常',

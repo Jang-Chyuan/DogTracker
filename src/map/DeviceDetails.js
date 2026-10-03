@@ -13,6 +13,7 @@ import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import { Position } from './TrackingSheet';
 import ActivityHistoryChart from './ActivityHistoryChart';
+import { environmentLabel, environmentEvidence } from '../ml/Environment';
 
 function battery(valid, percentage) {
   return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
@@ -101,6 +102,18 @@ export default function DeviceDetails({
           ) : dog ? (
             <>
               <Text style={styles.hint}>來源：{describeDogSource(dog)}</Text>
+              <Text style={styles.label}>目前環境：{environmentLabel(dog.environment)}</Text>
+              {!!dog.environment && (
+                <>
+                  <Text style={styles.hint}>{environmentEvidence(dog.environment)}</Text>
+                  <Text style={styles.hint}>
+                    判斷區間：{formatTime(dog.environment.windowStart)} 至 {formatTime(dog.environment.windowStart + 60000)}
+                    {' · '}{dog.environment.samples} 筆取樣
+                  </Text>
+                  <Text style={styles.hint}>資料時間：{formatTime(dog.environment.observedAt)}</Text>
+                  <Text style={styles.hint}>使用已結束的一分鐘內收到的資料；缺少封包仍可能影響判斷。</Text>
+                </>
+              )}
               {/* No coordinates: the marker this panel belongs to is already
                   on the map, and six decimals tell nobody anything. */}
               <Text style={styles.hint}>位置時間：{formatTime(dog.receivedAt)}</Text>

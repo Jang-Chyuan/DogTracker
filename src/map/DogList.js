@@ -7,6 +7,7 @@ import Stat from './Stat';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
+import { environmentLabel } from '../ml/Environment';
 
 const percent = value => (Number.isFinite(value) ? `${value}%` : '—');
 const speed = value => (Number.isFinite(value) ? `${value} km/h` : '— km/h');
@@ -62,6 +63,7 @@ export default function DogList({
               <Text style={styles.detail}>最後收到封包：{formatTime(dog.lastPacketAt ?? dog.receivedAt)}</Text>
               <Text style={styles.detail}>最後有效定位：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
               {!!dog.communicationStatus && <Text style={styles.detail}>{dog.communicationStatus}</Text>}
+              <Text style={styles.detail}>目前環境：{environmentLabel(dog.environment)}</Text>
               <View style={styles.stats}>
                 <Stat icon="speed" label="速度" value={speed(dog.speedKmh)} />
                 <Stat icon="battery" label="電量" value={percent(dog.batteryPercentage)}

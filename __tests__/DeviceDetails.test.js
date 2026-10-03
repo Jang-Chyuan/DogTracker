@@ -57,6 +57,9 @@ test('a dog and the handler answer a tap with the same panel', async () => {
     slaveId: 7, masterId: 3, source: 'ble', receivedAt: trackingPoint.receivedAt,
     coordinate: { latitude: 25.033, longitude: 121.5654 },
     distanceMeters: 82.4, retained: false, stale: false,
+    environment: { environment: 'indoor', source: 'usb_rule', observedAt: Date.now(),
+      windowStart: Math.floor(Date.now() / 60000) * 60000 - 60000, samples: 6,
+      probabilities: { indoor: 0.8, window: 0.15, outdoor: 0.05 } },
   };
   const view = subject => (
     <DeviceDetails tracking={{ point: trackingPoint }} subject={subject}
@@ -73,6 +76,10 @@ test('a dog and the handler answer a tap with the same panel', async () => {
   };
   const text = () => flatten(renderer.toJSON());
   expect(text()).toContain('狗 7');
+  expect(text()).toContain('目前環境：室內（USB 已連接）');
+  expect(text()).toContain('模型機率：室內 80% · 窗邊 15% · 室外 5%');
+  expect(text()).toContain('6 筆取樣');
+  expect(text()).toContain('判斷區間：');
   // The hardware and LoRa readings describe this pair, which is why they live
   // here and not on a card that can hold several dogs.
   expect(text()).toContain('82.4 m');
