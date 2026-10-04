@@ -26,6 +26,7 @@ import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
 import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLocationRecording';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
+import { useFixedLocations } from './src/cloud/useFixedLocations';
 import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
@@ -78,8 +79,9 @@ function TrackerApp() {
   const isHistory = route.name === 'history';
   // Both tabs draw on the same persistent map layer; only one of them is live.
   const showsMap = isMap || isHistory;
+  const fixedLocations = useFixedLocations(cloudSync.ownerId, tracking.foreground);
   const history = useMapHistory(tracking.historyDatabase, tracking.ready.real,
-    tracking.foreground && isHistory, cloudSync.ownerId);
+    tracking.foreground && isHistory, cloudSync.ownerId, fixedLocations);
   // The history card downloads a cloud range it does not hold, through the same
   // writer and the same exclusive slot as the cloud page.
   const historyDownload = useHistoryDownload({
@@ -181,6 +183,7 @@ function TrackerApp() {
         ]}
       >
         <MapScreen
+          fixedLocations={fixedLocations}
           history={history}
           historyDownload={historyDownload}
           tracking={tracking}

@@ -1,4 +1,5 @@
 import { coordinate as toCoordinate } from '../tracking/RouteSamples';
+import { fixedPosition } from './FixedPosition';
 
 // A slave_id identifies the same dog across the whole team, whichever Master
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
@@ -59,7 +60,7 @@ function bleCandidate(point, samples) {
  * and dogs that are not wanted can be hidden one by one.
  */
 export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
-  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null }) {
+  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, fixedLocations = [] }) {
   const local = bleCandidate(point, samples);
   const dogs = new Map();
   if (local) dogs.set(local.slaveId, local);
@@ -130,20 +131,26 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
     .map(dog => {
       const packet = packets.get(dog.slaveId);
       const lastPacketAt = packet?.time ?? dog.receivedAt;
-      const stale = !dog.coordinate || (windowMs != null && now - dog.receivedAt > windowMs);
       const communicating = now - lastPacketAt <= (windowMs ?? 120000);
+      const environment = environments.get(dog.slaveId) ?? null;
+      const fixed = communicating ? fixedPosition(fixedLocations.find(row => row.slave_id === dog.slaveId),
+        packet?.row.usb_present, environment, now) : null;
+      const positionAt = fixed ? lastPacketAt : dog.receivedAt;
+      const stale = !(fixed || dog.coordinate) || (windowMs != null && now - positionAt > windowMs);
       const noFix = packet && !packet.position;
-      return { ...dog, stale, lastPacketAt, lastPositionAt: dog.receivedAt,
-        environment: environments.get(dog.slaveId) ?? null,
-        retained: dog.retained || !!noFix,
+      return { ...dog, ...(fixed ? { coordinate: { latitude: fixed.latitude, longitude: fixed.longitude },
+        fixedReason: fixed.fixedReason, fixedName: fixed.fixedName, receivedAt: positionAt } : {}),
+        stale, lastPacketAt, lastPositionAt: positionAt,
+        environment,
+        retained: fixed ? false : dog.retained || !!noFix,
         communicationStatus: !communicating ? '未收到新資料'
           : noFix ? '有通訊／GPS 未定位' : '有通訊／定位正常',
         batteryPercentage: packet
           ? (packet.row.battery_valid !== 0 && packet.row.battery_valid !== false
             && Number.isFinite(packet.row.battery_percentage) ? packet.row.battery_percentage : null)
           : dog.batteryPercentage,
-        speedKmh: noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
-        distanceMeters: stale || noFix || packet?.source !== 'ble' ? null
+        speedKmh: fixed || noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
+        distanceMeters: fixed || stale || noFix || packet?.source !== 'ble' ? null
           : packet.row.distance_meters ?? null,
       };
     })
@@ -152,6 +159,7 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
 }
 
 export function describeDogSource(dog) {
+  if (dog.fixedReason) return `${dog.fixedName}・設定位置・${dog.fixedReason}`;
   if (dog.source === 'ble') {
     return dog.retained ? 'BLE・最後有效位置，非最新定位' : 'BLE';
   }

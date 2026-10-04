@@ -60,6 +60,7 @@ export default function TrackingSheet({
   bottomInset,
   topInset = 100,
   onHeight,
+  onDogDetails,
 }) {
   const point = tracking.point;
   const summary = sheetSummary(tracking);
@@ -108,6 +109,7 @@ export default function TrackingSheet({
         {showDogList ? (
           <DogList
             dogs={dogs}
+            onDetails={onDogDetails}
             dogAliases={dogAliases}
             selectedSlaveId={preferences.value.focusSlaveId}
             hiddenSlaveIds={preferences.value.hiddenSlaveIds}

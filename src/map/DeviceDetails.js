@@ -13,6 +13,7 @@ import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import { Position } from './TrackingSheet';
 import ActivityHistoryChart from './ActivityHistoryChart';
+import FixedLocationForm from './FixedLocationForm';
 import { environmentLabel, environmentEvidence } from '../ml/Environment';
 
 function battery(valid, percentage) {
@@ -84,9 +85,15 @@ export default function DeviceDetails({
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content}>
+          {tracking.mode === 'real' && dog && (
+            <FixedLocationForm slaveId={slaveId} masterId={dog.masterId} owner={activityOwner} />
+          )}
           {track ? (
             <>
               <Text style={styles.hint}>{track.sourceLabel}</Text>
+              {!!track.latest?.fixedReason && <Text style={styles.label}>
+                設定位置：{track.latest.fixedName} · {track.latest.fixedReason}
+              </Text>}
               <Text style={styles.hint}>
                 該時刻位置：{formatTime(track.latest?.time)}
               </Text>
