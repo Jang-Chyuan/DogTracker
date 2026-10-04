@@ -3,7 +3,9 @@ import { predictEnvironment } from '../ml/Environment';
 
 export function fixedPosition(setting, usb, environment, time) {
   if (!setting?.enabled || !coordinate(setting.latitude, setting.longitude)) return null;
-  const reason = usb === 1 || usb === true ? '充電（USB 已連接）'
+  const charging = usb === 1 || usb === true
+    || (usb !== 0 && usb !== false && environment?.source === 'usb_rule');
+  const reason = charging ? '充電（USB 已連接）'
     : environment && time - environment.observedAt >= 0 && time - environment.observedAt <= 120000
       ? { indoor: '室內', window: '窗邊' }[environment.environment] : null;
   return reason ? { latitude: setting.latitude, longitude: setting.longitude,

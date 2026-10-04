@@ -6,6 +6,7 @@ import { fixedPosition } from './FixedPosition';
 // per dog and takes the newest row of all sources.
 export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const MAX_DOGS = 20;
+export const LIVE_PACKET_WINDOW_MS = 3 * 60000;
 
 // A collar without a GPS fix reports 0,0 (seen on hardware 2026-09-18, with
 // battery and speed present). Those are valid numbers, so without this check a
@@ -131,12 +132,14 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
     .map(dog => {
       const packet = packets.get(dog.slaveId);
       const lastPacketAt = packet?.time ?? dog.receivedAt;
-      const communicating = now - lastPacketAt <= (windowMs ?? 120000);
+      const communicating = now - lastPacketAt <= (windowMs ?? LIVE_PACKET_WINDOW_MS);
       const environment = environments.get(dog.slaveId) ?? null;
-      const fixed = communicating ? fixedPosition(fixedLocations.find(row => row.slave_id === dog.slaveId),
-        packet?.row.usb_present, environment, now) : null;
+      const candidate = fixedPosition(fixedLocations.find(row => row.slave_id === dog.slaveId),
+        packet?.row.usb_present, environment, now);
+      const charging = candidate?.fixedReason === '充電（USB 已連接）';
+      const fixed = communicating || charging ? candidate : null;
       const positionAt = fixed ? lastPacketAt : dog.receivedAt;
-      const stale = !(fixed || dog.coordinate) || (windowMs != null && now - positionAt > windowMs);
+      const stale = !(fixed || dog.coordinate) || (!communicating && !charging);
       const noFix = packet && !packet.position;
       return { ...dog, ...(fixed ? { coordinate: { latitude: fixed.latitude, longitude: fixed.longitude },
         fixedReason: fixed.fixedReason, fixedName: fixed.fixedName, receivedAt: positionAt } : {}),

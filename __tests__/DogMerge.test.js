@@ -8,18 +8,24 @@ const cloudRow = (slaveId, receivedAt, masterId = 5) => ({
 });
 const merge = extra => mergeDogMarkers({ point: trackingPoint, now: NOW, ...extra });
 
-test('no-fix packets update battery without refreshing position, then a fix restores the marker', () => {
+test('fresh no-fix packets keep the last position visible without changing its timestamp', () => {
   const old = cloudRow(4, NOW - 121000);
   const packet = { ...cloudRow(4, NOW), slave_lat: 0, slave_lon: 0,
     battery_percentage: 55, battery_valid: 1, distance_meters: 999999, source: 'ble' };
   const options = { point: null, cloudRows: [old], packetRows: [packet], now: NOW, windowMs: 120000 };
   expect(mergeDogMarkers(options)[0]).toMatchObject({
-    lastPacketAt: NOW, lastPositionAt: NOW - 121000, stale: true,
+    lastPacketAt: NOW, lastPositionAt: NOW - 121000, stale: false,
     batteryPercentage: 55, distanceMeters: null, communicationStatus: '有通訊／GPS 未定位',
   });
   expect(mergeDogMarkers({ ...options, now: NOW + 121000 })[0].communicationStatus).toBe('未收到新資料');
   expect(mergeDogMarkers({ ...options, packetRows: [{ ...packet, slave_lat: 25, slave_lon: 121, distance_meters: 10 }] })[0])
     .toMatchObject({ stale: false, lastPositionAt: NOW, distanceMeters: 10, communicationStatus: '有通訊／定位正常' });
+});
+
+test('default live marker expires only after three minutes without packets', () => {
+  const options = { point: null, cloudRows: [cloudRow(104, NOW)], now: NOW + 180000 };
+  expect(mergeDogMarkers(options)[0].stale).toBe(false);
+  expect(mergeDogMarkers({ ...options, now: NOW + 180001 })[0].stale).toBe(true);
 });
 
 test('late phone uploads do not replace a more recent BLE position', () => {

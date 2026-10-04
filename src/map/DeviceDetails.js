@@ -128,7 +128,7 @@ export default function DeviceDetails({
                 <Text style={styles.warning}>最後有效位置，非最新定位</Text>
               )}
               {dog.stale && (
-                <Text style={styles.warning}>未更新／最後位置。超過 2 分鐘未更新，非目前位置</Text>
+                <Text style={styles.warning}>尚無可顯示位置，或超過 3 分鐘未收到封包</Text>
               )}
               {live || Number.isFinite(dog.distanceMeters) ? (
                 <View style={styles.stats}>

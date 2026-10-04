@@ -15,14 +15,15 @@ test('USB overrides environment; indoor and window apply; outdoor and stale resu
   expect(fixedPosition(setting, 0, { environment: 'indoor', observedAt: 0 }, now)).toBeNull();
   expect(fixedPosition({ ...setting, enabled: false }, 1, null, now)).toBeNull();
 });
-test('fresh USB no-fix dog gains a marker; stale packet and unplug restore original GPS handling', () => {
+test('charging retains a fixed marker after packet timeout; unplug restores GPS handling', () => {
   const point = { slaveId: 4, masterId: 7, slaveLat: 0, slaveLon: 0, usbPresent: 1, receivedAt: now };
   const args = { point, now, windowMs: 120000, fixedLocations: [setting] };
   const dog = mergeDogMarkers(args)[0];
   expect(dog.coordinate).toEqual({ latitude: 25, longitude: 121 });
   expect(dog.stale).toBe(false);
   expect(dog.retained).toBe(false);
-  expect(mergeDogMarkers({ ...args, now: now + 120001 })[0].fixedReason).toBeUndefined();
+  expect(mergeDogMarkers({ ...args, now: now + 180001 })[0]).toMatchObject({
+    fixedReason: '充電（USB 已連接）', stale: false, communicationStatus: '未收到新資料' });
   expect(mergeDogMarkers({ ...args, point: { ...point, usbPresent: 0 } })[0].coordinate).toBeNull();
   expect(point.slaveLat).toBe(0);
 });
@@ -36,6 +37,12 @@ test('history applies completed minute USB rule to next minute without using fut
   expect(output[2].latitude).toBe(25);
   expect(output[3].fixedReason).toBeUndefined();
   expect(points[2].latitude).toBe(26);
+});
+
+test('ML USB rule retains charging when USB is missing, but explicit unplug clears it', () => {
+  const environment = { source: 'usb_rule', environment: 'indoor', observedAt: 0 };
+  expect(fixedPosition(setting, null, environment, now).fixedReason).toContain('充電');
+  expect(fixedPosition(setting, 0, environment, now)).toBeNull();
 });
 test('history breaks segments when entering or leaving a fixed location', () => {
   const points = [{ time: 1000, latitude: 26, longitude: 122 },

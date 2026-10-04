@@ -9,7 +9,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
-import { mergeDogMarkers } from '../map/DogMerge';
+import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
@@ -93,7 +93,7 @@ export default function MapScreen({
     () => (mode === 'real'
       ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
         packetRows: cloudDogs?.packets, fixedLocations, now,
-        windowMs: 2 * 60000 })
+        windowMs: LIVE_PACKET_WINDOW_MS })
       : []),
     [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, fixedLocations, now],
   );
