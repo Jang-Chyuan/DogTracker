@@ -60,6 +60,7 @@ export default function TrackingSheet({
   bottomInset,
   topInset = 100,
   onHeight,
+  onDogDetails,
 }) {
   const point = tracking.point;
   const summary = sheetSummary(tracking);
@@ -108,6 +109,7 @@ export default function TrackingSheet({
         {showDogList ? (
           <DogList
             dogs={dogs}
+            onDetails={onDogDetails}
             dogAliases={dogAliases}
             selectedSlaveId={preferences.value.focusSlaveId}
             hiddenSlaveIds={preferences.value.hiddenSlaveIds}
@@ -218,7 +220,7 @@ export default function TrackingSheet({
             </>
           )}
         </View>
-        : <Text style={styles.hint}>狗圖示超過 2 分鐘未更新就隱藏；歷史軌跡仍保留查詢區間內的最後位置。</Text>}
+        : <Text style={styles.hint}>狗圖示超過 3 分鐘未收到封包才隱藏；充電時維持已設定的固定位置並標示通訊狀態。GPS 未定位時保留最後有效位置，歷史軌跡仍保留查詢區間內的最後位置。</Text>}
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (
           <View>

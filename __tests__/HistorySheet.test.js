@@ -89,18 +89,23 @@ test('dogs and Masters are multi-select, picked from what the phone holds', asyn
   }));
 });
 
-test('Master 9 can be selected even when the saved dog belongs only to Master 7', async () => {
+test('historical Masters remain multi-select without replacing the selected dogs', async () => {
   const value = history({ devices: [{ master: 7, slave: 4 }, { master: 9, slave: 8 }] });
   await mount(value);
   await act(async () => control('狗與 Master').props.onPress());
   expect(control('Master 9')).toBeDefined();
   await act(async () => control('Master 9').props.onPress());
-  await act(async () => control('Master 7').props.onPress());
-  expect(control('狗 8').props.accessibilityState.selected).toBe(true);
-  expect(control('狗 4').props.accessibilityState.selected).toBe(false);
-  expect(value.save).not.toHaveBeenCalled();
+  expect(control('Master 7').props.accessibilityState.selected).toBe(true);
+  expect(control('Master 9').props.accessibilityState.selected).toBe(true);
+  expect(control('狗 4').props.accessibilityState.selected).toBe(true);
+  expect(control('狗 8').props.accessibilityState.selected).toBe(false);
   await act(async () => control('套用（有未套用的變更）').props.onPress());
-  expect(value.save).toHaveBeenCalledWith(expect.objectContaining({ masters: [9], slaves: [8] }));
+  expect(value.save).toHaveBeenLastCalledWith(expect.objectContaining({ masters: [7, 9], slaves: [4] }));
+  await act(async () => control('Master 7').props.onPress());
+  expect(control('狗 4').props.accessibilityState.selected).toBe(true);
+  expect(control('狗 8').props.accessibilityState.selected).toBe(false);
+  await act(async () => control('套用（有未套用的變更）').props.onPress());
+  expect(value.save).toHaveBeenLastCalledWith(expect.objectContaining({ masters: [9], slaves: [4] }));
 });
 
 test('what is being edited drives the devices and days, before it is applied', async () => {

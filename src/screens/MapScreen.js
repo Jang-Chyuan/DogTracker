@@ -9,7 +9,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
-import { mergeDogMarkers } from '../map/DogMerge';
+import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
@@ -51,6 +51,7 @@ export default function MapScreen({
   historical = false,
   cloudDogs,
   cloudOwner,
+  fixedLocations,
   historyDownload,
 }) {
   const insets = useSafeAreaInsets();
@@ -91,10 +92,10 @@ export default function MapScreen({
   const dogs = useMemo(
     () => (mode === 'real'
       ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
-        packetRows: cloudDogs?.packets, now,
-        windowMs: 2 * 60000 })
+        packetRows: cloudDogs?.packets, fixedLocations, now,
+        windowMs: LIVE_PACKET_WINDOW_MS })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, now],
+    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, fixedLocations, now],
   );
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.
@@ -295,6 +296,7 @@ export default function MapScreen({
         />
       ) : (
         <TrackingSheet
+          onDogDetails={openDog}
           showRouteControls={false}
           tracking={tracking}
           master={master}

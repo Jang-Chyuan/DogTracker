@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { expireHistory, HISTORY_DEFAULTS } from './HistoryDatabase';
 import { listCloudDays, mergeDays } from './CloudDays';
 import { getCloudClient } from '../cloud/CloudClient';
+import { EMPTY_FIXED_LOCATIONS } from '../cloud/useFixedLocations';
 
 /** `active` is true while the history tab is the visible screen. */
-export function useMapHistory(database, ready, active, owner) {
+export function useMapHistory(database, ready, active, owner, fixedLocations = EMPTY_FIXED_LOCATIONS) {
   const db = useRef(null);
   const saving = useRef(false);
   const lastRead = useRef(null);
@@ -26,7 +27,7 @@ export function useMapHistory(database, ready, active, owner) {
   const [daysWanted, setDaysWanted] = useState(false);
   const [phoneRecorded, setPhoneRecorded] = useState(null);
   const [clock, setClock] = useState(Date.now);
-  const key = JSON.stringify(preferences) + ':' + (owner || '');
+  const key = JSON.stringify(preferences) + ':' + (owner || '') + ':' + JSON.stringify(fixedLocations);
   const currentKey = useRef(key);
   currentKey.current = key;
   useEffect(() => {
@@ -127,7 +128,8 @@ export function useMapHistory(database, ready, active, owner) {
     let alive = true, timer;
     async function poll() {
       try {
-        const value = await db.current.read(preferences, owner, Date.now(), () => alive);
+        const value = await db.current.read(preferences, owner, Date.now(), () => alive,
+          false, null, fixedLocations);
         if (alive) {
           lastRead.current = { key, at: Date.now() };
           setResult({ key, value }); setError('');
@@ -142,7 +144,7 @@ export function useMapHistory(database, ready, active, owner) {
     if (delay) timer = setTimeout(poll, delay);
     else poll();
     return () => { alive = false; clearTimeout(timer); };
-  }, [loaded, active, preferences, owner, key]);
+  }, [loaded, active, preferences, owner, key, fixedLocations]);
   return {
     preferences, loaded, error, busy, key, devices, days, daysLoading, daysIncomplete,
     phoneRecorded,

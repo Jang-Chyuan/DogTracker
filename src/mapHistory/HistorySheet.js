@@ -271,14 +271,7 @@ export default function HistorySheet({
                   selected={masters.includes(master)} disabled={history.busy}
                   onPress={() => {
                     const next = toggle(masters, master);
-                    const selectedMasters = next.length ? next : masterOptions;
-                    const heard = [...new Set(devices
-                      .filter(pair => selectedMasters.includes(pair.master))
-                      .map(pair => pair.slave))].sort((a, b) => a - b);
-                    const keep = slaves.filter(id => heard.includes(id));
-                    // Preserve explicit multi-dog picks while at least one
-                    // matches; replace them only when the query would be empty.
-                    patch({ masters: selectedMasters, slaves: keep.length ? slaves : heard });
+                    patch({ masters: next.length ? next : masterOptions });
                   }} />
               ))}
             </View>

@@ -27,6 +27,7 @@ class DogStatusStore private constructor(context: Context) {
     "satellites" to listOf("sat"), "hdop" to listOf("hdop", "hd"),
     "activity" to listOf("activity", "act"), "activity_valid" to listOf("activity_valid", "av"),
     "battery_mv" to listOf("battery_mv", "bmv"), "battery_percentage" to listOf("battery_pct", "bp"),
+    "usb_present" to listOf("usbPresent", "usb_present"),
     "battery_valid" to listOf("battery_valid", "bv"), "master_battery_mv" to listOf("master_battery_mv", "mbmv"),
     "master_battery_percentage" to listOf("master_battery_pct", "mbp"), "master_battery_valid" to listOf("master_battery_valid", "mbv"),
     "rssi" to listOf("rssi"), "snr" to listOf("snr"), "gps_time" to listOf("gps_time", "gt"),
@@ -56,6 +57,16 @@ class DogStatusStore private constructor(context: Context) {
     for (name in listOf("master_id", "slave_id")) {
       if (name !in columns) db.execSQL("ALTER TABLE dog_status ADD COLUMN $name INTEGER")
     }
+    for (table in listOf("dog_status", "supabase_dog_status")) {
+      val hasUsb = db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+        var found = false
+        while (cursor.moveToNext()) {
+          if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "usb_present") found = true
+        }
+        found
+      }
+      if (!hasUsb) db.execSQL("ALTER TABLE $table ADD COLUMN usb_present INTEGER")
+    }
     db.execSQL("DROP TRIGGER IF EXISTS trim_dog_status_after_insert")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_received_at ON dog_status(received_at DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)")
@@ -76,6 +87,13 @@ class DogStatusStore private constructor(context: Context) {
       for ((column, aliases) in fields) {
         val v = value(data, aliases)
         when {
+          column == "usb_present" -> {
+            when {
+              v == true || (v is Number && v.toDouble() == 1.0) -> put(column, 1)
+              v == false || (v is Number && v.toDouble() == 0.0) -> put(column, 0)
+              else -> putNull(column)
+            }
+          }
           column.endsWith("_valid") -> put(column, if (v == null || v == false || v == "" || (v is Number && v.toDouble() == 0.0)) 0 else 1)
           v == null -> putNull(column)
           v is Number -> put(column, v.toDouble())

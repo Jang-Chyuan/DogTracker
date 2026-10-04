@@ -13,6 +13,8 @@ import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import { Position } from './TrackingSheet';
 import ActivityHistoryChart from './ActivityHistoryChart';
+import FixedLocationForm from './FixedLocationForm';
+import { environmentLabel, environmentEvidence } from '../ml/Environment';
 
 function battery(valid, percentage) {
   return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
@@ -83,9 +85,15 @@ export default function DeviceDetails({
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content}>
+          {tracking.mode === 'real' && dog && (
+            <FixedLocationForm slaveId={slaveId} masterId={dog.masterId} owner={activityOwner} />
+          )}
           {track ? (
             <>
               <Text style={styles.hint}>{track.sourceLabel}</Text>
+              {!!track.latest?.fixedReason && <Text style={styles.label}>
+                設定位置：{track.latest.fixedName} · {track.latest.fixedReason}
+              </Text>}
               <Text style={styles.hint}>
                 該時刻位置：{formatTime(track.latest?.time)}
               </Text>
@@ -101,6 +109,18 @@ export default function DeviceDetails({
           ) : dog ? (
             <>
               <Text style={styles.hint}>來源：{describeDogSource(dog)}</Text>
+              <Text style={styles.label}>目前環境：{environmentLabel(dog.environment)}</Text>
+              {!!dog.environment && (
+                <>
+                  <Text style={styles.hint}>{environmentEvidence(dog.environment)}</Text>
+                  <Text style={styles.hint}>
+                    判斷區間：{formatTime(dog.environment.windowStart)} 至 {formatTime(dog.environment.windowStart + 60000)}
+                    {' · '}{dog.environment.samples} 筆取樣
+                  </Text>
+                  <Text style={styles.hint}>資料時間：{formatTime(dog.environment.observedAt)}</Text>
+                  <Text style={styles.hint}>使用已結束的一分鐘內收到的資料；缺少封包仍可能影響判斷。</Text>
+                </>
+              )}
               {/* No coordinates: the marker this panel belongs to is already
                   on the map, and six decimals tell nobody anything. */}
               <Text style={styles.hint}>位置時間：{formatTime(dog.receivedAt)}</Text>
@@ -108,7 +128,7 @@ export default function DeviceDetails({
                 <Text style={styles.warning}>最後有效位置，非最新定位</Text>
               )}
               {dog.stale && (
-                <Text style={styles.warning}>未更新／最後位置。超過 2 分鐘未更新，非目前位置</Text>
+                <Text style={styles.warning}>尚無可顯示位置，或超過 3 分鐘未收到封包</Text>
               )}
               {live || Number.isFinite(dog.distanceMeters) ? (
                 <View style={styles.stats}>

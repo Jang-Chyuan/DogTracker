@@ -1,3 +1,4 @@
+import { usbPresent } from '../models/UsbPresent';
 import { cloudTrackTime } from './CloudTrackTime';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -30,6 +31,7 @@ export function mapCloudTelemetry(row) {
     activity_valid: number(p.activityValid) ? 1 : 0,
     battery_mv: number(p.batteryMillivolts), battery_percentage: number(p.batteryPercentage),
     battery_valid: number(p.batteryValid) ? 1 : 0,
+    usb_present: usbPresent(p.usbPresent),
     // Slave time bases are not established: preserve raw values, not Unix dates.
     gps_time: p.gpsTimestamp == null ? null : String(number(p.gpsTimestamp)),
     activity_time: p.activityTimestamp == null ? null : String(number(p.activityTimestamp)),

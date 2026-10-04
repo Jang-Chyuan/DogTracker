@@ -2,6 +2,7 @@
 import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
 import { readActivityHistory } from './ActivityHistory';
+import { predictEnvironment } from '../ml/Environment';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -30,7 +31,7 @@ const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
 export function latestCloudStatusQuery(validFix) {
   const fix = validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : '';
   return `SELECT slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
-    received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, 'cloud' AS source
+    received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present, 'cloud' AS source
     FROM supabase_dog_status WHERE id IN (
       SELECT (SELECT id FROM supabase_dog_status AS newest
         WHERE newest.owner_user_id=? AND newest.slave_id=devices.slave_id ${fix}
@@ -69,7 +70,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         ['downloaded_at', 'INTEGER'], ['remote_received_at', 'TEXT'],
         ['display_latitude', 'REAL'], ['display_longitude', 'REAL'], ['display_version', 'INTEGER'],
         ['track_at', 'INTEGER'], ['upload_source', 'TEXT'], ['phone_received_at', 'INTEGER'],
-        ['track_time_version', 'INTEGER'],
+        ['track_time_version', 'INTEGER'], ['usb_present', 'INTEGER'],
       ]) {
         if (!columns.has(name)) {
           await connection.executeAsync(`ALTER TABLE supabase_dog_status ADD COLUMN ${name} ${type}`);
@@ -166,7 +167,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           'event_id', 'remote_received_at', 'received_at', 'master_id', 'slave_id',
           'sequence', 'slave_lat', 'slave_lon', 'speed_kmh', 'satellites', 'hdop',
           'activity', 'activity_valid', 'battery_mv', 'battery_percentage',
-          'battery_valid', 'gps_time', 'activity_time', 'rssi', 'snr', 'raw_payload',
+          'battery_valid', 'usb_present', 'gps_time', 'activity_time', 'rssi', 'snr', 'raw_payload',
         ];
         // Telemetry events are immutable. Ignore only already downloaded events;
         // a failed page rolls back as a whole. Compatible with Android 8 SQLite.
@@ -264,23 +265,43 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       return rows(await connection.executeAsync(latestCloudStatusQuery(true), [owner, sinceMs, owner]));
     },
     activityHistory: (owner, slaveId, now) => readActivityHistory(connection, owner, slaveId, now),
-    async latestStatusRows(owner, sinceMs) {
+    async latestStatusRows(owner, sinceMs, now = Date.now()) {
       requireOwner(owner);
       const cloud = rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner]));
       // Read both the latest packet and last valid fix per local dog. No raw
       // history pages are retained in React, including after a restart.
       const local = rows(await connection.executeAsync(`SELECT slave_id, master_id,
         MAX(received_at) AS track_at, received_at, slave_lat, slave_lon,
-        speed_kmh, battery_percentage, battery_valid, distance_meters, 'ble' AS source
+        speed_kmh, battery_percentage, battery_valid, usb_present, distance_meters, 'ble' AS source
         FROM dog_status WHERE received_at >= ? GROUP BY slave_id
         UNION ALL
         SELECT slave_id, master_id, MAX(received_at) AS track_at, received_at,
-        slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid,
+        slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present,
         distance_meters, 'ble' AS source
         FROM dog_status WHERE received_at >= ? AND slave_lat IS NOT NULL
           AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
         GROUP BY slave_id`, [sinceMs, sinceMs]));
-      return [...local, ...cloud];
+      return Promise.all([...local, ...cloud].map(async row => {
+        const isCloud = row.source === 'cloud';
+        const table = isCloud ? 'supabase_dog_status' : 'dog_status';
+        const clock = isCloud ? 'CAST(COALESCE(track_at, received_at) AS INTEGER)' : 'received_at';
+        const pair = [row.master_id, row.slave_id];
+        const account = isCloud ? [owner] : [];
+        const completedBefore = Math.floor(now / 60000) * 60000;
+        const latest = rows(await connection.executeAsync(`SELECT MAX(${clock}) AS time FROM ${table}
+          WHERE master_id = ? AND slave_id = ? AND ${clock} >= ? AND ${clock} < ?
+          ${isCloud ? 'AND owner_user_id = ?' : ''}`,
+        [...pair, sinceMs, completedBefore, ...account]))[0]?.time;
+        if (!Number.isFinite(latest)) return { ...row, environment: null };
+        const minute = Math.floor(latest / 60000) * 60000;
+        const window = rows(await connection.executeAsync(`SELECT master_id, slave_id,
+          ${clock} AS track_at, received_at, slave_lat, slave_lon,
+          satellites, hdop, rssi, snr, usb_present FROM ${table}
+          WHERE master_id = ? AND slave_id = ? AND ${clock} >= ? AND ${clock} < ?
+          ${isCloud ? 'AND owner_user_id = ?' : ''}`,
+        [...pair, minute, minute + 60000, ...account]));
+        return { ...row, environment: predictEnvironment(window) };
+      }));
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);

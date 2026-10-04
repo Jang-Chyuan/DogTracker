@@ -47,6 +47,7 @@ export const trackingPoint = Object.freeze({
   batteryMillivolts: 3920,
   batteryPercentage: 76,
   batteryValid: true,
+  usbPresent: null,
   masterBatteryMillivolts: 4010,
   masterBatteryPercentage: 83,
   masterBatteryValid: true,

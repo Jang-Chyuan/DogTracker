@@ -42,7 +42,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         const rows = await database.latestBySlave(owner, now() - MAX_AGE_MS);
         if (!alive) return;
         const packets = database.latestStatusRows
-          ? await database.latestStatusRows(owner, now() - MAX_AGE_MS) : [];
+          ? await database.latestStatusRows(owner, now() - MAX_AGE_MS, now()) : [];
         // The path is only read when something asks for it: it is the larger
         // query, and the card draws no line while the path switch is off.
         const track = Number.isFinite(trackSinceMs)

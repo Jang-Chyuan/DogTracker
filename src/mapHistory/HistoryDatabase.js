@@ -1,4 +1,5 @@
 import { simplifyRoute } from '../tracking/SimplifyRoute';
+import { applyHistoryFixedPositions } from '../map/FixedPosition';
 import { safePhoneHistoryCoordinate } from './PhoneHistoryCoordinates';
 import { coordinate } from '../tracking/RouteSamples';
 import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
@@ -132,7 +133,7 @@ export function createHistoryDatabase(db) {
         // queried a dog that does not exist and looked like "no data".
         .filter(pair => pair.master > 0 && pair.slave > 0);
     },
-    async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null) {
+    async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null, fixedLocations = []) {
       const queuedAt = Date.now();
       return withCloudDisplayLock(db, async () => {
         const startedAt = Date.now();
@@ -143,8 +144,10 @@ export function createHistoryDatabase(db) {
         const { since, until } = bounds || historyWindow(p, now);
         async function scan(table, time, extra, params, lat, lon) {
           const scanStarted = Date.now();
-          let cursor = since, id = 0, all = [];
-          const columns = table === 'myLocationTracker' || raw
+          const scanSince = table !== 'myLocationTracker' && !raw && fixedLocations.length
+            ? Math.floor(since / 60000) * 60000 - 120000 : since;
+          let cursor = scanSince, id = 0, all = [];
+          const columns = table === 'myLocationTracker' || raw || fixedLocations.length
             ? new Set(rows(await db.executeAsync(`PRAGMA table_info(${table})`)).map(column => column.name)) : new Set();
           const displayColumns = table === 'myLocationTracker' && columns.has('display_latitude') && columns.has('display_longitude');
           const selectedLat = displayColumns ? `COALESCE(display_latitude, ${lat})` : lat;
@@ -155,15 +158,15 @@ export function createHistoryDatabase(db) {
             // `raw` requests all records for export, not unsmoothed coordinates.
             const cloudDisplay = table === 'supabase_dog_status';
             const bleDisplay = table === 'dog_status';
-            const quality = raw && table !== 'myLocationTracker'
-              ? ['satellites', 'hdop', 'rssi', 'snr'].filter(column => columns.has(column)).map(column => ', ' + column).join('') : '';
+            const quality = (raw || fixedLocations.length) && table !== 'myLocationTracker'
+              ? ['satellites', 'hdop', 'rssi', 'snr', 'usb_present'].filter(column => columns.has(column)).map(column => ', ' + column).join('') : '';
             const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + quality + (cloudDisplay || bleDisplay
               ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
             const queryStarted = Date.now();
             const recovery = displayColumns ? `, ${lat} AS pipeline_latitude, ${lon} AS pipeline_longitude${raw ? '' : ', accuracy_meters, location_at'}` : '';
             const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} ${recovery} FROM ${table}
               WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
-              ORDER BY ${time},id LIMIT 1000`, [since, until, ...params, cursor, cursor, id]));
+              ORDER BY ${time},id LIMIT 1000`, [scanSince, until, ...params, cursor, cursor, id]));
             if (Date.now() - queryStarted >= 250) console.info(`[History timing] table=${table} pageMs=${Date.now() - queryStarted} rows=${page.length}`);
             if (!page.length) break;
             all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay)
@@ -194,6 +197,10 @@ export function createHistoryDatabase(db) {
             const params = p.source === 'cloud'
               ? [...p.masters, entry.slaveId, owner] : [...p.masters, entry.slaveId];
             entry.rows = await scan(table, time, extra, params, 'slave_lat', 'slave_lon');
+            if (!raw && fixedLocations.length) {
+              entry.rows = applyHistoryFixedPositions(entry.rows, fixedLocations, now)
+                .filter(point => point.time >= since);
+            }
           }
           const client = clients.flatMap(entry => entry.rows);
           // This screen only reads what the phone already stores: the cloud copy
@@ -234,7 +241,8 @@ export function historyGeometry(points) {
     for (const point of stream) {
       // Preserve actual signal gaps within each receiver/session stream.
       const valid = !!coordinate(point.latitude, point.longitude);
-      if (!valid || (last && (point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180))) {
+      if (!valid || (last && (point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180
+        || point.fixedReason !== last.fixedReason || point.fixedName !== last.fixedName))) {
         if (segment.length) segments.push(segment);
         segment = [];
       }

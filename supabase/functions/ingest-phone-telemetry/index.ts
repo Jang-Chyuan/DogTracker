@@ -55,7 +55,11 @@ Deno.serve(async req => {
       .eq('user_id', auth.user.id).eq('gateway_id', `master_${body.master_id}`).limit(1);
     if (memberError) return reply(503, { error: 'Membership lookup failed' });
     if (!membership?.length) return reply(403, { error: 'Master access denied' });
+    const usb = body.payload.usbPresent;
+    if (usb != null && typeof usb !== 'boolean' && !integer(usb, 0, 1))
+      return reply(400, { error: 'Invalid usbPresent' });
     const payload = Object.fromEntries(Object.keys(ranges).map(k => [k, body.payload[k]]));
+    if (usb != null) payload.usbPresent = Number(usb);
     const record = { event_id: body.event_id, master_id: body.master_id, slave_id: body.slave_id,
       seq: body.seq, payload, rssi: body.rssi, snr: body.snr,
       upload_source: 'phone', uploaded_by: auth.user.id, phone_id: body.phone_id,
@@ -67,7 +71,8 @@ Deno.serve(async req => {
       if (lookupError) return reply(503, { error: 'Duplicate lookup failed' });
       const same = ['master_id', 'slave_id', 'seq', 'phone_id', 'uploaded_by', 'upload_source', 'rssi', 'snr'].every(k => old[k] === record[k as keyof typeof record])
         && Date.parse(old.phone_received_at) === Date.parse(record.phone_received_at)
-        && Object.keys(ranges).every(k => old.payload[k] === payload[k]);
+        && Object.keys(ranges).every(k => old.payload[k] === payload[k])
+        && (old.payload.usbPresent ?? null) === (payload.usbPresent ?? null);
       return same ? reply(200, { ok: true, event_id: body.event_id }) : reply(409, { error: 'Event UUID conflict' });
     }
     if (error) return reply(error.code === '42501' ? 403 : 503, { error: 'Insert rejected' });

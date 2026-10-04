@@ -7,13 +7,14 @@ import Stat from './Stat';
 import TrackingAvatar from './TrackingAvatar';
 import VisibilityButton from './VisibilityButton';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
+import { environmentLabel } from '../ml/Environment';
 
 const percent = value => (Number.isFinite(value) ? `${value}%` : '—');
 const speed = value => (Number.isFinite(value) ? `${value} km/h` : '— km/h');
 
 export default function DogList({
   dogs, selectedSlaveId, hiddenSlaveIds = [], disabled, onSelect, onToggle, control,
-  linkNote, dogAliases,
+  linkNote, dogAliases, onDetails,
 }) {
   return (
     <View>
@@ -47,6 +48,12 @@ export default function DogList({
                 {name}
                 {selected ? ' · 地圖跟隨中' : ''}
               </Text>
+              {!!onDetails && <Pressable accessibilityRole="button"
+                accessibilityLabel={`${name} 固定位置設定`} disabled={disabled}
+                onPress={event => { event.stopPropagation(); onDetails(dog.slaveId); }}
+                style={styles.detailsButton}>
+                <Text style={styles.label}>固定位置設定 ›</Text>
+              </Pressable>}
               {/* Every row reads the same whatever answered it: where it came
                   from as an icon, then the same readings. */}
               <View style={styles.sourceRow}>
@@ -62,6 +69,8 @@ export default function DogList({
               <Text style={styles.detail}>最後收到封包：{formatTime(dog.lastPacketAt ?? dog.receivedAt)}</Text>
               <Text style={styles.detail}>最後有效定位：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
               {!!dog.communicationStatus && <Text style={styles.detail}>{dog.communicationStatus}</Text>}
+              <Text style={styles.detail}>目前環境：{environmentLabel(dog.environment)}</Text>
+              {!!dog.fixedReason && <Text style={styles.detail}>設定位置：{dog.fixedName} · {dog.fixedReason}</Text>}
               <View style={styles.stats}>
                 <Stat icon="speed" label="速度" value={speed(dog.speedKmh)} />
                 <Stat icon="battery" label="電量" value={percent(dog.batteryPercentage)}
@@ -72,7 +81,7 @@ export default function DogList({
                 )}
               </View>
               {dog.stale && (
-                <Text style={styles.warning}>未更新／最後位置。超過 2 分鐘未更新，非目前位置</Text>
+                <Text style={styles.warning}>尚無可顯示位置，或超過 3 分鐘未收到封包</Text>
               )}
             </View>
             {/* Each dog carries its own eye: hiding one of five dogs used to
@@ -93,6 +102,7 @@ export default function DogList({
 }
 
 const styles = StyleSheet.create({
+  detailsButton: { paddingVertical: 10 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -18,6 +18,7 @@ const columns = [
   ['received_at', '雲端接收時間', 185], ['master_id', 'Master', 75],
   ['slave_id', 'Slave', 70], ['slave_lat', '緯度', 110], ['slave_lon', '經度', 110],
   ['speed_kmh', '速度 km/h', 100], ['battery_percentage', '電量 %', 80],
+  ['usb_present', 'usb_present', 110],
   ['satellites', '衛星', 65], ['hdop', 'HDOP', 70], ['activity', '活動值', 80],
   ['rssi', 'RSSI', 75], ['snr', 'SNR', 70], ['sequence', '序號', 80],
 ];
