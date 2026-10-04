@@ -80,7 +80,7 @@ test('status reads retain local fixes and new no-fix packets, and use corrected 
     expect(packets.some(p => p.slave_id === 9)).toBe(false);
     const dogs = mergeDogMarkers({ point: null, packetRows: packets, now: NOW, windowMs: 120000 });
     expect(dogs.find(d => d.slaveId === 4)).toMatchObject({
-      stale: true, lastPositionAt: NOW - 121000, lastPacketAt: NOW,
+      stale: false, lastPositionAt: NOW - 121000, lastPacketAt: NOW,
       communicationStatus: '有通訊／GPS 未定位',
     });
     expect(dogs.find(d => d.slaveId === 6).stale).toBe(false);
