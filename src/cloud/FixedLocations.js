@@ -34,12 +34,26 @@ export async function readFixedLocation(client, owner, slaveId) {
   return data;
 }
 
-export async function saveFixedLocation(client, owner, value) {
+export async function unlockFixedLocation(client, owner, slaveId, masterId, password) {
+  await requireUser(client, owner);
+  if (!password) throw new Error('請輸入目前雲端帳號密碼');
+  const { data, error } = await client.functions.invoke('unlock-fixed-location', {
+    body: { slave_id: slaveId, master_id: masterId, password },
+  });
+  if (error || !data?.token || !Number.isFinite(data.expiresAt)) {
+    throw new Error('無法解鎖，請確認帳號密碼、網路連線與設定權限');
+  }
+  return { token: data.token, expiresAt: data.expiresAt };
+}
+
+export async function saveFixedLocation(client, owner, value, unlock) {
   const row = validateFixedLocation(value);
-  const user = await requireUser(client, owner);
-  const { data, error } = await client.from('slave_fixed_locations')
-    .upsert({ ...row, updated_by: user.id }, { onConflict: 'slave_id' })
-    .select(fields).single();
+  await requireUser(client, owner);
+  if (!unlock?.token || !Number.isFinite(unlock.expiresAt) || unlock.expiresAt <= Date.now()) throw new Error('請重新輸入密碼解鎖設定');
+  const { data, error } = await client.rpc('save_unlocked_fixed_location', {
+    p_token: unlock.token, p_slave_id: row.slave_id, p_master_id: row.master_id,
+    p_name: row.name, p_latitude: row.latitude, p_longitude: row.longitude, p_enabled: row.enabled,
+  });
   if (error) throw error;
   return data;
 }

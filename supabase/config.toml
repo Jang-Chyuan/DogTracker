@@ -1,2 +1,5 @@
 [functions.ingest-phone-telemetry]
 verify_jwt = true
+
+[functions.unlock-fixed-location]
+verify_jwt = true
