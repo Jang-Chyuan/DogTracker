@@ -4,6 +4,31 @@ import Renderer, { act } from 'react-test-renderer';
 import { Polyline } from 'react-native-svg';
 import ActivityHistoryChart from '../src/map/ActivityHistoryChart';
 
+test('switching slaves queries the selected dog and hides previous history while loading', async () => {
+  const data = [{ time: 0, value: 0.4 }, { time: 60000, value: 0.5 }];
+  let resolveNext;
+  const database = { activityHistory: jest.fn()
+    .mockResolvedValueOnce(data)
+    .mockImplementationOnce(() => new Promise(resolve => { resolveNext = resolve; })) };
+  const view = slaveId => <ActivityHistoryChart database={database} owner="a" active
+    slaveId={slaveId} dogAliases={{ 4: 'Nana', 8: 'Hermes' }} />;
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(view(8)); });
+    expect(database.activityHistory).toHaveBeenLastCalledWith('a', 8, expect.any(Number));
+    expect(renderer.root.findAllByType(Polyline)).toHaveLength(1);
+    await act(async () => { renderer.update(view(4)); });
+    expect(database.activityHistory).toHaveBeenLastCalledWith('a', 4, expect.any(Number));
+    expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).toContain('Nana');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('Hermes');
+    await act(async () => { resolveNext(data); });
+    expect(renderer.root.findAllByType(Polyline)).toHaveLength(1);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+  }
+});
+
 test('chart leaves gaps and stops database polling in background', async () => {
   jest.useFakeTimers();
   const data = Array.from({ length: 1440 }, (_, i) => ({ time: i * 60000,
@@ -11,14 +36,14 @@ test('chart leaves gaps and stops database polling in background', async () => {
   const database = { activityHistory: jest.fn(async () => data) };
   let renderer;
   try {
-    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart database={database} owner="a" active />); });
+    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart slaveId={8} database={database} owner="a" active />); });
     expect(renderer.root.findAllByType(Polyline)).toHaveLength(2);
     await act(async () => { await jest.advanceTimersByTimeAsync(60000); });
     expect(database.activityHistory).toHaveBeenCalledTimes(2);
-    await act(async () => { renderer.update(<ActivityHistoryChart database={database} owner="a" active={false} />); });
+    await act(async () => { renderer.update(<ActivityHistoryChart slaveId={8} database={database} owner="a" active={false} />); });
     await act(async () => { await jest.advanceTimersByTimeAsync(120000); });
     expect(database.activityHistory).toHaveBeenCalledTimes(2);
-    await act(async () => { renderer.update(<ActivityHistoryChart database={database} owner="b" active={false} />); });
+    await act(async () => { renderer.update(<ActivityHistoryChart slaveId={8} database={database} owner="b" active={false} />); });
     expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   } finally {
     await act(async () => { renderer?.unmount(); });
@@ -32,7 +57,7 @@ test('fixed 24-hour history supports zoom and pan without range selection button
   const database = { activityHistory: jest.fn(async () => data) };
   let renderer;
   try {
-    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart database={database} owner="a" active dogAliases={{ 8: 'Hermes' }} />); });
+    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart slaveId={8} database={database} owner="a" active dogAliases={{ 8: 'Hermes' }} />); });
     expect(renderer.root.findByType(Polyline).props.points.split(' ')).toHaveLength(1440);
     const choose = title => renderer.root.findAll(p => p.props.accessibilityLabel === title && typeof p.props.onPress === 'function')[0].props.onPress();
     expect(renderer.root.findAll(p => typeof p.props.onPress === 'function' && /\d+ 小時/.test(p.props.accessibilityLabel || ''))).toHaveLength(0);
@@ -60,7 +85,7 @@ test('horizontal pinch zoom is bounded and does not capture vertical scrolling',
   const database = { activityHistory: jest.fn(async () => Array.from({ length: 1440 }, (_, i) => ({ time: i * 60000, value: i / 1440 }))) };
   let renderer;
   try {
-    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart database={database} owner="a" active />); });
+    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart slaveId={8} database={database} owner="a" active />); });
     const handlers = spy.mock.calls[0][0];
     const event = (span, center = 97) => ({ nativeEvent: { touches: [{ pageX: center - span / 2 }, { pageX: center + span / 2 }] } });
     expect(handlers.onMoveShouldSetPanResponder({ nativeEvent: { touches: [{ pageX: 10 }] } })).toBe(false);
@@ -89,7 +114,7 @@ test('one-finger horizontal drag pans both ways within bounds and can transition
   const database = { activityHistory: jest.fn(async () => Array.from({ length: 1440 }, (_, i) => ({ time: i * 60000, value: i / 1440 }))) };
   let renderer;
   try {
-    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart database={database} owner="a" active />); });
+    await act(async () => { renderer = Renderer.create(<ActivityHistoryChart slaveId={8} database={database} owner="a" active />); });
     const handlers = spy.mock.calls[0][0];
     const event = x => ({ nativeEvent: { touches: [{ pageX: x }] } });
     expect(handlers.onMoveShouldSetPanResponder(event(100), { dx: 30, dy: 0 })).toBe(false);

@@ -26,7 +26,7 @@ export function applyHistoryFixedPositions(points, settings, now) {
   const results = new Map();
   for (const [key, rows] of windows) {
     if (Math.floor(rows[0].time / 60000) * 60000 + 60000 <= now) {
-      results.set(key, predictEnvironment(rows));
+      results.set(key, predictEnvironment(rows, 60000));
     }
   }
   const last = new Map();

@@ -4,8 +4,8 @@ import Svg, { Line, Polyline, Circle, Text as SvgText } from 'react-native-svg';
 import { ACTIVITY_HISTORY_HOURS } from '../cloud/ActivityHistory';
 
 const label = time => new Date(time).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
-export default function ActivityHistoryChart({ database, owner, active, dogAliases }) {
-  const name = dogAliases?.[8]?.trim() || 'Slave 8';
+export default function ActivityHistoryChart({ database, owner, active, dogAliases, slaveId }) {
+  const name = dogAliases?.[slaveId]?.trim() || `Slave ${slaveId}`;
   const [zoom, setZoom] = useState(null);
   const [offset, setOffset] = useState(0);
   const maximum = ACTIVITY_HISTORY_HOURS * 60;
@@ -84,21 +84,22 @@ export default function ActivityHistoryChart({ database, owner, active, dogAlias
       onPanResponderTerminate: () => { pinch.current = null; pan.current = null; },
     });
   }, []);
-  const [state, setState] = useState({ owner, data: null, error: '' });
+  const [state, setState] = useState({ owner, slaveId, data: null, error: '' });
   useEffect(() => {
     if (!active || !database?.activityHistory) return undefined;
     let alive = true, timer;
     const refresh = async () => {
       try {
-        const data = await database.activityHistory(owner, 8, Date.now());
-        if (alive) setState({ owner, data, error: '' });
-      } catch { if (alive) setState({ owner, data: null, error: '活動量讀取失敗，稍後重試' }); }
+        const data = await database.activityHistory(owner, slaveId, Date.now());
+        if (alive) setState({ owner, slaveId, data, error: '' });
+      } catch { if (alive) setState({ owner, slaveId, data: null, error: '活動量讀取失敗，稍後重試' }); }
       finally { if (alive) timer = setTimeout(refresh, 60000); }
     };
     refresh();
     return () => { alive = false; clearTimeout(timer); };
-  }, [database, owner, active]);
-  const range = state.owner === owner ? state.data?.slice(-maximum) : null;
+  }, [database, owner, slaveId, active]);
+  const current = state.owner === owner && state.slaveId === slaveId;
+  const range = current ? state.data?.slice(-maximum) : null;
   const end = range ? Math.max(0, range.length - endOffset) : 0;
   const data = range?.slice(Math.max(0, end - count), end);
   const rangeLabel = `最近 ${ACTIVITY_HISTORY_HOURS} 小時`;
@@ -112,7 +113,7 @@ export default function ActivityHistoryChart({ database, owner, active, dogAlias
   }
   if (part.length) segments.push(part);
   const values = data?.filter(p => p.value != null) || [];
-  return <View style={styles.root} testID="slave-8-activity-chart">
+  return <View style={styles.root} testID={`slave-${slaveId}-activity-chart`}>
     <Text style={styles.title}>{name} 活動量 · {rangeLabel}</Text>
     <View style={styles.ranges}>
       {[
@@ -132,7 +133,7 @@ export default function ActivityHistoryChart({ database, owner, active, dogAlias
     <View ref={surface} collapsable={false} testID="activity-zoom-surface"
       onLayout={event => { if (event.nativeEvent.layout.width > 0) bounds.current.width = event.nativeEvent.layout.width; }}
       {...responder.panHandlers}>
-    {state.owner === owner && state.error ? <Text>{state.error}</Text> : !data ? <Text>讀取活動量…</Text>
+    {current && state.error ? <Text>{state.error}</Text> : !data ? <Text>讀取活動量…</Text>
       : !values.length ? <Text>{rangeLabel}尚無有效活動資料</Text> : <>
         <Svg width="100%" height={120} viewBox="0 0 320 120" preserveAspectRatio="none" accessible accessibilityLabel={`${name} 活動量，${values.length} 個有效分鐘，最近有效平均 ${values.at(-1).value.toFixed(3)}`}>
           {[12, 60, 108].map(y => <Line key={y} x1={24} x2={316} y1={y} y2={y} stroke="#CBD5E1" />)}

@@ -1,7 +1,9 @@
 import model from './model.json';
 import { predictWindow } from './inference';
 
-export function predictEnvironment(rows) {
+export const ENVIRONMENT_WINDOW_MS = 120000;
+
+export function predictEnvironment(rows, windowMs = ENVIRONMENT_WINDOW_MS) {
   if (!rows.length) return null;
   const observations = rows.map(row => {
     const lat = row.slave_lat, lon = row.slave_lon;
@@ -14,19 +16,20 @@ export function predictEnvironment(rows) {
       raw_payload: { usbPresent: row.usb_present },
     };
   });
-  const result = predictWindow(model, observations);
+  const result = predictWindow(model, observations, { windowSeconds: windowMs / 1000 });
   // Entirely absent readings must not turn imputed values into a live answer.
   const hasSignal = observations.some(row =>
     ['satellites', 'hdop', 'rssi', 'snr', 'coordinate_valid'].some(key => Number.isFinite(row[key])));
   return { ...result, environment: hasSignal || result.source === 'usb_rule'
     ? result.environment : 'unknown',
   hasSignal,
-  windowStart: Math.floor((rows[0].track_at ?? rows[0].received_at) / 60000) * 60000,
+  windowStart: Math.floor((rows[0].track_at ?? rows[0].received_at) / windowMs) * windowMs,
+  windowEnd: (Math.floor((rows[0].track_at ?? rows[0].received_at) / windowMs) + 1) * windowMs,
   observedAt: Math.max(...rows.map(row => row.track_at ?? row.received_at)) };
 }
 
 export function environmentLabel(result, now = Date.now()) {
-  if (!result) return '等待完整分鐘資料';
+  if (!result) return '等待已結束的兩分鐘資料';
   if (now - result.observedAt > 120000) return '無法判斷（資料已超過 2 分鐘）';
   const label = { indoor: '室內', outdoor: '室外', window: '窗邊', unknown: '無法判斷' }[result.environment];
   if (result.source === 'usb_rule') return `${label}（USB 已連接）`;

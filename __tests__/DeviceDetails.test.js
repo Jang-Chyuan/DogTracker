@@ -2,7 +2,24 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, ScrollView, Switch } from 'react-native';
 import DeviceDetails from '../src/map/DeviceDetails';
+import ActivityHistoryChart from '../src/map/ActivityHistoryChart';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
+
+test.each([1, 4, 8, 255])('dog %i has the same activity chart in its map details', async slaveId => {
+  let renderer;
+  try {
+    await act(async () => {
+      renderer = Renderer.create(<DeviceDetails
+        tracking={{ mode: 'real', point: trackingPoint, foreground: true, ready: { real: true } }}
+        subject={{ kind: 'dog', dog: { slaveId, masterId: 3, source: 'cloud' } }}
+        activityOwner="a" dogAliases={{ [slaveId]: 'Nana' }}
+        topInset={80} bottomInset={120} onClose={() => {}} />);
+    });
+    expect(renderer.root.findByType(ActivityHistoryChart).props).toMatchObject({ slaveId, owner: 'a', active: true });
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+  }
+});
 
 test('Master details are information-only and close by backdrop, close button or Android Back', async () => {
   let renderer, onBack;
