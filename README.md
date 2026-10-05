@@ -139,3 +139,5 @@ android/app/src/main/java/com/dogtracker/
 ```
 
 更完整的 BLE 協定、模組分工與協作規則請參閱 [PROJECT_GUIDE.md](PROJECT_GUIDE.md)。
+
+環境分類的模型、資料流程與判定限制請參閱 [機器學習（ML）說明](src/ml/README.md)。

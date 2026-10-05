@@ -106,3 +106,31 @@ npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudScreen.test.j
 目前兩個已知帳號皆有 Master 5／7 授權，需另外使用無授權帳號驗證拒絕讀取。不能以 postgres 或 Secret Key 測試使用者 RLS。
 
 「雲端資料」頁的列表可以點任一列展開該筆的**原始雲端 JSON**（下載時就存在 `raw_payload`）。欄位表只有 App 讀得到的欄位，原始紀錄才看得出 payload 還帶了什麼——例如 Master 自己的座標（硬體問題 H2）。
+
+## 固定位置的帳號密碼解鎖
+
+即時地圖的固定位置表單預設唯讀。點「修改設定」後輸入目前登入的雲端帳號密碼，後端驗證成功才允許編輯。此功能需要具備 email 與密碼的帳號；只有 OAuth 或驗證碼登入而未設定密碼的帳號，需先建立帳號密碼。
+
+App 呼叫 `unlock-fixed-location` Edge Function；函式先驗證原登入 JWT，使用該帳號的 email 執行 `signInWithPassword()`，核對 user ID 並結束臨時驗證 session，不替換手機原本登入。密碼不寫入儲存空間或日誌。
+
+後端回傳綁定 user、Slave、Master 的一次性憑證，五分鐘後到期；手機僅保存在記憶體。關閉詳情、切換犬隻或帳號、登出、進入背景時會鎖定。儲存呼叫 `save_unlocked_fixed_location` RPC，核對憑證及目前 Master 權限後寫入，並消耗憑證。儲存失敗或網路回應不明時需重新解鎖；若後端已成功寫入，重新開啟面板可讀取結果。
+
+Migration 撤銷 authenticated 對 `slave_fixed_locations` 的直接 insert／update 權限，讀取仍沿用既有 RLS。RPC 也檢查原有紀錄所屬 Master 的權限，避免藉變更 Master 接管其他人的狗。
+
+部署至已確認的 Supabase 專案：
+
+```powershell
+supabase db push --dry-run
+supabase db push
+supabase functions deploy unlock-fixed-location
+```
+
+先檢視 dry-run 的待套用 migration。需要套用 `202610050001_fixed_location_password_unlock.sql` 並部署函式後，新 App 才能解鎖；部署期間及之後，舊 App 的固定位置直接寫入會被拒絕。協調後端與手機版本更新。函式沿用 Supabase 提供的 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`，service role key 只在後端使用。
+
+驗證：
+
+```powershell
+npm.cmd test -- --runInBand __tests__/FixedLocations.test.js __tests__/FixedLocationForm.test.js __tests__/FixedLocationUnlockBackend.test.js
+```
+
+線上驗收須以一般使用者 JWT 驗證直接寫入被拒絕，以及 RPC 拒絕錯誤／過期／已用憑證、其他帳號或犬隻、撤銷 Master 授權。Jest 驗證畫面和實際 Edge handler 的 mock 行為，不能取代 PostgreSQL migration 與線上整合驗收。

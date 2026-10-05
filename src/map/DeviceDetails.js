@@ -114,7 +114,7 @@ export default function DeviceDetails({
                 <>
                   <Text style={styles.hint}>{environmentEvidence(dog.environment)}</Text>
                   <Text style={styles.hint}>
-                    判斷區間：{formatTime(dog.environment.windowStart)} 至 {formatTime(dog.environment.windowStart + 60000)}
+                    判斷區間：{formatTime(dog.environment.windowStart)} 至 {formatTime(dog.environment.windowEnd ?? dog.environment.windowStart + 120000)}
                     {' · '}{dog.environment.samples} 筆取樣
                   </Text>
                   <Text style={styles.hint}>資料時間：{formatTime(dog.environment.observedAt)}</Text>
@@ -185,9 +185,9 @@ export default function DeviceDetails({
               <Text style={styles.hint}>參考圈半徑 1 公里，跟隨領犬員。</Text>
             </>
           )}
-          {tracking.mode === 'real' && slaveId === 8 && (
+          {tracking.mode === 'real' && Number.isInteger(slaveId) && slaveId >= 1 && slaveId <= 255 && (
             <ActivityHistoryChart database={tracking.cloudDatabase} owner={activityOwner}
-              dogAliases={dogAliases}
+              dogAliases={dogAliases} slaveId={slaveId} key={slaveId}
               active={activityActive && tracking.foreground && tracking.ready?.real} />
           )}
         </ScrollView>

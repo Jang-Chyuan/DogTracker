@@ -21,14 +21,15 @@ function stats(values) {
   const std = valid.length > 1 ? Math.sqrt(valid.reduce((s, v) => s + (v - mean) ** 2, 0) / (valid.length - 1)) : null;
   return [mean, std];
 }
-function aggregateWindow(rows) {
+function aggregateWindow(rows, windowSeconds = 60) {
+  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) throw new Error('Invalid windowSeconds');
   if (!Array.isArray(rows) || rows.length === 0) throw new Error('A window must contain observations');
   let group;
   for (const row of rows) {
     const time = Date.parse(row.observation_at);
     if (!Number.isFinite(time)) throw new Error('Invalid observation_at; use an ISO timestamp with timezone');
-    const key = JSON.stringify([row.session_name ?? 'prediction', String(row.master_id), String(row.slave_id), Math.floor(time / 60000)]);
-    if (group && key !== group) throw new Error('Use one session, Master, Slave and UTC minute per window');
+    const key = JSON.stringify([row.session_name ?? 'prediction', String(row.master_id), String(row.slave_id), Math.floor(time / (windowSeconds * 1000))]);
+    if (group && key !== group) throw new Error('Use one session, Master, Slave and UTC time bucket per window');
     group = key;
   }
   const features = {};
@@ -75,7 +76,7 @@ function predictFeatures(model, input, { usbRule = false, threshold = 0.6 } = {}
   };
 }
 function predictWindow(model, rows, options = {}) {
-  const window = aggregateWindow(rows);
+  const window = aggregateWindow(rows, options.windowSeconds ?? model.windowSeconds ?? 60);
   return { ...predictFeatures(model, window.features, { ...options, usbRule: window.usbRule }), samples: window.samples };
 }
 // Converts Supabase telemetry to the same units as the exported training CSV.

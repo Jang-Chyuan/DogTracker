@@ -6,11 +6,13 @@ const row = { master_id: 3, slave_id: 7, received_at: time,
   slave_lat: 0, slave_lon: 0, satellites: 0, hdop: 655.35,
   rssi: -80, snr: 3, usb_present: 1, source: 'ble' };
 
-test('USB rule uses every packet of a minute, and expires independently of GPS', () => {
-  const result = predictEnvironment([row, { ...row, received_at: time + 10000 }]);
+test('USB rule uses every packet of two minutes, and expires independently of GPS', () => {
+  const result = predictEnvironment([row, { ...row, received_at: time + 60000 }]);
   expect(result).toMatchObject({ environment: 'indoor', source: 'usb_rule', samples: 2 });
   expect(environmentLabel(result, time + 20000)).toBe('室內（USB 已連接）');
-  expect(environmentLabel(result, time + 131000)).toContain('資料已超過 2 分鐘');
+  expect(result.windowEnd - result.windowStart).toBe(120000);
+  expect(environmentLabel(result, time + 181000)).toContain('資料已超過 2 分鐘');
+  expect(() => predictEnvironment([row, { ...row, received_at: time + 120000 }])).toThrow('UTC time bucket');
   expect(predictEnvironment([row, { ...row, usb_present: 0 }]).source).toBe('random_forest');
 });
 
@@ -28,7 +30,7 @@ test('low confidence shows a tentative class with probabilities without disguisi
   expect(environmentEvidence(result)).toBe('模型機率：室內 20% · 窗邊 55% · 室外 25%');
   expect(environmentLabel({ ...result, hasSignal: false }, time)).toBe('無法判斷');
   expect(environmentLabel(result, time + 120001)).toContain('資料已超過 2 分鐘');
-  expect(environmentLabel(null, time)).toBe('等待完整分鐘資料');
+  expect(environmentLabel(null, time)).toBe('等待已結束的兩分鐘資料');
 });
 
 test('each slave uses its own newest packet including no-fix dogs', () => {

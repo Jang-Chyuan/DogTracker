@@ -2,7 +2,7 @@
 import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
 import { readActivityHistory } from './ActivityHistory';
-import { predictEnvironment } from '../ml/Environment';
+import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -287,19 +287,19 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         const clock = isCloud ? 'CAST(COALESCE(track_at, received_at) AS INTEGER)' : 'received_at';
         const pair = [row.master_id, row.slave_id];
         const account = isCloud ? [owner] : [];
-        const completedBefore = Math.floor(now / 60000) * 60000;
+        const completedBefore = Math.floor(now / ENVIRONMENT_WINDOW_MS) * ENVIRONMENT_WINDOW_MS;
         const latest = rows(await connection.executeAsync(`SELECT MAX(${clock}) AS time FROM ${table}
           WHERE master_id = ? AND slave_id = ? AND ${clock} >= ? AND ${clock} < ?
           ${isCloud ? 'AND owner_user_id = ?' : ''}`,
         [...pair, sinceMs, completedBefore, ...account]))[0]?.time;
         if (!Number.isFinite(latest)) return { ...row, environment: null };
-        const minute = Math.floor(latest / 60000) * 60000;
+        const windowStart = Math.floor(latest / ENVIRONMENT_WINDOW_MS) * ENVIRONMENT_WINDOW_MS;
         const window = rows(await connection.executeAsync(`SELECT master_id, slave_id,
           ${clock} AS track_at, received_at, slave_lat, slave_lon,
           satellites, hdop, rssi, snr, usb_present FROM ${table}
           WHERE master_id = ? AND slave_id = ? AND ${clock} >= ? AND ${clock} < ?
           ${isCloud ? 'AND owner_user_id = ?' : ''}`,
-        [...pair, minute, minute + 60000, ...account]));
+        [...pair, windowStart, windowStart + ENVIRONMENT_WINDOW_MS, ...account]));
         return { ...row, environment: predictEnvironment(window) };
       }));
     },

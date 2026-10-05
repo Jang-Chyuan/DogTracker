@@ -20,29 +20,34 @@ const row = (eventId, slaveId, receivedAt, masterId, extra = {}) => ({
   slave_lat: 25.1, slave_lon: 121.6, activity_valid: 0, battery_valid: 0, ...extra,
 });
 
-test('environment excludes the current minute and isolates corrected times, pairs and accounts', async () => {
+test('environment excludes the current two-minute bucket and isolates corrected times, pairs and accounts', async () => {
   const connection = createMemoryConnection();
   try {
     await createDogDatabase(connection).initialize();
     const database = createCloudDatabase(connection);
     await database.initialize();
-    const minute = Math.floor(NOW / 60000) * 60000;
+    const minute = Math.floor(NOW / 120000) * 120000;
     await database.savePage('a', [
       row('old', 4, NOW, 5, { track_at: minute - 1, usb_present: 0 }),
       row('first', 4, NOW, 5, { track_at: minute + 1000, usb_present: 1 }),
-      row('second', 4, NOW, 5, { track_at: minute + 2000, usb_present: 1 }),
+      row('second', 4, NOW, 5, { track_at: minute + 62000, usb_present: 1 }),
       row('other-master', 4, NOW, 6, { track_at: minute + 1500, usb_present: 0 }),
-      row('current-minute', 4, NOW, 5, { track_at: minute + 61000, usb_present: 0 }),
+      row('current-minute', 4, NOW, 5, { track_at: minute + 121000, usb_present: 0 }),
     ]);
     await database.savePage('b', [row('other-owner', 4, NOW, 5,
       { track_at: minute + 1500, usb_present: 0 })]);
-    const packets = await database.latestStatusRows('a', minute - 60000, minute + 65000);
+    const packets = await database.latestStatusRows('a', minute - 120000, minute + 125000);
     expect(packets.find(p => p.slave_id === 4).environment).toMatchObject({
-      environment: 'indoor', source: 'usb_rule', samples: 2, observedAt: minute + 2000,
-      windowStart: minute,
+      environment: 'indoor', source: 'usb_rule', samples: 2, observedAt: minute + 62000,
+      windowStart: minute, windowEnd: minute + 120000,
     });
     const initial = await database.latestStatusRows('a', minute, minute + 5000);
     expect(initial.find(p => p.slave_id === 4).environment).toBeNull();
+    const afterGap = await database.latestStatusRows('a', minute - 120000, minute + 485000);
+    expect(afterGap.find(p => p.slave_id === 4).environment).toMatchObject({
+      samples: 1, windowStart: minute + 120000, windowEnd: minute + 240000,
+      observedAt: minute + 121000,
+    });
   } finally { connection.close(); }
 });
 
