@@ -1,5 +1,4 @@
 import { coordinate as toCoordinate } from '../tracking/RouteSamples';
-import { fixedPosition } from './FixedPosition';
 
 // A slave_id identifies the same dog across the whole team, whichever Master
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
@@ -61,7 +60,7 @@ function bleCandidate(point, samples) {
  * and dogs that are not wanted can be hidden one by one.
  */
 export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
-  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, fixedLocations = [] }) {
+  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, holds = {} }) {
   const local = bleCandidate(point, samples);
   const dogs = new Map();
   if (local) dogs.set(local.slaveId, local);
@@ -134,26 +133,30 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const lastPacketAt = packet?.time ?? dog.receivedAt;
       const communicating = now - lastPacketAt <= (windowMs ?? LIVE_PACKET_WINDOW_MS);
       const environment = environments.get(dog.slaveId) ?? null;
-      const candidate = fixedPosition(fixedLocations.find(row => row.slave_id === dog.slaveId),
-        packet?.row.usb_present, environment, now);
-      const charging = candidate?.fixedReason === '充電（USB 已連接）';
-      const fixed = communicating || charging ? candidate : null;
-      const positionAt = fixed ? lastPacketAt : dog.receivedAt;
-      const stale = !(fixed || dog.coordinate) || (!communicating && !charging);
+      // Indoors the dog is drawn where it was last seen clearly (IndoorHold),
+      // never at a hand-entered point. A charging collar keeps that place after
+      // its packets stop, as the set point used to.
+      const usb = packet?.row.usb_present;
+      const charging = usb === 1 || usb === true || (usb !== 0 && usb !== false
+        && environment?.source === 'usb_rule');
+      const hold = holds[dog.slaveId] ?? null;
+      const held = hold && (communicating || charging) ? hold : null;
+      const positionAt = held ? held.anchorAt ?? lastPacketAt : dog.receivedAt;
+      const stale = !(held || dog.coordinate) || (!communicating && !charging);
       const noFix = packet && !packet.position;
-      return { ...dog, ...(fixed ? { coordinate: { latitude: fixed.latitude, longitude: fixed.longitude },
-        fixedReason: fixed.fixedReason, fixedName: fixed.fixedName, receivedAt: positionAt } : {}),
+      return { ...dog, ...(held ? { coordinate: held.coordinate, heldReason: held.reason,
+        heldSince: held.since, heldBuilding: held.buildingId ?? null, receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
         environment,
-        retained: fixed ? false : dog.retained || !!noFix,
+        retained: held ? false : dog.retained || !!noFix,
         communicationStatus: !communicating ? '未收到新資料'
           : noFix ? '有通訊／GPS 未定位' : '有通訊／定位正常',
         batteryPercentage: packet
           ? (packet.row.battery_valid !== 0 && packet.row.battery_valid !== false
             && Number.isFinite(packet.row.battery_percentage) ? packet.row.battery_percentage : null)
           : dog.batteryPercentage,
-        speedKmh: fixed || noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
-        distanceMeters: fixed || stale || noFix || packet?.source !== 'ble' ? null
+        speedKmh: held || noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
+        distanceMeters: held || stale || noFix || packet?.source !== 'ble' ? null
           : packet.row.distance_meters ?? null,
       };
     })
@@ -162,9 +165,14 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
 }
 
 export function describeDogSource(dog) {
-  if (dog.fixedReason) return `${dog.fixedName}・設定位置・${dog.fixedReason}`;
+  if (dog.heldReason) return `${heldLabel(dog)}・${dog.source === 'ble' ? 'BLE' : `經 Master ${dog.masterId ?? '?'}・雲端`}`;
   if (dog.source === 'ble') {
     return dog.retained ? 'BLE・最後有效位置，非最新定位' : 'BLE';
   }
   return `經 Master ${dog.masterId ?? '?'}・雲端`;
+}
+
+// What a held marker says under the name: why it stopped, and that it did.
+export function heldLabel(dog) {
+  return dog?.heldReason ? `${dog.heldReason}・停在原處` : null;
 }

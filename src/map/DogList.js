@@ -49,10 +49,10 @@ export default function DogList({
                 {selected ? ' · 地圖跟隨中' : ''}
               </Text>
               {!!onDetails && <Pressable accessibilityRole="button"
-                accessibilityLabel={`${name} 固定位置設定`} disabled={disabled}
+                accessibilityLabel={`${name} 詳細資訊`} disabled={disabled}
                 onPress={event => { event.stopPropagation(); onDetails(dog.slaveId); }}
                 style={styles.detailsButton}>
-                <Text style={styles.label}>固定位置設定 ›</Text>
+                <Text style={styles.label}>詳細資訊 ›</Text>
               </Pressable>}
               {/* Every row reads the same whatever answered it: where it came
                   from as an icon, then the same readings. */}
@@ -70,7 +70,7 @@ export default function DogList({
               <Text style={styles.detail}>最後有效定位：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
               {!!dog.communicationStatus && <Text style={styles.detail}>{dog.communicationStatus}</Text>}
               <Text style={styles.detail}>目前環境：{environmentLabel(dog.environment)}</Text>
-              {!!dog.fixedReason && <Text style={styles.detail}>設定位置：{dog.fixedName} · {dog.fixedReason}</Text>}
+              {!!dog.heldReason && <Text style={styles.detail}>位置：停在 {formatTime(dog.heldSince)} 前最後清楚的地方（{dog.heldReason}）</Text>}
               <View style={styles.stats}>
                 <Stat icon="speed" label="速度" value={speed(dog.speedKmh)} />
                 <Stat icon="battery" label="電量" value={percent(dog.batteryPercentage)}

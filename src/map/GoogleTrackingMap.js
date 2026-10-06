@@ -14,7 +14,7 @@ import MapView, {
   PROVIDER_GOOGLE,
 } from 'react-native-maps';
 import { floatingShadow, mapColors as colors } from './MapTheme';
-import { describeDogSource } from './DogMerge';
+import { describeDogSource, heldLabel } from './DogMerge';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import TrackingAvatar from './TrackingAvatar';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
@@ -39,7 +39,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   // frame), so fading and the follow ring have to ask for one redraw each.
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [faded, focused, title, position.fixedReason]);
+  }, [faded, focused, title, position.heldReason]);
   const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
@@ -58,7 +58,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       onPress={onPress}
     >
       <DogNameMarker label={role === 'slave' ? name : null}
-        status={position.fixedReason || (role === 'slave' && faded ? '未更新／最後位置' : null)}><View
+        status={heldLabel(position) || (role === 'slave' && faded ? '未更新／最後位置' : null)}><View
         collapsable={false}
         accessible
         accessibilityLabel={`${name}。${faded ? '未更新／最後位置。' : ''}${detail}`}
@@ -76,7 +76,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
 // side before it has laid out, and then draws as a blank dot.
 function TrackMarker({ track, onPress }) {
   const marker = useRef(null);
-  useEffect(() => { marker.current?.redraw?.(); }, [track.name, track.latest?.fixedReason]);
+  useEffect(() => { marker.current?.redraw?.(); }, [track.name, track.latest?.heldReason]);
   const { latest } = track;
   const detail = `${new Date(latest.time).toLocaleString()} · ${
     latest.speed_kmh == null ? '速度未知' : latest.speed_kmh.toFixed(1) + ' km/h'}`;
@@ -95,7 +95,7 @@ function TrackMarker({ track, onPress }) {
       onPress={onPress}
     >
       <DogNameMarker label={track.role === 'slave' ? track.name : null}
-        status={latest.fixedReason}><View
+        status={heldLabel(latest)}><View
         collapsable={false}
         accessible
         accessibilityLabel={`${track.name} · 該時刻位置。${detail}`}

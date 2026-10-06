@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_AGE_MS } from '../map/DogMerge';
+import { createHoldStore, HOLD_LOOKBACK_MS, snapHolds } from '../placement/HoldStore';
+import { buildingSnapper as defaultSnapper } from '../placement/BuildingSnap';
 
 export const POLL_MS = 10000;
 
@@ -10,15 +12,20 @@ export const POLL_MS = 10000;
  *
  * Demo mode must not see real positions, so the caller passes enabled=false.
  */
-const empty = () => ({ rows: [], packets: [], track: [], error: '' });
+const empty = () => ({ rows: [], packets: [], track: [], holds: {}, error: '' });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
-  { active = true, revision = 0 } = {}) {
+  { active = true, revision = 0, snapper = defaultSnapper } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
   const refresh = useRef(null);
   const inFlight = useRef(Promise.resolve());
   const lastRevision = useRef(revision);
+  // Indoor holds follow every row, so their trackers live across polls; a new
+  // account or database starts them over.
+  const holdState = useRef(null);
   useEffect(() => {
     if (!database || !owner || !enabled) {
+      // Logged out or in demo: the next start replays from scratch.
+      holdState.current = null;
       setCache({ owner, database, value: empty() });
       return undefined;
     }
@@ -47,7 +54,28 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         // query, and the card draws no line while the path switch is off.
         const track = Number.isFinite(trackSinceMs)
           ? await database.trackBySlave(owner, now() - trackSinceMs) : [];
-        if (alive) setCache({ owner, database, value: { rows, packets, track, error: '' } });
+        let holds = {};
+        if (database.holdRows) {
+          // A long pause (background) replays from scratch instead of catching
+          // up on every row since.
+          if (holdState.current?.owner !== owner || holdState.current?.database !== database
+            || now() - holdState.current.polledAt > HOLD_LOOKBACK_MS) {
+            holdState.current = { owner, database, store: createHoldStore(), cursors: null, polledAt: now() };
+          }
+          const state = holdState.current;
+          try {
+            const batch = await database.holdRows(owner, now() - HOLD_LOOKBACK_MS, state.cursors);
+            if (!alive || holdState.current !== state) return;
+            state.store.ingest(batch);
+            state.cursors = batch.cursors;
+            state.polledAt = now();
+          } catch (error) {
+            // A failed hold read must not empty the map: keep drawing the last holds.
+            console.warn('[Indoor hold] read failed', error?.message);
+          }
+          holds = snapHolds(state.store.holds(now()), snapper);
+        }
+        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, error: '' } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
         if (alive) setCache(current => ({ owner, database,
@@ -64,7 +92,9 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     refresh.current = poll;
     poll();
     return () => { alive = false; clearTimeout(timer); refresh.current = null; };
-  }, [database, owner, enabled, active, now, trackSinceMs]);
+  }, [database, owner, enabled, active, now, trackSinceMs, snapper]);
+  // A building answer arriving later redraws the held dog inside its house.
+  useEffect(() => snapper?.subscribe(() => refresh.current?.()), [snapper]);
   useEffect(() => {
     if (lastRevision.current !== revision) refresh.current?.();
     lastRevision.current = revision;

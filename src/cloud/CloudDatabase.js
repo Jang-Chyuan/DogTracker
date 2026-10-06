@@ -3,6 +3,7 @@ import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
 import { readActivityHistory } from './ActivityHistory';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
+import { HOLD_CONFIG } from '../placement/IndoorHold';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -45,7 +46,7 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory', 'holdRows'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -302,6 +303,58 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         [...pair, windowStart, windowStart + ENVIRONMENT_WINDOW_MS, ...account]));
         return { ...row, environment: predictEnvironment(window) };
       }));
+    },
+    /**
+     * Rows for the indoor hold, from both the BLE table and this account's
+     * cloud copy. A cold start (no cursors) reads the last lookback window and
+     * each dog's last good fixes before it; later calls read only rows added
+     * since the cursors, so a poll stays small whatever the retention holds.
+     */
+    async holdRows(owner, sinceMs, cursors = null, quality = HOLD_CONFIG) {
+      const columns = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
+        satellites, hdop, rssi, snr, usb_present`;
+      const read = async (table, clock, account) => {
+        const accountFilter = account ? 'owner_user_id = ? AND ' : '';
+        const params = account ? [owner] : [];
+        const fresh = rows(await connection.executeAsync(cursors
+          ? `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${accountFilter}id > ? ORDER BY id LIMIT 20000`
+          : `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${accountFilter}${clock} >= ? ORDER BY id LIMIT 20000`,
+        [...params, cursors ? cursors[table] ?? 0 : sinceMs]));
+        let seeds = [];
+        if (!cursors) {
+          // Indoors for hours: the anchor is the last good fixes before the
+          // replayed window, however long ago they were (within a day).
+          const slaves = [...new Set(fresh.map(row => row.slave_id))];
+          for (const slave of slaves) {
+            seeds = seeds.concat(rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time
+              FROM ${table} WHERE ${accountFilter}slave_id = ? AND ${clock} < ? AND ${clock} >= ?
+                AND satellites >= ? AND hdop <= ? AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+                AND NOT (slave_lat = 0 AND slave_lon = 0)
+              ORDER BY ${clock} DESC LIMIT 20`,
+            [...params, slave, sinceMs, sinceMs - 24 * 60 * 60000,
+              quality.goodMinSatellites, quality.goodMaxHdop])));
+          }
+        }
+        // Ordered by id: the last row carries the cursor (no spread over 20000 ids).
+        const last = fresh.length ? Number(fresh[fresh.length - 1].id) : cursors?.[table] ?? 0;
+        if (!cursors && !fresh.length) {
+          const top = rows(await connection.executeAsync(`SELECT MAX(id) AS id FROM ${table}
+            ${account ? 'WHERE owner_user_id = ?' : ''}`, params))[0]?.id;
+          return { fresh, seeds, last: Number(top) || 0 };
+        }
+        return { fresh, seeds, last };
+      };
+      const ble = await read('dog_status', 'received_at', false);
+      const cloud = owner
+        ? await read('supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', true)
+        : { fresh: [], seeds: [], last: 0 };
+      return {
+        rows: [...ble.fresh, ...cloud.fresh],
+        seeds: [...ble.seeds, ...cloud.seeds],
+        cursors: { dog_status: ble.last, supabase_dog_status: cloud.last },
+      };
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);

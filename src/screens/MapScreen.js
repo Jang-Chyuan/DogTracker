@@ -51,7 +51,6 @@ export default function MapScreen({
   historical = false,
   cloudDogs,
   cloudOwner,
-  fixedLocations,
   historyDownload,
 }) {
   const insets = useSafeAreaInsets();
@@ -92,10 +91,10 @@ export default function MapScreen({
   const dogs = useMemo(
     () => (mode === 'real'
       ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
-        packetRows: cloudDogs?.packets, fixedLocations, now,
+        packetRows: cloudDogs?.packets, holds: cloudDogs?.holds, now,
         windowMs: LIVE_PACKET_WINDOW_MS })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, fixedLocations, now],
+    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, cloudDogs?.holds, now],
   );
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.

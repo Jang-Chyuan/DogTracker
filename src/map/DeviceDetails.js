@@ -13,7 +13,6 @@ import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import { Position } from './TrackingSheet';
 import ActivityHistoryChart from './ActivityHistoryChart';
-import FixedLocationForm from './FixedLocationForm';
 import { environmentLabel, environmentEvidence } from '../ml/Environment';
 
 function battery(valid, percentage) {
@@ -85,14 +84,11 @@ export default function DeviceDetails({
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content}>
-          {tracking.mode === 'real' && dog && (
-            <FixedLocationForm slaveId={slaveId} masterId={dog.masterId} owner={activityOwner} />
-          )}
           {track ? (
             <>
               <Text style={styles.hint}>{track.sourceLabel}</Text>
-              {!!track.latest?.fixedReason && <Text style={styles.label}>
-                設定位置：{track.latest.fixedName} · {track.latest.fixedReason}
+              {!!track.latest?.heldReason && <Text style={styles.label}>
+                位置停在 {formatTime(track.latest.heldSince)} 前最後清楚的地方（{track.latest.heldReason}）
               </Text>}
               <Text style={styles.hint}>
                 該時刻位置：{formatTime(track.latest?.time)}
@@ -123,7 +119,13 @@ export default function DeviceDetails({
               )}
               {/* No coordinates: the marker this panel belongs to is already
                   on the map, and six decimals tell nobody anything. */}
-              <Text style={styles.hint}>位置時間：{formatTime(dog.receivedAt)}</Text>
+              <Text style={styles.hint}>位置時間：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
+              {!!dog.heldReason && (
+                <Text style={styles.label}>
+                  位置停在 {formatTime(dog.heldSince)} 前最後清楚的地方（{dog.heldReason}）
+                  {dog.heldBuilding ? '，畫在那棟建築物中央（OpenStreetMap）' : ''}。GPS 在室內會飄，狗離開後地圖自動恢復跟隨。
+                </Text>
+              )}
               {dog.retained && (
                 <Text style={styles.warning}>最後有效位置，非最新定位</Text>
               )}

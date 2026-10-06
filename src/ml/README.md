@@ -14,7 +14,7 @@
 4. `Environment.predictEnvironment()` 將該兩分鐘封包轉成觀測資料，交給 `inference.predictWindow()` 彙整並分類；回傳的 `samples` 就是該視窗的封包筆數。
 5. 清單與詳情顯示環境、信心及模型機率；畫面標籤會檢查資料是否過期。
 
-本機 BLE 使用 `received_at`；雲端使用 `track_at`，沒有時回退到 `received_at`。目前環境推論視窗內必須是相同 session、Master、Slave 及 UTC 兩分鐘分桶，混合視窗會拋出錯誤。分桶本身不受台灣時區顯示方式影響。歷史軌跡的固定位置回放目前仍使用既有的一分鐘視窗。
+本機 BLE 使用 `received_at`；雲端使用 `track_at`，沒有時回退到 `received_at`。目前環境推論視窗內必須是相同 session、Master、Slave 及 UTC 兩分鐘分桶，混合視窗會拋出錯誤。分桶本身不受台灣時區顯示方式影響。即時地圖與歷史的室內停留（`src/placement/IndoorHold.js`）也用同樣的兩分鐘分桶，把結果當成「在室內」的佐證之一。
 
 ## 輸入與特徵
 
