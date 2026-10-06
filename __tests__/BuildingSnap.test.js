@@ -57,3 +57,13 @@ test('offline, the dog stays where it was seen', async () => {
   expect(snapper.lookup(DOOR)).toBeNull();
   expect(snapHolds({ 4: { coordinate: DOOR } }, snapper)[4].coordinate).toEqual(DOOR);
 });
+
+test('only an indoor or charging hold is moved into a building', async () => {
+  const fetchImpl = jest.fn(async () => ({ ok: true, json: async () => ({ elements: [square(1, 12, 0, 8)] }) }));
+  const snapper = createBuildingSnapper({ fetchImpl });
+  snapper.lookup(DOOR);
+  await new Promise(resolve => setImmediate(resolve));
+  expect(snapHolds({ 4: { coordinate: DOOR, reason: '窗邊' } }, snapper)[4].coordinate).toEqual(DOOR);
+  expect(snapHolds({ 4: { coordinate: DOOR, reason: 'GPS 訊號弱' } }, snapper)[4].coordinate).toEqual(DOOR);
+  expect(snapHolds({ 4: { coordinate: DOOR, reason: '充電中' } }, snapper)[4].buildingId).toBe(1);
+});

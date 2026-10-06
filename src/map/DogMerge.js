@@ -145,7 +145,8 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const stale = !(held || dog.coordinate) || (!communicating && !charging);
       const noFix = packet && !packet.position;
       return { ...dog, ...(held ? { coordinate: held.coordinate, heldReason: held.reason,
-        heldSince: held.since, heldBuilding: held.buildingId ?? null, receivedAt: lastPacketAt } : {}),
+        heldSince: held.since, heldSource: held.source, heldBuilding: held.buildingId ?? null,
+        receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
         environment,
         retained: held ? false : dog.retained || !!noFix,
@@ -175,4 +176,12 @@ export function describeDogSource(dog) {
 // What a held marker says under the name: why it stopped, and that it did.
 export function heldLabel(dog) {
   return dog?.heldReason ? `${dog.heldReason}・停在原處` : null;
+}
+
+// The sentence for the panels: a hold from weak fixes is an estimate, not the
+// last clear fix, and must not read like one.
+export function heldSentence(dog, formatTime) {
+  if (!dog?.heldReason) return null;
+  if (dog.heldSource === 'weak') return `位置是依訊號弱的定位估計的（${dog.heldReason}），不是清楚的定位`;
+  return `位置停在 ${formatTime(dog.heldSince)} 前最後清楚的地方（${dog.heldReason}）`;
 }

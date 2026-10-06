@@ -207,17 +207,17 @@ export function createHistoryDatabase(db) {
               // when the dog has been inside since before it.
               const seed = rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude,
                 slave_lon AS longitude, satellites, hdop FROM ${table}
-                WHERE ${time} < ? AND ${time} >= ? ${extra} AND satellites >= ? AND hdop <= ?
+                WHERE ${time} < ? AND ${time} >= ? ${extra} AND satellites >= ? AND (hdop <= ? OR (hdop >= 100 AND hdop <= ? * 100 AND hdop <> 65535))
                   AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
                 ORDER BY ${time} DESC LIMIT 20`,
               [since - HOLD_CONTEXT_MS, since - 24 * 60 * 60000, ...params,
-                HOLD_CONFIG.goodMinSatellites, HOLD_CONFIG.goodMaxHdop]));
+                HOLD_CONFIG.goodMinSatellites, HOLD_CONFIG.goodMaxHdop, HOLD_CONFIG.goodMaxHdop]));
               entry.rows = applyHistoryHolds(entry.rows, { seed })
                 .filter(point => point.time >= since)
                 // History never waits for the network: it reuses houses the live
                 // map already looked up.
                 .map(point => {
-                  const building = point.heldReason && buildingSnapper.cached(point);
+                  const building = ['室內', '充電中'].includes(point.heldReason) && buildingSnapper.cached(point);
                   return building ? { ...point, ...building.coordinate } : point;
                 });
             }

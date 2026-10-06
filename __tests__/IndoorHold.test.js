@@ -30,6 +30,10 @@ test('fix quality: 0,0 has none, legacy rows without quality stay as they were',
   expect(fixQuality(weak(1, HOME))).toBe('weak');
   expect(fixQuality({ latitude: 25, longitude: 121 })).toBe('good');
   expect(fixQuality({ ...good(1), hdop: 655.35 })).toBe('good');
+  // A raw ×100 HDOP from a collar reads the same as the divided one.
+  expect(fixQuality({ ...good(1), hdop: 140 })).toBe('good');
+  expect(fixQuality({ ...good(1), hdop: 400 })).toBe('weak');
+  expect(fixQuality({ ...good(1), hdop: 65535 })).toBe('good');
 });
 
 test('losing the fix holds the dog where its good fixes were, then lets go when it walks off', () => {
@@ -226,4 +230,27 @@ test('the same lone fix from BLE and from the cloud does not vouch for itself as
   tracker.seed([good(0), good(5000), reflection, { ...reflection }].map(row => ({ ...row, time: row.time - 600000 })));
   for (let second = 0; second <= 120; second += 5) tracker.push(none(second * 1000));
   expect(distanceMeters(tracker.current().coordinate, HOME)).toBeLessThan(1);
+});
+
+test('rows arriving late are replayed in order instead of dropped', () => {
+  const store = createHoldStore(HOLD_CONFIG, { classify: silent });
+  const early = [good(0), good(5000)];
+  const silence = [];
+  for (let second = 10; second <= 120; second += 5) silence.push(none(second * 1000));
+  // The silence arrives first (BLE), the good fixes before it later (cloud).
+  store.ingest({ rows: silence });
+  expect(store.holds(120000)[4]).toBeUndefined();
+  store.ingest({ rows: early });
+  expect(store.holds(120000)[4]).toMatchObject({ reason: 'GPS 沒有定位' });
+});
+
+test('the same measurement relayed by two Masters counts once', () => {
+  const rows = [good(0), { ...good(20000), master_id: 9, time: 20000 }];
+  // The second row is the first fix relayed by another Master 20 s later.
+  rows[1].latitude = rows[0].latitude; rows[1].longitude = rows[0].longitude;
+  const tracker = createHoldTracker(HOLD_CONFIG, { classify: silent });
+  expect(rows.map(row => tracker.push(row))).toEqual([null, null]);
+  for (let second = 25; second <= 120; second += 5) tracker.push(none(second * 1000));
+  // One good fix alone never became trusted, so there is nothing to hold at.
+  expect(tracker.current()).toBeNull();
 });

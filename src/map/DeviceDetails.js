@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { floatingShadow, mapColors as colors } from './MapTheme';
-import { describeDogSource } from './DogMerge';
+import { describeDogSource, heldSentence } from './DogMerge';
 import { formatTime } from './MapFormat';
 import Stat from './Stat';
 import { Position } from './TrackingSheet';
@@ -88,7 +88,7 @@ export default function DeviceDetails({
             <>
               <Text style={styles.hint}>{track.sourceLabel}</Text>
               {!!track.latest?.heldReason && <Text style={styles.label}>
-                位置停在 {formatTime(track.latest.heldSince)} 前最後清楚的地方（{track.latest.heldReason}）
+                {heldSentence(track.latest, formatTime)}
               </Text>}
               <Text style={styles.hint}>
                 該時刻位置：{formatTime(track.latest?.time)}
@@ -122,7 +122,7 @@ export default function DeviceDetails({
               <Text style={styles.hint}>位置時間：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
               {!!dog.heldReason && (
                 <Text style={styles.label}>
-                  位置停在 {formatTime(dog.heldSince)} 前最後清楚的地方（{dog.heldReason}）
+                  {heldSentence(dog, formatTime)}
                   {dog.heldBuilding ? '，畫在那棟建築物中央（OpenStreetMap）' : ''}。GPS 在室內會飄，狗離開後地圖自動恢復跟隨。
                 </Text>
               )}

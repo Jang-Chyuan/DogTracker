@@ -97,6 +97,13 @@ export function createBuildingSnapper({ fetchImpl = typeof fetch === 'function' 
   config = SNAP_CONFIG } = {}) {
   const cache = new Map();
   const listeners = new Set();
+  const queue = [];
+  async function drain() {
+    while (queue.length) {
+      await request(queue[0]);
+      queue.shift();
+    }
+  }
   // Every write keeps the cache bounded; the oldest places go first.
   function put(key, entry) {
     cache.delete(key);
@@ -138,7 +145,10 @@ export function createBuildingSnapper({ fetchImpl = typeof fetch === 'function' 
       }
       if (!fetchImpl) return null;
       put(key, { pending: true });
-      request(key);
+      // One request at a time: the public Overpass server rate-limits, and a
+      // team arriving at a kennel together should not fire a burst.
+      queue.push(key);
+      if (queue.length === 1) drain();
       return undefined;
     },
     subscribe(listener) {

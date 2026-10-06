@@ -14,6 +14,8 @@ export const HOLD_CONFIG = Object.freeze({
   goodMinSatellites: 5,
   goodMaxHdop: 2,
   trustGapMs: 90000,
+  // The same coordinate from another Master within this long is a relayed copy.
+  duplicateWindowMs: 60000,
   // How long without a good fix before a hold may start: with no fix at all,
   // with the model saying indoor or the charger plugged in, and otherwise
   // (the model calls a lot of open sky "window", and a bridge is short).
@@ -61,6 +63,13 @@ export const HOLD_CONFIG = Object.freeze({
   releaseGoodFixesIndoor: 3,
   releaseAgreeM: 30,
   goodShareWindowMs: 60000,
+  // Good fixes whose median over nearbyMinSpanMs (at least nearbyFixes, with
+  // nearbyGoodShare of rows good) sits beyond nearbyAwayM also let go.
+  nearbyWindowMs: 120000,
+  nearbyFixes: 6,
+  nearbyMinSpanMs: 60000,
+  nearbyGoodShare: 0.7,
+  nearbyAwayM: 60,
   goodShareOutside: 0.5,
   releaseFarM: 100,
   releaseWindowMs: 180000,
@@ -124,8 +133,12 @@ export function hasFix(row) {
 export function fixQuality(row, config = HOLD_CONFIG) {
   if (!hasFix(row)) return 'none';
   const satellites = finite(row.satellites);
-  const rawHdop = finite(row.hdop);
-  const hdop = rawHdop !== null && rawHdop >= 0 && rawHdop < 655.35 ? rawHdop : null;
+  // HDOP arrives divided by 100 (cloud payloads, BLE JSON); 65535 / 655.35
+  // means "no HDOP", and nothing real is below 0.3. Any other value of 100 or more can only be the raw ×100
+  // integer, which real HDOP never reaches.
+  let hdop = finite(row.hdop);
+  if (hdop === 65535 || (hdop !== null && Math.abs(hdop - 655.35) < 0.01) || hdop < 0.3) hdop = null;
+  else if (hdop !== null && hdop >= 100) hdop /= 100;
   // Rows that never carried quality fields keep the old behaviour: shown as is.
   if (satellites === null && hdop === null) return 'good';
   const enoughSatellites = satellites === null || satellites >= config.goodMinSatellites;
@@ -162,18 +175,26 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
   let held = null;
   let previous = null;
   let previousHold = null;
+  const recentFixes = [];
   const buckets = new Map();
   let bucketStart = null;
 
+  // Several Masters can hear the dog in the same window. Their LoRa signal
+  // says how far each receiver is, not where the dog is, so the window takes
+  // the answer of the receiver that heard it best instead of the last one.
   function finishBuckets() {
+    let best = null, bestRssi = -Infinity;
     for (const rows of buckets.values()) {
+      const signals = rows.map(row => finite(row.rssi)).filter(value => value !== null);
+      const rssi = signals.length ? signals.reduce((sum, value) => sum + value, 0) / signals.length : -Infinity;
       try {
         const result = classify(rows);
-        if (result && (!environment || result.observedAt >= environment.observedAt)) environment = result;
+        if (result && (!best || rssi > bestRssi)) { best = result; bestRssi = rssi; }
       } catch (_) {
         // A malformed window says nothing about the dog; keep the previous answer.
       }
     }
+    if (best && (!environment || best.observedAt >= environment.observedAt)) environment = best;
     buckets.clear();
   }
 
@@ -321,7 +342,7 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     }
     if (!anchor) return null;
     held = {
-      anchor, source, reason, refine, weak: pool.slice(-config.weakPool), farGood: [], lately: [],
+      anchor, source, reason, refine, weak: pool.slice(-config.weakPool), farGood: [], lately: [], nearby: [],
       // The drift began right after the last good fix, not when it was noticed.
       since: lastGoodAt ?? pool[0]?.time ?? time,
       anchorAt: source === 'good' && group?.length ? group[group.length - 1].time : time,
@@ -350,6 +371,16 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     held.lately = held.lately.filter(entry => time - entry.time <= Math.max(shareWindow(), config.goodShareWindowMs));
     if (quality === 'good') {
       const away = distanceMeters(point, held.anchor);
+      // Searching around the house: steady good fixes settled somewhere else,
+      // even if not far, mean the dog is outside again.
+      held.nearby = held.nearby.filter(fix => point.time - fix.time <= config.nearbyWindowMs);
+      held.nearby.push(point);
+      if (held.nearby.length >= config.nearbyFixes
+        && point.time - held.nearby[0].time >= config.nearbyMinSpanMs
+        && held.lately.filter(entry => entry.quality === 'good').length >= held.lately.length * config.nearbyGoodShare
+        && distanceMeters(medianPoint(held.nearby), held.anchor) > config.nearbyAwayM) {
+        return release(point.time, 'good-fixes-nearby');
+      }
       if (away <= config.refineRadiusM) {
         held.refine.push(point);
         if (held.refine.length > config.refineFixes) held.refine.shift();
@@ -437,6 +468,19 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       if (row.time === lastTime && previous && hasFix(row) === !!previous.point
         && (!previous.point || (previous.point.latitude === Number(row.latitude)
           && previous.point.longitude === Number(row.longitude)))) return null;
+      // Two Masters relay the same GPS measurement, logged up to half a minute
+      // apart (seen on 2026-10-03: every M7 row repeated an M9 one). The same
+      // coordinate from another Master within a minute is one measurement.
+      // A collar standing still can report the very same coordinate twice
+      // through one Master, so only a copy from another Master is dropped.
+      if (hasFix(row) && recentFixes.some(fix => row.time - fix.time <= config.duplicateWindowMs
+        && (fix.master !== String(row.master_id ?? '') || fix.time === row.time)
+        && fix.latitude === Number(row.latitude) && fix.longitude === Number(row.longitude))) return null;
+      if (hasFix(row)) {
+        recentFixes.push({ time: row.time, master: String(row.master_id ?? ''),
+          latitude: Number(row.latitude), longitude: Number(row.longitude) });
+        while (recentFixes.length && row.time - recentFixes[0].time > config.duplicateWindowMs) recentFixes.shift();
+      }
       lastTime = row.time;
       trackEnvironment(row);
       if (row.usb_present !== undefined && row.usb_present !== null) usb = charging(row.usb_present);
@@ -506,6 +550,9 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       };
     },
     environment: () => environment,
+    // The good fixes it knows, to seed a replacement when rows arrive late.
+    goodFixes: () => goods.slice(),
+    lastTime: () => lastTime,
   };
 }
 
@@ -553,5 +600,6 @@ function hold(point, current) {
   point.longitude = current.coordinate.longitude;
   point.heldReason = current.reason;
   point.heldSince = current.since;
+  point.heldSource = current.source;
   point.speed_kmh = null;
 }

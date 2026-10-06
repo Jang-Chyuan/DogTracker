@@ -61,7 +61,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
         status={heldLabel(position) || (role === 'slave' && faded ? '未更新／最後位置' : null)}><View
         collapsable={false}
         accessible
-        accessibilityLabel={`${name}。${faded ? '未更新／最後位置。' : ''}${detail}`}
+        accessibilityLabel={`${name}。${heldLabel(position) ? `${heldLabel(position)}。` : ''}${faded ? '未更新／最後位置。' : ''}${detail}`}
         style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
         onLayout={() => marker.current?.redraw()}
       >

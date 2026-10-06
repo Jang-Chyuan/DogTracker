@@ -330,11 +330,11 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           for (const slave of slaves) {
             seeds = seeds.concat(rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time
               FROM ${table} WHERE ${accountFilter}slave_id = ? AND ${clock} < ? AND ${clock} >= ?
-                AND satellites >= ? AND hdop <= ? AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+                AND satellites >= ? AND (hdop <= ? OR (hdop >= 100 AND hdop <= ? * 100 AND hdop <> 65535)) AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
                 AND NOT (slave_lat = 0 AND slave_lon = 0)
               ORDER BY ${clock} DESC LIMIT 20`,
             [...params, slave, sinceMs, sinceMs - 24 * 60 * 60000,
-              quality.goodMinSatellites, quality.goodMaxHdop])));
+              quality.goodMinSatellites, quality.goodMaxHdop, quality.goodMaxHdop])));
           }
         }
         // Ordered by id: the last row carries the cursor (no spread over 20000 ids).
