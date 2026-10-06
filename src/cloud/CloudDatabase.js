@@ -346,16 +346,16 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
               WHERE ${accountFilter}slave_id = ? AND ${clock} >= ? AND ${clock} < ? ORDER BY ${clock}, id LIMIT 20000`,
             [...params, row.slave_id, from, sinceMs])));
           }
-          // Indoors for hours: the anchor is the last good fixes before the
-          // replayed window, however long ago they were (within a day).
+          // Indoors for hours or days (charging in a kennel): the anchor is the
+          // last good fixes before the replayed window, however long ago.
           for (const slave of [...heard, ...windows.keys()]) {
             const until = windows.get(slave) ?? sinceMs;
             seeds = seeds.concat(rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time
-              FROM ${table} WHERE ${accountFilter}slave_id = ? AND ${clock} < ? AND ${clock} >= ?
+              FROM ${table} WHERE ${accountFilter}slave_id = ? AND ${clock} < ?
                 AND satellites >= ? AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
                 AND NOT (slave_lat = 0 AND slave_lon = 0)
               ORDER BY ${clock} DESC LIMIT 40`,
-            [...params, slave, until, until - 24 * 60 * 60000, quality.goodMinSatellites])));
+            [...params, slave, until, quality.goodMinSatellites])));
           }
         }
         // Ordered by id: the last row carries the cursor (no spread over 20000 ids).

@@ -243,13 +243,13 @@ export function createHistoryDatabase(db) {
             if (!raw) {
               // Indoors the line stops where the dog was last seen clearly. The
               // last good fixes before the context window tell where that was
-              // when the dog has been inside since before it.
+              // when the dog has been inside since before it, however long ago.
               const seed = rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude,
                 slave_lon AS longitude, master_id, satellites, hdop FROM ${table}
-                WHERE ${time} < ? AND ${time} >= ? ${extra} AND satellites >= ?
+                WHERE ${time} < ? ${extra} AND satellites >= ?
                   AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
                 ORDER BY ${time} DESC LIMIT 40`,
-              [since - HOLD_CONTEXT_MS, since - 24 * 60 * 60000, ...params, HOLD_CONFIG.goodMinSatellites]));
+              [since - HOLD_CONTEXT_MS, ...params, HOLD_CONFIG.goodMinSatellites]));
               const key = [table, owner ?? '', p.masters.join(','), entry.slaveId].join('|');
               usedKeys.add(key);
               entry.rows = continueHistoryHolds(holdCache, key, entry.rows, seed)

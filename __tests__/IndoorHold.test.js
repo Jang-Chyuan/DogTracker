@@ -345,3 +345,25 @@ test('a cold start replays a dog silent for longer than the window, and seeds it
     expect(batch.seeds.map(row => row.time)).toEqual([6000, 1000]);
   } finally { db.close(); }
 });
+
+test('a collar indoors for days still stands at its last good fix', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db);
+    await cloud.initialize();
+    const insert = (time, lat, sats, hdop) => db.executeAsync(`INSERT INTO dog_status(master_id,slave_id,
+      received_at,slave_lat,slave_lon,satellites,hdop) VALUES(7,4,?,?,?,?,?)`, [time, lat, lat ? 121 : 0, sats, hdop]);
+    const day = 24 * 3600000;
+    // Walked in three days ago, then charged in the kennel with no fix since.
+    await insert(1000, 25, 9, 0.9);
+    await insert(6000, 25, 9, 0.9);
+    const now = 3 * day;
+    for (let time = now - 40 * 60000; time <= now; time += 10000) await insert(time, 0, 0, 655.35);
+    const store = createHoldStore(HOLD_CONFIG, { classify: silent });
+    store.ingest(await cloud.holdRows(null, now - 30 * 60000, null));
+    const held = store.holds(now)[4];
+    expect(held).toBeTruthy();
+    expect(distanceMeters(held.coordinate, { latitude: 25, longitude: 121 })).toBeLessThan(1);
+  } finally { db.close(); }
+});
