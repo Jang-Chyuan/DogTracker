@@ -48,13 +48,15 @@ export const HOLD_CONFIG = Object.freeze({
   travelStepM: 12,
   travelTotalM: 60,
   travelReleaseM: 80,
-  // Good fixes within refineRadiusM refine the anchor.
+  // Good fixes within refineRadiusM refine the anchor, which moves on the map
+  // only when the refined median is refineStepM away.
   refineRadiusM: 20,
   refineFixes: 20,
+  refineStepM: 8,
   // Good fixes beyond releaseRadiusM let go: two when most rows are good
   // (outdoors); releaseGoodFixes (releaseGoodFixesIndoor while the model or
   // charger says inside) agreeing within releaseAgreeM; two beyond releaseFarM.
-  releaseRadiusM: 40,
+  releaseRadiusM: 80,
   releaseGoodFixes: 2,
   releaseGoodFixesIndoor: 3,
   releaseAgreeM: 30,
@@ -351,7 +353,10 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       if (away <= config.refineRadiusM) {
         held.refine.push(point);
         if (held.refine.length > config.refineFixes) held.refine.shift();
-        held.anchor = medianPoint(held.refine);
+        // Small shifts of the median are noise; redrawing them adds up to
+        // hundreds of metres of walking that never happened.
+        const refined = medianPoint(held.refine);
+        if (distanceMeters(refined, held.anchor) >= config.refineStepM) held.anchor = refined;
         held.source = 'good';
         held.farGood = [];
         return null;
