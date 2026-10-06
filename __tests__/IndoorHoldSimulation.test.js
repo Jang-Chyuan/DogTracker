@@ -117,6 +117,23 @@ export const SCENARIOS = {
     { kind: 'open', minutes: 2, from: DOOR, to: offset(DOOR, 25, 10), label: 'yard' },
     { kind: 'indoor', minutes: 20, from: ROOM, fix: 0.5 },
   ],
+  // A kennel: the receiver inside, the dogs in runs a few metres apart.
+  'kennel: charging overnight 8 h': [
+    { kind: 'open', minutes: 5, from: PARK, to: DOOR },
+    { kind: 'indoor', minutes: 480, from: ROOM, fix: 0.5, usb: true },
+  ],
+  'kennel: moved to a run 20 m away': [
+    { kind: 'open', minutes: 5, from: PARK, to: DOOR },
+    { kind: 'indoor', minutes: 30, from: ROOM, fix: 0.5 },
+    { kind: 'indoor', minutes: 1, from: ROOM, to: offset(ROOM, 0, 20), fix: 0.5, label: 'move' },
+    { kind: 'indoor', minutes: 30, from: offset(ROOM, 0, 20), fix: 0.5 },
+  ],
+  'kennel: outdoor run beside the building': [
+    { kind: 'open', minutes: 5, from: PARK, to: offset(HOME, 0, 15) },
+    { kind: 'window', minutes: 40, from: offset(HOME, 0, 15), fix: 0.95, goodShare: 0.7 },
+    { kind: 'open', minutes: 0.5, from: offset(HOME, 0, 15), to: DOOR },
+    { kind: 'indoor', minutes: 30, from: ROOM, fix: 0.5 },
+  ],
 };
 
 export function displaySetPoint(rows, point = HOME) {
@@ -241,7 +258,8 @@ describeSimulation('indoor hold against simulated collars', () => {
   }
 
   test.each(['home, no fix for 2 h, walk out', 'home, drifting fixes 1 h', 'home, on and off fixes 1 h',
-    'charging indoors 3 h', 'switched on indoors', 'another building far from home'])(
+    'charging indoors 3 h', 'switched on indoors', 'another building far from home',
+    'kennel: charging overnight 8 h', 'kennel: moved to a run 20 m away'])(
     '%s: the dog stays put indoors', name => {
       const { raw, hold } = table[name];
       expect(hold.stillP95).toBeLessThanOrEqual(Math.max(40, raw.stillP95 / 2));

@@ -440,6 +440,10 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         const next = medianPoint(held.weak);
         if (distanceMeters(next, held.anchor) >= config.weakAnchorStepM) held.anchor = next;
       }
+      // A plugged-in collar is on a charger or a power bank: over a night in a
+      // kennel its drift wanders far one way now and then. Only good fixes let
+      // it go; in a car without them the ride-along draws it with the phone.
+      if (usb) return null;
       const travel = travelling(time);
       if (travel?.moving && distanceMeters(travel.newest, held.anchor) > config.travelReleaseM) {
         return release(time, 'travelling');

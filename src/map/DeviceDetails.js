@@ -125,7 +125,6 @@ export default function DeviceDetails({
                   {heldSentence(dog, formatTime)}。GPS 在室內會飄，狗離開後地圖自動恢復跟隨。
                 </Text>
               )}
-              {!!dog.heldAddress && <Text style={styles.label}>地點：{dog.heldAddress}</Text>}
               {dog.retained && (
                 <Text style={styles.warning}>最後有效位置，非最新定位</Text>
               )}

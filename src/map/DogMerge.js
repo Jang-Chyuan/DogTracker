@@ -150,7 +150,6 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const noFix = packet && !packet.position;
       return { ...dog, ...(held ? { coordinate: held.coordinate, heldReason: held.reason,
         heldSince: held.since, heldSource: held.source,
-        heldAddress: held.address ?? null,
         receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
         environment,

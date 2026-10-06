@@ -98,19 +98,3 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
     },
   };
 }
-
-/**
- * Moves each held dog into the house it stands in or next to, when the
- * building lookup already knows one; asks for the others in the background.
- */
-
-// Names the place of each hold in words (Android geocoder). The address only
-// labels the place; the dog stays where it was measured.
-export function nameHolds(holds, lookup) {
-  const result = {};
-  for (const [slaveId, hold] of Object.entries(holds)) {
-    const address = lookup?.lookup(hold.coordinate);
-    result[slaveId] = address ? { ...hold, address } : hold;
-  }
-  return result;
-}

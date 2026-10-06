@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_AGE_MS } from '../map/DogMerge';
-import { createHoldStore, HOLD_LOOKBACK_MS, nameHolds } from '../placement/HoldStore';
-import { addressLookup as defaultAddressLookup } from '../placement/AddressLookup';
+import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 
 export const POLL_MS = 10000;
 
@@ -14,7 +13,7 @@ export const POLL_MS = 10000;
  */
 const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, error: '' });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
-  { active = true, revision = 0, addresses = defaultAddressLookup } = {}) {
+  { active = true, revision = 0 } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
   const refresh = useRef(null);
   const inFlight = useRef(Promise.resolve());
@@ -76,7 +75,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
             // A failed hold read must not empty the map: keep drawing the last holds.
             console.warn('[Indoor hold] read failed', error?.message);
           }
-          holds = nameHolds(state.store.holds(now()), addresses);
+          holds = state.store.holds(now());
           statuses = state.store.statuses();
         }
         if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, error: '' } });
@@ -96,9 +95,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     refresh.current = poll;
     poll();
     return () => { alive = false; clearTimeout(timer); refresh.current = null; };
-  }, [database, owner, enabled, active, now, trackSinceMs, addresses]);
-  // An address arriving later redraws the held dog's place.
-  useEffect(() => addresses?.subscribe(() => refresh.current?.()), [addresses]);
+  }, [database, owner, enabled, active, now, trackSinceMs]);
   useEffect(() => {
     if (lastRevision.current !== revision) refresh.current?.();
     lastRevision.current = revision;
