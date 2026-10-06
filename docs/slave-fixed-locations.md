@@ -1,5 +1,7 @@
 # 共用固定位置設定
 
+> **App 端已移除**：狗在室內時改成停在最後清楚的位置，不再畫在設定點，詳細資訊裡也沒有「固定位置設定」表單了（見 [src/placement/README.md](../src/placement/README.md)）。Supabase 的資料表、解鎖函式與 migration 保留，舊資料不會遺失；要恢復 App 端，revert 這次的變更即可，既有設定會照舊生效。以下是原本的說明，留作後端參考。
+
 先在現有 Supabase 專案套用 `supabase/migrations/202610040001_slave_fixed_locations.sql`。
 此分支不會自動修改線上資料庫。
 

@@ -1,5 +1,5 @@
 import { simplifyRoute } from '../tracking/SimplifyRoute';
-import { applyHistoryHolds, HOLD_CONFIG } from '../placement/IndoorHold';
+import { createHistoryHolds, HOLD_CONFIG } from '../placement/IndoorHold';
 
 // A hold can start before the window: read this much earlier as context.
 const HOLD_CONTEXT_MS = 10 * 60000;
@@ -62,7 +62,46 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
+// A cached hold pass is rebuilt once it carries this many rows the window
+// has already left behind.
+const HOLD_CACHE_SLACK = 5000;
+
+/**
+ * The hold pass of one dog's history, continued across polls: the screen
+ * re-reads the same window every 10 s, and a day of rows through the tracker
+ * takes the better part of a second per dog on a phone.
+ */
+export function continueHistoryHolds(cache, key, points, seed) {
+  // The seed only matters to a new pass; a continued one already holds the
+  // points before the window.
+  let entry = cache.get(key);
+  const first = points.length ? entry?.index.get(points[0].id) : undefined;
+  const reuse = entry && first !== undefined
+    && first <= HOLD_CACHE_SLACK
+    && points.slice(0, entry.ids.length - first).every((row, at) => entry.ids[first + at] === row.id
+      && entry.times[first + at] === row.time);
+  if (!reuse) {
+    entry = { holds: createHistoryHolds({ seed }), ids: [], times: [], index: new Map() };
+    cache.set(key, entry);
+  }
+  const offset = reuse ? first : 0;
+  const added = points.slice(entry.ids.length - offset);
+  entry.holds.append(added);
+  for (const row of added) {
+    entry.index.set(row.id, entry.ids.length);
+    entry.ids.push(row.id);
+    entry.times.push(row.time);
+  }
+  // Fresh points keep their newest display fields; only the hold is carried over.
+  return points.map((row, at) => {
+    const held = entry.holds.output[offset + at];
+    return held?.heldReason ? { ...row, latitude: held.latitude, longitude: held.longitude, speed_kmh: null,
+      heldReason: held.heldReason, heldSince: held.heldSince, heldSource: held.heldSource } : row;
+  });
+}
+
 export function createHistoryDatabase(db) {
+  const holdCache = new Map();
   return {
     async load() {
       await db.executeAsync('CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
@@ -196,6 +235,7 @@ export function createHistoryDatabase(db) {
             + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
           // One query per dog: each keeps its own line and marker on the map, so
           // a track can never mix two dogs.
+          const usedKeys = new Set();
           for (const entry of clients) {
             const params = p.source === 'cloud'
               ? [...p.masters, entry.slaveId, owner] : [...p.masters, entry.slaveId];
@@ -205,16 +245,19 @@ export function createHistoryDatabase(db) {
               // last good fixes before the context window tell where that was
               // when the dog has been inside since before it.
               const seed = rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude,
-                slave_lon AS longitude, satellites, hdop FROM ${table}
-                WHERE ${time} < ? AND ${time} >= ? ${extra} AND satellites >= ? AND (hdop <= ? OR (hdop >= 100 AND hdop <= ? * 100 AND hdop <> 65535))
+                slave_lon AS longitude, master_id, satellites, hdop FROM ${table}
+                WHERE ${time} < ? AND ${time} >= ? ${extra} AND satellites >= ?
                   AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
-                ORDER BY ${time} DESC LIMIT 20`,
-              [since - HOLD_CONTEXT_MS, since - 24 * 60 * 60000, ...params,
-                HOLD_CONFIG.goodMinSatellites, HOLD_CONFIG.goodMaxHdop, HOLD_CONFIG.goodMaxHdop]));
-              entry.rows = applyHistoryHolds(entry.rows, { seed })
+                ORDER BY ${time} DESC LIMIT 40`,
+              [since - HOLD_CONTEXT_MS, since - 24 * 60 * 60000, ...params, HOLD_CONFIG.goodMinSatellites]));
+              const key = [table, owner ?? '', p.masters.join(','), entry.slaveId].join('|');
+              usedKeys.add(key);
+              entry.rows = continueHistoryHolds(holdCache, key, entry.rows, seed)
                 .filter(point => point.time >= since);
             }
           }
+          // Dogs no longer on the card free their cached pass.
+          if (!raw) for (const key of holdCache.keys()) if (!usedKeys.has(key)) holdCache.delete(key);
           const client = clients.flatMap(entry => entry.rows);
           // This screen only reads what the phone already stores: the cloud copy
           // holds what was downloaded, and both tables are trimmed by retention.

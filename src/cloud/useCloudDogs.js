@@ -23,8 +23,8 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
   // account or database starts them over.
   const holdState = useRef(null);
   useEffect(() => {
-    if (!database || !owner || !enabled) {
-      // Logged out or in demo: the next start replays from scratch.
+    if (!database || !enabled) {
+      // Demo mode: the next start replays from scratch.
       holdState.current = null;
       setCache({ owner, database, value: empty() });
       return undefined;
@@ -46,13 +46,14 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
       try {
         await previous;
         if (!alive) return;
-        const rows = await database.latestBySlave(owner, now() - MAX_AGE_MS);
+        // Logged out, only the indoor holds of this phone's own BLE rows apply.
+        const rows = owner ? await database.latestBySlave(owner, now() - MAX_AGE_MS) : [];
         if (!alive) return;
-        const packets = database.latestStatusRows
+        const packets = owner && database.latestStatusRows
           ? await database.latestStatusRows(owner, now() - MAX_AGE_MS, now()) : [];
         // The path is only read when something asks for it: it is the larger
         // query, and the card draws no line while the path switch is off.
-        const track = Number.isFinite(trackSinceMs)
+        const track = owner && Number.isFinite(trackSinceMs)
           ? await database.trackBySlave(owner, now() - trackSinceMs) : [];
         let holds = {}, statuses = {};
         if (database.holdRows) {
@@ -66,6 +67,8 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           try {
             const batch = await database.holdRows(owner, now() - HOLD_LOOKBACK_MS, state.cursors);
             if (!alive || holdState.current !== state) return;
+            // Stored rows moved in time (cloud time repair): replay them all.
+            if (batch.reset) state.store = createHoldStore();
             state.store.ingest(batch);
             state.cursors = batch.cursors;
             state.polledAt = now();
@@ -101,5 +104,5 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     lastRevision.current = revision;
   }, [revision]);
   // Never expose another account's cache, even for the render before effects run.
-  return enabled && owner && cache.owner === owner && cache.database === database ? cache.value : empty();
+  return enabled && cache.owner === owner && cache.database === database ? cache.value : empty();
 }

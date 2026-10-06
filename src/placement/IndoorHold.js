@@ -108,7 +108,8 @@ export function distanceMeters(a, b) {
 }
 
 function median(values) {
-  const sorted = [...values].sort((left, right) => left - right);
+  // A typed array sorts numbers without a comparator: this runs on most rows.
+  const sorted = Float64Array.from(values).sort();
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
@@ -165,6 +166,13 @@ const REASONS = Object.freeze({
  * push() returns an event when the hold starts or ends, so a history pass can
  * also move the rows between the last good fix and the start onto the anchor.
  */
+// Another Master's relay of a fix already seen (or the same row twice).
+function isCopy(fixes, row, config) {
+  return hasFix(row) && fixes.some(fix => row.time - fix.time <= config.duplicateWindowMs
+    && row.time >= fix.time && (fix.master !== String(row.master_id ?? '') || fix.time === row.time)
+    && fix.latitude === Number(row.latitude) && fix.longitude === Number(row.longitude));
+}
+
 export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvironment } = {}) {
   const goods = [];
   const weak = [];
@@ -206,7 +214,12 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     bucketStart = bucket;
     const key = String(row.master_id ?? '');
     if (!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key).push({
+    const bucketRows = buckets.get(key);
+    const last = bucketRows[bucketRows.length - 1];
+    // The BLE row and its cloud copy are one observation.
+    if (last && last.track_at === row.time && last.slave_lat === (hasFix(row) ? Number(row.latitude) : 0)
+      && last.slave_lon === (hasFix(row) ? Number(row.longitude) : 0)) return;
+    bucketRows.push({
       master_id: row.master_id, slave_id: row.slave_id, track_at: row.time,
       slave_lat: hasFix(row) ? Number(row.latitude) : 0,
       slave_lon: hasFix(row) ? Number(row.longitude) : 0,
@@ -257,14 +270,12 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
   // dog, even a slow one sniffing along, keeps moving the same way. Three
   // half-minute slices of all its fixes must step forward in one direction.
   function travelling(time) {
-    const fixes = [...goods, ...weak].sort((left, right) => left.time - right.time);
     const count = config.travelSlices;
     // Sparse collars (one packet every 30 s or more) get longer slices, so each
     // slice still holds two fixes.
-    const latest = fixes.slice(-10);
-    const gaps = latest.slice(1).map((fix, index) => fix.time - latest[index].time).sort((a, b) => a - b);
-    const typical = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
-    const sliceMs = Math.max(config.travelSliceMs, typical * 2.2);
+    const sliceMs = Math.max(config.travelSliceMs, typicalGap() * 2.2);
+    // Runs on most rows: only the fixes of the slices, not the whole pool.
+    const fixes = [...goods, ...weak].filter(fix => time - fix.time < count * sliceMs);
     const slices = Array.from({ length: count }, (_, index) => count - 1 - index)
       .map(index => fixes.filter(fix => time - fix.time >= index * sliceMs
         && time - fix.time < (index + 1) * sliceMs));
@@ -301,7 +312,8 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
 
   // The usual time between rows, from the latest fixes of any quality.
   function typicalGap() {
-    const latest = [...goods, ...weak].sort((left, right) => left.time - right.time).slice(-10);
+    // Both lists are in time order, so the newest ten are among their tails.
+    const latest = [...goods.slice(-10), ...weak.slice(-10)].sort((left, right) => left.time - right.time).slice(-10);
     const gaps = latest.slice(1).map((fix, index) => fix.time - latest[index].time).sort((a, b) => a - b);
     return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
   }
@@ -451,9 +463,16 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     // rows that will be pushed next.
     seed(goodRows) {
       // The same packet over BLE and from the cloud must not vouch for itself.
-      const unique = new Map();
-      for (const row of goodRows) if (fixQuality(row, config) === 'good') unique.set(Number(row.time), row);
-      const sorted = [...unique.values()].sort((left, right) => left.time - right.time);
+      // Two Masters relaying one fix must not vouch for each other either.
+      const candidates = goodRows.filter(row => fixQuality(row, config) === 'good')
+        .map(row => ({ ...row, time: Number(row.time) })).sort((left, right) => left.time - right.time);
+      const sorted = [], seen = [];
+      for (const row of candidates) {
+        if (isCopy(seen, row, config) || sorted.some(kept => kept.time === row.time)) continue;
+        seen.push({ time: row.time, master: String(row.master_id ?? ''),
+          latitude: Number(row.latitude), longitude: Number(row.longitude) });
+        sorted.push(row);
+      }
       // Same trust rule as live rows: a lone good fix among hours indoors is
       // likely a reflection, so only fixes with a neighbour seed the anchor.
       const backed = sorted.filter((row, index) => [sorted[index - 1], sorted[index + 1]]
@@ -468,27 +487,31 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     },
     push(row) {
       if (!Number.isFinite(row?.time) || row.time < lastTime) return null;
+      // What the row says about the receiver and the charger counts even when
+      // its coordinate is a copy: the BLE copy carries this phone's signal, and
+      // each Master's window is classified from what that Master heard.
+      if (row.source === 'ble' && finite(row.rssi) !== null) bleSignal = { rssi: finite(row.rssi), time: row.time };
+      if (row.usb_present !== undefined && row.usb_present !== null) usb = charging(row.usb_present);
+      trackEnvironment(row);
       // The same packet can arrive over BLE and again from the cloud copy.
-      if (row.time === lastTime && previous && hasFix(row) === !!previous.point
+      const samePacket = row.time === lastTime && previous && hasFix(row) === !!previous.point
         && (!previous.point || (previous.point.latitude === Number(row.latitude)
-          && previous.point.longitude === Number(row.longitude)))) return null;
+          && previous.point.longitude === Number(row.longitude)));
       // Two Masters relay the same GPS measurement, logged up to half a minute
       // apart (seen on 2026-10-03: every M7 row repeated an M9 one). The same
       // coordinate from another Master within a minute is one measurement.
       // A collar standing still can report the very same coordinate twice
       // through one Master, so only a copy from another Master is dropped.
-      if (hasFix(row) && recentFixes.some(fix => row.time - fix.time <= config.duplicateWindowMs
-        && (fix.master !== String(row.master_id ?? '') || fix.time === row.time)
-        && fix.latitude === Number(row.latitude) && fix.longitude === Number(row.longitude))) return null;
+      if (samePacket || isCopy(recentFixes, row, config)) {
+        lastTime = row.time;
+        return null;
+      }
       if (hasFix(row)) {
         recentFixes.push({ time: row.time, master: String(row.master_id ?? ''),
           latitude: Number(row.latitude), longitude: Number(row.longitude) });
         while (recentFixes.length && row.time - recentFixes[0].time > config.duplicateWindowMs) recentFixes.shift();
       }
       lastTime = row.time;
-      if (row.source === 'ble' && finite(row.rssi) !== null) bleSignal = { rssi: finite(row.rssi), time: row.time };
-      trackEnvironment(row);
-      if (row.usb_present !== undefined && row.usb_present !== null) usb = charging(row.usb_present);
       const measured = fixQuality(row, config);
       const point = measured === 'none' ? null
         : { time: row.time, latitude: Number(row.latitude), longitude: Number(row.longitude) };
@@ -505,10 +528,11 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         if (held) event = whileHeld(previous.point, 'good', previous.time);
       }
       previous = { time: row.time, quality: measured, point, trusted: quality === 'good' };
+      // Both the promoted fix and this one may have been added.
+      goods.splice(0, Math.max(0, goods.length - config.anchorFixes * 8));
       if (held) event = whileHeld(point, quality, row.time);
       if (quality === 'good') {
         goods.push(point);
-        if (goods.length > config.anchorFixes * 8) goods.shift();
         lastGoodAt = row.time;
       } else if (quality === 'weak') {
         weak.push(point);
@@ -570,35 +594,51 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
  * the rows between the last good fix and the moment the hold started move
  * there too, so the history never shows the drift the live map showed briefly.
  */
-export function applyHistoryHolds(points, { seed = [], config = HOLD_CONFIG, classify } = {}) {
+export function applyHistoryHolds(points, options) {
+  const holds = createHistoryHolds(options);
+  holds.append(points);
+  return holds.output;
+}
+
+/**
+ * The same pass, kept open: the history screen re-reads its window every few
+ * seconds, and only the rows added since need to go through the tracker.
+ */
+export function createHistoryHolds({ seed = [], config = HOLD_CONFIG, classify } = {}) {
   const tracker = createHoldTracker(config, classify ? { classify } : undefined);
   tracker.seed(seed);
-  const output = points.map(point => ({ ...point }));
-  output.forEach((point, index) => {
-    const raw = {
-      ...point,
-      latitude: point.raw_latitude ?? point.latitude,
-      longitude: point.raw_longitude ?? point.longitude,
-    };
-    const event = tracker.push(raw);
-    if (event?.type === 'start') {
-      const anchor = event.anchor;
-      let from = index;
-      for (let back = index - 1; back >= 0; back -= 1) {
-        const earlier = output[back];
-        const rawPoint = { latitude: earlier.raw_latitude ?? earlier.latitude,
-          longitude: earlier.raw_longitude ?? earlier.longitude };
-        if (earlier.time <= event.since || earlier.heldReason
-          || point.time - earlier.time > config.retroMaxMs) break;
-        if (hasFix(rawPoint) && distanceMeters(rawPoint, anchor) > config.farRadiusM) break;
-        from = back;
+  const output = [];
+  return {
+    output,
+    append(points) {
+      for (const source of points) {
+        const point = { ...source };
+        const index = output.length;
+        output.push(point);
+        const event = tracker.push({
+          ...point,
+          latitude: point.raw_latitude ?? point.latitude,
+          longitude: point.raw_longitude ?? point.longitude,
+        });
+        if (event?.type === 'start') {
+          const anchor = event.anchor;
+          let from = index;
+          for (let back = index - 1; back >= 0; back -= 1) {
+            const earlier = output[back];
+            const rawPoint = { latitude: earlier.raw_latitude ?? earlier.latitude,
+              longitude: earlier.raw_longitude ?? earlier.longitude };
+            if (earlier.time <= event.since || earlier.heldReason
+              || point.time - earlier.time > config.retroMaxMs) break;
+            if (hasFix(rawPoint) && distanceMeters(rawPoint, anchor) > config.farRadiusM) break;
+            from = back;
+          }
+          for (let fill = from; fill < index; fill += 1) hold(output[fill], tracker.current(point.time));
+        }
+        const current = tracker.current(point.time);
+        if (current) hold(point, current);
       }
-      for (let fill = from; fill < index; fill += 1) hold(output[fill], tracker.current(point.time));
-    }
-    const current = tracker.current(point.time);
-    if (current) hold(point, current);
-  });
-  return output;
+    },
+  };
 }
 
 function hold(point, current) {

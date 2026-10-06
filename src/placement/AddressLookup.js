@@ -13,6 +13,8 @@ export const ADDRESS_CONFIG = Object.freeze({
   precision: 4,
   cacheSize: 500,
   retryAfterMs: 60000,
+  // A geocoder that never answers must not stall the places after it.
+  timeoutMs: 15000,
 });
 
 // Google's data sometimes answers in simplified characters.
@@ -65,7 +67,14 @@ export function createAddressLookup({ native = Platform.OS === 'android' ? Nativ
     while (queue.length) {
       const [name, anchor] = queue[0];
       try {
-        const results = JSON.parse(await native.reverseGeocode(anchor.latitude, anchor.longitude));
+        let timer;
+        const answer = await Promise.race([
+          native.reverseGeocode(anchor.latitude, anchor.longitude),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), config.timeoutMs); }),
+        ]).finally(() => clearTimeout(timer));
+        const results = JSON.parse(answer);
+        // No answer at all is what Android gives offline: ask again later.
+        if (!Array.isArray(results) || !results.length) throw new Error('empty');
         put(name, { value: describePlace(anchor, results, config) });
       } catch (_) {
         put(name, { value: null, failedAt: Date.now() });

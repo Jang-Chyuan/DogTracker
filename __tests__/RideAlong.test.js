@@ -38,3 +38,13 @@ test('the map draws a riding dog with the phone and says so', () => {
   expect(heldLabel(dog)).toBe('坐車中・跟著領犬員');
   expect(heldSentence(dog, String)).toContain('領犬員手機');
 });
+
+test('readings from the future are not fresh after the clock is set back', () => {
+  const detector = createRideDetector();
+  const later = 3600000;
+  for (let second = 0; second <= 30; second += 5) {
+    detector.add({ latitude: 25, longitude: 121, speedKmh: 50, timestamp: later + second * 1000 }, later + second * 1000);
+  }
+  expect(detector.ride(30000)).toBeNull();
+  expect(ridesAlong({ lastGoodAt: null, bleRssi: -40, bleRssiAt: later }, { riding: true, coordinate: {} }, 0)).toBe(false);
+});

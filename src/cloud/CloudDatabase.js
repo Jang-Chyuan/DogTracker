@@ -4,6 +4,7 @@ import { cloudTrackTime } from './CloudTrackTime';
 import { readActivityHistory } from './ActivityHistory';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { HOLD_CONFIG } from '../placement/IndoorHold';
+import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -56,6 +57,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET ${cap}
   )`;
   let pagesSaved = 0;
+  // Bumped when stored rows move in time, so the indoor hold replays them.
+  let trackRepairs = 0;
   const rows = result => result.results || result.rows?._array || [];
   const requireOwner = owner => {
     if (!owner) throw new Error('請先登入');
@@ -157,6 +160,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           SET track_time_version=-1 WHERE owner_user_id=? AND event_id=? AND track_time_version IS NULL`,
         params: [owner, id] });
         await connection.executeBatchAsync(commands);
+        if (metadata.length) trackRepairs += 1;
       });
     },
     async savePage(owner, records, checkpoint = null) {
@@ -311,6 +315,9 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
      * since the cursors, so a poll stays small whatever the retention holds.
      */
     async holdRows(owner, sinceMs, cursors = null, quality = HOLD_CONFIG) {
+      // Rows already read may have moved in time: start over from the window.
+      const reset = !!cursors && cursors.repairs !== trackRepairs;
+      if (reset) cursors = null;
       const columns = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
         satellites, hdop, rssi, snr, usb_present`;
       const read = async (table, clock, account) => {
@@ -323,18 +330,32 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
             WHERE ${accountFilter}${clock} >= ? ORDER BY id LIMIT 20000`,
         [...params, cursors ? cursors[table] ?? 0 : sinceMs]));
         let seeds = [];
+        const older = [];
         if (!cursors) {
+          // A dog silent for longer than the window (charging, out of range)
+          // replays its own last half hour instead, so it keeps its hold.
+          const heard = new Set(fresh.map(row => row.slave_id));
+          const silent = rows(await connection.executeAsync(`SELECT slave_id, MAX(${clock}) AS newest
+            FROM ${table} WHERE ${accountFilter}${clock} < ? AND ${clock} >= ? GROUP BY slave_id`,
+          [...params, sinceMs, sinceMs - 24 * 60 * 60000])).filter(row => !heard.has(row.slave_id));
+          const windows = new Map();
+          for (const row of silent) {
+            const from = Number(row.newest) - HOLD_LOOKBACK_MS;
+            windows.set(row.slave_id, from);
+            older.push(...rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time FROM ${table}
+              WHERE ${accountFilter}slave_id = ? AND ${clock} >= ? AND ${clock} < ? ORDER BY ${clock}, id LIMIT 20000`,
+            [...params, row.slave_id, from, sinceMs])));
+          }
           // Indoors for hours: the anchor is the last good fixes before the
           // replayed window, however long ago they were (within a day).
-          const slaves = [...new Set(fresh.map(row => row.slave_id))];
-          for (const slave of slaves) {
+          for (const slave of [...heard, ...windows.keys()]) {
+            const until = windows.get(slave) ?? sinceMs;
             seeds = seeds.concat(rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time
               FROM ${table} WHERE ${accountFilter}slave_id = ? AND ${clock} < ? AND ${clock} >= ?
-                AND satellites >= ? AND (hdop <= ? OR (hdop >= 100 AND hdop <= ? * 100 AND hdop <> 65535)) AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+                AND satellites >= ? AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
                 AND NOT (slave_lat = 0 AND slave_lon = 0)
-              ORDER BY ${clock} DESC LIMIT 20`,
-            [...params, slave, sinceMs, sinceMs - 24 * 60 * 60000,
-              quality.goodMinSatellites, quality.goodMaxHdop, quality.goodMaxHdop])));
+              ORDER BY ${clock} DESC LIMIT 40`,
+            [...params, slave, until, until - 24 * 60 * 60000, quality.goodMinSatellites])));
           }
         }
         // Ordered by id: the last row carries the cursor (no spread over 20000 ids).
@@ -342,9 +363,9 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         if (!cursors && !fresh.length) {
           const top = rows(await connection.executeAsync(`SELECT MAX(id) AS id FROM ${table}
             ${account ? 'WHERE owner_user_id = ?' : ''}`, params))[0]?.id;
-          return { fresh, seeds, last: Number(top) || 0 };
+          return { fresh: older, seeds, last: Number(top) || 0 };
         }
-        return { fresh, seeds, last };
+        return { fresh: [...older, ...fresh], seeds, last };
       };
       const tag = (batch, source) => ({ ...batch, fresh: batch.fresh.map(row => ({ ...row, source })),
         seeds: batch.seeds.map(row => ({ ...row, source })) });
@@ -355,7 +376,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       return {
         rows: [...ble.fresh, ...cloud.fresh],
         seeds: [...ble.seeds, ...cloud.seeds],
-        cursors: { dog_status: ble.last, supabase_dog_status: cloud.last },
+        cursors: { dog_status: ble.last, supabase_dog_status: cloud.last, repairs: trackRepairs },
+        reset,
       };
     },
     async listHistory(owner, offset = 0) {

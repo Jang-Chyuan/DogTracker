@@ -254,3 +254,93 @@ test('the same measurement relayed by two Masters counts once', () => {
   // One good fix alone never became trusted, so there is nothing to hold at.
   expect(tracker.current()).toBeNull();
 });
+
+test('the good-fix buffer stays bounded through on-and-off fixes', () => {
+  const tracker = createHoldTracker(HOLD_CONFIG, { classify: silent });
+  for (let cycle = 0; cycle < 1000; cycle += 1) {
+    const base = cycle * 30000;
+    [good(base), good(base + 5000), none(base + 10000)].forEach(row => tracker.push(row));
+  }
+  expect(tracker.goodFixes().length).toBeLessThanOrEqual(HOLD_CONFIG.anchorFixes * 8);
+});
+
+test('one fix relayed by two Masters does not vouch for itself as a seed', () => {
+  const reflection = offset(HOME, 70, 0);
+  const tracker = createHoldTracker(HOLD_CONFIG, { classify: silent });
+  tracker.seed([{ ...good(-600000, reflection), master_id: 9 }, { ...good(-580000, reflection), master_id: 7 }]);
+  expect(tracker.goodFixes()).toEqual([]);
+});
+
+test('a relayed copy still brings this phone\'s signal and the charger state', () => {
+  const tracker = createHoldTracker(HOLD_CONFIG, { classify: silent });
+  tracker.push({ ...good(0), source: 'cloud', rssi: -90 });
+  tracker.push({ ...good(0), source: 'ble', rssi: -45 });
+  expect(tracker.status()).toMatchObject({ bleRssi: -45, bleRssiAt: 0 });
+});
+
+test('a late row keeps a long hold where and since when it began', () => {
+  const store = createHoldStore(HOLD_CONFIG, { classify: silent });
+  store.ingest({ rows: [good(0), good(5000), good(10000)] });
+  const silence = [];
+  for (let time = 15000; time <= 50 * 60000; time += 10000) silence.push(none(time));
+  store.ingest({ rows: silence });
+  const before = store.holds(50 * 60000)[4];
+  expect(before).toBeTruthy();
+  // Another Master uploads a packet from 40 minutes ago.
+  store.ingest({ rows: [{ ...none(10 * 60000 + 3000), master_id: 9 }] });
+  const after = store.holds(50 * 60000)[4];
+  expect(after.since).toBe(before.since);
+  expect(distanceMeters(after.coordinate, HOME)).toBeLessThan(1);
+});
+
+test('the phone\'s own row coming back from the cloud is the same row, not a late one', () => {
+  const store = createHoldStore(HOLD_CONFIG, { classify: silent });
+  const rows = [good(0), good(5000), good(10000)];
+  for (let time = 15000; time <= 50 * 60000; time += 10000) rows.push(none(time));
+  store.ingest({ rows: rows.map(row => ({ ...row, source: 'ble' })) });
+  const before = store.holds(50 * 60000)[4];
+  store.ingest({ rows: [{ ...rows[rows.length - 30], source: 'cloud' }] });
+  expect(store.holds(50 * 60000)[4]).toEqual(before);
+});
+
+test('history continued poll by poll matches one pass over the whole window', () => {
+  const { continueHistoryHolds } = require('../src/mapHistory/HistoryDatabase');
+  const rows = [];
+  let id = 0;
+  for (let time = 0; time < 40 * 60000; time += 10000) {
+    const minute = time / 60000;
+    const point = minute < 5 ? offset(HOME, minute * 60, 0)
+      : minute < 30 ? null : offset(HOME, 300 + (minute - 30) * 60, 0);
+    rows.push({ id: ++id, ...(point ? good(time, point) : weak(time, offset(HOME, 300 + (time % 70000) / 300, (time % 50000) / 400))) });
+  }
+  const full = applyHistoryHolds(rows);
+  const cache = new Map();
+  let shown;
+  for (let end = 30; end <= rows.length; end += 30) shown = continueHistoryHolds(cache, 'dog', rows.slice(0, end), []);
+  shown = continueHistoryHolds(cache, 'dog', rows, []);
+  expect(shown.map(row => [row.latitude, row.longitude, row.heldReason ?? null]))
+    .toEqual(full.map(row => [row.latitude, row.longitude, row.heldReason ?? null]));
+  // The window slides forward: the earlier pass is reused, not restarted.
+  const slid = continueHistoryHolds(cache, 'dog', rows.slice(12), []);
+  expect(slid.map(row => row.heldReason ?? null)).toEqual(full.slice(12).map(row => row.heldReason ?? null));
+});
+
+test('a cold start replays a dog silent for longer than the window, and seeds it', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db);
+    await cloud.initialize();
+    const insert = (time, lat, sats, hdop) => db.executeAsync(`INSERT INTO dog_status(master_id,slave_id,
+      received_at,slave_lat,slave_lon,satellites,hdop) VALUES(7,4,?,?,121,?,?)`, [time, lat, sats, hdop]);
+    await insert(1000, 25, 9, 655.35);
+    await insert(6000, 25, 9, 0.9);
+    for (let time = 600000; time <= 3600000; time += 60000) await insert(time, 0, 0, 655.35);
+    // Charging, silent since 3 600 000; the app starts two hours later.
+    const batch = await cloud.holdRows(null, 3600000 + 2 * 3600000, null);
+    expect(batch.rows.length).toBeGreaterThan(20);
+    expect(batch.rows.every(row => row.time >= 3600000 - 30 * 60000)).toBe(true);
+    // A missing-HDOP good fix seeds like it counts live.
+    expect(batch.seeds.map(row => row.time)).toEqual([6000, 1000]);
+  } finally { db.close(); }
+});

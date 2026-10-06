@@ -1,4 +1,4 @@
-import { shortAddress, describePlace, createAddressLookup } from '../src/placement/AddressLookup';
+import { shortAddress, describePlace, createAddressLookup, ADDRESS_CONFIG } from '../src/placement/AddressLookup';
 import { nameHolds } from '../src/placement/HoldStore';
 
 // Answers seen from the phone's geocoder on 2026-10-06.
@@ -36,4 +36,26 @@ test('lookups run one at a time, are cached, and name the holds', async () => {
 
 test('without the native geocoder nothing is named', () => {
   expect(createAddressLookup({ native: null }).lookup(DOG_4)).toBeNull();
+});
+
+test('no answer (offline) or a geocoder that never replies is asked again later', async () => {
+  jest.useFakeTimers();
+  try {
+    const native = { reverseGeocode: jest.fn()
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockImplementationOnce(async () => '[]')
+      .mockImplementation(async () => JSON.stringify(nearDog4)) };
+    const lookup = createAddressLookup({ native });
+    lookup.lookup(DOG_4);
+    await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.timeoutMs);
+    expect(lookup.lookup(DOG_4)).toBeNull();
+    await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.retryAfterMs + 1);
+    lookup.lookup(DOG_4);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(lookup.lookup(DOG_4)).toBeNull();
+    await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.retryAfterMs + 1);
+    lookup.lookup(DOG_4);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路630巷21號附近');
+  } finally { jest.useRealTimers(); }
 });
