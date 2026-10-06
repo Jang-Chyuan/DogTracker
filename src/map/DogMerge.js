@@ -179,15 +179,16 @@ export function describeDogSource(dog) {
   return `經 Master ${dog.masterId ?? '?'}・雲端`;
 }
 
-// What a held marker says under the name: why it stopped, and that it did.
+// What a held marker says under the name: where the dog is (室內、窗邊、充電中…).
 export function heldLabel(dog) {
-  return dog?.heldReason ? `${dog.heldReason}・停在原處` : null;
+  return dog?.heldReason || null;
 }
 
 // The sentence for the panels: a hold from weak fixes is an estimate, not the
 // last clear fix, and must not read like one.
 export function heldSentence(dog, formatTime) {
   if (!dog?.heldReason) return null;
-  if (dog.heldSource === 'weak') return `位置是依訊號弱的定位估計的（${dog.heldReason}），不是清楚的定位`;
-  return `位置停在 ${formatTime(dog.heldSince)} 前最後清楚的地方（${dog.heldReason}）`;
+  // "Since" reads as a state that is still going on, not as stale data.
+  const since = `${dog.heldReason}・${formatTime(dog.heldSince)} 起`;
+  return dog.heldSource === 'weak' ? `${since}（位置是依訊號弱的定位估計的）` : since;
 }

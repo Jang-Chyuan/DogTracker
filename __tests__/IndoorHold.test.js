@@ -1,7 +1,7 @@
 import { createHoldTracker, applyHistoryHolds, fixQuality, distanceMeters, HOLD_CONFIG }
   from '../src/placement/IndoorHold';
 import { createHoldStore } from '../src/placement/HoldStore';
-import { mergeDogMarkers, describeDogSource, heldLabel } from '../src/map/DogMerge';
+import { mergeDogMarkers, describeDogSource, heldLabel, heldSentence } from '../src/map/DogMerge';
 import { historyGeometry, createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
@@ -136,7 +136,8 @@ describe('the map draws a held dog', () => {
     const dog = mergeDogMarkers({ packetRows: [packet], holds: { 4: hold }, now: NOW, windowMs: 180000 })[0];
     expect(dog).toMatchObject({ coordinate: hold.coordinate, heldReason: '室內', heldSince: NOW - 600000,
       lastPositionAt: NOW - 600000, stale: false, speedKmh: null, retained: false });
-    expect(heldLabel(dog)).toBe('室內・停在原處');
+    expect(heldLabel(dog)).toBe('室內');
+    expect(heldSentence(dog, () => '10:12')).toBe('室內・10:12 起');
     expect(describeDogSource(dog)).toContain('室內');
   });
 
