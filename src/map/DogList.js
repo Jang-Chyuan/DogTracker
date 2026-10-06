@@ -72,6 +72,7 @@ export default function DogList({
               {!!dog.communicationStatus && <Text style={styles.detail}>{dog.communicationStatus}</Text>}
               <Text style={styles.detail}>目前環境：{environmentLabel(dog.environment)}</Text>
               {!!dog.heldReason && <Text style={styles.detail}>位置：{heldSentence(dog, formatTime)}</Text>}
+              {!!dog.heldAddress && <Text style={styles.detail}>地點：{dog.heldAddress}</Text>}
               <View style={styles.stats}>
                 <Stat icon="speed" label="速度" value={speed(dog.speedKmh)} />
                 <Stat icon="battery" label="電量" value={percent(dog.batteryPercentage)}

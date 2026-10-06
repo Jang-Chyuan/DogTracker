@@ -176,6 +176,8 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
   let previous = null;
   let previousHold = null;
   const recentFixes = [];
+  // The last LoRa signal this phone's own receiver heard from the dog.
+  let bleSignal = null;
   const buckets = new Map();
   let bucketStart = null;
 
@@ -243,8 +245,10 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     const trailing = near(latest, recent, config.anchorClusterM);
     // Only a group the dog stayed in may outvote the newest fixes: points along
     // a walk are close together too, but each for a few seconds.
+    // A slow walk also packs fixes together; a stay starts and ends in one spot.
     const stayed = best.length >= 5 && best[best.length - 1].time - best[0].time >= config.anchorStayMs
-      && latest.time - best[best.length - 1].time <= config.anchorRecentMs;
+      && latest.time - best[best.length - 1].time <= config.anchorRecentMs
+      && distanceMeters(best[0], best[best.length - 1]) <= config.anchorClusterM / 2;
     const chosen = stayed && best.length >= trailing.length * 2 ? best : trailing;
     return chosen.slice(-config.anchorFixes);
   }
@@ -482,6 +486,7 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         while (recentFixes.length && row.time - recentFixes[0].time > config.duplicateWindowMs) recentFixes.shift();
       }
       lastTime = row.time;
+      if (row.source === 'ble' && finite(row.rssi) !== null) bleSignal = { rssi: finite(row.rssi), time: row.time };
       trackEnvironment(row);
       if (row.usb_present !== undefined && row.usb_present !== null) usb = charging(row.usb_present);
       const measured = fixQuality(row, config);
@@ -553,6 +558,9 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     // The good fixes it knows, to seed a replacement when rows arrive late.
     goodFixes: () => goods.slice(),
     lastTime: () => lastTime,
+    // What a ride-along check needs: when the dog last had a good fix, and how
+    // strongly this phone's receiver last heard it.
+    status: () => ({ lastGoodAt, bleRssi: bleSignal?.rssi ?? null, bleRssiAt: bleSignal?.time ?? null }),
   };
 }
 

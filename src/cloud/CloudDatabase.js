@@ -346,9 +346,11 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         }
         return { fresh, seeds, last };
       };
-      const ble = await read('dog_status', 'received_at', false);
+      const tag = (batch, source) => ({ ...batch, fresh: batch.fresh.map(row => ({ ...row, source })),
+        seeds: batch.seeds.map(row => ({ ...row, source })) });
+      const ble = tag(await read('dog_status', 'received_at', false), 'ble');
       const cloud = owner
-        ? await read('supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', true)
+        ? tag(await read('supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', true), 'cloud')
         : { fresh: [], seeds: [], last: 0 };
       return {
         rows: [...ble.fresh, ...cloud.fresh],

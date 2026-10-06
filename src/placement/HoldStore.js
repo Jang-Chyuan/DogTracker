@@ -72,6 +72,11 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
       }
       return result;
     },
+    statuses() {
+      const result = {};
+      for (const [slaveId, state] of dogs) result[slaveId] = state.tracker.status();
+      return result;
+    },
   };
 }
 
@@ -82,6 +87,17 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
 // Only these reasons say the dog is inside; a "window" or a weak fix next to a
 // house must not pull a dog working outside it into the house.
 const SNAP_REASONS = new Set(['室內', '充電中']);
+// Names the place of each hold in words (Android geocoder), from the measured
+// anchor rather than a building centre.
+export function nameHolds(holds, lookup) {
+  const result = {};
+  for (const [slaveId, hold] of Object.entries(holds)) {
+    const address = lookup?.lookup(hold.anchor ?? hold.coordinate);
+    result[slaveId] = address ? { ...hold, address } : hold;
+  }
+  return result;
+}
+
 export function snapHolds(holds, snapper) {
   const result = {};
   for (const [slaveId, hold] of Object.entries(holds)) {

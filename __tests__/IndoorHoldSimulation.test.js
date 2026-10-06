@@ -1,4 +1,5 @@
 import { createHoldTracker, applyHistoryHolds, distanceMeters } from '../src/placement/IndoorHold';
+import { createRideDetector, ridesAlong } from '../src/placement/RideAlong';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../src/ml/Environment';
 import { HOME, offset, generate, displayRaw } from '../__fixtures__/IndoorScenarios';
 
@@ -11,6 +12,13 @@ const FIELD = offset(HOME, 900, 600);
 const PARK = offset(HOME, -400, 700);
 const OTHER = offset(HOME, 2500, -3000);
 const DOOR = offset(HOME, 12, 0);
+// Taoyuan airport: a terminal, a hangar, the apron, a parking garage, cargo.
+const TERMINAL = { latitude: 25.0768, longitude: 121.2312 };
+const HANGAR = { latitude: 25.0718, longitude: 121.2462 };
+const APRON = { latitude: 25.0790, longitude: 121.2390 };
+const GARAGE = { latitude: 25.0782, longitude: 121.2296 };
+const CARGO = { latitude: 25.0700, longitude: 121.2440 };
+const KENNEL = offset(TERMINAL, -2500, -1800);
 const ROOM = HOME;
 
 export const SCENARIOS = {
@@ -73,6 +81,36 @@ export const SCENARIOS = {
     { kind: 'open', minutes: 5, from: PARK, to: DOOR },
     { kind: 'indoor', minutes: 60, from: ROOM, to: offset(ROOM, -50, 40), fix: 0.5 },
   ],
+  'airport: walking 400 m inside a terminal': [
+    { kind: 'open', minutes: 4, from: offset(TERMINAL, -250, 0), to: TERMINAL, master: 'dog' },
+    { kind: 'indoor', minutes: 40, from: TERMINAL, to: offset(TERMINAL, 0, 400), fix: 0.3, master: 'dog' },
+    { kind: 'open', minutes: 4, from: offset(TERMINAL, 0, 400), to: offset(TERMINAL, -200, 400), master: 'dog', label: 'leave' },
+  ],
+  'airport: still in a metal hangar': [
+    { kind: 'open', minutes: 4, from: offset(HANGAR, -200, 0), to: HANGAR, master: 'dog' },
+    { kind: 'indoor', minutes: 30, from: HANGAR, fix: 0, master: 'dog' },
+    { kind: 'open', minutes: 4, from: HANGAR, to: offset(HANGAR, -200, 0), master: 'dog', label: 'leave' },
+  ],
+  'airport: patrolling the apron': [
+    { kind: 'open', minutes: 30, from: APRON, to: offset(APRON, 600, 900), master: 'dog' },
+  ],
+  'airport: up a parking garage': [
+    { kind: 'open', minutes: 3, from: offset(GARAGE, -150, 0), to: GARAGE, master: 'dog' },
+    { kind: 'indoor', minutes: 15, from: GARAGE, to: offset(GARAGE, 120, 60), fix: 0.1, master: 'dog' },
+    { kind: 'open', minutes: 3, from: offset(GARAGE, 120, 60), to: offset(GARAGE, 300, 60), master: 'dog', label: 'leave' },
+  ],
+  'airport: around a cargo warehouse': [
+    { kind: 'open', minutes: 3, from: offset(CARGO, -150, 0), to: CARGO, master: 'dog' },
+    { kind: 'indoor', minutes: 25, from: CARGO, to: offset(CARGO, 150, 120), fix: 0.4, master: 'dog' },
+  ],
+  'airport: perimeter, handler far': [
+    { kind: 'open', minutes: 30, from: offset(APRON, -1500, 0), to: offset(APRON, -1500, 1800), master: APRON },
+  ],
+  'van to the airport, collar blind': [
+    { kind: 'open', minutes: 3, from: offset(KENNEL, 0, -100), to: KENNEL, master: 'dog' },
+    { kind: 'drive', minutes: 6, from: KENNEL, to: APRON, fix: 0, master: 'dog' },
+    { kind: 'open', minutes: 10, from: APRON, to: offset(APRON, 400, 300), master: 'dog' },
+  ],
   'yard for 2 min, back in': [
     { kind: 'open', minutes: 5, from: PARK, to: DOOR },
     { kind: 'indoor', minutes: 20, from: ROOM, fix: 0.5 },
@@ -101,11 +139,23 @@ function displaySetPoint(rows) {
   });
 }
 
-function displayHold(rows, config) {
+// What the live map draws with the ride-along check: the phone's driving and
+// the dog's tracker status decide whether it rides with the handler.
+function displayRide(rows, config) {
   const raw = displayRaw(rows);
   const tracker = createHoldTracker(config);
+  const detector = createRideDetector();
+  const phone = rows.phoneTrack ?? rows.map(row => row.phone);
+  let next = 0;
   return rows.map((row, index) => {
     tracker.push(row);
+    // The phone reports on its own clock, not when a collar packet arrives.
+    while (next < phone.length && phone[next].timestamp <= row.time) {
+      detector.add(phone[next], phone[next].timestamp);
+      next += 1;
+    }
+    const ride = detector.ride(row.time);
+    if (ridesAlong(tracker.status(), ride, row.time)) return ride.coordinate;
     return tracker.current(row.time)?.coordinate ?? raw[index];
   });
 }
@@ -162,7 +212,7 @@ export function runAll(seeds = [1, 2, 3, 4, 5], config = undefined, methods = nu
       const rows = generate(segments, { seed, stepSeconds });
       if (!methods || methods.includes('raw')) merged.raw.push(measure(rows, displayRaw(rows)));
       if (!methods || methods.includes('point')) merged.point.push(measure(rows, displaySetPoint(rows)));
-      if (!methods || methods.includes('hold')) merged.hold.push(measure(rows, displayHold(rows, config)));
+      if (!methods || methods.includes('hold')) merged.hold.push(measure(rows, displayRide(rows, config)));
       if (!methods || methods.includes('history')) merged.history.push(measure(rows, displayHistory(rows, config)));
     }
     table[name] = Object.fromEntries(Object.entries(merged).filter(([, results]) => results.length)
@@ -194,7 +244,7 @@ describeSimulation('indoor hold against simulated collars', () => {
     });
 
   test.each(['charging in a moving car', 'open field, handler far away', 'open field, handler close',
-    'tunnel while walking', 'out of range 10 min'])(
+    'tunnel while walking', 'out of range 10 min', 'airport: patrolling the apron', 'airport: perimeter, handler far'])(
     '%s: a moving dog is not held back', name => {
       const { raw, hold } = table[name];
       expect(hold.movingP95).toBeLessThanOrEqual(raw.movingP95 + 25);
@@ -204,6 +254,11 @@ describeSimulation('indoor hold against simulated collars', () => {
     expect(table['charging in a moving car'].point.movingP50).toBeGreaterThan(1000);
     expect(table['charging in a moving car'].hold.movingP50)
       .toBeLessThanOrEqual(table['charging in a moving car'].raw.movingP50 + 3);
+  });
+
+  test('a blind collar in the handler\'s van rides along instead of staying where it got in', () => {
+    const { raw, hold } = table['van to the airport, collar blind'];
+    expect(hold.movingP95).toBeLessThan(raw.movingP95 / 4);
   });
 
   test('another building is held there, not drawn at home', () => {

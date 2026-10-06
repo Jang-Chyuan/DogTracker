@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_AGE_MS } from '../map/DogMerge';
-import { createHoldStore, HOLD_LOOKBACK_MS, snapHolds } from '../placement/HoldStore';
+import { createHoldStore, HOLD_LOOKBACK_MS, nameHolds, snapHolds } from '../placement/HoldStore';
+import { addressLookup as defaultAddressLookup } from '../placement/AddressLookup';
 import { buildingSnapper as defaultSnapper } from '../placement/BuildingSnap';
 
 export const POLL_MS = 10000;
@@ -12,9 +13,9 @@ export const POLL_MS = 10000;
  *
  * Demo mode must not see real positions, so the caller passes enabled=false.
  */
-const empty = () => ({ rows: [], packets: [], track: [], holds: {}, error: '' });
+const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, error: '' });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
-  { active = true, revision = 0, snapper = defaultSnapper } = {}) {
+  { active = true, revision = 0, snapper = defaultSnapper, addresses = defaultAddressLookup } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
   const refresh = useRef(null);
   const inFlight = useRef(Promise.resolve());
@@ -54,7 +55,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         // query, and the card draws no line while the path switch is off.
         const track = Number.isFinite(trackSinceMs)
           ? await database.trackBySlave(owner, now() - trackSinceMs) : [];
-        let holds = {};
+        let holds = {}, statuses = {};
         if (database.holdRows) {
           // A long pause (background) replays from scratch instead of catching
           // up on every row since.
@@ -73,9 +74,10 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
             // A failed hold read must not empty the map: keep drawing the last holds.
             console.warn('[Indoor hold] read failed', error?.message);
           }
-          holds = snapHolds(state.store.holds(now()), snapper);
+          holds = nameHolds(snapHolds(state.store.holds(now()), snapper), addresses);
+          statuses = state.store.statuses();
         }
-        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, error: '' } });
+        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, error: '' } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
         if (alive) setCache(current => ({ owner, database,
@@ -92,9 +94,10 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     refresh.current = poll;
     poll();
     return () => { alive = false; clearTimeout(timer); refresh.current = null; };
-  }, [database, owner, enabled, active, now, trackSinceMs, snapper]);
+  }, [database, owner, enabled, active, now, trackSinceMs, snapper, addresses]);
   // A building answer arriving later redraws the held dog inside its house.
   useEffect(() => snapper?.subscribe(() => refresh.current?.()), [snapper]);
+  useEffect(() => addresses?.subscribe(() => refresh.current?.()), [addresses]);
   useEffect(() => {
     if (lastRevision.current !== revision) refresh.current?.();
     lastRevision.current = revision;

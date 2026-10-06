@@ -40,6 +40,7 @@ const lerp = (a, b, f) => ({ latitude: a.latitude + (b.latitude - a.latitude) * 
 export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05 } = {}) {
   const random = rng(seed);
   const rows = [];
+  const phoneTrack = [];
   let time = 1_800_000_000_000;
   let bias = { n: 0, e: 0 };
   let jump = null;
@@ -55,9 +56,23 @@ export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05 } = 
       const wall = segment.kind === 'indoor' ? 10 : segment.kind === 'window' ? 5 : 0;
       const rssi = Math.max(-130, -42 - 22 * Math.log10(metres / 5) - wall + random.gauss(2));
       const snr = Math.max(-18, Math.min(12, 10 + (rssi + 92) / 3 + random.gauss(1)));
+      // The phone reports every few seconds whatever the collar does.
+      const handler = segment.master === 'dog' ? offset(truth, 3, 2) : master;
+      const pace = segment.to ? distanceMeters(segment.from, segment.to) / (segment.minutes * 60) : 0;
+      for (let second = stepSeconds - 5; second >= 0; second -= 5) {
+        phoneTrack.push({ latitude: handler.latitude, longitude: handler.longitude, timestamp: time - second * 1000,
+          speedKmh: segment.master === 'dog' ? pace * 3.6 : 0 });
+      }
       // LoRa below this level does not arrive at all, and some rows always get lost.
       if (segment.kind === 'silent' || rssi < -124 || random() < loss) continue;
+      // The handler's phone: beside the dog when the handler is (master 'dog'),
+      // otherwise at the receiver. Its speed is the segment's speed.
+      const metresPerSecond = segment.to ? distanceMeters(segment.from, segment.to) / (segment.minutes * 60) : 0;
+      const phoneAt = segment.master === 'dog' ? offset(truth, 3, 2) : master;
       const row = { time, master_id: 5, slave_id: 4, rssi: Math.round(rssi), snr: Math.round(snr * 4) / 4,
+        source: segment.master === 'dog' ? 'ble' : 'cloud',
+        phone: { latitude: phoneAt.latitude, longitude: phoneAt.longitude, timestamp: time,
+          speedKmh: segment.master === 'dog' ? metresPerSecond * 3.6 : 0 },
         usb_present: segment.usb ? 1 : 0, truth, segment: segment.label ?? segment.kind,
         moving: !!segment.to && distanceMeters(segment.from, segment.to) > 1 };
       const emit = (sats, hdop, northM, eastM) => {
@@ -66,7 +81,10 @@ export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05 } = 
           satellites: Math.round(sats), hdop: Math.round(hdop * 100) / 100 });
       };
       const none = () => Object.assign(row, { latitude: 0, longitude: 0, satellites: 0, hdop: 655.35 });
-      if (segment.kind === 'open' || segment.kind === 'drive') {
+      if ((segment.kind === 'open' || segment.kind === 'drive') && segment.fix !== undefined && random() >= segment.fix) {
+        // A collar on the floor of a van, in a crate: no fix at all.
+        none();
+      } else if (segment.kind === 'open' || segment.kind === 'drive') {
         emit(random.uniform(8, 12), random.uniform(0.7, 1.3), random.gauss(3), random.gauss(3));
       } else if (segment.kind === 'forest') {
         if (random() < 0.15) none();
@@ -98,6 +116,7 @@ export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05 } = 
       rows.push(row);
     }
   }
+  rows.phoneTrack = phoneTrack;
   return rows;
 }
 

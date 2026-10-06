@@ -1,4 +1,5 @@
 import { coordinate as toCoordinate } from '../tracking/RouteSamples';
+import { ridesAlong } from '../placement/RideAlong';
 
 // A slave_id identifies the same dog across the whole team, whichever Master
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
@@ -60,7 +61,7 @@ function bleCandidate(point, samples) {
  * and dogs that are not wanted can be hidden one by one.
  */
 export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
-  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, holds = {} }) {
+  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, holds = {}, statuses = {}, ride = null }) {
   const local = bleCandidate(point, samples);
   const dogs = new Map();
   if (local) dogs.set(local.slaveId, local);
@@ -139,13 +140,17 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const usb = packet?.row.usb_present;
       const charging = usb === 1 || usb === true || (usb !== 0 && usb !== false
         && environment?.source === 'usb_rule');
-      const hold = holds[dog.slaveId] ?? null;
+      // Riding in the handler's vehicle beats a hold at the place it got in.
+      const hold = ridesAlong(statuses[dog.slaveId], ride, now)
+        ? { coordinate: ride.coordinate, reason: '坐車中', source: 'ride', since: lastPacketAt }
+        : holds[dog.slaveId] ?? null;
       const held = hold && (communicating || charging) ? hold : null;
       const positionAt = held ? held.anchorAt ?? lastPacketAt : dog.receivedAt;
       const stale = !(held || dog.coordinate) || (!communicating && !charging);
       const noFix = packet && !packet.position;
       return { ...dog, ...(held ? { coordinate: held.coordinate, heldReason: held.reason,
         heldSince: held.since, heldSource: held.source, heldBuilding: held.buildingId ?? null,
+        heldAddress: held.address ?? null,
         receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
         environment,
@@ -175,6 +180,7 @@ export function describeDogSource(dog) {
 
 // What a held marker says under the name: why it stopped, and that it did.
 export function heldLabel(dog) {
+  if (dog?.heldSource === 'ride') return '坐車中・跟著領犬員';
   return dog?.heldReason ? `${dog.heldReason}・停在原處` : null;
 }
 
@@ -182,6 +188,7 @@ export function heldLabel(dog) {
 // last clear fix, and must not read like one.
 export function heldSentence(dog, formatTime) {
   if (!dog?.heldReason) return null;
+  if (dog.heldSource === 'ride') return '項圈在車上沒有定位，畫在領犬員手機的位置（坐車中）';
   if (dog.heldSource === 'weak') return `位置是依訊號弱的定位估計的（${dog.heldReason}），不是清楚的定位`;
   return `位置停在 ${formatTime(dog.heldSince)} 前最後清楚的地方（${dog.heldReason}）`;
 }

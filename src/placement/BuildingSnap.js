@@ -118,7 +118,9 @@ export function createBuildingSnapper({ fetchImpl = typeof fetch === 'function' 
     try {
       const response = await fetchImpl(OVERPASS_URL, {
         method: 'POST', signal: controller?.signal,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        // Overpass refuses clients that do not say who they are (HTTP 406).
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'DogTracker/1.0 (+https://github.com/Jang-Chyuan/DogTracker)' },
         body: `data=${encodeURIComponent(query)}`,
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
