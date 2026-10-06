@@ -163,7 +163,7 @@ export function displaySetPoint(rows, point = HOME) {
 
 // What the live map draws with the ride-along check: the phone's driving and
 // the dog's tracker status decide whether it rides with the handler.
-function displayRide(rows, config) {
+export function displayRide(rows, config) {
   const raw = displayRaw(rows);
   const tracker = createHoldTracker(config);
   const detector = createRideDetector();
