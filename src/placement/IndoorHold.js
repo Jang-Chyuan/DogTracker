@@ -53,8 +53,8 @@ export const HOLD_CONFIG = Object.freeze({
   // Good fixes within refineRadiusM refine the anchor, which moves on the map
   // only when the refined median is refineStepM away.
   refineRadiusM: 20,
-  refineFixes: 20,
-  refineStepM: 8,
+  refineFixes: 200,
+  refineStepM: 15,
   // Good fixes beyond releaseRadiusM let go: two when most rows are good
   // (outdoors); releaseGoodFixes (releaseGoodFixesIndoor while the model or
   // charger says inside) agreeing within releaseAgreeM; two beyond releaseFarM.

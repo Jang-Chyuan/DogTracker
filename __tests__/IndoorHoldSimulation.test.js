@@ -119,15 +119,20 @@ export const SCENARIOS = {
   ],
 };
 
-function displaySetPoint(rows) {
+export function displaySetPoint(rows, point = HOME) {
   const raw = displayRaw(rows);
   const finished = [];
   let bucket = null, bucketRows = [];
   return rows.map((row, index) => {
     const start = Math.floor(row.time / ENVIRONMENT_WINDOW_MS) * ENVIRONMENT_WINDOW_MS;
     if (bucket !== null && start !== bucket && bucketRows.length) {
-      finished.push(predictEnvironment(bucketRows.map(item => ({ ...item,
-        slave_lat: item.latitude, slave_lon: item.longitude, track_at: item.time }))));
+      // main classifies each receiver's window on its own and keeps the newest.
+      const byMaster = new Map();
+      bucketRows.forEach(item => byMaster.set(item.master_id, [...(byMaster.get(item.master_id) || []), item]));
+      for (const group of byMaster.values()) {
+        finished.push(predictEnvironment(group.map(item => ({ ...item,
+          slave_lat: item.latitude, slave_lon: item.longitude, track_at: item.time }))));
+      }
       bucketRows = [];
     }
     bucket = start;
@@ -135,7 +140,7 @@ function displaySetPoint(rows) {
     const environment = finished[finished.length - 1];
     const indoor = environment && row.time - environment.observedAt <= 120000
       && ['indoor', 'window'].includes(environment.environment);
-    return row.usb_present === 1 || indoor ? HOME : raw[index];
+    return row.usb_present === 1 || indoor ? point : raw[index];
   });
 }
 
