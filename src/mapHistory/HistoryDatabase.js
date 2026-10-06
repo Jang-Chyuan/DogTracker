@@ -1,6 +1,5 @@
 import { simplifyRoute } from '../tracking/SimplifyRoute';
 import { applyHistoryHolds, HOLD_CONFIG } from '../placement/IndoorHold';
-import { buildingSnapper } from '../placement/BuildingSnap';
 
 // A hold can start before the window: read this much earlier as context.
 const HOLD_CONTEXT_MS = 10 * 60000;
@@ -213,13 +212,7 @@ export function createHistoryDatabase(db) {
               [since - HOLD_CONTEXT_MS, since - 24 * 60 * 60000, ...params,
                 HOLD_CONFIG.goodMinSatellites, HOLD_CONFIG.goodMaxHdop, HOLD_CONFIG.goodMaxHdop]));
               entry.rows = applyHistoryHolds(entry.rows, { seed })
-                .filter(point => point.time >= since)
-                // History never waits for the network: it reuses houses the live
-                // map already looked up.
-                .map(point => {
-                  const building = ['室內', '充電中'].includes(point.heldReason) && buildingSnapper.cached(point);
-                  return building ? { ...point, ...building.coordinate } : point;
-                });
+                .filter(point => point.time >= since);
             }
           }
           const client = clients.flatMap(entry => entry.rows);

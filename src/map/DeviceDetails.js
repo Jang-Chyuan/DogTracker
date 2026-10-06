@@ -122,8 +122,7 @@ export default function DeviceDetails({
               <Text style={styles.hint}>位置時間：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
               {!!dog.heldReason && (
                 <Text style={styles.label}>
-                  {heldSentence(dog, formatTime)}
-                  {dog.heldBuilding ? '，畫在那棟建築物中央（OpenStreetMap）' : ''}。GPS 在室內會飄，狗離開後地圖自動恢復跟隨。
+                  {heldSentence(dog, formatTime)}。GPS 在室內會飄，狗離開後地圖自動恢復跟隨。
                 </Text>
               )}
               {!!dog.heldAddress && <Text style={styles.label}>地點：{dog.heldAddress}</Text>}

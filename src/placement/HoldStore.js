@@ -84,26 +84,14 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
  * Moves each held dog into the house it stands in or next to, when the
  * building lookup already knows one; asks for the others in the background.
  */
-// Only these reasons say the dog is inside; a "window" or a weak fix next to a
-// house must not pull a dog working outside it into the house.
-const SNAP_REASONS = new Set(['室內', '充電中']);
-// Names the place of each hold in words (Android geocoder), from the measured
-// anchor rather than a building centre.
+
+// Names the place of each hold in words (Android geocoder). The address only
+// labels the place; the dog stays where it was measured.
 export function nameHolds(holds, lookup) {
   const result = {};
   for (const [slaveId, hold] of Object.entries(holds)) {
-    const address = lookup?.lookup(hold.anchor ?? hold.coordinate);
+    const address = lookup?.lookup(hold.coordinate);
     result[slaveId] = address ? { ...hold, address } : hold;
-  }
-  return result;
-}
-
-export function snapHolds(holds, snapper) {
-  const result = {};
-  for (const [slaveId, hold] of Object.entries(holds)) {
-    const building = SNAP_REASONS.has(hold.reason) ? snapper?.lookup(hold.coordinate) : null;
-    result[slaveId] = building ? { ...hold, coordinate: building.coordinate, anchor: hold.coordinate,
-      buildingId: building.buildingId } : hold;
   }
   return result;
 }
