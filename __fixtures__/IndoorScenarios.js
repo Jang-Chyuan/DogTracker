@@ -37,7 +37,16 @@ const lerp = (a, b, f) => ({ latitude: a.latitude + (b.latitude - a.latitude) * 
  * master: where the receiver is; 'home' (default), 'dog' (handler next to the
  * dog), or a point.
  */
-export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05 } = {}) {
+// How bad indoor fixes are. 'harsh' is the stress test the rules were tuned
+// on; 'real' is fitted to 2026-10-03 dog 4 (a still collar: p95 46 m, max
+// 140 m from its centre, no jumps of hundreds of metres).
+export const DRIFT = {
+  harsh: { step: 6, cap: 120, jumpChance: 0.02, jump: 220, multipath: [40, 80] },
+  real: { step: 3.2, cap: 55, jumpChance: 0.003, jump: 60, multipath: [20, 45] },
+};
+
+export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05, drift = 'harsh' } = {}) {
+  const errors = DRIFT[drift];
   const random = rng(seed);
   const rows = [];
   const phoneTrack = [];
@@ -94,11 +103,13 @@ export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05 } = 
       } else if (segment.kind === 'indoor' || segment.kind === 'window') {
         // Indoor error wanders (multipath), reverts slowly, and now and then
         // jumps a few hundred metres for a few rows.
-        bias.n = bias.n * 0.98 + random.gauss(6);
-        bias.e = bias.e * 0.98 + random.gauss(6);
+        bias.n = bias.n * 0.98 + random.gauss(errors.step);
+        bias.e = bias.e * 0.98 + random.gauss(errors.step);
         const spread = Math.hypot(bias.n, bias.e);
-        if (spread > 120) { bias.n *= 120 / spread; bias.e *= 120 / spread; }
-        if (!jump && random() < 0.02) jump = { n: random.gauss(220), e: random.gauss(220), left: Math.ceil(random.uniform(1, 4)) };
+        if (spread > errors.cap) { bias.n *= errors.cap / spread; bias.e *= errors.cap / spread; }
+        if (!jump && random() < errors.jumpChance) {
+          jump = { n: random.gauss(errors.jump), e: random.gauss(errors.jump), left: Math.ceil(random.uniform(1, 4)) };
+        }
         const fixShare = segment.fix ?? (segment.kind === 'window' ? 0.9 : 0.5);
         if (random() >= fixShare) none();
         else if (jump) {
@@ -108,7 +119,7 @@ export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05 } = 
         } else if (random() < (segment.goodShare ?? (segment.kind === 'window' ? 0.5 : 0.03))) {
           // Good-looking fixes indoors are the dangerous ones: by a window they
           // are close, through multipath they can be 40-80 m off.
-          const off = segment.kind === 'window' ? 12 : random.uniform(40, 80);
+          const off = segment.kind === 'window' ? 12 : random.uniform(...errors.multipath);
           const angle = random.uniform(0, 2 * Math.PI);
           emit(random.uniform(5, 8), random.uniform(1.3, 2), off * Math.cos(angle), off * Math.sin(angle));
         } else emit(random.uniform(3, 5), random.uniform(2.5, 8), bias.n, bias.e);

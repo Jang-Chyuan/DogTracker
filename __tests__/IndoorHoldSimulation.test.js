@@ -219,6 +219,8 @@ export function measure(rows, shown) {
   return {
     stillP50: round(percentile(still.errors, 0.5)),
     stillP95: round(percentile(still.errors, 0.95)),
+    // The farthest the dog was ever drawn from where it stood.
+    stillMax: round(still.errors.length ? Math.max(...still.errors) : null),
     jitterPerHour: still.hours ? round(still.jitter / still.hours) : '—',
     movingP50: round(percentile(moving.errors, 0.5)),
     movingP95: round(percentile(moving.errors, 0.95)),
@@ -226,12 +228,12 @@ export function measure(rows, shown) {
   };
 }
 
-export function runAll(seeds = [1, 2, 3, 4, 5], config = undefined, methods = null, stepSeconds = 5) {
+export function runAll(seeds = [1, 2, 3, 4, 5], config = undefined, methods = null, stepSeconds = 5, drift = 'harsh') {
   const table = {};
   for (const [name, segments] of Object.entries(SCENARIOS)) {
     const merged = { raw: [], point: [], hold: [], history: [] };
     for (const seed of seeds) {
-      const rows = generate(segments, { seed, stepSeconds });
+      const rows = generate(segments, { seed, stepSeconds, drift });
       if (!methods || methods.includes('raw')) merged.raw.push(measure(rows, displayRaw(rows)));
       if (!methods || methods.includes('point')) merged.point.push(measure(rows, displaySetPoint(rows)));
       if (!methods || methods.includes('hold')) merged.hold.push(measure(rows, displayRide(rows, config)));
