@@ -141,8 +141,10 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const charging = usb === 1 || usb === true || (usb !== 0 && usb !== false
         && environment?.source === 'usb_rule');
       // Riding in the handler's vehicle beats a hold at the place it got in.
+      // The dog is simply drawn where it is, with nothing said about it: it is
+      // where the handler expects it, not a state to point out.
       const hold = ridesAlong(statuses[dog.slaveId], ride, now)
-        ? { coordinate: ride.coordinate, reason: '坐車中', source: 'ride', since: lastPacketAt }
+        ? { coordinate: ride.coordinate, reason: null, source: 'ride', since: lastPacketAt }
         : holds[dog.slaveId] ?? null;
       const held = hold && (communicating || charging) ? hold : null;
       const positionAt = held ? held.anchorAt ?? lastPacketAt : dog.receivedAt;
@@ -179,7 +181,6 @@ export function describeDogSource(dog) {
 
 // What a held marker says under the name: why it stopped, and that it did.
 export function heldLabel(dog) {
-  if (dog?.heldSource === 'ride') return '坐車中・跟著領犬員';
   return dog?.heldReason ? `${dog.heldReason}・停在原處` : null;
 }
 
@@ -187,7 +188,6 @@ export function heldLabel(dog) {
 // last clear fix, and must not read like one.
 export function heldSentence(dog, formatTime) {
   if (!dog?.heldReason) return null;
-  if (dog.heldSource === 'ride') return '項圈在車上沒有定位，畫在領犬員手機的位置（坐車中）';
   if (dog.heldSource === 'weak') return `位置是依訊號弱的定位估計的（${dog.heldReason}），不是清楚的定位`;
   return `位置停在 ${formatTime(dog.heldSince)} 前最後清楚的地方（${dog.heldReason}）`;
 }

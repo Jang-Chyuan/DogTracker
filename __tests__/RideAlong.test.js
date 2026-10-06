@@ -28,15 +28,16 @@ test('a dog rides along only when heard loudly and blind', () => {
   expect(ridesAlong(close, null, NOW)).toBe(false);
 });
 
-test('the map draws a riding dog with the phone and says so', () => {
+test('the map draws a riding dog with the phone, without calling it out', () => {
   const packet = { slave_id: 4, master_id: 7, received_at: NOW, slave_lat: 0, slave_lon: 0, source: 'ble' };
   const ride = { riding: true, coordinate: { latitude: 25.01, longitude: 121.02 } };
   const statuses = { 4: { bleRssi: -40, bleRssiAt: NOW, lastGoodAt: NOW - 600000 } };
   const cloudRows = [{ slave_id: 4, master_id: 7, received_at: NOW - 600000, slave_lat: 25, slave_lon: 121 }];
   const dog = mergeDogMarkers({ cloudRows, packetRows: [packet], statuses, ride, now: NOW, windowMs: 180000 })[0];
-  expect(dog).toMatchObject({ coordinate: ride.coordinate, heldReason: '坐車中', heldSource: 'ride', stale: false });
-  expect(heldLabel(dog)).toBe('坐車中・跟著領犬員');
-  expect(heldSentence(dog, String)).toContain('領犬員手機');
+  expect(dog).toMatchObject({ coordinate: ride.coordinate, heldSource: 'ride', stale: false });
+  expect(dog.heldReason).toBeNull();
+  expect(heldLabel(dog)).toBeNull();
+  expect(heldSentence(dog, String)).toBeNull();
 });
 
 test('readings from the future are not fresh after the clock is set back', () => {
