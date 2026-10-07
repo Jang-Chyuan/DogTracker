@@ -65,6 +65,9 @@ export function createTrackingPreferences(database, onChange) {
   };
   let disposed = false;
   let pending = null;
+  // Changes waiting for the write in flight (see save).
+  let queued = null;
+  let queuedRun = null;
   function update(patch) {
     state = { ...state, ...patch };
     if (!disposed) onChange(state);
@@ -99,17 +102,30 @@ export function createTrackingPreferences(database, onChange) {
         await database.initialize();
         return validateTrackingPreferences(await database.load());
       }, true),
-    save: patch =>
-      state.ready
-        ? run(async () => {
-            const next = validateTrackingPreferences({
-              ...state.value,
-              ...patch,
-            });
-            await database.save(next);
-            return next;
-          })
-        : Promise.resolve(false),
+    save: function save(patch) {
+      if (!state.ready || disposed) return Promise.resolve(false);
+      if (pending) {
+        // A change made while a write is in flight is merged with any other
+        // waiting change and written right after it, so the last choice wins
+        // instead of being dropped.
+        queued = { ...queued, ...patch };
+        queuedRun ??= pending.then(() => {
+          const next = queued;
+          queued = null;
+          queuedRun = null;
+          return next && !disposed ? save(next) : false;
+        });
+        return queuedRun;
+      }
+      return run(async () => {
+        const next = validateTrackingPreferences({
+          ...state.value,
+          ...patch,
+        });
+        await database.save(next);
+        return next;
+      });
+    },
     reset: () =>
       run(async () => {
         await database.initialize();

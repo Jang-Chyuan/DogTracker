@@ -138,7 +138,7 @@ test('tapping a dog follows it and tapping it again releases the camera', async 
 test('the map re-centres on the followed dog and leaves the others drawn', async () => {
   await expand(screen({ focusSlaveId: 4 }).element);
   expect(mockCamera.animateCamera).toHaveBeenCalledWith(
-    { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 400 },
+    { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 300 },
   );
   const markers = dogMarkers();
   expect(markers.map(node => node.props.identifier))
@@ -165,7 +165,7 @@ test('hiding the dog markers keeps the list and keeps following the chosen dog',
   // The card says 跟隨中, so the camera has to actually follow.
   expect(cardText()).toContain('地圖跟隨中');
   expect(mockCamera.animateCamera).toHaveBeenCalledWith(
-    { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 400 },
+    { center: { latitude: 25.04, longitude: 121.57 } }, { duration: 300 },
   );
   // One eye in the header covers every dog on the map.
   expect(renderer.root.findAll(

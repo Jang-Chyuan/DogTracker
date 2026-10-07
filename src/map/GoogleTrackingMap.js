@@ -1,9 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   PixelRatio,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -14,7 +12,7 @@ import MapView, {
   Polyline,
   PROVIDER_GOOGLE,
 } from 'react-native-maps';
-import { colors as tokens, opacity } from '../theme/tokens';
+import { colors as tokens, layout, motion, opacity, size as sizes } from '../theme/tokens';
 import { floatingShadow, mapColors as colors } from './MapTheme';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
@@ -23,6 +21,12 @@ import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { INDOOR_WORD, nameTags } from './DogMarkers';
 import { dogMapLabel } from '../mapHistory/DogAliases';
 import { hideSplash } from '../app/hideSplash';
+import {
+  framedCoordinates, framePadding, frameAllCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S, regionForFrame,
+} from './MapFraming';
+import { edgeHints } from './EdgeHints';
+import { EdgeHintView, MapButtons, MapTip } from './MapControls';
+import OverlapPicker, { overlapMenuPlace } from './OverlapPicker';
 
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
 const withOpacity = (hex, alpha) => hex + Math.round(alpha * 255).toString(16).padStart(2, '0').toUpperCase();
@@ -39,6 +43,16 @@ const dash = () => [6, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(len
 // Drawing order: base map, ring, red lines, routes, dogs and phone.
 const Z = { ring: 1, rangeLine: 2, route: 3 };
 
+// The launch screen is released once the first framing has been drawn, or
+// this long after the map loaded when there is still nothing to frame (the
+// native side lets go after 10 s whatever happens).
+export const FIRST_FRAME_WAIT_MS = 3000;
+// A fit is drawn within a frame or two; release the launch screen after it
+// even if the map reports no camera change (the camera was already there).
+const AFTER_FIT_MS = 250;
+// The map's own padding at the sides (dp).
+const MAP_SIDE_PADDING = 12;
+
 const EMPTY_REGION = {
   latitude: 23.7,
   longitude: 121,
@@ -48,7 +62,7 @@ const EMPTY_REGION = {
 // One dog on the live map. The marker view is not tracked for changes (that
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
-function DogMarker({ source, marker, tag, avatar, zIndex, onPress }) {
+function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
   const ref = useRef(null);
   const frame = markerFrame(marker.size);
   const look = [marker.size, marker.problem, marker.stale, marker.indoor, marker.selected,
@@ -66,13 +80,20 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress }) {
       // already opens the dog. The label below is what TalkBack reads.
       onPress={onPress}
     >
-      <View collapsable={false} accessible accessibilityLabel={marker.label}
+      <View collapsable={false} accessible accessibilityLabel={label || marker.label}
         onLayout={() => ref.current?.redraw?.()}>
         <DogMarkerView marker={marker} tag={tag} avatar={avatar}
           onAvatarLoad={() => ref.current?.redraw?.()} />
       </View>
     </Marker>
   );
+}
+
+// TalkBack for the face carrying a 「3 隻」 tag: the dogs in it, and what a
+// double tap does.
+function groupSpeech(tag, markers) {
+  const names = tag.members.map(id => markers.find(marker => marker.slaveId === id)?.name).filter(Boolean);
+  return `${tag.text}：${names.join('、')}，點兩下選一隻`;
 }
 
 // The history track's last drawn position: the same face and name tag as the
@@ -147,6 +168,23 @@ function GoogleTrackingMapRenderer({
   // { source, points }: points from another source (a fixture or data
   // source switch moves every dog) are never used for this one.
   const [dogPoints, setDogPoints] = useState({ source: null, points: {} });
+  // While the camera moves (a drag, or a move the user asked for) the screen
+  // points are out of date: the off-screen hints wait for the next read.
+  const moving = useRef(false);
+  const [movingState, setMovingState] = useState(false);
+  const movingTimer = useRef(null);
+  const startMoving = useCallback(() => {
+    if (moving.current) return;
+    moving.current = true;
+    setMovingState(true);
+    // A move to where the camera already is reports no change: read again
+    // after a moment anyway, so the hints never stay hidden.
+    clearTimeout(movingTimer.current);
+    movingTimer.current = setTimeout(() => {
+      if (moving.current) setCursorRevision(value => value + 1);
+    }, 1500);
+  }, []);
+  useEffect(() => () => clearTimeout(movingTimer.current), []);
   const pointsKey = dogMarkers.map(marker => `${marker.slaveId}:${marker.coordinate.latitude},`
     + `${marker.coordinate.longitude}:${marker.size}`).join('|');
   const activeInstance = useRef(instance);
@@ -164,28 +202,54 @@ function GoogleTrackingMapRenderer({
   const [needsFirstPositionFit, setNeedsFirstPositionFit] = useState(false);
   const interacted = useRef(false);
   const savedView = useRef(null);
+  const framed = useRef(false);
+  const afterFit = useRef(null);
+  useEffect(() => () => clearTimeout(afterFit.current), []);
+  const splashReleased = useRef(false);
+  const releaseSplash = useCallback(() => {
+    if (splashReleased.current) return;
+    splashReleased.current = true;
+    hideSplash();
+  }, []);
+  const fontScale = PixelRatio.getFontScale?.() || 1;
+  // Framing keeps clear of the bottom right buttons too (16dp + 48dp), so no
+  // dog or name tag is framed under them.
+  const padding = useMemo(() => {
+    const value = framePadding(dogMarkers, fontScale);
+    return { ...value, right: value.right + layout.screenEdge + sizes.floatingButton };
+  }, [dogMarkers, fontScale]);
   const cameraRead = useRef(0);
   // Android owns pause/resume. Replacing a healthy map on every resume retains
   // old SDK frame callbacks and duplicates all history overlays. Recentring
   // the phone only moves the camera; it never replaces the map surface.
   useEffect(() => {
     if (!dataReady || mountedMap) return;
-    setNeedsFirstPositionFit(positions.length === 0 || !!presentation.historyTracks);
+    // The first view is always one fit of what the presentation frames, made
+    // under the launch screen (initialRegion only centres on the first point).
+    setNeedsFirstPositionFit(true);
     setMountedMap(true);
-  }, [dataReady, mountedMap, positions.length, presentation.historyTracks]);
+  }, [dataReady, mountedMap]);
   useEffect(() => {
     const map = mapRef.current;
-    if (!usable || dogMarkers.length < 2 || !map?.pointForCoordinate) return undefined;
+    // Read for one dog too: the off-screen hints need to know where it is.
+    if (!usable || dogMarkers.length < 1 || !map?.pointForCoordinate) return undefined;
     let alive = true;
     Promise.all(dogMarkers.map(marker => map.pointForCoordinate(marker.coordinate)
       .then(point => [marker.slaveId, point]).catch(() => null)))
       .then(entries => {
-        if (alive) setDogPoints({ source, points: Object.fromEntries(entries.filter(Boolean)) });
+        if (!alive) return;
+        setDogPoints({ source, points: Object.fromEntries(entries.filter(Boolean)) });
+        // Read after the camera stopped: the off-screen hints are right again.
+        if (moving.current) {
+          moving.current = false;
+          setMovingState(false);
+        }
       });
     return () => { alive = false; };
-    // pointsKey stands for dogMarkers' positions and sizes.
+    // pointsKey stands for dogMarkers' positions and sizes; a new size or
+    // padding of the map moves every dog on screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usable, pointsKey, cursorRevision, source]);
+  }, [usable, pointsKey, cursorRevision, source, cursorLayout.width, cursorLayout.height, topInset, bottomInset]);
   const projecting = usable && dogMarkers.length > 1 && typeof mapRef.current?.pointForCoordinate === 'function';
   const tags = useMemo(() => {
     const points = dogPoints.source === source ? dogPoints.points : null;
@@ -237,17 +301,30 @@ function GoogleTrackingMapRenderer({
   // the camera back — and the card's dog row is what ends following.
   const follow = presentation.follow || null;
   const followed = useRef('');
+  // The dog chosen to follow, kept while it is not reporting, so its return
+  // is not mistaken for a new choice that overrides a drag.
+  const followedDog = useRef(null);
   useEffect(() => {
     if (!usable || !follow) {
       followed.current = '';
       phoneCentered.current = false;
+      if (!presentation.followId) followedDog.current = null;
       return;
     }
     if (phoneCentered.current) return;
     const key = `${follow.slaveId}:${follow.coordinate.latitude},${follow.coordinate.longitude}`;
     if (followed.current === key) return;
+    // Choosing a dog to follow is the user's own move; after that, once the
+    // user has dragged the map, new positions no longer move it (v3: the app
+    // never moves a map the user moved).
+    const newDog = followedDog.current !== follow.slaveId;
+    followedDog.current = follow.slaveId;
     followed.current = key;
-    mapRef.current?.animateCamera({ center: follow.coordinate }, { duration: 400 });
+    if (newDog) interacted.current = false;
+    else if (interacted.current) return;
+    mapRef.current?.animateCamera({ center: follow.coordinate }, { duration: motion.camera.duration });
+    // presentation.followId: the chosen dog even while it is not reporting.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usable, follow]);
   const priorSource = useRef(source);
   const sourceToFit = useRef(null);
@@ -257,6 +334,9 @@ function GoogleTrackingMapRenderer({
     sourceToFit.current = source;
     interacted.current = false;
     phoneCentered.current = false;
+    // The blue dot's last fix belongs to the source it was seen with.
+    nativePhone.current = null;
+    setNativeFixAt(null);
   }, [source]);
   // initialRegion frames the first source without a visible post-load jump.
   // A source switch, or the first position after an initially empty DB, gets
@@ -269,11 +349,116 @@ function GoogleTrackingMapRenderer({
       return;
     mapRef.current?.fitToCoordinates(positions, {
       animated: false,
-      edgePadding: { top: 24, right: 24, bottom: 24, left: 24 },
+      // Room for the faces' "!" and name tags (History tracks have none).
+      edgePadding: presentation.historyTracks ? { top: 24, right: 24, bottom: 24, left: 24 } : padding,
     });
     sourceToFit.current = null;
-    if (needsFirstPositionFit) setNeedsFirstPositionFit(false);
+    if (needsFirstPositionFit) {
+      setNeedsFirstPositionFit(false);
+      // The first framing is in place: the launch screen can go once it is
+      // drawn (onRegionChangeComplete), so the first frame seen is framed.
+      framed.current = true;
+      clearTimeout(afterFit.current);
+      afterFit.current = setTimeout(releaseSplash, AFTER_FIT_MS);
+    }
+    // padding follows dogMarkers, which change with every position; only a
+    // new reason to fit (positions, source, readiness) refits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usable, positions, source, needsFirstPositionFit, framingReady]);
+  // Nothing to frame yet (no dog, no phone fix): let the app through after a
+  // short wait rather than holding the launch screen.
+  useEffect(() => {
+    if (!configured) {
+      releaseSplash();
+      return undefined;
+    }
+    // With something to frame the launch screen waits for the framing (the
+    // native side still lets go after 10 s).
+    if (!loaded || positions.length) return undefined;
+    const timer = setTimeout(releaseSplash, FIRST_FRAME_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [configured, loaded, positions.length, releaseSplash]);
+  // ---- the live map's own controls (A1) ----------------------------------
+  const live = !presentation.historyTracks;
+  const screenPoints = dogPoints.source === source ? dogPoints.points : null;
+  const hints = useMemo(() => (live && screenPoints ? edgeHints(dogMarkers, screenPoints, {
+    width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: bottomInset,
+  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, topInset, bottomInset]);
+  // When the map's own blue dot last reported (kept coarse: one update a
+  // minute is enough to know whether there is a fix).
+  const [nativeFixAt, setNativeFixAt] = useState(null);
+  // The phone's position now: the recording service's fix (10 minutes at
+  // most), else the map's own blue dot from the last 10 minutes.
+  const currentPhone = () => {
+    const recorded = phoneFix(livePhone);
+    if (recorded) return recorded;
+    const native = nativePhone.current;
+    return native && Date.now() - native.receivedAt <= PHONE_FIX_MAX_AGE_S * 1000
+      && Number.isFinite(native.latitude) && Number.isFinite(native.longitude)
+      ? { latitude: native.latitude, longitude: native.longitude } : null;
+  };
+  const phoneAvailable = !!phoneFix(livePhone)
+    || (nativeFixAt != null && Date.now() - nativeFixAt <= PHONE_FIX_MAX_AGE_S * 1000);
+  const [tip, setTip] = useState(null);
+  const clearTip = useCallback(() => setTip(null), []);
+  const showTip = text => setTip({ text, key: Date.now() });
+  // A move the user asked for: from now on nothing automatic moves the map.
+  const takeCamera = () => {
+    startMoving();
+    interacted.current = true;
+    phoneCentered.current = true;
+    setNeedsFirstPositionFit(false);
+  };
+  const frame = coordinates => {
+    if (!usable || !coordinates?.length) return;
+    takeCamera();
+    const points = framedCoordinates(coordinates);
+    // 300 ms (motion.camera), inside the map's own padding.
+    const region = regionForFrame(points, padding, {
+      width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
+      height: cursorLayout.height - topInset - bottomInset,
+    });
+    if (region) mapRef.current?.animateToRegion(region, motion.camera.duration);
+    else mapRef.current?.fitToCoordinates(points, { animated: true, edgePadding: padding });
+  };
+  const pressFrameAll = () => frame(frameAllCoordinates(dogMarkers, currentPhone()));
+  const pressMyLocation = () => {
+    const position = currentPhone();
+    if (!position) {
+      showTip('手機沒有定位');
+      return;
+    }
+    if (!usable) return;
+    takeCamera();
+    mapRef.current?.animateCamera({ center: position }, { duration: motion.camera.duration });
+  };
+  // The overlap menu: which group tag was tapped (by the dog carrying it).
+  const [picker, setPicker] = useState(null);
+  const closePicker = useCallback(() => setPicker(null), []);
+  const pressDog = slaveId => {
+    const tag = tags[slaveId];
+    if (tag?.group > 1) setPicker({ source, lead: slaveId, members: tag.members });
+    else onDogPress?.(slaveId);
+  };
+  const pickerMarkers = useMemo(() => {
+    if (!picker || picker.source !== source) return null;
+    const byId = new Map(dogMarkers.map(marker => [marker.slaveId, marker]));
+    const members = picker.members.map(id => byId.get(id)).filter(Boolean);
+    return members.length > 1 ? members : null;
+  }, [picker, source, dogMarkers]);
+  const leadPoint = picker && screenPoints?.[picker.lead];
+  const leadSize = picker && dogMarkers.find(marker => marker.slaveId === picker.lead)?.size;
+  const pickerPlace = pickerMarkers && leadPoint ? overlapMenuPlace({ ...leadPoint, size: leadSize },
+    // Above the card: the card is drawn over the map and would cover it.
+    pickerMarkers.length, { width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: bottomInset })
+    : null;
+  // The menu goes when its dogs no longer overlap, on a source switch, and
+  // when a dog is opened some other way (its card row).
+  useEffect(() => {
+    if (picker && !pickerMarkers) setPicker(null);
+  }, [picker, pickerMarkers]);
+  const openDogId = dogMarkers.find(marker => marker.selected)?.slaveId ?? null;
+  useEffect(() => setPicker(null), [openDogId]);
   return (
     <View style={StyleSheet.absoluteFill} testID="tracking-map-container"
       onLayout={event => setCursorLayout(event.nativeEvent.layout)}>
@@ -298,7 +483,10 @@ function GoogleTrackingMapRenderer({
           showsMyLocationButton={false}
           onUserLocationChange={event => {
             const value = event.nativeEvent?.coordinate;
-            if (value) nativePhone.current = { ...value, receivedAt: Date.now() };
+            if (!value) return;
+            const receivedAt = Date.now();
+            nativePhone.current = { ...value, receivedAt };
+            if (nativeFixAt == null || receivedAt - nativeFixAt > 60000) setNativeFixAt(receivedAt);
           }}
           // Google SDK handles rotation/tilt visibility and tap-to-north.
           showsCompass
@@ -310,7 +498,7 @@ function GoogleTrackingMapRenderer({
           // specific map instance is ready, including retry/source replacement.
           mapPadding={
             ready
-              ? { top: topInset, right: 12, bottom: bottomInset, left: 12 }
+              ? { top: topInset, right: MAP_SIDE_PADDING, bottom: bottomInset, left: MAP_SIDE_PADDING }
               : undefined
           }
           onMapReady={() => {
@@ -318,8 +506,10 @@ function GoogleTrackingMapRenderer({
           }}
           onPanDrag={() => {
             interacted.current = true;
+            startMoving();
           }}
           onRegionChangeComplete={(_, details) => {
+            if (framed.current) releaseSplash();
             if (activeInstance.current !== instance || !foreground) return;
             setCursorRevision(value => value + 1);
             if (details?.isGesture) interacted.current = true;
@@ -337,8 +527,8 @@ function GoogleTrackingMapRenderer({
             });
           }}
           onMapLoaded={() => {
-            // The first drawn map lets the launch screen go (no-op afterwards).
-            hideSplash();
+            // The launch screen stays until the first framing is drawn (see
+            // the fit above), so the whole of Taiwan never shows first.
             if (activeInstance.current === instance)
               setLoadedInstance(instance);
           }}
@@ -432,7 +622,8 @@ function GoogleTrackingMapRenderer({
               // the open dog on top, then problems, then the dog carrying a
               // group tag over the faces it covers.
               zIndex={marker.selected ? 40 : (marker.problem ? 34 : 31) + (tags[marker.slaveId]?.group > 1 ? 2 : 0)}
-              onPress={onDogPress ? () => onDogPress(marker.slaveId) : undefined}
+              label={tags[marker.slaveId]?.group > 1 ? groupSpeech(tags[marker.slaveId], dogMarkers) : undefined}
+              onPress={onDogPress ? () => pressDog(marker.slaveId) : undefined}
             />
           ))}
         </MapView>
@@ -462,35 +653,24 @@ function GoogleTrackingMapRenderer({
           />
         </View>
       )}
-      {configured && foreground && (loaded || timedOut) && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="本機位置"
-          style={[styles.retry, { top: topInset + 56 }]}
-          onPress={() => {
-            const live = livePhone?.running && livePhone.ageSeconds != null && livePhone.ageSeconds <= 30
-              ? livePhone.position : null;
-            const position = live || (nativePhone.current && Date.now() - nativePhone.current.receivedAt <= 30000
-              ? nativePhone.current : null);
-            if (!position || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)
-              || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) {
-              Alert.alert('本機位置', '尚無有效的手機定位，請確認已開啟定位與定位權限。');
-              return;
-            }
-            if (!ready) {
-              Alert.alert('本機位置', '地圖尚未準備完成，請稍候再試。');
-              return;
-            }
-            interacted.current = true;
-            phoneCentered.current = true;
-            setNeedsFirstPositionFit(false);
-            mapRef.current?.animateCamera({ center: {
-              latitude: position.latitude, longitude: position.longitude,
-            } }, { duration: 400 });
-          }}
-        >
-          <Text style={styles.retryText}>本機位置</Text>
-        </Pressable>
+      {live && usable && foreground && !movingState && hints.map(value => (
+        <EdgeHintView key={value.side} value={value} avatars={presentation.dogAvatars || {}}
+          onPress={() => frame(value.coordinates)} />
+      ))}
+      {live && configured && foreground && (loaded || timedOut) && (
+        // 框住全部 and 我的位置 (A1), 12dp above the card; above the tip
+        // while it shows.
+        <MapButtons bottom={bottomInset + (tip ? sizes.floatingButton + layout.floatingGap : 0)}
+          phoneAvailable={phoneAvailable} onFrameAll={pressFrameAll} onMyLocation={pressMyLocation} />
+      )}
+      {live && <MapTip message={tip} bottom={bottomInset} onDone={clearTip} />}
+      {pickerMarkers && pickerPlace && (
+        <OverlapPicker markers={pickerMarkers} place={pickerPlace} avatars={presentation.dogAvatars || {}}
+          onClose={closePicker}
+          onPick={slaveId => {
+            setPicker(null);
+            onDogPress?.(slaveId);
+          }} />
       )}
     </View>
   );
@@ -522,14 +702,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...floatingShadow,
   },
-  retry: {
-    position: 'absolute',
-    left: 14,
-    padding: 12,
-    minHeight: 44,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    ...floatingShadow,
-  },
-  retryText: { color: colors.ink, fontWeight: '600' },
 });

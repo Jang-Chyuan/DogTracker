@@ -3,7 +3,8 @@
 // provider-neutral: the renderer only draws what these return.
 import { size as sizes } from '../theme/tokens';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
-import { dogFreshness, isIndoorHold, staleSpeech } from '../tracking/DogFreshness';
+import { dogFreshness, isIndoorHold, staleSpeech, staleText } from '../tracking/DogFreshness';
+import { RANGE_STATUS } from '../tracking/ReceiverRange';
 import { dogProblems } from '../tracking/DogProblems';
 
 // The one word the map uses for a dog held where it was last seen clearly,
@@ -30,20 +31,31 @@ export function dogMarkers(dogs = [], { now = Date.now(), cloud = null, pauses =
   for (const dog of dogs) {
     const freshness = dogFreshness(dog, { now, cloud, pauses });
     if (!freshness.drawn) continue;
-    const problems = dogProblems(dog, freshness, ranges?.[dog.slaveId]);
-    markers.push(dogMarker(dog, { freshness, problems, now,
+    const range = ranges?.[dog.slaveId];
+    const problems = dogProblems(dog, freshness, range);
+    markers.push(dogMarker(dog, { freshness, problems, now, range,
       name: dogName(dog.slaveId, aliases), selected: dog.slaveId === selectedId }));
   }
   return markers;
 }
 
-export function dogMarker(dog, { freshness, problems, name, now, selected = false }) {
+export function dogMarker(dog, { freshness, problems, name, now, range = null, selected = false }) {
   const indoor = isIndoorHold(dog);
   const base = problems.any ? sizes.marker.attention : sizes.marker.normal;
+  const note = problemNote(dog, { freshness, problems, range, indoor, now });
   return {
     slaveId: dog.slaveId,
     coordinate: dog.coordinate,
+    // Where its position came from: 'ble' is this phone's own receiver (the
+    // cold-start framing frames only those dogs and the phone).
+    source: dog.fixSource ?? dog.source ?? null,
+    // The receiver that delivered it (another receiver used before this one
+    // is not "local" for framing).
+    masterId: dog.masterId ?? null,
     name,
+    // The overlap menu's second line: what is wrong (crit), or 快離開 (warn),
+    // or 室內 (muted); null for a dog with nothing to say.
+    note,
     // Only the name; held indoors 「小黑・室內」. Never an address or a reason.
     tag: indoor ? `${name}・${INDOOR_WORD}` : name,
     indoor,
@@ -53,6 +65,24 @@ export function dogMarker(dog, { freshness, problems, name, now, selected = fals
     size: base + (selected ? sizes.marker.selectedGrowth : 0),
     label: markerSpeech(dog, { name, indoor, freshness, problems, now }),
   };
+}
+
+/**
+ * One short line for the overlap menu (頭像＋名字＋問題): the problems, most
+ * serious first, in the card's words (「不在接收範圍」「沒有新位置・最後
+ * 10:12」「電量 15%・偏低」) as `crit`; otherwise 「快離開接收範圍」 as `warn`;
+ * otherwise 「室內」 as `muted`; otherwise null.
+ */
+export function problemNote(dog, { freshness, problems, range, indoor, now }) {
+  const crit = [];
+  if (problems.outOfRange) crit.push('不在接收範圍');
+  const stale = staleText(freshness, now);
+  if (stale) crit.push(stale);
+  if (problems.lowBattery) crit.push(`電量 ${dog.batteryPercentage}%・偏低`);
+  if (crit.length) return { text: crit.join('，'), level: 'crit' };
+  if (range?.status === RANGE_STATUS.NEAR && !indoor) return { text: '快離開接收範圍', level: 'warn' };
+  if (indoor) return { text: INDOOR_WORD, level: 'muted' };
+  return null;
 }
 
 /**
@@ -97,7 +127,9 @@ const intersects = (a, b) => a.left < b.right && b.left < a.right && a.top < b.b
  *
  * @param markers dogMarkers() output
  * @param points screen positions by dog, in dp: { [slaveId]: { x, y } }
- * @returns { [slaveId]: { text, group: number, problem: boolean } | null }
+ * @returns { [slaveId]: { text, group: number, problem: boolean, members?: slaveId[] } | null }
+ *   A group tag's `members`: its dogs, nearest the top of the screen first
+ *   (the overlap menu lists them in that order).
  *   null = no tag under this face; dogs without a screen position keep their tag.
  */
 export function nameTags(markers, points = {}, fontScale = 1) {
@@ -137,6 +169,8 @@ export function nameTags(markers, points = {}, fontScale = 1) {
       text: `${members.length} 隻${indoor ? `・${INDOOR_WORD}` : ''}`,
       group: members.length,
       problem: members.some(item => item.marker.problem),
+      members: [...members].sort((left, right) => left.y - right.y
+        || left.marker.slaveId - right.marker.slaveId).map(item => item.marker.slaveId),
     };
   }
   return result;

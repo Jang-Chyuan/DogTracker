@@ -73,12 +73,12 @@ describe('name tags that run into each other', () => {
   test('overlapping: one 「3 隻」 tag under the lowest face, with a red dot for any problem', () => {
     const list = markers(dog(4), dog(6, { batteryPercentage: 10 }), dog(8));
     const tags = nameTags(list, { 4: { x: 100, y: 100 }, 6: { x: 110, y: 104 }, 8: { x: 120, y: 112 } });
-    expect(tags).toEqual({ 4: null, 6: null, 8: { text: '3 隻', group: 3, problem: true } });
+    expect(tags).toEqual({ 4: null, 6: null, 8: { text: '3 隻', group: 3, problem: true, members: [4, 6, 8] } });
   });
   test('all held indoors: 「2 隻・室內」; one not held: just 「2 隻」', () => {
     const held = extra => dog(extra, { heldReason: '室內', heldSource: 'good' });
     const points = { 4: { x: 100, y: 100 }, 6: { x: 104, y: 102 } };
-    expect(nameTags(markers(held(4), held(6)), points)[6]).toEqual({ text: '2 隻・室內', group: 2, problem: false });
+    expect(nameTags(markers(held(4), held(6)), points)[6]).toEqual({ text: '2 隻・室內', group: 2, problem: false, members: [4, 6] });
     expect(nameTags(markers(held(4), dog(6)), points)[6].text).toBe('2 隻');
   });
   test('the selected dog keeps its own tag and leaves the group; a group of one is no group', () => {
@@ -91,7 +91,7 @@ describe('name tags that run into each other', () => {
     const width = tagSize('豆豆').width;
     const chain = nameTags(list, { 4: { x: 100, y: 100 }, 6: { x: 100 + width - 4, y: 100 },
       8: { x: 100 + 2 * width - 8, y: 100 } });
-    expect(Object.values(chain).filter(Boolean)).toEqual([{ text: '3 隻', group: 3, problem: false }]);
+    expect(Object.values(chain).filter(Boolean)).toEqual([{ text: '3 隻', group: 3, problem: false, members: [4, 6, 8] }]);
     expect(Object.values(nameTags(list, {})).every(tag => tag.group === 1)).toBe(true);
   });
   test('tags grow with the font size', () => {
