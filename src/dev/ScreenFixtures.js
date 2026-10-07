@@ -352,6 +352,41 @@ const FIXTURES = {
     cloud: synced(now), phone: walkingPhone(now),
     ble: [], cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
   }),
+  // Only 豆豆 is on receiver 7, walking near the handler: the first view
+  // frames the two of them. Five cloud dogs are 2–3 km west, off the left of
+  // that view: one hint with three faces (阿福 first, red frame: no new
+  // position for 40 minutes) and 「+2」. Dog 9 is 2.5 km east: its own hint
+  // on the right.
+  'dogs-offscreen': now => {
+    const west = (slave, north, east, rest = {}) => series(cloudRow, now, { slave, from: 10 * MINUTE,
+      to: 20 * SECOND, every: 15 * SECOND, start: [north, east], step: [0.02, 0.02], ...rest });
+    return {
+      receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+      ble: dog4Ble(now),
+      cloudRows: [
+        ...west(6, 20, -220),
+        ...series(cloudRow, now, { slave: 8, from: 50 * MINUTE, to: 40 * MINUTE, every: 15 * SECOND,
+          start: [-15, -260], step: [0.02, 0] }),
+        ...west(5, 5, -240),
+        ...west(3, 35, -280),
+        ...west(2, -25, -300),
+        ...west(9, 10, 250),
+      ],
+    };
+  },
+  // 豆豆 and dog 5 on receiver 7 near the handler; 阿福's last position came
+  // from the cloud 26 hours ago, about 10 km south-west. The first view frames
+  // the local dogs and the phone only (阿福 shows as an edge hint); 框住全部
+  // frames 阿福 too.
+  'cold-start-far-cloud': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...series(bleRow, now, { slave: 5, from: 10 * MINUTE, to: 9 * SECOND, start: [-20, 20], step: [0.05, -0.03] }),
+    ]),
+    cloudRows: series(cloudRow, now, { slave: 8, from: 26 * 60 * MINUTE + 10 * MINUTE, to: 26 * 60 * MINUTE,
+      every: 15 * SECOND, start: [-640, -720], step: [0.02, 0.03] }),
+  }),
 };
 
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));

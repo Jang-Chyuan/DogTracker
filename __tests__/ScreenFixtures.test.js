@@ -22,6 +22,29 @@ import { LATEST_SINCE } from '../src/cloud/useCloudDogs';
 import { dogMarkers } from '../src/map/DogMarkers';
 import { lastTimeText } from '../src/tracking/DogFreshness';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
+import { coldStartCoordinates, frameAllCoordinates, framePadding, phoneFix } from '../src/map/MapFraming';
+import { edgeHints } from '../src/map/EdgeHints';
+
+// Where each dog lands on a 392×830 dp screen (Pixel 4a) once `coordinates`
+// are fitted into the part left by the top controls (100 dp) and the card
+// (260 dp), like fitToCoordinates with the framing padding: a flat
+// projection, close enough over a few km.
+function fitProjection(coordinates, markers, { width = 392, height = 830, top = 100, bottom = 260 } = {}) {
+  const pad = framePadding(markers);
+  const lats = coordinates.map(point => point.latitude);
+  const lons = coordinates.map(point => point.longitude);
+  const [south, north, west, east] = [Math.min(...lats), Math.max(...lats), Math.min(...lons), Math.max(...lons)];
+  const cos = Math.cos(((south + north) / 2) * Math.PI / 180);
+  const innerWidth = width - pad.left - pad.right;
+  const innerHeight = height - top - bottom - pad.top - pad.bottom;
+  const scale = Math.min(innerWidth / Math.max(1e-9, (east - west) * cos), innerHeight / Math.max(1e-9, north - south));
+  const cx = pad.left + innerWidth / 2;
+  const cy = top + pad.top + innerHeight / 2;
+  const project = point => ({ x: cx + (point.longitude - (west + east) / 2) * cos * scale,
+    y: cy - (point.latitude - (south + north) / 2) * scale });
+  const points = Object.fromEntries(markers.map(marker => [marker.slaveId, project(marker.coordinate)]));
+  return { points, view: { width, height, top, bottom } };
+}
 
 // What the live map would draw for a fixture: the same calls MapScreen makes.
 async function screen(name) {
@@ -81,9 +104,13 @@ test('every fixture is reproducible, near Taoyuan station, and on the fixed cloc
       .map(row => ({ latitude: row.slave_lat, longitude: row.slave_lon }))
       .concat(fixture.phoneRoute);
     for (const place of places) {
-      // Within ~2 km of the station: invented, never the team's real area.
-      expect(Math.abs(place.latitude - FIXTURE_ORIGIN.latitude)).toBeLessThan(0.02);
-      expect(Math.abs(place.longitude - FIXTURE_ORIGIN.longitude)).toBeLessThan(0.02);
+      // Invented, never the team's real area: within ~2 km of the station,
+      // except the far dogs of the framing fixtures, which lie west and south
+      // (away from the real area, north of the station) within ~10 km.
+      const far = ['dogs-offscreen', 'cold-start-far-cloud'].includes(name);
+      expect(place.latitude - FIXTURE_ORIGIN.latitude).toBeLessThan(0.02);
+      expect(FIXTURE_ORIGIN.latitude - place.latitude).toBeLessThan(far ? 0.1 : 0.02);
+      expect(Math.abs(place.longitude - FIXTURE_ORIGIN.longitude)).toBeLessThan(far ? 0.1 : 0.02);
     }
     for (const row of [...fixture.raw.ble, ...fixture.raw.cloud]) {
       expect(row.received_at).toBeLessThanOrEqual(FIXTURE_NOW);
@@ -275,7 +302,48 @@ test('dogs-overlap: three dogs together merge into 「3 隻」 with a red dot fo
   }
   const points = Object.fromEntries(state.markers.map((marker, index) => [marker.slaveId, { x: 200 + index, y: 300 }]));
   expect(Object.values(nameTags(state.markers, points)).filter(Boolean))
-    .toEqual([{ text: '3 隻', group: 3, problem: true }]);
+    .toEqual([{ text: '3 隻', group: 3, problem: true, members: [4, 6, 8] }]);
+});
+
+test('dogs-overlap: tapping 「3 隻」 lists the three dogs, 阿福 with its low battery', async () => {
+  const state = await screen('dogs-overlap');
+  expect(state.marker(8).note).toEqual({ text: '電量 12%・偏低', level: 'crit' });
+  expect(state.marker(4).note).toBeNull();
+});
+
+test('dogs-offscreen: the first view frames 豆豆 and the phone; five dogs off the left (3 faces + 「+2」, 阿福 first), one off the right', async () => {
+  const state = await screen('dogs-offscreen');
+  const phone = phoneFix(state.fixture.livePhone);
+  const first = coldStartCoordinates(state.markers, phone);
+  expect(first).toEqual([state.marker(4).coordinate, phone]);
+  expect(state.marker(8)).toMatchObject({ problem: true, stale: true, source: 'cloud' });
+  const { points, view } = fitProjection(first, state.markers);
+  const hints = edgeHints(state.markers, points, view);
+  expect(hints.map(hint => hint.side)).toEqual(['left', 'right']);
+  const [left, right] = hints;
+  expect(left.faces.map(face => face.slaveId)[0]).toBe(8);
+  expect(left.faces).toHaveLength(3);
+  expect(left.extra).toBe(2);
+  expect(left.slaveIds.sort()).toEqual([2, 3, 5, 6, 8]);
+  expect(right.slaveIds).toEqual([9]);
+  expect(left.label).toMatch(/^左邊畫面外有 5 隻狗：阿福、.*，其中阿福有問題，點兩下移過去$/);
+});
+
+test('cold-start-far-cloud: 阿福 (26 h, ~10 km) is left out of the first view; 框住全部 frames it', async () => {
+  const state = await screen('cold-start-far-cloud');
+  const phone = phoneFix(state.fixture.livePhone);
+  const far = state.marker(8);
+  expect(far).toMatchObject({ source: 'cloud', stale: true });
+  expect(distanceMeters(far.coordinate, state.marker(4).coordinate)).toBeGreaterThan(9000);
+  const first = coldStartCoordinates(state.markers, phone);
+  expect(first).toEqual([state.marker(4).coordinate, state.marker(5).coordinate, phone]);
+  const { points, view } = fitProjection(first, state.markers);
+  // Off the first view: an edge hint points at it.
+  expect(edgeHints(state.markers, points, view).flatMap(hint => hint.slaveIds)).toEqual([8]);
+  const all = frameAllCoordinates(state.markers, phone);
+  expect(all).toContainEqual(far.coordinate);
+  const fitted = fitProjection(all, state.markers);
+  expect(edgeHints(state.markers, fitted.points, fitted.view)).toEqual([]);
 });
 
 test('dog-never-fixed: collar 9 talks but never had a fix — not drawn', async () => {
