@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAuth } from '../auth/AuthProvider';
 import { colors, opacity, radius, space, type } from '../theme/tokens';
 
@@ -66,11 +66,12 @@ export default function LoginScreen({ onSignedIn, onLater }) {
       </Pressable>
     </View>
     {message ? <Text accessibilityLiveRegion="polite" style={styles.error}>{message}</Text> : null}
-    <Pressable accessibilityRole="button" accessibilityLabel="登入" accessibilityState={{ disabled: disabled || !email.trim() || !password, busy }}
-      disabled={disabled || !email.trim() || !password} onPress={login}
-      style={({ pressed }) => [styles.primary, (disabled || !email.trim() || !password) && styles.disabled,
-        pressed && styles.pressed]}>
-      <Text style={styles.primaryText}>{busy ? '登入中…' : '登入'}</Text>
+    {/* D1: the fields are checked when 登入 is pressed, not by greying it out. */}
+    <Pressable accessibilityRole="button" accessibilityLabel="登入" accessibilityState={{ disabled, busy }}
+      disabled={disabled} onPress={login}
+      style={({ pressed }) => [styles.primary, disabled && !busy && styles.disabled, pressed && styles.pressed]}>
+      {busy ? <ActivityIndicator color={colors.tonalText} accessibilityLabel="登入中" />
+        : <Text style={styles.primaryText}>登入</Text>}
     </Pressable>
     {onLater ? <Pressable accessibilityRole="button" accessibilityLabel="稍後再說" onPress={onLater}
       style={({ pressed }) => [styles.later, pressed && styles.pressed]}>

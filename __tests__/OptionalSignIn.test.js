@@ -206,6 +206,19 @@ test('settings says 未登入 as a plain state, and 需要重新登入 after 登
 test('sign-in failures read as the design says', () => {
   expect(signInErrorText({ status: 400, message: 'Invalid login credentials' })).toBe('電子郵件或密碼不對');
   expect(signInErrorText(new TypeError('Network request failed'))).toBe('連不上網路');
-  expect(signInErrorText(new Error('請輸入 Email 與密碼'))).toBe('請輸入 Email 與密碼');
+  expect(signInErrorText(new Error('請輸入電子郵件和密碼'))).toBe('請輸入電子郵件和密碼');
   expect(signInErrorText(null)).toBe('登入失敗，請稍後重試');
+});
+
+test('登入 is checked when pressed: empty fields say so and reach no server', async () => {
+  const s = supabase();
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}>
+    <CloudScreen database={spyDatabase()} clientFactory={s.factory} />
+  </AuthProvider>); });
+  const login = renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
+    && typeof node.props.onPress === 'function')[0];
+  expect(login.props.disabled).toBe(false);
+  await act(async () => login.props.onPress());
+  expect(text()).toContain('請輸入電子郵件和密碼');
+  expect(s.client.auth.signInWithPassword).not.toHaveBeenCalled();
 });

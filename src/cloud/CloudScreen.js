@@ -124,7 +124,8 @@ export default function CloudScreen({ database, sync, onLater, clientFactory = g
   }
 
   return <View>
-    <Text style={ui.title}>雲端資料</Text>
+    {/* Signed out the page is the sign-in form (D1), under the 「‹ 雲端資料」 header. */}
+    {session ? <Text style={ui.title}>雲端資料</Text> : null}
     {connection.error ? <Text style={ui.error}>{connection.error}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={ui.error}>{error}</Text> : null}
     {!session ? <LoginScreen onLater={onLater} /> : <>
