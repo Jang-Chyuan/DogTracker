@@ -347,22 +347,36 @@ export default function MapScreen({
   };
   // 「今天 x km」 (A1/A2): today's distance and whether the phone records
   // and has a location.
-  const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone }));
+  // Recording that has not had a first fix yet waits 10 minutes before the
+  // slash, like a lost one (判定表「暫時沒有 GPS 訊號」).
+  const waitingSince = useRef(null);
+  const waiting = !!livePhone?.running && !livePhone?.position;
+  if (!waiting) waitingSince.current = null;
+  else if (waitingSince.current == null) waitingSince.current = now;
+  const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone, now,
+    waitingSince: waitingSince.current }));
   const today = useMemo(() => JSON.parse(pillKey), [pillKey]);
   const [routeBusy, setRouteBusy] = useState(false);
+  // Only while the live map is still in front does a finished save navigate.
+  const liveInFront = useRef(false);
+  liveInFront.current = active && !historical;
   // Tapping it opens my route: today's recorded route of this phone in the
-  // history page, no dogs. The query is stored first, like 看軌跡.
+  // history page (the whole day, so it grows while recording and ends at the
+  // last fix when recording stops), no dogs. The query is stored first, like
+  // 看軌跡.
   const openMyRoute = useCallback(async () => {
     if (!history?.save || routeBusy) return;
     const start = startOfToday(now);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
     setRouteBusy(true);
     const saved = await history.save({
       ...history.preferences,
-      timeMode: 'fixed', startAt: start, endAt: Math.max(now, start + 60000),
+      timeMode: 'fixed', startAt: start, endAt: end.getTime(),
       phone: true, client: false,
     });
     setRouteBusy(false);
-    if (saved) onOpenHistory?.(null);
+    if (saved && liveInFront.current) onOpenHistory?.(null);
   }, [history, routeBusy, now, onOpenHistory]);
   // A5: the name is stored with the history preferences' names (dogAliases),
   // the face in dog_avatars; both by collar number, on this phone only.

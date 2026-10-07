@@ -164,6 +164,12 @@ test('no bottom tabs: the gear opens settings, and hardware preserves correct ba
   await act(async () => expect(onBack()).toBe(true));
   expect(text()).toContain('硬體連線');
   expect(ble.disconnect).not.toHaveBeenCalled();
+  // The hardware page's 「‹ 硬體連線」 goes back like the back key.
+  await press('BLE／QR 與 Master 設定');
+  expect(text()).toContain('‹ 硬體連線');
+  await press('返回，硬體連線');
+  expect(text()).toContain('‹ 設定');
+  expect(text()).not.toContain('手動 BLE 掃描');
   // Every page the tabs reached is still reached: cloud and location
   // recording from settings, each with its 「‹ 標題」 back to settings.
   await press('雲端資料');
