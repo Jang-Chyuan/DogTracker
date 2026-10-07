@@ -22,7 +22,8 @@
 // - While the user has disconnected the receiver (中斷連線), its dogs do not go
 //   stale; after reconnecting, a dog that was fine before gets
 //   now − max(its time, reconnect time). A dog already stale before stays
-//   stale under the plain formula.
+//   stale under the plain formula. Several pauses chain: a dog still inside
+//   the grace of one pause is fine when the next one starts.
 // - A dog that never had a position is not on the map at all (drawn: false).
 // - There is no upper age limit: a position older than 24 hours stays on the
 //   map, grey.
@@ -55,15 +56,16 @@ export function cloudClock(cloud, now) {
  *   newest packet), `heldReason`/`heldSource`.
  * @param options.now the map clock
  * @param options.cloud see cloudClock
- * @param options.pause {{ pausedAt: number, resumedAt: number|null }} the last
- *   time the user disconnected this phone's receiver, and when it came back
- *   (null while still disconnected); null when that has not happened.
+ * @param options.pauses [{ pausedAt: number, resumedAt: number|null }] when
+ *   the user disconnected this phone's receiver and when it was receiving
+ *   again (null while still disconnected), oldest first (the receiver's
+ *   getState().receiverPauses).
  * @returns {{ drawn: boolean, stale: boolean, basis: 'position'|'packet',
  *   source: 'ble'|'cloud'|null, lastAt: number|null, ageMs: number|null }}
  *   `lastAt` is the time to show (「最後 10:12」); `basis` says whether it is
  *   a position (「沒有新位置」) or a packet (「沒有新資料」).
  */
-export function dogFreshness(dog, { now = Date.now(), cloud = null, pause = null } = {}) {
+export function dogFreshness(dog, { now = Date.now(), cloud = null, pauses = [] } = {}) {
   const held = isIndoorHold(dog);
   const basis = held ? 'packet' : 'position';
   const lastAt = held ? (Number.isFinite(dog.packetAt) ? dog.packetAt : dog.fixAt) : dog?.fixAt;
@@ -73,15 +75,19 @@ export function dogFreshness(dog, { now = Date.now(), cloud = null, pause = null
   }
   const reference = source === 'cloud' ? cloudClock(cloud, now) : now;
   const ageMs = Math.max(0, reference - lastAt);
-  let stale = ageMs > STALE_AFTER_MS;
-  if (source !== 'cloud' && Number.isFinite(pause?.pausedAt) && lastAt < pause.pausedAt) {
-    const staleBefore = pause.pausedAt - lastAt > STALE_AFTER_MS;
-    if (!staleBefore) {
-      if (!Number.isFinite(pause.resumedAt)) stale = false;
-      else stale = now - Math.max(lastAt, pause.resumedAt) > STALE_AFTER_MS;
-    }
+  if (source === 'cloud') return { drawn: true, stale: ageMs > STALE_AFTER_MS, basis, source, lastAt, ageMs };
+  // The time the stale clock runs from: the position (or packet), moved on to
+  // each reconnect the dog was still fine for.
+  let from = lastAt;
+  for (const pause of [...(pauses || [])].sort((left, right) => left.pausedAt - right.pausedAt)) {
+    if (!Number.isFinite(pause?.pausedAt) || pause.pausedAt <= from) continue;
+    // Already stale when switched off: the plain formula from here on.
+    if (pause.pausedAt - from > STALE_AFTER_MS) break;
+    // Still switched off: the clock stands still.
+    if (!Number.isFinite(pause.resumedAt)) return { drawn: true, stale: false, basis, source, lastAt, ageMs };
+    from = Math.max(from, pause.resumedAt);
   }
-  return { drawn: true, stale, basis, source, lastAt, ageMs };
+  return { drawn: true, stale: now - from > STALE_AFTER_MS, basis, source, lastAt, ageMs };
 }
 
 const pad = value => String(value).padStart(2, '0');

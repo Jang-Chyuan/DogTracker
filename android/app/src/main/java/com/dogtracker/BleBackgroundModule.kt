@@ -61,8 +61,14 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
 
   @ReactMethod
   fun stop() {
-    context.getSharedPreferences("ble_session", android.content.Context.MODE_PRIVATE)
-      .edit().putBoolean("enabled", false).commit()
+    val prefs = context.getSharedPreferences("ble_session", android.content.Context.MODE_PRIVATE)
+    val editor = prefs.edit().putBoolean("enabled", false)
+    // The user switched an active receiver off: remembered for the map.
+    if (prefs.getBoolean("enabled", false)) {
+      editor.putString(ReceiverPauses.KEY,
+        ReceiverPauses.paused(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis()))
+    }
+    editor.commit()
     context.stopService(Intent(context, BleForegroundService::class.java))
   }
 
@@ -91,6 +97,16 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
       putInt("expectedMasterId", prefs.getInt("expectedMasterId", 0))
       putString("lastStatus", prefs.getString("lastStatus", ""))
       putString("lastPayload", prefs.getString("lastPayload", ""))
+      // When the user switched the receiver off and when it delivered again
+      // (resumedAt 0 = still off); see ReceiverPauses.
+      putArray("receiverPauses", Arguments.createArray().apply {
+        for (pause in ReceiverPauses.parse(prefs.getString(ReceiverPauses.KEY, ""))) {
+          pushMap(Arguments.createMap().apply {
+            putDouble("pausedAt", pause.pausedAt.toDouble())
+            if (pause.resumedAt > 0) putDouble("resumedAt", pause.resumedAt.toDouble()) else putNull("resumedAt")
+          })
+        }
+      })
     }
     promise.resolve(result)
   }

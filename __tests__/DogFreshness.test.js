@@ -68,17 +68,33 @@ test('while the user has disconnected the receiver its dogs do not go stale; rec
   const pausedAt = NOW - 30 * MINUTE;
   // Fine (2 minutes old) when the receiver was switched off.
   const dog = ble(32);
-  expect(dogFreshness(dog, { now: NOW, pause: { pausedAt, resumedAt: null } }).stale).toBe(false);
+  const one = resumedAt => [{ pausedAt, resumedAt }];
+  expect(dogFreshness(dog, { now: NOW, pauses: one(null) }).stale).toBe(false);
   // Back 5 minutes ago: now − max(position, reconnect) = 5 minutes.
-  expect(dogFreshness(dog, { now: NOW, pause: { pausedAt, resumedAt: NOW - 5 * MINUTE } }).stale).toBe(false);
-  expect(dogFreshness(dog, { now: NOW, pause: { pausedAt, resumedAt: NOW - 11 * MINUTE } }).stale).toBe(true);
+  expect(dogFreshness(dog, { now: NOW, pauses: one(NOW - 5 * MINUTE) }).stale).toBe(false);
+  expect(dogFreshness(dog, { now: NOW, pauses: one(NOW - 11 * MINUTE) }).stale).toBe(true);
   // Already stale before the pause: the plain formula, no grace.
   const before = ble(45);
-  expect(dogFreshness(before, { now: NOW, pause: { pausedAt, resumedAt: null } }).stale).toBe(true);
-  expect(dogFreshness(before, { now: NOW, pause: { pausedAt, resumedAt: NOW - MINUTE } }).stale).toBe(true);
+  expect(dogFreshness(before, { now: NOW, pauses: one(null) }).stale).toBe(true);
+  expect(dogFreshness(before, { now: NOW, pauses: one(NOW - MINUTE) }).stale).toBe(true);
   // Cloud dogs keep their own formula during the pause.
-  expect(dogFreshness(cloud(32), { now: NOW, cloud: { lastDownloadAt: NOW },
-    pause: { pausedAt, resumedAt: null } }).stale).toBe(true);
+  expect(dogFreshness(cloud(32), { now: NOW, cloud: { lastDownloadAt: NOW }, pauses: one(null) }).stale).toBe(true);
+  // A position newer than the pause is not affected by it.
+  expect(dogFreshness(ble(12), { now: NOW, pauses: one(NOW - 20 * MINUTE) }).stale).toBe(true);
+});
+
+test('pauses chain: a dog still within the grace of one pause is fine when the next one starts', () => {
+  // Position at 0, off at 5, back at 35, off again at 36, back at 50; now 55.
+  const at = minute => NOW - 55 * MINUTE + minute * MINUTE;
+  const dog = ble(55);
+  const pauses = [{ pausedAt: at(36), resumedAt: at(50) }, { pausedAt: at(5), resumedAt: at(35) }];
+  expect(dogFreshness(dog, { now: NOW, pauses }).stale).toBe(false);
+  expect(dogFreshness(dog, { now: at(61), pauses }).stale).toBe(true);
+  // Still off after the second pause: no new staleness.
+  expect(dogFreshness(dog, { now: NOW, pauses: [pauses[1], { pausedAt: at(36), resumedAt: null }] }).stale).toBe(false);
+  // Off again only after the grace ran out: stale stays stale.
+  const late = [pauses[1], { pausedAt: at(46), resumedAt: at(50) }];
+  expect(dogFreshness(dog, { now: NOW, pauses: late }).stale).toBe(true);
 });
 
 test('older than 24 hours is still drawn; a dog that never had a position is not', () => {

@@ -33,8 +33,8 @@ export default function DogAvatar({ avatar, size = 40, stale = false, border = 2
   const color = DOG_COLORS[value.color] || DOG_COLORS.coral;
   const background = stale ? colors.staleFace : color.bg;
   const line = stale ? STALE_LINE : color.line;
-  // Thin lines vanish on a small face; small faces get heavier strokes.
-  const stroke = inner < 48 ? 4.6 : 3.4;
+  // The mockups' line weight (3.4 on the 120 grid): light, hand-drawn.
+  const stroke = 3.4;
   return (
     <View style={frame} testID={`dog-avatar-${value.art}${stale ? '-stale' : ''}`}>
       <Svg width={inner} height={inner} viewBox="14 16 92 92">

@@ -197,6 +197,9 @@ class BleForegroundService : Service() {
         connecting = false
         isConnected = true
         reconnectAttempt = 0
+        // Receiving again after the user switched it off: closes that pause.
+        prefs.edit().putString(ReceiverPauses.KEY,
+          ReceiverPauses.resumed(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis())).apply()
         subscribedElapsed = SystemClock.elapsedRealtime()
         lastReceivedElapsed = 0
         stale = false
