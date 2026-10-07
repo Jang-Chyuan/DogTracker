@@ -122,12 +122,14 @@ export function advanceRange(state = emptyRange(), row, config = RANGE) {
     }
     return Object.freeze(next);
   }
+  // A BLE row older than the cloud position that made the dog cloud-only was
+  // written late: it is from before the switch, so it neither judges nor
+  // counts towards clearing (counting restarts with the first row after).
+  if (state.cloudSince != null && time < state.cloudSince) return state;
   next.lastLocalAt = time;
-  // Heard by this phone again (not an older row written late).
-  if (!(next.cloudSince > time)) {
-    next.cloudOnly = false;
-    next.cloudSince = null;
-  }
+  // Heard by this phone again.
+  next.cloudOnly = false;
+  next.cloudSince = null;
   if (row.held) {
     // Positions while held are drift, not where the dog is: nothing judged,
     // nothing counted, and counting restarts after the release.

@@ -113,12 +113,16 @@ function inTimeOrder(rows) {
     .map((row, index) => ({ ...row, id: ids[index] }));
 }
 
-// A dog `metres` from the receiver towards north-east, wandering a few metres
-// sideways from row to row so it reads as walking, never as parked.
-const northEastOf = (where, metres, progress) => {
+// A dog `metres` from the receiver towards `bearing` (degrees from north),
+// wandering a few metres sideways from row to row so it reads as walking,
+// never as parked.
+const awayFrom = (where, metres, progress, bearing = 45) => {
   const side = Math.sin(progress * 12) * 6;
-  return offset(where, metres / Math.SQRT2 + side, metres / Math.SQRT2 - side);
+  const angle = (bearing * Math.PI) / 180;
+  return offset(where, metres * Math.cos(angle) - side * Math.sin(angle),
+    metres * Math.sin(angle) + side * Math.cos(angle));
 };
+const northEastOf = (where, metres, progress) => awayFrom(where, metres, progress, 45);
 
 // ---- receiver, cloud and phone states -------------------------------------
 
@@ -208,8 +212,8 @@ const FIXTURES = {
         start: [22, -24], step: [-0.05, 0] }),
     ],
   }),
-  // 豆豆 (dog 4) walked away from receiver 7: 600 m ten minutes ago, 1.3 km
-  // now. Out of range: a red dashed line from the ring's edge to it. 小黑
+  // 豆豆 (dog 4) walked north-north-east away from receiver 7: 700 m ten
+  // minutes ago, 1.6 km now. Out of range: a red dashed line from the ring's edge to it. 小黑
   // (dog 6, also on receiver 7) stays well inside; 阿福 comes from the cloud.
   'range-out': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
@@ -217,7 +221,7 @@ const FIXTURES = {
       ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
         dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
       ...track(bleRow, now, { slave: 4, from: 10 * MINUTE,
-        dog: (progress, where) => northEastOf(where, 600 + 700 * progress, progress) }),
+        dog: (progress, where) => awayFrom(where, 700 + 900 * progress, progress, 15) }),
     ]),
     cloudRows: dog8Cloud(now),
   }),
@@ -252,16 +256,16 @@ const FIXTURES = {
   // outside the ring — but the judgement stays where it was made: still in
   // range, no line. 豆豆 walks along with the receiver.
   'range-stale-inside': now => {
-    // The receiver starts walking off (300 m south-west) right after 小黑's
+    // The receiver starts walking off (300 m south) right after 小黑's
     // last position, 170 s ago.
     const start = (10 * MINUTE - 170 * SECOND) / (10 * MINUTE - 5 * SECOND);
     const moving = progress => (progress <= start ? RECEIVER
-      : offset(RECEIVER, -212 * (progress - start) / (1 - start), -212 * (progress - start) / (1 - start)));
+      : offset(RECEIVER, -300 * (progress - start) / (1 - start), 0));
     return {
       receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
       ble: inTimeOrder([
         ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 170 * SECOND,
-          dog: progress => northEastOf(RECEIVER, 760 + 20 * progress, progress) }),
+          dog: progress => awayFrom(RECEIVER, 760 + 20 * progress, progress, 5) }),
         ...track(bleRow, now, { slave: 4, from: 10 * MINUTE, receiver: moving,
           dog: (progress, where) => offset(where, 60 + progress * 10, -120) }),
       ]),

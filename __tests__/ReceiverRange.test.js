@@ -184,6 +184,16 @@ describe('cloud data: never judges, never clears', () => {
     expect(statusAfter(rows)).toBe('out');
     expect(statusAfter([...rows, ble(8 * MINUTE + 1, 600)])).toBe('in');
   });
+  test('BLE rows written late, from before the switch to cloud, do not clear', () => {
+    let state = judgeRange([ble(0, 1500)]);
+    state = advanceRange(state, cloud(10 * MINUTE, 300));
+    state = advanceRange(state, ble(2 * MINUTE, 300));
+    state = advanceRange(state, ble(4 * MINUTE, 300));
+    expect(state).toMatchObject({ status: 'out', cloudOnly: true, clearing: [] });
+    // Heard after the switch: counting starts there.
+    state = advanceRange(state, ble(11 * MINUTE, 300));
+    expect(state).toMatchObject({ status: 'out', cloudOnly: false, clearing: [T0 + 11 * MINUTE] });
+  });
   test('a cloud row interleaved while this phone still hears the dog does not reset anything', () => {
     expect(statusAfter([ble(0, 1500), ble(10 * SECOND, 600), cloud(15 * SECOND, 600), ble(140 * SECOND, 600)]))
       .toBe('in');
@@ -314,6 +324,19 @@ describe('fed by the live hold store', () => {
     store.ingest({ rows: rows(0, 60, 1500, { source: 'cloud', master_latitude: undefined,
       master_longitude: undefined }) });
     expect(store.ranges()).toEqual({});
+  });
+  test('a replacement store keeps the judgements of the one it replaces', () => {
+    const first = createHoldStore();
+    first.ingest({ rows: rows(0, 60, 1500) });
+    const second = createHoldStore();
+    second.seedRanges(first.ranges());
+    // The replay of the same rows changes nothing; 950 m afterwards is still out.
+    second.ingest({ rows: [...rows(0, 60, 1500), ...rows(70, 400, 950)] });
+    expect(second.ranges()[4].status).toBe('out');
+    // Without the carried state the replay window alone would say near.
+    const fresh = createHoldStore();
+    fresh.ingest({ rows: rows(70, 400, 950) });
+    expect(fresh.ranges()[4].status).toBe('near');
   });
   test('a late cloud row replays the hold but does not move the range back', () => {
     const store = createHoldStore();

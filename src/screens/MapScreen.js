@@ -84,8 +84,8 @@ export default function MapScreen({
   const now = fixture ? fixture.now : liveNow;
   // The receiver this phone is set up for, read from the native service while
   // the live map is in front (a fixture supplies its own reader).
-  const receiverState = useReceiverState(active && tracking.foreground && !historical,
-    fixture?.readReceiverState);
+  const receiverActive = active && tracking.foreground && !historical;
+  const receiverState = useReceiverState(receiverActive, fixture?.readReceiverState);
   // The newest stored packet can be from a receiver used before this one.
   const otherReceiver = isOtherReceiver(point, receiverState);
   // Its receiver readings (position, battery) are then not this receiver's
@@ -284,6 +284,9 @@ export default function MapScreen({
         livePhone={livePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
+        // A fixture switch (or a return to live data) reads the receiver
+        // again: frame only once its link is known, so the ring is framed.
+        framingReady={historical || (receiverActive && receiverState !== undefined)}
         dataReady={
           tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&

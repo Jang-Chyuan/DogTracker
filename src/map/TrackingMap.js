@@ -12,6 +12,7 @@ export const MAP_LOAD_TIMEOUT_MS = 15000;
  * @property {boolean} configured
  * @property {boolean} foreground
  * @property {boolean} dataReady
+ * @property {boolean} framingReady  false while what is framed is still unknown
  * @property {boolean} phoneEnabled
  *
  * A provider renderer receives only provider-neutral presentation and UI state.

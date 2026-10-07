@@ -111,6 +111,17 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
       }
       return result;
     },
+    // Carries range judgements over from a store being replaced (a long pause
+    // or a time repair replays the rows from scratch, but only the last 30
+    // minutes of them: an out-of-range dog must stay out until it clears).
+    // Rows the carried state has already seen are ignored by advanceRange.
+    seedRanges(ranges = {}) {
+      for (const [slaveId, range] of Object.entries(ranges)) {
+        const state = dog(Number(slaveId));
+        state.range = range;
+        state.touched = Math.max(state.touched, range.lastTime ?? 0);
+      }
+    },
     // Each dog's receiver-range judgement (ReceiverRange.advanceRange state).
     ranges() {
       const result = {};
