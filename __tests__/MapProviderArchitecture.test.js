@@ -36,6 +36,9 @@ test('composition injects a validated provider and only Google imports its SDK',
   expect(source('TrackingMapPresentation.js')).not.toMatch(
     /react-native|MapView|PROVIDER_GOOGLE/,
   );
+  // The shared receiver-range judgement it draws from is SDK-free as well.
+  expect(fs.readFileSync(path.join(__dirname, '..', 'src', 'tracking', 'ReceiverRange.js'), 'utf8'))
+    .not.toMatch(/from '(react|react-native|react-native-maps)'/);
   expect(source('GoogleTrackingMap.js')).toContain("from 'react-native-maps'");
   expect(source('GoogleTrackingMap.js')).not.toContain(
     'NativeTrackingPlatform',
@@ -95,11 +98,16 @@ test('shared presentation applies fallback and route rules before rendering', ()
     routeRows[1].receivedAt + 1000,
   );
 
-  expect(presentation.master).toMatchObject({ retained: true });
+  // The receiver keeps its last valid position for the card and the ring, but
+  // is not drawn itself: no marker and no track (v3).
+  expect(presentation.positions.master).toMatchObject({ retained: true });
+  expect(presentation).not.toHaveProperty('master');
+  expect(presentation).not.toHaveProperty('masterSegments');
   expect(presentation.slave).toMatchObject({ retained: true });
   // Trails are on, but the newest row has no coordinates: a one-point piece is
   // not a line, so nothing is drawn.
-  expect(presentation.masterSegments).toEqual([]);
   expect(presentation.slaveSegments).toEqual([]);
-  expect(presentation.masterRangeMeters).toBe(MASTER_RANGE_METERS);
+  // The ring is decided with the receiver link (MapScreen), not here.
+  expect(presentation.rangeRing).toBeNull();
+  expect(MASTER_RANGE_METERS).toBe(1000);
 });

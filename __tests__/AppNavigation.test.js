@@ -9,7 +9,7 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
-import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
+import MapView, { Circle, Marker, Polygon, Polyline } from 'react-native-maps';
 import { mockDatabase, open } from 'react-native-nitro-sqlite';
 import App from '../App';
 import { createBleService } from '../src/ble/BleService';
@@ -138,17 +138,19 @@ afterEach(async () => {
   Platform.OS = originalOS;
 });
 
-test('first use shows stored hardware markers, circle, no routes or automatic writer', async () => {
+test('first use shows the stored dog, no receiver marker, no ring without a connected receiver, no routes or automatic writer', async () => {
   await mount();
   expect(open).toHaveBeenCalledTimes(1);
   expect(rows('dog_status')).toHaveLength(1);
+  // The receiver (25.0325, 121.5648) is not drawn (v3); the dog is.
   expect(
     renderer.root.findAllByType(Marker).map(node => node.props.coordinate),
   ).toEqual([
-    { latitude: 25.0325, longitude: 121.5648 },
     { latitude: 25.033, longitude: 121.5654 },
   ]);
-  expect(renderer.root.findByType(Circle).props.radius).toBe(1000);
+  // No receiver connection known here, so no range ring.
+  expect(renderer.root.findAllByType(Polygon)).toHaveLength(0);
+  expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   expect(text()).not.toMatch(/查看兩端|首頁路徑已達繪圖上限|失聯|通知未開啟/);
   expect(
@@ -233,44 +235,25 @@ test('native BLE replay does not write again or move stored map markers', async 
   expect(markerCoordinates()).toEqual(markers);
 });
 
-test('all eight visibility states gate overlays, retain card controls, and leave phone location independent', async () => {
+test('every visibility state gates the dog markers, the receiver has no eye, and phone location stays independent', async () => {
   jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
   await mount();
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   await expand();
   for (const showTrails of [false, true])
-    for (const showSlaveMarker of [false, true])
-      for (const showMasterMarker of [false, true]) {
-        for (const [next, role] of [
-          [showSlaveMarker, '所有狗'],
-          [showMasterMarker, '領犬員'],
-        ]) {
-          const current = button('隱藏' + role + '位置') !== undefined;
-          if (current !== next)
-            await press((current ? '隱藏' : '顯示') + role + '位置');
-        }
-        await setTrails(showTrails);
-        expect(renderer.root.findAllByType(Marker)).toHaveLength(
-          Number(showMasterMarker) + Number(showSlaveMarker),
-        );
-        expect(renderer.root.findAllByType(Circle)).toHaveLength(
-          Number(showMasterMarker),
-        );
-        expect(renderer.root.findAllByType(Polyline)).toHaveLength(
-          0,
-        );
-        expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(
-          true,
-        );
-        expect(
-          button((showMasterMarker ? '隱藏' : '顯示') + '領犬員位置'),
-        ).toBeDefined();
-        expect(preferences()).toMatchObject({
-          showTrails,
-          showMasterMarker,
-          showSlaveMarker,
-        });
-      }
+    for (const showSlaveMarker of [false, true]) {
+      const current = button('隱藏所有狗位置') !== undefined;
+      if (current !== showSlaveMarker)
+        await press((current ? '隱藏' : '顯示') + '所有狗位置');
+      await setTrails(showTrails);
+      expect(renderer.root.findAllByType(Marker)).toHaveLength(Number(showSlaveMarker));
+      expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
+      expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
+      // The receiver is not drawn and its range ring cannot be turned off.
+      expect(button('隱藏領犬員位置')).toBeUndefined();
+      expect(button('顯示領犬員位置')).toBeUndefined();
+      expect(preferences()).toMatchObject({ showTrails, showSlaveMarker });
+    }
 });
 
 test('all display values survive a cold remount without duplicating hardware rows', async () => {
@@ -285,7 +268,7 @@ test('all display values survive a cold remount without duplicating hardware row
   expect(mockDatabase.close).toHaveBeenCalledTimes(1);
   await mount();
   expect(preferences()).toEqual(saved);
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
   expect(rows('dog_status')).toEqual(hardwareRows);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
 });
@@ -302,7 +285,7 @@ test('background and foreground never generate rows; real mode with empty DB rem
   connection.sqlite.exec('DELETE FROM dog_status');
   await mount();
   expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
-  expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
+  expect(renderer.root.findAllByType(Polygon)).toHaveLength(0);
   expect(text()).toContain('等待硬體資料');
   expect(text()).not.toContain('首頁路徑已達繪圖上限');
 });
@@ -319,7 +302,7 @@ test('first map asks permission once; denial does not affect hardware locations'
     });
   await mount();
   expect(request).toHaveBeenCalledTimes(1);
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   await press('設定', 'tab');
   await press('即時位置', 'tab');
   expect(request).toHaveBeenCalledTimes(1);
@@ -332,11 +315,11 @@ test('eye save failures preserve markers and remain retryable', async () => {
   );
   await expand();
   await press('隱藏所有狗位置');
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   expect(text()).toContain('settings locked');
   connection.sqlite.exec('DROP TRIGGER fail_settings');
   await press('隱藏所有狗位置');
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
 });
 
 test('hardware callback writes real rows, and failed hardware writes remain visible', async () => {
@@ -387,14 +370,13 @@ test('Android map uses the native SQL adapter without opening Nitro', async () =
   try {
     await mount();
     expect(open).not.toHaveBeenCalled();
-    expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
+    expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
     // Independent native writer inserts a DB row, never a BLE-to-map callback.
     connection.sqlite.prepare(
       'INSERT INTO dog_status (received_at, master_id, slave_id, master_lat, master_lon, slave_lat, slave_lon) VALUES (?,3,7,25.02,121.32,25.03,121.33)',
     ).run(Date.now());
     await advance();
     expect(renderer.root.findAllByType(Marker).map(node => node.props.coordinate)).toEqual([
-      { latitude: 25.02, longitude: 121.32 },
       { latitude: 25.0315, longitude: 121.4477 },
     ]);
     expect(execute.mock.calls.some(([sql]) => sql.includes('WHERE id > ?'))).toBe(true);

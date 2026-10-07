@@ -1,8 +1,11 @@
 import { cameraCoordinates, latestPosition } from './TrackingGeometry';
 import { DEFAULT_TRACKING_PREFERENCES } from '../tracking/TrackingPreferences';
 import { MAX_AGE_MS } from './DogMerge';
+import {
+  circleCoordinates, distanceMeters, RANGE, RANGE_STATUS, ringEdgePoint,
+} from '../tracking/ReceiverRange';
 
-export const MASTER_RANGE_METERS = 1000;
+export const MASTER_RANGE_METERS = RANGE.radiusM;
 
 // Drawn points carry their own time (see RouteSegments), so a window change
 // clips the cached line instead of rereading SQLite. A piece is time-ordered,
@@ -52,6 +55,9 @@ function withAge(position, since, now) {
 /**
  * Converts provider-neutral SQLite models into one shared map presentation.
  * Provider renderers must not reinterpret tracking or fallback rules.
+ *
+ * The receiver itself is not drawn (v3: no marker, name tag or track); its
+ * position stays in `positions` for the card and the range ring.
  */
 export function createTrackingMapPresentation(
   point,
@@ -69,16 +75,55 @@ export function createTrackingMapPresentation(
     // Keep information/camera data available even when both eyes are closed.
     positions: { master, slave },
     cameraPositions: cameraCoordinates(master?.stale ? null : master, slave?.stale ? null : slave),
-    master: visibility.showMasterMarker && !master?.stale ? master : null,
     slave: visibility.showSlaveMarker && !slave?.stale ? slave : null,
-    masterSegments:
-      trails && visibility.showMasterMarker
-        ? clipSegments(route.masterSegments, since)
-        : [],
     slaveSegments:
       trails && visibility.showSlaveMarker
         ? clipSegments(route.slaveSegments, since)
         : [],
-    masterRangeMeters: MASTER_RANGE_METERS,
+    rangeRing: null,
+    rangeLines: [],
   };
+}
+
+// Receiver links (ReceiverState.receiverLink) during which this phone is
+// connected to its receiver.
+const CONNECTED_LINKS = new Set(['receiving', 'quiet']);
+
+/**
+ * The 1 km receiver range ring, or null. Drawn only while this phone is
+ * connected to its receiver and that receiver has a position; never while
+ * disconnected, connecting, switched off or with cloud data only, and it
+ * cannot be turned off. `receiverPosition` must already be this receiver's
+ * (another receiver's stored position is filtered out before).
+ */
+export function receiverRangeRing(receiverPosition, link) {
+  if (!CONNECTED_LINKS.has(link) || !receiverPosition?.coordinate) return null;
+  const center = receiverPosition.coordinate;
+  return {
+    center,
+    radiusMeters: MASTER_RANGE_METERS,
+    // The ring is a dashed outline; Android draws dashes on polygons only.
+    coordinates: circleCoordinates(center, MASTER_RANGE_METERS),
+  };
+}
+
+/**
+ * The red dashed lines from the ring's edge to each drawn dog that is out of
+ * range (判定表「圈外的紅色虛線」): only with a ring, only for a dog whose
+ * judgement is out (a dog without new positions keeps the judgement of its
+ * last one), only while the position drawn for it is really outside the ring
+ * (a dog walking back, or a receiver that walked up to its last position, gets
+ * no line though it is still out), and never for a dog held in place.
+ */
+export function outOfRangeLines(ring, dogs = [], ranges = {}) {
+  if (!ring) return [];
+  const lines = [];
+  for (const dog of dogs) {
+    if (!dog?.coordinate || dog.heldReason) continue;
+    if (ranges[dog.slaveId]?.status !== RANGE_STATUS.OUT) continue;
+    if (distanceMeters(ring.center, dog.coordinate) <= ring.radiusMeters) continue;
+    const edge = ringEdgePoint(ring.center, dog.coordinate, ring.radiusMeters);
+    if (edge) lines.push({ slaveId: dog.slaveId, coordinates: [edge, dog.coordinate] });
+  }
+  return lines;
 }
