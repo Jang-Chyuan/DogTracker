@@ -18,7 +18,9 @@ import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreference
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { MAX_AGE_MS } from '../src/map/DogMerge';
+import { LATEST_SINCE } from '../src/cloud/useCloudDogs';
+import { dogMarkers } from '../src/map/DogMarkers';
+import { lastTimeText } from '../src/tracking/DogFreshness';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
 
 // What the live map would draw for a fixture: the same calls MapScreen makes.
@@ -35,8 +37,13 @@ async function screen(name) {
   const other = isOtherReceiver(point, receiver);
   const link = receiverLink(receiver, now);
   const ring = receiverRangeRing(other ? null : base.positions.master, link);
-  const drawnDogs = merged.filter(dog => !dog.stale);
+  // MapScreen draws every dog that has had a position, as DogMarkers says.
+  const drawnDogs = merged.filter(dog => dog.coordinate);
+  const markers = dogMarkers(drawnDogs, { now, cloud: fixture.cloudSync, ranges: dogs.ranges,
+    aliases: fixture.dogAliases });
   return {
+    markers,
+    marker: id => markers.find(marker => marker.slaveId === id),
     fixture,
     link,
     receiver: receiverNumber(receiver),
@@ -136,7 +143,9 @@ test('receiver-disconnected: dropped after receiving, its dog has gone quiet', a
   const dog4 = state.dogs.find(dog => dog.slaveId === 4);
   expect(dog4.stale).toBe(true);
   expect(FIXTURE_NOW - dog4.lastPacketAt).toBeGreaterThanOrEqual(5 * 60000);
-  expect(state.drawn).toEqual([6, 8]);
+  // Still drawn at its last position, and not yet 「沒有新位置」 (5 < 10 minutes).
+  expect(state.drawn).toEqual([4, 6, 8]);
+  expect(state.marker(4)).toMatchObject({ stale: false, problem: false, size: 40 });
   // Disconnected: no range ring, although the receiver's last position is known.
   expect(state.ring).toBeNull();
   // The judgement made before the drop stays as it was (豆豆 in range).
@@ -216,14 +225,72 @@ test('dog-indoor: the real indoor-hold rules hold 小黑 where it went inside', 
   expect(state.dogs.filter(dog => dog.heldReason).map(dog => dog.slaveId)).toEqual([6]);
 });
 
-test('dogs-aged: one current, one just past the live window, one forty minutes old', async () => {
+test('dogs-aged: current, four minutes (still current), forty minutes (grey, red "!")', async () => {
   const state = await screen('dogs-aged');
   const byId = Object.fromEntries(state.dogs.map(dog => [dog.slaveId, dog]));
   const age = dog => Math.round((FIXTURE_NOW - dog.lastPacketAt) / 60000);
-  expect([byId[4].stale, byId[6].stale, byId[8].stale]).toEqual([false, true, true]);
   expect([age(byId[4]), age(byId[6]), age(byId[8])]).toEqual([0, 4, 40]);
   expect(state.dogs.some(dog => dog.heldReason)).toBe(false);
-  expect(state.drawn).toEqual([4]);
+  expect(state.drawn).toEqual([4, 6, 8]);
+  expect(state.markers.map(marker => [marker.tag, marker.stale, marker.problem, marker.size])).toEqual([
+    ['豆豆', false, false, 40], ['小黑', false, false, 40], ['阿福', true, true, 48]]);
+  // 阿福 came from the cloud: judged against the last download (5 s ago).
+  expect(state.marker(8).label).toBe(`阿福，沒有新位置，最後 ${lastTimeText(FIXTURE_NOW - 40 * 60000, FIXTURE_NOW)}`);
+});
+
+test('dog-low-battery: 15% is a problem, 15% while charging is not', async () => {
+  const state = await screen('dog-low-battery');
+  expect(state.dogs.some(dog => dog.heldReason)).toBe(false);
+  expect(state.markers.map(marker => [marker.tag, marker.problem, marker.size, marker.label])).toEqual([
+    ['豆豆', true, 48, '豆豆，電量 15%，偏低'], ['小黑', false, 40, '小黑，充電中 15%'], ['阿福', false, 40, '阿福']]);
+});
+
+test('dog-indoor: house and 「小黑・室內」 on the map, read out the same', async () => {
+  const state = await screen('dog-indoor');
+  expect(state.marker(6)).toMatchObject({ indoor: true, stale: false, problem: false, size: 40,
+    tag: '小黑・室內', label: '小黑・室內' });
+  expect(state.markers.filter(marker => marker.indoor).map(marker => marker.slaveId)).toEqual([6]);
+});
+
+test('dogs-indoor-stacked: three dogs held in one kennel, their tags merge into 「3 隻・室內」', async () => {
+  const { nameTags } = require('../src/map/DogMarkers');
+  const state = await screen('dogs-indoor-stacked');
+  expect(state.markers.filter(marker => marker.indoor).map(marker => marker.slaveId)).toEqual([4, 6, 8]);
+  const held = state.markers.filter(marker => marker.indoor);
+  // Within a few metres of each other.
+  for (const marker of held) expect(distanceMeters(held[0].coordinate, marker.coordinate)).toBeLessThan(15);
+  // On screen (any zoom where 15 m is a few dp) they are one group.
+  const points = Object.fromEntries(state.markers.map((marker, index) => [marker.slaveId,
+    marker.indoor ? { x: 200 + index, y: 300 + index } : { x: 40, y: 40 }]));
+  const tags = nameTags(state.markers, points);
+  expect(Object.values(tags).filter(Boolean).map(tag => tag.text).sort()).toEqual(['3 隻・室內', '狗 5']);
+});
+
+test('dogs-overlap: three dogs together merge into 「3 隻」 with a red dot for 阿福\'s battery', async () => {
+  const { nameTags } = require('../src/map/DogMarkers');
+  const state = await screen('dogs-overlap');
+  expect(state.markers.map(marker => [marker.slaveId, marker.problem])).toEqual([[4, false], [6, false], [8, true]]);
+  for (const marker of state.markers) {
+    expect(distanceMeters(state.markers[0].coordinate, marker.coordinate)).toBeLessThan(15);
+  }
+  const points = Object.fromEntries(state.markers.map((marker, index) => [marker.slaveId, { x: 200 + index, y: 300 }]));
+  expect(Object.values(nameTags(state.markers, points)).filter(Boolean))
+    .toEqual([{ text: '3 隻', group: 3, problem: true }]);
+});
+
+test('dog-never-fixed: collar 9 talks but never had a fix — not drawn', async () => {
+  const state = await screen('dog-never-fixed');
+  expect(state.dogs.map(dog => dog.slaveId)).toEqual([4, 9]);
+  expect(state.dog(9).coordinate).toBeNull();
+  expect(state.markers.map(marker => marker.slaveId)).toEqual([4]);
+});
+
+test('dog-stale-24h: a position 26 hours old stays on the map, grey with the date', async () => {
+  const state = await screen('dog-stale-24h');
+  expect(state.marker(8)).toMatchObject({ stale: true, problem: true, size: 48, tag: '阿福',
+    label: `阿福，沒有新位置，最後 ${lastTimeText(FIXTURE_NOW - 26 * 3600000, FIXTURE_NOW)}` });
+  expect(lastTimeText(FIXTURE_NOW - 26 * 3600000, FIXTURE_NOW)).toContain('/');
+  expect(state.marker(4)).toMatchObject({ stale: false, problem: false });
 });
 
 test('a fixture replaces the map inputs and leaves them untouched when off', async () => {
@@ -327,7 +394,8 @@ test.each(FIXTURE_NAMES)('%s: the rows read the same as the real CloudDatabase r
     for (const row of fixture.raw.ble) await insert('dog_status', row);
     for (const row of fixture.raw.cloud) await insert('supabase_dog_status', row);
     const owner = fixture.cloudSync.ownerId;
-    const since = fixture.now - MAX_AGE_MS;
+    // What useCloudDogs asks for: every dog's newest rows, however old.
+    const since = LATEST_SINCE;
     const pick = row => [row.slave_id, row.master_id, row.source, Number(row.track_at), row.slave_lat, row.slave_lon,
       row.battery_percentage, row.usb_present, row.environment?.environment ?? null];
     const order = (left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right));

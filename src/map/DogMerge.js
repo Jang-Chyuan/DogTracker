@@ -60,8 +60,11 @@ function bleCandidate(point, samples) {
  * happens to be holding. The source is written on the marker and in the card,
  * and dogs that are not wanted can be hidden one by one.
  */
+//
+// A dog stays on the map however old its last position is (v3 §6: older than
+// 24 hours it is kept, grey); pass `maxAgeMs` only to limit what is read.
 export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
-  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, holds = {}, statuses = {}, ride = null }) {
+  now = Date.now(), maxAgeMs = Infinity, windowMs = null, holds = {}, statuses = {}, ride = null }) {
   const local = bleCandidate(point, samples);
   const dogs = new Map();
   if (local) dogs.set(local.slaveId, local);
@@ -146,7 +149,10 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const hold = ridesAlong(statuses[dog.slaveId], ride, now)
         ? { coordinate: ride.coordinate, reason: null, source: 'ride', since: lastPacketAt }
         : holds[dog.slaveId] ?? null;
-      const held = hold && (communicating || charging) ? hold : null;
+      // A hold outlives the packets (v3: a dog held indoors that falls silent
+      // keeps its house and turns grey after 10 minutes; DogFreshness times
+      // it by its packets). HoldStore forgets a dog unheard for 24 hours.
+      const held = hold;
       const positionAt = held ? held.anchorAt ?? lastPacketAt : dog.receivedAt;
       const stale = !(held || dog.coordinate) || (!communicating && !charging);
       const noFix = packet && !packet.position;
@@ -154,6 +160,13 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
         heldSince: held.since, heldSource: held.source,
         receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
+        // For DogFreshness: the newest valid position and the newest packet,
+        // each with the source it came from (the phone's receiver or cloud).
+        fixAt: dog.coordinate ? dog.receivedAt : null,
+        fixSource: dog.coordinate ? dog.source : null,
+        packetAt: packet?.time ?? (dog.coordinate ? dog.receivedAt : null),
+        packetSource: packet?.source ?? (dog.coordinate ? dog.source : null),
+        charging,
         environment,
         retained: held ? false : dog.retained || !!noFix,
         communicationStatus: !communicating ? '未收到新資料'

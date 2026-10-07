@@ -27,6 +27,7 @@ import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
 import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLocationRecording';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
+import { useDogAvatars } from './src/dogs/useDogAvatars';
 import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
@@ -84,6 +85,8 @@ function TrackerApp() {
   const isHistory = route.name === 'history';
   // Both tabs draw on the same persistent map layer; only one of them is live.
   const showsMap = isMap || isHistory;
+  // Each dog's face (dog_avatars); the default illustration until one is set.
+  const dogAvatars = useDogAvatars(tracking.historyDatabase, tracking.ready.real);
   const history = useMapHistory(tracking.historyDatabase, tracking.ready.real,
     tracking.foreground && isHistory, cloudSync.ownerId);
   // The history card downloads a cloud range it does not hold, through the same
@@ -183,6 +186,8 @@ function TrackerApp() {
           phone={mapInputs.phone}
           cloudDogs={mapInputs.cloudDogs}
           cloudOwner={mapInputs.cloudSync.ownerId}
+          cloudSync={mapInputs.cloudSync}
+          dogAvatars={dogAvatars}
           historical={isHistory}
           active={showsMap}
           bottomInset={insets.bottom + NAV_HEIGHT + 20}

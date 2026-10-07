@@ -37,7 +37,8 @@ const at = (north, east) => ({
   longitude: FIXTURE_ORIGIN.longitude + east * STEP,
 });
 
-// Dog names the handler gave (history preferences' dogAliases).
+// Dog names the handler gave (history preferences' dogAliases). Dog 5 has
+// none: it is 「狗 5」.
 const ALIASES = Object.freeze({ 4: '豆豆', 6: '小黑', 8: '阿福' });
 
 // ---- raw rows ------------------------------------------------------------
@@ -132,7 +133,10 @@ const receiving = now => ({
   deviceName: 'DogGPS-Master7', expectedMasterId: 7, lastReceivedAt: now - 3 * SECOND,
   storageError: '', resumeError: '',
 });
-const synced = now => ({ ownerId: FIXTURE_OWNER, lastSuccess: now - 5 * SECOND, error: null });
+// The last live download started 5 s ago and succeeded (DogFreshness judges
+// cloud dogs against it).
+const synced = now => ({ ownerId: FIXTURE_OWNER, lastSuccess: now - 5 * SECOND,
+  lastDownloadAt: now - 5 * SECOND, failingSince: null, error: null });
 
 // The handler walking slowly north-east, phone location recording on.
 function walkingPhone(now) {
@@ -156,6 +160,16 @@ const dog6Cloud = (now, until = 15 * SECOND) =>
   series(cloudRow, now, { slave: 6, from: 10 * MINUTE, to: until, every: 15 * SECOND, start: [-18, 24], step: [0.03, -0.05] });
 const dog8Cloud = now =>
   series(cloudRow, now, { slave: 8, from: 10 * MINUTE, to: 20 * SECOND, every: 15 * SECOND, start: [22, -24], step: [-0.05, 0] });
+
+// A dog on receiver 7 that went inside `inside` ms ago at `spot`: clear fixes
+// in one place for 13 minutes, then packets without a fix. The real hold
+// rules (HoldStore + the bundled environment model) hold it there.
+const indoorBle = (now, slave, spot, { inside = 12 * MINUTE, until = 8 * SECOND, ...rest } = {}) => [
+  ...series(bleRow, now, { slave, from: inside + 13 * MINUTE, to: inside + 10 * SECOND, start: spot, ...rest })
+    .map((row, index) => ({ ...row, slave_lat: row.slave_lat + (index % 5) * 0.00001,
+      slave_lon: row.slave_lon - (index % 5) * 0.00001 })),
+  ...series(bleRow, now, { slave, from: inside, to: until, rssi: -96, snr: -4, ...rest }),
+];
 
 const FIXTURES = {
   // Receiver connected, cloud synced, three fresh dogs, phone recording.
@@ -201,8 +215,9 @@ const FIXTURES = {
     ],
     cloudRows: dog8Cloud(now),
   }),
-  // Dog 4 current; dog 6 last heard four minutes ago (just past the 3-minute
-  // live window); dog 8 last heard forty minutes ago (kept up to 24 hours).
+  // 豆豆 current; 小黑 last heard four minutes ago (still current: v3 goes
+  // grey only after 10 minutes); 阿福 last heard forty minutes ago: grey face,
+  // red "!", larger, still on the map.
   'dogs-aged': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: dog4Ble(now),
@@ -272,6 +287,63 @@ const FIXTURES = {
       cloudRows: dog8Cloud(now),
     };
   },
+  // 豆豆's collar is at 15% and not charging: red "!" and the larger face.
+  // 小黑's is at 15% too but plugged in: not a problem, no badge (the card
+  // says 充電中 15%). 阿福 is fine.
+  'dog-low-battery': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [14, 9], step: [0.05, 0.08], battery: 15 }),
+      // Walking briskly (no hold: the fixes keep moving).
+      ...series(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND, start: [-28, 4], step: [0.4, 0.5],
+        battery: 15, usb: 1 }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 豆豆, 小黑 and 阿福 went into the same kennel twelve minutes ago (a few
+  // metres apart, as GPS sees separate cages): all three held indoors, their
+  // name tags merge into 「3 隻・室內」. Dog 5 walks outside on its own.
+  'dogs-indoor-stacked': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...indoorBle(now, 4, [-18, 24]),
+      ...indoorBle(now, 6, [-18.3, 24.4], { inside: 11 * MINUTE }),
+      ...indoorBle(now, 8, [-17.7, 24.3], { inside: 13 * MINUTE }),
+      ...series(bleRow, now, { slave: 5, from: 10 * MINUTE, start: [20, -30], step: [0.05, 0.08] }),
+    ]),
+    cloudRows: [],
+  }),
+  // 豆豆, 小黑 and 阿福 walking together, a few metres apart: their faces
+  // overlap and the tags merge into one 「3 隻」, with a red dot because
+  // 阿福's battery is low (its own face still has its "!").
+  'dogs-overlap': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [14, 9], step: [0.05, 0.08] }),
+      ...series(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND, start: [14.4, 9.5], step: [0.05, 0.08] }),
+      ...series(bleRow, now, { slave: 8, from: 10 * MINUTE, to: 11 * SECOND, start: [13.6, 9.6], step: [0.05, 0.08],
+        battery: 12 }),
+    ]),
+    cloudRows: [],
+  }),
+  // Collar 9 talks to receiver 7 but has never had a fix: not drawn, no
+  // marker (S2 lists it as 「還沒定位」). 豆豆 is drawn as usual.
+  'dog-never-fixed': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...series(bleRow, now, { slave: 9, from: 10 * MINUTE, to: 3 * SECOND }),
+    ]),
+    cloudRows: [],
+  }),
+  // 阿福 was last downloaded 26 hours ago: still on the map at that position,
+  // grey with the red "!" (v3 §6: older than 24 hours is kept). 豆豆 current.
+  'dog-stale-24h': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: dog4Ble(now),
+    cloudRows: series(cloudRow, now, { slave: 8, from: 26 * 60 * MINUTE + 10 * MINUTE, to: 26 * 60 * MINUTE,
+      every: 15 * SECOND, start: [-45, -50], step: [0.02, 0.03] }),
+  }),
   // Signed in, no receiver set up: 小黑 and 阿福 come only from the cloud. No
   // receiver, so no range ring and no range judgement at all.
   'cloud-only': now => ({
@@ -313,7 +385,8 @@ const newestBy = (rows, test = () => true) => {
 function withEnvironment(row, table, now) {
   const completedBefore = Math.floor(now / ENVIRONMENT_WINDOW_MS) * ENVIRONMENT_WINDOW_MS;
   const pair = table.filter(other => other.master_id === row.master_id && other.slave_id === row.slave_id);
-  const latest = Math.max(...pair.map(timeOf).filter(time => time < completedBefore && now - time <= MAX_AGE_MS));
+  // Read since LATEST_SINCE (all stored rows), like latestStatusRows.
+  const latest = Math.max(...pair.map(timeOf).filter(time => time < completedBefore));
   if (!Number.isFinite(latest)) return { ...row, environment: null };
   const start = Math.floor(latest / ENVIRONMENT_WINDOW_MS) * ENVIRONMENT_WINDOW_MS;
   const window = pair.filter(other => timeOf(other) >= start && timeOf(other) < start + ENVIRONMENT_WINDOW_MS)
@@ -388,9 +461,9 @@ export function buildFixture(name, now = FIXTURE_NOW) {
   // each source with its environment, and the indoor holds.
   const holds = createHoldStore();
   holds.ingest(holdBatch(ble, cloudRows, now));
-  // useCloudDogs reads everything since now - MAX_AGE_MS.
-  const recent = row => now - timeOf(row) <= MAX_AGE_MS;
-  const recentFix = row => recent(row) && hasFix(row);
+  // useCloudDogs reads every dog's newest rows, however old (LATEST_SINCE).
+  const recent = () => true;
+  const recentFix = row => hasFix(row);
   const packets = [
     ...newestBy(ble, recent).map(row => withEnvironment(packet(row, 'ble'), ble, now)),
     ...newestBy(ble, recentFix).map(row => withEnvironment(packet(row, 'ble'), ble, now)),

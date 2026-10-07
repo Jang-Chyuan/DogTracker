@@ -79,3 +79,24 @@ test('the hook says "pending" until the first read answers, and null when it fai
   expect(value).toBeNull();
   tree.unmount();
 });
+
+test('switching the receiver off and on is remembered for the dogs\' freshness grace', () => {
+  const { trackReceiverPause } = require('../src/map/ReceiverState');
+  let record = trackReceiverPause(null, up, NOW);
+  expect(record).toEqual({ running: true, pausedAt: null, resumedAt: null });
+  // No read (inactive map) says nothing.
+  expect(trackReceiverPause(record, null, NOW + 1000)).toBe(record);
+  // A dropped link is not the user disconnecting.
+  record = trackReceiverPause(record, { ...up, connected: false }, NOW + 2000);
+  expect(record.pausedAt).toBeNull();
+  record = trackReceiverPause(record, { ...up, running: false }, NOW + 3000);
+  expect(record).toEqual({ running: false, pausedAt: NOW + 3000, resumedAt: null });
+  // Still off later: the pause keeps its start.
+  expect(trackReceiverPause(record, { ...up, enabled: false }, NOW + 4000)).toBe(record);
+  record = trackReceiverPause(record, { ...up, connected: false, lastReceivedAt: 0 }, NOW + 5000);
+  expect(record.resumedAt).toBeNull();
+  record = trackReceiverPause(record, { ...up, lastReceivedAt: NOW + 6000 }, NOW + 6000);
+  expect(record).toEqual({ running: true, pausedAt: NOW + 3000, resumedAt: NOW + 6000 });
+  // Never running before (first start, no receiver): no pause.
+  expect(trackReceiverPause(null, { ...up, enabled: false }, NOW).pausedAt).toBeNull();
+});

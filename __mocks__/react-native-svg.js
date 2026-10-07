@@ -13,3 +13,6 @@ export const Line = shape('line');
 export const Rect = shape('rect');
 export const G = shape('g');
 export const Text = shape('text');
+export const Ellipse = shape('ellipse');
+export const Defs = shape('defs');
+export const ClipPath = shape('clippath');
