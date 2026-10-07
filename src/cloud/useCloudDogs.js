@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { MAX_AGE_MS } from '../map/DogMerge';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 
 export const POLL_MS = 10000;
+// The latest rows are read from the start of what this phone stores.
+export const LATEST_SINCE = 0;
 
 /**
  * Reads the newest downloaded row per dog from the local cloud copy. The map
@@ -44,10 +45,14 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         await previous;
         if (!alive) return;
         // Logged out, only the indoor holds of this phone's own BLE rows apply.
-        const rows = owner ? await database.latestBySlave(owner, now() - MAX_AGE_MS) : [];
+        // Every dog's newest row however old: a dog last seen more than 24
+        // hours ago stays on the map, grey (v3 §6). The cloud side is one
+        // indexed lookup per dog; the BLE table is capped at 10,000 rows per
+        // dog, and a busy day already filled the old 24-hour window.
+        const rows = owner ? await database.latestBySlave(owner, LATEST_SINCE) : [];
         if (!alive) return;
         const packets = owner && database.latestStatusRows
-          ? await database.latestStatusRows(owner, now() - MAX_AGE_MS, now()) : [];
+          ? await database.latestStatusRows(owner, LATEST_SINCE, now()) : [];
         // The path is only read when something asks for it: it is the larger
         // query, and the card draws no line while the path switch is off.
         const track = owner && Number.isFinite(trackSinceMs)

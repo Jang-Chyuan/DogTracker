@@ -22,7 +22,12 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let controller = null;
   let manualPending = false;
   let sweptAt = 0;
-  let state = { busy: false, mode: null, error: '', lastSuccess: null, revision: 0 };
+  // lastDownloadAt: when the last successful live download started (what it
+  // brought is current up to then); failingSince: the first failure since the
+  // last success. DogFreshness judges cloud dogs by these (v3 判定表「未更新
+  // （雲端的狗）」).
+  let state = { busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
+    failingSince: null, revision: 0 };
   const publish = patch => {
     state = { ...state, ...patch };
     if (!disposed) onChange({ ...state, owner, foreground });
@@ -80,10 +85,11 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           }
         }
         check();
-        publish({ lastSuccess: now() });
+        publish({ lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null });
       } catch (error) {
         if (valid(version) && (!abort.signal.aborted || timedOut)) {
-          publish({ error: timedOut ? '同步逾時，已儲存批次保留，稍後重試' : error.message });
+          publish({ error: timedOut ? '同步逾時，已儲存批次保留，稍後重試' : error.message,
+            failingSince: state.failingSince ?? now() });
         }
       } finally {
         clearTimeout(timeout);
@@ -106,7 +112,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       sweptAt = 0;
       generation += 1;
       controller?.abort();
-      publish({ error: '', lastSuccess: null, revision: state.revision + 1 });
+      publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, revision: state.revision + 1 });
       wake();
     },
     setForeground(active) {

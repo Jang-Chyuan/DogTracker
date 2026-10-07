@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,13 +16,12 @@ import MapView, {
 } from 'react-native-maps';
 import { colors as tokens, opacity } from '../theme/tokens';
 import { floatingShadow, mapColors as colors } from './MapTheme';
-import { describeDogSource, heldLabel } from './DogMerge';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
-import TrackingAvatar from './TrackingAvatar';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
-import DogNameMarker, { DOG_NAME_ANCHOR } from './DogNameMarker';
-import { dogHistoryLabel } from '../mapHistory/DogAliases';
+import DogMarkerView, { markerFrame } from './DogMarkerView';
+import { INDOOR_WORD, nameTags } from './DogMarkers';
+import { dogMapLabel } from '../mapHistory/DogAliases';
 import { hideSplash } from '../app/hideSplash';
 
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
@@ -46,86 +45,60 @@ const EMPTY_REGION = {
   latitudeDelta: 4,
   longitudeDelta: 4,
 };
-function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
-  // A position older than the selected window is drawn faded, so it reads as
-  // "last seen here", not as where the dog is now. The followed dog gets a ring
-  // so the camera's target is visible on the map, not only in the card.
-  const faded = !!position.stale;
-  const focused = !!position.focused;
-  const marker = useRef(null);
-  // The marker view is not tracked for changes (that would redraw it on every
-  // frame), so fading and the follow ring have to ask for one redraw each.
-  useEffect(() => {
-    marker.current?.redraw?.();
-  }, [faded, focused, title, position.heldReason]);
-  const name = title || '狗 · Slave';
-  const detail = description || (
-    position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
-  );
+// One dog on the live map. The marker view is not tracked for changes (that
+// would redraw it on every frame), so every change of what it shows asks for
+// one redraw. A tap opens the dog.
+function DogMarker({ source, marker, tag, avatar, zIndex, onPress }) {
+  const ref = useRef(null);
+  const frame = markerFrame(marker.size);
+  const look = [marker.size, marker.problem, marker.stale, marker.indoor, marker.selected,
+    tag?.text, tag?.problem, avatar?.kind, avatar?.art, avatar?.color, avatar?.uri?.length].join('|');
+  useEffect(() => { ref.current?.redraw?.(); }, [look]);
   return (
     <Marker
-      ref={marker}
-      identifier={identifier || source + '-' + role}
-      coordinate={position.coordinate}
-      anchor={role === 'slave' ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
+      ref={ref}
+      identifier={source + '-dog-' + marker.slaveId}
+      coordinate={marker.coordinate}
+      anchor={frame.anchor}
       tracksViewChanges={false}
-      zIndex={role === 'slave' ? 20 : 10}
+      zIndex={zIndex}
       // No title or description: those draw the SDK's own bubble, and a tap
-      // already opens this device's panel. Two boxes for one tap read as a bug.
-      // The text they carried lives on the view below, for screen readers.
+      // already opens the dog. The label below is what TalkBack reads.
       onPress={onPress}
     >
-      <DogNameMarker label={role === 'slave' ? name : null}
-        status={heldLabel(position) || (role === 'slave' && faded ? '未更新／最後位置' : null)}><View
-        collapsable={false}
-        accessible
-        accessibilityLabel={`${name}。${heldLabel(position) ? `${heldLabel(position)}。` : ''}${faded ? '未更新／最後位置。' : ''}${detail}`}
-        style={[styles.marker, focused && styles.focusedMarker, faded && styles.fadedMarker]}
-        onLayout={() => marker.current?.redraw()}
-      >
-        <TrackingAvatar role={role} size={40} />
-      </View></DogNameMarker>
+      <View collapsable={false} accessible accessibilityLabel={marker.label}
+        onLayout={() => ref.current?.redraw?.()}>
+        <DogMarkerView marker={marker} tag={tag} avatar={avatar}
+          onAvatarLoad={() => ref.current?.redraw?.()} />
+      </View>
     </Marker>
   );
 }
 
-// The history track's last drawn position. Same redraw dance as DeviceMarker:
-// a custom marker view that is not tracked for changes can reach the native
-// side before it has laid out, and then draws as a blank dot.
+// The history track's last drawn position: the same face and name tag as the
+// live map (house and 「名字・室內」 when it was held there), without the
+// live problem badges. Same redraw dance as DogMarker.
 function TrackMarker({ track, onPress }) {
-  const marker = useRef(null);
-  useEffect(() => { marker.current?.redraw?.(); }, [track.name, track.latest?.heldReason]);
+  const ref = useRef(null);
   const { latest } = track;
-  const detail = `${new Date(latest.time).toLocaleString()} · ${
-    latest.speed_kmh == null ? '速度未知' : latest.speed_kmh.toFixed(1) + ' km/h'}`;
-  // The view is captured once, on layout: tracking it re-captures the bitmap on
-  // every render, and during playback that is four times a second — the marker
-  // visibly flickered while the scrubber moved.
-
+  const indoor = !!latest.heldReason;
+  const marker = { slaveId: track.name, size: 40, problem: false, stale: false, indoor, selected: false };
+  const frame = markerFrame(marker.size);
+  const name = dogMapLabel(track.name);
+  const text = indoor ? `${name}・${INDOOR_WORD}` : name;
+  useEffect(() => { ref.current?.redraw?.(); }, [text]);
   return (
     <Marker
-      ref={marker}
+      ref={ref}
       coordinate={latest}
-      anchor={track.role === 'slave' ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
+      anchor={frame.anchor}
       tracksViewChanges={false}
-      // Like the live map: no title or description, because the tap opens this
-      // device's panel and the SDK's own bubble would be a second box.
       onPress={onPress}
     >
-      <DogNameMarker label={track.role === 'slave' ? track.name : null}
-        status={heldLabel(latest)}><View
-        collapsable={false}
-        accessible
-        accessibilityLabel={`${track.name} · 該時刻位置。${detail}`}
-        style={styles.marker}
-        onLayout={() => marker.current?.redraw?.()}
-      >
-        {track.role === 'slave' ? (
-          <TrackingAvatar role="slave" size={36} />
-        ) : (
-          <View style={[styles.phoneDot, { backgroundColor: track.color }]} />
-        )}
-      </View></DogNameMarker>
+      <View collapsable={false} accessible accessibilityLabel={`${text}，${new Date(latest.time).toLocaleString()}`}
+        onLayout={() => ref.current?.redraw?.()}>
+        <DogMarkerView marker={marker} tag={{ text, group: 1 }} avatar={track.avatar} />
+      </View>
     </Marker>
   );
 }
@@ -149,7 +122,6 @@ function GoogleTrackingMapRenderer({
   configured,
 }) {
   const {
-    slave,
     slaveSegments,
     rangeRing,
     rangeLines = [],
@@ -167,6 +139,14 @@ function GoogleTrackingMapRenderer({
   const [loadedInstance, setLoadedInstance] = useState(null);
   const [timedOut, setTimedOut] = useState(false);
   const instance = String(attempt);
+  // Where each dog is on screen, read after every camera move, so name tags
+  // that would run into each other merge into one 「3 隻」 tag.
+  const dogMarkers = useMemo(() => presentation.dogMarkers || [], [presentation.dogMarkers]);
+  // { source, points }: points from another source (a fixture or data
+  // source switch moves every dog) are never used for this one.
+  const [dogPoints, setDogPoints] = useState({ source: null, points: {} });
+  const pointsKey = dogMarkers.map(marker => `${marker.slaveId}:${marker.coordinate.latitude},`
+    + `${marker.coordinate.longitude}:${marker.size}`).join('|');
   const activeInstance = useRef(instance);
   activeInstance.current = instance;
   const ready = readyInstance === instance;
@@ -191,6 +171,30 @@ function GoogleTrackingMapRenderer({
     setNeedsFirstPositionFit(positions.length === 0 || !!presentation.historyTracks);
     setMountedMap(true);
   }, [dataReady, mountedMap, positions.length, presentation.historyTracks]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!usable || dogMarkers.length < 2 || !map?.pointForCoordinate) return undefined;
+    let alive = true;
+    Promise.all(dogMarkers.map(marker => map.pointForCoordinate(marker.coordinate)
+      .then(point => [marker.slaveId, point]).catch(() => null)))
+      .then(entries => {
+        if (alive) setDogPoints({ source, points: Object.fromEntries(entries.filter(Boolean)) });
+      });
+    return () => { alive = false; };
+    // pointsKey stands for dogMarkers' positions and sizes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usable, pointsKey, cursorRevision, source]);
+  const projecting = usable && dogMarkers.length > 1 && typeof mapRef.current?.pointForCoordinate === 'function';
+  const tags = useMemo(() => {
+    const points = dogPoints.source === source ? dogPoints.points : null;
+    // Just switched source: no tags for the moment it takes to place them,
+    // rather than separate tags that then jump into a group (or a group made
+    // from where the previous source's dogs were).
+    if (projecting && !points) return Object.fromEntries(dogMarkers.map(marker => [marker.slaveId, null]));
+    // Within one source a dog that moved keeps its last screen point until the
+    // next read (a moment), so its tag does not blink on every new position.
+    return nameTags(dogMarkers, points || {}, PixelRatio.getFontScale?.() || 1);
+  }, [dogMarkers, dogPoints, source, projecting]);
   useEffect(() => {
     onReadyChange?.(configured && usable);
   }, [configured, usable, onReadyChange]);
@@ -407,14 +411,6 @@ function GoogleTrackingMapRenderer({
               tappable={false}
             />
           ))}
-          {slave && (
-            <DeviceMarker
-              key={source + '-slave'}
-              source={source}
-              role="slave"
-              position={slave}
-            />
-          )}
           {(presentation.dogPaths || []).map(track => (
             <React.Fragment key={source + '-dogpath-' + track.slaveId}>
               {track.segments.map((segment, index) => (
@@ -423,18 +419,18 @@ function GoogleTrackingMapRenderer({
               ))}
             </React.Fragment>
           ))}
-          {(presentation.dogs || []).map(dog => (
-            <DeviceMarker
-              key={source + '-dog-' + dog.slaveId}
-              identifier={source + '-dog-' + dog.slaveId}
+          {dogMarkers.map(marker => (
+            <DogMarker
+              key={source + '-dog-' + marker.slaveId}
               source={source}
-              role="slave"
-              position={dog}
-              onPress={onDogPress ? () => onDogPress(dog.slaveId) : undefined}
-              title={dogHistoryLabel(dog.slaveId, presentation.dogAliases)}
-              description={describeDogSource(dog) + ' · '
-                + new Date(dog.receivedAt).toLocaleTimeString()
-                + (dog.stale ? '（早於所選時間範圍）' : '')}
+              marker={marker}
+              tag={tags[marker.slaveId]}
+              avatar={presentation.dogAvatars?.[marker.slaveId]}
+              // Above the phone's dot (30), whose name tag layer they carry:
+              // the open dog on top, then problems, then the dog carrying a
+              // group tag over the faces it covers.
+              zIndex={marker.selected ? 40 : (marker.problem ? 34 : 31) + (tags[marker.slaveId]?.group > 1 ? 2 : 0)}
+              onPress={onDogPress ? () => onDogPress(marker.slaveId) : undefined}
             />
           ))}
         </MapView>
@@ -534,18 +530,4 @@ const styles = StyleSheet.create({
     ...floatingShadow,
   },
   retryText: { color: colors.ink, fontWeight: '600' },
-  fadedMarker: { opacity: 0.45 },
-  phoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: '#FFFFFF' },
-  focusedMarker: {
-    borderRadius: 23,
-    borderWidth: 3,
-    borderColor: colors.dog,
-    backgroundColor: '#FFFFFFAA',
-  },
-  marker: {
-    width: 46,
-    height: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });

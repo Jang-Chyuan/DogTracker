@@ -18,7 +18,7 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | 本機 BLE 列 | `dog_status` 的列（含 `satellites`、`hdop`、`usb_present`、`rssi`、`master_lat/lon`） | `mapDogStatusRow`、`mergePositionSamples` → `tracking.point`／`positionSamples` |
 | 雲端列 | `supabase_dog_status` 的列 | 模仿 `CloudDatabase.latestBySlave`／`latestStatusRows`（含環境模型）→ `cloudDogs.rows`／`packets` |
 | 停在原處、接收範圍 | **給列，不直接給 hold 或判定**：本機＋雲端列照 `holdRows` 冷啟動的方式交給真的 `HoldStore`／`IndoorHold`＋內建環境模型算出 `holds`、`statuses`；同一批列也算出每隻狗的接收範圍判定 `ranges`（`ReceiverRange.js`） | `mergeDogMarkers`、`outOfRangeLines` |
-| 雲端同步狀態 | `useCloudSync` 的 `ownerId`、`lastSuccess`、`error` | 地圖收到的 `cloudSync` |
+| 雲端同步狀態 | `useCloudSync` 的 `ownerId`、`lastSuccess`、`lastDownloadAt`、`failingSince`、`error` | 地圖收到的 `cloudSync`；雲端狗的「沒有新位置」照 `DogFreshness` 用 `lastDownloadAt` 判斷 |
 | 手機位置／路線 | 現在位置（`useLiveLocation` 的樣子）和最近 10 分鐘的路線 | 地圖上的手機點；路線交給真的 `RideAlong` 判斷坐車 |
 | 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
@@ -34,11 +34,16 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | `receiver-connecting` | 接收器 7 剛選好還沒收到資料；最新一筆封包來自之前用的接收器 3，不能當成 7 畫 |
 | `receiver-disconnected` | 接收器 7 五分鐘前斷線、自動重連中；牠收的豆豆不再更新 |
 | `dog-indoor` | 小黑進室內 12 分鐘：先有清楚定位，之後封包沒定位 → 真的 hold 規則判「室內」 |
-| `dogs-aged` | 豆豆最新、小黑 4 分鐘前、阿福 40 分鐘前 |
+| `dogs-aged` | 豆豆最新、小黑 4 分鐘前（還算新）、阿福 40 分鐘前（灰色頭像＋紅色「!」＋放大） |
 | `range-out` | 豆豆從接收器 7 走到 1.6 公里外：不在接收範圍，從範圍圈邊緣拉紅色虛線 |
 | `range-near-edge` | 豆豆在 880 m（快離開，800 m–1 km）：圈內、不畫線，卡片才變琥珀（046） |
 | `range-returning` | 豆豆出去 1.3 公里後走回 950 m：還沒解除（要 900 m 內 2 筆、跨 2 分鐘），仍是圈外，但畫在圈內所以不畫線 |
 | `range-stale-inside` | 小黑快 3 分鐘沒有新位置，最後一筆時在範圍內（780 m）；之後接收器往反方向走 300 m，那個位置現在落在圈外 → 判定停在最後一筆，不畫線 |
+| `dog-low-battery` | 豆豆電量 15%、沒在充電：紅色「!」＋放大；小黑 15% 但在充電：沒有角標 |
+| `dogs-indoor-stacked` | 豆豆、小黑、阿福在同一個狗舍停在原處（相距幾公尺）：小房子，名稱牌合成「3 隻・室內」；狗 5 在外面 |
+| `dogs-overlap` | 豆豆、小黑、阿福走在一起：名稱牌合成「3 隻」，阿福電量低所以小標有紅點 |
+| `dog-never-fixed` | 訊號源 9 一直有封包但從沒定位：地圖上不畫 |
+| `dog-stale-24h` | 阿福最後位置是 26 小時前：照樣畫在地圖上（灰色＋紅色「!」） |
 | `cloud-only` | 沒設定接收器，小黑、阿福只從雲端來：不畫範圍圈、沒有接收範圍判定 |
 
 ## 新增情境（之後每個 PR）

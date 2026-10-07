@@ -143,9 +143,8 @@ test('the map re-centres on the followed dog and leaves the others drawn', async
   const markers = dogMarkers();
   expect(markers.map(node => node.props.identifier))
     .toEqual(['real-dog-4', 'real-dog-6', 'real-dog-7']);
-  // Only the followed dog carries the ring.
-  const ringed = markers.filter(node => JSON.stringify(node.props.position).includes('"focused":true'));
-  expect(ringed.map(node => node.props.identifier)).toEqual(['real-dog-4']);
+  // v3 has no follow ring: the followed dog looks like any other.
+  expect(markers.map(node => node.props.zIndex)).toEqual([31, 31, 31]);
 });
 
 test('following a dog that stopped reporting does not move the camera or crash', async () => {
