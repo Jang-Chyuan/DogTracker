@@ -62,7 +62,7 @@ export function AuthProvider({ children, clientFactory = getSupabase }) {
     session, user: session?.user || null, loading, error, expired, available: !!client,
     async signIn(email, password) {
       const address = email.trim();
-      if (!address || !password) throw new Error('請輸入 Email 與密碼');
+      if (!address || !password) throw new Error('請輸入電子郵件和密碼');
       const { data, error: failure } = await requireClient().auth.signInWithPassword({ email: address, password });
       if (failure) throw failure;
       return data;
