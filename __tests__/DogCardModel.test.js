@@ -74,13 +74,21 @@ test('battery: 20% is low, 21% is not, charging never is; unknown is 「—」',
 
 test('a battery reading 10 minutes older than the position carries its time', () => {
   const at = new Date(2026, 9, 7, 9, 12).getTime();
-  expect(row(card(dog(), { battery: { percentage: 62, charging: false, at } }), 'battery').value).toBe('62%（09:12）');
-  expect(row(card(dog(), { battery: { percentage: 62, charging: true, at } }), 'battery').value).toBe('充電中 62%（09:12）');
+  // The newest packet had no valid battery: the card's own read is the newest.
+  const noBattery = dog({ batteryPercentage: null });
+  expect(row(card(noBattery, { battery: { percentage: 62, charging: false, at } }), 'battery').value).toBe('62%（09:12）');
+  expect(row(card({ ...noBattery, charging: true }, { battery: { percentage: 62, at } }), 'battery').value)
+    .toBe('充電中 62%（09:12）');
+  // A newer packet beats an older read, and an older read's charging does
+  // not survive unplugging.
+  expect(row(card(dog({ batteryPercentage: 15 }), { battery: { percentage: 62, charging: true, at } }), 'battery'))
+    .toMatchObject({ value: '15%・偏低', tone: 'crit' });
   // Nine minutes older: no time.
   expect(row(card(dog(), { battery: { percentage: 62, at: NOW - 5000 - 9 * MINUTE } }), 'battery').value).toBe('62%');
   // Held indoors, it is compared with the newest packet, not the held point.
   const held = dog({ heldReason: '室內', heldSource: 'weak', fixAt: NOW - 3 * 3600000, packetAt: NOW - 5000 });
-  expect(row(card(held, { battery: { percentage: 62, at: NOW - 6000 } }), 'battery').value).toBe('62%');
+  expect(row(card({ ...held, batteryPercentage: null }, { battery: { percentage: 62, at: NOW - 6000 } }), 'battery').value)
+    .toBe('62%');
 });
 
 test('A7b: held indoors — 位置 「室內」 (address line when known), 離手機・室內, no 接收範圍 row', () => {

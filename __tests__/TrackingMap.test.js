@@ -663,3 +663,39 @@ test('a tap on the map reaches onMapPress, and the camera heading is reported', 
   expect(onHeading).toHaveBeenCalledWith(33);
 });
 
+
+test('看軌跡 whose save finishes after the card closed does not open history', async () => {
+  const tracking = {
+    mode: 'real', point: trackingPoint, route: emptyLiveRoute(), ready: { real: true }, errors: {},
+    initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
+    saveTrackingPreferences: jest.fn(),
+  };
+  let finish;
+  const history = { key: 'k', devices: [], preferences: { source: 'ble', slaves: [4], masters: [3], dogAliases: {} },
+    save: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+  const onOpenHistory = jest.fn();
+  await act(async () => {
+    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }} bottomInset={80}
+      mapProvider={GOOGLE_MAP_PROVIDER} history={history} onOpenHistory={onOpenHistory} />);
+  });
+  const map = () => renderer.root.findAll(node => typeof node.props.onDogPress === 'function', { deep: false })[0];
+  await act(async () => map().props.onDogPress(7));
+  await act(async () => renderer.root.findAllByProps({ testID: 'dog-card' })[0]
+    .props.onLayout({ nativeEvent: { layout: { height: 400 } } }));
+  const track = () => renderer.root.findAll(node => node.props.testID === 'dog-card-track'
+    && typeof node.props.onPress === 'function')[0];
+  await act(async () => { track().props.onPress(); });
+  expect(history.save).toHaveBeenCalledWith(expect.objectContaining({ slaves: [7], timeMode: 'fixed' }));
+  // The card is closed (tap on the map) before the save is done.
+  await act(async () => map().props.onMapPress());
+  await act(async () => finish(true));
+  expect(onOpenHistory).not.toHaveBeenCalled();
+  // Saved and still open: history opens for that dog.
+  await act(async () => map().props.onDogPress(7));
+  await act(async () => renderer.root.findAllByProps({ testID: 'dog-card' })[0]
+    .props.onLayout({ nativeEvent: { layout: { height: 410 } } }));
+  await act(async () => { track().props.onPress(); });
+  await act(async () => finish(true));
+  expect(onOpenHistory).toHaveBeenCalledWith(7);
+});

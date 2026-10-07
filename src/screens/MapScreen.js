@@ -79,14 +79,19 @@ export default function MapScreen({
   const [heading, setHeading] = useState(0);
   // A card sliding away is replaced by a new one (a new key) when a dog is
   // tapped meanwhile, so the new card rises instead of finishing the close.
+  // Bumped on every opening and closing, so a 看軌跡 save that finishes
+  // after its card went away does not navigate.
+  const cardGeneration = useRef(0);
   const cardClosing = useRef(false);
   const [cardKey, setCardKey] = useState(0);
   const cardHeightChanged = useCallback(value => {
+    if (!value) cardGeneration.current += 1;
     cardClosing.current = !value;
     setCardHeight(value);
   }, []);
   const openDog = useCallback(slaveId => {
     if (historical) return;
+    cardGeneration.current += 1;
     if (cardClosing.current) {
       cardClosing.current = false;
       setCardKey(value => value + 1);
@@ -308,6 +313,7 @@ export default function MapScreen({
     const heard = (history.devices || []).filter(pair => pair.slave === dog.slaveId).map(pair => pair.master);
     const masters = [...new Set([...heard, ...(dog.masterId != null ? [dog.masterId] : [])])];
     setTrackBusy(true);
+    const generation = cardGeneration.current;
     const saved = await history.save({
       ...history.preferences,
       timeMode: 'fixed', startAt: start.getTime(), endAt: Math.max(now, start.getTime() + 60000),
@@ -316,7 +322,8 @@ export default function MapScreen({
       masters: masters.length ? masters : history.preferences.masters,
     });
     setTrackBusy(false);
-    if (!saved) return;
+    // The card was closed or another dog opened meanwhile: stay on the map.
+    if (!saved || generation !== cardGeneration.current) return;
     setSelected(null);
     onOpenHistory?.(dog.slaveId);
   };

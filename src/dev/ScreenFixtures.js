@@ -650,7 +650,7 @@ function cardRows(ble, cloud, slaveId, since) {
     .map(row => ({ ...row, time: time(row) }));
   const activity = rows => rows.filter(row => row.time >= since && row.activity_valid === 1)
     .sort((left, right) => left.time - right.time)
-    .map(row => ({ time: row.time, activity: row.activity, activity_valid: 1, activity_time: null,
+    .map(row => ({ time: row.time, activity: row.activity, activity_valid: 1, activity_time: row.activity_time ?? null,
       master_id: row.master_id, slave_id: row.slave_id }));
   const newestBattery = (rows, source) => rows.filter(row => row.battery_valid === 1)
     .sort((left, right) => right.time - left.time).slice(0, 1)

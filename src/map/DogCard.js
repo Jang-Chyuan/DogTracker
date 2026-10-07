@@ -14,12 +14,16 @@ import { PressScale } from './MapControls';
 import { colors, layout, motion, radius, shadow, size as sizes, touch, type } from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
+// The grab handle (the mockups' #b9c3bd: visible on white, not a control).
+const HANDLE = '#B9C3BD';
 // Closing goes a little faster than rising, like the history range bar.
 const CLOSE_MS = 180;
 // A swipe down further than this share of the card's height, or faster than
 // this, closes it; anything less springs back.
 const CLOSE_SHARE = 0.25;
 const CLOSE_VELOCITY = 0.5;
+// The card floats a little off the screen edges, as in the A3 mockups.
+const CARD_INSET = 8;
 
 const TONE = {
   crit: { text: colors.crit, badge: colors.problemBadge },
@@ -40,7 +44,7 @@ function StatusRow({ row, first, onPress }) {
   const tone = row.tone && TONE[row.tone];
   const valueColor = tone ? tone.text : row.activityTone ? ACTIVITY_TONE[row.activityTone] : colors.text;
   const content = (
-    <View style={[styles.row, !first && styles.rowLine, row.detail && row.key === 'position' && styles.rowTwoLine]}
+    <View style={[styles.row, !first && styles.rowLine, row.twoLine && styles.rowTwoLine]}
       testID={`dog-card-row-${row.key}`}>
       <Text style={styles.rowLabel} accessible={false}>{row.label}</Text>
       <View style={styles.rowValue}>
@@ -140,7 +144,9 @@ const DogCard = forwardRef(function DogCard({ card, avatar, heading = 0, onClose
     return () => subscription.remove();
   }, [close]);
   const onLayout = event => {
-    const value = Math.round(event.nativeEvent.layout.height);
+    const own = Math.round(event.nativeEvent.layout.height);
+    // What it covers, counted from the screen bottom (it floats above it).
+    const value = own ? own + CARD_INSET + insets.bottom : 0;
     if (!value || value === measured.current) return;
     const first = !measured.current;
     measured.current = value;
@@ -167,10 +173,10 @@ const DogCard = forwardRef(function DogCard({ card, avatar, heading = 0, onClose
   })).current;
   // At most 75% of the screen below the status bar; the header and 看軌跡
   // stay, the headline and rows scroll.
-  const maxHeight = Math.floor((windowHeight - insets.top) * sizes.card.maxRatio);
+  const maxHeight = Math.floor((windowHeight - insets.top) * sizes.card.maxRatio) - CARD_INSET - insets.bottom;
   return (
     <Animated.View testID="dog-card" onLayout={onLayout} {...pan.panHandlers}
-      style={[styles.card, { maxHeight, paddingBottom: layout.cardPadding + insets.bottom,
+      style={[styles.card, { maxHeight, bottom: CARD_INSET + insets.bottom,
         transform: [{ translateY: offset }] }, !height && styles.unmeasured]}>
       <View style={styles.handle} accessible={false} />
       <View style={styles.header}>
@@ -207,20 +213,19 @@ export default DogCard;
 const styles = StyleSheet.create({
   card: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    left: CARD_INSET,
+    right: CARD_INSET,
     zIndex: 25,
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
+    borderRadius: radius.sheet,
     paddingHorizontal: layout.cardPadding,
+    paddingBottom: layout.cardPadding,
     ...shadow.floating,
     elevation: 8,
   },
   unmeasured: { opacity: 0 },
   handle: {
-    alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: colors.line,
+    alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: HANDLE,
     marginTop: 8, marginBottom: 4,
   },
   header: { flexDirection: 'row', alignItems: 'center', minHeight: touch.min, gap: 12 },

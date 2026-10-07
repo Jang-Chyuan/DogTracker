@@ -102,9 +102,11 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
   // 位置: only when there is something to say about where the dog is.
   if (stale) {
     rows.push({ key: 'position', label: '位置', value: staleText(freshness, now), tone: 'crit',
-      detail: indoor ? address : null });
+      detail: indoor ? address : null, twoLine: indoor });
   } else if (indoor) {
-    rows.push({ key: 'position', label: '位置', value: '室內', tone: null, detail: address });
+    // Two lines (64dp) held indoors: 「室內」 and the address under it (A7b;
+    // the address comes with PR 059, the line is kept for it meanwhile).
+    rows.push({ key: 'position', label: '位置', value: '室內', tone: null, detail: address, twoLine: true });
   }
   rows.push(batteryRow(dog, battery, positionAt, now));
   const view = rangeView(range, { held: indoor });
@@ -130,11 +132,17 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
 }
 
 function batteryRow(dog, battery, positionAt, now) {
-  const reading = Number.isFinite(battery?.percentage) ? battery
-    : Number.isFinite(dog.batteryPercentage)
-      ? { percentage: dog.batteryPercentage, charging: dog.charging, at: dog.packetAt } : null;
+  // The newer of the card's own read (the newest valid reading) and the
+  // dog's newest packet; equal times take the packet.
+  const packet = Number.isFinite(dog.batteryPercentage)
+    ? { percentage: dog.batteryPercentage, at: dog.packetAt } : null;
+  const read = Number.isFinite(battery?.percentage) ? battery : null;
+  const reading = !read ? packet : !packet ? read
+    : (Number(read.at) > Number(packet.at) ? read : packet);
   if (!reading) return { key: 'battery', label: '電量', value: '—', tone: null };
-  const charging = !!(dog.charging || reading.charging);
+  // Charging is what the newest packet says now (USB, or the environment's
+  // USB rule), not what an older reading said.
+  const charging = !!dog.charging;
   const percent = `${Math.round(reading.percentage)}%`;
   const low = reading.percentage <= LOW_BATTERY_PERCENT && !charging;
   const old = Number.isFinite(reading.at) && Number.isFinite(positionAt)
