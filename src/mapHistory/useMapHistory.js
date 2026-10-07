@@ -13,8 +13,13 @@ export function useMapHistory(database, ready, active, owner) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
-  const [devices, setDevices] = useState([]);
-  const [days, setDays] = useState([]);
+  // Both lists belong to the account they were read for: signing out keeps
+  // the app open, so another account's (or no account's) card must not list
+  // the previous account's cloud devices and days.
+  const [ownedDevices, setOwnedDevices] = useState({ owner: null, value: [] });
+  const [ownedDays, setOwnedDays] = useState({ owner: null, value: [] });
+  const devices = ownedDevices.owner === (owner || null) ? ownedDevices.value : [];
+  const days = ownedDays.owner === (owner || null) ? ownedDays.value : [];
   // The cloud day counts are one request per day, so they land a moment after
   // the local ones; the card says so instead of quietly growing a row of chips.
   const [daysLoading, setDaysLoading] = useState(false);
@@ -66,9 +71,10 @@ export function useMapHistory(database, ready, active, owner) {
   useEffect(() => {
     if (!loaded || !active) return undefined;
     let alive = true;
+    const account = owner || null;
     db.current?.listDevices(source, owner)
-      .then(value => { if (alive) setDevices(value); })
-      .catch(() => { if (alive) setDevices([]); });
+      .then(value => { if (alive) setOwnedDevices({ owner: account, value }); })
+      .catch(() => { if (alive) setOwnedDevices({ owner: account, value: [] }); });
     return () => { alive = false; };
   }, [loaded, active, source, owner]);
   useEffect(() => {
@@ -88,6 +94,8 @@ export function useMapHistory(database, ready, active, owner) {
     let alive = true;
     const controller = new AbortController();
     setDaysLoading(true);
+    const account = owner || null;
+    const setDays = value => setOwnedDays({ owner: account, value });
     (async () => {
       setDaysIncomplete('');
       let local = [];
