@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
+import { useAuth } from '../auth/AuthProvider';
+import LoginScreen from '../screens/LoginScreen';
 import { getCloudClient } from './CloudClient';
 import { CLOUD_BUDGET_BYTES } from './CloudDatabase';
 
@@ -23,25 +25,18 @@ const columns = [
   ['rssi', 'RSSI', 75], ['snr', 'SNR', 70], ['sequence', '序號', 80],
 ];
 
-function Field({ label, ...props }) {
-  return <View>
-    <Text style={ui.text}>{label}</Text>
-    <TextInput accessibilityLabel={label} style={styles.input}
-      placeholderTextColor="#94a3b8" autoCapitalize="none" autoCorrect={false} {...props} />
-  </View>;
-}
-
 const megabytes = bytes => `${Math.round(bytes / (1024 * 1024))} MB`;
 
-export default function CloudScreen({ database, sync, clientFactory = getCloudClient }) {
+// Signed out (by choice, or 登入失效 while in use) this page is where to sign
+// in: the map works without an account, so nothing blocks in front of it.
+export default function CloudScreen({ database, sync, onLater, clientFactory = getCloudClient }) {
+  const auth = useAuth();
   const [connection] = useState(() => {
     try { return { client: clientFactory() }; }
     catch (configurationError) { return { error: configurationError.message }; }
   });
   const client = connection.client;
   const [session, setSession] = useState(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [rows, setRows] = useState([]);
   // Which row's original Supabase JSON is open. The mapped columns only carry
   // the fields this app reads; the question "does the payload hold anything
@@ -67,7 +62,8 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
       if (!mounted.current) return;
       const nextOwner = next?.user.id || null;
       if (owner.current !== nextOwner) {
-        generation.current += 1;        owner.current = nextOwner;
+        generation.current += 1;
+        owner.current = nextOwner;
         setRows([]); setCount(0); setOffset(0); setError('');
       }
       setSession(next);
@@ -83,7 +79,8 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
     }).catch(() => { if (mounted.current) setError('無法讀取登入狀態'); });
     return () => {
       mounted.current = false;
-      generation.current += 1;      subscription.unsubscribe();
+      generation.current += 1;
+      subscription.unsubscribe();
     };
   }, [client]);
 
@@ -126,24 +123,11 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
     }
   }
 
-  const login = () => perform(async () => {
-    const secret = password;
-    setPassword('');
-    const { error: authError } = await client.auth.signInWithPassword({ email: email.trim(), password: secret });
-    if (authError) throw new Error('登入失敗，請確認帳號、密碼、Email 驗證狀態及網路');
-  });
   return <View>
     <Text style={ui.title}>雲端資料</Text>
     {connection.error ? <Text style={ui.error}>{connection.error}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={ui.error}>{error}</Text> : null}
-    {!session ? <View style={ui.card}>
-      <Text style={ui.heading}>登入 Supabase 帳號</Text>
-      <Text style={ui.hint}>登入狀態會安全保存在手機；下次開啟自動恢復登入並補下載。</Text>
-      <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" editable={!busy} />
-      <Field label="密碼" value={password} onChangeText={setPassword} secureTextEntry editable={!busy} />
-      <ActionButton title={busy ? '登入中…' : '登入'} onPress={login}
-        disabled={!client || busy || !email.trim() || !password} />
-    </View> : <>
+    {!session ? <LoginScreen onLater={onLater} /> : <>
       <View style={ui.card}>
         <Text style={ui.text}>{session.user.email}</Text>
         <Text style={ui.hint}>下載範圍由此帳號的 Master 授權決定，包含該 Master 的所有 Slave。</Text>
@@ -159,8 +143,8 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
         </Text> : null}
         {sync?.error ? <Text style={ui.error}>{sync.error}</Text> : null}
         <ActionButton title="登出" secondary disabled={busy} onPress={() => perform(async () => {
-          const { error: signOutError } = await client.auth.signOut({ scope: 'local' });
-          if (signOutError) throw new Error('登出失敗，請確認連線後重試');
+          try { await auth.signOut(); }
+          catch { throw new Error('登出失敗，請確認連線後重試'); }
         })} />
       </View>
 
@@ -210,8 +194,6 @@ export default function CloudScreen({ database, sync, clientFactory = getCloudCl
 }
 
 const styles = StyleSheet.create({
-  input: { color: '#f8fafc', borderColor: '#475569', borderWidth: 1, borderRadius: 8,
-    padding: 12, marginBottom: 12, minHeight: 46 },
   row: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#334155' },
   cell: { color: '#e2e8f0', padding: 8, fontSize: 12 },
   header: { fontWeight: '700', backgroundColor: '#1e3a8a' },

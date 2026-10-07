@@ -1,6 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Text, TextInput } from 'react-native';
+import { AuthProvider } from '../src/auth/AuthProvider';
 import CloudScreen, { formatRaw } from '../src/cloud/CloudScreen';
 
 const RAW = JSON.stringify({
@@ -14,19 +15,25 @@ const row = (id, extra = {}) => ({
 });
 
 let renderer;
+// The page's sign-in form reads the app's AuthProvider, on the same client.
+const withAuth = element => Renderer.create(<AuthProvider clientFactory={element.props.clientFactory}>
+  {element}
+</AuthProvider>);
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = null; });
 
 function fixtures() {
-  let listener;
+  // One client shared by AuthProvider and the page, as in the app.
+  const listeners = new Set();
+  const listener = (event, session) => listeners.forEach(callback => callback(event, session));
   const user = { id: 'account-a', email: 'user@example.test' };
   const client = { auth: {
     onAuthStateChange: jest.fn(callback => {
-      listener = callback;
-      return { data: { subscription: { unsubscribe: jest.fn() } } };
+      listeners.add(callback);
+      return { data: { subscription: { unsubscribe: () => listeners.delete(callback) } } };
     }),
     getSession: jest.fn(async () => ({ data: { session: null } })),
     startAutoRefresh: jest.fn(), stopAutoRefresh: jest.fn(),
-    signInWithPassword: jest.fn(async () => { listener('SIGNED_IN', { user }); return {}; }),
+    signInWithPassword: jest.fn(async () => { listener('SIGNED_IN', { user }); return { data: { session: { user } } }; }),
     signOut: jest.fn(async () => { listener('SIGNED_OUT', null); return {}; }),
   } };
   const database = {
@@ -42,7 +49,7 @@ const text = () => JSON.stringify(renderer.toJSON());
 async function login() {
   await act(async () => {
     renderer.root.findAllByType(TextInput)
-      .find(node => node.props.accessibilityLabel === 'Email')
+      .find(node => node.props.accessibilityLabel === '電子郵件')
       .props.onChangeText('user@example.test');
     renderer.root.findAllByType(TextInput)
       .find(node => node.props.accessibilityLabel === '密碼')
@@ -65,7 +72,7 @@ test('the raw record is readable, and says so when a row has none', () => {
 test('tapping a row opens its original cloud JSON, and tapping again closes it', async () => {
   const { client, database } = fixtures();
   await act(async () => {
-    renderer = Renderer.create(
+    renderer = withAuth(
       <CloudScreen database={database} clientFactory={() => client} />);
   });
   await login();

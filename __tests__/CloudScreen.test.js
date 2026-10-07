@@ -1,22 +1,29 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { TextInput } from 'react-native';
+import { AuthProvider } from '../src/auth/AuthProvider';
 import CloudScreen from '../src/cloud/CloudScreen';
 
 let renderer;
+// The page's sign-in form reads the app's AuthProvider, on the same client.
+const withAuth = element => Renderer.create(<AuthProvider clientFactory={element.props.clientFactory}>
+  {element}
+</AuthProvider>);
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = null; });
 
 function fixtures() {
-  let listener;
+  // One client shared by AuthProvider and the page, as in the app.
+  const listeners = new Set();
+  const listener = (event, session) => listeners.forEach(callback => callback(event, session));
   const user = { id: 'account-a', email: 'user@example.test' };
   const client = { auth: {
     onAuthStateChange: jest.fn(callback => {
-      listener = callback;
-      return { data: { subscription: { unsubscribe: jest.fn() } } };
+      listeners.add(callback);
+      return { data: { subscription: { unsubscribe: () => listeners.delete(callback) } } };
     }),
     getSession: jest.fn(async () => ({ data: { session: null } })),
     startAutoRefresh: jest.fn(), stopAutoRefresh: jest.fn(),
-    signInWithPassword: jest.fn(async () => { listener('SIGNED_IN', { user }); return {}; }),
+    signInWithPassword: jest.fn(async () => { listener('SIGNED_IN', { user }); return { data: { session: { user } } }; }),
     signOut: jest.fn(async () => { listener('SIGNED_OUT', null); return {}; }),
   } };
   const database = {
@@ -38,7 +45,7 @@ async function press(label) {
 }
 async function login() {
   await act(async () => {
-    renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === 'Email')
+    renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === '電子郵件')
       .props.onChangeText('user@example.test');
     renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === '密碼')
       .props.onChangeText('test-only-password');
@@ -48,7 +55,7 @@ async function login() {
 
 test('login loads only that account cache and logout hides it and clears password', async () => {
   const { client, database } = fixtures();
-  await act(async () => { renderer = Renderer.create(<CloudScreen database={database} clientFactory={() => client} />); });
+  await act(async () => { renderer = withAuth(<CloudScreen database={database} clientFactory={() => client} />); });
   await login();
   expect(client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'user@example.test', password: 'test-only-password' });
   expect(database.listHistory).toHaveBeenCalledWith('account-a', 0);
@@ -62,7 +69,7 @@ test('late cache reads cannot display the previous account after an auth change'
   const { client, database, emit } = fixtures();
   let finishOldRead;
   database.listHistory.mockImplementationOnce(() => new Promise(resolve => { finishOldRead = resolve; }));
-  await act(async () => { renderer = Renderer.create(<CloudScreen database={database} clientFactory={() => client} />); });
+  await act(async () => { renderer = withAuth(<CloudScreen database={database} clientFactory={() => client} />); });
   await login();
   database.listHistory.mockResolvedValue([]);
   await act(async () => { emit({ user: { id: 'account-b', email: 'b@example.test' } }); });
@@ -74,7 +81,7 @@ test('late cache reads cannot display the previous account after an auth change'
 test('automatic sync refreshes the local table without a manual download option', async () => {
   const { client, database } = fixtures();
   const clientFactory = () => client;
-  await act(async () => { renderer = Renderer.create(<CloudScreen database={database}
+  await act(async () => { renderer = withAuth(<CloudScreen database={database}
     sync={{ revision: 0, mode: 'auto' }} clientFactory={clientFactory} />); });
   await login();
   expect(text()).toContain('自動同步中');
@@ -83,8 +90,8 @@ test('automatic sync refreshes the local table without a manual download option'
   expect(text()).not.toContain('結束日期');
   expect(text()).toContain('ACCOUNT_A_ONLY');
   database.listHistory.mockResolvedValue([{ id: 2, sequence: 'AUTO_SYNC_NEW_ROW' }]);
-  await act(async () => renderer.update(<CloudScreen database={database}
-    sync={{ revision: 1, lastSuccess: 1000 }} clientFactory={clientFactory} />));
+  await act(async () => renderer.update(<AuthProvider clientFactory={clientFactory}><CloudScreen database={database}
+    sync={{ revision: 1, lastSuccess: 1000 }} clientFactory={clientFactory} /></AuthProvider>));
   expect(text()).toContain('AUTO_SYNC_NEW_ROW');
   expect(text()).toContain('上次同步');
   await press('重新讀取本機資料');

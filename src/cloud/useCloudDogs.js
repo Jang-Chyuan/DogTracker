@@ -51,7 +51,8 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         // dog, and a busy day already filled the old 24-hour window.
         const rows = owner ? await database.latestBySlave(owner, LATEST_SINCE) : [];
         if (!alive) return;
-        const packets = owner && database.latestStatusRows
+        // Signed out, this phone's own BLE packets only (latestStatusRows).
+        const packets = database.latestStatusRows
           ? await database.latestStatusRows(owner, LATEST_SINCE, now()) : [];
         // The path is only read when something asks for it: it is the larger
         // query, and the card draws no line while the path switch is off.
