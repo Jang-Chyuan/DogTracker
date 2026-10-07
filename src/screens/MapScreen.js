@@ -21,7 +21,7 @@ import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import { useReceiverState } from '../map/useReceiverState';
-import { isOtherReceiver, receiverLink, trackReceiverPause } from '../map/ReceiverState';
+import { isOtherReceiver, receiverLink } from '../map/ReceiverState';
 import { dogMarkers } from '../map/DogMarkers';
 
 // The first fit frames what this handler is working with: the connected pair
@@ -103,15 +103,10 @@ export default function MapScreen({
     setSelected(null);
   }, [mode, point.masterId]);
   const link = receiverLink(receiverState, now);
-  // When the user last switched this receiver off and on (DogFreshness grace).
-  // A fixture starts its own record.
-  const pauseRecord = useRef({ key: null, value: null });
-  const pauseKey = fixture?.name ?? 'live';
-  if (pauseRecord.current.key !== pauseKey) pauseRecord.current = { key: pauseKey, value: null };
-  pauseRecord.current.value = trackReceiverPause(pauseRecord.current.value, receiverState, now);
-  const pausedAt = pauseRecord.current.value.pausedAt;
-  const resumedAt = pauseRecord.current.value.resumedAt;
-  const pause = useMemo(() => (pausedAt == null ? null : { pausedAt, resumedAt }), [pausedAt, resumedAt]);
+  // When the user switched this receiver off and on (DogFreshness grace),
+  // recorded by the native service whatever screen was open.
+  const pausesKey = JSON.stringify(Array.isArray(receiverState?.receiverPauses) ? receiverState.receiverPauses : []);
+  const pauses = useMemo(() => JSON.parse(pausesKey), [pausesKey]);
   const lastDownloadAt = cloudSync?.lastDownloadAt ?? null;
   const failingSince = cloudSync?.failingSince ?? null;
   const cloudClockInput = useMemo(() => ({ lastDownloadAt, failingSince }), [lastDownloadAt, failingSince]);
@@ -191,7 +186,7 @@ export default function MapScreen({
       slave: null,
       slaveSegments: [],
       dogs: dogsVisible ? marked : [],
-      dogMarkers: dogsVisible ? dogMarkers(drawn, { now, cloud: cloudClockInput, pause,
+      dogMarkers: dogsVisible ? dogMarkers(drawn, { now, cloud: cloudClockInput, pauses,
         ranges: cloudDogs?.ranges, aliases: dogAliases, selectedId: selectedDogId }) : [],
       // Hidden dogs take their line with them, like the markers.
       dogPaths: dogsVisible
@@ -205,7 +200,7 @@ export default function MapScreen({
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
   }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, cloudDogs?.ranges,
-    now, cloudClockInput, pause, dogAliases, selectedDogId]);
+    now, cloudClockInput, pauses, dogAliases, selectedDogId]);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {

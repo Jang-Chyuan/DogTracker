@@ -18,17 +18,17 @@ export const dogName = (slaveId, aliases) => dogMapLabel(dogHistoryLabel(slaveId
  * (not drawn, no card, no alert).
  *
  * @param dogs merged dogs (DogMerge.mergeDogMarkers)
- * @param options.now the map clock; options.cloud and options.pause as in
+ * @param options.now the map clock; options.cloud and options.pauses as in
  *   DogFreshness.dogFreshness
  * @param options.ranges receiver-range judgements by dog
  * @param options.aliases the names the handler gave
  * @param options.selectedId the dog whose card is open
  */
-export function dogMarkers(dogs = [], { now = Date.now(), cloud = null, pause = null, ranges = {},
+export function dogMarkers(dogs = [], { now = Date.now(), cloud = null, pauses = [], ranges = {},
   aliases = {}, selectedId = null } = {}) {
   const markers = [];
   for (const dog of dogs) {
-    const freshness = dogFreshness(dog, { now, cloud, pause });
+    const freshness = dogFreshness(dog, { now, cloud, pauses });
     if (!freshness.drawn) continue;
     const problems = dogProblems(dog, freshness, ranges?.[dog.slaveId]);
     markers.push(dogMarker(dog, { freshness, problems, now,

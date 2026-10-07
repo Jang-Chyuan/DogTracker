@@ -86,7 +86,8 @@ function TrackMarker({ track, onPress }) {
   const frame = markerFrame(marker.size);
   const name = dogMapLabel(track.name);
   const text = indoor ? `${name}・${INDOOR_WORD}` : name;
-  useEffect(() => { ref.current?.redraw?.(); }, [text]);
+  const avatarKey = [track.avatar?.kind, track.avatar?.art, track.avatar?.color, track.avatar?.uri?.length].join('|');
+  useEffect(() => { ref.current?.redraw?.(); }, [text, avatarKey]);
   return (
     <Marker
       ref={ref}
@@ -97,7 +98,8 @@ function TrackMarker({ track, onPress }) {
     >
       <View collapsable={false} accessible accessibilityLabel={`${text}，${new Date(latest.time).toLocaleString()}`}
         onLayout={() => ref.current?.redraw?.()}>
-        <DogMarkerView marker={marker} tag={{ text, group: 1 }} avatar={track.avatar} />
+        <DogMarkerView marker={marker} tag={{ text, group: 1 }} avatar={track.avatar}
+          onAvatarLoad={() => ref.current?.redraw?.()} />
       </View>
     </Marker>
   );

@@ -42,28 +42,3 @@ export function isOtherReceiver(point, state) {
   return number != null && point?.id != null && point.masterId !== number;
 }
 
-/**
- * The last time the user disconnected this phone's receiver, for
- * DogFreshness (判定表「中斷連線時的狀態」): while it is switched off its dogs
- * do not go stale, and after it is back they get a grace period.
- *
- * Fed with every receiver state the map reads; returns the next record
- * { running, pausedAt, resumedAt } (pausedAt null: never paused). Switching
- * the background service off ('stopped', 'none') after it ran is the user
- * disconnecting; a dropped link ('disconnected') is not. The record is kept in
- * memory only: a restarted app judges by the plain formula.
- */
-export function trackReceiverPause(record, state, now) {
-  const current = record || { running: false, pausedAt: null, resumedAt: null };
-  // No state read (inactive map, failed read): nothing is known.
-  if (!state) return current;
-  const link = receiverLink(state, now);
-  if (link === 'stopped' || link === 'none') {
-    if (!current.running) return current;
-    return { running: false, pausedAt: now, resumedAt: null };
-  }
-  const connected = link === 'receiving' || link === 'quiet';
-  const resumed = connected && current.pausedAt != null && current.resumedAt == null;
-  if (current.running && !resumed) return current;
-  return { running: true, pausedAt: current.pausedAt, resumedAt: resumed ? now : current.resumedAt };
-}

@@ -116,7 +116,8 @@ describe('the marker view', () => {
     expect(house).toHaveLength(1);
     const style = node => Object.assign({}, ...[node.props.style].flat(3).filter(Boolean));
     expect(style(problem[0])).toMatchObject({ top: -6, right: -6, backgroundColor: colors.problemBadge, width: 16 });
-    expect(style(house[0])).toMatchObject({ bottom: -6, left: -6, backgroundColor: colors.receiver });
+    // Left, 6dp out of the 48dp face, centred a quarter of the face below its centre.
+    expect(style(house[0])).toMatchObject({ top: 28, left: -6, backgroundColor: colors.receiver });
     expect(byId(renderer, 'dog-avatar-classic-stale')).toHaveLength(1);
     expect(JSON.stringify(renderer.toJSON())).toContain('小黑・室內');
   });

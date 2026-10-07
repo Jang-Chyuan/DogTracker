@@ -44,14 +44,26 @@ function ProblemBadge({ offset }) {
   );
 }
 
-function HouseBadge({ offset }) {
+// Left, reaching `offset` out of the face like the "!"; its centre a quarter
+// of the face below the face's centre, on the rim (as in the A7 mockup).
+function HouseBadge({ offset, size }) {
   return (
-    <View testID="dog-badge-indoor" style={[styles.badge, styles.house, { bottom: -offset, left: -offset }]}>
+    <View testID="dog-badge-indoor" style={[styles.badge, styles.house,
+      { top: size * 0.75 - badge.size / 2, left: -offset }]}>
       <Svg width={badge.glyph} height={badge.glyph} viewBox="0 0 24 24">
         <Path d="M4 11 12 4l8 7v9H4z" fill="none" stroke="#FFFFFF" strokeWidth={2.8} strokeLinejoin="round" />
       </Svg>
     </View>
   );
+}
+
+// The shadow circle under a face: 1dp wider and 1dp lower (0 1 3 in the
+// mockups), 3dp lower and 3dp wider when its card is open.
+function shadowFrame(size, selected, width) {
+  const spread = selected ? 3 : 1;
+  const side = size + 2 * spread;
+  return { width: side, height: side, borderRadius: side / 2, left: (width - side) / 2,
+    top: TOP - spread + (selected ? 3 : 1) };
 }
 
 /**
@@ -62,14 +74,18 @@ function HouseBadge({ offset }) {
 export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
   const { size, problem, indoor, stale, selected } = marker;
   const frame = markerFrame(size);
-  // Badges reach 4dp out of a normal face and 6dp out of an enlarged one.
-  const offset = size > markerSize.normal ? badge.offsetLarge : badge.offset;
+  // Badges reach 4dp out of a 40dp face, 6dp out of 48dp, 8dp out of 56dp
+  // (判定表「角標位移（選中時）」).
+  const offset = badge.offset + (size - markerSize.normal) / 4;
   return (
     <View collapsable={false} style={[styles.root, { width: frame.width, height: frame.height }]}>
+      {/* A drawn shadow: a marker is captured as a bitmap, where elevation
+          shadows barely show. */}
+      <View style={[styles.shadow, selected && styles.selectedShadow, shadowFrame(size, selected, frame.width)]} />
       <View style={[styles.face, { top: TOP, left: (frame.width - size) / 2, width: size, height: size,
         borderRadius: size / 2 }, selected && styles.selected]}>
         <DogAvatar avatar={avatar} size={size} stale={stale} border={markerSize.border} onLoad={onAvatarLoad} />
-        {indoor && <HouseBadge offset={offset} />}
+        {indoor && <HouseBadge offset={offset} size={size} />}
         {problem && <ProblemBadge offset={offset} />}
       </View>
       {tag && (
@@ -92,11 +108,10 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
 
 const styles = StyleSheet.create({
   root: { overflow: 'visible' },
-  face: { position: 'absolute', backgroundColor: '#FFFFFF',
-    // The mockups' soft drop shadow under every face.
-    shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
-    elevation: 3 },
-  selected: { shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 8 },
+  face: { position: 'absolute', backgroundColor: '#FFFFFF' },
+  selected: {},
+  shadow: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.16)' },
+  selectedShadow: { backgroundColor: 'rgba(0,0,0,0.22)' },
   badge: { position: 'absolute', width: badge.size, height: badge.size, borderRadius: badge.size / 2,
     borderWidth: badge.border, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   problem: { backgroundColor: colors.problemBadge },
