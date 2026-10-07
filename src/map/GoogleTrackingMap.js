@@ -21,6 +21,7 @@ import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
 import DogNameMarker, { DOG_NAME_ANCHOR } from './DogNameMarker';
 import { dogHistoryLabel } from '../mapHistory/DogAliases';
+import { hideSplash } from '../app/hideSplash';
 
 const EMPTY_REGION = {
   latitude: 23.7,
@@ -312,6 +313,8 @@ function GoogleTrackingMapRenderer({
             });
           }}
           onMapLoaded={() => {
+            // The first drawn map lets the launch screen go (no-op afterwards).
+            hideSplash();
             if (activeInstance.current === instance)
               setLoadedInstance(instance);
           }}
