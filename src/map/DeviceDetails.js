@@ -183,7 +183,7 @@ export default function DeviceDetails({
                 領犬員裝置電量：
                 {battery(point.masterBatteryValid, point.masterBatteryPercentage)}
               </Text>
-              <Text style={styles.hint}>參考圈半徑 1 公里，跟隨領犬員。</Text>
+              <Text style={styles.hint}>接收範圍圈半徑 1 公里，以接收器為中心；接收器連著而且有位置時才畫。</Text>
             </>
           )}
           {Number.isInteger(slaveId) && slaveId >= 1 && slaveId <= 255 && (

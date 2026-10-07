@@ -8,7 +8,10 @@ import {
 } from '../src/dev/ScreenFixtures';
 import { useScreenFixture } from '../src/dev/useScreenFixture';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../src/map/DogMerge';
-import { createTrackingMapPresentation } from '../src/map/TrackingMapPresentation';
+import {
+  createTrackingMapPresentation, outOfRangeLines, receiverRangeRing,
+} from '../src/map/TrackingMapPresentation';
+import { distanceMeters, rangeView, RANGE_STATUS } from '../src/tracking/ReceiverRange';
 import { isOtherReceiver, receiverLink, receiverNumber } from '../src/map/ReceiverState';
 import { dogHistoryLabel, dogMapLabel } from '../src/mapHistory/DogAliases';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
@@ -30,14 +33,20 @@ async function screen(name) {
   const base = createTrackingMapPresentation(point, route, positionSamples,
     { ...DEFAULT_TRACKING_PREFERENCES, windowMinutes: 2 }, now);
   const other = isOtherReceiver(point, receiver);
+  const link = receiverLink(receiver, now);
+  const ring = receiverRangeRing(other ? null : base.positions.master, link);
+  const drawnDogs = merged.filter(dog => !dog.stale);
   return {
     fixture,
-    link: receiverLink(receiver, now),
+    link,
     receiver: receiverNumber(receiver),
     otherReceiver: other,
-    receiverMarker: other ? null : base.master,
+    ring,
+    lines: outOfRangeLines(ring, drawnDogs, dogs.ranges),
+    ranges: dogs.ranges,
+    dog: id => merged.find(dog => dog.slaveId === id),
     dogs: merged,
-    drawn: merged.filter(dog => !dog.stale).map(dog => dog.slaveId),
+    drawn: drawnDogs.map(dog => dog.slaveId),
     label: dog => dogMapLabel(dogHistoryLabel(dog.slaveId, fixture.dogAliases)),
   };
 }
@@ -80,7 +89,11 @@ test('all-good: receiver receiving, cloud synced, every dog current, phone recor
   expect(state.link).toBe('receiving');
   expect(state.receiver).toBe(7);
   expect(state.otherReceiver).toBe(false);
-  expect(state.receiverMarker).not.toBeNull();
+  // Connected and the receiver has a position: the 1 km ring around it.
+  expect(state.ring.radiusMeters).toBe(1000);
+  expect(state.ring.center).toEqual(state.fixture.tracking.positionSamples
+    .find(sample => sample.master).master);
+  expect(state.lines).toEqual([]);
   expect(state.drawn).toEqual([4, 6, 8]);
   expect(state.dogs.some(dog => dog.heldReason || dog.retained)).toBe(false);
   expect(state.fixture.cloudSync.error).toBeFalsy();
@@ -95,7 +108,7 @@ test('no-data: no receiver set up and no dogs from anywhere', async () => {
   expect(state.dogs).toEqual([]);
   expect(state.fixture.cloudDogs.rows).toEqual([]);
   expect(state.fixture.tracking.point.id).toBeNull();
-  expect(state.receiverMarker).toBeNull();
+  expect(state.ring).toBeNull();
 });
 
 test('receiver-connecting: never received yet, and receiver 3\'s old packet does not pose as receiver 7', async () => {
@@ -106,9 +119,13 @@ test('receiver-connecting: never received yet, and receiver 3\'s old packet does
   expect(state.otherReceiver).toBe(true);
   // Receiver 3's position would otherwise be drawn: it is a minute old.
   expect(createTrackingMapPresentation(state.fixture.tracking.point, state.fixture.tracking.route,
-    state.fixture.tracking.positionSamples, DEFAULT_TRACKING_PREFERENCES, state.fixture.now).master)
+    state.fixture.tracking.positionSamples, DEFAULT_TRACKING_PREFERENCES, state.fixture.now).positions.master)
     .not.toBeNull();
-  expect(state.receiverMarker).toBeNull();
+  // Not connected yet, and the stored position is receiver 3's: no ring either way.
+  expect(state.ring).toBeNull();
+  expect(receiverRangeRing(state.fixture.tracking.positionSamples.find(sample => sample.master)
+    && { coordinate: state.fixture.tracking.positionSamples.find(sample => sample.master).master }, 'receiving'))
+    .not.toBeNull();
   // The dogs themselves are still drawn: dog 4's own fix was real.
   expect(state.drawn).toEqual([4, 6, 8]);
 });
@@ -120,6 +137,70 @@ test('receiver-disconnected: dropped after receiving, its dog has gone quiet', a
   expect(dog4.stale).toBe(true);
   expect(FIXTURE_NOW - dog4.lastPacketAt).toBeGreaterThanOrEqual(5 * 60000);
   expect(state.drawn).toEqual([6, 8]);
+  // Disconnected: no range ring, although the receiver's last position is known.
+  expect(state.ring).toBeNull();
+  // The judgement made before the drop stays as it was (豆豆 in range).
+  expect(rangeView(state.ranges[4]).status).toBe(RANGE_STATUS.IN);
+});
+
+test('range-out: 豆豆 walked 1.3 km away — out of range, red dashed line from the ring edge', async () => {
+  const state = await screen('range-out');
+  expect(state.link).toBe('receiving');
+  expect(state.ring).not.toBeNull();
+  const dog4 = state.dog(4);
+  expect(distanceMeters(state.ring.center, dog4.coordinate)).toBeGreaterThan(1250);
+  expect(state.ranges[4].status).toBe(RANGE_STATUS.OUT);
+  expect(rangeView(state.ranges[4])).toMatchObject({ status: 'out', problem: true, showConfirmedAt: false });
+  expect(state.ranges[6].status).toBe(RANGE_STATUS.IN);
+  // 阿福 only comes from the cloud: no judgement at all.
+  expect(state.ranges[8]).toBeUndefined();
+  expect(state.lines.map(line => line.slaveId)).toEqual([4]);
+  const [edge, end] = state.lines[0].coordinates;
+  expect(distanceMeters(state.ring.center, edge)).toBeCloseTo(1000, -1);
+  expect(end).toEqual(dog4.coordinate);
+  // The edge point lies on the way from the centre to the dog.
+  expect(distanceMeters(state.ring.center, edge) + distanceMeters(edge, end))
+    .toBeCloseTo(distanceMeters(state.ring.center, end), 0);
+});
+
+test('range-near-edge: 豆豆 880 m away — 快離開, no line, ring still drawn', async () => {
+  const state = await screen('range-near-edge');
+  const distance = distanceMeters(state.ring.center, state.dog(4).coordinate);
+  expect(distance).toBeGreaterThan(800);
+  expect(distance).toBeLessThan(1000);
+  expect(rangeView(state.ranges[4])).toMatchObject({ status: 'near', warning: true, problem: false });
+  expect(state.lines).toEqual([]);
+});
+
+test('range-returning: back within 1 km but not cleared — still out, drawn inside the ring, no line', async () => {
+  const state = await screen('range-returning');
+  const distance = distanceMeters(state.ring.center, state.dog(4).coordinate);
+  expect(distance).toBeGreaterThan(900);
+  expect(distance).toBeLessThan(1000);
+  expect(state.ranges[4].status).toBe(RANGE_STATUS.OUT);
+  expect(state.lines).toEqual([]);
+});
+
+test('range-stale-inside: 小黑 judged in range at its last position — no line though that spot is now outside the ring', async () => {
+  const state = await screen('range-stale-inside');
+  const dog6 = state.dog(6);
+  // No new position for almost three minutes, still drawn.
+  expect(FIXTURE_NOW - dog6.lastPositionAt).toBeGreaterThan(2.5 * 60000);
+  expect(state.drawn).toContain(6);
+  // The receiver walked off: the last position is outside the ring now…
+  expect(distanceMeters(state.ring.center, dog6.coordinate)).toBeGreaterThan(1000);
+  // …but the judgement stays the one made at that position.
+  expect(state.ranges[6].status).toBe(RANGE_STATUS.IN);
+  expect(state.lines).toEqual([]);
+});
+
+test('cloud-only: no receiver, so no ring and no range judgement', async () => {
+  const state = await screen('cloud-only');
+  expect(state.link).toBe('none');
+  expect(state.ring).toBeNull();
+  expect(state.ranges).toEqual({});
+  expect(state.drawn).toEqual([6, 8]);
+  expect(state.dogs.every(dog => dog.source === 'cloud')).toBe(true);
 });
 
 test('dog-indoor: the real indoor-hold rules hold 小黑 where it went inside', async () => {
@@ -257,6 +338,7 @@ test.each(FIXTURE_NAMES)('%s: the rows read the same as the real CloudDatabase r
     const store = createHoldStore();
     store.ingest(await cloud.holdRows(owner, fixture.now - HOLD_LOOKBACK_MS, null));
     expect(store.holds(fixture.now)).toEqual(fixture.cloudDogs.holds);
+    expect(store.ranges()).toEqual(fixture.cloudDogs.ranges);
   } finally { db.close(); }
 });
 
@@ -291,23 +373,46 @@ async function renderFixture(name) {
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
   const markers = renderer.root.findAllByType(Marker).map(node => node.props.identifier).filter(Boolean);
+  const { Polygon, Polyline } = require('react-native-maps');
+  const { colors } = require('../src/theme/tokens');
+  const rings = renderer.root.findAllByType(Polygon).length;
+  const redLines = renderer.root.findAllByType(Polyline)
+    .filter(node => node.props.strokeColor === colors.critLine).length;
   const text = JSON.stringify(renderer.toJSON());
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
-  return { markers, text, saved: live.tracking.saveTrackingPreferences };
+  return { markers, rings, redLines, text, saved: live.tracking.saveTrackingPreferences };
 }
 
 test('the real map draws a fixture: receiver 3 neither drawn nor its battery shown as ours', async () => {
   const good = await renderFixture('all-good');
-  expect(good.markers).toEqual(expect.arrayContaining(['real:fixture:all-good-dog-4', 'real:fixture:all-good-dog-6', 'real:fixture:all-good-dog-8', 'real:fixture:all-good-master']));
+  expect(good.markers).toEqual(expect.arrayContaining(['real:fixture:all-good-dog-4', 'real:fixture:all-good-dog-6', 'real:fixture:all-good-dog-8']));
+  // The receiver itself is never drawn; its ring is.
+  expect(good.markers.some(id => id.endsWith('-master'))).toBe(false);
+  expect(good.rings).toBe(1);
+  expect(good.redLines).toBe(0);
   expect(good.text).toContain('64%');
   const connecting = await renderFixture('receiver-connecting');
   expect(connecting.markers).toEqual(expect.arrayContaining(['real:fixture:receiver-connecting-dog-4',
     'real:fixture:receiver-connecting-dog-6', 'real:fixture:receiver-connecting-dog-8']));
   expect(connecting.markers.some(id => id.endsWith('-master'))).toBe(false);
+  expect(connecting.rings).toBe(0);
   expect(connecting.text).not.toContain('64%');
   const indoor = await renderFixture('dog-indoor');
   expect(indoor.text).toContain('小黑');
   expect(indoor.text).toContain('室內');
   expect(good.saved).not.toHaveBeenCalled();
+});
+
+test('the real map draws the range ring and the red line only where the rules say', async () => {
+  const counts = async name => {
+    const { rings, redLines } = await renderFixture(name);
+    return [rings, redLines];
+  };
+  expect(await counts('range-out')).toEqual([1, 1]);
+  expect(await counts('range-near-edge')).toEqual([1, 0]);
+  expect(await counts('range-returning')).toEqual([1, 0]);
+  expect(await counts('range-stale-inside')).toEqual([1, 0]);
+  expect(await counts('receiver-disconnected')).toEqual([0, 0]);
+  expect(await counts('cloud-only')).toEqual([0, 0]);
 });

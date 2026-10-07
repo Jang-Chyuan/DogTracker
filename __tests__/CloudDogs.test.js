@@ -218,13 +218,13 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
     let renderer;
     await act(async () => { renderer = Renderer.create(view()); });
     expect(database.latestBySlave).toHaveBeenCalledWith('account-a', NOW - MAX_AGE_MS);
-    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, error: '' });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '' });
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
-    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, error: 'locked' });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: 'locked' });
     // An unavailable database stops reads and clears cached rows.
     await act(async () => { renderer.update(view({ enabled: false })); });
-    expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], holds: {}, statuses: {}, error: '' });
+    expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '' });
     const calls = database.latestBySlave.mock.calls.length;
     await act(async () => { await jest.advanceTimersByTimeAsync(3 * POLL_MS); });
     expect(database.latestBySlave).toHaveBeenCalledTimes(calls);

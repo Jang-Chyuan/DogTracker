@@ -60,6 +60,7 @@ export default function TrackingSheet({
   topInset = 100,
   onHeight,
   onDogDetails,
+  onReceiverDetails,
 }) {
   const point = tracking.point;
   const summary = sheetSummary(tracking);
@@ -134,29 +135,22 @@ export default function TrackingSheet({
             手機連線的領犬員。
           </Text>
         )}
-        <View style={!preferences.value.showMasterMarker && styles.hiddenRow}>
-          <Position
-            role="master"
-            position={master}
-            visibilityControl={
-              <VisibilityButton
-                role="master"
-                visible={preferences.value.showMasterMarker}
-                disabled={disabled}
-                onPress={() =>
-                  tracking.saveTrackingPreferences({
-                    showMasterMarker: !preferences.value.showMasterMarker,
-                  })
-                }
-              />
-            }
-          />
+        {/* The receiver is no longer drawn on the map (v3), so its panel opens
+            from this row instead of from a marker; its range ring cannot be
+            turned off, so the row has no eye. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="領犬員（接收器）詳細資料"
+          disabled={!onReceiverDetails || !master}
+          onPress={onReceiverDetails}
+        >
+          <Position role="master" position={master} />
           <View style={styles.metrics}>
             <Stat icon="battery" label="領犬員電量"
               level={point.masterBatteryValid ? point.masterBatteryPercentage : null}
               value={battery(point.masterBatteryValid, point.masterBatteryPercentage)} />
           </View>
-        </View>
+        </Pressable>
         {showRouteControls ? <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>移動路徑</Text>
@@ -222,10 +216,10 @@ export default function TrackingSheet({
           </View>
         )}
         <Text style={styles.hint}>
-          參考圈半徑 1 公里，跟隨領犬員眼睛。
+          接收範圍圈半徑 1 公里，以接收器為中心；接收器連著而且有位置時才畫。
         </Text>
         <Text style={styles.hint}>
-          點地圖上的狗或領犬員可以看該裝置的詳細資料（距離、硬體回報、LoRa 訊號）。
+          點地圖上的狗或上面的領犬員列，可以看詳細資料（距離、硬體回報、LoRa 訊號）。
         </Text>
     </BottomSheet>
   );
@@ -245,7 +239,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   sectionTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
-  hiddenRow: { opacity: 0.6 },
   windowRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   window: {
     minHeight: 40,
