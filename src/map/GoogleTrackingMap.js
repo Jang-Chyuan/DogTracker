@@ -185,6 +185,9 @@ function GoogleTrackingMapRenderer({
   // time a card opens — so only what is drawn over the map (buttons, hints,
   // the overlap menu) and the moves the user asks for keep clear of the card.
   coverBottom = 0,
+  // 「今天 x km」 (TodayDistance.todayPill) beside 我的位置, and its tap.
+  today = null,
+  onToday,
   supported,
   configured,
 }) {
@@ -715,10 +718,11 @@ function GoogleTrackingMapRenderer({
           onPress={() => frame(value.coordinates)} />
       ))}
       {live && configured && foreground && (loaded || timedOut) && (
-        // 框住全部 and 我的位置 (A1), 12dp above the card; above the tip
+        // 框住全部, 我的位置 and 「今天 x km」 (A1), 12dp above the card; above the tip
         // while it shows.
         <MapButtons bottom={overlayBottom + (tip ? sizes.floatingButton + layout.floatingGap : 0)}
-          phoneAvailable={phoneAvailable} onFrameAll={pressFrameAll} onMyLocation={pressMyLocation} />
+          phoneAvailable={phoneAvailable} onFrameAll={pressFrameAll} onMyLocation={pressMyLocation}
+          today={today} onToday={onToday} />
       )}
       {live && <MapTip message={tip} bottom={overlayBottom} onDone={clearTip} />}
       {pickerMarkers && pickerPlace && (

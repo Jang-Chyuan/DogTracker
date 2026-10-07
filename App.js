@@ -3,6 +3,7 @@ import {
   BackHandler,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -32,14 +33,13 @@ import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
 import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
-import BottomNavigation, {
-  NAV_HEIGHT,
-} from './src/components/BottomNavigation';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import LoginScreen from './src/screens/LoginScreen';
 import { hideSplash } from './src/app/hideSplash';
+import { useTodayRoute } from './src/locationTracker/useTodayRoute';
+import { layout } from './src/theme/tokens';
 
 
 
@@ -69,6 +69,14 @@ export function AuthGate({ children }) {
   return <React.Fragment key={user.id}>{children}</React.Fragment>;
 }
 
+// The pages off the map, by route: the header's 「‹ 標題」.
+const PAGE_TITLES = {
+  settings: '設定',
+  cloud: '雲端資料',
+  locationTracker: '手機位置記錄',
+  hardware: '硬體連線',
+};
+
 const authStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
   loading: { padding: 24 },
@@ -80,8 +88,6 @@ function TrackerApp() {
   const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
   const insets = useSafeAreaInsets();
   const [route, setRoute] = useState({ name: 'map', parent: null });
-  // A dog's card covers the bottom of the live map, tabs included.
-  const [cardOpen, setCardOpen] = useState(false);
   // The dog whose history 看軌跡 opened: back on the live map, its card opens
   // again (design: history from a dog's card returns to that card).
   const [cardHistory, setCardHistory] = useState(null);
@@ -108,6 +114,10 @@ function TrackerApp() {
   });
   const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
   useDefaultLocationRecording(tracking.foreground, phone);
+  // 「今天 x km」: today's recorded route of this phone, while the live map
+  // is in front.
+  const liveTodayRoute = useTodayRoute(tracking.historyDatabase, tracking.ready.real,
+    tracking.foreground && isMap);
   // Cache eligibility is separate from polling visibility. Background/navigation
   // pauses reads; logout invalidates the account-bound cache.
   // Debug builds only: a named screen state (dogtracker://dev/fixture?name=…)
@@ -118,7 +128,10 @@ function TrackerApp() {
     undefined, null, { active: tracking.foreground && showsMap && !fixture, revision: cloudSync.revision });
   const fixtureEdits = useFixtureEdits(fixture);
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
-    { tracking, phone, cloudDogs, cloudSync, history, dogAvatars }, fixtureEdits);
+    { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute }, fixtureEdits);
+  // Background work that keeps going when the map is left (返回鍵 on the
+  // map): this phone uploading for a receiver.
+  const uploading = (upload.settings || []).some(setting => setting.mode === 'phone');
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.
@@ -126,7 +139,7 @@ function TrackerApp() {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        if (route.name === 'map') handleRootBack();
+        if (route.name === 'map') handleRootBack({ uploading });
         else navigate(route.parent || 'map');
         return true;
       },
@@ -134,7 +147,7 @@ function TrackerApp() {
     return () => subscription.remove();
     // navigate reads route and cardHistory, both listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route, cardHistory]);
+  }, [route, cardHistory, uploading]);
 
   let content;
   switch (route.name) {
@@ -172,15 +185,19 @@ function TrackerApp() {
     >
       <StatusBar barStyle={showsMap ? 'dark-content' : 'light-content'} />
       {!showsMap && (
+        // No bottom tabs (v3): every page off the map says where it is and
+        // goes back the way the back key does (「‹ 標題」).
         <View style={styles.header}>
-          <Text style={styles.brand}>DogTracker</Text>
-          <Text
-            style={styles.source}
+          <Pressable
+            testID="page-back"
+            accessibilityRole="button"
+            accessibilityLabel={`返回，${PAGE_TITLES[route.name] || '設定'}`}
+            onPress={() => navigate(route.name === 'hardware' ? 'settings' : route.parent || 'map')}
+            hitSlop={8}
+            style={({ pressed }) => [styles.back, pressed && styles.pressed]}
           >
-            {!tracking.preferences.ready
-              ? '讀取設定中…'
-              : '正式 · SQLite'}
-          </Text>
+            <Text style={styles.brand}>{`‹ ${PAGE_TITLES[route.name] || '設定'}`}</Text>
+          </Pressable>
         </View>
       )}
       <View
@@ -205,10 +222,13 @@ function TrackerApp() {
           dogAvatars={mapInputs.dogAvatars}
           historical={isHistory}
           active={showsMap}
-          bottomInset={insets.bottom + NAV_HEIGHT + 20}
+          // No bottom tabs (v3): the map's buttons sit 16dp above the
+          // screen's bottom edge.
+          bottomInset={insets.bottom + layout.screenEdge}
           mapProvider={GOOGLE_MAP_PROVIDER}
           fixture={isHistory ? null : fixture}
-          onCardChange={setCardOpen}
+          todayRoute={mapInputs.todayRoute}
+          onOpenSettings={() => navigate('settings')}
           openDogRequest={openDogRequest}
           onOpenHistory={slaveId => {
             setCardHistory(slaveId);
@@ -252,14 +272,6 @@ function TrackerApp() {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
-      {!(isMap && cardOpen) && (
-        <BottomNavigation
-          selected={route.parent || route.name}
-          onNavigate={navigate}
-          floating={showsMap}
-          bottomInset={insets.bottom}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -271,11 +283,12 @@ const styles = StyleSheet.create({
   keyboardView: { flex: 1 },
   container: { padding: 20, paddingBottom: 28 },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderBottomColor: '#334155',
     borderBottomWidth: 1,
   },
+  back: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 8, alignSelf: 'flex-start' },
+  pressed: { opacity: 0.7 },
   brand: { color: '#f8fafc', fontSize: 18, fontWeight: '700' },
-  source: { color: '#93c5fd', fontSize: 14, marginTop: 4 },
 });
