@@ -37,6 +37,7 @@ import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import LoginScreen from './src/screens/LoginScreen';
+import { hideSplash } from './src/app/hideSplash';
 
 
 
@@ -52,6 +53,10 @@ export default function App() {
 
 export function AuthGate({ children }) {
   const { loading, user } = useAuth();
+  // The launch screen covers session restore and, when signed in, stays until
+  // the map has loaded (GoogleTrackingMap), so the app opens straight onto its
+  // first real screen instead of a blank or "restoring" page.
+  useEffect(() => { if (!loading && !user) hideSplash(); }, [loading, user]);
   if (loading) return <SafeAreaView style={[authStyles.container, authStyles.loading]}>
     <Text accessibilityLiveRegion="polite" style={ui.text}>正在恢復登入狀態…</Text>
   </SafeAreaView>;
