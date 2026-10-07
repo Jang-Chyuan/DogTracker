@@ -489,8 +489,13 @@ test.each(FIXTURE_NAMES)('%s: the rows read the same as the real CloudDatabase r
   } finally { db.close(); }
 });
 
+const findAncestor = (node, test) => {
+  for (let item = node.parent; item; item = item.parent) if (test(item)) return item;
+  return null;
+};
+
 // The real MapScreen, given what App hands it for a fixture.
-async function renderFixture(name) {
+async function renderFixture(name, { edits = null, inspect = null } = {}) {
   const MapView = require('react-native-maps').default;
   const { Marker } = require('react-native-maps');
   const { Platform } = require('react-native');
@@ -508,14 +513,15 @@ async function renderFixture(name) {
       preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
       saveTrackingPreferences: jest.fn() },
     phone: { enabled: true }, cloudDogs: { rows: [] }, cloudSync: { ownerId: 'real' },
-    history: { key: 'live', preferences: { source: 'local', dogAliases: {} } },
+    history: { key: 'live', preferences: { source: 'local', dogAliases: {} }, save: jest.fn() },
+    dogAvatars: { avatars: {}, save: jest.fn() },
   };
-  const inputs = applyScreenFixture(fixture, live);
+  const inputs = applyScreenFixture(fixture, live, edits);
   let renderer;
   await act(async () => {
     renderer = Renderer.create(<MapScreen tracking={inputs.tracking} phone={inputs.phone} history={inputs.history}
       cloudDogs={inputs.cloudDogs} cloudOwner={inputs.cloudSync.ownerId} bottomInset={80}
-      mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture} />);
+      dogAvatars={inputs.dogAvatars} mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture} />);
   });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
@@ -527,9 +533,26 @@ async function renderFixture(name) {
   const redLines = renderer.root.findAllByType(Polyline)
     .filter(node => node.props.strokeColor === colors.critLine).length;
   const text = JSON.stringify(renderer.toJSON());
+  // Every photo face drawn, where, and whether it is greyscale.
+  const photos = renderer.root.findAll(node => node.props.testID === 'dog-avatar-photo' && typeof node.type === 'string')
+    .map(node => {
+      const inCard = !!findAncestor(node, item => item.props.testID === 'dog-card');
+      // On the map the photo is an SVG image (drawn into the marker bitmap),
+      // greyed by a saturate-0 filter; elsewhere an Image with a CSS filter.
+      const vector = node.findAll(child => child.props.href?.uri)[0];
+      if (vector) {
+        return { inCard, grey: vector.props.filter === 'url(#grey)', uri: vector.props.href.uri, vector: true };
+      }
+      const image = node.findAll(child => child.props.source?.uri)[0];
+      const style = [image.props.style].flat(3).filter(Boolean);
+      return { inCard, grey: style.some(item => item.filter?.[0]?.grayscale === 1), uri: image.props.source.uri };
+    });
+  const result = { markers, rings, redLines, text, photos, saved: live.tracking.saveTrackingPreferences, live,
+    renderer, inputs };
+  if (inspect) await inspect(result);
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
-  return { markers, rings, redLines, text, saved: live.tracking.saveTrackingPreferences };
+  return result;
 }
 
 test('the real map draws a fixture: receiver 3 neither drawn nor its battery shown as ours', async () => {
@@ -662,4 +685,100 @@ test('the real map opens a card fixture\'s card with its rows', async () => {
   const indoor = await renderFixture('card-indoor');
   expect(indoor.text).toContain('充電中 62%');
   expect(indoor.text).not.toContain('接收範圍');
+});
+
+// ---- the dog's page and faces (047) ----------------------------------------
+
+test('dog-edit: card-ok with the pencil pressed opens 豆豆\'s page (A5) over its card', async () => {
+  const fixture = buildFixture('dog-edit');
+  expect(fixture).toMatchObject({ openDog: 4, openPage: 'edit' });
+  const edit = await renderFixture('dog-edit');
+  expect(edit.text).toContain('dog-profile');
+  expect(edit.text).toContain('訊號源 4');
+  // card-ok itself opens only the card.
+  const ok = await renderFixture('card-ok');
+  expect(ok.text).toContain('dog-card');
+  expect(ok.text).not.toContain('dog-profile');
+});
+
+test('dog-photo-avatar: 小黑\'s photo on the map and on its card, in colour', async () => {
+  const { photos, text } = await renderFixture('dog-photo-avatar');
+  expect(text).toContain('小黑');
+  expect(photos.filter(photo => photo.inCard)).toHaveLength(1);
+  expect(photos.filter(photo => !photo.inCard)).toEqual([expect.objectContaining({ vector: true })]);
+  expect(photos.every(photo => !photo.grey && photo.uri.startsWith('data:image/jpeg;base64,'))).toBe(true);
+  const state = await screen('dog-photo-avatar');
+  expect(state.marker(6)).toMatchObject({ stale: false });
+});
+
+test('dog-photo-stale: 阿福\'s photo turns greyscale on the map and on its card', async () => {
+  const state = await screen('dog-photo-stale');
+  expect(state.marker(8)).toMatchObject({ stale: true, problem: true });
+  const { photos } = await renderFixture('dog-photo-stale');
+  expect(photos.filter(photo => photo.inCard)).toEqual([expect.objectContaining({ grey: true })]);
+  expect(photos.filter(photo => !photo.inCard)).toEqual([expect.objectContaining({ grey: true })]);
+});
+
+test('on a fixture, the dog page\'s name and face live in memory, never in this phone\'s data', async () => {
+  const fixture = buildFixture('dog-edit');
+  const edits = { aliases: null, avatars: null, setAliases: jest.fn(), setAvatars: jest.fn() };
+  const live = { tracking: { preferences: { value: {} }, ready: {}, errors: {} }, phone: {}, cloudSync: {},
+    history: { preferences: { dogAliases: { 4: 'real' } }, save: jest.fn() },
+    dogAvatars: { avatars: { 4: { kind: 'art', art: 'curly', color: 'blue' } }, save: jest.fn() } };
+  const inputs = applyScreenFixture(fixture, live, edits);
+  expect(inputs.history.preferences.dogAliases[4]).toBe('豆豆');
+  expect(inputs.dogAvatars.avatars).toEqual({});
+  expect(await inputs.history.save({ ...inputs.history.preferences, dogAliases: { 4: '小白' } })).toBe(true);
+  expect(edits.setAliases).toHaveBeenCalledWith({ 4: '小白' });
+  const face = { kind: 'art', art: 'short', color: 'mint' };
+  expect(await inputs.dogAvatars.save(4, face)).toBe(true);
+  expect(edits.setAvatars.mock.calls[0][0](null)).toEqual({ 4: face });
+  expect(live.history.save).not.toHaveBeenCalled();
+  expect(live.dogAvatars.save).not.toHaveBeenCalled();
+  // What was changed is drawn.
+  const changed = applyScreenFixture(fixture, live, { ...edits, aliases: { 4: '小白' }, avatars: { 4: face } });
+  expect(changed.history.preferences.dogAliases[4]).toBe('小白');
+  expect(changed.dogAvatars.avatars[4]).toBe(face);
+  // Off: the live names and faces, untouched.
+  expect(applyScreenFixture(null, live).dogAvatars).toBe(live.dogAvatars);
+});
+
+test('the real map: the pencil opens the page, a new name and face show on the card and the map', async () => {
+  let state = { aliases: null, avatars: null };
+  const edits = { ...state, setAliases: value => { state = { ...state, aliases: value }; },
+    setAvatars: value => { state = { ...state, avatars: typeof value === 'function' ? value(state.avatars) : value }; } };
+  await renderFixture('card-ok', { edits, inspect: async ({ renderer, live }) => {
+    const pencil = renderer.root.findAll(node => node.props.testID === 'dog-card-edit'
+      && typeof node.props.onPress === 'function')[0];
+    await act(async () => pencil.props.onPress());
+    expect(renderer.root.findAll(node => node.props.testID === 'dog-profile')).not.toHaveLength(0);
+    const name = renderer.root.findAll(node => node.props.testID === 'dog-profile-name'
+      && typeof node.props.onPress === 'function')[0];
+    await act(async () => name.props.onPress());
+    const { TextInput } = require('react-native');
+    await act(async () => renderer.root.findByType(TextInput).props.onChangeText('小白'));
+    await act(async () => renderer.root.findByType(TextInput).props.onSubmitEditing());
+    expect(live.history.save).not.toHaveBeenCalled();
+  } });
+  expect(state.aliases).toEqual({ 4: '小白', 6: '小黑', 8: '阿福' });
+  const face = { kind: 'photo', uri: 'data:image/jpeg;base64,AAAA' };
+  const after = await renderFixture('card-ok', { edits: { ...edits, aliases: state.aliases, avatars: { 4: face } } });
+  expect(after.text).toContain('小白');
+  expect(after.photos.filter(photo => photo.inCard)).toHaveLength(1);
+  expect(after.photos.filter(photo => !photo.inCard)).toHaveLength(1);
+});
+
+test('a photo face is drawn into the map marker: tracked while it loads, fixed once it has', async () => {
+  const { PHOTO_SETTLE_MS } = require('../src/map/GoogleTrackingMap');
+  await renderFixture('dog-photo-avatar', { inspect: async ({ renderer }) => {
+    const { Marker } = require('react-native-maps');
+    const marker = id => renderer.root.findAllByType(Marker).find(node => node.props.identifier?.endsWith(`-dog-${id}`));
+    expect(marker(6).props.tracksViewChanges).toBe(true);
+    // Illustrations never need it.
+    expect(marker(4).props.tracksViewChanges).toBe(false);
+    const image = marker(6).findAll(node => node.props.href?.uri && typeof node.props.onLoad === 'function')[0];
+    await act(async () => image.props.onLoad());
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, PHOTO_SETTLE_MS + 100)); });
+    expect(marker(6).props.tracksViewChanges).toBe(false);
+  } });
 });

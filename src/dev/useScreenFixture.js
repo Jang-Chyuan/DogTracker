@@ -28,3 +28,18 @@ export function useScreenFixture(enabled = __DEV__) {
   }, [enabled, name]);
   return useMemo(() => (enabled && name ? buildFixture(name) : null), [enabled, name]);
 }
+
+/**
+ * In-memory names and faces for a fixture's dogs, changed on the dog's page
+ * (A5) while the fixture is shown; forgotten when it changes or goes off.
+ */
+export function useFixtureEdits(fixture) {
+  const [aliases, setAliases] = useState(null);
+  const [avatars, setAvatars] = useState(null);
+  const name = fixture?.name ?? null;
+  useEffect(() => {
+    setAliases(null);
+    setAvatars(null);
+  }, [name]);
+  return useMemo(() => ({ aliases, avatars, setAliases, setAvatars }), [aliases, avatars]);
+}

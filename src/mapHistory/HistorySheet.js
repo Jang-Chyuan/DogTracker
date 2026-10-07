@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { dogHistoryLabel } from './DogAliases';
 import { ActionButton } from '../components/ScreenUI';
 import BottomSheet from '../map/BottomSheet';
@@ -181,7 +181,8 @@ export default function HistorySheet({
     preview = '';
   }
   const notice = history.data ? coverageNotice(history.data) : '';
-  const changed = JSON.stringify(draft) !== JSON.stringify(history.preferences);
+  const changed = JSON.stringify({ ...draft, dogAliases: null })
+    !== JSON.stringify({ ...history.preferences, dogAliases: null });
   const limited = history.data?.phone.limited
     || list(history.data?.clients).some(track => track.limited);
   return (
@@ -195,7 +196,8 @@ export default function HistorySheet({
       footer={<ActionButton
         title={history.busy ? '查詢中…' : changed ? '套用（有未套用的變更）' : '重新查詢'}
         disabled={history.busy}
-        onPress={() => history.save(draft)} />}
+        // Names always come from what is saved now (A5), never from the draft.
+        onPress={() => history.save({ ...draft, dogAliases: history.preferences.dogAliases })} />}
     >
       {history.error ? <Text style={styles.error}>{history.error}</Text> : null}
       {!!notice && <Text style={styles.warning}>{notice}</Text>}
@@ -220,7 +222,7 @@ export default function HistorySheet({
       {/* Source first: which dogs and Masters exist at all depends on it. */}
       <Section
         title="狗與 Master"
-        value={`${slaves.map(id => dogHistoryLabel(id, draft.dogAliases)).join('、') || '未選'} · ${
+        value={`${slaves.map(id => dogHistoryLabel(id, history.preferences.dogAliases)).join('、') || '未選'} · ${
           masters.map(id => `M${id}`).join('、') || '未選'}`}
         open={open === 'devices'}
         onToggle={() => section('devices')}
@@ -228,7 +230,7 @@ export default function HistorySheet({
         <Text style={styles.label}>看哪幾隻狗（可複選）</Text>
         <View style={styles.row}>
           {dogOptions.map(slave => (
-            <Chip key={slave} label={dogHistoryLabel(slave, draft.dogAliases)} selected={slaves.includes(slave)}
+            <Chip key={slave} label={dogHistoryLabel(slave, history.preferences.dogAliases)} selected={slaves.includes(slave)}
               disabled={history.busy}
               icon={<TrackingAvatar role="slave" size={22} />}
               onPress={() => {
@@ -251,17 +253,7 @@ export default function HistorySheet({
             </Text>
           )}
         </View>
-        {slaves.map(slave => (
-          <View key={slave}>
-            <Text style={styles.label}>狗 {slave} 的別名</Text>
-            <TextInput accessibilityLabel={`狗 ${slave} 的別名`}
-              value={draft.dogAliases?.[slave] || ''} maxLength={20}
-              placeholder="輸入別名（最多 20 字）" placeholderTextColor={colors.muted}
-              editable={!history.busy} style={styles.aliasInput}
-              onChangeText={alias => patch({ dogAliases: { ...draft.dogAliases, [slave]: alias } })} />
-          </View>
-        ))}
-        {!!slaves.length && <Text style={styles.hint}>按「套用」儲存在這支手機；留空恢復狗的編號。</Text>}
+        {/* Names are edited on the dog's own page (A5, the card's pencil). */}
         {masterOptions.length > 0 && (
           <>
             <Text style={styles.label}>哪幾台 Master 收到的（可複選）</Text>
@@ -451,8 +443,6 @@ export default function HistorySheet({
 }
 
 const styles = StyleSheet.create({
-  aliasInput: { minHeight: 44, paddingHorizontal: 12, color: colors.ink,
-    backgroundColor: '#FFFFFF', borderRadius: 8 },
   section: {
     marginTop: 10,
     borderRadius: 14,

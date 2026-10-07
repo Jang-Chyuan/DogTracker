@@ -59,11 +59,44 @@ const EMPTY_REGION = {
   latitudeDelta: 4,
   longitudeDelta: 4,
 };
+// A photo face reaches the marker's bitmap only once it has decoded and been
+// drawn; a redraw at onLoad alone can still capture the empty frame. So while
+// a photo is new the marker follows its view's changes, and a moment after the
+// photo has loaded (or at the latest PHOTO_TRACK_MAX_MS) it goes back to a
+// fixed bitmap.
+export const PHOTO_SETTLE_MS = 600;
+export const PHOTO_TRACK_MAX_MS = 4000;
+function usePhotoMarker(avatar, ref) {
+  const photo = avatar?.kind === 'photo' ? avatar.uri : '';
+  const photoKey = photo ? `${photo.length}:${photo.slice(-24)}` : '';
+  const [tracking, setTracking] = useState(!!photoKey);
+  const timer = useRef(null);
+  const settle = useCallback(delay => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      setTracking(false);
+      ref.current?.redraw?.();
+    }, delay);
+  }, [ref]);
+  useEffect(() => {
+    if (!photoKey) return;
+    setTracking(true);
+    settle(PHOTO_TRACK_MAX_MS);
+  }, [photoKey, settle]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const onLoad = useCallback(() => {
+    ref.current?.redraw?.();
+    settle(PHOTO_SETTLE_MS);
+  }, [ref, settle]);
+  return { tracking, onLoad };
+}
+
 // One dog on the live map. The marker view is not tracked for changes (that
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
 function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
   const ref = useRef(null);
+  const photo = usePhotoMarker(avatar, ref);
   const frame = markerFrame(marker.size);
   const look = [marker.size, marker.problem, marker.stale, marker.indoor, marker.selected,
     tag?.text, tag?.problem, avatar?.kind, avatar?.art, avatar?.color, avatar?.uri?.length].join('|');
@@ -74,7 +107,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
       identifier={source + '-dog-' + marker.slaveId}
       coordinate={marker.coordinate}
       anchor={frame.anchor}
-      tracksViewChanges={false}
+      tracksViewChanges={photo.tracking}
       zIndex={zIndex}
       // No title or description: those draw the SDK's own bubble, and a tap
       // already opens the dog. The label below is what TalkBack reads.
@@ -82,8 +115,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
     >
       <View collapsable={false} accessible accessibilityLabel={label || marker.label}
         onLayout={() => ref.current?.redraw?.()}>
-        <DogMarkerView marker={marker} tag={tag} avatar={avatar}
-          onAvatarLoad={() => ref.current?.redraw?.()} />
+        <DogMarkerView marker={marker} tag={tag} avatar={avatar} onAvatarLoad={photo.onLoad} />
       </View>
     </Marker>
   );
@@ -101,6 +133,7 @@ function groupSpeech(tag, markers) {
 // live problem badges. Same redraw dance as DogMarker.
 function TrackMarker({ track, onPress }) {
   const ref = useRef(null);
+  const photo = usePhotoMarker(track.avatar, ref);
   const { latest } = track;
   const indoor = !!latest.heldReason;
   const marker = { slaveId: track.name, size: 40, problem: false, stale: false, indoor, selected: false };
@@ -114,13 +147,12 @@ function TrackMarker({ track, onPress }) {
       ref={ref}
       coordinate={latest}
       anchor={frame.anchor}
-      tracksViewChanges={false}
+      tracksViewChanges={photo.tracking}
       onPress={onPress}
     >
       <View collapsable={false} accessible accessibilityLabel={`${text}，${new Date(latest.time).toLocaleString()}`}
         onLayout={() => ref.current?.redraw?.()}>
-        <DogMarkerView marker={marker} tag={{ text, group: 1 }} avatar={track.avatar}
-          onAvatarLoad={() => ref.current?.redraw?.()} />
+        <DogMarkerView marker={marker} tag={{ text, group: 1 }} avatar={track.avatar} onAvatarLoad={photo.onLoad} />
       </View>
     </Marker>
   );

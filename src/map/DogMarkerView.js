@@ -84,7 +84,8 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
       <View style={[styles.shadow, selected && styles.selectedShadow, shadowFrame(size, selected, frame.width)]} />
       <View style={[styles.face, { top: TOP, left: (frame.width - size) / 2, width: size, height: size,
         borderRadius: size / 2 }, selected && styles.selected]}>
-        <DogAvatar avatar={avatar} size={size} stale={stale} border={markerSize.border} onLoad={onAvatarLoad} />
+        <DogAvatar avatar={avatar} size={size} stale={stale} border={markerSize.border} onLoad={onAvatarLoad}
+          snapshot />
         {indoor && <HouseBadge offset={offset} size={size} />}
         {problem && <ProblemBadge offset={offset} />}
       </View>
