@@ -132,8 +132,9 @@ function TrackerApp() {
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
     { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute }, fixtureEdits);
   // Background work that keeps going when the map is left (返回鍵 on the
-  // map): this phone uploading for a receiver.
-  const uploading = (upload.settings || []).some(setting => setting.mode === 'phone');
+  // map): this phone uploads for a receiver and still has rows waiting.
+  const uploading = (upload.settings || []).some(setting => setting.mode === 'phone')
+    && (upload.counts || []).some(row => row.status === 'pending' && Number(row.count) > 0);
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.

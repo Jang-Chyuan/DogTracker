@@ -6,6 +6,8 @@ import { Alert, BackHandler, NativeModules } from 'react-native';
 // to the background, so nothing stops. With none running it asks
 // 「要關閉 DogTracker 嗎？」.
 
+export const CLOSE_IMPACT = '現在沒有在接收、記錄位置或上傳，關閉不會中斷任何工作。';
+
 async function receiving() {
   const state = await NativeModules.BleBackground?.getState?.();
   return !!(state?.enabled && state?.running);
@@ -36,7 +38,8 @@ export async function handleRootBack({ uploading = false } = {}) {
     moveToBackground();
     return;
   }
-  Alert.alert('要關閉 DogTracker 嗎？', undefined, [
+  // The body says what closing affects (DESIGN 確認對話框「寫出影響範圍」).
+  Alert.alert('要關閉 DogTracker 嗎？', CLOSE_IMPACT, [
     { text: '取消', style: 'cancel' },
     { text: '關閉', style: 'destructive', onPress: () => BackHandler.exitApp() },
   ]);

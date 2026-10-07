@@ -10,7 +10,6 @@ export default function SettingsScreen({
 }) {
   return (
     <View>
-      <Text style={ui.title}>設定</Text>
       <View style={ui.card}>
         <Text style={ui.heading}>歷史地圖</Text>
         <Text style={ui.hint}>

@@ -70,20 +70,23 @@ export function startOfToday(now) {
 
 /**
  * What the pill shows.
- * - route: today's sum ({ count, metres }), or null while it is still read.
+ * - route: today's sum ({ count, metres }), or null until it was read once.
  * - livePhone: the recording service's live snapshot (running, position,
  *   ageSeconds), null before the first read.
  * - phone: usePhoneLocation's permission and location-service state.
  * - now, waitingSince: since when recording has run without any fix yet
  *   (null: it has one); the slash waits 10 minutes for a first fix too.
  *
- * @returns {{ text, icon: 'walk'|'walk-muted'|'walk-off', muted: boolean,
- *   recorded: boolean, label: string }}
+ * @returns {null | { text, icon: 'walk'|'walk-muted'|'walk-off', muted: boolean,
+ *   recorded: boolean, label: string }}  null until the route was read.
  *   walk: phone colour; walk-muted: grey (recording off); walk-off: grey with a
  *   slash (no permission, only approximate location, location service off, or
  *   recording without a fix for over 10 minutes).
  */
 export function todayPill({ route, livePhone, phone, now = null, waitingSince = null }) {
+  // Not shown until today's route has been read once: no 「今天 0.0 km」
+  // flashing before the real number.
+  if (!route) return null;
   const permission = phone?.permission;
   const known = permission && permission !== 'checking' && !phone?.busy;
   const permissionProblem = known && (permission !== 'precise' || !phone.services);
