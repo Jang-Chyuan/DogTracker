@@ -59,7 +59,8 @@ async function mount(props = {}) {
 
 test('A3b on screen: name, 訊號源, headline, rows in order, red and amber 「!」, no receiver row', async () => {
   const { onHeight } = await mount();
-  expect(onHeight).toHaveBeenLastCalledWith(420);
+  // What it covers: its height and the 8dp it floats above the screen edge.
+  expect(onHeight).toHaveBeenLastCalledWith(428);
   const text = flatten(renderer.toJSON());
   expect(text).toContain('豆豆');
   expect(text).toContain('訊號源 4');
@@ -130,11 +131,14 @@ test('close() (a tap on empty map) closes it too; the card itself takes the swip
   expect(typeof card.props.onMoveShouldSetResponderCapture).toBe('function');
 });
 
-test('a held dog\'s 位置 row has two lines once an address is known (A7b), one line until then', async () => {
+test('a held dog\'s 位置 row is two lines high (A7b); the address line shows once known', async () => {
   const held = { heldReason: '室內', heldSource: 'weak' };
   const fresh = { freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW } };
   await mount({ card: model(held, fresh) });
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內');
+  // The row keeps its two-line height (64dp) for the address to come.
+  const style = [byTestId('dog-card-row-position')[0].props.style].flat(3).filter(Boolean);
+  expect(style.some(item => item.minHeight === 64)).toBe(true);
   await act(async () => renderer.update(<DogCard card={model(held, { ...fresh, address: '桃園區中正路 1 號附近' })} />));
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內桃園區中正路 1 號附近');
 });
@@ -209,4 +213,24 @@ test('the card\'s readings from SQLite: both tables, one copy per reading, the n
   } finally {
     connection.close();
   }
+});
+
+test('the card readings never show another reader\'s rows (logout, account or fixture switch)', async () => {
+  const { useDogCardReadings } = require('../src/map/useDogCardReadings');
+  const seen = [];
+  function Probe({ read }) {
+    seen.push(useDogCardReadings(read, 4, NOW));
+    return null;
+  }
+  const rows = value => ({ local: [], cloud: [], battery: [{ time: NOW - 60000, battery_percentage: value, source: 'ble' }] });
+  const first = jest.fn(async () => rows(50));
+  let resolveSecond;
+  const second = jest.fn(() => new Promise(resolve => { resolveSecond = resolve; }));
+  await act(async () => { renderer = Renderer.create(<Probe read={first} />); });
+  expect(seen.at(-1).battery.percentage).toBe(50);
+  await act(async () => renderer.update(<Probe read={second} />));
+  // The new reader has not answered yet: nothing, not the old account's 50%.
+  expect(seen.at(-1)).toMatchObject({ loaded: false, battery: null });
+  await act(async () => resolveSecond(rows(70)));
+  expect(seen.at(-1).battery.percentage).toBe(70);
 });
