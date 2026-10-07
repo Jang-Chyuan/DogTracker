@@ -1,5 +1,5 @@
 import { Alert, BackHandler, NativeModules } from 'react-native';
-import { backgroundWork, handleRootBack } from '../src/app/handleRootBack';
+import { backgroundWork, CLOSE_IMPACT, handleRootBack } from '../src/app/handleRootBack';
 
 const moveToBackground = jest.fn();
 function native({ ble = { enabled: false, running: false }, location = { running: false } } = {}) {
@@ -50,6 +50,7 @@ test('with no background work it asks 「要關閉 DogTracker 嗎？」 and clos
   await handleRootBack();
   expect(moveToBackground).not.toHaveBeenCalled();
   expect(alert.mock.calls[0][0]).toBe('要關閉 DogTracker 嗎？');
+  expect(alert.mock.calls[0][1]).toBe(CLOSE_IMPACT);
   const buttons = alert.mock.calls[0][2];
   expect(buttons.map(button => button.text)).toEqual(['取消', '關閉']);
   expect(exit).not.toHaveBeenCalled();

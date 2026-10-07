@@ -259,12 +259,15 @@ function GoogleTrackingMapRenderer({
     hideSplash();
   }, []);
   const fontScale = PixelRatio.getFontScale?.() || 1;
-  // Framing keeps clear of the bottom right buttons too (16dp + 48dp), so no
-  // dog or name tag is framed under them.
+  // Framing keeps clear of the bottom right buttons too (16dp + 48dp), and on
+  // the live map of the bottom row they stand on (「今天 x km」 beside 我的位置,
+  // 48dp), so no dog or name tag is framed under them.
+  const bottomRow = presentation.historyTracks ? 0 : sizes.floatingButton;
   const padding = useMemo(() => {
     const value = framePadding(dogMarkers, fontScale);
-    return { ...value, right: value.right + layout.screenEdge + sizes.floatingButton };
-  }, [dogMarkers, fontScale]);
+    return { ...value, right: value.right + layout.screenEdge + sizes.floatingButton,
+      bottom: value.bottom + bottomRow };
+  }, [dogMarkers, fontScale, bottomRow]);
   const cameraRead = useRef(0);
   // Android owns pause/resume. Replacing a healthy map on every resume retains
   // old SDK frame callbacks and duplicates all history overlays. Recentring
@@ -404,8 +407,8 @@ function GoogleTrackingMapRenderer({
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const hints = useMemo(() => (live && screenPoints ? edgeHints(dogMarkers, screenPoints, {
-    width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: overlayBottom,
-  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, topInset, overlayBottom]);
+    width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: overlayBottom, bottomRow,
+  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, topInset, overlayBottom, bottomRow]);
   // When the map's own blue dot last reported (kept coarse: one update a
   // minute is enough to know whether there is a fix).
   const [nativeFixAt, setNativeFixAt] = useState(null);

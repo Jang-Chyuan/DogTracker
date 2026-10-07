@@ -129,9 +129,10 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
     expect(todayPill({ route, livePhone: waiting, phone: precise }).icon).toBe('walk');
   });
 
-  test('before the first reads nothing flashes grey or 未記錄', () => {
-    expect(todayPill({ route: null, livePhone: null, phone: { permission: 'checking', services: false } }))
-      .toMatchObject({ text: '今天 0.0 km', icon: 'walk', muted: false });
+  test('before the first reads nothing flashes: no pill until the route is read, then no grey or 未記錄', () => {
+    expect(todayPill({ route: null, livePhone: recording, phone: precise })).toBeNull();
+    expect(todayPill({ route, livePhone: null, phone: { permission: 'checking', services: false } }))
+      .toMatchObject({ text: '今天 2.7 km', icon: 'walk', muted: false });
   });
 });
 
@@ -200,4 +201,14 @@ describe('useTodayRoute', () => {
     await act(async () => renderer.unmount());
     jest.useRealTimers();
   });
+});
+
+test('a bottom hint sits above the bottom row (「今天 x km」 beside 我的位置)', () => {
+  const { edgeHints } = require('../src/map/EdgeHints');
+  const marker = { slaveId: 4, coordinate: START, problem: false, stale: false, tag: { text: '豆豆' } };
+  const view = { width: 392, height: 830, top: 100, bottom: 40 };
+  const [plain] = edgeHints([marker], { 4: { x: 150, y: 1200 } }, view);
+  const [raised] = edgeHints([marker], { 4: { x: 150, y: 1200 } }, { ...view, bottomRow: 48 });
+  expect(plain.side).toBe('bottom');
+  expect(raised.y + raised.height).toBeLessThanOrEqual(830 - 40 - 48 - 12);
 });
