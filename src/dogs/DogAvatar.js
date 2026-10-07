@@ -1,6 +1,8 @@
 import React from 'react';
 import { Image, StyleSheet, View } from 'react-native';
-import Svg, { Circle, ClipPath, Defs, Ellipse, G, Path } from 'react-native-svg';
+import Svg, {
+  Circle, ClipPath, Defs, Ellipse, FeColorMatrix, Filter, G, Image as SvgImage, Path,
+} from 'react-native-svg';
 import { colors } from '../theme/tokens';
 import { DEFAULT_AVATAR, DOG_ARTS, DOG_COLORS } from './DogArt';
 
@@ -14,12 +16,34 @@ export const STALE_LINE = '#5B645F';
  * illustration's background becomes staleFace with darker lines, a photo turns
  * greyscale — never the white border or the badges drawn over it (v3: no
  * transparency, no status ring). `border` is the white frame's width.
- * `onLoad` lets a map marker redraw once a photo is decoded.
+ * `onLoad` lets a map marker redraw once a photo is decoded. `tint`
+ * ({ bg, line }) draws an illustration in other colours (A5c's unselected
+ * 樣子 choices are neutral). `snapshot` is for map markers, which are drawn
+ * into a bitmap off screen: there a photo is drawn by the SVG surface (it
+ * loads while being drawn), because an Image view never loads unattached.
  */
-export default function DogAvatar({ avatar, size = 40, stale = false, border = 2, onLoad }) {
+export default function DogAvatar({ avatar, size = 40, stale = false, border = 2, onLoad, tint = null,
+  snapshot = false }) {
   const value = avatar || DEFAULT_AVATAR;
   const frame = [styles.frame, { width: size, height: size, borderRadius: size / 2, borderWidth: border }];
   const inner = size - 2 * border;
+  if (value.kind === 'photo' && snapshot) {
+    return (
+      <View style={frame} testID="dog-avatar-photo">
+        <Svg width={inner} height={inner} viewBox="0 0 100 100">
+          <Defs>
+            <ClipPath id="photo"><Circle cx={50} cy={50} r={50} /></ClipPath>
+            {stale && (
+              <Filter id="grey"><FeColorMatrix type="saturate" values="0" /></Filter>
+            )}
+          </Defs>
+          <SvgImage href={{ uri: value.uri }} x={0} y={0} width={100} height={100}
+            preserveAspectRatio="xMidYMid slice" clipPath="url(#photo)" onLoad={onLoad}
+            filter={stale ? 'url(#grey)' : undefined} testID={stale ? 'dog-photo-grey' : 'dog-photo'} />
+        </Svg>
+      </View>
+    );
+  }
   if (value.kind === 'photo') {
     return (
       <View style={frame} testID="dog-avatar-photo">
@@ -31,8 +55,8 @@ export default function DogAvatar({ avatar, size = 40, stale = false, border = 2
   }
   const art = DOG_ARTS[value.art] || DOG_ARTS.classic;
   const color = DOG_COLORS[value.color] || DOG_COLORS.coral;
-  const background = stale ? colors.staleFace : color.bg;
-  const line = stale ? STALE_LINE : color.line;
+  const background = stale ? colors.staleFace : tint?.bg ?? color.bg;
+  const line = stale ? STALE_LINE : tint?.line ?? color.line;
   // The mockups' line weight (3.4 on the 120 grid): light, hand-drawn.
   const stroke = 3.4;
   return (

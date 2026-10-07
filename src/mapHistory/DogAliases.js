@@ -1,8 +1,9 @@
+// At most 20 characters as the user sees them (an emoji is one; DogName).
 export function normalizeDogAliases(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value)
     .filter(([id, alias]) => /^[1-9]\d*$/.test(id) && typeof alias === 'string')
-    .map(([id, alias]) => [id, alias.trim().slice(0, 20)])
+    .map(([id, alias]) => [id, Array.from(alias.trim()).slice(0, 20).join('')])
     .filter(([, alias]) => alias));
 }
 

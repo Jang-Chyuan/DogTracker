@@ -69,6 +69,13 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Path d="M13.5 7l3 3M12 20h8" {...stroke} />
         </>
       )}
+      {name === 'camera' && (
+        // 改頭像 (A5): the mockups' camera.
+        <>
+          <Path d="M4 8h3l2-3h6l2 3h3v11H4z" {...stroke} />
+          <Circle cx={12} cy={13} r={3.5} {...stroke} />
+        </>
+      )}
       {name === 'arrow' && (
         // The card's direction arrow, pointing up (north on screen); the card
         // turns it to the dog's bearing.

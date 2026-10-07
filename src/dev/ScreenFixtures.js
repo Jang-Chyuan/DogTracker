@@ -13,6 +13,7 @@
 // one fixed clock, so a screenshot taken today and next month look the same.
 
 import { emptyTrackingPoint, mapDogStatusRow } from '../models/TrackingPoint';
+import { FIXTURE_PHOTO } from './fixturePhoto';
 import { mergePositionSamples } from '../tracking/RouteSamples';
 import { emptyLiveRoute } from '../tracking/LiveRouteWindow';
 import { MAX_AGE_MS } from '../map/DogMerge';
@@ -428,6 +429,18 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // ---- a dog's page (047, design A5/A5a/A5c) ------------------------------
+  // card-ok with the pencil pressed: 豆豆's own page (A5) over its card.
+  'dog-edit': now => ({ ...FIXTURES['card-ok'](now), openPage: 'edit' }),
+  // 小黑 has a photo for a face: on the map and on its card (current, so in
+  // colour); 豆豆 and 阿福 keep the default illustration.
+  'dog-photo-avatar': now => ({ ...FIXTURES['card-ok'](now), openDog: 6,
+    avatars: { 6: { kind: 'photo', uri: FIXTURE_PHOTO } } }),
+  // dogs-aged with a photo for 阿福 (40 minutes without a new position): the
+  // photo turns greyscale on the map and on its card; the white frame and the
+  // red 「!」 keep their colour.
+  'dog-photo-stale': now => ({ ...FIXTURES['dogs-aged'](now), openDog: 8,
+    avatars: { 8: { kind: 'photo', uri: FIXTURE_PHOTO } } }),
   // A3b: 豆豆 walked out to 1.4 km and has been silent since 09:05 (25
   // minutes): no new position, battery 15%, out of range — every problem row
   // at once, and 活動量 「—」.
@@ -588,7 +601,7 @@ export function buildFixture(name, now = FIXTURE_NOW) {
   const make = FIXTURES[name];
   if (!make) return null;
   nextId = 1;
-  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null } = make(now);
+  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {} } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -637,8 +650,11 @@ export function buildFixture(name, now = FIXTURE_NOW) {
     phoneRoute: phone?.route || [],
     ride: rides.ride(now),
     dogAliases: ALIASES,
-    // card-* states open this dog's card.
+    // card-* states open this dog's card; dog-edit its page (A5) too.
     openDog,
+    openPage,
+    // Faces by collar number (useDogAvatars' avatars); the default otherwise.
+    avatars,
     // CloudDatabase.dogCardRows over the fixture's rows (DogCardReadings).
     readCardRows: async (slaveId, since) => cardRows(ble, cloud?.ownerId ? cloudRows : [], slaveId, since),
   };
@@ -672,9 +688,14 @@ const ignoreWrite = () => Promise.resolve();
  * fixture the live inputs come back untouched. The SQLite session itself keeps
  * running underneath; nothing a fixture shows can write to it.
  */
-export function applyScreenFixture(fixture, live) {
+export function applyScreenFixture(fixture, live, edits = null) {
   if (!fixture) return live;
   const { tracking, phone, cloudSync, history } = live;
+  // A name or face changed on a fixture's dog page (A5) lives in memory only
+  // (useFixtureEdits), so the page can be tried without touching this phone's
+  // real names and faces.
+  const aliases = edits?.aliases ?? fixture.dogAliases;
+  const avatars = edits?.avatars ?? fixture.avatars ?? {};
   return {
     tracking: {
       ...tracking,
@@ -699,10 +720,24 @@ export function applyScreenFixture(fixture, live) {
     cloudDogs: fixture.cloudDogs,
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
     history: history && {
-      ...history, preferences: { ...history.preferences, dogAliases: fixture.dogAliases },
-      // The card's 看軌跡 and rename must not store a fixture's dog in this
-      // phone's real history query or names.
-      save: async () => true,
+      ...history, preferences: { ...history.preferences, dogAliases: aliases },
+      // The card's 看軌跡 and the dog page's name must not store a fixture's
+      // dog in this phone's real history query or names.
+      save: async preferences => {
+        if (preferences?.dogAliases && preferences.dogAliases !== aliases) edits?.setAliases?.(preferences.dogAliases);
+        return true;
+      },
+    },
+    dogAvatars: {
+      avatars, error: '',
+      save: async (slaveId, avatar) => {
+        edits?.setAvatars?.(current => {
+          const next = { ...(current ?? avatars) };
+          if (avatar) next[slaveId] = avatar; else delete next[slaveId];
+          return next;
+        });
+        return true;
+      },
     },
   };
 }
