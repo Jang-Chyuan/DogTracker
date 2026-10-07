@@ -11,11 +11,12 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   showSlaveMarker: true,
   showTrails: false,
   windowMinutes: 2,
-  // Which dog the map camera follows; null follows every visible device.
-  focusSlaveId: null,
-  // Dogs the user hid one by one; the list still shows them.
-  hiddenSlaveIds: [],
 });
+
+// Saved by versions before v3, which had a dog to follow and dogs hidden one by
+// one. v3 has neither (every dog is drawn, the map never follows): the fields
+// are read and dropped, never obeyed and never written again.
+export const DROPPED_PREFERENCES = Object.freeze(['focusSlaveId', 'hiddenSlaveIds']);
 
 export function validateTrackingPreferences(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -29,14 +30,6 @@ export function validateTrackingPreferences(value) {
   }
   if (!WINDOW_PRESETS.includes(settings.windowMinutes))
     throw new Error('時間視窗設定格式錯誤');
-  // A dog that is not on the map is not an error: the selection is kept so the
-  // camera follows it again when that dog reports, but it must be an id.
-  if (settings.focusSlaveId !== null &&
-    !(Number.isInteger(settings.focusSlaveId) && settings.focusSlaveId >= 0))
-    throw new Error('跟隨的狗設定格式錯誤');
-  if (!Array.isArray(settings.hiddenSlaveIds) ||
-    !settings.hiddenSlaveIds.every(id => Number.isInteger(id) && id >= 0))
-    throw new Error('隱藏的狗設定格式錯誤');
   // Old per-role trail settings have different semantics; only missing new
   // fields receive defaults. Malformed saved JSON still fails explicitly.
   return {
@@ -46,10 +39,6 @@ export function validateTrackingPreferences(value) {
     showSlaveMarker: settings.showSlaveMarker,
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
-    focusSlaveId: settings.focusSlaveId,
-    // Stored sorted and without repeats, so the saved value cannot grow every
-    // time the same dog is hidden.
-    hiddenSlaveIds: [...new Set(settings.hiddenSlaveIds)].sort((a, b) => a - b),
   };
 }
 

@@ -80,7 +80,19 @@ function TrackerApp() {
   const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
   const insets = useSafeAreaInsets();
   const [route, setRoute] = useState({ name: 'map', parent: null });
-  const navigate = (name, parent = null) => setRoute({ name, parent });
+  // A dog's card covers the bottom of the live map, tabs included.
+  const [cardOpen, setCardOpen] = useState(false);
+  // The dog whose history 看軌跡 opened: back on the live map, its card opens
+  // again (design: history from a dog's card returns to that card).
+  const [cardHistory, setCardHistory] = useState(null);
+  const [openDogRequest, setOpenDogRequest] = useState(null);
+  const navigate = (name, parent = null) => {
+    if (name === 'map' && route.name === 'history' && cardHistory != null) {
+      setOpenDogRequest({ slaveId: cardHistory, key: Date.now() });
+    }
+    if (name !== 'history') setCardHistory(null);
+    setRoute({ name, parent });
+  };
   const isMap = route.name === 'map';
   const isHistory = route.name === 'history';
   // Both tabs draw on the same persistent map layer; only one of them is live.
@@ -114,12 +126,14 @@ function TrackerApp() {
       'hardwareBackPress',
       () => {
         if (route.name === 'map') handleRootBack();
-        else setRoute({ name: route.parent || 'map', parent: null });
+        else navigate(route.parent || 'map');
         return true;
       },
     );
     return () => subscription.remove();
-  }, [route]);
+    // navigate reads route and cardHistory, both listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, cardHistory]);
 
   let content;
   switch (route.name) {
@@ -193,6 +207,12 @@ function TrackerApp() {
           bottomInset={insets.bottom + NAV_HEIGHT + 20}
           mapProvider={GOOGLE_MAP_PROVIDER}
           fixture={isHistory ? null : fixture}
+          onCardChange={setCardOpen}
+          openDogRequest={openDogRequest}
+          onOpenHistory={slaveId => {
+            setCardHistory(slaveId);
+            setRoute({ name: 'history', parent: null });
+          }}
         />
 
 
@@ -231,12 +251,14 @@ function TrackerApp() {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
-      <BottomNavigation
-        selected={route.parent || route.name}
-        onNavigate={navigate}
-        floating={showsMap}
-        bottomInset={insets.bottom}
-      />
+      {!(isMap && cardOpen) && (
+        <BottomNavigation
+          selected={route.parent || route.name}
+          onNavigate={navigate}
+          floating={showsMap}
+          bottomInset={insets.bottom}
+        />
+      )}
     </SafeAreaView>
   );
 }

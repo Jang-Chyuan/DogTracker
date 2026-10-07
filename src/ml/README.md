@@ -73,8 +73,7 @@ USB 規則是「插 USB 視為室內」的產品假設；室外接行動電源�
 | [inference.js](inference.js) | 時間視窗彙整、缺值處理、森林推論與原始雲端資料轉換 |
 | [model.json](model.json) | 模型版本、特徵、補值參數與 300 棵樹 |
 | [CloudDatabase.js](../cloud/CloudDatabase.js) | 查詢最近已結束且有資料的兩分鐘視窗 |
-| [DogList.js](../map/DogList.js) | 清單環境標籤 |
-| [DeviceDetails.js](../map/DeviceDetails.js) | 詳情環境與模型機率 |
+| [IndoorHold.js](../placement/IndoorHold.js) | 停在原處用環境結果判斷室內（第三版即時地圖不再另外顯示環境標籤；診斷頁 S8 之後顯示） |
 | [Environment.test.js](../../__tests__/Environment.test.js) | USB、缺資料、過期、低信心與犬隻資料隔離測試 |
 
 ## 驗證方式

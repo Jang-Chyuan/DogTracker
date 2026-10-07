@@ -25,7 +25,8 @@ test('a fresh App reads real SQLite and never creates simulated positions', asyn
     await act(async () => {
       renderer = Renderer.create(<App />);
     });
-    expect(JSON.stringify(renderer!.toJSON())).toContain('等待硬體資料');
+    // No dog, no card: the live map shows no simulated position either.
+    expect(renderer!.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
     expect(
       connection.sqlite
         .prepare('SELECT COUNT(*) AS count FROM dog_status')

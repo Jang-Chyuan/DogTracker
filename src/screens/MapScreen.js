@@ -15,15 +15,20 @@ import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
 import { dogColor } from '../map/CloudTracks';
-import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import { useReceiverState } from '../map/useReceiverState';
 import { isOtherReceiver, receiverLink, receiverNumber } from '../map/ReceiverState';
-import { dogMarkers } from '../map/DogMarkers';
-import { coldStartCoordinates, framedCoordinates, phoneFix } from '../map/MapFraming';
+import { dogMarkers, dogName } from '../map/DogMarkers';
+import { coldStartCoordinates, phoneFix } from '../map/MapFraming';
+import DogCard from '../map/DogCard';
+import { ActivityPage, RenameDialog } from '../map/DogCardPages';
+import { dogCard, phoneReading } from '../map/DogCardModel';
+import { useDogCardReadings } from '../map/useDogCardReadings';
+import { cloudClock, dogFreshness } from '../tracking/DogFreshness';
+import { layout } from '../theme/tokens';
 
 // How long the first framing waits for the phone's first position report
 // before framing without it (the launch screen is still up meanwhile).
@@ -48,6 +53,12 @@ export default function MapScreen({
   // Debug builds only (src/dev/ScreenFixtures.js): the clock, the phone's live
   // position and the receiver reader of a named screen state.
   fixture = null,
+  // A dog's card opens or closes (App hides the bottom tabs under it).
+  onCardChange,
+  // 看軌跡: the history query is saved; open the history page for slaveId.
+  onOpenHistory,
+  // { slaveId, key }: open this dog's card (back from its history).
+  openDogRequest = null,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
@@ -55,15 +66,39 @@ export default function MapScreen({
   const [sheetHeight, setSheetHeight] = useState(0);
   const [mapStatus, setMapStatus] = useState(null);
   const [noticeHeight, setNoticeHeight] = useState(0);
-  // Which marker's panel is open: the handler, or one dog by id. Both markers
-  // answer a tap the same way.
+  // What is open: one dog's card on the live map, or a track's panel in
+  // history. Both are answered by a tap on the marker.
   const [selected, setSelected] = useState(null);
   const closeDetails = useCallback(() => setSelected(null), []);
-  // The receiver is not drawn on the map any more; its panel opens from the
-  // receiver row of the card.
-  const openMaster = useCallback(() => setSelected({ kind: 'master' }), []);
-  const openDog = useCallback(slaveId => setSelected({ kind: 'dog', slaveId }), []);
+  const card = useRef(null);
+  // The card's height while it is up (the map buttons sit above it).
+  const [cardHeight, setCardHeight] = useState(0);
+  // Each opening of a card asks the map once to bring that dog into view.
+  const [focusRequest, setFocusRequest] = useState(null);
+  const [cardPage, setCardPage] = useState(null);
+  const [heading, setHeading] = useState(0);
+  // A card sliding away is replaced by a new one (a new key) when a dog is
+  // tapped meanwhile, so the new card rises instead of finishing the close.
+  const cardClosing = useRef(false);
+  const [cardKey, setCardKey] = useState(0);
+  const cardHeightChanged = useCallback(value => {
+    cardClosing.current = !value;
+    setCardHeight(value);
+  }, []);
+  const openDog = useCallback(slaveId => {
+    if (historical) return;
+    if (cardClosing.current) {
+      cardClosing.current = false;
+      setCardKey(value => value + 1);
+    }
+    setSelected(current => (current?.kind === 'dog' && current.slaveId === slaveId ? current
+      : { kind: 'dog', slaveId }));
+    setCardPage(null);
+    setFocusRequest({ slaveId, key: Date.now() });
+  }, [historical]);
   const openTrack = useCallback(name => setSelected({ kind: 'track', name }), []);
+  // Tapping empty map closes the card (sliding away), like swiping it down.
+  const pressMap = useCallback(() => card.current?.close(), []);
   const { point, route, positionSamples, mode } = tracking;
   // Ageing is measured against this clock, not against the newest row: a silent
   // collar changes nothing else on this screen.
@@ -76,14 +111,21 @@ export default function MapScreen({
   const receiverState = useReceiverState(receiverActive, fixture?.readReceiverState);
   // The newest stored packet can be from a receiver used before this one.
   const otherReceiver = isOtherReceiver(point, receiverState);
-  // Its receiver readings (position, battery) are then not this receiver's
-  // either; the dog's own readings in it stay.
-  const sheetTracking = useMemo(() => (otherReceiver ? { ...tracking, point: { ...point,
-    masterLat: null, masterLon: null, masterBatteryValid: false, masterBatteryPercentage: null,
-    masterBatteryMillivolts: null } } : tracking), [otherReceiver, tracking, point]);
   useEffect(() => {
     setSelected(null);
   }, [mode, point.masterId]);
+  // A screen fixture can open one dog's card (card-* states).
+  const fixtureDog = fixture?.openDog ?? null;
+  const fixtureName = fixture?.name ?? null;
+  useEffect(() => {
+    if (fixtureDog != null) openDog(fixtureDog);
+    else setSelected(null);
+  }, [fixtureName, fixtureDog, openDog]);
+  useEffect(() => {
+    if (openDogRequest?.slaveId != null) openDog(openDogRequest.slaveId);
+    // A new request has a new key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDogRequest?.key]);
   const link = receiverLink(receiverState, now);
   // When the user switched this receiver off and on (DogFreshness grace),
   // recorded by the native service whatever screen was open.
@@ -114,10 +156,7 @@ export default function MapScreen({
     [point, positionSamples, route, tracking.preferences.value, now, otherReceiver, link],
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
-  // rows.
-  // The eye hides the markers, not the list: the card must still say which dogs
-  // reported and when.
-  // The handler's phone driving tells the map which dogs ride along.
+  // rows. The handler's phone driving tells the map which dogs ride along.
   const realPhone = useLiveLocation(active && tracking.foreground && !fixture);
   const livePhone = fixture ? fixture.livePhone : realPhone;
   const rideDetector = useRef(null);
@@ -135,63 +174,37 @@ export default function MapScreen({
     [point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, cloudDogs?.holds,
       cloudDogs?.statuses, ride, now],
   );
-  // Each dog's recent BLE route owns its source independently. Other dogs'
-  // packets must not replace it with the cloud copy on every notification.
-  const dogPaths = useMemo(() => [], []);
-  const focusSlaveId = tracking.preferences.value.focusSlaveId;
-  const dogsVisible = tracking.preferences.value.showSlaveMarker;
-  const hiddenSlaveIds = tracking.preferences.value.hiddenSlaveIds;
-  const selectedDogId = selected?.kind === 'dog' ? selected.slaveId : null;
+  const selectedDogId = selected?.kind === 'dog' && !historical ? selected.slaveId : null;
   const dogAliases = history?.preferences.dogAliases;
   const livePresentation = useMemo(() => {
     // The connected pair's single dog marker is not drawn: every dog is one
     // of `dogMarkers`.
     if (!dogs.length) return { ...basePresentation, slave: null, slaveSegments: [], dogMarkers: [], dogs: [] };
-    // Following a dog means the camera reads that dog; the others stay drawn.
-    // A followed dog that is not reporting is ignored rather than forgotten, so
-    // the camera returns to it when its next row arrives. Hiding the markers
-    // does not cancel following: the card still lists the dogs, and a card that
-    // says 跟隨中 while the map ignores it would be a lie.
-    const focused = dogs.find(dog => !dog.stale && dog.slaveId === focusSlaveId) || null;
     // Every dog that has ever had a position is drawn, however old (v3 §6:
-    // grey after 10 minutes, kept after 24 hours). A dog hidden by its own eye
-    // leaves the map but stays in the card.
-    const drawn = dogs.filter(dog => dog.coordinate && !hiddenSlaveIds.includes(dog.slaveId));
-    const marked = focused
-      ? drawn.map(dog => (dog === focused ? { ...dog, focused: true } : dog))
-      : drawn;
+    // grey after 10 minutes, kept after 24 hours). v3 has no hidden dogs and
+    // no following: preferences stored by older versions are ignored.
+    const drawn = dogs.filter(dog => dog.coordinate);
     return {
       ...basePresentation,
-      rangeLines: outOfRangeLines(basePresentation.rangeRing, dogsVisible ? drawn : [], cloudDogs?.ranges),
-      // dogs replaces the single slave marker; positions stays untouched so the
-      // card and camera keep reading the connected pair.
+      rangeLines: outOfRangeLines(basePresentation.rangeRing, drawn, cloudDogs?.ranges),
+      // dogs replaces the single slave marker.
       slave: null,
       slaveSegments: [],
-      dogs: dogsVisible ? marked : [],
-      dogMarkers: dogsVisible ? dogMarkers(drawn, { now, cloud: cloudClockInput, pauses,
-        ranges: cloudDogs?.ranges, aliases: dogAliases, selectedId: selectedDogId }) : [],
-      // Hidden dogs take their line with them, like the markers.
-      dogPaths: dogsVisible
-        ? dogPaths.filter(track => !hiddenSlaveIds.includes(track.slaveId))
-        : [],
-      follow: focused && { slaveId: focused.slaveId, coordinate: focused.coordinate },
-      // The dog chosen to follow, even while it is not reporting.
-      followId: focusSlaveId ?? null,
-      focused: focused ? focused.coordinate : null,
+      dogs: drawn,
+      dogMarkers: dogMarkers(drawn, { now, cloud: cloudClockInput, pauses,
+        ranges: cloudDogs?.ranges, aliases: dogAliases, selectedId: selectedDogId }),
+      dogPaths: [],
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, cloudDogs?.ranges,
-    now, cloudClockInput, pauses, dogAliases, selectedDogId]);
+  }, [basePresentation, dogs, cloudDogs?.ranges, now, cloudClockInput, pauses, dogAliases, selectedDogId]);
   // What the first view (cold start, or a data source switch) frames: the
   // dogs from this phone's own receiver and the phone; a far cloud dog only
-  // with 框住全部 (MapFraming). Following a dog frames that dog.
+  // with 框住全部 (MapFraming).
   const phoneSpot = phoneFix(livePhone);
   const receiverId = receiverState ? receiverNumber(receiverState) : null;
   const phoneKey = phoneSpot ? `${phoneSpot.latitude},${phoneSpot.longitude}` : '';
   const framedPresentation = useMemo(() => ({
     ...livePresentation,
-    cameraPositions: livePresentation.focused
-      ? framedCoordinates([livePresentation.focused])
-      : coldStartCoordinates(livePresentation.dogMarkers, phoneSpot, receiverId),
+    cameraPositions: coldStartCoordinates(livePresentation.dogMarkers, phoneSpot, receiverId),
     // phoneKey stands for phoneSpot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [livePresentation, phoneKey, receiverId]);
@@ -207,8 +220,8 @@ export default function MapScreen({
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {
-    // The live map is live only: what it draws is decided by the card's own
-    // eyes and time window, never by the history tab's parameters.
+    // The live map is live only: what it draws is never decided by the
+    // history tab's parameters.
     if (!historical) return { ...framedPresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
     const data = history.data;
     // Playback draws the same tracks up to the cursor, so the map never shows a
@@ -240,33 +253,96 @@ export default function MapScreen({
     return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], cameraPositions, historyTracks: tracks };
   }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, framedPresentation,
     playbackAt, avatars]);
-  const { master } = presentation.positions;
-  // A panel closes itself when its subject leaves the map: a dog that stopped
-  // reporting, or the handler's marker being hidden.
-  const detailSubject = useMemo(() => {
-    if (!selected) return null;
-    if (historical) {
-      if (selected.kind !== 'track') return null;
-      const track = (presentation.historyTracks || [])
-        .find(item => item.name === selected.name);
-      return track ? { kind: 'track', track } : null;
+  // A history track's panel (the live map's dogs answer with their card).
+  const trackSubject = useMemo(() => {
+    if (!historical || selected?.kind !== 'track') return null;
+    const track = (presentation.historyTracks || []).find(item => item.name === selected.name);
+    return track ? { kind: 'track', track } : null;
+  }, [selected, historical, presentation.historyTracks]);
+  // ---- the dog's card (A3) ------------------------------------------------
+  // The card belongs to a dog drawn on the live map: it goes when the dog
+  // does (a dog that never had a position has no card).
+  const cardDog = useMemo(() => (selectedDogId == null || !active ? null
+    : dogs.find(dog => dog.slaveId === selectedDogId && dog.coordinate) || null), [selectedDogId, active, dogs]);
+  const cardOpen = !!cardDog;
+  useEffect(() => {
+    if (selectedDogId != null && !cardDog) setSelected(null);
+  }, [selectedDogId, cardDog]);
+  useEffect(() => {
+    if (!cardOpen) {
+      setCardHeight(0);
+      setCardPage(null);
     }
-    if (selected.kind === 'master') return master ? { kind: 'master' } : null;
-    const dog = dogs.find(item => item.slaveId === selected.slaveId);
-    return dog ? { kind: 'dog', dog } : null;
-  }, [selected, historical, master, dogs, presentation.historyTracks]);
+    onCardChange?.(cardOpen);
+  }, [cardOpen, onCardChange]);
+  const database = tracking.cloudDatabase;
+  const readCardRows = useMemo(() => fixture?.readCardRows
+    ?? (database?.dogCardRows ? (slaveId, since) => database.dogCardRows(cloudOwner ?? null, slaveId, since) : null),
+  [fixture?.readCardRows, database, cloudOwner]);
+  const readings = useDogCardReadings(cardOpen ? readCardRows : null, cardDog?.slaveId ?? null, now);
+  const cardModel = useMemo(() => {
+    if (!cardDog) return null;
+    const freshness = dogFreshness(cardDog, { now, cloud: cloudClockInput, pauses });
+    return dogCard(cardDog, {
+      freshness,
+      range: cloudDogs?.ranges?.[cardDog.slaveId] ?? null,
+      battery: readings.battery,
+      activity: readings.activity,
+      phone: phoneReading(livePhone, now),
+      now,
+      reference: freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
+      name: dogName(cardDog.slaveId, dogAliases),
+    });
+  }, [cardDog, now, cloudClockInput, pauses, cloudDogs?.ranges, readings, livePhone, dogAliases]);
+  const closedCard = useCallback(() => setSelected(current => (current?.kind === 'dog' ? null : current)), []);
+  const [trackBusy, setTrackBusy] = useState(false);
+  // 看軌跡: today's path of this dog. The query is stored first, so the
+  // history page never opens on the previous one.
+  const openTrackHistory = async () => {
+    if (!cardDog || !history?.save || trackBusy) return;
+    const dog = cardDog;
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    // Every receiver known to have heard this dog, so a day relayed by several
+    // receivers is not cut down to the one heard last.
+    const heard = (history.devices || []).filter(pair => pair.slave === dog.slaveId).map(pair => pair.master);
+    const masters = [...new Set([...heard, ...(dog.masterId != null ? [dog.masterId] : [])])];
+    setTrackBusy(true);
+    const saved = await history.save({
+      ...history.preferences,
+      timeMode: 'fixed', startAt: start.getTime(), endAt: Math.max(now, start.getTime() + 60000),
+      slaves: [dog.slaveId], client: true,
+      source: dog.fixSource === 'cloud' ? 'cloud' : 'ble',
+      masters: masters.length ? masters : history.preferences.masters,
+    });
+    setTrackBusy(false);
+    if (!saved) return;
+    setSelected(null);
+    onOpenHistory?.(dog.slaveId);
+  };
+  const rename = async name => {
+    if (!cardDog || !history?.save) return false;
+    const aliases = { ...(history.preferences.dogAliases || {}) };
+    // Empty restores 「狗 4」 (HistoryDatabase drops empty names).
+    aliases[cardDog.slaveId] = name;
+    const saved = await history.save({ ...history.preferences, dogAliases: aliases });
+    if (saved) setCardPage(null);
+    return saved;
+  };
+  const closePage = useCallback(() => setCardPage(null), []);
+  const focusDog = useMemo(() => (cardDog && cardHeight && focusRequest?.slaveId === cardDog.slaveId
+    ? { key: focusRequest.key, coordinate: cardDog.coordinate } : null),
+  // Asked once per opening, after the card has its height.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [focusRequest, !!cardHeight, cardDog?.slaveId]);
   // History notices live in the history card, next to the controls that cause
   // them; the map keeps only what belongs to the map itself.
-  // The card names the colours next to the eyes that control them; a banner
-  // over the map only covered the map.
   const messages = [];
   if (historical && Number.isFinite(playbackAt))
     messages.push(`回放中：${new Date(playbackAt).toLocaleString()}`);
   if (mapStatus) messages.push(mapStatus);
   if (!historical && cloudDogs?.error)
     messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
-  // Which dog came from where is written on its row in the card and in its
-  // panel; repeating it over the map only covered the map.
   if (phone?.error)
     messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
   if (
@@ -290,11 +366,13 @@ export default function MapScreen({
       `正式資料儲存失敗：${tracking.realWriteError}。部分硬體資料未能儲存，不會自動重送。`,
     );
   if (tracking.preferences.error)
-    messages.push(
-      `追蹤設定失敗：${tracking.preferences.error}。請上滑卡片重試。`,
-    );
+    messages.push(`地圖設定讀取失敗：${tracking.preferences.error}。重新開啟 App 重試。`);
   const top = insets.top + 12;
   const controlsTop = top + 44 + (messages.length ? noticeHeight + 8 : 0);
+  // The live map's padding stays put (an open card covers the map, it does
+  // not move it); its buttons sit 12dp above the open card, else above the tabs.
+  const mapBottom = historical ? bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12 : bottomInset;
+  const coverBottom = !historical && cardHeight ? cardHeight + layout.floatingGap : 0;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
@@ -303,7 +381,7 @@ export default function MapScreen({
         source={historical ? 'history:' + history.key : fixture ? `${mode}:fixture:${fixture.name}` : mode}
         presentation={presentation}
         topInset={controlsTop}
-        bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
+        bottomInset={mapBottom}
         onStatus={setMapStatus}
         onSnapshotReady={onSnapshotReady}
         livePhone={livePhone}
@@ -324,6 +402,10 @@ export default function MapScreen({
         phoneEnabled={!!phone?.enabled}
         onDogPress={openDog}
         onTrackPress={openTrack}
+        onMapPress={cardOpen ? pressMap : undefined}
+        onHeading={setHeading}
+        focusDog={focusDog}
+        coverBottom={coverBottom}
       />
       {(historical || !tracking.preferences.ready) && <View style={[styles.source, { top }]}>
         <View style={styles.statusDot} />
@@ -351,7 +433,7 @@ export default function MapScreen({
           </ScrollView>
         </View>
       )}
-      {historical ? (
+      {historical && (
         <HistorySheet
           history={history}
           download={historyDownload}
@@ -361,30 +443,40 @@ export default function MapScreen({
           topInset={controlsTop}
           onHeight={setSheetHeight}
         />
-      ) : (
-        <TrackingSheet
-          onDogDetails={openDog}
-          onReceiverDetails={openMaster}
-          showRouteControls={false}
-          tracking={sheetTracking}
-          master={master}
-          dogs={dogs}
-          dogAliases={history?.preferences.dogAliases}
-          bottomInset={bottomInset}
-          topInset={controlsTop}
-          onHeight={setSheetHeight}
+      )}
+      {cardModel && (
+        <DogCard
+          key={cardKey}
+          ref={card}
+          card={cardModel}
+          avatar={avatars[cardModel.slaveId]}
+          heading={heading}
+          onHeight={cardHeightChanged}
+          onClosed={closedCard}
+          onEdit={() => setCardPage('rename')}
+          onActivity={() => setCardPage('activity')}
+          onTrack={openTrackHistory}
+          trackBusy={trackBusy}
         />
       )}
-      {detailSubject && (
+      {cardModel && cardPage === 'activity' && (
+        <ActivityPage name={cardModel.name} slaveId={cardModel.slaveId} database={database} owner={cloudOwner}
+          active={active && tracking.foreground && !!tracking.ready?.real} dogAliases={dogAliases}
+          onBack={closePage} />
+      )}
+      {cardModel && cardPage === 'rename' && (
+        <RenameDialog name={cardModel.name} initial={dogAliases?.[cardModel.slaveId] || ''}
+          defaultName={`狗 ${cardModel.slaveId}`} onSave={rename} onCancel={closePage} />
+      )}
+      {trackSubject && (
         <DeviceDetails
           activityOwner={cloudOwner}
           activityActive={active}
           tracking={tracking}
-          subject={detailSubject}
+          subject={trackSubject}
           dogAliases={history?.preferences.dogAliases}
-          master={master}
           topInset={controlsTop}
-          bottomInset={bottomInset + SHEET_COLLAPSED_HEIGHT}
+          bottomInset={bottomInset}
           onClose={closeDetails}
         />
       )}
