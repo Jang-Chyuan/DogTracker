@@ -15,7 +15,7 @@ import { budgetHistory, budgetHistoryTracks, groupHistoryStreams } from './Histo
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar', 'read',
-  'listDevices', 'listDays', 'hasPhoneTrack'];
+  'listDevices', 'listDays', 'hasPhoneTrack', 'phoneRouteSince'];
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
@@ -177,6 +177,24 @@ export function createHistoryDatabase(db) {
       const found = rows(await db.executeAsync(
         'SELECT id FROM myLocationTracker LIMIT 1'));
       return found.length > 0;
+    },
+    /**
+     * This phone's own recorded positions from `since` on, after the cursor
+     * { time, id } (oldest first, at most `limit`): what 「今天 x km」 adds up.
+     * The pipeline's coordinates, not the display animation's.
+     */
+    async phoneRouteSince(since, cursor = null, limit = 2000) {
+      const exists = rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
+      if (!exists.length) return [];
+      const time = Math.max(Number(since) || 0, Number(cursor?.time) || 0);
+      const id = Number(cursor?.time) >= Number(since) ? Number(cursor?.id) || 0 : 0;
+      return rows(await db.executeAsync(
+        `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy FROM myLocationTracker
+         WHERE recorded_at >= ? AND (recorded_at > ? OR (recorded_at = ? AND id > ?))
+         ORDER BY recorded_at, id LIMIT ?`, [Number(since) || 0, time, time, id, limit]))
+        .map(row => ({ id: Number(row.id), time: Number(row.time), latitude: Number(row.latitude),
+          longitude: Number(row.longitude), accuracy: row.accuracy == null ? null : Number(row.accuracy) }));
     },
     /**
      * Which Master/Slave pairs this phone actually holds for a source. The card

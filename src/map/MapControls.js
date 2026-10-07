@@ -6,7 +6,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from './Glyph';
 import DogAvatar from '../dogs/DogAvatar';
-import { colors, layout, motion, radius, shadow, size as sizes, type } from '../theme/tokens';
+import { colors, layout, motion, radius, shadow, size as sizes, tabularNumbers, type } from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
 
@@ -25,9 +25,10 @@ export function PressScale({ style, children, onPress, ...rest }) {
 /**
  * 框住全部 and 我的位置: right 16dp, `bottom` above the card (or the screen
  * bottom), 12dp apart. 我的位置 turns iconMuted without a phone fix; it can
- * still be pressed, and says why (onMyLocation decides).
+ * still be pressed, and says why (onMyLocation decides). 「今天 x km」
+ * (`today`, from TodayDistance.todayPill) sits left of 我的位置, 12dp apart.
  */
-export function MapButtons({ bottom, phoneAvailable, onFrameAll, onMyLocation }) {
+export function MapButtons({ bottom, phoneAvailable, onFrameAll, onMyLocation, today = null, onToday }) {
   // They ride up and down with the card (220 ms, motion.cardRise) instead of
   // jumping ahead of it.
   const lift = useRef(new Animated.Value(bottom)).current;
@@ -43,12 +44,51 @@ export function MapButtons({ bottom, phoneAvailable, onFrameAll, onMyLocation })
         accessibilityHint="把所有狗和手機放進畫面" onPress={onFrameAll} style={styles.round}>
         <Glyph name="frame" color={colors.text} size={sizes.icon.map} />
       </PressScale>
-      <PressScale testID="map-my-location" accessibilityRole="button" accessibilityLabel="我的位置"
-        accessibilityHint={phoneAvailable ? '把地圖移到手機的位置' : '手機沒有定位'}
-        onPress={onMyLocation} style={styles.round}>
-        <Glyph name="locate" color={phoneAvailable ? colors.phone : colors.iconMuted} size={sizes.icon.map} />
-      </PressScale>
+      <View style={styles.row} pointerEvents="box-none">
+        {today && <TodayPill value={today} onPress={onToday} />}
+        <PressScale testID="map-my-location" accessibilityRole="button" accessibilityLabel="我的位置"
+          accessibilityHint={phoneAvailable ? '把地圖移到手機的位置' : '手機沒有定位'}
+          onPress={onMyLocation} style={styles.round}>
+          <Glyph name="locate" color={phoneAvailable ? colors.phone : colors.iconMuted} size={sizes.icon.map} />
+        </PressScale>
+      </View>
     </Animated.View>
+  );
+}
+
+/**
+ * 「今天 x km」 (A1/A2): 48dp high, 16dp sides, fully round; a 20dp walking
+ * person (phone colour; iconMuted when recording is off; iconMuted with a
+ * slash when the phone has no location) and 16sp bold tabular figures.
+ * Opens my route (history).
+ */
+export function TodayPill({ value, onPress }) {
+  const iconColor = value.icon === 'walk' ? colors.phone : colors.iconMuted;
+  return (
+    <PressScale testID="map-today" accessibilityRole="button" accessibilityLabel={value.label}
+      accessibilityHint="看我今天的路線" onPress={onPress} style={styles.pill}>
+      <View testID={`map-today-icon-${value.icon}`}>
+        <Glyph name={value.icon === 'walk-off' ? 'walk-off' : 'walk'} color={iconColor} size={sizes.icon.walk} />
+      </View>
+      <Text style={[styles.pillText, value.muted && styles.pillMuted]} numberOfLines={1}>{value.text}</Text>
+    </PressScale>
+  );
+}
+
+/**
+ * The settings gear (A1 top right): 48dp round, fixed 8dp under the status
+ * bar and 16dp from the right; it does not move with the card. `alert` lights
+ * the red dot (049 decides when).
+ */
+export function SettingsGear({ top, alert = false, alertLabel = null, onPress }) {
+  return (
+    <View style={[styles.gear, { top }]} pointerEvents="box-none">
+      <PressScale testID="map-settings" accessibilityRole="button"
+        accessibilityLabel={alert && alertLabel ? alertLabel : '設定'} onPress={onPress} style={styles.round}>
+        <Glyph name="gear" color={colors.text} size={sizes.icon.map} />
+        {alert && <View testID="map-settings-dot" style={styles.gearDot} />}
+      </PressScale>
+    </View>
   );
 }
 
@@ -113,6 +153,20 @@ export function MapTip({ message, bottom, onDone }) {
 
 const styles = StyleSheet.create({
   buttons: { position: 'absolute', right: layout.screenEdge, gap: layout.floatingGap, alignItems: 'flex-end' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: layout.floatingGap },
+  pill: {
+    height: sizes.todayPill.height, paddingHorizontal: sizes.todayPill.paddingH, borderRadius: radius.full,
+    backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: sizes.todayPill.iconGap,
+    ...shadow.floating,
+  },
+  pillText: { ...type.status, ...tabularNumbers, color: colors.text },
+  pillMuted: { color: colors.textMuted },
+  gear: { position: 'absolute', right: layout.screenEdge },
+  // The red dot's slot (049): top right of the 48dp circle, ringed in white.
+  gearDot: {
+    position: 'absolute', top: 6, right: 6, width: 10, height: 10, borderRadius: 5,
+    backgroundColor: colors.critLine, borderWidth: 2, borderColor: colors.surface,
+  },
   round: {
     width: sizes.floatingButton, height: sizes.floatingButton, borderRadius: radius.button,
     backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadow.floating,

@@ -1,6 +1,9 @@
 import React from 'react';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
+// The gear outline of the design's mockups (24×24).
+const GEAR = 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z';
+
 /**
  * The small icons the card uses instead of repeating words: where a row came
  * from, and what its numbers are. Drawn as paths on a 24×24 grid, the way icon
@@ -80,6 +83,22 @@ export default function Glyph({ name, color, size = 16, level = null }) {
         // The card's direction arrow, pointing up (north on screen); the card
         // turns it to the dog's bearing.
         <Path d="M12 20V4M5.5 10.5 12 4l6.5 6.5" {...stroke} />
+      )}
+      {name === 'gear' && (
+        // 設定 (A1 top right): the mockups' gear.
+        <>
+          <Path d={GEAR} {...stroke} />
+          <Circle cx={12} cy={12} r={3} {...stroke} />
+        </>
+      )}
+      {(name === 'walk' || name === 'walk-off') && (
+        // 「今天 x km」: a walking person; with a slash when the phone has
+        // no location (A2).
+        <>
+          <Circle cx={13} cy={4.5} r={1.8} {...stroke} />
+          <Path d="M10 21l2-6 3 3v3M8 12l2-4 4 1 2 4 2 1M12 15l-1-4" {...stroke} />
+          {name === 'walk-off' && <Path d="M3 3l18 18" {...stroke} />}
+        </>
       )}
       {name === 'chevron' && <Path d="M9 5l7 7-7 7" {...stroke} />}
       {name === 'back' && <Path d="M15 5l-7 7 7 7" {...stroke} />}

@@ -14,6 +14,8 @@ export const MAP_LOAD_TIMEOUT_MS = 15000;
  * @property {boolean} dataReady
  * @property {boolean} framingReady  false while what is framed is still unknown
  * @property {boolean} phoneEnabled
+ * @property {Object} [today]  「今天 x km」 (TodayDistance.todayPill), drawn beside 我的位置
+ * @property {Function} [onToday]
  *
  * A provider renderer receives only provider-neutral presentation and UI state.
  * It must not query SQLite or reinterpret route and fallback rules.
