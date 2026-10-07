@@ -141,6 +141,18 @@ function GoogleTrackingMapRenderer({
   livePhone,
   onDogPress,
   onTrackPress,
+  // A tap on the map itself (not on a dog): closes the open card.
+  onMapPress,
+  // The map's rotation in degrees (the card's direction arrow follows it).
+  onHeading,
+  // { key, coordinate }: a dog's card just opened; bring the dog into view
+  // above it if the card or the screen edge hides it (once per key).
+  focusDog,
+  // How much of the bottom an open card covers (0: none). The map's own
+  // padding stays at bottomInset — changing it would shift the whole map each
+  // time a card opens — so only what is drawn over the map (buttons, hints,
+  // the overlap menu) and the moves the user asks for keep clear of the card.
+  coverBottom = 0,
   supported,
   configured,
 }) {
@@ -296,38 +308,11 @@ function GoogleTrackingMapRenderer({
     mountedMap,
     onStatus,
   ]);
-  // Following a dog re-centres the map on each new position of that dog, at the
-  // user's own zoom. Panning in between is left alone — the next position pulls
-  // the camera back — and the card's dog row is what ends following.
-  const follow = presentation.follow || null;
-  const followed = useRef('');
-  // The dog chosen to follow, kept while it is not reporting, so its return
-  // is not mistaken for a new choice that overrides a drag.
-  const followedDog = useRef(null);
-  useEffect(() => {
-    if (!usable || !follow) {
-      followed.current = '';
-      phoneCentered.current = false;
-      if (!presentation.followId) followedDog.current = null;
-      return;
-    }
-    if (phoneCentered.current) return;
-    const key = `${follow.slaveId}:${follow.coordinate.latitude},${follow.coordinate.longitude}`;
-    if (followed.current === key) return;
-    // Choosing a dog to follow is the user's own move; after that, once the
-    // user has dragged the map, new positions no longer move it (v3: the app
-    // never moves a map the user moved).
-    const newDog = followedDog.current !== follow.slaveId;
-    followedDog.current = follow.slaveId;
-    followed.current = key;
-    if (newDog) interacted.current = false;
-    else if (interacted.current) return;
-    mapRef.current?.animateCamera({ center: follow.coordinate }, { duration: motion.camera.duration });
-    // presentation.followId: the chosen dog even while it is not reporting.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usable, follow]);
   const priorSource = useRef(source);
   const sourceToFit = useRef(null);
+  // Bumped after each framing fit, so a card's dog is brought into view only
+  // once the new source has been framed (never framed from the old view).
+  const [fitCount, setFitCount] = useState(0);
   useEffect(() => {
     if (priorSource.current === source) return;
     priorSource.current = source;
@@ -353,6 +338,7 @@ function GoogleTrackingMapRenderer({
       edgePadding: presentation.historyTracks ? { top: 24, right: 24, bottom: 24, left: 24 } : padding,
     });
     sourceToFit.current = null;
+    setFitCount(value => value + 1);
     if (needsFirstPositionFit) {
       setNeedsFirstPositionFit(false);
       // The first framing is in place: the launch screen can go once it is
@@ -381,9 +367,10 @@ function GoogleTrackingMapRenderer({
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !presentation.historyTracks;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
+  const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const hints = useMemo(() => (live && screenPoints ? edgeHints(dogMarkers, screenPoints, {
-    width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: bottomInset,
-  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, topInset, bottomInset]);
+    width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: overlayBottom,
+  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, topInset, overlayBottom]);
   // When the map's own blue dot last reported (kept coarse: one update a
   // minute is enough to know whether there is a fix).
   const [nativeFixAt, setNativeFixAt] = useState(null);
@@ -413,14 +400,48 @@ function GoogleTrackingMapRenderer({
     if (!usable || !coordinates?.length) return;
     takeCamera();
     const points = framedCoordinates(coordinates);
-    // 300 ms (motion.camera), inside the map's own padding.
-    const region = regionForFrame(points, padding, {
+    // Inside the map's own padding, and above an open card.
+    const framing = { ...padding, bottom: padding.bottom + overlayBottom - bottomInset };
+    // 300 ms (motion.camera).
+    const region = regionForFrame(points, framing, {
       width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
       height: cursorLayout.height - topInset - bottomInset,
     });
     if (region) mapRef.current?.animateToRegion(region, motion.camera.duration);
-    else mapRef.current?.fitToCoordinates(points, { animated: true, edgePadding: padding });
+    else mapRef.current?.fitToCoordinates(points, { animated: true, edgePadding: framing });
   };
+  // A dog whose card just opened: when the card (or a screen edge) covers it,
+  // move the map so it shows in the middle of what is left above the card
+  // (300 ms). Asked once per opening.
+  const focused = useRef(null);
+  useEffect(() => {
+    if (!focusDog || focused.current === focusDog.key || !usable || !cursorLayout.height) return;
+    // A source switch (or the first view) is still to be framed: wait for it,
+    // or this move would count as the user's and cancel that framing.
+    if ((sourceToFit.current === source && !interacted.current) || needsFirstPositionFit) return;
+    focused.current = focusDog.key;
+    const map = mapRef.current;
+    if (!map?.pointForCoordinate) return;
+    const { width, height } = cursorLayout;
+    map.pointForCoordinate(focusDog.coordinate).then(async point => {
+      const margin = sizes.marker.attention + layout.framePadding;
+      const hidden = !point || point.x < margin || point.x > width - margin
+        || point.y < topInset + margin || point.y > height - overlayBottom - margin;
+      if (!hidden || focused.current !== focusDog.key) return;
+      // The camera's centre is the middle of the padded map; move it by how
+      // far the dog is from where it should be.
+      const target = { x: width / 2, y: (topInset + height - overlayBottom) / 2 };
+      const middle = { x: width / 2, y: topInset + (height - topInset - bottomInset) / 2 };
+      const moved = point && map.coordinateForPoint
+        ? await map.coordinateForPoint({ x: middle.x + point.x - target.x, y: middle.y + point.y - target.y })
+        : null;
+      if (focused.current !== focusDog.key) return;
+      takeCamera();
+      map.animateCamera({ center: moved || focusDog.coordinate }, { duration: motion.camera.duration });
+    }).catch(() => {});
+    // takeCamera only flips refs; the effect runs per opening (focusDog.key).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDog, usable, cursorLayout.height, overlayBottom, fitCount, needsFirstPositionFit]);
   const pressFrameAll = () => frame(frameAllCoordinates(dogMarkers, currentPhone()));
   const pressMyLocation = () => {
     const position = currentPhone();
@@ -450,7 +471,7 @@ function GoogleTrackingMapRenderer({
   const leadSize = picker && dogMarkers.find(marker => marker.slaveId === picker.lead)?.size;
   const pickerPlace = pickerMarkers && leadPoint ? overlapMenuPlace({ ...leadPoint, size: leadSize },
     // Above the card: the card is drawn over the map and would cover it.
-    pickerMarkers.length, { width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: bottomInset })
+    pickerMarkers.length, { width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: overlayBottom })
     : null;
   // The menu goes when its dogs no longer overlap, on a source switch, and
   // when a dog is opened some other way (its card row).
@@ -476,6 +497,8 @@ function GoogleTrackingMapRenderer({
           }
           mapType="standard"
           moveOnMarkerPress={false}
+          // Google reports a tap only (a drag or a long press is not one).
+          onPress={onMapPress ? () => onMapPress() : undefined}
           showsUserLocation={ready && foreground && phoneEnabled && !(livePhone?.running && livePhone.position)}
           userLocationPriority="high"
           userLocationUpdateInterval={1000}
@@ -519,8 +542,10 @@ function GoogleTrackingMapRenderer({
                 activeInstance.current === instance &&
                 cameraRead.current === request &&
                 camera
-              )
+              ) {
                 savedView.current = { source, camera };
+                if (Number.isFinite(camera.heading)) onHeading?.(camera.heading);
+              }
             }).catch(() => {
               // Keep the last successful camera snapshot if native teardown
               // races this read. A map with no snapshot uses SQLite framing.
@@ -660,10 +685,10 @@ function GoogleTrackingMapRenderer({
       {live && configured && foreground && (loaded || timedOut) && (
         // 框住全部 and 我的位置 (A1), 12dp above the card; above the tip
         // while it shows.
-        <MapButtons bottom={bottomInset + (tip ? sizes.floatingButton + layout.floatingGap : 0)}
+        <MapButtons bottom={overlayBottom + (tip ? sizes.floatingButton + layout.floatingGap : 0)}
           phoneAvailable={phoneAvailable} onFrameAll={pressFrameAll} onMyLocation={pressMyLocation} />
       )}
-      {live && <MapTip message={tip} bottom={bottomInset} onDone={clearTip} />}
+      {live && <MapTip message={tip} bottom={overlayBottom} onDone={clearTip} />}
       {pickerMarkers && pickerPlace && (
         <OverlapPicker markers={pickerMarkers} place={pickerPlace} avatars={presentation.dogAvatars || {}}
           onClose={closePicker}

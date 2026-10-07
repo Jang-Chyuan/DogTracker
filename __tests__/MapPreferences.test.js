@@ -2,6 +2,7 @@ import {
   createTrackingPreferences,
   DEFAULT_TRACKING_PREFERENCES,
   validateTrackingPreferences,
+  DROPPED_PREFERENCES,
   WINDOW_PRESETS,
 } from '../src/tracking/TrackingPreferences';
 import { createSettingsDatabase } from '../src/database/SettingsDatabase';
@@ -73,8 +74,6 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showSlaveMarker: false,
     showTrails: true,
     windowMinutes: 2,
-    focusSlaveId: null,
-    hiddenSlaveIds: [],
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -126,8 +125,6 @@ test('every setting survives a new controller and shares no tracking-row writes'
       showSlaveMarker: true,
       showTrails: true,
       windowMinutes: 30,
-      focusSlaveId: 4,
-      hiddenSlaveIds: [6],
     };
     await first.save(value);
     await first.close();
@@ -181,13 +178,13 @@ test('the home window only accepts the confirmed presets and survives a reload',
   }
 });
 
-test('per-dog eyes are stored sorted, without repeats, and reject junk', () => {
-  expect(validateTrackingPreferences({}).hiddenSlaveIds).toEqual([]);
-  expect(validateTrackingPreferences({ hiddenSlaveIds: [6, 2, 6] }).hiddenSlaveIds)
-    .toEqual([2, 6]);
-  for (const invalid of [null, 4, ['4'], [1.5], [-1]]) {
-    expect(() => validateTrackingPreferences({ hiddenSlaveIds: invalid }))
-      .toThrow('隱藏的狗');
+test('the followed dog and hidden dogs of older versions are read and dropped (v3)', () => {
+  // v3 draws every dog and never follows one: whatever an older version
+  // stored, even a malformed value, is neither obeyed nor an error.
+  for (const stored of [{ focusSlaveId: 4, hiddenSlaveIds: [6, 2] }, { focusSlaveId: 'x', hiddenSlaveIds: null }]) {
+    const value = validateTrackingPreferences(stored);
+    expect(value).toEqual(DEFAULT_TRACKING_PREFERENCES);
+    for (const key of DROPPED_PREFERENCES) expect(value).not.toHaveProperty(key);
   }
 });
 

@@ -24,6 +24,9 @@ import { lastTimeText } from '../src/tracking/DogFreshness';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
 import { coldStartCoordinates, frameAllCoordinates, framePadding, phoneFix } from '../src/map/MapFraming';
 import { edgeHints } from '../src/map/EdgeHints';
+import { CARD_ACTIVITY_LOOKBACK_MS, dogCardReadings } from '../src/activity/DogCardReadings';
+import { dogCard, phoneReading } from '../src/map/DogCardModel';
+import { cloudClock, dogFreshness } from '../src/tracking/DogFreshness';
 
 // Where each dog lands on a 392×830 dp screen (Pixel 4a) once `coordinates`
 // are fitted into the part left by the top controls (100 dp) and the card
@@ -377,12 +380,14 @@ test('a fixture replaces the map inputs and leaves them untouched when off', asy
   expect(inputs.tracking.point).toBe(fixture.tracking.point);
   expect(inputs.tracking.ready.real).toBe(true);
   expect(inputs.tracking.errors.real).toBeNull();
-  expect(inputs.tracking.preferences.value.hiddenSlaveIds).toEqual([]);
-  expect(inputs.tracking.preferences.value.focusSlaveId).toBeNull();
-  // Buttons on a fixture screen never save into the real preferences.
+  // Buttons on a fixture screen never save into the real preferences, history
+  // query or dog names (the card's 看軌跡 and rename).
   expect(inputs.tracking.saveTrackingPreferences).not.toBe(live.tracking.saveTrackingPreferences);
-  await inputs.tracking.saveTrackingPreferences({ hiddenSlaveIds: [6] });
+  await inputs.tracking.saveTrackingPreferences({ showTrails: true });
   expect(live.tracking.saveTrackingPreferences).not.toHaveBeenCalled();
+  live.history.save = jest.fn();
+  expect(await applyScreenFixture(fixture, live).history.save({ slaves: [6] })).toBe(true);
+  expect(live.history.save).not.toHaveBeenCalled();
   expect(inputs.phone.enabled).toBe(true);
   expect(inputs.cloudDogs).toBe(fixture.cloudDogs);
   expect(inputs.cloudSync.ownerId).not.toBe('real-user');
@@ -475,6 +480,12 @@ test.each(FIXTURE_NAMES)('%s: the rows read the same as the real CloudDatabase r
     store.ingest(await cloud.holdRows(owner, fixture.now - HOLD_LOOKBACK_MS, null));
     expect(store.holds(fixture.now)).toEqual(fixture.cloudDogs.holds);
     expect(store.ranges()).toEqual(fixture.cloudDogs.ranges);
+    // A card fixture's activity and battery readings, as the open card reads them.
+    if (fixture.openDog != null) {
+      const cardSince = fixture.now - CARD_ACTIVITY_LOOKBACK_MS;
+      expect(dogCardReadings(await cloud.dogCardRows(owner, fixture.openDog, cardSince), fixture.now))
+        .toEqual(dogCardReadings(await fixture.readCardRows(fixture.openDog, cardSince), fixture.now));
+    }
   } finally { db.close(); }
 });
 
@@ -528,13 +539,13 @@ test('the real map draws a fixture: receiver 3 neither drawn nor its battery sho
   expect(good.markers.some(id => id.endsWith('-master'))).toBe(false);
   expect(good.rings).toBe(1);
   expect(good.redLines).toBe(0);
-  expect(good.text).toContain('64%');
+  // The receiver's own battery is not on the map (settings → receiver, S2).
+  expect(good.text).not.toContain('64%');
   const connecting = await renderFixture('receiver-connecting');
   expect(connecting.markers).toEqual(expect.arrayContaining(['real:fixture:receiver-connecting-dog-4',
     'real:fixture:receiver-connecting-dog-6', 'real:fixture:receiver-connecting-dog-8']));
   expect(connecting.markers.some(id => id.endsWith('-master'))).toBe(false);
   expect(connecting.rings).toBe(0);
-  expect(connecting.text).not.toContain('64%');
   const indoor = await renderFixture('dog-indoor');
   expect(indoor.text).toContain('小黑');
   expect(indoor.text).toContain('室內');
@@ -552,4 +563,103 @@ test('the real map draws the range ring and the red line only where the rules sa
   expect(await counts('range-stale-inside')).toEqual([1, 0]);
   expect(await counts('receiver-disconnected')).toEqual([0, 0]);
   expect(await counts('cloud-only')).toEqual([0, 0]);
+});
+
+// ---- the dog's card (046) ---------------------------------------------------
+
+// The card MapScreen opens for a card-* fixture: the same calls it makes.
+async function card(name) {
+  const state = await screen(name);
+  const { fixture } = state;
+  const dog = state.dog(fixture.openDog);
+  const now = fixture.now;
+  const freshness = dogFreshness(dog, { now, cloud: fixture.cloudSync });
+  const readings = dogCardReadings(await fixture.readCardRows(dog.slaveId, now - CARD_ACTIVITY_LOOKBACK_MS), now);
+  const model = dogCard(dog, { freshness, range: fixture.cloudDogs.ranges[dog.slaveId] ?? null,
+    battery: readings.battery, activity: readings.activity, phone: phoneReading(fixture.livePhone, now), now,
+    reference: freshness.source === 'cloud' ? cloudClock(fixture.cloudSync, now) : now,
+    name: state.label(dog) });
+  const rows = Object.fromEntries(model.rows.map(row => [row.key, row]));
+  return { model, rows, keys: model.rows.map(row => row.key), state };
+}
+
+test('card-ok: in range, 62%, resting 18 minutes; no 位置 row', async () => {
+  const { model, rows, keys } = await card('card-ok');
+  expect(model.name).toBe('豆豆');
+  expect(model.sourceLabel).toBe('訊號源 4');
+  expect(keys).toEqual(['battery', 'range', 'activity']);
+  expect(rows.battery).toMatchObject({ value: '62%', tone: null });
+  expect(rows.range).toMatchObject({ value: '在範圍內', tone: null });
+  expect(rows.activity).toMatchObject({ value: '休息中', detail: '已 18 分鐘', activityTone: 'rest', at: null });
+  expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機' });
+});
+
+test('card-near-edge (A3): 快離開接收範圍 in amber, no distance written', async () => {
+  const { rows, keys, state } = await card('card-near-edge');
+  expect(keys).toEqual(['battery', 'range', 'activity']);
+  expect(rows.range).toMatchObject({ value: '快離開接收範圍', tone: 'warn' });
+  // The marker itself does not change for 快離開.
+  expect(state.marker(4)).toMatchObject({ problem: false });
+  expect(rows.activity).toMatchObject({ value: '休息中', detail: '已 18 分鐘' });
+});
+
+test('card-problems (A3b): every problem row red, 活動量 「—」, the distance is to the last position', async () => {
+  const { model, rows, keys } = await card('card-problems');
+  expect(keys).toEqual(['position', 'battery', 'range', 'activity']);
+  expect(rows.position).toMatchObject({ value: '沒有新位置・最後 09:05', tone: 'crit' });
+  expect(rows.battery).toMatchObject({ value: '15%・偏低', tone: 'crit' });
+  expect(rows.range).toMatchObject({ value: '不在接收範圍', tone: 'crit' });
+  expect(rows.activity).toMatchObject({ value: '—', tone: null });
+  expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・最後位置' });
+  expect(model.headline.distance).toMatch(/km$/);
+  expect(model.rows.map(row => row.speech).join('；'))
+    .toBe('位置，沒有新位置，最後 09:05；電量 15%，偏低；接收範圍，不在接收範圍；活動量，沒有資料');
+});
+
+test('card-indoor (A7b): 位置 「室內」, charging 62%, resting 40 minutes, no 接收範圍 row', async () => {
+  const { model, rows, keys, state } = await card('card-indoor');
+  expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
+  expect(keys).toEqual(['position', 'battery', 'activity']);
+  expect(rows.position).toMatchObject({ value: '室內', tone: null, detail: null });
+  expect(rows.battery).toMatchObject({ value: '充電中 62%', tone: null });
+  expect(rows.activity).toMatchObject({ value: '休息中', detail: '已 40 分鐘' });
+  expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・室內' });
+});
+
+test('card-cloud-dog: a cloud dog has no 接收範圍 row; running hard (劇烈活動)', async () => {
+  const { model, rows, keys } = await card('card-cloud-dog');
+  expect(model.name).toBe('小黑');
+  expect(keys).toEqual(['battery', 'activity']);
+  expect(rows.battery.value).toBe('76%');
+  expect(rows.activity).toMatchObject({ value: '劇烈活動', activityTone: 'vigorous' });
+  expect(rows.activity.detail).toMatch(/^已 \d+ 分鐘$/);
+  // The direction and distance are from the phone, cloud dog or not.
+  expect(model.headline.kind).toBe('distance');
+});
+
+test('card-phone-no-fix: the headline says 手機沒有定位 instead of a direction', async () => {
+  const { model, state } = await card('card-phone-no-fix');
+  expect(phoneFix(state.fixture.livePhone)).toBeNull();
+  expect(model.headline).toEqual({ kind: 'no-phone', text: '手機沒有定位' });
+  expect(model.headlineSpeech).toBe('豆豆，手機沒有定位');
+});
+
+test('card-readings-old: readings older than the position carry their time', async () => {
+  const { model, rows } = await card('card-readings-old');
+  expect(model.stale).toBe(false);
+  expect(rows.battery).toMatchObject({ value: '62%（09:11）', tone: null });
+  expect(rows.activity).toMatchObject({ value: '休息中', detail: '已 12 分鐘' });
+  expect(new Date(rows.activity.at).getMinutes()).toBe(11);
+});
+
+test('the real map opens a card fixture\'s card with its rows', async () => {
+  const problems = await renderFixture('card-problems');
+  for (const words of ['豆豆', '訊號源 4', '沒有新位置・最後 09:05', '15%・偏低', '不在接收範圍', '看軌跡', '離手機・最後位置']) {
+    expect(problems.text).toContain(words);
+  }
+  // No receiver row on a dog's card.
+  expect(problems.text).not.toContain('接收器');
+  const indoor = await renderFixture('card-indoor');
+  expect(indoor.text).toContain('充電中 62%');
+  expect(indoor.text).not.toContain('接收範圍');
 });

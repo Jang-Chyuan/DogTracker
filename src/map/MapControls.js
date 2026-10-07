@@ -28,8 +28,17 @@ export function PressScale({ style, children, onPress, ...rest }) {
  * still be pressed, and says why (onMyLocation decides).
  */
 export function MapButtons({ bottom, phoneAvailable, onFrameAll, onMyLocation }) {
+  // They ride up and down with the card (220 ms, motion.cardRise) instead of
+  // jumping ahead of it.
+  const lift = useRef(new Animated.Value(bottom)).current;
+  useEffect(() => {
+    const move = Animated.timing(lift, { toValue: bottom, duration: motion.cardRise.duration, easing: ease,
+      useNativeDriver: false });
+    move.start();
+    return () => move.stop();
+  }, [lift, bottom]);
   return (
-    <View style={[styles.buttons, { bottom }]} pointerEvents="box-none">
+    <Animated.View style={[styles.buttons, { bottom: lift }]} pointerEvents="box-none">
       <PressScale testID="map-frame-all" accessibilityRole="button" accessibilityLabel="框住全部"
         accessibilityHint="把所有狗和手機放進畫面" onPress={onFrameAll} style={styles.round}>
         <Glyph name="frame" color={colors.text} size={sizes.icon.map} />
@@ -39,7 +48,7 @@ export function MapButtons({ bottom, phoneAvailable, onFrameAll, onMyLocation })
         onPress={onMyLocation} style={styles.round}>
         <Glyph name="locate" color={phoneAvailable ? colors.phone : colors.iconMuted} size={sizes.icon.map} />
       </PressScale>
-    </View>
+    </Animated.View>
   );
 }
 

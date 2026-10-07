@@ -70,21 +70,11 @@ async function mount() {
 async function advance(ms = 1000) {
   await act(async () => jest.advanceTimersByTimeAsync(ms));
 }
-async function expand() {
-  const handle = renderer.root.findAllByProps({
-    testID: 'tracking-sheet-handle',
-  })[0];
-  await act(async () =>
-    handle.props.onAccessibilityAction({
-      nativeEvent: { actionName: 'increment' },
-    }),
-  );
-  await act(async () =>
-    handle.props.onAccessibilityAction({
-      nativeEvent: { actionName: 'increment' },
-    }),
-  );
-}
+// The live map's own dog-tap handler (GoogleTrackingMap calls it on a marker).
+const tapDog = async slaveId => {
+  const map = renderer.root.findAll(node => typeof node.props.onDogPress === 'function', { deep: false })[0];
+  await act(async () => map.props.onDogPress(slaveId));
+};
 beforeEach(async () => {
   jest.useFakeTimers();
   Platform.OS = 'android';
@@ -153,10 +143,9 @@ test('first use shows the stored dog, no receiver marker, no ring without a conn
   expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   expect(text()).not.toMatch(/查看兩端|首頁路徑已達繪圖上限|失聯|通知未開啟/);
-  expect(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet-summary' })[0].props
-      .children,
-  ).toBe('最新詳細資訊');
+  // No dog list under the map (v3): a dog's card opens when it is tapped.
+  expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
   await advance(601000);
   expect(rows('dog_status')).toHaveLength(1);
   expect(ble.connect).not.toHaveBeenCalled();
@@ -201,8 +190,35 @@ test('the history tab keeps the same map, carries its own card, and back returns
   expect(text()).toContain('移到下方的「歷史」分頁');
   await press('歷史軌跡', 'tab');
   await act(async () => expect(onBack()).toBe(true));
-  expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' }).length)
-    .toBeGreaterThan(0);
+  expect(renderer.root.findAllByProps({ testID: 'history-sheet' })).toHaveLength(0);
+  expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
+  // Back from the tab, not from a card's 看軌跡: no card opens.
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
+});
+
+test('a tapped dog opens its card over the tabs; 看軌跡 saves its query, and back reopens the card', async () => {
+  await mount();
+  await advance();
+  await tapDog(7);
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
+  // The card covers the bottom of the map, tabs included.
+  expect(renderer.root.findAllByProps({ testID: 'bottom-navigation' })).toHaveLength(0);
+  await act(async () => renderer.root.findAll(node => node.props.testID === 'dog-card-track'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  await advance();
+  const screen = renderer.root.findByType(MapScreen);
+  expect(screen.props.historical).toBe(true);
+  // The query was stored before the page opened: this dog, today so far.
+  expect(screen.props.history.preferences).toMatchObject({ slaves: [7], timeMode: 'fixed', client: true });
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  expect(screen.props.history.preferences.startAt).toBe(start.getTime());
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
+  // Back from that history returns to the live map with the dog's card open.
+  await act(async () => expect(onBack()).toBe(true));
+  await advance();
+  expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
 });
 test('page changes keep the same native map, source and saved switches', async () => {
   await mount();
@@ -235,31 +251,26 @@ test('native BLE replay does not write again or move stored map markers', async 
   expect(markerCoordinates()).toEqual(markers);
 });
 
-test('every visibility state gates the dog markers, the receiver has no eye, and phone location stays independent', async () => {
+test('the live map has no eyes: every dog is drawn whatever older versions stored, phone location independent', async () => {
   jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
   await mount();
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  await expand();
   for (const showTrails of [false, true])
     for (const showSlaveMarker of [false, true]) {
-      const current = button('隱藏所有狗位置') !== undefined;
-      if (current !== showSlaveMarker)
-        await press((current ? '隱藏' : '顯示') + '所有狗位置');
-      await setTrails(showTrails);
-      expect(renderer.root.findAllByType(Marker)).toHaveLength(Number(showSlaveMarker));
+      // What an older version could have stored: all dogs hidden, paths on.
+      await act(async () => renderer.root.findByType(MapScreen).props.tracking
+        .saveTrackingPreferences({ showSlaveMarker, showTrails }));
+      expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
       expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
       expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
-      // The receiver is not drawn and its range ring cannot be turned off.
+      expect(button('隱藏所有狗位置')).toBeUndefined();
+      expect(button('顯示所有狗位置')).toBeUndefined();
       expect(button('隱藏領犬員位置')).toBeUndefined();
-      expect(button('顯示領犬員位置')).toBeUndefined();
-      expect(preferences()).toMatchObject({ showTrails, showSlaveMarker });
     }
 });
 
 test('all display values survive a cold remount without duplicating hardware rows', async () => {
   await mount();
-  await expand();
-  await press('隱藏所有狗位置');
   await setTrails(true);
   const saved = preferences();
   const hardwareRows = rows('dog_status');
@@ -268,7 +279,7 @@ test('all display values survive a cold remount without duplicating hardware row
   expect(mockDatabase.close).toHaveBeenCalledTimes(1);
   await mount();
   expect(preferences()).toEqual(saved);
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   expect(rows('dog_status')).toEqual(hardwareRows);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
 });
@@ -286,7 +297,7 @@ test('background and foreground never generate rows; real mode with empty DB rem
   await mount();
   expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
   expect(renderer.root.findAllByType(Polygon)).toHaveLength(0);
-  expect(text()).toContain('等待硬體資料');
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
   expect(text()).not.toContain('首頁路徑已達繪圖上限');
 });
 test('first map asks permission once; denial does not affect hardware locations', async () => {
@@ -308,18 +319,17 @@ test('first map asks permission once; denial does not affect hardware locations'
   expect(request).toHaveBeenCalledTimes(1);
 });
 
-test('eye save failures preserve markers and remain retryable', async () => {
+test('map preference save failures keep the markers and say so', async () => {
   await mount();
   connection.sqlite.exec(
     "CREATE TRIGGER fail_settings BEFORE INSERT ON app_settings BEGIN SELECT RAISE(ABORT, 'settings locked'); END",
   );
-  await expand();
-  await press('隱藏所有狗位置');
+  await setTrails(true);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   expect(text()).toContain('settings locked');
   connection.sqlite.exec('DROP TRIGGER fail_settings');
-  await press('隱藏所有狗位置');
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
+  await setTrails(true);
+  expect(text()).not.toContain('settings locked');
 });
 
 test('hardware callback writes real rows, and failed hardware writes remain visible', async () => {
