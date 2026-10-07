@@ -12,6 +12,10 @@ import { size } from '../theme/tokens';
 // Where recording stopped for longer than this, the route is broken: the map
 // draws no line across it (size.route.breakAfterMs) and nothing is counted.
 export const ROUTE_GAP_MS = size.route.breakAfterMs;
+// Faster than this between two counted points is a ride, not walking: the
+// route keeps it but the distance does not (開車的段落不算距離). An interim
+// rule until the driving segments of 054 replace it.
+export const RIDE_SPEED_MPS = 25 / 3.6;
 
 const valid = point => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude)
   && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180
@@ -41,7 +45,8 @@ export function addRoutePoints(state, points) {
     } else {
       const moved = distanceMeters(anchor, here);
       if (moved > Math.max(anchor.accuracy, accuracy)) {
-        metres += moved;
+        const seconds = (here.time - anchor.time) / 1000;
+        if (!(seconds > 0 && moved / seconds > RIDE_SPEED_MPS)) metres += moved;
         anchor = here;
       }
     }
@@ -69,6 +74,8 @@ export function startOfToday(now) {
  * - livePhone: the recording service's live snapshot (running, position,
  *   ageSeconds), null before the first read.
  * - phone: usePhoneLocation's permission and location-service state.
+ * - now, waitingSince: since when recording has run without any fix yet
+ *   (null: it has one); the slash waits 10 minutes for a first fix too.
  *
  * @returns {{ text, icon: 'walk'|'walk-muted'|'walk-off', muted: boolean,
  *   recorded: boolean, label: string }}
@@ -76,14 +83,15 @@ export function startOfToday(now) {
  *   slash (no permission, only approximate location, location service off, or
  *   recording without a fix for over 10 minutes).
  */
-export function todayPill({ route, livePhone, phone }) {
+export function todayPill({ route, livePhone, phone, now = null, waitingSince = null }) {
   const permission = phone?.permission;
   const known = permission && permission !== 'checking' && !phone?.busy;
   const permissionProblem = known && (permission !== 'precise' || !phone.services);
   const recording = !!livePhone?.running;
   const fixAge = Number.isFinite(livePhone?.ageSeconds) ? livePhone.ageSeconds : null;
   // Not before the first live read (livePhone null): no slash flashes at start.
-  const noFix = recording && (!livePhone.position || fixAge == null || fixAge > PHONE_FIX_MAX_AGE_S);
+  const noFix = recording && (livePhone.position && fixAge != null ? fixAge > PHONE_FIX_MAX_AGE_S
+    : Number.isFinite(now) && Number.isFinite(waitingSince) && now - waitingSince > PHONE_FIX_MAX_AGE_S * 1000);
   const recorded = (route?.count || 0) > 0;
   const icon = permissionProblem || noFix ? 'walk-off' : livePhone && !recording ? 'walk-muted' : 'walk';
   // Recording off (or not allowed) and nothing recorded today: 「未記錄」.

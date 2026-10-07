@@ -24,7 +24,9 @@ import UploadSettingsScreen from '../cloudUpload/UploadSettingsScreen';
 
 const sharedBleService = createBleService();
 
-export default function HardwareScreen({ dogDatabase, upload, active = true, onBack, onStorageError }) {
+// backRequest: a new value is the page header's 「‹ 硬體連線」, which goes back
+// exactly like the back key.
+export default function HardwareScreen({ dogDatabase, upload, active = true, onBack, onStorageError, backRequest = 0 }) {
   const [bleService] = useState(() => sharedBleService);
   const databaseReadyRef = useRef(null);
   const lastSavedAtBySlaveRef = useRef(new Map());
@@ -100,6 +102,18 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
     };
   }, [bleService, scanning, connecting, qrScanning, onStorageError]);
 
+  const goBack = useRef(null);
+  goBack.current = () => {
+    if (screen === 'wifi' || screen === 'data') setScreen('menu');
+    else if (screen === 'connect' || screen === 'menu') setScreen('scan');
+    else if (onBack) onBack();
+  };
+  const lastBackRequest = useRef(backRequest);
+  useEffect(() => {
+    if (backRequest === lastBackRequest.current) return;
+    lastBackRequest.current = backRequest;
+    if (active) goBack.current();
+  }, [active, backRequest]);
   useEffect(() => {
     if (!active) return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {

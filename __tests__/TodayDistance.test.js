@@ -38,6 +38,15 @@ describe('today\'s distance', () => {
     expect(sum.metres).toBeCloseTo(20, 0);
   });
 
+  test('a ride (over 25 km/h) is not counted; the walk on both sides is', () => {
+    const walk = [north(0, 0), north(10, 10), north(20, 20)];
+    // 2 km in 2 minutes by car, then walking again.
+    const ride = [north(1020, 140), north(2020, 260)];
+    const after = [north(2030, 270), north(2040, 280)];
+    const sum = addRoutePoints(emptyRouteDistance(), [...walk, ...ride, ...after]);
+    expect(sum.metres).toBeCloseTo(40, 0);
+  });
+
   test('reading in pages gives the same sum as reading at once', () => {
     const walk = Array.from({ length: 40 }, (_, index) => north(index * 7, index * 5));
     const once = addRoutePoints(emptyRouteDistance(), walk);
@@ -110,6 +119,16 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
       .toMatchObject({ icon: 'walk-off', text: '今天 2.7 km', label: '今天 2.7 公里，手機沒有定位' });
   });
 
+  test('recording without a first fix waits 10 minutes before the slash too', () => {
+    const now = 1000 * MINUTE;
+    const waiting = { running: true, position: null, ageSeconds: null };
+    expect(todayPill({ route, livePhone: waiting, phone: precise, now, waitingSince: now - 9 * MINUTE }).icon)
+      .toBe('walk');
+    expect(todayPill({ route, livePhone: waiting, phone: precise, now, waitingSince: now - 11 * MINUTE }).icon)
+      .toBe('walk-off');
+    expect(todayPill({ route, livePhone: waiting, phone: precise }).icon).toBe('walk');
+  });
+
   test('before the first reads nothing flashes grey or 未記錄', () => {
     expect(todayPill({ route: null, livePhone: null, phone: { permission: 'checking', services: false } }))
       .toMatchObject({ text: '今天 0.0 km', icon: 'walk', muted: false });
@@ -127,7 +146,7 @@ describe('reading today\'s route from myLocationTracker', () => {
     const insert = connection.sqlite.prepare('INSERT INTO myLocationTracker VALUES(?,?,?,?,?,?,?)');
     insert.run(1, day - MINUTE, day - MINUTE, 24.98, 121.31, 5, 3);
     for (let index = 0; index < 5; index += 1)
-      insert.run(index + 2, day + index * SECOND, day + index * SECOND, 24.99 + index * 0.0001, 121.31, 4, 3);
+      insert.run(index + 2, day + index * 5 * SECOND, day + index * 5 * SECOND, 24.99 + index * 0.0001, 121.31, 4, 3);
     const first = await database.phoneRouteSince(day, null, 3);
     expect(first.map(row => row.id)).toEqual([2, 3, 4]);
     expect(first[0]).toEqual({ id: 2, time: day, latitude: 24.99, longitude: 121.31, accuracy: 4 });

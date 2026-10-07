@@ -88,6 +88,8 @@ function TrackerApp() {
   const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
   const insets = useSafeAreaInsets();
   const [route, setRoute] = useState({ name: 'map', parent: null });
+  // The hardware page keeps its own back stack: its header back is passed in.
+  const [hardwareBack, setHardwareBack] = useState(0);
   // The dog whose history 看軌跡 opened: back on the live map, its card opens
   // again (design: history from a dog's card returns to that card).
   const [cardHistory, setCardHistory] = useState(null);
@@ -192,7 +194,8 @@ function TrackerApp() {
             testID="page-back"
             accessibilityRole="button"
             accessibilityLabel={`返回，${PAGE_TITLES[route.name] || '設定'}`}
-            onPress={() => navigate(route.name === 'hardware' ? 'settings' : route.parent || 'map')}
+            onPress={() => (route.name === 'hardware' ? setHardwareBack(value => value + 1)
+              : navigate(route.parent || 'map'))}
             hitSlop={8}
             style={({ pressed }) => [styles.back, pressed && styles.pressed]}
           >
@@ -245,6 +248,7 @@ function TrackerApp() {
           onStorageError={tracking.reportNativeWriteError}
           active={route.name === 'hardware'}
           onBack={() => navigate('settings')}
+          backRequest={hardwareBack}
         />
       )}
       {!showsMap && route.name !== 'hardware' && (
