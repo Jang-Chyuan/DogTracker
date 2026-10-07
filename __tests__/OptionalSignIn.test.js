@@ -80,7 +80,7 @@ test('signed out, the gate opens the app (the map) instead of a login wall', asy
   expect(mounted).toHaveBeenCalledTimes(1);
 });
 
-test('signing in or out keeps the app mounted; a different account starts it over', async () => {
+test('signing in or out keeps the app mounted; only a direct account switch starts it over', async () => {
   const s = supabase(), mounted = jest.fn(), unmounted = jest.fn();
   function Main() { useEffect(() => { mounted(); return unmounted; }, []); return <Text>Live map</Text>; }
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}>
@@ -94,7 +94,12 @@ test('signing in or out keeps the app mounted; a different account starts it ove
   await act(async () => s.emit('SIGNED_IN', { user: s.user }));
   expect(mounted).toHaveBeenCalledTimes(1);
   expect(unmounted).not.toHaveBeenCalled();
+  // Signed out of A, then B signs in on the 雲端資料 page: the page stays.
+  await act(async () => s.emit('SIGNED_OUT', null));
   await act(async () => s.emit('SIGNED_IN', { user: { id: 'account-b' } }));
+  expect(unmounted).not.toHaveBeenCalled();
+  // Only a direct switch from one account to another starts over.
+  await act(async () => s.emit('SIGNED_IN', { user: { id: 'account-c' } }));
   expect(unmounted).toHaveBeenCalledTimes(1);
   expect(mounted).toHaveBeenCalledTimes(2);
   expect(text()).toContain('Live map');

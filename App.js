@@ -62,17 +62,18 @@ export function AuthGate({ children }) {
   if (loading) return <SafeAreaView style={[authStyles.container, authStyles.loading]}>
     <Text accessibilityLiveRegion="polite" style={ui.text}>正在恢復登入狀態…</Text>
   </SafeAreaView>;
-  // Another account signing in discards the previous account's navigation
-  // state; signing in or out alone keeps the page the user is on.
+  // A direct switch to another account discards the previous account's
+  // navigation state; signing in or out keeps the page the user is on.
   return <React.Fragment key={account}>{children}</React.Fragment>;
 }
 
-// Counts sign-ins of a different account than the last one seen; signing out
-// and back in as the same account (or the first sign-in) keeps the count.
+// Counts direct switches from one account to another. Signing in from the
+// signed-out app (also after signing out of another account) keeps the page
+// the user signed in on: every account-bound hook follows the owner itself.
 function useAccountGeneration(userId) {
   const last = useRef(null), generation = useRef(0);
-  if (userId && userId !== last.current) {
-    if (last.current) generation.current += 1;
+  if (userId !== last.current) {
+    if (userId && last.current) generation.current += 1;
     last.current = userId;
   }
   return generation.current;
