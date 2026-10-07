@@ -143,12 +143,12 @@ test('receiver-disconnected: dropped after receiving, its dog has gone quiet', a
   expect(rangeView(state.ranges[4]).status).toBe(RANGE_STATUS.IN);
 });
 
-test('range-out: 豆豆 walked 1.3 km away — out of range, red dashed line from the ring edge', async () => {
+test('range-out: 豆豆 walked 1.6 km away — out of range, red dashed line from the ring edge', async () => {
   const state = await screen('range-out');
   expect(state.link).toBe('receiving');
   expect(state.ring).not.toBeNull();
   const dog4 = state.dog(4);
-  expect(distanceMeters(state.ring.center, dog4.coordinate)).toBeGreaterThan(1250);
+  expect(distanceMeters(state.ring.center, dog4.coordinate)).toBeGreaterThan(1550);
   expect(state.ranges[4].status).toBe(RANGE_STATUS.OUT);
   expect(rangeView(state.ranges[4])).toMatchObject({ status: 'out', problem: true, showConfirmedAt: false });
   expect(state.ranges[6].status).toBe(RANGE_STATUS.IN);
@@ -376,6 +376,7 @@ async function renderFixture(name) {
   const { Polygon, Polyline } = require('react-native-maps');
   const { colors } = require('../src/theme/tokens');
   const rings = renderer.root.findAllByType(Polygon).length;
+  expect(renderer.root.findAllByType(Polyline).filter(node => node.props.testID === 'range-ring')).toHaveLength(rings);
   const redLines = renderer.root.findAllByType(Polyline)
     .filter(node => node.props.strokeColor === colors.critLine).length;
   const text = JSON.stringify(renderer.toJSON());

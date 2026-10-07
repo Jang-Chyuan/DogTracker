@@ -140,6 +140,7 @@ function GoogleTrackingMapRenderer({
   onSnapshotReady,
   foreground,
   dataReady = true,
+  framingReady = true,
   phoneEnabled,
   livePhone,
   onDogPress,
@@ -256,7 +257,9 @@ function GoogleTrackingMapRenderer({
   // one bounds fit only after native tiles/layout are ready.
   useEffect(() => {
     const shouldFit = sourceToFit.current === source || needsFirstPositionFit;
-    if (!usable || !shouldFit || interacted.current || !positions.length)
+    // A switched source frames once what it will keep drawing: wait until
+    // whatever decides that (the receiver's link, for the range ring) is known.
+    if (!usable || !shouldFit || !framingReady || interacted.current || !positions.length)
       return;
     mapRef.current?.fitToCoordinates(positions, {
       animated: false,
@@ -264,7 +267,7 @@ function GoogleTrackingMapRenderer({
     });
     sourceToFit.current = null;
     if (needsFirstPositionFit) setNeedsFirstPositionFit(false);
-  }, [usable, positions, source, needsFirstPositionFit]);
+  }, [usable, positions, source, needsFirstPositionFit, framingReady]);
   return (
     <View style={StyleSheet.absoluteFill} testID="tracking-map-container"
       onLayout={event => setCursorLayout(event.nativeEvent.layout)}>
@@ -362,14 +365,31 @@ function GoogleTrackingMapRenderer({
           ))}
           {/* The receiver itself is not drawn: no marker, no name tag, no track
               (v3). Only its 1 km range ring, which cannot be turned off. */}
+          {/* Fabric's Polygon ignores dash patterns and zIndex: the fill is a
+              polygon with no outline, the dashed outline a closed polyline.
+              Butt caps, or Android turns every dash into a dot. */}
           {rangeRing && (
             <Polygon
-              key={source + '-range'}
+              key="range-ring-fill"
               coordinates={rangeRing.coordinates}
-              strokeColor={RANGE_RING.stroke}
+              strokeColor="transparent"
+              strokeWidth={0}
               fillColor={RANGE_RING.fill}
+              tappable={false}
+            />
+          )}
+          {rangeRing && (
+            <Polyline
+              // One ring at a time: a stable key moves it instead of replacing
+              // the native overlay on every source switch.
+              key="range-ring"
+              testID="range-ring"
+              coordinates={[...rangeRing.coordinates, rangeRing.coordinates[0]]}
+              geodesic={false}
+              strokeColor={RANGE_RING.stroke}
               strokeWidth={RANGE_RING.width}
               lineDashPattern={dash()}
+              lineCap="butt"
               zIndex={Z.ring}
               tappable={false}
             />
@@ -382,6 +402,7 @@ function GoogleTrackingMapRenderer({
               strokeColor={tokens.critLine}
               strokeWidth={OUT_OF_RANGE_WIDTH}
               lineDashPattern={dash()}
+              lineCap="butt"
               zIndex={Z.rangeLine}
               tappable={false}
             />

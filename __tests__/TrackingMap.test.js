@@ -115,18 +115,26 @@ test('Google provider, DB markers, dog trail and a dashed 1000 metre range ring;
   expect(
     renderer.root.findAllByType(Marker).map(node => node.props.coordinate),
   ).toEqual([slave.coordinate]);
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(1);
+  // The dog's route and the ring's dashed outline.
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(2);
   expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
-  const ring = renderer.root.findByType(Polygon).props;
-  for (const point of ring.coordinates) {
+  const fill = renderer.root.findByType(Polygon).props;
+  const ring = renderer.root.findAllByType(Polyline).find(node => node.props.testID === 'range-ring').props;
+  for (const point of [...fill.coordinates, ...ring.coordinates]) {
     expect(distanceMeters(master.coordinate, point)).toBeCloseTo(1000, -1);
   }
+  // The outline is closed.
+  expect(ring.coordinates.at(-1)).toEqual(ring.coordinates[0]);
   // Design tokens: rangeRing at 55% for the dashed 1.5dp outline, 6% fill.
   expect(ring.strokeColor).toBe(colors.rangeRing + Math.round(opacity.rangeRingStroke * 255).toString(16).toUpperCase());
-  expect(ring.fillColor).toBe(colors.rangeRing + '0F');
+  expect(fill.fillColor).toBe(colors.rangeRing + '0F');
+  expect(fill.strokeWidth).toBe(0);
   expect(ring.strokeWidth).toBe(1.5);
   expect(ring.lineDashPattern).toHaveLength(2);
+  // Round caps make Android draw dots instead of dashes.
+  expect(ring.lineCap).toBe('butt');
   expect(ring.tappable).toBe(false);
+  expect(fill.tappable).toBe(false);
   // The marker draws no bubble of its own; the text is on its view, where a
   // screen reader finds it.
   expect(renderer.root.findAllByType(Marker)[0].findAll(node =>
@@ -142,8 +150,9 @@ test('out-of-range lines are critLine, 2dp, dashed, drawn above the ring and bel
   expect(red.coordinates[1]).toEqual(dog);
   expect(red.strokeWidth).toBe(2);
   expect(red.lineDashPattern).toHaveLength(2);
-  const route = lines.find(node => node.props.strokeColor !== colors.critLine).props;
-  const ring = renderer.root.findByType(Polygon).props;
+  expect(red.lineCap).toBe('butt');
+  const route = lines.find(node => node.props.strokeColor !== colors.critLine && node.props.testID !== 'range-ring').props;
+  const ring = lines.find(node => node.props.testID === 'range-ring').props;
   expect(ring.zIndex).toBeLessThan(red.zIndex);
   expect(red.zIndex).toBeLessThan(route.zIndex);
 });
@@ -162,7 +171,7 @@ test('provider draws the prepared visible segments; empty presentation removes e
       slaveSegments: [[master.coordinate, slave.coordinate], [slave.coordinate, master.coordinate]],
     },
   });
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(2);
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(3);
   await act(async () =>
     renderer.update(
       <TrackingMap
@@ -201,6 +210,17 @@ test('switching data source reuses the native map and reframes the new source', 
   );
   expect(renderer.root.findByType(MapView)).toBe(nativeMap);
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(fits + 1);
+});
+test('a switched source waits for framingReady before its one fit', async () => {
+  await render();
+  await readyMap();
+  await act(async () => renderer.update(<TrackingMap {...defaults} source="real:fixture:x" framingReady={false} />));
+  expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
+  await act(async () => renderer.update(<TrackingMap {...defaults} source="real:fixture:x" framingReady />));
+  expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.update(<TrackingMap {...defaults} source="real:fixture:x" framingReady
+    bottomInset={120} />));
+  expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
 });
 test('missing key never mounts native map and gives an explicit fallback message', async () => {
   NativePlatform.isMapConfigured.mockReturnValue(false);

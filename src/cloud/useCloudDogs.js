@@ -56,16 +56,24 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         if (database.holdRows) {
           // A long pause (background) replays from scratch instead of catching
           // up on every row since.
-          if (holdState.current?.owner !== owner || holdState.current?.database !== database
-            || now() - holdState.current.polledAt > HOLD_LOOKBACK_MS) {
-            holdState.current = { owner, database, store: createHoldStore(), cursors: null, polledAt: now() };
+          const replaced = holdState.current;
+          if (replaced?.owner !== owner || replaced?.database !== database
+            || now() - replaced.polledAt > HOLD_LOOKBACK_MS) {
+            const store = createHoldStore();
+            // Same account and database: the receiver-range judgements stay.
+            if (replaced?.owner === owner && replaced?.database === database) store.seedRanges(replaced.store.ranges());
+            holdState.current = { owner, database, store, cursors: null, polledAt: now() };
           }
           const state = holdState.current;
           try {
             const batch = await database.holdRows(owner, now() - HOLD_LOOKBACK_MS, state.cursors);
             if (!alive || holdState.current !== state) return;
             // Stored rows moved in time (cloud time repair): replay them all.
-            if (batch.reset) state.store = createHoldStore();
+            if (batch.reset) {
+              const judged = state.store.ranges();
+              state.store = createHoldStore();
+              state.store.seedRanges(judged);
+            }
             state.store.ingest(batch);
             state.cursors = batch.cursors;
             state.polledAt = now();
