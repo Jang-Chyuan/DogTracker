@@ -597,6 +597,8 @@ export default function MapScreen({
       )}
       {historical && (
         <HistorySheet
+          // A fixture switch opens its history page afresh (half high, top).
+          key={fixture ? `fixture:${fixture.name}` : 'live'}
           history={history}
           download={historyDownload}
           extras={<HistoryPlaybackControls playback={playback} />}
