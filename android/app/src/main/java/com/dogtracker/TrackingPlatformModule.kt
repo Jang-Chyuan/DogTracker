@@ -6,6 +6,8 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import android.view.HapticFeedbackConstants
+import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.annotations.ReactModule
@@ -59,6 +61,23 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
   }
 
   override fun appVersion(): String = BuildConfig.VERSION_NAME
+
+  // Touch haptics through the window (no VIBRATE permission; follows the
+  // system's touch-feedback setting). EFFECT_DOUBLE_CLICK is two light taps.
+  override fun performHaptic(effect: String) {
+    val view = reactApplicationContext.currentActivity?.window?.decorView ?: return
+    val constant = when (effect) {
+      "EFFECT_TICK" -> HapticFeedbackConstants.CLOCK_TICK
+      "EFFECT_CLICK" -> HapticFeedbackConstants.CONTEXT_CLICK
+      "EFFECT_DOUBLE_CLICK" -> HapticFeedbackConstants.KEYBOARD_TAP
+      "EFFECT_HEAVY_CLICK" -> HapticFeedbackConstants.LONG_PRESS
+      else -> return
+    }
+    UiThreadUtil.runOnUiThread {
+      view.performHapticFeedback(constant)
+      if (effect == "EFFECT_DOUBLE_CLICK") view.postDelayed({ view.performHapticFeedback(constant) }, 90)
+    }
+  }
 
   override fun batteryOptimizationIgnored(promise: Promise) {
     try {

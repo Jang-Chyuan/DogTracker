@@ -240,3 +240,27 @@ test('each dog\'s face is stored by collar number; a damaged or unknown one fall
     expect(await db.loadDogAvatars()).toEqual({});
   } finally { connection.close(); }
 });
+
+test('historyDays: the local days with one dog\'s rows (local and the account\'s cloud) or my route', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const db = createHistoryDatabase(connection);
+    await connection.executeAsync(`CREATE TABLE dog_status (id INTEGER PRIMARY KEY, received_at INTEGER, master_id INTEGER,
+      slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync(`CREATE TABLE supabase_dog_status (id INTEGER PRIMARY KEY, owner_user_id TEXT,
+      received_at INTEGER, track_at INTEGER, master_id INTEGER, slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync(`CREATE TABLE myLocationTracker (id INTEGER PRIMARY KEY, recorded_at INTEGER,
+      latitude REAL, longitude REAL, accuracy_meters REAL)`);
+    const local = (y, m, d, h) => new Date(y, m - 1, d, h).getTime();
+    await connection.executeAsync('INSERT INTO dog_status(received_at,master_id,slave_id) VALUES(?,?,?),(?,?,?),(?,?,?)',
+      [local(2026, 10, 3, 8), 7, 4, local(2026, 10, 3, 23), 7, 4, local(2026, 10, 5, 0), 7, 6]);
+    await connection.executeAsync('INSERT INTO supabase_dog_status(owner_user_id,received_at,track_at,slave_id) VALUES(?,?,?,?),(?,?,?,?)',
+      ['me', local(2026, 10, 6, 9), local(2026, 10, 6, 9), 4, 'other', local(2026, 10, 7, 9), local(2026, 10, 7, 9), 4]);
+    await connection.executeAsync('INSERT INTO myLocationTracker(recorded_at,latitude,longitude) VALUES(?,?,?)',
+      [local(2026, 10, 2, 7), 25, 121]);
+    expect(await db.historyDays({ subject: 'dog', slaveId: 4, owner: 'me' })).toEqual(['2026-10-03', '2026-10-06']);
+    expect(await db.historyDays({ subject: 'dog', slaveId: 4, source: 'local', owner: 'me' })).toEqual(['2026-10-03']);
+    expect(await db.historyDays({ subject: 'dog', slaveId: 4 })).toEqual(['2026-10-03']);
+    expect(await db.historyDays({ subject: 'phone' })).toEqual(['2026-10-02']);
+  } finally { connection.close(); }
+});

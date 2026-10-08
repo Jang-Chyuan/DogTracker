@@ -52,3 +52,30 @@ export function refreshCursor(model, cursor, options) {
 export function selectCursorNode(model, node, options = {}) {
   return screenCursor(model, node.start, { ...options, action: node.type === 'gap' ? 'gap' : 'node' });
 }
+
+const TEN_MINUTES = 600000;
+const HOUR = 3600000;
+const stayAt = (model, time) => (time == null ? null : (model.locations || [])
+  .find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end) ?? null);
+
+/**
+ * The one haptic of a cursor move (判定表「操作與震動」): 'double' entering a
+ * stay or for a node / stop number; 'heavy' reaching either end of the range;
+ * 'click' crossing a full hour; 'tick' crossing a 10-minute mark (skipped
+ * when a fast drag crosses several) or for a tap on the route; else null.
+ */
+export function cursorHaptic(model, previousTime, time, action = 'drag') {
+  if (time == null) return null;
+  if (action === 'node' || action === 'stop') return 'double';
+  if (action === 'route') return 'tick';
+  if (action !== 'drag' || previousTime == null || previousTime === time) return null;
+  const stay = stayAt(model, time);
+  if (stay && stay !== stayAt(model, previousTime)) return 'double';
+  const points = model.points || [];
+  const ends = [points[0]?.time, points[points.length - 1]?.time];
+  if (ends.includes(time) && !ends.includes(previousTime)) return 'heavy';
+  const low = Math.min(previousTime, time), high = Math.max(previousTime, time);
+  if (Math.floor(high / HOUR) !== Math.floor(low / HOUR)) return 'click';
+  const crossed = Math.floor(high / TEN_MINUTES) - Math.floor(low / TEN_MINUTES);
+  return crossed === 1 ? 'tick' : null;
+}

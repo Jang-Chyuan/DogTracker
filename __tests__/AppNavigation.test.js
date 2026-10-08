@@ -437,7 +437,7 @@ test('S7/S8 fixtures: diagnostics states, the delete question with rows to uploa
 test('「今天 x km」 opens my route on the same map, with its own card, and back returns home', async () => {
   await mount();
   await advance();
-  expect(renderer.root.findAllByProps({ testID: 'history-sheet' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'history-panel' })).toHaveLength(0);
   const map = renderer.root.findByType(MapView);
   await act(async () => map.props.onMapLoaded());
   const pill = renderer.root.findAll(node => node.props.testID === 'map-today'
@@ -452,22 +452,22 @@ test('「今天 x km」 opens my route on the same map, with its own card, and b
   expect(routeQuery).toMatchObject({ timeMode: 'fixed', startAt: start.getTime(), phone: true, client: false });
   // The same native map is reused; only the card and its parameters change.
   expect(renderer.root.findByType(MapView) === map).toBe(true);
-  expect(renderer.root.findAllByProps({ testID: 'history-sheet' }).length)
-    .toBeGreaterThan(0);
+  // The v3 history screen: ‹ 回到現在, 我的路線, the date row; no old query card.
+  const has = id => renderer.root.findAllByProps({ testID: id }).length > 0;
+  expect(has('history-panel')).toBe(true);
+  expect(has('history-back-now')).toBe(true);
+  expect(has('history-date')).toBe(true);
+  expect(has('history-export')).toBe(true);
+  expect(has('history-add')).toBe(false);
+  expect(text()).toContain('我的路線');
+  expect(text()).toContain('今天');
+  expect(button('重新查詢')).toBeUndefined();
+  expect(button('套用（有未套用的變更）')).toBeUndefined();
   expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
-  await act(async () => renderer.root.findByProps({ testID: 'history-sheet-handle' })
-    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
-  expect(text()).toContain('歷史軌跡');
-  // The card's sections are folded until opened, so it stays about a screen high.
-  expect(button('雲端下載的（Supabase）')).toBeUndefined();
-  await press('資料來源');
-  expect(button('雲端下載的（Supabase）')).toBeDefined();
-  expect(button('重新查詢')).toBeDefined();
-  expect(button('匯出')).toBeDefined();
   // History has no gear (its top right is its own); back returns to the map.
   expect(renderer.root.findAllByProps({ testID: 'map-settings' })).toHaveLength(0);
   await act(async () => expect(onBack()).toBe(true));
-  expect(renderer.root.findAllByProps({ testID: 'history-sheet' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'history-panel' })).toHaveLength(0);
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
   // Back from my route, not from a card's 看軌跡: no card opens.
   expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
@@ -496,7 +496,12 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   start.setHours(0, 0, 0, 0);
   expect(screen.props.history.preferences.startAt).toBe(start.getTime());
   expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
-  // Back from that history returns to the live map with the dog's card open.
+  // The history screen is this dog's: its capsule, ＋ 加入 (055b) and its target.
+  expect(screen.props.historyTarget).toEqual({ subject: 'dog', slaveId: 7 });
+  expect(renderer.root.findAllByProps({ testID: 'history-add' }).length).toBeGreaterThan(0);
+  // Back from that history returns to the live map with the dog's card open
+  // (‹ 回到現在 does the same: onLeaveHistory is the same step back).
+  expect(screen.props.onLeaveHistory).toBeInstanceOf(Function);
   await act(async () => expect(onBack()).toBe(true));
   await advance();
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);

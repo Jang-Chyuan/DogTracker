@@ -22,7 +22,7 @@ const DAY_PAGE = 2000;
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar', 'read',
-  'listDevices', 'listDays', 'hasPhoneTrack', 'phoneRouteSince', 'historyDayRows'];
+  'listDevices', 'listDays', 'hasPhoneTrack', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
@@ -272,6 +272,34 @@ export function createHistoryDatabase(db) {
       }
       seed.sort((a, b) => a.time - b.time);
       return { rows: out, seed: seed.slice(-40), after: cursors };
+    },
+    /**
+     * The local days (「YYYY-MM-DD」 in the phone's time zone) this phone holds
+     * rows of for one dog (any receiver; `source` as historyDayRows) or for
+     * my route, oldest first: the history's date row ‹ › steps between them
+     * (H3a). Days only the cloud holds come with the calendar (054b).
+     */
+    async historyDays({ subject = 'dog', slaveId = null, source = 'all', owner = null } = {}) {
+      const table = async name => rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
+      const dayOf = time => `strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')`;
+      const found = new Set();
+      const add = list => list.forEach(row => { if (row.day) found.add(String(row.day)); });
+      if (subject === 'phone') {
+        if (await table('myLocationTracker')) {
+          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('recorded_at')} AS day FROM myLocationTracker`)));
+        }
+      } else {
+        if (source !== 'cloud' && await table('dog_status')) {
+          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('received_at')} AS day FROM dog_status
+            WHERE slave_id = ?`, [slaveId])));
+        }
+        if (source !== 'local' && owner && await table('supabase_dog_status')) {
+          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('CAST(COALESCE(track_at, received_at) AS INTEGER)')} AS day
+            FROM supabase_dog_status WHERE slave_id = ? AND owner_user_id = ?`, [slaveId, owner])));
+        }
+      }
+      return [...found].sort();
     },
     /**
      * Which Master/Slave pairs this phone actually holds for a source. The card
