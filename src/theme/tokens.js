@@ -270,7 +270,7 @@ export const size = {
       border: 3,
     },
   },
-  sheet: { collapsed: 140, maxRatio: 0.75, emptyRatio: 0.4, dataSourceRow: 48 },
+  sheet: { collapsed: 140, maxRatio: 0.75, emptyRatio: 0.4 },
   calendarDot: 5,
 };
 

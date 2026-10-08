@@ -12,7 +12,6 @@ import {
 } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
-import { HISTORY_SOURCE_OPTIONS } from '../history/screen/HistoryMultiSources';
 import { layout, size as sizes, space, touch, type } from '../theme/tokens';
 import HistoryBottomSheet from './HistoryBottomSheet';
 
@@ -104,61 +103,6 @@ export const AddDogSheet = forwardRef(function AddDogSheet(
           沒有其他狗
         </Text>
       )}
-    </HistoryBottomSheet>
-  );
-});
-
-/** 資料來源: 全部／這支手機收到的／雲端, one radio each; `onChoose(id)` after it closed. */
-export const SourceSheet = forwardRef(function SourceSheet(
-  { selected, onChoose, onClosed, bottomInset },
-  ref,
-) {
-  const styles = getStyles(useTheme());
-  const sheet = useRef(null);
-  useImperativeHandle(
-    ref,
-    () => ({
-      back: () => {
-        sheet.current?.close();
-        return true;
-      },
-    }),
-    [],
-  );
-  return (
-    <HistoryBottomSheet
-      ref={sheet}
-      title="資料來源"
-      onClosed={onClosed}
-      bottomInset={bottomInset}
-      testID="history-source-sheet"
-      closeLabel="關閉資料來源"
-    >
-      <View accessibilityRole="radiogroup">
-        {HISTORY_SOURCE_OPTIONS.map(option => {
-          const on = option.id === selected;
-          return (
-            <Pressable
-              key={option.id}
-              testID={`history-source-${option.id}`}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: on }}
-              accessibilityLabel={option.label}
-              onPress={() => sheet.current?.close(() => onChoose(option.id))}
-              style={({ pressed }) => [
-                styles.row,
-                styles.rowInner,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={[styles.radio, on && styles.radioOn]}>
-                {on && <View style={styles.radioDot} />}
-              </View>
-              <Text style={styles.option}>{option.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
     </HistoryBottomSheet>
   );
 });

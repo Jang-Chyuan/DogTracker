@@ -1,7 +1,7 @@
 import { dogTransition, dogPresentation, rangeOwner, protagonist, entryDefaults, backAction, BACK_KEY_TABLE, emptyState } from '../src/history/screen';
-const initial = { dogs: [], protagonist: null, range: { start: 1, end: 2 }, cursorTime: 2, source: 'cloud' };
+const initial = { dogs: [], protagonist: null, range: { start: 1, end: 2 }, cursorTime: 2 };
 const add = (state, id, hasData = true) => dogTransition(state, { type: 'add', dog: { id, hasData } });
-test('2–4 dogs retain shared range, cursor, source and stable colours, recycling smallest slot', () => {
+test('2–4 dogs retain shared range, cursor and stable colours, recycling smallest slot', () => {
   let state = add(add(add(add(initial, 'a'), 'b'), 'c'), 'd');
   expect(state.dogs.map(d => d.colourToken)).toEqual(['route1', 'route2', 'route3', 'route4']);
   expect(add(state, 'e').message).toBe('最多同時 4 隻');
@@ -9,10 +9,10 @@ test('2–4 dogs retain shared range, cursor, source and stable colours, recycli
   state = add(state, 'e');
   expect(state.dogs.map(d => d.colourToken)).toEqual(['route1', 'route3', 'route4', 'route2']);
   state = dogTransition(state, { type: 'select', id: 'e' });
-  expect(state).toMatchObject({ protagonist: 'e', range: initial.range, cursorTime: 2, source: 'cloud' });
+  expect(state).toMatchObject({ protagonist: 'e', range: initial.range, cursorTime: 2 });
   expect(add(state, 'a').dogs).toHaveLength(4);
 });
-test('no-data dogs cannot be protagonist unless all empty; data/source changes use first eligible', () => {
+test('no-data dogs cannot be protagonist unless all empty; data changes use first eligible', () => {
   let state = add(add(initial, 'a', false), 'b', true);
   expect(state.protagonist).toBe('b');
   expect(dogTransition(state, { type: 'select', id: 'a' }).protagonist).toBe('b');
@@ -44,7 +44,7 @@ test('date range owner prioritizes retained entry memory then new protagonist', 
 });
 test('entry defaults and return-to-now restore live map/current protagonist card', () => {
   const dog = entryDefaults({ dogId: 'a', today: '2026-10-08', latest: 100 });
-  expect(dog).toMatchObject({ source: 'all', panel: 'half', cursorTime: 100, rangeExpanded: false });
+  expect(dog).toMatchObject({ panel: 'half', cursorTime: 100, rangeExpanded: false });
   expect(backAction({ ...dog, protagonist: 'b' })).toEqual({ type: 'live-map', card: 'b' });
   expect(backAction({ ...dog, calendar: true }, { returnToNow: true })).toEqual({ type: 'live-map', card: 'a' });
   expect(backAction(entryDefaults({ entry: 'today-distance', today: '2026-10-08' })).card).toBe(null);
@@ -61,7 +61,7 @@ test.each([
   ['phone', true, '今天還沒有路線'], ['phone', false, '這天沒有路線'], ['dog', true, '這天沒有小黑的紀錄'],
 ])('H8 %s today=%s', (subject, today, text) => {
   expect(emptyState({ subject, today, name: '小黑', dayRecords: false })).toEqual({ text, exportEnabled: false,
-    cursorEnabled: false, showSummary: false, showRange: false, showSources: subject === 'dog' });
+    cursorEnabled: false, showSummary: false, showRange: false });
 });
 test('empty selected range keeps summary; one fix may export; held-only records count', () => {
   expect(emptyState({ dayRecords: true, rangeRecords: false, hasPoints: true })).toMatchObject({ text: '這段時間沒有紀錄', showSummary: true, showRange: true, exportEnabled: false });

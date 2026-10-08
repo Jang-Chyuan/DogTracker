@@ -418,7 +418,7 @@ const dog5Walk = (now, today = true) => dogDay(today ? now : now - 24 * 60 * MIN
 // 小黑's history (看軌跡) with `dogs` added; 狗 5 is a live dog on the map (so
 // it can be added). `view`: the protagonist, the source, an open sheet, the
 // cursor `cursorAgo` before now.
-function multiFixture(now, { dogs = [], protagonist = null, source = null, sheet = null, fiveToday = true,
+function multiFixture(now, { dogs = [], protagonist = null, sheet = null, fiveToday = true,
   cursorAgo = null, exportView = null }) {
   const base = FIXTURES['all-good'](now);
   const cloud = afuMorning(now);
@@ -428,7 +428,7 @@ function multiFixture(now, { dogs = [], protagonist = null, source = null, sheet
     ble: [...base.ble, ...series(bleRow, now, { slave: 5, from: 4 * MINUTE, to: 60 * SECOND, start: [-12, 30] })],
     history: historyPage(now, { slave: 6, ble: [...dogMorning(now), ...doudouMorning(now), ...dog5Walk(now, fiveToday)],
       cloudRows: cloud }),
-    historyView: { dogs, protagonist, source, sheet, cursorAgo, export: exportView },
+    historyView: { dogs, protagonist, sheet, cursorAgo, export: exportView },
     geocoder: { names: HISTORY_NAMES },
   };
 }
@@ -1226,14 +1226,6 @@ const FIXTURES = {
   'history-multi-cursor': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, cursorAgo: 50 * MINUTE }),
   // 「＋ 加入」's list open over 小黑's day (狗 5 has no record today).
   'history-multi-add': now => multiFixture(now, { dogs: [], fiveToday: false, sheet: 'add' }),
-  // 資料來源's choices open (全部 chosen).
-  'history-source-picker': now => multiFixture(now, { dogs: [4], protagonist: 4, sheet: 'source' }),
-  // 資料來源：雲端 while 小黑 and 豆豆 only have this phone's rows: 「這天沒有
-  // 小黑的紀錄」 with the row still at the foot.
-  'history-source-empty': now => multiFixture(now, { dogs: [4], source: 'cloud' }),
-  // 資料來源：這支手機收到的: 阿福's rows are the cloud's only, so it fades and
-  // 豆豆 (this phone's) stays.
-  'history-source-local': now => multiFixture(now, { dogs: [4, 8], protagonist: 8, source: 'local' }),
   // ---- history (056): the export (H9/H10) ---------------------------------
   // H9: my route like the mockup, the export window open (PNG / GPX / CSV in fixed order).
   'history-export': now => ({ ...FIXTURES['history-my-route'](now), historyView: { export: { phase: 'choose' } } }),
@@ -1541,7 +1533,7 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     accuracy_meters: point.accuracy ?? 6, altitude_meters: 112, speed_kmh: 3.6, heading_degrees: 40,
     raw_latitude: point.latitude, raw_longitude: point.longitude, session_id: 'fixture-walk', raw_speed_kmh: 3.8,
     speed_accuracy_mps: 0.4, motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
-  const readDay = async ({ subject, slaveId, start, end, source = 'all', owner = null, after = {} }) => {
+  const readDay = async ({ subject, slaveId, start, end, owner = null, after = {} }) => {
     if (after.fixture) return { rows: [], seed: [], after };
     // As HistoryDatabase.historyDayRows: half an hour before, and 3 minutes
     // past midnight (do the last stay, hold or walk go on next day?).
@@ -1551,9 +1543,9 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     if (subject === 'phone') {
       return { rows: phoneRows.filter(row => within(row.time)).map(phoneHistoryRow), seed: [], after: { fixture: true } };
     }
-    const local = source === 'cloud' ? [] : ble.filter(row => row.slave_id === slaveId && within(row.received_at))
+    const local = ble.filter(row => row.slave_id === slaveId && within(row.received_at))
       .map(row => dogHistoryRow(row, 'local'));
-    const cloud = source === 'local' || !owner ? [] : cloudRows
+    const cloud = !owner ? [] : cloudRows
       .filter(row => row.slave_id === slaveId && within(timeOf(row))).map(row => dogHistoryRow(row, 'cloud'));
     return { rows: [...local, ...cloud], seed: [], after: { fixture: true } };
   };
@@ -1562,10 +1554,10 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     const date = new Date(time);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
-  const readDays = async ({ subject, slaveId, source = 'all', owner = null }) => {
+  const readDays = async ({ subject, slaveId, owner = null }) => {
     const times = subject === 'phone' ? phoneRows.map(row => row.time) : [
-      ...(source === 'cloud' ? [] : ble.filter(row => row.slave_id === slaveId).map(row => row.received_at)),
-      ...(source === 'local' || !owner ? [] : cloudRows.filter(row => row.slave_id === slaveId).map(timeOf)),
+      ...(ble.filter(row => row.slave_id === slaveId).map(row => row.received_at)),
+      ...(!owner ? [] : cloudRows.filter(row => row.slave_id === slaveId).map(timeOf)),
     ];
     return [...new Set(times.map(keyOf))].sort();
   };

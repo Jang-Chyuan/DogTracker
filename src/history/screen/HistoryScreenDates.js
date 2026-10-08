@@ -7,8 +7,8 @@ export function dayBounds(day) {
   const [y, m, d] = day.split('-').map(Number);
   return { dayStart: new Date(y, m - 1, d).getTime(), dayEnd: new Date(y, m - 1, d + 1).getTime() };
 }
-export function availableDays(local = [], cloud = [], source = 'all') {
-  return [...new Set(source === 'local' ? local : source === 'cloud' ? cloud : [...local, ...cloud])].sort();
+export function availableDays(local = [], cloud = []) {
+  return [...new Set([...local, ...cloud])].sort();
 }
 export function dateNavigation(day, today, days) {
   return { previous: days.filter(d => d < day && d <= today).pop() ?? null,

@@ -1,7 +1,7 @@
 import { emptyText } from '../HistoryText';
 
 export function entryDefaults({ entry = 'dog-card', dogId = null, today, latest = null, fromAlert = false }) {
-  return { entry, entryId: dogId, day: today, source: 'all', protagonist: dogId,
+  return { entry, entryId: dogId, day: today, protagonist: dogId,
     cursorTime: latest, panel: 'half', rangeExpanded: false, calendar: false, monthPicker: false,
     returnCard: entry === 'dog-card' && !fromAlert };
 }
@@ -23,5 +23,5 @@ export function emptyState({ subject = 'dog', today = false, name, dayRecords, r
   const empty = !dayRecords || !rangeRecords;
   return { text: !dayRecords ? emptyText({ subject, today, name }) : !rangeRecords ? '這段時間沒有紀錄' : null,
     exportEnabled: !empty, cursorEnabled: !empty && hasPoints,
-    showSummary: !!dayRecords, showRange: !!dayRecords && hasPoints, showSources: subject === 'dog' };
+    showSummary: !!dayRecords, showRange: !!dayRecords && hasPoints };
 }

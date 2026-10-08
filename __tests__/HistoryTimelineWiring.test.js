@@ -47,7 +47,7 @@ describe('rows', () => {
     expect(phoneHistoryRow({ recorded_at: 20, latitude: 1, longitude: 2, accuracy_meters: null }).accuracy).toBeNull();
   });
 
-  test('historyDayRows reads one dog\'s day from both tables, with the source filter and a cursor', async () => {
+  test('historyDayRows reads one dog\'s day from both tables, merged with a cursor and receiver distance', async () => {
     const connection = createMemoryConnection();
     const database = createHistoryDatabase(connection);
     connection.sqlite.exec(`CREATE TABLE dog_status(id INTEGER PRIMARY KEY, received_at INTEGER, master_id INTEGER,
@@ -56,7 +56,7 @@ describe('rows', () => {
     connection.sqlite.exec(`CREATE TABLE supabase_dog_status(id INTEGER PRIMARY KEY, owner_user_id TEXT,
       received_at INTEGER, track_at INTEGER, master_id INTEGER, slave_id INTEGER, slave_lat REAL, slave_lon REAL,
       satellites INTEGER, hdop REAL, usb_present INTEGER, rssi INTEGER, snr REAL, gps_time TEXT)`);
-    const local = connection.sqlite.prepare('INSERT INTO dog_status VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
+    const local = connection.sqlite.prepare('INSERT INTO dog_status(id, received_at, master_id, slave_id, slave_lat, slave_lon, satellites, hdop, usb_present, rssi, snr, gps_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
     const cloud = connection.sqlite.prepare('INSERT INTO supabase_dog_status VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     // Before the context (seed only), in the context, the day, just past midnight.
     local.run(1, DAY - 2 * HISTORY_DAY_CONTEXT_MS, 7, 4, 24.98, 121.31, 9, 0.9, 0, -70, 5, '1');
@@ -66,16 +66,17 @@ describe('rows', () => {
     local.run(5, endOfDay(DAY) + MINUTE, 7, 4, 24.982, 121.31, 9, 0.9, 0, -70, 5, '9');
     cloud.run(1, 'me', DAY + 9 * MINUTE, DAY + 2 * MINUTE, 9, 4, 24.982, 121.31, 9, 1, 0, -80, 5, '4');
     cloud.run(2, 'someone', DAY + 3 * MINUTE, DAY + 3 * MINUTE, 9, 4, 24.983, 121.31, 9, 1, 0, -80, 5, '5');
+    connection.sqlite.exec('ALTER TABLE dog_status ADD COLUMN distance_meters REAL');
+    connection.sqlite.exec('UPDATE dog_status SET distance_meters = 42 WHERE id = 3');
     const day = { subject: 'dog', slaveId: 4, start: DAY, end: endOfDay(DAY) };
     const all = await database.historyDayRows({ ...day, owner: 'me' });
     expect(all.rows.map(row => [row.source, row.id, row.time])).toEqual([
       ['local', 2, DAY - 10 * MINUTE], ['local', 3, DAY + MINUTE], ['local', 5, endOfDay(DAY) + MINUTE],
       ['cloud', 1, DAY + 2 * MINUTE]]);
+    expect(all.rows.find(row => row.source === 'local' && row.id === 3).distance_meters).toBe(42);
     expect(all.seed.map(row => row.time)).toEqual([DAY - 2 * HISTORY_DAY_CONTEXT_MS]);
-    expect((await database.historyDayRows({ ...day, source: 'local', owner: 'me' })).rows).toHaveLength(3);
-    expect((await database.historyDayRows({ ...day, source: 'cloud', owner: 'me' })).rows).toHaveLength(1);
     // Signed out: no cloud rows at all.
-    expect((await database.historyDayRows({ ...day, source: 'cloud' })).rows).toHaveLength(0);
+    expect((await database.historyDayRows({ ...day })).rows).toHaveLength(3);
     // Only rows added since, even older ones (a download, 判定表「補下載完成」).
     local.run(6, DAY + 5 * MINUTE, 7, 4, 24.984, 121.31, 9, 0.9, 0, -70, 5, '6');
     cloud.run(3, 'me', DAY + 30 * MINUTE, DAY - 5 * MINUTE, 9, 4, 24.98, 121.31, 9, 1, 0, -80, 5, '0');

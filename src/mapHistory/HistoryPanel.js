@@ -88,7 +88,6 @@ const HistoryPanel = forwardRef(function HistoryPanel(
     locked = false,
     initialLevel = 'half',
     above = null,
-    footer = null,
   },
   ref,
 ) {
@@ -205,14 +204,6 @@ const HistoryPanel = forwardRef(function HistoryPanel(
     if (locked) return;
     settle(levelRef.current === 'full' ? 'half' : 'full');
   };
-  // The foot row (資料來源) stays at the bottom of what is shown, above the
-  // navigation bar: it rides the panel's height, not its top.
-  const footerHeight = footer ? sizes.sheet.dataSourceRow : 0;
-  const footerY = useMemo(
-    () =>
-      Animated.add(height, new Animated.Value(-(footerHeight + bottomInset))),
-    [height, footerHeight, bottomInset],
-  );
   // One fixed height (a day without records): nothing fades.
   const fadeFrom =
     levels.summary < levels.full ? levels.summary : levels.summary - 40;
@@ -280,27 +271,13 @@ const HistoryPanel = forwardRef(function HistoryPanel(
             }}
             contentContainerStyle={{
               paddingBottom:
-                levels.full - levels[level] + bottomInset + footerHeight + 16,
+                levels.full - levels[level] + bottomInset + 16,
             }}
           >
             {children}
           </ScrollView>
         </Animated.View>
-        {footer && (
-          <Animated.View
-            style={[
-              styles.footer,
-              {
-                height: footerHeight + bottomInset,
-                paddingBottom: bottomInset,
-                opacity: listOpacity,
-                transform: [{ translateY: footerY }],
-              },
-            ]}
-          >
-            {footer}
-          </Animated.View>
-        )}
+
       </View>
     </Animated.View>
   );
@@ -338,12 +315,5 @@ const getStyles = makeStyles(theme => {
     handleArea: { height: 20, alignItems: 'center', justifyContent: 'center' },
     handle: { width: 32, height: 4, borderRadius: 2, backgroundColor: HANDLE },
     list: { flex: 1 },
-    footer: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      top: 0,
-      backgroundColor: colors.elevated,
-    },
   });
 });

@@ -4,7 +4,7 @@ import { screenRange, reconcileRange } from './HistoryScreenRange';
 import { screenCursor } from './HistoryScreenCursor';
 import { protagonist, rangeOwner } from './HistoryScreenDogs';
 
-/** Adapter reuses source filtering, departure/stay replay and vehicle detection.
+/** Adapter reuses source merging, departure/stay replay and vehicle detection.
  * Feed full-day rows plus midnight context exactly as for historyTimeline.
  * Cursor distance uses observation edges, never uniform speed across a list row. */
 export function screenDayModel(rows, options) {
@@ -24,7 +24,7 @@ export function screenDayModel(rows, options) {
 }
 
 /** Date changes select the protagonist BEFORE resolving shared remembered range.
- * models are computed for the selected source/day, including held packets.
+ * models are computed for the merged day, including held packets.
  * Entry memory wins while that dog remains selected; otherwise main dog wins. */
 export function changeDogDay(state, day, models, remembered = {}) {
   const dogs = state.dogs.map(d => ({ ...d, hasData: !!models[d.id]?.dayRecords }));

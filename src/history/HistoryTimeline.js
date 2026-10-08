@@ -10,13 +10,13 @@ import { historyStops, historyIndoorNodes } from './HistoryStops';
  * Day bounds are [dayStart, dayEnd); range endpoints are actual observations.
  * Consumer calendar/list/export must use the returned source stream. */
 export function historyTimeline(rows = [], options = {}) {
-  const { subject = 'dog', source = 'all', dayStart = -Infinity, dayEnd = Infinity,
+  const { subject = 'dog', dayStart = -Infinity, dayEnd = Infinity,
     today = false, now = rows[rows.length - 1]?.time ?? 0, manualRange = null, closedAt = null,
     following = today && manualRange?.end == null, state = null, timezone = '',
     replayHolds, config = configFor(subject) } = options;
   const replay = replayHolds ?? (subject === 'dog'
     ? packets => replayHistoryHolds(packets, { since: dayStart, ...options.holdOptions }) : undefined);
-  const stream = historySourceStream(rows, { source, replayHolds: replay });
+  const stream = historySourceStream(rows, { replayHolds: replay });
   const context = filterHistoryPoints(stream.points, { subject, config });
   const dayPoints = context.filter(p => p.time >= dayStart && p.time < dayEnd);
   const contextMovement = historyMovement(context, { subject, config });
@@ -27,7 +27,7 @@ export function historyTimeline(rows = [], options = {}) {
   const vehicles = contextMovement.vehicles;
   const movement = historyMovement(points, { subject, config, vehicles });
   const switches = movement.switches.map(({ point, ...node }) => node);
-  const identity = JSON.stringify([subject, source, range.start, following ? 'following' : range.end,
+  const identity = JSON.stringify([subject, range.start, following ? 'following' : range.end,
     dayStart, dayEnd, timezone, !!manualRange]);
   const stays = historyStops(context, { subject, config, start: range.start, end: range.end,
     dayStart, dayEnd: dayEnd - 1, vehicles, following, identity, state });
