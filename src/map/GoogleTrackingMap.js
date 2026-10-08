@@ -17,9 +17,12 @@ import { floatingShadow, mapColors as colors } from './MapTheme';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
+import {
+  CursorMarkerView, cursorAnchor, IndoorMarkerView, StopMarkerView, TimeMarkerView,
+} from '../mapHistory/HistoryMapMarkers';
+import { nearestRoutePoint } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
-import { INDOOR_WORD, nameTags } from './DogMarkers';
-import { dogMapLabel } from '../mapHistory/DogAliases';
+import { nameTags } from './DogMarkers';
 import { reportMapFramed } from '../app/hideSplash';
 import {
   framedCoordinates, framePadding, frameAllCoordinates, receiverDogsCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S, regionForFrame,
@@ -60,6 +63,15 @@ export const FIRST_FRAME_WAIT_MS = 3000;
 const AFTER_FIT_MS = 250;
 // The map's own padding at the sides (dp).
 const MAP_SIDE_PADDING = 12;
+// History framing: 24dp all round, plus the cursor label's height on top.
+const HISTORY_FRAME = { top: 24 + 56, right: 24, bottom: 24, left: 24 };
+// Coordinates all within about 30 m of each other.
+const tinySpan = points => {
+  const lat = points.map(p => p.latitude), lon = points.map(p => p.longitude);
+  return Math.max(...lat) - Math.min(...lat) < 0.0003 && Math.max(...lon) - Math.min(...lon) < 0.0003;
+};
+// A tap this close to the route (dp) is a tap on it.
+const ROUTE_TAP_DP = 24;
 
 const EMPTY_REGION = {
   latitude: 23.7,
@@ -136,33 +148,63 @@ function groupSpeech(tag, markers) {
   return `${tag.text}：${names.join('、')}，點兩下選一隻`;
 }
 
-// The history track's last drawn position: the same face and name tag as the
-// live map (house and 「名字・室內」 when it was held there), without the
-// live problem badges. Same redraw dance as DogMarker.
-function TrackMarker({ track, onPress }) {
+// ---- the history route (055a) -------------------------------------------
+// Fixed bitmaps, like DogMarker: every change of what one shows asks for one
+// redraw. Time markers sit under the stop numbers, the cursor on top.
+function RouteMarker({ coordinate, look, zIndex, anchor = CENTER, onPress, children, label }) {
   const ref = useRef(null);
-  const photo = usePhotoMarker(track.avatar, ref);
-  const { latest } = track;
-  const indoor = !!latest.heldReason;
-  const marker = { slaveId: track.name, size: 40, problem: false, stale: false, indoor, selected: false };
-  const frame = markerFrame(marker.size);
-  const name = dogMapLabel(track.name);
-  const text = indoor ? `${name}・${INDOOR_WORD}` : name;
-  const avatarKey = [track.avatar?.kind, track.avatar?.art, track.avatar?.color, track.avatar?.uri?.length].join('|');
-  useEffect(() => { ref.current?.redraw?.(); }, [text, avatarKey]);
+  useEffect(() => { ref.current?.redraw?.(); }, [look]);
   return (
-    <Marker
-      ref={ref}
-      coordinate={latest}
-      anchor={frame.anchor}
-      tracksViewChanges={photo.tracking}
-      onPress={onPress}
-    >
-      <View collapsable={false} accessible accessibilityLabel={`${text}，${new Date(latest.time).toLocaleString()}`}
-        onLayout={() => ref.current?.redraw?.()}>
-        <DogMarkerView marker={marker} tag={{ text, group: 1 }} avatar={track.avatar} onAvatarLoad={photo.onLoad} />
+    <Marker ref={ref} coordinate={coordinate} anchor={anchor} tracksViewChanges={false} zIndex={zIndex}
+      onPress={onPress} tappable={!!onPress}>
+      <View collapsable={false} accessible={!!label} accessibilityLabel={label}
+        onLayout={() => ref.current?.redraw?.()}>{children}</View>
+    </Marker>
+  );
+}
+const CENTER = { x: 0.5, y: 0.5 };
+
+function CursorMarker({ cursor, color }) {
+  const [labelHeight, setLabelHeight] = useState(44);
+  const ref = useRef(null);
+  const look = `${cursor.lines?.join('|')}:${cursor.stale}:${labelHeight}`;
+  useEffect(() => { ref.current?.redraw?.(); }, [look, cursor.key]);
+  return (
+    <Marker ref={ref} coordinate={cursor.coordinate} anchor={cursorAnchor(labelHeight)} tracksViewChanges={false}
+      zIndex={60} tappable={false}>
+      <View collapsable={false} onLayout={() => ref.current?.redraw?.()}>
+        <CursorMarkerView lines={cursor.lines} color={color} stale={cursor.stale}
+          onLabelHeight={value => { if (Math.abs(value - labelHeight) > 0.5) setLabelHeight(value); }} />
       </View>
     </Marker>
+  );
+}
+
+function HistoryRoute({ route, onStopPress }) {
+  const dashed = useMemo(() => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)), []);
+  return (
+    <>
+      {route.lines.map((line, index) => (
+        <Polyline key={`route-${index}-${line.start}`} coordinates={line.coordinates} geodesic={false}
+          strokeColor={line.color} strokeWidth={line.width} zIndex={line.dashed ? Z.route - 0.5 : Z.route}
+          lineDashPattern={line.dashed ? dashed : undefined} lineCap={line.dashed ? 'butt' : 'round'}
+          lineJoin="round" tappable={false} />
+      ))}
+      {route.times.map(marker => (
+        <RouteMarker key={marker.key} coordinate={marker.coordinate} look={`${marker.label}:${marker.end}`} zIndex={20}>
+          <TimeMarkerView label={marker.label} end={marker.end} color={route.color} />
+        </RouteMarker>
+      ))}
+      {route.places.map(place => (
+        <RouteMarker key={place.key} coordinate={place.coordinate} look={`${place.kind}:${place.number}`}
+          zIndex={place.kind === 'indoor' ? 26 : 25}
+          label={place.kind === 'indoor' ? '室內' : `停留 ${place.number}`}
+          onPress={onStopPress ? () => onStopPress(place) : undefined}>
+          {place.kind === 'indoor' ? <IndoorMarkerView /> : <StopMarkerView number={place.number} color={route.color} />}
+        </RouteMarker>
+      ))}
+      {route.cursor && <CursorMarker cursor={route.cursor} color={route.color} />}
+    </>
   );
 }
 
@@ -193,7 +235,6 @@ function GoogleTrackingMapRenderer({
   phoneEnabled,
   livePhone,
   onDogPress,
-  onTrackPress,
   // A tap on the map itself (not on a dog): closes the open card.
   onMapPress,
   // The map's rotation in degrees (the card's direction arrow follows it).
@@ -212,6 +253,15 @@ function GoogleTrackingMapRenderer({
   // 「今天 x km」 (TodayDistance.todayPill) beside 我的位置, and its tap.
   today = null,
   onToday,
+  // The history screen (presentation.historyRoute): a tap on the route or a
+  // drag of the cursor (time, 'route' | 'drag'), a stop number tapped,
+  // { key, coordinate } to bring the cursor into view (220 ms), { key } to
+  // frame the route (框住全部), and the panel at { level, extraBottom }.
+  onCursorMove,
+  onStopPress,
+  historyFocus = null,
+  historyFrame = null,
+  historyPanel = null,
   supported,
   configured,
 }) {
@@ -225,7 +275,7 @@ function GoogleTrackingMapRenderer({
   const [cursorLayout, setCursorLayout] = useState({ width: 0, height: 0 });
   const [cursorRevision, setCursorRevision] = useState(0);
   const [cursorDragging, setCursorDragging] = useState(false);
-  const [cursorSelection, setCursorSelection] = useState(null);
+  const historyRoute = presentation.historyRoute || null;
   const [attempt, setAttempt] = useState(0);
   const nativePhone = useRef(null);
   const phoneCentered = useRef(false);
@@ -286,7 +336,7 @@ function GoogleTrackingMapRenderer({
   // Framing keeps clear of the bottom right buttons too (16dp + 48dp), and on
   // the live map of the bottom row they stand on (「今天 x km」 beside 我的位置,
   // 48dp), so no dog or name tag is framed under them.
-  const bottomRow = presentation.historyTracks ? 0 : sizes.floatingButton;
+  const bottomRow = historyRoute ? 0 : sizes.floatingButton;
   const padding = useMemo(() => {
     const value = framePadding(dogMarkers, fontScale);
     return { ...value, right: value.right + layout.screenEdge + sizes.floatingButton,
@@ -392,10 +442,15 @@ function GoogleTrackingMapRenderer({
     // whatever decides that (the receiver's link, for the range ring) is known.
     if (!usable || !shouldFit || !framingReady || interacted.current || !positions.length)
       return;
-    mapRef.current?.fitToCoordinates(positions, {
+    // One place only (只有一筆, a day indoors): a street-level view of it, not
+    // the closest zoom.
+    if (historyRoute && tinySpan(positions)) {
+      mapRef.current?.animateCamera({ center: positions[0], zoom: 16 }, { duration: 0 });
+    } else mapRef.current?.fitToCoordinates(positions, {
       animated: false,
-      // Room for the faces' "!" and name tags (History tracks have none).
-      edgePadding: presentation.historyTracks ? { top: 24, right: 24, bottom: 24, left: 24 }
+      // Room for the faces' "!" and name tags; in history for the cursor's
+      // label over the route's newest fix (判定表「地圖相機」).
+      edgePadding: historyRoute ? HISTORY_FRAME
         : { ...padding, top: padding.top + Math.max(0, (coverTop || 0) - topInset) },
     });
     sourceToFit.current = null;
@@ -426,7 +481,7 @@ function GoogleTrackingMapRenderer({
     return () => clearTimeout(timer);
   }, [configured, loaded, positions.length, releaseSplash]);
   // ---- the live map's own controls (A1) ----------------------------------
-  const live = !presentation.historyTracks;
+  const live = !historyRoute;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const overlayTop = Math.max(topInset, coverTop || 0);
@@ -508,6 +563,65 @@ function GoogleTrackingMapRenderer({
     // takeCamera only flips refs; the effect runs per opening (focusDog.key).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusDog, usable, cursorLayout.height, overlayTop, overlayBottom, fitCount, needsFirstPositionFit]);
+  // ---- the history screen -------------------------------------------------
+  // A tap on the map: on the route (within 24dp of a fix) moves the cursor
+  // there; anywhere else is a tap on empty map.
+  const pressHistoryMap = async event => {
+    const found = nearestRoutePoint(historyRoute?.points, event?.coordinate, historyRoute?.cursor?.time ?? null);
+    const map = mapRef.current;
+    if (found && map?.pointForCoordinate && event?.position) {
+      try {
+        const point = await map.pointForCoordinate(found.point);
+        const scale = PixelRatio.get();
+        // position is in pixels, the projection in dp.
+        if (Math.hypot(point.x - event.position.x / scale, point.y - event.position.y / scale) <= ROUTE_TAP_DP) {
+          onCursorMove?.(found.point.time, 'route');
+          return;
+        }
+      } catch { /* Fall through: an empty tap. */ }
+    }
+    onMapPress?.();
+  };
+  const routeCamera = historyRoute?.camera;
+  const frameRoute = (extraBottom = 0, animated = true) => {
+    if (!usable || !routeCamera?.length) return;
+    if (tinySpan(routeCamera)) {
+      mapRef.current?.animateCamera({ center: routeCamera[0], zoom: 16 }, { duration: motion.camera.duration });
+      return;
+    }
+    mapRef.current?.fitToCoordinates(routeCamera, { animated,
+      edgePadding: { ...HISTORY_FRAME, bottom: HISTORY_FRAME.bottom + extraBottom } });
+  };
+  const historyFramed = useRef(null);
+  useEffect(() => {
+    if (!historyFrame || historyFramed.current === historyFrame.key || !usable) return;
+    historyFramed.current = historyFrame.key;
+    takeCamera();
+    frameRoute(historyPanel?.extraBottom || 0);
+    // Once per press of 框住全部.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyFrame?.key, usable]);
+  // 判定表「面板高度」: at 75% the route is framed again above the panel —
+  // unless the user moved the map, then only the padding changes.
+  const panelLevel = historyPanel?.level;
+  const lastLevel = useRef(panelLevel);
+  useEffect(() => {
+    if (lastLevel.current === panelLevel) return;
+    const was = lastLevel.current;
+    lastLevel.current = panelLevel;
+    if (!historyRoute || interacted.current || !usable) return;
+    if (panelLevel === 'full' || was === 'full') frameRoute(historyPanel?.extraBottom || 0);
+    // On a new level only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelLevel]);
+  // A node of the list or a stop number: the cursor point comes into the
+  // middle of the map above the panel (220 ms, motion.cursorJump).
+  const focusedHistory = useRef(null);
+  useEffect(() => {
+    if (!historyFocus || focusedHistory.current === historyFocus.key || !usable) return;
+    focusedHistory.current = historyFocus.key;
+    mapRef.current?.animateCamera({ center: historyFocus.coordinate }, { duration: motion.cursorJump.duration });
+  }, [historyFocus, usable]);
   const framedRequest = useRef(null);
   useEffect(() => {
     if (!frameRequest || framedRequest.current === frameRequest.key || !usable) return;
@@ -578,8 +692,9 @@ function GoogleTrackingMapRenderer({
           showsBuildings={failure !== 'tiles'}
           moveOnMarkerPress={false}
           // Google reports a tap only (a drag or a long press is not one).
-          onPress={onMapPress ? () => onMapPress() : undefined}
-          showsUserLocation={ready && foreground && phoneEnabled && !(livePhone?.running && livePhone.position)}
+          onPress={historyRoute ? event => pressHistoryMap(event.nativeEvent)
+            : onMapPress ? () => onMapPress() : undefined}
+          showsUserLocation={ready && foreground && phoneEnabled && !historyRoute && !(livePhone?.running && livePhone.position)}
           userLocationPriority="high"
           userLocationUpdateInterval={1000}
           toolbarEnabled={false}
@@ -642,22 +757,9 @@ function GoogleTrackingMapRenderer({
               setLoadedInstance(instance);
           }}
         >
-          {livePhone?.running && livePhone.position && <PhoneLocationOverlay location={livePhone} active={foreground} />}
-          {(presentation.historyTracks || []).map(track => (
-            <React.Fragment key={track.name}>
-              {track.segments.filter(segment => segment.length > 1).map((segment, index) => (
-                <Polyline key={index} coordinates={segment} strokeColor={track.color} strokeWidth={4} geodesic={false}
-                  zIndex={Z.route} />
-              ))}
-              {track.latest && (track.role === 'phone'
-                ? <PhoneLocationOverlay key={source + ':' + (track.latest.session_id || '')} historical active={foreground}
-                  onPress={onTrackPress ? () => onTrackPress(track.name) : undefined}
-                  location={{ position: { latitude: track.latest.latitude, longitude: track.latest.longitude,
-                    timestamp: track.latest.time, rawSpeedKmh: track.latest.speed_kmh } }} />
-                : <TrackMarker track={track}
-                  onPress={onTrackPress ? () => onTrackPress(track.name) : undefined} />)}
-            </React.Fragment>
-          ))}
+          {/* History draws no live phone (flow.txt: 只有可以拖的游標點). */}
+          {!historyRoute && livePhone?.running && livePhone.position && <PhoneLocationOverlay location={livePhone} active={foreground} />}
+          {historyRoute && <HistoryRoute route={historyRoute} onStopPress={onStopPress} />}
           {slaveSegments.map((segment, index) => (
             <Polyline
               key={source + '-slave-' + index}
@@ -744,12 +846,12 @@ function GoogleTrackingMapRenderer({
           <Text style={styles.unavailableText}>正在讀取本機位置…</Text>
         </View>
       )}
-      {usable && cursorLayout.width > 0 && presentation.historyTracks?.some(track => track.role === 'phone' && track.segments.length > 0) &&
-        <HistoryCursor key={source + ':' + instance} tracks={presentation.historyTracks.filter(track => track.role === 'phone')} mapRef={mapRef}
-          hidden={!foreground} selection={cursorSelection?.source === source ? cursorSelection.value : null}
-          onDraggingChange={setCursorDragging}
-          onSelectionChange={value => setCursorSelection({ source, value })}
-          revision={cursorRevision} width={cursorLayout.width} height={cursorLayout.height} top={topInset} bottom={bottomInset} />}
+      {usable && cursorLayout.width > 0 && historyRoute?.cursor && (
+        <HistoryCursor key={source + ':' + instance} mapRef={mapRef} cursor={historyRoute.cursor}
+          points={historyRoute.points} hidden={!foreground} onMove={onCursorMove}
+          onDraggingChange={setCursorDragging} revision={cursorRevision} width={cursorLayout.width}
+          height={cursorLayout.height} top={topInset} bottom={overlayBottom} />
+      )}
       {!component && mountedMap && !loaded && !timedOut && (
         <View
           style={[styles.loading, { top: topInset + 56 }]}

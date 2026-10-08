@@ -17,70 +17,61 @@ test('label clears every route segment including lines crossing the box with end
   expect(cursorLabelBox(segments, { x: 1, y: 1 }, 100, 100, 20, 20)).toBeNull();
 });
 
-// Exercise the screen overlay rather than a native draggable marker.
-test('all disjoint segments request projection without waiting for an earlier UI commit', async () => {
-  const React = require('react');
-  const Renderer = require('react-test-renderer');
-  const HistoryCursor = require('../src/mapHistory/HistoryCursor').default;
-  const finish = [];
-  const project = jest.fn(() => new Promise(resolve => finish.push(resolve)));
-  const tracks = [{ name: '手機', segments: [0, 1, 2].map(i => [{ time: i * 200000, latitude: 25, longitude: 121 }]) }];
-  let renderer;
-  try {
-    await Renderer.act(async () => { renderer = Renderer.create(React.createElement(HistoryCursor,
-      { tracks, mapRef: { current: { pointForCoordinate: project } }, width: 400, height: 800, top: 100, bottom: 100 })); });
-    expect(project).toHaveBeenCalledTimes(3);
-    await Renderer.act(async () => finish.forEach(resolve => resolve({ x: 200, y: 300 })));
-    expect(renderer.root.findByProps({ testID: 'history-cursor-handle' })).toBeDefined();
-  } finally { if (renderer) await Renderer.act(async () => renderer.unmount()); }
-});
-
-test('overlay gesture projects the cursor onto the route and updates the record time', async () => {
+// The 055a cursor handle: a 48dp target over the cursor point that drags it
+// along the route (the point and label are a map marker).
+describe('the cursor handle', () => {
   const React = require('react');
   const Renderer = require('react-test-renderer');
   const { PanResponder } = require('react-native');
   const HistoryCursor = require('../src/mapHistory/HistoryCursor').default;
-  let handlers;
-  const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers = value; return { panHandlers: {} }; });
-  const points = [0, 1, 2].map(i => ({ id: i, time: i * 1000, latitude: 25, longitude: 121 + i }));
-  const tracks = [{ name: '手機', segments: [[points[0], points[2]]], sourcePoints: points }];
-  const mapRef = { current: { pointForCoordinate: async p => ({ x: 50 + (p.longitude - 121) * 100, y: 300 }) } };
-  let renderer;
-  try {
-    await Renderer.act(async () => { renderer = Renderer.create(React.createElement(HistoryCursor,
-      { tracks, mapRef, revision: 0, width: 400, height: 800, top: 100, bottom: 100 })); });
-    await Renderer.act(async () => handlers.onPanResponderGrant());
-    await Renderer.act(async () => handlers.onPanResponderMove(null, { dx: 100, dy: 200 }));
+  const points = [0, 1, 2, 3].map(i => ({ time: i * 60000, latitude: 25, longitude: 121 + i * 0.001 }));
+  const cursorAt = p => ({ time: p.time, coordinate: { latitude: p.latitude, longitude: p.longitude },
+    lines: ['09:00', '已走 0.1 km'] });
+  // Projection: 100 dp per 0.001° of longitude, the route along y = 300.
+  const mapRef = () => ({ current: {
+    pointForCoordinate: jest.fn(async p => ({ x: 50 + (p.longitude - 121) * 100000, y: 300 })),
+    coordinateForPoint: jest.fn(async p => ({ latitude: 25 + (p.y - 300) * 0.00001, longitude: 121 + (p.x - 50) / 100000 })),
+  } });
+  const props = { width: 400, height: 800, top: 100, bottom: 100, revision: 0 };
+
+  test('sits over the cursor point and says its two lines to TalkBack', async () => {
+    let renderer;
+    await Renderer.act(async () => { renderer = Renderer.create(<HistoryCursor {...props} mapRef={mapRef()}
+      cursor={cursorAt(points[1])} points={points} />); });
     const handle = renderer.root.findByProps({ testID: 'history-cursor-handle' });
-    expect(handle.props.accessibilityLabel).toContain(new Date(1000).toLocaleString());
-    expect(handle.props.style[1]).toEqual({ left: 126, top: 268 });
-    await Renderer.act(async () => handlers.onPanResponderRelease());
-    // A second gesture must remain mounted even if the native coordinate lookup is slow.
-    const originalProject = mapRef.current.pointForCoordinate;
-    let finishProjection;
-    mapRef.current.pointForCoordinate = () => new Promise(resolve => { finishProjection = resolve; });
-    await Renderer.act(async () => handlers.onPanResponderGrant());
-    await Renderer.act(async () => handlers.onPanResponderMove(null, { dx: 100, dy: 0 }));
-    const second = renderer.root.findByProps({ testID: 'history-cursor-handle' });
-    expect(second.props.accessibilityLabel).toContain(new Date(2000).toLocaleString());
-    expect(second.props.style[1]).toEqual({ left: 226, top: 268 });
-    await Renderer.act(async () => { finishProjection({ x: 250, y: 300 }); });
-    await Renderer.act(async () => handlers.onPanResponderRelease());
-    mapRef.current.pointForCoordinate = originalProject;
-    await Renderer.act(async () => handlers.onPanResponderGrant());
-    await Renderer.act(async () => handlers.onPanResponderMove(null, { dx: -100, dy: 0 }));
-    await Renderer.act(async () => handlers.onPanResponderRelease());
-    const refreshed = [{ ...tracks[0], segments: [[points[2]]], sourcePoints: [points[2]] }];
-    await Renderer.act(async () => renderer.update(React.createElement(HistoryCursor,
-      { tracks: refreshed, mapRef, revision: 0, width: 400, height: 800, top: 100, bottom: 100, hidden: true })));
+    expect(handle.props.style[1].left).toBeCloseTo(150 - 24);
+    expect(handle.props.style[1].top).toBeCloseTo(300 - 24);
+    expect(handle.props.accessibilityLabel).toBe('09:00，已走 0.1 km');
+    // Hidden off the visible map, or while the app is in the background.
+    await Renderer.act(async () => renderer.update(<HistoryCursor {...props} mapRef={mapRef()} hidden
+      cursor={cursorAt(points[1])} points={points} />));
     expect(renderer.root.findAllByProps({ testID: 'history-cursor-handle' })).toHaveLength(0);
-    await Renderer.act(async () => renderer.update(React.createElement(HistoryCursor,
-      { tracks: refreshed, mapRef, revision: 1, width: 400, height: 800, top: 100, bottom: 100 })));
-    const locked = renderer.root.findByProps({ testID: 'history-cursor-handle' });
-    expect(locked.props.accessibilityLabel).toContain(new Date(1000).toLocaleString());
-    expect(locked.props.style[1]).toEqual({ left: 126, top: 268 });
-  } finally {
-    if (renderer) await Renderer.act(async () => renderer.unmount());
-    spy.mockRestore();
-  }
+    await Renderer.act(async () => renderer.unmount());
+  });
+
+  test('a drag snaps the finger to the nearest fix; the map stops moving meanwhile', async () => {
+    let handlers;
+    const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers = value; return { panHandlers: {} }; });
+    const onMove = jest.fn();
+    const dragging = jest.fn();
+    let renderer;
+    try {
+      await Renderer.act(async () => { renderer = Renderer.create(<HistoryCursor {...props} mapRef={mapRef()}
+        cursor={cursorAt(points[0])} points={points} onMove={onMove} onDraggingChange={dragging} />); });
+      await Renderer.act(async () => handlers.onPanResponderGrant());
+      expect(dragging).toHaveBeenLastCalledWith(true);
+      // 190 dp right, 40 dp off the line: nearest is the fix at x = 250.
+      await Renderer.act(async () => handlers.onPanResponderMove(null, { dx: 190, dy: 40 }));
+      expect(onMove).toHaveBeenLastCalledWith(points[2].time, 'drag');
+      await Renderer.act(async () => handlers.onPanResponderRelease());
+      expect(dragging).toHaveBeenLastCalledWith(false);
+      // TalkBack steps fix by fix.
+      const handle = renderer.root.findByProps({ testID: 'history-cursor-handle' });
+      await Renderer.act(async () => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+      expect(onMove).toHaveBeenLastCalledWith(points[1].time, 'drag');
+    } finally {
+      if (renderer) await Renderer.act(async () => renderer.unmount());
+      spy.mockRestore();
+    }
+  });
 });

@@ -334,7 +334,8 @@ test('the buttons sit 16dp from the right, 12dp above the card, and only on the 
   expect(buttons).toBeTruthy();
   expect(column.length).toBeGreaterThan(0);
   await act(async () => renderer.update(<TrackingMap {...defaults}
-    presentation={{ ...defaults.presentation, historyTracks: [] }} />));
+    presentation={{ ...defaults.presentation, historyRoute: { color: '#1A73E8', lines: [], places: [], times: [],
+      cursor: null, camera: [], points: [] } }} />));
   expect(renderer.root.findAll(node => node.props.testID === 'map-frame-all')).toHaveLength(0);
 });
 

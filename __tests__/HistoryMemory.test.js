@@ -1,6 +1,5 @@
 import { historyGeometry, expireHistory, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
 import { budgetHistoryTracks } from '../src/mapHistory/HistoryGeometryBudget';
-import { clipTrackTo } from '../src/mapHistory/HistoryPlayback';
 import { serializeHistory } from '../src/mapHistory/HistoryExport';
 import { stablePhoneDisplay } from '../src/map/PhoneDisplayPosition';
 
@@ -15,8 +14,6 @@ test('interleaved receivers form separate continuous tracks, also in GPX, with o
   const xml = serializeHistory('gpx', { phone: [], clients: [{ slaveId: 4, rows }], since: 0, until: 6000000 });
   expect(xml.match(/<trkseg>/g)).toHaveLength(2);
   expect(xml.match(/<trkpt /g)).toHaveLength(6000);
-  const clipped = clipTrackTo(track, 2500);
-  expect(clipped.latest.time).toBe(1000);
 });
 
 test('expiry preserves receiver separation and genuine gaps remain disconnected', () => {
