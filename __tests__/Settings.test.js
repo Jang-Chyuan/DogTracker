@@ -259,7 +259,7 @@ test('a change of receiver waits for the first packet; another Master puts the o
     expectedMasterId: 7, sessionId: 'old' };
   const previous = snapshotReceiver(old);
   expect(previous).toEqual({ deviceId: 'AA', deviceName: 'DogGPS-Master7', serviceUuid: 's', dataUuid: 'd',
-    expectedMasterId: 7, number: 7 });
+    expectedMasterId: 7, number: 7, enabled: true });
   expect(snapshotReceiver({ enabled: false, deviceId: '' })).toBeNull();
   // Nothing the old session reported counts.
   expect(judgeSwitch({ ...old, enabled: false, lastStatus: 'Master ID 不符合：QR=8，BLE=3' }, 8, 'old'))
@@ -303,6 +303,10 @@ test('useReceiverControl: 中斷連線, 重新連線, and the wrong-receiver dia
   await act(async () => renderer.update(<Probe state={{ ...old, sessionId: 'new', enabled: false, running: false,
     expectedMasterId: 8, deviceName: 'DogGPS-Master8', lastStatus: 'Master ID 不符合：QR=8，BLE=3' }} />));
   expect(native.restoreReceiver).toHaveBeenCalledWith('AA', 'DogGPS-Master7', 's', 'd', 7);
+  // The shared BLE service let go of the attempt first: its callbacks for
+  // Master 8 cannot act on receiver 7's packets after 「連線接收器 7」.
+  expect(ble.disconnect).toHaveBeenCalledTimes(2);
+  expect(ble.disconnect.mock.invocationCallOrder[1]).toBeLessThan(native.restoreReceiver.mock.invocationCallOrder[0]);
   expect(alert).toHaveBeenCalledTimes(1);
   const [title, message, buttons] = alert.mock.calls[0];
   expect(title).toBe('這不是要連的接收器');
@@ -321,8 +325,31 @@ test('useReceiverControl: 中斷連線, 重新連線, and the wrong-receiver dia
   await act(async () => renderer.update(<Probe state={{ ...old, sessionId: 'newer', expectedMasterId: 9,
     lastReceivedAt: 10 }} />));
   expect(native.restoreReceiver).toHaveBeenCalledTimes(1);
+  // A QR-chosen receiver that does not connect: the old one comes back,
+  // connected again because it was (receiver 9 now), and 「沒有更換，還是接收器 9」.
+  act(() => control.watchSwitch(8));
+  await act(async () => control.switchFailed());
+  expect(native.restoreReceiver).toHaveBeenCalledTimes(2);
+  expect(native.reconnect).toHaveBeenCalledTimes(3);
+  expect(alert).toHaveBeenLastCalledWith('沒有更換，還是接收器 9');
+  // Nothing pending: nothing to undo.
+  await act(async () => control.switchFailed());
+  expect(native.restoreReceiver).toHaveBeenCalledTimes(2);
   await act(async () => renderer.unmount());
   alert.mockRestore();
+});
+
+test('診斷 shows why positions cannot be written, above the old pages', async () => {
+  const SettingsLinks = require('../src/settings/SettingsLinks').default;
+  const { SETTINGS_LINKS } = require('../src/settings/SettingsLinks');
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<SettingsLinks links={SETTINGS_LINKS.diagnostics} onOpen={() => {}}
+      storage={{ full: false, reason: '資料存檔失敗：attempt to write a readonly database' }} />);
+  });
+  expect(text(renderer)).toContain('資料存檔失敗：attempt to write a readonly database');
+  expect(text(renderer)).toContain('即時資料');
+  await act(async () => renderer.unmount());
 });
 
 // ---- S4 ---------------------------------------------------------------------

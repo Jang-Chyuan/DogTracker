@@ -276,6 +276,12 @@ export function createBleService(manager = new BleManager()) {
       );
     },
 
+    // Leaving the scan page stops a scan still running.
+    stopScan() {
+      cancelScan?.();
+      cancelScan = null;
+    },
+
     async connect(foundDevice, onStatus, onData, config = activeConfig) {
       cancelScan?.();
       if (reconnectTimer) clearTimeout(reconnectTimer);

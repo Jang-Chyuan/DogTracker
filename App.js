@@ -174,7 +174,7 @@ function TrackerApp() {
   // 「今天 x km」: today's recorded route of this phone, while the live map
   // is in front.
   const liveTodayRoute = useTodayRoute(tracking.historyDatabase, tracking.ready.real,
-    tracking.foreground && isMap);
+    tracking.foreground && (isMap || route.name === 'phone'));
   // Cache eligibility is separate from polling visibility. Background/navigation
   // pauses reads; logout invalidates the account-bound cache.
   // Debug builds only: a named screen state (dogtracker://dev/fixture?name=…)
@@ -182,7 +182,7 @@ function TrackerApp() {
   const fixture = useScreenFixture();
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
     tracking.ready.real,
-    undefined, null, { active: tracking.foreground && showsMap && !fixture, revision: cloudSync.revision });
+    undefined, null, { active: tracking.foreground && (showsMap || route.name === 'receiver') && !fixture, revision: cloudSync.revision });
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
@@ -204,7 +204,9 @@ function TrackerApp() {
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
     if (id === 'receiver-settings') open('receiver');
-    else if (id === 'connect-receiver' || id === 'storage-reason') openHardware('scan');
+    else if (id === 'connect-receiver') openHardware('scan');
+    // Until S8 (051), 診斷 lists the reason above its old pages.
+    else if (id === 'storage-reason') open('diagnostics');
     else if (id === 'sign-in') open('cloud');
     else if (id === 'storage-settings') {
       Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(() => Linking.openSettings());
@@ -278,6 +280,7 @@ function TrackerApp() {
     case 'diagnostics':
     case 'advanced':
       page = <SettingsLinks links={SETTINGS_LINKS[route.name]}
+        storage={route.name === 'diagnostics' ? settingsData.storage : null}
         onOpen={id => (id === 'records' ? open('locationRecords') : id === 'upload' ? open('upload')
           : openHardware(id))} />;
       break;
@@ -362,6 +365,7 @@ function TrackerApp() {
           entry={route.name === 'hardware' ? route.entry : null}
           onBack={goBack}
           onConnected={goBack}
+          onConnectFailed={receiverControl.switchFailed}
           onQrTarget={receiverControl.watchSwitch}
           onMismatch={receiverControl.reportMismatch}
           backRequest={hardwareBack}
