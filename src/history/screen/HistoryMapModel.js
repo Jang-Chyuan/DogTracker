@@ -109,6 +109,21 @@ export function placeMarkers(locations) {
       start: n.start, end: n.end, coordinate: coordinateOf(n) }));
 }
 
+// Metres between two coordinates (equirectangular: the history is a few km).
+const metresApart = (a, b) => Math.hypot((b.longitude - a.longitude) * Math.cos((a.latitude * Math.PI) / 180) * 111320,
+  (b.latitude - a.latitude) * 110540);
+
+/** Middle time markers at least `apartM` from the places and the times kept. */
+export function uncrowded(times, places, apartM = 150) {
+  const kept = times.filter(marker => marker.end);
+  for (const marker of times) {
+    if (marker.end) continue;
+    const near = [...places, ...kept].some(other => metresApart(marker.coordinate, other.coordinate) < apartM);
+    if (!near) kept.push(marker);
+  }
+  return kept.sort((a, b) => a.time - b.time);
+}
+
 /**
  * Everything the map draws for the history screen: { lines, places, times,
  * cursor, camera, points } — `points` are the range's fixes (a tap or a drag
@@ -132,9 +147,12 @@ export function historyMapPresentation(model, { color, cursor = null } = {}) {
       ...routeLines(model.edges || [], { color, cursorTime }),
     ],
     places,
-    // The cursor's label already says its time: no marker under it (H1).
-    times: timeMarkers(points, { allIndoor,
-      stays: (model.locations || []).filter(n => ['stop', 'indoor', 'switch'].includes(n.type)) }).filter(marker => !(marker.end && marker.time === cursor?.point?.time)),
+    // The cursor's label already says its time: no marker under it (H1);
+    // a time in the middle too close to a number or another time is left
+    // out (its label would sit on theirs).
+    times: uncrowded(timeMarkers(points, { allIndoor,
+      stays: (model.locations || []).filter(n => ['stop', 'indoor', 'switch'].includes(n.type)) })
+      .filter(marker => !(marker.end && marker.time === cursor?.point?.time)), places),
     cursor: cursor?.point ? { time: cursor.point.time, coordinate: coordinateOf(cursor.point), lines: cursor.label,
       stale: !!cursor.stale, key: cursor.point.time } : null,
     camera: (points.length ? points : dayPoints).map(coordinateOf),
