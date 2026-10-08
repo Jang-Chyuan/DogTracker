@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, space, touch, type } from '../theme/tokens';
+import { formatClockSeconds, formatCount, formatDate, formatDateTime } from '../map/MapFormat';
 import { LoadState, PillButton, dataStyles } from '../settings/DataTable';
 import { settingsStyles } from '../settings/SettingsUI';
 import { LOCATION_RECORD_LIMIT } from './LocationTrackerDatabase';
 import { useLocationTracker } from './useLocationTracker';
 
 const motionLabel = state => ({ moving: '移動', suspected_stationary: '疑似靜止', stationary: '靜止', unknown: '未知' }[state] || '未判定');
-const time = at => new Date(at).toLocaleTimeString('zh-TW', { hour12: false });
-const date = at => new Date(at).toLocaleDateString('zh-TW');
+const time = formatClockSeconds;
+const date = formatDate;
 const fixed = (value, digits, unit = '') => (value == null ? '—' : `${Number(value).toFixed(digits)}${unit}`);
 // A gap of two minutes, or another recording session, is a break.
 const BREAK_MS = 120000;
@@ -27,14 +28,14 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
   return (
     <ScrollView testID="location-records" style={settingsStyles.page} contentContainerStyle={settingsStyles.content}>
       <Text style={dataStyles.hint}>
-        {`已存 ${Number(tracker.total || 0).toLocaleString()}／${LOCATION_RECORD_LIMIT.toLocaleString()} 筆・第 ${tracker.page} 頁`}
+        {`已存 ${formatCount(tracker.total)}／${formatCount(LOCATION_RECORD_LIMIT)} 筆・第 ${tracker.page} 頁`}
       </Text>
       <View style={dataStyles.buttons}>
         <PillButton title="回到最新" onPress={tracker.refresh} />
         <PillButton title="上一頁" onPress={tracker.previous} disabled={tracker.page === 1 || tracker.loading} />
         <PillButton title="下一頁" onPress={tracker.next} disabled={!tracker.hasMore || tracker.loading} />
       </View>
-      <LoadState testID="location-records" loading={tracker.loading && !rows.length} error={tracker.error}
+      <LoadState testID="location-records" loading={tracker.loading && !rows.length} error={tracker.error ? `讀取失敗：${tracker.error}` : ''}
         empty={!rows.length} emptyText="還沒有位置記錄" onRetry={tracker.refresh} />
       {rows.map((row, index) => {
         const previous = rows[index - 1];
@@ -60,7 +61,7 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
               </Text>
               {expanded ? <View style={styles.more}>
                 <Text style={styles.detail}>{`海拔 ${row.altitude_meters ?? '—'} m・方向 ${row.heading_degrees ?? '—'}°`}</Text>
-                <Text style={styles.detail}>{`寫入時間 ${new Date(row.recorded_at).toLocaleString('zh-TW', { hour12: false })}`}</Text>
+                <Text style={styles.detail}>{`寫入時間 ${formatDateTime(row.recorded_at)}`}</Text>
                 {row.display_latitude != null ? <Text style={styles.detail}>
                   {`歷史顯示位置 ${fixed(row.display_latitude, 6)}, ${fixed(row.display_longitude, 6)}・${row.display_source === 'animated' ? '藍點動畫' : '定位管線'}`}
                 </Text> : null}

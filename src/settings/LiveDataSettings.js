@@ -1,19 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { getDeviceProfile } from '../config/DeviceProfiles';
-import { formatClock } from '../map/MapFormat';
+import { formatClockSeconds } from '../map/MapFormat';
 import { ColumnPicker, DataTable, LoadState, PillButton, dataStyles } from './DataTable';
 import { settingsStyles } from './SettingsUI';
 
-const clockWithSeconds = value => {
-  const date = new Date(value);
-  return `${formatClock(value)}:${String(date.getSeconds()).padStart(2, '0')}`;
-};
 
 // Every dog_status column worth reading (widths are the narrowest a column
 // gets; nothing is cut short).
 export const LIVE_COLUMNS = Object.freeze([
-  { key: 'received_at', label: '接收時間', width: 84, format: clockWithSeconds },
+  { key: 'received_at', label: '接收時間', width: 84, format: formatClockSeconds },
   { key: 'master_id', label: '接收器', width: 64 },
   { key: 'slave_id', label: '訊號源', width: 64 },
   { key: 'slave_lat', label: '狗的緯度', width: 96 },
