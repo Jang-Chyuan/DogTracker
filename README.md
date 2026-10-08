@@ -136,7 +136,7 @@ src/database/                       SQLite 儲存
 src/models/DogStatus.js             共用資料模型
 android/app/src/main/java/com/dogtracker/
   BleForegroundService.kt           BLE 前景服務及程序復原
-  QrScannerActivity.kt              CameraX／ML Kit QR 掃描器
+  QrCameraViewManager.kt            D3a 掃描框裡的相機（CameraX／ML Kit）
 ```
 
 更完整的 BLE 協定、模組分工與協作規則請參閱 [PROJECT_GUIDE.md](PROJECT_GUIDE.md)。

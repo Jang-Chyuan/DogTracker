@@ -1,6 +1,6 @@
 import { getErrorMessage } from '../utils/errors';
 import { DEFAULT_ALERT_PREFERENCES, normalizeAlertPreferences } from '../alerts/AlertPreferences';
-import { ONBOARDING_DONE, ONBOARDING_SIGN_IN } from '../app/Launch';
+import { ONBOARDING_DONE, ONBOARDING_SIGN_IN, ONBOARDING_STEPS } from '../app/Launch';
 
 // Home map presets, confirmed 2026-09-16: minutes for working close to the
 // dog, hours for reviewing the outing. 24 hours is the upper bound of the home
@@ -20,6 +20,12 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   // The first-launch guide (Launch.js): a phone that saved nothing yet starts
   // at D1 ('signIn'); a saved row from before the guide existed is 'done'.
   onboarding: ONBOARDING_DONE,
+  // D2 asked for the permissions once (「全部允許」): rows not allowed since
+  // then say 「未允許」 with 「開系統設定 ›」, never a second system question.
+  permissionsAsked: false,
+  // D3 asked for the camera once: refused since then, D3a says 「需要相機才能
+  // 掃描」 with 「開系統設定 ›」.
+  cameraAsked: false,
 });
 
 // Saved by versions before v3, which had a dog to follow and dogs hidden one by
@@ -33,7 +39,8 @@ export function validateTrackingPreferences(value) {
   const settings = { ...DEFAULT_TRACKING_PREFERENCES, ...value };
   if (!['demo', 'real'].includes(settings.mode))
     throw new Error('資料模式設定格式錯誤');
-  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails', 'noDataCardDismissed']) {
+  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails', 'noDataCardDismissed', 'permissionsAsked',
+    'cameraAsked']) {
     if (typeof settings[key] !== 'boolean')
       throw new Error('地圖顯示設定格式錯誤');
   }
@@ -52,7 +59,9 @@ export function validateTrackingPreferences(value) {
     // Missing before v3 (051b); a damaged value falls back to the defaults
     // rather than failing every other preference.
     alerts: normalizeAlertPreferences(settings.alerts),
-    onboarding: settings.onboarding === ONBOARDING_SIGN_IN ? ONBOARDING_SIGN_IN : ONBOARDING_DONE,
+    onboarding: ONBOARDING_STEPS.includes(settings.onboarding) ? settings.onboarding : ONBOARDING_DONE,
+    permissionsAsked: settings.permissionsAsked,
+    cameraAsked: settings.cameraAsked,
   };
 }
 

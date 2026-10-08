@@ -325,16 +325,17 @@ test('useReceiverControl: 中斷連線, 重新連線, and the wrong-receiver dia
   await act(async () => renderer.update(<Probe state={{ ...old, sessionId: 'newer', expectedMasterId: 9,
     lastReceivedAt: 10 }} />));
   expect(native.restoreReceiver).toHaveBeenCalledTimes(1);
-  // A QR-chosen receiver that does not connect: the old one comes back,
-  // connected again because it was (receiver 9 now), and 「沒有更換，還是接收器 9」.
-  act(() => control.watchSwitch(8));
-  await act(async () => control.switchFailed());
-  expect(native.restoreReceiver).toHaveBeenCalledTimes(2);
-  expect(native.reconnect).toHaveBeenCalledTimes(3);
-  expect(alert).toHaveBeenLastCalledWith('沒有更換，還是接收器 9');
-  // Nothing pending: nothing to undo.
-  await act(async () => control.switchFailed());
-  expect(native.restoreReceiver).toHaveBeenCalledTimes(2);
+  // A first set up (D3) typed in by name: nothing to put back; another
+  // Master forgets it and offers 重新搜尋 (back to D3c).
+  act(() => control.watchSwitch(5, { previous: null, session: null, method: 'manual' }));
+  await act(async () => renderer.update(<Probe state={{ ...old, sessionId: 'first', enabled: false,
+    expectedMasterId: 5, lastStatus: 'Master ID 不符合：QR=5，BLE=2' }} />));
+  expect(native.restoreReceiver).toHaveBeenLastCalledWith('', '', '', '', 0);
+  const [, firstMessage, firstButtons] = alert.mock.calls.at(-1);
+  expect(firstMessage).toBe('要連 5，收到的是 2，已中斷連線');
+  expect(firstButtons.map(button => button.text)).toEqual(['稍後再說', '重新搜尋']);
+  firstButtons[1].onPress();
+  expect(onRescan).toHaveBeenLastCalledWith('manual');
   await act(async () => renderer.unmount());
   alert.mockRestore();
 });

@@ -5,7 +5,7 @@
 ```
 dogtracker://dev/fixture?name=<名稱>    打開情境
 dogtracker://dev/fixture?name=off       回到真實資料
-dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：settings receiver phone cloud alerts advanced diagnostics wifi liveData cloudData locationRecords
+dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：settings receiver phone cloud alerts advanced diagnostics wifi liveData cloudData locationRecords permissions pair paired
 ```
 
 - 只有 `__DEV__` 會監聽（`useScreenFixture.js`），只有 `android/app/src/debug/AndroidManifest.xml` 宣告 `dogtracker` scheme；release 版收不到這個連結。
@@ -34,6 +34,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 刪除全部狗資料 | `deletion: { unsent, open }`：還沒上傳的筆數、確認框一打開就出現；情境裡「先上傳」一律沒網路、「一起刪除」不刪任何東西 | `useDeleteDogData` → S7 確認框 |
 | 啟動 | `launch`：冷啟動時 `Launch.launchScreen` 讀的輸入（資料庫打開了沒／錯誤、設定讀完沒、引導走到哪一步、恢復登入結束或超過 10 秒、登入了沒、恢復時登入已失效）；`restoring`：恢復登入還在等 Supabase | `launchScreen` → App 開在地圖、D1（第一次／登入失效）或 D0 啟動失敗；S3「暫時連不上，會自動重試」 |
 | 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
+| 初次使用 D2–D4 | `permissionsGuide`（D2 每列的允許狀態 `grants`、問過了沒 `asked`）、`pairing`（D3 的畫面：`view`、`camera`、`dialog`、`target`、`nearby`、`input`）；開在引導的那一頁（有進度條）。情境不問任何權限、不掃描、不連線，掃描框裡不開相機 | `permissionsPage` → D2；`usePairing` → D3；D4 用 `pairedPage` 讀同一批本機列 |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新有效電量）→ `DogCardModel` |
 
 第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的個人頁（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
@@ -102,6 +103,16 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `onboarding-first-launch` | 第一次開 App、沒登入 → D1「登入 Supabase 帳號」，上方引導進度條第 1 步（共 4 步）、下方「登入」「稍後再說」；情境裡的「稍後再說」不寫進這支手機的設定 |
 | `auth-restore-slow` | 恢復登入超過 10 秒還連不上 Supabase → 先用手機裡的資料進地圖（只有接收器 7 的豆豆、狗 5）；`&page=cloud` 的 S3 寫「暫時連不上，會自動重試」 |
 | `auth-expired` | 冷啟動時恢復登入發現登入已失效 → D1 上方紅字「需要重新登入」（沒有進度條）；完成、「稍後再說」、返回鍵都回地圖 |
+| `onboard-permissions-partial` | D2c：附近的裝置已允許、精確位置只給了大概、通知未允許 → 紅色「!」＋「開系統設定 ›」，按鈕「下一步」 |
+| `onboard-permissions-done` | D2d：三列都「已允許」、按鈕「下一步」 |
+| `pair-wrong-qr` | D3b：掃到不是接收器的 QR →「這不是接收器的 QR Code」「手動輸入」「再掃一次」 |
+| `pair-camera-denied` | D3a 相機被拒：掃描框換成「需要相機才能掃描」「開系統設定 ›」，下面照樣有「手動輸入」 |
+| `pair-manual-nearby` | D3c：輸入「DogGPS-Master 7」，搜尋中，附近找到 DogGPS-Master7（訊號強）、DogGPS-Master3（訊號弱） |
+| `pair-connecting` | D3d：「正在連 DogGPS-Master7…」＋「取消」 |
+| `pair-failed` | D3d 30 秒連不上：「連不上接收器 7」「手動輸入」「重試」 |
+| `pair-mismatch` | QR 寫 7、收到 3：「這不是要連的接收器」「要連 7，收到的是 3，已中斷連線」「稍後再說」「重新掃描」 |
+| `pair-done-sources` | D4：已連上接收器 7、收到訊號源 4、7、9（9 還沒定位也列出） |
+| `pair-done-empty` | D4b：已連上接收器 7、還沒收到訊號源 |
 | `db-open-failed` | 手機裡的資料庫打不開 → D0 啟動失敗「手機裡的資料打不開」＋「重試」「診斷」；「診斷」最上面寫原因 |
 
 ## 新增情境（之後每個 PR）

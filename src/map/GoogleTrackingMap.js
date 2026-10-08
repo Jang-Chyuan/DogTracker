@@ -22,7 +22,7 @@ import { INDOOR_WORD, nameTags } from './DogMarkers';
 import { dogMapLabel } from '../mapHistory/DogAliases';
 import { reportMapFramed } from '../app/hideSplash';
 import {
-  framedCoordinates, framePadding, frameAllCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S, regionForFrame,
+  framedCoordinates, framePadding, frameAllCoordinates, receiverDogsCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S, regionForFrame,
 } from './MapFraming';
 import { edgeHints } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
@@ -201,6 +201,9 @@ function GoogleTrackingMapRenderer({
   // { key, coordinate }: a dog's card just opened; bring the dog into view
   // above it if the card or the screen edge hides it (once per key).
   focusDog,
+  // { key, receiverId }: frame that receiver's located dogs once (back from
+  // D3 opened by A6); nothing located leaves the map where it is.
+  frameRequest = null,
   // How much of the bottom an open card covers (0: none). The map's own
   // padding stays at bottomInset — changing it would shift the whole map each
   // time a card opens — so only what is drawn over the map (buttons, hints,
@@ -505,6 +508,15 @@ function GoogleTrackingMapRenderer({
     // takeCamera only flips refs; the effect runs per opening (focusDog.key).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusDog, usable, cursorLayout.height, overlayTop, overlayBottom, fitCount, needsFirstPositionFit]);
+  const framedRequest = useRef(null);
+  useEffect(() => {
+    if (!frameRequest || framedRequest.current === frameRequest.key || !usable) return;
+    framedRequest.current = frameRequest.key;
+    const points = receiverDogsCoordinates(dogMarkers, frameRequest.receiverId);
+    if (points.length) frame(points);
+    // Once per request; the markers are read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameRequest?.key, usable]);
   const pressFrameAll = () => frame(frameAllCoordinates(dogMarkers, currentPhone()));
   const pressMyLocation = () => {
     const position = currentPhone();
