@@ -4,7 +4,7 @@
 
 ## 功能與用途
 
-地圖的犬隻清單及裝置詳情會顯示「目前環境」。這是環境推估，不是精確位置或活動種類辨識。QR 掃描使用的 Google ML Kit 是另一項獨立功能；活動量圖則整理硬體回報的活動值，不使用本環境模型。
+第三版即時地圖不顯示環境；設定 → 診斷（S8）的「每隻狗的判斷」顯示每隻狗的「目前環境」。這是環境推估，不是精確位置或活動種類辨識。QR 掃描使用的 Google ML Kit 是另一項獨立功能；活動量圖則整理硬體回報的活動值，不使用本環境模型。
 
 ## 資料流程
 
@@ -73,7 +73,8 @@ USB 規則是「插 USB 視為室內」的產品假設；室外接行動電源�
 | [inference.js](inference.js) | 時間視窗彙整、缺值處理、森林推論與原始雲端資料轉換 |
 | [model.json](model.json) | 模型版本、特徵、補值參數與 300 棵樹 |
 | [CloudDatabase.js](../cloud/CloudDatabase.js) | 查詢最近已結束且有資料的兩分鐘視窗 |
-| [IndoorHold.js](../placement/IndoorHold.js) | 停在原處用環境結果判斷室內（第三版即時地圖不再另外顯示環境標籤；診斷頁 S8 之後顯示） |
+| [IndoorHold.js](../placement/IndoorHold.js) | 停在原處用環境結果判斷室內（第三版即時地圖不再另外顯示環境標籤） |
+| [DiagnosticsModel.js](../diagnostics/DiagnosticsModel.js) | 設定 → 診斷（S8）每隻狗最近一個兩分鐘視窗的結果、三類機率與筆數 |
 | [Environment.test.js](../../__tests__/Environment.test.js) | USB、缺資料、過期、低信心與犬隻資料隔離測試 |
 
 ## 驗證方式

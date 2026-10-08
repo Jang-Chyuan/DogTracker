@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { readLocationPage } from './LocationTrackerDatabase';
 import { startLocationTracker, stopLocationTracker } from './LocationTrackerService';
 
-export function useLocationTracker(foreground) {
+// `readPage`: where the rows come from (a screen fixture's own, in debug).
+export function useLocationTracker(foreground, readPage = readLocationPage) {
   const [cursors, setCursors] = useState([0]);
   const [revision, setRevision] = useState(0);
   const [data, setData] = useState({ rows: [], total: 0, running: false, status: '讀取中…' });
@@ -23,7 +24,7 @@ export function useLocationTracker(foreground) {
     async function load() {
       setLoading(true);
       try {
-        const result = await readLocationPage(before);
+        const result = await readPage(before);
         if (alive) { setData(result); setError(null); }
       } catch (e) { if (alive) setError(e.message); }
       finally {
@@ -35,7 +36,7 @@ export function useLocationTracker(foreground) {
     }
     load();
     return () => { alive = false; clearTimeout(timer); };
-  }, [before, revision, foreground]);
+  }, [before, revision, foreground, readPage]);
   async function toggle() {
     if (action.current) return;
     action.current = true;

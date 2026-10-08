@@ -3,6 +3,7 @@ import { createDogDatabase } from './DogDatabase';
 import { createSettingsDatabase } from './SettingsDatabase';
 import { createCloudDatabase } from '../cloud/CloudDatabase';
 import { createHistoryDatabase } from '../mapHistory/HistoryDatabase';
+import { createDogDataStore } from './DogDataStore';
 
 // All local tables share dogtracker.sqlite; only this owner closes the connection.
 export function createLocalDatabases() {
@@ -27,6 +28,8 @@ export function createLocalDatabases() {
     settings: prepare(createSettingsDatabase(connection)),
     cloud: prepare(createCloudDatabase(connection)),
     history: createHistoryDatabase(connection),
+    // 刪除全部狗資料 (S7): this phone's dog positions and downloaded copy.
+    dogData: createDogDataStore(connection),
     close() {
       connection.close();
     },

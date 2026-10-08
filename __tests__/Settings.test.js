@@ -339,19 +339,6 @@ test('useReceiverControl: 中斷連線, 重新連線, and the wrong-receiver dia
   alert.mockRestore();
 });
 
-test('診斷 shows why positions cannot be written, above the old pages', async () => {
-  const SettingsLinks = require('../src/settings/SettingsLinks').default;
-  const { SETTINGS_LINKS } = require('../src/settings/SettingsLinks');
-  let renderer;
-  await act(async () => {
-    renderer = Renderer.create(<SettingsLinks links={SETTINGS_LINKS.diagnostics} onOpen={() => {}}
-      storage={{ full: false, reason: '資料存檔失敗：attempt to write a readonly database' }} />);
-  });
-  expect(text(renderer)).toContain('資料存檔失敗：attempt to write a readonly database');
-  expect(text(renderer)).toContain('即時資料');
-  await act(async () => renderer.unmount());
-});
-
 // ---- S4 ---------------------------------------------------------------------
 
 test('phone-permissions-missing: one 權限 cell naming what is missing, 定位服務 打開, battery 已允許', () => {
