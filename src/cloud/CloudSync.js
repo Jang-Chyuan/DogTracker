@@ -2,6 +2,7 @@ import { downloadMasterIncremental, listCloudMasters } from './CloudIncremental'
 import { withCloudSyncSlot, cancelBackgroundSync } from './CloudSyncSlot';
 import { reconcileCloudWindow } from './CloudReconcile';
 import { repairCloudTrackTimes } from './CloudTrackTime';
+import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
 // that are found by the count check instead. Sweeping every cycle would spend
@@ -26,8 +27,11 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   // brought is current up to then); failingSince: the first failure since the
   // last success. DogFreshness judges cloud dogs by these (v3 判定表「未更新
   // （雲端的狗）」).
+  // authFailed: the last pass was refused for the sign-in (401, expired JWT:
+  // 判定表「使用中登入失效」); offline: it never reached Supabase (S3 can
+  // say a switch needs the network).
   let state = { busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
-    failingSince: null, revision: 0 };
+    failingSince: null, authFailed: false, offline: false, revision: 0 };
   const publish = patch => {
     state = { ...state, ...patch };
     if (!disposed) onChange({ ...state, owner, foreground });
@@ -85,11 +89,12 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           }
         }
         check();
-        publish({ lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null });
+        publish({ lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
       } catch (error) {
         if (valid(version) && (!abort.signal.aborted || timedOut)) {
           publish({ error: timedOut ? '同步逾時，已儲存批次保留，稍後重試' : error.message,
-            failingSince: state.failingSince ?? now() });
+            failingSince: state.failingSince ?? now(), authFailed: !timedOut && isAuthFailure(error),
+            offline: timedOut || isNetworkFailure(error) });
         }
       } finally {
         clearTimeout(timeout);
@@ -112,7 +117,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       sweptAt = 0;
       generation += 1;
       controller?.abort();
-      publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, revision: state.revision + 1 });
+      publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
+        offline: false, revision: state.revision + 1 });
       wake();
     },
     setForeground(active) {
@@ -130,6 +136,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       }
       publish({});
     },
+    // S3 「重試」: a pass now instead of at the next 30-second tick.
+    retry() { wake(); },
     async runManual(work, abort = new AbortController()) {
       if (manualPending || state.mode === 'manual') throw new Error('已有下載進行中');
       const version = generation;

@@ -192,9 +192,13 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(text()).toContain('位置記錄');
   expect(text()).toContain('忽略電池最佳化');
   await act(async () => expect(onBack()).toBe(true));
-  // Supabase 帳號 → the cloud page (sign-in) until S3.
+  // Supabase 帳號 → S3 (signed in: the account, 下載, 上傳).
   await tap('settings-row-account');
   expect(title()).toBe('返回，Supabase 帳號');
+  expect(renderer.root.findAllByProps({ testID: 'account-settings' }).length).toBeGreaterThan(0);
+  expect(text()).toContain('已登入');
+  expect(text()).toContain('最後上傳成功');
+  expect(text()).not.toContain('轉送 Supabase');
   await press('返回，Supabase 帳號');
   // 診斷 keeps the old data table and the phone's record list in reach.
   await tap('settings-row-diagnostics');
@@ -203,12 +207,16 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(title()).toBe('返回，即時資料');
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，診斷');
+  // 本機／雲端資料 (the old cloud table) until S8.
+  await tap('settings-link-cloudData');
+  expect(title()).toBe('返回，本機／雲端資料');
+  await act(async () => expect(onBack()).toBe(true));
   await tap('settings-link-records');
   expect(title()).toBe('返回，記錄清單');
   expect(text()).toContain('80,000 筆');
   await act(async () => expect(onBack()).toBe(true));
   await act(async () => expect(onBack()).toBe(true));
-  // 進階 keeps 接收器 Wi-Fi and the upload settings in reach.
+  // 進階 keeps 接收器 Wi-Fi in reach; the upload settings are on S3.
   await tap('settings-row-advanced');
   expect(title()).toBe('返回，進階');
   await tap('settings-link-wifi');
@@ -216,10 +224,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   // The hardware page's 「‹ 標題」 goes back like the back key.
   await press('返回，接收器 Wi-Fi');
   expect(title()).toBe('返回，進階');
-  await tap('settings-link-upload');
-  expect(title()).toBe('返回，上傳設定');
-  expect(text()).toContain('轉送 Supabase');
-  await act(async () => expect(onBack()).toBe(true));
+  expect(row('settings-link-upload')).toBeUndefined();
   await act(async () => expect(onBack()).toBe(true));
   // Settings' own 「‹ 設定」 (and the back key) return to the map.
   await press('返回，設定');
@@ -253,6 +258,36 @@ test('a settings fixture opens its page over the map: S1 with red 「!」 rows, 
   // Back from S2 returns to S1, then to the map.
   await press('返回，接收器');
   expect(title()).toBe('返回，設定');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
+});
+
+test('S3 fixtures: the account page with its states, the switch confirmation, back to settings', async () => {
+  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=upload-switch-confirm');
+  let emit;
+  Linking.addEventListener.mockImplementationOnce((_, handler) => {
+    emit = handler;
+    return { remove: jest.fn() };
+  });
+  await mount();
+  await advance(100);
+  expect(title()).toBe('返回，Supabase 帳號');
+  expect(text()).toContain('這台接收器改由這支手機上傳。手機裡還有 120 筆沒上傳，會先上傳。');
+  // The fixture's switch writes nothing; the dialog closes.
+  await press('切換');
+  expect(text()).not.toContain('會先上傳');
+  expect(text()).toContain('由接收器的 Wi-Fi 上傳');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=cloud-failing&page=cloud' }));
+  await advance(100);
+  expect(text()).toContain('下載失敗');
+  expect(text()).toContain('連不上 Supabase・09:24 起');
+  expect(text()).toContain('12 筆');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=cloud-expired' }));
+  await advance(100);
+  expect(text()).toContain('需要重新登入');
+  expect(text()).toContain('登入 Supabase 帳號');
+  await press('返回，Supabase 帳號');
+  expect(title()).toBe('返回，設定');
+  expect(row('settings-row-account').props.accessibilityLabel).toBe('Supabase 帳號，有問題：需要重新登入');
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 

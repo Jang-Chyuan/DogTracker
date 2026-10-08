@@ -16,10 +16,11 @@ export function signInErrorText(failure) {
 
 /**
  * The sign-in form (D1 登入 Supabase 帳號). Signing in is optional: the app
- * works without it, so the form lives on the 雲端資料 page rather than in
- * front of the map. Render inside AuthProvider; `onLater` is 「稍後再說」.
+ * works without it, so the form lives on 設定 → Supabase 帳號 (S3) rather than in
+ * front of the map. Render inside AuthProvider; `onLater` is 「稍後再說」;
+ * `expired` (登入失效, default AuthProvider's) adds 「需要重新登入」.
  */
-export default function LoginScreen({ onSignedIn, onLater }) {
+export default function LoginScreen({ onSignedIn, onLater, expired: expiredProp }) {
   const auth = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,7 +50,7 @@ export default function LoginScreen({ onSignedIn, onLater }) {
   const message = error || auth.error;
   return <View style={styles.panel}>
     <Text style={styles.title}>登入 Supabase 帳號</Text>
-    {auth.expired ? <Text accessibilityRole="alert" style={styles.expired}>需要重新登入</Text> : null}
+    {(expiredProp ?? auth.expired) ? <Text accessibilityRole="alert" style={styles.expired}>需要重新登入</Text> : null}
     <Text style={styles.body}>登入後會把收到的位置上傳，也能看到隊友的狗。不登入也可以用，只顯示這支手機連到的接收器。</Text>
     <TextInput accessibilityLabel="電子郵件" placeholder="電子郵件" placeholderTextColor={colors.textMuted}
       style={[styles.field, !!error && styles.fieldError, disabled && styles.disabled]}

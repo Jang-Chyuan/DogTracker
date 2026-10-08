@@ -24,9 +24,10 @@ import { ui } from './src/components/ScreenUI';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
-import CloudScreen from './src/cloud/CloudScreen';
+import CloudDataScreen from './src/cloud/CloudDataScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
-import UploadSettingsScreen from './src/cloudUpload/UploadSettingsScreen';
+import AccountSettings from './src/settings/AccountSettings';
+import { accountPage } from './src/settings/AccountModel';
 import SettingsHome from './src/settings/SettingsHome';
 import ReceiverSettings from './src/settings/ReceiverSettings';
 import PhoneSettings from './src/settings/PhoneSettings';
@@ -67,7 +68,7 @@ export default function App() {
 export function AuthGate({ children }) {
   const { loading, user } = useAuth();
   // Signing in is optional (v3 D1): signed out, the app opens on the map with
-  // this phone's own receiver data, and 設定 → 雲端資料 is where to sign in.
+  // this phone's own receiver data, and 設定 → Supabase 帳號 is where to sign in.
   // The launch screen covers session restore and stays until the map has
   // loaded (GoogleTrackingMap), signed in or not, so there is no blank or
   // "restoring" page in between.
@@ -101,7 +102,7 @@ const PAGE_TITLES = {
   diagnostics: '診斷',
   advanced: '進階',
   locationRecords: '記錄清單',
-  upload: '上傳設定',
+  cloudData: '本機／雲端資料',
 };
 // The old hardware pages, by what they were opened for.
 const HARDWARE_TITLES = { scan: '連接接收器', qr: '連接接收器', wifi: '接收器 Wi-Fi', data: '即時資料' };
@@ -109,7 +110,7 @@ const pageTitle = route => (route.name === 'hardware' ? HARDWARE_TITLES[route.en
   : PAGE_TITLES[route.name] || '設定');
 // The v3 settings pages (light); the old pages keep their dark look until
 // their v3 pages replace them (051–053).
-const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'diagnostics', 'advanced']);
+const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'cloud', 'diagnostics', 'advanced']);
 // Where each settings home row leads.
 const SETTINGS_ROUTES = { receiver: 'receiver', phone: 'phone', account: 'cloud', diagnostics: 'diagnostics',
   advanced: 'advanced' };
@@ -133,8 +134,11 @@ const authStyles = StyleSheet.create({
 function TrackerApp() {
   const auth = useAuth();
   const tracking = useTrackingSession();
-  const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real);
-  const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
+  // An upload or download refused for the sign-in (401) asks AuthProvider
+  // whether it ended (判定表「使用中登入失效」).
+  const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real, undefined, auth.reportAuthFailure);
+  const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground,
+    auth.reportAuthFailure);
   const insets = useSafeAreaInsets();
   // The pages opened from the map, newest last; back (the key or 「‹ 標題」)
   // returns to the one before.
@@ -190,7 +194,7 @@ function TrackerApp() {
       // The gear's red dot: the upload failing or the sign-in expired.
       cloudProblem: !!cloudSync.ownerId && !!upload.error,
       signInExpired: !!auth.expired,
-      permissions,
+      permissions, upload,
       account: { signedIn: !!auth.user, email: auth.user?.email || '' } }, fixtureEdits);
   // ---- the receiver, for the map and the settings pages ------------------
   const settingsOpen = LIGHT_PAGES.has(route.name) || route.name === 'hardware';
@@ -253,10 +257,21 @@ function TrackerApp() {
       content = <LocationTrackerScreen foreground={tracking.foreground} />;
       break;
     case 'cloud':
-      content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync} onLater={goBack} />;
+      // S3: signed out it is the sign-in form (「稍後再說」 goes back). A
+      // fixture's page writes nothing and signs nobody out.
+      page = <AccountSettings page={accountPage(settingsData)} onLater={goBack}
+        dialog={fixture?.dialog ?? null}
+        onSignOut={fixture ? async () => {} : async () => {
+          await auth.signOut();
+          // A6 comes back after signing out (判定表「A6 的 ✕ 什麼時候重來」).
+          tracking.saveTrackingPreferences?.({ noDataCardDismissed: false })?.catch?.(() => {});
+        }}
+        onRetryDownload={fixture ? () => {} : () => cloudSync.retry?.()}
+        onRetryUpload={() => mapInputs.upload?.retry?.()?.catch?.(() => {})}
+        onSwitch={(master, mode) => mapInputs.upload.switchMode(master, mode)} />;
       break;
-    case 'upload':
-      content = <UploadSettingsScreen upload={upload} />;
+    case 'cloudData':
+      content = <CloudDataScreen database={tracking.cloudDatabase} sync={cloudSync} phoneId={upload.phoneId} />;
       break;
     case 'settings': {
       const home = settingsHome(settingsData);
@@ -281,7 +296,7 @@ function TrackerApp() {
     case 'advanced':
       page = <SettingsLinks links={SETTINGS_LINKS[route.name]}
         storage={route.name === 'diagnostics' ? settingsData.storage : null}
-        onOpen={id => (id === 'records' ? open('locationRecords') : id === 'upload' ? open('upload')
+        onOpen={id => (id === 'records' ? open('locationRecords') : id === 'cloudData' ? open('cloudData')
           : openHardware(id))} />;
       break;
     default:

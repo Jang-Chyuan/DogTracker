@@ -1,22 +1,22 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { TextInput } from 'react-native';
 import { AuthProvider } from '../src/auth/AuthProvider';
-import CloudScreen from '../src/cloud/CloudScreen';
+import CloudDataScreen from '../src/cloud/CloudDataScreen';
 
 let renderer;
-// The page's sign-in form reads the app's AuthProvider, on the same client.
+// Signing in happens on S3; this page follows the shared client's session.
 const withAuth = element => Renderer.create(<AuthProvider clientFactory={element.props.clientFactory}>
   {element}
 </AuthProvider>);
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = null; });
 
+let lastClient;
 function fixtures() {
   // One client shared by AuthProvider and the page, as in the app.
   const listeners = new Set();
   const listener = (event, session) => listeners.forEach(callback => callback(event, session));
   const user = { id: 'account-a', email: 'user@example.test' };
-  const client = { auth: {
+  const client = lastClient = { auth: {
     onAuthStateChange: jest.fn(callback => {
       listeners.add(callback);
       return { data: { subscription: { unsubscribe: () => listeners.delete(callback) } } };
@@ -44,32 +44,28 @@ async function press(label) {
   await act(async () => { await button.props.onPress(); });
 }
 async function login() {
-  await act(async () => {
-    renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === '電子郵件')
-      .props.onChangeText('user@example.test');
-    renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === '密碼')
-      .props.onChangeText('test-only-password');
-  });
-  await press('登入');
+  await act(async () => { await lastClient.auth.signInWithPassword(); });
 }
 
-test('login loads only that account cache and logout hides it and clears password', async () => {
+test('signing in (on S3) loads only that account cache and signing out hides it', async () => {
   const { client, database } = fixtures();
-  await act(async () => { renderer = withAuth(<CloudScreen database={database} clientFactory={() => client} />); });
+  await act(async () => { renderer = withAuth(<CloudDataScreen database={database} clientFactory={() => client} />); });
   await login();
-  expect(client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'user@example.test', password: 'test-only-password' });
   expect(database.listHistory).toHaveBeenCalledWith('account-a', 0);
   expect(text()).toContain('ACCOUNT_A_ONLY');
-  await press('登出');
+  // No sign-in form or 登出 here: those are on S3.
+  expect(text()).not.toContain('登入 Supabase 帳號');
+  expect(text()).not.toContain('"登出"');
+  await act(async () => { await client.auth.signOut(); });
   expect(text()).not.toContain('ACCOUNT_A_ONLY');
-  expect(renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === '密碼').props.value).toBe('');
+  expect(text()).toContain('登入 Supabase 帳號後');
 });
 
 test('late cache reads cannot display the previous account after an auth change', async () => {
   const { client, database, emit } = fixtures();
   let finishOldRead;
   database.listHistory.mockImplementationOnce(() => new Promise(resolve => { finishOldRead = resolve; }));
-  await act(async () => { renderer = withAuth(<CloudScreen database={database} clientFactory={() => client} />); });
+  await act(async () => { renderer = withAuth(<CloudDataScreen database={database} clientFactory={() => client} />); });
   await login();
   database.listHistory.mockResolvedValue([]);
   await act(async () => { emit({ user: { id: 'account-b', email: 'b@example.test' } }); });
@@ -81,7 +77,7 @@ test('late cache reads cannot display the previous account after an auth change'
 test('automatic sync refreshes the local table without a manual download option', async () => {
   const { client, database } = fixtures();
   const clientFactory = () => client;
-  await act(async () => { renderer = withAuth(<CloudScreen database={database}
+  await act(async () => { renderer = withAuth(<CloudDataScreen database={database}
     sync={{ revision: 0, mode: 'auto' }} clientFactory={clientFactory} />); });
   await login();
   expect(text()).toContain('自動同步中');
@@ -90,7 +86,7 @@ test('automatic sync refreshes the local table without a manual download option'
   expect(text()).not.toContain('結束日期');
   expect(text()).toContain('ACCOUNT_A_ONLY');
   database.listHistory.mockResolvedValue([{ id: 2, sequence: 'AUTO_SYNC_NEW_ROW' }]);
-  await act(async () => renderer.update(<AuthProvider clientFactory={clientFactory}><CloudScreen database={database}
+  await act(async () => renderer.update(<AuthProvider clientFactory={clientFactory}><CloudDataScreen database={database}
     sync={{ revision: 1, lastSuccess: 1000 }} clientFactory={clientFactory} /></AuthProvider>));
   expect(text()).toContain('AUTO_SYNC_NEW_ROW');
   expect(text()).toContain('上次同步');

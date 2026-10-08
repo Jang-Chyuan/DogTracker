@@ -18,3 +18,13 @@ changes. Android data-sync timeouts stop the service and prevent automatic
 restart in that process; the UI reports the startup error while foreground
 upload and the network-constrained 15-minute WorkManager fallback remain usable.
 This does not change the receiver phone's cloud download interval.
+
+## Upload routes (S3)
+
+Each receiver (Master) uploads either by its own Wi-Fi or through this phone;
+the route is chosen on 設定 → Supabase 帳號 (S3), after a confirmation. No
+receiver uses this phone by default. A switch never deletes queued rows: what
+this phone still holds for that receiver is sent first (`UploadService.flush`,
+which needs the network); if that cannot finish, the route does not change.
+An upload refused with 401 asks `AuthProvider.reportAuthFailure` whether the
+sign-in ended (one refresh; refused → 登入失效).

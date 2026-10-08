@@ -3,7 +3,7 @@ import { Linking, LogBox } from 'react-native';
 import { buildFixture, fixtureNameFromUrl, fixturePageFromUrl } from './ScreenFixtures';
 
 // Debug builds only (__DEV__): listens for dogtracker://dev/fixture?name=…
-// (&page=settings|receiver|phone opens that settings page of the state) and
+// (&page=settings|receiver|phone|cloud opens that settings page of the state) and
 // hands back the fixture to draw, or null for the live data (?name=off). Release builds never subscribe, and only the debug manifest
 // (android/app/src/debug/AndroidManifest.xml) declares the scheme.
 export function useScreenFixture(enabled = __DEV__) {

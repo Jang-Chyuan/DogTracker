@@ -166,6 +166,8 @@ const TONES = StyleSheet.create({
   critAction: { color: colors.problemBadge },
   tonal: { color: colors.tonalText },
   muted: { color: colors.textMuted },
+  // A value on the right in bold (S3 「12 筆」「10:04」, as .v7li .r).
+  mutedBold: { color: colors.textMuted, fontWeight: '700' },
   danger: { color: colors.problemBadge },
   plain: { color: colors.text },
 });

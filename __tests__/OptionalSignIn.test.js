@@ -3,7 +3,8 @@ import Renderer, { act } from 'react-test-renderer';
 import { AppState, NativeModules, Text, TextInput } from 'react-native';
 import { AuthProvider, useAuth } from '../src/auth/AuthProvider';
 import { AuthGate } from '../App';
-import CloudScreen from '../src/cloud/CloudScreen';
+import AccountSettings from '../src/settings/AccountSettings';
+import { accountPage } from '../src/settings/AccountModel';
 import { useCloudSync } from '../src/cloud/useCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { useHistoryDownload } from '../src/mapHistory/useHistoryDownload';
@@ -12,7 +13,7 @@ import { settingsHome } from '../src/settings/SettingsModel';
 import { signInErrorText } from '../src/screens/LoginScreen';
 
 // One Supabase client shared by every subscriber (AuthProvider, useCloudSync,
-// CloudScreen), as getCloudClient returns in the app.
+// S3), as getCloudClient returns in the app.
 function supabase({ restored = null } = {}) {
   const listeners = new Set();
   let restore;
@@ -50,6 +51,14 @@ function spyDatabase() {
     latestBySlave: record('latestBySlave'), latestStatusRows: record('latestStatusRows'),
     trackBySlave: record('trackBySlave'), holdRows: record('holdRows'),
   };
+}
+
+// S3 as App draws it: the account page from AuthProvider and the sync.
+function AccountPage({ sync = {}, onLater }) {
+  const auth = useAuth();
+  return <AccountSettings onLater={onLater} onSignOut={auth.signOut}
+    page={accountPage({ account: { signedIn: !!auth.user, email: auth.user?.email || '' },
+      signInExpired: auth.expired, sync, upload: { settingsReady: true } })} />;
 }
 
 let renderer, previousCloud, previousBle;
@@ -147,12 +156,12 @@ test('without an account the cloud hooks stay idle: no sync, no reads of cloud r
   expect(NativeModules.CloudBackgroundSync.setOwner).toHaveBeenLastCalledWith(null);
 });
 
-test('signing in from 設定 → 雲端資料 starts the sync and stays on that page', async () => {
+test('signing in from 設定 → Supabase 帳號 (S3) starts the sync and stays on that page', async () => {
   const s = supabase(), database = spyDatabase(), later = jest.fn();
   let sync;
   function Page() {
     sync = useCloudSync(database, true, s.factory);
-    return <CloudScreen database={database} sync={sync} onLater={later} clientFactory={s.factory} />;
+    return <AccountPage sync={sync} onLater={later} />;
   }
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}><Page /></AuthProvider>); });
   // The D1 form, with 「稍後再說」 going back.
@@ -179,13 +188,14 @@ test('signing in from 設定 → 雲端資料 starts the sync and stays on that 
   expect(text()).toContain('登出');
 });
 
-test('登入失效 on the 雲端資料 page asks to sign in again there', async () => {
+test('登入失效 on S3 asks to sign in again there', async () => {
   const s = supabase({ restored: { user: { id: 'account-a', email: 'user@example.test' } } });
   const database = spyDatabase();
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}>
-    <CloudScreen database={database} clientFactory={s.factory} />
+    <AccountPage />
   </AuthProvider>); });
   expect(text()).toContain('user@example.test');
+  expect(database.calls).toEqual([]);
   await act(async () => s.emit('SIGNED_OUT', null));
   expect(text()).toContain('需要重新登入');
   expect(text()).toContain('登入 Supabase 帳號');
@@ -214,7 +224,7 @@ test('sign-in failures read as the design says', () => {
 test('登入 is checked when pressed: empty fields say so and reach no server', async () => {
   const s = supabase();
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}>
-    <CloudScreen database={spyDatabase()} clientFactory={s.factory} />
+    <AccountPage />
   </AuthProvider>); });
   const login = renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
     && typeof node.props.onPress === 'function')[0];
@@ -222,4 +232,22 @@ test('登入 is checked when pressed: empty fields say so and reach no server', 
   await act(async () => login.props.onPress());
   expect(text()).toContain('請輸入電子郵件和密碼');
   expect(s.client.auth.signInWithPassword).not.toHaveBeenCalled();
+});
+
+test('a download refused for the sign-in asks once whether the sign-in ended (登入失效)', async () => {
+  const s = supabase({ restored: { user: { id: 'account-a' } } }), database = spyDatabase();
+  const refused = { data: null, error: { message: 'JWT expired', code: 'PGRST301' }, status: 401 };
+  const query = { select: () => query, eq: () => query, order: () => query, range: () => query,
+    abortSignal: async () => refused };
+  s.client.from = jest.fn(() => query);
+  const failures = jest.fn();
+  let sync;
+  function Probe() { sync = useCloudSync(database, true, s.factory, failures); return null; }
+  await act(async () => { renderer = Renderer.create(<Probe />); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(sync.authFailed).toBe(true);
+  expect(failures).toHaveBeenCalledTimes(1);
+  // 重試 runs another pass; the same refusal is reported again (a new pass).
+  await act(async () => { sync.retry(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(s.client.from.mock.calls.length).toBeGreaterThan(1);
 });

@@ -148,6 +148,24 @@ const receiving = now => ({
 const synced = now => ({ ownerId: FIXTURE_OWNER, lastSuccess: now - 5 * SECOND,
   lastDownloadAt: now - 5 * SECOND, failingSince: null, error: null });
 
+// useCloudUpload's answer (S3): receivers this account may upload for
+// (`masters`), each one's route (`phone` / `wifi` lists), rows still waiting
+// per receiver, rows the cloud refused (`blocked`), the last success. Its
+// actions write nothing.
+function uploading(now, { phone = [7], wifi = [], pending = {}, blocked = 0, last = now - 8 * SECOND,
+  error = '' } = {}) {
+  const waiting = Object.values(pending).reduce((sum, value) => sum + value, 0);
+  return {
+    owner: FIXTURE_OWNER, supported: true, settingsReady: true, phoneId: 'fixture-phone',
+    masters: [...phone, ...wifi],
+    settings: [...phone.map(master => ({ master_id: master, mode: 'phone' })),
+      ...wifi.map(master => ({ master_id: master, mode: 'wifi' }))],
+    counts: [{ status: 'pending', count: waiting }, ...(blocked ? [{ status: 'blocked', count: blocked }] : [])],
+    pendingByMaster: pending, last, error,
+    setMode: async () => {}, switchMode: async () => {}, retry: async () => {},
+  };
+}
+
 // No account: useCloudSync has no owner and nothing was downloaded for one.
 const SIGNED_OUT = Object.freeze({ ownerId: null, lastSuccess: null, lastDownloadAt: null,
   failingSince: null, error: null });
@@ -267,9 +285,12 @@ const FIXTURES = {
   // The map itself cannot open: grey only, 「地圖打不開」.
   'map-unavailable': now => ({ ...FIXTURES['all-good'](now), mapFailure: 'component' }),
   // Downloads have failed for six minutes: the gear's red dot only, no card.
+  // On S3 (&page=cloud) as in the S3 mockup: 下載失敗 (連不上 Supabase・
+  // 09:24 起), 12 rows still waiting, the last upload 16 minutes ago.
   'cloud-failing': now => ({ ...FIXTURES['all-good'](now),
     cloud: { ...synced(now), lastSuccess: now - 6 * MINUTE - 5 * SECOND, lastDownloadAt: now - 6 * MINUTE - 5 * SECOND,
-      failingSince: now - 6 * MINUTE, error: 'Network request failed' } }),
+      failingSince: now - 6 * MINUTE, error: 'Network request failed', offline: true },
+    upload: uploading(now, { pending: { 7: 12 }, last: now - 16 * MINUTE }) }),
   // Receiver 7's own battery at 15%: the gear's red dot only.
   'receiver-battery-low': now => ({ ...FIXTURES['all-good'](now),
     ble: series(bleRow, now, { slave: 4, from: 10 * MINUTE, to: 5 * SECOND, start: [14, 9], step: [0.05, 0.08],
@@ -582,6 +603,35 @@ const FIXTURES = {
     return { ...FIXTURES['all-good'](now),
       phone: { route, position, recording: false, today: morningWalk(position, now - 14 * 60 * MINUTE) } };
   },
+  // ---- S3 Supabase 帳號 (051a): open on the account page ------------------
+  // Signed out (「稍後再說」): the sign-in form on S3.
+  'cloud-signed-out': now => ({ ...FIXTURES['signed-out-map'](now), openRoute: 'cloud' }),
+  // Signed in, all well: last download 5 s ago, nothing waiting, receiver 7
+  // uploads through this phone.
+  'cloud-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud' }),
+  // Uploads waiting: 12 rows not sent yet, 3 the cloud refused (需處理 +
+  // 重試), the last success 16 minutes ago. Downloads are fine.
+  'cloud-upload-pending': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
+    upload: uploading(now, { pending: { 7: 12 }, blocked: 3, last: now - 16 * MINUTE,
+      error: '上傳失敗 (403)：forbidden' }) }),
+  // Restoring the sign-in without a network: nothing reached Supabase since
+  // the app started → 「暫時連不上，會自動重試」.
+  'cloud-unreachable-retrying': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
+    cloud: { ...synced(now), lastSuccess: null, lastDownloadAt: null, failingSince: now - 3 * MINUTE,
+      error: 'Network request failed', offline: true },
+    upload: uploading(now, { pending: { 7: 4 }, last: now - 40 * MINUTE }) }),
+  // 登入失效 while in use (a download was refused): signed out, S3 says
+  // 「需要重新登入」 over the sign-in form; the gear has its red dot.
+  'cloud-expired': now => ({ ...FIXTURES['signed-out-map'](now), openRoute: 'cloud', expired: true }),
+  // Receiver 7 uploads by its own Wi-Fi; 120 rows from before still wait in
+  // this phone. 「接收器 7 的上傳方式」 pressed: the confirmation (c255).
+  'upload-switch-confirm': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
+    upload: uploading(now, { phone: [], wifi: [7], pending: { 7: 120 }, last: now - 50 * MINUTE }),
+    dialog: { kind: 'switch', master: 7 } }),
+  // The same without a network: it cannot switch yet (c256).
+  'upload-switch-offline': now => ({ ...FIXTURES['upload-switch-confirm'](now),
+    cloud: { ...synced(now), lastSuccess: now - 4 * MINUTE, lastDownloadAt: now - 4 * MINUTE,
+      failingSince: now - 3 * MINUTE, error: 'Network request failed', offline: true } }),
   // ---- settings (050): S1, S2, S4 open on their page ---------------------
   // S1 with nothing to handle: receiver 7 connected (its battery 64%), phone
   // recording, signed in, notifications allowed.
@@ -647,7 +697,7 @@ const FIXTURES = {
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
 
 // A settings page a fixture can be opened on (&page=…), whatever its own.
-export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone']);
+export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud']);
 const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-z]+))?$/;
 
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.
@@ -753,7 +803,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   if (!make) return null;
   nextId = 1;
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
-    dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {} } = make(now);
+    dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
+    upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -817,8 +868,13 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       running: !!phone?.position && phone.recording !== false, busy: false, error: null, toggle: () => {} },
     // Signed in as the fixture account (S1 Supabase 帳號) unless signed out.
     account: { signedIn: !!cloud?.ownerId, email: cloud?.ownerId ? 'tim@example.com' : '' },
-    // The settings page it opens on (S1, S2, S4), if any.
+    // The settings page it opens on (S1, S2, S3, S4), if any.
     openRoute: page ?? openRoute,
+    // useCloudUpload's answer (S3; null signed out), 登入失效, and a dialog
+    // open on S3 ({ kind: 'switch', master } | { kind: 'signout' }).
+    upload,
+    expired,
+    dialog,
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
     todayRoute: (() => {
@@ -899,9 +955,11 @@ export function applyScreenFixture(fixture, live, edits = null) {
         && fixture.phonePermission.services },
     todayRoute: fixture.todayRoute,
     cloudDogs: fixture.cloudDogs,
-    // The upload is this phone's: a fixture shows it working.
-    cloudProblem: false,
-    signInExpired: false,
+    // The upload as the fixture says (S3); its error is the gear's red dot.
+    upload: fixture.upload ?? { settings: [], counts: [], masters: [], supported: true, settingsReady: false,
+      switchMode: async () => {}, retry: async () => {} },
+    cloudProblem: !!fixture.cloudSync?.ownerId && !!fixture.upload?.error,
+    signInExpired: !!fixture.expired,
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,

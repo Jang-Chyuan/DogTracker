@@ -19,7 +19,8 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | 雲端列 | `supabase_dog_status` 的列 | 模仿 `CloudDatabase.latestBySlave`／`latestStatusRows`（含環境模型）→ `cloudDogs.rows`／`packets` |
 | 停在原處、接收範圍 | **給列，不直接給 hold 或判定**：本機＋雲端列照 `holdRows` 冷啟動的方式交給真的 `HoldStore`／`IndoorHold`＋內建環境模型算出 `holds`、`statuses`；同一批列也算出每隻狗的接收範圍判定 `ranges`（`ReceiverRange.js`） | `mergeDogMarkers`、`outOfRangeLines` |
 | 上方卡片 | `dismissed`（按過 ✕ 的卡片）、`storageError`（`realWriteError`）、`mapFailure`（`'tiles'` 沒有底圖／`'component'` 地圖打不開，交給 `GoogleTrackingMap` 的 `failure`） | `TopAlerts.js`（`topCards`、`gearReasons`）→ `TopAlertCards`、齒輪紅點 |
-| 雲端同步狀態 | `useCloudSync` 的 `ownerId`、`lastSuccess`、`lastDownloadAt`、`failingSince`、`error` | 地圖收到的 `cloudSync`；雲端狗的「沒有新位置」照 `DogFreshness` 用 `lastDownloadAt` 判斷 |
+| 雲端同步狀態 | `useCloudSync` 的 `ownerId`、`lastSuccess`、`lastDownloadAt`、`failingSince`、`error`、`offline` | 地圖收到的 `cloudSync`；雲端狗的「沒有新位置」照 `DogFreshness` 用 `lastDownloadAt` 判斷；S3 的下載列 |
+| 上傳狀態 | `useCloudUpload` 的回答（`upload`：每台接收器的上傳方式、可上傳的接收器、每台還沒上傳的筆數、需處理、最後上傳成功、錯誤；動作不寫入）、`expired`（登入失效）、`dialog`（S3 打開的確認框） | `AccountModel.accountPage` → S3；上傳錯誤 → 齒輪紅點、S1「!」 |
 | 手機位置／路線 | 現在位置（`useLiveLocation` 的樣子）和最近 10 分鐘的路線 | 地圖上的手機點；路線交給真的 `RideAlong` 判斷坐車 |
 | 手機記錄、權限 | `phone.recording: false` 讓記錄服務沒在跑；`phone.permission`／`phone.services` 是 `usePhoneLocation` 的回答（預設精確位置、定位服務開著） | `todayPill`（右下「今天 x km」的 icon）、`phone.enabled`（地圖藍點） |
 | 今天的路線 | `phone.today`：今天 `myLocationTracker` 的列（每 10 秒一筆） | 和 `useTodayRoute` 同一套 `addRoutePoints` 算出「今天 x km」 |
@@ -76,6 +77,14 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | `phone-recording-off` | 09:05 關掉記錄、之前走了 2.7 km → 灰色走路小人、灰字「今天 2.7 km」 |
 | `phone-no-permission` | 定位權限被拿掉（之前走了 2.7 km）→ 灰色走路小人加斜線、灰字「今天 2.7 km」（A2）；沒有藍點 |
 | `phone-no-route` | 記錄關著、今天沒有任何路線（只有昨天的）→ 灰色「未記錄」 |
+| `cloud-signed-out` | S3 沒登入：這頁就是登入表單（D1），「稍後再說」回設定 |
+| `cloud-ok` | S3 已登入、最後下載成功、還沒上傳 0 筆、接收器 7 由這支手機上傳 |
+| `cloud-failing&page=cloud` | S3 照設計稿：「下載失敗」「連不上 Supabase・09:24 起」「重試 ›」、還沒上傳 12 筆、最後上傳成功 |
+| `cloud-upload-pending` | S3：需處理 3 筆（紅色「!」＋「重試 ›」）、還沒上傳 12 筆 |
+| `cloud-unreachable-retrying` | S3：開 App 後還沒連上過 Supabase →「暫時連不上，會自動重試」 |
+| `cloud-expired` | S3 使用中登入失效：「需要重新登入」＋登入表單；齒輪紅點、S1「!」 |
+| `upload-switch-confirm` | S3：接收器 7 由 Wi-Fi 上傳、手機裡還有 120 筆，切換確認框打開（c255） |
+| `upload-switch-offline` | 同上但沒網路：確認框寫「要先上傳完 120 筆，請連上網路」、不能切（c256） |
 
 ## 新增情境（之後每個 PR）
 
