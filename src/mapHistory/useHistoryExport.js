@@ -5,7 +5,7 @@
 // by the native exporter, then Android's share sheet. 取消 (and the back
 // key) drops a running export; 重試 makes the files again from the same
 // snapshot. Temporary files go the next day.
-import { useCallback, useContext, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AddressLookupContext } from '../placement/AddressLookup';
 import { buildCSV } from './ExportCSV';
 import { buildGPX } from './ExportGPX';
@@ -69,13 +69,23 @@ export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemem
   const run = useRef(0);
   const prepared = useRef(null);
   const exporting = useRef(null);
-  const close = useCallback(() => {
+  /** Drops the running export at once (its result, if any, is never shared). */
+  const stop = useCallback(() => {
     run.current += 1;
     if (exporting.current) exporter?.cancel?.(exporting.current);
     exporting.current = null;
+    // The export icon is back at once, while the window still slides away.
+    setState(current => (current.phase === 'generating' ? { ...current, stopped: true } : current));
+  }, [exporter]);
+  const close = useCallback(() => {
+    stop();
     prepared.current = null;
     setState({ phase: 'closed', format: null });
-  }, [exporter]);
+  }, [stop]);
+  // Leaving the history stops an export still running.
+  const stopRef = useRef(stop);
+  stopRef.current = stop;
+  useEffect(() => () => stopRef.current(), []);
   const open = useCallback(() => {
     prepared.current = null;
     setState({ phase: 'choose', format: null });
@@ -102,11 +112,12 @@ export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemem
       }
       const createdAt = now();
       await cleanExports(exporter, createdAt);
+      if (!alive()) return;
       const exportId = `${createdAt}-${id}`;
       exporting.current = exportId;
       const paths = await makeExportFiles(snapshot, format, exporter, { exportId, createdAt, alive });
       if (!alive()) return;
-      exporting.current = null;
+      if (exporting.current === exportId) exporting.current = null;
       onRemember?.(format);
       // 打開 Android 分享時才關掉小視窗.
       await exporter.share(paths, EXPORT_MIME[format]);
@@ -115,7 +126,6 @@ export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemem
       setState({ phase: 'closed', format: null });
     } catch (error) {
       if (!alive()) return;
-      exporting.current = null;
       console.warn('[History export]', error?.message || error);
       setState({ phase: 'failed', format });
     }
@@ -133,6 +143,6 @@ export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemem
     return true;
   }, [state.phase, close]);
   const range = screen.range;
-  return { ...state, open, start, cancel: close, retry, close, back, lastFormat,
-    generating: state.phase === 'generating', range };
+  return { ...state, open, start, stop, cancel: close, retry, close, back, lastFormat,
+    generating: state.phase === 'generating' && !state.stopped, range };
 }

@@ -3,7 +3,11 @@ export const CSV_COLUMNS = 'source,id,recorded_at,location_at,latitude,longitude
 const cell = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
 const iso = time => time == null ? '' : new Date(time).toISOString();
 export function buildCSV(snapshot) {
-  const entries = activeSubjects(snapshot).flatMap(subject => (subject.rows || []).filter(row => packetTime(row) >= snapshot.since && packetTime(row) <= snapshot.until).map(row => ({ subject, row })));
+  // 判定表「停在原處期間的歷史資料」: a packet without an original fix is no
+  // CSV row (it still makes the dog count as having data in the range).
+  const entries = activeSubjects(snapshot).flatMap(subject => (subject.rows || [])
+    .filter(row => packetTime(row) >= snapshot.since && packetTime(row) <= snapshot.until && rawCoordinate(row, subject))
+    .map(row => ({ subject, row })));
   entries.sort((a, b) => packetTime(a.row) - packetTime(b.row) || (a.subject.slaveId ?? -1) - (b.subject.slaveId ?? -1));
   const lines = entries.map(({ subject, row }) => {
     const p = rawCoordinate(row, subject);

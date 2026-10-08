@@ -54,7 +54,8 @@ test('hold-only exports clip duration, split wpts around no-data and omit unknow
   expect(gpx).toContain('小黑-4 室內・35 分');
   expect(gpx).toContain('1970-01-01T00:10:00.000Z');
   expect(gpx).not.toContain('<desc>');
-  expect(buildCSV(data).split('\r\n')).toHaveLength(3);
+  // No original fix: no CSV row (spec.txt:317), though the dog still has data.
+  expect(buildCSV(data).split('\r\n')).toHaveLength(2);
 });
 
 // Design spec.txt:488: | GPX | GPX 1.1，時間用 UTC。狗的歷史：每隻狗一條移動的 trk（名稱「小黑-4」），中斷的地方分成不同的 trkseg；每一次坐車各自一個 trk（「小黑-4 坐車 1（不算距離）」、type＝drive），坐車前後的移動不相連。我的路線：步行的路線一條 trk（名稱「我的路線」，遇到中斷或開車都分成不同的 trkseg，開車前後不相連），每一次開車各自一個 trk，名稱依序「開車 1（不算距離）」「開車 2（不算距離）」、type＝drive（GPX 1.1 的 trk 有 type 欄位）；選定匯出範圍內沒資料的狗不寫 trk；停留是 wpt：名稱「小黑-4 停留 1・18 分」（我的路線「停留 1・18 分」）、時間＝停留開始、desc＝地點（扣過中斷時再加「不含中斷 5 分」）；多隻狗是一個檔案，每隻狗各自一條移動的 trk 和每次坐車各一個 trk（名稱前面是那隻的狗名和訊號源編號，例「小黑-4」「小黑-4 坐車 1（不算距離）」）。停在原處也是 wpt：名稱「小黑-4 室內・40 分」、座標＝停住點、時間＝照匯出範圍裁切後那段的開始（時間長度也照裁切後算；中間有「沒有資料」斷開時每段各一個）、desc＝地址（查不到就不寫）；沿著手機路線畫的那段不寫（原始資料裡沒有項圈座標）；多隻狗時每隻各自輸出（名稱前面是那隻的狗名和訊號源編號）

@@ -3,7 +3,7 @@
 // GPX / CSV, the one used last marked 「✓ 上次用」); a format chosen turns the
 // window, in place, into 「⟳ 產生中…　取消」, then 「匯出失敗　重試」 when it
 // failed. Android's share sheet closes it.
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { clock } from '../history/HistoryText';
 import { colors, size as sizes, space, touch, type } from '../theme/tokens';
@@ -17,33 +17,38 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
   const sheet = useRef(null);
   const { phase, lastFormat, range } = exporter;
   // The back key: 產生中＝取消 (the hook stops it); the window slides away.
-  useImperativeHandle(ref, () => ({ back: () => { sheet.current?.close(() => exporter.cancel()); return true; } }),
-    [exporter]);
+  // The run stops at the press (a result arriving while the window slides
+  // away is never shared); the window closes after its slide.
+  const cancel = () => { exporter.stop(); sheet.current?.close(); };
+  useImperativeHandle(ref, () => ({ back: () => { cancel(); return true; } }));
   const busy = phase === 'generating';
+  // 原地變成: the window keeps the formats' height while 產生中 or failed.
+  const [listHeight, setListHeight] = useState(0);
+  const keep = listHeight ? { minHeight: listHeight } : null;
   let body;
   if (busy) {
     body = (
-      <View style={styles.status} testID="history-export-generating" accessibilityLiveRegion="polite">
+      <View style={keep}><View style={styles.status} testID="history-export-generating" accessibilityLiveRegion="polite">
         <ActivityIndicator size={sizes.spinner} color={colors.tonalText} />
         <Text style={styles.statusText}>產生中…</Text>
         <Pressable testID="history-export-cancel" accessibilityRole="button" accessibilityLabel="取消匯出"
-          onPress={() => sheet.current?.close(() => exporter.cancel())} style={styles.textButton} hitSlop={8}>
+          onPress={cancel} style={styles.textButton} hitSlop={8}>
           <Text style={styles.textButtonText}>取消</Text>
         </Pressable>
-      </View>
+      </View></View>
     );
   } else if (phase === 'failed') {
     body = (
-      <View style={styles.status} testID="history-export-failed" accessibilityLiveRegion="polite">
+      <View style={keep}><View style={styles.status} testID="history-export-failed" accessibilityLiveRegion="polite">
         <Text style={[styles.statusText, styles.failed]}>匯出失敗</Text>
         <Pressable testID="history-export-retry" accessibilityRole="button" accessibilityLabel="重試匯出"
           onPress={exporter.retry} style={styles.textButton} hitSlop={8}>
           <Text style={styles.textButtonText}>重試</Text>
         </Pressable>
-      </View>
+      </View></View>
     );
   } else {
-    body = EXPORT_FORMATS.map((format, index) => {
+    body = <View onLayout={event => setListHeight(event.nativeEvent.layout.height)}>{EXPORT_FORMATS.map((format, index) => {
       const last = format.id === lastFormat;
       return (
         <Pressable key={format.id} testID={`history-export-${format.id}`} accessibilityRole="button"
@@ -57,7 +62,7 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
           {last && <Text style={styles.last}>✓ 上次用</Text>}
         </Pressable>
       );
-    });
+    })}</View>;
   }
   return (
     <HistoryBottomSheet ref={sheet} title={exportTitle(range)} onClosed={() => exporter.close()}

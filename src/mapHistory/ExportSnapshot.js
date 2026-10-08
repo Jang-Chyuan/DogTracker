@@ -13,6 +13,24 @@ const isVehicle = mode => mode === 'driving' || mode === 'ride';
 const lineOf = section => (!section ? null : section.type === 'gap' ? 'gap' : isVehicle(section.mode) ? 'solid' : 'dots');
 export const placeKey = point => `${point.latitude},${point.longitude}`;
 
+/**
+ * The car or ride trips of a list (GPX: one trk per trip): vehicle rows only
+ * separated by 沒有資料 rows are one trip (判定表「開車中間有中斷」: 同一段開車，
+ * 地圖和 GPX 在中斷處分開 — the break splits its trkseg). A trip still on at
+ * the last fix keeps that fix (an interval's end is otherwise the walk's).
+ */
+export function vehicleTrips(nodes, lastTime) {
+  const trips = [];
+  let open = null;
+  for (const node of nodes) {
+    if (node.type === 'movement' && isVehicle(node.mode)) {
+      if (open && open.mode === node.mode) open.end = node.end;
+      else { open = { start: node.start, end: node.end, mode: node.mode }; trips.push(open); }
+    } else if (node.type !== 'gap') open = null;
+  }
+  return trips.map(({ start, end }) => ({ start, end: end === lastTime ? end + 1 : end }));
+}
+
 /** The places of a model whose address the export asks for (as the list does). */
 export function exportPlaces(model) {
   return (model?.nodes || []).filter(node => !isSection(node) && Number.isFinite(node.latitude));
@@ -23,9 +41,12 @@ export function exportPlaces(model) {
  * 「最後 12:05」」: 匯出的檔案一律寫實際時刻), never a moving 「現在」.
  */
 function lastPacket(models, range) {
-  const times = models.flatMap(model => (model.packets || []).map(p => p.time)
-    .filter(time => time >= range.start && time <= range.end));
-  return times.length ? Math.max(...times) : range.end;
+  // A loop, not Math.max(...): a day of several dogs is 100 000+ packets.
+  let last = -Infinity;
+  for (const model of models) {
+    for (const p of model.packets || []) if (p.time >= range.start && p.time <= range.end && p.time > last) last = p.time;
+  }
+  return Number.isFinite(last) ? last : range.end;
 }
 
 /**
@@ -117,7 +138,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n) })),
       stays: nodes.filter(n => n.type === 'stop').map(n => ({ start: n.start, end: n.end, number: n.number,
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n), excludedMs: n.interruptionMs || 0 })),
-      rides: nodes.filter(n => n.type === 'movement' && isVehicle(n.mode)).map(n => ({ start: n.start, end: n.end })),
+      rides: vehicleTrips(nodes, last?.time),
       gaps: nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
       distanceKm: km(model.distanceM),
       distanceWord: phone ? '走了' : '移動',

@@ -126,12 +126,17 @@ function headOps(page) {
 
 function sectionOps(block) {
   const top = block.y + 12, height = block.height - 24;
-  return [
-    { t: 'rect', x: S.side, y: top, w: 8, h: height, r: 4, fill: block.color },
-    { t: 'runs', x: S.side + 28, y: top, h: height, size: S.sectionFont, runs: [
+  const ops = [{ t: 'rect', x: S.side, y: top, w: 8, h: height, r: 4, fill: block.color }];
+  if (block.oneLine) {
+    ops.push({ t: 'runs', x: S.side + 28, y: top, h: height, size: S.sectionFont, runs: [
       { text: block.title, color: colors.text, bold: true },
-      { text: `  ${block.detail}`, color: colors.textMuted, bold: false, size: S.sectionDetailFont }] },
-  ];
+      { text: `  ${block.detail}`, color: colors.textMuted, bold: false, size: S.sectionDetailFont }] });
+    return ops;
+  }
+  block.titleLines.forEach((line, index) => ops.push(text(line, S.side + 28, top + index * 48, 48, S.sectionFont,
+    colors.text, { bold: true })));
+  ops.push(text(block.detail, S.side + 28, top + block.titleLines.length * 48, 48, S.sectionDetailFont, colors.textMuted));
+  return ops;
 }
 
 /** The map block for the renderer: geography it projects itself (it knows the base map's camera). */
@@ -162,7 +167,6 @@ export function pngDrawPages(layout) {
       else ops.push(...rowOps(block));
     }
     const footer = page.footer;
-    ops.push({ t: 'line', x1: S.side, y1: footer.y, x2: page.width - S.side, y2: footer.y, color: colors.line, width: 2 });
     ops.push(text(footer.text, S.side, footer.y, footer.height, S.footerFont, colors.textMuted));
     ops.push(text(footer.page, page.width - S.side, footer.y, footer.height, S.footerFont, colors.textMuted, { align: 'right' }));
     return { width: page.width, height: page.height, ops };

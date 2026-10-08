@@ -49,14 +49,16 @@ test('phone driving gaps retain one drive track with disconnected segments', () 
 });
 
 // Design spec.txt:489:「CSV 每一筆位置…沒值留空…CSV 照樣寫原始座標」；hist.txt:247:「CSV 每一筆位置」。
-test('CSV retains GPS-less indoor and vehicle packets, never substitutes displayed phone coordinates', () => {
+// Design spec.txt:317:「沒有原始座標的封包不輸出 trkpt、也不輸出 CSV 列」(056 review: the
+// Codex draft kept them as empty rows); spec.txt:489:「CSV 照樣寫原始座標」.
+test('CSV leaves out packets without an original fix and never substitutes displayed phone coordinates', () => {
   const csv = buildCSV(snap(dog({ rows: [point(m, { location_at: null, raw_latitude: null, raw_longitude: null, display_source: 'phone', latitude: 40, longitude: 50 }), point(2 * m, { raw_latitude: 24, raw_longitude: 120, latitude: 40, longitude: 50 })] })));
   const lines = csv.split('\r\n');
-  expect(lines).toHaveLength(4);
+  expect(lines).toHaveLength(3);
   const cells = lines[1].slice(1, -1).split('","');
   expect(cells).toHaveLength(24);
-  for (const column of ['location_at', 'latitude', 'longitude', 'raw_latitude', 'raw_longitude']) expect(cells[CSV_COLUMNS.indexOf(column)]).toBe('');
-  expect(lines[2]).toContain('"24","120"');
+  expect(lines[1]).toContain('"24","120"');
+  expect(lines[1]).not.toContain('"40"');
   expect(count(buildGPX(snap(dog({ rows: [point(m, { raw_latitude: null, raw_longitude: null, display_source: 'phone' })] }))), 'trkpt')).toBe(0);
 });
 
