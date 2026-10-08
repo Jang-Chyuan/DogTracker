@@ -113,6 +113,18 @@ const HistoryPanel = forwardRef(function HistoryPanel(
   const [level, setLevelState] = useState(initialLevel);
   const levelRef = useRef(level);
   levelRef.current = level;
+  // The list's bottom padding shrinks as the panel rises (so its end stays
+  // above the screen's edge at every height). A list scrolled to its end at
+  // half height would then show blank space under the last row at 75%:
+  // bring it back to the new end.
+  const ownScroll = useRef(null);
+  const scroller = scrollRef ?? ownScroll;
+  const scrolled = useRef({ y: 0, content: 0, frame: 0 });
+  useEffect(() => {
+    const { y, content, frame } = scrolled.current;
+    const end = Math.max(0, content - frame);
+    if (frame > 0 && y > end + 1) scroller.current?.scrollTo({ y: end, animated: true });
+  }, [level, scroller]);
   const height = useRef(new Animated.Value(levels[initialLevel])).current;
   const current = useRef(levels[initialLevel]);
   useEffect(() => {
@@ -253,9 +265,19 @@ const HistoryPanel = forwardRef(function HistoryPanel(
                  fades out over its last 40dp (it would peek over the system bar). */}
         <Animated.View style={[styles.list, { opacity: listOpacity }]}>
           <ScrollView
-            ref={scrollRef}
+            ref={scroller}
             style={styles.list}
             nestedScrollEnabled
+            scrollEventThrottle={100}
+            onScroll={event => {
+              scrolled.current.y = event.nativeEvent.contentOffset.y;
+            }}
+            onContentSizeChange={(_, contentHeight) => {
+              scrolled.current.content = contentHeight;
+            }}
+            onLayout={event => {
+              scrolled.current.frame = event.nativeEvent.layout.height;
+            }}
             contentContainerStyle={{
               paddingBottom:
                 levels.full - levels[level] + bottomInset + footerHeight + 16,
