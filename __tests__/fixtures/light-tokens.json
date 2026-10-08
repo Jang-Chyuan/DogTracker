@@ -1,0 +1,109 @@
+{
+  "colors": {
+    "bg": "#FAF7F6",
+    "surface": "#FFFFFF",
+    "text": "#222222",
+    "textMuted": "#5E5E5E",
+    "line": "#EDE6E4",
+    "accent": "#F2867A",
+    "tonal": "#FFE4DF",
+    "tonalText": "#A3413A",
+    "brandSoft": "#FFF1EE",
+    "ok": "#1E7A3C",
+    "okBg": "#E4F2E8",
+    "warn": "#9A5B00",
+    "warnBg": "#FFF1D6",
+    "crit": "#7A1D18",
+    "critBg": "#FFF3F1",
+    "critLine": "#D64545",
+    "receiver": "#3E5A6B",
+    "receiverRing": "#5B7A8C",
+    "phone": "#1A73E8",
+    "phoneStale": "#9AA59F",
+    "iconMuted": "#8A948F",
+    "snackbar": "#FFFFFF",
+    "scrim": "rgba(20,24,22,0.45)",
+    "pressedOverlay": "rgba(0,0,0,0.08)",
+    "activityLow": "#3E5A8C",
+    "activityNormal": "#D3CCC4",
+    "activityHigh": "#E07A2E",
+    "activityHighText": "#B85A12",
+    "problemBadge": "#B3261E",
+    "warnIcon": "#9A5B00",
+    "staleRing": "#6B7470",
+    "staleFace": "#C9CFCC",
+    "routeFaded": "#7C8796",
+    "mapLabelHalo": "#FFFFFF",
+    "route1": "#D9604F",
+    "route2": "#2F6FA8",
+    "route3": "#4E8A2E",
+    "route4": "#8A55B0",
+    "onRoute": "#FFFFFF",
+    "sheetHandle": "#B9C3BD",
+    "alertBorder": "#F4CFC9",
+    "alertIconBg": "#FDE7E4",
+    "alertDetail": "#8A5A55",
+    "rangeRing": "#5B7A8C",
+    "noDataLine": "#C9CFCC",
+    "mapFallback": "#ECEEEC"
+  },
+  "routeColors": [
+    "#D9604F",
+    "#2F6FA8",
+    "#4E8A2E",
+    "#8A55B0"
+  ],
+  "settingIcon": {
+    "receiver": {
+      "bg": "#E6EEF3",
+      "line": "#3E5A6B"
+    },
+    "phone": {
+      "bg": "#E8F0FD",
+      "line": "#1A73E8"
+    },
+    "account": {
+      "bg": "#EEEAF7",
+      "line": "#5E4FA3"
+    },
+    "diagnostics": {
+      "bg": "#F1EEEC",
+      "line": "#6B7470"
+    },
+    "advanced": {
+      "bg": "#F1EEEC",
+      "line": "#6B7470"
+    },
+    "map": {
+      "bg": "#EAF2E4",
+      "line": "#4E7A2E"
+    },
+    "alerts": {
+      "bg": "#FBECE9",
+      "line": "#B3261E"
+    }
+  },
+  "opacity": {
+    "disabled": 0.4,
+    "rangeRingStroke": 0.55,
+    "rangeRingFill": 0.06,
+    "phoneAccuracy": 0.15,
+    "cursorHalo": 0.18,
+    "routeUpcoming": 0.3,
+    "routeBeforeCursor": 0.5,
+    "routeAfterCursor": 0.2,
+    "faceGlow": 0.28
+  },
+  "shadow": {
+    "floating": {
+      "shadowColor": "#3A2420",
+      "shadowOffset": {
+        "width": 0,
+        "height": 2
+      },
+      "shadowOpacity": 0.08,
+      "shadowRadius": 8,
+      "elevation": 3
+    }
+  }
+}
