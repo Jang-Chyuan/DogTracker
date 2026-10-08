@@ -102,12 +102,12 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
   // 位置: only when there is something to say about where the dog is.
   if (stale) {
     rows.push({ key: 'position', label: '位置', value: staleText(freshness, now), tone: 'crit',
-      detail: indoor ? address : null, twoLine: indoor && !!address });
+      detail: indoor ? address : null, twoLine: indoor });
   } else if (indoor) {
     // Two lines (64dp) held indoors: 「室內」 and the address under it (A7b).
-    // No address yet, none found or offline: one line, no spinner
-    // (edges「沒網路時查地址」).
-    rows.push({ key: 'position', label: '位置', value: '室內', tone: null, detail: address, twoLine: !!address });
+    // No address yet, none found or offline: no second line and no spinner
+    // (edges「沒網路時查地址」), the row keeps its 64dp so nothing jumps.
+    rows.push({ key: 'position', label: '位置', value: '室內', tone: null, detail: address, twoLine: true });
   }
   rows.push(batteryRow(dog, battery, positionAt, now));
   const view = rangeView(range, { held: indoor });

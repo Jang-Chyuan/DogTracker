@@ -356,3 +356,35 @@ test('offline the geocoder is not asked; reopening the card asks again at once (
   await flush();
   expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
 });
+
+test('a district-only answer is the district, not 「…附近」; a real address among them wins', () => {
+  const at = { latitude: 25.0797, longitude: 121.2342 };
+  expect(describePlace(at, [{ line: '337台灣桃園市大園區', ...at }])).toBe('大園區（附近沒有地址）');
+  expect(describePlace(at, [{ line: '337台灣桃園市大園區', ...at },
+    { line: '337台灣桃園市大園區航站南路9號', latitude: 25.0798, longitude: 121.2342 }])).toBe('大園區航站南路 9 號附近');
+});
+
+test('a saved miss is skipped when the card reopens; saved addresses never wait behind a slow geocoder', async () => {
+  const saved = new Map();
+  const store = {
+    find: jest.fn(async point => saved.get(`${point.latitude}`) ?? null),
+    save: jest.fn(async entry => { saved.set(`${entry.anchor.latitude}`, entry); }),
+  };
+  const OTHER = { latitude: 25.1, longitude: 121.3 };
+  saved.set(`${DOG_4.latitude}`, { anchor: DOG_4, value: null, failedAt: Date.now() });
+  saved.set(`${OTHER.latitude}`, { anchor: OTHER, value: '桃園區中正路 1 號附近' });
+  let answer;
+  const native = { reverseGeocode: jest.fn(() => new Promise(resolve => { answer = resolve; })) };
+  const lookup = createAddressLookup({ native, store });
+  expect(lookup.lookup(DOG_4, { retry: true })).toBeUndefined();
+  await flush();
+  expect(native.reverseGeocode).toHaveBeenCalledTimes(1);
+  // DOG_4's geocoder answer is still out; OTHER comes from the phone at once.
+  lookup.lookup(OTHER);
+  await flush();
+  expect(lookup.lookup(OTHER)).toBe('桃園區中正路 1 號附近');
+  answer(JSON.stringify(nearDog4));
+  await flush();
+  await flush();
+  expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
+});
