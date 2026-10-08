@@ -10,7 +10,9 @@ export const LATEST_SINCE = 0;
  * never queries Supabase: CloudSync owns downloading, this only reads what is
  * already on the phone, so the map keeps working offline.
  */
-const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '' });
+// loaded: the first read has finished (A6 waits for it, so it never flashes
+// before the stored dogs are read).
+const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: false });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
   { active = true, revision = 0 } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
@@ -92,7 +94,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           // Each dog's receiver-range judgement, fed by the same rows.
           ranges = state.store.ranges();
         }
-        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, ranges, error: '' } });
+        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, ranges, error: '', loaded: true } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
         if (alive) setCache(current => ({ owner, database,

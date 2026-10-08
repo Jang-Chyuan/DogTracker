@@ -66,11 +66,11 @@ test('legacy stored demo mode loads as real while preserving every other prefere
     const { focusSlaveId, hiddenSlaveIds, ...kept } = stored;
     expect(focusSlaveId).toBe(7);
     expect(hiddenSlaveIds).toEqual([4, 6]);
-    expect(changed.mock.calls.at(-1)[0].value).toEqual({ ...kept, mode: 'real' });
+    expect(changed.mock.calls.at(-1)[0].value).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false });
     // Loading only normalizes in memory; the next successful save persists it.
     expect(await database.load()).toEqual(stored);
     expect(await controller.save({})).toBe(true);
-    expect(await database.load()).toEqual({ ...kept, mode: 'real' });
+    expect(await database.load()).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false });
     await controller.close();
   } finally {
     connection.close();

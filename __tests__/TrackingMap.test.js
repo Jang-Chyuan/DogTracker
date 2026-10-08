@@ -43,7 +43,7 @@ const defaults = {
   },
   topInset: 100,
   bottomInset: 300,
-  onStatus: jest.fn(),
+  onMapState: jest.fn(),
   foreground: true,
   provider: GOOGLE_MAP_PROVIDER,
 };
@@ -98,7 +98,7 @@ test('repeated foreground recovery retains the same loaded surface and camera', 
     await act(async () => renderer.update(<TrackingMap {...defaults} />));
     expect(renderer.root.findByType(MapView)).toBe(oldMap);
   }
-  expect(defaults.onStatus).toHaveBeenLastCalledWith(null);
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('ok');
   // Only the first framing, made once under the launch screen.
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
 });
@@ -162,13 +162,25 @@ test('out-of-range lines are critLine, 2dp, dashed, drawn above the ring and bel
   expect(ring.zIndex).toBeLessThan(red.zIndex);
   expect(red.zIndex).toBeLessThan(route.zIndex);
 });
-test('enables the native Google compass without adding a phone location button', async () => {
-  await render();
+test('rotation is on; our compass replaces the native one (top left on Android) and shows once turned', async () => {
+  await render({ compassTop: 120 });
   const map = renderer.root.findByType(MapView);
-  expect(map.props.showsCompass).toBe(true);
+  expect(map.props.showsCompass).toBe(false);
   expect(map.props.rotateEnabled).toBe(true);
   expect(map.props.pitchEnabled).toBe(true);
   expect(map.props.showsMyLocationButton).toBe(false);
+  await readyMap();
+  const compass = () => renderer.root.findAll(node => node.props.testID === 'map-compass'
+    && typeof node.props.onPress === 'function');
+  expect(compass()).toHaveLength(0);
+  mockCamera.getCamera.mockResolvedValueOnce({ center: master.coordinate, zoom: 15, pitch: 0, heading: 40 });
+  await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
+  expect(compass().length).toBeGreaterThan(0);
+  const placed = renderer.root.findAll(node => typeof node.type === 'string'
+    && [node.props.style].flat().some(style => style?.top === 120));
+  expect(placed.length).toBeGreaterThan(0);
+  await act(async () => compass()[0].props.onPress());
+  expect(mockCamera.animateCamera).toHaveBeenCalledWith({ heading: 0 }, { duration: 300 });
 });
 test('provider draws the prepared visible segments; empty presentation removes every overlay', async () => {
   await render({
@@ -230,13 +242,38 @@ test('a switched source waits for framingReady before its one fit', async () => 
     bottomInset={120} />));
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
 });
-test('missing key never mounts native map and gives an explicit fallback message', async () => {
+test('missing key never mounts native map: grey, and the map says it cannot open', async () => {
   NativePlatform.isMapConfigured.mockReturnValue(false);
   await render();
   expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
-  expect(defaults.onStatus).toHaveBeenLastCalledWith(
-    expect.stringContaining('未設定'),
-  );
+  expect(renderer.root.findAll(node => node.props.testID === 'map-unavailable')).not.toHaveLength(0);
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('unavailable');
+});
+test('no tiles within the load timeout is 地圖載入失敗; 重試 opens a new map that reports retrying', async () => {
+  await render();
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('loading');
+  await act(async () => { jest.advanceTimersByTime(15000); });
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('load-failed');
+  const first = renderer.root.findByType(MapView);
+  await act(async () => renderer.update(<TrackingMap {...defaults} retryKey={1} />));
+  expect(renderer.root.findByType(MapView)).not.toBe(first);
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('retrying');
+  await readyMap();
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('ok');
+});
+test('a map that throws while opening is caught: grey and unavailable, and 重試 tries again', async () => {
+  const Broken = () => { throw new Error('native map missing'); };
+  const provider = { ...GOOGLE_MAP_PROVIDER, Renderer: Broken };
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+  await render({ provider });
+  expect(renderer.root.findAll(node => node.props.testID === 'map-unavailable')).not.toHaveLength(0);
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('unavailable');
+  await act(async () => renderer.update(<TrackingMap {...defaults} provider={GOOGLE_MAP_PROVIDER} retryKey={1} />));
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+  warn.mockRestore();
+  error.mockRestore();
 });
 const pressLabel = async label => act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === label
   && typeof node.props.onPress === 'function')[0].props.onPress());
@@ -436,7 +473,7 @@ test('tile completion and changed padding never refit an already framed map', as
     ),
   );
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
-  expect(defaults.onStatus.mock.calls.every(([value]) => value === null)).toBe(
+  expect(defaults.onMapState.mock.calls.every(([value]) => value === 'loading' || value === 'ok')).toBe(
     true,
   );
 });

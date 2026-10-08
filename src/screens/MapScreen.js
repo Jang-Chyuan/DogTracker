@@ -32,6 +32,10 @@ import { useDogCardReadings } from '../map/useDogCardReadings';
 import { cloudClock, dogFreshness } from '../tracking/DogFreshness';
 import { layout } from '../theme/tokens';
 import { SettingsGear } from '../map/MapControls';
+import TopAlertCards from '../map/TopAlertCards';
+import {
+  gearLabel, gearReasons, receiverOutage, showsNoDogs, storageProblem, topCards, trackReceiverWait,
+} from '../map/TopAlerts';
 import { startOfToday, todayPill } from '../tracking/TodayDistance';
 
 // How long the first framing waits for the phone's first position report
@@ -68,12 +72,29 @@ export default function MapScreen({
   todayRoute = null,
   // The gear (A1 top right) opens settings.
   onOpenSettings,
+  // Signed in to Supabase (A6 hides 「登入 Supabase」).
+  signedIn = false,
+  // The cloud upload failing or the sign-in expired (gear red dot); the
+  // download side is judged from cloudSync.
+  cloudProblem = false,
+  // Android 13+ notification permission not given (gear red dot).
+  notificationsDenied = false,
+  // A top card's button that leaves the map: 'receiver-settings',
+  // 'storage-settings', 'storage-reason', 'connect-receiver', 'sign-in'.
+  onAlertAction,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
   const onSnapshotReady = useCallback(value => { snapshot.current = value; }, []);
   const [sheetHeight, setSheetHeight] = useState(0);
-  const [mapStatus, setMapStatus] = useState(null);
+  // The base map's state (GoogleTrackingMap): drives the 地圖載入失敗 card.
+  const [mapState, setMapState] = useState('loading');
+  const [mapRetry, setMapRetry] = useState(0);
+  // Top cards closed with ✕ (TopAlerts): the disconnection by its start, the
+  // storage problem until writing works again. A fixture can start with some.
+  const [dismissed, setDismissed] = useState(() => fixture?.dismissed ?? {});
+  const [noDogsClosed, setNoDogsClosed] = useState(false);
+  const [topHeight, setTopHeight] = useState(0);
   const [noticeHeight, setNoticeHeight] = useState(0);
   // What is open: one dog's card on the live map, or a track's panel in
   // history. Both are answered by a tap on the marker.
@@ -147,6 +168,23 @@ export default function MapScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openDogRequest?.key]);
   const link = receiverLink(receiverState, now);
+  // ---- top cards and the gear's red dot (A2/A2b/A2c/A6) -------------------
+  useEffect(() => {
+    setDismissed(fixture?.dismissed ?? {});
+    setNoDogsClosed(false);
+    // A fixture's own starting state only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixtureName]);
+  const outage = receiverOutage(receiverState, now);
+  const storage = storageProblem(tracking.realWriteError);
+  // Writing works again: a collapsed storage card is forgotten (a new failure
+  // shows it again).
+  const storageFailing = !!storage;
+  useEffect(() => {
+    if (!storageFailing) setDismissed(current => (current.storage ? { ...current, storage: false } : current));
+  }, [storageFailing]);
+  const receiverWait = useRef(null);
+  receiverWait.current = trackReceiverWait(receiverWait.current, receiverState, now);
   // When the user switched this receiver off and on (DogFreshness grace),
   // recorded by the native service whatever screen was open.
   const pausesKey = JSON.stringify(Array.isArray(receiverState?.receiverPauses) ? receiverState.receiverPauses : []);
@@ -194,6 +232,35 @@ export default function MapScreen({
     [point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, cloudDogs?.holds,
       cloudDogs?.statuses, ride, now],
   );
+  const noDogs = !historical && showsNoDogs({
+    receiverState,
+    hasDogData: dogs.length > 0 || point?.id != null || !!cloudDogs?.rows?.length || !!cloudDogs?.packets?.length,
+    dataRead: tracking.initialSnapshotReady === true && !!cloudDogs?.loaded,
+    dismissed: noDogsClosed || !!tracking.preferences.value?.noDataCardDismissed,
+  });
+  const cards = historical ? [] : topCards({
+    outage, storage, map: mapState === 'retrying' ? 'load-failed' : mapState, retrying: mapState === 'retrying',
+    noDogs, signedIn, dismissed,
+  });
+  const reasons = historical ? [] : gearReasons({
+    outage, storage, dismissed, receiverState, receiverWait: receiverWait.current,
+    receiverBattery: otherReceiver || point?.id == null ? null
+      : { valid: point.masterBatteryValid, percentage: point.masterBatteryPercentage },
+    cloudFailing: !!cloudOwner && (cloudSync?.failingSince != null || cloudProblem),
+    signInExpired: false, phone, notificationsDenied, now,
+  });
+  const pressCardAction = useCallback(id => {
+    if (id === 'map-retry') setMapRetry(value => value + 1);
+    else onAlertAction?.(id);
+  }, [onAlertAction]);
+  const closeCard = useCallback(id => {
+    if (id === 'receiver' && outage) setDismissed(current => ({ ...current, receiver: outage.key }));
+    else if (id === 'storage') setDismissed(current => ({ ...current, storage: true }));
+    else if (id === 'no-dogs') {
+      setNoDogsClosed(true);
+      tracking.saveTrackingPreferences?.({ noDataCardDismissed: true });
+    }
+  }, [outage, tracking]);
   const selectedDogId = selected?.kind === 'dog' && !historical ? selected.slaveId : null;
   const dogAliases = history?.preferences.dogAliases;
   const livePresentation = useMemo(() => {
@@ -400,11 +467,8 @@ export default function MapScreen({
   const messages = [];
   if (historical && Number.isFinite(playbackAt))
     messages.push(`回放中：${new Date(playbackAt).toLocaleString()}`);
-  if (mapStatus) messages.push(mapStatus);
-  if (!historical && cloudDogs?.error)
-    messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
-  if (phone?.error)
-    messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
+  // The base map, the cloud and the phone's location speak through the top
+  // cards, the gear's red dot and 「今天 x km」 (A2), not through notices.
   if (
     historical && (history?.data?.phone.limited ||
       history?.data?.clients?.some(track => track.limited))
@@ -421,14 +485,17 @@ export default function MapScreen({
       }`,
     );
   else if (!tracking.ready[mode]) messages.push('正在準備 SQLite…');
-  if (tracking.realWriteError)
-    messages.push(
-      `正式資料儲存失敗：${tracking.realWriteError}。部分硬體資料未能儲存，不會自動重送。`,
-    );
   if (tracking.preferences.error)
     messages.push(`地圖設定讀取失敗：${tracking.preferences.error}。重新開啟 App 重試。`);
   const top = insets.top + 12;
+  // The top cards hang 8dp under the gear (8dp under the status bar, 48dp).
+  const gearTop = insets.top + layout.belowStatusBar;
+  const cardsTop = gearTop + 48 + 8;
+  const cardsBottom = cards.length && topHeight ? cardsTop + topHeight : 0;
+  const noticesTop = cardsBottom ? cardsBottom + 8 : top + 44;
   const controlsTop = top + 44 + (messages.length ? noticeHeight + 8 : 0);
+  // The compass: 12dp under the gear, or under the whole stack of cards.
+  const compassTop = historical ? controlsTop + 12 : (cardsBottom || gearTop + 48) + 12;
   // The live map's padding stays put (an open card covers the map, it does
   // not move it); its buttons sit 12dp above the open card, else above the tabs.
   const mapBottom = historical ? bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12 : bottomInset;
@@ -442,7 +509,11 @@ export default function MapScreen({
         presentation={presentation}
         topInset={controlsTop}
         bottomInset={mapBottom}
-        onStatus={setMapStatus}
+        onMapState={setMapState}
+        retryKey={mapRetry}
+        failure={fixture?.mapFailure ?? null}
+        coverTop={cardsBottom}
+        compassTop={compassTop}
         onSnapshotReady={onSnapshotReady}
         livePhone={livePhone}
         foreground={tracking.foreground && active}
@@ -471,7 +542,12 @@ export default function MapScreen({
       />
       {!historical && (
         // Fixed under the status bar; it does not move with the card.
-        <SettingsGear top={insets.top + layout.belowStatusBar} onPress={onOpenSettings} />
+        <SettingsGear top={gearTop} alert={reasons.length > 0} alertLabel={gearLabel(reasons)}
+          onPress={onOpenSettings} />
+      )}
+      {!historical && (
+        <TopAlertCards cards={cards} top={cardsTop} onAction={pressCardAction} onClose={closeCard}
+          onHeight={setTopHeight} />
       )}
       {(historical || !tracking.preferences.ready) && <View style={[styles.source, { top }]}>
         <View style={styles.statusDot} />
@@ -484,7 +560,7 @@ export default function MapScreen({
       {!!messages.length && (
         <View
           onLayout={event => setNoticeHeight(event.nativeEvent.layout.height)}
-          style={[styles.notices, { top: top + 44 }]}
+          style={[styles.notices, { top: historical ? top + 44 : noticesTop }]}
         >
           <ScrollView nestedScrollEnabled>
             {messages.map(message => (
