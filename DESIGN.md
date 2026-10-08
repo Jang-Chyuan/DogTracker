@@ -326,7 +326,7 @@
 | 狗頭像 | 一般 40dp、要注意（有紅色「!」）48dp；選中再大 8dp（40→48、48→56）＋陰影；白框 2.5dp；點擊範圍至少 48dp |
 | 紅色「!」角標 | 右上；16dp 圓、`problemBadge` 底、1.5dp 白框、9dp 白色「!」 |
 | 小房子角標 | 左下；16dp 圓、`receiver` 底、1.5dp 白框、9dp 白色小房子；停在原處（不是問題） |
-| 角標位置 | 一般頭像往外 4dp、放大的往外 6dp |
+| 角標位置 | 角標中心在含白框的頭像外緣；「!」右上 45°（`size.badge.problemAngle`）：top = right = size×(1−1/√2)/2−badge.size/2；房子左側、中心下方 size/4（`size.badge.houseDrop` = 0.25）：left = size/2−√((size/2)²−(size/4)²)−badge.size/2，top = 3×size/4−badge.size/2 |
 | 名稱牌 | 13sp 粗體、內距 2/6dp、圓角 6、1dp `line` 框、頭像下方 2dp |
 | 群組小標 | 高 32dp（點擊範圍 48）、內距 0/10dp、全圓角、`surface`；14sp 粗體；有問題的加 8dp `problemBadge` 紅點 |
 | 畫面外提示 | 高 36dp（點擊範圍 48）、全圓角、`surface`、陰影；小頭像 24dp、重疊 6dp |
@@ -336,7 +336,7 @@
 
 | 元件 | 規格 |
 |---|---|
-| 右上齒輪 | 48dp 圓、`surface`、`shadow.floating`；狀態列下 8dp、右 16dp，不跟卡片移動；有要去設定處理的事時加紅點 |
+| 右上齒輪 | 48dp 圓、`surface`、`shadow.floating`；狀態列下 8dp、右 16dp，不跟卡片移動；有要去設定處理的事時加紅點；10dp 紅點含 2dp `surface` 框，top/right 2dp，中心在右上 45° 外緣，容器不裁切 |
 | 右下按鈕（框住全部、我的位置） | 48dp 圓；右 16dp、底 16dp，間距 12dp；卡片或面板打開時整組移到它上緣上方 12dp |
 | 「今天 x km」膠囊 | 高 48dp、內距 16dp、全圓角；走路 icon 20dp＋間距 6dp；16sp 粗體等寬數字；未記錄：`textMuted` 字、`iconMuted` icon |
 | 上方提醒卡 | 齒輪下方 8dp、左右 16dp、圓角 14、白底、1dp `alertBorder` 框、左邊 4dp `critLine` 線；左側 32dp `alertIconBg` 圓底圖示；標題 15sp 粗體、說明 12sp；兩張間距 8dp。順序由上往下：接收器斷線、位置存不進手機、地圖載入失敗或打不開、A6 |

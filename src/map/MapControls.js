@@ -24,6 +24,7 @@ import {
 } from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
+const visibleOverflow = StyleSheet.create({ visible: { overflow: 'visible' } }).visible;
 
 /** A pressable that shrinks to 0.97 for 120 ms while pressed (motion.press). */
 export function PressScale({ style, children, onPress, ...rest }) {
@@ -37,12 +38,16 @@ export function PressScale({ style, children, onPress, ...rest }) {
     }).start();
   return (
     <Pressable
+      style={visibleOverflow}
       onPress={onPress}
       onPressIn={() => to(motion.press.scale)}
       onPressOut={() => to(1)}
       {...rest}
     >
-      <Animated.View style={[style, { transform: [{ scale }] }]}>
+      <Animated.View
+        collapsable={false}
+        style={[style, visibleOverflow, { transform: [{ scale }] }]}
+      >
         {children}
       </Animated.View>
     </Pressable>
@@ -348,12 +353,12 @@ const getStyles = makeStyles(theme => {
     },
     pillText: { ...type.status, ...tabularNumbers, color: colors.text },
     pillMuted: { color: colors.textMuted },
-    gear: { position: 'absolute', right: layout.screenEdge },
-    // The red dot's slot (049): top right of the 48dp circle, ringed in white.
+    gear: { position: 'absolute', right: layout.screenEdge, overflow: 'visible' },
+    // Centre on the top-right rim of the 48dp circle; ring matches its surface.
     gearDot: {
       position: 'absolute',
-      top: 6,
-      right: 6,
+      top: 2,
+      right: 2,
       width: 10,
       height: 10,
       borderRadius: 5,

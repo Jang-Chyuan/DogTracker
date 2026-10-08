@@ -50,10 +50,10 @@ describe('framing', () => {
 
   test('padding leaves 24dp beyond the faces\' "!" and their name tags', () => {
     const small = framePadding([marker(4, 0, 0)]);
-    expect(small.top).toBe(24 + 20 + 6);
+    expect(small.top).toBe(47);
     expect(small.bottom).toBeGreaterThan(small.top);
     const big = framePadding([marker(4, 0, 0, { size: 56, tag: '一個很長很長的名字・室內' })]);
-    expect(big.top).toBe(24 + 28 + 6);
+    expect(big.top).toBe(52);
     expect(big.left).toBeGreaterThan(small.left);
     expect(big.left).toBe(big.right);
   });

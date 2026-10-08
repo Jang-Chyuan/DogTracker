@@ -12,6 +12,7 @@
 //   then 24dp (layout.framePadding) around that.
 import { layout, size as sizes } from '../theme/tokens';
 import { tagSize } from './DogMarkers';
+import { problemBadgePosition } from './BadgeGeometry';
 
 // The phone is 「沒有定位」 once its newest fix is older than this (design:
 // 手機超過 10 分鐘沒 GPS).
@@ -97,7 +98,7 @@ export function framePadding(markers = [], fontScale = 1) {
     half = Math.max(half, tag.width / 2);
     tagHeight = Math.max(tagHeight, tag.height);
   }
-  const above = face / 2 + sizes.badge.offsetLarge;
+  const above = face / 2 + Math.max(0, -problemBadgePosition(face).top);
   const below = face / 2 + sizes.marker.labelGap + tagHeight;
   return {
     top: Math.ceil(base + above),
