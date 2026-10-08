@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAuth } from '../auth/AuthProvider';
 import { colors, opacity, radius, space, type } from '../theme/tokens';
 
@@ -35,6 +35,14 @@ export default function LoginScreen({ step = null, expired = false, onDone, onLa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [focused, setFocused] = useState(null);
+  // The keyboard's height: the buttons ride on top of it (the window is
+  // drawn edge to edge, so it does not shrink for the keyboard).
+  const [keyboard, setKeyboard] = useState(0);
+  useEffect(() => {
+    const onShow = Keyboard.addListener('keyboardDidShow', event => setKeyboard(event?.endCoordinates?.height || 0));
+    const onHide = Keyboard.addListener('keyboardDidHide', () => setKeyboard(0));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
   const locked = useRef(false), mounted = useRef(false), left = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -81,7 +89,8 @@ export default function LoginScreen({ step = null, expired = false, onDone, onLa
     disabled && styles.disabled];
 
   return (
-    <View testID="sign-in-page" style={styles.page} onLayout={onLayout}>
+    <View testID="sign-in-page" style={[styles.page, keyboard > 0 && { paddingBottom: keyboard }]}
+      onLayout={onLayout}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {step ? (

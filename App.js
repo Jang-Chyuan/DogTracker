@@ -61,7 +61,7 @@ import { useTodayRoute } from './src/locationTracker/useTodayRoute';
 import { colors, layout, touch, type } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
-import { launchInto } from './src/app/hideSplash';
+import { holdSplash, launchInto } from './src/app/hideSplash';
 import { launchScreen, leaveSignIn, ONBOARDING_DONE, ONBOARDING_SIGN_IN, signInStack } from './src/app/Launch';
 import LoginScreen from './src/screens/LoginScreen';
 import StartFailedScreen, { START_FAILED_TITLE } from './src/screens/StartFailedScreen';
@@ -151,6 +151,8 @@ const appVersion = (() => {
 // feed, the downloaded dogs and their indoor holds, the history and activity
 // caches. TrackerApp mounts again on the page the user was on (`resume`).
 function TrackerRoot() {
+  // Deciding what opens first starts now: D0 waits for it (hideSplash.js).
+  useState(holdSplash);
   const [session, setSession] = useState({ generation: 0, resume: null });
   return <TrackerApp key={session.generation} resume={session.resume}
     onRestart={resume => setSession(current => ({ generation: current.generation + 1, resume }))} />;
@@ -278,15 +280,12 @@ function TrackerApp({ resume = null, onRestart }) {
     // A fixture's start left for another state: back on the map.
     const leaving = launch.key !== null && launchKey === 'live';
     setLaunch({ key: launchKey, screen: decided });
-    if (leaving) {
-      // (A fixture opening a settings page has set its own stack.)
-      if (!fixturePage) setStack([{ name: 'map' }]);
-      return;
-    }
+    // (A fixture opening a settings page has set its own stack.)
+    if (leaving && fixturePage) return;
     if (decided === 'failed') setStack([{ name: 'startFailed' }]);
     else if (decided === 'onboarding' || decided === 'expired') setStack(signInStack(decided));
-    else if (fixture?.launch && !fixturePage) setStack([{ name: 'map' }]);
-    if (launchKey !== 'live') return;
+    else if ((fixture?.launch || leaving) && !fixturePage) setStack([{ name: 'map' }]);
+    if (launchKey !== 'live' || leaving) return;
     // The map lets the launch screen go after its first framing; D1 and the
     // failure screen once they are laid out (onLayout below).
     if (decided === 'map') {
@@ -534,6 +533,11 @@ function TrackerApp({ resume = null, onRestart }) {
 
 
       </View>
+      {/* The map's surface shows through anything transparent above it, even
+          hidden (opacity 0): off the map, an opaque cover in the page colour
+          keeps it out of the status bar and navigation bar insets. */}
+      {!showsMap && <View testID="map-cover" pointerEvents="none"
+        style={[StyleSheet.absoluteFill, styles.mapCover, (light || full) && styles.page]} />}
       {tracking.ready.real && (
         <HardwareScreen
           dogDatabase={tracking.hardwareDatabase}
@@ -557,6 +561,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#0f172a' },
   mapLayer: { backgroundColor: '#0f172a' },
   hiddenMapLayer: { opacity: 0, zIndex: -1 },
+  mapCover: { backgroundColor: '#0f172a', zIndex: -1 },
   header: {
     paddingHorizontal: 12,
     paddingVertical: 4,

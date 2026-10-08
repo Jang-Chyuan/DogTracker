@@ -9,6 +9,15 @@ import { NativeModules } from 'react-native';
 // through if neither ever reports.
 const gate = { mapFramed: false, launch: null };
 
+/**
+ * JavaScript is running and deciding what opens first: the launch screen
+ * stays past the native 10 s safety timeout (up to 30 s), since opening a
+ * new database on a slow phone can take that long.
+ */
+export function holdSplash() {
+  NativeModules.AppSplash?.hold?.();
+}
+
 /** Lets the launch screen go (the native module; a no-op without it). */
 export function hideSplash() {
   NativeModules.AppSplash?.hide?.();
