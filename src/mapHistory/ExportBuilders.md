@@ -34,8 +34,8 @@ A subject has:
   formatted badge/detail text, as on screen. The export label “現在” becomes “結束”.
 
 Activity is determined from packet timestamps within the selected range, so
-hold-only packets with no valid GPS still count. GPX/CSV GPS points are clipped
-by their acquisition timestamp. No interpolation, smoothing or downsampling is
+hold-only packets with no valid GPS still count. GPX GPS points are clipped by acquisition timestamp. CSV includes every selected
+packet by recording timestamp, including packets with missing raw coordinates. No interpolation, smoothing or downsampling is
 performed. Do not pass map geometry capped to a drawing budget.
 
 ## Functions
@@ -46,7 +46,7 @@ performed. Do not pass map geometry capped to a drawing budget.
   over three minutes split segments. Hold waypoints are range-clipped and split
   around gaps. Stay duration/description deduct clipped no-data time.
 - `buildCSV(snapshot)`: one UTF-8 string with BOM, CRLF and the 24-column design
-  header; quoted/escaped cells, missing values empty. Sort by GPS time (UTC), then
+  header; quoted/escaped cells, missing values empty. Sort by recording time (UTC), then
   slave ID. Phone source is `phone`, dog source is `dog-N`, matching the existing
   serializer. Phone collar-only fields are empty. Raw coordinates populate the
   primary latitude/longitude columns as well as the raw columns when supplied.
@@ -55,8 +55,8 @@ performed. Do not pass map geometry capped to a drawing budget.
   an optional synchronous pure font measurement function. Default measurement is
   deterministic and conservative; actual renderer font metrics should be used
   for final layout. Title and legend lines are measured; legend item coordinates
-  are relative to the legend area under the title. Addresses truncate after two
-  lines only in this model. Render rows using `PNG_STYLE` and app light colours.
+  are relative to the legend area under the title. Addresses and details wrap without truncation; a row too tall for an entire
+  page rejects explicitly. Render rows using `PNG_STYLE` and app light colours.
   Page one alone has a square map; later pages repeat title/legend. Map block
   provides subjects, combined 72px padding (=24dp), endpoint/all time-marker
   policy, no cursor/fading, attribution and blank-map scale fallback policy.
@@ -70,6 +70,9 @@ performed. Do not pass map geometry capped to a drawing budget.
   calendar day; not an elapsed-24-hour/seven-day expiry. Platform enumerates only
   its export cache and performs deletion. Invalid dates return false.
 
-Freeze/copy the snapshot at export selection and reuse it for retry. Address
+`captureExportSnapshot` copies and deeply freezes the snapshot at export selection
+for retry. `exportAddressState` makes the offline/error/5000ms deadline decision
+without I/O or timers; the caller must enforce its remaining deadline and cancel
+requests. Cached snapshot addresses are preserved. Address
 lookups, hold detection, range snapping, rendering, sharing and filesystem cleanup
 remain caller/platform responsibilities.

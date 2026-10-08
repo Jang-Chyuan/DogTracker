@@ -4,9 +4,9 @@ import { localDateParts } from './ExportFiles';
 
 export const PNG_STYLE = {
   width: 1080, maxHeight: 2400, mapHeight: 1080, footerHeight: 60,
-  timeColumn: 150, trackColumn: 80, titleFont: 40, addressFont: 40,
+  timeColumn: 150, trackColumn: 80, titleFont: 40, titleWeight: 'bold', fontFamily: 'app', addressWeight: 'bold', addressFont: 40,
   timeFont: 36, detailFont: 30, nodeSize: 64, movementIcon: 72,
-  legendFont: 28, sectionFont: 36, footerFont: 24,
+  legendFont: 28, legendWeight: 'bold', sectionFont: 36, sectionDetailFont: 28, sectionWeight: 'bold', footerFont: 24,
   text: colors.text, textMuted: colors.textMuted, background: colors.surface,
   holdText: colors.receiver, manualText: colors.tonalText, warningText: colors.warn,
   dottedLine: { diameter: 9, gap: 21 }, driveLine: 9, gapLine: { width: 6, dash: [18, 12] },
@@ -51,7 +51,9 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     const map = pages.length === 0;
     const page = { width: 1080, title, titleLines, titleHeight, legend, legendHeight, blocks: [], height: baseHeight + (map ? 1080 : 0) };
     if (map) page.blocks.push({ type: 'map', y: baseHeight, height: 1080, width: 1080,
-      subjects, padding: 72, attribution: '© Google', timeMarkers: multi ? 'endpoints' : 'all', cursor: null, fadeByCursor: false, fallback: 'blank-with-scale' });
+      subjects, padding: 72, fit: 'all-routes-and-stays', scale: true, north: true, stayNumbers: 'per-subject', routeColors: subjects.map((subject, index) => subject.routeColor || routeColors[index % 4]),
+      routeStyle: { movementWidth: 12, driveWidth: 6, drive: 'solid', connectGaps: false, opacity: 1 },
+      holds: 'representative-position', endpointTimes: 'actual-last-sample', attribution: '© Google', attributionPosition: 'bottom-right', timeMarkers: multi ? 'endpoints' : 'all', cursor: null, fadeByCursor: false, fallback: 'blank-with-scale' });
     pages.push(page); return page;
   }
   let page = newPage();
@@ -59,9 +61,12 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
   subjects.forEach((subject, subjectIndex) => {
     const rows = (subject.timeline || []).map(row => {
       const movement = ['move', 'ride', 'drive', 'gap'].includes(row.type);
-      const addressLines = wrap(row.address || row.title || (row.latitude != null ? `${row.latitude}, ${row.longitude}` : ''), movement ? 30 : 40, 754, measureText, 2);
-      const detailLines = wrap(row.detail || '', 30, 754, measureText, 2);
-      return { type: 'row', subjectIndex, row: { ...row, label: row.label === '現在' ? '結束' : row.label }, addressLines, detailLines,
+      const addressLines = wrap(row.address || row.title || (row.latitude != null ? `${row.latitude}, ${row.longitude}` : ''), movement ? 30 : 40, 754, measureText);
+      const missingAddress = !movement && !row.address && row.latitude != null;
+      const detailLines = wrap([row.detail, missingAddress && !row.detail?.includes('查不到地址') ? '查不到地址' : null].filter(Boolean).join('・'), 30, 754, measureText);
+      const time = row.end ?? row.time ?? row.start;
+      const actualTime = Number.isFinite(time) ? clock(localDateParts(time, snapshot.timeZone)) : undefined;
+      return { type: 'row', subjectIndex, row: { ...row, label: row.label === '現在' ? '結束' : row.label, ...(actualTime ? { timeText: actualTime } : {}) }, addressLines, detailLines, missingAddress, detailColor: colors.textMuted,
         height: Math.max(movement ? 96 : 140, addressLines.length * (movement ? 36 : 48) + detailLines.length * 36 + (movement ? 24 : 56)) };
     });
     const section = continued => ({ type: 'section', subjectIndex, title: `${subject.name || displayName(subject)}${continued ? '（續）' : ''}`, height: 72, color: subject.routeColor || routeColors[subjectIndex % 4], start: subject.start ?? snapshot.since, end: subject.end ?? snapshot.until, distanceKm: subject.distanceKm ?? 0, stripeWidth: 4, textColor: colors.text, detailColor: colors.textMuted });
@@ -70,6 +75,7 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     if (multi) add(section(false));
     rows.forEach((row, index) => {
       if (page.height + row.height + 60 > 2400) { page = newPage(); if (multi) add(section(index > 0)); }
+      if (page.height + row.height + 60 > 2400) throw new Error('清單列超過可用高度');
       add(row);
     });
   });

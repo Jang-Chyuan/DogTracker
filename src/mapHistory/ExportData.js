@@ -24,7 +24,7 @@ export function activeSubjects(snapshot) {
   return (snapshot.subjects || []).filter(subject => (subject.rows || []).some(row => packetTime(row) >= snapshot.since && packetTime(row) <= snapshot.until));
 }
 export function clippedIntervals(interval, snapshot, gaps = []) {
-  let pieces = [{ start: Math.max(interval.start, snapshot.since), end: Math.min(interval.end, snapshot.until) }].filter(p => p.end >= p.start);
+  let pieces = [{ start: Math.max(interval.start, snapshot.since), end: Math.min(interval.end, snapshot.until) }].filter(p => p.end > p.start);
   for (const gap of gaps) pieces = pieces.flatMap(p => {
     if (gap.end <= p.start || gap.start >= p.end) return [p];
     return [{ start: p.start, end: Math.min(p.end, gap.start) }, { start: Math.max(p.start, gap.end), end: p.end }].filter(part => part.end > part.start);
@@ -34,4 +34,21 @@ export function clippedIntervals(interval, snapshot, gaps = []) {
 export function exportRows(subject, snapshot) {
   return (subject.rows || []).filter(row => Number.isFinite(gpsTime(row)) && gpsTime(row) >= snapshot.since && gpsTime(row) <= snapshot.until)
     .slice().sort((a, b) => gpsTime(a) - gpsTime(b));
+}
+
+// Capture data rather than retaining references to live history state.
+export function captureExportSnapshot(snapshot) {
+  validateSnapshot(snapshot);
+  const copy = value => {
+    if (Array.isArray(value)) return Object.freeze(value.map(copy));
+    if (value && typeof value === 'object') return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copy(item)])));
+    return value;
+  };
+  return copy(snapshot);
+}
+// Pure deadline decision: callers own network requests and cancellation.
+export function exportAddressState({ online, elapsedMs = 0, address, failed = false }) {
+  if (address) return { status: 'resolved', address };
+  if (!online || failed || elapsedMs >= 5000) return { status: 'missing', address: null, text: '查不到地址' };
+  return { status: 'pending', address: null, remainingMs: 5000 - elapsedMs };
 }
