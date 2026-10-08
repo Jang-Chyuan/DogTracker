@@ -59,14 +59,13 @@ export function sectionText(section) {
 
 /**
  * A place row's pill (判定表「清單節點的內容」「時間軸清單的其他膠囊」):
- * { text, tone } with tone 'stay' (route colour), 'plain', 'manual' (tonal),
+ * { text, tone } with tone 'stay' (route colour), 'plain',
  * 'closed' (warn) or 'indoor' (receiver); null for a switch point.
  */
 export function nodePill(node) {
   switch (node.type) {
     case 'departure':
-      if (node.continuesPreviousDay) return { text: '接續前一天', tone: 'plain' };
-      return node.manual ? { text: '出發（手動）', tone: 'manual' } : { text: '出發', tone: 'plain' };
+      return { text: '出發', tone: 'plain' };
     case 'stop': {
       const stay = `停 ${listDuration(node.durationMs)}`;
       return { text: node.continuesPreviousDay ? `接續前一天・${stay}` : stay, tone: 'stay' };

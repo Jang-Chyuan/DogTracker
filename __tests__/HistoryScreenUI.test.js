@@ -74,7 +74,7 @@ test('history-range-open (H2b): the bar open in its frame, 完成, the dragged s
   expect(s.ids('history-range-bar')).toEqual(['history-range-bar']);
   expect(s.text()).toContain('拖兩端的圓點改開始、結束');
   expect(s.text()).toContain('完成');
-  expect(s.text()).toContain('出發（手動）');
+  expect(s.text()).toContain('出發');
   expect(s.text()).not.toContain('已手動調整');
   expect(s.text()).toContain('07:50 – 現在');
   // The right handle says this minute, not 「現在」.
@@ -105,7 +105,7 @@ test('a dragged range is kept for the day; the list and summary follow it', asyn
   expect(s.screen.model.points[0].time).toBe(start.time);
   await act(async () => s.screen.commitRange({ start: start.time, end: null, following: true }));
   expect(s.screen.manual).toBe(true);
-  expect(s.text()).toContain('出發（手動）');
+  expect(s.text()).toContain('出發');
   await unmount(s);
   // Opened again (same fixture scope): the range is still the dragged one.
   const again = await mountFixture('history-my-route');

@@ -1140,7 +1140,7 @@ const FIXTURES = {
   'history-dog': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: dogMorning(now) }), geocoder: { names: HISTORY_NAMES } }),
   // H2b: my route with the range bar open; the start dragged to the walk after
-  // the first stay (出發（手動）), the end following now.
+  // the first stay (出發), the end following now.
   'history-range-open': now => ({ ...FIXTURES['history-my-route'](now),
     historyView: { rangeOpen: true, manual: { start: now - 100 * MINUTE, end: null, following: true } } }),
   // 豆豆 has one fix today: one point, no distance, no range bar (只有一筆).

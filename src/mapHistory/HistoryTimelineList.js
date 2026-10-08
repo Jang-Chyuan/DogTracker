@@ -123,7 +123,6 @@ function Pill({ pill, color }) {
   const tone = {
     stay: [{ backgroundColor: `${color}1F` }, { color }],
     plain: [{ backgroundColor: colors.pillPlain }, { color: colors.textMuted }],
-    manual: [{ backgroundColor: colors.tonal }, { color: colors.tonalText }],
     closed: [{ backgroundColor: colors.warnBg }, { color: colors.warn }],
     indoor: [{ backgroundColor: colors.pillIndoor }, { color: colors.receiver }],
   }[pill.tone];

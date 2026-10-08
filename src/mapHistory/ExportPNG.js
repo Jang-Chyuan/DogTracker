@@ -19,7 +19,7 @@ export const PNG_STYLE = {
   legendFont: 28, legendWeight: 'bold', legendHeight: 56, sectionFont: 36, sectionDetailFont: 28,
   sectionWeight: 'bold', sectionHeight: 72, footerFont: 24, placeMin: 140, movementMin: 96, rowGap: 36,
   text: colors.text, textMuted: colors.textMuted, background: colors.surface,
-  holdText: colors.receiver, manualText: colors.tonalText, warningText: colors.warn,
+  holdText: colors.receiver, warningText: colors.warn,
   dottedLine: { diameter: 9, gap: 21 }, driveLine: 9, gapLine: { width: 6, dash: [18, 12] },
 };
 const S = PNG_STYLE;
