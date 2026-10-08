@@ -22,10 +22,10 @@ export default function PermissionsScreen({ page, step = null, onNext, onSystemS
         </>
       )}>
       <View style={styles.list}>
-        {page.rows.map(row => (
+        {page.rows.map((row, index) => (
           <React.Fragment key={row.id}>
+            {index > 0 ? <View style={styles.rule} /> : null}
             <PermissionRow row={row} onSystemSettings={onSystemSettings} />
-            <View style={styles.rule} />
           </React.Fragment>
         ))}
       </View>

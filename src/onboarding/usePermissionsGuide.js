@@ -4,6 +4,7 @@ import { androidPermissions, askableIds, grantOf, neededPermissions, permissions
 
 const NO_NAMES = Object.freeze({});
 const NO_IDS = Object.freeze([]);
+const SHOW_ROW_MS = 150;
 
 /**
  * D2's permissions, asked for real: checks what this phone allows (again each
@@ -65,6 +66,10 @@ export function usePermissionsGuide({ asked = NO_IDS, onAsked, fixture = null,
         setAskedNow(sent);
         Promise.resolve(onAsked?.(sent)).catch(() => {});
         setAsking(id);
+        // The row says 「詢問中…」 on screen before the system question
+        // covers the app (a paused app draws nothing new).
+        await new Promise(resolve => setTimeout(resolve, SHOW_ROW_MS));
+        if (!alive.current) return;
         // A question closed with the back key counts as not allowed; the
         // next one is asked all the same.
         await Promise.resolve().then(() => permissions.requestMultiple(androidPermissions(id, names)))
