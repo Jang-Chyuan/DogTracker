@@ -31,6 +31,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.atan
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.ln
@@ -341,8 +342,14 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     val minX = pts.minOf { it.first }; val maxX = pts.maxOf { it.first }
     val minY = pts.minOf { it.second }; val maxY = pts.maxOf { it.second }
     val fit = min((w - 2.0 * padding) / max(maxX - minX, 1e-9), (h - 2.0 * padding) / max(maxY - minY, 1e-9))
-    val zoom = floor(ln(fit / (256 * density)) / ln(2.0)).coerceIn(3.0, 18.0)
-    val scale = 256 * density * 2.0.pow(zoom)
+    // The fit wants a zoom between two whole ones: the lite map draws at the
+    // next whole zoom on a larger view, scaled down to w×h (labels stay sharp,
+    // the routes fill the frame).
+    val wanted = (ln(fit / (256 * density)) / ln(2.0)).coerceIn(3.0, 18.0)
+    val zoom = ceil(wanted - 1e-9)
+    val shrink = 2.0.pow(wanted - zoom)
+    val viewW = (w / shrink).toInt(); val viewH = (h / shrink).toInt()
+    val scale = 256 * density * 2.0.pow(zoom) * shrink
     val cx = (minX + maxX) / 2; val cy = (minY + maxY) / 2
     val centre = LatLng(atan(sinh(PI * (1 - 2 * cy))) * 180 / PI, cx * 360 - 180)
     val latch = CountDownLatch(1)
@@ -356,14 +363,16 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         view = map
         map.onCreate(null)
         // Behind the app's own views: laid out at the PNG's size, never seen.
-        (activity.window.decorView as ViewGroup).addView(map, 0, FrameLayout.LayoutParams(w, h))
+        (activity.window.decorView as ViewGroup).addView(map, 0, FrameLayout.LayoutParams(viewW, viewH))
         map.onResume()
         map.getMapAsync { google ->
           google.uiSettings.isMapToolbarEnabled = false
           google.setOnMapLoadedCallback {
             try {
-              val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-              map.draw(Canvas(bitmap))
+              val full = Bitmap.createBitmap(viewW, viewH, Bitmap.Config.ARGB_8888)
+              map.draw(Canvas(full))
+              val bitmap = if (viewW == w && viewH == h) full
+                else Bitmap.createScaledBitmap(full, w, h, true).also { full.recycle() }
               result = bitmap to Projector({ la, lo -> val (x, y) = mercator(la, lo)
                 ((w / 2.0 + (x - cx) * scale).toFloat()) to ((h / 2.0 + (y - cy) * scale).toFloat()) },
                 40075016.0 * cos(centre.latitude * PI / 180.0) / scale)
