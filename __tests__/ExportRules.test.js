@@ -145,3 +145,13 @@ test('CSV selected recording range includes both endpoints and excludes outside 
   expect(csv).not.toContain('"after"');
   expect(csv.split('\r\n')).toHaveLength(4);
 });
+
+test('GPX trkpts stay in GPS order when a delayed packet carries an earlier fix', () => {
+  // Packet at 5 min holds the 2-minute fix; the 3-minute fix arrived first.
+  const rows = [point(3 * m, { location_at: 3 * m }), point(5 * m, { location_at: 2 * m, latitude: 25.001 }),
+    point(6 * m, { location_at: 6 * m })];
+  const times = [...buildGPX(snap(dog({ rows }))).matchAll(/<trkpt[^>]*>(?:<ele>[^<]*<\/ele>)?<time>([^<]+)<\/time>/g)]
+    .map(match => Date.parse(match[1]));
+  expect(times).toEqual([...times].sort((a, b) => a - b));
+  expect(times).toHaveLength(3);
+});
