@@ -53,7 +53,7 @@ class SearchRelayService : Service() {
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     startForeground(3106, NotificationCompat.Builder(this, "dogtracker_search_relay")
-      .setSmallIcon(com.dogtracker.R.drawable.ic_stat_dog).setContentTitle("DogTracker 搜尋位置轉送")
+      .setSmallIcon(com.dogtracker.R.drawable.ic_stat_dog).setColor(getColor(com.dogtracker.R.color.ic_launcher_background)).setContentTitle("DogTracker 搜尋位置轉送")
       .setContentText("每 10 秒嘗試上傳；斷網保留資料").setOngoing(true).build())
     val next = intent?.getStringExtra("owner").orEmpty()
     if (next.isEmpty() || timedOut) { stopSelf(); return START_NOT_STICKY }

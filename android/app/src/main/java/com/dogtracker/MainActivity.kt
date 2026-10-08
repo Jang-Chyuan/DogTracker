@@ -1,6 +1,7 @@
 package com.dogtracker
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -8,6 +9,8 @@ import android.os.Looper
 import android.util.Log
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -28,6 +31,24 @@ class MainActivity : ReactActivity() {
     handler.postDelayed({ if (!SplashState.held) SplashState.appReady = true }, SplashState.TIMEOUT_MS)
     handler.postDelayed({ SplashState.appReady = true }, SplashState.HOLD_TIMEOUT_MS)
     super.onCreate(savedInstanceState)
+    updateSystemBars(resources.configuration)
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    setTheme(R.style.AppTheme)
+    updateSystemBars(newConfig)
+  }
+
+  @Suppress("DEPRECATION")
+  private fun updateSystemBars(config: Configuration) {
+    val dark = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    window.navigationBarColor = ContextCompat.getColor(this, R.color.app_background)
+    window.setBackgroundDrawableResource(R.color.app_background)
+    WindowInsetsControllerCompat(window, window.decorView).apply {
+      isAppearanceLightStatusBars = !dark
+      isAppearanceLightNavigationBars = !dark
+    }
   }
 
   override fun onResume() {
