@@ -16,6 +16,7 @@ import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
 // The history list reads this much before the day too: a visit or a drive
 // running over midnight, a break before the first fix (判定表「跨午夜」).
 export const HISTORY_DAY_CONTEXT_MS = 30 * 60000;
+export const HISTORY_DAY_AFTER_MS = 3 * 60000;
 const DAY_PAGE = 2000;
 
 // The single list the app composition binds; a method added here without the
@@ -204,28 +205,33 @@ export function createHistoryDatabase(db) {
     },
     /**
      * One dog's (or this phone's) rows of one day for the history list
-     * (src/history): [start - HISTORY_DAY_CONTEXT_MS, end). `subject` is
+     * (src/history): [start - HISTORY_DAY_CONTEXT_MS, end + HISTORY_DAY_AFTER_MS). `subject` is
      * 'dog' (by collar number, every receiver) or 'phone'; `source` is the
      * history's 資料來源 — 'all', 'local' (dog_status) or 'cloud' (the
      * account's supabase_dog_status; nothing signed out). `after` holds the
-     * last { time, id } read per table: only newer rows come back, so today's
-     * list re-reads a few rows, not the day. The dog's hold model also gets
+     * last id read per table: only rows added since come back (whatever their
+     * time, so a download of older rows is seen), and polling re-reads a few
+     * rows, not the day. The dog's hold model also gets
      * the last good fixes before the window (`seed`), like the history map.
      * @returns {{ rows, seed, after }}
      */
     async historyDayRows({ subject = 'dog', slaveId = null, start, end, source = 'all', owner = null, after = {} }) {
       const since = Number(start) - HISTORY_DAY_CONTEXT_MS;
+      // A few minutes past midnight tell whether the last stay or hold goes on
+      // the next day (「接續隔天」); they are not part of this day.
+      const until = Number(end) + HISTORY_DAY_AFTER_MS;
       const cursors = { ...after };
-      async function pages(key, sql, params, time) {
+      // By id, not time: a cloud download can add rows older than the newest
+      // one read (判定表「補下載完成」), and those must be read too.
+      async function pages(key, sql, params) {
         const found = [];
-        let cursor = cursors[key] ?? { time: since, id: -1 };
+        let cursor = cursors[key] ?? { id: -1 };
         for (;;) {
-          const page = rows(await db.executeAsync(`${sql} AND (${time} > ? OR (${time} = ? AND id > ?))
-            ORDER BY ${time}, id LIMIT ${DAY_PAGE}`, [...params, cursor.time, cursor.time, cursor.id]));
+          const page = rows(await db.executeAsync(`${sql} AND id > ? ORDER BY id LIMIT ${DAY_PAGE}`,
+            [...params, cursor.id]));
           if (!page.length) break;
           found.push(...page);
-          const last = page[page.length - 1];
-          cursor = { time: Number(last.row_time), id: Number(last.id) };
+          cursor = { id: Number(page[page.length - 1].id) };
           if (page.length < DAY_PAGE) break;
         }
         cursors[key] = cursor;
@@ -235,9 +241,9 @@ export function createHistoryDatabase(db) {
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
       if (subject === 'phone') {
         if (!(await table('myLocationTracker'))) return { rows: [], seed: [], after: cursors };
-        const found = await pages('phone', `SELECT id, recorded_at AS row_time, recorded_at AS time, latitude, longitude,
+        const found = await pages('phone', `SELECT id, recorded_at AS time, latitude, longitude,
           accuracy_meters AS accuracy FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ?`,
-        [since, end], 'recorded_at');
+        [since, until]);
         return { rows: found.map(phoneHistoryRow), seed: [], after: cursors };
       }
       const out = [], seed = [];
@@ -253,8 +259,8 @@ export function createHistoryDatabase(db) {
         const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at']);
         const scope = `slave_id = ?${key === 'cloud' ? ' AND owner_user_id = ?' : ''}`;
         const params = key === 'cloud' ? [slaveId, owner] : [slaveId];
-        const found = await pages(key, `SELECT id, ${time} AS row_time, received_at, master_id, slave_id, slave_lat, slave_lon${extra}
-          FROM ${name} WHERE ${scope} AND ${time} >= ? AND ${time} < ?`, [...params, since, end], time);
+        const found = await pages(key, `SELECT id, received_at, master_id, slave_id, slave_lat, slave_lon${extra}
+          FROM ${name} WHERE ${scope} AND ${time} >= ? AND ${time} < ?`, [...params, since, until]);
         out.push(...found.map(row => dogHistoryRow(row, key)));
         if (first && columns.has('satellites')) {
           seed.push(...rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude, slave_lon AS longitude,

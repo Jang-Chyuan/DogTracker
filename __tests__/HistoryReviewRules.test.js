@@ -1,6 +1,6 @@
 // Second review of the 054a history logic against the v3 design (判定表
 // rows quoted above each test).
-import { historyMovement, historyTimeline, historyVisits, historyDeparture } from '../src/history';
+import { historyMovement, historyTimeline, historyVisits, historyDeparture, historyStops } from '../src/history';
 import { point } from '../__fixtures__/HistoryLogicFixtures';
 
 // A path along the meridian: [seconds, metres] pairs with an accuracy.
@@ -96,4 +96,51 @@ test('a collar without fixes in the car is no data, not distance', () => {
   expect(model.nodes.map(n => n.type)).toEqual(['departure', 'movement', 'gap', 'movement', 'end']);
   expect(model.distanceM).toBeLessThan(1500);
   expect(model.sections.find(s => s.type === 'gap').countedDistanceM).toBe(0);
+});
+
+// 判定表「停留的重算」: a whole recalculation replays in time order, so a stay
+// marked early is kept when longer visits later raise the baseline — opening
+// the finished day gives what following it live gave (Codex review #1).
+test('stays are replayed in time order, not judged once with the final median', () => {
+  const early = [...[0, 60, 120, 180, 240].map(t => [t, 0]), ...[300, 330, 360].map(t => [t, 100]),
+    ...[390, 420, 450].map(t => [t, 200]), ...[480, 510, 540].map(t => [t, 300]), ...[570, 600, 630].map(t => [t, 400])];
+  // Five later visits of 150 s each: the final median is 150 s, 3× is 450 s.
+  const later = [];
+  for (let k = 0; k < 5; k += 1) for (let s = 0; s <= 150; s += 30) later.push([660 + k * 180 + s, 500 + k * 100]);
+  const all = path([...early, ...later], {});
+  const replayed = historyStops(all, { following: false });
+  expect(replayed.stops.map(s => s.start)).toEqual([0]);
+  // Live, in two appends, the same answer.
+  const part = historyStops(all.filter(p => p.time <= 640000), { following: true });
+  expect(part.stops.map(s => s.start)).toEqual([0]);
+});
+
+// Codex review #6 — 判定表「停在原處前後的距離」: drift drawn onto the hold
+// spot does not count; the release from the spot does.
+test('the edge into a hold adds no distance, the release does', () => {
+  const held = { heldReason: 'indoor', heldSince: 100000, accuracy: 5 };
+  const m = historyMovement([point(0, 0, { accuracy: 5 }), point(110, 100, held), point(170, 100, held),
+    point(180, 120, { accuracy: 5 })]);
+  expect(m.distanceM).toBeCloseTo(20);
+});
+// Codex review #7 — fixes over 25 m are not judged: they cannot bridge a
+// 10-minute interruption between judged fixes (判定表「造訪的起訖」).
+test('a poor fix in the middle does not join two visits across ten minutes', () => {
+  expect(historyVisits([point(0), point(500, 0, { accuracy: 30 }), point(700)])).toHaveLength(2);
+});
+// Codex review #9 — a drive cut off by the end of the data keeps its last fix
+// in the car: no zero-length visit there.
+test('the last fix of a drive that runs to the end is not a visit', () => {
+  const drive = path(leg(0, 40, 0, 6), { accuracy: 5 });
+  const m = historyMovement(drive, { subject: 'phone' });
+  expect(m.vehicles[0].exited).toBe(false);
+  expect(historyVisits(drive, { subject: 'phone', vehicles: m.vehicles })).toHaveLength(0);
+});
+// Codex review #10 — minutes on foot without counted distance are still a
+// row, and the switch to the car stays (判定表「交通方式切換點」).
+test('a long slow stretch before the car keeps its row and the switch point', () => {
+  const pairs = [...leg(0, 300, 0, 0.01), ...leg(310, 400, 3, 9)];
+  const model = historyTimeline(path(pairs), { subject: 'phone', range: { start: 0, end: 400000 } });
+  expect(model.nodes.map(n => (n.type === 'movement' ? n.mode : n.type))).toEqual(
+    ['departure', 'walking', 'switch', 'driving', 'end']);
 });

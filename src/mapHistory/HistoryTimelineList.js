@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
 import { colors } from '../theme/tokens';
 import {
-  coordinates, emptyText, interruptionText, nodePill, nodeTimes, sectionText, summaryText,
+  emptyText, interruptionText, nodePill, nodeTimes, placeCoordinates, placeTitle, sectionText, summaryText,
 } from '../history/HistoryText';
 
 // 判定表「時間軸清單」: time column 54dp, track 36dp, then the place.
@@ -79,11 +79,10 @@ function PlaceRow({ node, next, color }) {
         <Node node={node} color={color} />
       </View>
       <View style={styles.place}>
-        {/* No address lookup yet (053a's Geocoder comes later): the first
-            line is the coordinates, as when no address is found. */}
-        <Text style={styles.address}>{coordinates(node)}</Text>
+        <Text style={styles.address}>{placeTitle(node)}</Text>
         <View style={styles.second}>
           <Pill pill={nodePill(node)} color={color} />
+          {placeCoordinates(node) ? <Text style={styles.note}>{placeCoordinates(node)}</Text> : null}
           {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
       </View>
@@ -114,10 +113,10 @@ function SectionRow({ section, color }) {
  * 恢復記錄, the end) with the movement and 沒有資料 rows between them.
  * Shown on the old history page until 055 builds the new one.
  */
-export default function HistoryTimelineList({ model, subject, today, name, color, loading, error }) {
+function HistoryTimelineList({ model, subject, today, name, color, loading, error }) {
   if (error) return <Text style={styles.empty}>{error}</Text>;
   if (!model) return loading ? <Text style={styles.empty}>讀取中…</Text> : null;
-  if (!model.packets.length) return <Text style={styles.empty}>{emptyText({ subject, today, name })}</Text>;
+  if (!model.dayRecords) return <Text style={styles.empty}>{emptyText({ subject, today, name })}</Text>;
   if (!model.points.length) return <Text style={styles.empty}>這段時間沒有紀錄</Text>;
   const summary = summaryText(model, { subject });
   const nodes = model.nodes;
@@ -135,12 +134,18 @@ export default function HistoryTimelineList({ model, subject, today, name, color
   );
 }
 
+// The page re-renders every second (useMapHistory's clock); the list only
+// when its model changes.
+export default React.memo(HistoryTimelineList);
+
 const styles = StyleSheet.create({
   summary: { paddingVertical: 10 },
   title: { color: colors.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   detail: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
-  row: { flexDirection: 'row', paddingBottom: 12 },
-  sectionRow: { minHeight: 40, paddingBottom: 0 },
+  // The 12dp between rows is inside the place column, so the track column
+  // runs the full row and the line has no breaks.
+  row: { flexDirection: 'row' },
+  sectionRow: { minHeight: 40 },
   timeColumn: { width: TIME_WIDTH, alignItems: 'flex-end', paddingRight: 4 },
   time: { color: colors.text, fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], lineHeight: 20 },
   timeEnd: { color: colors.textMuted, fontSize: 12, fontVariant: ['tabular-nums'] },
@@ -158,7 +163,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.receiver, alignItems: 'center', justifyContent: 'center', marginTop: -3 },
   resume: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, backgroundColor: colors.surface, marginTop: 4 },
   end: { width: 18, height: 18, borderRadius: 9, borderWidth: 4, marginTop: 1 },
-  place: { flex: 1, paddingLeft: 4 },
+  place: { flex: 1, paddingLeft: 4, paddingBottom: 12 },
   address: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, fontVariant: ['tabular-nums'] },
   second: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 4 },
   pill: { height: 18, borderRadius: 9, paddingHorizontal: 7, justifyContent: 'center' },

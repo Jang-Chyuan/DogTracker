@@ -16,20 +16,22 @@ const settle = (visit, completed) => ({ ...visit, ...mean(visit.points), complet
 export function historyVisits(points, { subject = 'dog', config = configFor(subject),
   vehicles = [], following = false } = {}) {
   const visits = [];
-  let current = null, outside = [], insideIndex = 0;
+  // The last fix that took part in the judgement: fixes over 25 m are not
+  // judged at all, so they neither bridge nor break an interruption.
+  let current = null, outside = [], insideIndex = 0, judged = null;
   const finish = () => {
     if (!current) return;
     visits.push(settle(current, true)); current = null; outside = [];
   };
   for (let i = 0; i < points.length; i += 1) {
     const p = points[i];
-    if (p.heldReason || isVehiclePoint(p, vehicles)) { finish(); continue; }
+    if (p.heldReason || isVehiclePoint(p, vehicles)) { finish(); judged = null; continue; }
     if (p.accuracy > config.stayAccuracyM) continue;
-    if (current) {
-      const prev = points[i - 1], dt = p.time - (prev?.time ?? p.time);
-      if (dt > config.gapMs && (dt >= config.mergeGapMs || above(distanceMeters(prev.accuracy > config.stayAccuracyM
-        ? current.points[current.points.length - 1] : prev, p), config.radiusM))) finish();
+    if (current && judged) {
+      const dt = p.time - judged.time;
+      if (dt > config.gapMs && (dt >= config.mergeGapMs || above(distanceMeters(judged, p), config.radiusM))) finish();
     }
+    judged = p;
     if (!current) {
       insideIndex = i;
       current = { id: `visit:${p.time}`, type: 'stop', start: p.time, end: p.time,
@@ -40,7 +42,7 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
     if (!above(distanceMeters(current.center, p), config.radiusM)) {
       const last = current.points[current.points.length - 1];
       // All signal gaps are deducted, including gaps inside an unconfirmed exit.
-      const gaps = points.slice(insideIndex + 1, i + 1);
+      const gaps = points.slice(insideIndex + 1, i + 1).filter(q => !(q.accuracy > config.stayAccuracyM));
       let previous = last, interrupted = 0;
       for (const q of gaps) {
         if (q.time - previous.time > config.gapMs) {
@@ -75,39 +77,60 @@ function clippedVisit(visit, start, end, dayBoundary = false) {
     continuesPreviousDay: !!visit.continuesPreviousDay || (dayBoundary && visit.start < start),
     continuesNextDay: !!visit.continuesNextDay || (dayBoundary && visit.end > end) };
 }
-/** Stateless calculation plus an explicit immutable append state.
- * Caller changes `identity` for subject/source/range start/timezone/range kind.
- * Fixed ends belong in identity; following ends do not. Earlier edits or new
- * vehicle classification invalidate state automatically. */
+/**
+ * 判定表「停留的重算」: a whole recalculation replays the decisions in time
+ * order, as they would have been made live — so a stay marked while the
+ * baseline was low stays marked when later visits raise it (「標了就不撤銷」),
+ * and opening a finished day gives what following it all day gave.
+ * Each step is a visit starting or ending:
+ * - 「至少 5 次」 counts visits started so far (the ongoing one too); fewer
+ *   than five in the range → the whole day's visits so far are the baseline
+ *   (備援基準), and fewer than five of those → nothing is marked yet.
+ * - The median is over visits already ended.
+ * - The first time the baseline is usable (or the range's own baseline takes
+ *   over from the day's, for a range that follows now), every visit in the
+ *   range is judged; afterwards each visit is judged when it ends, and the
+ *   ongoing one at the end of the data.
+ * - A fixed end (past day, fixed manual end, recording closed) settles the
+ *   last visit; with the day baseline still in use, the whole day's ended
+ *   visits judge every unmarked visit once more (判定表「固定終點的結算」).
+ *   A fixed-end range keeps the day baseline once it took it.
+ * `state` and `identity` are accepted for callers that keep them; the
+ * replay itself is deterministic, so appending rows gives the same answer.
+ */
 export function historyStops(points, { start = -Infinity, end = Infinity,
   dayStart = start, dayEnd = end, subject = 'dog', config = configFor(subject),
-  vehicles = [], following = false, identity = '', state = null } = {}) {
+  vehicles = [], following = false, identity = '' } = {}) {
   const visits = historyVisits(points, { subject, config, vehicles, following });
   const day = visits.map(v => clippedVisit(v, dayStart, dayEnd, true)).filter(Boolean);
   const selected = day.map(v => clippedVisit(v, start, end)).filter(Boolean);
-  // What was processed, one short key per fix (not the whole row: a row can
-  // carry its raw payload).
-  const prefix = points.map(p => `${p.time}:${p.latitude}:${p.longitude}:${p.accuracy ?? ''}:${p.heldReason ?? ''}`);
-  const append = state?.identity === identity && state.vehicles.every(v => vehicles.some(next => next.start === v.start && next.end === v.end))
-    && !vehicles.some(v => v.start <= state.lastTime && !state.vehicles.some(old => old.start === v.start && old.end === v.end))
-    && state.prefix.every((p, i) => p === prefix[i]) && prefix.length >= state.prefix.length;
-  const fallback = selected.length < config.minVisits || (append && !following && state.fallback);
-  const baseline = fallback ? day : selected;
-  const typicalMs = median(baseline.filter(v => v.completed).map(v => v.durationMs));
-  const ready = baseline.length >= config.minVisits && typicalMs != null;
-  const firstPass = !append || !state.ready || fallback !== state.fallback;
-  const retained = new Set(append ? state.marked : []);
-  const assessed = new Set(append ? state.assessed : []);
-  for (const v of selected) {
-    if (ready && (firstPass || !v.completed || !assessed.has(v.id))
-      && v.durationMs >= config.stayMs && v.durationMs >= typicalMs * config.stayRatio) retained.add(v.id);
-    if (ready && v.completed) assessed.add(v.id);
+  const qualifies = (v, typical) => v.durationMs >= config.stayMs && v.durationMs >= typical * config.stayRatio;
+  const marked = new Set();
+  const steps = [...new Set(day.flatMap(v => [v.start, v.end]))].sort((x, y) => x - y);
+  let ready = false, fallback = null, typicalMs = null;
+  const judge = (list, typical) => { for (const v of list) if (!marked.has(v.id) && qualifies(v, typical)) marked.add(v.id); };
+  for (const t of steps) {
+    const ownStarted = selected.filter(v => v.start <= t).length;
+    const useFallback = (!following && fallback) || ownStarted < config.minVisits;
+    const base = useFallback ? day : selected;
+    const started = base.filter(v => v.start <= t).length;
+    const typical = median(base.filter(v => v.completed && v.end <= t).map(v => v.durationMs));
+    if (started < config.minVisits || typical == null) continue;
+    const switched = ready && fallback !== useFallback;
+    typicalMs = typical;
+    if (!ready || switched) judge(selected.filter(v => v.end <= t && (v.completed || v.start <= t)), typical);
+    else judge(selected.filter(v => v.completed && v.end === t), typical);
+    ready = true; fallback = useFallback;
   }
-  const stops = selected.filter(v => retained.has(v.id)).map((v, i) => ({ ...v, number: i + 1 }));
-  return { visits: selected, stops, typicalMs, fallback,
-    state: { identity, prefix, vehicles: vehicles.map(v => ({ start: v.start, end: v.end })),
-      lastTime: points[points.length - 1]?.time ?? -Infinity, ready, fallback,
-      marked: [...retained], assessed: [...assessed] } };
+  // The ongoing visit is judged again with every append (and at the end here).
+  if (ready) judge(selected.filter(v => !v.completed), typicalMs);
+  if (ready && !following && fallback) {
+    const settled = median(day.filter(v => v.completed).map(v => v.durationMs));
+    if (settled != null) { typicalMs = settled; judge(selected, settled); }
+  }
+  const stops = selected.filter(v => marked.has(v.id)).map((v, i) => ({ ...v, number: i + 1 }));
+  return { visits: selected, stops, typicalMs, fallback: !!fallback || selected.length < config.minVisits,
+    state: { identity, ready, fallback: !!fallback, marked: [...marked] } };
 }
 /** Indoor holds are unconditional, unnumbered nodes, split at actual packet gaps.
  * Feed packet observations replayed with applyHistoryHolds / continueHistoryHolds.

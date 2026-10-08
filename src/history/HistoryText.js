@@ -71,8 +71,12 @@ export function nodePill(node) {
       const stay = `停 ${listDuration(node.durationMs)}`;
       return { text: node.continuesPreviousDay ? `接續前一天・${stay}` : stay, tone: 'stay' };
     }
-    case 'indoor':
-      return { text: `室內・${listDuration(node.end - node.start)}`, tone: 'indoor' };
+    case 'indoor': {
+      // 判定表「跨午夜」 for a hold over midnight, as for a stay.
+      const inside = `室內・${listDuration(node.end - node.start)}`;
+      const text = node.continuesPreviousDay ? `接續前一天・${inside}` : node.continuesNextDay ? `${inside}・接續隔天` : inside;
+      return { text, tone: 'indoor' };
+    }
     case 'resume':
       return { text: '恢復記錄', tone: 'plain' };
     case 'end':
@@ -83,6 +87,20 @@ export function nodePill(node) {
     default:
       return null;
   }
+}
+
+/**
+ * The first line of a place. No address lookup yet (053a's Geocoder comes
+ * with 055): the coordinates, as when no address is found; a hold says
+ * 「停留（室內）」 (判定表「清單節點的內容」).
+ */
+export function placeTitle(node) {
+  return node.type === 'indoor' ? '停留（室內）' : coordinates(node);
+}
+
+/** The second line's coordinates, under a hold's 「停留（室內）」 only. */
+export function placeCoordinates(node) {
+  return node.type === 'indoor' ? coordinates(node) : '';
 }
 
 /** The left column: one time, or a stay's start and end. */

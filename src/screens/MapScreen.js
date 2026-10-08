@@ -606,6 +606,8 @@ export default function MapScreen({
           onHeight={setSheetHeight}
           owner={cloudOwner}
           clock={fixtureClock}
+          // Recording switched off: my route's end is fixed at its last fix.
+          recording={livePhone ? !!livePhone.running : null}
         />
       )}
       {cardModel && (

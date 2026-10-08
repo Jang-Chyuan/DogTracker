@@ -99,7 +99,7 @@ export function historyTimeline(rows = [], options = {}) {
   nodes.forEach((n, i) => {
     if (n.type !== 'switch') return;
     for (const [side, beyond] of [[nodes[i - 1], nodes[i - 2]], [nodes[i + 1], nodes[i + 2]]]) {
-      if (foot(side) && side.countedDistanceM === 0 && place(beyond) && !drop.has(beyond)) {
+      if (foot(side) && side.countedDistanceM === 0 && side.durationMs <= 60000 && place(beyond) && !drop.has(beyond)) {
         drop.add(n); drop.add(side); return;
       }
     }
@@ -121,7 +121,11 @@ export function historyTimeline(rows = [], options = {}) {
   }
   const keptLocations = locations.filter(n => !drop.has(n));
   const keptSections = sections.filter(n => !drop.has(n));
-  return { ...stream, points, range, departure, nodes, locations: keptLocations, sections: keptSections,
+  // H8 asks whether the day itself has records; the context read before
+  // midnight does not count (判定表「停住期間的封包算不算『有紀錄』」: held
+  // packets do).
+  const dayRecords = stream.packets.some(p => p.time >= dayStart && p.time < dayEnd);
+  return { ...stream, dayRecords, points, range, departure, nodes, locations: keptLocations, sections: keptSections,
     state: stays.state, typicalMs: stays.typicalMs,
     distanceM: movement.edges.reduce((sum, e) => sum + e.countedDistanceM, 0),
     durationMs: first ? last.time - first.time : 0,
