@@ -7,7 +7,7 @@ const HOLD_CONTEXT_MS = 10 * 60000;
 import { safePhoneHistoryCoordinate } from './PhoneHistoryCoordinates';
 import { coordinate } from '../tracking/RouteSamples';
 import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
-import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
+import { historyWindow, parseHistoryRange } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
 import { ensureBleDisplayColumns } from '../ble/BleDisplayCoordinates';
 import { budgetHistory, budgetHistoryTracks, groupHistoryStreams } from './HistoryGeometryBudget';
@@ -22,7 +22,7 @@ const DAY_PAGE = 2000;
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar', 'read',
-  'listDevices', 'listDays', 'hasPhoneTrack', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
+  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
@@ -145,45 +145,6 @@ export function createHistoryDatabase(db) {
       const settings = validateHistory(value);
       await db.executeAsync('INSERT OR REPLACE INTO map_history_settings(id,value) VALUES(1,?)', [JSON.stringify(settings)]);
       return settings;
-    },
-    /**
-     * Which local days actually hold rows for the chosen devices, so the card
-     * can offer them instead of making the user query a day to find out it is
-     * empty. Platform date pickers cannot mark days themselves.
-     */
-    async listDays(value, owner) {
-      const p = validateHistory(value);
-      if (p.source === 'cloud' && !owner) return [];
-      const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
-      const time = p.source === 'ble' ? 'received_at' : 'CAST(COALESCE(track_at, received_at) AS INTEGER)';
-      const masters = p.masters.map(() => '?').join(',');
-      const slaves = p.slaves.map(() => '?').join(',');
-      const params = p.source === 'cloud'
-        ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
-      const found = rows(await db.executeAsync(
-        `SELECT MIN(${time}) AS from_at, MAX(${time}) AS to_at, COUNT(*) AS rows
-         FROM ${table}
-         WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
-         ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}
-         GROUP BY strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')
-         ORDER BY from_at DESC LIMIT 60`, params));
-      return found
-        .filter(row => Number.isFinite(row.from_at))
-        .map(row => ({
-          day: startOfDay(row.from_at),
-          rows: Number(row.rows || 0),
-          from: Number(row.from_at),
-          to: Number(row.to_at),
-        }));
-    },
-    /** Whether this phone has ever recorded its own position (GPS Timeline). */
-    async hasPhoneTrack() {
-      const exists = rows(await db.executeAsync(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
-      if (!exists.length) return false;
-      const found = rows(await db.executeAsync(
-        'SELECT id FROM myLocationTracker LIMIT 1'));
-      return found.length > 0;
     },
     /**
      * This phone's own recorded positions from `since` on, after the cursor

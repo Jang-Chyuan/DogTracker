@@ -838,9 +838,15 @@ test('a photo face is drawn into the map marker: tracked while it loads, fixed o
   await renderFixture('dog-photo-avatar', { inspect: async ({ renderer }) => {
     const { Marker } = require('react-native-maps');
     const marker = id => renderer.root.findAllByType(Marker).find(node => node.props.identifier?.endsWith(`-dog-${id}`));
-    expect(marker(6).props.tracksViewChanges).toBe(true);
-    // Illustrations never need it.
+    // Every new marker follows its view until it has been laid out once
+    // (else the SDK's default red pin shows for a moment).
+    expect(marker(4).props.tracksViewChanges).toBe(true);
+    const layout = id => marker(id).findAll(node => typeof node.props.onLayout === 'function'
+      && node.props.collapsable === false)[0].props.onLayout();
+    await act(async () => { layout(4); layout(6); await new Promise(resolve => setTimeout(resolve, 50)); });
+    // Then an illustration keeps a fixed bitmap; a photo is followed until it loaded.
     expect(marker(4).props.tracksViewChanges).toBe(false);
+    expect(marker(6).props.tracksViewChanges).toBe(true);
     const image = marker(6).findAll(node => node.props.href?.uri && typeof node.props.onLoad === 'function')[0];
     await act(async () => image.props.onLoad());
     await act(async () => { await new Promise(resolve => setTimeout(resolve, PHOTO_SETTLE_MS + 100)); });
