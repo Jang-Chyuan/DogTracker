@@ -1,7 +1,6 @@
-// The design values DESIGN.md describes (v3 UI). Screens move onto these one by
-// one; until a screen has moved, it keeps its own colours (AppTheme, ScreenUI).
-// DESIGN.md lists every colour here with its hex value, and
-// __tests__/DesignTokens.test.js keeps the two in step.
+// Original light design values. ThemeProvider combines these with the exact
+// dark palette; views read useTheme rather than importing a static palette.
+// DESIGN.md and DesignTokens.test.js keep both schemes in step.
 
 export const colors = {
   bg: '#FAF7F6',
@@ -79,7 +78,12 @@ export const colors = {
   pillIndoor: '#E6EEF3',
 };
 
-export const routeColors = [colors.route1, colors.route2, colors.route3, colors.route4];
+export const routeColors = [
+  colors.route1,
+  colors.route2,
+  colors.route3,
+  colors.route4,
+];
 
 // Settings home icons: tinted 36dp square (bg) with a 2dp line icon (line).
 export const settingIcon = {
@@ -172,8 +176,22 @@ export const touch = {
 };
 
 export const size = {
-  icon: { canvas: 24, stroke: 2, map: 22, row: 20, walk: 20, pencil: 20, adjust: 18 },
-  marker: { normal: 40, attention: 48, selectedGrowth: 8, border: 2.5, labelGap: 2 },
+  icon: {
+    canvas: 24,
+    stroke: 2,
+    map: 22,
+    row: 20,
+    walk: 20,
+    pencil: 20,
+    adjust: 18,
+  },
+  marker: {
+    normal: 40,
+    attention: 48,
+    selectedGrowth: 8,
+    border: 2.5,
+    labelGap: 2,
+  },
   badge: { size: 16, border: 1.5, glyph: 9, offset: 4, offsetLarge: 6 },
   mapLabel: { paddingV: 2, paddingH: 6, border: 1, halo: 3, maxLines: 2 },
   phoneDot: { size: 14, border: 3, staleAfterMs: 3000 },
@@ -181,7 +199,13 @@ export const size = {
   chip: { height: 36, paddingH: 12, avatar: 20, leadBorder: 2 },
   todayPill: { height: 48, paddingH: 16, iconGap: 6 },
   groupTag: { height: 32, paddingH: 10, problemDot: 8 },
-  edgeHint: { height: 36, avatar: 24, overlap: 6, maxAvatars: 3, problemBorder: 2 },
+  edgeHint: {
+    height: 36,
+    avatar: 24,
+    overlap: 6,
+    maxAvatars: 3,
+    problemBorder: 2,
+  },
   overlapMenu: { width: 240, row: 56, avatar: 32, maxRows: 5 },
   card: { avatar: 40, labelWidth: 72, warnIcon: 18, maxRatio: 0.75 },
   activity: { segmented: 36, chart: 200, totalRow: 56 },
@@ -197,10 +221,25 @@ export const size = {
   scanFrame: { inset: 96, corner: 4 },
   splash: { canvas: 240, visible: 160 },
   rangeRing: { radiusM: 1000 },
-  route: { walk: 4, upcoming: 3, secondary: 3, drive: 2, faded: 2, fadedDash: [4, 4], breakAfterMs: 180000 },
+  route: {
+    walk: 4,
+    upcoming: 3,
+    secondary: 3,
+    drive: 2,
+    faded: 2,
+    fadedDash: [4, 4],
+    breakAfterMs: 180000,
+  },
   stopMarker: { size: 22, border: 2 },
   timeMarker: { size: 7, border: 1.6, endSize: 9, endBorder: 2.4 },
-  cursor: { dot: 16, border: 3, halo: 32, labelGap: 12, labelPaddingV: 4, labelPaddingH: 8 },
+  cursor: {
+    dot: 16,
+    border: 3,
+    halo: 32,
+    labelGap: 12,
+    labelPaddingV: 4,
+    labelPaddingH: 8,
+  },
   rangeBar: { track: 6, handle: 24, handleBorder: 3, frameBorder: 1.5 },
   timeline: {
     timeColumn: 54,
@@ -213,7 +252,15 @@ export const size = {
     noDataDash: [6, 4],
     rowGap: 12,
     icon: 20,
-    node: { start: 16, stop: 24, end: 18, resume: 12, hold: 24, holdGlyph: 14, border: 3 },
+    node: {
+      start: 16,
+      stop: 24,
+      end: 18,
+      resume: 12,
+      hold: 24,
+      holdGlyph: 14,
+      border: 3,
+    },
   },
   sheet: { collapsed: 140, maxRatio: 0.75, emptyRatio: 0.4, dataSourceRow: 48 },
   calendarDot: 5,
@@ -257,4 +304,16 @@ export const haptics = {
   alert: [200, 100, 200],
   alertCritical: [500, 150, 200, 150, 500],
   alertMinIntervalMs: 120000,
+};
+
+// Explicit semantic values that have no original palette entry.
+export const extras = {
+  elevated: colors.surface,
+  grabHandle: colors.sheetHandle,
+  switchOff: colors.line,
+  floatingOutline: colors.line,
+  onWarnIcon: '#FFFFFF',
+  routeCasing: '#FFFFFF',
+  staleLine: '#5B645F',
+  avatarFrameMap: '#FFFFFF',
 };
