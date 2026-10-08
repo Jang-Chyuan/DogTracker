@@ -45,7 +45,9 @@
     "alertDetail": "#8A5A55",
     "rangeRing": "#5B7A8C",
     "noDataLine": "#C9CFCC",
-    "mapFallback": "#ECEEEC"
+    "mapFallback": "#ECEEEC",
+    "pillPlain": "#F1EEEC",
+    "pillIndoor": "#E6EEF3"
   },
   "routeColors": [
     "#D9604F",

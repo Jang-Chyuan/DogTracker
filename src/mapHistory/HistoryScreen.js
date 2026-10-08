@@ -737,7 +737,7 @@ const getStyles = makeStyles(theme => {
       paddingHorizontal: space.l,
       borderTopWidth: 1,
       borderTopColor: colors.line,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.elevated,
     },
     sourceText: { ...type.value, fontWeight: '400', color: colors.text },
     pressed: { backgroundColor: colors.pressedOverlay },

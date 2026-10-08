@@ -245,6 +245,23 @@ test('both schemes cover every original colour-bearing token and match the desig
   Object.keys(lightTheme.colors).forEach(key =>
     expect(darkTheme.colors[key]).toBeDefined(),
   );
+  // Every light colour has a dark value of its own: from the design's dark
+  // table, its dark-only list, or darkAdditions (tokens added later, with the
+  // reasoning in tokens.js). Nothing silently stays light in the dark theme.
+  const explicit = new Set([
+    ...Object.keys(darkSpec.colors),
+    ...Object.keys(darkSpec.darkOnly),
+    ...Object.keys(tokens.darkAdditions),
+    'sheetHandle', // = darkOnly.grabHandle
+  ]);
+  expect(
+    [...Object.keys(tokens.colors), ...Object.keys(tokens.extras)].filter(
+      key => !explicit.has(key),
+    ),
+  ).toEqual([]);
+  Object.entries(tokens.darkAdditions).forEach(([key, value]) =>
+    expect(darkTheme.colors[key]).toBe(value),
+  );
   for (const group of ['colors', 'settingIcon', 'opacity', 'shadow']) {
     const visit = (expected, actual) =>
       Object.entries(expected).forEach(([key, value]) => {
@@ -286,6 +303,8 @@ describe('dark text and graphic contrast', () => {
     ['warn glyph', c.onWarnIcon, c.warnIcon, 4.5],
     ['problem glyph', WHITE, c.problemBadge, 4.5],
     ['floating outline', c.floatingOutline, c.mapBase, 3],
+    ['plain list pill', c.textMuted, c.pillPlain, 4.5],
+    ['indoor list pill', c.receiver, c.pillIndoor, 4.5],
     ...darkTheme.routeColors.flatMap((color, i) => [
       [
         `route${i + 1} upcoming over land`,

@@ -593,7 +593,7 @@ const getStyles = makeStyles(theme => {
     framePlain: {
       backgroundColor: colors.elevated,
       borderWidth: 0,
-      borderColor: colors.surface,
+      borderColor: colors.elevated,
     },
     frameOn: {
       backgroundColor: colors.bg,

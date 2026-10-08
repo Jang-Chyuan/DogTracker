@@ -1473,7 +1473,9 @@ function GoogleTrackingMapRenderer({
 // parent renders from reconciling thousands of unchanged native coordinates.
 const MemoizedGoogleTrackingMap = React.memo(GoogleTrackingMapRenderer);
 
-export default MemoizedGoogleTrackingMap;
+export default function GoogleTrackingMap(props) {
+  return <MemoizedGoogleTrackingMap {...props} />;
+}
 const getStyles = makeStyles(theme => {
   const {
     colors: tokens,
