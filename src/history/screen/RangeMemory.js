@@ -18,6 +18,11 @@ export function rememberRangeFor(key, range) {
   while (memory.size > MAX_ENTRIES) memory.delete(memory.keys().next().value);
 }
 
+/** Forgets the range of `key` (it no longer holds a minute of fixes). */
+export function forgetRange(key) {
+  memory.delete(key);
+}
+
 /** Tests only. */
 export function forgetRanges() {
   memory.clear();

@@ -182,7 +182,8 @@ const styles = StyleSheet.create({
   end: { width: 18, height: 18, borderRadius: 9, borderWidth: 4, marginTop: 1 },
   // 12dp between rows, outside the selected fill (radius.stayRow 12).
   placeOuter: { flex: 1, paddingBottom: 6 },
-  place: { marginTop: -4, paddingTop: 4, paddingLeft: 8, paddingRight: 8, paddingBottom: 6, borderRadius: 12 },
+  place: { marginTop: -4, paddingTop: 4, paddingLeft: 8, paddingRight: 8, paddingBottom: 6, borderRadius: 12,
+    overflow: 'hidden' },
   address: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, fontVariant: ['tabular-nums'] },
   asking: { color: colors.textMuted, fontWeight: '400', minHeight: 40 },
   second: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 4 },

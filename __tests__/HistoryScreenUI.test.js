@@ -79,6 +79,13 @@ test('history-range-open (H2b): the bar open in its frame, 完成, the dragged s
   expect(s.text()).toContain('07:50 – 現在');
   // The right handle says this minute, not 「現在」.
   expect(s.text()).toContain('"09:30"');
+  // TalkBack moves each end on its own (a fix at least a minute on).
+  const before = s.screen.range.start;
+  const startHandle = s.renderer.root.findAll(node => node.props.testID === 'range-handle-start'
+    && node.props.onAccessibilityAction)[0];
+  await act(async () => startHandle.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+  expect(s.screen.range.start).toBeGreaterThanOrEqual(before + 60000);
+  expect(s.screen.range.following).toBe(true);
   // Back closes the bar first, then nothing more inside the screen.
   let used;
   await act(async () => { used = s.ref.current.back(); });
@@ -165,4 +172,80 @@ test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a
   expect(s.screen.following).toBe(false);
   expect(s.screen.navigation.next).toBe('2026-10-07');
   await unmount(s);
+});
+
+describe('the screen over time', () => {
+  const { startOfToday } = require('../src/tracking/TodayDistance');
+  const { useHistoryDayRows } = require('../src/mapHistory/useHistoryScreen');
+
+  test('over midnight the screen keeps its day; 「今天」 is gone and the end no longer follows', async () => {
+    const fixture = buildFixture('history-my-route');
+    let screen;
+    function Probe({ clock }) {
+      screen = useHistoryScreen({ target: { subject: 'phone', slaveId: null }, read: fixture.history.readDay,
+        readDays: fixture.history.readDays, clock, memoryScope: 'midnight:' });
+      return null;
+    }
+    let renderer;
+    await act(async () => { renderer = Renderer.create(<Probe clock={() => fixture.now} />); });
+    await act(async () => {});
+    const day = startOfToday(fixture.now);
+    expect(screen.today).toBe(true);
+    const tomorrow = day + 24 * 3600000 + 5 * 60000;
+    await act(async () => renderer.update(<Probe clock={() => tomorrow} />));
+    await act(async () => {});
+    expect(screen.day).toBe(day);
+    expect(screen.today).toBe(false);
+    expect(screen.following).toBe(false);
+    expect(screen.navigation.next).toBe('2026-10-08');
+    await act(async () => renderer.unmount());
+  });
+
+  test('a remembered range left without a minute of fixes goes back to the automatic range', async () => {
+    const fixture = buildFixture('history-my-route');
+    const day = startOfToday(fixture.now);
+    let screen;
+    function Probe() {
+      screen = useHistoryScreen({ target: { subject: 'phone', slaveId: null }, read: fixture.history.readDay,
+        readDays: fixture.history.readDays, clock: () => fixture.now, memoryScope: 'emptied:',
+        preset: { manual: { start: day + 60000, end: day + 90000, following: false } } });
+      return null;
+    }
+    let renderer;
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    await act(async () => {});
+    await act(async () => {});
+    expect(screen.manual).toBe(false);
+    expect(screen.model.points.length).toBeGreaterThan(100);
+    await act(async () => renderer.unmount());
+  });
+
+  test('a read that works again clears an earlier failure', async () => {
+    jest.useFakeTimers();
+    try {
+      let fail = false;
+      const read = jest.fn(async () => {
+        if (fail) throw new Error('資料庫忙碌');
+        return { rows: [], seed: [], after: { done: true } };
+      });
+      let result;
+      function Probe() {
+        result = useHistoryDayRows({ read, subject: 'phone', slaveId: null, day: startOfToday(Date.now()),
+          clock: Date.now });
+        return null;
+      }
+      let renderer;
+      await act(async () => { renderer = Renderer.create(<Probe />); });
+      expect(result.loaded).toBe(true);
+      fail = true;
+      await act(async () => jest.advanceTimersByTimeAsync(15000));
+      expect(result.error).toBe('資料庫忙碌');
+      fail = false;
+      await act(async () => jest.advanceTimersByTimeAsync(15000));
+      expect(result.error).toBe('');
+      await act(async () => renderer.unmount());
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

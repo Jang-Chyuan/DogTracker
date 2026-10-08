@@ -49,8 +49,14 @@ export function panelLevels(height, bottomInset = 0, { empty = false } = {}) {
  * Ref: { level, setLevel(level), back() } — back() takes the panel from 75%
  * to half and says whether it did (返回鍵 table).
  */
-const HistoryPanel = forwardRef(function HistoryPanel({ levels, header, children, onLevel, onDragStart,
+const HistoryPanel = forwardRef(function HistoryPanel({ levels: given, header, children, onLevel, onDragStart,
   bottomInset = 0, scrollRef, locked = false, initialLevel = 'half', above = null }, ref) {
+  // 只留日期列和摘要: exactly the header (it can be taller than 140dp with
+  // large text), above the navigation bar.
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const summary = Math.min(given.full, Math.max(given.summary, headerHeight ? Math.ceil(headerHeight + bottomInset) : 0));
+  const levels = useMemo(() => ({ ...given, summary: given.summary === given.full ? given.summary : summary }),
+    [given, summary]);
   const [level, setLevelState] = useState(initialLevel);
   const levelRef = useRef(level);
   levelRef.current = level;
@@ -113,7 +119,8 @@ const HistoryPanel = forwardRef(function HistoryPanel({ levels, header, children
         <Animated.View pointerEvents="box-none" style={[styles.above, { opacity: aboveOpacity }]}>{above}</Animated.View>
       )}
       <View style={styles.sheet}>
-        <View {...responder.panHandlers} testID="history-panel-header">
+        <View {...responder.panHandlers} testID="history-panel-header"
+          onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
           <Pressable onPress={pressHandle} style={styles.handleArea} accessibilityRole="adjustable"
             accessibilityLabel="面板高度" hitSlop={8}>
             <View style={styles.handle} />
