@@ -131,7 +131,7 @@ test('close() (a tap on empty map) closes it too; the card itself takes the swip
   expect(typeof card.props.onMoveShouldSetResponderCapture).toBe('function');
 });
 
-test('a held dog\'s 位置 row is two lines high with its address (A7b); one line while there is none', async () => {
+test('a held dog\'s 位置 row is 64dp high (A7b); the address line shows once known, no spinner before', async () => {
   const held = { heldReason: '室內', heldSource: 'weak' };
   const fresh = { freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW } };
   const heights = () => [byTestId('dog-card-row-position')[0].props.style].flat(3).filter(Boolean)
@@ -139,7 +139,7 @@ test('a held dog\'s 位置 row is two lines high with its address (A7b); one lin
   await mount({ card: model(held, fresh) });
   // Still asking, none found or offline: 「室內」 alone, no spinner, one line.
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內');
-  expect(heights()).not.toContain(64);
+  expect(heights()).toContain(64);
   await act(async () => renderer.update(<DogCard card={model(held, { ...fresh, address: '桃園區中正路 1 號附近' })} />));
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內桃園區中正路 1 號附近');
   expect(heights()).toContain(64);

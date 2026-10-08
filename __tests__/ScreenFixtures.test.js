@@ -703,10 +703,10 @@ test('card-indoor (A7b): 位置 「室內」 over its address, charging 62%, res
   expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・室內' });
 });
 
-test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內」 alone on one line', async () => {
+test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內」 alone, no second line', async () => {
   const { rows, state } = await card('dog-indoor-no-address');
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
-  expect(rows.position).toMatchObject({ value: '室內', detail: null, twoLine: false });
+  expect(rows.position).toMatchObject({ value: '室內', detail: null, twoLine: true });
 });
 
 test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: no address)', async () => {

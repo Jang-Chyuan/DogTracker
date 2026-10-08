@@ -76,7 +76,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-near-edge` | A3：豆豆 880 m，「接收範圍」琥珀「快離開接收範圍」 |
 | `card-problems` | A3b：豆豆 09:05 之後沒有新位置、15%、不在接收範圍，活動量「—」 |
 | `card-indoor` | A7b：小黑停在原處（室內）、充電中 62%、休息中 已 40 分鐘，沒有「接收範圍」列；「位置」第二行「桃園區中正路 1 號附近」 |
-| `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」只寫「室內」一行，不轉圈 |
+| `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」只寫「室內」、沒有第二行（列高照樣 64dp），不轉圈 |
 | `card-indoor-geocoder` | 同 `card-indoor`，地址用這支手機自己的 Geocoder 查（要網路＋Play services） |
 | `card-cloud-dog` | 小黑只從雲端來：沒有「接收範圍」列；劇烈活動 |
 | `card-phone-no-fix` | 手機最後定位 15 分鐘前：方向距離改寫「手機沒有定位」 |

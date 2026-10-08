@@ -205,15 +205,27 @@ export function describePlace(anchor, results, config = ADDRESS_CONFIG) {
           : Infinity,
     }))
     .sort((left, right) => left.away - right.away);
-  const best = found[0];
-  if (!best) return null;
-  const text = shortAddress(best.line);
+  if (!found.length) return null;
+  // 「台灣桃園市大園區」 alone names no address: it only gives the district.
+  const districtOnly = text =>
+    !text || /^[^區鄉鎮市]{1,4}[區鄉鎮市]$/u.test(text);
+  const best =
+    found.find(result => !districtOnly(shortAddress(result.line))) ||
+    found[0];
+  const text = districtOnly(shortAddress(best.line))
+    ? null
+    : shortAddress(best.line);
   if (text && best.away <= config.nearM) return `${text}附近`;
   if (text && best.away <= config.tooFarM)
     return `${text}附近（約 ${Math.round(best.away / 10) * 10} m）`;
   const district =
-    text?.match(/^([^區鄉鎮市]{1,4}[區鄉鎮市])/u)?.[1] ||
-    traditional(String(best.district || '')).trim();
+    found
+      .map(
+        result =>
+          shortAddress(result.line)?.match(/^([^區鄉鎮市]{1,4}[區鄉鎮市])/u)?.[1] ||
+          traditional(String(result.district || '')).trim(),
+      )
+      .find(Boolean) || null;
   return district ? `${district}（附近沒有地址）` : null;
 }
 
@@ -253,14 +265,6 @@ export function createAddressLookup({
     while (queue.length) {
       const [name, anchor] = queue[0];
       try {
-        const saved = await store?.find(anchor).catch(() => null);
-        if (
-          saved &&
-          (saved.value || now() - saved.failedAt < config.retryAfterMs)
-        ) {
-          put(name, saved);
-          continue;
-        }
         // Offline the geocoder has nothing to say: do not wait on it.
         if (native.isOnline && !(await native.isOnline().catch(() => false)))
           throw new Error('offline');
@@ -321,8 +325,23 @@ export function createAddressLookup({
         return entry.value;
       }
       put(name, { pending: true, anchor });
-      queue.push([name, anchor]);
-      if (queue.length === 1) drain();
+      // The phone's saved addresses are read outside the geocoder's queue, so
+      // a slow answer never holds up places already known.
+      Promise.resolve(store ? store.find(anchor).catch(() => null) : null).then(
+        saved => {
+          if (
+            saved &&
+            (saved.value ||
+              (!retry && now() - saved.failedAt < config.retryAfterMs))
+          ) {
+            put(name, saved);
+            for (const listener of listeners) listener(name);
+            return;
+          }
+          queue.push([name, anchor]);
+          drain();
+        },
+      );
       return undefined;
     },
     async lookupAddresses(points, { timeoutMs = 5000 } = {}) {

@@ -628,7 +628,7 @@ const FIXTURES = {
     cloudRows: dog8Cloud(now),
   }),
   // 小黑 held indoors with no network: no address is asked, the 位置 row is
-  // 「室內」 alone, one line, no spinner (edges「沒網路時查地址」).
+  // 「室內」 alone (still 64dp), no spinner (edges「沒網路時查地址」).
   'dog-indoor-no-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: { offline: true } }),
   // card-indoor named by this phone's own Geocoder (network + Play services;
   // the place is by Taoyuan station). Nothing is written to its cache.
