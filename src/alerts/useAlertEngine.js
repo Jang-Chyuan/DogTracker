@@ -12,7 +12,10 @@ const LOG_LENGTH = 12;
  * Runs the alerts while the app is in front: every ALERT_TICK_MS (and when
  * the inputs change) one AlertEngine step over the latest snapshot, its
  * effects carried out (AlertEffects), and the saved state written when it
- * changed. In the background 058b's native service takes over.
+ * changed. Off screen the receiver's service checks this phone's dogs, the
+ * receiver and the storage natively (android .../alerts/BackgroundAlerts):
+ * App keeps the state natively and hands it back and forth
+ * (AlertNotifications, useNativeAlertState).
  *
  * - `source` names where the inputs come from ('live' or a fixture's name):
  *   a new source starts from its own state (`initial`), so a fixture never
@@ -115,6 +118,11 @@ export function useAlertEngine({
     log.current = [];
   }
 
+  // What was restored (a pause in force) shows at once, before the first
+  // snapshot is read.
+  useEffect(() => {
+    publish(null);
+  }, [source, publish]);
   useEffect(() => {
     if (!running) return undefined;
     tick();

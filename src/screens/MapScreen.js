@@ -100,6 +100,11 @@ export default function MapScreen({
   historyBack = null,
   // Back from D3 opened by A6: frame that receiver's located dogs (once per key).
   frameRequest = null,
+  // A notification tapped (058b, AlertNotifications.notificationDestination
+  // with a key): 'map' with a dogId opens that dog's card (once the dog is
+  // on the map), 'open-map' closes the card and frames everything, 'my-route'
+  // opens today's route. App opens the settings pages itself.
+  notificationRequest = null,
   // 「今天 x km」: today's recorded route of this phone ({ count, metres },
   // useTodayRoute), null until read.
   todayRoute = null,
@@ -805,6 +810,34 @@ export default function MapScreen({
     setRouteBusy(false);
     if (saved && liveInFront.current) onOpenHistory?.(null);
   }, [history, routeBusy, now, onOpenHistory]);
+  // ---- a notification tapped (058b) ----------------------------------------
+  // 判定表「通知本體和「打開地圖」按鈕」: the body opens the most severe
+  // problem (a dog: its card); 「打開地圖」 only the live map, everything
+  // framed, no card. A request waits until what it opens is there.
+  const handledNotification = useRef(null);
+  const [notificationFrame, setNotificationFrame] = useState(null);
+  useEffect(() => {
+    const request = notificationRequest;
+    if (!request || handledNotification.current === request.key || !active || historical) return;
+    if (request.screen === 'open-map') {
+      handledNotification.current = request.key;
+      if (cardOpen) card.current?.close();
+      setNotificationFrame({ key: request.key, all: true });
+    } else if (request.screen === 'map' && request.dogId != null) {
+      if (!dogs.some(dog => dog.slaveId === request.dogId && dog.coordinate)) return;
+      handledNotification.current = request.key;
+      openDog(request.dogId);
+    } else if (request.screen === 'my-route') {
+      if (!history?.save) return;
+      handledNotification.current = request.key;
+      openMyRoute();
+    } else handledNotification.current = request.key;
+  }, [notificationRequest, active, historical, cardOpen, dogs, openDog, history, openMyRoute]);
+  // The newer of the two framing requests.
+  const mapFrameRequest =
+    notificationFrame && (!frameRequest || notificationFrame.key > frameRequest.key)
+      ? notificationFrame
+      : frameRequest;
   // A5: the name is stored with the history preferences' names (dogAliases),
   // the face in dog_avatars; both by collar number, on this phone only.
   const saveName = async name => {
@@ -959,7 +992,7 @@ export default function MapScreen({
         historyPanel={historyPanel}
         onHeading={setHeading}
         focusDog={focusDog}
-        frameRequest={historical ? null : frameRequest}
+        frameRequest={historical ? null : mapFrameRequest}
         coverBottom={coverBottom}
         today={historical ? null : today}
         onToday={openMyRoute}

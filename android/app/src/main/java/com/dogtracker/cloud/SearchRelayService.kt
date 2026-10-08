@@ -48,13 +48,14 @@ class SearchRelayService : Service() {
     super.onCreate()
     instance = this
     lock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DogTracker:search-relay")
-    getSystemService(NotificationManager::class.java).createNotificationChannel(
-      NotificationChannel("dogtracker_search_relay", "搜尋位置轉送", NotificationManager.IMPORTANCE_LOW))
+    com.dogtracker.NotificationChannels.create(this)
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    startForeground(3106, NotificationCompat.Builder(this, "dogtracker_search_relay")
-      .setSmallIcon(com.dogtracker.R.drawable.ic_stat_dog).setColor(getColor(com.dogtracker.R.color.ic_launcher_background)).setContentTitle("DogTracker 搜尋位置轉送")
-      .setContentText("每 10 秒嘗試上傳；斷網保留資料").setOngoing(true).build())
+    startForeground(3106, NotificationCompat.Builder(this, com.dogtracker.NotificationChannels.TRACKING)
+      .setSmallIcon(com.dogtracker.R.drawable.ic_stat_dog).setContentTitle("DogTracker・資料同步")
+      .setContentText("正在同步狗的位置").setColor(com.dogtracker.NotificationChannels.accent(this))
+      .setContentIntent(com.dogtracker.NotificationChannels.launch(this, "cloud-settings"))
+      .setOnlyAlertOnce(true).setOngoing(true).build())
     val next = intent?.getStringExtra("owner").orEmpty()
     if (next.isEmpty() || timedOut) { stopSelf(); return START_NOT_STICKY }
     if (next != owner) { runId = null; owner = next }

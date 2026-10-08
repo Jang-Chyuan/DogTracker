@@ -78,6 +78,8 @@ class MainActivity : ReactActivity() {
 
   override fun onResume() {
     super.onResume()
+    // The app on screen runs the alerts itself (useAlertEngine).
+    com.dogtracker.alerts.BackgroundAlerts.setAppVisible(true)
     // Only resume when the user brings the app to the foreground. A manual
     // stop clears enabled; a system force-stop leaves the saved session intact.
     val prefs = getSharedPreferences("ble_session", MODE_PRIVATE)
@@ -102,6 +104,12 @@ class MainActivity : ReactActivity() {
       Log.e("DogTracker", "Unable to resume saved BLE session", error)
       prefs.edit().putString("resumeError", "背景恢復失敗：${error.message}").apply()
     }
+  }
+
+  override fun onPause() {
+    // Off screen: the receiver's service checks the alerts (BackgroundAlerts).
+    com.dogtracker.alerts.BackgroundAlerts.setAppVisible(false)
+    super.onPause()
   }
 
   /**

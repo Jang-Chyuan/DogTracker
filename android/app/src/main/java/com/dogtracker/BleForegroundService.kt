@@ -1,7 +1,6 @@
 package com.dogtracker
 
 import android.Manifest
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -12,17 +11,25 @@ import android.os.*
 import android.util.Base64
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import com.dogtracker.alerts.BackgroundAlerts
+import com.dogtracker.alerts.Events
+import com.dogtracker.alerts.ReceiverInput
+import com.dogtracker.alerts.ReceiverPause
 import org.json.JSONObject
 import java.util.UUID
 
 class BleForegroundService : Service() {
   companion object {
-    const val CHANNEL_ID = "dogtracker_ble"
+    const val CHANNEL_ID = NotificationChannels.TRACKING
     const val NOTIFICATION_ID = 3103
     const val EVENT_STATUS = "BleBackgroundStatus"
     const val EVENT_DATA = "BleBackgroundData"
     const val ACTION_CONNECT = "com.dogtracker.ble.CONNECT"
     const val ACTION_STOP = "com.dogtracker.ble.STOP"
+    // The persistent notification's 「中斷連線」: the user's own disconnect.
+    const val ACTION_USER_STOP = "com.dogtracker.ble.USER_STOP"
+    // How often the background alert check runs (BackgroundAlerts).
+    const val ALERT_CHECK_MS = 10_000L
     const val ACTION_RESUME = "com.dogtracker.ble.RESUME"
     const val EXTRA_DEVICE_ID = "deviceId"
     const val EXTRA_DEVICE_NAME = "deviceName"
@@ -66,6 +73,41 @@ class BleForegroundService : Service() {
     finishWifi(null, "Wi-Fi 指令逾時")
     fail("BLE 指令逾時，重新連線")
   }
+  // The alerts while the app is off screen (BackgroundAlerts skips its turn
+  // while the app is on screen and runs them itself).
+  private val alertCheck = object : Runnable {
+    override fun run() {
+      if (manualStop) return
+      try {
+        BackgroundAlerts.evaluate(this@BleForegroundService, alertInput(), System.currentTimeMillis())
+      } catch (error: Exception) {
+        android.util.Log.w("DogTrackerAlerts", "background alert check failed", error)
+      }
+      handler.postDelayed(this, ALERT_CHECK_MS)
+    }
+  }
+
+  private fun alertInput(): ReceiverInput {
+    val number = if (expectedMasterId > 0) expectedMasterId
+      else Regex("(\\d+)\\s*$").find(deviceName)?.groupValues?.get(1)?.toIntOrNull()
+    return ReceiverInput(
+      enabled = prefs.getBoolean("enabled", false), running = isRunning, connected = isConnected,
+      disconnectedAt = disconnectedAt, number = number,
+      batteryPercentage = BackgroundAlerts.receiverBattery(this),
+      storageError = prefs.getString("storageError", null),
+      pauses = ReceiverPauses.parse(prefs.getString(ReceiverPauses.KEY, "")).map {
+        ReceiverPause(it.pausedAt, if (it.resumedAt > 0) it.resumedAt else null)
+      },
+    )
+  }
+
+  // A link that just dropped is checked again after the 30 seconds that make
+  // it 「斷線」, even with the screen off.
+  private val wakeLock by lazy {
+    getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DogTracker:ble-disconnect")
+      .apply { setReferenceCounted(false) }
+  }
+
   private val freshnessCheck = object : Runnable {
     override fun run() {
       if (manualStop) return
@@ -86,11 +128,7 @@ class BleForegroundService : Service() {
     worker.start()
     handler = Handler(worker.looper)
     instance = this
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val channel = NotificationChannel(CHANNEL_ID, "DogTracker BLE", NotificationManager.IMPORTANCE_LOW)
-      channel.description = "DogTracker BLE 接收與資料存檔"
-      getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-    }
+    NotificationChannels.create(this)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -98,6 +136,17 @@ class BleForegroundService : Service() {
     if (intent?.action == ACTION_RESUME && isRunning) return START_STICKY
     if (intent?.action == ACTION_STOP) {
       handler.post { stopSession() }
+      return START_NOT_STICKY
+    }
+    if (intent?.action == ACTION_USER_STOP) {
+      // The same as S2's 中斷連線 (BleBackgroundModule.stop): remembered as
+      // the user's own, so its dogs do not turn 「沒有新位置」 and no
+      // disconnection is alerted.
+      if (prefs.getBoolean("enabled", false)) {
+        prefs.edit().putString(ReceiverPauses.KEY,
+          ReceiverPauses.paused(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis())).commit()
+      }
+      handler.post { stopSession("已中斷連線") }
       return START_NOT_STICKY
     }
     startForeground(NOTIFICATION_ID, notification("正在準備 BLE 連線"))
@@ -120,6 +169,7 @@ class BleForegroundService : Service() {
           .putString("sessionId", intent.getStringExtra("sessionId"))
           .remove("lastPayload").remove("lastReceivedAt").remove("storageError").commit()
         reconnectAttempt = 0
+        BackgroundAlerts.forgetReceiver(this)
       } else {
         deviceId = prefs.getString("deviceId", "").orEmpty()
         deviceName = prefs.getString("deviceName", "DogGPS Master").orEmpty()
@@ -133,6 +183,8 @@ class BleForegroundService : Service() {
       } else {
         handler.removeCallbacks(freshnessCheck)
         handler.post(freshnessCheck)
+        handler.removeCallbacks(alertCheck)
+        handler.postDelayed(alertCheck, ALERT_CHECK_MS)
         connectGatt()
       }
     }
@@ -288,6 +340,7 @@ class BleForegroundService : Service() {
         } catch (error: Exception) {
           prefs.edit().putString("storageError", "資料存檔失敗：${error.message}").apply()
         }
+        runCatching { BackgroundAlerts.onPacket(this, data, now) }
         lastReceivedElapsed = SystemClock.elapsedRealtime()
         lastDataElapsed = lastReceivedElapsed
         stale = false
@@ -344,7 +397,10 @@ class BleForegroundService : Service() {
   private fun fail(message: String) {
     // Only the loss of an established link starts a disconnection; failed
     // reconnect attempts keep its first moment.
-    if (isConnected) disconnectedAt = System.currentTimeMillis()
+    if (isConnected) {
+      disconnectedAt = System.currentTimeMillis()
+      runCatching { wakeLock.acquire(Events.DISCONNECT_GRACE_MS + 2 * ALERT_CHECK_MS) }
+    }
     closeGatt()
     publishStatus(message)
     scheduleReconnect()
@@ -393,11 +449,25 @@ class BleForegroundService : Service() {
     stopSelf()
   }
 
-  private fun notification(status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-    .setContentTitle("DogTracker").setContentText(status).setSmallIcon(R.drawable.ic_stat_dog).setColor(getColor(R.color.ic_launcher_background))
-    .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).putExtra(SplashState.EXTRA_FROM_NOTIFICATION, true),
+  // The 「常駐」 notification in field words (design 「常駐通知（三種）」):
+  // which receiver, and whether the dogs' positions are coming in. A tap opens
+  // 設定 → 接收器 (S2); 「中斷連線」 is S2's 中斷連線.
+  private fun notification(@Suppress("UNUSED_PARAMETER") status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
+    .setContentTitle(receiverTitle()).setContentText(when {
+      isConnected -> "正在接收狗的位置"
+      disconnectedAt > 0 -> "斷線了，正在自動重連"
+      else -> "正在連線接收器"
+    }).setColor(NotificationChannels.accent(this)).setSmallIcon(R.drawable.ic_stat_dog)
+    .setContentIntent(NotificationChannels.launch(this, "receiver-settings"))
+    .addAction(0, "中斷連線", PendingIntent.getService(this, NOTIFICATION_ID,
+      Intent(this, BleForegroundService::class.java).setAction(ACTION_USER_STOP),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     .setOngoing(true).setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()
+
+  private fun receiverTitle(): String {
+    val number = alertInput().number
+    return if (number != null) "DogTracker・接收器 $number" else "DogTracker・接收器"
+  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -410,6 +480,7 @@ class BleForegroundService : Service() {
       manualStop = true
       handler.removeCallbacksAndMessages(null)
       closeGatt()
+      runCatching { if (wakeLock.isHeld) wakeLock.release() }
       worker.quitSafely()
     }
     super.onDestroy()

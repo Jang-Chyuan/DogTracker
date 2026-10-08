@@ -1044,3 +1044,34 @@ test('an update from a version without the guide, signed out, with dog data but 
   expect(signInPage()).toBe(false);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
 });
+
+// 058b 判定表「通知本體和「打開地圖」按鈕」, 「常駐通知（三種）」: where a tap leads.
+test('notification body opens receiver settings after cold launch settles', async () => {
+  Linking.getInitialURL.mockResolvedValue('dogtracker://notification/receiver-settings');
+  await mount();
+  await advance(100);
+  expect(title()).toBe('返回，接收器');
+  Linking.getInitialURL.mockResolvedValue(null);
+});
+
+test('notification dog body opens its card; 打開地圖 closes it; an unknown link does nothing', async () => {
+  Linking.getInitialURL.mockResolvedValue('dogtracker://notification/map?dogId=7');
+  const handlers = [];
+  Linking.addEventListener.mockImplementation((_, handler) => {
+    handlers.push(handler);
+    return { remove: jest.fn() };
+  });
+  await mount();
+  await advance(100);
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
+  await act(async () => handlers.forEach(handler => handler({ url: 'dogtracker://notification/somewhere' })));
+  await advance(100);
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
+  await act(async () => handlers.forEach(handler => handler({ url: 'dogtracker://notification/open-map' })));
+  await advance(1000);
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
+  await act(async () => handlers.forEach(handler => handler({ url: 'dogtracker://notification/cloud-settings' })));
+  await advance(100);
+  expect(title()).toBe('返回，Supabase 帳號');
+  Linking.getInitialURL.mockResolvedValue(null);
+});

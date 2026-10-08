@@ -51,6 +51,13 @@ import AlertSettings from './src/settings/AlertSettings';
 import { alertsPage } from './src/alerts/AlertPreferences';
 import { useAlertPreferences } from './src/settings/useAlertPreferences';
 import { useAlertEngine } from './src/alerts/useAlertEngine';
+import { useNativeAlertState } from './src/alerts/useNativeAlertState';
+import {
+  alertSnapshot,
+  handOverAlerts,
+  notificationDestination,
+  saveAlertState,
+} from './src/alerts/AlertNotifications';
 import { pauseAlertState } from './src/alerts/AlertEngine';
 import AlertPreview from './src/dev/AlertPreview';
 import {
@@ -527,6 +534,49 @@ function TrackerApp({ resume = null, onRestart }) {
     // liveLaunch and fixture are read at the moment of the decision only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decided, launchKey, launch.key]);
+
+  // ---- a notification tapped (058b) --------------------------------------
+  // The merged alert's body opens its most severe problem, 「打開地圖」 the
+  // live map; the 「常駐」 notifications their page (AlertNotifications
+  // .notificationDestination). At a cold start it waits for the map; the
+  // first-launch guide is not interrupted. Back from a page returns to the
+  // map, as from a top card.
+  const [notificationRequest, setNotificationRequest] = useState(null);
+  useEffect(() => {
+    const take = url => {
+      const destination = notificationDestination(url);
+      if (destination) setNotificationRequest({ ...destination, key: Date.now() });
+    };
+    let alive = true;
+    Promise.resolve()
+      .then(() => Linking.getInitialURL())
+      .then(url => alive && take(url))
+      .catch(() => {});
+    const subscription = Linking.addEventListener?.('url', event => take(event?.url));
+    return () => {
+      alive = false;
+      subscription?.remove?.();
+    };
+  }, []);
+  const appliedNotification = useRef(null);
+  useEffect(() => {
+    const request = notificationRequest;
+    if (!request || launch.screen !== 'map') return;
+    if (appliedNotification.current === request.key) return;
+    appliedNotification.current = request.key;
+    const page = {
+      'receiver-settings': 'receiver',
+      diagnostics: 'diagnostics',
+      'cloud-settings': 'cloud',
+    }[request.screen];
+    setCardHistory(null);
+    setStack(page ? [{ name: 'map' }, { name: page }] : [{ name: 'map' }]);
+    if (request.screen === 'system-storage') {
+      Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(
+        () => Linking.openSettings(),
+      );
+    }
+  }, [notificationRequest, launch.screen]);
   // The guide's step, saved as it moves forward (a fixture's in memory only).
   const saveGuideStep = step => {
     Promise.resolve(
@@ -642,10 +692,13 @@ function TrackerApp({ resume = null, onRestart }) {
   const onAlertInput = useCallback(input => {
     alertInput.current = input;
   }, []);
+  // The live alert state is kept natively, shared with the receiver's
+  // background check (058b); read again whenever that moved it on.
+  const nativeAlertState = useNativeAlertState(tracking.foreground && !fixture);
   const alertSource = fixture
     ? fixtureName
-    : preferences.ready
-    ? 'live'
+    : preferences.ready && nativeAlertState.ready
+    ? `live#${nativeAlertState.revision}`
     : 'live-loading';
   const alertPause = fixture?.alertPause ?? null;
   const alerts = useAlertEngine({
@@ -654,7 +707,7 @@ function TrackerApp({ resume = null, onRestart }) {
       launch.key !== null &&
       alertSource !== 'live-loading',
     source: alertSource,
-    initial: fixture ? null : preferences.value.alertState,
+    initial: fixture ? null : nativeAlertState.state,
     clock: () => (fixture ? now : Date.now()),
     readInput: () => {
       const input = alertInput.current;
@@ -667,6 +720,8 @@ function TrackerApp({ resume = null, onRestart }) {
         receiverState === undefined
       )
         return null;
+      // What the background check needs once the app is off screen.
+      if (!fixture) handOverAlerts(alertSnapshot(input.dogs, alertPreferences.value));
       return {
         dogs: input.dogs,
         receiverBattery: input.receiverBattery,
@@ -688,9 +743,7 @@ function TrackerApp({ resume = null, onRestart }) {
     save: fixture
       ? null
       : value =>
-          Promise.resolve(
-            tracking.saveTrackingPreferences?.({ alertState: value }),
-          ).catch(() => false),
+          saveAlertState(value, nativeAlertState.revision).catch(() => false),
     // alerts-paused: paused `since` before the fixture's now, until `until`.
     setup: alertPause
       ? (state, at) =>
@@ -1137,6 +1190,9 @@ function TrackerApp({ resume = null, onRestart }) {
             onAlertInput={onAlertInput}
             openDogRequest={openDogRequest}
             frameRequest={frameRequest}
+            notificationRequest={
+              launch.screen === 'map' ? notificationRequest : null
+            }
             onOpenHistory={slaveId => {
               setCardHistory(slaveId);
               open('history', {

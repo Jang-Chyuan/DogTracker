@@ -8,7 +8,6 @@ import android.location.*
 import android.os.*
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.dogtracker.MainActivity
 import com.dogtracker.R
 import org.json.JSONObject
 import java.util.UUID
@@ -20,7 +19,7 @@ class LocationTrackerService : Service(), LocationListener {
     @Volatile var status = "尚未開始記錄"
     @Volatile var liveJson = "{}"
     @Volatile internal var displayLocation: DisplayLocation? = null
-    const val CHANNEL = "dogtracker_phone_location"
+    const val CHANNEL = com.dogtracker.NotificationChannels.TRACKING
     const val ID = 3105
   }
   private lateinit var manager: LocationManager
@@ -71,8 +70,7 @@ class LocationTrackerService : Service(), LocationListener {
     manager = getSystemService(LocationManager::class.java)
     worker.start()
     handler = Handler(worker.looper)
-    if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java)
-      .createNotificationChannel(NotificationChannel(CHANNEL, "手機位置記錄", NotificationManager.IMPORTANCE_LOW))
+    com.dogtracker.NotificationChannels.create(this)
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val preferences = getSharedPreferences("phone_location_recording", 0)
@@ -84,11 +82,11 @@ class LocationTrackerService : Service(), LocationListener {
     if (!preferences.getBoolean("enabled", true)) { stopSelf(); return START_NOT_STICKY }
     if (running) return START_NOT_STICKY
     try {
-      val launch = PendingIntent.getActivity(this, ID, Intent(this, MainActivity::class.java).putExtra(com.dogtracker.SplashState.EXTRA_FROM_NOTIFICATION, true), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      val launch = com.dogtracker.NotificationChannels.launch(this, "my-route")
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-      startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_dog).setColor(getColor(R.color.ic_launcher_background))
-        .setContentTitle("DogTracker GPS Timeline").setContentText("約每秒 GPS 定位；> 20 km/h 時每秒保存，精度需 < 50 m")
-        .setContentIntent(launch).setOngoing(true).addAction(0, "停止記錄", stop).build())
+      startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_dog)
+        .setContentTitle("DogTracker・手機位置記錄").setContentText("正在記錄我的路線")
+        .setColor(com.dogtracker.NotificationChannels.accent(this)).setOnlyAlertOnce(true).setContentIntent(launch).setOngoing(true).addAction(0, "停止記錄", stop).build())
       val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
       check(precise) { "請允許精確位置" }
       val providers = listOf(LocationManager.GPS_PROVIDER).filter { manager.isProviderEnabled(it) }

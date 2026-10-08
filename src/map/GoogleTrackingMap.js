@@ -192,7 +192,7 @@ function usePhotoMarker(avatar, ref) {
 // One dog on the live map. The marker view is not tracked for changes (that
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
-function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
+function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownKey = 0 }) {
   const { isDark } = useTheme();
   // The launch screen's handover draws a copy of each dog over the map while
   // it flies and pops them in; the real marker shows once they are in place.
@@ -216,9 +216,11 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
     avatar?.color,
     avatar?.uri?.length,
   ].join('|');
+  // Also each time the map is shown again: a bitmap taken while the map was
+  // hidden under a page (or the app off screen) can be Google's default pin.
   useEffect(() => {
     ref.current?.redraw?.();
-  }, [look, isDark]);
+  }, [look, isDark, shownKey]);
   return (
     <StyledMarker
       ref={ref}
@@ -620,6 +622,13 @@ function GoogleTrackingMapRenderer({
         `${marker.coordinate.longitude}:${marker.size}`,
     )
     .join('|');
+  // Counts the times the map came back on screen (DogMarker redraws then).
+  const [shownKey, setShownKey] = useState(0);
+  const wasShown = useRef(foreground);
+  useEffect(() => {
+    if (foreground && !wasShown.current) setShownKey(value => value + 1);
+    wasShown.current = foreground;
+  }, [foreground]);
   const activeInstance = useRef(instance);
   activeInstance.current = instance;
   const ready = readyInstance === instance;
@@ -1159,7 +1168,11 @@ function GoogleTrackingMapRenderer({
     if (!frameRequest || framedRequest.current === frameRequest.key || !usable)
       return;
     framedRequest.current = frameRequest.key;
-    const points = receiverDogsCoordinates(dogMarkers, frameRequest.receiverId);
+    // { all: true }: everything, as the 框住全部 button (a notification's
+    // 「打開地圖」); else one receiver's dogs.
+    const points = frameRequest.all
+      ? frameAllCoordinates(dogMarkers, currentPhone())
+      : receiverDogsCoordinates(dogMarkers, frameRequest.receiverId);
     if (points.length) frame(points);
     // Once per request; the markers are read at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1481,6 +1494,7 @@ function GoogleTrackingMapRenderer({
               marker={marker}
               tag={tags[marker.slaveId]}
               avatar={presentation.dogAvatars?.[marker.slaveId]}
+              shownKey={shownKey}
               // Above the phone's dot (30), whose name tag layer they carry:
               // the open dog on top, then problems, then the dog carrying a
               // group tag over the faces it covers.
