@@ -392,7 +392,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   private fun drawMap(canvas: Canvas, op: JSONObject, exportId: String) {
     val x = op.getDouble("x").toFloat(); val y = op.getDouble("y").toFloat()
     val w = op.getInt("w"); val h = op.getInt("h")
-    val padding = op.optInt("padding", 72)
+    val padding = op.optInt("padding", 128)
     val coords = coordinatesOf(op)
     canvas.save()
     canvas.clipRect(x, y, x + w, y + h)
