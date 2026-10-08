@@ -14,7 +14,7 @@ export default function PhoneSettings({ page, onRecording, onPermissions, onLoca
   return (
     <ScrollView testID="phone-settings" style={settingsStyles.page}
       contentContainerStyle={[settingsStyles.content, settingsStyles.firstCard]}>
-      <GroupCard>
+      <GroupCard flat>
         <ListRow title="位置記錄" detail={recording.detail} detailTone={recording.problem ? 'crit' : undefined}
           label={['位置記錄', recording.detail].filter(Boolean).join('，')}>
           <Switch testID="phone-recording" accessibilityLabel="位置記錄" value={recording.on}

@@ -16,7 +16,7 @@ export default function ReceiverSettings({ page, onDisconnect, onReconnect, onRe
     return (
       <ScrollView testID="receiver-settings" style={settingsStyles.page} contentContainerStyle={settingsStyles.content}>
         <GroupTitle>目前的接收器</GroupTitle>
-        <GroupCard>
+        <GroupCard flat>
           <ListRow title="還沒設定接收器" />
           <ListRow testID="receiver-connect" title="連接接收器" titleTone="tonal" chevron onPress={onConnect}
             label="連接接收器" />
@@ -28,7 +28,7 @@ export default function ReceiverSettings({ page, onDisconnect, onReconnect, onRe
   return (
     <ScrollView testID="receiver-settings" style={settingsStyles.page} contentContainerStyle={settingsStyles.content}>
       <GroupTitle>目前的接收器</GroupTitle>
-      <GroupCard>
+      <GroupCard flat>
         <ListRow testID="receiver-current" title={page.title} detail={page.subtitle}
           detailTone={page.subtitleProblem ? 'crit' : undefined} problem={page.subtitleProblem}
           leading={<View style={{ marginRight: space.m }}><ReceiverIcon number={page.number} ring={40} /></View>}
@@ -45,7 +45,7 @@ export default function ReceiverSettings({ page, onDisconnect, onReconnect, onRe
         <ListRow testID="receiver-change" title="掃 QR Code 換接收器" chevron onPress={onChange} label="掃 QR Code 換接收器" />
       </GroupCard>
       <GroupTitle>收到的訊號源</GroupTitle>
-      <GroupCard testID="receiver-sources">
+      <GroupCard flat testID="receiver-sources">
         {page.sources.length ? page.sources.map(source => (
           <ListRow key={source.slaveId} testID={`receiver-source-${source.slaveId}`} title={source.name}
             detail={source.detail} right={source.right} label={[source.name, source.detail, source.right]

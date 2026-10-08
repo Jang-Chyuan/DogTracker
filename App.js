@@ -295,7 +295,7 @@ function TrackerApp() {
       edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
     >
       <StatusBar barStyle={showsMap || light ? 'dark-content' : 'light-content'}
-        backgroundColor={light ? colors.bg : undefined} />
+        backgroundColor={light ? colors.surface : undefined} />
       {!showsMap && (
         // No bottom tabs (v3): every page off the map says where it is and
         // goes back the way the back key does (「‹ 標題」).
@@ -407,8 +407,8 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   brand: { color: '#f8fafc', fontSize: 18, fontWeight: '700' },
   // The v3 pages: a light 56dp header 「‹ 標題」 over the page colour.
-  lightHeader: { backgroundColor: colors.bg, borderBottomWidth: 0, minHeight: touch.subpageHeader,
+  lightHeader: { backgroundColor: colors.surface, borderBottomWidth: 0, minHeight: touch.subpageHeader,
     justifyContent: 'center', paddingHorizontal: 8 },
   lightBrand: { ...type.title, color: colors.text },
-  page: { flex: 1, backgroundColor: colors.bg },
+  page: { flex: 1, backgroundColor: colors.surface },
 });
