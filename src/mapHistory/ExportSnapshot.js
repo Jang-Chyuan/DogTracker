@@ -7,6 +7,7 @@
 import { historyMapPresentation, placeMarkers, routeLines, timeMarkers, uncrowded } from '../history/screen/HistoryMapModel';
 import { interruptionText, km, nodePill, nodeTimes, placeLines, sectionText } from '../history/HistoryText';
 import { captureExportSnapshot } from './ExportData';
+import { exportLightTheme, exportRouteColor } from '../theme/exportPalette';
 
 const isSection = node => node?.type === 'movement' || node?.type === 'gap';
 const isVehicle = mode => mode === 'driving' || mode === 'ride';
@@ -82,8 +83,9 @@ export function exportTimelineRows(nodes, addressOf) {
  * for one dog or my route, only the first and last for several dogs.
  */
 export function exportMapLayer(model, color, { multi = false } = {}) {
-  const lines = routeLines(model.edges || [], { color });
-  const presentation = historyMapPresentation(model, { color, cursor: null });
+  // Light, whatever the phone's theme (the PNG is a fixed-light file).
+  const lines = routeLines(model.edges || [], { color, theme: exportLightTheme });
+  const presentation = historyMapPresentation(model, { color, cursor: null, theme: exportLightTheme });
   const places = (presentation?.places || []).length ? presentation.places : placeMarkers(model.locations || []);
   const allIndoor = model.points.length > 0 && model.points.every(p => p.heldReason);
   const stays = (model.locations || []).filter(n => ['stop', 'indoor', 'switch'].includes(n.type));
@@ -123,7 +125,8 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
   const subjects = entries.map(entry => {
     const model = entry.model;
     const phone = subject === 'phone';
-    const color = look[entry.id]?.color;
+    // The PNG is always light: a dark-theme route colour goes back to light.
+    const color = exportRouteColor(look[entry.id]?.color);
     const nodes = model.nodes || [];
     const first = model.points[0], last = model.points[model.points.length - 1];
     return {

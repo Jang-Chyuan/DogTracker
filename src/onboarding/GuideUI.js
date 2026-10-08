@@ -245,7 +245,11 @@ export const getGuideStyles = makeStyles(theme => {
 const getStyles = makeStyles(theme => {
   const { colors, opacity, literalColors: themeLiteral } = theme;
   return StyleSheet.create({
-    page: { flex: 1, backgroundColor: colors.bg },
+    // Light keeps its white page; dark uses the page bg (深色模式「底色層次」).
+    page: {
+      flex: 1,
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+    },
     middle: { flex: 1 },
     content: {
       flexGrow: 1,
@@ -335,6 +339,9 @@ const getStyles = makeStyles(theme => {
     },
     dialogPressed: { backgroundColor: colors.pressedOverlay },
     dialogAction: { ...type.status, color: colors.tonalText },
-    dialogCancel: { color: colors.tonalText },
+    // 取消: light as before (textMuted); dark tonalText (S7 確認對話框・深色).
+    dialogCancel: {
+      color: theme.isDark ? colors.tonalText : colors.textMuted,
+    },
   });
 });
