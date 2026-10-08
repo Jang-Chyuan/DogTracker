@@ -48,8 +48,9 @@ test('a dog without a fix for 17 minutes, following now: 「最後 09:13」', as
   expect(nodePill(last)).toEqual({ text: '最後 09:13', tone: 'plain' });
 });
 
-test('the end dragged back to 08:50: 「結束」 at that time', async () => {
-  const { last } = await open('history-manual-end');
+test('only the end dragged back to 08:50: 「結束」 at that time, the start still 「出發」', async () => {
+  const { last, screen } = await open('history-manual-end');
+  expect(nodePill(screen.model.nodes[0])).toEqual({ text: '出發', tone: 'plain' });
   expect(last).toMatchObject({ type: 'end', label: '結束' });
   expect(clock(last.end)).toBe('08:50');
 });
@@ -78,4 +79,27 @@ test('indoors until now: the list ends on the house node 「室內・N 分」', 
   const { last } = await open('history-indoor-end');
   expect(last.type).toBe('indoor');
   expect(nodePill(last)).toEqual({ text: '室內・30 分', tone: 'indoor' });
+});
+
+test('a swipe over a row never counts as a tap on it (useTap)', async () => {
+  const { useTap, TAP_SLOP } = require('../src/mapHistory/HistoryTimelineList');
+  const pressed = jest.fn();
+  let tap;
+  function Row() {
+    tap = useTap(pressed, 'stop');
+    return null;
+  }
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<Row />); });
+  const at = (x, y) => ({ nativeEvent: { pageX: x, pageY: y } });
+  tap.onPressIn(at(100, 1700));
+  tap.onPress(at(100, 900));
+  expect(pressed).not.toHaveBeenCalled();
+  tap.onPressIn(at(100, 1700));
+  tap.onPress(at(100 + TAP_SLOP - 2, 1702));
+  expect(pressed).toHaveBeenCalledWith('stop');
+  // Accessibility and tests press without coordinates: a tap.
+  tap.onPress(undefined);
+  expect(pressed).toHaveBeenCalledTimes(2);
+  await act(async () => renderer.unmount());
 });
