@@ -921,7 +921,10 @@ const FIXTURES = {
   'cloud-signed-out': now => ({ ...FIXTURES['signed-out-map'](now), openRoute: 'cloud' }),
   // Signed in, all well: last download 5 s ago, nothing waiting, receiver 7
   // uploads through this phone.
-  'cloud-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud' }),
+  'cloud-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud', upload: uploading(now) }),
+  // Every receiver uses its own Wi-Fi: only upload route rows are shown.
+  'cloud-wifi-only': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
+    upload: uploading(now, { phone: [], wifi: [7, 8] }) }),
   // Uploads waiting: 12 rows not sent yet, 3 the cloud refused (需處理 +
   // 重試), the last success 16 minutes ago. Downloads are fine.
   'cloud-upload-pending': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',

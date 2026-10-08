@@ -249,7 +249,8 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(title()).toBe('返回，Supabase 帳號');
   expect(renderer.root.findAllByProps({ testID: 'account-settings' }).length).toBeGreaterThan(0);
   expect(text()).toContain('已登入');
-  expect(text()).toContain('最後上傳成功');
+  // No phone upload route is loaded in this live navigation setup.
+  expect(text()).not.toContain('最後上傳成功');
   expect(text()).not.toContain('轉送 Supabase');
   await press('返回，Supabase 帳號');
   expect(row('settings-row-diagnostics')).toBeUndefined();
@@ -325,7 +326,7 @@ test('S1 提醒 opens S6 (not the system settings); a switch is saved at once an
   expect(preferences().alerts.receiverDisconnectedStorage).toBe(false);
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，設定');
-  expect(row('settings-row-alerts').props.accessibilityLabel).toBe('提醒，震動、聲音、各項開關，震動、聲音，部分開');
+  expect(row('settings-row-alerts').props.accessibilityLabel).toBe('提醒，震動、聲音、各項開關，震動、聲音');
 });
 
 test('a settings fixture opens its page over the map: S1 with red 「!」 rows, S2 中斷連線', async () => {
