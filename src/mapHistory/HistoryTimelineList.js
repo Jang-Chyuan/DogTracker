@@ -12,8 +12,6 @@ const TIME_WIDTH = 54;
 const TRACK_WIDTH = 36;
 // Enough dots or dashes for the tallest row; the row clips the rest.
 const MARKS = 40;
-const PLAIN_PILL = '#F1EEEC';
-const INDOOR_PILL = '#E6EEF3';
 
 const isVehicle = mode => mode === 'driving' || mode === 'ride';
 
@@ -45,7 +43,7 @@ function Node({ node, color }) {
         </View>
       );
     case 'indoor':
-      return <View style={styles.indoor}><Glyph name="house" color="#FFFFFF" size={14} /></View>;
+      return <View style={styles.indoor}><Glyph name="house" color={colors.onRoute} size={14} /></View>;
     case 'resume':
       return <View style={[styles.resume, { borderColor: color }]} />;
     default:
@@ -57,10 +55,10 @@ function Pill({ pill, color }) {
   if (!pill) return null;
   const tone = {
     stay: [{ backgroundColor: `${color}1F` }, { color }],
-    plain: [{ backgroundColor: PLAIN_PILL }, { color: colors.textMuted }],
+    plain: [{ backgroundColor: colors.pillPlain }, { color: colors.textMuted }],
     manual: [{ backgroundColor: colors.tonal }, { color: colors.tonalText }],
     closed: [{ backgroundColor: colors.warnBg }, { color: colors.warn }],
-    indoor: [{ backgroundColor: INDOOR_PILL }, { color: colors.receiver }],
+    indoor: [{ backgroundColor: colors.pillIndoor }, { color: colors.receiver }],
   }[pill.tone];
   return <View style={[styles.pill, tone[0]]}><Text style={[styles.pillText, tone[1]]}>{pill.text}</Text></View>;
 }
@@ -175,7 +173,7 @@ const styles = StyleSheet.create({
   departure: { width: 16, height: 16, borderRadius: 8, borderWidth: 3, backgroundColor: colors.surface, marginTop: 2 },
   numbered: { width: 30, height: 30, borderRadius: 15, borderWidth: 3, borderColor: colors.surface,
     alignItems: 'center', justifyContent: 'center', marginTop: -3 },
-  number: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  number: { color: colors.onRoute, fontSize: 12, fontWeight: '700' },
   indoor: { width: 30, height: 30, borderRadius: 15, borderWidth: 3, borderColor: colors.surface,
     backgroundColor: colors.receiver, alignItems: 'center', justifyContent: 'center', marginTop: -3 },
   resume: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, backgroundColor: colors.surface, marginTop: 4 },

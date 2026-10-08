@@ -202,8 +202,13 @@ export function createHistoryDatabase(db) {
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
       if (subject === 'phone') {
         if (!(await table('myLocationTracker'))) return { rows: [], seed: [], after: cursors };
+        // The CSV export's columns ride along (判定表「CSV」: 照 main 的欄位).
+        const phoneColumns = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
+        const phoneExtra = ['location_at', 'accuracy_meters', 'altitude_meters', 'speed_kmh', 'heading_degrees',
+          'raw_latitude', 'raw_longitude', 'session_id', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state',
+          'display_source', 'display_location_at'].filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
         const found = await pages('phone', `SELECT id, recorded_at AS time, latitude, longitude,
-          accuracy_meters AS accuracy FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ?`,
+          accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ?`,
         [since, until]);
         return { rows: found.map(phoneHistoryRow), seed: [], after: cursors };
       }
@@ -217,7 +222,7 @@ export function createHistoryDatabase(db) {
       ]) {
         if (!wanted || !(await table(name))) continue;
         const columns = await columnsOf(name);
-        const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at']);
+        const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at', 'speed_kmh']);
         const scope = `slave_id = ?${key === 'cloud' ? ' AND owner_user_id = ?' : ''}`;
         const params = key === 'cloud' ? [slaveId, owner] : [slaveId];
         const found = await pages(key, `SELECT id, received_at, master_id, slave_id, slave_lat, slave_lon${extra}

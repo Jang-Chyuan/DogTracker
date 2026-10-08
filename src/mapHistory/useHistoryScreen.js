@@ -492,6 +492,8 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   }, [readDays, source, owner, shownKey]);
   const loading = !!subject && !dayModel && !slots.some(slot => slot.error);
   return {
+    // The export (H9) captures the whole day's model and the dogs' looks.
+    dayModel, look,
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
     following, cursor, cursors, pressed, focus, map, color, loading,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,

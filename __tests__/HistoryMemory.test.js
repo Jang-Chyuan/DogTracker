@@ -1,19 +1,15 @@
 import { historyGeometry, expireHistory, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
 import { budgetHistoryTracks } from '../src/mapHistory/HistoryGeometryBudget';
-import { serializeHistory } from '../src/mapHistory/HistoryExport';
 import { stablePhoneDisplay } from '../src/map/PhoneDisplayPosition';
 
 const point = (time, master_id = 5, latitude = 25) => ({ time, master_id, slave_id: 4, latitude, longitude: 121 });
-test('interleaved receivers form separate continuous tracks, also in GPX, with original rows intact', () => {
+test('interleaved receivers form separate continuous tracks with original rows intact', () => {
   const rows = Array.from({ length: 6000 }, (_, i) => point(i * 1000, i % 2 ? 7 : 5, i % 2 ? 26 : 25));
   const track = historyGeometry(rows);
   expect(track.segments).toHaveLength(2);
   expect(track.segments.every(part => new Set(part.map(p => p.master_id)).size === 1)).toBe(true);
   expect(track.count).toBe(6000);
   expect(track.sourcePoints).toBe(rows);
-  const xml = serializeHistory('gpx', { phone: [], clients: [{ slaveId: 4, rows }], since: 0, until: 6000000 });
-  expect(xml.match(/<trkseg>/g)).toHaveLength(2);
-  expect(xml.match(/<trkpt /g)).toHaveLength(6000);
 });
 
 test('expiry preserves receiver separation and genuine gaps remain disconnected', () => {

@@ -24,11 +24,10 @@ import { createRideDetector } from '../placement/RideAlong';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { todayRouteDistance } from '../tracking/TodayDistance';
 import { ONBOARDING_DONE, ONBOARDING_SIGN_IN } from '../app/Launch';
-import { historyGeometry, HISTORY_DAY_CONTEXT_MS } from '../mapHistory/HistoryDatabase';
-import { budgetHistory } from '../mapHistory/HistoryGeometryBudget';
+import { HISTORY_DAY_CONTEXT_MS } from '../mapHistory/HistoryDatabase';
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
-import { startOfToday } from '../tracking/TodayDistance';
 import { fixtureAddressLookup } from './fixtureGeocoder';
+import { fixtureExporter } from './fixtureExporter';
 import { dayKey } from '../history/screen/HistoryScreenDates';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
@@ -393,6 +392,14 @@ const morningRoute = now => legsPath(now, 160 * MINUTE, at(-40, -150), [
   { stay: 18 }, { walk: 20, bearing: 170 }, { walk: 38, bearing: 250 },
 ]);
 
+// 小黑's day for the export (056): out at about 06:50, a stay, a ride, a
+// 12-minute break, 25 minutes indoors, walking until now (09:30).
+const exportDay = now => legsPath(now, 160 * MINUTE, at(20, -60), [
+  { stay: 12 }, { walk: 18, bearing: 40, speed: 0.8 }, { stay: 16 }, { walk: 10, bearing: 110, speed: 0.8 },
+  { drive: 4, speed: 11, bearing: 150 }, { walk: 14, bearing: 220, speed: 0.8 }, { gap: 12 },
+  { walk: 12, bearing: 260, speed: 0.8 }, { stay: 3 }, { inside: 25 }, { walk: 20, bearing: 330, speed: 0.8 },
+]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix, ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
+
 // ---- history (055b): several dogs ----------------------------------------
 // One dog's morning near the station from `start` (fixture now 09:30), a fix
 // every 10 s: `legs` as legsPath's. `make` bleRow (this phone) or cloudRow.
@@ -412,7 +419,7 @@ const dog5Walk = (now, today = true) => dogDay(today ? now : now - 24 * 60 * MIN
 // it can be added). `view`: the protagonist, the source, an open sheet, the
 // cursor `cursorAgo` before now.
 function multiFixture(now, { dogs = [], protagonist = null, source = null, sheet = null, fiveToday = true,
-  cursorAgo = null }) {
+  cursorAgo = null, exportView = null }) {
   const base = FIXTURES['all-good'](now);
   const cloud = afuMorning(now);
   return {
@@ -421,7 +428,7 @@ function multiFixture(now, { dogs = [], protagonist = null, source = null, sheet
     ble: [...base.ble, ...series(bleRow, now, { slave: 5, from: 4 * MINUTE, to: 60 * SECOND, start: [-12, 30] })],
     history: historyPage(now, { slave: 6, ble: [...dogMorning(now), ...doudouMorning(now), ...dog5Walk(now, fiveToday)],
       cloudRows: cloud }),
-    historyView: { dogs, protagonist, source, sheet, cursorAgo },
+    historyView: { dogs, protagonist, source, sheet, cursorAgo, export: exportView },
     geocoder: { names: HISTORY_NAMES },
   };
 }
@@ -1084,6 +1091,28 @@ const FIXTURES = {
   // 資料來源：這支手機收到的: 阿福's rows are the cloud's only, so it fades and
   // 豆豆 (this phone's) stays.
   'history-source-local': now => multiFixture(now, { dogs: [4, 8], protagonist: 8, source: 'local' }),
+  // ---- history (056): the export (H9/H10) ---------------------------------
+  // H9: my route like the mockup, the export window open (PNG used last).
+  'history-export': now => ({ ...FIXTURES['history-my-route'](now), historyView: { export: { phase: 'choose' } } }),
+  // 產生中 that never ends (the export icon a spinner; 取消 or the back key stops it).
+  'history-export-generating': now => ({ ...FIXTURES['history-my-route'](now), historyExport: 'hang',
+    historyView: { export: { phase: 'generating', format: 'png' } } }),
+  // The window open, every export hanging: choose a format to watch 產生中 begin.
+  'history-export-hang': now => ({ ...FIXTURES['history-my-route'](now), historyExport: 'hang',
+    historyView: { export: { phase: 'choose' } } }),
+  // 匯出失敗　重試 (重試 then works: a real export of the same day).
+  'history-export-failed': now => ({ ...FIXTURES['history-my-route'](now),
+    historyView: { export: { phase: 'failed', format: 'png' } } }),
+  // The first export fails, 重試 makes it from the same snapshot.
+  'history-export-fail-once': now => ({ ...FIXTURES['history-my-route'](now), historyExport: 'fail-once',
+    historyView: { export: { phase: 'choose' } } }),
+  // H10b: four dogs (小黑, 豆豆, 阿福 from the cloud, 狗 5) for the many-dogs PNG.
+  'history-export-multi': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 6,
+    exportView: { phase: 'choose' } }),
+  // H10a: 小黑's day with a stay, a ride, a break (沒有資料), indoors and on again.
+  'history-export-day': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: exportDay(now) }), geocoder: { names: HISTORY_NAMES },
+    historyView: { export: { phase: 'choose' } } }),
   // ---- history (054b): the calendar and a day only the cloud holds -------
   // H3b: 小黑's calendar on October; dots on this phone's days and the cloud's
   // (9/28 and 10/3 only in the cloud); a day only the cloud holds downloads
@@ -1228,6 +1257,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
+    historyExport = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -1337,24 +1367,30 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     pairing,
     // The history page (054a): its query, the map's tracks and the day reader
     // of the time-line list, all from the fixture's rows.
-    history: history && historyFixture(history, [...(history.phoneDays || []), ...(phone?.today || [])], now),
+    history: history && historyFixture(history, [...(history.phoneDays || []), ...(phone?.today || [])]),
     // The history screen opened as it was left (H2b: the range bar open, a
     // range already dragged; 054b: the calendar open, another day chosen).
     historyView,
     // The history's stand-in cloud (054b): { cloud, online, seed } or null.
     historyCloud,
+    // The export (056): 'hang' (產生中 never ends), 'fail', 'fail-once'; else
+    // the real exporter (files in this phone's cache, Android's share sheet).
+    exporter: historyExport ? fixtureExporter(historyExport) : null,
     // Its places' names (053a): made-up answers, none, or this phone's
     // Geocoder; never this phone's address cache.
     addressLookup: fixtureAddressLookup(geocoder),
   };
 }
 
-// What the old history page reads for a history fixture: the query, the map's
-// tracks (HistoryDatabase.read's shape) and historyDayRows over the rows.
-function historyFixture({ preferences, ble = [], cloudRows = [] }, today, now) {
+// What the history screen reads for a history fixture: the query and
+// historyDayRows / historyDays over the fixture's rows.
+function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
+  // myLocationTracker's columns as the CSV export reads them (made up).
   const phoneRows = today.map((point, index) => ({ id: index + 1, time: point.time, latitude: point.latitude,
-    longitude: point.longitude, accuracy: point.accuracy ?? 6 }));
-  const dayStart = startOfToday(now);
+    longitude: point.longitude, accuracy: point.accuracy ?? 6, location_at: point.time - 400,
+    accuracy_meters: point.accuracy ?? 6, altitude_meters: 112, speed_kmh: 3.6, heading_degrees: 40,
+    raw_latitude: point.latitude, raw_longitude: point.longitude, session_id: 'fixture-walk', raw_speed_kmh: 3.8,
+    speed_accuracy_mps: 0.4, motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
   const readDay = async ({ subject, slaveId, start, end, source = 'all', owner = null, after = {} }) => {
     if (after.fixture) return { rows: [], seed: [], after };
     const since = start - HISTORY_DAY_CONTEXT_MS;
@@ -1380,15 +1416,7 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today, now) {
     ];
     return [...new Set(times.map(keyOf))].sort();
   };
-  const dogTrack = slaveId => ble.filter(row => row.slave_id === slaveId && row.received_at >= dayStart)
-    .map(row => ({ id: row.id, time: row.received_at, latitude: row.slave_lat, longitude: row.slave_lon,
-      master_id: row.master_id, slave_id: row.slave_id }));
-  const data = budgetHistory({
-    phone: historyGeometry(preferences.phone ? phoneRows.filter(row => row.time >= dayStart) : []),
-    clients: preferences.slaves.map(slaveId => ({ slaveId,
-      ...historyGeometry(preferences.client ? dogTrack(slaveId) : []) })),
-    since: dayStart, until: now, coverage: null, message: '' });
-  return { preferences, readDay, readDays, data };
+  return { preferences, readDay, readDays };
 }
 
 const rejectRead = reason => async () => { throw new Error(reason); };
@@ -1528,7 +1556,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
     history: history && {
       ...history, preferences: { ...history.preferences, ...fixture.history?.preferences, dogAliases: aliases },
       // A history fixture (054a) draws its own day, never this phone's.
-      ...(fixture.history ? { data: fixture.history.data, readDay: fixture.history.readDay,
+      ...(fixture.history ? { readDay: fixture.history.readDay,
         readDays: fixture.history.readDays, loaded: true,
         busy: false, error: '', key: `fixture:${fixture.name}`, devices: [] } : {}),
       // The card's 看軌跡 and the dog page's name must not store a fixture's

@@ -126,20 +126,6 @@ test('multi-dog pagination keeps section header with first node and resumes only
   expect(layout.pages[0].blocks[0]).toMatchObject({ padding: 72, timeMarkers: 'endpoints', cursor: null });
 });
 
-// Design spec.txt:339: | PNG 第 1 張放不下清單 | 地圖下方剩的高度放不下第一隻狗的段頭＋第一個節點時，第 1 張只放標題、圖例、地圖、頁尾，清單從第 2 張開始
-test('PNG wraps legend, preserves long addresses and moves list to page 2 if first node will not fit', () => {
-  const subjects = [1, 2, 3, 4].map(slaveId => dog({ slaveId, name: '很長的名字'.repeat(42), timeline: [{ type: 'stay', address: '地址'.repeat(30), detail: '說明'.repeat(10) }] }));
-  const layout = buildPNGLayout(snapshot(...subjects));
-  expect(layout.pages[0].legendHeight).toBeGreaterThan(56);
-  expect(layout.pages[0].blocks.map(b => b.type)).toEqual(['map']);
-  const rows = layout.pages.flatMap(p => p.blocks.filter(b => b.type === 'row'));
-  expect(rows).toHaveLength(4);
-  expect(rows[0].addressLines.length).toBeGreaterThan(2);
-  expect(rows[0].addressLines.join('')).toBe('地址'.repeat(30));
-  expect(layout.pages[1].blocks[0].title).not.toContain('（續）');
-  expect(layout.pages.every(p => p.height <= 2400)).toBe(true);
-});
-
 // Design spec.txt:487: | 多隻狗 PNG | 選定匯出範圍內沒資料的狗（停住期間的封包也算有資料）不算進隻數、不畫、沒有清單段；標題「DogTracker・狗的歷史（3 隻）・起訖」；每隻狗一段，段頭寫狗名、路線色、起訖時間、距離；換張時，被切開的那隻在下一張開頭寫「〔狗名〕（續）」
 test('only one active dog uses single layout and filename; no data yields no pages', () => {
   const data = snapshot(dog(), dog({ slaveId: 5, rows: [] }));

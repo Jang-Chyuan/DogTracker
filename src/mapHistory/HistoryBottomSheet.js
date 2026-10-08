@@ -9,12 +9,14 @@ import { colors, motion, radius, size as sizes, space, touch, type } from '../th
 const ease = Easing.bezier(...motion.easeOut);
 
 /**
- * `title`, `children` (the rows), `onClosed()` once it has slid away. Ref:
+ * `title`, `children` (the rows), `onClosed()` once it has slid away;
+ * `locked`: a tap on the scrim does nothing (H9 產生中: only 取消 or the back
+ * key stop it); `divided`: a line under the title. Ref:
  * { close(then?) } — slides it away, then calls `then` (a choice is applied
  * after the sheet has gone, so the screen does not change under it).
  */
 const HistoryBottomSheet = forwardRef(function HistoryBottomSheet({ title, children, onClosed, bottomInset = 0,
-  testID, closeLabel = '關閉' }, ref) {
+  testID, closeLabel = '關閉', locked = false, divided = false }, ref) {
   const { height: windowHeight } = useWindowDimensions();
   const progress = useRef(new Animated.Value(0)).current;
   // Made once (a native-driven style changed under a running animation left
@@ -42,13 +44,13 @@ const HistoryBottomSheet = forwardRef(function HistoryBottomSheet({ title, child
     <View style={[StyleSheet.absoluteFill, styles.layer]} testID={testID} collapsable={false}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]} collapsable={false}>
         <Pressable style={StyleSheet.absoluteFill} accessibilityRole="button" accessibilityLabel={closeLabel}
-          onPress={() => close()} />
+          onPress={() => { if (!locked) close(); }} />
       </Animated.View>
       <Animated.View onLayout={onLayout} accessibilityViewIsModal
         style={[styles.sheet, { paddingBottom: space.l + bottomInset,
           maxHeight: Math.round(windowHeight * sizes.sheet.maxRatio), transform: [{ translateY }] }]}>
         <View style={styles.handle} />
-        <Text style={styles.title} accessibilityRole="header">{title}</Text>
+        <Text style={[styles.title, divided && styles.divided]} accessibilityRole="header">{title}</Text>
         <ScrollView bounces={false}>{children}</ScrollView>
       </Animated.View>
     </View>
@@ -67,5 +69,7 @@ const styles = StyleSheet.create({
     paddingTop: space.s, elevation: 24,
   },
   handle: { alignSelf: 'center', width: 32, height: 4, borderRadius: 2, backgroundColor: colors.sheetHandle, marginBottom: space.s },
+  // H9: a line under the title (the export window).
+  divided: { borderBottomWidth: 1, borderBottomColor: colors.line, paddingBottom: space.m },
   title: { ...type.status, color: colors.text, minHeight: touch.min, textAlignVertical: 'center', paddingTop: 12 },
 });

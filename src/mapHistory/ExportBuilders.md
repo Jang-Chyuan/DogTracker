@@ -1,7 +1,23 @@
 # V3 pure export builders (H9/H10)
 
 These modules do not access React Native, SQLite, the network, files, clocks or
-randomness. They do not replace `HistoryExport.js` until the v3 caller is wired.
+randomness. `useHistoryExport` (056) wires them: `ExportSnapshot.buildExportSnapshot`
+makes the snapshot from the history screen's day model, `ExportDraw` turns the
+PNG layout into drawing operations for `HistoryExportPackage.kt`.
+
+## 056 changes to the Codex draft
+
+- `timeZone: null` means the phone's own zone (the app passes null).
+- My route exports its recorded route (`latitude`/`longitude`) in the GPX and the CSV
+  coordinate columns; its `raw_*` go to the raw columns. A dog's raw columns default
+  to the collar fix (as main wrote `slave_lat` there).
+- GPX points are in the range by packet time (the screen's range); the fix time still
+  decides hold/ride classification. A fix repeated in several packets is one trkpt.
+- Stay waypoints deduct the list's own `interruptionMs` (`excludedMs`).
+- PNG rows are the screen's list rows (`exportTimelineRows`: title, pill, coordinates,
+  查不到地址, 不含中斷, movement lead/time/rest); the title is two lines (who; date, times,
+  distance); a row taller than a page has its address cut after 2 lines (判定表「PNG
+  一列比一頁還高」) instead of failing.
 
 ## Snapshot contract
 
