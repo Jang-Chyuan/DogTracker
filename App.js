@@ -234,7 +234,8 @@ function TrackerApp() {
     recording: recordingSwitch });
   // S6's switches, saved with the tracking preferences (a fixture's only in
   // memory). Nothing sends alerts yet: 058 reads the same AlertPreferences.
-  const alertPreferences = useAlertPreferences(settingsData.alerts, mapInputs.tracking.saveTrackingPreferences);
+  const alertPreferences = useAlertPreferences(settingsData.alerts, mapInputs.tracking.saveTrackingPreferences,
+    fixtureName ?? 'live');
 
   // Background work that keeps going when the map is left (返回鍵 on the
   // map): this phone uploads for a receiver and still has rows waiting.
