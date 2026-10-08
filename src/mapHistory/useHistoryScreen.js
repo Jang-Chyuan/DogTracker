@@ -448,7 +448,9 @@ export function useHistoryScreen({
     ? `${writeKey}:${JSON.stringify(preset.manual)}`
     : '';
   const presetDone = useRef('');
-  if (presetKey && presetDone.current !== presetKey) {
+  // Only for a fresh fixture opening (not while no history shows, not when
+  // coming back to a snapshot, whose range is the user's).
+  if (presetKey && sessionKey && !restored && presetDone.current !== presetKey) {
     presetDone.current = presetKey;
     rememberRangeFor(memoryKeyOf(entryId), preset.manual);
   }

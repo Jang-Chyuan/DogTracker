@@ -340,6 +340,8 @@ function TrackerApp({ resume = null, onRestart }) {
   stackNow.current = stack;
   // The history screen's snapshot taker (MapScreen sets it while history shows).
   const historySnapshot = useRef(null);
+  // The dog whose card an alert opened (until that card closes).
+  const alertCardDog = useRef(null);
   // D3 連接接收器 from `entry` (Pairing.pairingFlow): S2 ('receiver', with
   // its mode), A6 ('map'), a mismatch dialog ('alert'; `view` 'manual' when
   // the receiver was typed in) or the guide ('onboarding').
@@ -598,7 +600,12 @@ function TrackerApp({ resume = null, onRestart }) {
     // Leaving every page for the live map forgets the card history came from.
     if (result.stack.length === 1) setCardHistory(null);
     setStack(result.stack);
-    if (result.dogId != null) setMapRequest({ screen: 'map', dogId: result.dogId, key });
+    if (result.dogId != null) {
+      // Its 看軌跡 is a new errand: back from that history goes to the live
+      // map, not to the card (also when opened on the live map itself).
+      alertCardDog.current = result.dogId;
+      setMapRequest({ screen: 'map', dogId: result.dogId, key });
+    }
   };
   const appliedNotification = useRef(null);
   useEffect(() => {
@@ -861,10 +868,12 @@ function TrackerApp({ resume = null, onRestart }) {
       alertCardOpen.current = fromAlert ? top.key : null;
       return;
     }
-    if (fromAlert && alertCardOpen.current === top.key) {
-      alertCardOpen.current = null;
-      setStack(closeAlertCard(current));
-    }
+    // Closed (or gone with the map, e.g. a page opened over it): no card's
+    // back step is left; only a close on the alert's own map returns.
+    const wasOpen = alertCardOpen.current;
+    alertCardOpen.current = null;
+    alertCardDog.current = null;
+    if (fromAlert && wasOpen === top.key) setStack(closeAlertCard(current));
   }, []);
 
   // The preview's 「+N 分」 is judged at once.
@@ -1328,7 +1337,9 @@ function TrackerApp({ resume = null, onRestart }) {
               const next = openTrackFrom(stackNow.current, slaveId == null
                 ? { subject: 'phone', slaveId: null }
                 : { subject: 'dog', slaveId });
-              setCardHistory(next.fromCard ? slaveId : null);
+              setCardHistory(
+                next.fromCard && slaveId !== alertCardDog.current ? slaveId : null,
+              );
               setStack(next.stack);
             }}
             // A fixture's history page (no route target): whom its query is about.
