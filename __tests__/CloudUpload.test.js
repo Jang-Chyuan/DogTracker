@@ -26,10 +26,8 @@ test('no receiver uploads through this phone by default; saved routes survive re
     // Design S3: 不再預設 Master 5.
     await database.owner('alice');
     expect(await database.settings('alice')).toEqual([]);
-    insert(connection, 'five', 'alice', 5);
-    expect(await database.pending('alice', Date.now())).toEqual([]);
     await database.setMode('alice', 5, 'phone');
-    expect((await database.pending('alice', Date.now())).map(r => r.master_id)).toEqual([5]);
+    expect(await database.settings('alice')).toEqual([{ owner_user_id: 'alice', master_id: 5, mode: 'phone' }]);
     await database.setMode('alice', 5, 'wifi');
     await database.owner(null);
     await createUploadDatabase(connection).owner('alice');
@@ -77,11 +75,15 @@ test('changing a route deletes nothing: waiting rows stay, local history and oth
     insert(connection, 'old'); insert(connection, 'other-owner', 'bob');
     insert(connection, 'other-master', 'alice', 5);
     await database.setMode('alice', 7, 'phone');
-    expect((await database.pending('alice', Date.now())).map(r => r.event_id)).toEqual(['old']);
     await database.setMode('alice', 7, 'wifi');
-    expect(await database.pending('alice', Date.now())).toEqual([]);
+    // Queued here, it is still this phone's to send whatever the route now.
+    expect((await database.pending('alice', Date.now())).map(r => r.event_id).sort()).toEqual(['old', 'other-master']);
     await database.setMode('alice', 7, 'phone');
-    expect((await database.pending('alice', Date.now())).map(r => r.event_id)).toEqual(['old']);
+    // 重試 also clears a waiting row's backoff.
+    connection.sqlite.exec("UPDATE ble_upload_queue SET next_retry_at=9999999999999 WHERE event_id='old'");
+    expect((await database.pending('alice', Date.now())).map(r => r.event_id)).toEqual(['other-master']);
+    await database.retry('alice');
+    expect((await database.pending('alice', Date.now())).map(r => r.event_id).sort()).toEqual(['old', 'other-master']);
     expect(await database.pendingCount('alice', 7)).toBe(1);
     expect((await database.summary('alice')).pendingByMaster).toEqual({ 5: 1, 7: 1 });
     expect(connection.sqlite.prepare('SELECT COUNT(*) n FROM dog_status').get().n).toBe(1);

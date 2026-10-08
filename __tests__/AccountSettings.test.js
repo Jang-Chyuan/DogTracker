@@ -6,7 +6,7 @@ import { accountPage, signOutDialog, switchDialog } from '../src/settings/Accoun
 import AccountSettings from '../src/settings/AccountSettings';
 import { cloudError, isAuthFailure, isNetworkFailure } from '../src/cloud/CloudErrors';
 import { createCloudSync } from '../src/cloud/CloudSync';
-import { AuthProvider, useAuth } from '../src/auth/AuthProvider';
+import { AuthProvider, refreshRefused, useAuth } from '../src/auth/AuthProvider';
 import { formatClock } from '../src/map/MapFormat';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 import { emptyLiveRoute } from '../src/tracking/LiveRouteWindow';
@@ -287,5 +287,26 @@ test('reportAuthFailure: a new session or no network keeps the sign-in; a refuse
   expect(refused.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
   expect(auth.user).toBeNull();
   expect(auth.expired).toBe(true);
+  await act(async () => renderer.unmount());
+});
+
+test('only an explicit refusal of the refresh token ends the sign-in', () => {
+  expect(refreshRefused({ status: 400, message: 'Invalid Refresh Token: Refresh Token Not Found' })).toBe(true);
+  expect(refreshRefused({ code: 'refresh_token_not_found' })).toBe(true);
+  expect(refreshRefused({ status: 429, message: 'Too many requests' })).toBe(false);
+  expect(refreshRefused({ status: 503, message: 'Service unavailable' })).toBe(false);
+  expect(refreshRefused({ message: 'something odd' })).toBe(false);
+});
+
+test('a dialog opened for one account closes when the account changes', async () => {
+  const { data } = input('upload-switch-confirm');
+  const page = accountPage(data);
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<AccountSettings page={page} onSwitch={jest.fn()} />); });
+  await act(async () => pressable(renderer, page.routes[0].label).props.onPress());
+  expect(text(renderer)).toContain('改由這支手機上傳？');
+  await act(async () => renderer.update(<AccountSettings page={{ ...page, email: 'other@example.com' }}
+    onSwitch={jest.fn()} />));
+  expect(text(renderer)).not.toContain('改由這支手機上傳？');
   await act(async () => renderer.unmount());
 });

@@ -6,6 +6,16 @@ import { isNetworkFailure } from '../cloud/CloudErrors';
 
 const AuthContext = createContext(null);
 
+// Supabase refused the refresh token itself (revoked, expired, unknown
+// session): 400/401/403 with an auth error, never 429 or 5xx.
+export function refreshRefused(failure) {
+  const status = Number(failure?.status);
+  const words = `${failure?.code || ''} ${failure?.message || ''}`;
+  if (status === 429 || status >= 500) return false;
+  if ([400, 401, 403].includes(status)) return true;
+  return /refresh_token_not_found|refresh_token_already_used|session_not_found|session_expired|invalid refresh token|invalid_grant|bad_jwt/i.test(words);
+}
+
 export function AuthProvider({ children, clientFactory = getSupabase }) {
   const [connection] = useState(() => {
     try { return { client: clientFactory() }; }
@@ -82,7 +92,10 @@ export function AuthProvider({ children, clientFactory = getSupabase }) {
         try {
           const { data, error: failure } = await client.auth.refreshSession();
           if (!failure && data?.session?.user) return false;
-          if (failure && isNetworkFailure(failure)) return false;
+          // Only an explicit refusal of the refresh token ends the sign-in;
+          // no network, throttling (429), server errors or anything unknown
+          // keep it and the next pass asks again.
+          if (!failure || isNetworkFailure(failure) || !refreshRefused(failure)) return false;
           if (!signedIn.current) return true;
           // Not a user sign-out: receive(null) marks it expired.
           await client.auth.signOut({ scope: 'local' }).catch(() => {});
