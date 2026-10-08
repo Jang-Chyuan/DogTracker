@@ -186,3 +186,11 @@ describe('the panel and the date row', () => {
     expect(dateRowLabel(new Date(2026, 8, 28).getTime(), today)).toBe('9/28（一）');
   });
 });
+
+test('a time in the middle too close to a stop number or another time is left out; the ends stay', async () => {
+  const { uncrowded } = require('../src/history/screen/HistoryMapModel');
+  const marker = (time, east, end = false) => ({ time, end, coordinate: { latitude: 25, longitude: 121 + east / 100000 } });
+  const kept = uncrowded([marker(1, 0, true), marker(2, 50), marker(3, 400), marker(4, 450), marker(5, 1000, true)],
+    [{ coordinate: { latitude: 25, longitude: 121.009 } }]);
+  expect(kept.map(m => m.time)).toEqual([1, 3, 5]);
+});
