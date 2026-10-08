@@ -135,7 +135,15 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   // 進入時的預設: today, the range of the day, the cursor on the newest fix,
   // the entry dog alone, 資料來源 全部. Each opening (and each fixture)
   // starts there again (flow.txt「再次進入」, 判定表「再次進入歷史的資料來源」).
-  const sessionKey = target ? `${subjectKey(entryId)}|${memoryScope}` : null;
+  const baseKey = target ? `${subjectKey(entryId)}|${memoryScope}` : null;
+  // Each opening is a new session (再次進入: today, the entry dog alone, 全部),
+  // also the same dog opened again or a fixture with another preset.
+  const presetJson = preset ? JSON.stringify(preset) : '';
+  const opening = useRef({ base: null, preset: '', count: 0 });
+  if (baseKey && (opening.current.base !== baseKey || opening.current.preset !== presetJson)) {
+    opening.current = { base: baseKey, preset: presetJson, count: opening.current.count + 1 };
+  } else if (!baseKey) opening.current = { ...opening.current, base: null };
+  const sessionKey = baseKey ? `${baseKey}|${opening.current.count}` : null;
   const [dayState, setDayState] = useState({ key: null, day: null });
   // Today is taken once per opening: over midnight the screen keeps its day
   // (判定表「開著時過了午夜」), 「今天」 turning into the date.
@@ -214,7 +222,7 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   const cloudDogs = subject === 'dog' && source !== 'local' ? dogIds : [];
   const cloudDays = useHistoryCloud({ cloud: cloudDogs.length ? cloud : null,
     slaveId: cloudDogs.length > 1 ? cloudDogs : cloudDogs[0] ?? null,
-    scope: `${sessionKey}|${cloudDogs.join(',')}|${cloud?.owner ?? ''}`, todayKey, local: localDays, active,
+    scope: `${baseKey}|${cloudDogs.join(',')}|${cloud?.owner ?? ''}`, todayKey, local: localDays, active,
     seed: cloudSeed });
   const { knowledge } = cloudDays;
   const navigation = useMemo(() => dateNavigation(shownKey, todayKey, knownDays(knowledge)),
@@ -250,11 +258,11 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     if (!subject || !subjects.length) return null;
     const main = subjects.find(s => s.id === current.protagonist) ? current.protagonist : subjects[0].id;
     return multiDayModel(subjects, { dayStart: day, dayEnd, today, now: modelNow, source, manual, following,
-      protagonist: main, rangeOwner: current.rangeOwner ?? main });
+      protagonist: main, rangeOwner: current.rangeOwner ?? main, kept: current.kept ?? null });
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject, versions, day, dayEnd, today, modelNow, source, manual, following, current.protagonist,
-    current.rangeOwner]);
+    current.rangeOwner, current.kept]);
   const model = dayModel?.main ?? null;
   const protagonistId = dayModel?.protagonist ?? current.protagonist;
   // Who has a fix in the range (40% chips, 地圖不畫牠); a dog still being
@@ -322,7 +330,7 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     const start = typeof next === 'string' ? dayBounds(next).dayStart : next;
     setDay(start);
     // 換日期時的順序: the protagonist of the new day gives its range.
-    setSelection(state => ({ ...state, rangeOwner: state.protagonist }));
+    setSelection(state => ({ ...state, rangeOwner: state.protagonist, kept: null }));
     setDraft(null);
     setCursorTime(null);
     setInGap(false);
@@ -430,14 +438,18 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     setFocus({ key: Date.now(), time: null, action: 'protagonist', id });
   }, [dogs, protagonistId, cursor]);
   /** ✕ on a chip (not on the last one). */
+  const shownRange = dayModel?.range ?? null;
   const removeDog = useCallback(id => {
     setSelection(state => {
       if (state.dogs.length < 2) return state;
       const next = dogTransition(state, { type: 'remove', id });
-      return { ...next, message: null, rangeOwner: state.rangeOwner === id ? next.protagonist : state.rangeOwner };
+      // The dog that gave the range goes: the range stays as it is (移除不改範圍).
+      const gave = state.rangeOwner === id;
+      return { ...next, message: null, rangeOwner: gave ? next.protagonist : state.rangeOwner,
+        kept: gave && shownRange ? shownRange : state.kept ?? null };
     });
     haptic('tick');
-  }, []);
+  }, [shownRange]);
   /** A row of 「＋ 加入」: added with the smallest free colour; full at four. */
   const addDog = useCallback(dog => {
     if (current.dogs.length >= MAX_DOGS) { say(`最多同時 ${MAX_DOGS} 隻`); return false; }

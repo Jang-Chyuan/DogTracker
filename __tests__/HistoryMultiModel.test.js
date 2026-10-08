@@ -156,3 +156,13 @@ describe('the map of several dogs', () => {
       { color: colors.route1, cursor: c[4] }));
   });
 });
+
+test('移除不改範圍: a kept range stays when the dog that gave it has gone', () => {
+  const a = walk(4, 30, 120), b = walk(6, 0, 150, { east: 0.01 });
+  const kept = { start: at(30), end: at(120), following: false };
+  const day = multiDayModel([subject(6, b)], { ...options, protagonist: 6, kept });
+  expect(day.range).toMatchObject({ start: at(30), end: at(120) });
+  expect(day.main.points[0].time).toBeGreaterThanOrEqual(at(30));
+  expect(day.main.points[day.main.points.length - 1].time).toBeLessThanOrEqual(at(120));
+  expect(a.length).toBeGreaterThan(0);
+});
