@@ -33,3 +33,8 @@ test('four dogs disable the whole add section, even dogs with records', () => {
   expect(result).toMatchObject({ full: true, note: '最多同時 4 隻' });
   expect(result.addable[0]).toMatchObject({ disabled: true, opacity: 0.4 });
 });
+
+test('the sheet lists the protagonist first, the others in their added order', () => {
+  const ordered = sheet([{ id: '4' }, { id: '6', protagonist: true }, { id: '8' }], []);
+  expect(ordered.shown.map(dog => dog.id)).toEqual(['6', '4', '8']);
+});
