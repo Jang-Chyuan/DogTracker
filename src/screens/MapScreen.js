@@ -122,6 +122,9 @@ export default function MapScreen({
   // A top card's button that leaves the map: 'receiver-settings',
   // 'storage-settings', 'storage-reason', 'connect-receiver', 'sign-in'.
   onAlertAction,
+  // The alerts' view of the dogs (058a, App's useAlertEngine): { source,
+  // ready, dogs (named, with their range judgement), receiverBattery }.
+  onAlertInput,
 }) {
   const styles = useStyles(getStyles);
   const insets = useSafeAreaInsets();
@@ -354,6 +357,41 @@ export default function MapScreen({
       dismissed:
         noDogsClosed || !!tracking.preferences.value?.noDataCardDismissed,
     });
+  // ---- the alerts' snapshot (058a) ----------------------------------------
+  // The same merged dogs, names, range judgements and receiver battery as the
+  // markers and the gear, so an alert is about exactly what the map shows.
+  const alertDogAliases = history?.preferences.dogAliases;
+  const alertSnapshotReady =
+    tracking.initialSnapshotReady === true && !!cloudDogs?.loaded;
+  const alertBatteryValid =
+    otherReceiver || point?.id == null ? null : point.masterBatteryValid;
+  const alertBatteryPercentage =
+    otherReceiver || point?.id == null ? null : point.masterBatteryPercentage;
+  const alertSource = fixture?.name ?? 'live';
+  useEffect(() => {
+    onAlertInput?.({
+      source: alertSource,
+      ready: alertSnapshotReady,
+      dogs: dogs.map(dog => ({
+        ...dog,
+        name: dogName(dog.slaveId, alertDogAliases),
+        range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
+      })),
+      receiverBattery:
+        alertBatteryValid == null
+          ? null
+          : { valid: alertBatteryValid, percentage: alertBatteryPercentage },
+    });
+  }, [
+    onAlertInput,
+    alertSource,
+    alertSnapshotReady,
+    dogs,
+    alertDogAliases,
+    cloudDogs?.ranges,
+    alertBatteryValid,
+    alertBatteryPercentage,
+  ]);
   // History shares the map: only the map's own card follows it there.
   const cards = topCards({
     map: mapState === 'retrying' ? 'load-failed' : mapState,

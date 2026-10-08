@@ -16,7 +16,7 @@
 import { gearReasons, receiverOutage, storageProblem } from '../map/TopAlerts';
 import { isOtherReceiver, receiverNumber } from '../map/ReceiverState';
 import { formatClock } from '../map/MapFormat';
-import { alertsHomeStatus } from '../alerts/AlertPreferences';
+import { alertsHomeRight } from '../alerts/AlertPreferences';
 
 const MINUTE = 60 * 1000;
 
@@ -26,7 +26,7 @@ const MINUTE = 60 * 1000;
  * plus the receiver's native state and wait, the clock and the 位置記錄
  * switch (a fixture brings its own).
  */
-export function settingsInput(inputs, { now, receiverState, receiverWait = null, recording = null }) {
+export function settingsInput(inputs, { now, receiverState, receiverWait = null, recording = null, alertPause }) {
   const sync = inputs.cloudSync || {};
   return {
     now,
@@ -50,6 +50,9 @@ export function settingsInput(inputs, { now, receiverState, receiverWait = null,
     storage: storageProblem(inputs.tracking?.realWriteError),
     // 設定 → 提醒 (S6): the saved AlertPreferences.
     alerts: inputs.tracking?.preferences?.value?.alerts,
+    // A 暫停提醒 in force (the alert engine's, else its saved state): S1
+    // 「暫停到 11:10」, S6 「已暫停提醒到 11:10」.
+    alertPause: alertPause !== undefined ? alertPause : inputs.tracking?.preferences?.value?.alertState?.pause ?? null,
     diagnosticsEnabled: inputs.tracking?.preferences?.value?.diagnosticsEnabled === true,
   };
 }
@@ -146,7 +149,8 @@ const ROW_REASONS = {
  *
  * input: { now, receiverState, receiverWait, point, phone, permissions:
  * { notificationsDenied, nearbyDenied }, recording: { enabled, running },
- * account: { signedIn, email }, cloudFailing, signInExpired, storage, alerts }.
+ * account: { signedIn, email }, cloudFailing, signInExpired, storage, alerts,
+ * alertPause }.
  */
 export function settingsHome(input) {
   const reasons = settingsReasons(input);
@@ -161,12 +165,12 @@ export function settingsHome(input) {
   if (['waiting', 'silent', 'connected'].includes(phase) && battery) receiverStatus.push(battery);
   const recording = input.recording || {};
   const account = input.account || {};
-  const row = (id, title, subtitle, status) => {
+  const row = (id, title, subtitle, status, statusTone = null) => {
     const own = reasons.filter(reason => ROW_REASONS[id]?.includes(reason));
     const problem = own.length > 0;
     const why = own.map(reason => reasonText(reason, input)).filter(Boolean)
       .filter((text, index, all) => all.indexOf(text) === index).join('、');
-    return { id, title, subtitle, status: problem ? [] : status, problem,
+    return { id, title, subtitle, status: problem ? [] : status, statusTone: problem ? null : statusTone, problem,
       label: problem ? `${title}，有問題：${why}` : [title, subtitle, ...status].filter(Boolean).join('，') };
   };
   return {
@@ -184,7 +188,10 @@ export function settingsHome(input) {
       ] },
       // v3 has no 地圖 row (map display options were removed): 提醒 alone.
       // 提醒: permission problems take priority over the delivery status.
-      { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', alertsHomeStatus(input.alerts, now))] },
+      { title: '提醒', rows: [(() => {
+        const right = alertsHomeRight(input.alerts, now, input.alertPause);
+        return row('alerts', '提醒', '震動、聲音、各項開關', right.lines, right.tone);
+      })()] },
       // 進階 (S7): the receiver's Wi-Fi and 刪除全部狗資料 (c196).
       { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi、刪除資料', []),
         ...(input.diagnosticsEnabled ? [row('diagnostics', '診斷', '即時資料、本機／雲端資料、記錄清單', [])] : [])] },

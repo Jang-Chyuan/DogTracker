@@ -5,7 +5,7 @@
 ```
 dogtracker://dev/fixture?name=<名稱>    打開情境
 dogtracker://dev/fixture?name=off       回到真實資料
-dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：settings receiver phone cloud alerts advanced diagnostics wifi liveData cloudData locationRecords permissions pair paired；map（留在地圖，例如看 history-today 的「今天 x km」）、history（歷史頁）
+dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：settings receiver phone cloud alerts advanced diagnostics wifi liveData cloudData locationRecords permissions pair paired；map（留在地圖，例如看 history-today 的「今天 x km」）、history（歷史頁）、alertPreview（提醒預覽，只有開發用）
 ```
 
 - 只有 `__DEV__` 會監聽（`useScreenFixture.js`），只有 `android/app/src/debug/AndroidManifest.xml` 宣告 `dogtracker` scheme；release 版收不到這個連結。
@@ -32,6 +32,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
 | 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
+| 提醒（058a） | 情境自己的提醒引擎（`useAlertEngine`，不存進手機）跑在情境的假時鐘上；`alertPause: { since, until }` 開的時候已經暫停；`&page=alertPreview` 的「+N 分」把假時鐘往前移、「App 在背景」模擬背景，看合併通知的內容、`notify`／`update`／收起、震動節奏和 N3 卡片 | `AlertEvents` → `AlertScheduler` → `AlertContent`、`AlertEffects` |
 | 提醒設定 | `alerts`（AlertPreferences，沒給就是預設）、`alertsOpen`（S6「狗」展開）；S6 的開關只改記憶體（`useFixtureEdits`），不寫進這支手機的設定 | `alertsPage`、`alertsHomeStatus` → S6、S1「提醒」 |
 | 診斷的資料頁 | `diagnostics`：同一批列照即時資料（`dog_status` 新的在前）、本機／雲端資料（登入的帳號、含原始 JSON）、記錄清單（`phone.today` 當 `myLocationTracker` 的列）的讀法交出；`readFailure` 讓三頁都讀取失敗 | `LiveDataSettings`、`CloudDataScreen`、`LocationTrackerScreen`；S8 的速度緩衝讀同一批 `dog_status` 列 |
 | 接收器 Wi-Fi | `wifi`（接收器存的網路，預設「家裡、辦公室」、使用中「家裡」）；新增、刪除只改記憶體 | `useReceiverWifi` → S7 第二行、Wi-Fi 頁 |
@@ -119,8 +120,11 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `diagnostics-error` | S8：位置存不進手機（其他原因）→ 最上面寫原因（「看原因」的去處） |
 | `diagnostics-read-failed` | 手機裡的資料讀不到 → 三個資料頁「讀取失敗」＋「重試」 |
 | `advanced-delete-confirm` | S7：按了「刪除全部狗資料」、還有 120 筆沒上傳 →「還有 120 筆沒上傳：先上傳／一起刪除」（c296）；「先上傳」→ 沒網路的說明 |
-| `alerts-all-off` | S6：所有提醒及震動／聲音開關關閉；S1 寫「全部關閉」；不影響 app 內警示 |
-| `notifications-denied` | S6「通知權限 未允許 開系統設定 ›」；S1「提醒」「手機」只放紅色「!」；地圖齒輪紅點 |
+| `alerts-all-off` | S6：所有提醒及震動／聲音開關關閉；S1 寫「全部關閉」；問題和 `alerts-receiver-down` 一樣：`&page=map` 照樣有上方卡片、齒輪、狗的紅色「!」（開關只管通知），`&page=alertPreview` 沒有通知、不震 |
+| `alerts-two-dogs` | N1：豆豆不在接收範圍（危急震動）、狗 5 10 分鐘沒有新位置 → 一則「DogTracker・2 隻狗要注意」；`&page=alertPreview` 看通知內容、用假時鐘往前走 |
+| `alerts-receiver-down` | N2／A2：接收器 7（豆豆、小黑、狗 5）5 分鐘前斷線 → 上方卡片；通知「接收器 7 斷線了（3 隻狗收不到）」 |
+| `alerts-paused` | 同 `alerts-two-dogs`，10 分鐘前按了「暫停提醒 30 分」→ S6 最上面「已暫停提醒到 09:50」＋「恢復」；S1「暫停到 09:50」（warn 色） |
+| `notifications-denied` | S6「通知權限 未允許 開系統設定 ›」（允許時這一列不出現）；S1「提醒」「手機」只放紅色「!」；地圖齒輪紅點 |
 | `onboarding-first-launch` | 第一次開 App、沒登入 → D1「登入 Supabase 帳號」，上方引導進度條第 1 步（共 4 步）、下方「登入」「稍後再說」；情境裡的「稍後再說」不寫進這支手機的設定 |
 | `auth-restore-slow` | 恢復登入超過 10 秒還連不上 Supabase → 先用手機裡的資料進地圖（只有接收器 7 的豆豆、狗 5）；`&page=cloud` 的 S3 寫「暫時連不上，會自動重試」 |
 | `auth-expired` | 冷啟動時恢復登入發現登入已失效 → D1 上方紅字「需要重新登入」（沒有進度條）；完成、「稍後再說」、返回鍵都回地圖 |

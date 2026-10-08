@@ -15,6 +15,14 @@ export const HAPTIC_EFFECTS = Object.freeze({
 });
 
 let screenReader = false;
+// An alert's vibration pattern is playing until then: no touch haptic over it
+// (design 「提醒出現時，操作震動先停」).
+let quietUntil = 0;
+
+/** Keeps touch haptics quiet for `ms` (an alert is vibrating). */
+export function holdTouchHaptics(ms, now = Date.now()) {
+  quietUntil = Math.max(quietUntil, now + Math.max(0, ms));
+}
 try {
   AccessibilityInfo.isScreenReaderEnabled?.().then(value => { screenReader = !!value; }).catch(() => {});
   AccessibilityInfo.addEventListener?.('screenReaderChanged', value => { screenReader = !!value; });
@@ -25,7 +33,7 @@ try {
 /** Plays one of HAPTIC_EFFECTS' kinds; anything else (or none) does nothing. */
 export function haptic(kind) {
   const effect = HAPTIC_EFFECTS[kind];
-  if (!effect || screenReader) return false;
+  if (!effect || screenReader || Date.now() < quietUntil) return false;
   try {
     NativeTrackingPlatform?.performHaptic?.(effect);
     return true;

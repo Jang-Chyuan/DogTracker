@@ -1073,7 +1073,37 @@ const FIXTURES = {
   // 「部分開」.
   'alerts-some-off': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts', alertsOpen: true,
     alerts: { dogOutOfRange: false, receiverBattery: false, receiverDisconnectedStorage: false, sound: true } }),
-  'alerts-all-off': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts', alertsOpen: true,
+  // ---- alerts (058a): the engine on the fixture's fake clock --------------
+  // N1: 豆豆 walked out of receiver 7's range (不在接收範圍, the strong
+  // vibration at once) and 狗 5 has had no position for 10 minutes: one
+  // notification 「DogTracker・2 隻狗要注意」. &page=alertPreview shows it.
+  'alerts-two-dogs': now => {
+    const base = FIXTURES['range-out'](now);
+    return { ...base, ble: inTimeOrder([...base.ble,
+      ...series(bleRow, now, { slave: 5, from: 25 * MINUTE, to: 10 * MINUTE + 30 * SECOND, start: [-30, 40],
+        step: [0.04, -0.02] })]) };
+  },
+  // N2 / A2: receiver 7 (豆豆, 小黑 and 狗 5 on it) dropped five minutes ago:
+  // the top card on the map; one notification 「接收器 7 斷線了（3 隻狗收不到）」.
+  'alerts-receiver-down': now => ({
+    receiver: { ...receiving(now), connected: false, receiving: false, lastReceivedAt: now - 5 * MINUTE,
+      disconnectedAt: now - 5 * MINUTE },
+    cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...dog4Ble(now, 5 * MINUTE),
+      ...series(bleRow, now, { slave: 6, from: 12 * MINUTE, to: 5 * MINUTE, start: [-18, 24], step: [0.03, -0.05] }),
+      ...series(bleRow, now, { slave: 5, from: 12 * MINUTE, to: 5 * MINUTE, start: [-30, 40], step: [0.04, -0.02] }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 暫停提醒 30 分 pressed ten minutes ago with alerts-two-dogs' problems:
+  // S6 「已暫停提醒到 09:50」＋「恢復」, S1 「暫停到 09:50」.
+  'alerts-paused': now => ({ ...FIXTURES['alerts-two-dogs'](now), openRoute: 'alerts',
+    alertPause: { since: 10 * MINUTE, until: 20 * MINUTE } }),
+  // Every alert, 震動 and 聲音 off, with alerts-receiver-down's problems: S1
+  // 「全部關閉」; the map still shows the top card, the gear and the dogs'
+  // red 「!」 (switches control notifications only); no notification.
+  'alerts-all-off': now => ({ ...FIXTURES['alerts-receiver-down'](now), openRoute: 'alerts', alertsOpen: true,
     alerts: { dogStale: false, dogOutOfRange: false, dogBattery: false, receiverBattery: false,
       receiverDisconnectedStorage: false, vibrate: false, sound: false } }),
   // Notifications not allowed: S6 「通知權限 未允許 開系統設定 ›」; S1's 提醒
@@ -1290,7 +1320,9 @@ export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
 export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'advanced',
   'diagnostics', 'wifi', 'liveData', 'cloudData', 'locationRecords', 'permissions', 'pair', 'paired',
   // The live map (a history fixture's 「今天 x km」) or the history page.
-  'map', 'history']);
+  'map', 'history',
+  // The alert engine's debug preview (058a).
+  'alertPreview']);
 const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-zA-Z]+))?$/;
 
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.
@@ -1400,7 +1432,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
-    historyExport = null, activityView = null, activity = null, activityClock = null,
+    historyExport = null, activityView = null, activity = null, activityClock = null, alertPause = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -1477,6 +1509,9 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // whether the 狗 group shows its three switches.
     alerts: normalizeAlertPreferences(alerts),
     alertsOpen,
+    // A 暫停提醒 in force when the fixture opens: { since, until } ms
+    // before / after its now (alerts-paused).
+    alertPause,
     diagnosticsEnabled,
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
