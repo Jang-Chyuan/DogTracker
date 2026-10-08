@@ -1,5 +1,6 @@
 import { getErrorMessage } from '../utils/errors';
 import { DEFAULT_ALERT_PREFERENCES, normalizeAlertPreferences } from '../alerts/AlertPreferences';
+import { ONBOARDING_DONE, ONBOARDING_SIGN_IN } from '../app/Launch';
 
 // Home map presets, confirmed 2026-09-16: minutes for working close to the
 // dog, hours for reviewing the outing. 24 hours is the upper bound of the home
@@ -16,6 +17,9 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   noDataCardDismissed: false,
   // 設定 → 提醒 (S6): AlertPreferences.
   alerts: DEFAULT_ALERT_PREFERENCES,
+  // The first-launch guide (Launch.js): a phone that saved nothing yet starts
+  // at D1 ('signIn'); a saved row from before the guide existed is 'done'.
+  onboarding: ONBOARDING_DONE,
 });
 
 // Saved by versions before v3, which had a dog to follow and dogs hidden one by
@@ -48,8 +52,12 @@ export function validateTrackingPreferences(value) {
     // Missing before v3 (051b); a damaged value falls back to the defaults
     // rather than failing every other preference.
     alerts: normalizeAlertPreferences(settings.alerts),
+    onboarding: settings.onboarding === ONBOARDING_SIGN_IN ? ONBOARDING_SIGN_IN : ONBOARDING_DONE,
   };
 }
+
+// Nothing saved at all: this phone has not opened the app before.
+const firstLaunch = stored => !stored || (typeof stored === 'object' && Object.keys(stored).length === 0);
 
 // Connection lifetime is owned by the tracking session. Writes are applied to
 // UI state only after SQLite succeeds and cannot outlive that owner.
@@ -98,7 +106,8 @@ export function createTrackingPreferences(database, onChange) {
     load: () =>
       run(async () => {
         await database.initialize();
-        return validateTrackingPreferences(await database.load());
+        const stored = await database.load();
+        return validateTrackingPreferences(firstLaunch(stored) ? { onboarding: ONBOARDING_SIGN_IN } : stored);
       }, true),
     save: function save(patch) {
       if (!state.ready || disposed) return Promise.resolve(false);

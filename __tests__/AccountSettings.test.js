@@ -11,12 +11,6 @@ import { formatClock } from '../src/map/MapFormat';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 import { emptyLiveRoute } from '../src/tracking/LiveRouteWindow';
 
-jest.mock('../src/screens/LoginScreen', () => {
-  const { Text } = require('react-native');
-  return ({ expired, onLater }) => <Text testID="login" onPress={onLater}>
-    {`登入 Supabase 帳號${expired ? '・需要重新登入' : ''}`}</Text>;
-});
-
 const MINUTE = 60000;
 
 // What App hands S3 for a fixture (the same path as the settings pages).
@@ -50,9 +44,9 @@ test('every S3 fixture opens on the account page; any fixture can (&page=cloud)'
   expect(buildFixture('cloud-failing', FIXTURE_NOW, 'cloud').openRoute).toBe('cloud');
 });
 
-test('cloud-signed-out: the sign-in form, no 「!」 (not signed in is a choice)', () => {
+test('cloud-signed-out: 未登入 with 登入, no 「!」 (not signed in is a choice)', () => {
   const { data } = input('cloud-signed-out');
-  expect(accountPage(data)).toEqual({ signedIn: false, expired: false });
+  expect(accountPage(data)).toEqual({ signedIn: false, expired: false, restoring: false });
   expect(accountRow(data)).toMatchObject({ subtitle: '未登入', problem: false });
 });
 
@@ -97,7 +91,7 @@ test('cloud-unreachable-retrying: never reached Supabase since start → 「暫�
 
 test('cloud-expired: signed out with 需要重新登入; S1 and the gear say so', () => {
   const { data, inputs } = input('cloud-expired');
-  expect(accountPage(data)).toEqual({ signedIn: false, expired: true });
+  expect(accountPage(data)).toEqual({ signedIn: false, expired: true, restoring: false });
   expect(inputs.signInExpired).toBe(true);
   expect(accountRow(data)).toMatchObject({ problem: true, label: 'Supabase 帳號，有問題：需要重新登入' });
 });
@@ -201,15 +195,28 @@ test('a switch that cannot send first keeps the dialog open with the reason; 取
   await act(async () => renderer.unmount());
 });
 
-test('signed out (or expired) S3 is the sign-in form; 稍後再說 goes back', async () => {
-  const later = jest.fn();
+test('signed out S3: 未登入 or 需要重新登入 with 登入 (→ D1); restoring says it retries by itself', async () => {
+  const signIn = jest.fn();
   let renderer;
   await act(async () => { renderer = Renderer.create(<AccountSettings page={{ signedIn: false, expired: true }}
-    onLater={later} />); });
-  expect(text(renderer)).toContain('登入 Supabase 帳號・需要重新登入');
-  await act(async () => renderer.root.findByProps({ testID: 'login' }).props.onPress());
-  expect(later).toHaveBeenCalledTimes(1);
+    onSignIn={signIn} />); });
+  expect(text(renderer)).toContain('需要重新登入');
+  expect(text(renderer)).not.toContain('登入 Supabase 帳號');
+  await act(async () => pressable(renderer, '需要重新登入，登入').props.onPress());
+  expect(signIn).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.update(<AccountSettings page={{ signedIn: false, expired: false }} onSignIn={signIn} />));
+  await act(async () => pressable(renderer, '未登入，登入').props.onPress());
+  expect(signIn).toHaveBeenCalledTimes(2);
+  await act(async () => renderer.update(<AccountSettings page={{ signedIn: false, expired: false, restoring: true }}
+    onSignIn={signIn} />));
+  expect(text(renderer)).toContain('暫時連不上，會自動重試');
+  expect(pressable(renderer, '未登入，登入')).toBeUndefined();
   await act(async () => renderer.unmount());
+});
+
+test('auth-restore-slow: S3 says 暫時連不上，會自動重試 while the saved sign-in waits', () => {
+  const { data } = input('auth-restore-slow', 'cloud');
+  expect(accountPage(data)).toEqual({ signedIn: false, expired: false, restoring: true });
 });
 
 // ---- 登入失效 detection -----------------------------------------------------------

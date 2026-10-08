@@ -23,9 +23,13 @@ test('a delayed stored session cannot override logout and subscription is cleane
   let renderer;
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}><Probe /></AuthProvider>); });
   expect(value.loading).toBe(true);
+  // Supabase removed the saved session while restoring (refused): 登入失效
+  // found at the start (D1 「需要重新登入」).
   await act(async () => f.notify(null));
   await act(async () => restore({ data: { session: { user: { id: 'old' } } } }));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   expect(value.user).toBeNull(); expect(value.loading).toBe(false);
+  expect(value.expiredAtStart).toBe(true);
   await value.signOut();
   expect(f.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
   await act(async () => renderer.unmount());
@@ -34,7 +38,7 @@ test('a delayed stored session cannot override logout and subscription is cleane
 
 test('login submits trimmed email and unchanged password, clears password on success', async () => {
   const f = fixture(), done = jest.fn(); let renderer;
-  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}><LoginScreen onSignedIn={done} /></AuthProvider>); });
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}><LoginScreen onDone={done} /></AuthProvider>); });
   const inputs = renderer.root.findAllByType(TextInput);
   await act(async () => {
     inputs[0].props.onChangeText(' user@example.com ');
@@ -43,7 +47,110 @@ test('login submits trimmed email and unchanged password, clears password on suc
   await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
     && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(f.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'user@example.com', password: ' password ' });
-  expect(done).toHaveBeenCalledWith({ user: { id: 'a' } });
+  expect(done).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByType(TextInput)[1].props.value).toBe('');
+  await act(async () => renderer.unmount());
+});
+
+// ---- the start (052): restore timeout, no network, 登入失效 at the start ----
+const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+function AuthProbe({ onValue }) { onValue(useAuth()); return null; }
+
+test('the restore past 10 s lets the app open; it keeps waiting and a later session is taken', async () => {
+  jest.useFakeTimers();
+  const f = fixture(); let value, restore, renderer;
+  f.auth.getSession.mockReturnValue(new Promise(resolve => { restore = resolve; }));
+  try {
+    await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>
+      <AuthProbe onValue={next => { value = next; }} /></AuthProvider>); });
+    await act(async () => jest.advanceTimersByTime(9900));
+    expect(value.loading).toBe(true);
+    await act(async () => jest.advanceTimersByTime(100));
+    // Opened signed out for now; S3 「暫時連不上，會自動重試」.
+    expect(value.loading).toBe(false);
+    expect(value.timedOut).toBe(true);
+    expect(value.restoring).toBe(true);
+    expect(value.expiredAtStart).toBe(false);
+    // The saved sign-in comes back (Supabase reached later).
+    await act(async () => restore({ data: { session: { user: { id: 'a' } } } }));
+    await act(async () => jest.advanceTimersByTime(1));
+    expect(value.user).toEqual({ id: 'a' });
+    expect(value.restoring).toBe(false);
+  } finally {
+    await act(async () => renderer.unmount());
+    jest.useRealTimers();
+  }
+});
+
+test('no network at the restore: the saved sign-in waits (restoring); a refusal later is 登入失效 in use', async () => {
+  let notify;
+  const f = fixture();
+  f.auth.onAuthStateChange = callback => { notify = callback; return { data: { subscription: { unsubscribe: jest.fn() } } }; };
+  f.auth.getSession.mockResolvedValue({ data: { session: null },
+    error: { name: 'AuthRetryableFetchError', message: 'Network request failed', status: 0 } });
+  let value, renderer;
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>
+    <AuthProbe onValue={next => { value = next; }} /></AuthProvider>); });
+  await act(async () => notify('INITIAL_SESSION', null));
+  await settle();
+  expect(value.loading).toBe(false);
+  expect(value.restoring).toBe(true);
+  expect(value.expired).toBe(false);
+  // Reached later and refused: in use now (S3, the gear), not D1.
+  await act(async () => notify('SIGNED_OUT', null));
+  expect(value.restoring).toBe(false);
+  expect(value.expired).toBe(true);
+  expect(value.expiredAtStart).toBe(false);
+  await act(async () => renderer.unmount());
+});
+
+test('nothing saved: the restore ends signed out, neither restoring nor expired', async () => {
+  const f = fixture(); let value, renderer;
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>
+    <AuthProbe onValue={next => { value = next; }} /></AuthProvider>); });
+  await settle();
+  expect(value).toMatchObject({ loading: false, user: null, restoring: false, expired: false, expiredAtStart: false });
+  await act(async () => renderer.unmount());
+});
+
+test('「稍後再說」 during a sign-in cancels it: the late session is not taken and is signed out', async () => {
+  let notify, finish;
+  const f = fixture();
+  f.auth.onAuthStateChange = callback => { notify = callback; return { data: { subscription: { unsubscribe: jest.fn() } } }; };
+  f.auth.signInWithPassword.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  f.auth.signOut.mockImplementation(async () => { notify('SIGNED_OUT', null); return { error: null }; });
+  const later = jest.fn(), done = jest.fn();
+  let value, renderer;
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>
+    <AuthProbe onValue={next => { value = next; }} />
+    <LoginScreen onDone={done} onLater={later} />
+  </AuthProvider>); });
+  await settle();
+  const inputs = renderer.root.findAllByType(TextInput);
+  await act(async () => {
+    inputs[0].props.onChangeText('user@example.com');
+    inputs[1].props.onChangeText('test-only-password');
+  });
+  const button = label => renderer.root.findAll(node => node.props.accessibilityLabel === label
+    && node.props.accessibilityRole === 'button' && typeof node.props.onPress === 'function')[0];
+  await act(async () => { button('登入').props.onPress(); });
+  expect(JSON.stringify(renderer.toJSON())).toContain('登入中');
+  // 「稍後再說」 can always be pressed.
+  await act(async () => button('稍後再說').props.onPress());
+  expect(later).toHaveBeenCalledTimes(1);
+  // Supabase signs in anyway: its event and its answer are not taken.
+  const session = { user: { id: 'late' } };
+  await act(async () => {
+    expect(value.isDiscarded(session)).toBe(true);
+    notify('SIGNED_IN', session);
+    finish({ data: { session }, error: null });
+  });
+  await settle();
+  expect(value.user).toBeNull();
+  expect(done).not.toHaveBeenCalled();
+  expect(f.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  // Signing that one out is not 登入失效.
+  expect(value.expired).toBe(false);
+  expect(value.isDiscarded(session)).toBe(false);
   await act(async () => renderer.unmount());
 });

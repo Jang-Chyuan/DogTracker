@@ -10,7 +10,8 @@ import { GroupCard, GroupTitle, HomeRow, ProblemBang, settingsStyles } from './S
  */
 export function StorageWarning({ storage, onPress, testID = 'settings-storage-warning' }) {
   if (!storage) return null;
-  const title = storage.full ? '手機空間不足，位置存不進手機' : '位置存不進手機';
+  // `heading`: a problem of its own (D0 「手機裡的資料打不開」 opening 診斷).
+  const title = storage.heading ?? (storage.full ? '手機空間不足，位置存不進手機' : '位置存不進手機');
   // On 診斷 (S8, no onPress) the whole reason, also when the phone is full.
   const reason = onPress ? (!storage.full && storage.reason) : storage.reason;
   const body = (

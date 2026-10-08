@@ -7,10 +7,15 @@ import { createCloudSync } from './CloudSync';
 // bounded background passes. Do not cancel durable jobs on a React unmount.
 // `onAuthFailure`: a pass was refused for the sign-in (401 / expired JWT);
 // AuthProvider.reportAuthFailure decides whether the sign-in really ended.
-export function useCloudSync(database, ready, clientFactory = getCloudClient, onAuthFailure = null) {
+// `isDiscarded(session)`: a sign-in cancelled with 「稍後再說」 (D1) that
+// landed anyway; it is not followed (AuthProvider signs it out at once).
+export function useCloudSync(database, ready, clientFactory = getCloudClient, onAuthFailure = null,
+  isDiscarded = null) {
   const engine = useRef(null);
   const authFailure = useRef(onAuthFailure);
   authFailure.current = onAuthFailure;
+  const discarded = useRef(isDiscarded);
+  discarded.current = isDiscarded;
   const [ownerId, setOwnerId] = useState(null);
   const [status, setStatus] = useState({ busy: false, error: '', revision: 0 });
   useEffect(() => {
@@ -38,7 +43,7 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
     };
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       eventSeen = true;
-      if (!disposed) sessionChanged(session);
+      if (!disposed && !discarded.current?.(session)) sessionChanged(session);
     });
     client.auth.getSession().then(({ data, error }) => {
       if (disposed || eventSeen) return;

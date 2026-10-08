@@ -17,7 +17,6 @@ import {
 import { useTrackingSession } from './src/app/useTrackingSession';
 import HardwareScreen from './src/screens/HardwareScreen';
 import { handleRootBack } from './src/app/handleRootBack';
-import { ui } from './src/components/ScreenUI';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
@@ -62,6 +61,10 @@ import { useTodayRoute } from './src/locationTracker/useTodayRoute';
 import { colors, layout, touch, type } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
+import { launchInto } from './src/app/hideSplash';
+import { launchScreen, leaveSignIn, ONBOARDING_DONE, ONBOARDING_SIGN_IN, signInStack } from './src/app/Launch';
+import LoginScreen from './src/screens/LoginScreen';
+import StartFailedScreen, { START_FAILED_TITLE } from './src/screens/StartFailedScreen';
 
 
 
@@ -76,16 +79,12 @@ export default function App() {
 }
 
 export function AuthGate({ children }) {
-  const { loading, user } = useAuth();
-  // Signing in is optional (v3 D1): signed out, the app opens on the map with
-  // this phone's own receiver data, and 設定 → Supabase 帳號 is where to sign in.
-  // The launch screen covers session restore and stays until the map has
-  // loaded (GoogleTrackingMap), signed in or not, so there is no blank or
-  // "restoring" page in between.
+  const { user } = useAuth();
+  // Signing in is optional (v3 D1). The app starts at once, while the sign-in
+  // is restored: the launch screen (D0) covers both, and TrackerApp decides
+  // what opens first (Launch.launchScreen) — the map, D1, or the failure
+  // screen — so there is no blank or "restoring" page in between.
   const account = useAccountGeneration(user?.id || null);
-  if (loading) return <SafeAreaView style={[authStyles.container, authStyles.loading]}>
-    <Text accessibilityLiveRegion="polite" style={ui.text}>正在恢復登入狀態…</Text>
-  </SafeAreaView>;
   // A direct switch to another account discards the previous account's
   // navigation state; signing in or out keeps the page the user is on.
   return <React.Fragment key={account}>{children}</React.Fragment>;
@@ -117,6 +116,9 @@ const PAGE_TITLES = {
   locationRecords: '記錄清單',
   wifi: '接收器 Wi-Fi',
 };
+// Pages of their own, without the 「‹ 標題」 header: D1 登入 and D0's
+// failure screen.
+const FULL_PAGES = new Set(['signIn', 'startFailed']);
 const pageTitle = route => (route.name === 'hardware' ? '連接接收器' : PAGE_TITLES[route.name] || '設定');
 // The v3 settings pages (light). The receiver scan (hardware) keeps its old
 // dark look until D3 (053) replaces it; it is the only old page left.
@@ -145,11 +147,6 @@ const appVersion = (() => {
   try { return NativeTrackingPlatform?.appVersion?.() || ''; } catch { return ''; }
 })();
 
-const authStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  loading: { padding: 24 },
-});
-
 // 刪除全部狗資料 (S7) starts every reader of the deleted tables over: the live
 // feed, the downloaded dogs and their indoor holds, the history and activity
 // caches. TrackerApp mounts again on the page the user was on (`resume`).
@@ -164,7 +161,8 @@ function TrackerApp({ resume = null, onRestart }) {
   const tracking = useTrackingSession();
   // An upload or download refused for the sign-in (401) asks AuthProvider
   // whether it ended (判定表「使用中登入失效」).
-  const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real, undefined, auth.reportAuthFailure);
+  const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real, undefined, auth.reportAuthFailure,
+    auth.isDiscarded);
   const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground,
     auth.reportAuthFailure);
   const insets = useSafeAreaInsets();
@@ -172,6 +170,9 @@ function TrackerApp({ resume = null, onRestart }) {
   // returns to the one before.
   const [stack, setStack] = useState(() => resume?.stack ?? [{ name: 'map' }]);
   const route = stack[stack.length - 1];
+  // What the start opened on (Launch.launchScreen), once decided: { key:
+  // 'live' or the fixture shown, screen }.
+  const [launch, setLaunch] = useState({ key: null, screen: null });
   // The hardware page keeps its own back stack: its header back is passed in.
   const [hardwareBack, setHardwareBack] = useState(0);
   // The dog whose history 看軌跡 opened: back on the live map, its card opens
@@ -201,7 +202,9 @@ function TrackerApp({ resume = null, onRestart }) {
   const historyDownload = useHistoryDownload({
     database: tracking.cloudDatabase, sync: cloudSync, owner: cloudSync.ownerId,
   });
-  const phone = usePhoneLocation(tracking.foreground, undefined, showsMap);
+  // The first location question waits for the map itself: never under the
+  // launch screen or over D1 (D2 asks for permissions in the guide, 053).
+  const phone = usePhoneLocation(tracking.foreground, undefined, showsMap && launch.key !== null);
   useDefaultLocationRecording(tracking.foreground, phone);
   // 「今天 x km」: today's recorded route of this phone, while the live map
   // is in front.
@@ -223,6 +226,8 @@ function TrackerApp({ resume = null, onRestart }) {
       // The gear's red dot: the upload failing or the sign-in expired.
       cloudProblem: !!cloudSync.ownerId && !!upload.error,
       signInExpired: !!auth.expired,
+      // The sign-in restore still waits for Supabase (S3 「暫時連不上…」).
+      restoring: !!auth.restoring,
       permissions, upload,
       account: { signedIn: !!auth.user, email: auth.user?.email || '' } }, fixtureEdits);
   // ---- the receiver, for the map and the settings pages ------------------
@@ -240,7 +245,8 @@ function TrackerApp({ resume = null, onRestart }) {
     else if (id === 'connect-receiver') openHardware('scan');
     // 診斷 (S8) starts with the reason.
     else if (id === 'storage-reason') open('diagnostics');
-    else if (id === 'sign-in') open('cloud');
+    // A6 「登入 Supabase」: D1, back on the map afterwards.
+    else if (id === 'sign-in') open('signIn', { entry: 'map' });
     else if (id === 'storage-settings') {
       Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(() => Linking.openSettings());
     }
@@ -252,6 +258,61 @@ function TrackerApp({ resume = null, onRestart }) {
     if (!fixturePage) return;
     setStack(stackTo(fixturePage));
   }, [fixtureName, fixturePage]);
+
+  // ---- the start (D0): what opens first ----------------------------------
+  // Decided once, under the launch screen: the map, D1 (first launch, or the
+  // restore found the sign-in refused) or 「手機裡的資料打不開」. A fixture
+  // with a `launch` shows its own start.
+  const preferences = tracking.preferences;
+  const liveLaunch = {
+    databaseReady: tracking.ready.real, databaseError: tracking.errors.real,
+    preferencesSettled: preferences.ready || !!preferences.error,
+    onboarding: preferences.ready ? preferences.value.onboarding : ONBOARDING_DONE,
+    authSettled: !auth.loading, signedIn: !!auth.user, expiredAtStart: !!auth.expiredAtStart,
+  };
+  const launchInput = fixture?.launch ?? liveLaunch;
+  const decided = launchScreen(launchInput);
+  const launchKey = fixture?.launch ? fixtureName : 'live';
+  useEffect(() => {
+    if (decided === 'splash' || launch.key === launchKey) return;
+    // A fixture's start left for another state: back on the map.
+    const leaving = launch.key !== null && launchKey === 'live';
+    setLaunch({ key: launchKey, screen: decided });
+    if (leaving) {
+      // (A fixture opening a settings page has set its own stack.)
+      if (!fixturePage) setStack([{ name: 'map' }]);
+      return;
+    }
+    if (decided === 'failed') setStack([{ name: 'startFailed' }]);
+    else if (decided === 'onboarding' || decided === 'expired') setStack(signInStack(decided));
+    else if (fixture?.launch && !fixturePage) setStack([{ name: 'map' }]);
+    if (launchKey !== 'live') return;
+    // The map lets the launch screen go after its first framing; D1 and the
+    // failure screen once they are laid out (onLayout below).
+    if (decided === 'map') {
+      launchInto('map');
+      // Signed in from before the guide existed (an update): it is passed.
+      if (liveLaunch.onboarding === ONBOARDING_SIGN_IN) {
+        Promise.resolve(tracking.saveTrackingPreferences?.({ onboarding: ONBOARDING_DONE })).catch(() => {});
+      }
+    }
+    // liveLaunch and fixture are read at the moment of the decision only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decided, launchKey, launch.key]);
+  // D1's ways out (判定表「D1 的四種入口」): 'done', 'later', 'back'.
+  const leaveSignInPage = how => {
+    const result = leaveSignIn(route.entry, how);
+    if (result.exit) { BackHandler.exitApp(); return; }
+    if (result.finishOnboarding) {
+      Promise.resolve(mapInputs.tracking.saveTrackingPreferences?.({ onboarding: ONBOARDING_DONE }))
+        .catch(() => {});
+    }
+    goBack();
+  };
+  // 「重試」 on the failure screen opens the database again (a fixture's keeps
+  // failing, as it would).
+  const retryStart = () => { if (!fixture) onRestart?.({ stack: [{ name: 'map' }] }); };
+  const startFailure = launchInput.databaseError || '';
   // ---- what the settings pages say ---------------------------------------
   const recordingSwitch = useRecordingSwitch(tracking.foreground && route.name === 'phone' && !fixture);
   const settingsData = settingsInput(mapInputs, { now, receiverState, receiverWait: receiverWait.current,
@@ -304,6 +365,9 @@ function TrackerApp({ resume = null, onRestart }) {
       'hardwareBackPress',
       () => {
         if (route.name === 'map') handleRootBack({ uploading });
+        else if (route.name === 'signIn') leaveSignInPage('back');
+        // Nothing under the failure screen: back leaves the app.
+        else if (route.name === 'startFailed') BackHandler.exitApp();
         else goBack();
         return true;
       },
@@ -315,6 +379,18 @@ function TrackerApp({ resume = null, onRestart }) {
 
   let page = null;
   switch (route.name) {
+    case 'signIn':
+      // D1, from any of its four entries (Launch.signInStack).
+      page = <LoginScreen key={`${route.entry}-${fixtureName ?? 'live'}`}
+        step={route.entry === 'onboarding' ? 1 : null}
+        expired={route.entry === 'expired' || (route.entry === 'cloud' && !!mapInputs.signInExpired)}
+        onDone={() => leaveSignInPage('done')} onLater={() => leaveSignInPage('later')}
+        onLayout={() => launchInto('page')} />;
+      break;
+    case 'startFailed':
+      page = <StartFailedScreen onRetry={retryStart} onDiagnostics={() => open('diagnostics')}
+        onLayout={() => launchInto('page')} />;
+      break;
     case 'locationRecords':
       page = <LocationTrackerScreen key={fixtureName ?? 'live'} foreground={tracking.foreground}
         readPage={sources?.readLocationPage} />;
@@ -322,7 +398,7 @@ function TrackerApp({ resume = null, onRestart }) {
     case 'cloud':
       // S3: signed out it is the sign-in form (「稍後再說」 goes back). A
       // fixture's page writes nothing and signs nobody out.
-      page = <AccountSettings page={accountPage(settingsData)} onLater={goBack}
+      page = <AccountSettings page={accountPage(settingsData)} onSignIn={() => open('signIn', { entry: 'cloud' })}
         dialog={fixture?.dialog ?? null}
         onSignOut={fixture ? async () => {} : async () => {
           await auth.signOut();
@@ -373,7 +449,10 @@ function TrackerApp({ resume = null, onRestart }) {
       break;
     case 'diagnostics':
       page = <DiagnosticsSettings page={diagnosticsPage({ packets: mapInputs.cloudDogs?.packets,
-        rows: sources ? fixture.raw.ble : recentRows, aliases: settingsData.aliases, storage: settingsData.storage,
+        rows: sources ? fixture.raw.ble : recentRows, aliases: settingsData.aliases,
+        // Opened from D0's failure screen: why the database cannot be opened.
+        storage: launch.screen === 'failed' && startFailure
+          ? { heading: START_FAILED_TITLE, reason: startFailure, full: false } : settingsData.storage,
         now })} onOpen={open} />;
       break;
     case 'advanced':
@@ -384,15 +463,16 @@ function TrackerApp({ resume = null, onRestart }) {
       break;
   }
   const light = LIGHT_PAGES.has(route.name);
+  const full = FULL_PAGES.has(route.name);
 
   return (
     <SafeAreaView
-      style={[styles.safeArea, light && styles.page]}
+      style={[styles.safeArea, (light || full) && styles.page]}
       edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
     >
-      <StatusBar barStyle={showsMap || light ? 'dark-content' : 'light-content'}
-        backgroundColor={light ? colors.surface : undefined} />
-      {!showsMap && (
+      <StatusBar barStyle={showsMap || light || full ? 'dark-content' : 'light-content'}
+        backgroundColor={light || full ? colors.surface : undefined} />
+      {!showsMap && !full && (
         // No bottom tabs (v3): every page off the map says where it is and
         // goes back the way the back key does (「‹ 標題」).
         <View style={[styles.header, light && styles.lightHeader]}>
@@ -437,7 +517,8 @@ function TrackerApp({ resume = null, onRestart }) {
           fixture={isHistory ? null : fixture}
           todayRoute={mapInputs.todayRoute}
           onOpenSettings={() => open('settings')}
-          signedIn={!!mapInputs.cloudSync.ownerId}
+          // Restoring a saved sign-in counts: A6 offers no 「登入 Supabase」.
+          signedIn={!!mapInputs.cloudSync.ownerId || !!mapInputs.restoring}
           cloudProblem={mapInputs.cloudProblem}
           signInExpired={mapInputs.signInExpired}
           notificationsDenied={mapInputs.permissions.notificationsDenied}
@@ -467,7 +548,7 @@ function TrackerApp({ resume = null, onRestart }) {
           backRequest={hardwareBack}
         />
       )}
-      {light && <View style={styles.page}>{page}</View>}
+      {(light || full) && <View style={styles.page}>{page}</View>}
     </SafeAreaView>
   );
 }
