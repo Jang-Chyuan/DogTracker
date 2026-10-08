@@ -226,3 +226,17 @@ test('paused while the cloud is asked (app in the background): asked again in fr
   expect(JSON.stringify(renderer.toJSON())).not.toContain('查詢中…');
   await act(async () => renderer.unmount());
 });
+
+test('a day left incomplete says so after another day, and is downloaded again when chosen', async () => {
+  const s = await mount('history-cloud-incomplete');
+  await settle(1600);
+  expect(s.screen.download).toMatchObject({ kind: 'incomplete' });
+  await act(async () => { s.screen.goTo('2026-09-29'); });
+  await settle(0);
+  expect(s.screen.download).toBe(null);
+  let result;
+  await act(async () => { result = s.screen.goTo('2026-09-28'); });
+  expect(result.type).toBe('download');
+  expect(s.text()).toContain('下載 9/28 的紀錄…');
+  await act(async () => s.renderer.unmount());
+});

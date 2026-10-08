@@ -32,6 +32,8 @@ export function calendarKnowledge(value = {}) {
     local: asSet(value.local), cloud: asSet([...(value.cloud || []), ...(value.earliest ? [value.earliest] : [])]),
     checked: asSet(value.checked),
     earliest: value.earliest ?? null, cloudEnabled: !!value.cloudEnabled, query: value.query ?? 'idle',
+    // Days whose download was cancelled or failed: this phone holds part.
+    incomplete: asSet(value.incomplete),
   };
 }
 
@@ -43,13 +45,15 @@ export function earliestKnownDay(knowledge) {
 }
 
 /**
- * One day: 'future', 'local' (this phone holds it), 'cloud' (only the cloud
- * does: chosen, it is downloaded first), 'empty' (no records), or 'unknown'
- * (the cloud was not asked yet, or the question failed).
+ * One day: 'future', 'local' (this phone holds it), 'partial' (this phone
+ * holds part: its download was not finished; chosen, it is downloaded again),
+ * 'cloud' (only the cloud does: chosen, it is downloaded first), 'empty' (no
+ * records), or 'unknown' (the cloud was not asked yet, or the question failed).
  */
 export function dayState(day, today, knowledge) {
   const k = calendarKnowledge(knowledge);
   if (day > today) return 'future';
+  if (k.cloudEnabled && k.incomplete.has(day)) return 'partial';
   if (k.local.has(day)) return 'local';
   if (k.cloudEnabled && k.cloud.has(day)) return 'cloud';
   if (!k.cloudEnabled || k.checked.has(day) || (k.earliest && day < k.earliest)) return 'empty';
@@ -67,7 +71,7 @@ export function dayCell(day, { today, selected, knowledge, inMonth = true }) {
   const k = calendarKnowledge(knowledge);
   const state = dayState(day, today, k);
   const isToday = day === today;
-  const records = state === 'local' || state === 'cloud';
+  const records = state === 'local' || state === 'cloud' || state === 'partial';
   const tappable = records || isToday || (state === 'unknown' && k.query === 'failed');
   const muted = !tappable && state !== 'unknown';
   const [y, m, d] = day.split('-').map(Number);
@@ -77,6 +81,7 @@ export function dayCell(day, { today, selected, knowledge, inMonth = true }) {
   else if (state === 'future') label = `${date}，還沒到`;
   else if (state === 'empty') label = `${date}，沒有紀錄`;
   else if (state === 'cloud') label = `${date}，有紀錄，只在雲端`;
+  else if (state === 'partial') label = `${date}，有紀錄，還沒下載完`;
   else if (state === 'local') label = `${date}，有紀錄`;
   else label = `${date}，查詢中`;
   return { day, year: y, month: m, date: d, inMonth, state, dot: records, today: isToday,
@@ -177,7 +182,8 @@ export function monthsToCheck(year, today, knowledge) {
 export function chooseDay(day, { today, knowledge, online = true }) {
   const cell = dayCell(day, { today, selected: null, knowledge });
   if (!cell.tappable) return { type: 'none' };
-  if (cell.state === 'local' || cell.today) return { type: 'show', day };
+  // Today is always tappable, but its rows only in the cloud are still downloaded.
+  if (cell.state === 'local' || (cell.today && !['cloud', 'partial'].includes(cell.state))) return { type: 'show', day };
   if (!online) return { type: 'offline', day, message: offlineMessage(day) };
   return { type: 'download', day };
 }
@@ -251,7 +257,9 @@ export async function walkCloudDays({ newestBefore, since, until, onStep, isCurr
  * finished (H3c; 判定表「下載取消或失敗」): `download` is { day, status:
  * 'downloading' | 'failed' | 'cancelled' | 'done' }.
  */
-export function downloadPanel(download, { day, hasRows }) {
+export function downloadPanel(download, { day, hasRows, incomplete = false }) {
+  // A day left incomplete earlier (another day was downloaded since) still says so.
+  if ((!download || download.day !== day) && incomplete) download = { day, status: 'failed' };
   if (!download || download.day !== day || download.status === 'done') return null;
   if (download.status === 'downloading') {
     return { kind: 'downloading', title: `下載 ${shortDate(day)} 的紀錄…`, detail: '只有雲端有，正在下載',
