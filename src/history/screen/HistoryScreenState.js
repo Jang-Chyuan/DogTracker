@@ -9,6 +9,7 @@ export function entryDefaults({ entry = 'dog-card', dogId = null, today, latest 
 // The first matching transient layer consumes Back. Return-to-now always exits.
 export const BACK_KEY_TABLE = [
   ['exportGenerating', 'cancel-export'], ['exportOpen', 'close-export'],
+  ['dogSheet', 'close-dog-sheet'],
   ['monthPicker', 'calendar'], ['calendar', 'close-calendar'],
   ['downloading', 'cancel-download'], ['rangeExpanded', 'collapse-range'],
 ];

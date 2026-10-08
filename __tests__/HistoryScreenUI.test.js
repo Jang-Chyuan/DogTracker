@@ -62,7 +62,7 @@ test('history-my-route (H1 我的路線): 我的路線, no ＋ 加入, the list,
 test('history-dog (H1 狗的歷史): the dog capsule, ＋ 加入, 移動 and 坐車', async () => {
   const s = await mountFixture('history-dog');
   expect(s.text()).toContain('豆豆');
-  expect(s.ids('history-add')).toEqual(['history-add']);
+  expect(s.ids('history-dogs-pill')).toEqual(['history-dogs-pill']);
   expect(s.ids('timeline-movement-ride')).toHaveLength(1);
   expect(s.screen.cursor.label[1]).toMatch(/^已移動 /);
   expect(s.screen.map.color).toBe('#D9604F');
