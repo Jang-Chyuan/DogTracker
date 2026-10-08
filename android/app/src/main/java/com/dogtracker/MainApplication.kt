@@ -22,6 +22,7 @@ class MainApplication : Application(), ReactApplication {
           add(QrScannerPackage())
           add(com.dogtracker.cloud.CloudSyncPackage())
           add(AppSplashPackage())
+          add(PlaceLookupPackage())
         },
     )
   }
