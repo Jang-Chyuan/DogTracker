@@ -20,7 +20,7 @@ import HistoryCursor from '../mapHistory/HistoryCursor';
 import {
   CursorFaceView, CursorMarkerView, cursorAnchor, IndoorMarkerView, StopMarkerView, TimeMarkerView,
 } from '../mapHistory/HistoryMapMarkers';
-import { nearestRouteSpot, uncrowded } from '../history/screen/HistoryMapModel';
+import { HISTORY_FRAME_PADDING, historyFramePadding, nearestRouteSpot, uncrowded } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { nameTags } from './DogMarkers';
 import { reportMapFramed } from '../app/hideSplash';
@@ -63,8 +63,8 @@ export const FIRST_FRAME_WAIT_MS = 3000;
 const AFTER_FIT_MS = 250;
 // The map's own padding at the sides (dp).
 const MAP_SIDE_PADDING = 12;
-// History framing: 24dp all round, plus the cursor label's height on top.
-const HISTORY_FRAME = { top: 24 + 56, right: 24, bottom: 24, left: 24 };
+// History framing: 24dp all round, the cursor label on top, 框住全部 below.
+const HISTORY_FRAME = HISTORY_FRAME_PADDING;
 // Coordinates all within about 30 m of each other.
 const tinySpan = points => {
   const lat = points.map(p => p.latitude), lon = points.map(p => p.longitude);
@@ -117,6 +117,7 @@ function usePhotoMarker(avatar, ref) {
 function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
   const ref = useRef(null);
   const photo = usePhotoMarker(avatar, ref);
+  const settled = useSettledMarker(ref);
   const frame = markerFrame(marker.size);
   const look = [marker.size, marker.problem, marker.stale, marker.indoor, marker.selected, marker.staleRing, marker.tint,
     tag?.text, tag?.problem, avatar?.kind, avatar?.art, avatar?.color, avatar?.uri?.length].join('|');
@@ -127,14 +128,14 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
       identifier={source + '-dog-' + marker.slaveId}
       coordinate={marker.coordinate}
       anchor={frame.anchor}
-      tracksViewChanges={photo.tracking}
+      tracksViewChanges={photo.tracking || settled.tracking}
       zIndex={zIndex}
       // No title or description: those draw the SDK's own bubble, and a tap
       // already opens the dog. The label below is what TalkBack reads.
       onPress={onPress}
     >
       <View collapsable={false} accessible accessibilityLabel={label || marker.label}
-        onLayout={() => ref.current?.redraw?.()}>
+        onLayout={settled.onLayout}>
         <DogMarkerView marker={marker} tag={tag} avatar={avatar} onAvatarLoad={photo.onLoad} />
       </View>
     </Marker>
@@ -149,16 +150,36 @@ function groupSpeech(tag, markers) {
 }
 
 // ---- the history route (055a) -------------------------------------------
+// A marker whose bitmap is taken before its view has been laid out is drawn
+// as the SDK's default red pin for a moment (seen right after a fixture or a
+// data switch). So a new marker follows its view until that view has been
+// laid out once, then keeps a fixed bitmap (one redraw per change after).
+function useSettledMarker(ref) {
+  const [tracking, setTracking] = useState(true);
+  const frame = useRef(null);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  const onLayout = useCallback(() => {
+    if (!tracking) { ref.current?.redraw?.(); return; }
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      setTracking(false);
+      ref.current?.redraw?.();
+    });
+  }, [tracking, ref]);
+  return { tracking, onLayout };
+}
+
 // Fixed bitmaps, like DogMarker: every change of what one shows asks for one
 // redraw. Time markers sit under the stop numbers, the cursor on top.
 function RouteMarker({ coordinate, look, zIndex, anchor = CENTER, onPress, children, label }) {
   const ref = useRef(null);
+  const settled = useSettledMarker(ref);
   useEffect(() => { ref.current?.redraw?.(); }, [look]);
   return (
-    <Marker ref={ref} coordinate={coordinate} anchor={anchor} tracksViewChanges={false} zIndex={zIndex}
+    <Marker ref={ref} coordinate={coordinate} anchor={anchor} tracksViewChanges={settled.tracking} zIndex={zIndex}
       onPress={onPress} tappable={!!onPress}>
       <View collapsable={false} accessible={!!label} accessibilityLabel={label}
-        onLayout={() => ref.current?.redraw?.()}>{children}</View>
+        onLayout={settled.onLayout}>{children}</View>
     </Marker>
   );
 }
@@ -167,14 +188,15 @@ const CENTER = { x: 0.5, y: 0.5 };
 function CursorMarker({ cursor, color }) {
   const [labelHeight, setLabelHeight] = useState(44);
   const ref = useRef(null);
+  const settled = useSettledMarker(ref);
   const face = cursor.face ?? null;
   const look = `${cursor.lines?.join('|')}:${cursor.stale}:${labelHeight}:${color}:${face?.name ?? ''}:${face?.avatar?.uri?.length ?? face?.avatar?.art ?? ''}`;
   useEffect(() => { ref.current?.redraw?.(); }, [look, cursor.key]);
   const height = value => { if (Math.abs(value - labelHeight) > 0.5) setLabelHeight(value); };
   return (
-    <Marker ref={ref} coordinate={cursor.coordinate} anchor={cursorAnchor(labelHeight, !!face)} tracksViewChanges={false}
-      zIndex={60} tappable={false}>
-      <View collapsable={false} onLayout={() => ref.current?.redraw?.()}>
+    <Marker ref={ref} coordinate={cursor.coordinate} anchor={cursorAnchor(labelHeight, !!face)}
+      tracksViewChanges={settled.tracking} zIndex={60} tappable={false}>
+      <View collapsable={false} onLayout={settled.onLayout}>
         {face ? <CursorFaceView lines={cursor.lines} color={color} stale={cursor.stale} face={face} onLabelHeight={height} />
           : <CursorMarkerView lines={cursor.lines} color={color} stale={cursor.stale} onLabelHeight={height} />}
       </View>
@@ -191,8 +213,11 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   // The model leaves out times within 150 m; zoomed out, 150 m is a few dp,
   // so the labels would sit on each other: the same rule in screen distance.
   const apartM = metresPerDp * TIME_APART_DP;
-  const times = useMemo(() => (apartM > 150 ? uncrowded(route.times, route.places, apartM) : route.times),
-    [route.times, route.places, apartM]);
+  // Until the map has told its zoom, only the ends (a middle time drawn and
+  // then taken away again flickers).
+  const times = useMemo(() => (!metresPerDp ? route.times.filter(marker => marker.end)
+    : apartM > 150 ? uncrowded(route.times, route.places, apartM) : route.times),
+  [route.times, route.places, apartM, metresPerDp]);
   return (
     <>
       {route.lines.map((line, index) => (
@@ -349,7 +374,10 @@ function GoogleTrackingMapRenderer({
   // Framing keeps clear of the bottom right buttons too (16dp + 48dp), and on
   // the live map of the bottom row they stand on (「今天 x km」 beside 我的位置,
   // 48dp), so no dog or name tag is framed under them.
-  const bottomRow = historyRoute ? 0 : sizes.floatingButton;
+  // The history screen, also while its day is still being read (no route
+  // yet): never the live phone, its dot or the live buttons in between.
+  const historyMode = !!historyRoute || !!presentation.historyMode;
+  const bottomRow = historyMode ? 0 : sizes.floatingButton;
   const padding = useMemo(() => {
     const value = framePadding(dogMarkers, fontScale);
     return { ...value, right: value.right + layout.screenEdge + sizes.floatingButton,
@@ -463,7 +491,7 @@ function GoogleTrackingMapRenderer({
       animated: false,
       // Room for the faces' "!" and name tags; in history for the cursor's
       // label over the route's newest fix (判定表「地圖相機」).
-      edgePadding: historyRoute ? HISTORY_FRAME
+      edgePadding: historyRoute ? historyFramePadding(positions, historyRoute.cursor?.coordinate)
         : { ...padding, top: padding.top + Math.max(0, (coverTop || 0) - topInset) },
     });
     sourceToFit.current = null;
@@ -494,7 +522,7 @@ function GoogleTrackingMapRenderer({
     return () => clearTimeout(timer);
   }, [configured, loaded, positions.length, releaseSplash]);
   // ---- the live map's own controls (A1) ----------------------------------
-  const live = !historyRoute;
+  const live = !historyMode;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const overlayTop = Math.max(topInset, coverTop || 0);
@@ -605,7 +633,8 @@ function GoogleTrackingMapRenderer({
       return;
     }
     // At 75% little map is left: a slim frame, or the SDK refuses the fit.
-    const room = extraBottom > 0 ? { top: 16, right: 24, bottom: 8, left: 24 } : HISTORY_FRAME;
+    const room = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate,
+      extraBottom > 0 ? { top: 16, right: 24, bottom: 8, left: 24 } : HISTORY_FRAME);
     mapRef.current?.fitToCoordinates(routeCamera, { animated,
       edgePadding: { ...room, bottom: room.bottom + extraBottom } });
   };
@@ -731,7 +760,7 @@ function GoogleTrackingMapRenderer({
           // Google reports a tap only (a drag or a long press is not one).
           onPress={historyRoute ? event => pressHistoryMap(event.nativeEvent)
             : onMapPress ? () => onMapPress() : undefined}
-          showsUserLocation={ready && foreground && phoneEnabled && !historyRoute && !(livePhone?.running && livePhone.position)}
+          showsUserLocation={ready && foreground && phoneEnabled && !historyMode && !(livePhone?.running && livePhone.position)}
           userLocationPriority="high"
           userLocationUpdateInterval={1000}
           toolbarEnabled={false}
@@ -802,7 +831,7 @@ function GoogleTrackingMapRenderer({
           }}
         >
           {/* History draws no live phone (flow.txt: 只有可以拖的游標點). */}
-          {!historyRoute && livePhone?.running && livePhone.position && <PhoneLocationOverlay location={livePhone} active={foreground} />}
+          {!historyMode && livePhone?.running && livePhone.position && <PhoneLocationOverlay location={livePhone} active={foreground} />}
           {historyRoute && <HistoryRoute route={historyRoute} onStopPress={onStopPress} metresPerDp={metresPerDp} />}
           {slaveSegments.map((segment, index) => (
             <Polyline

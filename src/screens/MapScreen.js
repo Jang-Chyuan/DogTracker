@@ -359,7 +359,7 @@ export default function MapScreen({
     // Several dogs (H7): the others are faces at their cursor points, drawn
     // like the live map's dogs (a tap makes one the protagonist; faces that
     // run into each other share one 「2 隻」 tag and its menu).
-    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [],
+    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], historyMode: true,
       dogMarkers: historyFaces(screen.map?.faces), dogAvatars: avatars,
       cameraPositions: screen.map?.camera ?? [], historyRoute: screen.map };
   }, [historical, history?.preferences.dogAliases, framedPresentation, avatars, screen.map]);
