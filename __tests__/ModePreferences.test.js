@@ -1,6 +1,7 @@
 import { createTrackingPreferences } from '../src/tracking/TrackingPreferences';
 import { createSettingsDatabase } from '../src/database/SettingsDatabase';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+import { DEFAULT_ALERT_PREFERENCES } from '../src/alerts/AlertPreferences';
 
 test('mode defaults to real, persists in SQLite and is restored by a new controller', async () => {
   const connection = createMemoryConnection();
@@ -66,11 +67,11 @@ test('legacy stored demo mode loads as real while preserving every other prefere
     const { focusSlaveId, hiddenSlaveIds, ...kept } = stored;
     expect(focusSlaveId).toBe(7);
     expect(hiddenSlaveIds).toEqual([4, 6]);
-    expect(changed.mock.calls.at(-1)[0].value).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false });
+    expect(changed.mock.calls.at(-1)[0].value).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false, alerts: DEFAULT_ALERT_PREFERENCES });
     // Loading only normalizes in memory; the next successful save persists it.
     expect(await database.load()).toEqual(stored);
     expect(await controller.save({})).toBe(true);
-    expect(await database.load()).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false });
+    expect(await database.load()).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false, alerts: DEFAULT_ALERT_PREFERENCES });
     await controller.close();
   } finally {
     connection.close();

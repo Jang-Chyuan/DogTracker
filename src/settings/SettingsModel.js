@@ -16,6 +16,7 @@
 import { gearReasons, receiverOutage, storageProblem } from '../map/TopAlerts';
 import { isOtherReceiver, receiverNumber } from '../map/ReceiverState';
 import { formatClock } from '../map/MapFormat';
+import { alertsHomeStatus } from '../alerts/AlertPreferences';
 
 const MINUTE = 60 * 1000;
 
@@ -45,6 +46,8 @@ export function settingsInput(inputs, { now, receiverState, receiverWait = null,
     cloudFailing: !!sync.ownerId && (sync.failingSince != null || !!inputs.cloudProblem),
     signInExpired: !!inputs.signInExpired,
     storage: storageProblem(inputs.tracking?.realWriteError),
+    // 設定 → 提醒 (S6): the saved AlertPreferences.
+    alerts: inputs.tracking?.preferences?.value?.alerts,
   };
 }
 // A connected receiver says 「N 分鐘沒有新資料」 once it has been quiet this
@@ -140,7 +143,7 @@ const ROW_REASONS = {
  *
  * input: { now, receiverState, receiverWait, point, phone, permissions:
  * { notificationsDenied, nearbyDenied }, recording: { enabled, running },
- * account: { signedIn, email }, cloudFailing, signInExpired, storage }.
+ * account: { signedIn, email }, cloudFailing, signInExpired, storage, alerts }.
  */
 export function settingsHome(input) {
   const reasons = settingsReasons(input);
@@ -178,7 +181,8 @@ export function settingsHome(input) {
         row('diagnostics', '診斷', '即時資料、本機／雲端資料、記錄清單', []),
       ] },
       // v3 has no 地圖 row (map display options were removed): 提醒 alone.
-      { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', ['震動'])] },
+      // 提醒: how alerts arrive (震動／聲音／關), 「部分開」 when some are off.
+      { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', alertsHomeStatus(input.alerts))] },
       // Until S7 (051c): the old Wi-Fi page lives behind 進階 (刪除資料
       // arrives with S7).
       { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi', [])] },

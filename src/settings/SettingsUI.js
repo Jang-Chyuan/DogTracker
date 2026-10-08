@@ -126,7 +126,7 @@ export function HomeRow({ row, onPress }) {
  * `leading` replaces the 「!」 (S2's receiver icon). Pressable when `onPress`.
  */
 export function ListRow({ title, detail, detailTone, right, rightTone, action, actionTone = 'crit',
-  problem = false, leading = null, titleTone, onPress, chevron = false, label, testID, children }) {
+  problem = false, leading = null, titleTone, onPress, chevron = false, label, testID, accessibilityState, children }) {
   const rowStyle = useContext(Flat) ? [styles.listRow, styles.flatRow] : styles.listRow;
   const rights = Array.isArray(right) ? right : right ? [right] : [];
   const body = (
@@ -155,7 +155,7 @@ export function ListRow({ title, detail, detailTone, right, rightTone, action, a
   }
   return (
     <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
-      style={({ pressed }) => [rowStyle, pressed && styles.pressed]}>
+      accessibilityState={accessibilityState} style={({ pressed }) => [rowStyle, pressed && styles.pressed]}>
       {body}
     </Pressable>
   );
@@ -163,6 +163,8 @@ export function ListRow({ title, detail, detailTone, right, rightTone, action, a
 
 const TONES = StyleSheet.create({
   crit: { color: colors.crit },
+  // 未允許 on S6 (the mockup's amber).
+  warn: { color: colors.warn },
   critAction: { color: colors.problemBadge },
   tonal: { color: colors.tonalText },
   muted: { color: colors.textMuted },
