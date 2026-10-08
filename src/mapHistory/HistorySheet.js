@@ -116,6 +116,7 @@ export function rangeLabel(draft) {
  */
 export default function HistorySheet({
   history, snapshot, bottomInset, topInset, onHeight, extras, download, owner = null, clock = Date.now,
+  recording = null,
 }) {
   const [draft, setDraft] = useState(history.preferences);
   // The time-line list (054a): the dog the page was opened for, or my route,
@@ -124,7 +125,8 @@ export default function HistorySheet({
   const target = useMemo(() => timelineSubject(history.preferences, nowAtOpen),
     // The day is fixed when the query changes, not every clock tick.
     [history.preferences]); // eslint-disable-line react-hooks/exhaustive-deps
-  const timeline = useHistoryTimeline({ read: history.readDay, target, owner, clock });
+  const timeline = useHistoryTimeline({ read: history.readDay, target, owner, clock,
+    following: target?.subject !== 'phone' || recording !== false });
   const [open, setOpen] = useState('');
   const [picker, setPicker] = useState(null);
   useEffect(() => setDraft(history.preferences), [history.preferences]);
@@ -198,6 +200,8 @@ export default function HistorySheet({
   return (
     <BottomSheet
       name="history"
+      // Half high: the time-line list shows at once (H1).
+      initialLevel={target ? 'compact' : 'collapsed'}
       title="歷史軌跡"
       summary={historySummary(history)}
       bottomInset={bottomInset}

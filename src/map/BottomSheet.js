@@ -32,16 +32,19 @@ export default function BottomSheet({
   onHeight,
   children,
   footer,
+  // Where it opens: the history page opens half high with its time-line list
+  // in view (H1 「面板停在一半高」).
+  initialLevel = 'collapsed',
 }) {
   const { height: windowHeight, fontScale } = useWindowDimensions();
   const stops = useMemo(
     () => sheetStops(windowHeight, bottomInset, topInset, fontScale),
     [windowHeight, bottomInset, topInset, fontScale],
   );
-  const [level, setLevel] = useState('collapsed');
-  const animation = useRef(new Animated.Value(stops.collapsed)).current;
-  const current = useRef(stops.collapsed);
-  const start = useRef(stops.collapsed);
+  const [level, setLevel] = useState(initialLevel);
+  const animation = useRef(new Animated.Value(stops[initialLevel])).current;
+  const current = useRef(stops[initialLevel]);
+  const start = useRef(stops[initialLevel]);
   const scroll = useRef(null);
   const scrollOffset = useRef(0);
   const motion = useRef(null);

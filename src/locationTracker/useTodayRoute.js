@@ -37,13 +37,15 @@ export function useTodayRoute(database, ready, active, clock = Date.now) {
           current.cursor = { time: last.time, id: last.id };
           if (page.length < PAGE) break;
         }
-        // Only new rows change the answer (the clock alone moves 「現在」,
-        // which the pill does not show).
-        if (current.read === current.list.length) return;
+        // New rows change the answer; without them only the clock can, while
+        // a departure is being confirmed (it settles at minute 8 by the
+        // phone's time even if no fix came, 判定表「出發偵測：資料不到 8 分鐘」).
+        if (current.read === current.list.length && current.status !== 'confirming') return;
         current.read = current.list.length;
         const sum = todayRouteDistance(current.list, { now: Math.max(at, current.list.at(-1)?.time ?? at),
           dayStart: day, state: current.state });
         current.state = sum.state;
+        current.status = sum.status;
         const { count, metres, status } = sum;
         setRoute(value => (value?.count === count && value?.metres === metres && value?.status === status
           ? value : { count, metres, status }));

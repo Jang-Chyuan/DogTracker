@@ -117,7 +117,7 @@ test('new trip strictly after processed observations retains old stop identity',
   const next = [...base, point(640, 460), point(650, 520), point(660, 580)];
   const result = historyStops(next, { following: true, identity: 'same', state: first.state,
     vehicles: [{ start: 640000, end: 660000 }] });
-  expect(result.state.assessed).toEqual(expect.arrayContaining(first.state.assessed));
+  expect(result.state.marked).toEqual(expect.arrayContaining(first.state.marked));
   expect(result.stops[0].id).toBe(first.stops[0].id);
 });
 // spec.txt「手動改範圍…整份重算」「跨午夜…接續前一天」。

@@ -10,9 +10,12 @@ const footMode = subject => (subject === 'phone' ? 'walking' : 'moving');
 function detectVehicles(edges, config) {
   const vehicles = [];
   let high = null, active = null, low = null;
-  const close = endIndex => {
+  // `exited`: ended by 30/60 s of low speed, so its last fix is the first one
+  // on foot; ended by a gap, a hold or the data's end, its last fix was still
+  // in the car (判定表「開車和停留」: car fixes take no part in visits).
+  const close = (endIndex, exited = false) => {
     vehicles.push({ start: edges[active].start, end: edges[endIndex].end,
-      firstEdge: active, lastEdge: endIndex });
+      firstEdge: active, lastEdge: endIndex, exited });
     active = null; low = null; high = null;
   };
   for (let i = 0; i < edges.length; i += 1) {
@@ -36,7 +39,7 @@ function detectVehicles(edges, config) {
       } else high = null;
     } else if (!atLeast(edge.speed, config.exitSpeed)) {
       if (low == null) low = i;
-      if (edge.end - edges[low].start >= config.exitMs) close(low - 1);
+      if (edge.end - edges[low].start >= config.exitMs) close(low - 1, true);
     } else low = null;
   }
   if (active != null) close(edges.length - 1);
@@ -77,7 +80,10 @@ export function historyMovement(points, { subject = 'dog', config = configFor(su
     const distanceM = distanceMeters(from, to);
     return { from, to, start: from.time, end: to.time, durationMs, distanceM,
       speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs,
-      mode: from.heldReason && to.heldReason && from.heldSince === to.heldSince ? 'indoor' : footMode(subject) };
+      // Into or within a hold: not movement (判定表「停在原處前後的距離」:
+      // the drift drawn onto the hold spot does not count); the release edge
+      // out of it is ordinary movement from the spot.
+      mode: to.heldReason ? 'indoor' : footMode(subject) };
   });
   const found = vehicles ?? detectVehicles(edges, config);
   for (const edge of edges) {
@@ -94,7 +100,7 @@ export function historyMovement(points, { subject = 'dog', config = configFor(su
         latitude: edge.from.latitude, longitude: edge.from.longitude, point: edge.from }] : [];
   });
   const high = vehicles ? null : pendingHigh(edges, config);
-  return { edges, vehicles: found.map(({ start, end, firstEdge, lastEdge }) => ({ start, end, firstEdge, lastEdge })),
+  return { edges, vehicles: found.map(({ start, end, firstEdge, lastEdge, exited = true }) => ({ start, end, firstEdge, lastEdge, exited })),
     switches, pendingHighStart: high, distanceM: edges.reduce((sum, e) => sum + e.countedDistanceM, 0) };
 }
 
@@ -111,4 +117,5 @@ function pendingHigh(edges, config) {
   return start;
 }
 
-export const isVehiclePoint = (point, vehicles) => vehicles.some(v => point.time >= v.start && point.time < v.end);
+export const isVehiclePoint = (point, vehicles) => vehicles.some(v => point.time >= v.start
+  && (point.time < v.end || (v.exited === false && point.time === v.end)));

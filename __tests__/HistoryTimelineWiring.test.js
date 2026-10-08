@@ -56,7 +56,7 @@ describe('rows', () => {
       satellites INTEGER, hdop REAL, usb_present INTEGER, rssi INTEGER, snr REAL, gps_time TEXT)`);
     const local = connection.sqlite.prepare('INSERT INTO dog_status VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
     const cloud = connection.sqlite.prepare('INSERT INTO supabase_dog_status VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-    // Before the context (seed only), in the context, the day, tomorrow.
+    // Before the context (seed only), in the context, the day, just past midnight.
     local.run(1, DAY - 2 * HISTORY_DAY_CONTEXT_MS, 7, 4, 24.98, 121.31, 9, 0.9, 0, -70, 5, '1');
     local.run(2, DAY - 10 * MINUTE, 7, 4, 24.98, 121.31, 9, 0.9, 0, -70, 5, '2');
     local.run(3, DAY + MINUTE, 7, 4, 24.981, 121.31, 9, 0.9, 0, -70, 5, '3');
@@ -67,16 +67,21 @@ describe('rows', () => {
     const day = { subject: 'dog', slaveId: 4, start: DAY, end: endOfDay(DAY) };
     const all = await database.historyDayRows({ ...day, owner: 'me' });
     expect(all.rows.map(row => [row.source, row.id, row.time])).toEqual([
-      ['local', 2, DAY - 10 * MINUTE], ['local', 3, DAY + MINUTE], ['cloud', 1, DAY + 2 * MINUTE]]);
+      ['local', 2, DAY - 10 * MINUTE], ['local', 3, DAY + MINUTE], ['local', 5, endOfDay(DAY) + MINUTE],
+      ['cloud', 1, DAY + 2 * MINUTE]]);
     expect(all.seed.map(row => row.time)).toEqual([DAY - 2 * HISTORY_DAY_CONTEXT_MS]);
-    expect((await database.historyDayRows({ ...day, source: 'local', owner: 'me' })).rows).toHaveLength(2);
+    expect((await database.historyDayRows({ ...day, source: 'local', owner: 'me' })).rows).toHaveLength(3);
     expect((await database.historyDayRows({ ...day, source: 'cloud', owner: 'me' })).rows).toHaveLength(1);
     // Signed out: no cloud rows at all.
     expect((await database.historyDayRows({ ...day, source: 'cloud' })).rows).toHaveLength(0);
-    // Only newer rows after the cursor.
+    // Only rows added since, even older ones (a download, 判定表「補下載完成」).
     local.run(6, DAY + 5 * MINUTE, 7, 4, 24.984, 121.31, 9, 0.9, 0, -70, 5, '6');
+    cloud.run(3, 'me', DAY + 30 * MINUTE, DAY - 5 * MINUTE, 9, 4, 24.98, 121.31, 9, 1, 0, -80, 5, '0');
     const next = await database.historyDayRows({ ...day, owner: 'me', after: all.after });
-    expect(next.rows.map(row => row.id)).toEqual([6]); expect(next.seed).toEqual([]);
+    expect(next.rows.map(row => [row.source, row.id])).toEqual([['local', 6], ['cloud', 3]]); expect(next.seed).toEqual([]);
+    // A few minutes past midnight are read for 「接續隔天」.
+    local.run(7, endOfDay(DAY) + 2 * MINUTE, 7, 4, 24.984, 121.31, 9, 0.9, 0, -70, 5, '7');
+    expect((await database.historyDayRows({ ...day, owner: 'me', after: next.after })).rows.map(row => row.id)).toEqual([7]);
     connection.close();
   });
 
@@ -211,12 +216,14 @@ describe('the old history page shows the list', () => {
     await act(async () => jest.advanceTimersByTimeAsync(15000));
     expect(result.model.points).toHaveLength(61);
     expect(reads[1]).toEqual({ done: true });
-    // A past day: one read, no polling.
+    // A past day: read again only every minute (a download can add rows).
     const past = { subject: 'phone', slaveId: null, day: DAY - 86400000 };
     read.mockClear();
     await act(async () => renderer.update(<Probe target={past} />));
-    await act(async () => jest.advanceTimersByTimeAsync(60000));
+    await act(async () => jest.advanceTimersByTimeAsync(30000));
     expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => jest.advanceTimersByTimeAsync(30000));
+    expect(read).toHaveBeenCalledTimes(2);
     await act(async () => renderer.unmount());
     jest.useRealTimers();
   });
