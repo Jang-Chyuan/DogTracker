@@ -205,6 +205,8 @@ const styles = StyleSheet.create({
     position: 'absolute', left: layout.screenEdge, right: layout.screenEdge, minHeight: 48,
     borderRadius: radius.snackbar, backgroundColor: colors.snackbar, borderWidth: 1, borderColor: colors.line,
     justifyContent: 'center', paddingHorizontal: layout.screenEdge, ...shadow.floating,
+    // Over the history's sheets too (H3d over 選日期).
+    zIndex: 70, elevation: 32,
   },
   tipText: { ...type.body, color: colors.text },
   // The history's H3d sentence: one line on a 360dp phone.
