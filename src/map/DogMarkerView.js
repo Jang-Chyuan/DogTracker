@@ -3,6 +3,7 @@ import { PixelRatio, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { size as sizes, type } from '../theme/tokens';
 import DogAvatar from '../dogs/DogAvatar';
+import { problemBadgePosition, houseBadgePosition } from './BadgeGeometry';
 
 // The view inside one dog's map marker (design v3「狗的標記：所有情況」,
 // DESIGN.md §15): the face (40dp, 48dp with a problem, +8dp when its card is
@@ -39,13 +40,13 @@ export function markerFrame(faceSize) {
   };
 }
 
-function ProblemBadge({ offset }) {
+function ProblemBadge({ size }) {
   const { literalColors: themeLiteral } = useTheme();
   const styles = useStyles(getStyles);
   return (
     <View
       testID="dog-badge-problem"
-      style={[styles.badge, styles.problem, { top: -offset, right: -offset }]}
+      style={[styles.badge, styles.problem, problemBadgePosition(size)]}
     >
       <Svg width={badge.glyph} height={badge.glyph} viewBox="0 0 24 24">
         <Path
@@ -60,9 +61,8 @@ function ProblemBadge({ offset }) {
   );
 }
 
-// Left, reaching `offset` out of the face like the "!"; its centre a quarter
-// of the face below the face's centre, on the rim (as in the A7 mockup).
-function HouseBadge({ offset, size }) {
+// Centre on the left rim, a quarter face below its centre.
+function HouseBadge({ size }) {
   const { literalColors: themeLiteral } = useTheme();
   const styles = useStyles(getStyles);
   return (
@@ -71,7 +71,7 @@ function HouseBadge({ offset, size }) {
       style={[
         styles.badge,
         styles.house,
-        { top: size * 0.75 - badge.size / 2, left: -offset },
+        houseBadgePosition(size),
       ]}
     >
       <Svg width={badge.glyph} height={badge.glyph} viewBox="0 0 24 24">
@@ -111,9 +111,6 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
   const styles = useStyles(getStyles);
   const { size, problem, indoor, stale, selected, staleRing, tint } = marker;
   const frame = markerFrame(size);
-  // Badges reach 4dp out of a 40dp face, 6dp out of 48dp, 8dp out of 56dp
-  // (判定表「角標位移（選中時）」).
-  const offset = badge.offset + (size - markerSize.normal) / 4;
   return (
     <View
       collapsable={false}
@@ -129,6 +126,7 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
         ]}
       />
       <View
+        collapsable={false}
         style={[
           styles.face,
           {
@@ -158,8 +156,8 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
             style={[styles.staleRing, { borderRadius: (size + 6) / 2 }]}
           />
         )}
-        {indoor && <HouseBadge offset={offset} size={size} />}
-        {problem && <ProblemBadge offset={offset} />}
+        {indoor && <HouseBadge size={size} />}
+        {problem && <ProblemBadge size={size} />}
       </View>
       {tag && (
         <View
@@ -193,6 +191,7 @@ const getStyles = makeStyles(theme => {
     root: { overflow: 'visible' },
     face: {
       position: 'absolute',
+      overflow: 'visible',
       backgroundColor: themeLiteral.avatarFrameMap,
     },
     selected: {},

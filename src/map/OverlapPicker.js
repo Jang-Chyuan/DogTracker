@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
+import { problemBadgePosition } from './BadgeGeometry';
 import { radius, size as sizes, type } from '../theme/tokens';
 
 const menu = sizes.overlapMenu;
@@ -119,7 +120,7 @@ export default function OverlapPicker({
             >
               {/* The face as on the map: grey when it has no new position, the
                red "!" top right for any problem. */}
-              <View style={styles.face}>
+              <View collapsable={false} style={styles.face}>
                 <DogAvatar
                   avatar={avatars[marker.slaveId]}
                   size={menu.avatar}
@@ -183,11 +184,10 @@ const getStyles = makeStyles(theme => {
     words: { flex: 1 },
     name: { ...type.status, color: colors.text },
     note: { ...type.caption },
-    face: { width: menu.avatar, height: menu.avatar },
+    face: { width: menu.avatar, height: menu.avatar, overflow: 'visible' },
     badge: {
       position: 'absolute',
-      top: -sizes.badge.offset,
-      right: -sizes.badge.offset,
+      ...problemBadgePosition(menu.avatar, sizes.badge.size - 2),
       width: sizes.badge.size - 2,
       height: sizes.badge.size - 2,
       borderRadius: sizes.badge.size,

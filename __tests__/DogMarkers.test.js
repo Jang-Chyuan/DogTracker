@@ -3,6 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { dogMarkers, nameTags, tagSize } from '../src/map/DogMarkers';
 import { dogProblems } from '../src/tracking/DogProblems';
 import DogMarkerView, { markerFrame } from '../src/map/DogMarkerView';
+import { problemBadgePosition, houseBadgePosition } from '../src/map/BadgeGeometry';
 import DogAvatar, { STALE_LINE } from '../src/dogs/DogAvatar';
 import { colors } from '../src/theme/tokens';
 
@@ -115,9 +116,9 @@ describe('the marker view', () => {
     expect(problem).toHaveLength(1);
     expect(house).toHaveLength(1);
     const style = node => Object.assign({}, ...[node.props.style].flat(3).filter(Boolean));
-    expect(style(problem[0])).toMatchObject({ top: -6, right: -6, backgroundColor: colors.problemBadge, width: 16 });
-    // Left, 6dp out of the 48dp face, centred a quarter of the face below its centre.
-    expect(style(house[0])).toMatchObject({ top: 28, left: -6, backgroundColor: colors.receiver });
+    expect(style(problem[0])).toMatchObject({ ...problemBadgePosition(48), backgroundColor: colors.problemBadge, width: 16 });
+    // Centre on the rim, a quarter face below its centre.
+    expect(style(house[0])).toMatchObject({ ...houseBadgePosition(48), backgroundColor: colors.receiver });
     expect(byId(renderer, 'dog-avatar-classic-stale')).toHaveLength(1);
     expect(JSON.stringify(renderer.toJSON())).toContain('小黑・室內');
   });
