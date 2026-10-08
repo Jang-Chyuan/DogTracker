@@ -46,7 +46,7 @@ test('D2a → D2b → D2c / D2d: rows and the button', () => {
   const a = permissionsPage({ needed, grants: nothing });
   expect(a.rows.map(row => [row.number, row.title, row.detail, row.state])).toEqual([
     [1, '附近的裝置', '連接接收器', 'todo'], [2, '精確位置', '算出狗離你多遠、記錄你的路線', 'todo'],
-    [3, '通知', '狗出問題時提醒你（可以不開）', 'todo']]);
+    [3, '通知', '狗出問題時提醒你', 'todo']]);
   expect(a.primary).toEqual({ id: 'allowAll', label: '全部允許', disabled: false });
   expect(a.later).toBe(true);
   // Not checked yet: the button waits.
