@@ -137,7 +137,7 @@ object AlertPoster {
     val target = content.target
     val notification = NotificationCompat.Builder(context, NotificationChannels.ALERTS)
       .setSmallIcon(R.drawable.ic_stat_dog).setColor(NotificationChannels.accent(context))
-      .setContentTitle(content.title).setContentText(content.lines.first())
+      .setContentTitle(content.title).setContentText(content.collapsedText)
       .setStyle(style).setNumber(content.count)
       .setCategory(NotificationCompat.CATEGORY_STATUS)
       // A new alert pops up (the channel makes no sound of its own); an

@@ -404,6 +404,9 @@ data class Target(val screen: String, val dogId: String? = null)
 
 data class NotificationContent(val title: String, val lines: List<String>, val target: Target) {
   val count get() = lines.size
+  // Collapsed (and popping up) the notification has one line: every problem
+  // in it, most severe first, as far as it fits (expanded: one per line).
+  val collapsedText get() = lines.joinToString("、")
 }
 
 object Content {
