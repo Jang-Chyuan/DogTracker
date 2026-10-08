@@ -199,6 +199,8 @@ describe('addresses (053a)', () => {
   test('a place\'s two lines: found, asking, not found; a hold not found says 停留（室內）', () => {
     expect(placeLines(stop, { state: 'found', text: '八德區和平路 552 號附近' }))
       .toEqual({ title: '八德區和平路 552 號附近', titleMuted: false, coordinates: '24.9311, 121.2879', missing: '' });
+    expect(placeLines(stop, { state: 'found', text: '大園區航站南路 9 號附近（約 140 m）' }).title)
+      .toBe('大園區航站南路 9 號附近（約\u00A0140\u00A0m）');
     expect(placeLines(stop, { state: 'pending' }))
       .toEqual({ title: '查地址中…', titleMuted: true, coordinates: '24.9311, 121.2879', missing: '' });
     expect(placeLines(stop, { state: 'none' }))
