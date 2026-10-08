@@ -25,7 +25,9 @@ const monthOf = day => ({ year: Number(day.slice(0, 4)), month: Number(day.slice
 function Arrow({ side, enabled, onPress, label, testID }) {
   return (
     <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label}
-      accessibilityState={{ disabled: !enabled }} disabled={!enabled} onPress={onPress} style={styles.arrow}
+      accessibilityState={{ disabled: !enabled }} disabled={!enabled} onPress={onPress}
+      // The chevron sits at the sheet's edge, its 48dp target reaching inwards.
+      style={[styles.arrow, side === 'previous' ? styles.arrowStart : styles.arrowEnd]}
       hitSlop={4}>
       <Glyph name={side === 'previous' ? 'back' : 'chevron'} color={enabled ? colors.text : colors.line} size={20} />
     </Pressable>
@@ -256,7 +258,9 @@ const styles = StyleSheet.create({
   todayText: { ...type.value, color: colors.text },
   disabled: { opacity: opacity.disabled },
   monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.xs },
-  arrow: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center' },
+  arrow: { width: touch.min, height: touch.min, justifyContent: 'center' },
+  arrowStart: { alignItems: 'flex-start' },
+  arrowEnd: { alignItems: 'flex-end' },
   monthPill: { flexDirection: 'row', alignItems: 'center', height: 40, paddingHorizontal: 18, borderRadius: 20,
     borderWidth: 1.5, borderColor: colors.line },
   monthTitle: { ...type.status, fontSize: 17, color: colors.text },
