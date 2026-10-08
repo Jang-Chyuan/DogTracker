@@ -22,3 +22,8 @@ export function historyDogsSheet(dogs = [], candidates = [], days = {}) {
         opacity: full || days[dog.id] === false ? 0.4 : 1,
         detail: days[dog.id] === false ? '這天沒有紀錄' : `訊號源 ${dog.id}` })) };
 }
+
+/** A dog without a photo is drawn in its route colour, like its face on the history map. */
+export function routeTint(dog, colors) {
+  return dog?.avatar || !dog?.color ? null : { bg: dog.color, line: colors.onRoute };
+}

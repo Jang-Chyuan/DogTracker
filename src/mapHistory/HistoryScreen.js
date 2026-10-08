@@ -38,7 +38,7 @@ import HistoryExportSheet from './HistoryExportSheet';
 import { useHistoryExport } from './useHistoryExport';
 import HistoryCalendarSheet from './HistoryCalendarSheet';
 import { DogsSheet } from './HistoryPickers';
-import { historyDogsPill } from '../history/screen/HistoryDogsPill';
+import { historyDogsPill, routeTint } from '../history/screen/HistoryDogsPill';
 
 const OPEN_MOTION = LayoutAnimation.create(
   motion.rangeExpand.duration,
@@ -89,12 +89,12 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
       <View style={styles.pillSlot}>
         <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
           {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
-            <DogAvatar avatar={pill.lead.avatar} size={26} border={0} />
+            <DogAvatar avatar={pill.lead.avatar} size={26} border={0} tint={routeTint(pill.lead, colors)} />
           </View>}
           <Text style={styles.capsuleText} numberOfLines={1}>{pill.name}</Text>
           {!!pill.faces.length && <View style={styles.others}>
             {pill.faces.map((dog, index) => <View key={dog.id} style={index > 0 && styles.overlap}>
-              <DogAvatar avatar={dog.avatar} size={18} border={0} />
+              <DogAvatar avatar={dog.avatar} size={18} border={1.5} tint={routeTint(dog, colors)} />
             </View>)}
             {pill.more > 0 && <Text style={styles.more}>{`+${pill.more}`}</Text>}
           </View>}
