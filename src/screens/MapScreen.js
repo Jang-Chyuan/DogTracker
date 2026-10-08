@@ -74,9 +74,11 @@ export default function MapScreen({
   onOpenSettings,
   // Signed in to Supabase (A6 hides 「登入 Supabase」).
   signedIn = false,
-  // The cloud upload failing or the sign-in expired (gear red dot); the
-  // download side is judged from cloudSync.
+  // The cloud upload failing (gear red dot); the download side is judged
+  // from cloudSync.
   cloudProblem = false,
+  // The Supabase sign-in expired while in use (gear red dot, 「需要重新登入」).
+  signInExpired = false,
   // Android 13+ notification permission not given (gear red dot).
   notificationsDenied = false,
   // A top card's button that leaves the map: 'receiver-settings',
@@ -238,16 +240,17 @@ export default function MapScreen({
     dataRead: tracking.initialSnapshotReady === true && !!cloudDogs?.loaded,
     dismissed: noDogsClosed || !!tracking.preferences.value?.noDataCardDismissed,
   });
-  const cards = historical ? [] : topCards({
-    outage, storage, map: mapState === 'retrying' ? 'load-failed' : mapState, retrying: mapState === 'retrying',
-    noDogs, signedIn, dismissed,
+  // History shares the map: only the map's own card follows it there.
+  const cards = topCards({
+    map: mapState === 'retrying' ? 'load-failed' : mapState, retrying: mapState === 'retrying',
+    ...(historical ? {} : { outage, storage, noDogs, signedIn, dismissed }),
   });
   const reasons = historical ? [] : gearReasons({
     outage, storage, dismissed, receiverState, receiverWait: receiverWait.current,
     receiverBattery: otherReceiver || point?.id == null ? null
       : { valid: point.masterBatteryValid, percentage: point.masterBatteryPercentage },
     cloudFailing: !!cloudOwner && (cloudSync?.failingSince != null || cloudProblem),
-    signInExpired: false, phone, notificationsDenied, now,
+    signInExpired, phone, notificationsDenied, now,
   });
   const pressCardAction = useCallback(id => {
     if (id === 'map-retry') setMapRetry(value => value + 1);
@@ -467,8 +470,12 @@ export default function MapScreen({
   const messages = [];
   if (historical && Number.isFinite(playbackAt))
     messages.push(`回放中：${new Date(playbackAt).toLocaleString()}`);
-  // The base map, the cloud and the phone's location speak through the top
-  // cards, the gear's red dot and 「今天 x km」 (A2), not through notices.
+  // The base map, cloud sync and storage speak through the top cards and the
+  // gear's red dot (A2); reading this phone's own copies can still fail.
+  if (!historical && cloudDogs?.error)
+    messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
+  if (phone?.error)
+    messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
   if (
     historical && (history?.data?.phone.limited ||
       history?.data?.clients?.some(track => track.limited))
@@ -545,10 +552,8 @@ export default function MapScreen({
         <SettingsGear top={gearTop} alert={reasons.length > 0} alertLabel={gearLabel(reasons)}
           onPress={onOpenSettings} />
       )}
-      {!historical && (
-        <TopAlertCards cards={cards} top={cardsTop} onAction={pressCardAction} onClose={closeCard}
-          onHeight={setTopHeight} />
-      )}
+      <TopAlertCards cards={cards} top={cardsTop} onAction={pressCardAction} onClose={closeCard}
+        onHeight={setTopHeight} />
       {(historical || !tracking.preferences.ready) && <View style={[styles.source, { top }]}>
         <View style={styles.statusDot} />
         <Text style={styles.sourceText}>
@@ -560,7 +565,7 @@ export default function MapScreen({
       {!!messages.length && (
         <View
           onLayout={event => setNoticeHeight(event.nativeEvent.layout.height)}
-          style={[styles.notices, { top: historical ? top + 44 : noticesTop }]}
+          style={[styles.notices, { top: noticesTop }]}
         >
           <ScrollView nestedScrollEnabled>
             {messages.map(message => (

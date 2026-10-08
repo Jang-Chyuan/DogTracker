@@ -1,6 +1,29 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
+import { colors, radius, type } from '../theme/tokens';
+
+/**
+ * 「位置存不進手機」 above everything else (design 「位置存不進手機收起之後」):
+ * phone full → 「手機空間不足，位置存不進手機」, opens the storage settings;
+ * any other reason → the reason, opens where it is shown. Goes when writing
+ * works again.
+ */
+export function StorageWarning({ storage, onPress }) {
+  if (!storage) return null;
+  const title = storage.full ? '手機空間不足，位置存不進手機' : '位置存不進手機';
+  return (
+    <Pressable testID="settings-storage-warning" accessibilityRole="button"
+      accessibilityLabel={storage.full ? title : `${title}，${storage.reason}`} onPress={onPress}
+      style={({ pressed }) => [styles.warning, pressed && styles.pressed]}>
+      <View style={styles.bang}><Text style={styles.bangText}>!</Text></View>
+      <View style={styles.body}>
+        <Text style={styles.title}>{title}</Text>
+        {!storage.full && <Text style={styles.reason} numberOfLines={2}>{storage.reason}</Text>}
+      </View>
+    </Pressable>
+  );
+}
 
 export default function SettingsScreen({
   tracking,
@@ -8,9 +31,13 @@ export default function SettingsScreen({
   onCloud,
   onLocationTracker,
   account = null,
+  // TopAlerts.storageProblem of the last write, and where its warning leads.
+  storage = null,
+  onStorage,
 }) {
   return (
     <View>
+      <StorageWarning storage={storage} onPress={onStorage} />
       <View style={ui.card}>
         <Text style={ui.heading}>歷史地圖</Text>
         <Text style={ui.hint}>
@@ -42,3 +69,17 @@ export default function SettingsScreen({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  warning: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginBottom: 16,
+    borderRadius: radius.alertCard, backgroundColor: colors.critBg, borderWidth: 1, borderColor: colors.alertBorder,
+  },
+  pressed: { opacity: 0.8 },
+  bang: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.problemBadge, alignItems: 'center',
+    justifyContent: 'center' },
+  bangText: { ...type.captionBold, color: colors.surface },
+  body: { flex: 1 },
+  title: { ...type.cardTitle, color: colors.crit },
+  reason: { ...type.small, color: colors.textMuted },
+});

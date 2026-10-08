@@ -40,6 +40,7 @@ import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { useTodayRoute } from './src/locationTracker/useTodayRoute';
 import { layout } from './src/theme/tokens';
 import { useNotificationPermission } from './src/app/useNotificationPermission';
+import { storageProblem } from './src/map/TopAlerts';
 
 
 
@@ -146,11 +147,14 @@ function TrackerApp() {
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
     { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute,
       // The gear's red dot: the upload failing or the sign-in expired.
-      cloudProblem: !!auth.expired || (!!cloudSync.ownerId && !!upload.error),
+      cloudProblem: !!cloudSync.ownerId && !!upload.error,
+      signInExpired: !!auth.expired,
       notificationsDenied }, fixtureEdits);
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
-    if (id === 'receiver-settings' || id === 'connect-receiver' || id === 'storage-reason') navigate('hardware', 'map');
+    if (id === 'receiver-settings' || id === 'connect-receiver' || id === 'storage-reason') {
+      navigate('hardware', route.name === 'settings' ? 'settings' : 'map');
+    }
     else if (id === 'sign-in') navigate('cloud', 'map');
     else if (id === 'storage-settings') {
       Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(() => Linking.openSettings());
@@ -194,6 +198,9 @@ function TrackerApp() {
           onCloud={() => navigate('cloud', 'settings')}
           onLocationTracker={() => navigate('locationTracker', 'settings')}
           account={{ signedIn: !!auth.user, email: auth.user?.email || '', expired: auth.expired }}
+          storage={storageProblem(tracking.realWriteError)}
+          onStorage={() => alertAction(storageProblem(tracking.realWriteError)?.full ? 'storage-settings'
+            : 'storage-reason')}
         />
       );
       break;
@@ -262,6 +269,7 @@ function TrackerApp() {
           onOpenSettings={() => navigate('settings')}
           signedIn={!!mapInputs.cloudSync.ownerId}
           cloudProblem={mapInputs.cloudProblem}
+          signInExpired={mapInputs.signInExpired}
           notificationsDenied={mapInputs.notificationsDenied}
           onAlertAction={alertAction}
           openDogRequest={openDogRequest}

@@ -11,7 +11,7 @@
 //   disconnection or storage card the user collapsed with ✕.
 // - A dog's own problems stay on the dog (DogMarkers); nothing here.
 
-import { receiverLink, receiverNumber } from './ReceiverState';
+import { receiverNumber } from './ReceiverState';
 import { formatClock } from './MapFormat';
 
 // A link that dropped counts as 斷線 once automatic reconnection has not
@@ -32,7 +32,9 @@ export const RECEIVER_BATTERY_LOW = 20;
  * `key` tells one disconnection from the next (a ✕ is for this one only).
  */
 export function receiverOutage(state, now) {
-  if (receiverLink(state, now) !== 'disconnected') return null;
+  // Not receiverLink's 'disconnected': a link can drop before its first
+  // packet, and a packet stored by an earlier run says nothing about this one.
+  if (!state?.enabled || !state.running || state.connected) return null;
   const since = Number(state.disconnectedAt);
   if (!(since > 0) || now - since < DISCONNECT_GRACE_MS) return null;
   return { key: since, since, number: receiverNumber(state) };
@@ -54,10 +56,15 @@ export function storageProblem(error) {
  * RECEIVER_MISSING_MS. Returns the next memory.
  */
 export function trackReceiverWait(memory, state, now) {
-  const link = receiverLink(state, now);
-  const waiting = link === 'connecting' || link === 'stopped';
-  if (!waiting) return { waitingSince: null };
-  return { waitingSince: memory?.waitingSince ?? now };
+  // Set up, but its service is not running, or it has not connected in this
+  // service run (no disconnectedAt): waiting, not disconnected.
+  const waiting = !!state?.enabled && (!state.running
+    || (!state.connected && !(Number(state.disconnectedAt) > 0)));
+  if (!waiting) return { waitingSince: null, device: null };
+  // Another receiver chosen meanwhile starts its own wait.
+  const device = state.deviceId || state.deviceName || '';
+  const same = memory?.waitingSince != null && memory.device === device;
+  return { waitingSince: same ? memory.waitingSince : now, device };
 }
 
 /**
