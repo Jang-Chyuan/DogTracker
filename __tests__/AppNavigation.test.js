@@ -771,7 +771,7 @@ test('D2 asks one permission after another, then 下一步; leaving midway resum
     await advance(100);
     expect(page('permissions-page')).toBe(true);
     for (const words of ['App 需要這些權限', '附近的裝置', '連接接收器', '精確位置', '算出狗離你多遠、記錄你的路線', '通知',
-      '狗出問題時提醒你（可以不開）', '全部允許', '稍後再說']) expect(text()).toContain(words);
+      '狗出問題時提醒你', '全部允許', '稍後再說']) expect(text()).toContain(words);
     // Quit on D2: the next start continues on D2.
     await act(async () => renderer.unmount());
     await mount();
