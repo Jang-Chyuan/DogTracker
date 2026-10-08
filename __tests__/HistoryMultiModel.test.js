@@ -1,64 +1,158 @@
-import { multiDayModel, multiSelection } from '../src/history/screen';
-import { visitsFixture } from '../__fixtures__/HistoryLogicFixtures';
+// 055b: one day of several dogs (H7) — the protagonist, the shared range,
+// the shared cursor and what the map draws for the others.
+import {
+  dayHasRecords, multiCursors, multiDayModel, multiMapPresentation, sharedCursorTime,
+} from '../src/history/screen/HistoryMultiModel';
+import { historyMapPresentation } from '../src/history/screen/HistoryMapModel';
 import { historyTimeline } from '../src/history/HistoryTimeline';
-const minute = 60000;
-const rows = (offset = 0) => [0, 1, 2, 3, 4, 5].map((n) => ({ time: n * minute + offset,
-  latitude: 25 + n * 0.0001, longitude: 121, source: 'local', accuracy: 5 }));
-const subjects = multiSelection([{ id: 'a', name: '小黑', hasData: true }, { id: 'b', name: '豆豆', hasData: true }]).dogs
-  .map((s, i) => ({ ...s, rows: rows(i * minute) }));
-const options = { dayStart: 0, dayEnd: 86400000, today: false, range: { start: minute, end: 4 * minute }, protagonist: 'a' };
-test('shared range intersects individual observations; existing algorithms and summaries agree', () => {
-  const result = multiDayModel(subjects, options);
-  expect(result.subjects.map(s => s.model.points.map(p => p.time))).toEqual([[1, 2, 3, 4], [1, 2, 3, 4]].map(a => a.map(t => t * minute)));
-  result.subjects.forEach(s => {
-    const reference = historyTimeline(subjects.find(d => d.id === s.id).rows, { ...options, subject: 'dog' });
-    expect(s.model.distanceM).toBe(reference.distanceM);
-    expect(s.summary.distanceM).toBe(reference.distanceM);
+import { dogHistoryRow } from '../src/history/HistoryRows';
+import { colors, opacity } from '../src/theme/tokens';
+import { withAlpha } from '../src/history/screen/HistoryMapModel';
+
+const MINUTE = 60000;
+const DAY = new Date(2026, 9, 3).getTime();
+const at = minutes => DAY + 8 * 60 * MINUTE + minutes * MINUTE;
+// A dog walking north-east from `from` to `to` minutes after 08:00, a fix
+// every 30 s, in `source`; `east` keeps the dogs apart.
+const walk = (slave, from, to, { source = 'local', east = 0, stay = null } = {}) => {
+  const rows = [];
+  for (let t = from; t <= to; t += 0.5) {
+    const moving = !(stay && t >= stay[0] && t <= stay[1]);
+    const step = moving ? t : stay[0];
+    rows.push(dogHistoryRow({ id: rows.length + 1, slave_id: slave, received_at: at(t), track_at: at(t),
+      slave_lat: 24.99 + step * 0.00012, slave_lon: 121.30 + east + step * 0.00008, satellites: 9, hdop: 1 }, source));
+  }
+  return rows;
+};
+const options = { dayStart: DAY, dayEnd: DAY + 86400000, today: false, now: at(240), source: 'all' };
+const noHolds = packets => packets;
+const subject = (id, rows) => ({ id, rows, replayHolds: noHolds });
+
+describe('the day of several dogs', () => {
+  test('the shared range is the protagonist’s own; every other dog is cut to it', () => {
+    const a = walk(4, 30, 120), b = walk(6, 0, 150, { east: 0.01 });
+    const day = multiDayModel([subject(4, a), subject(6, b)], { ...options, protagonist: 4 });
+    expect(day.protagonist).toBe(4);
+    const own = historyTimeline(a, { ...options, replayHolds: noHolds });
+    expect(day.range).toMatchObject({ start: own.points[0].time, end: own.points[own.points.length - 1].time });
+    const other = day.subjects[1].model;
+    expect(other.points[0].time).toBeGreaterThanOrEqual(day.range.start);
+    expect(other.points[other.points.length - 1].time).toBeLessThanOrEqual(day.range.end);
+    // The same algorithm in the same range: its distance is the one alone.
+    const alone = historyTimeline(b, { ...options, replayHolds: noHolds, range: { start: day.range.start, end: day.range.end } });
+    expect(other.distanceM).toBe(alone.distanceM);
+    // The range bar snaps to both dogs' fixes.
+    expect(day.dayPoints.length).toBe(own.dayPoints.length + alone.dayPoints.length);
   });
-  expect(result.timeline).toBe(result.subjects[0].model.nodes);
-  expect(result.camera).toHaveLength(8);
-  expect(result.cursorTime).toBe(4 * minute);
-  expect(result.subjects[1].map.times).toEqual([]);
-  expect(result.subjects[1].map.lines.every(l => l.width === 3)).toBe(true);
+
+  test('主角: a dog without records that day is never it while another has some; one alone stays', () => {
+    const a = walk(4, 30, 120);
+    const day = multiDayModel([subject(6, []), subject(4, a)], { ...options, protagonist: 6 });
+    expect(day.protagonist).toBe(4);
+    expect(day.subjects[0]).toMatchObject({ id: 6, model: null, dayRecords: false, hasData: false });
+    const empty = multiDayModel([subject(6, [])], { ...options, protagonist: 6 });
+    expect(empty).toMatchObject({ protagonist: 6, range: null });
+    expect(empty.main.dayRecords).toBe(false);
+    expect(multiDayModel([], options).protagonist).toBeNull();
+  });
+
+  test('換資料來源: the protagonist becomes the first dog with records in the new source', () => {
+    const a = walk(4, 30, 120, { source: 'local' }), b = walk(6, 0, 150, { source: 'cloud', east: 0.01 });
+    const subjects = [subject(4, a), subject(6, b)];
+    expect(multiDayModel(subjects, { ...options, source: 'cloud', protagonist: 4 }).protagonist).toBe(6);
+    const local = multiDayModel(subjects, { ...options, source: 'local', protagonist: 6 });
+    expect(local.protagonist).toBe(4);
+    expect(local.subjects[1].hasData).toBe(false);
+    // Back to 全部 the wanted dog is the protagonist again.
+    expect(multiDayModel(subjects, { ...options, protagonist: 6 }).protagonist).toBe(6);
+  });
+
+  test('a dragged range the protagonist has no fix in: another dog with fixes leads', () => {
+    const a = walk(4, 0, 30), b = walk(6, 60, 150, { east: 0.01 });
+    const day = multiDayModel([subject(4, a), subject(6, b)], { ...options, protagonist: 4,
+      manual: { start: at(70), end: at(140), following: false } });
+    expect(day.protagonist).toBe(6);
+    expect(day.range).toMatchObject({ start: at(70), end: at(140), following: false });
+    expect(day.subjects[0].hasData).toBe(false);
+  });
+
+  test('dayHasRecords: packets of the day in the source, a held packet without a fix included', () => {
+    const rows = [{ time: at(0), source: 'local' }, { time: DAY - MINUTE, source: 'cloud' }];
+    expect(dayHasRecords(rows, { ...options })).toBe(true);
+    expect(dayHasRecords(rows, { ...options, source: 'cloud' })).toBe(false);
+    expect(dayHasRecords([{ time: at(0), source: 'ble' }], { ...options, source: 'local' })).toBe(true);
+  });
 });
-test('protagonist switches list without changing shared range; empty subject never drawn', () => {
-  const result = multiDayModel([...subjects, { id: 'c', name: '阿福', rows: [] }], { ...options, protagonist: 'b' });
-  expect(result.timeline).toBe(result.subjects[1].model.nodes);
-  expect(result.range).toBe(options.range);
-  expect(result.subjects[2]).toMatchObject({ map: null, opacity: 0.4, summary: { detail: '沒有資料' } });
-  expect(multiDayModel([...subjects, { id: 'c', rows: [] }], { ...options, protagonist: 'c' }).protagonist).toBe('a');
+
+describe('the shared cursor', () => {
+  const a = walk(4, 30, 120), b = walk(6, 0, 90, { east: 0.01 }), c = walk(8, 100, 200, { east: 0.02 });
+  const day = multiDayModel([subject(4, a), subject(6, b), subject(8, c)], { ...options, protagonist: 4 });
+
+  test('opening: the protagonist’s newest fix in the range; kept inside the range', () => {
+    expect(sharedCursorTime(day, null)).toBe(at(120));
+    expect(sharedCursorTime(day, at(10))).toBe(day.range.start);
+    expect(sharedCursorTime(day, at(500))).toBe(day.range.end);
+  });
+
+  test('a dog whose last fix is before the time waits there, grey; one not started yet is not drawn', () => {
+    const cursors = multiCursors(day, at(110));
+    expect(cursors[4]).toMatchObject({ stale: false, hidden: false });
+    expect(cursors[6]).toMatchObject({ stale: true });
+    expect(cursors[6].point.time).toBe(at(90));
+    expect(cursors[6].label[1]).toBe('這段沒資料（最後 09:30）');
+    expect(multiCursors(day, at(40))[8].hidden).toBe(true);
+  });
+
+  test('one subject keeps the single screen’s cursor: the nearest fix', () => {
+    const one = multiDayModel([subject(4, a)], { ...options, protagonist: 4 });
+    const cursors = multiCursors(one, at(60.2));
+    expect(cursors[4].point.time).toBe(at(60));
+    expect(cursors[4].stale).toBe(false);
+  });
 });
-test('shared cursor past subject last fix holds stale position; before first fix hides cursor', () => {
-  const result = multiDayModel(subjects, { ...options, range: { start: 0, end: 6 * minute }, cursorTime: 6 * minute });
-  expect(result.subjects[0].cursor).toMatchObject({ stale: true, point: { time: 5 * minute } });
-  expect(result.subjects[0].cursor.label[1]).toContain('這段沒資料');
-  expect(multiDayModel(subjects, { ...options, range: { start: 0, end: 6 * minute }, cursorTime: 0 }).subjects[1].cursor.hidden).toBe(true);
-});
-test('no day data and empty range use H8 without export; phone and empty selection safe', () => {
-  const empty = multiDayModel([{ id: 'a', name: '小黑', rows: [] }], options);
-  expect(empty).toMatchObject({ protagonist: 'a', exportEnabled: false, camera: [], timeline: [] });
-  expect(empty.summary.title).toBe('這天沒有小黑的紀錄');
-  const clipped = multiDayModel(subjects, { ...options, range: { start: 10 * minute, end: 11 * minute } });
-  expect(clipped.summary.title).toBe('這段時間沒有紀錄');
-  expect(clipped.exportEnabled).toBe(false);
-  expect(multiDayModel([], options).protagonist).toBe(null);
-  const phone = multiDayModel([{ id: 'phone', name: '我的路線', subject: 'phone', colour: '#1A73E8', rows: rows() }], { ...options, range: undefined });
-  expect(phone.summary.detail).toContain('走了');
-});
-test('independent stop numbering and gaps never bridge subjects or missing intervals', () => {
-  const stationary = visitsFixture();
-  const result = multiDayModel(subjects.map(s => ({ ...s, rows: stationary })), { ...options, range: { start: 0, end: 630000 } });
-  expect(result.subjects.map(s => s.map.places.map(p => p.number))).toEqual([[1], [1]]);
-  const gap = multiDayModel([{ ...subjects[0], rows: [rows()[0], { ...rows()[1], time: 10 * minute }] }], { ...options, range: { start: 0, end: 10 * minute } });
-  expect(gap.subjects[0].map.lines).toEqual([]);
-});
-test('source selection recalculates eligibility, points and shared auto range', () => {
-  const mixed = subjects.map((s, i) => ({ ...s, rows: s.rows.map(p => ({ ...p, source: i ? 'cloud' : 'local' })) }));
-  const local = multiDayModel(mixed, { ...options, source: 'local', protagonist: 'b', range: undefined });
-  expect(local.protagonist).toBe('a');
-  expect(local.subjects[1]).toMatchObject({ hasData: false, map: null });
-  const cloud = multiDayModel(mixed, { ...options, source: 'cloud', range: undefined });
-  expect(cloud.protagonist).toBe('b');
-  expect(cloud.range.start).toBeGreaterThanOrEqual(minute);
-  expect(cloud.subjects[0].model.points).toEqual([]);
+
+describe('the map of several dogs', () => {
+  const a = walk(4, 30, 120, { stay: [60, 80] }), b = walk(6, 0, 150, { east: 0.01, stay: [40, 70] });
+  const day = multiDayModel([subject(4, a), subject(6, b)], { ...options, protagonist: 4 });
+  const look = { 4: { color: colors.route1, name: '小黑' }, 6: { color: colors.route2, name: '豆豆' } };
+  const cursors = multiCursors(day, at(90));
+  const map = multiMapPresentation(day, cursors, look);
+
+  test('numbers, times and the camera follow the protagonist only', () => {
+    const alone = historyMapPresentation(day.main, { color: colors.route1, cursor: cursors[4] });
+    expect(map.places).toEqual(alone.places);
+    expect(map.times).toEqual(alone.times);
+    expect(map.camera).toEqual(alone.camera);
+    expect(map.color).toBe(colors.route1);
+  });
+
+  test('the others: 3dp, 50% before the cursor and 20% after, never dashed', () => {
+    const others = map.lines.filter(line => line.color.startsWith(withAlpha(colors.route2, 1).slice(0, 14)));
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every(line => line.width === 3 && !line.dashed)).toBe(true);
+    expect(others.some(line => line.color === withAlpha(colors.route2, opacity.routeBeforeCursor))).toBe(true);
+    expect(others.some(line => line.color === withAlpha(colors.route2, opacity.routeAfterCursor))).toBe(true);
+  });
+
+  test('a face for every other dog at its cursor point; the protagonist’s cursor carries its name', () => {
+    expect(map.faces).toEqual([expect.objectContaining({ id: 6, name: '豆豆', color: colors.route2, stale: false })]);
+    expect(map.cursor.face).toMatchObject({ name: '小黑' });
+  });
+
+  test('middle time markers only where the cursor has been; both ends always', () => {
+    const long = multiDayModel([subject(4, walk(4, 0, 240))], { ...options, protagonist: 4 });
+    const time = long.range.start + 50 * MINUTE;
+    const full = historyMapPresentation(long.main, { color: colors.route1 });
+    const early = historyMapPresentation(long.main, { color: colors.route1, cursor: multiCursors(long, time)[4] });
+    expect(full.times.some(marker => !marker.end && marker.time > time)).toBe(true);
+    expect(early.times.every(marker => marker.end || marker.time <= time)).toBe(true);
+    expect(early.times.filter(marker => marker.end)).toHaveLength(2);
+  });
+
+  test('one subject draws exactly the single screen’s map', () => {
+    const one = multiDayModel([subject(4, a)], { ...options, protagonist: 4 });
+    const c = multiCursors(one, at(90));
+    expect(multiMapPresentation(one, c, look)).toEqual(historyMapPresentation(one.main,
+      { color: colors.route1, cursor: c[4] }));
+  });
 });

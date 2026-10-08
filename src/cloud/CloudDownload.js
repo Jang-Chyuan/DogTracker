@@ -19,8 +19,10 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
       .order('received_at', { ascending: true }).order('event_id', { ascending: true })
       .limit(1000);
     if (masterId !== null) query = query.eq('master_id', masterId);
-    // One dog's day (the history's day only the cloud holds, 054b).
-    if (slaveId !== null) query = query.eq('slave_id', slaveId);
+    // One dog's day, or the dogs shown together (the history's day only the
+    // cloud holds, 054b/055b).
+    if (Array.isArray(slaveId)) query = query.in('slave_id', slaveId);
+    else if (slaveId !== null) query = query.eq('slave_id', slaveId);
     if (cursor) {
       // Values were validated by mapCloudTelemetry; retain microsecond precision.
       query = query.or(`received_at.gt.${cursor.time},and(received_at.eq.${cursor.time},event_id.gt.${cursor.id})`);

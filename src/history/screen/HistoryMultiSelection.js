@@ -21,8 +21,11 @@ export function multiSelectionTransition(state, event) {
 export function multiSelectionPresentation(state, catalogue = []) {
   const phone = state.subject === 'phone';
   const full = state.dogs.length >= 4;
+  // 「＋ 加入」小視窗: not the dogs already in, by collar number; a dog
+  // without records that day says so and is faded (it can still be added).
   const candidates = phone ? [] : catalogue.filter(d => !state.dogs.some(s => s.id === d.id))
-    .map(d => ({ ...d, detail: d.hasData ? null : '沒有紀錄' }));
+    .sort((a, b) => Number(a.id) - Number(b.id))
+    .map(d => ({ ...d, detail: d.hasData ? null : '沒有紀錄', opacity: d.hasData ? 1 : 0.4 }));
   return { chips: dogPresentation(state.dogs).map(d => ({ ...d,
     selected: d.id === state.protagonist, removable: !phone && d.removable,
     selectable: d.hasData || !state.dogs.some(s => s.hasData) })),

@@ -148,11 +148,12 @@ export function historyMapPresentation(model, { color, cursor = null } = {}) {
     ],
     places,
     // The cursor's label already says its time: no marker under it (H1);
-    // a time in the middle too close to a number or another time is left
+    // a middle time only where the cursor has been; one too close to a number or another time is left
     // out (its label would sit on theirs).
     times: uncrowded(timeMarkers(points, { allIndoor,
       stays: (model.locations || []).filter(n => ['stop', 'indoor', 'switch'].includes(n.type)) })
-      .filter(marker => !(marker.end && marker.time === cursor?.point?.time)), places),
+      // 途中的時間標記只畫走過的部分（游標之前）; the ends always.
+      .filter(marker => (marker.end ? marker.time !== cursor?.point?.time : marker.time <= cursorTime)), places),
     cursor: cursor?.point ? { time: cursor.point.time, coordinate: coordinateOf(cursor.point), lines: cursor.label,
       stale: !!cursor.stale, key: cursor.point.time } : null,
     camera: (points.length ? points : dayPoints).map(coordinateOf),

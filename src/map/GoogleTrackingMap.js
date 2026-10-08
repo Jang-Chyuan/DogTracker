@@ -18,7 +18,7 @@ import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
 import {
-  CursorMarkerView, cursorAnchor, IndoorMarkerView, StopMarkerView, TimeMarkerView,
+  CursorFaceView, CursorMarkerView, cursorAnchor, IndoorMarkerView, StopMarkerView, TimeMarkerView,
 } from '../mapHistory/HistoryMapMarkers';
 import { nearestRouteSpot, uncrowded } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
@@ -118,7 +118,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
   const ref = useRef(null);
   const photo = usePhotoMarker(avatar, ref);
   const frame = markerFrame(marker.size);
-  const look = [marker.size, marker.problem, marker.stale, marker.indoor, marker.selected,
+  const look = [marker.size, marker.problem, marker.stale, marker.indoor, marker.selected, marker.staleRing, marker.tint,
     tag?.text, tag?.problem, avatar?.kind, avatar?.art, avatar?.color, avatar?.uri?.length].join('|');
   useEffect(() => { ref.current?.redraw?.(); }, [look]);
   return (
@@ -167,14 +167,16 @@ const CENTER = { x: 0.5, y: 0.5 };
 function CursorMarker({ cursor, color }) {
   const [labelHeight, setLabelHeight] = useState(44);
   const ref = useRef(null);
-  const look = `${cursor.lines?.join('|')}:${cursor.stale}:${labelHeight}`;
+  const face = cursor.face ?? null;
+  const look = `${cursor.lines?.join('|')}:${cursor.stale}:${labelHeight}:${color}:${face?.name ?? ''}:${face?.avatar?.uri?.length ?? face?.avatar?.art ?? ''}`;
   useEffect(() => { ref.current?.redraw?.(); }, [look, cursor.key]);
+  const height = value => { if (Math.abs(value - labelHeight) > 0.5) setLabelHeight(value); };
   return (
-    <Marker ref={ref} coordinate={cursor.coordinate} anchor={cursorAnchor(labelHeight)} tracksViewChanges={false}
+    <Marker ref={ref} coordinate={cursor.coordinate} anchor={cursorAnchor(labelHeight, !!face)} tracksViewChanges={false}
       zIndex={60} tappable={false}>
       <View collapsable={false} onLayout={() => ref.current?.redraw?.()}>
-        <CursorMarkerView lines={cursor.lines} color={color} stale={cursor.stale}
-          onLabelHeight={value => { if (Math.abs(value - labelHeight) > 0.5) setLabelHeight(value); }} />
+        {face ? <CursorFaceView lines={cursor.lines} color={color} stale={cursor.stale} face={face} onLabelHeight={height} />
+          : <CursorMarkerView lines={cursor.lines} color={color} stale={cursor.stale} onLabelHeight={height} />}
       </View>
     </Marker>
   );

@@ -1,5 +1,5 @@
-// What the history's calendar asks the cloud (054b): which days hold one
-// dog's rows (H3b's dots), the earliest one (how far back ‹ goes), and the
+// What the history's calendar asks the cloud (054b): which days hold the
+// rows of the dog (or dogs, 055b) (H3b's dots), the earliest one (how far back ‹ goes), and the
 // download of a day only the cloud holds (H3c). The download is the cloud
 // page's writer (downloadCloudHistory → CloudDatabase.savePage) through the
 // sync's exclusive slot (runManual), so it never races the 30-second sync.
@@ -49,7 +49,11 @@ async function oneTime(query, signal, ms) {
  * `owner` the account, `runManual(work, abort)` the sync's slot.
  */
 export function createHistoryCloud({ client, database, owner, runManual, questionMs = CLOUD_QUESTION_MS }) {
-  const rows = slaveId => client.from('dog_telemetry').select('received_at').eq('slave_id', slaveId);
+  // One dog, or the dogs shown together (H7: a day of any of them has a dot).
+  const rows = slaveId => {
+    const query = client.from('dog_telemetry').select('received_at');
+    return Array.isArray(slaveId) ? query.in('slave_id', slaveId) : query.eq('slave_id', slaveId);
+  };
   // One download at a time: a cancelled one keeps the sync's slot until it
   // has stopped, so the next waits for it instead of being refused.
   let previous = Promise.resolve();
@@ -64,7 +68,7 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
     earliest({ slaveId, signal }) {
       return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
     },
-    /** Downloads the dog's rows of [dayStart, dayEnd) into this phone. */
+    /** Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone. */
     download({ slaveId, dayStart, dayEnd, signal }) {
       const before = previous;
       const run = (async () => {

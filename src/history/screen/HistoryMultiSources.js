@@ -6,6 +6,12 @@ export const HISTORY_SOURCE_OPTIONS = [
   { id: 'cloud', label: '雲端' },
 ];
 
+/** The row at the foot of a dog's panel: 「資料來源：全部 ›」 (c328). */
+export function sourceLabel(source = 'all') {
+  const option = HISTORY_SOURCE_OPTIONS.find(o => o.id === source) ?? HISTORY_SOURCE_OPTIONS[0];
+  return `資料來源：${option.label} ›`;
+}
+
 /** Supply rows for one subject (or slave_id on shared raw rows). Availability
  * describes packets, including indoor/status packets, not just GPS fixes.
  * Empty sources remain selectable: the design keeps this row even in H8.
@@ -21,7 +27,7 @@ export function multiSourcePicker(rows = [], { subject = 'dog', subjectId,
   const options = HISTORY_SOURCE_OPTIONS.map(o => ({ ...o, available: o.id === 'all' ? local || cloud
     : o.id === 'local' ? local : cloud, enabled: true, selected: o.id === selected }));
   return { visible: true, title: '資料來源', options, selected,
-    label: `資料來源：${options.find(o => o.selected).label} ›` };
+    label: sourceLabel(selected) };
 }
 
 /** Immediate selection; preserve explicit empty source rather than silently
@@ -31,5 +37,5 @@ export function selectMultiSource(picker, source) {
   if (!option) return picker;
   return { ...picker, selected: source, open: false,
     options: picker.options.map(o => ({ ...o, selected: o.id === source })),
-    label: `資料來源：${option.label} ›` };
+    label: sourceLabel(source) };
 }
