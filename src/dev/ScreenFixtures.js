@@ -1177,9 +1177,10 @@ const FIXTURES = {
     geocoder: { names: HISTORY_NAMES } }),
   // 小黑's 10/2 (a past day this phone holds): 「結束」 with its time.
   'history-past-day': now => calendarFixture(now, { view: { goTo: dayKey(new Date(now - 5 * DAY_MS)) } }),
-  // My route today with the end dragged back to 08:50 (fixed): 「結束 08:50」.
+  // My route today with only the end dragged back to 08:50 (fixed): 「結束
+  // 08:50」; the start stays the automatic departure (07:02:20), 「出發」.
   'history-manual-end': now => ({ ...FIXTURES['history-my-route'](now),
-    historyView: { manual: { start: null, end: now - 40 * MINUTE, following: false } } }),
+    historyView: { manual: { start: now - 8860 * SECOND, end: now - 40 * MINUTE, following: false } } }),
   // My route with recording switched off at 09:05: 「記錄已關閉 09:05」.
   'history-recording-off': now => {
     const path = myRouteMorning(now).filter(row => row.time <= now - 25 * MINUTE);
