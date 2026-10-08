@@ -24,7 +24,7 @@ import { createRideDetector } from '../placement/RideAlong';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { todayRouteDistance } from '../tracking/TodayDistance';
 import { ONBOARDING_DONE, ONBOARDING_SIGN_IN } from '../app/Launch';
-import { HISTORY_DAY_CONTEXT_MS } from '../mapHistory/HistoryDatabase';
+import { HISTORY_DAY_AFTER_MS, HISTORY_DAY_CONTEXT_MS } from '../mapHistory/HistoryDatabase';
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
 import { fixtureAddressLookup } from './fixtureGeocoder';
 import { fixtureExporter } from './fixtureExporter';
@@ -1169,6 +1169,48 @@ const FIXTURES = {
       ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
   },
+  // ---- the list's last node (057a): every way a day's list can end -------
+  // 小黑 today, its last fix at 09:13 (17 minutes ago), the end following now:
+  // 「最後 09:13」 (判定表「「現在」和「最後 12:05」」).
+  'history-dog-stale': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: dogMorning(now).filter(row => row.received_at <= now - 17 * MINUTE) }),
+    geocoder: { names: HISTORY_NAMES } }),
+  // 小黑's 10/2 (a past day this phone holds): 「結束」 with its time.
+  'history-past-day': now => calendarFixture(now, { view: { goTo: dayKey(new Date(now - 5 * DAY_MS)) } }),
+  // My route today with the end dragged back to 08:50 (fixed): 「結束 08:50」.
+  'history-manual-end': now => ({ ...FIXTURES['history-my-route'](now),
+    historyView: { manual: { start: null, end: now - 40 * MINUTE, following: false } } }),
+  // My route with recording switched off at 09:05: 「記錄已關閉 09:05」.
+  'history-recording-off': now => {
+    const path = myRouteMorning(now).filter(row => row.time <= now - 25 * MINUTE);
+    const phone = routePhone(path, now);
+    return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
+      phone: { ...phone, recording: false }, geocoder: { names: HISTORY_NAMES } };
+  },
+  // 小黑 walking from 10/5 23:10 into 10/6 00:50, opened on 10/5: the last
+  // node 「接續隔天」.
+  'history-cross-midnight': now => {
+    const midnight = new Date(now - 24 * 60 * MINUTE).setHours(0, 0, 0, 0);
+    const late = legsPath(midnight, 50 * MINUTE, at(-20, -40), [{ walk: 25, bearing: 70, speed: 0.5 }, { stay: 15 },
+      { walk: 60, bearing: 120, speed: 0.5 }]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix }));
+    // legsPath stops 5 s before its "now": run it past midnight on its own.
+    const after = legsPath(midnight + 50 * MINUTE, 50 * MINUTE, late.length ? { latitude: late.at(-1).slave_lat,
+      longitude: late.at(-1).slave_lon } : at(0, 0), [{ walk: 50, bearing: 20, speed: 0.5 }])
+      .map(row => bleRow({ slave: 6, time: row.time, fix: row.fix }));
+    return { ...FIXTURES['all-good'](now), openRoute: 'history',
+      history: historyPage(now, { slave: 6, ble: [...late, ...after, ...dogMorning(now)] }),
+      historyView: { goTo: dayKey(new Date(midnight - 60 * MINUTE)) }, geocoder: { names: HISTORY_NAMES } };
+  },
+  // 豆豆 walks, stays, then goes inside for the last 30 minutes (packets
+  // without a fix until now): the list ends on the house node 「室內・N 分」.
+  'history-indoor-end': now => {
+    const path = legsPath(now, 85 * MINUTE, at(10, 8), [{ walk: 25, bearing: 60, speed: 1.3 }, { stay: 15 },
+      { walk: 2, bearing: 90, speed: 0.4 }, { stay: 13 }, { inside: 30 }]);
+    const ble = path.map(row => bleRow({ slave: 4, time: row.time, fix: row.fix,
+      ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
+    return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }),
+      geocoder: { names: HISTORY_NAMES } };
+  },
   // ---- history (055b): several dogs (H7) and 資料來源 ------------------
   // H7: 看軌跡 on 小黑's card, then 豆豆 and 阿福 added; 豆豆 leads (its
   // list, numbers and 「豆豆・移動 x km」), the others thin, faces at the cursor.
@@ -1500,8 +1542,11 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     speed_accuracy_mps: 0.4, motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
   const readDay = async ({ subject, slaveId, start, end, source = 'all', owner = null, after = {} }) => {
     if (after.fixture) return { rows: [], seed: [], after };
+    // As HistoryDatabase.historyDayRows: half an hour before, and 3 minutes
+    // past midnight (do the last stay, hold or walk go on next day?).
     const since = start - HISTORY_DAY_CONTEXT_MS;
-    const within = time => time >= since && time < end;
+    const until = end + HISTORY_DAY_AFTER_MS;
+    const within = time => time >= since && time < until;
     if (subject === 'phone') {
       return { rows: phoneRows.filter(row => within(row.time)).map(phoneHistoryRow), seed: [], after: { fixture: true } };
     }
