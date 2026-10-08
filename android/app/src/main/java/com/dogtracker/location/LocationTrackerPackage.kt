@@ -24,7 +24,10 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
   }
   @ReactMethod fun live(promise: Promise) {
     promise.resolve(org.json.JSONObject(LocationTrackerService.liveJson)
-      .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status).toString())
+      .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status)
+      // The user's 位置記錄 switch (S4), on unless they switched it off.
+      .put("enabled", context.getSharedPreferences("phone_location_recording", 0).getBoolean("enabled", true))
+      .toString())
   }
   @ReactMethod fun start(promise: Promise) {
     try {

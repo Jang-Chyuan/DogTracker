@@ -7,7 +7,8 @@ import CloudScreen from '../src/cloud/CloudScreen';
 import { useCloudSync } from '../src/cloud/useCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { useHistoryDownload } from '../src/mapHistory/useHistoryDownload';
-import SettingsScreen from '../src/screens/SettingsScreen';
+import SettingsHome from '../src/settings/SettingsHome';
+import { settingsHome } from '../src/settings/SettingsModel';
 import { signInErrorText } from '../src/screens/LoginScreen';
 
 // One Supabase client shared by every subscriber (AuthProvider, useCloudSync,
@@ -191,15 +192,15 @@ test('登入失效 on the 雲端資料 page asks to sign in again there', async 
 });
 
 test('settings says 未登入 as a plain state, and 需要重新登入 after 登入失效', async () => {
-  const tracking = { ready: { real: true }, errors: {} };
-  await act(async () => { renderer = Renderer.create(<SettingsScreen tracking={tracking}
-    account={{ signedIn: false, email: '', expired: false }} />); });
+  const home = (account, signInExpired = false) => <SettingsHome onOpen={() => {}}
+    home={settingsHome({ now: 0, receiverState: null, account, signInExpired })} />;
+  await act(async () => { renderer = Renderer.create(home({ signedIn: false, email: '' })); });
   expect(text()).toContain('未登入');
-  await act(async () => renderer.update(<SettingsScreen tracking={tracking}
-    account={{ signedIn: false, email: '', expired: true }} />));
-  expect(text()).toContain('需要重新登入');
-  await act(async () => renderer.update(<SettingsScreen tracking={tracking}
-    account={{ signedIn: true, email: 'user@example.test', expired: false }} />));
+  // Not signed in is a choice: no red 「!」 on the Supabase row.
+  expect(text()).not.toContain('Supabase 帳號，有問題');
+  await act(async () => renderer.update(home({ signedIn: false, email: '' }, true)));
+  expect(text()).toContain('Supabase 帳號，有問題：需要重新登入');
+  await act(async () => renderer.update(home({ signedIn: true, email: 'user@example.test' })));
   expect(text()).toContain('user@example.test');
 });
 
