@@ -8,24 +8,31 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export function useReceiverWifi(service, { active = false, connected = false } = {}) {
   const [state, setState] = useState({ ssids: null, activeSsid: '', loading: false, error: '' });
   const mounted = useRef(true);
+  // Bumped by a new service, a change and every read: only the newest read
+  // may set the list (a read started before a deletion must not bring the
+  // deleted network back).
+  const generation = useRef(0);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
   // A new service (a fixture's, or the live one again) starts over.
   useEffect(() => {
+    generation.current += 1;
     setState({ ssids: null, activeSsid: '', loading: false, error: '' });
   }, [service]);
   const load = useCallback(async () => {
     if (!service?.getWifiList) return;
+    const id = ++generation.current;
+    const latest = () => mounted.current && id === generation.current;
     setState(current => ({ ...current, loading: true, error: '' }));
     try {
       const result = await service.getWifiList();
-      if (mounted.current) {
+      if (latest()) {
         setState({ ssids: result?.ssids || [], activeSsid: result?.activeSsid || '', loading: false, error: '' });
       }
     } catch (error) {
-      if (mounted.current) setState(current => ({ ...current, loading: false, error: error?.message || '讀取失敗' }));
+      if (latest()) setState(current => ({ ...current, loading: false, error: error?.message || '讀取失敗' }));
     }
   }, [service]);
   useEffect(() => {
@@ -41,9 +48,11 @@ export function useReceiverWifi(service, { active = false, connected = false } =
       await load();
     },
     async remove(ssid) {
+      generation.current += 1;
       await service.removeWifi(ssid);
+      generation.current += 1;
       if (mounted.current) {
-        setState(current => ({ ...current, ssids: (current.ssids || []).filter(item => item !== ssid),
+        setState(current => ({ ...current, loading: false, ssids: (current.ssids || []).filter(item => item !== ssid),
           activeSsid: current.activeSsid === ssid ? '' : current.activeSsid }));
       }
     },

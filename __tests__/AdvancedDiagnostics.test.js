@@ -424,9 +424,13 @@ test('先上傳 that sends everything deletes right after; closing meanwhile del
   const second = flow(slow);
   await act(async () => second.result.start());
   let upload;
-  act(() => { upload = second.result.uploadFirst(); });
+  await act(async () => { upload = second.result.uploadFirst(); });
+  // The upload is told when its run is over.
+  const alive = slow.uploadAll.mock.calls[0][0];
+  expect(alive()).toBe(true);
   expect(second.result.dialog.uploading).toBe(true);
   act(() => second.result.cancel());
+  expect(alive()).toBe(false);
   left = 0;
   await act(async () => { finish('done'); await upload; });
   expect(slow.deleteAll).not.toHaveBeenCalled();
@@ -453,4 +457,58 @@ test('a fixture opens the dialog at once with its rows waiting', () => {
   expect(result.dialog).toMatchObject({ visible: true, note: '還有 120 筆沒上傳：先上傳／一起刪除' });
   unmount();
   expect(FIXTURE_NOW).toBe(buildFixture('advanced-delete-confirm').now);
+});
+
+test('a count that comes back after the dialog closed and opened again is not used', async () => {
+  const counts = [];
+  const actions = { countUnsent: jest.fn(() => new Promise(resolve => counts.push(resolve))),
+    uploadAll: jest.fn(), deleteAll: jest.fn(async () => {}), onDeleted: jest.fn() };
+  const { result, unmount } = flow(actions);
+  await act(async () => { result.start(); });
+  act(() => result.cancel());
+  await act(async () => { result.start(); });
+  await act(async () => counts[1](7));
+  await act(async () => counts[0](0));
+  expect(result.dialog).toMatchObject({ visible: true, note: '還有 7 筆沒上傳：先上傳／一起刪除' });
+  unmount();
+});
+
+test('a Wi-Fi read started before a deletion does not bring the network back', async () => {
+  const { useReceiverWifi } = require('../src/settings/useReceiverWifi');
+  const reads = [];
+  const service = { getWifiList: jest.fn(() => new Promise(resolve => reads.push(resolve))),
+    removeWifi: jest.fn(async () => {}), configureWifi: jest.fn(async () => {}) };
+  let wifi;
+  function Probe() { wifi = useReceiverWifi(service, { active: true, connected: true }); return null; }
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<Probe />); });
+  await act(async () => reads[0]({ ssids: ['家裡', '辦公室'], activeSsid: '家裡' }));
+  expect(wifi.ssids).toEqual(['家裡', '辦公室']);
+  await act(async () => { wifi.reload(); });
+  await act(async () => wifi.remove('辦公室'));
+  await act(async () => reads[1]({ ssids: ['家裡', '辦公室'], activeSsid: '家裡' }));
+  expect(wifi.ssids).toEqual(['家裡']);
+  expect(wifi.loading).toBe(false);
+  await act(async () => renderer.unmount());
+});
+
+test('本機／雲端資料: reading says so, a failed read offers 重試, columns can be picked', async () => {
+  const CloudDataScreen = require('../src/cloud/CloudDataScreen').default;
+  const sources = buildFixture('diagnostics-ok').diagnostics;
+  let finish;
+  const database = { ...sources.cloudDatabase,
+    listHistory: jest.fn(() => new Promise((resolve, reject) => { finish = { resolve, reject }; })) };
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<CloudDataScreen database={database} clientFactory={sources.cloudClient} />); });
+  expect(renderer.root.findAllByProps({ testID: 'cloud-data-loading' }).length).toBeGreaterThan(0);
+  expect(text(renderer)).not.toContain('還沒有這個帳號的雲端資料');
+  await act(async () => finish.reject(new Error('database is locked')));
+  expect(text(renderer)).toContain('讀取失敗：database is locked');
+  database.listHistory.mockImplementation(sources.cloudDatabase.listHistory);
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '重試'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  expect(renderer.root.findByProps({ testID: 'cloud-data-table' })).toBeDefined();
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '選擇欄位（8）')[0].props.onPress());
+  expect(renderer.root.findByProps({ testID: 'column-picker' })).toBeDefined();
+  await act(async () => renderer.unmount());
 });

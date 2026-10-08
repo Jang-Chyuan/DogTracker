@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, space as gap, type } from '../theme/tokens';
 import { formatClockSeconds, formatDateTime } from '../map/MapFormat';
-import { DataTable, PillButton, TextButton, dataStyles } from '../settings/DataTable';
+import { ColumnPicker, DataTable, LoadState, PillButton, TextButton, dataStyles } from '../settings/DataTable';
 import { GroupCard, GroupTitle, ListRow, settingsStyles } from '../settings/SettingsUI';
 import { getCloudClient } from './CloudClient';
 import { CLOUD_BUDGET_BYTES } from './CloudDatabase';
@@ -26,6 +26,9 @@ const COLUMNS = [
   ['satellites', '衛星', 52], ['hdop', 'HDOP', 64], ['activity', '活動值', 72],
   ['rssi', 'RSSI', 64], ['snr', 'SNR', 56], ['sequence', '序號', 72],
 ].map(([key, label, width, format]) => ({ key, label, width, format }));
+// What the table shows until other columns are picked (「恢復預設欄位」).
+export const CLOUD_DEFAULT_COLUMNS = Object.freeze(['received_at', 'master_id', 'slave_id', 'slave_lat', 'slave_lon',
+  'battery_percentage', 'usb_present', 'sequence']);
 
 const megabytes = bytes => `${Math.round(bytes / (1024 * 1024))} MB`;
 
@@ -52,6 +55,10 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
   const [offset, setOffset] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The first read of this account's rows finished (until then: 讀取中).
+  const [loaded, setLoaded] = useState(false);
+  const [selected, setSelected] = useState(() => [...CLOUD_DEFAULT_COLUMNS]);
+  const [picking, setPicking] = useState(false);
   const mounted = useRef(false);
   const owner = useRef(null);
   const generation = useRef(0);
@@ -68,7 +75,7 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
       if (owner.current !== nextOwner) {
         generation.current += 1;
         owner.current = nextOwner;
-        setRows([]); setCount(0); setOffset(0); setError('');
+        setRows([]); setCount(0); setOffset(0); setError(''); setLoaded(false);
       }
       setSession(next);
     };
@@ -97,8 +104,10 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
       const [history, total, space] = await Promise.all([
         database.listHistory(userId, offset), database.count(userId), database.usage(),
       ]);
-      if (!cancelled && current(version)) { setRows(history); setCount(total); setUsage(space); }
-    }).catch(() => { if (!cancelled && current(version)) setError('讀取本機雲端資料失敗，請按重新讀取'); });
+      if (!cancelled && current(version)) { setRows(history); setCount(total); setUsage(space); setLoaded(true); }
+    }).catch(failure => {
+      if (!cancelled && current(version)) setError(`讀取失敗：${failure?.message || '手機裡的雲端資料讀不到'}`);
+    });
     return () => { cancelled = true; };
   }, [database, session?.user.id, sync?.revision, offset]);
 
@@ -110,7 +119,7 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
       database.listHistory(userId, nextOffset), database.count(userId), database.usage(),
     ]);
     if (current(version)) {
-      setRows(history); setCount(total); setUsage(space); setOffset(nextOffset);
+      setRows(history); setCount(total); setUsage(space); setOffset(nextOffset); setLoaded(true);
     }
   }
 
@@ -120,7 +129,7 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
     setBusy(true); setError('');
     const version = generation.current;
     try { await action(version); }
-    catch (failure) { if (current(version)) setError(failure.message || '操作失敗，請重試'); }
+    catch (failure) { if (current(version)) setError(`讀取失敗：${failure?.message || '請再試一次'}`); }
     finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -132,7 +141,7 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
     ? `上次同步：${formatClockSeconds(sync.lastSuccess)}` : '等待自動同步';
   return <ScrollView testID="cloud-data" style={settingsStyles.page} contentContainerStyle={settingsStyles.content}>
     {connection.error ? <Text style={styles.error}>{connection.error}</Text> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {error && !session ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {!session ? <Text testID="cloud-data-signed-out" style={styles.empty}>
       登入 Supabase 帳號後，這裡會列出下載到這支手機的雲端資料。</Text> : <>
       <GroupTitle>帳號與同步</GroupTitle>
@@ -152,9 +161,19 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
       <Text style={dataStyles.heading} accessibilityRole="header">{`這個帳號下載的資料（共 ${count} 筆）`}</Text>
       <View style={dataStyles.buttons}>
         <PillButton title="重新讀取本機資料" disabled={busy} onPress={() => perform(() => loadRows(0))} />
+        <PillButton title={picking ? '收起欄位' : `選擇欄位（${selected.length}）`}
+          onPress={() => setPicking(value => !value)} />
       </View>
-      {rows.length ? <>
-        <DataTable testID="cloud-data-table" columns={COLUMNS} rows={rows} openId={rawId}
+      {picking ? <ColumnPicker columns={COLUMNS} selected={selected} onReset={() => setSelected([...CLOUD_DEFAULT_COLUMNS])}
+        onToggle={key => setSelected(shown => (shown.includes(key)
+          ? (shown.length === 1 ? shown : shown.filter(item => item !== key))
+          : COLUMNS.filter(column => shown.includes(column.key) || column.key === key).map(column => column.key)))} />
+        : null}
+      <LoadState testID="cloud-data" loading={!loaded && !error} error={error}
+        onRetry={() => perform(() => loadRows(offset))} empty={false} />
+      {!loaded || error ? null : rows.length ? <>
+        <DataTable testID="cloud-data-table" columns={COLUMNS.filter(column => selected.includes(column.key))}
+          rows={rows} openId={rawId}
           rowLabel={row => `第 ${row.id} 筆原始資料`}
           onRowPress={row => setRawId(open => (open === row.id ? null : row.id))} />
         <Text style={dataStyles.hint}>點一列看這筆的原始雲端 JSON；時間照手機的時區。</Text>
