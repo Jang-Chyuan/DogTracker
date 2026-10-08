@@ -908,11 +908,13 @@ function TrackerApp({ resume = null, onRestart }) {
     case 'diagnostics':
       page = (
         <DiagnosticsSettings
+          // Opened from D0's failure screen without the flag: no 隱藏診斷
+          // (design 判定表「診斷的入口」); with it, hiding returns to D0.
+          canHide={settingsData.diagnosticsEnabled}
           onHide={async () => {
             const saved = await mapInputs.tracking.saveTrackingPreferences({ diagnosticsEnabled: false });
-            if (saved || (launch.screen === 'failed' && !settingsData.diagnosticsEnabled)) {
-              setStack([{ name: 'map' }, { name: 'settings' }]);
-            }
+            if (launch.screen === 'failed') goBack();
+            else if (saved) setStack([{ name: 'map' }, { name: 'settings' }]);
           }}
           page={diagnosticsPage({
             packets: mapInputs.cloudDogs?.packets,
