@@ -67,6 +67,8 @@ export default function MapScreen({
   onOpenHistory,
   // { slaveId, key }: open this dog's card (back from its history).
   openDogRequest = null,
+  // Back from D3 opened by A6: frame that receiver's located dogs (once per key).
+  frameRequest = null,
   // 「今天 x km」: today's recorded route of this phone ({ count, metres },
   // useTodayRoute), null until read.
   todayRoute = null,
@@ -552,6 +554,7 @@ export default function MapScreen({
         onMapPress={cardOpen ? pressMap : undefined}
         onHeading={setHeading}
         focusDog={focusDog}
+        frameRequest={historical ? null : frameRequest}
         coverBottom={coverBottom}
         today={historical ? null : today}
         onToday={openMyRoute}

@@ -53,9 +53,7 @@ async function requestPermissions() {
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
     ];
-  if (Platform.Version >= 33 && PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS) {
-    permissions.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-  }
+  // Notifications are D2's question, never asked by a scan.
   const result = await PermissionsAndroid.requestMultiple(permissions);
   return Object.values(result).every(
     permission => permission === PermissionsAndroid.RESULTS.GRANTED,
@@ -236,7 +234,14 @@ export function createBleService(manager = new BleManager()) {
       return getBackgroundState();
     },
 
-    async scan(config, onStatus, onDevice, onFinished) {
+    // Bluetooth's switch: 'PoweredOn', 'PoweredOff', … (react-native-ble-plx);
+    // 'Unknown' when it cannot be read.
+    async bluetoothState() {
+      try { return await manager.state(); } catch { return 'Unknown'; }
+    },
+
+    // `options.timeoutMs`: how long the scan runs (D3c lists receivers for 30 s).
+    async scan(config, onStatus, onDevice, onFinished, options = {}) {
       if (!(await requestPermissions())) {
         onStatus('未取得 BLE 掃描權限');
         onFinished?.();
@@ -273,6 +278,7 @@ export function createBleService(manager = new BleManager()) {
           onStatus('掃描完成');
           onFinished?.();
         },
+        options.timeoutMs,
       );
     },
 

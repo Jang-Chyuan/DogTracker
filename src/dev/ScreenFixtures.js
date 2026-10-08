@@ -668,6 +668,51 @@ const FIXTURES = {
   // S1 with nothing to handle: receiver 7 connected (its battery 64%), phone
   // recording, signed in, notifications allowed.
   'settings-all-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'settings' }),
+  // ---- 初次使用 D2–D4 (053): the guide's pages ------------------------------
+  // D2c: 「全部允許」 ran; 附近的裝置 allowed, 精確位置 only 大概, 通知 refused
+  // → red 「!」 with 「開系統設定 ›」 on both, the button 「下一步」.
+  'onboard-permissions-partial': now => ({ ...FIXTURES['no-data'](now), openRoute: 'permissions',
+    permissionsGuide: { asked: true, grants: { nearby: 'granted', location: 'approximate', notifications: 'denied' } } }),
+  // D2d: everything allowed: three ticks, 「下一步」.
+  'onboard-permissions-done': now => ({ ...FIXTURES['no-data'](now), openRoute: 'permissions',
+    permissionsGuide: { asked: true, grants: { nearby: 'granted', location: 'granted', notifications: 'granted' } } }),
+  // D3b: a QR code that is not a receiver's → 「這不是接收器的 QR Code」.
+  'pair-wrong-qr': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
+    pairing: { view: 'scan', camera: 'granted', dialog: { kind: 'wrongQr' } } }),
+  // D3a without the camera: 「需要相機才能掃描」 with 「開系統設定 ›」 where the
+  // frame was; 手動輸入 still there.
+  'pair-camera-denied': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
+    pairing: { view: 'scan', camera: 'denied' } }),
+  // D3c: 「DogGPS-Master 7」 typed; still searching, two receivers found so
+  // far (7 strong, 3 weak).
+  'pair-manual-nearby': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
+    pairing: { view: 'manual', input: 'DogGPS-Master 7', searching: true,
+      nearby: [{ id: 'AA:BB:CC:00:00:07', name: 'DogGPS-Master7', rssi: -58 },
+        { id: 'AA:BB:CC:00:00:03', name: 'DogGPS-Master3', rssi: -86 }] } }),
+  // D3d: connecting to DogGPS-Master7 (the QR code's), 取消.
+  'pair-connecting': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
+    pairing: { view: 'connecting', target: { name: 'DogGPS-Master7', number: 7, method: 'qr' } } }),
+  // D3d after 30 s: 「連不上接收器 7」 with 手動輸入 / 重試.
+  'pair-failed': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
+    pairing: { view: 'stopped', target: { name: 'DogGPS-Master7', number: 7, method: 'qr' },
+      dialog: { kind: 'failed', number: 7, method: 'qr' } } }),
+  // The QR code said 7, receiver 3 answered: 「這不是要連的接收器」「要連 7，收到
+  // 的是 3，已中斷連線」 with 稍後再說 / 重新掃描.
+  'pair-mismatch': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
+    pairing: { view: 'stopped', target: { name: 'DogGPS-Master7', number: 7, method: 'qr' },
+      dialog: { kind: 'mismatch', expected: 7, got: 3, method: 'qr' } } }),
+  // D4: receiver 7 connected and three sources heard — 4 and 7 located, 9
+  // never — each only as 「訊號源 N」 after the default face.
+  'pair-done-sources': now => ({ receiver: receiving(now), cloud: SIGNED_OUT, phone: walkingPhone(now),
+    openRoute: 'paired',
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 60 * SECOND, to: 5 * SECOND, start: [14, 9], step: [0.05, 0.08] }),
+      ...series(bleRow, now, { slave: 7, from: 60 * SECOND, to: 15 * SECOND, start: [-20, 18], step: [0.04, -0.02] }),
+      ...series(bleRow, now, { slave: 9, from: 50 * SECOND, to: 25 * SECOND }),
+    ]) }),
+  // D4b: receiver 7 connected, nothing heard yet.
+  'pair-done-empty': now => ({ receiver: { ...receiving(now), receiving: false, lastReceivedAt: 0 },
+    cloud: SIGNED_OUT, phone: walkingPhone(now), openRoute: 'paired', ble: [] }),
   // S1 with red 「!」 rows (as in the S1 mockup): location services off
   // (手機), downloads failing (Supabase 帳號), notifications not allowed
   // (手機 and 提醒). The receiver is fine.
@@ -763,7 +808,7 @@ export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
 
 // A settings page a fixture can be opened on (&page=…), whatever its own.
 export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'advanced',
-  'diagnostics', 'wifi', 'liveData', 'cloudData', 'locationRecords']);
+  'diagnostics', 'wifi', 'liveData', 'cloudData', 'locationRecords', 'permissions', 'pair', 'paired']);
 const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-zA-Z]+))?$/;
 
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.
@@ -872,6 +917,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
+    permissionsGuide = null, pairing = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -974,6 +1020,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // whether the sign-in restore still waits for Supabase.
     launch,
     restoring,
+    // D2's rows ({ grants, asked }) and D3's state (usePairing's fixture:
+    // view, camera, dialog, target, nearby…): drawn, nothing asked or scanned.
+    permissionsGuide,
+    pairing,
   };
 }
 

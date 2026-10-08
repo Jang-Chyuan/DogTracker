@@ -39,10 +39,13 @@ src/
 │  └─ DogMap.js                         地圖介面（預留）
 ├─ models/
 │  └─ DogStatus.js                      共用正規化資料模型
+├─ onboarding/
+│  ├─ Permissions.js、PermissionsScreen.js  D2 權限一次問完
+│  ├─ Pairing.js、usePairing.js、PairingScreen.js  D3 掃 QR／手動輸入／連線
+│  └─ PairedScreen.js                   D4 已連上接收器、收到的訊號源
 ├─ qr/
 │  └─ MasterQrParser.js                 QR 設定格式與安全驗證
 └─ screens/
-   ├─ HardwareScreen.js                 接收器掃描（QR／手動，D3 取代前）
    ├─ MapScreen.js                      地圖畫面（預留）
    └─ HistoryScreen.js                  歷史畫面（預留）
 
@@ -50,9 +53,8 @@ android/app/src/main/java/com/dogtracker/
 ├─ BleBackgroundModule.kt               React Native 與前景服務橋接
 ├─ BleBackgroundPackage.kt              BLE 原生模組註冊
 ├─ BleForegroundService.kt              GATT 復原、Notify 與原生重連
-├─ QrScannerActivity.kt                 CameraX／ML Kit 掃描畫面
-├─ QrScannerModule.kt                   QR Scanner Promise 橋接
-└─ QrScannerPackage.kt                  QR 原生模組註冊
+├─ QrCameraViewManager.kt               D3a 掃描框裡的相機（CameraX／ML Kit）
+└─ QrScannerPackage.kt                  註冊 QrCameraView
 ```
 
 ## 模組責任

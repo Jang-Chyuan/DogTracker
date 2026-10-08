@@ -63,6 +63,18 @@ export function coldStartCoordinates(markers = [], phone = null, receiverId = nu
   return frameAllCoordinates(markers, null);
 }
 
+/**
+ * Back on the map from D3 (A6 「連接接收器」): the dogs this receiver has sent
+ * that have a position; none (nothing heard or nothing located yet) leaves
+ * the map where it is ([]).
+ */
+export function receiverDogsCoordinates(markers = [], receiverId = null) {
+  const points = markers.filter(marker => marker.source === 'ble' && valid(marker.coordinate)
+    && (receiverId == null || marker.masterId == null || marker.masterId === receiverId))
+    .map(marker => plain(marker.coordinate));
+  return points.length ? framedCoordinates(points) : [];
+}
+
 /** 「框住全部」: every dog on the map and the phone. */
 export function frameAllCoordinates(markers = [], phone = null) {
   const points = markers.filter(marker => valid(marker.coordinate)).map(marker => plain(marker.coordinate));

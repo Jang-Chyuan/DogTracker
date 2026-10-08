@@ -68,12 +68,12 @@ test('legacy stored demo mode loads as real while preserving every other prefere
     expect(focusSlaveId).toBe(7);
     expect(hiddenSlaveIds).toEqual([4, 6]);
     expect(changed.mock.calls.at(-1)[0].value).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false, alerts: DEFAULT_ALERT_PREFERENCES,
-      onboarding: 'done' });
+      onboarding: 'done', permissionsAsked: false, cameraAsked: false });
     // Loading only normalizes in memory; the next successful save persists it.
     expect(await database.load()).toEqual(stored);
     expect(await controller.save({})).toBe(true);
     expect(await database.load()).toEqual({ ...kept, mode: 'real', noDataCardDismissed: false, alerts: DEFAULT_ALERT_PREFERENCES,
-      onboarding: 'done' });
+      onboarding: 'done', permissionsAsked: false, cameraAsked: false });
     await controller.close();
   } finally {
     connection.close();

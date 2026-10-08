@@ -1,11 +1,13 @@
-// Changing receivers from settings → 接收器 (S2 「掃 QR Code 換接收器」,
-// 「中斷並重新掃描」), as far as the design's rules can be kept before D3
-// (053): the receiver used until now is remembered when the QR code picks
-// another one; if the new one turns out to be another Master (its first
-// packet has the wrong number), the previous receiver is put back, switched
-// off, and a dialog says so (判定表「換接收器時「先換過去」之後才發現編號不符」):
-// 「這不是要連的接收器」「要連 8，收到的是 3，已中斷連線，改回接收器 7（已中斷連線）」
-// with 「連線接收器 7」 / 「重新掃描」. Pure; useReceiverControl does the rest.
+// A receiver chosen in D3 that later turns out to be another Master (its
+// first packet has the wrong number), wherever the user is by then (判定表
+// 「初次設定之後才發現編號不符」, and 「換接收器時「先換過去」之後才發現編號不符」):
+// it is disconnected; after a change of receiver the previous one is put
+// back, switched off, and a dialog says so: 「這不是要連的接收器」「要連 8，收到的
+// 是 3，已中斷連線，改回接收器 7（已中斷連線）」 with 「連線接收器 7」 /
+// 「重新掃描」; on a first set up the wrong one is forgotten (「稍後再說」 /
+// 「重新掃描」, 「重新搜尋」 when it was typed in). Pure; useReceiverControl does
+// the rest. D3 itself (usePairing) judges the packets it waits for with
+// judgeSwitch too.
 
 import { receiverNumber } from '../map/ReceiverState';
 
@@ -59,7 +61,7 @@ export function notChangedMessage(previous) {
  * the receiver used before (put back, switched off), or null on a first set
  * up (nothing to put back: the wrong receiver is forgotten).
  */
-export function mismatchDialog({ expected, got }, previous) {
+export function mismatchDialog({ expected, got }, previous, method = 'qr') {
   const back = previous?.number ?? null;
   if (back != null) {
     return {
@@ -71,6 +73,7 @@ export function mismatchDialog({ expected, got }, previous) {
   return {
     title: '這不是要連的接收器',
     message: `要連 ${expected}，收到的是 ${got}，已中斷連線`,
-    buttons: [{ id: 'later', label: '稍後再說' }, { id: 'rescan', label: '重新掃描' }],
+    buttons: [{ id: 'later', label: '稍後再說' },
+      method === 'manual' ? { id: 'rescan', label: '重新搜尋' } : { id: 'rescan', label: '重新掃描' }],
   };
 }
