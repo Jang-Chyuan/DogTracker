@@ -877,9 +877,9 @@ const FIXTURES = {
   // My route: walk, drive 12 minutes, walk — a numbered switch point where
   // each mode starts (H2 開車換走路的地方多一個點).
   'history-mode-switch': now => {
-    const phone = routePhone(legsPath(now, 70 * MINUTE, at(-80, -60), [{ walk: 18, bearing: 20 },
-      { drive: 3, speed: 9, bearing: 90 }, { drive: 3, speed: 9, bearing: 0 }, { drive: 3, speed: 9, bearing: 270 },
-      { drive: 3, speed: 9, bearing: 180 }, { walk: 25, bearing: 160 }, { stay: 15 }]), now);
+    const phone = routePhone(legsPath(now, 70 * MINUTE, at(-100, -150), [{ walk: 18, bearing: 20 },
+      { drive: 4, speed: 8, bearing: 90 }, { drive: 4, speed: 8, bearing: 20 }, { walk: 25, bearing: 200 },
+      { stay: 19 }]), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
   },
   // 豆豆's day with two breaks: 12 minutes (沒有資料) and 40 minutes (沒有資料

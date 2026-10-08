@@ -111,12 +111,11 @@ export default function Glyph({ name, color, size = 16, level = null }) {
         </>
       )}
       {name === 'car' && (
-        // History list: 開車 (my route) and 坐車 (a dog).
+        // History list: 開車 (my route) and 坐車 (a dog), seen from the side.
         <>
-          <Path d="M5 16V11l2-5h10l2 5v5M3.5 11h17" {...stroke} />
-          <Rect x={3.5} y={11} width={17} height={6} rx={1.5} {...stroke} />
-          <Circle cx={7.5} cy={18.5} r={1.5} {...stroke} />
-          <Circle cx={16.5} cy={18.5} r={1.5} {...stroke} />
+          <Path d="M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7" {...stroke} />
+          <Circle cx={6} cy={16.5} r={1.8} {...stroke} />
+          <Circle cx={16.5} cy={16.5} r={1.8} {...stroke} />
         </>
       )}
       {name === 'dots' && (
