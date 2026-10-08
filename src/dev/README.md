@@ -5,7 +5,7 @@
 ```
 dogtracker://dev/fixture?name=<名稱>    打開情境
 dogtracker://dev/fixture?name=off       回到真實資料
-dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：settings receiver phone cloud alerts advanced diagnostics wifi liveData cloudData locationRecords permissions pair paired
+dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：settings receiver phone cloud alerts advanced diagnostics wifi liveData cloudData locationRecords permissions pair paired；map（留在地圖，例如看 history-today 的「今天 x km」）、history（歷史頁）
 ```
 
 - 只有 `__DEV__` 會監聽（`useScreenFixture.js`），只有 `android/app/src/debug/AndroidManifest.xml` 宣告 `dogtracker` scheme；release 版收不到這個連結。
@@ -24,7 +24,8 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 上傳狀態 | `useCloudUpload` 的回答（`upload`：每台接收器的上傳方式、可上傳的接收器、每台還沒上傳的筆數、需處理、最後上傳成功、錯誤；動作不寫入）、`expired`（登入失效）、`dialog`（S3 打開的確認框） | `AccountModel.accountPage` → S3；上傳錯誤 → 齒輪紅點、S1「!」 |
 | 手機位置／路線 | 現在位置（`useLiveLocation` 的樣子）和最近 10 分鐘的路線 | 地圖上的手機點；路線交給真的 `RideAlong` 判斷坐車 |
 | 手機記錄、權限 | `phone.recording: false` 讓記錄服務沒在跑；`phone.permission`／`phone.services` 是 `usePhoneLocation` 的回答（預設精確位置、定位服務開著） | `todayPill`（右下「今天 x km」的 icon）、`phone.enabled`（地圖藍點） |
-| 今天的路線 | `phone.today`：今天 `myLocationTracker` 的列（每 10 秒一筆） | 和 `useTodayRoute` 同一套 `addRoutePoints` 算出「今天 x km」 |
+| 今天的路線 | `phone.today`：今天 `myLocationTracker` 的列（每 10 秒一筆） | 和 `useTodayRoute` 同一套 `todayRouteDistance`（出發偵測、開車不算，src/history）算出「今天 x km」 |
+| 歷史頁（054a） | `history`：舊歷史頁的查詢（看哪隻狗或我的路線）、狗那一天的 `dog_status`／`supabase_dog_status` 列；我的路線用 `phone.today` | 時間軸清單照 `historyDayRows` 的讀法交出（`HistoryRows` → `historyTimeline`）；地圖的軌跡照 `historyGeometry` 畫；情境開著時歷史頁不讀這支手機的資料 |
 | 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
 | 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
@@ -113,6 +114,11 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `pair-mismatch` | QR 寫 7、收到 3：「這不是要連的接收器」「要連 7，收到的是 3，已中斷連線」「稍後再說」「重新掃描」 |
 | `pair-done-sources` | D4：已連上接收器 7、收到訊號源 4、7、9（9 還沒定位也列出） |
 | `pair-done-empty` | D4b：已連上接收器 7、還沒收到訊號源 |
+| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；`&page=map` 看右下「今天 x km」＝摘要的距離 |
+| `history-no-departure` | 我的路線：06:30 起一直在家附近 →「還沒出發」，範圍＝今天全部記錄，沒有停留 |
+| `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
+| `history-gap` | 豆豆：中斷 12 分（「沒有資料」）和 40 分（「沒有資料」＋「恢復記錄」） |
+| `history-indoor` | 豆豆：走路、停留，進室內 25 分（小房子節點「室內・N 分」，不編號、不算距離），再走路 |
 | `db-open-failed` | 手機裡的資料庫打不開 → D0 啟動失敗「手機裡的資料打不開」＋「重試」「診斷」；「診斷」最上面寫原因 |
 
 ## 新增情境（之後每個 PR）

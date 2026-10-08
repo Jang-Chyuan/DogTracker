@@ -18,6 +18,9 @@
 | `historyIndoorNodes(points, options)` | 室內小房子節點；使用重算後封包，不用 GPS 去重結果判斷封包缺口 |
 | `historyDeparture(points, options)` | 確認狀態、自動範圍與手動範圍；輸入完整當天過濾後點，可提供完整交通分類 |
 | `historyTimeline(rows, options)` | 整合入口：共同資料流、範圍、地點列、交通／缺口列、編號、距離與追加狀態 |
+| `countDistances(edges, config)` | 判定表「距離怎麼加」：和「上一個有算進去的點」比，超過兩筆誤差較大者（至少 5 m，缺誤差值當 10 m）才算 |
+| `dogHistoryRow(row, source)`, `phoneHistoryRow(row)`（`HistoryRows.js`） | `dog_status`／`supabase_dog_status`／`myLocationTracker` 的列轉成共同格式：封包時間＝手機收到的時間（雲端用 `track_at`），定位時間＝項圈的 `gps_time` |
+| `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344）：時長、距離、膠囊、移動段、H8 |
 
 時間一律為 UTC 毫秒；公尺為 `distanceM`，持續時間為 `durationMs`。`subject` 為 `dog` 或 `phone`；`source` 為 `all`、`local`（接受 `ble` 別名）或 `cloud`。
 
@@ -37,3 +40,17 @@
 `nodes` 是排序後完整清單；`locations` 只有地點列，`sections` 只有交通／缺口列。型別：`departure`、`stop`、`switch`、`indoor`、`movement`、`gap`、`end`。交通方式：`walking`、`moving`、`driving`、`ride`、`gap`。停留與切換點共用 `number`；室內節點不編號。切換點沒有上下車文字與停留時間。節點座標可供後續非同步查地址。
 
 缺口列保留前後實測時間與座標，但 `distanceM`／`countedDistanceM` 都是零；車段保留實際 `distanceM`，`countedDistanceM` 為零。合併停留保留 `interruptionMs`，供清單／PNG／GPX 顯示「不含中斷 N 分」。跨日節點使用 `continuesPreviousDay`／`continuesNextDay`；終點 `label` 為「現在」、「最後」或「結束」。
+
+## 第二次審查（054a，Claude）補上的規則
+
+- 距離改成判定表「距離怎麼加」：每段連續步行的第一筆只當比較點，之後和上一個「有算進去」的點比（不是和前一筆比），所以慢慢走不會被一筆一筆濾掉；缺誤差值當 10 m，下限 5 m。
+- 停留的座標改成判定表「停留的代表位置」：造訪裡誤差 25 m 內實測點的平均；判斷圈內圈外仍用第一個實測點（`center`）。
+- 判定表「恢復記錄節點」：缺口超過 30 分鐘時，「沒有資料」段之後在中斷後第一筆加 `resume` 節點（不編號；那一點已經是停留或室內節點時不另外加）。
+- 停留前後緊貼的切換點：停留結束後幾秒才上車時，中間那段 0 km 的步行和切換點拿掉，停留本身就是分界（H1：停留 2 → 坐車 → 3）。兩個地點之間不到 1 分鐘、0 km 的步行段也拿掉（判定表「停在原處節點的前後」）。
+- 停留裡的移動距離算進抵達那段步行（判定表「距離怎麼算」：和有沒有被標成停留無關），清單各段加起來等於摘要。
+- 記錄關閉：`closedAt` 給了才寫「記錄已關閉 10:20」；手機目前沒有存關閉時間，055 再接。
+- 出發偵測的取點改成二分搜尋，一整天 8640 筆在原地也只要幾十毫秒（「今天 x km」每 15 秒重算）。
+
+## 已知缺口：狗在車上沒有 GPS（H2c 坐車段借用手機路線）
+
+設計稿判定表「狗在車上沒定位」要求項圈在車上沒有好定位時，沿著這支手機的路線畫坐車段。這要跨資料流（手機 30 秒速度中間值、接收器聽到這隻狗的訊號強度、項圈 1 分鐘以上沒有好定位），計畫（第 2 段「之後（不排號）」）排在坐車實測確認之後才做。目前的行為：那段項圈沒有定位就沒有實測點，清單照「在車上沒定位、歷史裡沒有手機路線」畫成「沒有資料」段，項圈恢復好定位後接上（超過 30 分鐘另加「恢復記錄」）；不會把車速的跳點當成移動距離（超過 15 m/s 的單筆照跳點丟掉）。`__tests__/HistoryReviewRules.test.js` 有一個測試鎖住這個行為。

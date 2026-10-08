@@ -1,6 +1,17 @@
 import { configFor, distanceMeters, median, above } from './HistoryConfig';
 import { isVehiclePoint } from './HistoryMovement';
 
+// 判定表「停留的代表位置」: the mean of the visit's judged fixes (accuracy
+// within 25 m, both sides of a short interruption); the map number, the
+// address and the coordinates all use it. The centre (first fix) only decides
+// who is inside.
+function mean(points) {
+  const n = points.length;
+  return { latitude: points.reduce((sum, p) => sum + p.latitude, 0) / n,
+    longitude: points.reduce((sum, p) => sum + p.longitude, 0) / n };
+}
+const settle = (visit, completed) => ({ ...visit, ...mean(visit.points), completed });
+
 /** One vote per visit; departure is confirmed only by consecutive outside fixes. */
 export function historyVisits(points, { subject = 'dog', config = configFor(subject),
   vehicles = [], following = false } = {}) {
@@ -8,7 +19,7 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
   let current = null, outside = [], insideIndex = 0;
   const finish = () => {
     if (!current) return;
-    visits.push({ ...current, completed: true }); current = null; outside = [];
+    visits.push(settle(current, true)); current = null; outside = [];
   };
   for (let i = 0; i < points.length; i += 1) {
     const p = points[i];
@@ -22,10 +33,11 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
     if (!current) {
       insideIndex = i;
       current = { id: `visit:${p.time}`, type: 'stop', start: p.time, end: p.time,
+        center: { latitude: p.latitude, longitude: p.longitude },
         latitude: p.latitude, longitude: p.longitude, points: [p], gaps: [], durationMs: 0, interruptionMs: 0 };
       continue;
     }
-    if (!above(distanceMeters(current, p), config.radiusM)) {
+    if (!above(distanceMeters(current.center, p), config.radiusM)) {
       const last = current.points[current.points.length - 1];
       // All signal gaps are deducted, including gaps inside an unconfirmed exit.
       const gaps = points.slice(insideIndex + 1, i + 1);
@@ -48,7 +60,7 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
       }
     }
   }
-  if (current) visits.push({ ...current, completed: !following });
+  if (current) visits.push(settle(current, !following));
   return visits;
 }
 function clippedVisit(visit, start, end, dayBoundary = false) {
@@ -56,7 +68,7 @@ function clippedVisit(visit, start, end, dayBoundary = false) {
   if (!inside.length) return null;
   const interruptionMs = visit.gaps.filter(g => g.start >= inside[0].time
     && g.end <= inside[inside.length - 1].time).reduce((sum, g) => sum + g.end - g.start, 0);
-  return { ...visit, start: inside[0].time, end: inside[inside.length - 1].time,
+  return { ...visit, ...mean(inside), start: inside[0].time, end: inside[inside.length - 1].time,
     points: inside, interruptionMs,
     durationMs: inside[inside.length - 1].time - inside[0].time - interruptionMs,
     completed: visit.completed || visit.end > end,
@@ -73,8 +85,9 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
   const visits = historyVisits(points, { subject, config, vehicles, following });
   const day = visits.map(v => clippedVisit(v, dayStart, dayEnd, true)).filter(Boolean);
   const selected = day.map(v => clippedVisit(v, start, end)).filter(Boolean);
-  const prefix = points.map(p => JSON.stringify(p));
-  const vehicleKey = JSON.stringify(vehicles);
+  // What was processed, one short key per fix (not the whole row: a row can
+  // carry its raw payload).
+  const prefix = points.map(p => `${p.time}:${p.latitude}:${p.longitude}:${p.accuracy ?? ''}:${p.heldReason ?? ''}`);
   const append = state?.identity === identity && state.vehicles.every(v => vehicles.some(next => next.start === v.start && next.end === v.end))
     && !vehicles.some(v => v.start <= state.lastTime && !state.vehicles.some(old => old.start === v.start && old.end === v.end))
     && state.prefix.every((p, i) => p === prefix[i]) && prefix.length >= state.prefix.length;
@@ -92,7 +105,7 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
   }
   const stops = selected.filter(v => retained.has(v.id)).map((v, i) => ({ ...v, number: i + 1 }));
   return { visits: selected, stops, typicalMs, fallback,
-    state: { identity, prefix, vehicleKey, vehicles: vehicles.map(v => ({ start: v.start, end: v.end })),
+    state: { identity, prefix, vehicles: vehicles.map(v => ({ start: v.start, end: v.end })),
       lastTime: points[points.length - 1]?.time ?? -Infinity, ready, fallback,
       marked: [...retained], assessed: [...assessed] } };
 }

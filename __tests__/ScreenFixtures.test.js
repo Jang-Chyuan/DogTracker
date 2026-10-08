@@ -103,10 +103,11 @@ test('every fixture is reproducible, near Taoyuan station, and on the fixed cloc
     expect(fixture.now).toBe(FIXTURE_NOW);
     // Built twice, the same rows: a screenshot does not depend on when it was taken.
     expect(JSON.stringify(buildFixture(name))).toBe(JSON.stringify(fixture));
-    const places = [...fixture.raw.ble, ...fixture.raw.cloud]
+    const places = [...fixture.raw.ble, ...fixture.raw.cloud, ...fixture.raw.history]
       .filter(row => row.slave_lat || row.slave_lon)
       .map(row => ({ latitude: row.slave_lat, longitude: row.slave_lon }))
-      .concat(fixture.phoneRoute);
+      // (Today's route is checked for the history fixtures, which draw it.)
+      .concat(fixture.phoneRoute, name.startsWith('history-') ? fixture.raw.today : []);
     for (const place of places) {
       // Invented, never the team's real area: within ~2 km of the station,
       // except the far dogs of the framing fixtures, which lie west and south
@@ -116,7 +117,7 @@ test('every fixture is reproducible, near Taoyuan station, and on the fixed cloc
       expect(FIXTURE_ORIGIN.latitude - place.latitude).toBeLessThan(far ? 0.1 : 0.02);
       expect(Math.abs(place.longitude - FIXTURE_ORIGIN.longitude)).toBeLessThan(far ? 0.1 : 0.02);
     }
-    for (const row of [...fixture.raw.ble, ...fixture.raw.cloud]) {
+    for (const row of [...fixture.raw.ble, ...fixture.raw.cloud, ...fixture.raw.history]) {
       expect(row.received_at).toBeLessThanOrEqual(FIXTURE_NOW);
     }
   }
@@ -456,7 +457,7 @@ test('a fixture link can open a settings page of its state (&page=)', async () =
   const url = 'dogtracker://dev/fixture?name=receiver-connecting&page=receiver';
   expect(fixtureNameFromUrl(url)).toBe('receiver-connecting');
   expect(fixturePageFromUrl(url)).toBe('receiver');
-  expect(fixturePageFromUrl('dogtracker://dev/fixture?name=all-good&page=history')).toBeNull();
+  expect(fixturePageFromUrl('dogtracker://dev/fixture?name=all-good&page=nowhere')).toBeNull();
   expect(fixturePageFromUrl('dogtracker://dev/fixture?name=all-good')).toBeNull();
   const initial = jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(url);
   const listen = jest.spyOn(Linking, 'addEventListener').mockImplementation(() => ({ remove: jest.fn() }));
@@ -866,6 +867,6 @@ test('phone-no-permission: no permission means no recording and no blue dot', ()
 });
 
 test('phone-no-route: yesterday\'s walk is not today\'s route', () => {
-  expect(buildFixture('phone-no-route').todayRoute).toEqual({ count: 0, metres: 0 });
+  expect(buildFixture('phone-no-route').todayRoute).toEqual({ count: 0, metres: 0, status: 'not-departed' });
   expect(buildFixture('phone-recording').todayRoute.count).toBeGreaterThan(300);
 });

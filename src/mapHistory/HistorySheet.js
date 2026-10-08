@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { dogHistoryLabel } from './DogAliases';
 import { ActionButton } from '../components/ScreenUI';
@@ -10,6 +10,9 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import HistoryExportButton from './HistoryExportButton';
 import { coverageNotice } from './HistoryCoverage';
 import { historyWindow, startOfDay } from './HistoryTime';
+import HistoryTimelineList from './HistoryTimelineList';
+import { timelineSubject, useHistoryTimeline } from './useHistoryTimeline';
+import { colors as tokens } from '../theme/tokens';
 
 const HOUR_PRESETS = [1, 3, 6, 12, 24];
 // A season of outings would be a wall of chips; the rest stay reachable through
@@ -112,9 +115,16 @@ export function rangeLabel(draft) {
  * query.
  */
 export default function HistorySheet({
-  history, snapshot, bottomInset, topInset, onHeight, extras, download,
+  history, snapshot, bottomInset, topInset, onHeight, extras, download, owner = null, clock = Date.now,
 }) {
   const [draft, setDraft] = useState(history.preferences);
+  // The time-line list (054a): the dog the page was opened for, or my route,
+  // over the query's day; 資料來源 全部 until 055 adds its choice.
+  const nowAtOpen = clock();
+  const target = useMemo(() => timelineSubject(history.preferences, nowAtOpen),
+    // The day is fixed when the query changes, not every clock tick.
+    [history.preferences]); // eslint-disable-line react-hooks/exhaustive-deps
+  const timeline = useHistoryTimeline({ read: history.readDay, target, owner, clock });
   const [open, setOpen] = useState('');
   const [picker, setPicker] = useState(null);
   useEffect(() => setDraft(history.preferences), [history.preferences]);
@@ -199,6 +209,14 @@ export default function HistorySheet({
         // Names always come from what is saved now (A5), never from the draft.
         onPress={() => history.save({ ...draft, dogAliases: history.preferences.dogAliases })} />}
     >
+      {target && (
+        <View style={styles.timeline}>
+          <HistoryTimelineList model={timeline.model} loading={timeline.loading} error={timeline.error}
+            subject={target.subject} today={target.day === startOfDay(clock())}
+            name={target.subject === 'dog' ? dogHistoryLabel(target.slaveId, history.preferences.dogAliases) : ''}
+            color={target.subject === 'phone' ? tokens.phone : tokens.route1} />
+        </View>
+      )}
       {history.error ? <Text style={styles.error}>{history.error}</Text> : null}
       {!!notice && <Text style={styles.warning}>{notice}</Text>}
       {!!history.data?.message && <Text style={styles.warning}>{history.data.message}</Text>}
@@ -462,6 +480,7 @@ const styles = StyleSheet.create({
   sectionAnswer: { color: colors.muted, fontSize: 13, flexShrink: 1 },
   chevron: { color: colors.muted, fontSize: 14, fontWeight: '700' },
   sectionBody: { paddingHorizontal: 12, paddingBottom: 12 },
+  timeline: { paddingHorizontal: 4 },
   visibility: { marginTop: 10, padding: 12, borderRadius: 14, backgroundColor: '#F3F6F4' },
   eyeRow: {
     flexDirection: 'row',

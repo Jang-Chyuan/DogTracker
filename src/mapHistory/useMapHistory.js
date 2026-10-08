@@ -31,6 +31,12 @@ export function useMapHistory(database, ready, active, owner) {
   const [daysWanted, setDaysWanted] = useState(false);
   const [phoneRecorded, setPhoneRecorded] = useState(null);
   const [clock, setClock] = useState(Date.now);
+  // Stable across renders (the list's polling effect depends on it); signing
+  // in or out changes `owner` in the request, not the function.
+  const readDay = useRef(request => {
+    if (!db.current?.historyDayRows) return Promise.resolve({ rows: [], seed: [], after: {} });
+    return db.current.historyDayRows(request);
+  });
   const key = JSON.stringify(preferences) + ':' + (owner || '');
   const currentKey = useRef(key);
   currentKey.current = key;
@@ -160,6 +166,8 @@ export function useMapHistory(database, ready, active, owner) {
     /** The card calls this when it opens the section that lists the days. */
     wantDays: setDaysWanted,
     data,
+    /** One day of one dog's or this phone's rows for the time-line list. */
+    readDay: readDay.current,
     async exportRows() {
       if (!data) throw new Error('請等待歷史資料載入');
       const alive = () => currentKey.current === key && !!db.current;
