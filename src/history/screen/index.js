@@ -7,3 +7,4 @@ export * from './HistoryScreenState';
 export * from './HistoryScreenModel';
 export * from './HistoryMultiSelection';
 export * from './HistoryMultiModel';
+export * from './HistoryDogsPill';

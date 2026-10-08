@@ -458,7 +458,7 @@ test('「今天 x km」 opens my route on the same map, with its own card, and b
   expect(has('history-back-now')).toBe(true);
   expect(has('history-date')).toBe(true);
   expect(has('history-export')).toBe(true);
-  expect(has('history-add')).toBe(false);
+  expect(has('history-dogs-sheet')).toBe(false);
   expect(text()).toContain('我的路線');
   expect(text()).toContain('今天');
   expect(button('重新查詢')).toBeUndefined();
@@ -498,7 +498,7 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
   // The history screen is this dog's: its capsule, ＋ 加入 (055b) and its target.
   expect(screen.props.historyTarget).toEqual({ subject: 'dog', slaveId: 7 });
-  expect(renderer.root.findAllByProps({ testID: 'history-add' }).length).toBeGreaterThan(0);
+  expect(renderer.root.findAllByProps({ testID: 'history-dogs-pill' }).length).toBeGreaterThan(0);
   // Back from that history returns to the live map with the dog's card open
   // (‹ 回到現在 does the same: onLeaveHistory is the same step back).
   expect(screen.props.onLeaveHistory).toBeInstanceOf(Function);

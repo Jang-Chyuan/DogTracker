@@ -416,10 +416,10 @@ const dog5Walk = (now, today = true) => dogDay(today ? now : now - 24 * 60 * MIN
   [{ walk: 25, bearing: 200, speed: 0.6 }, { stay: 10 }, { walk: 20, bearing: 320, speed: 0.6 }]);
 
 // 小黑's history (看軌跡) with `dogs` added; 狗 5 is a live dog on the map (so
-// it can be added). `view`: the protagonist, the source, an open sheet, the
+// it can be added). `view`: the protagonist, an open sheet, the
 // cursor `cursorAgo` before now.
 function multiFixture(now, { dogs = [], protagonist = null, sheet = null, fiveToday = true,
-  cursorAgo = null, exportView = null }) {
+  cursorAgo = null, exportView = null } = {}) {
   const base = FIXTURES['all-good'](now);
   const cloud = afuMorning(now);
   return {
@@ -1212,20 +1212,20 @@ const FIXTURES = {
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }),
       geocoder: { names: HISTORY_NAMES } };
   },
-  // ---- history (055b): several dogs (H7) and 資料來源 ------------------
-  // H7: 看軌跡 on 小黑's card, then 豆豆 and 阿福 added; 豆豆 leads (its
-  // list, numbers and 「豆豆・移動 x km」), the others thin, faces at the cursor.
+  // ---- history (055b): several dogs (H7) ---------------------------------
+  // H7 capsule and immediate chooser states.
   'history-multi-dog': now => multiFixture(now, { dogs: [4, 8], protagonist: 4 }),
-  // Four dogs: 「＋ 加入」 faded (最多同時 4 隻), the chips scroll sideways.
   'history-multi-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4 }),
-  // 小黑 and 狗 5, which has no record today: its chip at 40%, nothing drawn
-  // for it, never the protagonist.
   'history-multi-no-data': now => multiFixture(now, { dogs: [5], fiveToday: false }),
-  // The cursor at 08:40, inside 阿福's break: 阿福 waits at its last fix
-  // before it (grey dashed ring), the others are where they were then.
   'history-multi-cursor': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, cursorAgo: 50 * MINUTE }),
-  // 「＋ 加入」's list open over 小黑's day (狗 5 has no record today).
-  'history-multi-add': now => multiFixture(now, { dogs: [], fiveToday: false, sheet: 'add' }),
+  'history-multi-add': now => multiFixture(now, { dogs: [], fiveToday: false, sheet: 'dogs' }),
+  'history-dogs-one-addable': now => multiFixture(now),
+  'history-dogs-one-alone': now => ({ ...multiFixture(now), ble: [], cloudRows: dog6Cloud(now) }),
+  'history-dogs-three': now => multiFixture(now, { dogs: [4, 8], protagonist: 6 }),
+  'history-dogs-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4 }),
+  'history-dogs-sheet-three': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, sheet: 'dogs' }),
+  'history-dogs-sheet-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4, sheet: 'dogs' }),
+  'history-dogs-sheet-no-record': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, fiveToday: false, sheet: 'dogs' }),
   // ---- history (056): the export (H9/H10) ---------------------------------
   // H9: my route like the mockup, the export window open (PNG / GPX / CSV in fixed order).
   'history-export': now => ({ ...FIXTURES['history-my-route'](now), historyView: { export: { phase: 'choose' } } }),

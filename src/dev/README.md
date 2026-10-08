@@ -26,7 +26,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 手機記錄、權限 | `phone.recording: false` 讓記錄服務沒在跑；`phone.permission`／`phone.services` 是 `usePhoneLocation` 的回答（預設精確位置、定位服務開著） | `todayPill`（右下「今天 x km」的 icon）、`phone.enabled`（地圖藍點） |
 | 今天的路線 | `phone.today`：今天 `myLocationTracker` 的列（每 10 秒一筆） | 和 `useTodayRoute` 同一套 `todayRouteDistance`（出發偵測、開車不算，src/history）算出「今天 x km」 |
 | 歷史畫面（054a/055a） | `history`：舊歷史頁的查詢（看哪隻狗或我的路線）、狗那一天的 `dog_status`／`supabase_dog_status` 列；我的路線用 `phone.today` | 時間軸清單照 `historyDayRows` 的讀法交出（`HistoryRows` → `historyTimeline`）；情境開著時歷史頁不讀這支手機的資料 |
-| 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）、`calendar`（`'month'` 月曆／`'months'` 選月份打開）、`goTo`（開在別天，只在雲端的日子會開始下載）、`dogs`（再加哪幾隻狗，055b）、`protagonist`、`sheet`（`'add'` 小視窗開著）、`cursorAgo`（游標在多久以前）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
+| 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）、`calendar`（`'month'` 月曆／`'months'` 選月份打開）、`goTo`（開在別天，只在雲端的日子會開始下載）、`dogs`（再加哪幾隻狗，055b）、`protagonist`、`sheet`（`'dogs'` 選狗小視窗開著）、`cursorAgo`（游標在多久以前）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
 | 雲端的日子、下載（054b） | `historyCloud`：`fixtureHistoryCloud` 照 `HistoryCloud` 的介面回答（`newestBefore`、`earliest`、`download`），資料是情境自己的「雲端」列；下載把那天的列放進情境的 `supabase_dog_status`；`online: false` 沒網路；`seed` 是開頭就知道的雲端日子 | `useHistoryCloud` → 月曆的點、‹ ›、H3c／H3d；情境從不連 Supabase |
 | 匯出（056） | `historyExport`：`'hang'`（產生中一直不結束）、`'fail'`、`'fail-once'`（第一次失敗、重試成功）；沒給就是真的原生匯出（檔案寫進這支手機的 cache、打開 Android 分享）。`historyView.export`：`{ phase: 'choose' \| 'generating' \| 'failed', format }` 開著匯出小視窗 | `useHistoryExport` → `HistoryExportSheet`、`HistoryExportPackage.kt` |
 | 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
@@ -186,3 +186,19 @@ scripts/fixture-screenshots.sh <輸出資料夾> [名稱 …]   # 不給名稱�
 ```bash
 adb shell am start -a android.intent.action.VIEW -d 'dogtracker://dev/fixture?name=dog-indoor' com.dogtracker
 ```
+
+### 2026-10-09 歷史選狗膠囊
+
+上方只有一顆膠囊：主角 26dp 頭像＋2dp 路線色圈＋名字；其他狗最多兩張 18dp 頭像，重疊 6dp，超出以 +N 表示。多狗顯示 ▾；只有一狗但可加其他狗顯示 ＋；只有一狗且沒有其他狗及「我的路線」不可點。列不捲動。
+
+| Fixture | 狀態 |
+| --- | --- |
+| `history-dogs-one-addable` | 一狗，其他狗可加入 |
+| `history-dogs-one-alone` | 一狗，帳號沒有其他狗，膠囊不可點 |
+| `history-dogs-three` | 三狗 |
+| `history-dogs-four` | 四狗，兩張小頭像＋+1 |
+| `history-dogs-sheet-three` | 三狗，選狗小視窗開著 |
+| `history-dogs-sheet-four` | 四狗，加入區變淡，最多同時 4 隻 |
+| `history-dogs-sheet-no-record` | 加入區的狗 5 這天沒有紀錄，40%，仍可加入 |
+
+小視窗「看哪幾隻狗」選了立即生效且不關閉；主角不可移除，先切換主角。點空白或返回鍵關閉。歷史資料永遠合併本機及雲端，沒有資料來源選擇器。

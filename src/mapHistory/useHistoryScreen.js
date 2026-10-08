@@ -762,7 +762,7 @@ export function useHistoryScreen({
       protagonist: d.id === protagonistId,
       // 判定表「全部加入的狗都沒資料」: then a faded one can lead too.
       selectable: hasData || !anyData,
-      removable: current.dogs.length > 1,
+      removable: d.id !== protagonistId,
     };
   });
   const [message, setMessage] = useState(null);
@@ -801,7 +801,7 @@ export function useHistoryScreen({
   const removeDog = useCallback(
     id => {
       setSelection(state => {
-        if (state.dogs.length < 2) return state;
+        if (state.dogs.length < 2 || id === protagonistId) return state;
         const next = dogTransition(state, { type: 'remove', id });
         // The dog that gave the range goes: the range stays as it is (移除不改範圍).
         const gave =
@@ -816,7 +816,7 @@ export function useHistoryScreen({
       if (cursorTime == null && time != null) setCursorTime(time);
       haptic('tick');
     },
-    [shownRange, entryId, remembered, cursorTime, time],
+    [shownRange, entryId, remembered, cursorTime, time, protagonistId],
   );
   /** A row of 「＋ 加入」: added with the smallest free colour; full at four. */
   const addDog = useCallback(

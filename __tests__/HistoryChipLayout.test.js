@@ -1,40 +1,29 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { PressScale } from '../src/map/MapControls';
-import { StyleSheet } from 'react-native';
-import { TopRow, historyChipsOverflow } from '../src/mapHistory/HistoryScreen';
+import { ScrollView, StyleSheet, useColorScheme } from 'react-native';
+import { TopRow } from '../src/mapHistory/HistoryScreen';
+import DogAvatar from '../src/dogs/DogAvatar';
+import { ThemeProvider, darkTheme } from '../src/theme/ThemeProvider';
 
-test('chip layout includes spacing, waits for measurements, and accepts an exact fit', () => {
-  expect(historyChipsOverflow(0, [100], 80)).toBe(false);
-  expect(historyChipsOverflow(100, [undefined], 80)).toBe(false);
-  expect(historyChipsOverflow(292, [100, 92], 80)).toBe(false);
-  expect(historyChipsOverflow(291, [100, 92], 80)).toBe(true);
-});
+jest.mock('react-native/Libraries/Utilities/useColorScheme', () => ({ __esModule: true, default: jest.fn() }));
 
-test('overflow fixes a round add button beside export; resizing restores the inline chip', async () => {
-  const onAdd = jest.fn();
+const dogs = [1, 2, 3, 4].map(id => ({ id, name: `狗 ${id}`, protagonist: id === 1,
+  color: darkTheme.colors[`route${id}`] }));
+test('fixed row has one pill, 26dp hero with 2dp ring and two 18dp faces; dark outline uses theme', async () => {
+  useColorScheme.mockReturnValue('dark');
   let renderer;
-  await act(async () => { renderer = Renderer.create(<TopRow top={0} subject="dog"
-    dogs={[{ id: 1, protagonist: true, hasData: true }]} nameOf={() => '小黑'}
-    onAdd={onAdd} onBack={() => {}} onExport={() => {}} exportEnabled full />); });
-  const host = id => renderer.root.findAll(node => typeof node.type === 'string' && node.props.testID === id)[0];
-  const layout = (id, width) => host(id).props.onLayout({ nativeEvent: { layout: { x: 0, width } } });
-  await act(async () => {
-    layout('history-chip-space', 200);
-    layout('history-dog-1', 120);
-    const measure = renderer.root.findAll(node => typeof node.type === 'string'
-      && node.props.onLayout && !node.props.testID)[0];
-    measure.props.onLayout({ nativeEvent: { layout: { width: 80 } } });
-  });
-  const add = renderer.root.findAllByType(PressScale).find(node => node.props.testID === 'history-add');
-  expect(add.props.accessibilityLabel).toBe('加入狗');
-  expect(StyleSheet.flatten(add.props.style)).toMatchObject({ width: 48, height: 48 });
-  const round = add.findAll(node => typeof node.type === 'string' && StyleSheet.flatten(node.props.style)?.width === 36)[0];
-  expect(StyleSheet.flatten(round.props.style)).toMatchObject({ height: 36, borderRadius: 18 });
-  expect(host('history-chips').findAll(node => node.props.testID === 'history-add')).toHaveLength(0);
-  await act(async () => add.props.onPress());
-  expect(onAdd).toHaveBeenCalledTimes(1);
-  await act(async () => layout('history-chip-space', 300));
-  expect(host('history-chips').findAll(node => typeof node.type === 'string' && node.props.testID === 'history-add')).toHaveLength(1);
+  await act(async () => { renderer = Renderer.create(<ThemeProvider><TopRow top={0} subject="dog"
+    dogs={dogs} nameOf={dog => dog.name} onAdd={() => {}} onBack={() => {}} onExport={() => {}}
+    warningCount={2} exportEnabled /></ThemeProvider>); });
+  expect(renderer.root.findAllByType(ScrollView)).toHaveLength(0);
+  expect(renderer.root.findAllByType(DogAvatar).map(node => node.props.size)).toEqual([26, 18, 18]);
+  const styles = renderer.root.findAll(node => typeof node.type === 'string').map(node => StyleSheet.flatten(node.props.style));
+  expect(styles).toContainEqual(expect.objectContaining({ borderWidth: 2, borderColor: dogs[0].color }));
+  expect(styles).toContainEqual(expect.objectContaining({ borderLeftWidth: 1, borderLeftColor: darkTheme.colors.line }));
+  expect(styles).toContainEqual(expect.objectContaining({ backgroundColor: darkTheme.colors.surface,
+    borderColor: darkTheme.colors.floatingOutline }));
+  const text = JSON.stringify(renderer.toJSON());
+  expect(text).toContain('+1');
+  expect(text).toContain('⚠ 2');
   await act(async () => renderer.unmount());
 });
