@@ -107,7 +107,9 @@ export function createTrackingPreferences(database, onChange) {
       run(async () => {
         await database.initialize();
         const stored = await database.load();
-        return validateTrackingPreferences(firstLaunch(stored) ? { onboarding: ONBOARDING_SIGN_IN } : stored);
+        // Nothing saved and no data from before: the first launch.
+        const fresh = firstLaunch(stored) && !(await Promise.resolve(database.usedBefore?.()).catch(() => false));
+        return validateTrackingPreferences(fresh ? { onboarding: ONBOARDING_SIGN_IN } : stored);
       }, true),
     save: function save(patch) {
       if (!state.ready || disposed) return Promise.resolve(false);

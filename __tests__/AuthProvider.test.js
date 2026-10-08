@@ -154,3 +154,64 @@ test('「稍後再說」 during a sign-in cancels it: the late session is not ta
   expect(value.isDiscarded(session)).toBe(false);
   await act(async () => renderer.unmount());
 });
+
+test('a second sign-in waiting for a cancelled one can be cancelled too and never reaches Supabase', async () => {
+  let finish;
+  const f = fixture();
+  f.auth.signInWithPassword.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  let value, renderer;
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>
+    <AuthProbe onValue={next => { value = next; }} /></AuthProvider>); });
+  await settle();
+  const first = value.signIn('a@example.com', 'x').catch(failure => failure);
+  await act(async () => value.cancelSignIn());
+  const second = value.signIn('a@example.com', 'x').catch(failure => failure);
+  await act(async () => value.cancelSignIn());
+  await act(async () => finish({ data: { session: null }, error: { status: 400, message: 'Invalid login credentials' } }));
+  expect((await first).cancelled).toBe(true);
+  expect((await second).cancelled).toBe(true);
+  expect(f.auth.signInWithPassword).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});
+
+test('D1 closed by the back key during a sign-in drops it; its late answer leads nowhere', async () => {
+  let finish;
+  const f = fixture();
+  f.auth.signInWithPassword.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const done = jest.fn();
+  let value, renderer;
+  function Page({ open }) {
+    return <>
+      <AuthProbe onValue={next => { value = next; }} />
+      {open ? <LoginScreen onDone={done} onLater={() => {}} /> : null}
+    </>;
+  }
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}><Page open /></AuthProvider>); });
+  await settle();
+  const inputs = renderer.root.findAllByType(TextInput);
+  await act(async () => {
+    inputs[0].props.onChangeText('user@example.com');
+    inputs[1].props.onChangeText('test-only-password');
+  });
+  await act(async () => { renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
+    && typeof node.props.onPress === 'function')[0].props.onPress(); });
+  await act(async () => renderer.update(<AuthProvider clientFactory={f.factory}><Page open={false} /></AuthProvider>));
+  await act(async () => finish({ data: { session: { user: { id: 'late' } } }, error: null }));
+  await settle();
+  expect(done).not.toHaveBeenCalled();
+  expect(value.user).toBeNull();
+  expect(f.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  await act(async () => renderer.unmount());
+});
+
+test('登入 checks the e-mail format before anything is sent', async () => {
+  const f = fixture(); let renderer;
+  await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}><LoginScreen /></AuthProvider>); });
+  const inputs = renderer.root.findAllByType(TextInput);
+  await act(async () => { inputs[0].props.onChangeText('abc'); inputs[1].props.onChangeText('x'); });
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  expect(JSON.stringify(renderer.toJSON())).toContain('電子郵件格式不對');
+  expect(f.auth.signInWithPassword).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});

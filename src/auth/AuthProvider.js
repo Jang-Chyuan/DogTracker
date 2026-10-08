@@ -132,11 +132,13 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
       const address = email.trim();
       if (!address || !password) throw new Error('請輸入電子郵件和密碼');
       const auth = requireClient().auth;
+      // Registered before waiting, so 「稍後再說」 can cancel it meanwhile.
+      const mine = { cancelled: false, task: null };
+      attempt.current = mine;
       // A cancelled attempt still on its way settles (and is signed out)
       // first, so it cannot sign this one out.
-      await discarding.current;
-      const mine = { cancelled: false };
-      attempt.current = mine;
+      while (discarding.current) await discarding.current;
+      if (mine.cancelled) throw cancelledSignIn();
       mine.task = auth.signInWithPassword({ email: address, password });
       try {
         const { data, error: failure } = await mine.task;
@@ -157,6 +159,8 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
       if (!current || current.cancelled) return;
       current.cancelled = true;
       attempt.current = null;
+      // Still waiting for an earlier one: it never reaches Supabase.
+      if (!current.task) return;
       const settle = Promise.resolve(current.task).then(async result => {
         if (!result?.data?.session) return;
         signingOut.current = true;
