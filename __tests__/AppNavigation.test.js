@@ -1021,6 +1021,8 @@ test('start fixtures: first launch, restore past 10 s, expired at start, databas
   await press('診斷');
   expect(text()).toContain('SQLITE_CANTOPEN');
   expect(preferences().diagnosticsEnabled).not.toBe(true);
+  // Diagnostics not switched on: no 隱藏診斷 from D0's 診斷.
+  expect(renderer.root.findAllByProps({ testID: 'diagnostics-hide' })).toHaveLength(0);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-restore-slow&page=cloud' }));
   await advance(100);
   expect(title()).toBe('返回，Supabase 帳號');
