@@ -43,11 +43,19 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
     lastAsk.current = null;
     setDownload(null);
   }, [scope]);
+  // Paused (the app in the background, another screen): the question stops;
+  // back in front, the last one is asked again (the calendar may be open).
+  const again = useRef(null);
   useEffect(() => {
-    if (active) return;
-    asking.current?.abort();
+    if (active) {
+      if (!asking.current && lastAsk.current) again.current?.();
+      return;
+    }
+    if (!asking.current) return;
+    asking.current.abort();
     asking.current = null;
-  }, [active]);
+    setQuery({ scope, status: 'idle' });
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
   const add = useCallback((cloudDays, checkedDays, extra = {}) => {
     if (!alive.current) return;
     setFound(current => {
@@ -56,12 +64,13 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
     });
   }, [scope, fresh]);
   // ---- the earliest day (once per subject) --------------------------------
+  // Set once answered; a stopped question is simply asked again next time.
   const earliestAsked = useRef(null);
   const askEarliest = useCallback(signal => {
     if (!enabled || earliestAsked.current === scope) return Promise.resolve();
-    earliestAsked.current = scope;
     return cloud.earliest({ slaveId, signal }).then(time => {
       if (signal.aborted) return;
+      earliestAsked.current = scope;
       if (time == null) {
         // The cloud holds nothing for this dog: every day is known empty.
         add([], [], { earliest: null, none: true });
@@ -69,9 +78,6 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
       }
       const key = dayKey(new Date(time));
       add([key], [], { earliest: key });
-    }).catch(error => {
-      earliestAsked.current = null;
-      throw error;
     });
   }, [enabled, scope, cloud, slaveId, add]);
   /** Asks one question at a time; a new one stops the one before. */
@@ -132,14 +138,19 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
   }, [enabled, known, local, todayKey, scope, run, cloud, slaveId, add]);
   const retryQuery = useCallback(() => {
     const last = lastAsk.current;
-    earliestAsked.current = earliestAsked.current === scope && known.earliest ? scope : null;
     if (last?.type === 'month') askMonth(last.month);
     else if (last?.type === 'year') askYear(last.year);
-  }, [askMonth, askYear, scope, known.earliest]);
+  }, [askMonth, askYear]);
+  again.current = () => {
+    const last = lastAsk.current;
+    if (last?.type === 'month') askMonth(last.month);
+    else if (last?.type === 'year') askYear(last.year);
+  };
   /** The calendar closed: stop asking (what was found stays). */
   const stopQuery = useCallback(() => {
     asking.current?.abort();
     asking.current = null;
+    lastAsk.current = null;
     setQuery({ scope, status: 'idle' });
   }, [scope]);
   // ---- downloading a day --------------------------------------------------

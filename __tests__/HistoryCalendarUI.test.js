@@ -9,12 +9,12 @@ import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryS
 
 const LEVELS = { summary: 140, half: 420, full: 620 };
 
-function Harness({ fixture, onScreen, screenRef, online }) {
+function Harness({ fixture, onScreen, screenRef, online, active = true }) {
   const target = historyTargetOf(fixture.history.preferences);
   const cloud = fixture.historyCloud;
   const screen = useHistoryScreen({ target, read: fixture.history.readDay, readDays: fixture.history.readDays,
     owner: fixture.cloudSync.ownerId, clock: () => fixture.now, memoryScope: `test:${fixture.name}:`,
-    preset: fixture.historyView ?? null, cloud: cloud?.cloud ?? null,
+    preset: fixture.historyView ?? null, cloud: cloud?.cloud ?? null, active,
     online: online ?? cloud?.online !== false, cloudSeed: cloud?.seed ?? null });
   onScreen?.(screen);
   return <HistoryScreen ref={screenRef} screen={screen} top={24} levels={LEVELS} bottomInset={0} name="小黑"
@@ -206,4 +206,23 @@ test('the date opens the calendar on the month of the day shown', async () => {
   expect(s.has('history-calendar')).toBe(true);
   expect(s.text()).toContain('2026 年 10 月');
   await act(async () => s.renderer.unmount());
+});
+
+test('paused while the cloud is asked (app in the background): asked again in front, not stuck on 查詢中…', async () => {
+  const fixture = buildFixture('history-calendar');
+  let screen;
+  const ref = React.createRef();
+  let renderer;
+  const draw = active => <Harness fixture={fixture} screenRef={ref} active={active}
+    onScreen={value => { screen = value; }} />;
+  await act(async () => { renderer = Renderer.create(draw(true)); });
+  await act(async () => { jest.advanceTimersByTime(100); });
+  await act(async () => { renderer.update(draw(false)); });
+  expect(screen.knowledge.query).toBe('idle');
+  await act(async () => { renderer.update(draw(true)); });
+  await settle(0);
+  expect(screen.knowledge.query).toBe('idle');
+  expect(screen.knowledge.earliest).toBe('2026-08-12');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('查詢中…');
+  await act(async () => renderer.unmount());
 });

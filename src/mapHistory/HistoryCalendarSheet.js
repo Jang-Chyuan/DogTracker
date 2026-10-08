@@ -35,9 +35,13 @@ function Arrow({ side, enabled, onPress, label, testID }) {
 /** 查詢中… / 雲端的紀錄查不到　重試 (判定表「月曆查詢雲端失敗」), next to the title. */
 function QueryStatus({ status, onRetry }) {
   if (status === 'querying') {
-    return <Text style={styles.status} numberOfLines={1} testID="calendar-querying">查詢中…</Text>;
+    return (
+      <View style={styles.statusRow}>
+        <Text style={styles.status} numberOfLines={1} testID="calendar-querying">查詢中…</Text>
+      </View>
+    );
   }
-  if (status !== 'failed') return null;
+  if (status !== 'failed') return <View style={styles.statusRow} />;
   return (
     <View style={styles.statusRow} testID="calendar-query-failed">
       <Text style={styles.status} numberOfLines={1}>雲端的紀錄查不到</Text>
@@ -208,7 +212,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet({ screen, 
     );
   }
   return (
-    <View style={StyleSheet.absoluteFill} testID="history-calendar">
+    <View style={[StyleSheet.absoluteFill, styles.layer]} testID="history-calendar">
       <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]}>
         <Pressable style={StyleSheet.absoluteFill} accessibilityRole="button" accessibilityLabel="關閉選日期"
           onPress={close} />
@@ -227,6 +231,8 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet({ screen, 
 export default HistoryCalendarSheet;
 
 const styles = StyleSheet.create({
+  // Over the top capsules (30) and the panel (40).
+  layer: { zIndex: 60, elevation: 30 },
   scrim: { backgroundColor: colors.scrim },
   sheet: {
     position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: colors.surface,
@@ -240,11 +246,11 @@ const styles = StyleSheet.create({
   title: { ...type.status, color: colors.text },
   backTitle: { minHeight: touch.min, justifyContent: 'center' },
   statusRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  status: { ...type.caption, color: colors.textMuted, flexShrink: 1, flex: 0 },
+  status: { ...type.caption, color: colors.textMuted, flexShrink: 1 },
   statusRetry: { minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space.xs },
   retryText: { ...type.value, color: colors.tonalText },
   // 回到今天: 32dp high (48dp to the finger), outlined; faded on today.
-  todayButton: { marginLeft: 'auto', height: 32, paddingHorizontal: space.m, borderRadius: radius.input,
+  todayButton: { height: 32, paddingHorizontal: space.m, borderRadius: radius.input,
     borderWidth: 1.5, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   todayText: { ...type.value, color: colors.text },
   disabled: { opacity: opacity.disabled },
@@ -259,7 +265,8 @@ const styles = StyleSheet.create({
   dayCell: { flex: 1, height: CELL + 4, padding: 2 },
   dayInner: { flex: 1, borderRadius: radius.input, alignItems: 'center', justifyContent: 'center' },
   dayText: { ...type.status, color: colors.text },
-  otherMonth: { color: colors.textMuted },
+  // The previous / next month's days (the mockup's #7D7672).
+  otherMonth: { color: '#7D7672' },
   faded: { color: FADED },
   today: { borderWidth: 1.5, borderColor: colors.text },
   selected: { backgroundColor: colors.tonal, borderWidth: 2, borderColor: colors.accent },

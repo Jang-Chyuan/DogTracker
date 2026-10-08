@@ -282,12 +282,11 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   const download = downloadPanel(cloudDays.download, { day: shownKey, hasRows: !!model?.dayRecords });
   // A screen fixture can open on another day (preset.goTo: H3c starts its
   // download), once per opening.
-  const presetDay = useRef('');
+  const goToNow = useRef(goTo);
+  goToNow.current = goTo;
   useEffect(() => {
-    if (!preset?.goTo || !sessionKey || presetDay.current === sessionKey) return;
-    presetDay.current = sessionKey;
-    goTo(preset.goTo);
-  }, [preset?.goTo, sessionKey, goTo]);
+    if (preset?.goTo && sessionKey) goToNow.current(preset.goTo);
+  }, [preset?.goTo, sessionKey]);
   // ---- dragging the range -------------------------------------------------
   const dragRange = useCallback(value => setDraft(value), []);
   const commitRange = useCallback(value => {
