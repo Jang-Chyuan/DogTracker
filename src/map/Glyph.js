@@ -108,6 +108,32 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Path d="M12 7v5.5l3.5 2" {...stroke} />
         </>
       )}
+      {name === 'receiver-off' && (
+        // 接收器斷線 (A2): the mockup's receiver box with its antenna.
+        <>
+          <Rect x={6} y={10} width={12} height={10} rx={2} {...stroke} />
+          <Path d="M12 10V5M8.5 4.5a5 5 0 0 1 7 0" {...stroke} />
+        </>
+      )}
+      {name === 'map-off' && (
+        // 地圖載入失敗／地圖打不開 (A2c): a folded map, struck through.
+        <Path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM3 3l18 18" {...stroke} />
+      )}
+      {name === 'storage' && (
+        // 位置存不進手機: a phone with a cross where the data would go.
+        <>
+          <Rect x={6} y={2.5} width={12} height={19} rx={2.5} {...stroke} />
+          <Path d="M10 10l4 4M14 10l-4 4M11 18.5h2" {...stroke} />
+        </>
+      )}
+      {name === 'close' && <Path d="M6 6l12 12M18 6 6 18" {...stroke} />}
+      {name === 'compass' && (
+        // The compass (shown once the map is turned): north half in red.
+        <>
+          <Path d="M12 3l3.2 9H8.8z" fill="#D64545" stroke="none" />
+          <Path d="M12 21l-3.2-9h6.4z" fill={color} stroke="none" />
+        </>
+      )}
     </Svg>
   );
 }

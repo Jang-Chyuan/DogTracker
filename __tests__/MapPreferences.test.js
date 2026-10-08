@@ -74,6 +74,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showSlaveMarker: false,
     showTrails: true,
     windowMinutes: 2,
+    noDataCardDismissed: false,
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -125,6 +126,7 @@ test('every setting survives a new controller and shares no tracking-row writes'
       showSlaveMarker: true,
       showTrails: true,
       windowMinutes: 30,
+      noDataCardDismissed: false,
     };
     await first.save(value);
     await first.close();

@@ -11,6 +11,8 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   showSlaveMarker: true,
   showTrails: false,
   windowMinutes: 2,
+  // A6 (還沒有狗) was closed with ✕: it never shows again.
+  noDataCardDismissed: false,
 });
 
 // Saved by versions before v3, which had a dog to follow and dogs hidden one by
@@ -24,7 +26,7 @@ export function validateTrackingPreferences(value) {
   const settings = { ...DEFAULT_TRACKING_PREFERENCES, ...value };
   if (!['demo', 'real'].includes(settings.mode))
     throw new Error('資料模式設定格式錯誤');
-  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails']) {
+  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails', 'noDataCardDismissed']) {
     if (typeof settings[key] !== 'boolean')
       throw new Error('地圖顯示設定格式錯誤');
   }
@@ -39,6 +41,7 @@ export function validateTrackingPreferences(value) {
     showSlaveMarker: settings.showSlaveMarker,
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
+    noDataCardDismissed: settings.noDataCardDismissed,
   };
 }
 

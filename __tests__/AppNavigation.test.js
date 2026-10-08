@@ -347,7 +347,12 @@ test('first map asks permission once; denial does not affect hardware locations'
   await mount();
   expect(request).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
-  await press('設定');
+  // No location permission: the gear carries the red dot and says so (049).
+  expect(button('設定')).toBeUndefined();
+  const gear = renderer.root.findAll(node => node.props.testID === 'map-settings'
+    && typeof node.props.onPress === 'function')[0];
+  expect(gear.props.accessibilityLabel).toMatch(/^設定，有 \d 件事要處理$/);
+  await act(async () => { await gear.props.onPress(); });
   await press('返回，設定');
   expect(request).toHaveBeenCalledTimes(1);
 });

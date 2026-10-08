@@ -89,6 +89,9 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
       putString("sessionId", prefs.getString("sessionId", ""))
       putString("deviceId", prefs.getString("deviceId", ""))
       putDouble("lastReceivedAt", prefs.getLong("lastReceivedAt", 0).toDouble())
+      // When the established link dropped (0 = connected or never connected
+      // in this service run): see BleForegroundService.disconnectedAt.
+      putDouble("disconnectedAt", if (BleForegroundService.isRunning) BleForegroundService.disconnectedAt.toDouble() else 0.0)
       putString("storageError", prefs.getString("storageError", ""))
       putString("resumeError", prefs.getString("resumeError", ""))
       putString("deviceName", prefs.getString("deviceName", "DogGPS Master"))

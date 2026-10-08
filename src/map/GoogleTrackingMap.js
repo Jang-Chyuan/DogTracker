@@ -25,7 +25,7 @@ import {
   framedCoordinates, framePadding, frameAllCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S, regionForFrame,
 } from './MapFraming';
 import { edgeHints } from './EdgeHints';
-import { EdgeHintView, MapButtons, MapTip } from './MapControls';
+import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 import OverlapPicker, { overlapMenuPlace } from './OverlapPicker';
 
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
@@ -163,7 +163,20 @@ function GoogleTrackingMapRenderer({
   presentation,
   topInset,
   bottomInset,
-  onStatus,
+  // The base map's state for the top card (TopAlerts): 'loading', 'ok',
+  // 'load-failed' (no tiles: the map still draws on grey), 'retrying' or
+  // 'unavailable' (the map itself cannot open).
+  onMapState,
+  // A new value is a press on the card's 重試: the map is opened again.
+  retryKey = 0,
+  // Debug screen fixtures only: 'tiles' draws the map without a base map
+  // (as when it cannot load), 'component' as if the map could not open.
+  failure = null,
+  // How far down the top cards reach (0: none). Like coverBottom the map's
+  // own padding stays put; hints, framing and the compass keep clear of them.
+  coverTop = 0,
+  // Where the compass sits (12dp under the gear or under the top cards).
+  compassTop = null,
   onReadyChange,
   onSnapshotReady,
   foreground,
@@ -202,7 +215,7 @@ function GoogleTrackingMapRenderer({
   const [cursorRevision, setCursorRevision] = useState(0);
   const [cursorDragging, setCursorDragging] = useState(false);
   const [cursorSelection, setCursorSelection] = useState(null);
-  const [attempt] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const nativePhone = useRef(null);
   const phoneCentered = useRef(false);
   const [readyInstance, setReadyInstance] = useState(null);
@@ -318,34 +331,32 @@ function GoogleTrackingMapRenderer({
   const initialRegion = center
     ? { ...center, latitudeDelta: 0.045, longitudeDelta: 0.045 }
     : EMPTY_REGION;
+  // 重試: open the map again (a new native instance), and wait for its tiles
+  // as on the first start.
+  const lastRetry = useRef(retryKey);
+  useEffect(() => {
+    if (lastRetry.current === retryKey) return;
+    lastRetry.current = retryKey;
+    setTimedOut(false);
+    setAttempt(value => value + 1);
+  }, [retryKey]);
+  const component = !supported || !configured || failure === 'component';
   useEffect(() => {
     setTimedOut(false);
-    if (!supported) {
-      onStatus('本平台尚未設定 Google Maps，仍可查看 SQLite 資料。');
-      return undefined;
-    }
-    if (!configured) {
-      onStatus('未設定 Google Maps Android key，仍可查看 SQLite 資料。');
-      return undefined;
-    }
-    onStatus(null);
-    if (loaded || !foreground || !mountedMap) return undefined;
-    const timer = setTimeout(() => {
-      setTimedOut(true);
-      onStatus(
-        '底圖尚未載入完成。請檢查網路、Google Maps key 與權限設定；SQLite 仍會更新。',
-      );
-    }, MAP_LOAD_TIMEOUT_MS);
+    if (component || loaded || !foreground || !mountedMap) return undefined;
+    // No tiles after this long: the map is drawn on grey and the top card says so.
+    const timer = setTimeout(() => setTimedOut(true), MAP_LOAD_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [
-    configured,
-    supported,
-    loaded,
-    instance,
-    foreground,
-    mountedMap,
-    onStatus,
-  ]);
+  }, [component, loaded, instance, foreground, mountedMap]);
+  let mapState;
+  if (component) mapState = 'unavailable';
+  else if (failure === 'tiles') mapState = loaded ? 'load-failed' : attempt > 0 ? 'retrying' : 'loading';
+  else if (loaded) mapState = 'ok';
+  else if (timedOut) mapState = 'load-failed';
+  else mapState = attempt > 0 ? 'retrying' : 'loading';
+  useEffect(() => {
+    onMapState?.(mapState);
+  }, [mapState, onMapState]);
   const priorSource = useRef(source);
   const sourceToFit = useRef(null);
   // Bumped after each framing fit, so a card's dog is brought into view only
@@ -373,7 +384,8 @@ function GoogleTrackingMapRenderer({
     mapRef.current?.fitToCoordinates(positions, {
       animated: false,
       // Room for the faces' "!" and name tags (History tracks have none).
-      edgePadding: presentation.historyTracks ? { top: 24, right: 24, bottom: 24, left: 24 } : padding,
+      edgePadding: presentation.historyTracks ? { top: 24, right: 24, bottom: 24, left: 24 }
+        : { ...padding, top: padding.top + Math.max(0, (coverTop || 0) - topInset) },
     });
     sourceToFit.current = null;
     setFitCount(value => value + 1);
@@ -406,9 +418,10 @@ function GoogleTrackingMapRenderer({
   const live = !presentation.historyTracks;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
+  const overlayTop = Math.max(topInset, coverTop || 0);
   const hints = useMemo(() => (live && screenPoints ? edgeHints(dogMarkers, screenPoints, {
-    width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: overlayBottom, bottomRow,
-  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, topInset, overlayBottom, bottomRow]);
+    width: cursorLayout.width, height: cursorLayout.height, top: overlayTop, bottom: overlayBottom, bottomRow,
+  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom, bottomRow]);
   // When the map's own blue dot last reported (kept coarse: one update a
   // minute is enough to know whether there is a fix).
   const [nativeFixAt, setNativeFixAt] = useState(null);
@@ -425,6 +438,9 @@ function GoogleTrackingMapRenderer({
   const phoneAvailable = !!phoneFix(livePhone)
     || (nativeFixAt != null && Date.now() - nativeFixAt <= PHONE_FIX_MAX_AGE_S * 1000);
   const [tip, setTip] = useState(null);
+  // The map's rotation: the compass shows only while it is turned.
+  const [heading, setHeading] = useState(0);
+  const turned = Math.abs((((heading % 360) + 540) % 360) - 180) > 1;
   const clearTip = useCallback(() => setTip(null), []);
   const showTip = text => setTip({ text, key: Date.now() });
   // A move the user asked for: from now on nothing automatic moves the map.
@@ -439,7 +455,8 @@ function GoogleTrackingMapRenderer({
     takeCamera();
     const points = framedCoordinates(coordinates);
     // Inside the map's own padding, and above an open card.
-    const framing = { ...padding, bottom: padding.bottom + overlayBottom - bottomInset };
+    const framing = { ...padding, top: padding.top + overlayTop - topInset,
+      bottom: padding.bottom + overlayBottom - bottomInset };
     // 300 ms (motion.camera).
     const region = regionForFrame(points, framing, {
       width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
@@ -464,11 +481,11 @@ function GoogleTrackingMapRenderer({
     map.pointForCoordinate(focusDog.coordinate).then(async point => {
       const margin = sizes.marker.attention + layout.framePadding;
       const hidden = !point || point.x < margin || point.x > width - margin
-        || point.y < topInset + margin || point.y > height - overlayBottom - margin;
+        || point.y < overlayTop + margin || point.y > height - overlayBottom - margin;
       if (!hidden || focused.current !== focusDog.key) return;
       // The camera's centre is the middle of the padded map; move it by how
       // far the dog is from where it should be.
-      const target = { x: width / 2, y: (topInset + height - overlayBottom) / 2 };
+      const target = { x: width / 2, y: (overlayTop + height - overlayBottom) / 2 };
       const middle = { x: width / 2, y: topInset + (height - topInset - bottomInset) / 2 };
       const moved = point && map.coordinateForPoint
         ? await map.coordinateForPoint({ x: middle.x + point.x - target.x, y: middle.y + point.y - target.y })
@@ -479,7 +496,7 @@ function GoogleTrackingMapRenderer({
     }).catch(() => {});
     // takeCamera only flips refs; the effect runs per opening (focusDog.key).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusDog, usable, cursorLayout.height, overlayBottom, fitCount, needsFirstPositionFit]);
+  }, [focusDog, usable, cursorLayout.height, overlayTop, overlayBottom, fitCount, needsFirstPositionFit]);
   const pressFrameAll = () => frame(frameAllCoordinates(dogMarkers, currentPhone()));
   const pressMyLocation = () => {
     const position = currentPhone();
@@ -509,7 +526,7 @@ function GoogleTrackingMapRenderer({
   const leadSize = picker && dogMarkers.find(marker => marker.slaveId === picker.lead)?.size;
   const pickerPlace = pickerMarkers && leadPoint ? overlapMenuPlace({ ...leadPoint, size: leadSize },
     // Above the card: the card is drawn over the map and would cover it.
-    pickerMarkers.length, { width: cursorLayout.width, height: cursorLayout.height, top: topInset, bottom: overlayBottom })
+    pickerMarkers.length, { width: cursorLayout.width, height: cursorLayout.height, top: overlayTop, bottom: overlayBottom })
     : null;
   // The menu goes when its dogs no longer overlap, on a source switch, and
   // when a dog is opened some other way (its card row).
@@ -521,7 +538,7 @@ function GoogleTrackingMapRenderer({
   return (
     <View style={StyleSheet.absoluteFill} testID="tracking-map-container"
       onLayout={event => setCursorLayout(event.nativeEvent.layout)}>
-      {configured && mountedMap ? (
+      {!component && mountedMap ? (
         <MapView
           key={instance}
           ref={mapRef}
@@ -533,7 +550,9 @@ function GoogleTrackingMapRenderer({
               ? savedView.current.camera
               : undefined
           }
-          mapType="standard"
+          // Without a base map (a fixture of a failed load) the dogs, the phone
+          // and the ring are drawn on the plain map background.
+          mapType={failure === 'tiles' ? 'none' : 'standard'}
           moveOnMarkerPress={false}
           // Google reports a tap only (a drag or a long press is not one).
           onPress={onMapPress ? () => onMapPress() : undefined}
@@ -549,8 +568,9 @@ function GoogleTrackingMapRenderer({
             nativePhone.current = { ...value, receivedAt };
             if (nativeFixAt == null || receivedAt - nativeFixAt > 60000) setNativeFixAt(receivedAt);
           }}
-          // Google SDK handles rotation/tilt visibility and tap-to-north.
-          showsCompass
+          // The compass is ours (CompassButton): Android's own sits top left
+          // and cannot be moved under the gear.
+          showsCompass={false}
           rotateEnabled={!cursorDragging}
           pitchEnabled={!cursorDragging}
           scrollEnabled={!cursorDragging}
@@ -582,7 +602,10 @@ function GoogleTrackingMapRenderer({
                 camera
               ) {
                 savedView.current = { source, camera };
-                if (Number.isFinite(camera.heading)) onHeading?.(camera.heading);
+                if (Number.isFinite(camera.heading)) {
+                  onHeading?.(camera.heading);
+                  setHeading(camera.heading);
+                }
               }
             }).catch(() => {
               // Keep the last successful camera snapshot if native teardown
@@ -690,12 +713,12 @@ function GoogleTrackingMapRenderer({
             />
           ))}
         </MapView>
+      ) : component ? (
+        // 地圖打不開: grey only; the top card says so (no list, no new page).
+        <View testID="map-unavailable" style={styles.fallback} />
       ) : (
         <View style={styles.unavailable}>
-          <Text style={styles.unavailableText}>
-            {configured ? '正在讀取本機位置…' : 'Google Maps'}
-          </Text>
-          {!configured && <Text style={styles.hint}>地圖設定尚未完成</Text>}
+          <Text style={styles.unavailableText}>正在讀取本機位置…</Text>
         </View>
       )}
       {usable && cursorLayout.width > 0 && presentation.historyTracks?.some(track => track.role === 'phone' && track.segments.length > 0) &&
@@ -704,7 +727,7 @@ function GoogleTrackingMapRenderer({
           onDraggingChange={setCursorDragging}
           onSelectionChange={value => setCursorSelection({ source, value })}
           revision={cursorRevision} width={cursorLayout.width} height={cursorLayout.height} top={topInset} bottom={bottomInset} />}
-      {configured && mountedMap && !loaded && !timedOut && (
+      {!component && mountedMap && !loaded && !timedOut && (
         <View
           style={[styles.loading, { top: topInset + 56 }]}
           pointerEvents="none"
@@ -720,7 +743,7 @@ function GoogleTrackingMapRenderer({
         <EdgeHintView key={value.side} value={value} avatars={presentation.dogAvatars || {}}
           onPress={() => frame(value.coordinates)} />
       ))}
-      {live && configured && foreground && (loaded || timedOut) && (
+      {live && !component && foreground && (loaded || timedOut) && (
         // 框住全部, 我的位置 and 「今天 x km」 (A1), 12dp above the card; above the tip
         // while it shows.
         <MapButtons bottom={overlayBottom + (tip ? sizes.floatingButton + layout.floatingGap : 0)}
@@ -728,6 +751,10 @@ function GoogleTrackingMapRenderer({
           today={today} onToday={onToday} />
       )}
       {live && <MapTip message={tip} bottom={overlayBottom} onDone={clearTip} />}
+      {usable && foreground && compassTop != null && turned && (
+        <CompassButton top={compassTop} heading={heading}
+          onPress={() => mapRef.current?.animateCamera({ heading: 0 }, { duration: motion.camera.duration })} />
+      )}
       {pickerMarkers && pickerPlace && (
         <OverlapPicker markers={pickerMarkers} place={pickerPlace} avatars={presentation.dogAvatars || {}}
           onClose={closePicker}
@@ -748,6 +775,7 @@ export default function GoogleTrackingMap(props) {
   return <MemoizedGoogleTrackingMap {...props} />;
 }
 const styles = StyleSheet.create({
+  fallback: { flex: 1, backgroundColor: tokens.mapFallback },
   unavailable: {
     flex: 1,
     backgroundColor: '#E9EEEA',
@@ -755,7 +783,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   unavailableText: { color: colors.master, fontWeight: '700', fontSize: 20 },
-  hint: { color: colors.muted, marginTop: 8 },
   loading: {
     position: 'absolute',
     left: 14,

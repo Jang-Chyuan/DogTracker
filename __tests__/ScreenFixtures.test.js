@@ -822,10 +822,12 @@ test.each([
       .map(node => node.props.children))).toContain(words);
     expect(renderer.root.findAll(node => node.props.testID === `map-today-icon-${icon}`
       && typeof node.type === 'string')).toHaveLength(1);
-    // The gear sits top right; its red dot waits for 049.
+    // The gear sits top right; a missing location permission lights its red
+    // dot (049), recording switched off does not.
     expect(renderer.root.findAll(node => node.props.testID === 'map-settings' && typeof node.type === 'string'))
       .toHaveLength(1);
-    expect(renderer.root.findAll(node => node.props.testID === 'map-settings-dot')).toHaveLength(0);
+    expect(renderer.root.findAll(node => node.props.testID === 'map-settings-dot' && typeof node.type === 'string'))
+      .toHaveLength(name === 'phone-no-permission' ? 1 : 0);
   } });
 });
 

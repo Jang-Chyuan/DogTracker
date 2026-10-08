@@ -18,6 +18,7 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | 本機 BLE 列 | `dog_status` 的列（含 `satellites`、`hdop`、`usb_present`、`rssi`、`master_lat/lon`） | `mapDogStatusRow`、`mergePositionSamples` → `tracking.point`／`positionSamples` |
 | 雲端列 | `supabase_dog_status` 的列 | 模仿 `CloudDatabase.latestBySlave`／`latestStatusRows`（含環境模型）→ `cloudDogs.rows`／`packets` |
 | 停在原處、接收範圍 | **給列，不直接給 hold 或判定**：本機＋雲端列照 `holdRows` 冷啟動的方式交給真的 `HoldStore`／`IndoorHold`＋內建環境模型算出 `holds`、`statuses`；同一批列也算出每隻狗的接收範圍判定 `ranges`（`ReceiverRange.js`） | `mergeDogMarkers`、`outOfRangeLines` |
+| 上方卡片 | `dismissed`（按過 ✕ 的卡片）、`storageError`（`realWriteError`）、`mapFailure`（`'tiles'` 沒有底圖／`'component'` 地圖打不開，交給 `GoogleTrackingMap` 的 `failure`） | `TopAlerts.js`（`topCards`、`gearReasons`）→ `TopAlertCards`、齒輪紅點 |
 | 雲端同步狀態 | `useCloudSync` 的 `ownerId`、`lastSuccess`、`lastDownloadAt`、`failingSince`、`error` | 地圖收到的 `cloudSync`；雲端狗的「沒有新位置」照 `DogFreshness` 用 `lastDownloadAt` 判斷 |
 | 手機位置／路線 | 現在位置（`useLiveLocation` 的樣子）和最近 10 分鐘的路線 | 地圖上的手機點；路線交給真的 `RideAlong` 判斷坐車 |
 | 手機記錄、權限 | `phone.recording: false` 讓記錄服務沒在跑；`phone.permission`／`phone.services` 是 `usePhoneLocation` 的回答（預設精確位置、定位服務開著） | `todayPill`（右下「今天 x km」的 icon）、`phone.enabled`（地圖藍點） |
@@ -35,10 +36,18 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | 名稱 | 狀態 |
 | --- | --- |
 | `all-good` | 接收器 7 收資料中、雲端同步正常、三隻狗都是新的、手機記錄中 |
-| `no-data` | 沒設定接收器、雲端沒有資料（已登入）、沒有任何狗 |
+| `no-data` | A6：沒設定接收器、沒登入、沒有任何狗 → 上方卡片「還沒有狗的資料」＋「連接接收器」「登入 Supabase」 |
+| `no-data-signed-in` | 同上但已登入（雲端沒有資料）→ A6 只有「連接接收器」 |
 | `signed-out-map` | 沒登入（「稍後再說」）：只有接收器 7 收到的豆豆、狗 5；手機裡之前帳號下載的雲端列（小黑、阿福）不畫 |
 | `receiver-connecting` | 接收器 7 剛選好還沒收到資料；最新一筆封包來自之前用的接收器 3，不能當成 7 畫 |
-| `receiver-disconnected` | 接收器 7 五分鐘前斷線、自動重連中；牠收的豆豆不再更新 |
+| `receiver-disconnected` | A2：接收器 7 這次連上後、五分鐘前斷線（`disconnectedAt`），自動重連中 → 上方卡片「接收器 7 斷線了」「09:25 斷線・正在自動重連」「接收器設定」；不畫範圍圈 |
+| `receiver-disconnected-dismissed` | A2b：同上、卡片按過 ✕ → 沒有卡片，齒輪紅點 |
+| `storage-failed` | 位置存不進手機（空間不足）→ 上方卡片「位置存不進手機」「手機空間不足」「檢查空間」 |
+| `storage-failed-other` | 位置存不進手機（其他原因）→ 卡片寫原因＋「看原因」 |
+| `map-load-failed` | A2c：底圖載入失敗 → 狗、手機、範圍圈畫在沒有底圖的地圖上＋「地圖載入失敗」「重試」 |
+| `map-unavailable` | 地圖元件打不開 → 灰底＋「地圖打不開」「狗的位置還是會照常收、照常提醒」「重試」 |
+| `cloud-failing` | 雲端下載失敗 6 分鐘 → 只有齒輪紅點 |
+| `receiver-battery-low` | 接收器 7 自己的電量 15% → 只有齒輪紅點 |
 | `dog-indoor` | 小黑進室內 12 分鐘：先有清楚定位，之後封包沒定位 → 真的 hold 規則判「室內」 |
 | `dogs-aged` | 豆豆最新、小黑 4 分鐘前（還算新）、阿福 40 分鐘前（灰色頭像＋紅色「!」＋放大） |
 | `range-out` | 豆豆從接收器 7 走到 1.6 公里外：不在接收範圍，從範圍圈邊緣拉紅色虛線 |

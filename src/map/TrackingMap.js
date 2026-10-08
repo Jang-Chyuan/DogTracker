@@ -1,4 +1,6 @@
 import React from 'react';
+import { StyleSheet, View } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export const MAP_LOAD_TIMEOUT_MS = 15000;
 
@@ -53,5 +55,36 @@ export default function TrackingMap({ provider, ...props }) {
     throw new TypeError('invalid map provider definition');
   const supported = isSupported();
   const configured = supported && isConfigured();
-  return <Renderer {...props} supported={supported} configured={configured} />;
+  return (
+    // 重試 (a new retryKey) opens a map that failed to open again.
+    <MapBoundary retryKey={props.retryKey ?? 0} onMapState={props.onMapState}>
+      <Renderer {...props} supported={supported} configured={configured} />
+    </MapBoundary>
+  );
 }
+
+/**
+ * A map that throws while opening is 「地圖打不開」: grey, with the top card
+ * (TopAlerts) saying so, instead of taking the whole app down.
+ */
+class MapBoundary extends React.Component {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidUpdate(previous) {
+    if (this.state.failed && previous.retryKey !== this.props.retryKey) this.setState({ failed: false });
+  }
+  componentDidCatch(error) {
+    console.warn('[Map] could not open', error?.message);
+    this.props.onMapState?.('unavailable');
+  }
+  render() {
+    if (this.state.failed) return <View testID="map-unavailable" style={styles.fallback} />;
+    return this.props.children;
+  }
+}
+
+const styles = StyleSheet.create({
+  fallback: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.mapFallback },
+});
