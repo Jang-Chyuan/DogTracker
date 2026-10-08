@@ -19,6 +19,7 @@ import { handleRootBack } from './src/app/handleRootBack';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
+import { AddressLookupContext, addressLookup } from './src/placement/AddressLookup';
 import CloudDataScreen from './src/cloud/CloudDataScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
 import AdvancedSettings from './src/settings/AdvancedSettings';
@@ -582,6 +583,9 @@ function TrackerApp({ resume = null, onRestart }) {
   const full = FULL_PAGES.has(route.name);
 
   return (
+    // Addresses (053a): the card and the history list share one lookup and
+    // its cache; a fixture brings its own.
+    <AddressLookupContext.Provider value={mapInputs.addressLookup ?? addressLookup}>
     <SafeAreaView
       style={[styles.safeArea, (light || full) && styles.page]}
       edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
@@ -657,6 +661,7 @@ function TrackerApp({ resume = null, onRestart }) {
         style={[StyleSheet.absoluteFill, styles.mapCover, (light || full) && styles.page]} />}
       {(light || full) && <View style={styles.page}>{page}</View>}
     </SafeAreaView>
+    </AddressLookupContext.Provider>
   );
 }
 

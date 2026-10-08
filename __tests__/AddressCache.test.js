@@ -23,7 +23,7 @@ test('SQLite labels survive new service instances and nearby points share them',
     });
     const nearby = { ...point, latitude: 25.0003 };
     await expect(second.lookupAddresses([nearby])).resolves.toEqual([
-      '桃園區中正路1號附近',
+      '桃園區中正路 1 號附近',
     ]);
     expect(native.reverseGeocode).toHaveBeenCalledTimes(1);
     expect(await store.find({ ...point, latitude: 25.001 })).toBeNull();

@@ -28,6 +28,7 @@ import { historyGeometry, HISTORY_DAY_CONTEXT_MS } from '../mapHistory/HistoryDa
 import { budgetHistory } from '../mapHistory/HistoryGeometryBudget';
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
 import { startOfToday } from '../tracking/TodayDistance';
+import { fixtureAddressLookup } from './fixtureGeocoder';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
 export const FIXTURE_NOW = Date.parse('2026-10-07T01:30:00Z');
@@ -611,9 +612,10 @@ const FIXTURES = {
     cloudRows: dog8Cloud(now),
   }),
   // A7b: 小黑 held indoors (clear fixes, then packets without a fix for 12
-  // minutes), collar on USB at 62%, resting for 40 minutes. 位置 「室內」 (the
-  // address line comes with PR 059), no 接收範圍 row.
+  // minutes), collar on USB at 62%, resting for 40 minutes. 位置 「室內」 with
+  // the held place's address under it (053a), no 接收範圍 row.
   'card-indoor': now => ({
+    geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
     ble: inTimeOrder([
       ...dog4Ble(now),
@@ -625,6 +627,12 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // 小黑 held indoors with no network: no address is asked, the 位置 row is
+  // 「室內」 alone, one line, no spinner (edges「沒網路時查地址」).
+  'dog-indoor-no-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: { offline: true } }),
+  // card-indoor named by this phone's own Geocoder (network + Play services;
+  // the place is by Taoyuan station). Nothing is written to its cache.
+  'card-indoor-geocoder': now => ({ ...FIXTURES['card-indoor'](now), geocoder: 'real' }),
   // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 row at all;
   // running hard for the last few minutes (劇烈活動).
   'card-cloud-dog': now => ({
@@ -865,7 +873,12 @@ const FIXTURES = {
   // 「今天 x km」 on the map (&page=map) is the summary's distance.
   'history-today': now => {
     const phone = routePhone(morningRoute(now), now);
-    return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
+    return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now),
+      // 出發, stays 1 and 2, 現在 (H2): an address next to the place, one
+      // 120 m away, one with no answer (coordinates, 「查不到地址」).
+      geocoder: { names: [{ line: '330台灣桃園市桃園區大興西路二段105號' },
+        { line: '330台灣桃園市桃園區同德六街76號', awayM: 120 }, null,
+        { line: '330台灣桃園市桃園區中山路552號' }] } };
   },
   // Still at home (a few metres of wander since 06:30): 還沒出發, the range is
   // the whole day.
@@ -1016,7 +1029,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
-    permissionsGuide = null, pairing = null, history = null,
+    permissionsGuide = null, pairing = null, history = null, geocoder = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -1127,6 +1140,9 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // The history page (054a): its query, the map's tracks and the day reader
     // of the time-line list, all from the fixture's rows.
     history: history && historyFixture(history, phone?.today || [], now),
+    // Its places' names (053a): made-up answers, none, or this phone's
+    // Geocoder; never this phone's address cache.
+    addressLookup: fixtureAddressLookup(geocoder),
   };
 }
 
@@ -1281,6 +1297,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
         && fixture.phonePermission.services },
     todayRoute: fixture.todayRoute,
     cloudDogs: fixture.cloudDogs,
+    addressLookup: fixture.addressLookup,
     // The upload as the fixture says (S3); its error is the gear's red dot.
     upload: fixture.upload ?? { settings: [], counts: [], masters: [], supported: true, settingsReady: false,
       switchMode: async () => {}, retry: async () => {} },

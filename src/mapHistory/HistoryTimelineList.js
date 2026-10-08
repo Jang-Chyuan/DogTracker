@@ -1,10 +1,11 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { LayoutAnimation, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
 import { colors } from '../theme/tokens';
 import {
-  emptyText, interruptionText, nodePill, nodeTimes, placeCoordinates, placeTitle, sectionText, summaryText,
+  emptyText, interruptionText, nodePill, nodeTimes, placeLines, sectionText, summaryText,
 } from '../history/HistoryText';
+import { usePlaceNames } from '../placement/AddressLookup';
 
 // 判定表「時間軸清單」: time column 54dp, track 36dp, then the place.
 const TIME_WIDTH = 54;
@@ -64,9 +65,10 @@ function Pill({ pill, color }) {
   return <View style={[styles.pill, tone[0]]}><Text style={[styles.pillText, tone[1]]}>{pill.text}</Text></View>;
 }
 
-function PlaceRow({ node, next, color }) {
+function PlaceRow({ node, next, color, place }) {
   const [start, end] = nodeTimes(node);
   const note = interruptionText(node);
+  const lines = placeLines(node, place);
   return (
     <View style={styles.row} testID={`timeline-${node.type}`}>
       <View style={styles.timeColumn}>
@@ -79,10 +81,14 @@ function PlaceRow({ node, next, color }) {
         <Node node={node} color={color} />
       </View>
       <View style={styles.place}>
-        <Text style={styles.address}>{placeTitle(node)}</Text>
+        {/* Two lines kept while the address is asked for (判定表「清單節點的內容」). */}
+        <Text style={[styles.address, lines.titleMuted && styles.asking]} testID="place-title">
+          {lines.title}
+        </Text>
         <View style={styles.second}>
           <Pill pill={nodePill(node)} color={color} />
-          {placeCoordinates(node) ? <Text style={styles.note}>{placeCoordinates(node)}</Text> : null}
+          {lines.coordinates ? <Text style={styles.note}>{lines.coordinates}</Text> : null}
+          {lines.missing ? <Text style={styles.note}>{lines.missing}</Text> : null}
           {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
       </View>
@@ -118,8 +124,25 @@ function HistoryTimelineList({ model, subject, today, name, color, loading, erro
   if (!model) return loading ? <Text style={styles.empty}>讀取中…</Text> : null;
   if (!model.dayRecords) return <Text style={styles.empty}>{emptyText({ subject, today, name })}</Text>;
   if (!model.points.length) return <Text style={styles.empty}>這段時間沒有紀錄</Text>;
+  return <TimelineBody model={model} subject={subject} color={color} />;
+}
+
+const isSection = node => ['movement', 'gap'].includes(node?.type);
+
+// Addresses fade in where they land and the rows below slide (180 ms).
+const ADDRESS_MOTION = LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut,
+  LayoutAnimation.Properties.opacity);
+
+function TimelineBody({ model, subject, color }) {
   const summary = summaryText(model, { subject });
   const nodes = model.nodes;
+  const places = usePlaceNames(nodes.map(node => (isSection(node) ? null : node)));
+  const states = places.map(place => place.state).join();
+  const shown = useRef(states);
+  useEffect(() => {
+    if (shown.current !== states) LayoutAnimation.configureNext(ADDRESS_MOTION);
+    shown.current = states;
+  }, [states]);
   return (
     <View testID="history-timeline">
       <View style={styles.summary} accessible accessibilityLabel={`${summary.title}，${summary.detail}`}>
@@ -128,8 +151,8 @@ function HistoryTimelineList({ model, subject, today, name, color, loading, erro
       </View>
       {nodes.map((node, index) => (['movement', 'gap'].includes(node.type)
         ? <SectionRow key={`s${node.start}-${index}`} section={node} color={color} />
-        : <PlaceRow key={`n${node.type}${node.start}-${index}`} node={node} color={color}
-          next={['movement', 'gap'].includes(nodes[index + 1]?.type) ? nodes[index + 1] : null} />))}
+        : <PlaceRow key={`n${node.type}${node.start}-${index}`} node={node} color={color} place={places[index]}
+          next={isSection(nodes[index + 1]) ? nodes[index + 1] : null} />))}
     </View>
   );
 }
@@ -166,6 +189,7 @@ const styles = StyleSheet.create({
   end: { width: 18, height: 18, borderRadius: 9, borderWidth: 4, marginTop: 1 },
   place: { flex: 1, paddingLeft: 8, paddingBottom: 12 },
   address: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, fontVariant: ['tabular-nums'] },
+  asking: { color: colors.textMuted, fontWeight: '400', minHeight: 40 },
   second: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 4 },
   pill: { height: 18, borderRadius: 9, paddingHorizontal: 7, justifyContent: 'center' },
   pillText: { fontSize: 11, fontWeight: '700' },
