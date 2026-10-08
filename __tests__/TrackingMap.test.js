@@ -339,52 +339,61 @@ test('the buttons sit 16dp from the right, 12dp above the card, and only on the 
   expect(renderer.root.findAll(node => node.props.testID === 'map-frame-all')).toHaveLength(0);
 });
 
-test('the launch screen goes only after the first framing is drawn, or after a wait with nothing to frame', async () => {
-  const { NativeModules } = require('react-native');
-  NativeModules.AppSplash = { hide: jest.fn() };
+test('the launch screen hands over only after the first framing is drawn, or after a wait with nothing to frame', async () => {
   const splash = require('../src/app/hideSplash');
+  const phase = () => splash.getSplashState().phase;
   // The start decided on the map (App): its framing releases the launch screen.
   splash.resetSplashGate();
   splash.launchInto('map');
-  try {
-    await render({ framingReady: false });
-    await readyMap();
-    // Loaded but not framed: the launch screen stays, however long the
-    // framing takes (with something to frame the wait is not cut short).
-    await act(async () => jest.advanceTimersByTime(5000));
-    expect(NativeModules.AppSplash.hide).not.toHaveBeenCalled();
-    await act(async () => renderer.update(<TrackingMap {...defaults} framingReady />));
-    expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
-    expect(NativeModules.AppSplash.hide).not.toHaveBeenCalled();
-    // The fitted camera is reported drawn.
-    await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
-    expect(NativeModules.AppSplash.hide).toHaveBeenCalledTimes(1);
-    await act(async () => renderer.unmount());
-    renderer = null;
-    NativeModules.AppSplash.hide.mockClear();
-    splash.resetSplashGate();
-    splash.launchInto('map');
-    // Nothing to frame: released after FIRST_FRAME_WAIT_MS.
-    await render({ presentation: { ...defaults.presentation, cameraPositions: [], dogMarkers: [] } });
-    await readyMap();
-    expect(NativeModules.AppSplash.hide).not.toHaveBeenCalled();
-    await act(async () => jest.advanceTimersByTime(3000));
-    expect(NativeModules.AppSplash.hide).toHaveBeenCalledTimes(1);
-    // Before the start is decided (D1 may come first), the framing alone
-    // never releases it.
-    await act(async () => renderer.unmount());
-    renderer = null;
-    NativeModules.AppSplash.hide.mockClear();
-    splash.resetSplashGate();
-    await render({ presentation: { ...defaults.presentation, cameraPositions: [], dogMarkers: [] } });
-    await readyMap();
-    await act(async () => jest.advanceTimersByTime(3000));
-    expect(NativeModules.AppSplash.hide).not.toHaveBeenCalled();
-    splash.launchInto('map');
-    expect(NativeModules.AppSplash.hide).toHaveBeenCalledTimes(1);
-  } finally {
-    delete NativeModules.AppSplash;
-  }
+  await render({ framingReady: false });
+  await readyMap();
+  // Loaded but not framed: the launch screen stays, however long the
+  // framing takes (with something to frame the wait is not cut short).
+  await act(async () => jest.advanceTimersByTime(5000));
+  expect(phase()).toBe('waiting');
+  await act(async () => renderer.update(<TrackingMap {...defaults} framingReady />));
+  expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
+  expect(phase()).toBe('waiting');
+  // The fitted camera is reported drawn: the dogs on screen are handed over.
+  await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
+  await act(async () => {});
+  expect(phase()).toBe('handover');
+  await act(async () => renderer.unmount());
+  renderer = null;
+  splash.resetSplashGate();
+  splash.launchInto('map');
+  // Nothing to frame: released after FIRST_FRAME_WAIT_MS, as a plain fade.
+  await render({ presentation: { ...defaults.presentation, cameraPositions: [], dogMarkers: [] } });
+  await readyMap();
+  expect(phase()).toBe('waiting');
+  await act(async () => jest.advanceTimersByTime(3000));
+  expect(splash.getSplashState()).toMatchObject({ phase: 'handover', mode: 'fade' });
+  // Before the start is decided (D1 may come first), the framing alone
+  // never releases it.
+  await act(async () => renderer.unmount());
+  renderer = null;
+  splash.resetSplashGate();
+  await render({ presentation: { ...defaults.presentation, cameraPositions: [], dogMarkers: [] } });
+  await readyMap();
+  await act(async () => jest.advanceTimersByTime(3000));
+  expect(phase()).toBe('waiting');
+  splash.launchInto('map');
+  expect(phase()).toBe('handover');
+  splash.resetSplashGate();
+});
+
+test('the handover goes to the dog nearest the middle; the others in order of distance from it', () => {
+  const { splashTargets } = require('../src/map/GoogleTrackingMap');
+  const marker = slaveId => ({ slaveId, size: 40, tag: `狗 ${slaveId}`, coordinate: {} });
+  const targets = splashTargets(
+    { dogMarkers: [marker(1), marker(2), marker(3), marker(4)], avatars: { 2: { kind: 'art' } },
+      width: 400, height: 800, top: 40, bottom: 40 },
+    { 1: { x: 50, y: 100 }, 2: { x: 210, y: 390 }, 3: { x: 300, y: 500 }, 4: { x: 500, y: 400 } },
+  );
+  // Dog 4 is off screen; dog 2 is nearest the middle (200, 400).
+  expect(targets.map(t => t.slaveId)).toEqual([2, 3, 1]);
+  expect(targets[0]).toMatchObject({ x: 210, y: 390, avatar: { kind: 'art' } });
+  expect(splashTargets({ dogMarkers: [], avatars: {}, width: 400, height: 800 }, {})).toEqual([]);
 });
 
 test('new DB rows never refit the camera after panning', async () => {

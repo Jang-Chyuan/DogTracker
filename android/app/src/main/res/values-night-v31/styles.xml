@@ -1,7 +1,8 @@
 <resources>
-    <style name="Theme.App.Starting" parent="Theme.SplashScreen.IconBackground">
+    <!-- Dark launch screen (D0): the whole white dog straight on bg, no disc;
+         the accent disc only fades in during the handover flight (SplashOverlay). -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenIconBackgroundColor">@color/splash_icon_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon_animated</item>
         <item name="windowSplashScreenAnimationDuration">800</item>
         <item name="postSplashScreenTheme">@style/AppTheme</item>

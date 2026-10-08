@@ -84,6 +84,8 @@ export const colors = {
   // Red words of an action that deletes or a failure to act on (中斷連線、
   // 刪除全部狗資料、Wi-Fi 刪除／重試). Light keeps problemBadge's red.
   critAction: '#B3261E',
+  // D0's white line dog (the launch screen and its handover), both themes.
+  splashLine: '#FFFFFF',
 };
 
 export const routeColors = [
@@ -332,6 +334,8 @@ export const darkAdditions = {
   // ground, textMuted 6.8:1 on the low one; the curve (route1) above 3:1 on both.
   activityHighBand: '#362A21',
   activityLowBand: '#212B36',
+  // D0's dog stays white on the dark launch screen (design 深色模式「啟動畫面」).
+  splashLine: '#FFFFFF',
 };
 
 export const extras = {

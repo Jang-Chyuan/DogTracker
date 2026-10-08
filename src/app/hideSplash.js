@@ -1,35 +1,85 @@
-import { NativeModules } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, NativeModules } from 'react-native';
 
-// The launch screen (D0, #47) covers opening the database and restoring the
-// sign-in. It goes once the app knows what to show first and that screen is
-// ready: the map after its first framing, or a page of its own (D1 登入, the
-// D0 failure screen) once it is laid out. Until the start is decided, the
+// The launch screen (D0, #47; 「D0 → 地圖銜接（C）」). The system launch
+// screen shows first; as soon as JavaScript draws its exact copy
+// (SplashOverlay), the system one goes (hideSplash) and the copy waits for
+// the next screen: the map once it has framed its first view and placed its
+// dogs, or a page of its own (D1 登入, onboarding, the D0 failure screen) once
+// it is laid out. Then the copy hands over: 「狗跳到地圖上」 to the dog nearest
+// the middle of the screen, or a plain fade. Until the start is decided the
 // map's framing alone does not release it, so a first launch never shows the
-// map for a moment before D1. MainActivity's own timeout still lets the app
-// through if neither ever reports.
-const gate = { mapFramed: false, launch: null };
+// map for a moment before D1. Nothing black or blank ever shows in between:
+// the copy covers the screen until the next one is drawn under it.
+const gate = { mapFramed: false, launch: null, targets: [] };
+// 'waiting' (the copy covers the screen) → 'handover' (mode 'fly' | 'fade')
+// → 'done'. The map's controls fade in through `chrome`; the real dog
+// markers stay hidden while the copy draws them (markersHidden).
+let state = { phase: 'waiting', mode: null, targets: [], markersHidden: false };
+const listeners = new Set();
+export const splashChrome = new Animated.Value(1);
+
+function setState(next) {
+  state = { ...state, ...next };
+  listeners.forEach(listener => listener(state));
+}
+
+/** The launch screen copy's state, for SplashOverlay, the map and its controls. */
+export const getSplashState = () => state;
+export function subscribeSplash(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 /**
- * JavaScript is running and deciding what opens first: the launch screen
- * stays past the native 10 s safety timeout (up to 30 s), since opening a
- * new database on a slow phone can take that long.
+ * JavaScript is running and deciding what opens first: the system launch
+ * screen stays past the native 10 s safety timeout (up to 30 s) until the
+ * copy is drawn.
  */
 export function holdSplash() {
   NativeModules.AppSplash?.hold?.();
 }
 
-/** Lets the launch screen go (the native module; a no-op without it). */
+/** Lets the system launch screen go (the native module; a no-op without it). */
 export function hideSplash() {
   NativeModules.AppSplash?.hide?.();
 }
 
-function release() {
-  if (gate.launch === 'page' || (gate.launch === 'map' && gate.mapFramed)) hideSplash();
+/** How this launch started (notification, animations off); see AppSplash.kt. */
+export function launchInfo() {
+  try {
+    return NativeModules.AppSplash?.launchInfo?.() ?? {};
+  } catch {
+    return {};
+  }
 }
 
-/** GoogleTrackingMap: the live map has framed its first view. */
-export function reportMapFramed() {
+function begin(mode, targets = []) {
+  if (state.phase !== 'waiting') return;
+  const fly =
+    mode === 'fly' && targets.length > 0 && !launchInfo().fromNotification;
+  if (fly) splashChrome.setValue(0);
+  setState({
+    phase: 'handover',
+    mode: fly ? 'fly' : 'fade',
+    targets: fly ? targets : [],
+    markersHidden: fly,
+  });
+}
+
+function release() {
+  if (gate.launch === 'page') begin('fade');
+  else if (gate.launch === 'map' && gate.mapFramed) begin('fly', gate.targets);
+}
+
+/**
+ * GoogleTrackingMap: the live map has framed its first view and placed its
+ * dogs. `targets`: the dogs on screen ({ slaveId, x, y, marker, tag, avatar },
+ * screen points in dp), nearest to the middle first; none → a plain fade.
+ */
+export function reportMapFramed(targets = []) {
   gate.mapFramed = true;
+  gate.targets = targets;
   release();
 }
 
@@ -42,8 +92,35 @@ export function launchInto(screen) {
   release();
 }
 
+/** SplashOverlay: the real markers may show again (the copies are in place). */
+export function showMarkers() {
+  if (state.markersHidden) setState({ markersHidden: false });
+}
+
+/** SplashOverlay: the handover has finished; the copy is gone. */
+export function finishSplash() {
+  splashChrome.setValue(1);
+  NativeModules.AppSplash?.done?.();
+  setState({ phase: 'done', markersHidden: false, targets: [] });
+}
+
+/** For the map's dog markers: hidden while SplashOverlay draws their copies. */
+export function useSplashMarkersHidden() {
+  const [hidden, setHidden] = useState(state.markersHidden);
+  useEffect(() => subscribeSplash(next => setHidden(next.markersHidden)), []);
+  return hidden;
+}
+
+/** Safety: nothing reported (a hang somewhere) — fade to whatever is there. */
+export function giveUpWaiting() {
+  begin('fade');
+}
+
 /** Tests only: a fresh start. */
 export function resetSplashGate() {
   gate.mapFramed = false;
   gate.launch = null;
+  gate.targets = [];
+  splashChrome.setValue(1);
+  state = { phase: 'waiting', mode: null, targets: [], markersHidden: false };
 }

@@ -84,7 +84,7 @@ class LocationTrackerService : Service(), LocationListener {
     if (!preferences.getBoolean("enabled", true)) { stopSelf(); return START_NOT_STICKY }
     if (running) return START_NOT_STICKY
     try {
-      val launch = PendingIntent.getActivity(this, ID, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      val launch = PendingIntent.getActivity(this, ID, Intent(this, MainActivity::class.java).putExtra(com.dogtracker.SplashState.EXTRA_FROM_NOTIFICATION, true), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_dog).setColor(getColor(R.color.ic_launcher_background))
         .setContentTitle("DogTracker GPS Timeline").setContentText("約每秒 GPS 定位；> 20 km/h 時每秒保存，精度需 < 50 m")

@@ -77,6 +77,7 @@ import { layout, touch, type } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
 import { holdSplash, launchInto } from './src/app/hideSplash';
+import SplashOverlay from './src/app/SplashOverlay';
 import {
   GUIDE_STEP_OF,
   guideStack,
@@ -109,6 +110,8 @@ export default function App() {
             <TrackerRoot />
           </AuthGate>
         </AuthProvider>
+        {/* D0's copy over everything until the first screen is ready. */}
+        <SplashOverlay />
       </SafeAreaProvider>
     </ThemeProvider>
   );
