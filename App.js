@@ -285,7 +285,13 @@ function TrackerApp({ resume = null, onRestart }) {
     if (decided === 'failed') setStack([{ name: 'startFailed' }]);
     else if (decided === 'onboarding' || decided === 'expired') setStack(signInStack(decided));
     else if ((fixture?.launch || leaving) && !fixturePage) setStack([{ name: 'map' }]);
-    if (launchKey !== 'live' || leaving) return;
+    if (leaving) return;
+    if (launchKey !== 'live') {
+      // A fixture opened at a cold start lets the launch screen go too (its
+      // D1 and failure screen by their own onLayout).
+      if (decided === 'map') launchInto(fixturePage ? 'page' : 'map');
+      return;
+    }
     // The map lets the launch screen go after its first framing; D1 and the
     // failure screen once they are laid out (onLayout below).
     if (decided === 'map') {

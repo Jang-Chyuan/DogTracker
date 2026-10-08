@@ -14,6 +14,8 @@ export function signInErrorText(failure) {
   return message || '登入失敗，請稍後重試';
 }
 
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // The first-launch guide's steps: D1 登入, D2 權限, D3 接收器, D4 完成.
 const GUIDE_STEPS = 4;
 
@@ -44,9 +46,16 @@ export default function LoginScreen({ step = null, expired = false, onDone, onLa
     return () => { onShow.remove(); onHide.remove(); };
   }, []);
   const locked = useRef(false), mounted = useRef(false), left = useRef(false);
+  const cancel = useRef(auth.cancelSignIn);
+  cancel.current = auth.cancelSignIn;
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      // Closed some other way (the back key) during a sign-in: it is
+      // dropped like 「稍後再說」, and its late answer leads nowhere.
+      if (locked.current && !left.current) { left.current = true; cancel.current?.(); }
+    };
   }, []);
   // Signed in some other way meanwhile (a slow restore finishing): nothing
   // left to do here.
@@ -59,12 +68,17 @@ export default function LoginScreen({ step = null, expired = false, onDone, onLa
 
   async function login() {
     if (locked.current || !auth.available) return;
+    // Checked when 登入 is pressed (design D1), before anything is sent.
+    if (email.trim() && password && !EMAIL.test(email.trim())) {
+      setError({ text: '電子郵件格式不對', offline: false });
+      return;
+    }
     locked.current = true;
     setBusy(true); setError(null);
     try {
       await auth.signIn(email, password);
       if (mounted.current) setPassword('');
-      if (!left.current) { left.current = true; done.current?.(); }
+      if (mounted.current && !left.current) { left.current = true; done.current?.(); }
     } catch (failure) {
       if (mounted.current && !failure?.cancelled) {
         const text = signInErrorText(failure);

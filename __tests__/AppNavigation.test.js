@@ -681,6 +681,8 @@ test('Android map uses the native SQL adapter without opening Nitro', async () =
 // ---- the start (052: D0, D1, 判定表「啟動與恢復登入」「D1 的四種入口」) ----------
 const signInPage = () => renderer.root.findAllByProps({ testID: 'sign-in-page' }).length > 0;
 const progressBar = () => renderer.root.findAllByProps({ testID: 'guide-progress' }).length > 0;
+// A new phone: no dog data from before either.
+const freshInstall = () => connection.sqlite.exec('DELETE FROM dog_status');
 // Preferences saved by an earlier run (past the first-launch guide).
 function usedBefore() {
   connection.sqlite.exec('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)');
@@ -689,6 +691,7 @@ function usedBefore() {
 }
 
 test('first launch, signed out: D1 with the guide progress; 稍後再說 opens the map and is remembered', async () => {
+  freshInstall();
   mockAuth = { loading: false, user: null, available: true };
   // A fresh install: no location permission yet.
   jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(false);
@@ -716,6 +719,7 @@ test('first launch, signed out: D1 with the guide progress; 稍後再說 opens t
 });
 
 test('first launch: the back key on D1 leaves the app, and the next start is D1 again', async () => {
+  freshInstall();
   mockAuth = { loading: false, user: null, available: true };
   const exit = jest.spyOn(BackHandler, 'exitApp').mockImplementation(() => {});
   await mount();
@@ -730,6 +734,7 @@ test('first launch: the back key on D1 leaves the app, and the next start is D1 
 });
 
 test('signed in from before the guide existed: the map opens and the guide counts as passed', async () => {
+  freshInstall();
   await mount();
   await advance(100);
   expect(signInPage()).toBe(false);
@@ -737,6 +742,7 @@ test('signed in from before the guide existed: the map opens and the guide count
 });
 
 test('the sign-in restore still running holds the start under D0; nothing opens before it ends', async () => {
+  freshInstall();
   mockAuth = { loading: true, user: null, available: true };
   await mount();
   await advance(100);
@@ -840,4 +846,12 @@ test('start fixtures: first launch, restore past 10 s, expired at start, databas
   await advance(100);
   expect(signInPage()).toBe(false);
   expect(renderer.root.findAllByProps({ testID: 'page-back' })).toHaveLength(0);
+});
+
+test('an update from a version without the guide, signed out, with dog data but no saved preferences: the map', async () => {
+  mockAuth = { loading: false, user: null, available: true };
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(false);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
 });
