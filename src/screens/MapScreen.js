@@ -492,16 +492,6 @@ export default function MapScreen({
   const target = historical ? historyTarget : null;
   const saveHistory = history?.save;
   const historyPreferences = history?.preferences;
-  // 「✓ 上次用」 (H9): the format exported last, kept with the history
-  // preferences on this phone (a fixture's only in memory).
-  const [fixtureExport, setFixtureExport] = useState(null);
-  const lastExport = fixture ? fixtureExport ?? fixture.historyView?.lastExport ?? 'png'
-    : historyPreferences?.exportFormat ?? 'png';
-  const rememberExport = useCallback(format => {
-    if (fixture) { setFixtureExport(format); return; }
-    if (!saveHistory || !historyPreferences || historyPreferences.exportFormat === format) return;
-    saveHistory({ ...historyPreferences, exportFormat: format });
-  }, [fixture, saveHistory, historyPreferences]);
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
   const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
@@ -990,7 +980,7 @@ export default function MapScreen({
           onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           onLevel={(level, height) => setPanel({ level, height })}
-          exportNative={exportNative} lastExport={lastExport} onRememberExport={rememberExport}
+          exportNative={exportNative}
           initialExport={fixture?.historyView?.export ?? null}
           closedAt={target.subject === 'phone' && screen.today && livePhone && !livePhone.running
             ? screen.model?.points.at(-1)?.time ?? null : null} />

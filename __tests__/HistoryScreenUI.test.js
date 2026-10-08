@@ -15,7 +15,7 @@ function Harness({ fixture, onScreen, screenRef }) {
     preset: fixture.historyView ?? null });
   onScreen?.(screen);
   return <HistoryScreen ref={screenRef} screen={screen} top={24} levels={LEVELS} bottomInset={0}
-    name={target.subject === 'dog' ? '豆豆' : ''} history={null} initialRangeOpen={!!fixture.historyView?.rangeOpen} />;
+    name={target.subject === 'dog' ? '豆豆' : ''} history={null} initialRangeOpen={!!fixture.historyView?.rangeOpen} initialExport={fixture.historyView?.export} />;
 }
 
 export async function mountFixture(name) {
@@ -248,4 +248,18 @@ describe('the screen over time', () => {
       jest.useRealTimers();
     }
   });
+});
+
+
+test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
+  'history-export-multi', 'history-export-day'])('%s: export formats stay PNG / GPX / CSV without a last-used marker', async name => {
+  const s = await mountFixture(name);
+  const rows = s.renderer.root.findAll(node => typeof node.type === 'string'
+    && ['history-export-png', 'history-export-gpx', 'history-export-csv'].includes(node.props.testID));
+  expect(rows.map(node => node.props.testID)).toEqual(['history-export-png', 'history-export-gpx', 'history-export-csv']);
+  expect(rows.map(node => node.props.accessibilityLabel)).toEqual([
+    'PNG 長圖，地圖＋時間軸清單，傳 LINE 最方便', 'GPX，給地圖 App 用', 'CSV，每一筆位置',
+  ]);
+  expect(s.text()).not.toContain('上次用');
+  await unmount(s);
 });

@@ -3,7 +3,7 @@ import { HISTORY_DEFAULTS } from './HistoryDatabase';
 
 /**
  * The stored history preferences (whom the history was opened for, the dogs'
- * names, the export format used last), the receivers that heard each dog,
+ * names), the receivers that heard each dog,
  * and the day readers of the history screen. `active` is true while the
  * history is on screen. The old query card's day list, cloud day walk and
  * draft preview went with the card (055b); the old query read every 10 s

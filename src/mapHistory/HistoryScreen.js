@@ -389,7 +389,7 @@ function FrameButton({ onPress }) {
  */
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, levels, bottomInset,
   onBack, onFrame, onLevel, closedAt = null, initialRangeOpen = false, initialCalendar = null,
-  candidates = [], initialSheet = null, exportNative = null, lastExport = 'png', onRememberExport, initialExport = null },
+  candidates = [], initialSheet = null, exportNative = null, initialExport = null },
 ref) {
   const styles = getStyles(useTheme());
   const panel = useRef(null);
@@ -398,8 +398,7 @@ ref) {
   const [rangeOpen, setRangeOpen] = useState(initialRangeOpen);
   const raised = useRef(false);
   // H9/H10: the export window and the export running from it.
-  const exporter = useHistoryExport({ screen, exporter: exportNative, lastFormat: lastExport,
-    onRemember: onRememberExport, initial: initialExport });
+  const exporter = useHistoryExport({ screen, exporter: exportNative, initial: initialExport });
   const exportSheet = useRef(null);
   const exporting = exporter.phase !== 'closed';
   // initialCalendar ('month' | 'months'): a screen fixture opens on H3b / H3e.
