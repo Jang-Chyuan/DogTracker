@@ -4,7 +4,7 @@
 // a 4dp red edge, a 32dp pale red icon circle, a dark red title and one tonal
 // pill on the right; A6 has an accent edge, a tonal dog circle and its buttons
 // under the text. Provider-neutral views: MapScreen decides what they do.
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import Glyph from './Glyph';
@@ -43,15 +43,23 @@ function Pill({ action, onPress }) {
   );
 }
 
-/** One card; slides in from above (220 ms) and out again when closed. */
-function TopCard({ value, onAction, onClose }) {
+/**
+ * One card; slides in from above (220 ms). Closed (✕), it is already gone
+ * from the stack's list — the gear's red dot lights at once — and only slides
+ * out (160 ms) before `onGone`.
+ */
+function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
   const shown = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(shown, { toValue: 1, duration: motion.cardRise.duration, easing: ease,
       useNativeDriver: true }).start();
   }, [shown]);
-  const close = () => Animated.timing(shown, { toValue: 0, duration: 160, easing: ease, useNativeDriver: true })
-    .start(() => onClose?.(value.id));
+  useEffect(() => {
+    if (!leaving) return;
+    Animated.timing(shown, { toValue: 0, duration: 160, easing: ease, useNativeDriver: true })
+      .start(() => onGone?.(value.id));
+  }, [leaving, shown, onGone, value.id]);
+  const close = () => onClose?.(value);
   const info = value.kind === 'info';
   const translateY = shown.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] });
   const closeButton = value.closable && (
@@ -61,7 +69,8 @@ function TopCard({ value, onAction, onClose }) {
     </Pressable>
   );
   return (
-    <Animated.View testID={`top-card-${value.id}`} accessibilityLiveRegion="polite"
+    <Animated.View testID={leaving ? undefined : `top-card-${value.id}`} accessibilityLiveRegion="polite"
+      pointerEvents={leaving ? 'none' : 'auto'}
       style={[styles.card, info ? styles.info : styles.alert, { opacity: shown, transform: [{ translateY }] }]}>
       <View style={[styles.icon, info ? styles.iconInfo : styles.iconAlert]}>
         {info ? <DogMark color={colors.tonalText} />
@@ -88,7 +97,20 @@ function TopCard({ value, onAction, onClose }) {
  * the compass and what the map frames keep clear of it.
  */
 export default function TopAlertCards({ cards, top, onAction, onClose, onHeight }) {
-  const empty = !cards.length;
+  // Cards closed with ✕ that are still sliding out, where they stood.
+  const [leaving, setLeaving] = useState([]);
+  const close = useCallback(value => {
+    setLeaving(current => [...current.filter(item => item.value.id !== value.id),
+      { value, index: cards.findIndex(item => item.id === value.id) }]);
+    onClose?.(value.id);
+  }, [cards, onClose]);
+  const gone = useCallback(id => setLeaving(current => current.filter(item => item.value.id !== id)), []);
+  const shown = cards.map(value => ({ value, leaving: false }));
+  for (const item of leaving) {
+    if (cards.some(value => value.id === item.value.id)) continue;
+    shown.splice(Math.min(Math.max(item.index, 0), shown.length), 0, { value: item.value, leaving: true });
+  }
+  const empty = !shown.length;
   useEffect(() => {
     if (empty) onHeight?.(0);
   }, [empty, onHeight]);
@@ -96,7 +118,10 @@ export default function TopAlertCards({ cards, top, onAction, onClose, onHeight 
   return (
     <View testID="top-cards" style={[styles.stack, { top }]} pointerEvents="box-none"
       onLayout={event => onHeight?.(event.nativeEvent.layout.height)}>
-      {cards.map(value => <TopCard key={value.id} value={value} onAction={onAction} onClose={onClose} />)}
+      {shown.map(item => (
+        <TopCard key={item.value.id} value={item.value} leaving={item.leaving} onAction={onAction} onClose={close}
+          onGone={gone} />
+      ))}
     </View>
   );
 }

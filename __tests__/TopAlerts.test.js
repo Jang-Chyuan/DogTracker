@@ -243,7 +243,7 @@ test('receiver-disconnected: 「接收器 7 斷線了」, no range ring; ✕ col
 
 test('map-load-failed draws dogs and ring on a map without a base map; map-unavailable draws grey only', async () => {
   const failed = await renderMap('map-load-failed');
-  expect(failed.maps[0].props.mapType).toBe('none');
+  expect(failed.maps[0].props.customMapStyle[0]).toEqual({ stylers: [{ visibility: 'off' }] });
   const { Marker, Polygon } = require('react-native-maps');
   expect(failed.renderer.root.findAllByType(Marker).length).toBeGreaterThan(0);
   expect(failed.renderer.root.findAllByType(Polygon)).toHaveLength(1);
