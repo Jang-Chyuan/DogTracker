@@ -14,9 +14,6 @@ export default function StartFailedScreen({ onRetry, onDiagnostics, onLayout }) 
   return (
     <View testID="start-failed" style={styles.page} onLayout={onLayout}>
       <View style={styles.middle}>
-        <View style={styles.icon} importantForAccessibility="no-hide-descendants">
-          <Text style={styles.iconText}>!</Text>
-        </View>
         <Text accessibilityRole="header" style={styles.title}>{START_FAILED_TITLE}</Text>
       </View>
       <View style={styles.bottom}>
@@ -36,10 +33,6 @@ export default function StartFailedScreen({ onRetry, onDiagnostics, onLayout }) 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
   middle: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xl },
-  // The one red 「!」 of problems, large: a 56dp pale red circle.
-  icon: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.alertIconBg, alignItems: 'center',
-    justifyContent: 'center', marginBottom: space.l },
-  iconText: { fontSize: 28, lineHeight: 34, fontWeight: '900', color: colors.problemBadge },
   title: { ...type.headline, color: colors.text, textAlign: 'center' },
   bottom: { paddingHorizontal: space.xl, paddingTop: space.s, paddingBottom: space.l },
   primary: { minHeight: 56, borderRadius: radius.button, backgroundColor: colors.tonal,
