@@ -1071,9 +1071,9 @@ const FIXTURES = {
   // 小黑 and 狗 5, which has no record today: its chip at 40%, nothing drawn
   // for it, never the protagonist.
   'history-multi-no-data': now => multiFixture(now, { dogs: [5], fiveToday: false }),
-  // The cursor at 08:20: 阿福 started later (not drawn yet), 小黑 waits at its
-  // last fix before the break (grey dashed ring).
-  'history-multi-cursor': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, cursorAgo: 70 * MINUTE }),
+  // The cursor at 08:40, inside 阿福's break: 阿福 waits at its last fix
+  // before it (grey dashed ring), the others are where they were then.
+  'history-multi-cursor': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, cursorAgo: 50 * MINUTE }),
   // 「＋ 加入」's list open over 小黑's day (狗 5 has no record today).
   'history-multi-add': now => multiFixture(now, { dogs: [], fiveToday: false, sheet: 'add' }),
   // 資料來源's choices open (全部 chosen).
@@ -1530,7 +1530,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       // A history fixture (054a) draws its own day, never this phone's.
       ...(fixture.history ? { data: fixture.history.data, readDay: fixture.history.readDay,
         readDays: fixture.history.readDays, loaded: true,
-        busy: false, error: '', key: `fixture:${fixture.name}`, devices: [], days: [], phoneRecorded: true } : {}),
+        busy: false, error: '', key: `fixture:${fixture.name}`, devices: [] } : {}),
       // The card's 看軌跡 and the dog page's name must not store a fixture's
       // dog in this phone's real history query or names.
       save: async preferences => {
