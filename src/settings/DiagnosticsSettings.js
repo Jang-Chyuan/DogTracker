@@ -22,7 +22,7 @@ export const DIAGNOSTICS_PAGES = Object.freeze([
  * moving/still speed buffer (only here: the live map shows neither). `page`
  * is DiagnosticsModel.diagnosticsPage.
  */
-export default function DiagnosticsSettings({ page, onOpen }) {
+export default function DiagnosticsSettings({ page, onOpen, onHide }) {
   const settingsStyles = useStyles(getSettingsStyles);
   const styles = useStyles(getStyles);
   return (
@@ -91,6 +91,14 @@ export default function DiagnosticsSettings({ page, onOpen }) {
         環境判斷只當停在原處的參考；速度緩衝 1.5 km/h 以上算移動、0.5 km/h
         以下算靜止，中間照前一個狀態。兩者都不顯示在地圖上。
       </Text>
+      <GroupCard flat>
+        <ListRow
+          testID="diagnostics-hide"
+          title="隱藏診斷"
+          label="隱藏診斷"
+          onPress={onHide}
+        />
+      </GroupCard>
     </ScrollView>
   );
 }

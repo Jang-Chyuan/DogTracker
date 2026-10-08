@@ -50,6 +50,7 @@ export function settingsInput(inputs, { now, receiverState, receiverWait = null,
     storage: storageProblem(inputs.tracking?.realWriteError),
     // 設定 → 提醒 (S6): the saved AlertPreferences.
     alerts: inputs.tracking?.preferences?.value?.alerts,
+    diagnosticsEnabled: inputs.tracking?.preferences?.value?.diagnosticsEnabled === true,
   };
 }
 // A connected receiver says 「N 分鐘沒有新資料」 once it has been quiet this
@@ -180,13 +181,13 @@ export function settingsHome(input) {
       { title: '帳號與資料', rows: [
         row('account', 'Supabase 帳號', account.signedIn ? account.email || '已登入' : '未登入',
           account.signedIn && account.email ? ['已登入'] : []),
-        row('diagnostics', '診斷', '即時資料、本機／雲端資料、記錄清單', []),
       ] },
       // v3 has no 地圖 row (map display options were removed): 提醒 alone.
       // 提醒: how alerts arrive (震動／聲音／關), 「部分開」 when some are off.
       { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', alertsHomeStatus(input.alerts))] },
       // 進階 (S7): the receiver's Wi-Fi and 刪除全部狗資料 (c196).
-      { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi、刪除資料', [])] },
+      { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi、刪除資料', []),
+        ...(input.diagnosticsEnabled ? [row('diagnostics', '診斷', '即時資料、本機／雲端資料、記錄清單', [])] : [])] },
     ],
     reasons,
   };

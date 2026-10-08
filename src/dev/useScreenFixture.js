@@ -40,12 +40,14 @@ export function useScreenFixture(enabled = __DEV__) {
 export function useFixtureEdits(fixture) {
   const [aliases, setAliases] = useState(null);
   const [avatars, setAvatars] = useState(null);
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(null);
   const [alerts, setAlerts] = useState(null);
   const name = fixture?.name ?? null;
   useEffect(() => {
     setAliases(null);
     setAvatars(null);
     setAlerts(null);
+    setDiagnosticsEnabled(null);
   }, [name]);
-  return useMemo(() => ({ aliases, avatars, alerts, setAliases, setAvatars, setAlerts }), [aliases, avatars, alerts]);
+  return useMemo(() => ({ aliases, avatars, alerts, diagnosticsEnabled, setDiagnosticsEnabled, setAliases, setAvatars, setAlerts }), [aliases, avatars, alerts, diagnosticsEnabled]);
 }

@@ -166,6 +166,49 @@ async function tap(id) {
 }
 const title = () => renderer.root.findByProps({ testID: 'page-back' }).props.accessibilityLabel;
 
+test('hidden diagnostics: consecutive taps, timeout, persistence across restart, and hide', async () => {
+  await mount();
+  await press('設定');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  const version = row('settings-version');
+  expect(version.props.accessibilityLabel).toBe('DogTracker 3.0.0，版本');
+  expect(version.props.accessibilityHint).toBeUndefined();
+  for (let i = 0; i < 3; i++) await tap('settings-version');
+  expect(text()).not.toContain('再點');
+  await tap('settings-version');
+  expect(text()).toContain('再點 3 下開啟診斷');
+  await advance(2001);
+  await tap('settings-version');
+  // The previous snackbar can remain, but this tap starts a new sequence.
+  for (let i = 0; i < 2; i++) await tap('settings-version');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  await tap('settings-version');
+  expect(text()).toContain('再點 3 下開啟診斷');
+  await tap('settings-version');
+  expect(text()).toContain('再點 2 下開啟診斷');
+  await tap('settings-version');
+  expect(text()).toContain('再點 1 下開啟診斷');
+  await tap('settings-version');
+  expect(text()).toContain('已開啟診斷');
+  expect(preferences().diagnosticsEnabled).toBe(true);
+  expect(row('settings-row-diagnostics')).toBeDefined();
+  await tap('settings-version');
+  expect(text()).toContain('診斷已經開啟');
+  await act(async () => renderer.unmount());
+  await mount();
+  await press('設定');
+  expect(row('settings-row-diagnostics')).toBeDefined();
+  await tap('settings-row-diagnostics');
+  await tap('diagnostics-hide');
+  expect(title()).toBe('返回，設定');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  expect(preferences().diagnosticsEnabled).toBe(false);
+  await act(async () => renderer.unmount());
+  await mount();
+  await press('設定');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+});
+
 test('no bottom tabs: the gear opens the grouped settings home; each row opens its page and back returns', async () => {
   await mount();
   expect(renderer.root.findAllByProps({ testID: 'bottom-navigation' })).toHaveLength(0);
@@ -174,7 +217,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(text()).toContain('‹ 設定');
   // S1: four groups, no 地圖 row; the old dark settings cards are gone.
   for (const group of ['裝置', '帳號與資料', '提醒', '其他']) expect(text()).toContain(group);
-  for (const id of ['receiver', 'phone', 'account', 'diagnostics', 'alerts', 'advanced']) {
+  for (const id of ['receiver', 'phone', 'account', 'alerts', 'advanced']) {
     expect(row(`settings-row-${id}`)).toBeDefined();
   }
   expect(text()).not.toContain('BLE／QR 與 Master 設定');
@@ -209,6 +252,8 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(text()).toContain('最後上傳成功');
   expect(text()).not.toContain('轉送 Supabase');
   await press('返回，Supabase 帳號');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  for (let i = 0; i < 7; i++) await tap('settings-version');
   // 診斷 (S8): its three data pages, all light v3 pages, back returns.
   await tap('settings-row-diagnostics');
   expect(title()).toBe('返回，診斷');
@@ -912,6 +957,7 @@ test('the database cannot be opened: 手機裡的資料打不開; 診斷 says wh
   await press('診斷');
   expect(title()).toBe('返回，診斷');
   expect(text()).toContain('SQLITE_CANTOPEN');
+  expect(preferences().diagnosticsEnabled).not.toBe(true);
   await act(async () => expect(onBack()).toBe(true));
   expect(text()).toContain('手機裡的資料打不開');
   // Nothing under it: back leaves the app.
@@ -967,6 +1013,7 @@ test('start fixtures: first launch, restore past 10 s, expired at start, databas
   expect(text()).toContain('手機裡的資料打不開');
   await press('診斷');
   expect(text()).toContain('SQLITE_CANTOPEN');
+  expect(preferences().diagnosticsEnabled).not.toBe(true);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-restore-slow&page=cloud' }));
   await advance(100);
   expect(title()).toBe('返回，Supabase 帳號');

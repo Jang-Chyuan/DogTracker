@@ -853,7 +853,9 @@ function TrackerApp({ resume = null, onRestart }) {
       const home = settingsHome(settingsData);
       page = (
         <SettingsHome
+          key={fixtureName ?? 'live'}
           home={home}
+          onEnableDiagnostics={() => mapInputs.tracking.saveTrackingPreferences({ diagnosticsEnabled: true })}
           version={appVersion}
           onOpen={id => open(SETTINGS_ROUTES[id])}
           onStorage={() =>
@@ -906,6 +908,12 @@ function TrackerApp({ resume = null, onRestart }) {
     case 'diagnostics':
       page = (
         <DiagnosticsSettings
+          onHide={async () => {
+            const saved = await mapInputs.tracking.saveTrackingPreferences({ diagnosticsEnabled: false });
+            if (saved || (launch.screen === 'failed' && !settingsData.diagnosticsEnabled)) {
+              setStack([{ name: 'map' }, { name: 'settings' }]);
+            }
+          }}
           page={diagnosticsPage({
             packets: mapInputs.cloudDogs?.packets,
             rows: sources ? fixture.raw.ble : recentRows,
