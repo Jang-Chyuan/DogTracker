@@ -307,6 +307,17 @@ export const haptics = {
 };
 
 // Explicit semantic values that have no original palette entry.
+// Dark values for light tokens added after the design's dark table
+// (dark-tokens.json): the history list pills of #70. Each follows the dark
+// rules — a fill one step brighter than the panel it sits on (elevated
+// #302827, like the light pill on white), its text still above 4.5:1.
+//   pillPlain  #3D3432: textMuted 5.70:1, against elevated 1.19:1 (light 1.13:1)
+//   pillIndoor #2A3A44: receiver 5.77:1, against elevated 1.23:1
+export const darkAdditions = {
+  pillPlain: '#3D3432',
+  pillIndoor: '#2A3A44',
+};
+
 export const extras = {
   elevated: colors.surface,
   grabHandle: colors.sheetHandle,

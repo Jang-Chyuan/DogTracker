@@ -6,7 +6,8 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { clock } from '../history/HistoryText';
-import { colors, size as sizes, space, touch, type } from '../theme/tokens';
+import { size as sizes, space, touch, type } from '../theme/tokens';
+import { makeStyles, useTheme } from '../theme/ThemeProvider';
 import HistoryBottomSheet from './HistoryBottomSheet';
 import { EXPORT_FORMATS } from './useHistoryExport';
 
@@ -14,6 +15,9 @@ import { EXPORT_FORMATS } from './useHistoryExport';
 export const exportTitle = range => (range ? `匯出 ${clock(range.start)}–${clock(range.end)}` : '匯出');
 
 const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bottomInset }, ref) {
+  const theme = useTheme();
+  const { colors } = theme;
+  const styles = getStyles(theme);
   const sheet = useRef(null);
   const { phase, lastFormat, range } = exporter;
   // The back key: 產生中＝取消 (the hook stops it); the window slides away.
@@ -74,7 +78,9 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
 
 export default HistoryExportSheet;
 
-const styles = StyleSheet.create({
+// Inside the sheet (elevated in dark): rules are `line`, words text/textMuted,
+// actions tonalText (DESIGN.md 深色模式「對話框、底部面板」).
+const getStyles = makeStyles(({ colors }) => StyleSheet.create({
   row: { minHeight: touch.row, flexDirection: 'row', alignItems: 'center', paddingVertical: space.m,
     gap: space.m },
   divided: { borderTopWidth: 1, borderTopColor: colors.line },
@@ -89,4 +95,4 @@ const styles = StyleSheet.create({
   failed: { fontWeight: '700' },
   textButton: { minHeight: touch.min, minWidth: touch.min, alignItems: 'flex-end', justifyContent: 'center' },
   textButtonText: { ...type.status, color: colors.tonalText },
-});
+}));

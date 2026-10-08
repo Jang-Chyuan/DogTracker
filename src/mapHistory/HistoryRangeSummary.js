@@ -327,7 +327,7 @@ const getStyles = makeStyles(theme => {
       borderWidth: sizes.rangeBar.frameBorder,
       borderColor: 'transparent',
     },
-    boxOpen: { borderColor: colors.accent, backgroundColor: colors.surface },
+    boxOpen: { borderColor: colors.accent, backgroundColor: colors.elevated },
     summary: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     texts: { flex: 1 },
     title: {
@@ -354,7 +354,7 @@ const getStyles = makeStyles(theme => {
       borderRadius: 18,
       borderWidth: 1,
       borderColor: colors.line,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.elevated,
     },
     adjustOpen: { backgroundColor: colors.tonal, borderColor: colors.tonal },
     adjustText: { color: colors.text, fontSize: 12, fontWeight: '700' },

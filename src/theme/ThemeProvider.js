@@ -17,6 +17,7 @@ export const darkTheme = {
     ...lightTheme.colors,
     ...darkSpec.colors,
     ...darkSpec.darkOnly,
+    ...light.darkAdditions,
     shadowBlack: darkSpec.shadow.floating.shadowColor,
     sheetHandle: darkSpec.darkOnly.grabHandle,
   },
