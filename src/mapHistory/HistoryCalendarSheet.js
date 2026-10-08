@@ -368,15 +368,6 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             />
           ))}
         </View>
-        <View style={styles.legend}>
-          <View style={styles.legendItem}>
-            <View style={styles.legendDot} />
-            <Text style={styles.legendText}>這個月有紀錄</Text>
-          </View>
-          <Text style={[styles.legendText, styles.legendFaded]}>
-            灰字＝沒有紀錄或還沒到，不能點
-          </Text>
-        </View>
       </>
     );
   } else {
@@ -447,15 +438,6 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             ))}
           </View>
         ))}
-        <View style={styles.legend}>
-          <View style={styles.legendItem}>
-            <View style={styles.legendDot} />
-            <Text style={styles.legendText}>有紀錄</Text>
-          </View>
-          <Text style={[styles.legendText, styles.legendFaded]}>
-            灰字＝沒有紀錄，不能點
-          </Text>
-        </View>
       </>
     );
   }
@@ -500,7 +482,6 @@ export default HistoryCalendarSheet;
 const getStyles = makeStyles(theme => {
   const { colors, opacity } = theme;
   const HANDLE = getHANDLE(theme);
-  const FADED = getFADED(theme);
   return StyleSheet.create({
     // Over the top capsules (30) and the panel (40).
     layer: { zIndex: 60, elevation: 30 },
@@ -628,23 +609,6 @@ const getStyles = makeStyles(theme => {
       borderRadius: sizes.calendarDot / 2,
       backgroundColor: colors.accent,
     },
-    legend: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      alignItems: 'center',
-      columnGap: space.l,
-      rowGap: space.xs,
-      marginTop: space.m,
-    },
-    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    legendDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: colors.accent,
-    },
-    legendText: { ...type.caption, color: colors.textMuted },
-    legendFaded: { color: FADED },
     yearRow: {
       flexDirection: 'row',
       alignItems: 'center',
