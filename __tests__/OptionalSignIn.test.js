@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AppState, NativeModules, Text, TextInput } from 'react-native';
 import { AuthProvider, useAuth } from '../src/auth/AuthProvider';
@@ -10,7 +10,7 @@ import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { useHistoryDownload } from '../src/mapHistory/useHistoryDownload';
 import SettingsHome from '../src/settings/SettingsHome';
 import { settingsHome } from '../src/settings/SettingsModel';
-import { signInErrorText } from '../src/screens/LoginScreen';
+import LoginScreen, { signInErrorText } from '../src/screens/LoginScreen';
 
 // One Supabase client shared by every subscriber (AuthProvider, useCloudSync,
 // S3), as getCloudClient returns in the app.
@@ -53,12 +53,18 @@ function spyDatabase() {
   };
 }
 
-// S3 as App draws it: the account page from AuthProvider and the sync.
+// S3 as App draws it: the account page from AuthProvider and the sync; its
+// 「登入」 opens D1 over it, and D1's ways out come back to it.
 function AccountPage({ sync = {}, onLater }) {
   const auth = useAuth();
-  return <AccountSettings onLater={onLater} onSignOut={auth.signOut}
+  const [signingIn, setSigningIn] = useState(false);
+  if (signingIn) {
+    return <LoginScreen expired={auth.expired} onDone={() => setSigningIn(false)}
+      onLater={() => { setSigningIn(false); onLater?.(); }} />;
+  }
+  return <AccountSettings onSignIn={() => setSigningIn(true)} onSignOut={auth.signOut}
     page={accountPage({ account: { signedIn: !!auth.user, email: auth.user?.email || '' },
-      signInExpired: auth.expired, sync, upload: { settingsReady: true } })} />;
+      signInExpired: auth.expired, restoring: auth.restoring, sync, upload: { settingsReady: true } })} />;
 }
 
 let renderer, previousCloud, previousBle;
@@ -82,8 +88,8 @@ test('signed out, the gate opens the app (the map) instead of a login wall', asy
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}>
     <AuthGate><Main /></AuthGate>
   </AuthProvider>); });
-  // Session restore runs under the launch screen.
-  expect(mounted).not.toHaveBeenCalled();
+  // The app starts while the session is restored (under the launch screen).
+  expect(mounted).toHaveBeenCalledTimes(1);
   await act(async () => s.restore(null));
   expect(text()).toContain('Live map');
   expect(text()).not.toContain('登入 Supabase 帳號');
@@ -164,13 +170,19 @@ test('signing in from 設定 → Supabase 帳號 (S3) starts the sync and stays 
     return <AccountPage sync={sync} onLater={later} />;
   }
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}><Page /></AuthProvider>); });
-  // The D1 form, with 「稍後再說」 going back.
-  expect(text()).toContain('登入 Supabase 帳號');
-  expect(text()).toContain('不登入也可以用，只顯示這支手機連到的接收器。');
+  // S3 signed out: 「未登入」 and 「登入」 → D1, whose 「稍後再說」 comes back.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(text()).toContain('未登入');
+  expect(text()).not.toContain('登入 Supabase 帳號');
   const button = label => renderer.root.findAll(node => node.props.accessibilityRole === 'button'
     && node.props.accessibilityLabel === label && typeof node.props.onPress === 'function')[0];
+  await act(async () => button('未登入，登入').props.onPress());
+  expect(text()).toContain('登入 Supabase 帳號');
+  expect(text()).toContain('不登入也可以用，只顯示這支手機連到的接收器。');
   await act(async () => button('稍後再說').props.onPress());
   expect(later).toHaveBeenCalledTimes(1);
+  expect(text()).toContain('未登入');
+  await act(async () => button('未登入，登入').props.onPress());
   expect(database.calls.some(([name]) => name === 'initialize')).toBe(false);
   const input = label => renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === label);
   await act(async () => {
@@ -198,7 +210,12 @@ test('登入失效 on S3 asks to sign in again there', async () => {
   expect(database.calls).toEqual([]);
   await act(async () => s.emit('SIGNED_OUT', null));
   expect(text()).toContain('需要重新登入');
+  // 「登入」 opens D1, which says it too.
+  const signIn = renderer.root.findAll(node => node.props.accessibilityLabel === '需要重新登入，登入'
+    && typeof node.props.onPress === 'function')[0];
+  await act(async () => signIn.props.onPress());
   expect(text()).toContain('登入 Supabase 帳號');
+  expect(text()).toContain('需要重新登入');
 });
 
 test('settings says 未登入 as a plain state, and 需要重新登入 after 登入失效', async () => {
@@ -226,6 +243,9 @@ test('登入 is checked when pressed: empty fields say so and reach no server', 
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}>
     <AccountPage />
   </AuthProvider>); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '未登入，登入'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
   const login = renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
     && typeof node.props.onPress === 'function')[0];
   expect(login.props.disabled).toBe(false);

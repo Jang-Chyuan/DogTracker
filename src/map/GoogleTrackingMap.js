@@ -20,7 +20,7 @@ import HistoryCursor from '../mapHistory/HistoryCursor';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { INDOOR_WORD, nameTags } from './DogMarkers';
 import { dogMapLabel } from '../mapHistory/DogAliases';
-import { hideSplash } from '../app/hideSplash';
+import { reportMapFramed } from '../app/hideSplash';
 import {
   framedCoordinates, framePadding, frameAllCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S, regionForFrame,
 } from './MapFraming';
@@ -277,7 +277,7 @@ function GoogleTrackingMapRenderer({
   const releaseSplash = useCallback(() => {
     if (splashReleased.current) return;
     splashReleased.current = true;
-    hideSplash();
+    reportMapFramed();
   }, []);
   const fontScale = PixelRatio.getFontScale?.() || 1;
   // Framing keeps clear of the bottom right buttons too (16dp + 48dp), and on

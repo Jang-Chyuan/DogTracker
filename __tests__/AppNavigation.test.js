@@ -19,9 +19,11 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
+// Signed in unless a test signs out (mockAuth is read on every render).
+let mockAuth;
 jest.mock('../src/auth/AuthProvider', () => ({
   AuthProvider: ({ children }) => children,
-  useAuth: () => ({ loading: false, user: { id: 'test-account' } }),
+  useAuth: () => mockAuth,
 }));
 
 jest.mock('../src/ble/BleService', () => ({
@@ -77,6 +79,7 @@ const tapDog = async slaveId => {
   await act(async () => map.props.onDogPress(slaveId));
 };
 beforeEach(async () => {
+  mockAuth = { loading: false, user: { id: 'test-account' }, available: true };
   jest.useFakeTimers();
   Platform.OS = 'android';
   connection = createMemoryConnection();
@@ -317,10 +320,23 @@ test('S3 fixtures: the account page with its states, the switch confirmation, ba
   expect(text()).toContain('下載失敗');
   expect(text()).toContain('連不上 Supabase・09:24 起');
   expect(text()).toContain('12 筆');
+  mockAuth = { loading: false, user: null, available: true };
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=cloud-expired' }));
   await advance(100);
   expect(text()).toContain('需要重新登入');
+  expect(text()).not.toContain('登入 Supabase 帳號');
+  // 「登入」 opens D1 (no guide progress), 「稍後再說」 comes back to S3.
+  await press('需要重新登入，登入');
+  expect(renderer.root.findAllByProps({ testID: 'sign-in-page' }).length).toBeGreaterThan(0);
   expect(text()).toContain('登入 Supabase 帳號');
+  expect(text()).toContain('需要重新登入');
+  expect(renderer.root.findAllByProps({ testID: 'guide-progress' })).toHaveLength(0);
+  await press('稍後再說');
+  expect(title()).toBe('返回，Supabase 帳號');
+  // The back key on D1 does the same.
+  await press('需要重新登入，登入');
+  await act(async () => expect(onBack()).toBe(true));
+  expect(title()).toBe('返回，Supabase 帳號');
   await press('返回，Supabase 帳號');
   expect(title()).toBe('返回，設定');
   expect(row('settings-row-account').props.accessibilityLabel).toBe('Supabase 帳號，有問題：需要重新登入');
@@ -660,4 +676,168 @@ test('Android map uses the native SQL adapter without opening Nitro', async () =
     renderer = null;
     delete NativeModules.BleBackground;
   }
+});
+
+// ---- the start (052: D0, D1, 判定表「啟動與恢復登入」「D1 的四種入口」) ----------
+const signInPage = () => renderer.root.findAllByProps({ testID: 'sign-in-page' }).length > 0;
+const progressBar = () => renderer.root.findAllByProps({ testID: 'guide-progress' }).length > 0;
+// Preferences saved by an earlier run (past the first-launch guide).
+function usedBefore() {
+  connection.sqlite.exec('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)');
+  connection.sqlite.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('map_preferences', ?)")
+    .run(JSON.stringify({ mode: 'real', windowMinutes: 2 }));
+}
+
+test('first launch, signed out: D1 with the guide progress; 稍後再說 opens the map and is remembered', async () => {
+  mockAuth = { loading: false, user: null, available: true };
+  // A fresh install: no location permission yet.
+  jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(false);
+  NativeTrackingPlatform.claimLocationPermissionPrompt.mockClear();
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(true);
+  expect(progressBar()).toBe(true);
+  for (const words of ['登入 Supabase 帳號', '登入後會把收到的位置上傳，也能看到隊友的狗。不登入也可以用，只顯示這支手機連到的接收器。',
+    '電子郵件', '密碼', '顯示', '登入', '稍後再說']) expect(text()).toContain(words);
+  expect(text()).not.toContain('需要重新登入');
+  // No 「‹ 標題」 header on D1.
+  expect(renderer.root.findAllByProps({ testID: 'page-back' })).toHaveLength(0);
+  // No location question under D0 or over D1: it waits for the map.
+  expect(NativeTrackingPlatform.claimLocationPermissionPrompt).not.toHaveBeenCalled();
+  await press('稍後再說');
+  await advance(100);
+  expect(signInPage()).toBe(false);
+  expect(NativeTrackingPlatform.claimLocationPermissionPrompt).toHaveBeenCalled();
+  expect(preferences().onboarding).toBe('done');
+  await act(async () => renderer.unmount());
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(false);
+});
+
+test('first launch: the back key on D1 leaves the app, and the next start is D1 again', async () => {
+  mockAuth = { loading: false, user: null, available: true };
+  const exit = jest.spyOn(BackHandler, 'exitApp').mockImplementation(() => {});
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(true);
+  await act(async () => expect(onBack()).toBe(true));
+  expect(exit).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(true);
+});
+
+test('signed in from before the guide existed: the map opens and the guide counts as passed', async () => {
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(false);
+  expect(preferences().onboarding).toBe('done');
+});
+
+test('the sign-in restore still running holds the start under D0; nothing opens before it ends', async () => {
+  mockAuth = { loading: true, user: null, available: true };
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(false);
+  // Restored without a session (first launch): D1.
+  mockAuth = { loading: false, user: null, available: true };
+  await act(async () => renderer.update(<App />));
+  await advance(100);
+  expect(signInPage()).toBe(true);
+});
+
+test('登入失效 found by the restore: D1 with 需要重新登入; 稍後再說 opens the map', async () => {
+  usedBefore();
+  mockAuth = { loading: false, user: null, available: true, expired: true, expiredAtStart: true };
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(true);
+  expect(progressBar()).toBe(false);
+  expect(text()).toContain('需要重新登入');
+  await press('稍後再說');
+  expect(signInPage()).toBe(false);
+  // The map (not settings) and the gear's red dot for the expired sign-in.
+  expect(renderer.root.findAllByProps({ testID: 'map-settings-dot' }).length).toBeGreaterThan(0);
+});
+
+test('the database cannot be opened: 手機裡的資料打不開; 診斷 says why; 重試 opens it again', async () => {
+  usedBefore();
+  open.mockImplementationOnce(() => { throw new Error('SQLITE_CANTOPEN: unable to open database file'); });
+  const exit = jest.spyOn(BackHandler, 'exitApp').mockImplementation(() => {});
+  await mount();
+  await advance(100);
+  expect(renderer.root.findAllByProps({ testID: 'start-failed' }).length).toBeGreaterThan(0);
+  expect(text()).toContain('手機裡的資料打不開');
+  await press('診斷');
+  expect(title()).toBe('返回，診斷');
+  expect(text()).toContain('SQLITE_CANTOPEN');
+  await act(async () => expect(onBack()).toBe(true));
+  expect(text()).toContain('手機裡的資料打不開');
+  // Nothing under it: back leaves the app.
+  await act(async () => expect(onBack()).toBe(true));
+  expect(exit).toHaveBeenCalledTimes(1);
+  await press('重試');
+  await advance(100);
+  expect(renderer.root.findAllByProps({ testID: 'start-failed' })).toHaveLength(0);
+  expect(open).toHaveBeenCalledTimes(2);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
+});
+
+test('A6 「登入 Supabase」 opens D1; back and 稍後再說 return to the map', async () => {
+  usedBefore();
+  mockAuth = { loading: false, user: null, available: true };
+  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=no-data');
+  await mount();
+  await advance(100);
+  await press('登入 Supabase');
+  expect(signInPage()).toBe(true);
+  expect(progressBar()).toBe(false);
+  await act(async () => expect(onBack()).toBe(true));
+  expect(signInPage()).toBe(false);
+  await press('登入 Supabase');
+  await press('稍後再說');
+  expect(signInPage()).toBe(false);
+  expect(text()).toContain('還沒有狗的資料');
+});
+
+test('start fixtures: first launch, restore past 10 s, expired at start, database failure', async () => {
+  usedBefore();
+  mockAuth = { loading: false, user: null, available: true };
+  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=onboarding-first-launch');
+  let emit;
+  Linking.addEventListener.mockImplementationOnce((_, handler) => {
+    emit = handler;
+    return { remove: jest.fn() };
+  });
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(true);
+  expect(progressBar()).toBe(true);
+  // A fixture's 稍後再說 saves nothing into this phone's preferences.
+  await press('稍後再說');
+  expect(signInPage()).toBe(false);
+  expect(preferences()).toEqual({ mode: 'real', windowMinutes: 2 });
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-expired' }));
+  await advance(100);
+  expect(signInPage()).toBe(true);
+  expect(text()).toContain('需要重新登入');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=db-open-failed' }));
+  await advance(100);
+  expect(text()).toContain('手機裡的資料打不開');
+  await press('診斷');
+  expect(text()).toContain('SQLITE_CANTOPEN');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-restore-slow&page=cloud' }));
+  await advance(100);
+  expect(title()).toBe('返回，Supabase 帳號');
+  expect(text()).toContain('暫時連不上，會自動重試');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-expired' }));
+  await advance(100);
+  expect(signInPage()).toBe(true);
+  // Off: back on the live map.
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
+  await advance(100);
+  expect(signInPage()).toBe(false);
+  expect(renderer.root.findAllByProps({ testID: 'page-back' })).toHaveLength(0);
 });
