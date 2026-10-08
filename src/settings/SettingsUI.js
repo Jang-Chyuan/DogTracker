@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { colors, radius, settingIcon, size, space, touch, type } from '../theme/tokens';
@@ -21,18 +21,27 @@ export function GroupTitle({ children }) {
   return <Text style={styles.group} accessibilityRole="header">{children}</Text>;
 }
 
-/** A rounded white card holding rows, a hairline between them. */
-export function GroupCard({ children, testID }) {
+// Rows on the page itself (flat) line up with the group names.
+const Flat = createContext(false);
+
+/**
+ * Rows with a line between them: in a rounded card with a 1dp frame
+ * (settings home, S1), or `flat` on the page with a line above each row
+ * (subpages, S2/S4), as in the mockups.
+ */
+export function GroupCard({ children, testID, flat = false }) {
   const rows = React.Children.toArray(children).filter(Boolean);
   return (
-    <View style={styles.card} testID={testID}>
-      {rows.map((row, index) => (
-        <View key={row.key ?? index}>
-          {index > 0 && <View style={styles.divider} />}
-          {row}
-        </View>
-      ))}
-    </View>
+    <Flat.Provider value={flat}>
+      <View style={flat ? styles.flat : styles.card} testID={testID}>
+        {rows.map((row, index) => (
+          <View key={row.key ?? index}>
+            {(flat || index > 0) && <View style={styles.divider} />}
+            {row}
+          </View>
+        ))}
+      </View>
+    </Flat.Provider>
   );
 }
 
@@ -118,6 +127,7 @@ export function HomeRow({ row, onPress }) {
  */
 export function ListRow({ title, detail, detailTone, right, rightTone, action, actionTone = 'crit',
   problem = false, leading = null, titleTone, onPress, chevron = false, label, testID, children }) {
+  const rowStyle = useContext(Flat) ? [styles.listRow, styles.flatRow] : styles.listRow;
   const rights = Array.isArray(right) ? right : right ? [right] : [];
   const body = (
     <>
@@ -141,11 +151,11 @@ export function ListRow({ title, detail, detailTone, right, rightTone, action, a
     </>
   );
   if (!onPress) {
-    return <View testID={testID} style={styles.listRow} accessible accessibilityLabel={label}>{body}</View>;
+    return <View testID={testID} style={rowStyle} accessible accessibilityLabel={label}>{body}</View>;
   }
   return (
     <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
-      style={({ pressed }) => [styles.listRow, pressed && styles.pressed]}>
+      style={({ pressed }) => [rowStyle, pressed && styles.pressed]}>
       {body}
     </Pressable>
   );
@@ -161,7 +171,7 @@ const TONES = StyleSheet.create({
 });
 
 export const settingsStyles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.bg },
+  page: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: space.l, paddingBottom: space.xxl },
   // A page without group names starts its first card 16dp under the header.
   firstCard: { paddingTop: space.l },
@@ -183,7 +193,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: radius.alertCard, borderWidth: 1, borderColor: colors.line,
     overflow: 'hidden',
   },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginLeft: space.l },
+  flat: { backgroundColor: colors.surface },
+  divider: { height: 1, backgroundColor: colors.line },
   icon: {
     width: 36, height: 36, borderRadius: radius.settingIcon, alignItems: 'center', justifyContent: 'center',
     marginRight: space.m,
@@ -196,6 +207,7 @@ const styles = StyleSheet.create({
     minHeight: touch.row, flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.l,
     paddingVertical: space.s + 2,
   },
+  flatRow: { paddingHorizontal: space.xs },
   pressed: { backgroundColor: colors.pressedOverlay },
   middle: { flex: 1, minWidth: 0, justifyContent: 'center' },
   name: { ...type.status, color: colors.text },
