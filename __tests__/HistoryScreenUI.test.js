@@ -161,6 +161,9 @@ test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a
   const exportButton = s.renderer.root.findAll(node => node.props.testID === 'history-export'
     && node.props.accessibilityState)[0];
   expect(exportButton.props.accessibilityState.disabled).toBe(true);
+  // The 36dp button keeps a 48dp touch target.
+  expect(s.renderer.root.findAll(node => node.props.testID === 'history-export' && node.props.hitSlop === 6).length)
+    .toBeGreaterThan(0);
   expect(s.screen.navigation.previous).toBe('2026-10-06');
   expect(s.screen.navigation.next).toBeNull();
   await act(async () => pressable(s, 'history-day-previous').props.onPress());

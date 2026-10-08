@@ -29,7 +29,9 @@ export function buildGPX(snapshot) {
     const groups = new Map();
     // The same collar fix repeated in later packets (or the same packet from
     // this phone and the cloud) is one trkpt (判定表「同一隻狗本機和雲端同時有」).
-    const rows = mergeHistoryFixes(exportRows(subject, snapshot));
+    // Deduplicated, then in GPS order again (a delayed packet's fix belongs
+    // where it was taken, not where it arrived).
+    const rows = mergeHistoryFixes(exportRows(subject, snapshot)).sort((a, b) => gpsTime(a) - gpsTime(b));
     let previous = null, previousKey = null, segment = null;
     for (const row of rows) {
       const time = gpsTime(row), p = rawCoordinate(row, subject);

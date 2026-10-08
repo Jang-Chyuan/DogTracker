@@ -109,7 +109,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
       <PressScale testID="history-export" accessibilityRole="button"
         accessibilityLabel={exportBusy ? '匯出，產生中' : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
-        disabled={!exportEnabled || exportBusy} onPress={onExport}
+        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={6}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
           : <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}

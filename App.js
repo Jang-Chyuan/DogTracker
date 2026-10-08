@@ -913,8 +913,9 @@ function TrackerApp({ resume = null, onRestart }) {
           canHide={settingsData.diagnosticsEnabled}
           onHide={async () => {
             const saved = await mapInputs.tracking.saveTrackingPreferences({ diagnosticsEnabled: false });
-            if (launch.screen === 'failed') goBack();
-            else if (saved) setStack([{ name: 'map' }, { name: 'settings' }]);
+            // Back to the screen S8 was opened from (S1 without its row,
+            // the map from a storage card, or D0).
+            if (saved || launch.screen === 'failed') goBack();
           }}
           page={diagnosticsPage({
             packets: mapInputs.cloudDogs?.packets,
