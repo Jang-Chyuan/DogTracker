@@ -263,3 +263,38 @@ test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
   expect(s.text()).not.toContain('上次用');
   await unmount(s);
 });
+
+test('range bar: a quick flick lands where the finger let go, even when its last moves never reached JS', async () => {
+  const { PanResponder } = require('react-native');
+  const s = await mountFixture('history-manual-end');
+  const created = [];
+  const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { created.push(value); return { panHandlers: {} }; });
+  try {
+    await act(async () => pressable(s, 'history-adjust').props.onPress());
+    const bar = s.renderer.root.findAll(node => node.props.testID === 'history-range-bar')[0];
+    const area = bar.findAll(node => typeof node.props.onLayout === 'function')[0];
+    await act(async () => area.props.onLayout({ nativeEvent: { layout: { width: 348 } } }));
+    const handlers = created.find(value => String(value.onPanResponderGrant).includes("middle"));
+    const before = s.screen.range;
+    expect(before.following).toBe(false);
+    // Touch right of the middle (the end handle), then let go 20 dp further
+    // left with no move delivered in between.
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
+    await act(async () => handlers.onPanResponderRelease(null, { dx: -20, dy: 0 }));
+    const flicked = s.screen.range;
+    expect(flicked.start).toBe(before.start);
+    expect(flicked.end).toBeLessThan(before.end);
+    // Back where it was, then the same drag with only its first move
+    // delivered: it still ends on the fix under the finger.
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
+    await act(async () => handlers.onPanResponderRelease(null, { dx: 20, dy: 0 }));
+    expect(s.screen.range.end).toBe(before.end);
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
+    await act(async () => handlers.onPanResponderMove(null, { dx: -5, dy: 0 }));
+    await act(async () => handlers.onPanResponderRelease(null, { dx: -20, dy: 0 }));
+    expect(s.screen.range.end).toBe(flicked.end);
+  } finally {
+    spy.mockRestore();
+    await unmount(s);
+  }
+});
