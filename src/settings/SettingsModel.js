@@ -183,8 +183,8 @@ export function settingsHome(input) {
           account.signedIn && account.email ? ['已登入'] : []),
       ] },
       // v3 has no 地圖 row (map display options were removed): 提醒 alone.
-      // 提醒: how alerts arrive (震動／聲音／關), 「部分開」 when some are off.
-      { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', alertsHomeStatus(input.alerts))] },
+      // 提醒: permission problems take priority over the delivery status.
+      { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', alertsHomeStatus(input.alerts, now))] },
       // 進階 (S7): the receiver's Wi-Fi and 刪除全部狗資料 (c196).
       { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi、刪除資料', []),
         ...(input.diagnosticsEnabled ? [row('diagnostics', '診斷', '即時資料、本機／雲端資料、記錄清單', [])] : [])] },

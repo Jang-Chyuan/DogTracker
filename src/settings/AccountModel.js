@@ -96,7 +96,7 @@ export function accountPage(input) {
     signedIn: true,
     email: account.email || '',
     download,
-    upload: { problem, pending, pendingText: `${pending} 筆`, lastText },
+    upload: { visible: routes.some(route => route.mode === 'phone'), problem, pending, pendingText: `${pending} 筆`, lastText },
     routes,
     routesLoading: upload.supported !== false && !upload.settingsReady,
     // The phone looks offline: a switch that must send rows first says so

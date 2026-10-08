@@ -1,3 +1,5 @@
+import { formatClock } from '../map/MapFormat';
+
 // What the user chose on 設定 → 提醒 (design v3 S6; 「每一種提醒」「提醒的規則」
 // tables). Pure: saved with the tracking preferences (`alerts`), read by the
 // S6 page, the S1 提醒 row, and — from 058 on — by whatever sends the
@@ -80,17 +82,15 @@ export function groupStatus(preferences, keys) {
   return '全部關';
 }
 
-/**
- * The S1 提醒 row's status (c193, accepted suggestion 「震動」): how alerts
- * arrive — 「震動」, 「聲音」, both, or 「關」 when neither — and, when some
- * category is off, a second line 「部分開」; all categories off: 「全部關閉」.
- */
-export function alertsHomeStatus(preferences) {
+/** S1: all off, active pause, then the notification delivery method. */
+export function alertsHomeStatus(preferences, now = Date.now()) {
   const value = normalizeAlertPreferences(preferences);
-  const how = [value.vibrate && '震動', value.sound && '聲音'].filter(Boolean).join('、') || '關';
   const categories = [...new Set(Object.values(ALERT_SETTING))];
   if (categories.every(key => !value[key])) return ['全部關閉'];
-  return categories.every(key => value[key]) ? [how] : [how, '部分開'];
+  if (Number.isFinite(preferences?.pausedUntil) && preferences.pausedUntil > now) {
+    return [`暫停到 ${formatClock(preferences.pausedUntil)}`];
+  }
+  return [[value.vibrate && '震動', value.sound && '聲音'].filter(Boolean).join('、') || '只有通知'];
 }
 
 /**

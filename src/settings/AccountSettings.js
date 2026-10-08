@@ -176,27 +176,31 @@ export default function AccountSettings({
 
       <GroupTitle>上傳</GroupTitle>
       <GroupCard flat>
-        {upload.problem && (
+        {upload.visible && upload.problem && (
           <StatusRow
             testID="account-upload-problem"
             row={upload.problem}
             onRetry={onRetryUpload}
           />
         )}
-        <ListRow
-          testID="account-upload-pending"
-          title="還沒上傳"
-          right={upload.pendingText}
-          rightTone={['mutedBold']}
-          label={`還沒上傳 ${upload.pendingText}`}
-        />
-        <ListRow
-          testID="account-upload-last"
-          title="最後上傳成功"
-          right={upload.lastText}
-          rightTone={['mutedBold']}
-          label={`最後上傳成功 ${upload.lastText}`}
-        />
+        {upload.visible && (
+          <>
+            <ListRow
+              testID="account-upload-pending"
+              title="手機還沒上傳"
+              right={upload.pendingText}
+              rightTone={['mutedBold']}
+              label={`手機還沒上傳 ${upload.pendingText}`}
+            />
+            <ListRow
+              testID="account-upload-last"
+              title="最後上傳成功"
+              right={upload.lastText}
+              rightTone={['mutedBold']}
+              label={`最後上傳成功 ${upload.lastText}`}
+            />
+          </>
+        )}
         {page.routesLoading && (
           <ListRow title="讀取上傳方式中…" titleTone="muted" />
         )}

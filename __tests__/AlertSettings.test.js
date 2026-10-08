@@ -1,3 +1,4 @@
+import { formatClock } from '../src/map/MapFormat';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Switch } from 'react-native';
@@ -54,14 +55,14 @@ test('group status: 全部開／部分開／全部關 (c300)', () => {
   expect(groupStatus({ dogStale: false, dogOutOfRange: false, dogBattery: false }, keys)).toBe('全部關');
 });
 
-test('S1 提醒 row: how alerts arrive (c193 「震動」), 「部分開」 when some are off', () => {
+test('S1 提醒 row: how alerts arrive (c193 「震動」), including notification-only delivery', () => {
   expect(alertsHomeStatus({})).toEqual(['震動']);
   expect(alertsHomeStatus({ sound: true })).toEqual(['震動、聲音']);
   expect(alertsHomeStatus({ vibrate: false, sound: true })).toEqual(['聲音']);
-  expect(alertsHomeStatus({ vibrate: false })).toEqual(['關']);
-  expect(alertsHomeStatus({ receiverBattery: false })).toEqual(['震動', '部分開']);
+  expect(alertsHomeStatus({ vibrate: false })).toEqual(['只有通知']);
+  expect(alertsHomeStatus({ receiverBattery: false })).toEqual(['震動']);
   expect(alertsHomeStatus({ dogStale: false, dogOutOfRange: false, dogBattery: false, receiverBattery: false }))
-    .toEqual(['震動', '部分開']);
+    .toEqual(['震動']);
 });
 
 test('S6 page model: the 狗 group, the switches, 通知權限', () => {
@@ -235,7 +236,7 @@ test('alerts-some-off: 不在接收範圍 and 接收器電量低 off, 聲音 on,
   expect(page.dogs.status).toBe('部分開');
   expect(page.dogs.items.map(item => item.on)).toEqual([true, false, true]);
   expect(page).toMatchObject({ receiverBattery: false, receiverDisconnectedStorage: false, vibrate: true, sound: true });
-  expect(alertsRow(data)).toMatchObject({ problem: false, status: ['震動、聲音', '部分開'] });
+  expect(alertsRow(data)).toMatchObject({ problem: false, status: ['震動、聲音'] });
 });
 
 test('alerts-all-off: every notification disabled and S1 says 全部關閉', () => {
@@ -319,4 +320,22 @@ test('S6: TalkBack reaches each switch itself, with its own label', async () => 
       parent = parent.parent;
     }
   }
+});
+
+test('S1 priority: permission denied, all off, active pause, delivery; expired pause clears', () => {
+  const { data } = settingsOf('alerts-all-off');
+  const pausedUntil = FIXTURE_NOW + 60000;
+  data.alerts = { ...data.alerts, pausedUntil, vibrate: true, sound: true };
+  expect(alertsRow(data).status).toEqual(['全部關閉']);
+  data.permissions = { ...data.permissions, notificationsDenied: true };
+  expect(alertsRow(data)).toMatchObject({ problem: true, status: [], label: '提醒，有問題：通知未允許' });
+  data.alerts = { ...DEFAULT_ALERT_PREFERENCES, pausedUntil };
+  expect(alertsRow(data).problem).toBe(true);
+  data.permissions.notificationsDenied = false;
+  expect(alertsRow(data).status).toEqual([`暫停到 ${formatClock(pausedUntil)}`]);
+  data.now = pausedUntil;
+  expect(alertsRow(data).status).toEqual(['震動']);
+  data.alerts = { ...DEFAULT_ALERT_PREFERENCES, vibrate: false, sound: false };
+  expect(alertsRow(data).status).toEqual(['只有通知']);
+  expect(alertsRow(data).label).toBe('提醒，震動、聲音、各項開關，只有通知');
 });
