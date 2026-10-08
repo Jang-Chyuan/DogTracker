@@ -305,6 +305,8 @@ describe('dark text and graphic contrast', () => {
     ['floating outline', c.floatingOutline, c.mapBase, 3],
     ['plain list pill', c.textMuted, c.pillPlain, 4.5],
     ['indoor list pill', c.receiver, c.pillIndoor, 4.5],
+    ['red action text', c.critAction, c.surface, 4.5],
+    ['red action text in a dialog', c.critAction, c.elevated, 4.5],
     ...darkTheme.routeColors.flatMap((color, i) => [
       [
         `route${i + 1} upcoming over land`,

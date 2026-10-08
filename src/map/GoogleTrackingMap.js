@@ -1121,6 +1121,9 @@ function GoogleTrackingMapRenderer({
           // Without a base map (a fixture of a failed load) the dogs, the phone
           // and the ring are drawn on plain grey, as when no tile arrives.
           mapType="standard"
+          // Google's own scheme for the frames before customMapStyle lands
+          // (loading tiles drew a light-grey grid on a dark cold start).
+          userInterfaceStyle={isDark ? 'dark' : 'light'}
           // An empty style puts the normal map back (undefined would keep the grey).
           customMapStyle={
             failure === 'tiles'
@@ -1131,7 +1134,10 @@ function GoogleTrackingMapRenderer({
               ? mapStyle.google
               : PLAIN_MAP
           }
-          showsBuildings={failure !== 'tiles'}
+          // Dark: no 3D buildings. Google draws them as light-grey blocks the
+          // dark style cannot recolour (DESIGN.md 深色模式「地圖」: land, roads,
+          // water and parks only).
+          showsBuildings={failure !== 'tiles' && !isDark}
           moveOnMarkerPress={false}
           // Google reports a tap only (a drag or a long press is not one).
           onPress={

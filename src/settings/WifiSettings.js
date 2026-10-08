@@ -289,12 +289,14 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
       marginLeft: space.s,
     },
-    deleteText: { ...type.captionBold, color: colors.problemBadge },
+    deleteText: { ...type.captionBold, color: colors.critAction },
     field: {
       minHeight: size.input.height,
       borderRadius: radius.input,
       borderWidth: size.input.border,
-      borderColor: theme.isDark ? colors.floatingOutline : colors.line,
+      borderColor: colors.floatingOutline,
+      // 深色模式「鍵盤」: inputs sit on surface (white in light, as before).
+      backgroundColor: colors.surface,
       paddingHorizontal: space.l,
       marginBottom: space.m,
       ...type.body,
@@ -333,7 +335,7 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
       paddingHorizontal: space.s,
     },
-    retryText: { ...type.captionBold, color: colors.problemBadge },
+    retryText: { ...type.captionBold, color: colors.critAction },
     primary: {
       minHeight: touch.primary,
       borderRadius: radius.button,
