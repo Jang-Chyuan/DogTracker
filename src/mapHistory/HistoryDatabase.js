@@ -176,7 +176,7 @@ export function createHistoryDatabase(db) {
      * the last good fixes before the window (`seed`), like the history map.
      * @returns {{ rows, seed, after }}
      */
-    async historyDayRows({ subject = 'dog', slaveId = null, start, end, source = 'all', owner = null, after = {} }) {
+    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {} }) {
       const since = Number(start) - HISTORY_DAY_CONTEXT_MS;
       // A few minutes past midnight tell whether the last stay or hold goes on
       // the next day (「接續隔天」); they are not part of this day.
@@ -217,12 +217,12 @@ export function createHistoryDatabase(db) {
       const optional = (columns, names) => names.filter(name => columns.has(name)).map(name => `, ${name}`).join('');
       const first = !Object.keys(after).length;
       for (const [key, name, time, wanted] of [
-        ['local', 'dog_status', 'received_at', source !== 'cloud'],
-        ['cloud', 'supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', source !== 'local' && !!owner],
+        ['local', 'dog_status', 'received_at', true],
+        ['cloud', 'supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', !!owner],
       ]) {
         if (!wanted || !(await table(name))) continue;
         const columns = await columnsOf(name);
-        const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at', 'speed_kmh']);
+        const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at', 'speed_kmh', 'distance_meters']);
         const scope = `slave_id = ?${key === 'cloud' ? ' AND owner_user_id = ?' : ''}`;
         const params = key === 'cloud' ? [slaveId, owner] : [slaveId];
         const found = await pages(key, `SELECT id, received_at, master_id, slave_id, slave_lat, slave_lon${extra}
@@ -245,7 +245,7 @@ export function createHistoryDatabase(db) {
      * my route, oldest first: the history's date row ‹ › steps between them
      * (H3a). Days only the cloud holds come with the calendar (054b).
      */
-    async historyDays({ subject = 'dog', slaveId = null, source = 'all', owner = null } = {}) {
+    async historyDays({ subject = 'dog', slaveId = null, owner = null } = {}) {
       const table = async name => rows(await db.executeAsync(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
       const dayOf = time => `strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')`;
@@ -256,11 +256,11 @@ export function createHistoryDatabase(db) {
           add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('recorded_at')} AS day FROM myLocationTracker`)));
         }
       } else {
-        if (source !== 'cloud' && await table('dog_status')) {
+        if (await table('dog_status')) {
           add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('received_at')} AS day FROM dog_status
             WHERE slave_id = ?`, [slaveId])));
         }
-        if (source !== 'local' && owner && await table('supabase_dog_status')) {
+        if (owner && await table('supabase_dog_status')) {
           add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('CAST(COALESCE(track_at, received_at) AS INTEGER)')} AS day
             FROM supabase_dog_status WHERE slave_id = ? AND owner_user_id = ?`, [slaveId, owner])));
         }

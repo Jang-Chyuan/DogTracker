@@ -255,7 +255,7 @@ test('historyDays: the local days with one dog\'s rows (local and the account\'s
     await connection.executeAsync('INSERT INTO myLocationTracker(recorded_at,latitude,longitude) VALUES(?,?,?)',
       [local(2026, 10, 2, 7), 25, 121]);
     expect(await db.historyDays({ subject: 'dog', slaveId: 4, owner: 'me' })).toEqual(['2026-10-03', '2026-10-06']);
-    expect(await db.historyDays({ subject: 'dog', slaveId: 4, source: 'local', owner: 'me' })).toEqual(['2026-10-03']);
+    expect(await db.historyDays({ subject: 'dog', slaveId: 4, owner: 'me' })).toEqual(['2026-10-03', '2026-10-06']);
     expect(await db.historyDays({ subject: 'dog', slaveId: 4 })).toEqual(['2026-10-03']);
     expect(await db.historyDays({ subject: 'phone' })).toEqual(['2026-10-02']);
   } finally { connection.close(); }

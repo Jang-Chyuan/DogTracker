@@ -396,3 +396,15 @@ describe('the PNG is light whatever the phone theme (深色模式「匯出的 PN
     expect(exportRouteColor('#123456')).toBe('#123456');
   });
 });
+
+
+test('GPX merges fixes across packet times, prefers local coordinates and keeps different dogs', () => {
+  const cloud = { source: 'cloud', slave_id: 4, time: at(0), locationTime: 'gps:777', latitude: 25, longitude: 121 };
+  const local = { ...cloud, source: 'local', time: at(1), latitude: 25.1, distance_meters: 42 };
+  const snapshot = { since: at(0), until: at(2), subjects: [{ kind: 'dog', slaveId: 4, name: '豆豆',
+    rows: [cloud, local] }, { kind: 'dog', slaveId: 6, name: '小黑', rows: [{ ...cloud, slave_id: 6 }] }] };
+  const gpx = buildGPX(snapshot);
+  expect((gpx.match(/<trkpt /g) || []).length).toBe(2);
+  expect(gpx).toContain('lat="25.1"');
+  expect(gpx).toContain('小黑-6');
+});

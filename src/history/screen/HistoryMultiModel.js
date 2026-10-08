@@ -12,32 +12,15 @@ import { screenCursor } from './HistoryScreenCursor';
 import { nearestRecord } from './HistoryScreenRange';
 import { historyMapPresentation, withAlpha } from './HistoryMapModel';
 
-const isLocal = source => source === 'local' || source === 'ble';
-
-/**
- * Whether `rows` hold any packet of [dayStart, dayEnd) in `source` (判定表
- * 「停住期間的封包算不算『有紀錄』」: a held packet without a fix counts).
- * The cheap question asked of every added dog before any timeline is made.
- */
-export function dayHasRecords(
-  rows = [],
-  { source = 'all', dayStart = -Infinity, dayEnd = Infinity } = {},
-) {
-  return rows.some(
-    row =>
-      row.time >= dayStart &&
-      row.time < dayEnd &&
-      (source === 'all' ||
-        (isLocal(source)
-          ? isLocal(row.source ?? 'local')
-          : row.source === 'cloud')),
-  );
+/** A held packet counts as a day record, across both sources. */
+export function dayHasRecords(rows = [], { dayStart = -Infinity, dayEnd = Infinity } = {}) {
+  return rows.some(row => row.time >= dayStart && row.time < dayEnd);
 }
 
 /**
  * `subjects`: [{ id, rows, replayHolds?, subject? ('dog' | 'phone') }] in
  * the order they were added. `options`: dayStart, dayEnd, today, now,
- * source ('all' | 'local' | 'cloud'), manual (the dragged or remembered
+ * manual (the dragged or remembered
  * range { start, end, following } or null), following (the end follows now),
  * protagonist (the id wanted), rangeOwner (whose automatic range is shared:
  * the protagonist when the screen opened or the day changed — 加入、移除、
@@ -53,7 +36,6 @@ export function multiDayModel(subjects, options) {
     dayEnd,
     today = false,
     now,
-    source = 'all',
     manual = null,
     following = false,
     closedAt = null,
@@ -69,7 +51,6 @@ export function multiDayModel(subjects, options) {
   const timeline = (s, extra) =>
     historyTimeline(s.rows || [], {
       subject: s.subject || 'dog',
-      source,
       dayStart,
       dayEnd,
       today,
@@ -84,7 +65,7 @@ export function multiDayModel(subjects, options) {
     : null;
   // 主角: a dog with records that day first (the wanted one if it has some).
   const dayRecords = subjects.map(s =>
-    dayHasRecords(s.rows, { source, dayStart, dayEnd }),
+    dayHasRecords(s.rows, { dayStart, dayEnd }),
   );
   let main = pickProtagonist(
     subjects.map((s, i) => ({ id: s.id, hasData: dayRecords[i] })),
@@ -121,7 +102,7 @@ export function multiDayModel(subjects, options) {
     : null;
   const models = subjects.map((s, i) => {
     if (i === leadIndex && !kept) return own;
-    // Nothing that day in this source: no timeline to make (地圖不畫牠).
+    // Nothing that day: no timeline to make (地圖不畫牠).
     if (!dayRecords[i]) return null;
     return timeline(s, {
       range: shared ?? { start: dayStart, end: dayEnd - 1 },

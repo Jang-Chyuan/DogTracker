@@ -24,7 +24,7 @@ const walk = (slave, from, to, { source = 'local', east = 0, stay = null } = {})
   }
   return rows;
 };
-const options = { dayStart: DAY, dayEnd: DAY + 86400000, today: false, now: at(240), source: 'all' };
+const options = { dayStart: DAY, dayEnd: DAY + 86400000, today: false, now: at(240) };
 const noHolds = packets => packets;
 const subject = (id, rows) => ({ id, rows, replayHolds: noHolds });
 
@@ -56,14 +56,14 @@ describe('the day of several dogs', () => {
     expect(multiDayModel([], options).protagonist).toBeNull();
   });
 
-  test('換資料來源: the protagonist becomes the first dog with records in the new source', () => {
+  test('merged sources keep both dogs eligible and retain the requested protagonist', () => {
     const a = walk(4, 30, 120, { source: 'local' }), b = walk(6, 0, 150, { source: 'cloud', east: 0.01 });
     const subjects = [subject(4, a), subject(6, b)];
-    expect(multiDayModel(subjects, { ...options, source: 'cloud', protagonist: 4 }).protagonist).toBe(6);
-    const local = multiDayModel(subjects, { ...options, source: 'local', protagonist: 6 });
-    expect(local.protagonist).toBe(4);
-    expect(local.subjects[1].hasData).toBe(false);
-    // Back to 全部 the wanted dog is the protagonist again.
+    expect(multiDayModel(subjects, { ...options, protagonist: 4 }).protagonist).toBe(4);
+    const merged = multiDayModel(subjects, { ...options, protagonist: 6 });
+    expect(merged.protagonist).toBe(6);
+    expect(merged.subjects[1].hasData).toBe(true);
+    // Both local and cloud dogs remain eligible.
     expect(multiDayModel(subjects, { ...options, protagonist: 6 }).protagonist).toBe(6);
   });
 
@@ -76,11 +76,10 @@ describe('the day of several dogs', () => {
     expect(day.subjects[0].hasData).toBe(false);
   });
 
-  test('dayHasRecords: packets of the day in the source, a held packet without a fix included', () => {
+  test('dayHasRecords: packets of the day across both sources, a held packet without a fix included', () => {
     const rows = [{ time: at(0), source: 'local' }, { time: DAY - MINUTE, source: 'cloud' }];
     expect(dayHasRecords(rows, { ...options })).toBe(true);
-    expect(dayHasRecords(rows, { ...options, source: 'cloud' })).toBe(false);
-    expect(dayHasRecords([{ time: at(0), source: 'ble' }], { ...options, source: 'local' })).toBe(true);
+    expect(dayHasRecords([{ time: at(0), source: 'ble' }], { ...options })).toBe(true);
   });
 });
 

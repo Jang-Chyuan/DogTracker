@@ -1,13 +1,11 @@
 import { normalizeHistoryRows, historySourceStream, filterHistoryPoints } from '../src/history';
 import { point, route } from '../__fixtures__/HistoryLogicFixtures';
 
-// spec.txt「先照資料來源篩選；全部時才合併本機和雲端」。
-test('source filtering precedes packet dedupe, local copy wins', () => {
+// Local rows win when the same fix is stored in both streams.
+test('merged packet and fix dedupe prefer the local copy', () => {
   const cloud = point(0, 10, { source: 'cloud', slave_id: 1 });
   const local = point(0, 20, { source: 'ble', slave_id: 1 });
   expect(historySourceStream([cloud, local]).points).toEqual([expect.objectContaining({ latitude: local.latitude })]);
-  expect(historySourceStream([cloud, local], { source: 'cloud' }).points[0].latitude).toBe(cloud.latitude);
-  expect(historySourceStream([cloud, local], { source: 'local' }).points[0].source).toBe('ble');
 });
 // spec.txt「同一訊號源＋同一封包時間」「GPS 再另外照同一定位時間去重」。
 test('two dedupe stages preserve packet state transitions', () => {
@@ -71,4 +69,12 @@ test('dog high-speed exception includes preceding accepted high edge', () => {
 // spec.txt「停住那段…畫在停住點」（弱定位的誤差不能刪掉已確認停住封包）。
 test('held anchor survives poor raw accuracy while malformed time does not', () => {
   expect(filterHistoryPoints([point(0, 0, { accuracy: 100, heldReason: 'indoor' }), point(10, 0, { time: NaN })])).toHaveLength(1);
+});
+
+test('same fix in different packets keeps local receiver distance', () => {
+  const cloud = point(0, 10, { source: 'cloud', slave_id: 4, locationTime: 'gps:777' });
+  const local = point(10, 20, { source: 'local', slave_id: 4, locationTime: 'gps:777', distance_meters: 42 });
+  const result = historySourceStream([cloud, local]);
+  expect(result.packets).toHaveLength(2);
+  expect(result.points).toEqual([expect.objectContaining({ source: 'local', distance_meters: 42 })]);
 });

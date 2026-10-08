@@ -30,7 +30,7 @@ test('cursor cumulative distance uses measured edges, not proportional list dist
   expect(cursorLabel(model, 60000)[1]).toBe('已移動 0.9 km');
 });
 test('date changes resolve eligible protagonist, memory priority, then latest cursor', () => {
-  const state = { entryId: 'a', protagonist: 'a', dogs: [{ id: 'a' }, { id: 'b' }], source: 'all' };
+  const state = { entryId: 'a', protagonist: 'a', dogs: [{ id: 'a' }, { id: 'b' }] };
   const models = { a: { dayRecords: false, points: [] }, b: { dayRecords: true, points: rows, screenRange: { start: 0, end: 180000 } } };
   const remembered = { a: { start: 60000, end: 120000 }, b: { start: 0, end: 60000 } };
   expect(changeDogDay(state, '2026-10-03', models, remembered)).toMatchObject({ protagonist: 'b', range: remembered.a, cursorTime: 120000, listPosition: 'start' });

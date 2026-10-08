@@ -42,8 +42,7 @@ import HistoryTimelineList from './HistoryTimelineList';
 import HistoryExportSheet from './HistoryExportSheet';
 import { useHistoryExport } from './useHistoryExport';
 import HistoryCalendarSheet from './HistoryCalendarSheet';
-import { AddDogSheet, SourceSheet } from './HistoryPickers';
-import { sourceLabel } from '../history/screen/HistoryMultiSources';
+import { AddDogSheet } from './HistoryPickers';
 
 const OPEN_MOTION = LayoutAnimation.create(
   motion.rangeExpand.duration,
@@ -240,24 +239,6 @@ export function TopRow({
           : <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
       </PressScale>
     </View>
-  );
-}
-
-/** 資料來源：全部 › — fixed at the foot of a dog's panel (not my route's). */
-function SourceRow({ source, onPress }) {
-  const styles = useStyles(getStyles);
-  const label = sourceLabel(source);
-  return (
-    <Pressable
-      testID="history-source"
-      accessibilityRole="button"
-      accessibilityLabel={label.replace(' ›', '')}
-      accessibilityHint="選資料來源"
-      onPress={onPress}
-      style={({ pressed }) => [styles.sourceRow, pressed && styles.pressed]}
-    >
-      <Text style={styles.sourceText}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -648,17 +629,7 @@ ref) {
       <HistoryPanel ref={panel} levels={levels} header={header} onLevel={panelLevel} onDragStart={dragStart}
         bottomInset={bottomInset} scrollRef={list} locked={empty || !model || downloading}
         above={hasRoute ? <FrameButton onPress={onFrame} /> : null}
-        footer={
-          subject === 'dog' ? (
-            <SourceRow
-              source={screen.source}
-              onPress={() => {
-                closeRange();
-                setSheet('source');
-              }}
-            />
-          ) : null
-        }
+
       >
         <Pressable
           onPress={closeRange}
@@ -688,15 +659,6 @@ ref) {
             dog => !(screen.dogs ?? []).some(shown => shown.id === dog.id),
           )}
           onAdd={dog => screen.addDog(dog)}
-          onClosed={() => setSheet(null)}
-        />
-      )}
-      {sheet === 'source' && (
-        <SourceSheet
-          ref={sheetRef}
-          bottomInset={bottomInset}
-          selected={screen.source}
-          onChoose={value => screen.setSource(value)}
           onClosed={() => setSheet(null)}
         />
       )}
@@ -761,15 +723,6 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     removeText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
-    sourceRow: {
-      height: sizes.sheet.dataSourceRow,
-      justifyContent: 'center',
-      paddingHorizontal: space.l,
-      borderTopWidth: 1,
-      borderTopColor: colors.line,
-      backgroundColor: colors.elevated,
-    },
-    sourceText: { ...type.value, fontWeight: '400', color: colors.text },
     pressed: { backgroundColor: colors.pressedOverlay },
     backText: { color: colors.text, fontSize: 13, fontWeight: '700' },
     capsuleText: {

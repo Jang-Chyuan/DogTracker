@@ -41,7 +41,7 @@ test('history-multi-dog (H7): three chips, 豆豆 leads, 「豆豆・移動 x km
   expect(s.screen.dogs.map(dog => [dog.id, dog.color, dog.protagonist])).toEqual([
     [6, colors.route1, false], [4, colors.route2, true], [8, colors.route3, false]]);
   expect(s.text()).toMatch(/豆豆・移動 \d+\.\d km/);
-  expect(s.text()).toContain('資料來源：全部 ›');
+  expect(s.text()).not.toContain('資料來源');
   expect(s.screen.map.cursor.face.name).toBe('豆豆');
   expect(s.screen.map.faces.map(face => face.id).sort()).toEqual([6, 8]);
   expect(s.screen.map.places.length).toBeGreaterThan(0);
@@ -97,22 +97,6 @@ test('history-multi-cursor: a dog without data at the cursor waits grey at its l
   await unmount(s);
 });
 
-test('資料來源: the picker, 雲端 without records (H8 with the row), 這支手機收到的 leaves the cloud dog out', async () => {
-  const picker = await mount('history-source-picker');
-  expect(picker.text()).toContain('這支手機收到的');
-  await act(async () => picker.screen.setSource('cloud'));
-  expect(picker.screen.source).toBe('cloud');
-  await unmount(picker);
-  const empty = await mount('history-source-empty');
-  expect(empty.text()).toContain('這天沒有小黑的紀錄');
-  expect(empty.text()).toContain('資料來源：雲端 ›');
-  await unmount(empty);
-  const local = await mount('history-source-local');
-  expect(local.screen.protagonist).not.toBe(8);
-  expect(local.screen.dogs.find(dog => dog.id === 8).hasData).toBe(false);
-  await unmount(local);
-});
-
 test('my route has no 資料來源 row and no ＋ 加入', async () => {
   const s = await mount('history-my-route');
   expect(s.text()).not.toContain('資料來源');
@@ -132,11 +116,10 @@ test('再次進入: leaving and opening the same dog again starts over (the entr
   let renderer;
   await act(async () => { renderer = Renderer.create(<Probe open />); });
   await act(async () => screen.addDog({ id: 4, hasData: true }));
-  await act(async () => screen.setSource('local'));
   expect(screen.dogs).toHaveLength(2);
   await act(async () => renderer.update(<Probe open={false} />));
   await act(async () => renderer.update(<Probe open />));
   expect(screen.dogs.map(dog => dog.id)).toEqual([6]);
-  expect(screen.source).toBe('all');
+  expect(screen).not.toHaveProperty('source');
   await act(async () => renderer.unmount());
 });
