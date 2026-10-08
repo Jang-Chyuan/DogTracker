@@ -227,7 +227,11 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
   { screen, bottomInset = 0, onOffline, onClosed, initialView = null },
   ref,
 ) {
-  const styles = getStyles(useTheme());
+  const theme = useTheme();
+  const styles = getStyles(theme);
+  // Day and month cells are drawn afresh on a theme switch: Android kept the
+  // old (light) fill on some cells when only their colour changed.
+  const scheme = theme.isDark ? 'dark' : 'light';
   const { height: windowHeight } = useWindowDimensions();
   const { dayKey, todayKey, knowledge, askMonth, askYear, stopQuery } = screen;
   // 再打開月曆停在哪個月: the month of the day shown.
@@ -355,7 +359,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
         <View style={styles.monthGrid}>
           {months.months.map(entry => (
             <MonthCell
-              key={entry.key}
+              key={`${entry.key}-${scheme}`}
               entry={entry}
               onPress={value => {
                 setShown({ year: picker, month: value });
@@ -435,7 +439,11 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
         {month.weeks.map(week => (
           <View key={week[0].day} style={styles.weekRow}>
             {week.map(cell => (
-              <DayCell key={cell.day} cell={cell} onPress={choose} />
+              <DayCell
+                key={`${cell.day}-${scheme}`}
+                cell={cell}
+                onPress={choose}
+              />
             ))}
           </View>
         ))}
