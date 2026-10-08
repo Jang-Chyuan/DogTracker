@@ -87,7 +87,7 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
         {/* History (H7): another dog's face on its route colour; a grey dashed
             ring while it has no data at the cursor's time. */}
         <DogAvatar avatar={avatar} size={size} stale={stale} border={markerSize.border} onLoad={onAvatarLoad}
-          snapshot tint={tint ? { bg: tint, line: '#FFFFFF' } : null} />
+          snapshot tint={tint ? { bg: tint, line: colors.onRoute } : null} />
         {staleRing && <View testID="dog-stale-ring" style={[styles.staleRing, { borderRadius: (size + 6) / 2 }]} />}
         {indoor && <HouseBadge offset={offset} size={size} />}
         {problem && <ProblemBadge offset={offset} />}
