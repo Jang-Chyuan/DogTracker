@@ -16,6 +16,12 @@ test('night colours match the design, including elevated native dialogs and spla
   expect(read('res/drawable/dialog_background.xml')).toContain(
     '@color/dialog_surface',
   );
+  // 1dp floatingOutline edge in dark only.
+  expect(xml).toContain(
+    `<color name="dialog_outline">${spec.darkOnly.floatingOutline}</color>`,
+  );
+  expect(read('res/values-night/dimens.xml')).toContain('>1dp</dimen>');
+  expect(read('res/values/dimens.xml')).toContain('>0dp</dimen>');
   const styles = read('res/values-night/styles.xml');
   for (const name of [
     'colorAccent',

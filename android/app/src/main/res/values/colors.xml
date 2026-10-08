@@ -6,4 +6,5 @@
     <color name="splash_background">#F2867A</color>
     <color name="splash_icon_background">#F2867A</color>
     <color name="dialog_surface">#FFFFFF</color>
+    <color name="dialog_outline">#EDE6E4</color>
 </resources>

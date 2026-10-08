@@ -158,6 +158,8 @@ const getStyles = makeStyles(theme => {
       maxWidth: 400,
       backgroundColor: colors.elevated,
       borderRadius: radius.dialog,
+      // S7 確認對話框・深色: a 1dp floatingOutline edge (none in light).
+      ...theme.floatingBorder,
       padding: 24,
     },
     title: { ...type.title, color: colors.text, marginBottom: space.l },
@@ -189,7 +191,11 @@ const getStyles = makeStyles(theme => {
       borderRadius: radius.button,
     },
     pressed: { backgroundColor: colors.pressedOverlay },
-    cancel: { ...type.status, color: colors.textMuted },
+    // 取消: light as before; dark tonalText (S7 確認對話框・深色).
+    cancel: {
+      ...type.status,
+      color: theme.isDark ? colors.tonalText : colors.textMuted,
+    },
     action: { ...type.status, color: colors.tonalText },
     destructive: { color: colors.crit },
     disabled: { opacity: 0.4 },
