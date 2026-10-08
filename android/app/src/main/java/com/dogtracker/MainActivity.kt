@@ -21,10 +21,12 @@ class MainActivity : ReactActivity() {
     // first screen ready (AppSplash.hide from JavaScript) or the timeout.
     SplashState.animationDone = false
     SplashState.appReady = false
+    SplashState.held = false
     installSplashScreen().setKeepOnScreenCondition { SplashState.keepOnScreen() }
     val handler = Handler(Looper.getMainLooper())
     handler.postDelayed({ SplashState.animationDone = true }, SplashState.ANIMATION_MS)
-    handler.postDelayed({ SplashState.appReady = true }, SplashState.TIMEOUT_MS)
+    handler.postDelayed({ if (!SplashState.held) SplashState.appReady = true }, SplashState.TIMEOUT_MS)
+    handler.postDelayed({ SplashState.appReady = true }, SplashState.HOLD_TIMEOUT_MS)
     super.onCreate(savedInstanceState)
   }
 
