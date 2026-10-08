@@ -150,7 +150,7 @@ export function EdgeHintView({ value, avatars = {}, onPress }) {
  * The bottom tip (下方提示): 48dp high, 16dp from the sides, white with a 1dp
  * line, for 5 seconds. `message` { text, key }: a new key shows it again.
  */
-export function MapTip({ message, bottom, onDone }) {
+export function MapTip({ message, bottom, onDone, strong = false }) {
   const opacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!message) return undefined;
@@ -164,7 +164,7 @@ export function MapTip({ message, bottom, onDone }) {
   return (
     <Animated.View testID="map-tip" accessibilityLiveRegion="polite" pointerEvents="none"
       style={[styles.tip, { bottom, opacity }]}>
-      <Text style={styles.tipText} numberOfLines={1}>{message.text}</Text>
+      <Text style={[styles.tipText, strong && styles.tipStrong]} numberOfLines={strong ? 2 : 1}>{message.text}</Text>
     </Animated.View>
   );
 }
@@ -207,4 +207,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center', paddingHorizontal: layout.screenEdge, ...shadow.floating,
   },
   tipText: { ...type.body, color: colors.text },
+  // The history's H3d sentence: one line on a 360dp phone.
+  tipStrong: { ...type.value, paddingVertical: 12 },
 });

@@ -26,7 +26,8 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 手機記錄、權限 | `phone.recording: false` 讓記錄服務沒在跑；`phone.permission`／`phone.services` 是 `usePhoneLocation` 的回答（預設精確位置、定位服務開著） | `todayPill`（右下「今天 x km」的 icon）、`phone.enabled`（地圖藍點） |
 | 今天的路線 | `phone.today`：今天 `myLocationTracker` 的列（每 10 秒一筆） | 和 `useTodayRoute` 同一套 `todayRouteDistance`（出發偵測、開車不算，src/history）算出「今天 x km」 |
 | 歷史畫面（054a/055a） | `history`：舊歷史頁的查詢（看哪隻狗或我的路線）、狗那一天的 `dog_status`／`supabase_dog_status` 列；我的路線用 `phone.today` | 時間軸清單照 `historyDayRows` 的讀法交出（`HistoryRows` → `historyTimeline`）；地圖的軌跡照 `historyGeometry` 畫；情境開著時歷史頁不讀這支手機的資料 |
-| 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
+| 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）、`calendar`（`'month'` 月曆／`'months'` 選月份打開）、`goTo`（開在別天，只在雲端的日子會開始下載）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
+| 雲端的日子、下載（054b） | `historyCloud`：`fixtureHistoryCloud` 照 `HistoryCloud` 的介面回答（`newestBefore`、`earliest`、`download`），資料是情境自己的「雲端」列；下載把那天的列放進情境的 `supabase_dog_status`；`online: false` 沒網路；`seed` 是開頭就知道的雲端日子 | `useHistoryCloud` → 月曆的點、‹ ›、H3c／H3d；情境從不連 Supabase |
 | 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
 | 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
@@ -128,6 +129,15 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
 | `history-gap` | 豆豆：中斷 12 分（「沒有資料」）和 40 分（「沒有資料」＋「恢復記錄」） |
 | `history-indoor` | 豆豆：走路、停留，進室內 25 分（小房子節點「室內・N 分」，不編號、不算距離），再走路 |
+| `history-calendar` | H3b：小黑的月曆（10 月）。手機裡有 9/29、9/30、10/2、今天；雲端另有 8/12（最早）、8/20、9/5、9/28、10/3。點 9/28 或 10/3（只在雲端）→ H3c 下載 3.5 秒後出現那天 |
+| `history-calendar-querying` | 月曆上方「查詢中…」：雲端一直沒回答；還沒查明的日子照一般字色、不能點 |
+| `history-calendar-failed` | 「雲端的紀錄查不到　重試」：還沒查明的日子照一般字色、可以點（點了下載） |
+| `history-month-picker` | H3e：選月份（8、9、10 月有紀錄，1–7 月灰、11–12 月還沒到） |
+| `history-cloud-offline` | H3d：沒有網路；點 9/28 → 月曆不收、日期不變，下方「沒有網路，9/28 的紀錄還沒下載，連上網路再試」 |
+| `history-calendar-signed-out` | 沒登入：只有手機裡的日子有點，不查雲端 |
+| `history-cloud-downloading` | H3c：開在 9/28 下載中（不會結束；取消或返回鍵 →「這天的紀錄還沒下載完　重試」） |
+| `history-cloud-failed` | 9/28 下載失敗、手機裡沒有：「這天的紀錄還沒下載完」＋「重試」（不是 H8） |
+| `history-cloud-incomplete` | 9/28 下載到一半失敗：那一半的路線＋「資料不完整　重試」 |
 | `db-open-failed` | 手機裡的資料庫打不開 → D0 啟動失敗「手機裡的資料打不開」＋「重試」「診斷」；「診斷」最上面寫原因 |
 
 ## 新增情境（之後每個 PR）

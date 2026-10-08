@@ -1,0 +1,89 @@
+// What the history's calendar asks the cloud (054b): which days hold one
+// dog's rows (H3b's dots), the earliest one (how far back ‹ goes), and the
+// download of a day only the cloud holds (H3c). The download is the cloud
+// page's writer (downloadCloudHistory → CloudDatabase.savePage) through the
+// sync's exclusive slot (runManual), so it never races the 30-second sync.
+// Signed out there is no adapter at all: nothing is asked.
+import { useMemo, useRef } from 'react';
+import { downloadCloudHistory } from '../cloud/CloudDownload';
+import { getCloudClient } from '../cloud/CloudClient';
+
+// 判定表「月曆查詢雲端失敗」: a question unanswered after 10 s has failed.
+export const CLOUD_QUESTION_MS = 10000;
+
+const iso = value => new Date(value).toISOString();
+
+/** `signal` plus a 10-second limit, as one signal; `done()` clears the timer. */
+function limited(signal, ms) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  signal?.addEventListener?.('abort', abort);
+  const timer = setTimeout(abort, ms);
+  return { signal: controller.signal, done: () => { clearTimeout(timer); signal?.removeEventListener?.('abort', abort); } };
+}
+
+async function oneTime(query, signal, ms) {
+  const limit = limited(signal, ms);
+  try {
+    const { data, error } = await query.abortSignal(limit.signal);
+    if (error) throw new Error(error.message || '雲端的紀錄查不到');
+    if (!Array.isArray(data)) throw new Error('雲端回傳格式不正確');
+    if (!data.length) return null;
+    const time = Date.parse(data[0].received_at);
+    return Number.isFinite(time) ? time : null;
+  } catch (error) {
+    if (limit.signal.aborted && !signal?.aborted) throw new Error('雲端的紀錄查不到（逾時）');
+    throw error;
+  } finally {
+    limit.done();
+  }
+}
+
+/**
+ * `client` the Supabase client, `database` the cloud database (savePage),
+ * `owner` the account, `runManual(work, abort)` the sync's slot.
+ */
+export function createHistoryCloud({ client, database, owner, runManual, questionMs = CLOUD_QUESTION_MS }) {
+  const rows = slaveId => client.from('dog_telemetry').select('received_at').eq('slave_id', slaveId);
+  return {
+    owner,
+    /** The time of the dog's newest row in [since, cutoff), or null. */
+    newestBefore({ slaveId, cutoff, since, signal }) {
+      return oneTime(rows(slaveId).gte('received_at', iso(since)).lt('received_at', iso(cutoff))
+        .order('received_at', { ascending: false }).limit(1), signal, questionMs);
+    },
+    /** The time of the dog's oldest row, or null. */
+    earliest({ slaveId, signal }) {
+      return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
+    },
+    /** Downloads the dog's rows of [dayStart, dayEnd) into this phone. */
+    async download({ slaveId, dayStart, dayEnd, signal }) {
+      await database.initialize();
+      const abort = new AbortController();
+      if (signal?.aborted) abort.abort();
+      signal?.addEventListener?.('abort', () => abort.abort());
+      const work = leaseCurrent => downloadCloudHistory({ client, database, owner, startAt: iso(dayStart),
+        endBefore: iso(dayEnd), slaveId, signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+      return runManual ? runManual(work, abort) : work(() => true);
+    },
+  };
+}
+
+/**
+ * The adapter for the signed-in account (null signed out), and whether the
+ * network is there: the last sync pass reached Supabase (useCloudSync's
+ * `offline`). `sync` is useCloudSync's (its runManual borrows the slot).
+ */
+export function useHistoryCloudSource({ database, sync, owner, clientFactory = getCloudClient }) {
+  const syncRef = useRef(sync);
+  syncRef.current = sync;
+  const cloud = useMemo(() => {
+    if (!owner || !database) return null;
+    let client;
+    try { client = clientFactory(); } catch { return null; }
+    return createHistoryCloud({ client, database, owner,
+      runManual: (work, abort) => syncRef.current.runManual(work, abort) });
+  }, [owner, database, clientFactory]);
+  return { cloud, online: !sync?.offline };
+}
