@@ -14,6 +14,7 @@ import {
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
+import { useAddress } from '../placement/AddressLookup';
 import { dogColor } from '../map/CloudTracks';
 import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
@@ -29,7 +30,7 @@ import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
 import { dogCard, phoneReading } from '../map/DogCardModel';
 import { useDogCardReadings } from '../map/useDogCardReadings';
-import { cloudClock, dogFreshness } from '../tracking/DogFreshness';
+import { cloudClock, dogFreshness, isIndoorHold } from '../tracking/DogFreshness';
 import { layout } from '../theme/tokens';
 import { SettingsGear } from '../map/MapControls';
 import TopAlertCards from '../map/TopAlertCards';
@@ -387,6 +388,8 @@ export default function MapScreen({
     ?? (database?.dogCardRows ? (slaveId, since) => database.dogCardRows(cloudOwner ?? null, slaveId, since) : null),
   [fixture?.readCardRows, database, cloudOwner]);
   const readings = useDogCardReadings(cardOpen ? readCardRows : null, cardDog?.slaveId ?? null, now);
+  // A7b: the held place's address under 「室內」 (none while asking/offline).
+  const address = useAddress(cardDog && isIndoorHold(cardDog) ? cardDog.coordinate : null);
   const cardModel = useMemo(() => {
     if (!cardDog) return null;
     const freshness = dogFreshness(cardDog, { now, cloud: cloudClockInput, pauses });
@@ -399,8 +402,9 @@ export default function MapScreen({
       now,
       reference: freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
       name: dogName(cardDog.slaveId, dogAliases),
+      address,
     });
-  }, [cardDog, now, cloudClockInput, pauses, cloudDogs?.ranges, readings, livePhone, dogAliases]);
+  }, [cardDog, now, cloudClockInput, pauses, cloudDogs?.ranges, readings, livePhone, dogAliases, address]);
   const closedCard = useCallback(() => setSelected(current => (current?.kind === 'dog' ? null : current)), []);
   const [trackBusy, setTrackBusy] = useState(false);
   // 看軌跡: today's path of this dog. The query is stored first, so the

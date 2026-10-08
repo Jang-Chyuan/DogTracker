@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createAddressCache } from './AddressCache';
 import { NativeModules, Platform } from 'react-native';
 import { distanceMeters } from './IndoorHold';
@@ -186,6 +186,10 @@ export function shortAddress(line) {
     /^([^區鄉鎮市]{1,4}[區鄉鎮市])[^區鄉鎮市路街道巷]{1,4}[里村]/,
     '$1',
   );
+  // The copy deck writes numbers apart: 「中正路 1 號」, 「630 巷 21 號」.
+  text = text
+    .replace(/([\u3400-\u9fff])(\d)/gu, '$1 $2')
+    .replace(/(\d)([\u3400-\u9fff])/gu, '$1 $2');
   return text || null;
 }
 
@@ -257,6 +261,9 @@ export function createAddressLookup({
           put(name, saved);
           continue;
         }
+        // Offline the geocoder has nothing to say: do not wait on it.
+        if (native.isOnline && !(await native.isOnline().catch(() => false)))
+          throw new Error('offline');
         let timer;
         const answer = await Promise.race([
           native.reverseGeocode(anchor.latitude, anchor.longitude),
@@ -289,7 +296,12 @@ export function createAddressLookup({
     running = false;
   }
   return {
-    lookup(anchor) {
+    /**
+     * The words for a place: a string, null (none found, offline, no
+     * geocoder) or undefined (still asking). `retry` asks again at once about
+     * a place that had no answer (the card opened again: 下次打開卡片再查).
+     */
+    lookup(anchor, { retry = false } = {}) {
       if (!valid(anchor) || !native?.reverseGeocode) return null;
       const nearby = [...cache.entries()].find(
         ([, item]) =>
@@ -302,7 +314,7 @@ export function createAddressLookup({
         entry &&
         !(
           entry.failedAt !== undefined &&
-          now() - entry.failedAt >= config.retryAfterMs
+          (retry || now() - entry.failedAt >= config.retryAfterMs)
         )
       ) {
         put(name, entry);
@@ -387,8 +399,20 @@ export const addressLookup = createAddressLookup({
   store: createAddressCache(),
 });
 
-/** Returns a label or null; a held point may drift 50 m from its original anchor. */
+// The live card and the history list ask the same lookup (and so share its
+// cache); a screen fixture gives its own, which never touches this phone's.
+export const AddressLookupContext = React.createContext(addressLookup);
+
+const pointKey = point =>
+  point ? `${point.latitude},${point.longitude}` : '';
+
+/**
+ * A7b's second line: the label or null. Not found, offline and still asking
+ * all read null (no spinner); asked again every minute and whenever the card
+ * opens. A held point may drift 50 m from where it was first named.
+ */
 export function useAddress(point) {
+  const lookup = useContext(AddressLookupContext);
   const anchor = useRef(null);
   if (!point) anchor.current = null;
   else if (
@@ -401,23 +425,58 @@ export function useAddress(point) {
   const [state, setState] = useState(null);
   useEffect(() => {
     const held = latitude === undefined ? null : { latitude, longitude };
-    const refresh = () =>
+    const refresh = retry =>
       setState({
         latitude,
         longitude,
-        value: addressLookup.lookup(held) ?? null,
+        value: lookup.lookup(held, { retry }) ?? null,
       });
-    const unsubscribe = addressLookup.subscribe(refresh);
-    refresh();
-    const timer = setInterval(refresh, ADDRESS_CONFIG.retryAfterMs);
+    const unsubscribe = lookup.subscribe(() => refresh(false));
+    refresh(true);
+    const timer = setInterval(
+      () => refresh(false),
+      ADDRESS_CONFIG.retryAfterMs,
+    );
     return () => {
       unsubscribe();
       clearInterval(timer);
     };
-  }, [latitude, longitude]);
+  }, [lookup, latitude, longitude]);
   return state?.latitude === latitude && state?.longitude === longitude
     ? state?.value ?? null
     : null;
+}
+
+/**
+ * The history list's place names (判定表「清單節點的內容」): one
+ * { state, text } per point — 'pending' while asking (「查地址中…」),
+ * 'found', or 'none'. A place still unanswered after waitMs (5 s) counts as
+ * not found (coordinates, 「查不到地址」); an answer arriving later still
+ * shows.
+ */
+export function usePlaceNames(points, { waitMs = 5000 } = {}) {
+  const lookup = useContext(AddressLookupContext);
+  const keys = points.map(pointKey).join('|');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stable = useMemo(() => points, [keys]);
+  const [, setTick] = useState(0);
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    setExpired(false);
+    const unsubscribe = lookup.subscribe(() => setTick(tick => tick + 1));
+    const timer = setTimeout(() => setExpired(true), waitMs);
+    setTick(tick => tick + 1);
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [lookup, keys, waitMs]);
+  return stable.map(point => {
+    const value = point ? lookup.lookup(point) : null;
+    if (typeof value === 'string') return { state: 'found', text: value };
+    if (value === undefined && !expired) return { state: 'pending', text: null };
+    return { state: 'none', text: null };
+  });
 }
 
 /** Results preserve input order; missing/pending labels are null. */

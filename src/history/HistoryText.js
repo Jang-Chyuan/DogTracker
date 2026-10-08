@@ -90,17 +90,20 @@ export function nodePill(node) {
 }
 
 /**
- * The first line of a place. No address lookup yet (053a's Geocoder comes
- * with 055): the coordinates, as when no address is found; a hold says
- * 「停留（室內）」 (判定表「清單節點的內容」).
+ * A place's two lines (判定表「清單節點的內容」), from its address lookup
+ * ({ state: 'pending' | 'found' | 'none', text }, usePlaceNames):
+ * { title, titleMuted, coordinates, missing } —
+ * found: the address, then the pill and the coordinates; still asking:
+ * 「查地址中…」 (muted), pill and coordinates; not found: the coordinates
+ * as the title and 「查不到地址」 after the pill — except a hold, which
+ * says 「停留（室內）」 over its pill and coordinates.
  */
-export function placeTitle(node) {
-  return node.type === 'indoor' ? '停留（室內）' : coordinates(node);
-}
-
-/** The second line's coordinates, under a hold's 「停留（室內）」 only. */
-export function placeCoordinates(node) {
-  return node.type === 'indoor' ? coordinates(node) : '';
+export function placeLines(node, place = { state: 'none' }) {
+  const where = coordinates(node);
+  if (place?.state === 'found') return { title: place.text, titleMuted: false, coordinates: where, missing: '' };
+  if (place?.state === 'pending') return { title: '查地址中…', titleMuted: true, coordinates: where, missing: '' };
+  if (node.type === 'indoor') return { title: '停留（室內）', titleMuted: false, coordinates: where, missing: '' };
+  return { title: where, titleMuted: false, coordinates: '', missing: '查不到地址' };
 }
 
 /** The left column: one time, or a stay's start and end. */

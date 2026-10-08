@@ -22,9 +22,9 @@ const nearDog4 = [
 ];
 
 test('addresses are shortened and written in traditional characters', () => {
-  expect(shortAddress(nearDog4[0].line)).toBe('蘆竹區大竹北路630巷21號');
+  expect(shortAddress(nearDog4[0].line)).toBe('蘆竹區大竹北路 630 巷 21 號');
   expect(shortAddress('334台灣桃園市八德區瑞興里仁德路498號')).toBe(
-    '八德區仁德路498號',
+    '八德區仁德路 498 號',
   );
   expect(
     shortAddress('3樓, No. 20號中正路武陵里桃園區桃園市台灣 330'),
@@ -32,7 +32,7 @@ test('addresses are shortened and written in traditional characters', () => {
 });
 
 test('a near address reads "附近"; a far one says how far, or only the district', () => {
-  expect(describePlace(DOG_4, nearDog4)).toBe('蘆竹區大竹北路630巷21號附近');
+  expect(describePlace(DOG_4, nearDog4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
   const terminal = { latitude: 25.0797, longitude: 121.2342 };
   expect(
     describePlace(terminal, [
@@ -42,7 +42,7 @@ test('a near address reads "附近"; a far one says how far, or only the distric
         longitude: 121.2331,
       },
     ]),
-  ).toBe('大園區航站南路9號附近（約 140 m）');
+  ).toBe('大園區航站南路 9 號附近（約 140 m）');
   expect(
     describePlace(terminal, [
       {
@@ -68,7 +68,7 @@ test('lookups run one at a time and cache the shared address', async () => {
   await new Promise(resolve => setImmediate(resolve));
   expect(native.reverseGeocode).toHaveBeenCalledTimes(1);
   expect(heard).toHaveBeenCalled();
-  expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路630巷21號附近');
+  expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
 });
 
 test('without the native geocoder nothing is named', () => {
@@ -96,7 +96,7 @@ test('no answer (offline) or a geocoder that never replies is asked again later'
     await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.retryAfterMs + 1);
     lookup.lookup(DOG_4);
     await jest.advanceTimersByTimeAsync(1);
-    expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路630巷21號附近');
+    expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
   } finally {
     jest.useRealTimers();
   }
@@ -114,7 +114,7 @@ test('closest result wins; district without a street and absent coordinates are 
       { line: 'far', latitude: 26, longitude: 121 },
       ...nearDog4,
     ]),
-  ).toBe('蘆竹區大竹北路630巷21號附近');
+  ).toBe('蘆竹區大竹北路 630 巷 21 號附近');
   expect(shortAddress(' 338 臺灣桃園市蘆竹區大華村長興路國慶巷 ')).toBe(
     '蘆竹區長興路國慶巷',
   );
@@ -136,7 +136,7 @@ test('invalid points never reach native; movement within 50 m reuses the anchore
   lookup.lookup(DOG_4);
   await flush();
   expect(lookup.lookup({ ...DOG_4, latitude: DOG_4.latitude + 0.0004 })).toBe(
-    '蘆竹區大竹北路630巷21號附近',
+    '蘆竹區大竹北路 630 巷 21 號附近',
   );
   expect(native.reverseGeocode).toHaveBeenCalledTimes(1);
   lookup.lookup({ ...DOG_4, latitude: DOG_4.latitude + 0.001 });
@@ -164,9 +164,9 @@ test('queue serializes distinct points; export preserves order and duplicate poi
   expect(native.reverseGeocode).toHaveBeenCalledTimes(1);
   finish(JSON.stringify(nearDog4));
   await expect(exported).resolves.toEqual([
-    '蘆竹區大竹北路630巷21號附近',
+    '蘆竹區大竹北路 630 巷 21 號附近',
     null,
-    '蘆竹區大竹北路630巷21號附近',
+    '蘆竹區大竹北路 630 巷 21 號附近',
   ]);
   expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
 });
@@ -230,13 +230,13 @@ test('cache read/write failures still allow a native answer; malformed answers r
   time = 60000;
   lookup.lookup(DOG_4);
   await flush();
-  expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路630巷21號附近');
+  expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
 });
 
 test('50 m and 300 m thresholds are inclusive; distant line yields district only', () => {
   const result = [{ ...DOG_4, line: '桃園市大園區航站路1號' }];
   expect(describePlace(DOG_4, result, { nearM: 0, tooFarM: 0 })).toBe(
-    '大園區航站路1號附近',
+    '大園區航站路 1 號附近',
   );
   const displaced = [{ ...result[0], latitude: DOG_4.latitude + 0.001 }];
   expect(describePlace(DOG_4, displaced, { nearM: 0, tooFarM: 300 })).toContain(
@@ -253,7 +253,7 @@ test('exact distance boundaries select near, approximate, then district labels',
   const result = [{ ...location, line: '桃園市大園區航站路1號' }];
   expect(
     describePlace(DOG_4, result, { nearM: distance, tooFarM: distance + 1 }),
-  ).toBe('大園區航站路1號附近');
+  ).toBe('大園區航站路 1 號附近');
   expect(
     describePlace(DOG_4, result, { nearM: distance - 1, tooFarM: distance }),
   ).toContain('（約 110 m）');
@@ -331,7 +331,28 @@ test('export retains resolved labels even when there are more points than cache 
     { latitude: 23, longitude: 119 },
   ];
   await expect(lookup.lookupAddresses(points)).resolves.toEqual(
-    points.map(() => '桃園區中正路1號附近'),
+    points.map(() => '桃園區中正路 1 號附近'),
   );
   expect(native.reverseGeocode).toHaveBeenCalledTimes(3);
+});
+
+test('offline the geocoder is not asked; reopening the card asks again at once (retry)', async () => {
+  let online = false;
+  const native = {
+    isOnline: jest.fn(async () => online),
+    reverseGeocode: jest.fn(async () => JSON.stringify(nearDog4)),
+  };
+  const lookup = createAddressLookup({ native });
+  expect(lookup.lookup(DOG_4)).toBeUndefined();
+  await flush();
+  await flush();
+  expect(native.reverseGeocode).not.toHaveBeenCalled();
+  expect(lookup.lookup(DOG_4)).toBeNull();
+  online = true;
+  // Within the minute a plain look keeps the miss; the card opening retries.
+  expect(lookup.lookup(DOG_4)).toBeNull();
+  expect(lookup.lookup(DOG_4, { retry: true })).toBeUndefined();
+  await flush();
+  await flush();
+  expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
 });
