@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import MapView, {
-  Marker,
+  Marker as GoogleMarker,
   Circle,
   Polygon,
   Polyline,
@@ -125,6 +125,26 @@ const tinySpan = points => {
 // A tap this close to the route (dp) is a tap on it.
 const ROUTE_TAP_DP = 24;
 
+// Every marker on our maps (「地圖標記一律用自己的樣式」) goes through here and
+// draws a view of its own: react-native-maps draws Google's red default pin
+// for a marker with no view. Debug builds report a marker given nothing to
+// draw (MarkerArchitecture.test.js checks every marker element in src).
+export const StyledMarker = React.forwardRef(function StyledMarker(
+  { children, ...props },
+  ref,
+) {
+  if (__DEV__ && React.Children.count(children) === 0) {
+    console.error(
+      `[Marker] ${props.identifier || 'a marker'} has no view of its own: it would be drawn as Google's default pin`,
+    );
+  }
+  return (
+    <GoogleMarker ref={ref} {...props}>
+      {children}
+    </GoogleMarker>
+  );
+});
+
 const EMPTY_REGION = {
   latitude: 23.7,
   longitude: 121,
@@ -194,7 +214,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
     ref.current?.redraw?.();
   }, [look, isDark]);
   return (
-    <Marker
+    <StyledMarker
       ref={ref}
       identifier={source + '-dog-' + marker.slaveId}
       coordinate={marker.coordinate}
@@ -218,7 +238,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
           onAvatarLoad={photo.onLoad}
         />
       </View>
-    </Marker>
+    </StyledMarker>
   );
 }
 
@@ -272,7 +292,7 @@ function RouteMarker({
     ref.current?.redraw?.();
   }, [look, isDark]);
   return (
-    <Marker
+    <StyledMarker
       ref={ref}
       coordinate={coordinate}
       anchor={anchor}
@@ -289,7 +309,7 @@ function RouteMarker({
       >
         {children}
       </View>
-    </Marker>
+    </StyledMarker>
   );
 }
 const CENTER = { x: 0.5, y: 0.5 };
@@ -312,7 +332,7 @@ function CursorMarker({ cursor, color }) {
     if (Math.abs(value - labelHeight) > 0.5) setLabelHeight(value);
   };
   return (
-    <Marker
+    <StyledMarker
       ref={ref}
       coordinate={cursor.coordinate}
       anchor={cursorAnchor(labelHeight, !!face)}
@@ -338,7 +358,7 @@ function CursorMarker({ cursor, color }) {
           />
         )}
       </View>
-    </Marker>
+    </StyledMarker>
   );
 }
 
@@ -1247,7 +1267,7 @@ function GoogleTrackingMapRenderer({
           {!historyMode && livePhone?.running && livePhone.position && (
             <PhoneLocationOverlay
               Circle={Circle}
-              Marker={Marker}
+              Marker={StyledMarker}
               location={livePhone}
               active={foreground}
             />
