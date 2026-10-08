@@ -5,7 +5,7 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { multiDayModel } from '../src/history/screen/HistoryMultiModel';
 import { dogHistoryRow, phoneHistoryRow } from '../src/history/HistoryRows';
-import { buildExportSnapshot, exportPlaces, placeKey } from '../src/mapHistory/ExportSnapshot';
+import { buildExportSnapshot, exportPlaces, placeKey, vehicleTrips } from '../src/mapHistory/ExportSnapshot';
 import { buildPNGLayout, layoutRow, wrap, defaultMeasure } from '../src/mapHistory/ExportPNG';
 import { pngDrawPages, measuredCharacters, widthMeasure, EXPORT_ICONS } from '../src/mapHistory/ExportDraw';
 import { buildGPX } from '../src/mapHistory/ExportGPX';
@@ -326,5 +326,41 @@ describe('the export window (useHistoryExport)', () => {
     expect(exporter.calls.share).toHaveLength(0);
     expect(state.back()).toBe(false);
     act(() => renderer.unmount());
+  });
+});
+
+describe('056 review fixes', () => {
+  const minute = MINUTE;
+  const fix = (t, extra = {}) => ({ time: t * minute, latitude: 25 + t / 1000, longitude: 121, ...extra });
+  const one = extra => ({ since: 0, until: 60 * minute, timeZone: 'UTC',
+    subjects: [{ kind: 'dog', name: '小黑', slaveId: 4, rows: [0, 1, 10, 11].map(t => fix(t)), ...extra }] });
+
+  test('a break keeps the fixes at its ends and splits the segment', () => {
+    const gpx = buildGPX(one({ gaps: [{ start: minute, end: 10 * minute }] }));
+    expect((gpx.match(/<trkpt /g) || [])).toHaveLength(4);
+    expect((gpx.match(/<trkseg>/g) || [])).toHaveLength(2);
+  });
+
+  test('one ride across 沒有資料 is one trk with two segments; a ride to the last fix keeps it', () => {
+    const nodes = [{ type: 'movement', mode: 'ride', start: 0, end: minute }, { type: 'gap', start: minute, end: 10 * minute },
+      { type: 'movement', mode: 'ride', start: 10 * minute, end: 11 * minute }];
+    const trips = vehicleTrips(nodes, 11 * minute);
+    expect(trips).toEqual([{ start: 0, end: 11 * minute + 1 }]);
+    const gpx = buildGPX(one({ rides: trips, gaps: [{ start: minute, end: 10 * minute }] }));
+    expect(gpx).toContain('小黑-4 坐車 1（不算距離）');
+    expect(gpx).not.toContain('坐車 2');
+    expect(gpx).not.toContain('<name>小黑-4</name>');
+  });
+
+  test('a long name puts the section times on their own line, inside the page', () => {
+    const long = '很長的狗名字很長的狗名字很長的狗名字很長';
+    const row = { kind: 'place', type: 'departure', times: ['00:00'], title: '地址', coordinates: '', missing: '', pill: null, note: '' };
+    const data = { since: 0, until: 60 * minute, timeZone: 'UTC', subjects: [
+      { kind: 'dog', name: long, slaveId: 4, distanceKm: '1.0 km', start: 0, end: minute, rows: [fix(0)], timeline: [row] },
+      { kind: 'dog', name: '豆豆', slaveId: 5, distanceKm: '1.0 km', start: 0, end: minute, rows: [fix(0)], timeline: [row] }] };
+    const sections = buildPNGLayout(data).pages.flatMap(p => p.blocks.filter(b => b.type === 'section'));
+    expect(sections[0].oneLine).toBe(false);
+    expect(sections[0].height).toBeGreaterThan(72);
+    expect(sections[1].oneLine).toBe(true);
   });
 });

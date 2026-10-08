@@ -42,9 +42,10 @@ export function buildGPX(snapshot) {
       const hold = holds.findIndex(item => inInterval(time, item));
       const key = ride < 0 ? 'move' : `ride-${ride}`;
       const state = `${key}/hold-${hold}`;
-      if (!p || gaps.some(gap => inInterval(time, gap))) { previous = null; segment = null; continue; }
+      // A break (沒有資料) splits the segment; the fixes at its ends stay.
+      if (!p) { previous = null; segment = null; continue; }
       const broken = !previous || previousKey !== state || time - gpsTime(previous) > 180000 || row.session_id !== previous.session_id ||
-        gaps.some(gap => gap.start >= gpsTime(previous) && gap.start <= time) ||
+        gaps.some(gap => gap.start >= gpsTime(previous) && gap.start < time) ||
         [...holds, ...rides].some(item => [item.start, item.end].some(boundary => boundary > gpsTime(previous) && boundary <= time));
       if (broken || !segment) {
         segment = [];

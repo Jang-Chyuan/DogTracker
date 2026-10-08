@@ -152,13 +152,25 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     });
     if (!rows.length) return;
     const span = subject.start != null ? `${clock(localDateParts(subject.start, snapshot.timeZone))}–${clock(localDateParts(subject.end, snapshot.timeZone))}` : '';
-    const section = continued => ({ type: 'section', subjectIndex, color, height: S.sectionHeight,
-      title: `${subject.name}${continued ? '（續）' : ''}`, detail: `${span}・${subject.distanceKm}` });
+    // 段頭: the name (36px bold) and 「08:03–12:11・7.3 km」 (28px) on one line,
+    // the times under the name when a long name leaves no room.
+    const section = continued => {
+      const title = `${subject.name}${continued ? '（續）' : ''}`, detail = `${span}・${subject.distanceKm}`;
+      const width = S.width - 2 * S.side - 28;
+      const nameLines = wrap(title, S.sectionFont, width, measure, { bold: true });
+      const oneLine = nameLines.length === 1 && measure(`${title}  ${detail}`, S.sectionFont, true) <= width;
+      const lines = oneLine ? 1 : nameLines.length + 1;
+      return { type: 'section', subjectIndex, color, title, detail, titleLines: nameLines, oneLine,
+        height: Math.max(S.sectionHeight, 24 + lines * 48) };
+    };
     // 判定表「PNG 第 1 張放不下清單」: the header goes with the first row.
-    if (page.height + (multi ? S.sectionHeight : 0) + rows[0].height > room) newPage();
+    if (page.height + (multi ? section(false).height : 0) + rows[0].height > room) newPage();
     if (multi) add(section(false));
     rows.forEach((row, index) => {
-      if (page.height + row.height > room) { newPage(); if (multi) add(section(index > 0)); }
+      if (page.height + row.height > room) {
+        newPage();
+        if (multi) add(section(index > 0));
+      }
       add(row);
     });
   });
