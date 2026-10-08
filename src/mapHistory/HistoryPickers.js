@@ -46,7 +46,7 @@ export const DogsSheet = forwardRef(function DogsSheet(
       </View>)}
       {(model.full || model.addable.length > 0) && <View testID="history-dogs-add-section">
         <View style={styles.sectionRow}>
-          <Text style={styles.section}>加入</Text>
+          <Text style={[styles.section, model.full && styles.faded]}>加入</Text>
           {model.note && <Text style={[styles.section, styles.sectionNote]}>{model.note}</Text>}
         </View>
         {model.addable.map(dog => <Pressable key={dog.id} testID={`history-add-${dog.id}`}
