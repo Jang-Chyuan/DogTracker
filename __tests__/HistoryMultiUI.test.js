@@ -73,7 +73,7 @@ test('「＋ 加入」: the list, a dog without records faded, added with the sm
   expect(four.screen.full).toBe(true);
   await act(async () => four.press('history-add'));
   expect(four.text()).toContain('最多同時 4 隻');
-  expect(four.text()).not.toContain('加入狗');
+  expect(four.renderer.root.findAll(node => node.props.testID === 'history-add-sheet')).toHaveLength(0);
   await unmount(four);
 });
 

@@ -56,18 +56,19 @@ const CLOSE_MOTION = LayoutAnimation.create(
   LayoutAnimation.Properties.opacity,
 );
 
-function Capsule({ children, onPress, testID, label, style, disabled }) {
+function Capsule({ children, onPress, testID, label, style, disabled, onLayout }) {
   const styles = useStyles(getStyles);
   const body = <View style={[styles.capsule, style]}>{children}</View>;
   if (!onPress)
     return (
-      <View testID={testID} accessible accessibilityLabel={label}>
+      <View testID={testID} accessible accessibilityLabel={label} onLayout={onLayout}>
         {body}
       </View>
     );
   return (
     <PressScale
       testID={testID}
+      onLayout={onLayout}
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
@@ -125,11 +126,17 @@ function DogChip({ dog, name, onPress, onRemove, onLayout }) {
   );
 }
 
+/** Compare the natural chips' width with the middle slot before reserving ＋. */
+export function historyChipsOverflow(available, dogWidths, addWidth) {
+  if (!available || !addWidth || dogWidths.some(width => width == null)) return false;
+  return dogWidths.reduce((sum, width) => sum + width, 0) + dogWidths.length * 8 + addWidth + 4 > available;
+}
+
 /**
  * The top row: ‹ 回到現在 (fixed left), the dogs and ＋ 加入 (scrolling
- * sideways when they do not fit) or 「我的路線」; the export icon fixed right.
+ * sideways when they do not fit); the add button then stays beside export.
  */
-function TopRow({
+export function TopRow({
   top,
   subject,
   dogs,
@@ -150,6 +157,10 @@ function TopRow({
   // tapped on the map can lead to a chip out of sight).
   const scroller = useRef(null);
   const places = useRef({});
+  const [available, setAvailable] = useState(0);
+  const [addWidth, setAddWidth] = useState(0);
+  const [dogWidths, setDogWidths] = useState({});
+  const overflow = historyChipsOverflow(available, dogs.map(dog => dogWidths[dog.id]), addWidth);
   const lead = dogs.find(dog => dog.protagonist)?.id;
   useEffect(() => {
     const place = places.current[lead];
@@ -171,6 +182,13 @@ function TopRow({
           </Capsule>
         </View>
       ) : (
+        <View style={styles.dogMiddle} testID="history-chip-space"
+          onLayout={event => setAvailable(event.nativeEvent.layout.width)}>
+        <View style={styles.measureAdd} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Capsule onLayout={event => setAddWidth(event.nativeEvent.layout.width)}>
+            <Text style={styles.capsuleText}>＋ 加入</Text>
+          </Capsule>
+        </View>
         <ScrollView
           ref={scroller}
           horizontal
@@ -189,19 +207,28 @@ function TopRow({
               onRemove={() => onRemove(dog.id)}
               onLayout={event => {
                 places.current[dog.id] = event.nativeEvent.layout;
+                const width = event.nativeEvent.layout.width;
+                setDogWidths(previous => previous[dog.id] === width ? previous : { ...previous, [dog.id]: width });
               }}
             />
           ))}
           {/* 滿 4 隻: 40% but still tappable (it says 最多同時 4 隻). */}
-          <Capsule
+          {!overflow && <Capsule
             testID="history-add"
-            label={full ? '加入，最多同時 4 隻' : '加入'}
+            label="加入狗"
             onPress={onAdd}
             style={full && styles.faded}
           >
             <Text style={styles.capsuleText}>＋ 加入</Text>
-          </Capsule>
+          </Capsule>}
         </ScrollView>
+        {overflow && <PressScale testID="history-add" accessibilityRole="button"
+          accessibilityLabel="加入狗" onPress={onAdd} style={styles.addHit}>
+          <View style={[styles.capsule, styles.addRound, full && styles.faded]}>
+            <Text style={styles.capsuleText}>＋</Text>
+          </View>
+        </PressScale>}
+        </View>
       )}
       {/* 產生中: a 20dp spinner instead, not pressable (判定表「載入中、產生中」). */}
       <PressScale testID="history-export" accessibilityRole="button"
@@ -700,6 +727,10 @@ const getStyles = makeStyles(theme => {
     },
     // Room above and below for the capsules' shadows and the 48dp touch.
     middle: { flex: 1, marginVertical: -8 },
+    dogMiddle: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    measureAdd: { position: 'absolute', opacity: 0 },
+    addHit: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+    addRound: { width: 36, height: 36, borderRadius: 18, paddingHorizontal: 0, justifyContent: 'center' },
     chips: {
       flexDirection: 'row',
       alignItems: 'center',
