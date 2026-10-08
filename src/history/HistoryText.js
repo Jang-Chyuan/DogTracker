@@ -100,7 +100,11 @@ export function nodePill(node) {
  */
 export function placeLines(node, place = { state: 'none' }) {
   const where = coordinates(node);
-  if (place?.state === 'found') return { title: place.text, titleMuted: false, coordinates: where, missing: '' };
+  // 「（約 120 m）」 wraps as one piece, never after 「約」.
+  if (place?.state === 'found') {
+    return { title: place.text.replace(/（約 (\d+) m）/u, '（約\u00A0$1\u00A0m）'), titleMuted: false,
+      coordinates: where, missing: '' };
+  }
   if (place?.state === 'pending') return { title: '查地址中…', titleMuted: true, coordinates: where, missing: '' };
   if (node.type === 'indoor') return { title: '停留（室內）', titleMuted: false, coordinates: where, missing: '' };
   return { title: where, titleMuted: false, coordinates: '', missing: '查不到地址' };
