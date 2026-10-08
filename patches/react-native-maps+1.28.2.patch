@@ -1,3 +1,25 @@
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
+index 555ab38..5c86c9a 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
+@@ -322,14 +322,9 @@ public class MapViewManager extends ViewGroupManager<MapView> implements RNMapsM
+             MapMarker markerView = (MapMarker) child;
+             // Marker is already added as invisible, restore visibility when image loads
+             markerView.setImageLoadedListener((uri, drawable, b) -> {
+-                com.google.android.gms.maps.model.Marker googleMarker =
+-                    (com.google.android.gms.maps.model.Marker) markerView.getFeature();
+-                if (googleMarker != null) {
+-                    // Restore original visibility (marker was hidden temporarily during image load)
+-                    if (View.VISIBLE == markerView.getVisibility()) {
+-                        googleMarker.setVisible(true);
+-                    }
+-                }
++                // DOGTRACKER_NO_DEFAULT_PIN: the marker is not shown here; the image
++                // may not have produced an icon, and update(true) shows the
++                // marker only once it has one (MapMarker.updateMarkerIcon).
+                 markerView.update(true);
+             });
+         }
 diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java
 index 3e0250f..95cc196 100644
 --- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java

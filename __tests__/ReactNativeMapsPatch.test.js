@@ -16,28 +16,37 @@ const patchFile = path.join(
   'patches',
   `react-native-maps+${mapsPackage.version}.patch`,
 );
-const markerSource = path.join(
+const javaRoot = path.join(
   path.dirname(require.resolve('react-native-maps/package.json')),
-  'android/src/main/java/com/rnmaps/maps/MapMarker.java',
+  'android/src/main/java/com/rnmaps',
 );
+const markerSource = path.join(javaRoot, 'maps/MapMarker.java');
+const mapViewManagerSource = path.join(javaRoot, 'fabric/MapViewManager.java');
 
 test('the react-native-maps patch exists for the installed version', () => {
   const patch = fs.readFileSync(patchFile, 'utf8');
   expect(patch).toContain(MARK);
   expect(patch).toContain('android/src/main/java/com/rnmaps/maps/MapMarker.java');
+  expect(patch).toContain('android/src/main/java/com/rnmaps/fabric/MapViewManager.java');
   // Only the Java source: no build outputs in the patch.
   expect(patch).not.toMatch(/^diff --git .*\/build\//m);
 });
 
 test('every npm install applies the patch', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  expect(pkg.scripts.postinstall).toBe('patch-package');
+  // --error-on-fail: a patch that no longer applies fails the install
+  // everywhere, not only in CI.
+  expect(pkg.scripts.postinstall).toBe('patch-package --error-on-fail');
   expect(pkg.devDependencies['patch-package']).toBeTruthy();
 });
 
 test('the installed MapMarker.java is patched: a marker without its own icon is hidden, never the default pin', () => {
   const source = fs.readFileSync(markerSource, 'utf8');
   expect(source).toContain(MARK);
+  // Its own icon = a view of its own or an image; nothing else.
+  expect(source).toMatch(
+    /private boolean hasOwnIcon\(\) \{\s*return hasCustomMarkerView \|\| iconBitmapDescriptor != null;\s*\}/,
+  );
   // New markers start hidden until their view arrives …
   expect(source).toMatch(/options\.visible\(hasOwnIcon\(\)\);/);
   // … and a marker that loses its view is hidden instead of re-iconed.
@@ -46,7 +55,15 @@ test('the installed MapMarker.java is patched: a marker without its own icon is 
     source.indexOf('public LatLng interpolate'),
   );
   expect(update).toMatch(/if \(!hasOwnIcon\(\)\) \{\s*if \(marker\.isVisible\(\)\) marker\.setVisible\(false\);\s*return;/);
-  expect(update.indexOf('marker.setIcon(getIcon())')).toBeLessThan(
-    update.indexOf('marker.setVisible(true)'),
-  );
+  // Shown only after it has been given its own icon.
+  const setIcon = update.indexOf('marker.setIcon(getIcon())');
+  const show = update.indexOf('marker.setVisible(true)');
+  expect(setIcon).toBeGreaterThan(-1);
+  expect(show).toBeGreaterThan(setIcon);
+});
+
+test('the image-load callback no longer shows a marker by itself', () => {
+  const source = fs.readFileSync(mapViewManagerSource, 'utf8');
+  expect(source).toContain(MARK);
+  expect(source).not.toMatch(/setVisible\(true\)/);
 });
