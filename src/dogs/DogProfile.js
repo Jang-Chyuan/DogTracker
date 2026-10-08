@@ -293,11 +293,11 @@ const getStyles = makeStyles(theme => {
       borderRadius: CAMERA / 2,
       backgroundColor: colors.surface,
       borderWidth: 1,
-      borderColor: colors.line,
+      // floatingOutline is line in light, the visible dark outline in dark.
+      borderColor: colors.floatingOutline,
       alignItems: 'center',
       justifyContent: 'center',
       ...shadow.floating,
-      ...theme.floatingBorder,
       elevation: 4,
     },
     cameraPressed: { backgroundColor: colors.bg },

@@ -61,7 +61,9 @@ darkTheme.appColors = {
 };
 darkTheme.floatingShadow = darkTheme.shadow.floating;
 export const resolveStyles = factory => factory(getTheme());
-lightTheme.floatingBorder = {};
+// Light sets the width to 0 rather than leaving it out: a border taken away
+// on a live dark → light switch left the history panel undrawn on Android.
+lightTheme.floatingBorder = { borderWidth: 0 };
 darkTheme.floatingBorder = {
   borderWidth: 1,
   borderColor: darkTheme.colors.floatingOutline,

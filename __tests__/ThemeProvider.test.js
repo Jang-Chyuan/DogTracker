@@ -79,3 +79,11 @@ test('unspecified scheme defaults to light; non-hook consumers read Appearance',
   jest.spyOn(Appearance, 'getColorScheme').mockReturnValue('dark');
   expect(getTheme()).toBe(darkTheme);
 });
+
+test('the floating border keeps its width key in light (removing it on a live dark → light switch left the history panel undrawn)', () => {
+  const { lightTheme, darkTheme } = require('../src/theme/ThemeProvider');
+  expect(lightTheme.floatingBorder).toEqual({ borderWidth: 0 });
+  expect(Object.keys(darkTheme.floatingBorder)).toEqual(
+    expect.arrayContaining(Object.keys(lightTheme.floatingBorder)),
+  );
+});
