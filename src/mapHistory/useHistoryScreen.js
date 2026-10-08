@@ -279,7 +279,8 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     startDownload(shownKey, reread);
     return { type: 'download', day: shownKey };
   }, [online, shownKey, startDownload, reread]);
-  const download = downloadPanel(cloudDays.download, { day: shownKey, hasRows: !!model?.dayRecords });
+  const download = downloadPanel(cloudDays.download, { day: shownKey, hasRows: !!model?.dayRecords,
+    incomplete: knowledge.incomplete.includes(shownKey) });
   // A screen fixture can open on another day (preset.goTo: H3c starts its
   // download), once per opening.
   const goToNow = useRef(goTo);
@@ -310,7 +311,7 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     error: day$.error, previousDay, nextDay, changeDay, moveCursor, dragRange, commitRange, draft,
     // The calendar (054b).
     dayKey: shownKey, todayKey, knowledge, goTo, download, cancelDownload: cancel, retryDownload,
-    askMonth: cloudDays.askMonth, askYear: cloudDays.askYear, retryQuery: cloudDays.retryQuery,
+    cloudScope: cloudDays.cloudScope, askMonth: cloudDays.askMonth, askYear: cloudDays.askYear, retryQuery: cloudDays.retryQuery,
     stopQuery: cloudDays.stopQuery,
   };
 }

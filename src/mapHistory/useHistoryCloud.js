@@ -7,6 +7,13 @@ import { dayBounds, dayKey } from '../history/screen/HistoryScreenDates';
 import { daysBetween, monthQueryRange, monthsToCheck, walkCloudDays } from '../history/screen/HistoryCalendar';
 
 const EMPTY = { cloud: [], checked: [], earliest: null };
+// Days whose download was not finished, per scope (subject, account and
+// fixture), for as long as the app runs (判定表「補下載完成」: only a finished download is complete).
+const INCOMPLETE = new Map();
+const incompleteOf = key => {
+  if (!INCOMPLETE.has(key)) INCOMPLETE.set(key, new Set());
+  return INCOMPLETE.get(key);
+};
 const merge = (list, more) => (more.length ? [...new Set([...list, ...more])] : list);
 
 /**
@@ -29,6 +36,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
   const asking = useRef(null);
   const lastAsk = useRef(null);
   const downloading = useRef(null);
+  const downloadSeq = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -38,6 +46,8 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
   useEffect(() => () => {
     asking.current?.abort();
     asking.current = null;
+    // A late answer of the old subject's download is not this one's.
+    downloadSeq.current += 1;
     downloading.current?.abort();
     downloading.current = null;
     lastAsk.current = null;
@@ -154,9 +164,18 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
     setQuery({ scope, status: 'idle' });
   }, [scope]);
   // ---- downloading a day --------------------------------------------------
-  const downloadSeq = useRef(0);
+  const incompleteKey = scope;
+  const [incompleteRevision, setIncompleteRevision] = useState(0);
+  const markIncomplete = useCallback((day, value) => {
+    const days = incompleteOf(incompleteKey);
+    if (value === days.has(day)) return;
+    if (value) days.add(day); else days.delete(day);
+    setIncompleteRevision(revision => revision + 1);
+  }, [incompleteKey]);
   const startDownload = useCallback((day, onEnd) => {
     if (!enabled) return;
+    // Incomplete until it has finished.
+    markIncomplete(day, true);
     downloading.current?.abort();
     const controller = new AbortController();
     downloading.current = controller;
@@ -168,6 +187,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
       .then(() => {
         if (!alive.current || downloadSeq.current !== id) return;
         setDownload({ day, status: 'done', id });
+        markIncomplete(day, false);
         // Downloaded (rows or not): the cloud was asked about this day.
         add([], [day]);
         onEnd?.('done');
@@ -178,7 +198,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
         onEnd?.('failed');
       })
       .finally(() => { if (downloading.current === controller) downloading.current = null; });
-  }, [enabled, cloud, slaveId, add]);
+  }, [enabled, cloud, slaveId, add, markIncomplete]);
   /** 取消, 返回鍵, ‹ › or another day while downloading. */
   const cancelDownload = useCallback(() => {
     if (!downloading.current) return false;
@@ -190,8 +210,10 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
     return true;
   }, []);
   const knowledge = useMemo(() => ({ local, cloud: known.cloud, checked: known.checked, earliest: known.earliest,
-    cloudEnabled: enabled && !known.none, query: enabled ? status : 'idle' }),
-  [local, known, enabled, status]);
-  return { knowledge, askMonth, askYear, retryQuery, stopQuery, download, startDownload, cancelDownload,
+    cloudEnabled: enabled && !known.none, query: enabled ? status : 'idle',
+    incomplete: enabled ? [...incompleteOf(incompleteKey)] : [] }),
+  // incompleteRevision stands for INCOMPLETE's contents.
+  [local, known, enabled, status, incompleteKey, incompleteRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { knowledge, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download, startDownload, cancelDownload,
     downloadingDay: download?.status === 'downloading' ? download.day : null };
 }

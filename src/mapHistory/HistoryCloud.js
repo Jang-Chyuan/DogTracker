@@ -10,6 +10,10 @@ import { getCloudClient } from '../cloud/CloudClient';
 
 // 判定表「月曆查詢雲端失敗」: a question unanswered after 10 s has failed.
 export const CLOUD_QUESTION_MS = 10000;
+// A day's download reaches past the day by upload time: the half hour before
+// (the list's context) and two hours after (rows uploaded late).
+export const DOWNLOAD_BEFORE_MS = 30 * 60000;
+export const DOWNLOAD_AFTER_MS = 2 * 3600000;
 
 const iso = value => new Date(value).toISOString();
 
@@ -46,6 +50,9 @@ async function oneTime(query, signal, ms) {
  */
 export function createHistoryCloud({ client, database, owner, runManual, questionMs = CLOUD_QUESTION_MS }) {
   const rows = slaveId => client.from('dog_telemetry').select('received_at').eq('slave_id', slaveId);
+  // One download at a time: a cancelled one keeps the sync's slot until it
+  // has stopped, so the next waits for it instead of being refused.
+  let previous = Promise.resolve();
   return {
     owner,
     /** The time of the dog's newest row in [since, cutoff), or null. */
@@ -58,14 +65,24 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
       return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
     },
     /** Downloads the dog's rows of [dayStart, dayEnd) into this phone. */
-    async download({ slaveId, dayStart, dayEnd, signal }) {
-      await database.initialize();
-      const abort = new AbortController();
-      if (signal?.aborted) abort.abort();
-      signal?.addEventListener?.('abort', () => abort.abort());
-      const work = leaseCurrent => downloadCloudHistory({ client, database, owner, startAt: iso(dayStart),
-        endBefore: iso(dayEnd), slaveId, signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
-      return runManual ? runManual(work, abort) : work(() => true);
+    download({ slaveId, dayStart, dayEnd, signal }) {
+      const before = previous;
+      const run = (async () => {
+        await before.catch(() => {});
+        if (signal?.aborted) throw new Error('下載已取消');
+        await database.initialize();
+        const abort = new AbortController();
+        if (signal?.aborted) abort.abort();
+        signal?.addEventListener?.('abort', () => abort.abort());
+        // By upload time (received_at): rows shown on this day by their fix
+        // time can arrive a little before it and up to a while after it.
+        const work = leaseCurrent => downloadCloudHistory({ client, database, owner,
+          startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId,
+          signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+        return runManual ? runManual(work, abort) : work(() => true);
+      })();
+      previous = run;
+      return run;
     },
   };
 }

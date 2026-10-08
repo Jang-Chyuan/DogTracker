@@ -148,3 +148,16 @@ test('H3c and its cancelled or failed ends', () => {
   expect(downloadPanel({ day, status: 'downloading' }, { day: today, hasRows: true })).toBe(null);
   expect(downloadPanel(null, { day, hasRows: true })).toBe(null);
 });
+
+test('a day whose download was not finished: a dot, downloaded again when chosen; today only in the cloud downloads too', () => {
+  const partial = { ...checkedOctober, incomplete: ['2026-09-29'] };
+  expect(dayCell('2026-09-29', { today, selected: today, knowledge: partial })).toMatchObject({ state: 'partial',
+    dot: true, tappable: true, label: '9 月 29 日，有紀錄，還沒下載完' });
+  expect(chooseDay('2026-09-29', { today, knowledge: partial })).toEqual({ type: 'download', day: '2026-09-29' });
+  expect(downloadPanel(null, { day: '2026-09-29', hasRows: true, incomplete: true }))
+    .toEqual({ kind: 'incomplete', text: '資料不完整', action: '重試' });
+  const cloudToday = { cloud: [today], cloudEnabled: true };
+  expect(chooseDay(today, { today, knowledge: cloudToday })).toEqual({ type: 'download', day: today });
+  expect(chooseDay(today, { today, knowledge: cloudToday, online: false }).type).toBe('offline');
+  expect(chooseDay(today, { today, knowledge: { cloudEnabled: true, checked: [today] } }).type).toBe('show');
+});

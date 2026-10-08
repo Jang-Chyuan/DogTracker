@@ -113,7 +113,8 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet({ screen, 
   useEffect(() => {
     if (picker != null) askYear?.(picker);
     else askMonth?.(shown);
-  }, [shown.year, shown.month, picker]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Asked again for another subject or account (signed in with the sheet open).
+  }, [shown.year, shown.month, picker, screen.cloudScope]); // eslint-disable-line react-hooks/exhaustive-deps
   useImperativeHandle(ref, () => ({
     back: () => {
       if (picker != null) { setPicker(null); return true; }
