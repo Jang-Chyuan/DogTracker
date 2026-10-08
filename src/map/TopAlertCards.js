@@ -79,7 +79,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
       <View style={styles.body} accessible accessibilityRole={info ? undefined : 'alert'}
         accessibilityLabel={`${value.title}，${value.detail}`}>
         <Text style={[styles.title, !info && styles.alertTitle]} numberOfLines={2}>{value.title}</Text>
-        <Text style={styles.detail} numberOfLines={info ? 3 : 2}>{value.detail}</Text>
+        <Text style={[styles.detail, !info && styles.alertDetail]} numberOfLines={info ? 3 : 2}>{value.detail}</Text>
         {info && (
           <View style={styles.buttons}>
             {value.actions.map(action => <Pill key={action.id} action={action} onPress={onAction} />)}
@@ -143,6 +143,7 @@ const styles = StyleSheet.create({
   title: { ...type.cardTitle, color: colors.text },
   alertTitle: { color: colors.crit },
   detail: { ...type.small, color: colors.textMuted },
+  alertDetail: { color: colors.alertDetail },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: card.gap, marginTop: card.gap },
   pill: {
     height: card.buttonHeight, borderRadius: radius.full, paddingHorizontal: 12, justifyContent: 'center',

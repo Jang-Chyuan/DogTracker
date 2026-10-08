@@ -61,6 +61,8 @@ export const colors = {
   route4: '#8A55B0',
   alertBorder: '#F4CFC9',
   alertIconBg: '#FDE7E4',
+  // The second line of a problem card (top card): muted red-brown.
+  alertDetail: '#8A5A55',
   // Receiver range ring (1 km): drawn with rangeRingOpacity below.
   rangeRing: '#5B7A8C',
   // Timeline track where there is no data (long dash).
