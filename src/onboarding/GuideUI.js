@@ -119,8 +119,6 @@ export function GuideDialog({ dialog, onPress, onClose, testID = 'guide-dialog' 
 }
 
 export const guideStyles = StyleSheet.create({
-  section: { ...type.captionBold, color: colors.textMuted, marginTop: space.xl, paddingBottom: space.s,
-    borderBottomWidth: 1, borderBottomColor: colors.line },
   link: { ...type.captionBold, color: colors.tonalText },
 });
 

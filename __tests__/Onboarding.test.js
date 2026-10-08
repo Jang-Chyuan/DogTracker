@@ -208,9 +208,12 @@ const receiver7 = { enabled: true, running: true, connected: true, deviceId: 'AA
   serviceUuid: 's', dataUuid: 'd', expectedMasterId: 7, sessionId: 'old', lastReceivedAt: 1 };
 const device8 = { id: 'AA:08', name: 'DogGPS-Master8', rssi: -60 };
 
+// D3 as shown on screen (its page laid out: the camera may be asked).
 function pairing(props) {
-  return renderHook(usePairing, { android: true, version: 34, permissions: allowAll(), native: null,
+  const hook = renderHook(usePairing, { android: true, version: 34, permissions: allowAll(), native: null,
     restore: jest.fn(async () => {}), ...props });
+  act(() => hook.get().onShown());
+  return hook;
 }
 
 beforeEach(() => {
@@ -339,7 +342,13 @@ test('D3: Bluetooth off, 附近的裝置 refused (asked once), location off on A
   hook.unmount();
 });
 
-test('the camera: asked once in D3a; refused → 需要相機才能掃描 (c259)', async () => {
+test('the camera: asked once in D3a, only once it is on screen; refused → 需要相機才能掃描 (c259)', async () => {
+  const early = allowAll({ check: jest.fn(async () => false) });
+  const unseen = renderHook(usePairing, { android: true, version: 34, permissions: early, native: null,
+    flow: pairingFlow('onboarding'), ble: fakeBle() });
+  await act(async () => {});
+  expect(early.request).not.toHaveBeenCalled();
+  unseen.unmount();
   const permissions = allowAll({ check: jest.fn(async () => false), request: jest.fn(async () => 'denied') });
   const onAsked = jest.fn();
   let hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), permissions, onAsked });

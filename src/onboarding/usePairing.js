@@ -52,6 +52,9 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
   const startConnected = flow.guide && receiverSetUp(receiverState) && !!receiverState?.enabled;
   const [view, setView] = useState(() => fixture?.view ?? (startConnected ? 'connected' : initialView));
   const [camera, setCamera] = useState(fixture?.camera ?? 'checking');
+  // D3a is on screen (laid out): only then may the camera question come,
+  // never over the page before it.
+  const [shown, setShown] = useState(false);
   const [dialog, setDialog] = useState(() => (fixture?.dialog
     ? pairingDialog(fixture.dialog.kind, { mode: flow.mode, ...fixture.dialog }) : null));
   const [target, setTarget] = useState(fixture?.target ?? null);
@@ -199,13 +202,13 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fixture, android, permissions, asked.camera]);
   useEffect(() => {
-    if (view !== 'scan' || fixture) return undefined;
+    if (view !== 'scan' || fixture || !shown) return undefined;
     checkCamera({ ask: true });
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') checkCamera({ ask: false });
     });
     return () => subscription.remove();
-  }, [view, fixture, checkCamera]);
+  }, [view, fixture, checkCamera, shown]);
 
   // ---- connecting -------------------------------------------------------
   // `next`: { name, number, method: 'qr' | 'manual', device? }.
@@ -397,6 +400,7 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
 
   return {
     view, camera, dialog, target, nearby, nameSearch, input, inputError, connectedNumber,
+    onShown: () => setShown(true),
     waitingForData: !!waiting.current,
     onQr, cancel, search: () => search(), searchName, pickNearby, typeName, press, back,
     closeDialog: () => {
