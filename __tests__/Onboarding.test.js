@@ -1,10 +1,10 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { AppState, Linking, PermissionsAndroid, Platform } from 'react-native';
+import { AppState, Linking, PermissionsAndroid, Platform, Text } from 'react-native';
 import { androidPermissions, askableIds, grantOf, neededPermissions, permissionsPage } from '../src/onboarding/Permissions';
 import {
   addNearby, CONNECT_TIMEOUT_MS, FIRST_PACKET_MS, pairedPage, pairingDialog, pairingFlow, parseReceiverName,
-  signalLabel, SEARCH_MS,
+  signalBars, signalBarsLabel, SEARCH_MS,
 } from '../src/onboarding/Pairing';
 import { usePairing } from '../src/onboarding/usePairing';
 import { usePermissionsGuide } from '../src/onboarding/usePermissionsGuide';
@@ -161,9 +161,9 @@ test('typed names: case and spaces ignored (c262), signal words, the nearby list
   expect(parseReceiverName('DogGPS-Master')).toBeNull();
   expect(parseReceiverName('Master7')).toBeNull();
   expect(parseReceiverName('DogGPS-Master0')).toBeNull();
-  expect(signalLabel(-58)).toBe('訊號強');
-  expect(signalLabel(-86)).toBe('訊號弱');
-  expect(signalLabel(null)).toBe('');
+  expect(signalBarsLabel(signalBars(-58))).toBe('訊號強');
+  expect(signalBarsLabel(signalBars(-86))).toBe('訊號弱');
+  expect(signalBarsLabel(signalBars(null))).toBe('');
   let list = [];
   list = addNearby(list, { id: 'a', name: 'DogGPS-Master3', rssi: -86 });
   list = addNearby(list, { id: 'b', localName: 'DogGPS-Master7', rssi: -58 });
@@ -586,6 +586,12 @@ test('pair-* fixtures draw the D3 state their names say', async () => {
     let renderer;
     act(() => { renderer = Renderer.create(<PairingScreen pairing={hook.get()} step={3} camera={false} />); });
     if (expected.text) expect(words(renderer)).toContain(expected.text);
+    if (name === 'pair-manual-nearby') {
+      expect(renderer.root.findAllByType(Text).map(node => node.props.children).join()).not.toMatch(/訊號[強中弱]/);
+      expect(renderer.root.findByProps({ testID: 'pair-nearby-DogGPS-Master7' })
+        .props.accessibilityLabel).toBe('DogGPS-Master7，訊號強');
+      expect(renderer.root.findAllByProps({ testID: 'pair-signal-bars' }).length).toBeGreaterThan(0);
+    }
     // A fixture scans, asks and connects nothing.
     expect(ble.scan).not.toHaveBeenCalled();
     expect(ble.connect).not.toHaveBeenCalled();
@@ -594,7 +600,7 @@ test('pair-* fixtures draw the D3 state their names say', async () => {
     hook.unmount();
   }
   const manual = fixtureScreen('pair-manual-nearby').pairing;
-  expect(manual.nearby.map(item => signalLabel(item.rssi))).toEqual(['訊號強', '訊號弱']);
+  expect(manual.nearby.map(item => signalBarsLabel(signalBars(item.rssi)))).toEqual(['訊號強', '訊號弱']);
 });
 
 test('pair-done-sources / pair-done-empty draw D4 and D4b', () => {
@@ -630,4 +636,11 @@ test('native storage errors reach the App with no receiver page open, then recov
   expect(database.saveStatus).toHaveBeenCalledTimes(1);
   expect(ble.disconnect).not.toHaveBeenCalled();
   hook.unmount();
+});
+
+test('signal bars include RSSI boundaries and unknown readings', () => {
+  expect([-59, -60, -61, -70, -71, -80, -81, null, undefined, NaN, Infinity]
+    .map(signalBars)).toEqual([4, 4, 3, 3, 2, 2, 1, 0, 0, 0, 0]);
+  expect([0, 1, 2, 3, 4].map(signalBarsLabel))
+    .toEqual(['', '訊號弱', '訊號中', '訊號強', '訊號強']);
 });

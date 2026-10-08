@@ -20,7 +20,8 @@ import {
   useKeyboardHeight,
 } from './GuideUI';
 import QrCamera from './QrCamera';
-import { signalLabel } from './Pairing';
+import { signalBars, signalBarsLabel } from './Pairing';
+import SignalBars from './SignalBars';
 import { radius, space, type } from '../theme/tokens';
 
 // The frame's backdrop before (or without) the camera picture.
@@ -348,7 +349,7 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           key={item.id}
           testID={`pair-nearby-${item.name}`}
           accessibilityRole="button"
-          accessibilityLabel={[item.name, signalLabel(item.rssi)]
+          accessibilityLabel={[item.name, signalBarsLabel(signalBars(item.rssi))]
             .filter(Boolean)
             .join('，')}
           onPress={() => pairing.pickNearby(item)}
@@ -359,7 +360,7 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           ]}
         >
           <Text style={styles.nearbyName}>{item.name}</Text>
-          <Text style={styles.signal}>{signalLabel(item.rssi)}</Text>
+          <SignalBars bars={signalBars(item.rssi)} />
         </Pressable>
       ))}
       {nearby.done && !nearby.list.length ? (
@@ -546,7 +547,6 @@ const getStyles = makeStyles(theme => {
     lastNearby: { borderBottomWidth: 0 },
     pressedRow: { backgroundColor: colors.pressedOverlay },
     nearbyName: { ...type.body, color: colors.text, flex: 1 },
-    signal: { ...type.caption, color: colors.textMuted },
     none: { ...type.body, color: colors.textMuted, marginTop: space.l },
     again: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start' },
     connectedRow: {

@@ -13,7 +13,6 @@ export const SEARCH_MS = 30 * 1000;
 // Changing receivers: after the link, the first packet must come within this.
 export const FIRST_PACKET_MS = 60 * 1000;
 // 訊號強 from here up (dBm), 訊號弱 below.
-export const STRONG_RSSI = -70;
 
 /**
  * A typed receiver name as the scan compares it (「手動輸入的格式」: case and
@@ -34,10 +33,14 @@ export function receiverNumberOf(name) {
   return parseReceiverName(name)?.number ?? null;
 }
 
-/** 訊號強 / 訊號弱 (c043/c044) for a scan's RSSI; nothing when unknown. */
-export function signalLabel(rssi) {
-  if (!Number.isFinite(rssi)) return '';
-  return rssi >= STRONG_RSSI ? '訊號強' : '訊號弱';
+/** Four phone-style signal bars; unknown scans have no icon. */
+export function signalBars(rssi) {
+  if (!Number.isFinite(rssi)) return 0;
+  return rssi >= -60 ? 4 : rssi >= -70 ? 3 : rssi >= -80 ? 2 : 1;
+}
+
+export function signalBarsLabel(bars) {
+  return bars >= 3 ? '訊號強' : bars === 2 ? '訊號中' : bars === 1 ? '訊號弱' : '';
 }
 
 /**

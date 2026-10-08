@@ -986,7 +986,7 @@ const FIXTURES = {
   'pair-camera-denied': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
     pairing: { view: 'scan', camera: 'denied' } }),
   // D3c: 「DogGPS-Master 7」 typed; still searching, two receivers found so
-  // far (7 strong, 3 weak).
+  // far (receiver 7: four bars, receiver 3: one bar).
   'pair-manual-nearby': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
     pairing: { view: 'manual', input: 'DogGPS-Master 7', searching: true,
       nearby: [{ id: 'AA:BB:CC:00:00:07', name: 'DogGPS-Master7', rssi: -58 },

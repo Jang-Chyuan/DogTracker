@@ -125,7 +125,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `onboard-permissions-done` | D2d：三列都「已允許」、按鈕「下一步」 |
 | `pair-wrong-qr` | D3b：掃到不是接收器的 QR →「這不是接收器的 QR Code」「手動輸入」「再掃一次」 |
 | `pair-camera-denied` | D3a 相機被拒：掃描框換成「需要相機才能掃描」「開系統設定 ›」，下面照樣有「手動輸入」 |
-| `pair-manual-nearby` | D3c：輸入「DogGPS-Master 7」，搜尋中，附近找到 DogGPS-Master7（訊號強）、DogGPS-Master3（訊號弱） |
+| `pair-manual-nearby` | D3c：輸入「DogGPS-Master 7」，搜尋中，附近找到 DogGPS-Master7（4 格訊號）、DogGPS-Master3（1 格訊號）；不寫訊號強弱，TalkBack 保留 |
 | `pair-connecting` | D3d：「正在連 DogGPS-Master7…」＋「取消」 |
 | `pair-failed` | D3d 30 秒連不上：「連不上接收器 7」「手動輸入」「重試」 |
 | `pair-mismatch` | QR 寫 7、收到 3：「這不是要連的接收器」「要連 7，收到的是 3，已中斷連線」「稍後再說」「重新掃描」 |
