@@ -134,7 +134,9 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     page = { width: S.width, title: head.title, subtitle: head.subtitle, titleLines, subtitleLines, titleHeight,
       legend, legendHeight, blocks: [], height: top };
     if (first) {
-      page.blocks.push({ type: 'map', y: top, height: S.mapHeight, width: S.width, padding: 72,
+      // 128 px keeps every route point clear of the 指北 disc (centre 72 px in
+      // from the top-right corner, radius 40) and endpoint labels inside the frame.
+      page.blocks.push({ type: 'map', y: top, height: S.mapHeight, width: S.width, padding: 128,
         subjects: subjects.map((subject, index) => ({ ...subject.map, color: subject.routeColor || routeColors[index % 4] })),
         holds: subjects.flatMap(subject => subject.holds || []),
         timeMarkers: multi ? 'endpoints' : 'all', cursor: null, fadeByCursor: false,
