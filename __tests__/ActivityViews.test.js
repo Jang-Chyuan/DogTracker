@@ -185,3 +185,97 @@ test('local calendar days retain DST capacity rather than adding fixed 24 hours'
     expect(monthView.bars[day - 1].capacityMinutes).toBe((next - start) / M);
   }
 });
+
+// The one-pass classify() against activityState() judged at every minute (the
+// first model's loop), on random minutes with gaps around both thresholds.
+describe('classify matches activityState at every minute', () => {
+  const { activityState } = require('../src/activity/ActivityMinutes');
+  const { classify } = require('../src/activity/views/ActivityViews');
+  const reference = values => {
+    const n = values.length;
+    const rest = new Uint8Array(n);
+    const vigorous = new Uint8Array(n);
+    for (let t = 0; t < n; t += 1) {
+      const window = [];
+      for (let k = Math.max(0, t - 9); k <= t; k += 1) {
+        if (!Number.isNaN(values[k])) window.push({ minute: k * M, value: values[k] });
+      }
+      const result = activityState(window, { end: t * M });
+      if (result.state !== 'rest' && result.state !== 'vigorous') continue;
+      const target = result.state === 'rest' ? rest : vigorous;
+      for (let k = result.since / M; k <= t; k += 1) target[k] = 1;
+    }
+    return { rest, vigorous };
+  };
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  test.each([0, 1, 2, 3, 4, 5])('random series %i', () => {
+    const values = Float64Array.from({ length: 600 }, (_, i) => {
+      const r = random();
+      if (r < 0.12) return NaN;
+      const phase = Math.floor(i / 40) % 3;
+      if (phase === 0) return random() < 0.9 ? 0.03 : 0.2;
+      if (phase === 1) return random() < 0.6 ? 0.9 : 0.5;
+      return 0.3;
+    });
+    const fast = classify(values);
+    const slow = reference(values);
+    expect(Array.from(fast.rest)).toEqual(Array.from(slow.rest));
+    expect(Array.from(fast.vigorous)).toEqual(Array.from(slow.vigorous));
+  });
+});
+
+test('a whole year of minutes builds quickly', () => {
+  const start = date(1, 1);
+  const now = date(10, 7, 9, 30);
+  const minutes = [];
+  for (let t = start; t < now; t += M) minutes.push({ minute: t, value: (t / M) % 97 < 30 ? 0.02 : 0.4, count: 2 });
+  const began = Date.now();
+  const view = buildYearView({ date: now, now, earliest: start, minutes });
+  expect(Date.now() - began).toBeLessThan(2000);
+  expect(view.bars).toHaveLength(12);
+  expect(view.totals.missing).toBe(0);
+  expect(view.bars[11].pendingMinutes).toBe(view.bars[11].capacityMinutes);
+});
+
+test('年 built month by month equals 年 built at once', () => {
+  const { combineYearView, buildActivityView, activityPeriod: periodOf } = require('../src/activity/views/ActivityViews');
+  const start = date(3, 16, 8);
+  const now = date(10, 7, 9, 30);
+  const minutes = [];
+  for (let t = start; t < now; t += M) {
+    // A rest that runs over midnight into April, gaps over a month end.
+    if (t >= date(5, 31, 23, 50) && t < date(6, 2)) continue;
+    minutes.push({ minute: t, value: (t / M) % 211 < 90 ? 0.02 : (t / M) % 211 < 95 ? 0.9 : 0.4, count: 1 });
+  }
+  const whole = buildYearView({ date: now, now, earliest: start, minutes });
+  const months = [];
+  for (let month = 1; month <= 10; month += 1) {
+    const period = periodOf('month', date(month, 1));
+    months.push(buildActivityView({ mode: 'month', date: period.start, now, earliest: date(1, 1),
+      minutes: minutes.filter(item => item.minute >= period.start - 9 * M && item.minute < period.end + 9 * M) }));
+  }
+  const combined = combineYearView({ date: now, now, earliest: start, months });
+  expect(combined.totals).toEqual(whole.totals);
+  expect(combined.bars).toEqual(whole.bars);
+  expect(combined.rows).toEqual(whole.rows);
+  expect(combined.navigation).toEqual(whole.navigation);
+  expect(combined.label).toBe(whole.label);
+});
+
+test('time before the dog\'s first reading is not 沒有資料', () => {
+  const first = date(10, 1, 12);
+  const view = buildDayView({ date: START, now: NOW, earliest: first, since: first,
+    readings: input(first, [0.3, 0.3, 0.3]) });
+  expect(view.totals).toEqual({ rest: 0, normal: 3, vigorous: 0, missing: 12 * 60 - 3 });
+  expect(view.rows[2].rangeLabels).toEqual(['12:03–24:00']);
+  expect(view.points[0]).toMatchObject({ value: null, state: 'before' });
+  const week = buildWeekView({ date: START, now: NOW, earliest: first, since: first,
+    minutes: [{ minute: first, value: 0.3, count: 1 }] });
+  expect(week.bars[0].totals).toEqual({ rest: 0, normal: 0, vigorous: 0, missing: 0 });
+  expect(week.bars[0].pendingMinutes).toBe(1440);
+  expect(week.rows[2].rangeLabels[0]).toBe('10/1（四） 12:01–24:00');
+});

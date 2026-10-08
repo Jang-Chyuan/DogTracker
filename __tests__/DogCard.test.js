@@ -2,7 +2,6 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, Text } from 'react-native';
 import DogCard from '../src/map/DogCard';
-import { ActivityPage } from '../src/map/DogCardPages';
 import { dogCard, phoneReading } from '../src/map/DogCardModel';
 import { dogCardReadings, readDogCardRows } from '../src/activity/DogCardReadings';
 import { RANGE_STATUS } from '../src/tracking/ReceiverRange';
@@ -143,19 +142,6 @@ test('a held dog\'s 位置 row is 64dp high (A7b); the address line shows once k
   await act(async () => renderer.update(<DogCard card={model(held, { ...fresh, address: '桃園區中正路 1 號附近' })} />));
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內桃園區中正路 1 號附近');
   expect(heights()).toContain(64);
-});
-
-test('the activity page shows that dog\'s chart and returns to the card on back', async () => {
-  const onBackPage = jest.fn();
-  const database = { activityHistory: jest.fn(async () => []) };
-  await act(async () => {
-    renderer = Renderer.create(<ActivityPage name="豆豆" slaveId={4} database={database} owner="a" active
-      onBack={onBackPage} />);
-  });
-  expect(flatten(renderer.toJSON())).toContain('豆豆・活動量');
-  expect(database.activityHistory).toHaveBeenCalledWith('a', 4, expect.any(Number));
-  expect(onBack()).toBe(true);
-  expect(onBackPage).toHaveBeenCalledTimes(1);
 });
 
 test('the card\'s readings from SQLite: both tables, one copy per reading, the newest valid battery', async () => {

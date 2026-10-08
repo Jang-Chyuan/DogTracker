@@ -54,6 +54,8 @@
 | `activityNormal` | `#D3CCC4` | `#7A706A` | 一般活動：A4 圖 |
 | `activityHigh` | `#E07A2E` | `#F0944A` | 高活動：A4 圖（圖形，不放字） |
 | `activityHighText` | `#B85A12` | `#F5A86A` | 卡片「劇烈活動」的字 |
+| `activityHighBand` | `#FDE7D6` | `#362A21` | A4 日：「高活動 0.8 以上」的區域、劇烈那幾段時間的淡底（區域標籤用 `warn` 字） |
+| `activityLowBand` | `#E6ECF3` | `#212B36` | A4 日：「低活動 0.05 以下」的區域、休息那幾段時間的淡底（區域標籤用 `textMuted` 字） |
 | `staleFace` | `#C9CFCC` | `#59615E` | 沒有新位置時插圖頭像的底色（照片轉灰階） |
 | `staleRing` | `#6B7470` | `#96A09B` | 歷史游標停在沒資料時段時的灰色虛線外圈（即時地圖不用） |
 | `route1` | `#D9604F` | `#FF8A78` | 狗的路線色槽 1（從卡片進來的那隻） |
