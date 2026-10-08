@@ -1,6 +1,6 @@
 // The export snapshot (H9/H10, 判定表「匯出快照和停在原處」): what the
 // history screen shows at the moment a format is chosen — the range, every
-// dog shown that has data in it (or my route), in the 資料來源 chosen — as
+// dog shown that has data in it (or my route), local and cloud merged — as
 // the plain data the GPX, CSV and PNG builders read (ExportBuilders.md). Pure:
 // the hook hands in the day's model (HistoryMultiModel.multiDayModel), the
 // dogs' looks and the addresses already looked up.

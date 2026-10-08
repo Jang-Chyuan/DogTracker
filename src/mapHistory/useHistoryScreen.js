@@ -1,6 +1,6 @@
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
 // route; H1/H2/H2b/H3a/H7/H8): the day shown, the rows of each dog shown, the
-// protagonist, the 資料來源, the range (automatic or the one the user dragged,
+// protagonist (local and cloud rows always merged), the range (automatic or the one the user dragged,
 // remembered per day), the shared cursor and what the map draws.
 // The rules are the pure modules of src/history and src/history/screen.
 import { useTheme, getTheme, resolveStyles } from '../theme/ThemeProvider';
