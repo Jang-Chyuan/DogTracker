@@ -528,7 +528,8 @@ function Summary({ view }) {
         return (
           <View
             key={row.state}
-            style={styles.row}
+            // Several lines: the label stays level with the first one.
+            style={[styles.row, (lines.length > 1 || total) && styles.rowTall]}
             testID={`activity-row-${row.state}`}
           >
             <Text style={styles.rowLabel}>{row.label}</Text>
@@ -687,7 +688,8 @@ const getStyles = makeStyles(theme => {
       borderTopWidth: 1,
       borderTopColor: colors.line,
     },
-    rowLabel: { ...type.value, fontSize: 16, color: colors.text },
+    rowTall: { alignItems: 'flex-start', paddingTop: space.m },
+    rowLabel: { ...type.value, fontSize: 16, lineHeight: 24, color: colors.text },
     rowValues: { alignItems: 'flex-end', flexShrink: 1 },
     rowValue: { ...type.body, ...tabularNumbers, fontSize: 14, color: colors.textMuted },
     rowTotal: { ...type.small, ...tabularNumbers, color: colors.textMuted },
