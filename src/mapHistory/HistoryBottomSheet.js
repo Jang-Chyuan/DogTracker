@@ -7,7 +7,6 @@ import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View, useWin
 import { colors, motion, radius, size as sizes, space, touch, type } from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
-const HANDLE = '#B9C3BD';
 
 /**
  * `title`, `children` (the rows), `onClosed()` once it has slid away. Ref:
@@ -67,6 +66,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, paddingHorizontal: space.l,
     paddingTop: space.s, elevation: 24,
   },
-  handle: { alignSelf: 'center', width: 32, height: 4, borderRadius: 2, backgroundColor: HANDLE, marginBottom: space.s },
+  handle: { alignSelf: 'center', width: 32, height: 4, borderRadius: 2, backgroundColor: colors.sheetHandle, marginBottom: space.s },
   title: { ...type.status, color: colors.text, minHeight: touch.min, textAlignVertical: 'center', paddingTop: 12 },
 });

@@ -107,9 +107,9 @@ export function CursorFaceView({ lines, color, stale = false, face, onLabelHeigh
         <Text allowFontScaling={false} style={styles.cursorDetail}>{lines?.[1]}</Text>
       </View>
       <View style={{ height: FACE_GAP }} />
-      <View style={[styles.faceHalo, stale ? styles.faceStale : { backgroundColor: withAlpha(color, 0.28) }]}>
+      <View style={[styles.faceHalo, stale ? styles.faceStale : { backgroundColor: withAlpha(color, opacity.faceGlow) }]}>
         <DogAvatar avatar={face?.avatar} size={FACE} border={2.5} snapshot
-          tint={face?.avatar ? null : { bg: color, line: '#FFFFFF' }} />
+          tint={face?.avatar ? null : { bg: color, line: colors.onRoute }} />
       </View>
       <View style={{ height: FACE_TAG_GAP }} />
       <View style={styles.faceTag}>

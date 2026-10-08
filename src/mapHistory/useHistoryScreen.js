@@ -213,7 +213,7 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   const subjects = loadedDogs.map(d => ({ id: d.id, subject: subject === 'phone' ? 'phone' : 'dog',
     rows: rowsOf(d.id).rows, replayHolds: subject === 'dog' ? rowsOf(d.id).replayHolds : undefined }));
   const versions = loadedDogs.map(d => `${d.id}:${rowsOf(d.id).version}`).join('|');
-  const hasRowsShown = subjects.some(s => dayHasRecords(s.rows, { dayStart: day, dayEnd }));
+  const hasRowsShown = subjects.some(s => dayHasRecords(s.rows, { source, dayStart: day, dayEnd }));
   const localDays = useMemo(() => [...new Set([...days, ...(hasRowsShown ? [shownKey] : [])])].sort(),
     [days, hasRowsShown, shownKey]);
   // The cloud's days of the dogs shown (054b): the calendar's dots, ‹ › and
@@ -234,7 +234,10 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   // (memoryScope), and can start with one already dragged (preset.manual, H2b).
   const memoryKeyOf = id => `${memoryScope}${subjectKey(id)}:${dayKey(new Date(day))}`;
   const entryShown = dogIds.includes(entryId);
-  const writeKey = memoryKeyOf(entryShown ? entryId : current.protagonist);
+  // Not the protagonist of the moment: switching it never changes the range
+  // (加入、移除、換主角都不改範圍); the dog that gave the range does.
+  const rangeDog = current.rangeOwner ?? current.protagonist;
+  const writeKey = memoryKeyOf(entryShown ? entryId : rangeDog);
   const presetKey = preset?.manual ? `${writeKey}:${JSON.stringify(preset.manual)}` : '';
   const presetDone = useRef('');
   if (presetKey && presetDone.current !== presetKey) {
@@ -243,7 +246,7 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   }
   const [memoryRevision, setMemoryRevision] = useState(0);
   const readKey = entryShown && rememberedRange(memoryKeyOf(entryId)) ? memoryKeyOf(entryId)
-    : memoryKeyOf(current.protagonist);
+    : memoryKeyOf(rangeDog);
   // memoryRevision stands for the memory's contents.
   const remembered = useMemo(() => rememberedRange(readKey), [readKey, memoryRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   // While a handle is dragged: the range being made (list and summary follow).
@@ -438,11 +441,13 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
       return;
     }
     setSelection(state => ({ ...state, protagonist: id }));
+    // 換主角時的共用時刻: the time stays (it no longer follows the newest fix).
+    if (cursorTime == null && time != null) setCursorTime(time);
     setPressed(null);
     setInGap(false);
     // 換主角時的地圖: always to the new protagonist's cursor (a chosen move).
     setFocus({ key: Date.now(), time: null, action: 'protagonist', id });
-  }, [dogs, protagonistId, cursor]);
+  }, [dogs, protagonistId, cursor, cursorTime, time]);
   /** ✕ on a chip (not on the last one). */
   const shownRange = dayModel?.range ?? null;
   const removeDog = useCallback(id => {
@@ -450,12 +455,13 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
       if (state.dogs.length < 2) return state;
       const next = dogTransition(state, { type: 'remove', id });
       // The dog that gave the range goes: the range stays as it is (移除不改範圍).
-      const gave = state.rangeOwner === id;
+      const gave = state.rangeOwner === id || (id === entryId && !!remembered);
       return { ...next, message: null, rangeOwner: gave ? next.protagonist : state.rangeOwner,
         kept: gave && shownRange ? shownRange : state.kept ?? null };
     });
+    if (cursorTime == null && time != null) setCursorTime(time);
     haptic('tick');
-  }, [shownRange]);
+  }, [shownRange, entryId, remembered, cursorTime, time]);
   /** A row of 「＋ 加入」: added with the smallest free colour; full at four. */
   const addDog = useCallback(dog => {
     if (current.dogs.length >= MAX_DOGS) { say(`最多同時 ${MAX_DOGS} 隻`); return false; }
@@ -471,9 +477,11 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     if (!HISTORY_SOURCE_OPTIONS.some(option => option.id === value)) return;
     cancel();
     setSelection(state => (state.source === value ? state : { ...state, source: value }));
+    // 換資料來源後主角沒資料…游標不動.
+    if (cursorTime == null && time != null) setCursorTime(time);
     setDraft(null);
     setPressed(null);
-  }, [cancel]);
+  }, [cancel, cursorTime, time]);
   /** Whether a dog not shown has records on the day shown in the source (加入 list). */
   const checkDay = useCallback(async id => {
     if (!readDays) return true;

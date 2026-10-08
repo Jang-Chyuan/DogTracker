@@ -11,7 +11,7 @@ import Glyph from '../map/Glyph';
 import { MapTip, PressScale } from '../map/MapControls';
 import { emptyText } from '../history/HistoryText';
 import { dateRowLabel } from '../history/screen/HistoryScreenDates';
-import { colors, layout, motion, radius, shadow, size as sizes, space, touch, type } from '../theme/tokens';
+import { colors, layout, motion, opacity, radius, shadow, size as sizes, space, touch, type } from '../theme/tokens';
 import HistoryPanel from './HistoryPanel';
 import HistoryRangeSummary from './HistoryRangeSummary';
 import HistoryTimelineList from './HistoryTimelineList';
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   capsule: { height: sizes.chip.height, borderRadius: sizes.chip.height / 2, paddingHorizontal: sizes.chip.paddingH,
     backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 6, ...shadow.floating },
   dogCapsule: { borderWidth: sizes.chip.leadBorder, paddingHorizontal: sizes.chip.paddingH - sizes.chip.leadBorder },
-  faded: { opacity: 0.4 },
+  faded: { opacity: opacity.disabled },
   remove: { marginLeft: -2, marginRight: -4, paddingHorizontal: 4, height: sizes.chip.height, justifyContent: 'center' },
   removeText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
   sourceRow: { height: sizes.sheet.dataSourceRow, justifyContent: 'center', paddingHorizontal: space.l,
