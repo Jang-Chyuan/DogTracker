@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Alert, NativeModules, Platform } from 'react-native';
 import { sharedBleService } from '../ble/sharedBle';
-import { judgeSwitch, mismatchDialog, snapshotReceiver } from './ReceiverSwitch';
+import { judgeSwitch, mismatchDialog, notChangedMessage, snapshotReceiver } from './ReceiverSwitch';
 
 /**
  * Settings → 接收器 (S2): 中斷連線, 重新連線, and the watch over a change of
@@ -20,17 +20,26 @@ export function useReceiverControl({ receiverState, onRescan, ble = sharedBleSer
   const disconnect = useCallback(() => ble.disconnect(), [ble]);
   const reconnect = useCallback(() => native?.reconnect?.().catch(() => {}), [native]);
 
-  const fail = useCallback(async mismatch => {
-    const { previous } = pending.current || {};
-    pending.current = null;
-    // Put the previous receiver back, switched off; on a first set up forget
-    // the wrong one.
+  // Puts `previous` back as the receiver this phone is set up for, switched
+  // off (an empty one forgets the receiver). The shared BLE service lets go
+  // of the attempt first, so its callbacks for the new Master cannot act on
+  // the restored receiver's packets.
+  const restore = useCallback(async previous => {
+    ble.disconnect();
     try {
       await native?.restoreReceiver?.(previous?.deviceId || '', previous?.deviceName || '',
         previous?.serviceUuid || '', previous?.dataUuid || '', previous?.expectedMasterId || 0);
     } catch {
       // The receiver page shows whatever the service reports next.
     }
+  }, [ble, native]);
+
+  const fail = useCallback(async mismatch => {
+    const { previous } = pending.current || {};
+    pending.current = null;
+    // Put the previous receiver back, switched off; on a first set up forget
+    // the wrong one.
+    await restore(previous);
     const dialog = mismatchDialog(mismatch, previous);
     Alert.alert(dialog.title, dialog.message, dialog.buttons.map(button => ({
       text: button.label,
@@ -40,7 +49,19 @@ export function useReceiverControl({ receiverState, onRescan, ble = sharedBleSer
         else if (button.id === 'rescan') rescan.current?.();
       },
     })), { cancelable: true });
-  }, [native]);
+  }, [native, restore]);
+
+  // The QR-chosen receiver did not connect: the change does not happen. The
+  // previous receiver comes back as it was (connected again if it was).
+  const switchFailed = useCallback(async () => {
+    if (!pending.current) return;
+    const { previous } = pending.current;
+    pending.current = null;
+    if (!previous) return;
+    await restore(previous);
+    if (previous.enabled) native?.reconnect?.().catch(() => {});
+    Alert.alert(notChangedMessage(previous));
+  }, [native, restore]);
 
   // A QR code chose Master `target`: remember what to put back.
   const watchSwitch = useCallback(target => {
@@ -59,5 +80,5 @@ export function useReceiverControl({ receiverState, onRescan, ble = sharedBleSer
     else if (verdict !== 'pending') fail(verdict);
   }, [receiverState, fail]);
 
-  return { disconnect, reconnect, watchSwitch, reportMismatch };
+  return { disconnect, reconnect, watchSwitch, reportMismatch, switchFailed };
 }

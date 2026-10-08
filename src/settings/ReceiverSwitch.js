@@ -19,6 +19,9 @@ export function snapshotReceiver(state) {
     dataUuid: state.dataUuid || '',
     expectedMasterId: Number(state.expectedMasterId) || 0,
     number: receiverNumber(state),
+    // Connected before the change: a change that does not happen
+    // reconnects it.
+    enabled: !!state.enabled,
   };
 }
 
@@ -44,6 +47,11 @@ export function judgeSwitch(state, target, session = null) {
     return 'matched';
   }
   return 'pending';
+}
+
+/** What a change that did not connect says (c294). */
+export function notChangedMessage(previous) {
+  return previous?.number != null ? `沒有更換，還是接收器 ${previous.number}` : '沒有更換接收器';
 }
 
 /**

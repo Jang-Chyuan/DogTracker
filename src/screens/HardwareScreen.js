@@ -32,7 +32,7 @@ import WifiSettingsScreen from '../screens/WifiSettingsScreen';
 // onQrTarget(masterId): a QR code chose this receiver (settings watches its
 // first packet); onMismatch({ expected, got }): another Master answered.
 export default function HardwareScreen({ dogDatabase, active = true, onBack, onStorageError, backRequest = 0,
-  entry = null, onConnected, onQrTarget, onMismatch }) {
+  entry = null, onConnected, onConnectFailed, onQrTarget, onMismatch }) {
   const [bleService] = useState(() => sharedBleService);
   const databaseReadyRef = useRef(null);
   const lastSavedAtBySlaveRef = useRef(new Map());
@@ -100,6 +100,20 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
       subscription.remove();
     };
   }, [bleService, scanning, connecting, qrScanning, onStorageError]);
+
+  // Leaving the page stops a scan still running; a connection that finishes
+  // after the user left does not navigate (onConnected) from another page.
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useEffect(() => {
+    if (active) return;
+    bleService.stopScan?.();
+    setScanning(false);
+    setQrScanning(false);
+  }, [active, bleService]);
+  const finishConnect = ok => {
+    if (ok && activeRef.current) onConnected?.();
+  };
 
   const goBack = useRef(null);
   goBack.current = () => {
@@ -199,7 +213,7 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
         config,
         setBleStatus,
         async device => {
-          if (connectingFromQr) return;
+          if (connectingFromQr || !activeRef.current) return;
           connectingFromQr = true;
           setScanning(false);
           setSelectedDevice(device);
@@ -225,7 +239,9 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
           );
           setConnecting(false);
           setConnected(ok);
-          if (ok) onConnected?.();
+          // Not connected (yet): the change of receiver did not happen.
+          if (!ok) onConnectFailed?.();
+          finishConnect(ok);
         },
         () => {
           setScanning(false);
@@ -252,7 +268,7 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
     setConnected(ok);
     if (ok) {
       applyProfile('default');
-      onConnected?.();
+      finishConnect(ok);
     }
   };
 
