@@ -5,6 +5,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
+import DogAvatar from '../dogs/DogAvatar';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { colors, opacity, size as sizes } from '../theme/tokens';
 
@@ -76,9 +77,46 @@ export function CursorMarkerView({ lines, color, stale = false, onLabelHeight })
 export const CURSOR_GAP = sizes.cursor.labelGap - (sizes.cursor.halo - (sizes.cursor.dot + sizes.cursor.border * 2)) / 2;
 
 /** The cursor marker's anchor for a label `labelHeight` high: the dot's centre. */
-export function cursorAnchor(labelHeight) {
+export function cursorAnchor(labelHeight, face = false) {
+  if (face) {
+    const total = labelHeight + FACE_GAP + FACE_HALO + FACE_TAG_GAP + FACE_TAG;
+    return { x: 0.5, y: (labelHeight + FACE_GAP + FACE_HALO / 2) / total };
+  }
   const total = labelHeight + CURSOR_GAP + sizes.cursor.halo;
   return { x: 0.5, y: (labelHeight + CURSOR_GAP + CURSOR_BELOW) / total };
+}
+
+// 多隻狗時的游標點 (the protagonist): a 40dp face in a glow of its route
+// colour, its name right under it, the label 12dp above the face.
+export const FACE = 40;
+const FACE_HALO = FACE + 16;
+const FACE_GAP = sizes.cursor.labelGap - (FACE_HALO - FACE) / 2;
+const FACE_TAG_GAP = 2 - (FACE_HALO - FACE) / 2;
+const FACE_TAG = 22;
+
+/**
+ * The protagonist's cursor among several dogs: the two-line label, the face
+ * (its own avatar) with a route-colour glow, and the name tag. Without data
+ * at the cursor's time: no glow, a grey dashed ring (判定表「主角在游標時間沒資料」).
+ */
+export function CursorFaceView({ lines, color, stale = false, face, onLabelHeight }) {
+  return (
+    <View style={styles.cursor}>
+      <View style={styles.cursorLabel} onLayout={event => onLabelHeight?.(event.nativeEvent.layout.height)}>
+        <Text allowFontScaling={false} style={styles.cursorTime}>{lines?.[0]}</Text>
+        <Text allowFontScaling={false} style={styles.cursorDetail}>{lines?.[1]}</Text>
+      </View>
+      <View style={{ height: FACE_GAP }} />
+      <View style={[styles.faceHalo, stale ? styles.faceStale : { backgroundColor: withAlpha(color, 0.28) }]}>
+        <DogAvatar avatar={face?.avatar} size={FACE} border={2.5} snapshot
+          tint={face?.avatar ? null : { bg: color, line: '#FFFFFF' }} />
+      </View>
+      <View style={{ height: FACE_TAG_GAP }} />
+      <View style={styles.faceTag}>
+        <Text allowFontScaling={false} style={styles.faceName} numberOfLines={1}>{face?.name}</Text>
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -101,4 +139,11 @@ const styles = StyleSheet.create({
   halo: { width: sizes.cursor.halo, height: sizes.cursor.halo, borderRadius: sizes.cursor.halo / 2,
     alignItems: 'center', justifyContent: 'center' },
   staleHalo: { borderWidth: 2, borderStyle: 'dashed', borderColor: colors.staleRing },
+  faceHalo: { width: FACE_HALO, height: FACE_HALO, borderRadius: FACE_HALO / 2, alignItems: 'center',
+    justifyContent: 'center' },
+  faceStale: { width: FACE + 8, height: FACE + 8, margin: (FACE_HALO - FACE - 8) / 2, borderWidth: 2,
+    borderStyle: 'dashed', borderColor: colors.staleRing },
+  faceTag: { height: FACE_TAG, paddingHorizontal: 6, borderRadius: 6, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: colors.surface, justifyContent: 'center', maxWidth: 160 },
+  faceName: { fontSize: 13, lineHeight: 16, fontWeight: '700', color: colors.text },
 });

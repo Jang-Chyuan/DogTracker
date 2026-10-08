@@ -15,14 +15,15 @@ const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
 const TOUCH = 48;
 
 /** The summary's two lines while the bar is closed, or open (the range itself). */
-export function rangeSummaryLines(model, { subject, open, range }) {
+export function rangeSummaryLines(model, { subject, open, range, who = null }) {
   if (!model?.points.length) return null;
-  if (!open) return summaryText(model, { subject });
-  const until = range.following ? '現在' : clock(range.end);
-  return {
-    title: `${clock(range.start)} – ${until}`,
-    detail: `${subject === 'phone' ? '走了' : '移動'} ${km(model.distanceM)}・${summaryDuration(model.durationMs)}`,
-  };
+  // Several dogs: the second line names the protagonist (c158: 「豆豆・移動 7.4 km」).
+  const moved = who ? `${who}・移動 ${km(model.distanceM)}`
+    : `${subject === 'phone' ? '走了' : '移動'} ${km(model.distanceM)}・${summaryDuration(model.durationMs)}`;
+  const until = range?.following ? '現在' : clock(range?.end);
+  if (!open && !who) return summaryText(model, { subject });
+  // Several dogs share one range: the title is that range, whoever leads.
+  return { title: `${clock(range.start)} – ${until}`, detail: moved };
 }
 
 function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
@@ -124,11 +125,12 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
  * my route's recording was switched off then (「記錄已在 10:20 關閉」).
  */
 export default function HistoryRangeSummary({ model, subject, range, track, today, open, onToggle, onDrag, onCommit,
-  closedAt = null }) {
-  const lines = rangeSummaryLines(model, { subject, open, range });
+  closedAt = null, dayPoints: shared = null, who = null }) {
+  const lines = rangeSummaryLines(model, { subject, open, range, who });
   if (!lines) return null;
-  const enabled = model.dayPoints?.length > 1
-    && model.dayPoints[model.dayPoints.length - 1].time - model.dayPoints[0].time >= 60000;
+  // The handles snap to every shown dog's fixes (判定表「多隻狗的共同範圍」).
+  const dayPoints = shared?.length ? shared : model.dayPoints;
+  const enabled = dayPoints?.length > 1 && dayPoints[dayPoints.length - 1].time - dayPoints[0].time >= 60000;
   const speech = `${lines.title.replace(' – ', ' 到 ')}，${lines.detail}${enabled ? '，點兩下調整範圍' : ''}`;
   return (
     <View style={[styles.box, open && styles.boxOpen]} testID="history-summary">
@@ -154,7 +156,7 @@ export default function HistoryRangeSummary({ model, subject, range, track, toda
       {open && (
         <>
           <Text style={styles.hint}>拖兩端的圓點改開始、結束</Text>
-          <RangeBar range={range} track={track} dayPoints={model.dayPoints} today={today}
+          <RangeBar range={range} track={track} dayPoints={dayPoints} today={today}
             onDrag={onDrag} onCommit={onCommit} />
         </>
       )}
