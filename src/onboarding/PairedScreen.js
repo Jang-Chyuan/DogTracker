@@ -13,7 +13,7 @@ const SITTING_DOG = ['M38 37c8-7 36-7 44 0', 'M39 35C24 35 17 52 21 71c2 7 9 8 1
 
 function SittingDog({ size = 80 }) {
   return (
-    <Svg width={size} height={size} viewBox="14 26 92 110" accessible={false}>
+    <Svg width={size} height={size} viewBox="12 24 104 112" accessible={false}>
       {SITTING_DOG.map(d => <Path key={d} d={d} stroke={colors.text} strokeWidth={4} fill="none"
         strokeLinecap="round" strokeLinejoin="round" />)}
       <Circle cx={49} cy={58} r={3.4} fill={colors.text} />

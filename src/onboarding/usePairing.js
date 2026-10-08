@@ -8,6 +8,7 @@ import { receiverSetUp } from '../settings/SettingsModel';
 import { receiverNumber } from '../map/ReceiverState';
 import { addNearby, CONNECT_TIMEOUT_MS, FIRST_PACKET_MS, pairingDialog, parseReceiverName, SEARCH_MS } from './Pairing';
 
+const NO_IDS = Object.freeze([]);
 const normalized = name => String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const openBluetooth = () => Linking.sendIntent('android.bluetooth.adapter.action.REQUEST_ENABLE')
   .catch(() => Linking.openSettings());
@@ -35,15 +36,16 @@ const sayNotChanged = message => {
  * - receiverState   the native state App polls (BleBackground.getState)
  * - service         { receiveData, onStatus }: useReceiverService's handlers
  * - restore(previous) puts a receiver back switched off (useReceiverControl)
- * - asked           { permissions, camera }: asked before (TrackingPreferences)
- * - onAsked(patch)  saves that a question was asked
+ * - asked           the system questions sent before ('nearby', 'location',
+ *                   'camera'…; TrackingPreferences.askedPermissions)
+ * - onAsked(list)   saves the list once another question is sent
  * - locationServices false when the phone's location switch is off
  * - onConnected({ number, method, previous, kept }) the receiver is in use
  * - onLeave(how)    'later' or 'back' out of D3 (after any restore)
  * - fixture         a screen state to draw (src/dev): nothing is scanned,
  *                   asked or connected
  */
-export function usePairing({ flow, receiverState, service = {}, restore, asked = {}, onAsked, locationServices = null,
+export function usePairing({ flow, receiverState, service = {}, restore, asked = NO_IDS, onAsked, locationServices = null,
   onConnected, onLeave, fixture = null, initialView = 'scan', ble = sharedBleService,
   native = Platform.OS === 'android' ? NativeModules.BleBackground : null, permissions = PermissionsAndroid,
   version = Platform.Version, android = Platform.OS === 'android' }) {
@@ -71,7 +73,13 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
   const waiting = useRef(null);
   const succeeded = useRef(false);
   const restored = useRef(false);
-  const askedNow = useRef({});
+  // Questions sent while D3 is open (the saved list may lag behind).
+  const askedNow = useRef([]);
+  const markAsked = id => {
+    askedNow.current = [...new Set([...asked, ...askedNow.current, id])];
+    Promise.resolve(callbacks.current.onAsked?.(askedNow.current)).catch(() => {});
+  };
+  const wasAsked = id => asked.includes(id) || askedNow.current.includes(id);
   const latest = useRef(receiverState);
   latest.current = receiverState;
   // The receiver used before a change (taken once, on the way in).
@@ -102,34 +110,41 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A change that did not happen: the old receiver as it was before
-  // (connected again if it was, for 'change'), and 「沒有更換，還是接收器 7」.
+  // Putting the receiver used before back: its settings, and its link if it
+  // was connected (never after 中斷並重新掃描, which leaves it disconnected).
+  // `oldLink` is 'paused' while an attempt has it off, 'back' once restored.
+  const oldLink = useRef(flow.waitForData ? 'paused' : 'back');
+  const restoring = useRef(Promise.resolve());
+  const putOld = () => {
+    oldLink.current = 'back';
+    const old = previous.current;
+    restoring.current = Promise.resolve(callbacks.current.restore?.(old)).then(() => {
+      if (old?.enabled && flow.mode !== 'rescan') return native?.reconnect?.();
+      return null;
+    }).catch(() => {});
+    return restoring.current;
+  };
+
+  // Out of D3 without a new receiver after a change: the old one as it was
+  // before, and 「沒有更換，還是接收器 7」 (c294).
   const putBack = () => {
     if (fixture || !flow.waitForData || succeeded.current || restored.current) return;
     restored.current = true;
-    const old = previous.current;
-    ble.disconnect();
-    Promise.resolve(callbacks.current.restore?.(old)).then(() => {
-      if (old && flow.restoreConnected && old.enabled) native?.reconnect?.().catch(() => {});
-    }).catch(() => {});
-    if (old) sayNotChanged(notChangedMessage(old));
+    if (oldLink.current === 'paused') { ble.disconnect(); putOld(); }
+    if (previous.current) sayNotChanged(notChangedMessage(previous.current));
   };
 
-  // An attempt that did not work out. A first set up puts back what was there
-  // at once (nothing: the attempted receiver is forgotten; after 換一台 the
-  // one before, connected again if it was); a change of receiver keeps the
-  // old link paused until D3 is left (putBack).
+  // An attempt that did not work out (取消, 30 s, another Master): the old
+  // receiver comes back at once — nothing on a first set up (the attempted
+  // one is forgotten), the one before after 換一台 or a change of receiver
+  // (判定表「換接收器」: 「取消、逾時、編號不符 → 恢復舊接收器和更換前的狀態」).
   const undo = () => {
     attempt.current += 1;
     clearTimers();
     waiting.current = null;
     if (fixture) return;
     ble.disconnect();
-    if (flow.waitForData) return;
-    const old = previous.current;
-    Promise.resolve(callbacks.current.restore?.(old)).then(() => {
-      if (old?.enabled) native?.reconnect?.().catch(() => {});
-    }).catch(() => {});
+    putOld();
   };
 
   const leave = how => {
@@ -162,9 +177,9 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
       .filter(Boolean);
     const has = async () => (await Promise.all(needed.map(check))).every(Boolean);
     if (!(await has())) {
-      if (!asked.permissions && !askedNow.current.permissions) {
-        askedNow.current.permissions = true;
-        Promise.resolve(callbacks.current.onAsked?.({ permissionsAsked: true })).catch(() => {});
+      const group = old ? 'location' : 'nearby';
+      if (!wasAsked(group)) {
+        markAsked(group);
         await Promise.resolve().then(() => permissions.requestMultiple(old
           ? [names.ACCESS_FINE_LOCATION, names.ACCESS_COARSE_LOCATION].filter(Boolean) : needed)).catch(() => null);
       }
@@ -191,16 +206,15 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
     if (!android) { setCamera('granted'); return; }
     const name = permissions.PERMISSIONS?.CAMERA;
     if (await check(name)) { if (alive.current) setCamera('granted'); return; }
-    if (ask && !asked.camera && !askedNow.current.camera) {
-      askedNow.current.camera = true;
-      Promise.resolve(callbacks.current.onAsked?.({ cameraAsked: true })).catch(() => {});
+    if (ask && !wasAsked('camera')) {
+      markAsked('camera');
       const answer = await Promise.resolve().then(() => permissions.request(name)).catch(() => null);
       if (alive.current) setCamera(answer === permissions.RESULTS?.GRANTED ? 'granted' : 'denied');
       return;
     }
     if (alive.current) setCamera('denied');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fixture, android, permissions, asked.camera]);
+  }, [fixture, android, permissions, asked]);
   useEffect(() => {
     if (view !== 'scan' || fixture || !shown) return undefined;
     checkCamera({ ask: true });
@@ -220,6 +234,12 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
     setNameSearch(null);
     setDialog(null);
     if (!(await ready()) || mine !== attempt.current) return;
+    // A restore still on its way finishes first; then the old link pauses
+    // for the attempt (掃描到比對完成之間舊連線先暫停).
+    await restoring.current;
+    if (mine !== attempt.current) return;
+    if (oldLink.current === 'back' && previous.current?.enabled) ble.disconnect();
+    oldLink.current = 'paused';
     setTarget(next);
     setView('connecting');
     const config = { bleName: next.name, serviceUuid: MASTER_SERVICE_UUID, masterId: next.number };

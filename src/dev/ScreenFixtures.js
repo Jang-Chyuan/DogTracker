@@ -672,10 +672,10 @@ const FIXTURES = {
   // D2c: 「全部允許」 ran; 附近的裝置 allowed, 精確位置 only 大概, 通知 refused
   // → red 「!」 with 「開系統設定 ›」 on both, the button 「下一步」.
   'onboard-permissions-partial': now => ({ ...FIXTURES['no-data'](now), openRoute: 'permissions',
-    permissionsGuide: { asked: true, grants: { nearby: 'granted', location: 'approximate', notifications: 'denied' } } }),
+    permissionsGuide: { asked: ['nearby', 'location', 'notifications'], grants: { nearby: 'granted', location: 'approximate', notifications: 'denied' } } }),
   // D2d: everything allowed: three ticks, 「下一步」.
   'onboard-permissions-done': now => ({ ...FIXTURES['no-data'](now), openRoute: 'permissions',
-    permissionsGuide: { asked: true, grants: { nearby: 'granted', location: 'granted', notifications: 'granted' } } }),
+    permissionsGuide: { asked: ['nearby', 'location', 'notifications'], grants: { nearby: 'granted', location: 'granted', notifications: 'granted' } } }),
   // D3b: a QR code that is not a receiver's → 「這不是接收器的 QR Code」.
   'pair-wrong-qr': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
     pairing: { view: 'scan', camera: 'granted', dialog: { kind: 'wrongQr' } } }),

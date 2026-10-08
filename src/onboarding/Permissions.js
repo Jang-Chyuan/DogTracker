@@ -51,9 +51,9 @@ export function grantOf(id, granted, permissions = {}) {
 
 /**
  * D2's rows and button. input: { needed (ids), grants ({ id: 'granted' |
- * 'approximate' | 'denied' }, a missing id = not known yet), asked (「全部
- * 允許」 ran, now or on an earlier visit), asking (the id whose system
- * question is open, or null while none is) }.
+ * 'approximate' | 'denied' }, a missing id = not known yet), asked (the ids
+ * whose system question was sent, now or on an earlier visit), asking (the
+ * id whose system question is open, or null while none is) }.
  *
  * Each row: { id, number, title, detail, state: 'todo' | 'ok' | 'asking' |
  * 'waiting' | 'problem', action (SYSTEM_SETTINGS or null) }. A row allowed is
@@ -65,8 +65,9 @@ export function grantOf(id, granted, permissions = {}) {
  * run, then only 「下一步」 (also when everything was allowed already); later
  * (「稍後再說」) is there until the questions are over.
  */
-export function permissionsPage({ needed, grants = {}, asked = false, asking = null }) {
+export function permissionsPage({ needed, grants = {}, asked = [], asking = null }) {
   const askingAt = asking ? needed.indexOf(asking) : -1;
+  const wasAsked = id => asked.includes(id);
   const rows = needed.map((id, index) => {
     const { title, purpose } = PERMISSION_ROWS[id];
     const base = { id, number: index + 1, title, action: null };
@@ -77,15 +78,23 @@ export function permissionsPage({ needed, grants = {}, asked = false, asking = n
     if (grant === 'approximate') {
       return { ...base, state: 'problem', detail: '只給了大概位置，算不出距離', action: SYSTEM_SETTINGS };
     }
-    if (grant === 'denied' && asked) return { ...base, state: 'problem', detail: '未允許', action: SYSTEM_SETTINGS };
+    if (grant === 'denied' && wasAsked(id)) return { ...base, state: 'problem', detail: '未允許', action: SYSTEM_SETTINGS };
     return { ...base, state: 'todo', detail: purpose };
   });
   const allGranted = needed.length > 0 && needed.every(id => grants[id] === 'granted');
   const known = needed.every(id => grants[id] != null);
   let primary;
   if (askingAt >= 0) primary = { id: 'asking', label: '詢問中…', disabled: true };
-  else if (asked || allGranted) primary = { id: 'next', label: '下一步', disabled: false };
+  // Nothing left to ask (each one allowed, or asked already): 下一步.
+  else if (known && askableIds({ needed, grants, asked }).length === 0) {
+    primary = { id: 'next', label: '下一步', disabled: false };
+  }
   // Until every row was checked the button waits (a moment at most).
   else primary = { id: 'allowAll', label: '全部允許', disabled: !known };
   return { rows, primary, later: primary.id !== 'next', allGranted };
+}
+
+/** The rows 「全部允許」 still asks: not allowed, and never asked before. */
+export function askableIds({ needed, grants = {}, asked = [] }) {
+  return needed.filter(id => grants[id] !== 'granted' && !asked.includes(id));
 }
