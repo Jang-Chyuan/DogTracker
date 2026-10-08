@@ -6,7 +6,6 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase, expireHistory, HISTORY_DATABASE_METHODS, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
 import { historyWindow, parseHistoryRange } from '../src/mapHistory/HistoryTime';
-import { serializeHistory } from '../src/mapHistory/HistoryExport';
 import { dogHistoryLabel } from '../src/mapHistory/DogAliases';
 
 test('dog aliases persist locally and clearing one restores its device label', async () => {
@@ -182,9 +181,6 @@ test('history lines and exports skip rows with no GPS fix', () => {
   expect(geometry.count).toBe(2);
   expect(geometry.segments.flat().every(point => point.latitude !== 0)).toBe(true);
   expect(geometry.latest).toMatchObject({ id: 3 });
-  const gpx = serializeHistory('gpx', { phone: rows, client: [], since: 1000, until: 4000 });
-  expect(gpx).not.toContain('lat="0"');
-  expect(gpx.match(/<trkpt /g)).toHaveLength(2);
 });
 
 test('every history database method is bound by the app composition', () => {

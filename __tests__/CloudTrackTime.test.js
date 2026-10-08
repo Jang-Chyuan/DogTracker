@@ -4,7 +4,6 @@ import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
 import { cloudTrackTime, repairCloudTrackTimes } from '../src/cloud/CloudTrackTime';
 import { createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
-import { serializeHistory } from '../src/mapHistory/HistoryExport';
 import { downloadCloudHistory } from '../src/cloud/CloudDownload';
 
 const base = Date.parse('2026-09-23T03:00:00Z');
@@ -44,9 +43,6 @@ test.each([false, true])('phone history, smoothing and export retain numeric tim
     expect(drawn.clients[0].latest.latitude).toBeCloseTo(25.003, 8);
     const exported = await history.read(prefs, 'a', 0, () => true, true, bounds);
     expect(exported.clients[0].rows[2].latitude).toBe(drawn.clients[0].latest.latitude);
-    expect(serializeHistory('gpx', exported)).toContain(`<time>${iso(20)}</time>`);
-    expect(serializeHistory('csv', exported)).toContain(iso(0));
-    expect(serializeHistory('csv', exported)).not.toContain(iso(1200));
     expect((await history.read(prefs, 'a', 0, () => true, true,
       { since: base + 1199000, until: base + 1300000 })).client).toHaveLength(0);
     expect((await cloud.listHistory('a'))[0].received_at).toBe(base + 1202000);

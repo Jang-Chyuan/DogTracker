@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HistoryScreen from '../mapHistory/HistoryScreen';
 import { panelLevels } from '../mapHistory/HistoryPanel';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
+import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
@@ -33,7 +34,7 @@ import TopAlertCards from '../map/TopAlertCards';
 import {
   gearLabel, gearReasons, receiverOutage, showsNoDogs, storageProblem, topCards, trackReceiverWait,
 } from '../map/TopAlerts';
-import { endOfDay, startOfToday, todayPill } from '../tracking/TodayDistance';
+import { startOfToday, todayPill } from '../tracking/TodayDistance';
 
 // How long the first framing waits for the phone's first position report
 // before framing without it (the launch screen is still up meanwhile).
@@ -98,8 +99,6 @@ export default function MapScreen({
   onAlertAction,
 }) {
   const insets = useSafeAreaInsets();
-  const snapshot = useRef(null);
-  const onSnapshotReady = useCallback(value => { snapshot.current = value; }, []);
   // The base map's state (GoogleTrackingMap): drives the 地圖載入失敗 card.
   const [mapState, setMapState] = useState('loading');
   const [mapRetry, setMapRetry] = useState(0);
@@ -330,15 +329,20 @@ export default function MapScreen({
   const target = historical ? historyTarget : null;
   const saveHistory = history?.save;
   const historyPreferences = history?.preferences;
-  // The export (the old one, until 056) reads the history query: it follows
-  // the day shown (useMapHistory.save).
-  const followDay = useCallback(dayStart => {
-    if (!saveHistory || !historyPreferences) return;
-    saveHistory({ ...historyPreferences, timeMode: 'fixed', startAt: dayStart, endAt: endOfDay(dayStart) });
-  }, [saveHistory, historyPreferences]);
+  // 「✓ 上次用」 (H9): the format exported last, kept with the history
+  // preferences on this phone (a fixture's only in memory).
+  const [fixtureExport, setFixtureExport] = useState(null);
+  const lastExport = fixture ? fixtureExport ?? fixture.historyView?.lastExport ?? 'png'
+    : historyPreferences?.exportFormat ?? 'png';
+  const rememberExport = useCallback(format => {
+    if (fixture) { setFixtureExport(format); return; }
+    if (!saveHistory || !historyPreferences || historyPreferences.exportFormat === format) return;
+    saveHistory({ ...historyPreferences, exportFormat: format });
+  }, [fixture, saveHistory, historyPreferences]);
+  const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
   const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
-    recording: livePhone ? !!livePhone.running : null, onDayChange: followDay,
+    recording: livePhone ? !!livePhone.running : null,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '', preset: fixture?.historyView ?? null,
     cloud: historyCloud?.cloud ?? null, online: historyCloud?.online !== false, cloudSeed: historyCloud?.seed ?? null });
@@ -559,7 +563,6 @@ export default function MapScreen({
         failure={fixture?.mapFailure ?? null}
         coverTop={cardsBottom}
         compassTop={compassTop}
-        onSnapshotReady={onSnapshotReady}
         livePhone={livePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
@@ -631,7 +634,8 @@ export default function MapScreen({
           levels={levels} bottomInset={insets.bottom} onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           onLevel={(level, height) => setPanel({ level, height })}
-          history={history} snapshot={snapshot}
+          exportNative={exportNative} lastExport={lastExport} onRememberExport={rememberExport}
+          initialExport={fixture?.historyView?.export ?? null}
           closedAt={target.subject === 'phone' && screen.today && livePhone && !livePhone.running
             ? screen.model?.points.at(-1)?.time ?? null : null} />
       )}

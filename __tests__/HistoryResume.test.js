@@ -3,7 +3,9 @@ import Renderer, { act } from 'react-test-renderer';
 import { useMapHistory } from '../src/mapHistory/useMapHistory';
 import { HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
 
-test('short resume reuses history; elapsed cadence or another account queries again', async () => {
+// 056: the old export's history query (read every 10 s) is gone; the
+// export uses the history screen's own day rows (useHistoryExport).
+test('the history no longer polls the old query, on screen or after a resume', async () => {
   jest.useFakeTimers();
   const db = {
     load: jest.fn(async () => HISTORY_DEFAULTS),
@@ -17,21 +19,11 @@ test('short resume reuses history; elapsed cadence or another account queries ag
   let renderer;
   try {
     await act(async () => { renderer = Renderer.create(<Probe />); });
-    expect(db.read).toHaveBeenCalledTimes(1);
+    await act(async () => jest.advanceTimersByTime(30000));
     await act(async () => renderer.update(<Probe active={false} />));
-    await act(async () => jest.advanceTimersByTime(2000));
-    await act(async () => renderer.update(<Probe />));
-    expect(db.read).toHaveBeenCalledTimes(1);
-    await act(async () => jest.advanceTimersByTime(8000));
-    expect(db.read).toHaveBeenCalledTimes(2);
-    await act(async () => renderer.update(<Probe active={false} />));
-    await act(async () => jest.advanceTimersByTime(15000));
-    expect(db.read).toHaveBeenCalledTimes(2);
-    await act(async () => renderer.update(<Probe />));
-    expect(db.read).toHaveBeenCalledTimes(3);
     await act(async () => renderer.update(<Probe owner="bob" />));
-    expect(db.read).toHaveBeenCalledTimes(4);
-    expect(db.read.mock.calls[3][1]).toBe('bob');
+    expect(db.read).not.toHaveBeenCalled();
+    expect(db.listDevices).toHaveBeenCalled();
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     jest.useRealTimers();

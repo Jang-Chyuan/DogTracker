@@ -1,4 +1,5 @@
 import { coordinate } from '../tracking/RouteSamples';
+import { localDateParts } from './ExportFiles';
 
 // Immutable export snapshot contract: {since, until, timeZone, subjects}.
 // Subject: {kind:'dog'|'phone', name, slaveId, rows, holds, stays, rides,
@@ -7,7 +8,12 @@ import { coordinate } from '../tracking/RouteSamples';
 // Source filtering/deduplication and stay detection belong to the caller.
 export const gpsTime = row => row.location_at ?? row.time ?? row.recorded_at;
 export const packetTime = row => row.time ?? row.recorded_at ?? row.location_at;
-export const rawCoordinate = row => coordinate(
+// The coordinates a row exports: a dog's are the collar's own fix (raw_*
+// when supplied, else slave_lat/slave_lon) — never a display position; my
+// route's are the recorded route (myLocationTracker latitude/longitude, the
+// ones the screen draws and 「今天 x km」 adds up), raw_* go to their own CSV columns.
+export const rawCoordinate = (row, subject = null) => subject?.kind === 'phone'
+  ? coordinate(row.latitude, row.longitude) : coordinate(
   Object.prototype.hasOwnProperty.call(row, 'raw_latitude') ? row.raw_latitude : row.latitude,
   Object.prototype.hasOwnProperty.call(row, 'raw_longitude') ? row.raw_longitude : row.longitude,
 );
@@ -16,7 +22,7 @@ export const subjectName = subject => subject.kind === 'phone' ? '我的路線' 
 export const displayName = subject => subject.kind === 'phone' ? '我的路線' : `${subject.name || `狗 ${subject.slaveId}`}（訊號源 ${subject.slaveId}）`;
 export function validateSnapshot(snapshot) {
   if (!Number.isFinite(snapshot.since) || !Number.isFinite(snapshot.until) || snapshot.since > snapshot.until) throw new Error('匯出範圍無效');
-  const day = time => new Intl.DateTimeFormat('en-CA', { timeZone: snapshot.timeZone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(time);
+  const day = time => { const p = localDateParts(time, snapshot.timeZone); return `${p.year}${p.month}${p.day}`; };
   if (day(snapshot.since) !== day(snapshot.until)) throw new Error('匯出範圍必須在同一天');
 }
 export function activeSubjects(snapshot) {
@@ -32,7 +38,9 @@ export function clippedIntervals(interval, snapshot, gaps = []) {
   return pieces;
 }
 export function exportRows(subject, snapshot) {
-  return (subject.rows || []).filter(row => Number.isFinite(gpsTime(row)) && gpsTime(row) >= snapshot.since && gpsTime(row) <= snapshot.until)
+  // In the range by the packet's time (the screen's range is made of packet
+  // times); a fix's own time still decides its hold or ride (ExportGPX).
+  return (subject.rows || []).filter(row => Number.isFinite(gpsTime(row)) && packetTime(row) >= snapshot.since && packetTime(row) <= snapshot.until)
     .slice().sort((a, b) => gpsTime(a) - gpsTime(b));
 }
 
