@@ -20,7 +20,7 @@ import HistoryCursor from '../mapHistory/HistoryCursor';
 import {
   CursorMarkerView, cursorAnchor, IndoorMarkerView, StopMarkerView, TimeMarkerView,
 } from '../mapHistory/HistoryMapMarkers';
-import { nearestRouteSpot } from '../history/screen/HistoryMapModel';
+import { nearestRouteSpot, uncrowded } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { nameTags } from './DogMarkers';
 import { reportMapFramed } from '../app/hideSplash';
@@ -180,8 +180,17 @@ function CursorMarker({ cursor, color }) {
   );
 }
 
-function HistoryRoute({ route, onStopPress }) {
+// A middle time marker keeps this far (dp) from a number, the ends and other
+// times at the zoom shown — one 「08:00」 label wide.
+const TIME_APART_DP = 48;
+
+function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   const dashed = useMemo(() => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)), []);
+  // The model leaves out times within 150 m; zoomed out, 150 m is a few dp,
+  // so the labels would sit on each other: the same rule in screen distance.
+  const apartM = metresPerDp * TIME_APART_DP;
+  const times = useMemo(() => (apartM > 150 ? uncrowded(route.times, route.places, apartM) : route.times),
+    [route.times, route.places, apartM]);
   return (
     <>
       {route.lines.map((line, index) => (
@@ -190,7 +199,7 @@ function HistoryRoute({ route, onStopPress }) {
           lineDashPattern={line.dashed ? dashed : undefined} lineCap={line.dashed ? 'butt' : 'round'}
           lineJoin="round" tappable={false} />
       ))}
-      {route.times.map(marker => (
+      {times.map(marker => (
         <RouteMarker key={marker.key} coordinate={marker.coordinate} look={`${marker.label}:${marker.end}`} zIndex={20}>
           <TimeMarkerView label={marker.label} end={marker.end} color={route.color} />
         </RouteMarker>
@@ -273,6 +282,8 @@ function GoogleTrackingMapRenderer({
   } = presentation;
   const mapRef = useRef(null);
   const [cursorLayout, setCursorLayout] = useState({ width: 0, height: 0 });
+  // Metres per dp at the zoom shown (the history's time markers keep apart).
+  const [metresPerDp, setMetresPerDp] = useState(0);
   const [cursorRevision, setCursorRevision] = useState(0);
   const [cursorDragging, setCursorDragging] = useState(false);
   const historyRoute = presentation.historyRoute || null;
@@ -764,6 +775,13 @@ function GoogleTrackingMapRenderer({
                 camera
               ) {
                 savedView.current = { source, camera };
+                if (historyRoute && Number.isFinite(camera.zoom) && camera.center) {
+                  // A Google map is 256 dp wide at zoom 0. Rounded so a small
+                  // pan does not redraw the markers.
+                  const value = Number(((40075016 * Math.cos((camera.center.latitude * Math.PI) / 180))
+                    / (256 * 2 ** camera.zoom)).toPrecision(2));
+                  setMetresPerDp(current => (current === value ? current : value));
+                }
                 if (Number.isFinite(camera.heading)) {
                   onHeading?.(camera.heading);
                   setHeading(camera.heading);
@@ -783,7 +801,7 @@ function GoogleTrackingMapRenderer({
         >
           {/* History draws no live phone (flow.txt: 只有可以拖的游標點). */}
           {!historyRoute && livePhone?.running && livePhone.position && <PhoneLocationOverlay location={livePhone} active={foreground} />}
-          {historyRoute && <HistoryRoute route={historyRoute} onStopPress={onStopPress} />}
+          {historyRoute && <HistoryRoute route={historyRoute} onStopPress={onStopPress} metresPerDp={metresPerDp} />}
           {slaveSegments.map((segment, index) => (
             <Polyline
               key={source + '-slave-' + index}
