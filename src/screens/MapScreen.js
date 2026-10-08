@@ -1,24 +1,37 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useStyles, makeStyles } from '../theme/ThemeProvider';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
 import { panelLevels } from '../mapHistory/HistoryPanel';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import {
-  createTrackingMapPresentation, outOfRangeLines, receiverRangeRing,
+  createTrackingMapPresentation,
+  outOfRangeLines,
+  receiverRangeRing,
 } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
 import { useAddress } from '../placement/AddressLookup';
 import { useMapClock } from '../map/useMapClock';
-import { floatingShadow, mapColors as colors } from '../map/MapTheme';
+
 import { useReceiverState } from '../map/useReceiverState';
-import { isOtherReceiver, receiverLink, receiverNumber } from '../map/ReceiverState';
+import {
+  isOtherReceiver,
+  receiverLink,
+  receiverNumber,
+} from '../map/ReceiverState';
 import { dogMarkers, dogName } from '../map/DogMarkers';
 import { coldStartCoordinates, phoneFix } from '../map/MapFraming';
 import DogCard from '../map/DogCard';
@@ -27,12 +40,22 @@ import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
 import { dogCard, phoneReading } from '../map/DogCardModel';
 import { useDogCardReadings } from '../map/useDogCardReadings';
-import { cloudClock, dogFreshness, isIndoorHold } from '../tracking/DogFreshness';
+import {
+  cloudClock,
+  dogFreshness,
+  isIndoorHold,
+} from '../tracking/DogFreshness';
 import { layout } from '../theme/tokens';
 import { SettingsGear } from '../map/MapControls';
 import TopAlertCards from '../map/TopAlertCards';
 import {
-  gearLabel, gearReasons, receiverOutage, showsNoDogs, storageProblem, topCards, trackReceiverWait,
+  gearLabel,
+  gearReasons,
+  receiverOutage,
+  showsNoDogs,
+  storageProblem,
+  topCards,
+  trackReceiverWait,
 } from '../map/TopAlerts';
 import { startOfToday, todayPill } from '../tracking/TodayDistance';
 
@@ -98,6 +121,7 @@ export default function MapScreen({
   // 'storage-settings', 'storage-reason', 'connect-receiver', 'sign-in'.
   onAlertAction,
 }) {
+  const styles = useStyles(getStyles);
   const insets = useSafeAreaInsets();
   // The base map's state (GoogleTrackingMap): drives the 地圖載入失敗 card.
   const [mapState, setMapState] = useState('loading');
@@ -132,19 +156,28 @@ export default function MapScreen({
     cardClosing.current = !value;
     setCardHeight(value);
   }, []);
-  const openDog = useCallback(slaveId => {
-    // In history a face is another dog shown: it becomes the protagonist.
-    if (historical) { selectHistoryDog.current?.(slaveId); return; }
-    cardGeneration.current += 1;
-    if (cardClosing.current) {
-      cardClosing.current = false;
-      setCardKey(value => value + 1);
-    }
-    setSelected(current => (current?.kind === 'dog' && current.slaveId === slaveId ? current
-      : { kind: 'dog', slaveId }));
-    setCardPage(null);
-    setFocusRequest({ slaveId, key: Date.now() });
-  }, [historical]);
+  const openDog = useCallback(
+    slaveId => {
+      // In history a face is another dog shown: it becomes the protagonist.
+      if (historical) {
+        selectHistoryDog.current?.(slaveId);
+        return;
+      }
+      cardGeneration.current += 1;
+      if (cardClosing.current) {
+        cardClosing.current = false;
+        setCardKey(value => value + 1);
+      }
+      setSelected(current =>
+        current?.kind === 'dog' && current.slaveId === slaveId
+          ? current
+          : { kind: 'dog', slaveId },
+      );
+      setCardPage(null);
+      setFocusRequest({ slaveId, key: Date.now() });
+    },
+    [historical],
+  );
   // Tapping empty map closes the card (sliding away), like swiping it down.
   const pressMap = useCallback(() => card.current?.close(), []);
   const { point, route, positionSamples, mode } = tracking;
@@ -155,14 +188,24 @@ export default function MapScreen({
   const now = fixture ? fixture.now : liveNow;
   // The history list's clock: a fixture's fixed one, else the real one.
   const fixtureNow = fixture?.now ?? null;
-  const fixtureClock = useCallback(() => fixtureNow ?? Date.now(), [fixtureNow]);
+  const fixtureClock = useCallback(
+    () => fixtureNow ?? Date.now(),
+    [fixtureNow],
+  );
   // The receiver this phone is set up for, read from the native service while
   // the live map is in front (a fixture supplies its own reader).
   const receiverActive = active && tracking.foreground && !historical;
   // App reads it for the settings pages too and hands it in (`receiver`:
   // { state, wait }); on its own the map reads it itself.
-  const ownReceiverState = useReceiverState(receiverActive && !receiver, fixture?.readReceiverState);
-  const receiverState = receiver ? (receiverActive ? receiver.state : null) : ownReceiverState;
+  const ownReceiverState = useReceiverState(
+    receiverActive && !receiver,
+    fixture?.readReceiverState,
+  );
+  const receiverState = receiver
+    ? receiverActive
+      ? receiver.state
+      : null
+    : ownReceiverState;
   // The newest stored packet can be from a receiver used before this one.
   const otherReceiver = isOtherReceiver(point, receiverState);
   useEffect(() => {
@@ -200,122 +243,238 @@ export default function MapScreen({
   // shows it again).
   const storageFailing = !!storage;
   useEffect(() => {
-    if (!storageFailing) setDismissed(current => (current.storage ? { ...current, storage: false } : current));
+    if (!storageFailing)
+      setDismissed(current =>
+        current.storage ? { ...current, storage: false } : current,
+      );
   }, [storageFailing]);
   const ownWait = useRef(null);
   ownWait.current = trackReceiverWait(ownWait.current, receiverState, now);
   const receiverWait = receiver ? receiver.wait : ownWait.current;
   // When the user switched this receiver off and on (DogFreshness grace),
   // recorded by the native service whatever screen was open.
-  const pausesKey = JSON.stringify(Array.isArray(receiverState?.receiverPauses) ? receiverState.receiverPauses : []);
+  const pausesKey = JSON.stringify(
+    Array.isArray(receiverState?.receiverPauses)
+      ? receiverState.receiverPauses
+      : [],
+  );
   const pauses = useMemo(() => JSON.parse(pausesKey), [pausesKey]);
   const lastDownloadAt = cloudSync?.lastDownloadAt ?? null;
   const failingSince = cloudSync?.failingSince ?? null;
-  const cloudClockInput = useMemo(() => ({ lastDownloadAt, failingSince }), [lastDownloadAt, failingSince]);
-  const avatars = useMemo(() => dogAvatars?.avatars || {}, [dogAvatars?.avatars]);
-  const basePresentation = useMemo(
-    () => {
-      const base = createTrackingMapPresentation(
-        point,
-        route,
-        positionSamples,
-        { ...tracking.preferences.value, windowMinutes: 2, showTrails: false },
-        now,
-      );
-      // Another receiver's last position is not this one's: no ring around
-      // it, and nothing framed there.
-      if (otherReceiver) return { ...base, positions: { ...base.positions, master: null }, cameraPositions: [] };
-      const rangeRing = receiverRangeRing(base.positions.master, link);
-      // The receiver is framed only through its ring: without a ring nothing
-      // of it is drawn, so the camera must not aim at it either.
-      const slave = base.positions.slave?.stale ? null : base.positions.slave;
-      return rangeRing ? { ...base, rangeRing } : { ...base, cameraPositions: cameraCoordinates(null, slave) };
-    },
-    [point, positionSamples, route, tracking.preferences.value, now, otherReceiver, link],
+  const cloudClockInput = useMemo(
+    () => ({ lastDownloadAt, failingSince }),
+    [lastDownloadAt, failingSince],
   );
+  const avatars = useMemo(
+    () => dogAvatars?.avatars || {},
+    [dogAvatars?.avatars],
+  );
+  const basePresentation = useMemo(() => {
+    const base = createTrackingMapPresentation(
+      point,
+      route,
+      positionSamples,
+      { ...tracking.preferences.value, windowMinutes: 2, showTrails: false },
+      now,
+    );
+    // Another receiver's last position is not this one's: no ring around
+    // it, and nothing framed there.
+    if (otherReceiver)
+      return {
+        ...base,
+        positions: { ...base.positions, master: null },
+        cameraPositions: [],
+      };
+    const rangeRing = receiverRangeRing(base.positions.master, link);
+    // The receiver is framed only through its ring: without a ring nothing
+    // of it is drawn, so the camera must not aim at it either.
+    const slave = base.positions.slave?.stale ? null : base.positions.slave;
+    return rangeRing
+      ? { ...base, rangeRing }
+      : { ...base, cameraPositions: cameraCoordinates(null, slave) };
+  }, [
+    point,
+    positionSamples,
+    route,
+    tracking.preferences.value,
+    now,
+    otherReceiver,
+    link,
+  ]);
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows. The handler's phone driving tells the map which dogs ride along.
   const realPhone = useLiveLocation(active && tracking.foreground && !fixture);
   const livePhone = fixture ? fixture.livePhone : realPhone;
   const rideDetector = useRef(null);
   if (!rideDetector.current) rideDetector.current = createRideDetector();
-  if (realPhone?.running && realPhone.position) rideDetector.current.add(realPhone.position, now);
+  if (realPhone?.running && realPhone.position)
+    rideDetector.current.add(realPhone.position, now);
   const currentRide = fixture ? fixture.ride : rideDetector.current.ride(now);
   const rideKey = currentRide
-    ? `${currentRide.coordinate.latitude},${currentRide.coordinate.longitude}` : '';
+    ? `${currentRide.coordinate.latitude},${currentRide.coordinate.longitude}`
+    : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ride = useMemo(() => currentRide, [rideKey]);
   const dogs = useMemo(
-    () => mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
-      packetRows: cloudDogs?.packets, holds: cloudDogs?.holds, statuses: cloudDogs?.statuses,
-      ride, now, windowMs: LIVE_PACKET_WINDOW_MS }),
-    [point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, cloudDogs?.holds,
-      cloudDogs?.statuses, ride, now],
+    () =>
+      mergeDogMarkers({
+        point,
+        samples: positionSamples,
+        cloudRows: cloudDogs?.rows,
+        packetRows: cloudDogs?.packets,
+        holds: cloudDogs?.holds,
+        statuses: cloudDogs?.statuses,
+        ride,
+        now,
+        windowMs: LIVE_PACKET_WINDOW_MS,
+      }),
+    [
+      point,
+      positionSamples,
+      cloudDogs?.rows,
+      cloudDogs?.packets,
+      cloudDogs?.holds,
+      cloudDogs?.statuses,
+      ride,
+      now,
+    ],
   );
-  const noDogs = !historical && showsNoDogs({
-    receiverState,
-    hasDogData: dogs.length > 0 || point?.id != null || !!cloudDogs?.rows?.length || !!cloudDogs?.packets?.length,
-    dataRead: tracking.initialSnapshotReady === true && !!cloudDogs?.loaded,
-    dismissed: noDogsClosed || !!tracking.preferences.value?.noDataCardDismissed,
-  });
+  const noDogs =
+    !historical &&
+    showsNoDogs({
+      receiverState,
+      hasDogData:
+        dogs.length > 0 ||
+        point?.id != null ||
+        !!cloudDogs?.rows?.length ||
+        !!cloudDogs?.packets?.length,
+      dataRead: tracking.initialSnapshotReady === true && !!cloudDogs?.loaded,
+      dismissed:
+        noDogsClosed || !!tracking.preferences.value?.noDataCardDismissed,
+    });
   // History shares the map: only the map's own card follows it there.
   const cards = topCards({
-    map: mapState === 'retrying' ? 'load-failed' : mapState, retrying: mapState === 'retrying',
+    map: mapState === 'retrying' ? 'load-failed' : mapState,
+    retrying: mapState === 'retrying',
     ...(historical ? {} : { outage, storage, noDogs, signedIn, dismissed }),
   });
-  const reasons = historical ? [] : gearReasons({
-    outage, storage, dismissed, receiverState, receiverWait,
-    receiverBattery: otherReceiver || point?.id == null ? null
-      : { valid: point.masterBatteryValid, percentage: point.masterBatteryPercentage },
-    cloudFailing: !!cloudOwner && (cloudSync?.failingSince != null || cloudProblem),
-    signInExpired, phone, notificationsDenied, nearbyDenied, now,
-  });
-  const pressCardAction = useCallback(id => {
-    if (id === 'map-retry') setMapRetry(value => value + 1);
-    else onAlertAction?.(id);
-  }, [onAlertAction]);
-  const closeCard = useCallback(id => {
-    if (id === 'receiver' && outage) setDismissed(current => ({ ...current, receiver: outage.key }));
-    else if (id === 'storage') setDismissed(current => ({ ...current, storage: true }));
-    else if (id === 'no-dogs') {
-      setNoDogsClosed(true);
-      tracking.saveTrackingPreferences?.({ noDataCardDismissed: true });
-    }
-  }, [outage, tracking]);
-  const selectedDogId = selected?.kind === 'dog' && !historical ? selected.slaveId : null;
+  const reasons = historical
+    ? []
+    : gearReasons({
+        outage,
+        storage,
+        dismissed,
+        receiverState,
+        receiverWait,
+        receiverBattery:
+          otherReceiver || point?.id == null
+            ? null
+            : {
+                valid: point.masterBatteryValid,
+                percentage: point.masterBatteryPercentage,
+              },
+        cloudFailing:
+          !!cloudOwner && (cloudSync?.failingSince != null || cloudProblem),
+        signInExpired,
+        phone,
+        notificationsDenied,
+        nearbyDenied,
+        now,
+      });
+  const pressCardAction = useCallback(
+    id => {
+      if (id === 'map-retry') setMapRetry(value => value + 1);
+      else onAlertAction?.(id);
+    },
+    [onAlertAction],
+  );
+  const closeCard = useCallback(
+    id => {
+      if (id === 'receiver' && outage)
+        setDismissed(current => ({ ...current, receiver: outage.key }));
+      else if (id === 'storage')
+        setDismissed(current => ({ ...current, storage: true }));
+      else if (id === 'no-dogs') {
+        setNoDogsClosed(true);
+        tracking.saveTrackingPreferences?.({ noDataCardDismissed: true });
+      }
+    },
+    [outage, tracking],
+  );
+  const selectedDogId =
+    selected?.kind === 'dog' && !historical ? selected.slaveId : null;
   const dogAliases = history?.preferences.dogAliases;
   const livePresentation = useMemo(() => {
     // The connected pair's single dog marker is not drawn: every dog is one
     // of `dogMarkers`.
-    if (!dogs.length) return { ...basePresentation, slave: null, slaveSegments: [], dogMarkers: [], dogs: [] };
+    if (!dogs.length)
+      return {
+        ...basePresentation,
+        slave: null,
+        slaveSegments: [],
+        dogMarkers: [],
+        dogs: [],
+      };
     // Every dog that has ever had a position is drawn, however old (v3 §6:
     // grey after 10 minutes, kept after 24 hours). v3 has no hidden dogs and
     // no following: preferences stored by older versions are ignored.
     const drawn = dogs.filter(dog => dog.coordinate);
     return {
       ...basePresentation,
-      rangeLines: outOfRangeLines(basePresentation.rangeRing, drawn, cloudDogs?.ranges),
+      rangeLines: outOfRangeLines(
+        basePresentation.rangeRing,
+        drawn,
+        cloudDogs?.ranges,
+      ),
       // dogs replaces the single slave marker.
       slave: null,
       slaveSegments: [],
       dogs: drawn,
-      dogMarkers: dogMarkers(drawn, { now, cloud: cloudClockInput, pauses,
-        ranges: cloudDogs?.ranges, aliases: dogAliases, selectedId: selectedDogId }),
+      dogMarkers: dogMarkers(drawn, {
+        now,
+        cloud: cloudClockInput,
+        pauses,
+        ranges: cloudDogs?.ranges,
+        aliases: dogAliases,
+        selectedId: selectedDogId,
+      }),
       dogPaths: [],
     };
-  }, [basePresentation, dogs, cloudDogs?.ranges, now, cloudClockInput, pauses, dogAliases, selectedDogId]);
+  }, [
+    basePresentation,
+    dogs,
+    cloudDogs?.ranges,
+    now,
+    cloudClockInput,
+    pauses,
+    dogAliases,
+    selectedDogId,
+  ]);
   // What the first view (cold start, or a data source switch) frames: the
   // dogs from this phone's own receiver and the phone; a far cloud dog only
   // with 框住全部 (MapFraming).
-  const phoneSpot = phoneFix(livePhone);
+  const phoneSpotValue = phoneFix(livePhone);
   const receiverId = receiverState ? receiverNumber(receiverState) : null;
-  const phoneKey = phoneSpot ? `${phoneSpot.latitude},${phoneSpot.longitude}` : '';
-  const framedPresentation = useMemo(() => ({
-    ...livePresentation,
-    cameraPositions: coldStartCoordinates(livePresentation.dogMarkers, phoneSpot, receiverId),
-    // phoneKey stands for phoneSpot.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [livePresentation, phoneKey, receiverId]);
+  const phoneKey = phoneSpotValue
+    ? `${phoneSpotValue.latitude},${phoneSpotValue.longitude}`
+    : '';
+  const phoneSpot = useMemo(() => {
+    if (!phoneKey) return null;
+    const [latitude, longitude] = phoneKey.split(',').map(Number);
+    return { latitude, longitude };
+  }, [phoneKey]);
+  const framedPresentation = useMemo(
+    () => ({
+      ...livePresentation,
+      cameraPositions: coldStartCoordinates(
+        livePresentation.dogMarkers,
+        phoneSpot,
+        receiverId,
+      ),
+      // phoneKey stands for phoneSpot.
+    }),
+    [livePresentation, phoneSpot, receiverId],
+  );
   // The first framing waits (briefly) for the phone's first report.
   const [phoneWaitOver, setPhoneWaitOver] = useState(false);
   useEffect(() => {
@@ -324,7 +483,11 @@ export default function MapScreen({
   }, []);
   // Settled once the phone has a fix, or says it is not recording, or the
   // wait is over; a report without a position yet keeps waiting.
-  const phoneSettled = !!fixture || !!phoneSpot || (livePhone != null && !livePhone.running) || phoneWaitOver;
+  const phoneSettled =
+    !!fixture ||
+    !!phoneSpot ||
+    (livePhone != null && !livePhone.running) ||
+    phoneWaitOver;
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
   const saveHistory = history?.save;
@@ -344,14 +507,21 @@ export default function MapScreen({
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
     recording: livePhone ? !!livePhone.running : null,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
-    memoryScope: fixture ? `fixture:${fixture.name}:` : '', preset: fixture?.historyView ?? null,
-    cloud: historyCloud?.cloud ?? null, online: historyCloud?.online !== false, cloudSeed: historyCloud?.seed ?? null });
+    memoryScope: fixture ? `fixture:${fixture.name}:` : '',
+    preset: fixture?.historyView ?? null,
+    cloud: historyCloud?.cloud ?? null,
+    online: historyCloud?.online !== false,
+    cloudSeed: historyCloud?.seed ?? null,
+  });
   selectHistoryDog.current = screen.selectDog;
   const window = useWindowDimensions();
   // A day downloading (H3c) or not finished keeps the half height.
-  const historyEmpty = !!screen.model && !screen.model.dayRecords && !screen.download;
-  const levels = useMemo(() => panelLevels(window.height, insets.bottom, { empty: historyEmpty }),
-    [window.height, insets.bottom, historyEmpty]);
+  const historyEmpty =
+    !!screen.model && !screen.model.dayRecords && !screen.download;
+  const levels = useMemo(
+    () => panelLevels(window.height, insets.bottom, { empty: historyEmpty }),
+    [window.height, insets.bottom, historyEmpty],
+  );
   const [panel, setPanel] = useState({ level: 'half' });
   const historyScreen = useRef(null);
   if (historyBack) historyBack.current = () => !!historyScreen.current?.back();
@@ -359,40 +529,90 @@ export default function MapScreen({
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is never decided by the
     // history's parameters.
-    if (!historical) return { ...framedPresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
+    if (!historical)
+      return {
+        ...framedPresentation,
+        dogAliases: history?.preferences.dogAliases,
+        dogAvatars: avatars,
+      };
     // Several dogs (H7): the others are faces at their cursor points, drawn
     // like the live map's dogs (a tap makes one the protagonist; faces that
     // run into each other share one 「2 隻」 tag and its menu).
-    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], historyMode: true,
-      dogMarkers: historyFaces(screen.map?.faces), dogAvatars: avatars,
-      cameraPositions: screen.map?.camera ?? [], historyRoute: screen.map };
-  }, [historical, history?.preferences.dogAliases, framedPresentation, avatars, screen.map]);
+    return {
+      positions: {},
+      slave: null,
+      slaveSegments: [],
+      rangeRing: null,
+      rangeLines: [],
+      historyMode: true,
+      dogMarkers: historyFaces(screen.map?.faces),
+      dogAvatars: avatars,
+      cameraPositions: screen.map?.camera ?? [],
+      historyRoute: screen.map,
+    };
+  }, [
+    historical,
+    history?.preferences.dogAliases,
+    framedPresentation,
+    avatars,
+    screen.map,
+  ]);
   // The old export (until 056) reads the history query: it follows the dogs
   // shown and 資料來源 (這支手機收到的 → BLE, 雲端 → cloud; 全部 keeps the
   // entry dog's own).
-  const exportDogs = historical && target?.subject === 'dog' ? screen.dogs.map(dog => dog.id).join(',') : '';
+  const exportDogs =
+    historical && target?.subject === 'dog'
+      ? screen.dogs.map(dog => dog.id).join(',')
+      : '';
   const exportSource = screen.source;
   useEffect(() => {
     if (!exportDogs || !saveHistory || !historyPreferences) return;
     const slaves = exportDogs.split(',').map(Number);
-    const source = exportSource === 'cloud' ? 'cloud' : exportSource === 'local' ? 'ble' : historyPreferences.source;
-    const heard = (history?.devices || []).filter(pair => slaves.includes(pair.slave)).map(pair => pair.master);
+    const source =
+      exportSource === 'cloud'
+        ? 'cloud'
+        : exportSource === 'local'
+        ? 'ble'
+        : historyPreferences.source;
+    const heard = (history?.devices || [])
+      .filter(pair => slaves.includes(pair.slave))
+      .map(pair => pair.master);
     const masters = [...new Set([...historyPreferences.masters, ...heard])];
-    if (String(historyPreferences.slaves) === String(slaves) && historyPreferences.source === source
-      && String(historyPreferences.masters) === String(masters)) return;
+    if (
+      String(historyPreferences.slaves) === String(slaves) &&
+      historyPreferences.source === source &&
+      String(historyPreferences.masters) === String(masters)
+    )
+      return;
     saveHistory({ ...historyPreferences, slaves, source, masters });
     // When the dogs or the source change.
   }, [exportDogs, exportSource]); // eslint-disable-line react-hooks/exhaustive-deps
   // The dogs that can be added (「＋ 加入」): every dog that has ever had a
   // position, by collar number (never-fixed sources are not dogs yet).
-  const historyCandidates = useMemo(() => (historical ? dogs.filter(dog => dog.coordinate)
-    .map(dog => ({ id: dog.slaveId, name: displayName(dog.slaveId, dogAliases), avatar: avatars[dog.slaveId] ?? null }))
-    : []), [historical, dogs, dogAliases, avatars]);
+  const historyCandidates = useMemo(
+    () =>
+      historical
+        ? dogs
+            .filter(dog => dog.coordinate)
+            .map(dog => ({
+              id: dog.slaveId,
+              name: displayName(dog.slaveId, dogAliases),
+              avatar: avatars[dog.slaveId] ?? null,
+            }))
+        : [],
+    [historical, dogs, dogAliases, avatars],
+  );
   // ---- the dog's card (A3) ------------------------------------------------
   // The card belongs to a dog drawn on the live map: it goes when the dog
   // does (a dog that never had a position has no card).
-  const cardDog = useMemo(() => (selectedDogId == null || !active ? null
-    : dogs.find(dog => dog.slaveId === selectedDogId && dog.coordinate) || null), [selectedDogId, active, dogs]);
+  const cardDog = useMemo(
+    () =>
+      selectedDogId == null || !active
+        ? null
+        : dogs.find(dog => dog.slaveId === selectedDogId && dog.coordinate) ||
+          null,
+    [selectedDogId, active, dogs],
+  );
   const cardOpen = !!cardDog;
   useEffect(() => {
     if (selectedDogId != null && !cardDog) setSelected(null);
@@ -408,15 +628,31 @@ export default function MapScreen({
     onCardChange?.(cardOpen);
   }, [cardOpen, onCardChange]);
   const database = tracking.cloudDatabase;
-  const readCardRows = useMemo(() => fixture?.readCardRows
-    ?? (database?.dogCardRows ? (slaveId, since) => database.dogCardRows(cloudOwner ?? null, slaveId, since) : null),
-  [fixture?.readCardRows, database, cloudOwner]);
-  const readings = useDogCardReadings(cardOpen ? readCardRows : null, cardDog?.slaveId ?? null, now);
+  const readCardRows = useMemo(
+    () =>
+      fixture?.readCardRows ??
+      (database?.dogCardRows
+        ? (slaveId, since) =>
+            database.dogCardRows(cloudOwner ?? null, slaveId, since)
+        : null),
+    [fixture?.readCardRows, database, cloudOwner],
+  );
+  const readings = useDogCardReadings(
+    cardOpen ? readCardRows : null,
+    cardDog?.slaveId ?? null,
+    now,
+  );
   // A7b: the held place's address under 「室內」 (none while asking/offline).
-  const address = useAddress(cardDog && isIndoorHold(cardDog) ? cardDog.coordinate : null);
+  const address = useAddress(
+    cardDog && isIndoorHold(cardDog) ? cardDog.coordinate : null,
+  );
   const cardModel = useMemo(() => {
     if (!cardDog) return null;
-    const freshness = dogFreshness(cardDog, { now, cloud: cloudClockInput, pauses });
+    const freshness = dogFreshness(cardDog, {
+      now,
+      cloud: cloudClockInput,
+      pauses,
+    });
     return dogCard(cardDog, {
       freshness,
       range: cloudDogs?.ranges?.[cardDog.slaveId] ?? null,
@@ -424,12 +660,26 @@ export default function MapScreen({
       activity: readings.activity,
       phone: phoneReading(livePhone, now),
       now,
-      reference: freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
+      reference:
+        freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
       name: dogName(cardDog.slaveId, dogAliases),
       address,
     });
-  }, [cardDog, now, cloudClockInput, pauses, cloudDogs?.ranges, readings, livePhone, dogAliases, address]);
-  const closedCard = useCallback(() => setSelected(current => (current?.kind === 'dog' ? null : current)), []);
+  }, [
+    cardDog,
+    now,
+    cloudClockInput,
+    pauses,
+    cloudDogs?.ranges,
+    readings,
+    livePhone,
+    dogAliases,
+    address,
+  ]);
+  const closedCard = useCallback(
+    () => setSelected(current => (current?.kind === 'dog' ? null : current)),
+    [],
+  );
   const [trackBusy, setTrackBusy] = useState(false);
   // 看軌跡: today's path of this dog. The query is stored first, so the
   // history page never opens on the previous one.
@@ -440,14 +690,21 @@ export default function MapScreen({
     start.setHours(0, 0, 0, 0);
     // Every receiver known to have heard this dog, so a day relayed by several
     // receivers is not cut down to the one heard last.
-    const heard = (history.devices || []).filter(pair => pair.slave === dog.slaveId).map(pair => pair.master);
-    const masters = [...new Set([...heard, ...(dog.masterId != null ? [dog.masterId] : [])])];
+    const heard = (history.devices || [])
+      .filter(pair => pair.slave === dog.slaveId)
+      .map(pair => pair.master);
+    const masters = [
+      ...new Set([...heard, ...(dog.masterId != null ? [dog.masterId] : [])]),
+    ];
     setTrackBusy(true);
     const generation = cardGeneration.current;
     const saved = await history.save({
       ...history.preferences,
-      timeMode: 'fixed', startAt: start.getTime(), endAt: Math.max(now, start.getTime() + 60000),
-      slaves: [dog.slaveId], client: true,
+      timeMode: 'fixed',
+      startAt: start.getTime(),
+      endAt: Math.max(now, start.getTime() + 60000),
+      slaves: [dog.slaveId],
+      client: true,
       source: dog.fixSource === 'cloud' ? 'cloud' : 'ble',
       masters: masters.length ? masters : history.preferences.masters,
     });
@@ -465,8 +722,15 @@ export default function MapScreen({
   const waiting = !!livePhone?.running && !livePhone?.position;
   if (!waiting) waitingSince.current = null;
   else if (waitingSince.current == null) waitingSince.current = now;
-  const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone, now,
-    waitingSince: waitingSince.current }));
+  const pillKey = JSON.stringify(
+    todayPill({
+      route: todayRoute,
+      livePhone,
+      phone,
+      now,
+      waitingSince: waitingSince.current,
+    }),
+  );
   const today = useMemo(() => JSON.parse(pillKey), [pillKey]);
   const [routeBusy, setRouteBusy] = useState(false);
   // Only while the live map is still in front does a finished save navigate.
@@ -484,8 +748,11 @@ export default function MapScreen({
     setRouteBusy(true);
     const saved = await history.save({
       ...history.preferences,
-      timeMode: 'fixed', startAt: start, endAt: end.getTime(),
-      phone: true, client: false,
+      timeMode: 'fixed',
+      startAt: start,
+      endAt: end.getTime(),
+      phone: true,
+      client: false,
     });
     setRouteBusy(false);
     if (saved && liveInFront.current) onOpenHistory?.(null);
@@ -494,19 +761,29 @@ export default function MapScreen({
   // the face in dog_avatars; both by collar number, on this phone only.
   const saveName = async name => {
     if (!cardDog || !history?.save) return false;
-    const aliases = { ...(history.preferences.dogAliases || {}), [cardDog.slaveId]: name };
-    return !!(await history.save({ ...history.preferences, dogAliases: aliases }));
+    const aliases = {
+      ...(history.preferences.dogAliases || {}),
+      [cardDog.slaveId]: name,
+    };
+    return !!(await history.save({
+      ...history.preferences,
+      dogAliases: aliases,
+    }));
   };
   const saveAvatar = async avatar => {
     if (!cardDog || !dogAvatars?.save) return false;
     return !!(await dogAvatars.save(cardDog.slaveId, avatar));
   };
   const closePage = useCallback(() => setCardPage(null), []);
-  const focusDog = useMemo(() => (cardDog && cardHeight && focusRequest?.slaveId === cardDog.slaveId
-    ? { key: focusRequest.key, coordinate: cardDog.coordinate } : null),
-  // Asked once per opening, after the card has its height.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  [focusRequest, !!cardHeight, cardDog?.slaveId]);
+  const focusDog = useMemo(
+    () =>
+      cardDog && cardHeight && focusRequest?.slaveId === cardDog.slaveId
+        ? { key: focusRequest.key, coordinate: cardDog.coordinate }
+        : null,
+    // Asked once per opening, after the card has its height.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [focusRequest, !!cardHeight, cardDog?.slaveId],
+  );
   // History notices live in the history card, next to the controls that cause
   // them; the map keeps only what belongs to the map itself.
   const messages = [];
@@ -526,7 +803,9 @@ export default function MapScreen({
     );
   else if (!tracking.ready[mode]) messages.push('正在準備 SQLite…');
   if (tracking.preferences.error)
-    messages.push(`地圖設定讀取失敗：${tracking.preferences.error}。重新開啟 App 重試。`);
+    messages.push(
+      `地圖設定讀取失敗：${tracking.preferences.error}。重新開啟 App 重試。`,
+    );
   const top = insets.top + 12;
   // The top cards hang 8dp under the gear (8dp under the status bar, 48dp).
   const gearTop = insets.top + layout.belowStatusBar;
@@ -534,27 +813,43 @@ export default function MapScreen({
   const cardsBottom = cards.length && topHeight ? cardsTop + topHeight : 0;
   const noticesTop = cardsBottom ? cardsBottom + 8 : top + 44;
   // History: under the top capsule row (8dp under the status bar, 48dp).
-  const controlsTop = historical ? gearTop + 48 + 8 + (messages.length ? noticeHeight + 8 : 0)
+  const controlsTop = historical
+    ? gearTop + 48 + 8 + (messages.length ? noticeHeight + 8 : 0)
     : top + 44 + (messages.length ? noticeHeight + 8 : 0);
   // The compass: 12dp under the gear, or under the whole stack of cards.
-  const compassTop = historical ? controlsTop + 12 : (cardsBottom || gearTop + 48) + 12;
+  const compassTop = historical
+    ? controlsTop + 12
+    : (cardsBottom || gearTop + 48) + 12;
   // The live map's padding stays put (an open card covers the map, it does
   // not move it); its buttons sit 12dp above the open card, else above the tabs.
   // History: the map's padding is the panel at half height (its default);
   // at 75% the route is framed above it (historyPanel.extraBottom).
   const mapBottom = historical ? levels.half : bottomInset;
-  const coverBottom = historical ? (panel.height ?? levels[panel.level] ?? levels.half)
-    : cardHeight ? cardHeight + layout.floatingGap : 0;
-  const historyPanel = historical ? { level: panel.level,
-    extraBottom: Math.max(0, (panel.height ?? levels.half) - levels.half) } : null;
-  const historySource = historical && target
-    ? `history:${target.subject}:${target.slaveId ?? ''}:${screen.day}:${fixture?.name ?? ''}` : null;
+  const coverBottom = historical
+    ? panel.height ?? levels[panel.level] ?? levels.half
+    : cardHeight
+    ? cardHeight + layout.floatingGap
+    : 0;
+  const historyPanel = historical
+    ? {
+        level: panel.level,
+        extraBottom: Math.max(0, (panel.height ?? levels.half) - levels.half),
+      }
+    : null;
+  const historySource =
+    historical && target
+      ? `history:${target.subject}:${target.slaveId ?? ''}:${screen.day}:${
+          fixture?.name ?? ''
+        }`
+      : null;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
         provider={mapProvider}
         // A screen fixture counts as a new source, so the map frames its dogs.
-        source={historySource ?? (fixture ? `${mode}:fixture:${fixture.name}` : mode)}
+        source={
+          historySource ?? (fixture ? `${mode}:fixture:${fixture.name}` : mode)
+        }
         presentation={presentation}
         topInset={controlsTop}
         bottomInset={mapBottom}
@@ -570,7 +865,11 @@ export default function MapScreen({
         // again: frame only once its link is known, so the ring is framed.
         // The first view also waits for the phone's first report (or a
         // moment), so it frames the phone with the local dogs.
-        framingReady={historical ? !!screen.model : (receiverActive && receiverState !== undefined && phoneSettled)}
+        framingReady={
+          historical
+            ? !!screen.model
+            : receiverActive && receiverState !== undefined && phoneSettled
+        }
         dataReady={
           tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&
@@ -580,14 +879,34 @@ export default function MapScreen({
         }
         phoneEnabled={!!phone?.enabled}
         onDogPress={openDog}
-        onMapPress={historical ? () => historyScreen.current?.mapPressed() : cardOpen ? pressMap : undefined}
+        onMapPress={
+          historical
+            ? () => historyScreen.current?.mapPressed()
+            : cardOpen
+            ? pressMap
+            : undefined
+        }
         onCursorMove={screen.moveCursor}
-        onStopPress={place => screen.moveCursor(place.start, 'stop', { start: place.start })}
-        historyFocus={historical && screen.focus && screen.cursor?.point ? { key: screen.focus.key,
-          // 換主角時的地圖: to the new protagonist's cursor, even after a drag.
-          centre: screen.focus.action === 'node' || screen.focus.action === 'stop'
-            || (screen.focus.action === 'protagonist' && screen.focus.id != null),
-          coordinate: { latitude: screen.cursor.point.latitude, longitude: screen.cursor.point.longitude } } : null}
+        onStopPress={place =>
+          screen.moveCursor(place.start, 'stop', { start: place.start })
+        }
+        historyFocus={
+          historical && screen.focus && screen.cursor?.point
+            ? {
+                key: screen.focus.key,
+                // 換主角時的地圖: to the new protagonist's cursor, even after a drag.
+                centre:
+                  screen.focus.action === 'node' ||
+                  screen.focus.action === 'stop' ||
+                  (screen.focus.action === 'protagonist' &&
+                    screen.focus.id != null),
+                coordinate: {
+                  latitude: screen.cursor.point.latitude,
+                  longitude: screen.cursor.point.longitude,
+                },
+              }
+            : null
+        }
         historyFrame={historyFrame}
         historyPanel={historyPanel}
         onHeading={setHeading}
@@ -597,17 +916,29 @@ export default function MapScreen({
         today={historical ? null : today}
         onToday={openMyRoute}
       />
+
       {!historical && (
         // Fixed under the status bar; it does not move with the card.
-        <SettingsGear top={gearTop} alert={reasons.length > 0} alertLabel={gearLabel(reasons)}
-          onPress={onOpenSettings} />
+        <SettingsGear
+          top={gearTop}
+          alert={reasons.length > 0}
+          alertLabel={gearLabel(reasons)}
+          onPress={onOpenSettings}
+        />
       )}
-      <TopAlertCards cards={cards} top={cardsTop} onAction={pressCardAction} onClose={closeCard}
-        onHeight={setTopHeight} />
-      {!historical && !tracking.preferences.ready && <View style={[styles.source, { top }]}>
-        <View style={styles.statusDot} />
-        <Text style={styles.sourceText}>讀取設定中…</Text>
-      </View>}
+      <TopAlertCards
+        cards={cards}
+        top={cardsTop}
+        onAction={pressCardAction}
+        onClose={closeCard}
+        onHeight={setTopHeight}
+      />
+      {!historical && !tracking.preferences.ready && (
+        <View style={[styles.source, { top }]}>
+          <View style={styles.statusDot} />
+          <Text style={styles.sourceText}>讀取設定中…</Text>
+        </View>
+      )}
       {!!messages.length && (
         <View
           onLayout={event => setNoticeHeight(event.nativeEvent.layout.height)}
@@ -627,11 +958,18 @@ export default function MapScreen({
         </View>
       )}
       {historical && target && (
-        <HistoryScreen key={fixture ? `fixture:${fixture.name}` : 'live'} ref={historyScreen} screen={screen}
-          top={gearTop} initialRangeOpen={!!fixture?.historyView?.rangeOpen}
+        <HistoryScreen
+          key={fixture ? `fixture:${fixture.name}` : 'live'}
+          ref={historyScreen}
+          screen={screen}
+          top={gearTop}
+          initialRangeOpen={!!fixture?.historyView?.rangeOpen}
           initialCalendar={fixture?.historyView?.calendar ?? null}
-          candidates={historyCandidates} initialSheet={fixture?.historyView?.sheet ?? null}
-          levels={levels} bottomInset={insets.bottom} onBack={onLeaveHistory}
+          candidates={historyCandidates}
+          initialSheet={fixture?.historyView?.sheet ?? null}
+          levels={levels}
+          bottomInset={insets.bottom}
+          onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           onLevel={(level, height) => setPanel({ level, height })}
           exportNative={exportNative} lastExport={lastExport} onRememberExport={rememberExport}
@@ -655,61 +993,84 @@ export default function MapScreen({
         />
       )}
       {cardModel && cardPage === 'activity' && (
-        <ActivityPage name={cardModel.name} slaveId={cardModel.slaveId} database={database} owner={cloudOwner}
-          active={active && tracking.foreground && !!tracking.ready?.real} dogAliases={dogAliases}
-          onBack={closePage} />
+        <ActivityPage
+          name={cardModel.name}
+          slaveId={cardModel.slaveId}
+          database={database}
+          owner={cloudOwner}
+          active={active && tracking.foreground && !!tracking.ready?.real}
+          dogAliases={dogAliases}
+          onBack={closePage}
+        />
       )}
       {cardModel && cardPage === 'edit' && (
-        <DogProfile key={cardModel.slaveId} slaveId={cardModel.slaveId}
-          name={displayName(cardModel.slaveId, dogAliases)} alias={dogAliases?.[cardModel.slaveId] || ''}
-          avatar={avatars[cardModel.slaveId] || null} onSaveName={saveName} onSaveAvatar={saveAvatar}
-          onBack={closePage} />
+        <DogProfile
+          key={cardModel.slaveId}
+          slaveId={cardModel.slaveId}
+          name={displayName(cardModel.slaveId, dogAliases)}
+          alias={dogAliases?.[cardModel.slaveId] || ''}
+          avatar={avatars[cardModel.slaveId] || null}
+          onSaveName={saveName}
+          onSaveAvatar={saveAvatar}
+          onBack={closePage}
+        />
       )}
     </View>
   );
 }
-const styles = StyleSheet.create({
-  // MapScreen lives in App's persistent absolute map layer. A flex-only child
-  // can measure to zero under Fabric, sending bottom-anchored overlays above
-  // the viewport, so make this screen an explicit inset box as well.
-  root: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: colors.canvas,
-  },
-  source: {
-    position: 'absolute',
-    zIndex: 20,
-    left: 14,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 14,
-    height: 36,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...floatingShadow,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.master,
-    marginRight: 8,
-  },
-  sourceText: { color: colors.ink, fontSize: 13, fontWeight: '700' },
-  notices: {
-    position: 'absolute',
-    zIndex: 20,
-    left: 14,
-    right: 14,
-    maxHeight: 108,
-    backgroundColor: '#FFFAF0',
-    borderRadius: 12,
-    padding: 10,
-    ...floatingShadow,
-  },
-  noticeText: { color: '#75430B', fontSize: 12, lineHeight: 18 },
+const getStyles = makeStyles(theme => {
+  const {
+    appColors: colors,
+    floatingShadow,
+    literalColors: themeLiteral,
+  } = theme;
+  return StyleSheet.create({
+    // MapScreen lives in App's persistent absolute map layer. A flex-only child
+    // can measure to zero under Fabric, sending bottom-anchored overlays above
+    // the viewport, so make this screen an explicit inset box as well.
+    root: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      backgroundColor: colors.canvas,
+    },
+    source: {
+      position: 'absolute',
+      zIndex: 20,
+      left: 14,
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 14,
+      height: 36,
+      flexDirection: 'row',
+      alignItems: 'center',
+      ...floatingShadow,
+    },
+    statusDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.master,
+      marginRight: 8,
+    },
+    sourceText: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+    notices: {
+      position: 'absolute',
+      zIndex: 20,
+      left: 14,
+      right: 14,
+      maxHeight: 108,
+      backgroundColor: themeLiteral.mapNoticeBackground,
+      borderRadius: 12,
+      padding: 10,
+      ...floatingShadow,
+    },
+    noticeText: {
+      color: themeLiteral.mapNoticeText,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+  });
 });

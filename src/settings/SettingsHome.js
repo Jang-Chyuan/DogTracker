@@ -1,35 +1,67 @@
-import React from 'react';
+import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, space, type } from '../theme/tokens';
-import { GroupCard, GroupTitle, HomeRow, ProblemBang, settingsStyles } from './SettingsUI';
+import { radius, space, type } from '../theme/tokens';
+import {
+  GroupCard,
+  GroupTitle,
+  HomeRow,
+  ProblemBang,
+  getSettingsStyles,
+} from './SettingsUI';
 
 /**
  * 「位置存不進手機」 above the groups (design 「位置存不進手機收起之後」): phone
  * full → 「手機空間不足，位置存不進手機」, opens the storage settings; any other
  * reason → the reason, opens where it is shown. Goes when writing works again.
  */
-export function StorageWarning({ storage, onPress, testID = 'settings-storage-warning' }) {
+export function StorageWarning({
+  storage,
+  onPress,
+  testID = 'settings-storage-warning',
+}) {
+  const styles = useStyles(getStyles);
   if (!storage) return null;
   // `heading`: a problem of its own (D0 「手機裡的資料打不開」 opening 診斷).
-  const title = storage.heading ?? (storage.full ? '手機空間不足，位置存不進手機' : '位置存不進手機');
+  const title =
+    storage.heading ??
+    (storage.full ? '手機空間不足，位置存不進手機' : '位置存不進手機');
   // On 診斷 (S8, no onPress) the whole reason, also when the phone is full.
-  const reason = onPress ? (!storage.full && storage.reason) : storage.reason;
+  const reason = onPress ? !storage.full && storage.reason : storage.reason;
   const body = (
     <>
       <ProblemBang />
       <View style={styles.body}>
         <Text style={styles.title}>{title}</Text>
-        {reason ? <Text style={styles.reason} numberOfLines={onPress ? 2 : undefined}>{reason}</Text> : null}
+        {reason ? (
+          <Text style={styles.reason} numberOfLines={onPress ? 2 : undefined}>
+            {reason}
+          </Text>
+        ) : null}
       </View>
     </>
   );
+
   const label = reason ? `${title}，${reason}` : title;
   if (!onPress) {
-    return <View testID={testID} accessible accessibilityLabel={label} style={styles.warning}>{body}</View>;
+    return (
+      <View
+        testID={testID}
+        accessible
+        accessibilityLabel={label}
+        style={styles.warning}
+      >
+        {body}
+      </View>
+    );
   }
   return (
-    <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
-      style={({ pressed }) => [styles.warning, pressed && styles.pressed]}>
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [styles.warning, pressed && styles.pressed]}
+    >
       {body}
     </Pressable>
   );
@@ -42,29 +74,48 @@ export function StorageWarning({ storage, onPress, testID = 'settings-storage-wa
  * version is the last line.
  */
 export default function SettingsHome({ home, version, onOpen, onStorage }) {
+  const settingsStyles = useStyles(getSettingsStyles);
   return (
-    <ScrollView testID="settings-home" style={settingsStyles.page} contentContainerStyle={settingsStyles.content}>
+    <ScrollView
+      testID="settings-home"
+      style={settingsStyles.page}
+      contentContainerStyle={settingsStyles.content}
+    >
       <StorageWarning storage={home.storage} onPress={onStorage} />
       {home.groups.map(group => (
         <View key={group.title}>
           <GroupTitle>{group.title}</GroupTitle>
           <GroupCard>
-            {group.rows.map(row => <HomeRow key={row.id} row={row} onPress={() => onOpen(row.id)} />)}
+            {group.rows.map(row => (
+              <HomeRow key={row.id} row={row} onPress={() => onOpen(row.id)} />
+            ))}
           </GroupCard>
         </View>
       ))}
-      {version ? <Text style={settingsStyles.footer}>{`DogTracker ${version}`}</Text> : null}
+      {version ? (
+        <Text style={settingsStyles.footer}>{`DogTracker ${version}`}</Text>
+      ) : null}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  warning: {
-    flexDirection: 'row', alignItems: 'center', gap: space.m, padding: 14, marginTop: space.s,
-    borderRadius: radius.alertCard, backgroundColor: colors.critBg, borderWidth: 1, borderColor: colors.alertBorder,
-  },
-  pressed: { opacity: 0.8 },
-  body: { flex: 1 },
-  title: { ...type.cardTitle, color: colors.crit },
-  reason: { ...type.small, color: colors.textMuted },
+const getStyles = makeStyles(theme => {
+  const { colors } = theme;
+  return StyleSheet.create({
+    warning: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.m,
+      padding: 14,
+      marginTop: space.s,
+      borderRadius: radius.alertCard,
+      backgroundColor: colors.critBg,
+      borderWidth: 1,
+      borderColor: colors.alertBorder,
+    },
+    pressed: { opacity: 0.8 },
+    body: { flex: 1 },
+    title: { ...type.cardTitle, color: colors.crit },
+    reason: { ...type.small, color: colors.textMuted },
+  });
 });

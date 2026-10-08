@@ -22,7 +22,11 @@ export const darkTheme = {
   },
   routeColors: darkSpec.routeColors,
   settingIcon: darkSpec.settingIcon,
-  opacity: { ...light.opacity, ...darkSpec.opacity },
+  opacity: {
+    ...light.opacity,
+    ...darkSpec.opacity,
+    faceGlow: darkSpec.opacity.cursorHalo,
+  },
   shadow: darkSpec.shadow,
   mapStyle: darkSpec.mapStyle,
 };
