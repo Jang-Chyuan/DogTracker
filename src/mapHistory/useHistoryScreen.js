@@ -254,15 +254,21 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   const following = today && growing && (!manual || manual.following);
   const lastRow = Math.max(0, ...subjects.map(s => s.rows[s.rows.length - 1]?.time ?? 0));
   const modelNow = Math.max(now, lastRow);
+  // The first view waits for every dog shown (the map frames the
+  // protagonist once); a dog added later is left out while it is read.
+  const allLoaded = current.dogs.length > 0 && current.dogs.every(d => rowsOf(d.id).loaded);
+  const shownOnce = useRef(null);
+  if (allLoaded && sessionKey) shownOnce.current = `${sessionKey}|${day}|${source}`;
+  const waiting = shownOnce.current !== `${sessionKey}|${day}|${source}` && !allLoaded;
   const dayModel = useMemo(() => {
-    if (!subject || !subjects.length) return null;
+    if (!subject || !subjects.length || waiting) return null;
     const main = subjects.find(s => s.id === current.protagonist) ? current.protagonist : subjects[0].id;
     return multiDayModel(subjects, { dayStart: day, dayEnd, today, now: modelNow, source, manual, following,
       protagonist: main, rangeOwner: current.rangeOwner ?? main, kept: current.kept ?? null });
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject, versions, day, dayEnd, today, modelNow, source, manual, following, current.protagonist,
-    current.rangeOwner, current.kept]);
+    current.rangeOwner, current.kept, waiting]);
   const model = dayModel?.main ?? null;
   const protagonistId = dayModel?.protagonist ?? current.protagonist;
   // Who has a fix in the range (40% chips, 地圖不畫牠); a dog still being
