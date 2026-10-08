@@ -17,6 +17,8 @@ const CLOSE_MS = motion.rangeCollapse.duration;
 const HANDLE = '#B9C3BD';
 // Grey (no records, the future): textMuted at 40% (DESIGN.md「月曆」).
 const FADED = 'rgba(94,94,94,0.4)';
+// The previous / next month's days (the mockup's #7D7672).
+const OTHER_MONTH = '#7D7672';
 const CELL = 44;
 const MONTH_CELL = 56;
 
@@ -55,17 +57,22 @@ function QueryStatus({ status, onRetry }) {
   );
 }
 
+// Colours are always given (never a style left out): Android kept a removed
+// background or text colour on a cell after the cloud's answer changed it.
+const dayColor = cell => (cell.selected ? colors.tonalText : cell.muted ? FADED
+  : !cell.inMonth ? OTHER_MONTH : colors.text);
+
 function DayCell({ cell, onPress }) {
-  const text = [styles.dayText, !cell.inMonth && styles.otherMonth, cell.muted && styles.faded,
-    cell.selected && styles.selectedText];
+  const text = [styles.dayText, { color: dayColor(cell) }];
+  const frame = cell.selected ? styles.frameSelected : cell.today ? styles.frameToday : styles.framePlain;
   return (
     <Pressable testID={`calendar-day-${cell.day}`} accessibilityRole="button" accessibilityLabel={cell.label}
       accessibilityState={{ disabled: !cell.tappable, selected: cell.selected }}
       // A day that cannot be chosen does nothing at all (判定表「沒紀錄的日子被點」).
       onPress={cell.tappable ? () => onPress(cell.day) : undefined} style={styles.dayCell}>
-      <View style={[styles.dayInner, cell.today && styles.today, cell.selected && styles.selected]}>
+      <View style={[styles.dayInner, frame]} collapsable={false}>
         <Text style={text}>{cell.date}</Text>
-        {cell.dot && <View style={styles.dot} />}
+        <View style={[styles.dot, cell.dot ? styles.shown : styles.hidden]} />
       </View>
     </Pressable>
   );
@@ -76,12 +83,13 @@ function MonthCell({ entry, onPress }) {
     <Pressable testID={`calendar-month-${entry.month}`} accessibilityRole="button"
       accessibilityLabel={`${entry.label}${entry.state === 'records' ? '，有紀錄' : entry.muted ? '，沒有紀錄' : ''}`}
       accessibilityState={{ disabled: !entry.tappable, selected: entry.selected }}
-      onPress={entry.tappable ? () => onPress(entry.month) : undefined}
-      style={[styles.monthCell, entry.tappable && styles.monthOn, entry.selected && styles.selected]}>
-      <Text style={[styles.monthText, entry.muted && styles.faded, entry.selected && styles.selectedText]}>
+      onPress={entry.tappable ? () => onPress(entry.month) : undefined} collapsable={false}
+      style={[styles.monthCell,
+        entry.selected ? styles.frameSelected : entry.tappable ? styles.frameOn : styles.framePlain]}>
+      <Text style={[styles.monthText, { color: entry.selected ? colors.tonalText : entry.muted ? FADED : colors.text }]}>
         {entry.label}
       </Text>
-      {entry.dot && <View style={styles.monthDot} />}
+      <View style={[styles.monthDot, entry.dot ? styles.shown : styles.hidden]} />
     </Pressable>
   );
 }
@@ -102,7 +110,10 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet({ screen, 
   // The year 選月份 shows (null: the month view).
   const [picker, setPicker] = useState(() => (initialView === 'months' ? monthOf(dayKey).year : null));
   const progress = useRef(new Animated.Value(0)).current;
-  const [sheetHeight, setSheetHeight] = useState(0);
+  // The animated styles are made once: a native-driven style that changed
+  // under a running animation left the sheet (or the scrim) undrawn.
+  const opened = useRef(false);
+  const translateY = useRef(progress.interpolate({ inputRange: [0, 1], outputRange: [windowHeight, 0] })).current;
   const closing = useRef(false);
   const close = useCallback(() => {
     if (closing.current) return;
@@ -126,8 +137,8 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet({ screen, 
   }), [picker, close]);
   const onLayout = event => {
     const value = Math.round(event.nativeEvent.layout.height);
-    if (!value || sheetHeight) return;
-    setSheetHeight(value);
+    if (!value || opened.current) return;
+    opened.current = true;
     Animated.timing(progress, { toValue: 1, duration: motion.cardRise.duration, easing: ease,
       useNativeDriver: true }).start();
   };
@@ -142,7 +153,6 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet({ screen, 
     [shown, todayKey, dayKey, knowledge]);
   const months = useMemo(() => (picker == null ? null
     : monthPicker({ year: picker, today: todayKey, shown: month.key, knowledge })), [picker, todayKey, month.key, knowledge]);
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [sheetHeight || windowHeight, 0] });
   let body;
   if (months) {
     body = (
@@ -215,15 +225,14 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet({ screen, 
     );
   }
   return (
-    <View style={[StyleSheet.absoluteFill, styles.layer]} testID="history-calendar">
-      <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]}>
+    <View style={[StyleSheet.absoluteFill, styles.layer]} testID="history-calendar" collapsable={false}>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]} collapsable={false}>
         <Pressable style={StyleSheet.absoluteFill} accessibilityRole="button" accessibilityLabel="關閉選日期"
           onPress={close} />
       </Animated.View>
       <Animated.View onLayout={onLayout} accessibilityViewIsModal
         style={[styles.sheet, { paddingBottom: space.l + bottomInset,
-          maxHeight: Math.round(windowHeight * sizes.sheet.maxRatio), transform: [{ translateY }] },
-        !sheetHeight && styles.unmeasured]}>
+          maxHeight: Math.round(windowHeight * sizes.sheet.maxRatio), transform: [{ translateY }] }]}>
         {!months && <View style={styles.handle} />}
         {body}
       </Animated.View>
@@ -242,7 +251,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, paddingHorizontal: space.l,
     paddingTop: space.s, elevation: 24,
   },
-  unmeasured: { opacity: 0 },
   handle: { alignSelf: 'center', width: 32, height: 4, borderRadius: 2, backgroundColor: HANDLE, marginBottom: space.s },
   titleRow: { flexDirection: 'row', alignItems: 'center', minHeight: touch.min, gap: space.s },
   // 標題 16sp 粗體 (DESIGN.md「底部小視窗」).
@@ -270,12 +278,15 @@ const styles = StyleSheet.create({
   dayCell: { flex: 1, height: CELL + 4, padding: 2 },
   dayInner: { flex: 1, borderRadius: radius.input, alignItems: 'center', justifyContent: 'center' },
   dayText: { ...type.status, color: colors.text },
-  // The previous / next month's days (the mockup's #7D7672).
-  otherMonth: { color: '#7D7672' },
-  faded: { color: FADED },
-  today: { borderWidth: 1.5, borderColor: colors.text },
-  selected: { backgroundColor: colors.tonal, borderWidth: 2, borderColor: colors.accent },
-  selectedText: { color: colors.tonalText },
+  // Every variant sets all three, so a change never leaves one behind.
+  // The sheet's white, not 'transparent': Android left the old fill on a
+  // cell whose fill was taken away.
+  framePlain: { backgroundColor: colors.surface, borderWidth: 0, borderColor: colors.surface },
+  frameOn: { backgroundColor: colors.bg, borderWidth: 0, borderColor: colors.bg },
+  frameToday: { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.text },
+  frameSelected: { backgroundColor: colors.tonal, borderWidth: 2, borderColor: colors.accent },
+  shown: { opacity: 1 },
+  hidden: { opacity: 0 },
   dot: { position: 'absolute', bottom: 4, width: sizes.calendarDot, height: sizes.calendarDot,
     borderRadius: sizes.calendarDot / 2, backgroundColor: colors.accent },
   legend: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.l, rowGap: space.xs,
@@ -289,7 +300,6 @@ const styles = StyleSheet.create({
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: space.s },
   monthCell: { width: '31.5%', height: MONTH_CELL, borderRadius: radius.input, alignItems: 'center',
     justifyContent: 'center' },
-  monthOn: { backgroundColor: colors.bg },
   monthText: { ...type.status, color: colors.text },
   monthDot: { position: 'absolute', bottom: 8, width: sizes.calendarDot, height: sizes.calendarDot,
     borderRadius: sizes.calendarDot / 2, backgroundColor: colors.accent },
