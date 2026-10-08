@@ -65,7 +65,7 @@ test('the switches do not change which problems exist', () => {
     receiverBattery: { valid: true, percentage: 10 },
   });
   expect(Object.keys(result.active).sort()).toEqual(['dog-battery:4', 'dog-out-of-range:4', 'dog-stale:4',
-    'receiver-battery:receiver', 'receiver-disconnected:receiver', 'storage:phone']);
+    'receiver-battery:7', 'receiver-disconnected:receiver', 'storage:phone']);
 });
 
 // notif「連上之後斷掉…30 秒…沒設定、自己按中斷、還沒連上過都不送」。
@@ -111,9 +111,42 @@ test('battery: 20% once, 10% once more, cleared only over 30%; charging is not l
 
 // notif「接收器電量低…只提醒一次；充到 30% 以上才解除」。
 test('the receiver battery has no 10% alert', () => {
-  const receiver = { enabled: true };
+  const receiver = { enabled: true, expectedMasterId: 7 };
   const first = events(0, [], { receiver, receiverBattery: { valid: true, percentage: 20 } });
   expect(events(M, [], { receiver, receiverBattery: { valid: true, percentage: 9 } }, first).events).toEqual([]);
+});
+
+// Codex review: a reading missing for a while is the same episode; another receiver is its own.
+test('battery episodes survive a missing reading; each receiver has its own', () => {
+  const receiver = { enabled: true, expectedMasterId: 7 };
+  let state = events(0, [{ ...dog, batteryPercentage: 15 }], { receiver, receiverBattery: { valid: true, percentage: 15 } });
+  let scheduler = scheduleAlerts({}, { now: 0, active: state.active }).state;
+  state = events(M, [], { receiver: { ...receiver, enabled: false } }, state);
+  expect(state.active['dog-battery:4']).toMatchObject({ present: false, startedAt: 0 });
+  expect(state.active['receiver-battery:7']).toMatchObject({ present: false, startedAt: 0 });
+  scheduler = scheduleAlerts(scheduler, { now: M, active: state.active }).state;
+  state = events(5 * M, [{ ...dog, batteryPercentage: 15 }], { receiver, receiverBattery: { valid: true, percentage: 15 } },
+    state);
+  expect(scheduleAlerts(scheduler, { now: 5 * M, active: state.active }).effects.vibration).toBeNull();
+  const other = events(6 * M, [], { receiver: { enabled: true, expectedMasterId: 8 },
+    receiverBattery: { valid: true, percentage: 15 } }, state);
+  expect(other.active['receiver-battery:8']).toMatchObject({ present: true, startedAt: 6 * M });
+  expect(other.active['receiver-battery:7']).toBeUndefined();
+});
+
+// Codex review: the pause ending waits for the gap; a queued cloud dog never alerts in the background.
+test('the pause end keeps the 2-minute gap; queued cloud dogs wait for the foreground', () => {
+  const a = event('dog-stale');
+  const b = event('dog-battery', 5);
+  let state = pauseAlerts(tick(0, [a]).state, map([a]), 0);
+  state = tick(29 * M, [a, b], state).state;
+  const ended = tick(30 * M, [a, b], state);
+  expect(ended.effects.vibration).toBeNull();
+  expect(tick(31 * M, [a, b], ended.state).effects.delivered).toEqual(['dog-stale:4']);
+  const cloud = event('dog-stale', 6, { source: 'cloud' });
+  const queued = run([[0, [a]], [M, [a, cloud]]]).state;
+  expect(tick(3 * M, [a, cloud], queued, { foreground: false }).effects.vibration).toBeNull();
+  expect(tick(4 * M, [a, cloud], queued).effects.delivered).toEqual(['dog-stale:6']);
 });
 
 // ---- scheduling ----------------------------------------------------------

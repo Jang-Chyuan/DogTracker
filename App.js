@@ -690,7 +690,7 @@ function TrackerApp({ resume = null, onRestart }) {
       : value =>
           Promise.resolve(
             tracking.saveTrackingPreferences?.({ alertState: value }),
-          ).catch(() => {}),
+          ).catch(() => false),
     // alerts-paused: paused `since` before the fixture's now, until `until`.
     setup: alertPause
       ? (state, at) =>

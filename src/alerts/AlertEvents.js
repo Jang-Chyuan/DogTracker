@@ -73,13 +73,14 @@ export function updateAlertEvents(previous = {}, {
     if (low) {
       const level = kind === 'dog-battery' && percentage <= BATTERY_AGAIN_PERCENT ? 2 : 1;
       batteries[latch] = {
-        startedAt: batteries[latch]?.startedAt ?? now,
-        level: Math.max(batteries[latch]?.level || 0, level),
+        kind, subject, startedAt: batteries[latch]?.startedAt ?? now,
+        level: Math.max(batteries[latch]?.level || 0, level), detail, percentage,
       };
     }
     if (batteries[latch]) {
-      add(kind, subject, { ...detail, percentage, level: batteries[latch].level, present: low },
-        batteries[latch].startedAt);
+      add(kind, subject, { ...batteries[latch].detail, ...detail,
+        percentage: Number.isFinite(percentage) ? percentage : batteries[latch].percentage,
+        level: batteries[latch].level, present: low }, batteries[latch].startedAt);
     }
   };
 
@@ -110,9 +111,22 @@ export function updateAlertEvents(previous = {}, {
   }
   const storage = storageProblem(storageError);
   if (storage) add('storage', 'phone', { storage, source: 'ble' });
-  if (receiver?.enabled && receiverBattery?.valid) {
-    battery('receiver-battery', 'receiver', receiverBattery.percentage, false,
-      { number: receiverNumber(receiver), source: 'ble' });
+  const number = receiverNumber(receiver);
+  if (receiver?.enabled && number != null) {
+    // Another receiver's low battery is not this one's.
+    for (const [latch, value] of Object.entries(batteries)) {
+      if (value?.kind === 'receiver-battery' && value.subject !== number) delete batteries[latch];
+    }
+    battery('receiver-battery', number, receiverBattery?.valid ? receiverBattery.percentage : null, false,
+      { number, source: 'ble' });
+  }
+  // A latched battery without a reading this time (the dog not heard, the
+  // receiver switched off) is still the same episode: kept, not shown.
+  for (const [latch, value] of Object.entries(batteries)) {
+    if (!active[latch] && value?.kind && value.subject != null) {
+      add(value.kind, value.subject, { ...value.detail, percentage: value.percentage, level: value.level,
+        present: false }, value.startedAt);
+    }
   }
 
   const events = [];

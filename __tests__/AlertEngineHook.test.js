@@ -26,7 +26,8 @@ afterEach(() => {
 });
 
 test('vibrates once, saves what changed, waits for the input, keeps a fixture apart', async () => {
-  const save = jest.fn();
+  // The first write is refused: it is tried again on the next tick.
+  const save = jest.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
   let input = null;
   const props = { running: true, source: 'live', clock: () => 5 * M, readInput: () => input, save };
   let renderer;
@@ -41,18 +42,18 @@ test('vibrates once, saves what changed, waits for the input, keeps a fixture ap
   expect(save).toHaveBeenCalledTimes(1);
   await act(async () => { jest.advanceTimersByTime(15000); });
   expect(Vibration.vibrate).toHaveBeenCalledTimes(1);
-  expect(save).toHaveBeenCalledTimes(1);
+  expect(save).toHaveBeenCalledTimes(2);
   // In front: never posted.
   expect(lastAlertNotification().command).toBe('cancel');
   // 暫停提醒 30 分: saved, shown.
-  await act(async () => { result.pauseNow(); });
+  await act(async () => { result.pauseNow(); await Promise.resolve(); });
   expect(result.pause.until).toBe(35 * M);
-  expect(save).toHaveBeenCalledTimes(2);
+  expect(save).toHaveBeenCalledTimes(3);
   // A fixture starts from its own state and never saves.
   await act(async () => { renderer.update(<Probe {...props} source="alerts-two-dogs" save={null} />); });
   await act(async () => { jest.advanceTimersByTime(5000); });
   expect(Vibration.vibrate).toHaveBeenCalledTimes(2);
   expect(result.pause).toBeNull();
-  expect(save).toHaveBeenCalledTimes(2);
-  renderer.unmount();
+  expect(save).toHaveBeenCalledTimes(3);
+  await act(async () => { renderer.unmount(); });
 });

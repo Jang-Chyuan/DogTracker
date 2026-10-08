@@ -57,12 +57,23 @@ export function useAlertEngine({
     setOutput(current => (current.key === key ? current : { ...next, key }));
   }, []);
 
+  // Written when it changed; marked saved only once the write succeeded, so
+  // a refused write is tried again on the next tick.
+  const writing = useRef(null);
   const persist = useCallback(() => {
     const value = persistedAlertState(state.current);
     const key = JSON.stringify(value);
-    if (key === savedKey.current) return;
-    savedKey.current = key;
-    latest.current.save?.(value);
+    const write = latest.current.save;
+    if (key === savedKey.current || key === writing.current || !write) return;
+    writing.current = key;
+    const from = owner.current;
+    Promise.resolve()
+      .then(() => write(value))
+      .then(ok => ok !== false, () => false)
+      .then(ok => {
+        if (writing.current === key) writing.current = null;
+        if (ok && owner.current === from) savedKey.current = key;
+      });
   }, []);
 
   const tick = useCallback(() => {
@@ -100,6 +111,7 @@ export function useAlertEngine({
     owner.current = { source, prepared: false };
     state.current = restoreAlertState(initial);
     savedKey.current = JSON.stringify(persistedAlertState(state.current));
+    writing.current = null;
     log.current = [];
   }
 

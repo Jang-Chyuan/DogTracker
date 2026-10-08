@@ -125,9 +125,11 @@ export function scheduleAlerts(previous = {}, {
   }
   if (ended) pause = null;
 
-  const queued = present.filter(event => pending[event.key]);
+  // Only what may alert now: a cloud dog in the background waits.
+  const queued = present.filter(event => pending[event.key] && !deferred(event));
   const critical = queued.some(event => CRITICAL_KINDS.includes(event.kind) && !pending[event.key].repeat);
-  const deliver = queued.length > 0 && (critical || ended || previous.lastAttentionAt == null
+  // The paused problems coming back at the end wait for the gap like any other.
+  const deliver = queued.length > 0 && (critical || previous.lastAttentionAt == null
     || now - previous.lastAttentionAt >= ATTENTION_GAP_MS);
   let lastAttentionAt = previous.lastAttentionAt ?? null;
   if (deliver) {
