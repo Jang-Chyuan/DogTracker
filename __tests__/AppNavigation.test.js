@@ -784,7 +784,7 @@ test('D2 asks one permission after another, then 下一步; leaving midway resum
     expect(text()).toContain('未允許');
     expect(text()).toContain('開系統設定 ›');
     expect(text()).not.toContain('全部允許');
-    expect(preferences().permissionsAsked).toBe(true);
+    expect(preferences().askedPermissions).toEqual(['nearby', 'location', 'notifications']);
     // 開系統設定 › opens this app's settings; back in the app every row is
     // checked again.
     await tap('permission-location-settings');
@@ -793,9 +793,10 @@ test('D2 asks one permission after another, then 下一步; leaving midway resum
     await act(async () => onAppState('active'));
     await advance(100);
     expect(text()).not.toContain('只給了大概位置');
-    // Back on D2 goes to D1 (the guide's step before).
+    // Back on D2 goes to D1 (the guide's step before), and a restart is D1.
     await act(async () => expect(onBack()).toBe(true));
     expect(signInPage()).toBe(true);
+    expect(preferences().onboarding).toBe('signIn');
   } finally {
     restoreVersion();
   }

@@ -20,13 +20,14 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   // The first-launch guide (Launch.js): a phone that saved nothing yet starts
   // at D1 ('signIn'); a saved row from before the guide existed is 'done'.
   onboarding: ONBOARDING_DONE,
-  // D2 asked for the permissions once (「全部允許」): rows not allowed since
-  // then say 「未允許」 with 「開系統設定 ›」, never a second system question.
-  permissionsAsked: false,
-  // D3 asked for the camera once: refused since then, D3a says 「需要相機才能
-  // 掃描」 with 「開系統設定 ›」.
-  cameraAsked: false,
+  // The system questions the guide has asked (D2 「全部允許」, D3 when D2 was
+  // skipped): 'nearby', 'location', 'notifications', 'camera'. One refused
+  // after it was asked says 「未允許」 / 「需要相機才能掃描」 with 「開系統設定 ›」,
+  // never a second system question.
+  askedPermissions: [],
 });
+
+export const ASKABLE_PERMISSIONS = Object.freeze(['nearby', 'location', 'notifications', 'camera']);
 
 // Saved by versions before v3, which had a dog to follow and dogs hidden one by
 // one. v3 has neither (every dog is drawn, the map never follows): the fields
@@ -39,8 +40,7 @@ export function validateTrackingPreferences(value) {
   const settings = { ...DEFAULT_TRACKING_PREFERENCES, ...value };
   if (!['demo', 'real'].includes(settings.mode))
     throw new Error('資料模式設定格式錯誤');
-  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails', 'noDataCardDismissed', 'permissionsAsked',
-    'cameraAsked']) {
+  for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails', 'noDataCardDismissed']) {
     if (typeof settings[key] !== 'boolean')
       throw new Error('地圖顯示設定格式錯誤');
   }
@@ -60,8 +60,9 @@ export function validateTrackingPreferences(value) {
     // rather than failing every other preference.
     alerts: normalizeAlertPreferences(settings.alerts),
     onboarding: ONBOARDING_STEPS.includes(settings.onboarding) ? settings.onboarding : ONBOARDING_DONE,
-    permissionsAsked: settings.permissionsAsked,
-    cameraAsked: settings.cameraAsked,
+    // Missing before 053; anything not a known question is dropped.
+    askedPermissions: Array.isArray(settings.askedPermissions)
+      ? ASKABLE_PERMISSIONS.filter(id => settings.askedPermissions.includes(id)) : [],
   };
 }
 

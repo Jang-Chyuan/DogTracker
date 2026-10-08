@@ -61,8 +61,8 @@ import { colors, layout, touch, type } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
 import { holdSplash, launchInto } from './src/app/hideSplash';
-import { guideStack, launchScreen, leaveSignIn, ONBOARDING_DONE, ONBOARDING_RECEIVER, ONBOARDING_SIGN_IN,
-  signInStack } from './src/app/Launch';
+import { GUIDE_STEP_OF, guideStack, launchScreen, leaveSignIn, ONBOARDING_DONE, ONBOARDING_PAIRED,
+  ONBOARDING_RECEIVER, ONBOARDING_SIGN_IN, signInStack } from './src/app/Launch';
 import { useReceiverService } from './src/ble/useReceiverService';
 import PermissionsScreen from './src/onboarding/PermissionsScreen';
 import { usePermissionsGuide } from './src/onboarding/usePermissionsGuide';
@@ -357,14 +357,22 @@ function TrackerApp({ resume = null, onRestart }) {
     saveGuideStep(ONBOARDING_DONE);
     setStack([{ name: 'map' }]);
   };
-  // Back in the guide: the step before, or out of the app from its first page.
+  // Back in the guide: the step before (saved, so a restart continues there),
+  // or out of the app from its first page.
   const guideBack = () => {
-    if (stack.length <= 2) BackHandler.exitApp();
-    else goBack();
+    if (stack.length <= 2) { BackHandler.exitApp(); return; }
+    const before = stack[stack.length - 2];
+    const step = GUIDE_STEP_OF[before.name];
+    if (step && !fixture) saveGuideStep(step);
+    goBack();
   };
-  // D2 → D3 (下一步 and 稍後再說 alike).
+  // D2 → D3 (下一步 and 稍後再說 alike). The map does not ask for location by
+  // itself afterwards: D2 asked, or the user chose to leave it (S4 has it).
   const permissionsNext = () => {
-    if (route.entry === 'onboarding') saveGuideStep(ONBOARDING_RECEIVER);
+    if (route.entry === 'onboarding' && !fixture) {
+      saveGuideStep(ONBOARDING_RECEIVER);
+      Promise.resolve(NativeTrackingPlatform?.claimLocationPermissionPrompt?.()).catch(() => {});
+    }
     openPairing(route.entry === 'onboarding' ? 'onboarding' : 'receiver');
   };
   // D3 set up a receiver (or 下一步 back on D3): D4 in the guide, otherwise
@@ -375,7 +383,11 @@ function TrackerApp({ resume = null, onRestart }) {
     if (!again && number != null && !fixture && (!flow.waitForData || kept)) {
       receiverControl.watchSwitch(number, { previous: kept ? previous : null, session: null, method });
     }
-    if (flow.guide) { open('paired', { entry: 'onboarding' }); return; }
+    if (flow.guide) {
+      saveGuideStep(ONBOARDING_PAIRED);
+      open('paired', { entry: 'onboarding' });
+      return;
+    }
     if (route.entry === 'map') setFrameRequest({ key: Date.now(), receiverId: number });
     goBack();
   };
@@ -643,15 +655,12 @@ function TrackerApp({ resume = null, onRestart }) {
   );
 }
 
-// D2, asking for real (or drawing a fixture's rows). The first location
-// question of the map is spent here too: D2 asked it.
+// D2, asking for real (or drawing a fixture's rows).
 function PermissionsRoute({ tracking, fixture, step, onNext, onLayout }) {
   const prefs = tracking.preferences?.value || {};
-  const guide = usePermissionsGuide({ asked: !!prefs.permissionsAsked, fixture: fixture?.permissionsGuide ?? null,
-    onAsked: () => {
-      Promise.resolve(NativeTrackingPlatform?.claimLocationPermissionPrompt?.()).catch(() => {});
-      return tracking.saveTrackingPreferences?.({ permissionsAsked: true });
-    } });
+  const guide = usePermissionsGuide({ asked: prefs.askedPermissions || [],
+    fixture: fixture?.permissionsGuide ?? null,
+    onAsked: list => tracking.saveTrackingPreferences?.({ askedPermissions: list }) });
   return <PermissionsScreen page={guide} step={step} onNext={onNext} onSystemSettings={() => Linking.openSettings()}
     onLayout={onLayout} />;
 }
@@ -662,8 +671,8 @@ function PairRoute({ route, tracking, receiverState, service, restore, locationS
   const flow = pairingFlow(route.entry, route.mode);
   const prefs = tracking.preferences?.value || {};
   const pairing = usePairing({ flow, receiverState, service, restore,
-    asked: { permissions: !!prefs.permissionsAsked, camera: !!prefs.cameraAsked },
-    onAsked: patch => tracking.saveTrackingPreferences?.(patch),
+    asked: prefs.askedPermissions || [],
+    onAsked: list => tracking.saveTrackingPreferences?.({ askedPermissions: list }),
     locationServices, fixture: fixture?.pairing ?? null, initialView: route.view || 'scan', onConnected, onLeave });
   backRef.current = pairing.back;
   return <PairingScreen pairing={pairing} step={flow.guide ? 3 : null} camera={!fixture} onLayout={onLayout} />;

@@ -1,7 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AppState, Linking, PermissionsAndroid, Platform } from 'react-native';
-import { androidPermissions, grantOf, neededPermissions, permissionsPage } from '../src/onboarding/Permissions';
+import { androidPermissions, askableIds, grantOf, neededPermissions, permissionsPage } from '../src/onboarding/Permissions';
 import {
   addNearby, CONNECT_TIMEOUT_MS, FIRST_PACKET_MS, pairedPage, pairingDialog, pairingFlow, parseReceiverName,
   signalLabel, SEARCH_MS,
@@ -52,7 +52,8 @@ test('D2a → D2b → D2c / D2d: rows and the button', () => {
   // Not checked yet: the button waits.
   expect(permissionsPage({ needed }).primary.disabled).toBe(true);
   // D2b: 附近的裝置 answered, 精確位置 being asked, 通知 waiting.
-  const b = permissionsPage({ needed, grants: { ...nothing, nearby: 'granted' }, asked: true, asking: 'location' });
+  const b = permissionsPage({ needed, grants: { ...nothing, nearby: 'granted' }, asked: ['nearby', 'location'],
+    asking: 'location' });
   expect(b.rows.map(row => [row.detail, row.state])).toEqual([['已允許', 'ok'], ['詢問中…', 'asking'],
     ['等一下', 'waiting']]);
   expect(b.primary).toEqual({ id: 'asking', label: '詢問中…', disabled: true });
@@ -60,7 +61,7 @@ test('D2a → D2b → D2c / D2d: rows and the button', () => {
   // D2c: only 大概, and refused → red 「!」 with 「開系統設定 ›」 (c027's
   // suggestion); 下一步 only.
   const c = permissionsPage({ needed, grants: { nearby: 'granted', location: 'approximate', notifications: 'denied' },
-    asked: true });
+    asked: needed });
   expect(c.rows.map(row => [row.detail, row.state, row.action])).toEqual([['已允許', 'ok', null],
     ['只給了大概位置，算不出距離', 'problem', '開系統設定 ›'], ['未允許', 'problem', '開系統設定 ›']]);
   expect(c.primary).toEqual({ id: 'next', label: '下一步', disabled: false });
@@ -72,6 +73,12 @@ test('D2a → D2b → D2c / D2d: rows and the button', () => {
   expect(d.primary.label).toBe('下一步');
   // 大概 location is a problem even before the questions (an earlier answer).
   expect(permissionsPage({ needed, grants: { ...nothing, location: 'approximate' } }).rows[1].state).toBe('problem');
+  // Only 附近的裝置 was asked (in D3, D2 skipped): the other two are still
+  // asked by 全部允許, never 附近的裝置 again.
+  const partly = permissionsPage({ needed, grants: nothing, asked: ['nearby'] });
+  expect(partly.rows.map(row => row.state)).toEqual(['problem', 'todo', 'todo']);
+  expect(partly.primary.label).toBe('全部允許');
+  expect(askableIds({ needed, grants: nothing, asked: ['nearby'] })).toEqual(['location', 'notifications']);
 });
 
 function renderHook(hook, props) {
@@ -106,7 +113,9 @@ test('usePermissionsGuide: one question at a time, each row as it comes back; th
   await act(async () => {});
   expect(hook.get().primary.label).toBe('全部允許');
   await act(async () => { await hook.get().allowAll(); });
-  expect(onAsked).toHaveBeenCalledTimes(1);
+  // Each question saved as it is sent.
+  expect(onAsked.mock.calls.map(call => call[0])).toEqual([['nearby'], ['nearby', 'location'],
+    ['nearby', 'location', 'notifications']]);
   expect(order).toEqual([[P.BLUETOOTH_SCAN, P.BLUETOOTH_CONNECT], [P.ACCESS_FINE_LOCATION, P.ACCESS_COARSE_LOCATION],
     [P.POST_NOTIFICATIONS]]);
   expect(hook.get().rows.map(row => row.state)).toEqual(['ok', 'problem', 'problem']);
@@ -121,7 +130,8 @@ test('usePermissionsGuide: one question at a time, each row as it comes back; th
 
 test('D2 page: rows, 開系統設定 › and the buttons', () => {
   const page = { ...permissionsPage({ needed: ['nearby', 'location', 'notifications'],
-    grants: { nearby: 'granted', location: 'approximate', notifications: 'denied' }, asked: true }), allowAll: jest.fn() };
+    grants: { nearby: 'granted', location: 'approximate', notifications: 'denied' },
+    asked: ['nearby', 'location', 'notifications'] }), allowAll: jest.fn() };
   const onNext = jest.fn(), onSystemSettings = jest.fn();
   let renderer;
   act(() => { renderer = Renderer.create(<PermissionsScreen page={page} step={2} onNext={onNext}
@@ -317,12 +327,12 @@ test('D3: Bluetooth off, 附近的裝置 refused (asked once), location off on A
   await act(async () => {});
   await act(async () => { hook.get().onQr(QR7); });
   expect(permissions.requestMultiple).toHaveBeenCalledWith([P.BLUETOOTH_SCAN, P.BLUETOOTH_CONNECT]);
-  expect(onAsked).toHaveBeenCalledWith({ permissionsAsked: true });
+  expect(onAsked).toHaveBeenCalledWith(['nearby']);
   expect(hook.get().dialog).toMatchObject({ title: '需要『附近的裝置』才能連接接收器' });
   hook.unmount();
   // Asked before: no second question.
   const again = allowAll({ check: jest.fn(async name => name === P.CAMERA) });
-  hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), permissions: again, asked: { permissions: true } });
+  hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), permissions: again, asked: ['nearby'] });
   await act(async () => {});
   await act(async () => { hook.get().onQr(QR7); });
   expect(again.requestMultiple).not.toHaveBeenCalled();
@@ -330,7 +340,7 @@ test('D3: Bluetooth off, 附近的裝置 refused (asked once), location off on A
   // Android 11: location permission and the location switch.
   const old = allowAll({ check: jest.fn(async name => name === P.CAMERA) });
   hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), permissions: old, version: 30,
-    asked: { permissions: true } });
+    asked: ['location'] });
   await act(async () => {});
   await act(async () => { hook.get().onQr(QR7); });
   expect(hook.get().dialog).toMatchObject({ title: '需要位置權限才能找接收器' });
@@ -354,11 +364,11 @@ test('the camera: asked once in D3a, only once it is on screen; refused → 需�
   let hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), permissions, onAsked });
   await act(async () => {});
   expect(permissions.request).toHaveBeenCalledWith(P.CAMERA);
-  expect(onAsked).toHaveBeenCalledWith({ cameraAsked: true });
+  expect(onAsked).toHaveBeenCalledWith(['camera']);
   expect(hook.get().camera).toBe('denied');
   hook.unmount();
   const again = allowAll({ check: jest.fn(async () => false) });
-  hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), permissions: again, asked: { camera: true } });
+  hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), permissions: again, asked: ['camera'] });
   await act(async () => {});
   expect(again.request).not.toHaveBeenCalled();
   expect(hook.get().camera).toBe('denied');
@@ -447,6 +457,34 @@ test('換接收器: the first packet from 8 takes it; leaving without one puts 7
   } finally {
     Platform.OS = originalOS;
   }
+});
+
+test('換接收器: 取消 or 30 s puts receiver 7 back at once, connected; another try pauses it again', async () => {
+  jest.useFakeTimers();
+  const native = { reconnect: jest.fn(async () => true), getState: jest.fn(async () => null) };
+  const restore = jest.fn(async () => {});
+  const ble = fakeBle({ devices: [] });
+  const hook = pairing({ flow: pairingFlow('receiver', 'change'), ble, native, restore, receiverState: receiver7,
+    onLeave: jest.fn() });
+  await act(async () => {});
+  await act(async () => { hook.get().onQr(QR8); });
+  act(() => hook.get().cancel());
+  await act(async () => {});
+  expect(restore).toHaveBeenCalledWith(expect.objectContaining({ number: 7 }));
+  expect(native.reconnect).toHaveBeenCalledTimes(1);
+  // Trying again: the old link pauses first; 30 s later it is back again.
+  const pauses = ble.disconnect.mock.calls.length;
+  await act(async () => { hook.get().onQr(QR8); });
+  expect(ble.disconnect.mock.calls.length).toBeGreaterThan(pauses);
+  await act(async () => { jest.advanceTimersByTime(CONNECT_TIMEOUT_MS); });
+  await act(async () => {});
+  expect(hook.get().dialog).toMatchObject({ title: '連不上接收器 8' });
+  expect(restore).toHaveBeenCalledTimes(2);
+  expect(native.reconnect).toHaveBeenCalledTimes(2);
+  // Leaving now restores nothing more.
+  await act(async () => { hook.get().press('later'); });
+  expect(restore).toHaveBeenCalledTimes(2);
+  hook.unmount();
 });
 
 test('D3 back: a dialog first, D3c → D3a, connecting → 取消, then out', async () => {

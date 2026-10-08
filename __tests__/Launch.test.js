@@ -28,7 +28,7 @@ test('first launch → D1; signed in (an update) → the map; 登入失效 at th
 });
 
 test('the guide resumes where it was left (中途退出下次從中斷那步繼續), signed in or not', () => {
-  for (const step of ['permissions', 'receiver']) {
+  for (const step of ['permissions', 'receiver', 'paired']) {
     expect(launchScreen(started({ onboarding: step }))).toBe('onboarding');
     expect(launchScreen(started({ onboarding: step, signedIn: true }))).toBe('onboarding');
   }
@@ -38,6 +38,7 @@ test('the guide resumes where it was left (中途退出下次從中斷那步繼�
   expect(names(guideStack('permissions'))).toEqual(['map:', 'signIn:onboarding', 'permissions:onboarding']);
   expect(names(guideStack('receiver'))).toEqual(['map:', 'signIn:onboarding', 'permissions:onboarding',
     'pair:onboarding']);
+  expect(names(guideStack('paired')).at(-1)).toBe('paired:onboarding');
   // Signed in, D1 has nothing to show: not in the way back.
   expect(names(guideStack('receiver', { signedIn: true }))).toEqual(['map:', 'permissions:onboarding',
     'pair:onboarding']);
