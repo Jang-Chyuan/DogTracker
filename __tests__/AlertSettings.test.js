@@ -157,8 +157,8 @@ test('S6: allowed → 已允許, the row does nothing', async () => {
 
 // ---- useAlertPreferences ---------------------------------------------------------
 
-function Probe({ saved, save, onValue }) {
-  const alerts = useAlertPreferences(saved, save);
+function Probe({ saved, save, onValue, source = null }) {
+  const alerts = useAlertPreferences(saved, save, source);
   onValue(alerts);
   return null;
 }
@@ -260,4 +260,53 @@ test('&page=alerts opens any state on S6; a fixture switch changes only memory',
   // The edit is what the fixture then shows.
   const edited = applyScreenFixture(fixture, live, { alerts: { ...DEFAULT_ALERT_PREFERENCES, sound: true } });
   expect(edited.tracking.preferences.value.alerts.sound).toBe(true);
+});
+
+test('on, then off before the first write ends: the first refused, the second saved → the stored value shows', async () => {
+  let latest;
+  const answers = [];
+  const save = jest.fn(() => new Promise(resolve => answers.push(resolve)));
+  const saved = { ...DEFAULT_ALERT_PREFERENCES };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<Probe saved={saved} save={save} onValue={value => { latest = value; }} />);
+  });
+  await act(async () => latest.change({ sound: true }));
+  await act(async () => latest.change({ sound: false }));
+  await act(async () => answers[0](false));
+  expect(latest.value.sound).toBe(false);
+  await act(async () => answers[1](true));
+  // Nothing stored changed, and nothing is left in flight: a later stored
+  // value is shown as it is.
+  await act(async () => renderer.update(<Probe saved={{ ...saved, vibrate: false }} save={save}
+    onValue={value => { latest = value; }} />));
+  expect(latest.value).toEqual({ ...DEFAULT_ALERT_PREFERENCES, vibrate: false });
+});
+
+test('a change in flight is dropped when the source changes (live ↔ fixture)', async () => {
+  let latest;
+  const save = jest.fn(() => new Promise(() => {}));
+  const probe = (source, saved) => <Probe saved={saved} save={save} source={source}
+    onValue={value => { latest = value; }} />;
+  let renderer;
+  await act(async () => { renderer = Renderer.create(probe('live', {})); });
+  await act(async () => latest.change({ sound: true }));
+  expect(latest.value.sound).toBe(true);
+  await act(async () => renderer.update(probe('alerts-default', {})));
+  expect(latest.value.sound).toBe(false);
+});
+
+test('S6: TalkBack reaches each switch itself, with its own label', async () => {
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<AlertSettings page={alertsPage({}, {})} onChange={jest.fn()} />);
+  });
+  for (const item of renderer.root.findAllByType(Switch)) {
+    expect(item.props.accessibilityLabel).toBeTruthy();
+    let parent = item.parent;
+    while (parent) {
+      if (parent.type === 'View') expect(parent.props.accessible).not.toBe(true);
+      parent = parent.parent;
+    }
+  }
 });

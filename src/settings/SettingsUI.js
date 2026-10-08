@@ -126,7 +126,7 @@ export function HomeRow({ row, onPress }) {
  * `leading` replaces the 「!」 (S2's receiver icon). Pressable when `onPress`.
  */
 export function ListRow({ title, detail, detailTone, right, rightTone, action, actionTone = 'crit',
-  problem = false, leading = null, titleTone, onPress, chevron = false, label, testID, accessibilityState, children }) {
+  problem = false, leading = null, titleTone, onPress, chevron = false, label, testID, accessibilityState, accessible = true, children }) {
   const rowStyle = useContext(Flat) ? [styles.listRow, styles.flatRow] : styles.listRow;
   const rights = Array.isArray(right) ? right : right ? [right] : [];
   const body = (
@@ -151,7 +151,10 @@ export function ListRow({ title, detail, detailTone, right, rightTone, action, a
     </>
   );
   if (!onPress) {
-    return <View testID={testID} style={rowStyle} accessible accessibilityLabel={label}>{body}</View>;
+    // `accessible={false}`: a row holding its own control (a switch) leaves
+    // that control for TalkBack to reach, with its own label and state.
+    return <View testID={testID} style={rowStyle} accessible={accessible}
+      accessibilityLabel={accessible ? label : undefined}>{body}</View>;
   }
   return (
     <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}

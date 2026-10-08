@@ -29,23 +29,23 @@ export default function AlertSettings({ page, onChange, onNotificationSettings, 
         </ListRow>
         {open && dogs.items.map(item => (
           <View key={item.key} style={styles.nested}>
-            <ListRow title={item.title} label={item.title}>
+            <ListRow title={item.title} accessible={false}>
               <AlertSwitch testID={`alerts-${item.key}`} label={`狗：${item.title}`} value={item.on}
                 onChange={on => onChange({ [item.key]: on })} />
             </ListRow>
           </View>
         ))}
-        <ListRow title="接收器電量低" label="接收器電量低">
+        <ListRow title="接收器電量低" accessible={false}>
           <AlertSwitch testID="alerts-receiverBattery" label="接收器電量低" value={page.receiverBattery}
             onChange={on => onChange({ receiverBattery: on })} />
         </ListRow>
         <ListRow testID="alerts-always" title="接收器斷線、位置存不進手機" detail="不能關" right="一定提醒"
           label="接收器斷線、位置存不進手機，不能關，一定提醒" />
-        <ListRow title="震動" label="震動">
+        <ListRow title="震動" accessible={false}>
           <AlertSwitch testID="alerts-vibrate" label="震動" value={page.vibrate}
             onChange={on => onChange({ vibrate: on })} />
         </ListRow>
-        <ListRow title="聲音" detail="跟著手機的通知音量" label="聲音，跟著手機的通知音量">
+        <ListRow title="聲音" detail="跟著手機的通知音量" accessible={false}>
           <AlertSwitch testID="alerts-sound" label="聲音，跟著手機的通知音量" value={page.sound}
             onChange={on => onChange({ sound: on })} />
         </ListRow>
