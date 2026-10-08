@@ -313,6 +313,7 @@ const getStyles = makeStyles(theme => {
       maxWidth: 400,
       backgroundColor: colors.elevated,
       borderRadius: radius.dialog,
+      ...theme.floatingBorder,
       padding: space.xl,
       elevation: 8,
       shadowColor: themeLiteral.dialogShadow,
