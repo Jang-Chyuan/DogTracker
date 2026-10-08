@@ -8,18 +8,28 @@ import { GroupCard, GroupTitle, HomeRow, ProblemBang, settingsStyles } from './S
  * full → 「手機空間不足，位置存不進手機」, opens the storage settings; any other
  * reason → the reason, opens where it is shown. Goes when writing works again.
  */
-export function StorageWarning({ storage, onPress }) {
+export function StorageWarning({ storage, onPress, testID = 'settings-storage-warning' }) {
   if (!storage) return null;
   const title = storage.full ? '手機空間不足，位置存不進手機' : '位置存不進手機';
-  return (
-    <Pressable testID="settings-storage-warning" accessibilityRole="button"
-      accessibilityLabel={storage.full ? title : `${title}，${storage.reason}`} onPress={onPress}
-      style={({ pressed }) => [styles.warning, pressed && styles.pressed]}>
+  // On 診斷 (S8, no onPress) the whole reason, also when the phone is full.
+  const reason = onPress ? (!storage.full && storage.reason) : storage.reason;
+  const body = (
+    <>
       <ProblemBang />
       <View style={styles.body}>
         <Text style={styles.title}>{title}</Text>
-        {!storage.full && <Text style={styles.reason} numberOfLines={2}>{storage.reason}</Text>}
+        {reason ? <Text style={styles.reason} numberOfLines={onPress ? 2 : undefined}>{reason}</Text> : null}
       </View>
+    </>
+  );
+  const label = reason ? `${title}，${reason}` : title;
+  if (!onPress) {
+    return <View testID={testID} accessible accessibilityLabel={label} style={styles.warning}>{body}</View>;
+  }
+  return (
+    <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
+      style={({ pressed }) => [styles.warning, pressed && styles.pressed]}>
+      {body}
     </Pressable>
   );
 }

@@ -163,3 +163,13 @@ test('overlapping scheduler calls send only one request and disposal stops the n
     expect(connection.sqlite.prepare("SELECT status FROM ble_upload_queue WHERE event_id='two'").get().status).toBe('pending');
   } finally { connection.close(); }
 });
+
+test('the receivers an account still has rows waiting for (先上傳, S7)', async () => {
+  const { connection, database } = setup();
+  insert(connection, 'a', 'alice', 7);
+  insert(connection, 'b', 'alice', 5);
+  insert(connection, 'c', 'bob', 9);
+  connection.sqlite.exec("UPDATE ble_upload_queue SET status='sent' WHERE event_id='b'");
+  expect(await database.pendingMasters('alice')).toEqual([7]);
+  expect(await database.pendingMasters('bob')).toEqual([9]);
+});

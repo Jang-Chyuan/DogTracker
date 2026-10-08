@@ -127,5 +127,30 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
       if (same() && await db.current.pendingCount(ownerAtStart, master) > 0) await send().catch(() => {});
     },
     async retry() { await db.current.retry(owner); refresh(n => n + 1); },
+    /**
+     * 刪除全部狗資料 →「先上傳」(S7): every row this account still has
+     * waiting is sent now, the refused ones tried again too, whatever the
+     * receiver or retry time. → 'done' | 'offline' | 'unauthorized' |
+     * 'cancelled' | 'signed-out' | 'failed'. Deletes nothing.
+     */
+    async flushAll() {
+      if (!owner) return 'signed-out';
+      if (!db.current || !service.current) return 'failed';
+      const ownerAtStart = owner;
+      const same = () => currentOwner.current === ownerAtStart;
+      try {
+        await db.current.retry(ownerAtStart);
+        for (const master of await db.current.pendingMasters(ownerAtStart)) {
+          const { result } = await service.current.flush(ownerAtStart, master, same);
+          if (result === 'unauthorized') authFailure.current?.();
+          if (result !== 'done') return result;
+        }
+        return 'done';
+      } catch {
+        return 'failed';
+      } finally {
+        refresh(n => n + 1);
+      }
+    },
   };
 }

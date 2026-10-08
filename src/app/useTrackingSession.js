@@ -242,6 +242,22 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           commands.add(task);
           return task.finally(() => commands.delete(task));
         },
+        // 刪除全部狗資料 (S7): rows still to upload, and the deletion itself
+        // (DogDataStore). App starts every reader over afterwards.
+        countUnsentUploads() {
+          const task = initialization.real.then(() => databases.dogData?.unsent() ?? 0);
+          commands.add(task);
+          return task.finally(() => commands.delete(task));
+        },
+        deleteDogData(options) {
+          const task = initialization.real.then(() => {
+            if (disposed) throw new Error('資料庫已關閉');
+            if (!databases.dogData) throw new Error('這個版本不能刪除狗資料');
+            return databases.dogData.deleteAll(options);
+          });
+          commands.add(task);
+          return task.finally(() => commands.delete(task));
+        },
         saveTrackingPreferences: trackingPreferences.save,
         retryTrackingPreferences: trackingPreferences.load,
         resetTrackingPreferences: trackingPreferences.reset,
@@ -301,6 +317,10 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     historyLoaded: trackingSources[mode].historyLoaded,
     initialSnapshotReady: trackingSources[mode].initialSnapshotReady,
     preferences,
+    countUnsentUploads: () => controlsRef.current?.countUnsentUploads()
+      ?? Promise.reject(new Error('資料庫尚未就緒')),
+    deleteDogData: options => controlsRef.current?.deleteDogData(options)
+      ?? Promise.reject(new Error('資料庫尚未就緒')),
     saveTrackingPreferences: patch =>
       controlsRef.current?.saveTrackingPreferences(patch),
     retryTrackingPreferences: () =>

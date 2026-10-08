@@ -5,6 +5,7 @@
 ```
 dogtracker://dev/fixture?name=<名稱>    打開情境
 dogtracker://dev/fixture?name=off       回到真實資料
+dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：settings receiver phone cloud alerts advanced diagnostics wifi liveData cloudData locationRecords
 ```
 
 - 只有 `__DEV__` 會監聽（`useScreenFixture.js`），只有 `android/app/src/debug/AndroidManifest.xml` 宣告 `dogtracker` scheme；release 版收不到這個連結。
@@ -28,6 +29,9 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
 | 提醒設定 | `alerts`（AlertPreferences，沒給就是預設）、`alertsOpen`（S6「狗」展開）；S6 的開關只改記憶體（`useFixtureEdits`），不寫進這支手機的設定 | `alertsPage`、`alertsHomeStatus` → S6、S1「提醒」 |
+| 診斷的資料頁 | `diagnostics`：同一批列照即時資料（`dog_status` 新的在前）、本機／雲端資料（登入的帳號、含原始 JSON）、記錄清單（`phone.today` 當 `myLocationTracker` 的列）的讀法交出；`readFailure` 讓三頁都讀取失敗 | `LiveDataSettings`、`CloudDataScreen`、`LocationTrackerScreen`；S8 的速度緩衝讀同一批 `dog_status` 列 |
+| 接收器 Wi-Fi | `wifi`（接收器存的網路，預設「家裡、辦公室」、使用中「家裡」）；新增、刪除只改記憶體 | `useReceiverWifi` → S7 第二行、Wi-Fi 頁 |
+| 刪除全部狗資料 | `deletion: { unsent, open }`：還沒上傳的筆數、確認框一打開就出現；情境裡「先上傳」一律沒網路、「一起刪除」不刪任何東西 | `useDeleteDogData` → S7 確認框 |
 | 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新有效電量）→ `DogCardModel` |
 
@@ -88,6 +92,11 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | `upload-switch-offline` | 同上但沒網路：確認框寫「要先上傳完 120 筆，請連上網路」、不能切（c256） |
 | `alerts-default` | S6 提醒：全部開、震動開、聲音關、通知已允許；S1「提醒」寫「震動」 |
 | `alerts-some-off` | S6：不在接收範圍、接收器電量低關掉，聲音開；「狗」展開三個開關（部分開）；S1 寫「震動、聲音」「部分開」 |
+| `diagnostics-ok` | S8：豆豆（接收器 7，速度緩衝「移動中」）、小黑、阿福（雲端）各自的環境模型結果；三個資料頁有資料 |
+| `diagnostics-empty` | S8：沒接收器、沒登入、沒有狗、沒有手機記錄 → 「還沒有狗的資料」，三個資料頁都是空的樣子 |
+| `diagnostics-error` | S8：位置存不進手機（其他原因）→ 最上面寫原因（「看原因」的去處） |
+| `diagnostics-read-failed` | 手機裡的資料讀不到 → 三個資料頁「讀取失敗」＋「重試」 |
+| `advanced-delete-confirm` | S7：按了「刪除全部狗資料」、還有 120 筆沒上傳 →「還有 120 筆沒上傳：先上傳／一起刪除」（c296）；「先上傳」→ 沒網路的說明 |
 | `notifications-denied` | S6「通知權限 未允許 開系統設定 ›」；S1「提醒」「手機」只放紅色「!」；地圖齒輪紅點 |
 
 ## 新增情境（之後每個 PR）

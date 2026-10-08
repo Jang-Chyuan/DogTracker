@@ -183,9 +183,8 @@ export function settingsHome(input) {
       // v3 has no 地圖 row (map display options were removed): 提醒 alone.
       // 提醒: how alerts arrive (震動／聲音／關), 「部分開」 when some are off.
       { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', alertsHomeStatus(input.alerts))] },
-      // Until S7 (051c): the old Wi-Fi page lives behind 進階 (刪除資料
-      // arrives with S7).
-      { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi', [])] },
+      // 進階 (S7): the receiver's Wi-Fi and 刪除全部狗資料 (c196).
+      { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi、刪除資料', [])] },
     ],
     reasons,
   };

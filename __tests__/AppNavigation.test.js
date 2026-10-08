@@ -200,31 +200,44 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(text()).toContain('最後上傳成功');
   expect(text()).not.toContain('轉送 Supabase');
   await press('返回，Supabase 帳號');
-  // 診斷 keeps the old data table and the phone's record list in reach.
+  // 診斷 (S8): its three data pages, all light v3 pages, back returns.
   await tap('settings-row-diagnostics');
   expect(title()).toBe('返回，診斷');
-  await tap('settings-link-data');
+  expect(renderer.root.findAllByProps({ testID: 'diagnostics-settings' }).length).toBeGreaterThan(0);
+  expect(row('settings-link-data')).toBeUndefined();
+  await tap('diagnostics-liveData');
   expect(title()).toBe('返回，即時資料');
+  expect(renderer.root.findAllByProps({ testID: 'live-data' }).length).toBeGreaterThan(0);
+  await advance(100);
+  // The stored packet in a table, columns to pick.
+  expect(text()).toContain('選擇欄位（5）');
+  expect(text()).toContain('接收時間');
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，診斷');
-  // 本機／雲端資料 (the old cloud table) until S8.
-  await tap('settings-link-cloudData');
+  await tap('diagnostics-cloudData');
   expect(title()).toBe('返回，本機／雲端資料');
+  expect(renderer.root.findAllByProps({ testID: 'cloud-data' }).length).toBeGreaterThan(0);
   await act(async () => expect(onBack()).toBe(true));
-  await tap('settings-link-records');
+  await tap('diagnostics-locationRecords');
   expect(title()).toBe('返回，記錄清單');
   expect(text()).toContain('80,000 筆');
   await act(async () => expect(onBack()).toBe(true));
   await act(async () => expect(onBack()).toBe(true));
-  // 進階 keeps 接收器 Wi-Fi in reach; the upload settings are on S3.
+  // 進階 (S7): 接收器 Wi-Fi (its own light page) and 刪除全部狗資料.
   await tap('settings-row-advanced');
   expect(title()).toBe('返回，進階');
-  await tap('settings-link-wifi');
+  expect(text()).toContain('刪除全部狗資料');
+  // No receiver connected: the Wi-Fi row says so; nothing is read.
+  expect(text()).toContain('接收器連上後才能設定');
+  await tap('advanced-wifi');
   expect(title()).toBe('返回，接收器 Wi-Fi');
-  // The hardware page's 「‹ 標題」 goes back like the back key.
+  expect(renderer.root.findAllByProps({ testID: 'wifi-settings' }).length).toBeGreaterThan(0);
+  expect(text()).toContain('沒有連線，連上後才能讀取和設定 Wi-Fi');
   await press('返回，接收器 Wi-Fi');
   expect(title()).toBe('返回，進階');
   expect(row('settings-link-upload')).toBeUndefined();
+  // No old dark page is left behind S7/S8.
+  expect(text()).not.toContain('#111827');
   await act(async () => expect(onBack()).toBe(true));
   // Settings' own 「‹ 設定」 (and the back key) return to the map.
   await press('返回，設定');
@@ -311,6 +324,91 @@ test('S3 fixtures: the account page with its states, the switch confirmation, ba
   await press('返回，Supabase 帳號');
   expect(title()).toBe('返回，設定');
   expect(row('settings-row-account').props.accessibilityLabel).toBe('Supabase 帳號，有問題：需要重新登入');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
+});
+
+test('刪除全部狗資料 (S7) on SQLite: asks, deletes only the dog rows, keeps faces and settings, reopens on S7', async () => {
+  await mount();
+  await advance(100);
+  // A downloaded row, a dog's face and a saved setting from before.
+  connection.sqlite.prepare(`INSERT INTO supabase_dog_status (received_at, master_id, slave_id, slave_lat, slave_lon)
+    VALUES (?, 9, 6, 25.01, 121.3)`).run(Date.now() - 60000);
+  connection.sqlite.exec(`INSERT OR REPLACE INTO dog_avatars (slave_id, value) VALUES (4, '{"kind":"art"}')`);
+  await act(async () => renderer.root.findByType(MapScreen).props.tracking
+    .saveTrackingPreferences({ noDataCardDismissed: true }));
+  expect(rows('dog_status')).toHaveLength(1);
+  const settingsBefore = connection.sqlite.prepare('SELECT COUNT(*) count FROM app_settings').get().count;
+  await press('設定');
+  await tap('settings-row-advanced');
+  expect(row('settings-row-advanced')).toBeUndefined();
+  await tap('advanced-delete');
+  await advance(10);
+  expect(text()).toContain('刪除全部狗資料？');
+  expect(text()).toContain('雲端、手機路線、狗的名字和頭像都不會動');
+  // 取消 deletes nothing.
+  await press('取消');
+  expect(rows('dog_status')).toHaveLength(1);
+  await tap('advanced-delete');
+  await advance(10);
+  // Nothing waits to be uploaded: one 「刪除」.
+  expect(button('先上傳')).toBeUndefined();
+  await press('刪除');
+  await advance(100);
+  expect(rows('dog_status')).toHaveLength(0);
+  expect(rows('supabase_dog_status')).toHaveLength(0);
+  expect(connection.sqlite.prepare('SELECT COUNT(*) count FROM dog_avatars').get().count).toBe(1);
+  expect(connection.sqlite.prepare('SELECT COUNT(*) count FROM app_settings').get().count).toBe(settingsBefore);
+  // A6's ✕ comes back (判定表「A6 的 ✕ 什麼時候重來」).
+  expect(preferences().noDataCardDismissed).toBe(false);
+  // Every reader started over, on S7, saying it went through.
+  expect(title()).toBe('返回，進階');
+  expect(text()).toContain('已刪除・');
+  await act(async () => expect(onBack()).toBe(true));
+  await act(async () => expect(onBack()).toBe(true));
+  expect(renderer.root.findByType(MapScreen).props.active).toBe(true);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
+});
+
+test('S7/S8 fixtures: diagnostics states, the delete question with rows to upload, Wi-Fi', async () => {
+  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=diagnostics-ok');
+  let emit;
+  Linking.addEventListener.mockImplementationOnce((_, handler) => {
+    emit = handler;
+    return { remove: jest.fn() };
+  });
+  await mount();
+  await advance(100);
+  expect(title()).toBe('返回，診斷');
+  for (const id of [4, 6, 8]) expect(renderer.root.findAllByProps({ testID: `diagnostics-dog-${id}` }).length).toBeGreaterThan(0);
+  expect(text()).toContain('移動中');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=diagnostics-error' }));
+  await advance(100);
+  expect(text()).toContain('attempt to write a readonly database');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=diagnostics-read-failed&page=liveData' }));
+  await advance(100);
+  expect(title()).toBe('返回，即時資料');
+  expect(text()).toContain('讀取失敗：database disk image is malformed');
+  // The fixture's delete question: 「先上傳」 finds no network, nothing deleted.
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=advanced-delete-confirm' }));
+  await advance(100);
+  expect(title()).toBe('返回，進階');
+  expect(text()).toContain('還有 120 筆沒上傳：先上傳／一起刪除');
+  await press('先上傳');
+  expect(text()).toContain('沒有網路，現在不能上傳。連上網路後再試，或選「一起刪除」');
+  await press('一起刪除');
+  expect(text()).not.toContain('還有 120 筆沒上傳');
+  expect(text()).toContain('已刪除・09:30');
+  expect(rows('dog_status')).toHaveLength(1);
+  // Wi-Fi on the fixture's receiver 7: its two networks, deleting asks.
+  expect(text()).toContain('家裡、辦公室');
+  await tap('advanced-wifi');
+  expect(title()).toBe('返回，接收器 Wi-Fi');
+  expect(text()).toContain('接收器 7 存的 Wi-Fi');
+  expect(text()).toContain('使用中');
+  await tap('wifi-delete-辦公室');
+  expect(text()).toContain('接收器 7 不會再連「辦公室」。');
+  await press('刪除');
+  expect(row('wifi-辦公室')).toBeUndefined();
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 

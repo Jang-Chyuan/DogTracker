@@ -18,19 +18,18 @@ import { DEFAULT_BLE_CONFIG } from '../ble/BleService';
 import { sharedBleService } from '../ble/sharedBle';
 import { getDeviceProfile } from '../config/DeviceProfiles';
 import { parseMasterQr } from '../qr/MasterQrParser';
-import DataTableScreen from '../screens/DataTableScreen';
-import WifiSettingsScreen from '../screens/WifiSettingsScreen';
 
-// The old hardware pages that v3 has not replaced yet: the BLE / QR scan
-// (until D3, 053), 接收器 Wi-Fi (until S7) and the live data table (until
-// S8, 051). Settings → 接收器 (S2) has the connection itself; there is no
-// menu page any more. `entry` ({ screen: 'scan' | 'qr' | 'wifi' | 'data',
-// key }) is the page to open, 'qr' starting the QR scanner at once; back
-// from it leaves the hardware pages (onBack). backRequest: a new value is the
-// page header's 「‹ 標題」, which goes back exactly like the back key.
+// The one old hardware page v3 has not replaced yet: the BLE / QR scan
+// (until D3, 053). Settings → 接收器 (S2) has the connection itself; 接收器
+// Wi-Fi is on S7 and the live data table on S8. `entry` ({ screen: 'scan' |
+// 'qr', key }) is the page to open, 'qr' starting the QR scanner at once;
+// back from it leaves the hardware pages (onBack). backRequest: a new value
+// is the page header's 「‹ 標題」, which goes back exactly like the back key.
 // onConnected: a receiver was connected (back to where the user came from);
 // onQrTarget(masterId): a QR code chose this receiver (settings watches its
 // first packet); onMismatch({ expected, got }): another Master answered.
+// While mounted it also reports the receiver service's storage error
+// (onStorageError), which the map's 「位置存不進手機」 and S8 show.
 export default function HardwareScreen({ dogDatabase, active = true, onBack, onStorageError, backRequest = 0,
   entry = null, onConnected, onConnectFailed, onQrTarget, onMismatch }) {
   const [bleService] = useState(() => sharedBleService);
@@ -45,7 +44,6 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
   const [connected, setConnected] = useState(false);
   const [backgroundRunning, setBackgroundRunning] = useState(false);
   const [storageError, setStorageError] = useState('');
-  const [activeMasterName, setActiveMasterName] = useState('DogGPS Master');
   const [bleStatus, setBleStatus] = useState('尚未掃描');
   const [activeProfile, setActiveProfile] = useState(() => getDeviceProfile('default'));
 
@@ -54,7 +52,6 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
     databaseReadyRef.current.catch(error => console.error('SQLite 初始化失敗', error));
     bleService.restoreBackground(handleConnectionStatus, receiveData).then(state => {
       if (!state?.enabled) return;
-      setActiveMasterName(state.deviceName || 'DogGPS Master');
       setBackgroundRunning(state.running);
       setConnected(state.connected);
       setBleStatus(state.lastStatus || '背景 BLE 正在恢復');
@@ -77,11 +74,8 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
         setConnected(Boolean(state.running && state.enabled && state.connected));
         setStorageError(state.storageError || '');
         onStorageError?.(state.storageError || null);
-        if (state.enabled) {
-          setActiveMasterName(state.deviceName || 'DogGPS Master');
-          if (!scanning && !connecting && !qrScanning) {
-            setBleStatus(state.running ? state.lastStatus : (state.resumeError || '背景服務已停止，請重新連線'));
-          }
+        if (state.enabled && !scanning && !connecting && !qrScanning) {
+          setBleStatus(state.running ? state.lastStatus : (state.resumeError || '背景服務已停止，請重新連線'));
         }
       } catch (error) {
         console.error('讀取背景狀態失敗', error);
@@ -201,7 +195,6 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
     try {
       const config = parseMasterQr(await NativeModules.QrScanner.scan());
       applyProfile(config.profile);
-      setActiveMasterName(config.bleName);
       onQrTarget?.(config.masterId);
       setDevices([]);
       setSelectedDevice(null);
@@ -259,9 +252,6 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
 
   const connectAndSubscribe = async () => {
     if (!selectedDevice) return;
-    setActiveMasterName(
-      selectedDevice.name || selectedDevice.localName || 'DogGPS Master',
-    );
     setConnecting(true);
     const ok = await bleService.connect(selectedDevice, handleConnectionStatus, receiveData);
     setConnecting(false);
@@ -356,20 +346,6 @@ export default function HardwareScreen({ dogDatabase, active = true, onBack, onS
             </View>
           ) : null}
 
-          {screen === 'data' ? (
-            <DataTableScreen
-              dogDatabase={dogDatabase}
-              onBack={onBack}
-              profile={activeProfile}
-            />
-          ) : null}
-          {screen === 'wifi' ? (
-            <WifiSettingsScreen
-              bleService={bleService}
-              masterName={activeMasterName}
-              onBack={onBack}
-            />
-          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
