@@ -1,8 +1,13 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+    <!-- Base application theme. Light only: v3 has no dark mode (動效「不採用
+         深色模式」), so the phone's dark mode must not flip native defaults
+         (window background, text, inputs, dialogs, bar icons). -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
         <!-- Confirmation dialogs (Alert.alert), design v3 確認對話框: white,
              24dp corners, dark text, coral-red (tonalText) buttons. -->

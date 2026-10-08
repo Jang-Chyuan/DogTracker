@@ -1,6 +1,7 @@
 package com.dogtracker
 
 import android.app.Application
+import androidx.appcompat.app.AppCompatDelegate
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -29,6 +30,10 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // Light only (v3 has no dark mode): the app's configuration stays day in
+    // the phone's dark mode, so React Native's Appearance, AppCompat widgets
+    // and dialogs all keep their light look.
+    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
     loadReactNative(this)
   }
 }
