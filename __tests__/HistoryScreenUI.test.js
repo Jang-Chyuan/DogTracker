@@ -293,6 +293,11 @@ test('range bar: a quick flick lands where the finger let go, even when its last
     await act(async () => handlers.onPanResponderMove(null, { dx: -5, dy: 0 }));
     await act(async () => handlers.onPanResponderRelease(null, { dx: -20, dy: 0 }));
     expect(s.screen.range.end).toBe(flicked.end);
+    // Android's release carries the finger's own position past the last move.
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348, pageX: 900 } }));
+    await act(async () => handlers.onPanResponderMove({ nativeEvent: { pageX: 895 } }, { dx: -5, dy: 0 }));
+    await act(async () => handlers.onPanResponderRelease({ nativeEvent: { pageX: 920 } }, { dx: -5, dy: 0 }));
+    expect(s.screen.range.end).toBe(before.end);
   } finally {
     spy.mockRestore();
     await unmount(s);

@@ -1,6 +1,6 @@
 // The export of the history screen (H9/H10; 判定表「匯出產生中」, flow.txt
 // 「匯出」): the small window's state, one export at a time from the moment a
-// format is chosen — the day shown (range, dogs, 資料來源) captured then, the
+// format is chosen — the day shown (range, dogs) captured then, the
 // places' addresses asked for at most 5 s (none offline), the file(s) made
 // by the native exporter, then Android's share sheet. 取消 (and the back
 // key) drops a running export; 重試 makes the files again from the same

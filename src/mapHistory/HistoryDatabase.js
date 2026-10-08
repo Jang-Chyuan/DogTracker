@@ -167,9 +167,10 @@ export function createHistoryDatabase(db) {
     /**
      * One dog's (or this phone's) rows of one day for the history list
      * (src/history): [start - HISTORY_DAY_CONTEXT_MS, end + HISTORY_DAY_AFTER_MS). `subject` is
-     * 'dog' (by collar number, every receiver) or 'phone'; `source` is the
-     * history's 資料來源 — 'all', 'local' (dog_status) or 'cloud' (the
-     * account's supabase_dog_status; nothing signed out). `after` holds the
+     * 'dog' (by collar number, every receiver) or 'phone'; `source` picks the
+     * tables — the history screen always reads 'all' (local and cloud merged);
+     * 'local' (dog_status) and 'cloud' (the account's supabase_dog_status;
+     * nothing signed out) remain for callers that need one side. `after` holds the
      * last id read per table: only rows added since come back (whatever their
      * time, so a download of older rows is seen), and polling re-reads a few
      * rows, not the day. The dog's hold model also gets
