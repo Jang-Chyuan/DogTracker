@@ -108,6 +108,8 @@ const HistoryPanel = forwardRef(function HistoryPanel({ levels: given, header, c
     if (locked) return;
     settle(levelRef.current === 'full' ? 'half' : 'full');
   };
+  const listOpacity = height.interpolate({ inputRange: [levels.summary, levels.summary + 40], outputRange: [0, 1],
+    extrapolate: 'clamp' });
   // What rides on the panel's top edge (框住全部), faded out above half.
   const aboveOpacity = height.interpolate({
     inputRange: [levels.half, Math.max(levels.half + 1, levels.half + 60)], outputRange: [1, 0], extrapolate: 'clamp',
@@ -127,10 +129,14 @@ const HistoryPanel = forwardRef(function HistoryPanel({ levels: given, header, c
           </Pressable>
           {header}
         </View>
-        <ScrollView ref={scrollRef} style={styles.list} nestedScrollEnabled
-          contentContainerStyle={{ paddingBottom: levels.full - levels[level] + bottomInset + 16 }}>
-          {children}
-        </ScrollView>
+        {/* Only the date row and the summary at the lowest height: the list
+            fades out over its last 40dp (it would peek over the system bar). */}
+        <Animated.View style={[styles.list, { opacity: listOpacity }]}>
+          <ScrollView ref={scrollRef} style={styles.list} nestedScrollEnabled
+            contentContainerStyle={{ paddingBottom: levels.full - levels[level] + bottomInset + 16 }}>
+            {children}
+          </ScrollView>
+        </Animated.View>
       </View>
     </Animated.View>
   );
