@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, space as gap, type } from '../theme/tokens';
+import { formatClockSeconds, formatDateTime } from '../map/MapFormat';
 import { DataTable, PillButton, TextButton, dataStyles } from '../settings/DataTable';
 import { GroupCard, GroupTitle, ListRow, settingsStyles } from '../settings/SettingsUI';
 import { getCloudClient } from './CloudClient';
@@ -19,7 +20,7 @@ export function formatRaw(value) {
 const PAGE = 50;
 // The downloaded columns (nothing is cut short: a cell wraps).
 const COLUMNS = [
-  ['received_at', '雲端接收時間', 150, value => new Date(value).toLocaleString('zh-TW', { hour12: false })],
+  ['received_at', '雲端接收時間', 150, formatDateTime],
   ['master_id', '接收器', 64], ['slave_id', '訊號源', 64], ['slave_lat', '緯度', 96], ['slave_lon', '經度', 104],
   ['speed_kmh', '速度 km/h', 84], ['battery_percentage', '電量 %', 64], ['usb_present', 'usb_present', 96],
   ['satellites', '衛星', 52], ['hdop', 'HDOP', 64], ['activity', '活動值', 72],
@@ -128,7 +129,7 @@ export default function CloudDataScreen({ database, sync, phoneId = '', clientFa
 
   const pages = Math.max(1, Math.ceil(count / PAGE));
   const syncText = !sync ? null : sync.mode === 'auto' ? '自動同步中…' : sync.lastSuccess
-    ? `上次同步：${new Date(sync.lastSuccess).toLocaleTimeString('zh-TW', { hour12: false })}` : '等待自動同步';
+    ? `上次同步：${formatClockSeconds(sync.lastSuccess)}` : '等待自動同步';
   return <ScrollView testID="cloud-data" style={settingsStyles.page} contentContainerStyle={settingsStyles.content}>
     {connection.error ? <Text style={styles.error}>{connection.error}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
