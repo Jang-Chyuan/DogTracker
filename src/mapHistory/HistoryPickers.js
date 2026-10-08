@@ -2,14 +2,15 @@ import { useTheme, makeStyles } from '../theme/ThemeProvider';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
-import { historyDogsSheet } from '../history/screen/HistoryDogsPill';
+import { historyDogsSheet, routeTint } from '../history/screen/HistoryDogsPill';
 import HistoryBottomSheet from './HistoryBottomSheet';
 
 /** Dog choices take effect while the window remains open. */
 export const DogsSheet = forwardRef(function DogsSheet(
   { dogs, candidates, checkDay, onAdd, onSelect, onRemove, onClosed, bottomInset }, ref,
 ) {
-  const styles = getStyles(useTheme());
+  const theme = useTheme();
+  const styles = getStyles(theme);
   const sheet = useRef(null);
   const [days, setDays] = useState({});
   useImperativeHandle(ref, () => ({ back: () => { sheet.current?.close(); return true; } }), []);
@@ -32,9 +33,10 @@ export const DogsSheet = forwardRef(function DogsSheet(
           accessibilityState={{ checked: dog.protagonist }}
           accessibilityLabel={`${dog.name}${dog.protagonist ? '，主角' : '，換成主角'}`}
           onPress={() => onSelect(dog.id)} style={({ pressed }) => [styles.choice, pressed && styles.pressed]}>
-          <DogAvatar avatar={dog.avatar} size={28} border={0} />
+          <DogAvatar avatar={dog.avatar} size={28} border={0} tint={routeTint(dog, theme.colors)} />
           <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
           {dog.protagonist && <View style={styles.tag}><Text style={styles.tagText}>主角</Text></View>}
+          <View style={styles.spacer} />
           <View style={[styles.radio, dog.protagonist && styles.radioOn]} />
         </Pressable>
         {dog.removable && <Pressable testID={`history-remove-${dog.id}`} accessibilityRole="button"
@@ -42,22 +44,23 @@ export const DogsSheet = forwardRef(function DogsSheet(
           <Text style={styles.detail}>✕</Text>
         </Pressable>}
       </View>)}
-      <View style={model.full && styles.faded} testID="history-dogs-add-section">
-        <Text style={styles.section}>加入</Text>
-        {model.note && <Text style={styles.detail}>{model.note}</Text>}
+      {(model.full || model.addable.length > 0) && <View testID="history-dogs-add-section">
+        <View style={styles.sectionRow}>
+          <Text style={styles.section}>加入</Text>
+          {model.note && <Text style={[styles.section, styles.sectionNote]}>{model.note}</Text>}
+        </View>
         {model.addable.map(dog => <Pressable key={dog.id} testID={`history-add-${dog.id}`}
           accessibilityRole="button" accessibilityState={{ disabled: dog.disabled }}
           accessibilityLabel={`${dog.name}，訊號源 ${dog.id}${dog.hasData ? '' : '，這天沒有紀錄'}`}
           disabled={dog.disabled} onPress={() => onAdd(dog)}
-          style={({ pressed }) => [styles.row, !model.full && !dog.hasData && styles.faded, pressed && styles.pressed]}>
+          style={({ pressed }) => [styles.row, dog.opacity < 1 && styles.faded, pressed && styles.pressed]}>
           <DogAvatar avatar={dog.avatar} size={28} border={0} />
           <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
-          <Text style={styles.detail}>{dog.detail}</Text>
-          <Text style={styles.detail}>＋</Text>
+          <Text style={styles.detail} numberOfLines={1}>{dog.detail}</Text>
+          <View style={styles.spacer} />
+          <Text style={styles.plus}>＋</Text>
         </Pressable>)}
-        {!model.addable.length && <Text style={styles.detail}>沒有其他狗</Text>}
-      </View>
-      <Text style={styles.note}>最多同時 4 隻；選了就生效，點空白處或返回鍵關掉。</Text>
+      </View>}
     </HistoryBottomSheet>
   );
 });
@@ -69,7 +72,11 @@ const getStyles = makeStyles(theme => {
     row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10,
       borderTopWidth: 1, borderTopColor: colors.line },
     choice: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
-    name: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.text },
+    name: { flexShrink: 1, fontSize: 14, fontWeight: '700', color: colors.text },
+    spacer: { flex: 1 },
+    sectionRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+    sectionNote: { marginLeft: 8 },
+    plus: { width: 48, textAlign: 'center', fontSize: 18, color: colors.tonalText },
     detail: { fontSize: 12, color: colors.textMuted },
     tag: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1, backgroundColor: colors.tonal },
     tagText: { fontSize: 11, color: colors.tonalText },
@@ -78,6 +85,5 @@ const getStyles = makeStyles(theme => {
     remove: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
     faded: { opacity: 0.4 },
     pressed: { backgroundColor: colors.pressedOverlay },
-    note: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
   });
 });
