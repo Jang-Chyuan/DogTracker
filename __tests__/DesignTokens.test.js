@@ -273,3 +273,34 @@ test('the original light palette is unchanged', () => {
     expect(tokens[group]).toEqual(value),
   );
 });
+
+describe('dark text and graphic contrast', () => {
+  const c = darkTheme.colors;
+  test.each([
+    ['main text', c.text, c.surface, 7],
+    ['elevated text', c.text, c.elevated, 7],
+    ['muted text', c.textMuted, c.elevated, 4.5],
+    ['tonal action', c.tonalText, c.tonal, 4.5],
+    ['problem text', c.crit, c.critBg, 4.5],
+    ['warn value', c.warn, c.surface, 4.5],
+    ['warn glyph', c.onWarnIcon, c.warnIcon, 4.5],
+    ['problem glyph', WHITE, c.problemBadge, 4.5],
+    ['floating outline', c.floatingOutline, c.mapBase, 3],
+    ...darkTheme.routeColors.flatMap((color, i) => [
+      [
+        `route${i + 1} upcoming over land`,
+        composite(color, darkTheme.opacity.routeUpcoming, c.mapBase),
+        c.mapBase,
+        3,
+      ],
+      [
+        `route${i + 1} before cursor over highway`,
+        composite(color, darkTheme.opacity.routeBeforeCursor, '#4A423E'),
+        '#4A423E',
+        3,
+      ],
+    ]),
+  ])('%s', (_, foreground, background, minimum) => {
+    expect(contrast(foreground, background)).toBeGreaterThanOrEqual(minimum);
+  });
+});

@@ -3,7 +3,7 @@
 // icons and the map block. Pure: everything is placed here so the Kotlin side
 // only paints, and a test can read what each page holds. Colours come from
 // the theme tokens only.
-import { colors } from '../theme/tokens';
+import { exportColors as colors } from '../theme/exportPalette';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { PLACE_X, PNG_STYLE as S } from './ExportPNG';
 

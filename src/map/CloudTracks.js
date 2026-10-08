@@ -1,3 +1,5 @@
+import { lightTheme } from '../theme/ThemeProvider';
+import { makeStyles, resolveStyles } from '../theme/ThemeProvider';
 import { simplifyRoute } from '../tracking/SimplifyRoute';
 import { coordinate } from '../tracking/RouteSamples';
 
@@ -9,10 +11,19 @@ export const DISPLAY_BUDGET = 4000;
 
 // Paths of several dogs at once need telling apart; the first is the familiar
 // red of the single-dog map.
-export const DOG_COLORS = Object.freeze(
-  ['#E45756', '#8C5BD6', '#D9822B', '#2E9E7E', '#B4478F']);
+export const getDOG_COLORS = makeStyles(theme => {
+  const { literalColors: themeLiteral } = theme;
+  return Object.freeze([
+    themeLiteral.cloudRouteCoral,
+    themeLiteral.cloudRoutePurple,
+    themeLiteral.cloudRouteOrange,
+    themeLiteral.cloudRouteGreen,
+    themeLiteral.cloudRoutePink,
+  ]);
+});
 
 export function dogColor(slaveId, index = 0) {
+  const DOG_COLORS = resolveStyles(getDOG_COLORS);
   const position = Number.isInteger(slaveId) ? slaveId : index;
   return DOG_COLORS[Math.abs(position) % DOG_COLORS.length];
 }
@@ -22,7 +33,10 @@ export function dogColor(slaveId, index = 0) {
  * asks for. Simplified once, like every other route on the map, and capped so a
  * day of rows cannot flood the renderer.
  */
-export function cloudTracks(rows = [], { since = 0, gapMs = GAP_MS, budget = DISPLAY_BUDGET } = {}) {
+export function cloudTracks(
+  rows = [],
+  { since = 0, gapMs = GAP_MS, budget = DISPLAY_BUDGET } = {},
+) {
   const byDog = new Map();
   for (const row of rows) {
     const time = Number(row.received_at);
@@ -34,7 +48,9 @@ export function cloudTracks(rows = [], { since = 0, gapMs = GAP_MS, budget = DIS
     byDog.get(slaveId).push({ ...point, time });
   }
   const tracks = [];
-  for (const [slaveId, points] of [...byDog.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const [slaveId, points] of [...byDog.entries()].sort(
+    (a, b) => a[0] - b[0],
+  )) {
     const segments = [];
     let piece = [];
     let previous = null;
@@ -50,7 +66,11 @@ export function cloudTracks(rows = [], { since = 0, gapMs = GAP_MS, budget = DIS
     const simplified = segments.map(segment => simplifyRoute(segment, 1));
     let left = budget;
     const kept = [];
-    for (let index = simplified.length - 1; index >= 0 && left > 0; index -= 1) {
+    for (
+      let index = simplified.length - 1;
+      index >= 0 && left > 0;
+      index -= 1
+    ) {
       const part = simplified[index].slice(-left);
       if (part.length > 1) kept.unshift(part);
       left -= part.length;
@@ -59,3 +79,6 @@ export function cloudTracks(rows = [], { since = 0, gapMs = GAP_MS, budget = DIS
   }
   return tracks;
 }
+
+// Compatibility for non-hook consumers; views resolve their current theme.
+export const DOG_COLORS = getDOG_COLORS(lightTheme);

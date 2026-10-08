@@ -1,6 +1,6 @@
+import { makeStyles, resolveStyles } from '../theme/ThemeProvider';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { colors } from '../theme/tokens';
 
 export const MAP_LOAD_TIMEOUT_MS = 15000;
 
@@ -73,18 +73,27 @@ class MapBoundary extends React.Component {
     return { failed: true };
   }
   componentDidUpdate(previous) {
-    if (this.state.failed && previous.retryKey !== this.props.retryKey) this.setState({ failed: false });
+    if (this.state.failed && previous.retryKey !== this.props.retryKey)
+      this.setState({ failed: false });
   }
   componentDidCatch(error) {
     console.warn('[Map] could not open', error?.message);
     this.props.onMapState?.('unavailable');
   }
   render() {
-    if (this.state.failed) return <View testID="map-unavailable" style={styles.fallback} />;
+    const styles = resolveStyles(getStyles);
+    if (this.state.failed)
+      return <View testID="map-unavailable" style={styles.fallback} />;
     return this.props.children;
   }
 }
 
-const styles = StyleSheet.create({
-  fallback: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.mapFallback },
+const getStyles = makeStyles(theme => {
+  const { colors } = theme;
+  return StyleSheet.create({
+    fallback: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: colors.mapFallback,
+    },
+  });
 });

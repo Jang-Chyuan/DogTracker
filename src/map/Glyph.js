@@ -1,8 +1,9 @@
-import React from 'react';
+import { useTheme } from '../theme/ThemeProvider';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
 // The gear outline of the design's mockups (24×24).
-const GEAR = 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z';
+const GEAR =
+  'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z';
 
 /**
  * The small icons the card uses instead of repeating words: where a row came
@@ -10,9 +11,13 @@ const GEAR = 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1
  * sets do, because the app ships no icon font.
  */
 export default function Glyph({ name, color, size = 16, level = null }) {
+  const { literalColors: themeLiteral } = useTheme();
   const stroke = {
-    stroke: color, strokeWidth: 2, fill: 'none',
-    strokeLinecap: 'round', strokeLinejoin: 'round',
+    stroke: color,
+    strokeWidth: 2,
+    fill: 'none',
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
   };
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
@@ -21,8 +26,10 @@ export default function Glyph({ name, color, size = 16, level = null }) {
         <Path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5" {...stroke} />
       )}
       {name === 'cloud' && (
-        <Path d="M7 18.5a4 4 0 0 1 .4-8A5.5 5.5 0 0 1 17.7 11a3.8 3.8 0 0 1-.7 7.5z"
-          {...stroke} />
+        <Path
+          d="M7 18.5a4 4 0 0 1 .4-8A5.5 5.5 0 0 1 17.7 11a3.8 3.8 0 0 1-.7 7.5z"
+          {...stroke}
+        />
       )}
       {name === 'speed' && (
         // A gauge with a needle and a pivot: the bare arc alone read as a
@@ -38,8 +45,14 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Rect x={2} y={7} width={17} height={10} rx={2.5} {...stroke} />
           <Line x1={21.5} y1={10.5} x2={21.5} y2={13.5} {...stroke} />
           {Number.isFinite(level) && level > 0 && (
-            <Rect x={4} y={9} width={Math.max(1.5, 13 * Math.min(1, level / 100))}
-              height={6} rx={1} fill={color} />
+            <Rect
+              x={4}
+              y={9}
+              width={Math.max(1.5, 13 * Math.min(1, level / 100))}
+              height={6}
+              rx={1}
+              fill={color}
+            />
           )}
         </>
       )}
@@ -96,7 +109,10 @@ export default function Glyph({ name, color, size = 16, level = null }) {
         // no location (A2).
         <>
           <Circle cx={13} cy={4.5} r={1.8} {...stroke} />
-          <Path d="M10 21l2-6 3 3v3M8 12l2-4 4 1 2 4 2 1M12 15l-1-4" {...stroke} />
+          <Path
+            d="M10 21l2-6 3 3v3M8 12l2-4 4 1 2 4 2 1M12 15l-1-4"
+            {...stroke}
+          />
           {name === 'walk-off' && <Path d="M3 3l18 18" {...stroke} />}
         </>
       )}
@@ -107,13 +123,19 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Circle cx={10} cy={5.5} r={2} {...stroke} />
           <Circle cx={14} cy={5.5} r={2} {...stroke} />
           <Circle cx={17.5} cy={10} r={2} {...stroke} />
-          <Path d="M12 12c-3 0-5.5 3.2-5.5 5.4 0 1.6 1.3 2.6 2.8 2.6 1 0 1.7-.5 2.7-.5s1.7.5 2.7.5c1.5 0 2.8-1 2.8-2.6C17.5 15.2 15 12 12 12z" {...stroke} />
+          <Path
+            d="M12 12c-3 0-5.5 3.2-5.5 5.4 0 1.6 1.3 2.6 2.8 2.6 1 0 1.7-.5 2.7-.5s1.7.5 2.7.5c1.5 0 2.8-1 2.8-2.6C17.5 15.2 15 12 12 12z"
+            {...stroke}
+          />
         </>
       )}
       {name === 'car' && (
         // History list: 開車 (my route) and 坐車 (a dog), seen from the side.
         <>
-          <Path d="M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7" {...stroke} />
+          <Path
+            d="M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7"
+            {...stroke}
+          />
           <Circle cx={6} cy={16.5} r={1.8} {...stroke} />
           <Circle cx={16.5} cy={16.5} r={1.8} {...stroke} />
         </>
@@ -159,7 +181,10 @@ export default function Glyph({ name, color, size = 16, level = null }) {
       {name === 'close' && <Path d="M6 6l12 12M18 6 6 18" {...stroke} />}
       {name === 'share' && (
         // 匯出 (history top right): an arrow up out of a tray.
-        <Path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" {...stroke} />
+        <Path
+          d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"
+          {...stroke}
+        />
       )}
       {name === 'sliders' && (
         // 調整範圍: two sliders with their knobs.
@@ -172,7 +197,11 @@ export default function Glyph({ name, color, size = 16, level = null }) {
       {name === 'compass' && (
         // The compass (shown once the map is turned): north half in red.
         <>
-          <Path d="M12 3l3.2 9H8.8z" fill="#D64545" stroke="none" />
+          <Path
+            d="M12 3l3.2 9H8.8z"
+            fill={themeLiteral.critLine}
+            stroke="none"
+          />
           <Path d="M12 21l-3.2-9h6.4z" fill={color} stroke="none" />
         </>
       )}

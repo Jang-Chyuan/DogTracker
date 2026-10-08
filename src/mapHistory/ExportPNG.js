@@ -4,7 +4,10 @@
 // every text already broken into lines. Pure: `measureText(text, size, bold)`
 // gives a text's width in px (the renderer's font widths, ExportDraw);
 // ExportDraw turns the layout into drawing operations.
-import { colors, routeColors } from '../theme/tokens';
+import {
+  exportColors as colors,
+  exportRouteColors as routeColors,
+} from '../theme/exportPalette';
 import { activeSubjects, displayName } from './ExportData';
 import { localDateParts } from './ExportFiles';
 

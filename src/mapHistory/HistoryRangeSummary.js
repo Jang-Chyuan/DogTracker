@@ -2,12 +2,23 @@
 // 「調整範圍時的框」): 「08:03 – 現在 ▾」 with the distance and time under it
 // and 「調整範圍」 on the right; a tap opens the bar in the same framed box,
 // whose two round handles move the start and the end.
-import React, { useMemo, useRef, useState } from 'react';
+import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
+import { useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
-import { clock, km, summaryDuration, summaryText } from '../history/HistoryText';
-import { dragRangeHandle, rangeHandles, stepRangeHandle, xOfTime } from '../history/screen/HistoryRangeBar';
-import { colors, size as sizes, tabularNumbers } from '../theme/tokens';
+import {
+  clock,
+  km,
+  summaryDuration,
+  summaryText,
+} from '../history/HistoryText';
+import {
+  dragRangeHandle,
+  rangeHandles,
+  stepRangeHandle,
+  xOfTime,
+} from '../history/screen/HistoryRangeBar';
+import { size as sizes, tabularNumbers } from '../theme/tokens';
 import { haptic } from '../utils/haptics';
 
 const HANDLE = sizes.rangeBar.handle;
@@ -18,8 +29,11 @@ const TOUCH = 48;
 export function rangeSummaryLines(model, { subject, open, range, who = null }) {
   if (!model?.points.length) return null;
   // Several dogs: the second line names the protagonist (c158: 「豆豆・移動 7.4 km」).
-  const moved = who ? `${who}・移動 ${km(model.distanceM)}`
-    : `${subject === 'phone' ? '走了' : '移動'} ${km(model.distanceM)}・${summaryDuration(model.durationMs)}`;
+  const moved = who
+    ? `${who}・移動 ${km(model.distanceM)}`
+    : `${subject === 'phone' ? '走了' : '移動'} ${km(
+        model.distanceM,
+      )}・${summaryDuration(model.durationMs)}`;
   const until = range?.following ? '現在' : clock(range?.end);
   if (!open && !who) return summaryText(model, { subject });
   // Several dogs share one range: the title is that range, whoever leads.
@@ -27,64 +41,109 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
 }
 
 function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
+  const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
   const handles = rangeHandles(range, track);
   const startX = xOfTime(handles.start, width, track);
   const endX = xOfTime(handles.end, width, track);
   const state = useRef({});
-  state.current = { range, track, dayPoints, today, width, startX, endX, onDrag, onCommit };
-  const drag = useRef({ handle: null, from: 0, last: null, rejected: false, edge: false });
-  const responder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderTerminationRequest: () => false,
-    onShouldBlockNativeResponder: () => true,
-    onPanResponderGrant: event => {
-      const { startX: s, endX: e } = state.current;
-      const x = event.nativeEvent.locationX - TOUCH / 2;
-      // 判定表「範圍條把手太近」: the side of the middle between them (left
-      // = start); right on the middle, the first direction moved decides.
-      const middle = (s + e) / 2;
-      const handle = x < middle ? 'start' : x > middle ? 'end' : null;
-      drag.current = { handle, from: x === middle ? s : handle === 'start' ? s : e, last: state.current.range,
-        rejected: false, edge: false };
-    },
-    onPanResponderMove: (_, gesture) => {
-      const d = drag.current;
-      const { track: t, dayPoints: points, today: isToday, width: w } = state.current;
-      // Both handles on one spot: the first direction picks (left = start).
-      if (!d.handle) {
-        if (Math.abs(gesture.dx) < 2) return;
-        d.handle = gesture.dx < 0 ? 'start' : 'end';
-        d.from = d.handle === 'start' ? state.current.startX : state.current.endX;
-      }
-      const x = Math.max(0, Math.min(w, d.from + gesture.dx));
-      const result = dragRangeHandle(state.current.range, d.handle, x, w, { track: t, dayPoints: points, today: isToday });
-      if (result.atEdge && !d.edge) haptic('heavy');
-      d.edge = result.atEdge;
-      d.rejected = !result.valid;
-      if (!result.valid) return;
-      const changed = result.range.start !== d.last.start || result.range.end !== d.last.end
-        || result.range.following !== d.last.following;
-      d.last = result.range;
-      if (changed) state.current.onDrag(result.range);
-    },
-    onPanResponderRelease: () => {
-      const d = drag.current;
-      // Refused (start not before the end): the handle springs back.
-      haptic(d.rejected ? 'double' : 'tick');
-      state.current.onCommit(d.last);
-      drag.current = { handle: null };
-    },
-    onPanResponderTerminate: () => {
-      state.current.onCommit(drag.current.last);
-      drag.current = { handle: null };
-    },
-  }), []);
+  state.current = {
+    range,
+    track,
+    dayPoints,
+    today,
+    width,
+    startX,
+    endX,
+    onDrag,
+    onCommit,
+  };
+  const drag = useRef({
+    handle: null,
+    from: 0,
+    last: null,
+    rejected: false,
+    edge: false,
+  });
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
+        onPanResponderGrant: event => {
+          const { startX: s, endX: e } = state.current;
+          const x = event.nativeEvent.locationX - TOUCH / 2;
+          // 判定表「範圍條把手太近」: the side of the middle between them (left
+          // = start); right on the middle, the first direction moved decides.
+          const middle = (s + e) / 2;
+          const handle = x < middle ? 'start' : x > middle ? 'end' : null;
+          drag.current = {
+            handle,
+            from: x === middle ? s : handle === 'start' ? s : e,
+            last: state.current.range,
+            rejected: false,
+            edge: false,
+          };
+        },
+        onPanResponderMove: (_, gesture) => {
+          const d = drag.current;
+          const {
+            track: t,
+            dayPoints: points,
+            today: isToday,
+            width: w,
+          } = state.current;
+          // Both handles on one spot: the first direction picks (left = start).
+          if (!d.handle) {
+            if (Math.abs(gesture.dx) < 2) return;
+            d.handle = gesture.dx < 0 ? 'start' : 'end';
+            d.from =
+              d.handle === 'start' ? state.current.startX : state.current.endX;
+          }
+          const x = Math.max(0, Math.min(w, d.from + gesture.dx));
+          const result = dragRangeHandle(state.current.range, d.handle, x, w, {
+            track: t,
+            dayPoints: points,
+            today: isToday,
+          });
+          if (result.atEdge && !d.edge) haptic('heavy');
+          d.edge = result.atEdge;
+          d.rejected = !result.valid;
+          if (!result.valid) return;
+          const changed =
+            result.range.start !== d.last.start ||
+            result.range.end !== d.last.end ||
+            result.range.following !== d.last.following;
+          d.last = result.range;
+          if (changed) state.current.onDrag(result.range);
+        },
+        onPanResponderRelease: () => {
+          const d = drag.current;
+          // Refused (start not before the end): the handle springs back.
+          haptic(d.rejected ? 'double' : 'tick');
+          state.current.onCommit(d.last);
+          drag.current = { handle: null };
+        },
+        onPanResponderTerminate: () => {
+          state.current.onCommit(drag.current.last);
+          drag.current = { handle: null };
+        },
+      }),
+    [],
+  );
   const step = (handle, event) => {
-    const result = stepRangeHandle(range, handle, event.nativeEvent.actionName === 'increment' ? 1 : -1,
-      { dayPoints, today });
-    if (!result.valid) { haptic('double'); return; }
+    const result = stepRangeHandle(
+      range,
+      handle,
+      event.nativeEvent.actionName === 'increment' ? 1 : -1,
+      { dayPoints, today },
+    );
+    if (!result.valid) {
+      haptic('double');
+      return;
+    }
     onCommit(result.range);
   };
   // 判定表「範圍條把手太近」: closer than 48dp, the start's time sits left of
@@ -93,24 +152,65 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
   const startLabel = clock(handles.start);
   const endLabel = clock(handles.end);
   return (
-    <View style={styles.bar} {...responder.panHandlers} testID="history-range-bar">
-      <View style={styles.trackArea} pointerEvents="none" onLayout={event => setWidth(event.nativeEvent.layout.width - TOUCH)}>
+    <View
+      style={styles.bar}
+      {...responder.panHandlers}
+      testID="history-range-bar"
+    >
+      <View
+        style={styles.trackArea}
+        pointerEvents="none"
+        onLayout={event => setWidth(event.nativeEvent.layout.width - TOUCH)}
+      >
         <View style={styles.track} />
-        <View style={[styles.selection, { left: TOUCH / 2 + startX, width: Math.max(0, endX - startX) }]} />
+        <View
+          style={[
+            styles.selection,
+            { left: TOUCH / 2 + startX, width: Math.max(0, endX - startX) },
+          ]}
+        />
         {/* TalkBack: each end is its own adjustable control (one fix, at
-            least a minute, per step). */}
-        <View testID="range-handle-start" style={[styles.handle, { left: startX + (TOUCH - HANDLE) / 2 }]}
-          accessible accessibilityRole="adjustable" accessibilityLabel={`開始 ${startLabel}`}
-          accessibilityActions={STEPS} onAccessibilityAction={event => step('start', event)} />
-        <View testID="range-handle-end" style={[styles.handle, { left: endX + (TOUCH - HANDLE) / 2 }]}
-          accessible accessibilityRole="adjustable"
-          accessibilityLabel={`結束 ${endLabel}${range.following ? '，跟著現在' : ''}`}
-          accessibilityActions={STEPS} onAccessibilityAction={event => step('end', event)} />
+               least a minute, per step). */}
+        <View
+          testID="range-handle-start"
+          style={[styles.handle, { left: startX + (TOUCH - HANDLE) / 2 }]}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={`開始 ${startLabel}`}
+          accessibilityActions={STEPS}
+          onAccessibilityAction={event => step('start', event)}
+        />
+        <View
+          testID="range-handle-end"
+          style={[styles.handle, { left: endX + (TOUCH - HANDLE) / 2 }]}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={`結束 ${endLabel}${
+            range.following ? '，跟著現在' : ''
+          }`}
+          accessibilityActions={STEPS}
+          onAccessibilityAction={event => step('end', event)}
+        />
       </View>
       <View style={styles.labels} pointerEvents="none">
-        <Text style={[styles.label, close ? [styles.labelRight, { right: width - startX + TOUCH / 2 + 2 }]
-          : [styles.labelCentre, { left: startX }]]}>{startLabel}</Text>
-        <Text style={[styles.label, close ? { left: endX + TOUCH / 2 + 2 } : [styles.labelCentre, { left: endX }]]}>
+        <Text
+          style={[
+            styles.label,
+            close
+              ? [styles.labelRight, { right: width - startX + TOUCH / 2 + 2 }]
+              : [styles.labelCentre, { left: startX }],
+          ]}
+        >
+          {startLabel}
+        </Text>
+        <Text
+          style={[
+            styles.label,
+            close
+              ? { left: endX + TOUCH / 2 + 2 }
+              : [styles.labelCentre, { left: endX }],
+          ]}
+        >
           {endLabel}
         </Text>
       </View>
@@ -124,74 +224,181 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
  * handle moves) and `onCommit` (the range when it is let go). `closedAt`:
  * my route's recording was switched off then (「記錄已在 10:20 關閉」).
  */
-export default function HistoryRangeSummary({ model, subject, range, track, today, open, onToggle, onDrag, onCommit,
-  closedAt = null, dayPoints: shared = null, who = null }) {
+export default function HistoryRangeSummary({
+  model,
+  subject,
+  range,
+  track,
+  today,
+  open,
+  onToggle,
+  onDrag,
+  onCommit,
+  closedAt = null,
+  dayPoints: shared = null,
+  who = null,
+}) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
   const lines = rangeSummaryLines(model, { subject, open, range, who });
   if (!lines) return null;
   // The handles snap to every shown dog's fixes (判定表「多隻狗的共同範圍」).
   const dayPoints = shared?.length ? shared : model.dayPoints;
-  const enabled = dayPoints?.length > 1 && dayPoints[dayPoints.length - 1].time - dayPoints[0].time >= 60000;
-  const speech = `${lines.title.replace(' – ', ' 到 ')}，${lines.detail}${enabled ? '，點兩下調整範圍' : ''}`;
+  const enabled =
+    dayPoints?.length > 1 &&
+    dayPoints[dayPoints.length - 1].time - dayPoints[0].time >= 60000;
+  const speech = `${lines.title.replace(' – ', ' 到 ')}，${lines.detail}${
+    enabled ? '，點兩下調整範圍' : ''
+  }`;
   return (
     <View style={[styles.box, open && styles.boxOpen]} testID="history-summary">
-      <Pressable onPress={enabled ? onToggle : undefined} style={styles.summary} accessibilityRole="button"
-        accessibilityLabel={speech} accessibilityState={{ expanded: open }}>
+      <Pressable
+        onPress={enabled ? onToggle : undefined}
+        style={styles.summary}
+        accessibilityRole="button"
+        accessibilityLabel={speech}
+        accessibilityState={{ expanded: open }}
+      >
         <View style={styles.texts}>
-          <Text style={[styles.title, open && styles.titleOpen]} numberOfLines={1}>
+          <Text
+            style={[styles.title, open && styles.titleOpen]}
+            numberOfLines={1}
+          >
             {lines.title}
-            {enabled ? <Text style={[styles.caret, open && styles.titleOpen]}>{open ? ' ▴' : ' ▾'}</Text> : null}
+            {enabled ? (
+              <Text style={[styles.caret, open && styles.titleOpen]}>
+                {open ? ' ▴' : ' ▾'}
+              </Text>
+            ) : null}
           </Text>
-          <Text style={styles.detail} numberOfLines={2}>{lines.detail}</Text>
+          <Text style={styles.detail} numberOfLines={2}>
+            {lines.detail}
+          </Text>
         </View>
         {enabled && (
-          <Pressable onPress={onToggle} testID="history-adjust" accessibilityRole="button"
-            accessibilityLabel={open ? '完成' : '調整範圍'} hitSlop={8}
-            style={[styles.adjust, open && styles.adjustOpen]}>
-            <Glyph name="sliders" color={open ? colors.tonalText : colors.text} size={sizes.icon.adjust} />
-            <Text style={[styles.adjustText, open && styles.adjustTextOpen]}>{open ? '完成' : '調整範圍'}</Text>
+          <Pressable
+            onPress={onToggle}
+            testID="history-adjust"
+            accessibilityRole="button"
+            accessibilityLabel={open ? '完成' : '調整範圍'}
+            hitSlop={8}
+            style={[styles.adjust, open && styles.adjustOpen]}
+          >
+            <Glyph
+              name="sliders"
+              color={open ? colors.tonalText : colors.text}
+              size={sizes.icon.adjust}
+            />
+            <Text style={[styles.adjustText, open && styles.adjustTextOpen]}>
+              {open ? '完成' : '調整範圍'}
+            </Text>
           </Pressable>
         )}
       </Pressable>
-      {!open && closedAt != null && <Text style={styles.closed}>{`記錄已在 ${clock(closedAt)} 關閉`}</Text>}
+      {!open && closedAt != null && (
+        <Text style={styles.closed}>{`記錄已在 ${clock(closedAt)} 關閉`}</Text>
+      )}
       {open && (
         <>
           <Text style={styles.hint}>拖兩端的圓點改開始、結束</Text>
-          <RangeBar range={range} track={track} dayPoints={dayPoints} today={today}
-            onDrag={onDrag} onCommit={onCommit} />
+          <RangeBar
+            range={range}
+            track={track}
+            dayPoints={dayPoints}
+            today={today}
+            onDrag={onDrag}
+            onCommit={onCommit}
+          />
         </>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  // Closed: no fill and no frame. Open: white, 1.5dp accent frame, radius 14.
-  box: { marginHorizontal: 16, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 14,
-    borderWidth: sizes.rangeBar.frameBorder, borderColor: 'transparent' },
-  boxOpen: { borderColor: colors.accent, backgroundColor: colors.surface },
-  summary: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  texts: { flex: 1 },
-  title: { color: colors.text, fontSize: 20, lineHeight: 28, fontWeight: '700', ...tabularNumbers },
-  titleOpen: { color: colors.tonalText },
-  caret: { color: colors.textMuted, fontSize: 14 },
-  detail: { color: colors.textMuted, fontSize: 13, lineHeight: 18, ...tabularNumbers },
-  adjust: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: 18,
-    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
-  adjustOpen: { backgroundColor: colors.tonal, borderColor: colors.tonal },
-  adjustText: { color: colors.text, fontSize: 12, fontWeight: '700' },
-  adjustTextOpen: { color: colors.tonalText },
-  closed: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
-  // 12sp textMuted, 4dp above and below, right on top of the bar.
-  hint: { color: colors.textMuted, fontSize: 12, lineHeight: 16, marginTop: 4, marginBottom: 4 },
-  // The 48dp touch row overlaps the hint's 4dp: the track sits right under it.
-  bar: { paddingBottom: 2, marginTop: -14 },
-  trackArea: { height: TOUCH, justifyContent: 'center' },
-  track: { marginHorizontal: TOUCH / 2, height: sizes.rangeBar.track, borderRadius: 3, backgroundColor: colors.line },
-  selection: { position: 'absolute', height: sizes.rangeBar.track, backgroundColor: colors.accent },
-  handle: { position: 'absolute', width: HANDLE, height: HANDLE, borderRadius: HANDLE / 2,
-    borderWidth: sizes.rangeBar.handleBorder, borderColor: colors.accent, backgroundColor: colors.surface },
-  labels: { height: 18, marginTop: -6, marginHorizontal: 0 },
-  label: { position: 'absolute', color: colors.textMuted, fontSize: 13, ...tabularNumbers },
-  labelRight: { textAlign: 'right' },
-  labelCentre: { width: TOUCH, textAlign: 'center' },
+const getStyles = makeStyles(theme => {
+  const { colors } = theme;
+  return StyleSheet.create({
+    // Closed: no fill and no frame. Open: white, 1.5dp accent frame, radius 14.
+    box: {
+      marginHorizontal: 16,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 14,
+      borderWidth: sizes.rangeBar.frameBorder,
+      borderColor: 'transparent',
+    },
+    boxOpen: { borderColor: colors.accent, backgroundColor: colors.surface },
+    summary: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    texts: { flex: 1 },
+    title: {
+      color: colors.text,
+      fontSize: 20,
+      lineHeight: 28,
+      fontWeight: '700',
+      ...tabularNumbers,
+    },
+    titleOpen: { color: colors.tonalText },
+    caret: { color: colors.textMuted, fontSize: 14 },
+    detail: {
+      color: colors.textMuted,
+      fontSize: 13,
+      lineHeight: 18,
+      ...tabularNumbers,
+    },
+    adjust: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      height: 36,
+      paddingHorizontal: 12,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.line,
+      backgroundColor: colors.surface,
+    },
+    adjustOpen: { backgroundColor: colors.tonal, borderColor: colors.tonal },
+    adjustText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+    adjustTextOpen: { color: colors.tonalText },
+    closed: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+    // 12sp textMuted, 4dp above and below, right on top of the bar.
+    hint: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 16,
+      marginTop: 4,
+      marginBottom: 4,
+    },
+    // The 48dp touch row overlaps the hint's 4dp: the track sits right under it.
+    bar: { paddingBottom: 2, marginTop: -14 },
+    trackArea: { height: TOUCH, justifyContent: 'center' },
+    track: {
+      marginHorizontal: TOUCH / 2,
+      height: sizes.rangeBar.track,
+      borderRadius: 3,
+      backgroundColor: colors.line,
+    },
+    selection: {
+      position: 'absolute',
+      height: sizes.rangeBar.track,
+      backgroundColor: colors.accent,
+    },
+    handle: {
+      position: 'absolute',
+      width: HANDLE,
+      height: HANDLE,
+      borderRadius: HANDLE / 2,
+      borderWidth: sizes.rangeBar.handleBorder,
+      borderColor: colors.accent,
+      backgroundColor: colors.avatarFrameMap,
+    },
+    labels: { height: 18, marginTop: -6, marginHorizontal: 0 },
+    label: {
+      position: 'absolute',
+      color: colors.textMuted,
+      fontSize: 13,
+      ...tabularNumbers,
+    },
+    labelRight: { textAlign: 'right' },
+    labelCentre: { width: TOUCH, textAlign: 'center' },
+  });
 });
