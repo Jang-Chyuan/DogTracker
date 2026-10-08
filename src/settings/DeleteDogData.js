@@ -71,9 +71,13 @@ export function useDeleteDogData(actions, initial = null, initialKey = null) {
     run.current += 1;
     set(initialUnsent == null ? CLOSED : { ...CLOSED, open: true, unsent: initialUnsent });
   }, [initialKey, initialUnsent, set]);
+  // A 「先上傳」 still sending (it stops at the next row once its run is
+  // over); a deletion waits for it, so no row goes up after it was deleted.
+  const uploading = useRef(null);
   const remove = useCallback(async includeUnsent => {
     set(previous => ({ ...previous, phase: 'deleting', problem: null }));
     try {
+      await uploading.current?.catch(() => {});
       await current.current.deleteAll({ includeUnsent });
       set(CLOSED);
       await current.current.onDeleted?.();
@@ -91,13 +95,17 @@ export function useDeleteDogData(actions, initial = null, initialKey = null) {
     state,
     dialog: deleteDialog(state),
     async start() {
-      run.current += 1;
+      const id = run.current + 1;
+      run.current = id;
       set({ ...CLOSED, open: true, phase: 'counting' });
       try {
         const unsent = await current.current.countUnsent();
-        set(previous => ({ ...previous, phase: 'ask', unsent: Number(unsent) || 0 }));
+        // Closed or opened again meanwhile: this count is not the dialog's.
+        if (id === run.current) set(previous => ({ ...previous, phase: 'ask', unsent: Number(unsent) || 0 }));
       } catch (error) {
-        set(previous => ({ ...previous, phase: 'ask', problem: `讀不到還沒上傳的筆數：${error?.message || ''}` }));
+        if (id === run.current) {
+          set(previous => ({ ...previous, phase: 'ask', problem: `讀不到還沒上傳的筆數：${error?.message || ''}` }));
+        }
       }
     },
     cancel() {
@@ -110,7 +118,12 @@ export function useDeleteDogData(actions, initial = null, initialKey = null) {
       const id = run.current;
       set(previous => ({ ...previous, phase: 'uploading', problem: null }));
       let result = 'failed';
-      try { result = await current.current.uploadAll(); } catch { result = 'failed'; }
+      // The upload stops once this run is over (closed, reopened, unmounted).
+      const alive = () => mounted.current && id === run.current;
+      const sending = Promise.resolve().then(() => current.current.uploadAll(alive));
+      uploading.current = sending;
+      try { result = await sending; } catch { result = 'failed'; }
+      finally { if (uploading.current === sending) uploading.current = null; }
       let remaining;
       try { remaining = Number(await current.current.countUnsent()) || 0; }
       catch { remaining = state.unsent; }

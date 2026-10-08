@@ -282,7 +282,7 @@ function TrackerApp({ resume = null, onRestart }) {
     onDeleted: () => setDeletedAt(fixture.now),
   } : {
     countUnsent: tracking.countUnsentUploads,
-    uploadAll: () => upload.flushAll?.() ?? Promise.resolve('failed'),
+    uploadAll: alive => upload.flushAll?.(alive) ?? Promise.resolve('failed'),
     deleteAll: options => tracking.deleteDogData(options),
     onDeleted: async () => {
       // A6 comes back after 刪除全部狗資料 (判定表「A6 的 ✕ 什麼時候重來」).
