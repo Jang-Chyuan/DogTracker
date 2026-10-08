@@ -20,8 +20,8 @@ const AlertSwitch = ({ testID, label, value, onChange }) => {
 
 /**
  * S6 提醒: 狗 (a group: 「全部開／部分開／全部關」, pressed it shows its three
- * switches), 接收器電量低, 接收器斷線、位置存不進手機 (only a statement: 一定
- * 提醒, no switch), 震動 and 聲音 (shared by every alert), 通知權限 (未允許 →
+ * switches), 接收器電量低, 接收器斷線、位置存不進手機 (a shared notification
+ * switch), 震動 and 聲音 (shared by every alert), 通知權限 (未允許 →
  * 「開系統設定 ›」 opens the app's notification settings). Every change is
  * saved at once (`onChange(patch)`). `page` is AlertPreferences.alertsPage.
  */
@@ -79,13 +79,14 @@ export default function AlertSettings({
             onChange={on => onChange({ receiverBattery: on })}
           />
         </ListRow>
-        <ListRow
-          testID="alerts-always"
-          title="接收器斷線、位置存不進手機"
-          detail="不能關"
-          right="一定提醒"
-          label="接收器斷線、位置存不進手機，不能關，一定提醒"
-        />
+        <ListRow title="接收器斷線、位置存不進手機" accessible={false}>
+          <AlertSwitch
+            testID="alerts-receiverDisconnectedStorage"
+            label="接收器斷線、位置存不進手機"
+            value={page.receiverDisconnectedStorage}
+            onChange={on => onChange({ receiverDisconnectedStorage: on })}
+          />
+        </ListRow>
         <ListRow title="震動" accessible={false}>
           <AlertSwitch
             testID="alerts-vibrate"

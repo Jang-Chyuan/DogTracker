@@ -308,7 +308,7 @@ test('S1 提醒 opens S6 (not the system settings); a switch is saved at once an
   await tap('settings-row-alerts');
   expect(title()).toBe('返回，提醒');
   expect(Linking.sendIntent?.mock?.calls?.length ?? 0).toBe(0);
-  expect(text()).toContain('一定提醒');
+  expect(text()).toContain('接收器斷線、位置存不進手機');
   const sound = renderer.root.findAll(node => node.props.testID === 'alerts-sound'
     && typeof node.props.onValueChange === 'function')[0];
   expect(sound.props.value).toBe(false);
@@ -317,9 +317,15 @@ test('S1 提醒 opens S6 (not the system settings); a switch is saved at once an
   expect(preferences().alerts).toMatchObject({ sound: true, vibrate: true, dogStale: true });
   expect(renderer.root.findAll(node => node.props.testID === 'alerts-sound'
     && typeof node.props.onValueChange === 'function')[0].props.value).toBe(true);
+  const disconnectStorage = renderer.root.findAll(node => node.props.testID === 'alerts-receiverDisconnectedStorage'
+    && typeof node.props.onValueChange === 'function')[0];
+  expect(disconnectStorage.props.value).toBe(true);
+  await act(async () => disconnectStorage.props.onValueChange(false));
+  await advance(100);
+  expect(preferences().alerts.receiverDisconnectedStorage).toBe(false);
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，設定');
-  expect(row('settings-row-alerts').props.accessibilityLabel).toBe('提醒，震動、聲音、各項開關，震動、聲音');
+  expect(row('settings-row-alerts').props.accessibilityLabel).toBe('提醒，震動、聲音、各項開關，震動、聲音，部分開');
 });
 
 test('a settings fixture opens its page over the map: S1 with red 「!」 rows, S2 中斷連線', async () => {

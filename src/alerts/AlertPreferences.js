@@ -3,10 +3,9 @@
 // S6 page, the S1 提醒 row, and — from 058 on — by whatever sends the
 // alerts. This module sends nothing.
 //
-// - The dog alerts (沒有新位置、不在接收範圍、電量低) and 接收器電量低 can be
-//   switched off one by one; all on by default.
-// - 接收器斷線 and 位置存不進手機 always alert (「一定提醒（不能關）」): they
-//   have no setting, so nothing saved can switch them off.
+// - Every alert category can be switched off; all on by default. The
+//   receiver disconnect/storage row shares one notification switch.
+// - These preferences control notification delivery only, never in-app warnings.
 // - 震動 and 聲音 are shared by every alert; 聲音 is off by default and, when
 //   on, follows the phone's notification volume.
 
@@ -15,6 +14,7 @@ export const DEFAULT_ALERT_PREFERENCES = Object.freeze({
   dogOutOfRange: true,
   dogBattery: true,
   receiverBattery: true,
+  receiverDisconnectedStorage: true,
   vibrate: true,
   sound: false,
 });
@@ -40,23 +40,19 @@ export function changeAlertPreferences(preferences, patch) {
   return normalizeAlertPreferences({ ...normalizeAlertPreferences(preferences), ...patch });
 }
 
-// Each alert by the event 058 raises, and the setting that switches it off
-// (null: always alerts).
+// Each notification kind and the setting that switches its delivery off.
 const ALERT_SETTING = Object.freeze({
   'dog-stale': 'dogStale',
   'dog-out-of-range': 'dogOutOfRange',
   'dog-battery': 'dogBattery',
   'receiver-battery': 'receiverBattery',
-  'receiver-disconnected': null,
-  storage: null,
+  'receiver-disconnected': 'receiverDisconnectedStorage',
+  storage: 'receiverDisconnectedStorage',
 });
 
 export const ALERT_KINDS = Object.freeze(Object.keys(ALERT_SETTING));
 
-/**
- * Whether an alert of this kind is to be raised. 接收器斷線 and 位置存不進手機
- * always are; an unknown kind is (an alert never goes missing by a typo).
- */
+/** Whether to deliver a notification; unknown kinds retain the safe default. */
 export function alertEnabled(preferences, kind) {
   const key = ALERT_SETTING[kind];
   if (!key) return true;
@@ -87,17 +83,18 @@ export function groupStatus(preferences, keys) {
 /**
  * The S1 提醒 row's status (c193, accepted suggestion 「震動」): how alerts
  * arrive — 「震動」, 「聲音」, both, or 「關」 when neither — and, when some
- * alert that can be switched off is off, a second line 「部分開」.
+ * category is off, a second line 「部分開」; all categories off: 「全部關閉」.
  */
 export function alertsHomeStatus(preferences) {
   const value = normalizeAlertPreferences(preferences);
   const how = [value.vibrate && '震動', value.sound && '聲音'].filter(Boolean).join('、') || '關';
-  const optional = [...DOG_ALERTS.map(alert => alert.key), 'receiverBattery'];
-  return optional.every(key => value[key]) ? [how] : [how, '部分開'];
+  const categories = [...new Set(Object.values(ALERT_SETTING))];
+  if (categories.every(key => !value[key])) return ['全部關閉'];
+  return categories.every(key => value[key]) ? [how] : [how, '部分開'];
 }
 
 /**
- * S6. { dogs: { status, items: [{ key, title, on }] }, receiverBattery,
+ * S6. { dogs: { status, items: [{ key, title, on }] }, receiverBattery, receiverDisconnectedStorage,
  * vibrate, sound, notifications: { denied, detail, status, action } }.
  * `permissions` is usePhonePermissions' answer.
  */
@@ -110,6 +107,7 @@ export function alertsPage(preferences, permissions = {}) {
       items: DOG_ALERTS.map(alert => ({ ...alert, on: value[alert.key] })),
     },
     receiverBattery: value.receiverBattery,
+    receiverDisconnectedStorage: value.receiverDisconnectedStorage,
     vibrate: value.vibrate,
     sound: value.sound,
     notifications: denied
