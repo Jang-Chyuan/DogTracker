@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { getSupabase } from '../services/supabase';
 import { NativeModules } from 'react-native';
 import { cancelBackgroundSync } from '../cloud/CloudSyncSlot';
+import { isNetworkFailure } from '../cloud/CloudErrors';
 
 const AuthContext = createContext(null);
 
@@ -17,7 +18,7 @@ export function AuthProvider({ children, clientFactory = getSupabase }) {
   // 登入失效 while in use: the session ended without this phone signing out
   // (the refresh token was refused). Signing in again clears it.
   const [expired, setExpired] = useState(false);
-  const signedIn = useRef(false), signingOut = useRef(false);
+  const signedIn = useRef(false), signingOut = useRef(false), checking = useRef(null);
 
   useEffect(() => {
     if (!client) return undefined;
@@ -66,6 +67,32 @@ export function AuthProvider({ children, clientFactory = getSupabase }) {
       const { data, error: failure } = await requireClient().auth.signInWithPassword({ email: address, password });
       if (failure) throw failure;
       return data;
+    },
+    /**
+     * An upload or download was refused for the sign-in (401 / expired JWT).
+     * One refresh decides: a new session means the token had only run out;
+     * no network says nothing; a refused refresh ends the session here, which
+     * reads as 登入失效 (S3 「需要重新登入」, the gear's red dot) — not D1.
+     * Resolves true when the sign-in ended.
+     */
+    reportAuthFailure() {
+      if (!client || !signedIn.current) return Promise.resolve(false);
+      if (checking.current) return checking.current;
+      checking.current = (async () => {
+        try {
+          const { data, error: failure } = await client.auth.refreshSession();
+          if (!failure && data?.session?.user) return false;
+          if (failure && isNetworkFailure(failure)) return false;
+          if (!signedIn.current) return true;
+          // Not a user sign-out: receive(null) marks it expired.
+          await client.auth.signOut({ scope: 'local' }).catch(() => {});
+          setExpired(true);
+          return true;
+        } catch (failure) {
+          return false;
+        } finally { checking.current = null; }
+      })();
+      return checking.current;
     },
     async signOut() {
       signingOut.current = true;

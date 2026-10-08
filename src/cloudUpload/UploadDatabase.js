@@ -5,31 +5,20 @@ export function createUploadDatabase(db) {
       return rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='phone_id'"))[0]?.value;
     },
     async owner(owner) {
-      const commands = [];
-      if (owner) commands.push({
-        query: "INSERT OR IGNORE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,5,'phone')",
-        params: [owner],
-      });
-      commands.push({ query: "INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('owner',?)", params: [owner || ''] });
-      // Publish the receiver's account together with its initial route. Never
-      // overwrite an explicitly saved Wi-Fi choice on resume or re-login.
-      await db.executeBatchAsync(commands);
+      // Publish the receiver's account. No receiver is set to upload through
+      // this phone by default (design: 不再預設 Master 5); a saved choice of
+      // either route stays on resume or re-login.
+      await db.executeAsync("INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('owner',?)", [owner || '']);
     },
     async settings(owner) {
       return rows(await db.executeAsync('SELECT * FROM ble_upload_settings WHERE owner_user_id=? ORDER BY master_id', [owner]));
     },
     async setMode(owner, master, mode) {
       if (!owner || !Number.isInteger(master) || master < 1 || master > 65535 || !['wifi', 'phone'].includes(mode)) throw new Error('上傳設定無效');
-      await db.executeBatchAsync([
-        // Start a new relay period only when changing from disabled to enabled.
-        // These are upload copies, never the original dog_status history rows.
-        { query: `DELETE FROM ble_upload_queue WHERE owner_user_id=? AND master_id=? AND status<>'sent'
-            AND ?='phone' AND NOT EXISTS (SELECT 1 FROM ble_upload_settings
-              WHERE owner_user_id=? AND master_id=? AND mode='phone')`,
-          params: [owner, master, mode, owner, master] },
-        { query: 'INSERT OR REPLACE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,?,?)',
-          params: [owner, master, mode] },
-      ]);
+      // Nothing waiting is deleted (S3: 不刪任何資料); the page sends it
+      // first (UploadService.flush).
+      await db.executeAsync('INSERT OR REPLACE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,?,?)',
+        [owner, master, mode]);
     },
     async isPending(row) {
       return rows(await db.executeAsync(`SELECT 1 FROM ble_upload_queue q JOIN ble_upload_settings s
@@ -49,6 +38,17 @@ export function createUploadDatabase(db) {
           CASE WHEN l.id IS NOT NULL THEN q.received_at END DESC,
           q.id LIMIT 20`, [owner, owner, now]));
     },
+    // Every row of one Master still waiting, oldest first, whatever its route
+    // or retry time (UploadService.flush).
+    async pendingFor(owner, master, limit = 50) {
+      return rows(await db.executeAsync(`SELECT * FROM ble_upload_queue
+        WHERE owner_user_id=? AND master_id=? AND status='pending' ORDER BY id LIMIT ?`, [owner, master, limit]));
+    },
+    async pendingCount(owner, master) {
+      return Number(rows(await db.executeAsync(
+        "SELECT COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? AND master_id=? AND status='pending'",
+        [owner, master]))[0]?.count || 0);
+    },
     async sent(row) {
       await db.executeBatchAsync([
         { query: "UPDATE ble_upload_queue SET status='sent',last_error='',sent_at=? WHERE event_id=? AND owner_user_id=?", params: [Date.now(), row.event_id, row.owner_user_id] },
@@ -65,10 +65,12 @@ export function createUploadDatabase(db) {
     },
     async summary(owner) {
       const counts = rows(await db.executeAsync('SELECT status,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? GROUP BY status', [owner]));
+      const byMaster = rows(await db.executeAsync("SELECT master_id,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? AND status='pending' GROUP BY master_id", [owner]));
       const last = rows(await db.executeAsync('SELECT MAX(sent_at) time FROM ble_upload_queue WHERE owner_user_id=?', [owner]))[0]?.time;
       const error = rows(await db.executeAsync("SELECT last_error FROM ble_upload_queue WHERE owner_user_id=? AND last_error<>'' ORDER BY id DESC LIMIT 1", [owner]))[0]?.last_error;
       const queueError = rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='queue_error'"))[0]?.value;
-      return { counts, last, error: queueError || error || '' };
+      const pendingByMaster = Object.fromEntries(byMaster.map(row => [row.master_id, Number(row.count)]));
+      return { counts, pendingByMaster, last, error: queueError || error || '' };
     },
   };
 }

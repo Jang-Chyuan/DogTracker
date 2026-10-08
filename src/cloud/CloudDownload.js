@@ -1,4 +1,5 @@
 import { mapCloudTelemetry } from './CloudTelemetry';
+import { cloudError } from './CloudErrors';
 
 export async function downloadCloudHistory({ client, database, owner, startAt, endBefore,
   masterId = null, signal, isCurrent = () => true, onProgress = () => {},
@@ -22,9 +23,9 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
       // Values were validated by mapCloudTelemetry; retain microsecond precision.
       query = query.or(`received_at.gt.${cursor.time},and(received_at.eq.${cursor.time},event_id.gt.${cursor.id})`);
     }
-    const { data, error } = await query.abortSignal(signal);
+    const { data, error, status } = await query.abortSignal(signal);
     await check();
-    if (error) throw new Error(`下載失敗${error.code ? ` (${error.code})` : ''}，請確認連線、登入及讀取權限`);
+    if (error) throw cloudError(`下載失敗${error.code ? ` (${error.code})` : ''}，請確認連線、登入及讀取權限`, error, status);
     if (!Array.isArray(data)) throw new Error('雲端回傳格式不正確');
     // Query to empty, not to page-size: the server may impose a smaller limit.
     if (!data.length) {

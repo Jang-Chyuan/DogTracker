@@ -9,8 +9,8 @@
 #   scripts/fixture-screenshots.sh [out-dir] [fixture ...]
 #
 # Without fixture names it takes every fixture in ScreenFixtures.js. A name can
-# carry a settings page, receiver-connecting@receiver (S1/S2/S4: settings,
-# receiver, phone); its screenshot is receiver-connecting@receiver.png. The status
+# carry a settings page, receiver-connecting@receiver (S1/S2/S3/S4: settings,
+# receiver, cloud, phone); its screenshot is receiver-connecting@receiver.png. The status
 # bar clock is set to the fixtures' fixed clock (09:30) with Android's demo mode,
 # and both are switched back off at the end (name=off returns to live data).
 set -e
