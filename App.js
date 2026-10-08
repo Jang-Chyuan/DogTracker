@@ -24,9 +24,19 @@ import { ui } from './src/components/ScreenUI';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
-import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
+import UploadSettingsScreen from './src/cloudUpload/UploadSettingsScreen';
+import SettingsHome from './src/settings/SettingsHome';
+import ReceiverSettings from './src/settings/ReceiverSettings';
+import PhoneSettings from './src/settings/PhoneSettings';
+import SettingsLinks, { SETTINGS_LINKS } from './src/settings/SettingsLinks';
+import { phonePage, receiverPage, settingsHome, settingsInput } from './src/settings/SettingsModel';
+import { useReceiverControl } from './src/settings/useReceiverControl';
+import { useRecordingSwitch } from './src/settings/useRecordingSwitch';
+import { useReceiverState } from './src/map/useReceiverState';
+import { useMapClock } from './src/map/useMapClock';
+import NativeTrackingPlatform from './specs/NativeTrackingPlatform';
 import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLocationRecording';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { useDogAvatars } from './src/dogs/useDogAvatars';
@@ -38,9 +48,9 @@ import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { useTodayRoute } from './src/locationTracker/useTodayRoute';
-import { layout } from './src/theme/tokens';
-import { useNotificationPermission } from './src/app/useNotificationPermission';
-import { storageProblem } from './src/map/TopAlerts';
+import { colors, layout, touch, type } from './src/theme/tokens';
+import { usePhonePermissions } from './src/app/usePhonePermissions';
+import { trackReceiverWait } from './src/map/TopAlerts';
 
 
 
@@ -85,10 +95,35 @@ function useAccountGeneration(userId) {
 // The pages off the map, by route: the header's 「‹ 標題」.
 const PAGE_TITLES = {
   settings: '設定',
-  cloud: '雲端資料',
-  locationTracker: '手機位置記錄',
-  hardware: '硬體連線',
+  receiver: '接收器',
+  phone: '手機',
+  cloud: 'Supabase 帳號',
+  diagnostics: '診斷',
+  advanced: '進階',
+  locationRecords: '記錄清單',
+  upload: '上傳設定',
 };
+// The old hardware pages, by what they were opened for.
+const HARDWARE_TITLES = { scan: '連接接收器', qr: '連接接收器', wifi: '接收器 Wi-Fi', data: '即時資料' };
+const pageTitle = route => (route.name === 'hardware' ? HARDWARE_TITLES[route.entry?.screen] || '連接接收器'
+  : PAGE_TITLES[route.name] || '設定');
+// The v3 settings pages (light); the old pages keep their dark look until
+// their v3 pages replace them (051–053).
+const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'diagnostics', 'advanced']);
+// Where each settings home row leads.
+const SETTINGS_ROUTES = { receiver: 'receiver', phone: 'phone', account: 'cloud', diagnostics: 'diagnostics',
+  advanced: 'advanced' };
+
+// Android's own settings pages.
+const openNotificationSettings = () => Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS',
+  [{ key: 'android.provider.extra.APP_PACKAGE', value: 'com.dogtracker' }]).catch(() => Linking.openSettings());
+const openLocationServices = () => Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS')
+  .catch(() => Linking.openSettings());
+const openBatterySettings = () => Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS')
+  .catch(() => Linking.openSettings());
+const appVersion = (() => {
+  try { return NativeTrackingPlatform?.appVersion?.() || ''; } catch { return ''; }
+})();
 
 const authStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
@@ -101,20 +136,26 @@ function TrackerApp() {
   const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real);
   const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
   const insets = useSafeAreaInsets();
-  const [route, setRoute] = useState({ name: 'map', parent: null });
+  // The pages opened from the map, newest last; back (the key or 「‹ 標題」)
+  // returns to the one before.
+  const [stack, setStack] = useState([{ name: 'map' }]);
+  const route = stack[stack.length - 1];
   // The hardware page keeps its own back stack: its header back is passed in.
   const [hardwareBack, setHardwareBack] = useState(0);
   // The dog whose history 看軌跡 opened: back on the live map, its card opens
   // again (design: history from a dog's card returns to that card).
   const [cardHistory, setCardHistory] = useState(null);
   const [openDogRequest, setOpenDogRequest] = useState(null);
-  const navigate = (name, parent = null) => {
-    if (name === 'map' && route.name === 'history' && cardHistory != null) {
+  const open = (name, extra = {}) => setStack(current => [...current, { name, ...extra }]);
+  const goBack = () => {
+    if (route.name === 'history' && cardHistory != null) {
       setOpenDogRequest({ slaveId: cardHistory, key: Date.now() });
     }
-    if (name !== 'history') setCardHistory(null);
-    setRoute({ name, parent });
+    setCardHistory(null);
+    setStack(current => (current.length > 1 ? current.slice(0, -1) : current));
   };
+  // A hardware page opened for `screen` ('scan', 'qr', 'wifi', 'data').
+  const openHardware = screen => open('hardware', { entry: { screen, key: Date.now() } });
   const isMap = route.name === 'map';
   const isHistory = route.name === 'history';
   // Both tabs draw on the same persistent map layer; only one of them is live.
@@ -143,98 +184,128 @@ function TrackerApp() {
     tracking.ready.real,
     undefined, null, { active: tracking.foreground && showsMap && !fixture, revision: cloudSync.revision });
   const fixtureEdits = useFixtureEdits(fixture);
-  const notificationsDenied = useNotificationPermission(tracking.foreground);
+  const permissions = usePhonePermissions(tracking.foreground);
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
     { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute,
       // The gear's red dot: the upload failing or the sign-in expired.
       cloudProblem: !!cloudSync.ownerId && !!upload.error,
       signInExpired: !!auth.expired,
-      notificationsDenied }, fixtureEdits);
+      permissions,
+      account: { signedIn: !!auth.user, email: auth.user?.email || '' } }, fixtureEdits);
+  // ---- the receiver, for the map and the settings pages ------------------
+  const settingsOpen = LIGHT_PAGES.has(route.name) || route.name === 'hardware';
+  const settingsClock = useMapClock(tracking.foreground && settingsOpen && !fixture);
+  const now = fixture ? fixture.now : settingsClock;
+  const receiverState = useReceiverState(tracking.foreground && !isHistory, fixture?.readReceiverState);
+  const receiverWait = useRef(null);
+  receiverWait.current = trackReceiverWait(receiverWait.current, receiverState,
+    fixture ? fixture.now : Date.now());
+  const receiverControl = useReceiverControl({ receiverState, onRescan: () => openHardware('qr') });
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
-    if (id === 'receiver-settings' || id === 'connect-receiver' || id === 'storage-reason') {
-      navigate('hardware', route.name === 'settings' ? 'settings' : 'map');
-    }
-    else if (id === 'sign-in') navigate('cloud', 'map');
+    if (id === 'receiver-settings') open('receiver');
+    else if (id === 'connect-receiver' || id === 'storage-reason') openHardware('scan');
+    else if (id === 'sign-in') open('cloud');
     else if (id === 'storage-settings') {
       Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(() => Linking.openSettings());
     }
   };
+  // A settings fixture opens its page (settings-*, receiver-*, phone-*).
+  const fixturePage = fixture?.openRoute ?? null;
+  const fixtureName = fixture?.name ?? null;
+  useEffect(() => {
+    if (!fixturePage) return;
+    setStack(fixturePage === 'settings' ? [{ name: 'map' }, { name: 'settings' }]
+      : [{ name: 'map' }, { name: 'settings' }, { name: fixturePage }]);
+  }, [fixtureName, fixturePage]);
+  // ---- what the settings pages say ---------------------------------------
+  const recordingSwitch = useRecordingSwitch(tracking.foreground && route.name === 'phone' && !fixture);
+  const settingsData = settingsInput(mapInputs, { now, receiverState, receiverWait: receiverWait.current,
+    recording: recordingSwitch });
+
   // Background work that keeps going when the map is left (返回鍵 on the
   // map): this phone uploads for a receiver and still has rows waiting.
   const uploading = (upload.settings || []).some(setting => setting.mode === 'phone')
     && (upload.counts || []).some(row => row.status === 'pending' && Number(row.count) > 0);
 
   useEffect(() => {
-    // HardwareScreen owns its nested scan/connect/menu back stack.
+    // HardwareScreen owns its nested scan/connect back stack.
     if (route.name === 'hardware') return undefined;
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
         if (route.name === 'map') handleRootBack({ uploading });
-        else navigate(route.parent || 'map');
+        else goBack();
         return true;
       },
     );
     return () => subscription.remove();
-    // navigate reads route and cardHistory, both listed.
+    // goBack reads route and cardHistory, both listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route, cardHistory, uploading]);
 
-  let content;
+  let content = null;
+  let page = null;
   switch (route.name) {
-    case 'locationTracker':
+    case 'locationRecords':
       content = <LocationTrackerScreen foreground={tracking.foreground} />;
       break;
     case 'cloud':
-      content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync}
-        onLater={() => navigate(route.parent || 'map')} />;
+      content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync} onLater={goBack} />;
       break;
-    case 'settings':
-      content = (
-        <SettingsScreen
-          tracking={tracking}
-          onHardware={() => navigate('hardware', 'settings')}
-          onCloud={() => navigate('cloud', 'settings')}
-          onLocationTracker={() => navigate('locationTracker', 'settings')}
-          account={{ signedIn: !!auth.user, email: auth.user?.email || '', expired: auth.expired }}
-          storage={storageProblem(tracking.realWriteError)}
-          onStorage={() => alertAction(storageProblem(tracking.realWriteError)?.full ? 'storage-settings'
-            : 'storage-reason')}
-        />
-      );
+    case 'upload':
+      content = <UploadSettingsScreen upload={upload} />;
       break;
-    case 'history':
-      // The history card is drawn over the map layer, like the live card.
-      content = null;
+    case 'settings': {
+      const home = settingsHome(settingsData);
+      page = <SettingsHome home={home} version={appVersion}
+        onOpen={id => (id === 'alerts' ? openNotificationSettings() : open(SETTINGS_ROUTES[id]))}
+        onStorage={() => alertAction(home.storage?.full ? 'storage-settings' : 'storage-reason')} />;
       break;
-    case 'hardware':
-      content = null;
+    }
+    case 'receiver':
+      page = <ReceiverSettings page={receiverPage(settingsData)}
+        onDisconnect={receiverControl.disconnect} onReconnect={receiverControl.reconnect}
+        onRescan={() => { receiverControl.disconnect(); openHardware('qr'); }}
+        onChange={() => openHardware('qr')} onConnect={() => openHardware('qr')} />;
+      break;
+    case 'phone':
+      page = <PhoneSettings page={phonePage(settingsData)}
+        onRecording={on => settingsData.recording.toggle?.(on)}
+        onPermissions={() => Linking.openSettings()} onLocationServices={openLocationServices}
+        onBattery={openBatterySettings} />;
+      break;
+    case 'diagnostics':
+    case 'advanced':
+      page = <SettingsLinks links={SETTINGS_LINKS[route.name]}
+        onOpen={id => (id === 'records' ? open('locationRecords') : id === 'upload' ? open('upload')
+          : openHardware(id))} />;
       break;
     default:
-      content = null;
+      break;
   }
+  const light = LIGHT_PAGES.has(route.name);
 
   return (
     <SafeAreaView
-      style={styles.safeArea}
+      style={[styles.safeArea, light && styles.page]}
       edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
     >
-      <StatusBar barStyle={showsMap ? 'dark-content' : 'light-content'} />
+      <StatusBar barStyle={showsMap || light ? 'dark-content' : 'light-content'}
+        backgroundColor={light ? colors.bg : undefined} />
       {!showsMap && (
         // No bottom tabs (v3): every page off the map says where it is and
         // goes back the way the back key does (「‹ 標題」).
-        <View style={styles.header}>
+        <View style={[styles.header, light && styles.lightHeader]}>
           <Pressable
             testID="page-back"
             accessibilityRole="button"
-            accessibilityLabel={`返回，${PAGE_TITLES[route.name] || '設定'}`}
-            onPress={() => (route.name === 'hardware' ? setHardwareBack(value => value + 1)
-              : navigate(route.parent || 'map'))}
+            accessibilityLabel={`返回，${pageTitle(route)}`}
+            onPress={() => (route.name === 'hardware' ? setHardwareBack(value => value + 1) : goBack())}
             hitSlop={8}
             style={({ pressed }) => [styles.back, pressed && styles.pressed]}
           >
-            <Text style={styles.brand}>{`‹ ${PAGE_TITLES[route.name] || '設定'}`}</Text>
+            <Text style={[styles.brand, light && styles.lightBrand]}>{`‹ ${pageTitle(route)}`}</Text>
           </Pressable>
         </View>
       )}
@@ -266,16 +337,18 @@ function TrackerApp() {
           mapProvider={GOOGLE_MAP_PROVIDER}
           fixture={isHistory ? null : fixture}
           todayRoute={mapInputs.todayRoute}
-          onOpenSettings={() => navigate('settings')}
+          onOpenSettings={() => open('settings')}
           signedIn={!!mapInputs.cloudSync.ownerId}
           cloudProblem={mapInputs.cloudProblem}
           signInExpired={mapInputs.signInExpired}
-          notificationsDenied={mapInputs.notificationsDenied}
+          notificationsDenied={mapInputs.permissions.notificationsDenied}
+          nearbyDenied={mapInputs.permissions.nearbyDenied}
+          receiver={{ state: isHistory ? null : receiverState, wait: receiverWait.current }}
           onAlertAction={alertAction}
           openDogRequest={openDogRequest}
           onOpenHistory={slaveId => {
             setCardHistory(slaveId);
-            setRoute({ name: 'history', parent: null });
+            open('history');
           }}
         />
 
@@ -283,15 +356,19 @@ function TrackerApp() {
       </View>
       {tracking.ready.real && (
         <HardwareScreen
-          upload={upload}
           dogDatabase={tracking.hardwareDatabase}
           onStorageError={tracking.reportNativeWriteError}
           active={route.name === 'hardware'}
-          onBack={() => navigate(route.parent || 'settings')}
+          entry={route.name === 'hardware' ? route.entry : null}
+          onBack={goBack}
+          onConnected={goBack}
+          onQrTarget={receiverControl.watchSwitch}
+          onMismatch={receiverControl.reportMismatch}
           backRequest={hardwareBack}
         />
       )}
-      {!showsMap && route.name !== 'hardware' && (
+      {light && <View style={styles.page}>{page}</View>}
+      {!showsMap && !light && route.name !== 'hardware' && (
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
@@ -325,4 +402,9 @@ const styles = StyleSheet.create({
   back: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 8, alignSelf: 'flex-start' },
   pressed: { opacity: 0.7 },
   brand: { color: '#f8fafc', fontSize: 18, fontWeight: '700' },
+  // The v3 pages: a light 56dp header 「‹ 標題」 over the page colour.
+  lightHeader: { backgroundColor: colors.bg, borderBottomWidth: 0, minHeight: touch.subpageHeader,
+    justifyContent: 'center', paddingHorizontal: 8 },
+  lightBrand: { ...type.title, color: colors.text },
+  page: { flex: 1, backgroundColor: colors.bg },
 });

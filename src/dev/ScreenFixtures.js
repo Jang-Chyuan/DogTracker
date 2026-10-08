@@ -139,6 +139,7 @@ const northEastOf = (where, metres, progress) => awayFrom(where, metres, progres
 // BleBackground.getState() of a receiver (QR Master 7) delivering packets.
 const receiving = now => ({
   enabled: true, running: true, connected: true, receiving: true,
+  deviceId: 'AA:BB:CC:00:00:07', sessionId: 'fixture-session',
   deviceName: 'DogGPS-Master7', expectedMasterId: 7, lastReceivedAt: now - 3 * SECOND,
   storageError: '', resumeError: '',
 });
@@ -581,6 +582,54 @@ const FIXTURES = {
     return { ...FIXTURES['all-good'](now),
       phone: { route, position, recording: false, today: morningWalk(position, now - 14 * 60 * MINUTE) } };
   },
+  // ---- settings (050): S1, S2, S4 open on their page ---------------------
+  // S1 with nothing to handle: receiver 7 connected (its battery 64%), phone
+  // recording, signed in, notifications allowed.
+  'settings-all-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'settings' }),
+  // S1 with red 「!」 rows (as in the S1 mockup): location services off
+  // (手機), downloads failing (Supabase 帳號), notifications not allowed
+  // (手機 and 提醒). The receiver is fine.
+  'settings-problems': now => ({ ...FIXTURES['cloud-failing'](now), openRoute: 'settings',
+    phone: { ...walkingPhone(now), services: false },
+    permissions: { notificationsDenied: true } }),
+  // S2: receiver 7 connected, but nothing new for six minutes:
+  // 「DogGPS-Master7・已連線・6 分鐘沒有新資料」.
+  'receiver-quiet': now => ({
+    receiver: { ...receiving(now), receiving: false, lastReceivedAt: now - 6 * MINUTE },
+    cloud: synced(now), phone: walkingPhone(now), openRoute: 'receiver',
+    ble: dog4Ble(now, 6 * MINUTE), cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
+  }),
+  // S2 收到的訊號源: 豆豆 (4) and dog 5 (never named: 「狗 5」) located;
+  // collar 9 talks to receiver 7 but never had a fix: only 「訊號源 9」 with
+  // 「還沒定位」.
+  'receiver-sources-unfixed': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openRoute: 'receiver',
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...series(bleRow, now, { slave: 5, from: 8 * MINUTE, to: 70 * SECOND, start: [-20, 18], step: [0.04, -0.02] }),
+      ...series(bleRow, now, { slave: 9, from: 10 * MINUTE, to: 20 * SECOND }),
+    ]),
+    cloudRows: [],
+  }),
+  // S2 after 「中斷連線」: receiver 7 is still the one set up, switched off
+  // twenty minutes ago — 「已中斷連線」 and 「重新連線」.
+  'receiver-disconnected-by-user': now => ({
+    receiver: { ...receiving(now), enabled: false, running: false, connected: false, receiving: false,
+      lastReceivedAt: now - 20 * MINUTE, lastStatus: '背景接收已停止' },
+    cloud: synced(now), phone: walkingPhone(now), openRoute: 'receiver',
+    ble: series(bleRow, now, { slave: 4, from: 30 * MINUTE, to: 20 * MINUTE, start: [14, 9], step: [0.05, 0.08] }),
+    cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
+  }),
+  // S4 with what is missing (as in the S4 mockup): no location permission,
+  // notifications not allowed, location services off; 位置記錄 still
+  // switched on, with this morning's records.
+  'phone-permissions-missing': now => {
+    const { route, position } = stalePhone(now, 20 * MINUTE);
+    return { ...FIXTURES['all-good'](now), openRoute: 'phone',
+      phone: { route, position, recording: false, recordingSwitch: true, permission: 'denied', services: false,
+        today: morningWalk(position, now - 20 * MINUTE, 4200) },
+      permissions: { notificationsDenied: true } };
+  },
   'card-readings-old': now => {
     const until = now - 18 * MINUTE - 30 * SECOND;
     return {
@@ -597,11 +646,21 @@ const FIXTURES = {
 
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
 
+// A settings page a fixture can be opened on (&page=…), whatever its own.
+export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone']);
+const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-z]+))?$/;
+
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.
 export function fixtureNameFromUrl(url) {
-  const match = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)$/.exec(url || '');
+  const match = FIXTURE_URL.exec(url || '');
   if (!match) return null;
   return match[1] === 'off' || FIXTURES[match[1]] ? match[1] : null;
+}
+
+// ?name=receiver-connecting&page=receiver → 'receiver' (S2 of that state).
+export function fixturePageFromUrl(url) {
+  const page = FIXTURE_URL.exec(url || '')?.[2] ?? null;
+  return FIXTURE_PAGES.includes(page) ? page : null;
 }
 
 // ---- what the app's own readers would make of those rows ------------------
@@ -689,12 +748,12 @@ function holdBatch(ble, cloud, now) {
  * The inputs a named fixture gives the screens, or null for an unknown name.
  * `now` is the fixed clock the screens read instead of the real one.
  */
-export function buildFixture(name, now = FIXTURE_NOW) {
+export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const make = FIXTURES[name];
   if (!make) return null;
   nextId = 1;
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
-    dismissed = {}, storageError = null, mapFailure = null } = make(now);
+    dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {} } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -751,6 +810,15 @@ export function buildFixture(name, now = FIXTURE_NOW) {
     phoneRoute: phone?.recording === false ? [] : phone?.route || [],
     // usePhoneLocation's answer: precise and on unless the state says not.
     phonePermission: { permission: phone?.permission ?? 'precise', services: phone?.services ?? true },
+    // usePhonePermissions' answer: everything allowed unless the state says.
+    permissions: { notificationsDenied: false, nearbyDenied: false, batteryIgnored: true, ...permissions },
+    // The 位置記錄 switch (S4): on unless recording was switched off.
+    recording: { enabled: phone?.recordingSwitch ?? phone?.recording !== false,
+      running: !!phone?.position && phone.recording !== false, busy: false, error: null, toggle: () => {} },
+    // Signed in as the fixture account (S1 Supabase 帳號) unless signed out.
+    account: { signedIn: !!cloud?.ownerId, email: cloud?.ownerId ? 'tim@example.com' : '' },
+    // The settings page it opens on (S1, S2, S4), if any.
+    openRoute: page ?? openRoute,
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
     todayRoute: (() => {
@@ -831,11 +899,12 @@ export function applyScreenFixture(fixture, live, edits = null) {
         && fixture.phonePermission.services },
     todayRoute: fixture.todayRoute,
     cloudDogs: fixture.cloudDogs,
-    // The upload and the notification permission are this phone's: a
-    // fixture shows them working.
+    // The upload is this phone's: a fixture shows it working.
     cloudProblem: false,
     signInExpired: false,
-    notificationsDenied: false,
+    permissions: fixture.permissions,
+    recording: fixture.recording,
+    account: fixture.account,
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
     history: history && {
       ...history, preferences: { ...history.preferences, dogAliases: aliases },

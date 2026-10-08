@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.location.LocationManager
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -54,6 +55,17 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
       promise.resolve(enabled)
     } catch (error: Exception) {
       promise.reject("location_status", "無法讀取系統定位狀態", error)
+    }
+  }
+
+  override fun appVersion(): String = BuildConfig.VERSION_NAME
+
+  override fun batteryOptimizationIgnored(promise: Promise) {
+    try {
+      val power = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+      promise.resolve(power.isIgnoringBatteryOptimizations(reactApplicationContext.packageName))
+    } catch (error: Exception) {
+      promise.reject("battery_optimization", "無法讀取電池最佳化狀態", error)
     }
   }
 

@@ -6,6 +6,8 @@ jest.mock('./specs/NativeTrackingPlatform', () => ({
     isMapConfigured: jest.fn(() => true),
     locationServicesEnabled: jest.fn(async () => true),
     claimLocationPermissionPrompt: jest.fn(async () => false),
+    batteryOptimizationIgnored: jest.fn(async () => true),
+    appVersion: jest.fn(() => '3.0.0'),
   },
 }));
 jest.mock(

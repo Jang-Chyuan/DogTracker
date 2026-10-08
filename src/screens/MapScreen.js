@@ -81,6 +81,11 @@ export default function MapScreen({
   signInExpired = false,
   // Android 13+ notification permission not given (gear red dot).
   notificationsDenied = false,
+  // Android 12+ 附近的裝置 not given (gear red dot).
+  nearbyDenied = false,
+  // { state, wait }: the receiver's native state and how long it has waited
+  // (TopAlerts.trackReceiverWait), read by App; omitted, the map reads them.
+  receiver = null,
   // A top card's button that leaves the map: 'receiver-settings',
   // 'storage-settings', 'storage-reason', 'connect-receiver', 'sign-in'.
   onAlertAction,
@@ -145,7 +150,10 @@ export default function MapScreen({
   // The receiver this phone is set up for, read from the native service while
   // the live map is in front (a fixture supplies its own reader).
   const receiverActive = active && tracking.foreground && !historical;
-  const receiverState = useReceiverState(receiverActive, fixture?.readReceiverState);
+  // App reads it for the settings pages too and hands it in (`receiver`:
+  // { state, wait }); on its own the map reads it itself.
+  const ownReceiverState = useReceiverState(receiverActive && !receiver, fixture?.readReceiverState);
+  const receiverState = receiver ? (receiverActive ? receiver.state : null) : ownReceiverState;
   // The newest stored packet can be from a receiver used before this one.
   const otherReceiver = isOtherReceiver(point, receiverState);
   useEffect(() => {
@@ -185,8 +193,9 @@ export default function MapScreen({
   useEffect(() => {
     if (!storageFailing) setDismissed(current => (current.storage ? { ...current, storage: false } : current));
   }, [storageFailing]);
-  const receiverWait = useRef(null);
-  receiverWait.current = trackReceiverWait(receiverWait.current, receiverState, now);
+  const ownWait = useRef(null);
+  ownWait.current = trackReceiverWait(ownWait.current, receiverState, now);
+  const receiverWait = receiver ? receiver.wait : ownWait.current;
   // When the user switched this receiver off and on (DogFreshness grace),
   // recorded by the native service whatever screen was open.
   const pausesKey = JSON.stringify(Array.isArray(receiverState?.receiverPauses) ? receiverState.receiverPauses : []);
@@ -246,11 +255,11 @@ export default function MapScreen({
     ...(historical ? {} : { outage, storage, noDogs, signedIn, dismissed }),
   });
   const reasons = historical ? [] : gearReasons({
-    outage, storage, dismissed, receiverState, receiverWait: receiverWait.current,
+    outage, storage, dismissed, receiverState, receiverWait,
     receiverBattery: otherReceiver || point?.id == null ? null
       : { valid: point.masterBatteryValid, percentage: point.masterBatteryPercentage },
     cloudFailing: !!cloudOwner && (cloudSync?.failingSince != null || cloudProblem),
-    signInExpired, phone, notificationsDenied, now,
+    signInExpired, phone, notificationsDenied, nearbyDenied, now,
   });
   const pressCardAction = useCallback(id => {
     if (id === 'map-retry') setMapRetry(value => value + 1);

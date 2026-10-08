@@ -263,18 +263,18 @@ test('receiver-disconnected: 「接收器 7 斷線了」, no range ring; ✕ col
 });
 
 test('the settings page shows the storage warning above everything (c282) and leads to its fix', async () => {
-  const SettingsScreen = require('../src/screens/SettingsScreen').default;
+  const SettingsHome = require('../src/settings/SettingsHome').default;
+  const { settingsHome } = require('../src/settings/SettingsModel');
   const onStorage = jest.fn();
+  const page = storage => <SettingsHome onOpen={() => {}} onStorage={onStorage}
+    home={settingsHome({ now: 0, receiverState: null, storage })} />;
   let renderer;
-  await act(async () => {
-    renderer = Renderer.create(<SettingsScreen tracking={{ ready: { real: true }, errors: {} }}
-      storage={storageProblem('database or disk is full')} onStorage={onStorage} />);
-  });
+  await act(async () => { renderer = Renderer.create(page(storageProblem('database or disk is full'))); });
   expect(JSON.stringify(renderer.toJSON())).toContain('手機空間不足，位置存不進手機');
   await act(async () => renderer.root.findAll(node => node.props.testID === 'settings-storage-warning'
     && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(onStorage).toHaveBeenCalled();
-  await act(async () => renderer.update(<SettingsScreen tracking={{ ready: { real: true }, errors: {} }} />));
+  await act(async () => renderer.update(page(null)));
   expect(renderer.root.findAll(node => node.props.testID === 'settings-storage-warning')).toHaveLength(0);
   await act(async () => renderer.unmount());
 });
