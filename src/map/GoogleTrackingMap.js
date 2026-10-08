@@ -221,7 +221,9 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   return (
     <>
       {route.lines.map((line, index) => (
-        <Polyline key={`route-${index}-${line.start}`} coordinates={line.coordinates} geodesic={false}
+        // A dashed line and a solid one are never the same native line: the
+        // SDK keeps an old dash pattern when it is taken away.
+        <Polyline key={`route-${line.dashed ? 'dashed' : 'solid'}-${index}-${line.start}`} coordinates={line.coordinates} geodesic={false}
           strokeColor={line.color} strokeWidth={line.width} zIndex={line.dashed ? Z.route - 0.5 : Z.route}
           lineDashPattern={line.dashed ? dashed : undefined} lineCap={line.dashed ? 'butt' : 'round'}
           lineJoin="round" tappable={false} />
