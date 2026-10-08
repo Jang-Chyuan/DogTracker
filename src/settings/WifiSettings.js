@@ -78,7 +78,7 @@ export default function WifiSettings({ wifi, receiver = '接收器' }) {
         ) : null}
         {ssids.map(network => (
           <ListRow key={network} testID={`wifi-${network}`} title={network}
-            right={network === wifi.activeSsid ? '使用中' : undefined} rightTone={['tonal']}
+            right={network === wifi.activeSsid ? '使用中' : undefined} rightTone={['mutedBold']}
             onPress={() => setSsid(network)} label={`${network}${network === wifi.activeSsid ? '，使用中' : ''}，填入名稱`}>
             <Pressable testID={`wifi-delete-${network}`} accessibilityRole="button" accessibilityLabel={`刪除 ${network}`}
               disabled={!connected} onPress={() => { setRemoveError(''); setRemoving(network); }} hitSlop={4}
