@@ -40,6 +40,7 @@ function ScanPage({ pairing, step, camera, onLayout }) {
   const { width } = useWindowDimensions();
   const size = Math.max(160, width - 96);
   const denied = pairing.camera === 'denied';
+  const live = camera && pairing.camera === 'granted';
   return (
     <GuidePage testID="pair-scan" step={step} title="連接接收器" body="打開接收器電源，掃描機身上的 QR Code。"
       scroll={false} onLayout={onLayout}
@@ -60,9 +61,12 @@ function ScanPage({ pairing, step, camera, onLayout }) {
             </Pressable>
           </View>
         ) : (
-          <View testID="pair-frame" style={[styles.frame, { width: size, height: size }]}
+          // Keyed by the camera: the native preview is mounted together with
+          // the corners drawn over it (a native view added later would cover
+          // them).
+          <View key={live ? 'live' : 'dark'} testID="pair-frame" style={[styles.frame, { width: size, height: size }]}
             accessible accessibilityLabel="QR Code 掃描框">
-            {camera && pairing.camera === 'granted'
+            {live
               ? <QrCamera style={StyleSheet.absoluteFill} paused={!!pairing.dialog} onScan={pairing.onQr} />
               : null}
             <Corners size={size} />
