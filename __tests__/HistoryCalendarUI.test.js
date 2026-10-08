@@ -54,7 +54,7 @@ test('H3b: dots on this phone\'s and the cloud\'s days, grey empty and future da
   expect(s.has('history-calendar')).toBe(true);
   expect(s.text()).toContain('選日期');
   expect(s.text()).toContain('2026 年 10 月');
-  expect(s.text()).toContain('灰字＝沒有紀錄，不能點');
+  expect(s.text()).not.toContain('灰字＝沒有紀錄，不能點');
   // The October walk found the cloud's 9/28 and 10/3; all its days are known.
   expect(s.screen.knowledge.cloud).toEqual(expect.arrayContaining(['2026-09-28', '2026-10-03', '2026-08-12']));
   expect(s.cell('2026-09-28').props.accessibilityLabel).toBe('9 月 28 日，有紀錄，只在雲端');
@@ -179,7 +179,8 @@ test('H3e: 選月份, the months with records, back to the month; 返回鍵 orde
   const s = await mount('history-month-picker');
   expect(s.text()).toContain('‹ 選月份');
   expect(s.text()).toContain('2026 年');
-  expect(s.text()).toContain('這個月有紀錄');
+  expect(s.text()).not.toContain('這個月有紀錄')
+  expect(s.text()).not.toContain('灰字＝沒有紀錄或還沒到，不能點');
   const month = n => s.renderer.root.findAll(node => node.props.testID === `calendar-month-${n}`
     && node.props.accessibilityLabel)[0];
   expect(month(8).props.accessibilityLabel).toBe('8 月，有紀錄');
