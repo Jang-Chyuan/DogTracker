@@ -234,7 +234,8 @@ const getStyles = makeStyles(theme => {
       backgroundColor: colors.surface,
       borderRadius: 10,
       borderWidth: 1,
-      borderColor: colors.line,
+      // Floats on the map: floatingOutline (= line in light).
+      borderColor: colors.floatingOutline,
       paddingVertical: sizes.cursor.labelPaddingV,
       paddingHorizontal: sizes.cursor.labelPaddingH,
       alignItems: 'center',
@@ -280,7 +281,7 @@ const getStyles = makeStyles(theme => {
       paddingHorizontal: 6,
       borderRadius: 6,
       borderWidth: 1,
-      borderColor: colors.line,
+      borderColor: colors.floatingOutline,
       backgroundColor: colors.surface,
       justifyContent: 'center',
       maxWidth: 160,

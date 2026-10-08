@@ -289,11 +289,11 @@ export default function ActivityHistoryChart({
         {...responder.panHandlers}
       >
         {current && state.error ? (
-          <Text>{state.error}</Text>
+          <Text style={styles.message}>{state.error}</Text>
         ) : !data ? (
-          <Text>讀取活動量…</Text>
+          <Text style={styles.message}>讀取活動量…</Text>
         ) : !values.length ? (
-          <Text>{rangeLabel}尚無有效活動資料</Text>
+          <Text style={styles.message}>{rangeLabel}尚無有效活動資料</Text>
         ) : (
           <>
             <Svg
@@ -415,5 +415,8 @@ const getStyles = makeStyles(theme => {
     rangeText: { color: themeLiteral.activityRangeText },
     disabled: { opacity: 0.4 },
     note: { fontSize: 12, color: themeLiteral.activityNote, marginVertical: 5 },
+    // Loading, empty and error words: themed (the default text colour was
+    // black, unreadable on the dark page).
+    message: theme.isDark ? { color: theme.colors.text } : {},
   });
 });
