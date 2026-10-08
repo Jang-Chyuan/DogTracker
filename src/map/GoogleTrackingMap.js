@@ -42,6 +42,14 @@ const OUT_OF_RANGE_WIDTH = 2;
 const dash = () => [6, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length));
 // Drawing order: base map, ring, red lines, routes, dogs and phone.
 const Z = { ring: 1, rangeLine: 2, route: 3 };
+// A base map that draws nothing but grey (design #ECEEEC): what a map without
+// tiles looks like, for the 地圖載入失敗 fixture.
+const PLAIN_MAP = [];
+const NO_BASE_MAP = [
+  { stylers: [{ visibility: 'off' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: tokens.mapFallback }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: tokens.mapFallback }] },
+];
 
 // The launch screen is released once the first framing has been drawn, or
 // this long after the map loaded when there is still nothing to frame (the
@@ -551,8 +559,11 @@ function GoogleTrackingMapRenderer({
               : undefined
           }
           // Without a base map (a fixture of a failed load) the dogs, the phone
-          // and the ring are drawn on the plain map background.
-          mapType={failure === 'tiles' ? 'none' : 'standard'}
+          // and the ring are drawn on plain grey, as when no tile arrives.
+          mapType="standard"
+          // An empty style puts the normal map back (undefined would keep the grey).
+          customMapStyle={failure === 'tiles' ? NO_BASE_MAP : PLAIN_MAP}
+          showsBuildings={failure !== 'tiles'}
           moveOnMarkerPress={false}
           // Google reports a tap only (a drag or a long press is not one).
           onPress={onMapPress ? () => onMapPress() : undefined}
