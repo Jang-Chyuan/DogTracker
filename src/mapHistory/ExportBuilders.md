@@ -15,7 +15,7 @@ PNG layout into drawing operations for `HistoryExportPackage.kt`.
   decides hold/ride classification. A fix repeated in several packets is one trkpt.
 - Stay waypoints deduct the list's own `interruptionMs` (`excludedMs`).
 - PNG rows are the screen's list rows (`exportTimelineRows`: title, pill, coordinates,
-  查不到地址, 不含中斷, movement lead/time/rest); the title is two lines (who; date, times,
+  不含中斷, movement lead/time/rest); the title is two lines (who; date, times,
   distance); a row taller than a page has its address cut after 2 lines (判定表「PNG
   一列比一頁還高」) instead of failing.
 

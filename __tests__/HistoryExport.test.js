@@ -76,11 +76,11 @@ describe('the snapshot of the day shown', () => {
       .toEqual(model.nodes.map(n => (n.type === 'movement' || n.type === 'gap' ? expect.any(String) : n.type)));
   });
 
-  test('list rows: an address found is the title; otherwise the coordinates and 查不到地址; the end says 結束', () => {
+  test('list rows: an address found is the title; otherwise coordinates above the pill; the end says 結束', () => {
     const places = subject.timeline.filter(row => row.kind === 'place');
     expect(places[0]).toMatchObject({ title: '桃園區中正路 50 號附近', missing: '' });
     expect(places[1].title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
-    expect(places[1].missing).toBe('查不到地址');
+    expect(places[1]).toMatchObject({ missing: '', coordinates: '' });
     expect(places[places.length - 1].pill.text).toBe('結束');
     expect(JSON.stringify(subject.timeline)).not.toContain('現在');
   });

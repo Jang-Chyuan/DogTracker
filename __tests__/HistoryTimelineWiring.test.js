@@ -196,7 +196,7 @@ const placesOf = model => model.nodes.filter(node => !['movement', 'gap'].includ
 describe('addresses (053a)', () => {
   const stop = { type: 'stop', latitude: 24.93111, longitude: 121.28794, durationMs: 17 * MINUTE };
   const house = { type: 'indoor', latitude: 24.9378, longitude: 121.2954, start: 0, end: 28 * MINUTE };
-  test('a place\'s two lines: found, asking, not found; a hold not found says 停留（室內）', () => {
+  test('a place\'s two lines: found, asking, not found; a hold uses the same coordinate fallback', () => {
     expect(placeLines(stop, { state: 'found', text: '八德區和平路 552 號附近' }))
       .toEqual({ title: '八德區和平路 552 號附近', titleMuted: false, coordinates: '24.9311, 121.2879', missing: '' });
     expect(placeLines(stop, { state: 'found', text: '大園區航站南路 9 號附近（約 140 m）' }).title)
@@ -204,9 +204,9 @@ describe('addresses (053a)', () => {
     expect(placeLines(stop, { state: 'pending' }))
       .toEqual({ title: '查地址中…', titleMuted: true, coordinates: '24.9311, 121.2879', missing: '' });
     expect(placeLines(stop, { state: 'none' }))
-      .toEqual({ title: '24.9311, 121.2879', titleMuted: false, coordinates: '', missing: '查不到地址' });
+      .toEqual({ title: '24.9311, 121.2879', titleMuted: false, coordinates: '', missing: '' });
     expect(placeLines(house, { state: 'none' }))
-      .toEqual({ title: '停留（室內）', titleMuted: false, coordinates: '24.9378, 121.2954', missing: '' });
+      .toEqual({ title: '24.9378, 121.2954', titleMuted: false, coordinates: '', missing: '' });
     expect(placeLines(house, { state: 'found', text: '八德區介壽路一段 728 號附近' }).title).toBe('八德區介壽路一段 728 號附近');
   });
 
@@ -217,13 +217,13 @@ describe('addresses (053a)', () => {
       '桃園區中山路 552 號附近']);
   });
 
-  test('history-indoor: no answers, the house node says 停留（室內） over its coordinates', async () => {
+  test('history-indoor: no answers, the house node uses coordinates as its title', async () => {
     const { fixture, model } = await fixtureList('history-indoor');
     const places = placesOf(model);
     const names = await placeNames(fixture.addressLookup, places);
     expect(names.every(name => name === null)).toBe(true);
     const held = places.find(node => node.type === 'indoor');
-    expect(placeLines(held, { state: 'none' }).title).toBe('停留（室內）');
+    expect(placeLines(held, { state: 'none' }).title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
   });
 
   test('the list: 查地址中… while asking, the address when it comes, coordinates after 5 s without one', async () => {
@@ -252,7 +252,7 @@ describe('addresses (053a)', () => {
       // Five seconds on, the rest count as not found: coordinates, 查不到地址.
       await act(async () => { jest.advanceTimersByTime(5000); });
       expect(titles()[1]).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
-      expect(text()).toContain('查不到地址');
+      expect(text()).not.toContain('查不到地址');
       await act(async () => renderer.unmount());
     } finally {
       jest.useRealTimers();

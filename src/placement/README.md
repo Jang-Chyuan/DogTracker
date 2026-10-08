@@ -100,5 +100,5 @@ REPORT=1 npm test -- --runInBand __tests__/IndoorHoldSimulation.test.js
 - 一次查一筆（排隊），每筆最多 15 秒；沒網路不問 Geocoder；查不到、逾時、出錯一分鐘後才重查（卡片重新打開時馬上重查）。微調 50 m 內沿用同一個地址。
 - 快取：記憶體＋`dogtracker.sqlite` 的 `address_cache`（最多 500 筆，借 Android 原生 SQLite owner），即時卡片和歷史清單共用 `AddressLookupContext` 預設的同一個 lookup；畫面情境用自己的 lookup（`src/dev/fixtureGeocoder.js`），不寫進這支手機的快取。
 - `useAddress(point)`：A7b 卡片第二行，字串或 `null`（還在查、查不到、沒網路都不寫，不轉圈）。
-- `usePlaceNames(points)`：歷史清單每個節點 `{ state: 'pending' | 'found' | 'none', text }`；超過 5 秒還沒答案算查不到（寫座標＋「查不到地址」，室內節點寫「停留（室內）」），之後查到照樣補上。
+- `usePlaceNames(points)`：歷史清單每個節點 `{ state: 'pending' | 'found' | 'none', text }`；超過 5 秒還沒答案算查不到（寫第一行座標、第二行膠囊；室內節點也查停住點地址、採同樣排法），之後查到照樣補上。
 - `lookupAddresses(points, { timeoutMs })`：匯出用，最多等 5 秒，順序和輸入相同。

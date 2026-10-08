@@ -1111,7 +1111,7 @@ const FIXTURES = {
     const phone = routePhone(morningRoute(now), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now),
       // 出發, stays 1 and 2, 現在 (H2): an address next to the place, one
-      // 120 m away, one with no answer (coordinates, 「查不到地址」).
+      // 120 m away, one with no answer (coordinates above the pill).
       geocoder: { names: [{ line: '330台灣桃園市桃園區大興西路二段105號' },
         { line: '330台灣桃園市桃園區同德六街76號', awayM: 120 }, null,
         { line: '330台灣桃園市桃園區中山路552號' }] } };

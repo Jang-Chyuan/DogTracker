@@ -79,11 +79,11 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
   }
   // 「PNG 一列比一頁還高」: the address is cut after 2 lines (in the PNG only).
   const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH, measure, { bold: true, maxLines: truncate ? 2 : Infinity });
-  // The second line: the pill, then the coordinates / 查不到地址 / 不含中斷, flowing.
+  // The second line: the pill, then the coordinates / 不含中斷, flowing.
   const items = [
     row.pill ? { kind: 'pill', text: row.pill.text, tone: row.pill.tone,
       width: measure(row.pill.text, S.detailFont, true) + S.pillPadding * 2 } : null,
-    ...[row.coordinates, row.missing, row.note].filter(Boolean).map(text => ({ kind: 'note', text,
+    ...[row.coordinates, row.note].filter(Boolean).map(text => ({ kind: 'note', text,
       width: Math.min(PLACE_WIDTH, measure(text, S.detailFont, false)) })),
   ].filter(Boolean);
   const placed = [];
