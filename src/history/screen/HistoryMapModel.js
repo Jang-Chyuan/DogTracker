@@ -209,3 +209,24 @@ export function nearestRouteSpot(points, coordinate, currentTime = null,
   const { index, ...result } = chosen;
   return result;
 }
+
+// The bottom keeps clear of 框住全部 (48dp, 12dp above the panel).
+export const HISTORY_FRAME_PADDING = { top: 24 + 56, right: 24, bottom: 24 + 48, left: 24 };
+// Half the cursor label's width (about 「08:46」「已移動 0.8 km」), so a label
+// over a point at the left or right edge of the route is not cut off.
+const LABEL_HALF = 72;
+/**
+ * The history frame for `positions` with the cursor at `cursor`: more room
+ * on the side where the cursor sits at the edge of the route (its label is
+ * centred over it).
+ */
+export function historyFramePadding(positions, cursor, base = HISTORY_FRAME_PADDING) {
+  if (!cursor || positions.length < 2) return base;
+  const lons = positions.map(p => p.longitude);
+  const west = Math.min(...lons), east = Math.max(...lons);
+  const width = east - west;
+  if (!(width > 0)) return base;
+  const at = (cursor.longitude - west) / width;
+  return { ...base, right: at > 0.8 ? Math.max(base.right, LABEL_HALF) : base.right,
+    left: at < 0.2 ? Math.max(base.left, LABEL_HALF) : base.left };
+}
