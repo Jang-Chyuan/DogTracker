@@ -52,11 +52,14 @@ export function multiDayModel(subjects, options) {
   const own = timeline(subjects[leadIndex], { manualRange });
   // 多隻狗的共同範圍: the dragged range, else the protagonist's own (出發 to
   // its last fix; following now today). Each dog is cut to it.
+  // `kept`: the range shown when the dog that gave it was removed (移除不改範圍).
+  const kept = !manual && options.kept ? options.kept : null;
   const shared = manual ? { start: manual.start, end: manual.following ? Math.max(now ?? 0, own.range.end ?? 0) : manual.end }
+    : kept ? { start: kept.start, end: kept.following && following ? Math.max(now ?? 0, kept.end) : kept.end }
     : own.points.length ? { start: own.range.start, end: following ? Math.max(now ?? 0, own.range.end) : own.range.end }
       : null;
   const models = subjects.map((s, i) => {
-    if (i === leadIndex) return own;
+    if (i === leadIndex && !kept) return own;
     // Nothing that day in this source: no timeline to make (地圖不畫牠).
     if (!dayRecords[i]) return null;
     return timeline(s, { range: shared ?? { start: dayStart, end: dayEnd - 1 }, manualRange });
@@ -68,9 +71,11 @@ export function multiDayModel(subjects, options) {
   // protagonist of the day without one).
   main = pickProtagonist(entries, main);
   const mainEntry = entries.find(e => e.id === main);
-  const points = own.points.length ? own.points : mainEntry.model.points;
+  const points = !kept && own.points.length ? own.points : mainEntry.model.points;
   const ends = entries.filter(e => e.hasData).map(e => e.model.points[e.model.points.length - 1].time);
-  const range = !points.length && !manual ? null : manual
+  const range = kept && entries.some(e => e.hasData)
+    ? { start: kept.start, end: kept.following && following ? Math.max(...ends) : kept.end, following: !!kept.following && following }
+    : !points.length && !manual ? null : manual
     ? { start: manual.start, end: manual.following ? Math.max(...ends, manual.start) : manual.end,
       following: !!manual.following && following }
     : { start: points[0].time, end: points[points.length - 1].time, following };

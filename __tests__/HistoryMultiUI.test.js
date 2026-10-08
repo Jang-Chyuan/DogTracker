@@ -119,3 +119,24 @@ test('my route has no 資料來源 row and no ＋ 加入', async () => {
   expect(s.text()).not.toContain('＋ 加入');
   await unmount(s);
 });
+
+test('再次進入: leaving and opening the same dog again starts over (the entry dog alone, 全部)', async () => {
+  const fixture = buildFixture('history-multi-dog');
+  let screen;
+  function Probe({ open }) {
+    screen = useHistoryScreen({ target: open ? { subject: 'dog', slaveId: 6 } : null, read: fixture.history.readDay,
+      readDays: fixture.history.readDays, owner: fixture.cloudSync.ownerId, clock: () => fixture.now,
+      memoryScope: 'reopen:' });
+    return null;
+  }
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<Probe open />); });
+  await act(async () => screen.addDog({ id: 4, hasData: true }));
+  await act(async () => screen.setSource('local'));
+  expect(screen.dogs).toHaveLength(2);
+  await act(async () => renderer.update(<Probe open={false} />));
+  await act(async () => renderer.update(<Probe open />));
+  expect(screen.dogs.map(dog => dog.id)).toEqual([6]);
+  expect(screen.source).toBe('all');
+  await act(async () => renderer.unmount());
+});
