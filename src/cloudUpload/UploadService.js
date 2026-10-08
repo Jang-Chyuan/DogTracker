@@ -62,11 +62,7 @@ export function createUploadService({ database, client }) {
         const pending = await database.pending(owner, Date.now());
         for (const row of pending) {
           if (!alive() || signal?.aborted) return 'cancelled';
-          // Recheck the fixed route before each event, including after a mode change.
-          const settings = await database.settings(owner);
-          if (!alive() || signal?.aborted) return 'cancelled';
-          if (!settings.some(s => s.master_id === row.master_id && s.mode === 'phone')) continue;
-          // A disable/re-enable may have removed this already-fetched queue row.
+          // A flush or another pass may have sent this already-fetched row.
           if (!await database.isPending(row)) continue;
           if (!alive() || signal?.aborted) return 'cancelled';
           const outcome = await send(row, owner, phone, alive, signal);

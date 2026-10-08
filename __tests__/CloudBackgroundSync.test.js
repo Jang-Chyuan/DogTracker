@@ -84,12 +84,12 @@ test('background job uploads queued BLE events then downloads history', async ()
   expect(f.native.complete).toHaveBeenCalledWith('run', 'success');
 });
 
-test.each(['wifi', 'missing'])('background relay skips a Master with %s settings even if its event was already queued', async mode => {
+test.each(['wifi', 'missing'])('an event queued while the phone uploaded is still sent after the route became %s (S3: nothing left behind)', async mode => {
   const f = fixture(), queue = queuedUpload(f);
   queue.settings = async () => mode === 'missing' ? [] : [{ master_id: 5, mode }];
   await f.run();
-  expect(f.client.functions.invoke).not.toHaveBeenCalled();
-  expect(queue.sent).not.toHaveBeenCalled();
+  expect(f.client.functions.invoke).toHaveBeenCalledTimes(1);
+  expect(queue.sent).toHaveBeenCalledTimes(1);
   expect(queue.failed).not.toHaveBeenCalled();
   expect(f.queries.length).toBeGreaterThan(0);
   expect(f.native.complete).toHaveBeenCalledWith('run', 'success');

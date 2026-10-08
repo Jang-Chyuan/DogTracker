@@ -21,19 +21,21 @@ export function createUploadDatabase(db) {
         [owner, master, mode]);
     },
     async isPending(row) {
-      return rows(await db.executeAsync(`SELECT 1 FROM ble_upload_queue q JOIN ble_upload_settings s
-        ON s.owner_user_id=q.owner_user_id AND s.master_id=q.master_id
-        WHERE q.owner_user_id=? AND q.event_id=? AND q.status='pending' AND s.mode='phone'`,
+      return rows(await db.executeAsync(`SELECT 1 FROM ble_upload_queue
+        WHERE owner_user_id=? AND event_id=? AND status='pending'`,
       [row.owner_user_id, row.event_id])).length > 0;
     },
+    // What waits in this phone, each dog's newest first. The route only
+    // decides what the receiver service queues; a row already queued here is
+    // this phone's to send even after its receiver went back to Wi-Fi (S3:
+    // nothing is deleted, nothing is left behind).
     async pending(owner, now) {
       return rows(await db.executeAsync(`WITH latest AS (
         SELECT MAX(id) id FROM ble_upload_queue WHERE owner_user_id=? AND status='pending'
         GROUP BY master_id, slave_id
-      ) SELECT q.* FROM ble_upload_queue q JOIN ble_upload_settings s
-        ON s.owner_user_id=q.owner_user_id AND s.master_id=q.master_id
+      ) SELECT q.* FROM ble_upload_queue q
         LEFT JOIN latest l ON l.id=q.id
-        WHERE q.owner_user_id=? AND s.mode='phone' AND q.status='pending' AND q.next_retry_at<=?
+        WHERE q.owner_user_id=? AND q.status='pending' AND q.next_retry_at<=?
         ORDER BY CASE WHEN l.id IS NOT NULL THEN 0 ELSE 1 END,
           CASE WHEN l.id IS NOT NULL THEN q.received_at END DESC,
           q.id LIMIT 20`, [owner, owner, now]));
@@ -61,7 +63,8 @@ export function createUploadDatabase(db) {
         [blocked ? 'blocked' : 'pending', now + delay, message.slice(0, 300), row.event_id, row.owner_user_id]);
     },
     async retry(owner) {
-      await db.executeAsync("UPDATE ble_upload_queue SET status='pending',next_retry_at=0 WHERE owner_user_id=? AND status='blocked'", [owner]);
+      // 「重試」: refused rows again, and waiting ones without their backoff.
+      await db.executeAsync("UPDATE ble_upload_queue SET status='pending',next_retry_at=0 WHERE owner_user_id=? AND status IN ('blocked','pending')", [owner]);
     },
     async summary(owner) {
       const counts = rows(await db.executeAsync('SELECT status,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? GROUP BY status', [owner]));

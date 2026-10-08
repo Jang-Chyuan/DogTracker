@@ -51,7 +51,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, 120000);
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error('同步已取消'); };
-    publish({ busy: true, mode: 'auto', error: '' });
+    // Each pass reports a refusal of the sign-in on its own (authFailed).
+    publish({ busy: true, mode: 'auto', error: '', authFailed: false });
     running = withCloudSyncSlot(async () => {
       try {
         check();

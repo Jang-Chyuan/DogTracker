@@ -33,12 +33,16 @@ test('a route switch sends what waits first, then changes; offline it does not c
     expect(upload.pendingByMaster).toEqual({ 7: 12 });
     let failure;
     await act(async () => { await upload.switchMode(7, 'phone').catch(error => { failure = error; }); });
-    expect(flush).toHaveBeenCalledWith('alice', 7);
+    expect(flush).toHaveBeenCalledWith('alice', 7, expect.any(Function));
     expect(failure.message).toBe('要先上傳完 12 筆，請連上網路');
     expect(database.setMode).not.toHaveBeenCalled();
     flush.mockImplementation(async () => { waiting = 0; return { result: 'done', remaining: 0 }; });
+    // A row queued while the route changes is sent right after it.
+    database.setMode.mockImplementationOnce(async () => { waiting = 1; });
     await act(async () => upload.switchMode(7, 'phone'));
     expect(database.setMode).toHaveBeenCalledWith('alice', 7, 'phone');
+    expect(flush).toHaveBeenCalledTimes(3);
+    expect(waiting).toBe(0);
     // Nothing waiting: no upload needed, it just switches.
     flush.mockClear();
     await act(async () => upload.switchMode(7, 'wifi'));

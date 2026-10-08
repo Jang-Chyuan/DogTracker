@@ -21,6 +21,9 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
   const db = useRef(null), service = useRef(null);
   const authFailure = useRef(onAuthFailure);
   authFailure.current = onAuthFailure;
+  // The account now: a switch started for another one stops (S3).
+  const currentOwner = useRef(owner);
+  currentOwner.current = owner;
   const [revision, refresh] = useState(0);
   const [state, setState] = useState({ settings: [], settingsOwner: null, masters: [], counts: [],
     pendingByMaster: {}, phoneId: '', error: '' });
@@ -103,15 +106,25 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
     async switchMode(master, mode) {
       if (!db.current || !service.current) throw new UploadSwitchError('failed', 0);
       const ownerAtStart = owner;
-      if (await db.current.pendingCount(ownerAtStart, master) > 0) {
-        const { result, remaining } = await service.current.flush(ownerAtStart, master);
+      const same = () => currentOwner.current === ownerAtStart;
+      const send = async () => {
+        const { result, remaining } = await service.current.flush(ownerAtStart, master, same);
         refresh(n => n + 1);
         if (result === 'unauthorized') authFailure.current?.();
+        return { result, remaining };
+      };
+      if (await db.current.pendingCount(ownerAtStart, master) > 0) {
+        const { result, remaining } = await send();
         if (result !== 'done' || remaining > 0) {
           throw new UploadSwitchError(result === 'done' ? 'failed' : result, remaining);
         }
       }
+      if (!same()) throw new UploadSwitchError('cancelled', 0);
       await setMode(master, mode);
+      // Rows the receiver service queued between the last send and the route
+      // change: send them now (the route no longer queues more). Whatever
+      // cannot go now stays queued and the normal pass sends it later.
+      if (same() && await db.current.pendingCount(ownerAtStart, master) > 0) await send().catch(() => {});
     },
     async retry() { await db.current.retry(owner); refresh(n => n + 1); },
   };

@@ -28,6 +28,15 @@ export default function AccountSettings({ page, onLater, onSignOut, onRetryDownl
   useEffect(() => () => { mounted.current = false; }, []);
   // A fixture switching to another open dialog (or none).
   useEffect(() => { setDialog(initialDialog); setError(null); }, [initialDialog]);
+  // Another account (or signed out): a dialog opened for the last one closes.
+  const account = page.signedIn ? page.email : null;
+  const shownFor = useRef(account);
+  useEffect(() => {
+    if (shownFor.current !== account) { setDialog(initialDialog); setError(null); }
+    shownFor.current = account;
+    // Only an account change; initialDialog has its own effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account]);
 
   if (!page.signedIn) {
     return (
