@@ -6,11 +6,12 @@ import React, { useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
 import { clock, km, summaryDuration, summaryText } from '../history/HistoryText';
-import { dragRangeHandle, rangeHandles, xOfTime } from '../history/screen/HistoryRangeBar';
+import { dragRangeHandle, rangeHandles, stepRangeHandle, xOfTime } from '../history/screen/HistoryRangeBar';
 import { colors, size as sizes, tabularNumbers } from '../theme/tokens';
 import { haptic } from '../utils/haptics';
 
 const HANDLE = sizes.rangeBar.handle;
+const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
 const TOUCH = 48;
 
 /** The summary's two lines while the bar is closed, or open (the range itself). */
@@ -79,19 +80,31 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
       drag.current = { handle: null };
     },
   }), []);
+  const step = (handle, event) => {
+    const result = stepRangeHandle(range, handle, event.nativeEvent.actionName === 'increment' ? 1 : -1,
+      { dayPoints, today });
+    if (!result.valid) { haptic('double'); return; }
+    onCommit(result.range);
+  };
   // 判定表「範圍條把手太近」: closer than 48dp, the start's time sits left of
   // its handle and the end's right of it (and 12dp lower if still too close).
   const close = endX - startX < TOUCH;
   const startLabel = clock(handles.start);
   const endLabel = clock(handles.end);
   return (
-    <View style={styles.bar} {...responder.panHandlers} testID="history-range-bar"
-      accessibilityRole="adjustable" accessibilityLabel={`開始 ${startLabel}，結束 ${endLabel}${range.following ? '，跟著現在' : ''}`}>
+    <View style={styles.bar} {...responder.panHandlers} testID="history-range-bar">
       <View style={styles.trackArea} pointerEvents="none" onLayout={event => setWidth(event.nativeEvent.layout.width - TOUCH)}>
         <View style={styles.track} />
         <View style={[styles.selection, { left: TOUCH / 2 + startX, width: Math.max(0, endX - startX) }]} />
-        <View testID="range-handle-start" style={[styles.handle, { left: startX + (TOUCH - HANDLE) / 2 }]} />
-        <View testID="range-handle-end" style={[styles.handle, { left: endX + (TOUCH - HANDLE) / 2 }]} />
+        {/* TalkBack: each end is its own adjustable control (one fix, at
+            least a minute, per step). */}
+        <View testID="range-handle-start" style={[styles.handle, { left: startX + (TOUCH - HANDLE) / 2 }]}
+          accessible accessibilityRole="adjustable" accessibilityLabel={`開始 ${startLabel}`}
+          accessibilityActions={STEPS} onAccessibilityAction={event => step('start', event)} />
+        <View testID="range-handle-end" style={[styles.handle, { left: endX + (TOUCH - HANDLE) / 2 }]}
+          accessible accessibilityRole="adjustable"
+          accessibilityLabel={`結束 ${endLabel}${range.following ? '，跟著現在' : ''}`}
+          accessibilityActions={STEPS} onAccessibilityAction={event => step('end', event)} />
       </View>
       <View style={styles.labels} pointerEvents="none">
         <Text style={[styles.label, close ? [styles.labelRight, { right: width - startX + TOUCH / 2 + 2 }]

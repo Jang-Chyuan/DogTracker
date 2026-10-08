@@ -6,7 +6,7 @@
 // while it is dragged. TalkBack steps fix by fix.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, StyleSheet, View } from 'react-native';
-import { nearestRoutePoint } from '../history/screen/HistoryMapModel';
+import { nearestRouteSpot } from '../history/screen/HistoryMapModel';
 
 const TOUCH = 48;
 
@@ -26,7 +26,11 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
   }, [coordinateKey, revision, width, height, mapRef]); // eslint-disable-line react-hooks/exhaustive-deps
   const live = useRef({});
   live.current = { cursor, points, onMove, place };
-  const drag = useRef({ origin: null, busy: false, pending: null });
+  // Each gesture has its own generation: a coordinate read that comes back
+  // after the finger lifted (or after a new gesture began) is dropped.
+  const drag = useRef({ origin: null, busy: false, pending: null, generation: 0 });
+  const generation = useRef(0);
+  useEffect(() => () => { generation.current += 1; }, []);
   const notify = useRef(onDraggingChange);
   notify.current = onDraggingChange;
   useEffect(() => () => notify.current?.(false), []);
@@ -38,12 +42,13 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
       d.busy = true;
       try {
         const coordinate = await mapRef.current?.coordinateForPoint?.(target);
+        if (d.generation !== generation.current) return;
         const { points: route, cursor: now, onMove: move } = live.current;
-        const found = coordinate && nearestRoutePoint(route, coordinate, now?.time ?? null);
+        const found = coordinate && nearestRouteSpot(route, coordinate, now?.time ?? null);
         if (found) move?.(found.point.time, 'drag');
       } catch { /* The map went away mid-drag. */ }
       d.busy = false;
-      if (d.pending) {
+      if (d.pending && d.generation === generation.current) {
         const next = d.pending;
         d.pending = null;
         follow(next);
@@ -55,7 +60,8 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => {
-        drag.current = { origin: live.current.place, busy: false, pending: null };
+        generation.current += 1;
+        drag.current = { origin: live.current.place, busy: false, pending: null, generation: generation.current };
         notify.current?.(true);
       },
       onPanResponderMove: (_, gesture) => {
@@ -63,8 +69,9 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
         if (!origin) return;
         follow({ x: origin.x + gesture.dx, y: origin.y + gesture.dy });
       },
+      // The last read of a released drag still lands (the finger's last place).
       onPanResponderRelease: () => notify.current?.(false),
-      onPanResponderTerminate: () => notify.current?.(false),
+      onPanResponderTerminate: () => { generation.current += 1; notify.current?.(false); },
     });
   }, [mapRef]);
   if (hidden || !cursor || !place || place.x < 0 || place.x > width || place.y < top || place.y > height - bottom) {

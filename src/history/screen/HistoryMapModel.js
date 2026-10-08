@@ -142,33 +142,51 @@ export function historyMapPresentation(model, { color, cursor = null } = {}) {
   };
 }
 
-// Metres between two coordinates (equirectangular: the history is a few km).
-function metres(a, b) {
-  const lat = ((a.latitude + b.latitude) / 2) * Math.PI / 180;
-  const x = (b.longitude - a.longitude) * Math.cos(lat) * 111320;
-  const y = (b.latitude - a.latitude) * 110540;
-  return Math.hypot(x, y);
-}
-
 /**
- * The fix a touch on the route means (判定表「游標標籤」): the nearest fix to
- * `coordinate`. Where the route passes the same place more than once (passes
- * — runs of consecutive fixes — whose nearest fix is within `overlapM` of the
- * nearest of all), the pass nearest in time to the cursor now wins, and its
- * nearest fix is taken. Returns { point, distanceM } or null.
+ * A touch on the drawn route (判定表「游標標籤」「點路線上任何一點」): the
+ * nearest place on a drawn segment (fix to fix, nothing across a break of
+ * over 3 minutes); where segments of different passes are about as near
+ * (within `overlapM`), the one nearest in time to the cursor now. Returns
+ * { point: the segment's nearer fix, coordinate: the place on the line,
+ * distanceM } or null.
  */
-export function nearestRoutePoint(points, coordinate, currentTime = null, overlapM = 15) {
+export function nearestRouteSpot(points, coordinate, currentTime = null,
+  { overlapM = 15, breakMs = sizes.route.breakAfterMs } = {}) {
   if (!points?.length || !coordinate) return null;
-  const distances = points.map(p => metres(p, coordinate));
-  const best = Math.min(...distances);
-  // Passes: consecutive fixes near the touch.
+  const lat0 = (coordinate.latitude * Math.PI) / 180;
+  const xy = p => ({ x: (p.longitude - coordinate.longitude) * Math.cos(lat0) * 111320,
+    y: (p.latitude - coordinate.latitude) * 110540 });
+  const spots = [];
+  if (points.length === 1) {
+    const a = xy(points[0]);
+    spots.push({ point: points[0], coordinate: { latitude: points[0].latitude, longitude: points[0].longitude },
+      distanceM: Math.hypot(a.x, a.y), index: 0 });
+  }
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p = points[i], q = points[i + 1];
+    if (q.time - p.time > breakMs) continue;
+    const a = xy(p), b = xy(q);
+    const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+    const f = length ? Math.max(0, Math.min(1, -(a.x * dx + a.y * dy) / length)) : 0;
+    spots.push({ point: f < 0.5 ? p : q, distanceM: Math.hypot(a.x + dx * f, a.y + dy * f), index: i,
+      coordinate: { latitude: p.latitude + (q.latitude - p.latitude) * f,
+        longitude: p.longitude + (q.longitude - p.longitude) * f } });
+  }
+  if (!spots.length) return null;
+  const best = Math.min(...spots.map(spot => spot.distanceM));
+  // Passes: runs of consecutive segments near the touch; the nearest of each.
   const passes = [];
-  let pass = null;
-  points.forEach((p, i) => {
-    if (distances[i] > best + overlapM) { pass = null; return; }
-    if (!pass) { pass = { point: p, distanceM: distances[i] }; passes.push(pass); }
-    else if (distances[i] < pass.distanceM) { pass.point = p; pass.distanceM = distances[i]; }
-  });
-  if (currentTime == null || passes.length === 1) return passes.reduce((a, b) => (b.distanceM < a.distanceM ? b : a));
-  return passes.reduce((a, b) => (Math.abs(b.point.time - currentTime) < Math.abs(a.point.time - currentTime) ? b : a));
+  let last = -2;
+  for (const spot of spots) {
+    if (spot.distanceM > best + overlapM) continue;
+    const pass = spot.index === last + 1 ? passes[passes.length - 1] : null;
+    if (!pass) passes.push(spot);
+    else if (spot.distanceM < pass.distanceM) passes[passes.length - 1] = spot;
+    last = spot.index;
+  }
+  const chosen = currentTime == null || passes.length === 1
+    ? passes.reduce((a, b) => (b.distanceM < a.distanceM ? b : a))
+    : passes.reduce((a, b) => (Math.abs(b.point.time - currentTime) < Math.abs(a.point.time - currentTime) ? b : a));
+  const { index, ...result } = chosen;
+  return result;
 }

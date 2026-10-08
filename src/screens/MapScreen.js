@@ -505,10 +505,10 @@ export default function MapScreen({
   // History: the map's padding is the panel at half height (its default);
   // at 75% the route is framed above it (historyPanel.extraBottom).
   const mapBottom = historical ? levels.half : bottomInset;
-  const coverBottom = historical ? (levels[panel.level] ?? levels.half)
+  const coverBottom = historical ? (panel.height ?? levels[panel.level] ?? levels.half)
     : cardHeight ? cardHeight + layout.floatingGap : 0;
   const historyPanel = historical ? { level: panel.level,
-    extraBottom: Math.max(0, (levels[panel.level] ?? levels.half) - levels.half) } : null;
+    extraBottom: Math.max(0, (panel.height ?? levels.half) - levels.half) } : null;
   const historySource = historical && target
     ? `history:${target.subject}:${target.slaveId ?? ''}:${screen.day}:${fixture?.name ?? ''}` : null;
   return (
@@ -547,6 +547,7 @@ export default function MapScreen({
         onCursorMove={screen.moveCursor}
         onStopPress={place => screen.moveCursor(place.start, 'stop', { start: place.start })}
         historyFocus={historical && screen.focus && screen.cursor?.point ? { key: screen.focus.key,
+          centre: screen.focus.action === 'node' || screen.focus.action === 'stop',
           coordinate: { latitude: screen.cursor.point.latitude, longitude: screen.cursor.point.longitude } } : null}
         historyFrame={historyFrame}
         historyPanel={historyPanel}
@@ -593,7 +594,7 @@ export default function MapScreen({
           avatar={target.subject === 'dog' ? avatars[target.slaveId] : null}
           levels={levels} bottomInset={insets.bottom} onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
-          onLevel={level => setPanel({ level })}
+          onLevel={(level, height) => setPanel({ level, height })}
           history={history} snapshot={snapshot}
           closedAt={target.subject === 'phone' && screen.today && livePhone && !livePhone.running
             ? screen.model?.points.at(-1)?.time ?? null : null} />

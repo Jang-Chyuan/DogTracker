@@ -61,3 +61,25 @@ export function dragRangeHandle(current, handle, x, width, { track, dayPoints, t
 export function rangeBarEnabled(dayPoints) {
   return dayPoints.length > 1 && dayPoints[dayPoints.length - 1].time - dayPoints[0].time >= MINUTE;
 }
+
+/**
+ * TalkBack's step on a handle (判定表「範圍條兩端」: 上下滑每次 1 分鐘): the
+ * first fix at least a minute later (`direction` 1) or earlier (-1). The end
+ * stepped past the day's last fix today follows now again; stepped down from
+ * following now it is that last fix. Returns { range, valid }.
+ */
+export function stepRangeHandle(current, handle, direction, { dayPoints, today }) {
+  if (!dayPoints.length) return { range: current, valid: false };
+  const lastFix = dayPoints[dayPoints.length - 1].time;
+  const from = handle === 'start' ? current.start : current.following ? lastFix + MINUTE : current.end;
+  const next = direction > 0 ? dayPoints.find(p => p.time >= from + MINUTE)
+    : [...dayPoints].reverse().find(p => p.time <= from - MINUTE);
+  let range;
+  if (handle === 'end' && direction > 0 && !next) {
+    if (!today || current.following) return { range: current, valid: false };
+    range = { ...current, end: lastFix, following: true };
+  } else if (!next) return { range: current, valid: false };
+  else range = handle === 'start' ? { ...current, start: next.time } : { ...current, end: next.time, following: false };
+  const end = range.following ? lastFix : range.end;
+  return { range, valid: end - range.start >= MINUTE };
+}

@@ -2,9 +2,11 @@
 // the cursor's haptics, the panel's heights, the date row and the memory of
 // dragged ranges.
 import {
-  historyMapPresentation, nearestRoutePoint, outsideLines, routeLines, timeMarkers, withAlpha,
+  historyMapPresentation, nearestRouteSpot, outsideLines, routeLines, timeMarkers, withAlpha,
 } from '../src/history/screen/HistoryMapModel';
-import { dragRangeHandle, rangeBarEnabled, rangeHandles, rangeTrack, timeOfX, xOfTime } from '../src/history/screen/HistoryRangeBar';
+import {
+  dragRangeHandle, rangeBarEnabled, rangeHandles, rangeTrack, stepRangeHandle, timeOfX, xOfTime,
+} from '../src/history/screen/HistoryRangeBar';
 import { cursorHaptic } from '../src/history/screen/HistoryScreenCursor';
 import { dateRowLabel } from '../src/history/screen/HistoryScreenDates';
 import { forgetRanges, rememberedRange, rememberRangeFor } from '../src/history/screen/RangeMemory';
@@ -63,15 +65,24 @@ describe('the route on the map', () => {
     expect(map.places.every(place => place.kind === 'indoor' || place.number > 0)).toBe(true);
   });
 
-  test('a touch: the nearest fix; where the route passes twice, the pass nearest in time to the cursor', () => {
+  test('a touch: the nearest place on a drawn segment; where the route passes twice, the pass nearest in time', () => {
     const out = [0, 1, 2, 3].map(i => ({ time: at(i), latitude: 25, longitude: 121 + i * 0.0002 }));
     const back = [4, 5, 6, 7].map(i => ({ time: at(i), latitude: 25.00005, longitude: 121 + (7 - i) * 0.0002 }));
     const points = [...out, ...back];
     const touch = { latitude: 25.00004, longitude: 121.0002 };
-    expect(nearestRoutePoint(points, touch).point.time).toBe(at(6));
-    expect(nearestRoutePoint(points, touch, at(1)).point.time).toBe(at(1));
-    expect(nearestRoutePoint(points, touch, at(7)).point.time).toBe(at(6));
-    expect(nearestRoutePoint([], touch)).toBeNull();
+    expect(nearestRouteSpot(points, touch).point.time).toBe(at(6));
+    expect(nearestRouteSpot(points, touch, at(1)).point.time).toBe(at(1));
+    expect(nearestRouteSpot(points, touch, at(7)).point.time).toBe(at(6));
+    // The middle of one long segment (two fixes 400 m apart) is on the route.
+    const long = [{ time: at(0), latitude: 25, longitude: 121 }, { time: at(1), latitude: 25, longitude: 121.004 }];
+    const middle = nearestRouteSpot(long, { latitude: 25, longitude: 121.0021 });
+    expect(middle.distanceM).toBeLessThan(1);
+    expect(middle.coordinate.longitude).toBeCloseTo(121.0021, 6);
+    expect(middle.point.time).toBe(at(1));
+    // Nothing is drawn across a break of over 3 minutes.
+    const broken = [{ time: at(0), latitude: 25, longitude: 121 }, { time: at(10), latitude: 25, longitude: 121.004 }];
+    expect(nearestRouteSpot(broken, { latitude: 25, longitude: 121.002 })).toBeNull();
+    expect(nearestRouteSpot([], touch)).toBeNull();
   });
 });
 
@@ -100,6 +111,17 @@ describe('the range bar', () => {
     expect(dragRangeHandle({ start: at(0), end: at(2), following: false }, 'start', 40, 200,
       { track, dayPoints, today: true }).valid).toBe(false);
     expect(rangeBarEnabled([{ time: at(0) }])).toBe(false);
+    // TalkBack steps: a fix at least a minute on; the end past the last fix follows now.
+    const stepped = stepRangeHandle({ start: at(0), end: at(4), following: false }, 'start', 1, { dayPoints, today: true });
+    expect(stepped).toEqual({ range: { start: at(1), end: at(4), following: false }, valid: true });
+    expect(stepRangeHandle({ start: at(0), end: at(10), following: true }, 'end', -1, { dayPoints, today: true }).range)
+      .toEqual({ start: at(0), end: at(10), following: false });
+    expect(stepRangeHandle({ start: at(0), end: at(10), following: false }, 'end', 1, { dayPoints, today: true }).range)
+      .toMatchObject({ following: true });
+    expect(stepRangeHandle({ start: at(0), end: at(10), following: false }, 'end', 1, { dayPoints, today: false }).valid)
+      .toBe(false);
+    expect(stepRangeHandle({ start: at(3), end: at(4), following: false }, 'start', 1, { dayPoints, today: true }).valid)
+      .toBe(false);
     expect(rangeBarEnabled([{ time: at(0) }, { time: at(1) }])).toBe(true);
   });
 

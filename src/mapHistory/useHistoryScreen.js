@@ -11,7 +11,7 @@ import { nearestRecord } from '../history/screen/HistoryScreenRange';
 import { dateNavigation, dayBounds, dayKey } from '../history/screen/HistoryScreenDates';
 import { historyMapPresentation } from '../history/screen/HistoryMapModel';
 import { rangeTrack } from '../history/screen/HistoryRangeBar';
-import { rememberedRange, rememberRangeFor } from '../history/screen/RangeMemory';
+import { forgetRange, rememberedRange, rememberRangeFor } from '../history/screen/RangeMemory';
 import { colors } from '../theme/tokens';
 import { haptic } from '../utils/haptics';
 
@@ -63,6 +63,9 @@ export function useHistoryDayRows({ read, subject, slaveId, day, source = 'all',
           cache.first = false;
           setResult(current => ({ key, rows: cache.rows, version: (current.key === key ? current.version : 0) + 1,
             error: '', replayHolds }));
+        } else {
+          // A read that works again clears an earlier failure.
+          setResult(current => (current.key === key && current.error ? { ...current, error: '' } : current));
         }
         timer = setTimeout(poll, today ? HISTORY_POLL_MS : PAST_POLL_MS);
       } catch (error) {
@@ -116,6 +119,9 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   // Each opening (and each fixture) starts there again (flow.txt「再次進入」).
   const sessionKey = target ? `${subjectKey}|${memoryScope}` : null;
   const [dayState, setDayState] = useState({ key: null, day: null });
+  // Today is taken once per opening: over midnight the screen keeps its day
+  // (判定表「開著時過了午夜」), 「今天」 turning into the date.
+  if (sessionKey && dayState.key !== sessionKey) setDayState({ key: sessionKey, day: startOfToday(clock()) });
   const day = dayState.key === sessionKey && dayState.day != null ? dayState.day : startOfToday(clock());
   const setDay = useCallback(value => setDayState({ key: sessionKey, day: value }), [sessionKey]);
   const dayEnd = endOfDay(day);
@@ -167,6 +173,17 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     });
     // day$.version stands for the rows.
   }, [subject, day$.loaded, day$.version, day, dayEnd, today, modelNow, following, manual]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 判定表「補傳資料改變停住判斷之後」: a remembered range is kept by its
+  // times (the fixes inside it); once nothing a minute long is left in it,
+  // the day goes back to its automatic range.
+  const emptied = !draft && !!remembered && !!model && model.dayPoints.length > 1
+    && (model.points.length < 2 || model.points[model.points.length - 1].time - model.points[0].time < 60000)
+    && model.dayPoints[model.dayPoints.length - 1].time - model.dayPoints[0].time >= 60000;
+  useEffect(() => {
+    if (!emptied) return;
+    forgetRange(memoryKey);
+    setMemoryRevision(revision => revision + 1);
+  }, [emptied, memoryKey]);
   const track = rangeTrack({ dayStart: day, dayEnd, today, now });
   const range = model?.points.length ? {
     start: model.points[0].time, end: model.points[model.points.length - 1].time, following,
@@ -201,8 +218,9 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     setCursorTime(snapped === last && !gap ? null : snapped);
     setInGap(gap);
     setPressed(node && !gap ? node.start : null);
-    // A node or a stop number moves the map there (220 ms).
-    if (action === 'node' || action === 'stop') setFocus({ key: Date.now(), time: snapped, action });
+    // A node or a stop number moves the map there (220 ms); a tap on the
+    // route or a movement row only when the cursor would be out of sight.
+    if (action !== 'drag') setFocus({ key: Date.now(), time: snapped, action });
   }, [cursorModel, effectiveTime]);
   // ---- the day ------------------------------------------------------------
   const changeDay = useCallback(next => {

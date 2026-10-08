@@ -20,7 +20,7 @@ import HistoryCursor from '../mapHistory/HistoryCursor';
 import {
   CursorMarkerView, cursorAnchor, IndoorMarkerView, StopMarkerView, TimeMarkerView,
 } from '../mapHistory/HistoryMapMarkers';
-import { nearestRoutePoint } from '../history/screen/HistoryMapModel';
+import { nearestRouteSpot } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { nameTags } from './DogMarkers';
 import { reportMapFramed } from '../app/hideSplash';
@@ -567,11 +567,13 @@ function GoogleTrackingMapRenderer({
   // A tap on the map: on the route (within 24dp of a fix) moves the cursor
   // there; anywhere else is a tap on empty map.
   const pressHistoryMap = async event => {
-    const found = nearestRoutePoint(historyRoute?.points, event?.coordinate, historyRoute?.cursor?.time ?? null);
+    const found = nearestRouteSpot(historyRoute?.points, event?.coordinate, historyRoute?.cursor?.time ?? null);
     const map = mapRef.current;
     if (found && map?.pointForCoordinate && event?.position) {
       try {
-        const point = await map.pointForCoordinate(found.point);
+        // The place on the drawn line, not its nearest fix: a tap in the
+        // middle of a long segment is on the route.
+        const point = await map.pointForCoordinate(found.coordinate);
         const scale = PixelRatio.get();
         // position is in pixels, the projection in dp.
         if (Math.hypot(point.x - event.position.x / scale, point.y - event.position.y / scale) <= ROUTE_TAP_DP) {
@@ -589,8 +591,10 @@ function GoogleTrackingMapRenderer({
       mapRef.current?.animateCamera({ center: routeCamera[0], zoom: 16 }, { duration: motion.camera.duration });
       return;
     }
+    // At 75% little map is left: a slim frame, or the SDK refuses the fit.
+    const room = extraBottom > 0 ? { top: 16, right: 24, bottom: 8, left: 24 } : HISTORY_FRAME;
     mapRef.current?.fitToCoordinates(routeCamera, { animated,
-      edgePadding: { ...HISTORY_FRAME, bottom: HISTORY_FRAME.bottom + extraBottom } });
+      edgePadding: { ...room, bottom: room.bottom + extraBottom } });
   };
   const historyFramed = useRef(null);
   useEffect(() => {
@@ -609,19 +613,39 @@ function GoogleTrackingMapRenderer({
     if (lastLevel.current === panelLevel) return;
     const was = lastLevel.current;
     lastLevel.current = panelLevel;
-    if (!historyRoute || interacted.current || !usable) return;
+    if (!historyRoute || !usable) return;
+    // Moved by hand: the map stays, unless the panel now covers the cursor.
+    if (interacted.current) {
+      if (historyRoute.cursor) showCursor(historyRoute.cursor.coordinate, false);
+      return;
+    }
     if (panelLevel === 'full' || was === 'full') frameRoute(historyPanel?.extraBottom || 0);
     // On a new level only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelLevel]);
   // A node of the list or a stop number: the cursor point comes into the
   // middle of the map above the panel (220 ms, motion.cursorJump).
+  // 判定表「使用者拖過地圖之後的游標」: otherwise the map moves only when the
+  // cursor point or its label (about 60dp above it) would be out of sight.
+  const showCursor = useCallback(async (coordinate, centre) => {
+    const map = mapRef.current;
+    if (!map || !coordinate) return;
+    if (!centre && map.pointForCoordinate) {
+      try {
+        const point = await map.pointForCoordinate(coordinate);
+        const seen = point.x >= 24 && point.x <= cursorLayout.width - 24 && point.y >= overlayTop + 72
+          && point.y <= cursorLayout.height - overlayBottom - 24;
+        if (seen) return;
+      } catch { /* Move anyway. */ }
+    }
+    map.animateCamera({ center: coordinate }, { duration: motion.cursorJump.duration });
+  }, [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom]);
   const focusedHistory = useRef(null);
   useEffect(() => {
     if (!historyFocus || focusedHistory.current === historyFocus.key || !usable) return;
     focusedHistory.current = historyFocus.key;
-    mapRef.current?.animateCamera({ center: historyFocus.coordinate }, { duration: motion.cursorJump.duration });
-  }, [historyFocus, usable]);
+    showCursor(historyFocus.coordinate, historyFocus.centre);
+  }, [historyFocus, usable, showCursor]);
   const framedRequest = useRef(null);
   useEffect(() => {
     if (!frameRequest || framedRequest.current === frameRequest.key || !usable) return;
