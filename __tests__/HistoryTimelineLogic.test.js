@@ -83,7 +83,7 @@ test('returned common stream and list always use the merged sources', () => {
   expect(model.packets).toHaveLength(3); expect(model.points).toHaveLength(3);
   expect(model.locations[0].start).toBe(0);
 });
-// spec.txt「手動改過開始…出發（手動）」「只改開始結束照樣跟著現在」。
+// spec.txt「手動改過開始…出發」「只改開始結束照樣跟著現在」。
 test('manual extending range is honored by list and counted distance', () => {
   const model = historyTimeline(route(Array(48).fill(1)), { subject: 'phone', today: true, now: 480000, manualRange: { start: 100000 } });
   expect(model.range).toEqual({ start: 100000, end: 480000 });

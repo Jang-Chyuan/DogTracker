@@ -133,7 +133,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `pair-done-empty` | D4b：已連上接收器 7、還沒收到訊號源 |
 | `history-my-route` | 歷史畫面（055a）、我的路線（H1）：約 07:02 出發、兩個停留、開車 6 分（切換點 3）、停留、走到現在；地址是捏造的（一個查不到） |
 | `history-dog` | 歷史畫面、小黑（看軌跡，H1 狗的歷史）：兩個停留、坐車 3 分、停留、移動到現在 |
-| `history-range-open` | H2b：同 `history-my-route`，範圍條打開、開始已拖到 07:50（「出發（手動）」），結束跟著現在（`historyView`） |
+| `history-range-open` | H2b：同 `history-my-route`，範圍條打開、開始已拖到 07:50（「出發」），結束跟著現在（`historyView`） |
 | `history-single-point` | 只有一筆：豆豆今天只有 09:10 一筆 → 一個點、距離 0、沒有「調整範圍」 |
 | `history-empty-day` | H8：我的路線今天沒有紀錄（昨天有）→「今天還沒有路線」、右上匯出變淡、‹ 跳到昨天 |
 | `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（第一行座標、第二行膠囊）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
