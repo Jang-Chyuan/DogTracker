@@ -773,8 +773,9 @@ test('D2 asks one permission after another, then 下一步; leaving midway resum
     await advance(100);
     expect(signInPage()).toBe(false);
     expect(page('permissions-page')).toBe(true);
-    await press('全部允許');
-    await advance(100);
+    // Each row shows 「詢問中…」 a moment before its system question.
+    await act(async () => { button('全部允許').props.onPress(); });
+    await advance(1000);
     // One system question per row, in order.
     expect(request.mock.calls.map(call => call[0])).toEqual([
       [PERMISSIONS.BLUETOOTH_SCAN, PERMISSIONS.BLUETOOTH_CONNECT],

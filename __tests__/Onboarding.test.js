@@ -112,7 +112,13 @@ test('usePermissionsGuide: one question at a time, each row as it comes back; th
   const hook = renderHook(usePermissionsGuide, { permissions, version: 34, android: true, onAsked });
   await act(async () => {});
   expect(hook.get().primary.label).toBe('全部允許');
-  await act(async () => { await hook.get().allowAll(); });
+  jest.useFakeTimers();
+  await act(async () => { hook.get().allowAll(); });
+  // The row being asked shows first, then its question comes.
+  expect(hook.get().rows.map(row => row.detail)).toEqual(['詢問中…', '等一下', '等一下']);
+  expect(order).toEqual([]);
+  await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
+  jest.useRealTimers();
   // Each question saved as it is sent.
   expect(onAsked.mock.calls.map(call => call[0])).toEqual([['nearby'], ['nearby', 'location'],
     ['nearby', 'location', 'notifications']]);

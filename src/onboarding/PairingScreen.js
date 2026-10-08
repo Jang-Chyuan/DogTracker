@@ -141,10 +141,12 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
         {nearby.searching ? <ActivityIndicator testID="pair-nearby-searching" size="small" color={colors.textMuted}
           accessibilityLabel="搜尋中" /> : null}
       </View>
-      {nearby.list.map(item => (
+      {nearby.list.map((item, index) => (
         <Pressable key={item.id} testID={`pair-nearby-${item.name}`} accessibilityRole="button"
           accessibilityLabel={[item.name, signalLabel(item.rssi)].filter(Boolean).join('，')}
-          onPress={() => pairing.pickNearby(item)} style={({ pressed }) => [styles.nearby, pressed && styles.pressedRow]}>
+          onPress={() => pairing.pickNearby(item)}
+          style={({ pressed }) => [styles.nearby, index === nearby.list.length - 1 && styles.lastNearby,
+            pressed && styles.pressedRow]}>
           <Text style={styles.nearbyName}>{item.name}</Text>
           <Text style={styles.signal}>{signalLabel(item.rssi)}</Text>
         </Pressable>
@@ -220,6 +222,7 @@ const styles = StyleSheet.create({
   sectionText: { ...type.captionBold, color: colors.textMuted, flex: 1 },
   nearby: { minHeight: 56, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1,
     borderBottomColor: colors.line },
+  lastNearby: { borderBottomWidth: 0 },
   pressedRow: { backgroundColor: colors.pressedOverlay },
   nearbyName: { ...type.body, color: colors.text, flex: 1 },
   signal: { ...type.caption, color: colors.textMuted },
