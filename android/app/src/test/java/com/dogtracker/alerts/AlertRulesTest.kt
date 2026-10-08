@@ -60,6 +60,20 @@ class AlertRulesTest {
     assertEquals(north(1500.0), dog.coordinate)
   }
 
+  // Codex review: weak indoor drift never lets a hold go; an invalid
+  // battery reading is no reading (DogMerge).
+  @Test fun weakFixesKeepTheHoldAndAnInvalidBatteryIsNone() {
+    val held = AlertDog(4, coordinate = north(10.0), fixAt = 0, packetAt = 0, held = true, batteryPercentage = 15)
+    var dog = Dogs.apply(held, packet(1000, north(1500.0)).copy(good = false))
+    dog = Dogs.apply(dog, packet(2000, north(1500.0)).copy(good = false))
+    assertTrue(dog.held)
+    assertNull(dog.batteryPercentage)
+    assertFalse(Dogs.good(3.0, 1.0))
+    assertFalse(Dogs.good(8.0, 350.0))
+    assertTrue(Dogs.good(8.0, 120.0))
+    assertTrue(Dogs.good(null, 65535.0))
+  }
+
   // 判定表「中斷連線時的狀態」: no 沒有新位置 while the user has the receiver off.
   @Test fun theUsersOwnDisconnectHoldsTheStaleClock() {
     val dog = AlertDog(4, coordinate = north(10.0), fixAt = 0, packetAt = 0)

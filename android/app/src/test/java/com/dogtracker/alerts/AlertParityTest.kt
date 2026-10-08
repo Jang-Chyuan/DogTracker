@@ -76,12 +76,11 @@ class AlertParityTest {
         else assertArrayEquals(label, vibration, effects.vibration)
         assertEquals(label, expect.getBoolean("critical"), effects.critical)
         assertEquals(label, expect.getBoolean("sound"), effects.sound)
-        // The saved state, in the app's format (the queue is the port's extra).
-        val written = JSONObject(AlertCodec.writeState(state)).apply { remove("pending") }
+        // The saved state, in the app's format.
+        val written = JSONObject(AlertCodec.writeState(state))
         assertEquals(label, plain(expect.getJSONObject("state")), plain(written))
         // And it reads back the same.
-        assertEquals(label, AlertCodec.writeState(state.copy(pending = emptyMap())),
-          AlertCodec.writeState(AlertCodec.readState(written.toString())))
+        assertEquals(label, AlertCodec.writeState(state), AlertCodec.writeState(AlertCodec.readState(written.toString())))
         steps += 1
       }
     }

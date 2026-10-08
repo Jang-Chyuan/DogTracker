@@ -69,6 +69,7 @@
       "active": {},
       "batteries": {},
       "seen": {},
+      "pending": {},
       "lastAttentionAt": null,
       "pause": null
      }
@@ -162,6 +163,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000660000,
       "pause": null
      }
@@ -272,6 +274,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000690000,
       "pause": null
      }
@@ -390,6 +393,13 @@
         "token": "1760000690000:1",
         "at": 1760000690000,
         "reminded": false
+       }
+      },
+      "pending": {
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "reminder": false,
+        "repeat": false
        }
       },
       "lastAttentionAt": 1760000690000,
@@ -523,6 +533,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000840000,
       "pause": {
        "since": 1760000840000,
@@ -656,6 +667,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000840000,
       "pause": {
        "since": 1760000840000,
@@ -830,6 +842,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000960000,
       "pause": {
        "since": 1760000840000,
@@ -1005,6 +1018,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760002700000,
       "pause": null
      }
@@ -1117,6 +1131,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760002700000,
       "pause": null
      }
@@ -1194,6 +1209,7 @@
       "active": {},
       "batteries": {},
       "seen": {},
+      "pending": {},
       "lastAttentionAt": null,
       "pause": null
      }
@@ -1265,6 +1281,7 @@
       "active": {},
       "batteries": {},
       "seen": {},
+      "pending": {},
       "lastAttentionAt": null,
       "pause": null
      }
@@ -1361,6 +1378,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000325000,
       "pause": null
      }
@@ -1468,6 +1486,7 @@
         "reminded": true
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000325000,
       "pause": null
      }
@@ -1567,6 +1586,7 @@
         "reminded": true
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000325000,
       "pause": null
      }
@@ -1683,6 +1703,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000780000,
       "pause": null
      }
@@ -1794,6 +1815,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000780000,
       "pause": null
      }
@@ -1905,6 +1927,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000780000,
       "pause": null
      }
@@ -1986,6 +2009,7 @@
       "active": {},
       "batteries": {},
       "seen": {},
+      "pending": {},
       "lastAttentionAt": null,
       "pause": null
      }
@@ -2069,6 +2093,7 @@
         "reminded": true
        }
       },
+      "pending": {},
       "lastAttentionAt": null,
       "pause": null
      }
@@ -2192,6 +2217,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000720000,
       "pause": null
      }
@@ -2314,6 +2340,7 @@
         "reminded": false
        }
       },
+      "pending": {},
       "lastAttentionAt": 1760000720000,
       "pause": null
      }
@@ -2412,6 +2439,7 @@
         "reminded": true
        }
       },
+      "pending": {},
       "lastAttentionAt": null,
       "pause": null
      }
@@ -2494,6 +2522,7 @@
         "reminded": true
        }
       },
+      "pending": {},
       "lastAttentionAt": null,
       "pause": null
      }

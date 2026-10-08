@@ -17,6 +17,11 @@ export function useNativeAlertState(active, { period = NATIVE_STATE_CHECK_MS, lo
   useEffect(() => {
     if (!active) return undefined;
     let alive = true;
+    // Each time the app comes to the front the state is read again before
+    // the alerts run: the background check may have alerted or paused
+    // meanwhile (not ready until then; App's source changes, so the engine
+    // starts from what was read).
+    setValue(current => (current.ready ? { ...current, ready: false } : current));
     const read = () => Promise.resolve()
       .then(() => load())
       .then(next => {

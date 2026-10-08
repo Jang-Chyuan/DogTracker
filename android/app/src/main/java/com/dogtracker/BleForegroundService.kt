@@ -146,7 +146,12 @@ class BleForegroundService : Service() {
         prefs.edit().putString(ReceiverPauses.KEY,
           ReceiverPauses.paused(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis())).commit()
       }
-      handler.post { stopSession("已中斷連線") }
+      handler.post {
+        stopSession("已中斷連線")
+        // A disconnection alert already showing goes (the user's own
+        // disconnect is not one); the other problems stay as they are.
+        runCatching { BackgroundAlerts.evaluate(this, alertInput(), System.currentTimeMillis()) }
+      }
       return START_NOT_STICKY
     }
     startForeground(NOTIFICATION_ID, notification("正在準備 BLE 連線"))

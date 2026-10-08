@@ -82,7 +82,7 @@ test('useNativeAlertState reads again when the native side moved the state on', 
     value = useNativeAlertState(active, { period: 1000 });
     return null;
   }
-  const state = { version: 1, active: {}, batteries: {}, seen: {}, lastAttentionAt: 7, pause: null };
+  const state = { version: 1, active: {}, batteries: {}, seen: {}, pending: {}, lastAttentionAt: 7, pause: null };
   Native.store.state = state;
   let renderer;
   await act(async () => { renderer = Renderer.create(<Probe active />); });

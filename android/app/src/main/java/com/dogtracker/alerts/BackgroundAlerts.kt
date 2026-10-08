@@ -44,9 +44,13 @@ object BackgroundAlerts {
   @Volatile private var visible = false
   @Volatile private var visibleChangedAt = 0L
 
-  fun setAppVisible(value: Boolean) {
-    visible = value
-    visibleChangedAt = SystemClock.elapsedRealtime()
+  fun setAppVisible(value: Boolean, context: Context? = null) {
+    synchronized(lock) {
+      visible = value
+      visibleChangedAt = SystemClock.elapsedRealtime()
+      // On screen there is no system notification (the app shows it all).
+      if (value && context != null) runCatching { AlertPoster.cancel(context) }
+    }
   }
 
   fun appVisible() = visible || SystemClock.elapsedRealtime() - visibleChangedAt < HANDOVER_MS
@@ -81,7 +85,7 @@ object BackgroundAlerts {
   fun save(context: Context, state: String, basedOn: Long): Boolean = synchronized(lock) {
     val prefs = prefs(context)
     if (prefs.getLong(REVISION, 0) != basedOn) return false
-    // Keep the queue the background check may have: the app does not save it.
+    // The app saves the whole state, its queue (pending) included.
     prefs.edit().putString(STATE, state).commit()
   }
 
@@ -101,12 +105,12 @@ object BackgroundAlerts {
     val incoming = AlertCodec.readDogs(value.optJSONArray("dogs"))
     for ((id, dog) in incoming) {
       val mine = known[id]
-      known[id] = if (mine == null) dog else dog.copy(
-        fixAt = maxOf(dog.fixAt ?: Long.MIN_VALUE, mine.fixAt ?: Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE },
-        packetAt = maxOf(dog.packetAt ?: Long.MIN_VALUE, mine.packetAt ?: Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE },
-        batteryPercentage = if ((mine.packetAt ?: 0) > (dog.packetAt ?: 0)) mine.batteryPercentage ?: dog.batteryPercentage
-          else dog.batteryPercentage ?: mine.batteryPercentage,
-      )
+      // Whichever saw this phone's newest packet of the dog keeps what came
+      // from the packets (times, position, hold, range, battery); the name
+      // is always the app's.
+      val mineNewer = mine != null && (mine.range.lastLocalAt ?: mine.packetAt ?: 0) >
+        (dog.range.lastLocalAt ?: dog.packetAt ?: 0)
+      known[id] = if (mine != null && mineNewer) mine.copy(name = dog.name) else dog
     }
     // A dog the app no longer counts as this phone's (only heard through the
     // cloud now, or forgotten after 24 hours) is not checked here either.
@@ -142,7 +146,9 @@ object BackgroundAlerts {
    * null when it was the app's turn.
    */
   fun evaluate(context: Context, receiver: ReceiverInput, now: Long, force: Boolean = false): Effects? {
-    val (effects, changed) = synchronized(lock) {
+    // One lock for the step and its effects: a pause, or the app coming on
+    // screen, never meets a step half carried out.
+    synchronized(lock) {
       if (!force && appVisible()) return null
       val prefs = prefs(context)
       val previous = AlertCodec.readState(prefs.getString(STATE, null))
@@ -154,13 +160,12 @@ object BackgroundAlerts {
       val edit = prefs.edit().putString(DOGS, AlertCodec.writeDogs(known.values).toString())
       receiverBattery?.let { edit.putInt(RECEIVER_BATTERY, it) }
       edit.apply()
-      effects to changed
+      if (effects.delivered.isNotEmpty() || changed) {
+        Log.i(AlertPoster.TAG, "background step: ${effects.notification}, delivered ${effects.delivered}")
+      }
+      AlertPoster.carryOut(context, effects)
+      return effects
     }
-    if (effects.delivered.isNotEmpty() || changed) {
-      Log.i(AlertPoster.TAG, "background step: ${effects.notification}, delivered ${effects.delivered}")
-    }
-    AlertPoster.carryOut(context, effects)
-    return effects
   }
 
   /** Forgets everything (debug builds' DebugAlertFeed). */

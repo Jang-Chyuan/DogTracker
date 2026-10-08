@@ -79,7 +79,7 @@ class MainActivity : ReactActivity() {
   override fun onResume() {
     super.onResume()
     // The app on screen runs the alerts itself (useAlertEngine).
-    com.dogtracker.alerts.BackgroundAlerts.setAppVisible(true)
+    com.dogtracker.alerts.BackgroundAlerts.setAppVisible(true, this)
     // Only resume when the user brings the app to the foreground. A manual
     // stop clears enabled; a system force-stop leaves the saved session intact.
     val prefs = getSharedPreferences("ble_session", MODE_PRIVATE)

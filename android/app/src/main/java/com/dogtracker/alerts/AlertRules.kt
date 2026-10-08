@@ -144,20 +144,34 @@ data class Packet(
   val receiver: LatLng?,
   val batteryPercentage: Int?,
   val usb: Boolean?,
+  // IndoorHold.fixQuality: enough satellites and a sharp enough HDOP (or a
+  // packet without those fields). Weak indoor drift never lets a hold go.
+  val good: Boolean = true,
 )
 
 object Dogs {
-  // A hold the app handed over lets go after two valid positions this far
+  // A hold the app handed over lets go after two good positions this far
   // from where the dog is held (IndoorHold's releaseFarM, the plain case).
   const val RELEASE_FAR_M = 100.0
   const val RELEASE_FIXES = 2
+  const val GOOD_MIN_SATELLITES = 5
+  const val GOOD_MAX_HDOP = 2.0
+
+  /** IndoorHold.fixQuality for a packet with a fix. */
+  fun good(satellites: Double?, hdopRaw: Double?): Boolean {
+    var hdop = hdopRaw
+    if (hdop != null && (hdop == 65535.0 || kotlin.math.abs(hdop - 655.35) < 0.01 || hdop < 0.3)) hdop = null
+    else if (hdop != null && hdop >= 100) hdop /= 100
+    if (satellites == null && hdop == null) return true
+    return (satellites == null || satellites >= GOOD_MIN_SATELLITES) && (hdop == null || hdop <= GOOD_MAX_HDOP)
+  }
 
   fun apply(previous: AlertDog?, packet: Packet): AlertDog {
     val dog = previous ?: AlertDog(packet.slaveId)
     if (dog.packetAt != null && packet.time <= dog.packetAt) return dog
     var held = dog.held
     var far = dog.farFixes
-    if (held && packet.dog != null && dog.coordinate != null) {
+    if (held && packet.dog != null && packet.good && dog.coordinate != null) {
       if (Geo.distance(packet.dog, dog.coordinate) > RELEASE_FAR_M) far += 1 else far = 0
       if (far >= RELEASE_FIXES) { held = false; far = 0 }
     }
@@ -167,7 +181,8 @@ object Dogs {
       fixAt = if (packet.dog != null) packet.time else dog.fixAt,
       coordinate = if (packet.dog != null && !held) packet.dog else dog.coordinate,
       held = held, farFixes = far,
-      batteryPercentage = packet.batteryPercentage ?: dog.batteryPercentage,
+      // As DogMerge: the newest packet's reading, none when it is not valid.
+      batteryPercentage = packet.batteryPercentage,
       charging = packet.usb ?: dog.charging,
       range = range,
     )

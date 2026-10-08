@@ -207,6 +207,8 @@ object AlertCodec {
     val masterLongitude = number("master_lon", "mlon")
     val batteryValid = number("battery_valid", "bv")
     val battery = number("battery_pct", "bp")
+    val satellites = number("satellites", "sat")
+    val hdop = number("hdop", "hd")
     val usb = number("usbPresent", "usb_present") ?: (data.opt("usbPresent") as? Boolean)?.let { if (it) 1.0 else 0.0 }
       ?: (data.opt("usb_present") as? Boolean)?.let { if (it) 1.0 else 0.0 }
     return Packet(
@@ -216,6 +218,7 @@ object AlertCodec {
       receiver = if (Geo.valid(masterLatitude, masterLongitude)) LatLng(masterLatitude!!, masterLongitude!!) else null,
       batteryPercentage = if (battery != null && batteryValid != 0.0) Math.round(battery).toInt() else null,
       usb = usb?.let { it == 1.0 },
+      good = Dogs.good(satellites, hdop),
     )
   }
 

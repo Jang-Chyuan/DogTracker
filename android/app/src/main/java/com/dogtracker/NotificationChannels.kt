@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import com.dogtracker.alerts.Scheduler
 
 /**
  * The app's two notification channels (design v3 「Android 細節」: alerts and
@@ -30,11 +29,11 @@ object NotificationChannels {
     val manager = context.getSystemService(NotificationManager::class.java)
     manager.createNotificationChannel(NotificationChannel(ALERTS, "提醒", NotificationManager.IMPORTANCE_HIGH).apply {
       description = "狗不在接收範圍、沒有新位置、電量低，接收器斷線等"
-      // The alert's own sound and vibration follow the 提醒 settings (S6);
-      // the channel's vibration switch is the user's way to turn it off.
+      // High so a new alert pops up on screen (N1/N2); its sound and
+      // vibration are the alert's own (S6 震動／聲音, critical or normal
+      // pattern), so the channel itself is silent.
       setSound(null, null)
-      enableVibration(true)
-      vibrationPattern = Scheduler.CRITICAL
+      enableVibration(false)
     })
     manager.createNotificationChannel(NotificationChannel(TRACKING, "常駐", NotificationManager.IMPORTANCE_LOW).apply {
       description = "接收器、位置記錄、資料同步在背景工作時"
