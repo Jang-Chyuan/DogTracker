@@ -27,13 +27,13 @@ import { useTheme } from '../theme/ThemeProvider';
 import DogMarkerView, { markerFrame } from '../map/DogMarkerView';
 import {
   finishSplash,
-  getSplashState,
   giveUpWaiting,
   hideSplash,
   launchInfo,
+  setReducedMotion,
   showMarkers,
   splashChrome,
-  subscribeSplash,
+  useSplashState,
 } from './hideSplash';
 
 // The system launch screen's icon box (res/drawable/splash_icon_animated, a
@@ -139,7 +139,9 @@ function MarkerCopy({ target, opacity, scale }) {
 
 export default function SplashOverlay() {
   const { colors, isDark } = useTheme();
-  const [splash, setSplash] = useState(getSplashState);
+  // In step from the first render: a report made before this subscribes
+  // (an early launch decision) is not missed.
+  const splash = useSplashState();
   // The screen until the copy has measured itself, so the dog is drawn in
   // the very first frame (the copy covers the whole screen, edge to edge).
   const [box, setBox] = useState(() => {
@@ -157,11 +159,11 @@ export default function SplashOverlay() {
     pops: [],
   }).current;
   const reduceMotion = useRef(false);
-  useEffect(() => subscribeSplash(setSplash), []);
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled?.()
       .then(value => {
         reduceMotion.current = !!value;
+        setReducedMotion(value);
       })
       .catch(() => {});
     // A hang somewhere (nothing ever reported): fade to what is there.

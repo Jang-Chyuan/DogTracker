@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { Animated, NativeModules } from 'react-native';
 
 // The launch screen (D0, #47; 「D0 → 地圖銜接（C）」). The system launch
@@ -16,6 +16,9 @@ const gate = { mapFramed: false, launch: null, targets: [] };
 // → 'done'. The map's controls fade in through `chrome`; the real dog
 // markers stay hidden while the copy draws them (markersHidden).
 let state = { phase: 'waiting', mode: null, targets: [], markersHidden: false };
+// Reduce motion (AccessibilityInfo, read by SplashOverlay at start): the
+// handover is a plain crossfade, so the real markers and controls stay.
+let reducedMotion = false;
 const listeners = new Set();
 export const splashChrome = new Animated.Value(1);
 
@@ -57,7 +60,10 @@ export function launchInfo() {
 function begin(mode, targets = []) {
   if (state.phase !== 'waiting') return;
   const fly =
-    mode === 'fly' && targets.length > 0 && !launchInfo().fromNotification;
+    mode === 'fly' &&
+    targets.length > 0 &&
+    !reducedMotion &&
+    !launchInfo().fromNotification;
   if (fly) splashChrome.setValue(0);
   setState({
     phase: 'handover',
@@ -106,9 +112,16 @@ export function finishSplash() {
 
 /** For the map's dog markers: hidden while SplashOverlay draws their copies. */
 export function useSplashMarkersHidden() {
-  const [hidden, setHidden] = useState(state.markersHidden);
-  useEffect(() => subscribeSplash(next => setHidden(next.markersHidden)), []);
-  return hidden;
+  return useSplashState().markersHidden;
+}
+
+/** The launch screen copy's state, kept in step from the first render. */
+export function useSplashState() {
+  return useSyncExternalStore(subscribeSplash, getSplashState);
+}
+
+export function setReducedMotion(value) {
+  reducedMotion = !!value;
 }
 
 /** Safety: nothing reported (a hang somewhere) — fade to whatever is there. */
@@ -122,5 +135,6 @@ export function resetSplashGate() {
   gate.launch = null;
   gate.targets = [];
   splashChrome.setValue(1);
+  reducedMotion = false;
   state = { phase: 'waiting', mode: null, targets: [], markersHidden: false };
 }

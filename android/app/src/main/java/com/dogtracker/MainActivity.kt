@@ -49,6 +49,13 @@ class MainActivity : ReactActivity() {
     updateSystemBars(resources.configuration)
   }
 
+  // singleTask: a notification tapped while the app is still opening arrives
+  // here; its handover is the plain fade too.
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    if (intent.getBooleanExtra(SplashState.EXTRA_FROM_NOTIFICATION, false)) SplashState.fromNotification = true
+  }
+
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
     setTheme(R.style.AppTheme)

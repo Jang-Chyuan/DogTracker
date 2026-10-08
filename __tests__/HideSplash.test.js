@@ -75,3 +75,14 @@ test('the handover starts once: a later report changes nothing', () => {
   expect(getSplashState()).toMatchObject({ mode: 'fly' });
   expect(getSplashState().targets.map(t => t.slaveId)).toEqual([4]);
 });
+
+test('reduce motion: a plain crossfade, real markers and controls stay visible', () => {
+  const { setReducedMotion } = require('../src/app/hideSplash');
+  setReducedMotion(true);
+  launchInto('map');
+  reportMapFramed([dog(4, 100, 300)]);
+  expect(getSplashState()).toMatchObject({
+    mode: 'fade',
+    markersHidden: false,
+  });
+});

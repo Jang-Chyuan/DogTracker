@@ -635,6 +635,13 @@ function GoogleTrackingMapRenderer({
   const afterFit = useRef(null);
   useEffect(() => () => clearTimeout(afterFit.current), []);
   const splashReleased = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   // What the launch screen's handover needs (「D0 → 地圖銜接（C）」): the dogs
   // on screen where they are drawn, the nearest to the middle first.
   const splashInputs = useRef({});
@@ -663,15 +670,21 @@ function GoogleTrackingMapRenderer({
           .catch(() => null),
       ),
     )
-      .then(entries =>
+      .then(entries => {
+        // The map was replaced or closed meanwhile (a new source, a fixture
+        // switch): its next framing reports instead.
+        if (!mounted.current || mapRef.current !== map) {
+          splashReleased.current = false;
+          return;
+        }
         reportMapFramed(
           splashTargets(
             inputs,
             Object.fromEntries(entries.filter(Boolean)),
             PixelRatio.getFontScale?.() || 1,
           ),
-        ),
-      )
+        );
+      })
       .catch(() => reportMapFramed([]));
   }, []);
   const fontScale = PixelRatio.getFontScale?.() || 1;

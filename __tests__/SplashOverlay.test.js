@@ -66,3 +66,19 @@ test('covers the screen while waiting; with animations off it goes straight to t
   expect(renderer.toJSON()).toBeNull();
   await act(async () => renderer.unmount());
 });
+
+test('a report made before the copy mounts is not missed (the state is read from the first render)', async () => {
+  NativeModules.AppSplash = {
+    hide: jest.fn(),
+    done: jest.fn(),
+    launchInfo: () => ({ animatorScale: 0 }),
+  };
+  launchInto('page');
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<SplashOverlay />);
+  });
+  expect(NativeModules.AppSplash.done).toHaveBeenCalledTimes(1);
+  expect(renderer.toJSON()).toBeNull();
+  await act(async () => renderer.unmount());
+});
