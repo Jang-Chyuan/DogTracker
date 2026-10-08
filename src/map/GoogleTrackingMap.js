@@ -129,6 +129,10 @@ const ROUTE_TAP_DP = 24;
 // draws a view of its own: react-native-maps draws Google's red default pin
 // for a marker with no view. Debug builds report a marker given nothing to
 // draw (MarkerArchitecture.test.js checks every marker element in src).
+// The SDK also has moments with no view at all: a new marker before its view
+// arrives, and (Fabric) a marker whose view is removed before the marker
+// itself. patches/react-native-maps+*.patch keeps the marker hidden then
+// (ReactNativeMapsPatch.test.js).
 export const StyledMarker = React.forwardRef(function StyledMarker(
   { children, ...props },
   ref,
