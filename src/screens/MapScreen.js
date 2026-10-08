@@ -149,6 +149,9 @@ export default function MapScreen({
   const liveNow = useMapClock(active && tracking.foreground && !fixture);
   // A screen fixture stops the clock, so its screenshot is the same every time.
   const now = fixture ? fixture.now : liveNow;
+  // The history list's clock: a fixture's fixed one, else the real one.
+  const fixtureNow = fixture?.now ?? null;
+  const fixtureClock = useCallback(() => fixtureNow ?? Date.now(), [fixtureNow]);
   // The receiver this phone is set up for, read from the native service while
   // the live map is in front (a fixture supplies its own reader).
   const receiverActive = active && tracking.foreground && !historical;
@@ -601,6 +604,8 @@ export default function MapScreen({
           bottomInset={bottomInset}
           topInset={controlsTop}
           onHeight={setSheetHeight}
+          owner={cloudOwner}
+          clock={fixtureClock}
         />
       )}
       {cardModel && (

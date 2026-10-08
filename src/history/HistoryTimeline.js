@@ -11,7 +11,7 @@ import { historyStops, historyIndoorNodes } from './HistoryStops';
  * Consumer calendar/list/export must use the returned source stream. */
 export function historyTimeline(rows = [], options = {}) {
   const { subject = 'dog', source = 'all', dayStart = -Infinity, dayEnd = Infinity,
-    today = false, now = rows[rows.length - 1]?.time ?? 0, manualRange = null,
+    today = false, now = rows[rows.length - 1]?.time ?? 0, manualRange = null, closedAt = null,
     following = today && manualRange?.end == null, state = null, timezone = '',
     replayHolds, config = configFor(subject) } = options;
   const replay = replayHolds ?? (subject === 'dog'
@@ -23,19 +23,10 @@ export function historyTimeline(rows = [], options = {}) {
   const departure = historyDeparture(dayPoints, { subject, config, today, now, movement: contextMovement, manualRange });
   const range = options.range ?? departure.range;
   const points = dayPoints.filter(p => p.time >= range.start && p.time <= range.end);
-  const movement = historyMovement(points, { subject, config });
   // Classify on the full day: clipping must not erase vehicle confirmation.
   const vehicles = contextMovement.vehicles;
-  for (const e of movement.edges) {
-    const vehicle = vehicles.some(v => e.start >= v.start && e.end <= v.end);
-    if (vehicle && !e.gap) { e.mode = subject === 'phone' ? 'driving' : 'ride'; e.countedDistanceM = 0; }
-  }
-  const switches = movement.edges.slice(1).flatMap((e, i) => {
-    const before = movement.edges[i];
-    return e.mode !== before.mode && !['gap', 'indoor'].includes(e.mode)
-      && !['gap', 'indoor'].includes(before.mode) ? [{ type: 'switch', start: e.start, end: e.start,
-        latitude: e.from.latitude, longitude: e.from.longitude }] : [];
-  });
+  const movement = historyMovement(points, { subject, config, vehicles });
+  const switches = movement.switches.map(({ point, ...node }) => node);
   const identity = JSON.stringify([subject, source, range.start, following ? 'following' : range.end,
     dayStart, dayEnd, timezone, !!manualRange]);
   const stays = historyStops(context, { subject, config, start: range.start, end: range.end,
@@ -45,10 +36,14 @@ export function historyTimeline(rows = [], options = {}) {
   const locations = [...stays.stops, ...indoor,
     ...switches.filter(s => !stays.stops.some(v => s.start >= v.start && s.start <= v.end))]
     .sort((a, b) => a.start - b.start);
-  let number = 0;
-  for (const node of locations) {
-    if (node.type !== 'indoor') node.number = ++number;
+  // 判定表「恢復記錄節點」: after a break of over 30 minutes the first fix
+  // after it is a 恢復記錄 node (unless a stay or a hold already starts there).
+  for (const e of movement.edges) {
+    if (e.mode !== 'gap' || e.durationMs <= config.resumeAfterMs) continue;
+    if (locations.some(n => n.start === e.end)) continue;
+    locations.push({ type: 'resume', start: e.end, end: e.end, latitude: e.to.latitude, longitude: e.to.longitude });
   }
+  locations.sort((a, b) => a.start - b.start);
   const first = points[0], last = points[points.length - 1];
   if (first && !locations.some(n => n.start === first.time
     && (n.type === 'indoor' || (n.type === 'stop' && n.continuesPreviousDay)))) locations.unshift({ type: 'departure',
@@ -58,12 +53,25 @@ export function historyTimeline(rows = [], options = {}) {
       && first.time - context.filter(p => p.time < dayStart).pop().time <= config.gapMs });
   if (last && last !== first && !locations.some(n => n.end === last.time && n.type === 'indoor')) locations.push({ type: 'end',
     start: last.time, end: last.time, latitude: last.latitude, longitude: last.longitude,
-    label: following ? now - last.time <= 120000 ? '現在' : '最後' : '結束',
+    // 判定表「「現在」和「最後 12:05」」; a recording that was switched off
+    // ends with 「記錄已關閉 10:20」 (closedAt, when the caller knows it).
+    label: following ? now - last.time <= 120000 ? '現在' : '最後' : closedAt != null ? '記錄已關閉' : '結束',
+    closedAt: following ? null : closedAt,
     continuesNextDay: context.some(p => p.time >= dayEnd && p.time - last.time <= config.gapMs) });
   const sections = [];
+  // Moves inside a stay still count (判定表「距離怎麼算」: 和有沒有被標成停留
+  // 無關): they go to the foot row that arrived there, or else the next one,
+  // so the rows add up to the summary.
+  let carried = 0;
+  const isFoot = mode => mode === 'walking' || mode === 'moving';
   for (const e of movement.edges) {
     if (e.mode !== 'gap' && locations.some(n => ['stop', 'indoor'].includes(n.type)
-      && e.start >= n.start && e.end <= n.end)) continue;
+      && e.start >= n.start && e.end <= n.end)) {
+      const arrived = [...sections].reverse().find(row => row.type === 'movement');
+      if (arrived && isFoot(arrived.mode)) arrived.countedDistanceM += e.countedDistanceM;
+      else carried += e.countedDistanceM;
+      continue;
+    }
     if (e.mode === 'indoor') continue;
     const prior = sections[sections.length - 1];
     if (prior && prior.mode === e.mode && prior.end === e.start && !locations.some(n => n.start === e.start || n.end === e.start)) {
@@ -76,10 +84,44 @@ export function historyTimeline(rows = [], options = {}) {
       distanceM: e.gap ? 0 : e.distanceM, countedDistanceM: e.countedDistanceM,
       excluded: ['driving', 'ride', 'gap'].includes(e.mode),
       line: e.gap ? 'long-dashed' : ['driving', 'ride'].includes(e.mode) ? 'solid' : 'dotted' });
+    const row = sections[sections.length - 1];
+    if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; carried = 0; }
   }
   const rank = node => node.type === 'departure' ? 0 : ['movement', 'gap'].includes(node.type) ? 2 : node.type === 'end' ? 3 : 1;
-  const nodes = [...locations, ...sections].sort((a, b) => a.start - b.start || rank(a) - rank(b));
-  return { ...stream, points, range, departure, nodes, locations, sections,
+  let nodes = [...locations, ...sections].sort((a, b) => a.start - b.start || rank(a) - rank(b));
+  // A switch right beside another place (a stay ends, the car starts after a
+  // few seconds on foot) would leave a 0 km foot row between two points:
+  // the place itself already separates the modes, so the switch and the empty
+  // foot row go (H1: 停留 2 → 坐車 → 3).
+  const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
+  const place = n => n && !['movement', 'gap', 'switch'].includes(n.type);
+  const drop = new Set();
+  nodes.forEach((n, i) => {
+    if (n.type !== 'switch') return;
+    for (const [side, beyond] of [[nodes[i - 1], nodes[i - 2]], [nodes[i + 1], nodes[i + 2]]]) {
+      if (foot(side) && side.countedDistanceM === 0 && place(beyond) && !drop.has(beyond)) {
+        drop.add(n); drop.add(side); return;
+      }
+    }
+  });
+  // Likewise a few seconds on foot with nothing counted between two places
+  // (a stay, then the dog goes inside; a stay that runs into the end): the
+  // places are adjacent (判定表「停在原處節點的前後」: 3 分鐘以內…停在原處
+  // 節點不算移動段).
+  nodes.forEach((n, i) => {
+    if (foot(n) && n.countedDistanceM === 0 && n.durationMs <= 60000
+      && place(nodes[i - 1]) && place(nodes[i + 1])) drop.add(n);
+  });
+  nodes = nodes.filter(n => !drop.has(n));
+  // 判定表「交通方式切換點」: stays and switch points share one numbering in
+  // time order; holds, departure, resume and end are not numbered.
+  let number = 0;
+  for (const node of nodes) {
+    if (node.type === 'stop' || node.type === 'switch') node.number = ++number;
+  }
+  const keptLocations = locations.filter(n => !drop.has(n));
+  const keptSections = sections.filter(n => !drop.has(n));
+  return { ...stream, points, range, departure, nodes, locations: keptLocations, sections: keptSections,
     state: stays.state, typicalMs: stays.typicalMs,
     distanceM: movement.edges.reduce((sum, e) => sum + e.countedDistanceM, 0),
     durationMs: first ? last.time - first.time : 0,

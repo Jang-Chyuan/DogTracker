@@ -11,11 +11,17 @@ import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
 import { ensureBleDisplayColumns } from '../ble/BleDisplayCoordinates';
 import { budgetHistory, budgetHistoryTracks, groupHistoryStreams } from './HistoryGeometryBudget';
+import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
+
+// The history list reads this much before the day too: a visit or a drive
+// running over midnight, a break before the first fix (判定表「跨午夜」).
+export const HISTORY_DAY_CONTEXT_MS = 30 * 60000;
+const DAY_PAGE = 2000;
 
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar', 'read',
-  'listDevices', 'listDays', 'hasPhoneTrack', 'phoneRouteSince'];
+  'listDevices', 'listDays', 'hasPhoneTrack', 'phoneRouteSince', 'historyDayRows'];
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
@@ -195,6 +201,71 @@ export function createHistoryDatabase(db) {
          ORDER BY recorded_at, id LIMIT ?`, [Number(since) || 0, time, time, id, limit]))
         .map(row => ({ id: Number(row.id), time: Number(row.time), latitude: Number(row.latitude),
           longitude: Number(row.longitude), accuracy: row.accuracy == null ? null : Number(row.accuracy) }));
+    },
+    /**
+     * One dog's (or this phone's) rows of one day for the history list
+     * (src/history): [start - HISTORY_DAY_CONTEXT_MS, end). `subject` is
+     * 'dog' (by collar number, every receiver) or 'phone'; `source` is the
+     * history's 資料來源 — 'all', 'local' (dog_status) or 'cloud' (the
+     * account's supabase_dog_status; nothing signed out). `after` holds the
+     * last { time, id } read per table: only newer rows come back, so today's
+     * list re-reads a few rows, not the day. The dog's hold model also gets
+     * the last good fixes before the window (`seed`), like the history map.
+     * @returns {{ rows, seed, after }}
+     */
+    async historyDayRows({ subject = 'dog', slaveId = null, start, end, source = 'all', owner = null, after = {} }) {
+      const since = Number(start) - HISTORY_DAY_CONTEXT_MS;
+      const cursors = { ...after };
+      async function pages(key, sql, params, time) {
+        const found = [];
+        let cursor = cursors[key] ?? { time: since, id: -1 };
+        for (;;) {
+          const page = rows(await db.executeAsync(`${sql} AND (${time} > ? OR (${time} = ? AND id > ?))
+            ORDER BY ${time}, id LIMIT ${DAY_PAGE}`, [...params, cursor.time, cursor.time, cursor.id]));
+          if (!page.length) break;
+          found.push(...page);
+          const last = page[page.length - 1];
+          cursor = { time: Number(last.row_time), id: Number(last.id) };
+          if (page.length < DAY_PAGE) break;
+        }
+        cursors[key] = cursor;
+        return found;
+      }
+      const table = async name => rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
+      if (subject === 'phone') {
+        if (!(await table('myLocationTracker'))) return { rows: [], seed: [], after: cursors };
+        const found = await pages('phone', `SELECT id, recorded_at AS row_time, recorded_at AS time, latitude, longitude,
+          accuracy_meters AS accuracy FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ?`,
+        [since, end], 'recorded_at');
+        return { rows: found.map(phoneHistoryRow), seed: [], after: cursors };
+      }
+      const out = [], seed = [];
+      const columnsOf = async name => new Set(rows(await db.executeAsync(`PRAGMA table_info(${name})`)).map(column => column.name));
+      const optional = (columns, names) => names.filter(name => columns.has(name)).map(name => `, ${name}`).join('');
+      const first = !Object.keys(after).length;
+      for (const [key, name, time, wanted] of [
+        ['local', 'dog_status', 'received_at', source !== 'cloud'],
+        ['cloud', 'supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', source !== 'local' && !!owner],
+      ]) {
+        if (!wanted || !(await table(name))) continue;
+        const columns = await columnsOf(name);
+        const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at']);
+        const scope = `slave_id = ?${key === 'cloud' ? ' AND owner_user_id = ?' : ''}`;
+        const params = key === 'cloud' ? [slaveId, owner] : [slaveId];
+        const found = await pages(key, `SELECT id, ${time} AS row_time, received_at, master_id, slave_id, slave_lat, slave_lon${extra}
+          FROM ${name} WHERE ${scope} AND ${time} >= ? AND ${time} < ?`, [...params, since, end], time);
+        out.push(...found.map(row => dogHistoryRow(row, key)));
+        if (first && columns.has('satellites')) {
+          seed.push(...rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude, slave_lon AS longitude,
+            master_id, satellites${columns.has('hdop') ? ', hdop' : ''} FROM ${name}
+            WHERE ${scope} AND ${time} < ? AND satellites >= ?
+              AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
+            ORDER BY ${time} DESC LIMIT 40`, [...params, since, HOLD_CONFIG.goodMinSatellites])));
+        }
+      }
+      seed.sort((a, b) => a.time - b.time);
+      return { rows: out, seed: seed.slice(-40), after: cursors };
     },
     /**
      * Which Master/Slave pairs this phone actually holds for a source. The card

@@ -137,6 +137,9 @@ const PARENT_PAGES = { liveData: 'diagnostics', cloudData: 'diagnostics', locati
 // D4, with the progress bar).
 const GUIDE_FIXTURE_PAGES = ['permissions', 'pair', 'paired'];
 const stackTo = page => {
+  if (page === 'map') return [{ name: 'map' }];
+  // A history fixture (054a) opens the history page over the map.
+  if (page === 'history') return [{ name: 'map' }, { name: 'history' }];
   if (page === 'settings') return [{ name: 'map' }, { name: 'settings' }];
   if (GUIDE_FIXTURE_PAGES.includes(page)) {
     return [{ name: 'map' }, ...GUIDE_FIXTURE_PAGES.slice(0, GUIDE_FIXTURE_PAGES.indexOf(page) + 1)
@@ -241,7 +244,9 @@ function TrackerApp({ resume = null, onRestart }) {
       || route.name === 'diagnostics' || route.name === 'paired') && !fixture, revision: cloudSync.revision });
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
-  const mapInputs = applyScreenFixture(isHistory ? null : fixture,
+  // The history page shows live data unless a history fixture (054a) is on.
+  const historyFixture = !!fixture?.history;
+  const mapInputs = applyScreenFixture(isHistory && !historyFixture ? null : fixture,
     { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute,
       // The gear's red dot: the upload failing or the sign-in expired.
       cloudProblem: !!cloudSync.ownerId && !!upload.error,
@@ -624,7 +629,7 @@ function TrackerApp({ resume = null, onRestart }) {
           // screen's bottom edge.
           bottomInset={insets.bottom + layout.screenEdge}
           mapProvider={GOOGLE_MAP_PROVIDER}
-          fixture={isHistory ? null : fixture}
+          fixture={isHistory && !historyFixture ? null : fixture}
           todayRoute={mapInputs.todayRoute}
           onOpenSettings={() => open('settings')}
           // Restoring a saved sign-in counts: A6 offers no 「登入 Supabase」.

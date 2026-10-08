@@ -1,14 +1,13 @@
-import { configFor, distanceMeters, atLeast } from './HistoryConfig';
+import { configFor, distanceMeters, atLeast, accuracyOf } from './HistoryConfig';
 
-/** Edges retain both actual distance and counted distance. Gaps never connect. */
-export function historyMovement(points, { subject = 'dog', config = configFor(subject) } = {}) {
-  const edges = points.slice(1).map((to, i) => {
-    const from = points[i], durationMs = to.time - from.time;
-    const distanceM = distanceMeters(from, to);
-    return { from, to, start: from.time, end: to.time, durationMs, distanceM,
-      speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs,
-      mode: from.heldReason && to.heldReason && from.heldSince === to.heldSince ? 'indoor' : subject === 'phone' ? 'walking' : 'moving' };
-  });
+const travelMode = subject => (subject === 'phone' ? 'driving' : 'ride');
+const footMode = subject => (subject === 'phone' ? 'walking' : 'moving');
+
+/**
+ * 判定表「開車段落」「狗坐車」「開車規則套到狗坐車」: the vehicle intervals of
+ * a run of edges. Each is { start, end, firstEdge, lastEdge }.
+ */
+function detectVehicles(edges, config) {
   const vehicles = [];
   let high = null, active = null, low = null;
   const close = endIndex => {
@@ -41,22 +40,75 @@ export function historyMovement(points, { subject = 'dog', config = configFor(su
     } else low = null;
   }
   if (active != null) close(edges.length - 1);
-  for (const vehicle of vehicles) {
-    for (let i = vehicle.firstEdge; i <= vehicle.lastEdge; i += 1) edges[i].mode = subject === 'phone' ? 'driving' : 'ride';
-  }
+  return vehicles;
+}
+
+/**
+ * 判定表「距離怎麼加」: the range is cut into runs of continuous walking (or
+ * a dog's movement), broken by a gap over 3 minutes, a vehicle or an indoor
+ * hold. The first fix of a run is only a reference; each later fix is
+ * compared with the last COUNTED one and counts once it is farther than the
+ * larger accuracy of the two (at least 5 m, 10 m without an accuracy). The
+ * distance lands on the edge that crossed the threshold.
+ */
+export function countDistances(edges, config = configFor('dog')) {
+  let anchor = null;
   for (const edge of edges) {
-    if (edge.gap) edge.mode = 'gap';
-    edge.countedDistanceM = ['walking', 'moving'].includes(edge.mode)
-      && atLeast(edge.distanceM, Math.max(edge.from.accuracy ?? 0, edge.to.accuracy ?? 0))
-      ? edge.distanceM : 0;
+    if (edge.mode !== 'walking' && edge.mode !== 'moving') {
+      edge.countedDistanceM = 0; anchor = null; continue;
+    }
+    if (!anchor) anchor = edge.from;
+    const moved = distanceMeters(anchor, edge.to);
+    const threshold = Math.max(config.minMoveM, accuracyOf(anchor, config), accuracyOf(edge.to, config));
+    if (moved > threshold) { edge.countedDistanceM = moved; anchor = edge.to; }
+    else edge.countedDistanceM = 0;
   }
+  return edges;
+}
+
+/**
+ * Edges keep both their actual distance and the counted distance. Gaps never
+ * connect. `vehicles` classifies the edges with intervals found on a longer
+ * stream (the whole day), so clipping a range cannot lose a confirmation.
+ */
+export function historyMovement(points, { subject = 'dog', config = configFor(subject), vehicles = null } = {}) {
+  const edges = points.slice(1).map((to, i) => {
+    const from = points[i], durationMs = to.time - from.time;
+    const distanceM = distanceMeters(from, to);
+    return { from, to, start: from.time, end: to.time, durationMs, distanceM,
+      speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs,
+      mode: from.heldReason && to.heldReason && from.heldSince === to.heldSince ? 'indoor' : footMode(subject) };
+  });
+  const found = vehicles ?? detectVehicles(edges, config);
+  for (const edge of edges) {
+    if (edge.mode === 'indoor') continue;
+    if (found.some(v => edge.start >= v.start && edge.end <= v.end)) edge.mode = travelMode(subject);
+  }
+  for (const edge of edges) if (edge.gap) edge.mode = 'gap';
+  countDistances(edges, config);
+  // 判定表「交通方式切換點」: where two modes meet, never across a gap or a hold.
   const switches = edges.slice(1).flatMap((edge, i) => {
     const before = edges[i];
     return !['gap', 'indoor'].includes(edge.mode) && !['gap', 'indoor'].includes(before.mode)
       && edge.mode !== before.mode ? [{ type: 'switch', start: edge.start, end: edge.start,
         latitude: edge.from.latitude, longitude: edge.from.longitude, point: edge.from }] : [];
   });
-  return { edges, vehicles, switches, pendingHighStart: high == null ? null : edges[high].start,
-    distanceM: edges.reduce((sum, e) => sum + e.countedDistanceM, 0) };
+  const high = vehicles ? null : pendingHigh(edges, config);
+  return { edges, vehicles: found.map(({ start, end, firstEdge, lastEdge }) => ({ start, end, firstEdge, lastEdge })),
+    switches, pendingHighStart: high, distanceM: edges.reduce((sum, e) => sum + e.countedDistanceM, 0) };
 }
+
+// The start of a high-speed run at the end that is not yet a vehicle (the
+// phone's departure grace looks at it).
+function pendingHigh(edges, config) {
+  let start = null;
+  for (let i = edges.length - 1; i >= 0; i -= 1) {
+    const e = edges[i];
+    if (e.mode !== 'walking' && e.mode !== 'moving') break;
+    if (!atLeast(e.speed, config.vehicleSpeed)) break;
+    start = e.start;
+  }
+  return start;
+}
+
 export const isVehiclePoint = (point, vehicles) => vehicles.some(v => point.time >= v.start && point.time < v.end);

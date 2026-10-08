@@ -3,7 +3,7 @@ import { point, route, visitsFixture } from '../__fixtures__/HistoryLogicFixture
 
 // hist.txt H1/H2「出發、停留、交通方式切換點、現在…同一套編號」。
 test('timeline alternates locations and single-mode sections with shared numbering', () => {
-  const points = route([...Array(6).fill(1), ...Array(3).fill(6), ...Array(3).fill(1)]);
+  const points = route([...Array(6).fill(1), ...Array(3).fill(6), ...Array(3).fill(1)]).map(p => ({ ...p, accuracy: 5 }));
   const model = historyTimeline(points, { subject: 'phone', range: { start: 0, end: 120000 } });
   expect(model.nodes.map(n => n.type)).toEqual(['departure', 'movement', 'switch', 'movement', 'switch', 'movement', 'end']);
   expect(model.locations.filter(n => n.type === 'switch').map(n => [n.start, n.number])).toEqual([[60000, 1], [90000, 2]]);

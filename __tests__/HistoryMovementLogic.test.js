@@ -70,8 +70,8 @@ test('dog entry cannot accumulate high seconds across gap', () => {
 });
 // spec.txt「停住那段不算距離…放開後第一筆好定位和停住點…照一般規則」。
 test('indoor interval is excluded; release edge counts', () => {
-  const held = { heldReason: 'indoor', heldSince: 0 };
-  const m = historyMovement([point(0, 0, held), point(10, 0, held), point(20, 10)]);
+  const held = { heldReason: 'indoor', heldSince: 0, accuracy: 5 };
+  const m = historyMovement([point(0, 0, held), point(10, 0, held), point(20, 10, { accuracy: 5 })]);
   expect(m.edges.map(e => e.mode)).toEqual(['indoor', 'moving']); expect(m.distanceM).toBeCloseTo(10);
 });
 

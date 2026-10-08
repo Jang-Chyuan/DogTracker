@@ -5,7 +5,7 @@ import { point, visitsFixture } from '../__fixtures__/HistoryLogicFixtures';
 test('visit uses first fix as centre and requires both exit conditions', () => {
   const visits = historyVisits([point(0), point(10, 24), point(20, 40), point(40, 50), point(41, 60)]);
   expect(visits).toHaveLength(2); expect(visits[0].end).toBe(10000);
-  expect(visits[1].start).toBe(20000); expect(visits[0].latitude).toBe(point(0).latitude);
+  expect(visits[1].start).toBe(20000); expect(visits[0].center.latitude).toBe(point(0).latitude);
 });
 // spec.txt「中途回到圈內就重新計算」。
 test('return inside resets consecutive exit clock', () => {
