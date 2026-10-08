@@ -1,0 +1,142 @@
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { BackHandler } from 'react-native';
+import ActivityScreen, { curveRuns, periodLabel } from '../src/activity/ActivityScreen';
+
+const M = 60000;
+const NOW = new Date(2026, 9, 7, 9, 30, 40).getTime();
+const FIRST = new Date(2026, 8, 1).getTime();
+
+let renderer, onBack;
+beforeEach(() => {
+  jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_, callback) => {
+    onBack = callback;
+    return { remove: jest.fn() };
+  });
+});
+afterEach(async () => {
+  if (renderer) await act(async () => renderer.unmount());
+  renderer = null;
+  jest.restoreAllMocks();
+});
+
+const flatten = node => {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(flatten).join('');
+  return flatten(node.children);
+};
+const text = id => flatten(renderer.root.findAll(node => node.props.testID === id)[0]);
+const press = async id => {
+  const node = renderer.root.findAll(item => item.props.testID === id && typeof item.props.onPress === 'function')[0];
+  await act(async () => node.props.onPress());
+};
+
+// Two readings a minute from FIRST: rests at night, otherwise 0.3.
+function reader() {
+  const calls = [];
+  const read = jest.fn(async (slaveId, { start, end, detail }) => {
+    calls.push({ start, end, detail });
+    if (detail === 'raw') {
+      const local = [];
+      for (let t = Math.max(start - 9 * M, FIRST); t < Math.min(end + 9 * M, NOW); t += M) {
+        local.push({ time: t + 10000, activity: new Date(t).getHours() < 6 ? 0.02 : 0.3, activity_valid: 1,
+          slave_id: slaveId, master_id: 7 });
+      }
+      return { local, cloud: [] };
+    }
+    const minutes = [];
+    for (let t = Math.max(start - 9 * M, FIRST); t < Math.min(end + 9 * M, NOW - 40000); t += M) {
+      minutes.push({ minute: t, value: new Date(t).getHours() < 6 ? 0.02 : 0.3, count: 1 });
+    }
+    return { minutes };
+  });
+  return { read, calls, readEarliest: jest.fn(async () => FIRST) };
+}
+
+async function mount(props) {
+  await act(async () => {
+    renderer = Renderer.create(<ActivityScreen name="小黑" slaveId={6} now={NOW} onBack={jest.fn()} {...props} />);
+  });
+}
+
+test('opens on 今天: the title, tabs, period, summary and explanation; › is off, the running minute left out', async () => {
+  const { read, readEarliest, calls } = reader();
+  await mount({ read, readEarliest });
+  const all = flatten(renderer.toJSON());
+  expect(all).toContain('小黑・活動量');
+  expect(all).toContain('日週月年');
+  expect(text('activity-period')).toBe('10/7（三）今天');
+  expect(all).toContain('今天休息6 小時劇烈0 分');
+  expect(all).toContain('休息：最近 10 分鐘幾乎沒動；劇烈：最近 2 分鐘一直在激烈活動');
+  expect(calls[0]).toMatchObject({ detail: 'raw' });
+  const next = renderer.root.findAll(node => node.props.testID === 'activity-next' && node.props.accessibilityState)[0];
+  expect(next.props.accessibilityState.disabled).toBe(true);
+});
+
+test('‹ › move by the tab\'s period and stop at the first reading; tabs keep the day', async () => {
+  const { read, readEarliest } = reader();
+  await mount({ read, readEarliest });
+  await press('activity-previous');
+  expect(text('activity-period')).toBe('10/6（二）');
+  await press('activity-next');
+  expect(text('activity-period')).toBe('10/7（三）今天');
+  await press('activity-tab-week');
+  expect(text('activity-period')).toBe('10/4（日）– 10/10（六）');
+  expect(flatten(renderer.toJSON())).toContain('這一週');
+  await press('activity-tab-month');
+  expect(text('activity-period')).toBe('2026 年 10 月');
+  await press('activity-previous');
+  expect(text('activity-period')).toBe('2026 年 9 月');
+  const previous = () => renderer.root.findAll(node => node.props.testID === 'activity-previous'
+    && node.props.accessibilityState)[0].props.accessibilityState.disabled;
+  expect(previous()).toBe(true);
+  await press('activity-tab-year');
+  expect(text('activity-period')).toBe('2026 年');
+  // 年 is read a month at a time with a pause between (still 載入中 here).
+  expect(flatten(renderer.toJSON())).toContain('載入中…');
+  for (let i = 0; i < 20 && !flatten(renderer.toJSON()).includes('這一年'); i += 1) {
+    await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  }
+  expect(flatten(renderer.toJSON())).toContain('這一年');
+  expect(read.mock.calls.filter(([, period]) => period.detail === 'minute').length).toBeGreaterThan(2);
+});
+
+test('the back key returns to the card', async () => {
+  const back = jest.fn();
+  const { read, readEarliest } = reader();
+  await mount({ read, readEarliest, onBack: back });
+  expect(onBack()).toBe(true);
+  expect(back).toHaveBeenCalledTimes(1);
+});
+
+test('載入中 with the period, then 讀取失敗 and 重試 reads again', async () => {
+  let fail = true;
+  const read = jest.fn(() => (fail ? Promise.reject(new Error('x')) : new Promise(() => {})));
+  await mount({ read, readEarliest: async () => FIRST, initialView: { mode: 'week', date: NOW } });
+  expect(flatten(renderer.toJSON())).toContain('讀取失敗');
+  expect(text('activity-period')).toBe('10/4（日）– 10/10（六）');
+  fail = false;
+  const retry = renderer.root.findAll(node => node.props.accessibilityLabel === '重試'
+    && typeof node.props.onPress === 'function')[0];
+  await act(async () => retry.props.onPress());
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(flatten(renderer.toJSON())).toContain('載入中…');
+});
+
+test('沒有活動量資料 for a dog without readings; both arrows off', async () => {
+  await mount({ read: async () => ({ local: [], cloud: [] }), readEarliest: async () => null });
+  expect(flatten(renderer.toJSON())).toContain('沒有活動量資料');
+  const states = ['activity-previous', 'activity-next'].map(id => renderer.root.findAll(node =>
+    node.props.testID === id && node.props.accessibilityState)[0].props.accessibilityState.disabled);
+  expect(states).toEqual([true, true]);
+});
+
+test('the curve breaks at minutes without data; a lone minute is a short dash', () => {
+  const points = [0.1, 0.2, null, 0.5, null, 0.3, 0.4].map(value => ({ value }));
+  const runs = curveRuns(points, 70, 100);
+  expect(runs).toHaveLength(3);
+  expect(runs[1].split(' ')).toHaveLength(2);
+  expect(periodLabel('day', NOW, NOW)).toBe('10/7（三）今天');
+  expect(periodLabel('day', NOW - 1440 * M, NOW)).toBe('10/6（二）');
+});

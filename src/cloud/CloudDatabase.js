@@ -1,7 +1,7 @@
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
-import { readActivityHistory } from './ActivityHistory';
+import { readActivityEarliest, readActivityPeriod } from '../activity/ActivityData';
 import { readDogCardRows } from '../activity/DogCardReadings';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { HOLD_CONFIG } from '../placement/IndoorHold';
@@ -48,7 +48,7 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory', 'dogCardRows', 'holdRows'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -270,7 +270,9 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       requireOwner(owner);
       return rows(await connection.executeAsync(latestCloudStatusQuery(true), [owner, sinceMs, owner]));
     },
-    activityHistory: (owner, slaveId, now) => readActivityHistory(connection, owner, slaveId, now),
+    // The activity page (A4): one dog's readings of a period, and its first.
+    activityPeriod: (owner, slaveId, period) => readActivityPeriod(connection, owner, slaveId, period),
+    activityEarliest: (owner, slaveId) => readActivityEarliest(connection, owner, slaveId),
     // The open dog card's activity and battery readings (DogCardReadings).
     dogCardRows: (owner, slaveId, since) => readDogCardRows(connection, owner, slaveId, since),
     // Signed out (no owner) only this phone's own BLE rows: signing in is
