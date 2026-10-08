@@ -89,15 +89,7 @@ export function nodePill(node) {
   }
 }
 
-/**
- * A place's two lines (判定表「清單節點的內容」), from its address lookup
- * ({ state: 'pending' | 'found' | 'none', text }, usePlaceNames):
- * { title, titleMuted, coordinates, missing } —
- * found: the address, then the pill and the coordinates; still asking:
- * 「查地址中…」 (muted), pill and coordinates; not found: the coordinates
- * as the title and 「查不到地址」 after the pill — except a hold, which
- * says 「停留（室內）」 over its pill and coordinates.
- */
+/** Address above pill + coordinates; missing addresses use coordinates above the pill. */
 export function placeLines(node, place = { state: 'none' }) {
   const where = coordinates(node);
   // 「（約 120 m）」 wraps as one piece, never after 「約」.
@@ -106,8 +98,7 @@ export function placeLines(node, place = { state: 'none' }) {
       coordinates: where, missing: '' };
   }
   if (place?.state === 'pending') return { title: '查地址中…', titleMuted: true, coordinates: where, missing: '' };
-  if (node.type === 'indoor') return { title: '停留（室內）', titleMuted: false, coordinates: where, missing: '' };
-  return { title: where, titleMuted: false, coordinates: '', missing: '查不到地址' };
+  return { title: where, titleMuted: false, coordinates: '', missing: '' };
 }
 
 /** The left column: one time, or a stay's start and end. */

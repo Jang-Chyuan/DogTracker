@@ -32,7 +32,7 @@
 ## 匯出（056，H9／H10）
 
 - 右上匯出 icon → `HistoryExportSheet`（底部小視窗）：標題「匯出 08:03–12:11」（範圍開始到最後一筆的實際時刻）、PNG 長圖／GPX／CSV，上次用的格式右側「✓ 上次用」（存在歷史偏好 `exportFormat`）。點一個格式，小視窗原地變成「⟳ 產生中…　取消」；失敗寫「匯出失敗　重試」；打開 Android 分享後才關。產生中點遮罩不關，返回鍵＝取消。
-- `useHistoryExport`：按下那一刻把畫面的 `dayModel`（範圍、畫面上的狗、資料來源都已算進去）、顏色和名字拍成快照；地址用 `AddressLookup.lookupAddresses` 最多等 5 秒（沒網路直接寫座標＋「查不到地址」）；快照凍結，「重試」用同一份。暫存檔在 cache/history_exports/〈匯出 id〉/，每次匯出先清掉今天以前的。
+- `useHistoryExport`：按下那一刻把畫面的 `dayModel`（範圍、畫面上的狗、資料來源都已算進去）、顏色和名字拍成快照；地址用 `AddressLookup.lookupAddresses` 最多等 5 秒（沒網路直接寫第一行座標、第二行膠囊）；快照凍結，「重試」用同一份。暫存檔在 cache/history_exports/〈匯出 id〉/，每次匯出先清掉今天以前的。
 - 純函式：`ExportSnapshot`（畫面模型 → 快照）、`ExportGPX`、`ExportCSV`、`ExportPNG`（版面、分張）、`ExportDraw`（畫圖指令，顏色只用 tokens）、`ExportFiles`（檔名、暫存、隔天清）；規則見 `ExportBuilders.md`。
 - 原生 `HistoryExportPackage.kt`：量字寬、寫 GPX／CSV、照指令畫 PNG（地圖區是 Google lite 模式底圖＋自己投影畫的路線、停留編號、時間標記、比例尺、指北；底圖載不出來時空白底＋比例尺）、Android 分享（多張一次分享）。
 - 拿掉的舊匯出：`HistoryExportDialog`（PNG 截目前地圖畫面＋三行字、GPX、CSV，可「儲存檔案」或分享）→ H9；`HistoryExport.serializeHistory` → `ExportGPX`／`ExportCSV`；`useMapHistory.exportRows` 與每 10 秒的查詢 → 畫面自己的 `historyDayRows`；地圖截圖 `onSnapshotReady` → 原生畫 PNG；原生 `prepare`／`save`（系統「建立文件」）→ `writeText`／`renderPng`＋分享（存檔改從分享選單選「雲端硬碟」等）。

@@ -70,7 +70,7 @@ test('CSV sorts packet recording time even when GPS acquisition is stale', () =>
 
 // Design edges.txt:34:「沒網路就不查…不等 5 秒」；spec.txt:127:「查地址最多等 5 秒，逾時或出錯就當成查不到」。
 test('address deadline is immediate offline, missing at 5 seconds or error, resolved before deadline', () => {
-  expect(exportAddressState({ online: false })).toMatchObject({ status: 'missing', text: '查不到地址' });
+  expect(exportAddressState({ online: false })).toMatchObject({ status: 'missing', text: '' });
   expect(exportAddressState({ online: true, elapsedMs: 4999 })).toMatchObject({ status: 'pending', remainingMs: 1 });
   expect(exportAddressState({ online: true, elapsedMs: 5000 }).status).toBe('missing');
   expect(exportAddressState({ online: true, failed: true }).status).toBe('missing');

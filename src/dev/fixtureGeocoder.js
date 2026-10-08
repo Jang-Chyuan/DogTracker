@@ -10,7 +10,7 @@ import { createAddressLookup } from '../placement/AddressLookup';
 //                          screen asks: { line, awayM } (the address point
 //                          awayM metres north of the place; 0 → 「…附近」),
 //                          { district } (only the district) or null (no
-//                          answer: 查不到地址). Places past the list get none.
+//                          answer: 沒有地址). Places past the list get none.
 //   anything else          no answer for any place.
 const METRES_PER_DEGREE = 111320;
 

@@ -53,7 +53,7 @@ function lastPacket(models, range) {
 /**
  * The PNG list rows of one model (判定表「時間軸清單（匯出 PNG）」): the same
  * words as the screen's list (HistoryText), the end written as 「結束」, an
- * address that was not found as coordinates + 「查不到地址」.
+ * address that was not found as coordinates above the pill.
  */
 export function exportTimelineRows(nodes, addressOf) {
   return nodes.map((node, index) => {
@@ -70,7 +70,7 @@ export function exportTimelineRows(nodes, addressOf) {
     const next = nodes[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: nodeTimes(node),
       title: lines.title, coordinates: lines.coordinates, missing: lines.missing, pill,
-      note: interruptionText(node), line: isSection(next) ? lineOf(next) : null,
+      note: lines.coordinates ? interruptionText(node) : '', line: isSection(next) ? lineOf(next) : null,
       start: node.start, end: node.end, latitude: node.latitude, longitude: node.longitude };
   });
 }

@@ -57,6 +57,6 @@ export function captureExportSnapshot(snapshot) {
 // Pure deadline decision: callers own network requests and cancellation.
 export function exportAddressState({ online, elapsedMs = 0, address, failed = false }) {
   if (address) return { status: 'resolved', address };
-  if (!online || failed || elapsedMs >= 5000) return { status: 'missing', address: null, text: '查不到地址' };
+  if (!online || failed || elapsedMs >= 5000) return { status: 'missing', address: null, text: '' };
   return { status: 'pending', address: null, remainingMs: 5000 - elapsedMs };
 }

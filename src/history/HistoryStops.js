@@ -145,7 +145,7 @@ export function historyIndoorNodes(points, { start = -Infinity, end = Infinity, 
     if (!node || node.heldSince !== p.heldSince || p.time - previous.time > config.gapMs) {
       node = { type: 'indoor', start: p.time, end: p.time, durationMs: 0,
         latitude: p.latitude, longitude: p.longitude, reason: p.heldReason,
-        heldSince: p.heldSince, label: '停留（室內）',
+        heldSince: p.heldSince, label: '室內',
         continuesPreviousDay: p.heldSince < dayStart, continuesNextDay: false };
       nodes.push(node);
     } else { node.end = p.time; node.durationMs = node.end - node.start; }

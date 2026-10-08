@@ -470,7 +470,7 @@ export function useAddress(point) {
  * The history list's place names (判定表「清單節點的內容」): one
  * { state, text } per point — 'pending' while asking (「查地址中…」),
  * 'found', or 'none'. A place still unanswered after waitMs (5 s) counts as
- * not found (coordinates, 「查不到地址」); an answer arriving later still
+ * not found (coordinates above the pill); an answer arriving later still
  * shows.
  */
 export function usePlaceNames(points, { waitMs = 5000 } = {}) {
