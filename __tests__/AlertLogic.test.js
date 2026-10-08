@@ -257,13 +257,14 @@ test.each([false, true])('the pause ending (resumed: %s) alerts the paused probl
 });
 
 // edges「前景…不是即時地圖…滑下 5 秒」「接收器電量低…只算進「⚠ N」」「N3 同時有好幾件事：一次只滑下最嚴重的那一張」。
-test.each(['map', 'history', 'settings'])('in front on %s: vibrate, no notification, one N3 card off the map', screen => {
+test.each(['map', 'history', 'settings', 'other'])('in front on %s: vibrate, no notification, one N3 card off the map', screen => {
   const list = [event('dog-stale'), event('dog-battery', 5), event('receiver-battery', 'receiver')];
   const { effects } = tick(0, list, {}, { screen });
   expect(effects.notification).toBe('cancel');
   expect(effects.vibration).not.toBeNull();
   expect(effects.badgeCount).toBe(3);
-  if (screen === 'map') expect(effects.card).toBeNull();
+  // Not on the live map, nor on the guide or D1 ('other').
+  if (screen === 'map' || screen === 'other') expect(effects.card).toBeNull();
   else expect(effects.card).toMatchObject({ event: { key: 'dog-stale:4' }, durationMs: 5000 });
   expect(tick(0, [event('receiver-battery', 'receiver')], {}, { screen }).effects.card).toBeNull();
 });

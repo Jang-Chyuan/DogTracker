@@ -59,6 +59,14 @@ import {
   saveAlertState,
 } from './src/alerts/AlertNotifications';
 import { pauseAlertState } from './src/alerts/AlertEngine';
+import { offMapAlerts } from './src/alerts/OffMapAlerts';
+import {
+  closeAlertCard,
+  isAlertReturn,
+  openAlertTarget,
+  openTrackFrom,
+} from './src/alerts/ReturnSnapshot';
+import { AlertBadge, N3Card } from './src/map/TopAlertCards';
 import AlertPreview from './src/dev/AlertPreview';
 import {
   phonePage,
@@ -318,12 +326,20 @@ function TrackerApp({ resume = null, onRestart }) {
   const open = (name, extra = {}) =>
     setStack(current => [...current, { name, ...extra }]);
   const goBack = () => {
-    if (route.name === 'history' && cardHistory != null) {
-      setOpenDogRequest({ slaveId: cardHistory, key: Date.now() });
+    // Leaving the history: back to the card it was opened from. (A page an
+    // alert opened over the history returns to it, card memory kept.)
+    if (route.name === 'history') {
+      if (cardHistory != null)
+        setOpenDogRequest({ slaveId: cardHistory, key: Date.now() });
+      setCardHistory(null);
     }
-    setCardHistory(null);
     setStack(current => (current.length > 1 ? current.slice(0, -1) : current));
   };
+  // The stack as last rendered, for callbacks that run later (a card closing).
+  const stackNow = useRef(stack);
+  stackNow.current = stack;
+  // The history screen's snapshot taker (MapScreen sets it while history shows).
+  const historySnapshot = useRef(null);
   // D3 連接接收器 from `entry` (Pairing.pairingFlow): S2 ('receiver', with
   // its mode), A6 ('map'), a mismatch dialog ('alert'; `view` 'manual' when
   // the receiver was typed in) or the guide ('onboarding').
@@ -558,24 +574,50 @@ function TrackerApp({ resume = null, onRestart }) {
       subscription?.remove?.();
     };
   }, []);
+  // What the live map is asked to open (MapScreen waits until the dog is
+  // there): a dog's card, 「打開地圖」's framing, my route.
+  const [mapRequest, setMapRequest] = useState(null);
+  // An alert's target (a notification, an N3 card, 「⚠ N」; ReturnSnapshot):
+  // from the history or a settings page it opens over a snapshot of that
+  // page, which back returns to; elsewhere on the live map.
+  const openAlert = (target, key = Date.now()) => {
+    if (!target) return;
+    if (target.screen === 'system-storage') {
+      Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(
+        () => Linking.openSettings(),
+      );
+      return;
+    }
+    const current = stackNow.current;
+    const top = current[current.length - 1];
+    const result = openAlertTarget(current, target, {
+      snapshot: top?.name === 'history' ? historySnapshot.current?.() ?? null : null,
+      settingsPages: LIGHT_PAGES,
+      key,
+    });
+    // Leaving every page for the live map forgets the card history came from.
+    if (result.stack.length === 1) setCardHistory(null);
+    setStack(result.stack);
+    if (result.dogId != null) setMapRequest({ screen: 'map', dogId: result.dogId, key });
+  };
   const appliedNotification = useRef(null);
   useEffect(() => {
     const request = notificationRequest;
     if (!request || launch.screen !== 'map') return;
     if (appliedNotification.current === request.key) return;
     appliedNotification.current = request.key;
-    const page = {
-      'receiver-settings': 'receiver',
-      diagnostics: 'diagnostics',
-      'cloud-settings': 'cloud',
-    }[request.screen];
-    setCardHistory(null);
-    setStack(page ? [{ name: 'map' }, { name: page }] : [{ name: 'map' }]);
-    if (request.screen === 'system-storage') {
-      Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(
-        () => Linking.openSettings(),
-      );
+    // 「打開地圖」 and the 「常駐」 notification's my route: the live map.
+    if (request.screen === 'open-map' || request.screen === 'my-route') {
+      setCardHistory(null);
+      setStack([{ name: 'map' }]);
+      setMapRequest(request);
+      return;
     }
+    openAlert(
+      request.screen === 'map' ? { screen: 'map', dogId: request.dogId } : { screen: request.screen },
+      request.key,
+    );
+    // openAlert reads the stack as rendered (stackNow).
   }, [notificationRequest, launch.screen]);
   // The guide's step, saved as it moves forward (a fixture's in memory only).
   const saveGuideStep = step => {
@@ -701,10 +743,28 @@ function TrackerApp({ resume = null, onRestart }) {
     ? `live#${nativeAlertState.revision}`
     : 'live-loading';
   const alertPause = fixture?.alertPause ?? null;
+  // Where the alerts are judged from: N3 slides down over the history and
+  // the settings pages only (AlertScheduler).
+  const settingsPage = LIGHT_PAGES.has(route.name);
+  const alertScreen = isMap
+    ? 'map'
+    : isHistory
+    ? 'history'
+    : settingsPage
+    ? 'settings'
+    : 'other';
+  // A fixture opening on a page judges its first alerts there (its N3),
+  // once it is open (later the user may go anywhere).
+  // (Each opening of a fixture, also the same one again, waits anew.)
+  const settledFixture = useRef(null);
+  if (fixturePage && route.name === fixturePage)
+    settledFixture.current = fixture;
+  const fixtureSettled = !fixturePage || settledFixture.current === fixture;
   const alerts = useAlertEngine({
     running:
       tracking.foreground &&
       launch.key !== null &&
+      fixtureSettled &&
       alertSource !== 'live-loading',
     source: alertSource,
     initial: fixture ? null : nativeAlertState.state,
@@ -738,7 +798,7 @@ function TrackerApp({ resume = null, onRestart }) {
     },
     preferences: alertPreferences.value,
     notificationsAllowed: !mapInputs.permissions?.notificationsDenied,
-    screen: isMap ? 'map' : isHistory ? 'history' : 'settings',
+    screen: alertScreen,
     foreground: tracking.foreground && !alertBackground,
     save: fixture
       ? null
@@ -750,6 +810,62 @@ function TrackerApp({ resume = null, onRestart }) {
           pauseAlertState(state, at - alertPause.since, at + alertPause.until)
       : null,
   });
+
+  // ---- N3 and 「⚠ N」 off the live map (058c) ------------------------------
+  // The card AlertScheduler handed over shows its 5 s (real time, also on a
+  // fixture), then collapses into 「⚠ N」; a tap on either opens its problem
+  // over a snapshot of this page (openAlert).
+  const [alertNow, setAlertNow] = useState(Date.now);
+  const n3 = alerts.card;
+  useEffect(() => {
+    setAlertNow(Date.now());
+    if (!n3) return undefined;
+    const left = n3.expiresAt - Date.now();
+    if (left <= 0) return undefined;
+    const timer = setTimeout(() => setAlertNow(Date.now()), left + 20);
+    return () => clearTimeout(timer);
+  }, [n3]);
+  const offMap = offMapAlerts({
+    active: alerts.active,
+    card: n3,
+    now: Math.max(alertNow, n3 ? n3.deliveredAt : 0),
+    screen: alertScreen,
+  });
+  // The card on screen, kept while it slides up into 「⚠ N」.
+  const [n3Shown, setN3Shown] = useState(null);
+  const n3Leaving = !!n3Shown && n3Shown.id !== offMap.card?.id;
+  useEffect(() => {
+    if (offMap.card) setN3Shown(offMap.card);
+  }, [offMap.card]);
+  const n3Gone = useCallback(
+    id => setN3Shown(current => (current?.id === id ? null : current)),
+    [],
+  );
+  const [n3Height, setN3Height] = useState(0);
+  // History: 8dp under the top capsule row; a settings page: 8dp under its
+  // title row (N3 提醒卡的位置).
+  const n3Top = insets.top + layout.belowStatusBar + 48 + 8;
+  const pressN3 = card => {
+    setN3Shown(null);
+    openAlert(card.target);
+  };
+  const pressAlertBadge = badge => openAlert(badge.target);
+  // A card an alert opened, closed (back, swiped down, the empty map): back
+  // to the page under it (ReturnSnapshot.closeAlertCard).
+  const alertCardOpen = useRef(null);
+  const cardChanged = useCallback(opened => {
+    const current = stackNow.current;
+    const top = current[current.length - 1];
+    const fromAlert = isAlertReturn(top) && top.name === 'map';
+    if (opened) {
+      alertCardOpen.current = fromAlert ? top.key : null;
+      return;
+    }
+    if (fromAlert && alertCardOpen.current === top.key) {
+      alertCardOpen.current = null;
+      setStack(closeAlertCard(current));
+    }
+  }, []);
 
   // The preview's 「+N 分」 is judged at once.
   const tickAlerts = alerts.tick;
@@ -830,6 +946,14 @@ function TrackerApp({ resume = null, onRestart }) {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
+        // The live map an alert opened over a kept page: its card's own back
+        // steps first (A4, A5, closing the card returns via cardChanged);
+        // without a card, back to that page.
+        if (route.name === 'map' && isAlertReturn(route)) {
+          if (alertCardOpen.current === route.key) return false;
+          setStack(current => closeAlertCard(current));
+          return true;
+        }
         if (route.name === 'map') handleRootBack({ uploading });
         else if (route.name === 'signIn') leaveSignInPage('back');
         // D3's own steps first (a dialog, D3c, a connection), then out.
@@ -1145,6 +1269,12 @@ function TrackerApp({ resume = null, onRestart }) {
             >
               <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
             </Pressable>
+            {/* 「⚠ N」 on the right of the title row (歷史、設定的紅色「⚠ N」). */}
+            <AlertBadge
+              badge={offMap.badge}
+              onPress={pressAlertBadge}
+              style={styles.headerBadge}
+            />
           </View>
         )}
         <View
@@ -1190,17 +1320,16 @@ function TrackerApp({ resume = null, onRestart }) {
             onAlertInput={onAlertInput}
             openDogRequest={openDogRequest}
             frameRequest={frameRequest}
-            notificationRequest={
-              launch.screen === 'map' ? notificationRequest : null
-            }
+            notificationRequest={launch.screen === 'map' ? mapRequest : null}
+            onCardChange={cardChanged}
             onOpenHistory={slaveId => {
-              setCardHistory(slaveId);
-              open('history', {
-                target:
-                  slaveId == null
-                    ? { subject: 'phone', slaveId: null }
-                    : { subject: 'dog', slaveId },
-              });
+              // From a card an alert opened: a new errand, the snapshot
+              // dropped (ReturnSnapshot.openTrackFrom).
+              const next = openTrackFrom(stackNow.current, slaveId == null
+                ? { subject: 'phone', slaveId: null }
+                : { subject: 'dog', slaveId });
+              setCardHistory(next.fromCard ? slaveId : null);
+              setStack(next.stack);
             }}
             // A fixture's history page (no route target): whom its query is about.
             historyTarget={
@@ -1211,6 +1340,10 @@ function TrackerApp({ resume = null, onRestart }) {
             }
             onLeaveHistory={goBack}
             historyBack={historyBack}
+            historyRestore={isHistory ? route.restore ?? null : null}
+            historySnapshot={historySnapshot}
+            alertBadge={isHistory ? { badge: offMap.badge, onPress: pressAlertBadge } : null}
+            n3Bottom={isHistory && offMap.card ? n3Top + n3Height : 0}
           />
         </View>
         {/* The map's surface shows through anything transparent above it, even
@@ -1227,7 +1360,30 @@ function TrackerApp({ resume = null, onRestart }) {
             ]}
           />
         )}
-        {(light || full) && <View style={styles.page}>{page}</View>}
+        {(light || full) && (
+          <View style={styles.page}>
+            {page}
+            {light && n3Shown && (
+              <N3Card
+                value={n3Shown}
+                leaving={n3Leaving}
+                top={8}
+                onPress={pressN3}
+                onGone={n3Gone}
+              />
+            )}
+          </View>
+        )}
+        {isHistory && n3Shown && (
+          <N3Card
+            value={n3Shown}
+            leaving={n3Leaving}
+            top={n3Top}
+            onPress={pressN3}
+            onGone={n3Gone}
+            onHeight={setN3Height}
+          />
+        )}
       </SafeAreaView>
     </AddressLookupContext.Provider>
   );
@@ -1312,7 +1468,9 @@ const getStyles = makeStyles(theme => {
     header: {
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
       minHeight: touch.subpageHeader,
-      justifyContent: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       paddingHorizontal: 8,
       paddingVertical: 4,
     },
@@ -1323,6 +1481,7 @@ const getStyles = makeStyles(theme => {
       alignSelf: 'flex-start',
     },
     pressed: { opacity: 0.7 },
+    headerBadge: { marginRight: 8 },
     brand: { ...type.title, color: colors.text },
     page: {
       flex: 1,

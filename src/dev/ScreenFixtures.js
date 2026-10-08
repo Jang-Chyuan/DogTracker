@@ -1110,6 +1110,30 @@ const FIXTURES = {
   // (and 手機) row only the red 「!」; the gear's red dot on the map.
   'notifications-denied': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts',
     permissions: { notificationsDenied: true } }),
+  // ---- alerts off the live map (058c): N3, 「⚠ N」, back to the snapshot ----
+  // My route today (as the N3 mockup) while 豆豆 walks out of receiver 7's
+  // range: the N3 card 「豆豆 不在接收範圍」 slides down for 5 s, then 「⚠ 1」
+  // left of the export icon; either opens 豆豆's card on the live map, back
+  // returns here.
+  'alerts-in-history': now => ({ ...FIXTURES['range-out'](now), phone: routePhone(myRouteMorning(now), now),
+    openRoute: 'history', history: historyPage(now), geocoder: { names: HISTORY_NAMES } }),
+  // 小黑's history with 豆豆 added (H7) while 豆豆 is out of range and 狗 5 has
+  // had no position for 10 minutes: N3 for 豆豆 (the most severe), then 「⚠ 2」.
+  // Move the cursor, add or change dogs, drag the range: back from the card
+  // (or the page) keeps them.
+  'alerts-in-dog-history': now => {
+    const alerts = FIXTURES['alerts-two-dogs'](now);
+    return { ...multiFixture(now, { dogs: [4], protagonist: 6 }), receiver: alerts.receiver, cloud: alerts.cloud,
+      phone: alerts.phone, ble: alerts.ble, cloudRows: alerts.cloudRows };
+  },
+  // The same with S6's 不在接收範圍 switched off (the 2026-10-09 rule): no N3
+  // card for 豆豆; 「⚠ 2」 still counts it (state, not an alert).
+  'alerts-in-history-off': now => ({ ...FIXTURES['alerts-in-dog-history'](now),
+    alerts: { dogOutOfRange: false, dogStale: false } }),
+  // S6 open while receiver 7 drops (alerts-receiver-down): N3 「接收器 7 斷線了
+  // （3 隻狗收不到）」 under the title row, then 「⚠ 1」 on its right; either
+  // opens S2 接收器, back returns to S6.
+  'alerts-in-settings': now => ({ ...FIXTURES['alerts-receiver-down'](now), openRoute: 'alerts' }),
   // ---- S7 進階, S8 診斷 (051c) ---------------------------------------------
   // S8 with everything readable: 豆豆 (4) from receiver 7 walking (速度緩衝
   // 移動中), 小黑 and 阿福 from the cloud; each dog's environment model result.

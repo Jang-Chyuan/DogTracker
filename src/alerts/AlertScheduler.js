@@ -71,8 +71,8 @@ export function pausePresentation(pause, now) {
  * @param input.active AlertEvents' `active`
  * @param input.now epoch ms
  * @param input.foreground the app is in front
- * @param input.screen 'map' (the live map) or anything else (history,
- *   settings): where an N3 card may slide down
+ * @param input.screen 'map' (the live map), 'history' or 'settings' (where
+ *   an N3 card slides down), or 'other' (the guide, D1: no card)
  * @param input.preferences S6 (AlertPreferences)
  * @param input.notificationsAllowed the system lets this app notify
  * @returns {{ state, effects: { notification: 'notify'|'update'|'cancel',
@@ -152,7 +152,9 @@ export function scheduleAlerts(previous = {}, {
   const content = notificationContent(listed);
   const silenced = pauseOn(pause, now) && listed.every(event => pause.known?.[event.key] === episodeToken(event));
   const how = alertDelivery(preferences);
-  const cardEvent = deliver && foreground && screen !== 'map'
+  // N3 slides down over the history screen and the settings pages only (not
+  // the live map, not the first-use guide or D1).
+  const cardEvent = deliver && foreground && (screen === 'history' || screen === 'settings')
     ? queued.find(event => event.kind !== 'receiver-battery') ?? null : null;
   const effects = {
     notification: foreground || !notificationsAllowed || !content || silenced
