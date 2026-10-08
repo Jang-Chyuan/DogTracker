@@ -44,6 +44,7 @@ const STATE_COLOR = {
 };
 const BAR_GAP = { week: 8, month: 2, year: 6 };
 const HOURS = ['00:00', '06:00', '12:00', '18:00', '24:00'];
+const AXIS_LABEL = 44;
 
 function useBack(onBack) {
   useEffect(() => {
@@ -79,7 +80,7 @@ export default function ActivityScreen({
   useBack(onBack);
   const [mode, setMode] = useState(initialView?.mode ?? 'day');
   const [date, setDate] = useState(initialView?.date ?? now);
-  const { status, view, retry } = useActivityView({
+  const { status, view, retry, earliest } = useActivityView({
     read,
     readEarliest,
     slaveId,
@@ -134,7 +135,7 @@ export default function ActivityScreen({
       >
         <Tabs mode={mode} onChoose={choose} />
         <PeriodRow
-          label={view?.label ?? periodLabel(mode, date, now)}
+          label={view?.label ?? periodLabel(mode, date, now, earliest)}
           navigation={navigation}
           onPrevious={() => go(navigation?.previous)}
           onNext={() => go(navigation?.next)}
@@ -148,8 +149,11 @@ export default function ActivityScreen({
 }
 
 // The period's words before its answer (載入中, 讀取失敗).
-export function periodLabel(mode, date, now) {
-  const period = activityPeriod(mode, date);
+// A date before the first reading or after now reads as the nearest period
+// (as useActivityView shows it).
+export function periodLabel(mode, date, now, earliest = null) {
+  const low = earliest != null && earliest < now ? earliest : -Infinity;
+  const period = activityPeriod(mode, Math.min(Math.max(date, low), now));
   const today = mode === 'day' && activityPeriod('day', now).start === period.start;
   return period.label + (today ? '今天' : '');
 }
@@ -408,12 +412,32 @@ function DayChart({ view }) {
           {ACTIVITY_VIEW_COPY.low}
         </Text>
       </View>
+      {/* Hours at their local time (a 23 or 25-hour day moves them). */}
       <View style={styles.axis}>
-        {HOURS.map(hour => (
-          <Text key={hour} style={styles.axisText}>
-            {hour}
-          </Text>
-        ))}
+        {width > 0 &&
+          HOURS.map((hour, index) => {
+            const day = new Date(view.start);
+            const time = new Date(
+              day.getFullYear(),
+              day.getMonth(),
+              day.getDate(),
+              index * 6,
+            ).getTime();
+            const left = Math.min(
+              Math.max(x(time) - AXIS_LABEL / 2, 0),
+              width - AXIS_LABEL,
+            );
+            const align =
+              index === 0 ? 'left' : index === HOURS.length - 1 ? 'right' : 'center';
+            return (
+              <Text
+                key={hour}
+                style={[styles.axisText, { left, textAlign: align }]}
+              >
+                {hour}
+              </Text>
+            );
+          })}
       </View>
     </View>
   );
@@ -498,11 +522,9 @@ function Summary({ view }) {
                 ...(row.additionalText ? [row.additionalText] : []),
               ]
             : [row.durationText];
-        // Several gaps: the total under the list (「沒有資料 h 小時 m 分」).
+        // The total under the gaps (判定表「A4 日的曲線」: 合計 h 小時 m 分).
         const total =
-          row.state === 'missing' && row.ranges.length > 1
-            ? `合計 ${row.durationText}`
-            : null;
+          row.state === 'missing' ? `合計 ${row.durationText}` : null;
         return (
           <View
             key={row.state}
@@ -612,12 +634,14 @@ const getStyles = makeStyles(theme => {
     },
     highLabel: { top: 2, color: colors.warn },
     lowLabel: { color: colors.textMuted },
-    axis: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: space.xs,
+    axis: { height: type.small.lineHeight, marginTop: space.xs },
+    axisText: {
+      ...type.small,
+      ...tabularNumbers,
+      color: colors.textMuted,
+      position: 'absolute',
+      width: AXIS_LABEL,
     },
-    axisText: { ...type.small, ...tabularNumbers, color: colors.textMuted },
     bars: {
       flexDirection: 'row',
       alignItems: 'flex-end',

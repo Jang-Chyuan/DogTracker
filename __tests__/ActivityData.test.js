@@ -40,19 +40,33 @@ test('日 reads raw rows of both tables with 9 minutes either side; other accoun
   } finally { db.close(); }
 });
 
-test('週／月／年 read per-minute means; the minute this phone heard wins over the downloaded one', async () => {
+test('週／月／年: one mean per minute over both tables, a downloaded copy of this phone\'s reading once', async () => {
   const { db, local, cloud } = database();
+  const stamped = (table, values) => db.sqlite.prepare(table === 'local'
+    ? 'INSERT INTO dog_status VALUES(6,?,?,?,1,?)'
+    : "INSERT INTO supabase_dog_status VALUES('a',6,?,?,?,?,1,?)").run(...values);
   try {
     local(DAY + 1000, 0.2);
     local(DAY + 2000, 0.4);
-    cloud(DAY + 3000, 0.9);
+    cloud(DAY + 2000, 0.4); // the copy of this phone's upload (same time): once
+    cloud(DAY + 3000, 0.9); // a reading only the cloud has: counts
     cloud(DAY + M, 0.5);
+    stamped('local', [7, DAY + 2 * M + 1000, '0.1', 'A1']);
+    stamped('cloud', [7, DAY + 2 * M + 9000, DAY + 2 * M + 1500, 0.1, 'A1']); // same collar stamp: once
+    stamped('cloud', [8, DAY + 2 * M + 9000, DAY + 2 * M + 1500, 0.7, 'A1']); // other receiver: counts
     const answer = await readActivityPeriod(db, 'a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'minute' });
     expect(answer.minutes).toEqual([
-      { minute: DAY, value: expect.closeTo(0.3), count: 2 },
+      { minute: DAY, value: expect.closeTo(0.5), count: 3 },
       { minute: DAY + M, value: 0.5, count: 1 },
+      { minute: DAY + 2 * M, value: expect.closeTo(0.4), count: 2 },
     ]);
     expect(activityViewInput(answer)).toEqual({ minutes: answer.minutes });
+    // The same minutes as the day's raw read through activityMinutes (the card's).
+    const raw = await readActivityPeriod(db, 'a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'raw' });
+    const { activityMinutes } = require('../src/activity/ActivityMinutes');
+    const same = activityMinutes(activityViewInput(raw).readings, { now: DAY + 1440 * M });
+    expect(same.map(item => [item.minute, item.count])).toEqual(answer.minutes.map(item => [item.minute, item.count]));
+    same.forEach((item, i) => expect(item.value).toBeCloseTo(answer.minutes[i].value));
   } finally { db.close(); }
 });
 
@@ -72,9 +86,9 @@ test('the first reading of either table, null without any; bad input rejected', 
 test('detail by tab and merging minutes', () => {
   expect(activityDetail('day')).toBe('raw');
   expect(['week', 'month', 'year'].map(activityDetail)).toEqual(['minute', 'minute', 'minute']);
-  expect(mergeMinutes([{ minute: 2, value: 0.1, count: 3 }], [{ minute: 2, value: 0.9, count: 1 },
-    { minute: 1, value: 0.5, count: 1 }, { minute: 'x', value: 1 }]))
-    .toEqual([{ minute: 1, value: 0.5, count: 1 }, { minute: 2, value: 0.1, count: 3 }]);
+  expect(mergeMinutes([{ minute: 2, sum: 0.3, count: 3 }], [{ minute: 2, sum: 0.9, count: 1 },
+    { minute: 1, sum: 0.5, count: 1 }, { minute: 'x', sum: 1, count: 1 }, { minute: 3, sum: 0, count: 0 }]))
+    .toEqual([{ minute: 1, value: 0.5, count: 1 }, { minute: 2, value: expect.closeTo(0.3), count: 4 }]);
 });
 
 test('CloudDatabase answers the page over the real schema', async () => {
@@ -91,7 +105,7 @@ test('CloudDatabase answers the page over the real schema', async () => {
     const raw = await cloud.activityPeriod('a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'raw' });
     expect(raw.local).toHaveLength(1);
     const minutes = await cloud.activityPeriod('a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'minute' });
-    expect(minutes.minutes).toEqual([{ minute: DAY, value: 0.02, count: 1 }]);
+    expect(minutes.minutes).toEqual([{ minute: DAY, value: expect.closeTo(0.02), count: 1 }]);
     expect(await cloud.activityEarliest('a', 6)).toBe(DAY + 30000);
   } finally { connection.close(); }
 });

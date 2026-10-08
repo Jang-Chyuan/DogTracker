@@ -469,6 +469,8 @@ function dogActivity(time) {
 // What CloudDatabase.activityPeriod answers for 小黑 (6) when its readings
 // run from `earliest` to the fixture's now, two a minute, without `gaps`
 // ([start, end) pairs). `answer: 'hang' | 'fail'` for 載入中 and 讀取失敗.
+// Whole 1/1024ths: sums are exact, so every reader's mean is the same number.
+const reading = time => Math.round(Math.max(0, Math.min(1, dogActivity(time))) * 1024) / 1024;
 function activityFixture({ earliest, gaps = [], now, answer = null }) {
   const has = time => time >= earliest && !gaps.some(([start, end]) => time >= start && time < end);
   const read = async (slaveId, { start, end, detail }) => {
@@ -485,8 +487,8 @@ function activityFixture({ earliest, gaps = [], now, answer = null }) {
           const time = minute + second * SECOND;
           if (time >= now) continue;
           // The minute still running reads high: A4 must leave it out.
-          const value = minute === Math.floor(now / MINUTE) * MINUTE ? 0.95 : dogActivity(time);
-          local.push({ time, activity: Math.max(0, Math.min(1, value)), activity_valid: 1, activity_time: null,
+          const value = minute === Math.floor(now / MINUTE) * MINUTE ? 0.95 : reading(time);
+          local.push({ time, activity: value, activity_valid: 1, activity_time: null,
             master_id: 7, slave_id: 6 });
         }
       }
@@ -494,15 +496,22 @@ function activityFixture({ earliest, gaps = [], now, answer = null }) {
     }
     const minutes = [];
     for (let minute = from; minute < Math.min(to, Math.floor(now / MINUTE) * MINUTE); minute += MINUTE) {
-      if (has(minute)) minutes.push({ minute, value: Math.max(0, Math.min(1, dogActivity(minute + 25 * SECOND))), count: 2 });
+      // The mean of the same two readings the raw answer gives.
+      if (has(minute)) minutes.push({ minute, count: 2,
+        value: (reading(minute + 10 * SECOND) + reading(minute + 40 * SECOND)) / 2 });
     }
     return { minutes };
   };
   return { readActivity: read, readActivityEarliest: async slaveId => (slaveId === 6 ? earliest ?? null : null) };
 }
 // 小黑's card open on the map, its activity page (A4) over it.
-const activityPage = (now, view, data) => ({ ...FIXTURES['card-ok'](now), openDog: 6, openPage: 'activity',
-  activityView: view, activity: activityFixture({ earliest: localDate(2026, 3, 16, 8, 0), now, ...data }) });
+// 小黑's own rows (its card's 活動量 row) carry the same activity as A4 reads.
+const activityPage = (now, view, data) => {
+  const base = FIXTURES['card-ok'](now);
+  return { ...base, openDog: 6, openPage: 'activity', activityView: view,
+    ble: base.ble.map(row => (row.slave_id === 6 ? { ...row, activity: reading(row.received_at) } : row)),
+    activity: activityFixture({ earliest: localDate(2026, 3, 16, 8, 0), now, ...data }) };
+};
 const day = (month, date, hour, minute = 0) => localDate(2026, month, date, hour, minute);
 
 const FIXTURES = {

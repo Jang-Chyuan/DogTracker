@@ -140,3 +140,33 @@ test('the curve breaks at minutes without data; a lone minute is a short dash', 
   expect(periodLabel('day', NOW, NOW)).toBe('10/7（三）今天');
   expect(periodLabel('day', NOW - 1440 * M, NOW)).toBe('10/6（二）');
 });
+
+test('a tab switch that lands before the first reading shows the first period with data', async () => {
+  const { read } = reader();
+  const first = new Date(2026, 8, 16, 8).getTime();
+  await mount({ read, readEarliest: async () => first, initialView: { mode: 'month', date: first } });
+  expect(text('activity-period')).toBe('2026 年 9 月');
+  await press('activity-tab-week');
+  expect(text('activity-period')).toBe('9/13（日）– 9/19（六）');
+  await press('activity-tab-day');
+  expect(text('activity-period')).toBe('9/16（三）');
+  expect(flatten(renderer.toJSON())).not.toContain('讀取失敗');
+});
+
+test('another reader (account) never shows the old answer; the first reading is read again', async () => {
+  const all = reader();
+  let first = null;
+  const read = jest.fn((...args) => (first == null ? Promise.resolve({ local: [], cloud: [] }) : all.read(...args)));
+  const readEarliest = jest.fn(async () => first);
+  await mount({ read, readEarliest });
+  expect(flatten(renderer.toJSON())).toContain('沒有活動量資料');
+  // A new minute: the dog now has readings.
+  first = FIRST;
+  await act(async () => renderer.update(<ActivityScreen name="小黑" slaveId={6} now={NOW + M} read={read}
+    readEarliest={readEarliest} onBack={jest.fn()} />));
+  expect(flatten(renderer.toJSON())).not.toContain('沒有活動量資料');
+  const pending = jest.fn(() => new Promise(() => {}));
+  await act(async () => renderer.update(<ActivityScreen name="小黑" slaveId={6} now={NOW + M} read={pending}
+    readEarliest={readEarliest} onBack={jest.fn()} />));
+  expect(flatten(renderer.toJSON())).toContain('載入中…');
+});
