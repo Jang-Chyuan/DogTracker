@@ -293,7 +293,7 @@ const getStyles = makeStyles(theme => {
       paddingHorizontal: space.s,
     },
     link: { ...type.captionBold, color: colors.tonalText },
-    crit: { color: colors.problemBadge },
+    crit: { color: colors.critAction },
     state: { paddingVertical: space.l, alignItems: 'flex-start' },
     empty: { ...type.body, color: colors.textMuted },
     error: { ...type.body, color: colors.crit },

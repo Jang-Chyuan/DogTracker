@@ -280,12 +280,12 @@ const getTONES = makeStyles(theme => {
     crit: { color: colors.crit },
     // 未允許 on S6 (the mockup's amber).
     warn: { color: colors.warn },
-    critAction: { color: colors.problemBadge },
+    critAction: { color: colors.critAction },
     tonal: { color: colors.tonalText },
     muted: { color: colors.textMuted },
     // A value on the right in bold (S3 「12 筆」「10:04」, as .v7li .r).
     mutedBold: { color: colors.textMuted, fontWeight: '700' },
-    danger: { color: colors.problemBadge },
+    danger: { color: colors.critAction },
     plain: { color: colors.text },
   });
 });

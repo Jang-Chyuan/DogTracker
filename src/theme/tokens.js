@@ -76,6 +76,9 @@ export const colors = {
   // pillPlain, 室內 on pillIndoor (receiver text).
   pillPlain: '#F1EEEC',
   pillIndoor: '#E6EEF3',
+  // Red words of an action that deletes or a failure to act on (中斷連線、
+  // 刪除全部狗資料、Wi-Fi 刪除／重試). Light keeps problemBadge's red.
+  critAction: '#B3261E',
 };
 
 export const routeColors = [
@@ -308,14 +311,18 @@ export const haptics = {
 
 // Explicit semantic values that have no original palette entry.
 // Dark values for light tokens added after the design's dark table
-// (dark-tokens.json): the history list pills of #70. Each follows the dark
+// (dark-tokens.json): the history list pills of #70 and critAction. Each follows the dark
 // rules — a fill one step brighter than the panel it sits on (elevated
 // #302827, like the light pill on white), its text still above 4.5:1.
 //   pillPlain  #3D3432: textMuted 5.70:1, against elevated 1.19:1 (light 1.13:1)
 //   pillIndoor #2A3A44: receiver 5.77:1, against elevated 1.23:1
+//   critAction #FFB4AB: 9.44:1 on surface, 8.48:1 on elevated
 export const darkAdditions = {
   pillPlain: '#3D3432',
   pillIndoor: '#2A3A44',
+  // Dark problemBadge is only 3.37:1 as text on surface; the dark rule
+  // 「會刪資料的動作 crit（深色是淡紅字）」 gives crit's #FFB4AB (9.44:1).
+  critAction: '#FFB4AB',
 };
 
 export const extras = {

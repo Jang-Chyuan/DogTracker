@@ -509,7 +509,7 @@ const getStyles = makeStyles(theme => {
       minHeight: 56,
       borderRadius: radius.input,
       borderWidth: 1.5,
-      borderColor: colors.line,
+      borderColor: colors.floatingOutline,
       paddingHorizontal: space.l,
       flexDirection: 'row',
       alignItems: 'center',
