@@ -1065,11 +1065,14 @@ const FIXTURES = {
   // Everything as it comes: every alert on, 震動 on, 聲音 off, notifications
   // allowed.
   'alerts-default': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts' }),
-  // Some switched off: 不在接收範圍 and 接收器電量低 off, 聲音 on; the 狗
+  // Some switched off: 不在接收範圍, 接收器電量低 and disconnect/storage off, 聲音 on; the 狗
   // group open on its three switches (「部分開」). S1 says 「震動、聲音」 and
   // 「部分開」.
   'alerts-some-off': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts', alertsOpen: true,
-    alerts: { dogOutOfRange: false, receiverBattery: false, sound: true } }),
+    alerts: { dogOutOfRange: false, receiverBattery: false, receiverDisconnectedStorage: false, sound: true } }),
+  'alerts-all-off': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts', alertsOpen: true,
+    alerts: { dogStale: false, dogOutOfRange: false, dogBattery: false, receiverBattery: false,
+      receiverDisconnectedStorage: false, vibrate: false, sound: false } }),
   // Notifications not allowed: S6 「通知權限 未允許 開系統設定 ›」; S1's 提醒
   // (and 手機) row only the red 「!」; the gear's red dot on the map.
   'notifications-denied': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts',

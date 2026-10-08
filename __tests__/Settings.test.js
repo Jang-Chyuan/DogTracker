@@ -101,6 +101,16 @@ test('every gear red-dot reason lands on its S1 row', () => {
   expect(settingsReasons({ ...base, storage: { full: true, reason: 'x' } })).toContain('storage');
 });
 
+test('all notification switches off preserves in-app receiver/storage warnings and gear reasons', () => {
+  const base = input('receiver-disconnected').data;
+  const active = { ...base, storage: { full: true, reason: 'disk is full' } };
+  const muted = { ...active, alerts: input('alerts-all-off').data.alerts };
+  expect(settingsReasons(muted)).toEqual(settingsReasons(active));
+  expect(settingsReasons(muted)).toEqual(expect.arrayContaining(['receiver-disconnected', 'storage']));
+  expect(settingsHome(muted).storage).toEqual(settingsHome(active).storage);
+  expect(rowsOf(settingsHome(muted)).receiver).toEqual(rowsOf(settingsHome(active)).receiver);
+});
+
 test('S1: signed out is a plain 未登入; battery optimization is never a problem', () => {
   const { data } = input('signed-out-map');
   const rows = rowsOf(settingsHome(data));
