@@ -23,7 +23,10 @@ export default function PairingScreen({ pairing, step = null, camera = true, onL
     page = <ConnectingPage pairing={pairing} step={step} onLayout={onLayout} />;
   }
   else if (pairing.view === 'connected') page = <ConnectedPage pairing={pairing} step={step} onLayout={onLayout} />;
-  else page = <ScanPage pairing={pairing} step={step} camera={camera} onLayout={onLayout} />;
+  else {
+    page = <ScanPage pairing={pairing} step={step} camera={camera}
+      onLayout={event => { onLayout?.(event); pairing.onShown?.(); }} />;
+  }
   return (
     <>
       {page}
@@ -130,9 +133,9 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
         <GuideButton testID="pair-search" label="搜尋並連線" busy={searchingName} onPress={pairing.searchName} />
       </View>
       <View style={styles.sectionRow}>
-        <Text style={[guideStyles.section, styles.sectionText]}>附近找到的接收器</Text>
+        <Text style={styles.sectionText}>附近找到的接收器</Text>
         {nearby.searching ? <ActivityIndicator testID="pair-nearby-searching" size="small" color={colors.textMuted}
-          accessibilityLabel="搜尋中" style={styles.sectionSpinner} /> : null}
+          accessibilityLabel="搜尋中" /> : null}
       </View>
       {nearby.list.map(item => (
         <Pressable key={item.id} testID={`pair-nearby-${item.name}`} accessibilityRole="button"
@@ -208,9 +211,9 @@ const styles = StyleSheet.create({
   example: { ...type.caption, color: colors.textMuted, marginLeft: space.s },
   error: { ...type.caption, color: colors.crit, marginTop: space.xs },
   searchButton: { marginTop: space.m },
-  sectionRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  sectionText: { flex: 1 },
-  sectionSpinner: { position: 'absolute', right: 0, bottom: space.s },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', marginTop: space.xl, minHeight: 32,
+    borderBottomWidth: 1, borderBottomColor: colors.line, paddingBottom: space.xs },
+  sectionText: { ...type.captionBold, color: colors.textMuted, flex: 1 },
   nearby: { minHeight: 56, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1,
     borderBottomColor: colors.line },
   pressedRow: { backgroundColor: colors.pressedOverlay },

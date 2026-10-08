@@ -22,7 +22,12 @@ export default function PermissionsScreen({ page, step = null, onNext, onSystemS
         </>
       )}>
       <View style={styles.list}>
-        {page.rows.map(row => <PermissionRow key={row.id} row={row} onSystemSettings={onSystemSettings} />)}
+        {page.rows.map(row => (
+          <React.Fragment key={row.id}>
+            <PermissionRow row={row} onSystemSettings={onSystemSettings} />
+            <View style={styles.rule} />
+          </React.Fragment>
+        ))}
       </View>
     </GuidePage>
   );
@@ -58,8 +63,11 @@ function PermissionRow({ row, onSystemSettings }) {
 
 const styles = StyleSheet.create({
   list: { borderTopWidth: 1, borderTopColor: colors.line, marginTop: space.s },
+  // The row being asked is tinted a little past the text on both sides; the
+  // lines between rows keep to the text.
   row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingVertical: space.s,
-    borderBottomWidth: 1, borderBottomColor: colors.line, marginHorizontal: -space.s, paddingHorizontal: space.s },
+    marginHorizontal: -space.s, paddingHorizontal: space.s },
+  rule: { height: 1, backgroundColor: colors.line },
   asking: { backgroundColor: colors.brandSoft },
   circle: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.line, alignItems: 'center',
     justifyContent: 'center', marginRight: space.m },

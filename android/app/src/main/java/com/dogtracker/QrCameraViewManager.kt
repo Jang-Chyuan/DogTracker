@@ -77,17 +77,21 @@ class QrCameraViewManager : SimpleViewManager<QrCameraViewManager.QrCameraView>(
       addView(preview, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
-    // React lays children out itself; a native child (the preview) has to
-    // be measured and placed here, or it stays 0×0.
-    override fun requestLayout() {
-      super.requestLayout()
-      post(measureAndLayout)
+    // React sets this view's frame but never measures a native child: the
+    // preview is measured and placed here to fill the frame.
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+      val width = right - left
+      val height = bottom - top
+      preview.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+      preview.layout(0, 0, width, height)
     }
 
-    private val measureAndLayout = Runnable {
-      measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
-      layout(left, top, right, bottom)
+    // The preview asks for a layout when its picture starts; React would not
+    // pass that on, so it is done here.
+    override fun requestLayout() {
+      super.requestLayout()
+      post { if (width > 0 && height > 0) onLayout(true, left, top, right, bottom) }
     }
 
     override fun onAttachedToWindow() {

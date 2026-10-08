@@ -813,6 +813,10 @@ test('D3 in the guide: a QR code finds and connects its receiver, D4 lists the s
     await press('下一步');
     await advance(100);
     expect(page('pair-scan')).toBe(true);
+    // The camera is asked for once the page is on screen.
+    const scan = renderer.root.findAll(node => node.props.testID === 'pair-scan'
+      && typeof node.props.onLayout === 'function')[0];
+    await act(async () => scan.props.onLayout({ nativeEvent: { layout: {} } }));
     const camera = renderer.root.findAll(node => node.props.testID === 'qr-camera'
       && typeof node.props.onScan === 'function')[0];
     expect(camera).toBeDefined();
