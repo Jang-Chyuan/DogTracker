@@ -27,6 +27,7 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
 | 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
+| 提醒設定 | `alerts`（AlertPreferences，沒給就是預設）、`alertsOpen`（S6「狗」展開）；S6 的開關只改記憶體（`useFixtureEdits`），不寫進這支手機的設定 | `alertsPage`、`alertsHomeStatus` → S6、S1「提醒」 |
 | 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新有效電量）→ `DogCardModel` |
 
@@ -85,6 +86,9 @@ dogtracker://dev/fixture?name=off       回到真實資料
 | `cloud-expired` | S3 使用中登入失效：「需要重新登入」＋登入表單；齒輪紅點、S1「!」 |
 | `upload-switch-confirm` | S3：接收器 7 由 Wi-Fi 上傳、手機裡還有 120 筆，切換確認框打開（c255） |
 | `upload-switch-offline` | 同上但沒網路：確認框寫「要先上傳完 120 筆，請連上網路」、不能切（c256） |
+| `alerts-default` | S6 提醒：全部開、震動開、聲音關、通知已允許；S1「提醒」寫「震動」 |
+| `alerts-some-off` | S6：不在接收範圍、接收器電量低關掉，聲音開；「狗」展開三個開關（部分開）；S1 寫「震動、聲音」「部分開」 |
+| `notifications-denied` | S6「通知權限 未允許 開系統設定 ›」；S1「提醒」「手機」只放紅色「!」；地圖齒輪紅點 |
 
 ## 新增情境（之後每個 PR）
 

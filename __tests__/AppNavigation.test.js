@@ -232,6 +232,29 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
 });
 
+test('S1 提醒 opens S6 (not the system settings); a switch is saved at once and S1 follows', async () => {
+  await mount();
+  await advance(100);
+  await press('設定');
+  Linking.sendIntent?.mockClear?.();
+  expect(row('settings-row-alerts').props.accessibilityLabel).toBe('提醒，震動、聲音、各項開關，震動');
+  await tap('settings-row-alerts');
+  expect(title()).toBe('返回，提醒');
+  expect(Linking.sendIntent?.mock?.calls?.length ?? 0).toBe(0);
+  expect(text()).toContain('一定提醒');
+  const sound = renderer.root.findAll(node => node.props.testID === 'alerts-sound'
+    && typeof node.props.onValueChange === 'function')[0];
+  expect(sound.props.value).toBe(false);
+  await act(async () => sound.props.onValueChange(true));
+  await advance(100);
+  expect(preferences().alerts).toMatchObject({ sound: true, vibrate: true, dogStale: true });
+  expect(renderer.root.findAll(node => node.props.testID === 'alerts-sound'
+    && typeof node.props.onValueChange === 'function')[0].props.value).toBe(true);
+  await act(async () => expect(onBack()).toBe(true));
+  expect(title()).toBe('返回，設定');
+  expect(row('settings-row-alerts').props.accessibilityLabel).toBe('提醒，震動、聲音、各項開關，震動、聲音');
+});
+
 test('a settings fixture opens its page over the map: S1 with red 「!」 rows, S2 中斷連線', async () => {
   // React Native's jest setup mocks Linking: answer once, for this mount.
   Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=settings-problems');
