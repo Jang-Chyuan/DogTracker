@@ -417,6 +417,6 @@ const getStyles = makeStyles(theme => {
     note: { fontSize: 12, color: themeLiteral.activityNote, marginVertical: 5 },
     // Loading, empty and error words: themed (the default text colour was
     // black, unreadable on the dark page).
-    message: theme.isDark ? { color: theme.colors.text } : {},
+    message: { color: theme.colors.text },
   });
 });
