@@ -21,7 +21,7 @@
 - 共用游標：主角是頭像 40dp＋路線色光暈＋名稱牌，標籤在上方；其他狗 32dp 頭像（路線色底）＋名稱牌，沒資料時停在缺口前最後一筆、灰色虛線外圈；其他狗的路線 3dp、游標前 50%、後 20%。
 - 資料來源（`HistoryPickers.SourceSheet`）：狗的歷史面板最底下固定「資料來源：全部 ›」，全部／這支手機收到的／雲端，選了就關；清單、地圖、月曆的點、雲端下載都照它；再次進入回到全部。匯出跟著畫面上的範圍、狗和來源（056）。
 
-舊的「歷史軌跡」查詢卡片（`HistorySheet`）、回放（`HistoryPlayback*`）、多天範圍與舊的三角游標都拿掉了；`useMapHistory` 只剩偏好（狗名、上次用的匯出格式）、聽過每隻狗的接收器和日子讀取（舊匯出的每 10 秒查詢在 056 拿掉）；舊卡片的日期清單與雲端日子掃描（`CloudDays`）、草稿預覽、`HistoryCoverage`（「本機最早只到…」）、`listDays`、`hasPhoneTrack` 在 055b 拿掉（日期列、月曆、雲端下載與「資料不完整」取代）。
+舊的「歷史軌跡」查詢卡片（`HistorySheet`）、回放（`HistoryPlayback*`）、多天範圍與舊的三角游標都拿掉了；`useMapHistory` 只剩偏好（狗名）、聽過每隻狗的接收器和日子讀取（舊匯出的每 10 秒查詢在 056 拿掉）；舊卡片的日期清單與雲端日子掃描（`CloudDays`）、草稿預覽、`HistoryCoverage`（「本機最早只到…」）、`listDays`、`hasPhoneTrack` 在 055b 拿掉（日期列、月曆、雲端下載與「資料不完整」取代）。
 
 ## 共用的資料
 
@@ -31,7 +31,7 @@
 
 ## 匯出（056，H9／H10）
 
-- 右上匯出 icon → `HistoryExportSheet`（底部小視窗）：標題「匯出 08:03–12:11」（範圍開始到最後一筆的實際時刻）、PNG 長圖／GPX／CSV，上次用的格式右側「✓ 上次用」（存在歷史偏好 `exportFormat`）。點一個格式，小視窗原地變成「⟳ 產生中…　取消」；失敗寫「匯出失敗　重試」；打開 Android 分享後才關。產生中點遮罩不關，返回鍵＝取消。
+- 右上匯出 icon → `HistoryExportSheet`（底部小視窗）：標題「匯出 08:03–12:11」（範圍開始到最後一筆的實際時刻）、PNG 長圖／GPX／CSV 固定順序，不標示上次使用格式。舊歷史偏好中的 `exportFormat` 不再讀取，不需遷移或清除。點一個格式，小視窗原地變成「⟳ 產生中…　取消」；失敗寫「匯出失敗　重試」；打開 Android 分享後才關。產生中點遮罩不關，返回鍵＝取消。
 - `useHistoryExport`：按下那一刻把畫面的 `dayModel`（範圍、畫面上的狗、資料來源都已算進去）、顏色和名字拍成快照；地址用 `AddressLookup.lookupAddresses` 最多等 5 秒（沒網路直接寫第一行座標、第二行膠囊）；快照凍結，「重試」用同一份。暫存檔在 cache/history_exports/〈匯出 id〉/，每次匯出先清掉今天以前的。
 - 純函式：`ExportSnapshot`（畫面模型 → 快照）、`ExportGPX`、`ExportCSV`、`ExportPNG`（版面、分張）、`ExportDraw`（畫圖指令，顏色只用 tokens）、`ExportFiles`（檔名、暫存、隔天清）；規則見 `ExportBuilders.md`。
 - 原生 `HistoryExportPackage.kt`：量字寬、寫 GPX／CSV、照指令畫 PNG（地圖區是 Google lite 模式底圖＋自己投影畫的路線、停留編號、時間標記、比例尺、指北；底圖載不出來時空白底＋比例尺）、Android 分享（多張一次分享）。

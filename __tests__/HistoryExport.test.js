@@ -260,8 +260,8 @@ describe('the export window (useHistoryExport)', () => {
   const day = dayOf([[6, dogRows(6, legs(DOG_DAY))]]);
   const screen = { dayModel: day, range: day.range, subject: 'dog', look };
   let state;
-  function Probe({ exporter, lookup, onRemember }) {
-    state = useHistoryExport({ screen, exporter, onRemember, now: () => DAY + 5000 });
+  function Probe({ exporter, lookup }) {
+    state = useHistoryExport({ screen, exporter, now: () => DAY + 5000 });
     return null;
   }
   const lookupOf = () => ({ lookupAddresses: jest.fn(async points => points.map(() => null)) });
@@ -273,9 +273,9 @@ describe('the export window (useHistoryExport)', () => {
     return renderer;
   };
 
-  test('a format chosen: 產生中, the files, then the share sheet; 上次用 remembered; the window closes', async () => {
-    const exporter = fakeExporter(), lookup = lookupOf(), onRemember = jest.fn();
-    const renderer = await mount({ exporter, lookup, onRemember });
+  test('a format chosen: 產生中, the files, then the share sheet; the window closes', async () => {
+    const exporter = fakeExporter(), lookup = lookupOf();
+    const renderer = await mount({ exporter, lookup });
     act(() => state.open());
     expect(state.phase).toBe('choose');
     let running;
@@ -284,7 +284,6 @@ describe('the export window (useHistoryExport)', () => {
     await act(async () => running);
     expect(lookup.lookupAddresses).toHaveBeenCalledWith(expect.any(Array), { timeoutMs: 5000 });
     expect(exporter.calls.share[0]).toMatchObject({ mime: 'application/gpx+xml' });
-    expect(onRemember).toHaveBeenCalledWith('gpx');
     expect(state.phase).toBe('closed');
     act(() => renderer.unmount());
   });

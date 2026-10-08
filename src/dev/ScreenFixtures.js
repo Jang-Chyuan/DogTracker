@@ -1235,7 +1235,7 @@ const FIXTURES = {
   // 豆豆 (this phone's) stays.
   'history-source-local': now => multiFixture(now, { dogs: [4, 8], protagonist: 8, source: 'local' }),
   // ---- history (056): the export (H9/H10) ---------------------------------
-  // H9: my route like the mockup, the export window open (PNG used last).
+  // H9: my route like the mockup, the export window open (PNG / GPX / CSV in fixed order).
   'history-export': now => ({ ...FIXTURES['history-my-route'](now), historyView: { export: { phase: 'choose' } } }),
   // 產生中 that never ends (the export icon a spinner; 取消 or the back key stops it).
   'history-export-generating': now => ({ ...FIXTURES['history-my-route'](now), historyExport: 'hang',
