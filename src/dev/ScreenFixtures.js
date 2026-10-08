@@ -969,6 +969,8 @@ const FIXTURES = {
   // ---- settings (050): S1, S2, S4 open on their page ---------------------
   // S1 with nothing to handle: receiver 7 connected (its battery 64%), phone
   // recording, signed in, notifications allowed.
+  'settings-diagnostics-on': now => ({ ...FIXTURES['all-good'](now), openRoute: 'settings', diagnosticsEnabled: true }),
+
   'settings-all-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'settings' }),
   // ---- 初次使用 D2–D4 (053): the guide's pages ------------------------------
   // D2c: 「全部允許」 ran; 附近的裝置 allowed, 精確位置 only 大概, 通知 refused
@@ -1390,7 +1392,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
-    alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
+    alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
     historyExport = null, activityView = null, activity = null, activityClock = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
@@ -1469,6 +1471,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // whether the 狗 group shows its three switches.
     alerts: normalizeAlertPreferences(alerts),
     alertsOpen,
+    diagnosticsEnabled,
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
     todayRoute: (() => {
@@ -1668,11 +1671,13 @@ export function applyScreenFixture(fixture, live, edits = null) {
       realWriteError: fixture.storageError,
       preferences: { ...tracking.preferences, ready: true, busy: false, error: null,
         value: { ...tracking.preferences.value, ...FIXTURE_PREFERENCES,
-          alerts: edits?.alerts ?? fixture.alerts } },
+          alerts: edits?.alerts ?? fixture.alerts,
+          diagnosticsEnabled: edits?.diagnosticsEnabled ?? fixture.diagnosticsEnabled } },
       // A tap on a fixture's eye or follow button must not save the fixture's
       // dog ids into this phone's real preferences; a switch on S6 changes
       // the fixture's alerts in memory only (useFixtureEdits).
       saveTrackingPreferences: patch => {
+        if (typeof patch?.diagnosticsEnabled === 'boolean') edits?.setDiagnosticsEnabled?.(patch.diagnosticsEnabled);
         if (patch?.alerts) edits?.setAlerts?.(patch.alerts);
         return Promise.resolve(true);
       },

@@ -1,3 +1,5 @@
+import { useRef, useState, useCallback } from 'react';
+import { MapTip } from '../map/MapControls';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { radius, space, type } from '../theme/tokens';
@@ -73,29 +75,75 @@ export function StorageWarning({
  * (SettingsModel.settingsHome). `onOpen(rowId)` opens the row's page; the
  * version is the last line.
  */
-export default function SettingsHome({ home, version, onOpen, onStorage }) {
+export default function SettingsHome({
+  home,
+  version,
+  onOpen,
+  onStorage,
+  onEnableDiagnostics,
+}) {
   const settingsStyles = useStyles(getSettingsStyles);
+  const taps = useRef({ count: 0, at: null, saving: false });
+  const [message, setMessage] = useState(null);
+  const clearMessage = useCallback(() => setMessage(null), []);
+  const versionTap = async () => {
+    const show = text => setMessage({ text, key: {} });
+    if (
+      home.groups.some(group =>
+        group.rows.some(row => row.id === 'diagnostics'),
+      )
+    ) {
+      show('診斷已經開啟');
+      return;
+    }
+    if (taps.current.saving) return;
+    const now = Date.now();
+    const count =
+      taps.current.at == null || now - taps.current.at > 2000
+        ? 1
+        : taps.current.count + 1;
+    taps.current = { count, at: now, saving: count === 7 };
+    if (count === 7) {
+      const saved = await onEnableDiagnostics?.();
+      taps.current = { count: 0, at: null, saving: false };
+      if (saved) show('已開啟診斷');
+    } else if (count >= 4) show(`再點 ${7 - count} 下開啟診斷`);
+  };
   return (
-    <ScrollView
-      testID="settings-home"
-      style={settingsStyles.page}
-      contentContainerStyle={settingsStyles.content}
-    >
-      <StorageWarning storage={home.storage} onPress={onStorage} />
-      {home.groups.map(group => (
-        <View key={group.title}>
-          <GroupTitle>{group.title}</GroupTitle>
-          <GroupCard>
-            {group.rows.map(row => (
-              <HomeRow key={row.id} row={row} onPress={() => onOpen(row.id)} />
-            ))}
-          </GroupCard>
-        </View>
-      ))}
-      {version ? (
-        <Text style={settingsStyles.footer}>{`DogTracker ${version}`}</Text>
-      ) : null}
-    </ScrollView>
+    <View style={settingsStyles.page}>
+      <ScrollView
+        testID="settings-home"
+        style={settingsStyles.page}
+        contentContainerStyle={settingsStyles.content}
+      >
+        <StorageWarning storage={home.storage} onPress={onStorage} />
+        {home.groups.map(group => (
+          <View key={group.title}>
+            <GroupTitle>{group.title}</GroupTitle>
+            <GroupCard>
+              {group.rows.map(row => (
+                <HomeRow
+                  key={row.id}
+                  row={row}
+                  onPress={() => onOpen(row.id)}
+                />
+              ))}
+            </GroupCard>
+          </View>
+        ))}
+        {version ? (
+          <Pressable
+            testID="settings-version"
+            accessibilityRole="button"
+            accessibilityLabel={`DogTracker ${version}，版本`}
+            onPress={versionTap}
+          >
+            <Text style={settingsStyles.footer}>{`DogTracker ${version}`}</Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
+      <MapTip message={message} bottom={space.l} onDone={clearMessage} />
+    </View>
   );
 }
 

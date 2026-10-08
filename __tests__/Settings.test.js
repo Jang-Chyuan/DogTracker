@@ -43,13 +43,13 @@ test('settings-all-ok: four groups, no 地圖 row, every row its usual status an
   const home = settingsHome(data);
   expect(home.groups.map(group => group.title)).toEqual(['裝置', '帳號與資料', '提醒', '其他']);
   expect(home.groups.map(group => group.rows.map(row => row.id)))
-    .toEqual([['receiver', 'phone'], ['account', 'diagnostics'], ['alerts'], ['advanced']]);
+    .toEqual([['receiver', 'phone'], ['account'], ['alerts'], ['advanced']]);
   const rows = rowsOf(home);
   expect(Object.values(rows).some(row => row.problem)).toBe(false);
   expect(rows.receiver).toMatchObject({ subtitle: '接收器 7', status: ['已連線', '電量 64%'] });
   expect(rows.phone).toMatchObject({ subtitle: '位置記錄、權限', status: ['記錄中'] });
   expect(rows.account).toMatchObject({ subtitle: 'tim@example.com', status: ['已登入'] });
-  expect(rows.diagnostics.subtitle).toBe('即時資料、本機／雲端資料、記錄清單');
+  expect(rows.diagnostics).toBeUndefined();
   expect(rows.alerts).toMatchObject({ subtitle: '震動、聲音、各項開關', status: ['震動'] });
   expect(rows.receiver.label).toBe('接收器，接收器 7，已連線，電量 64%');
   expect(home.storage).toBeNull();
@@ -67,7 +67,7 @@ test('settings-problems: 手機, Supabase 帳號 and 提醒 carry only the red �
   expect(rows.phone.label).toBe('手機，有問題：定位服務關著、通知未允許');
   expect(rows.account.label).toBe('Supabase 帳號，有問題：連不上');
   expect(rows.alerts.label).toBe('提醒，有問題：通知未允許');
-  expect(rows.diagnostics.problem).toBe(false);
+  expect(rows.diagnostics).toBeUndefined();
   expect(rows.advanced.problem).toBe(false);
 });
 
@@ -429,4 +429,11 @@ test('usePhonePermissions reads notifications, nearby devices and battery optimi
   check.mockRestore();
   Platform.OS = os;
   if (version) Object.defineProperty(Platform, 'Version', version);
+});
+
+test('settings-diagnostics-on adds diagnostics only beneath advanced in 其他', () => {
+  const { data, fixture } = input('settings-diagnostics-on');
+  expect(fixture.openRoute).toBe('settings');
+  expect(settingsHome(data).groups.map(group => group.rows.map(row => row.id)))
+    .toEqual([['receiver', 'phone'], ['account'], ['alerts'], ['advanced', 'diagnostics']]);
 });

@@ -15,6 +15,7 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   windowMinutes: 2,
   // A6 (還沒有狗) was closed with ✕: it never shows again.
   noDataCardDismissed: false,
+  diagnosticsEnabled: false,
   // 設定 → 提醒 (S6): AlertPreferences.
   alerts: DEFAULT_ALERT_PREFERENCES,
   // The first-launch guide (Launch.js): a phone that saved nothing yet starts
@@ -56,6 +57,7 @@ export function validateTrackingPreferences(value) {
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
     noDataCardDismissed: settings.noDataCardDismissed,
+    diagnosticsEnabled: settings.diagnosticsEnabled === true,
     // Missing before v3 (051b); a damaged value falls back to the defaults
     // rather than failing every other preference.
     alerts: normalizeAlertPreferences(settings.alerts),
