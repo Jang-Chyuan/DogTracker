@@ -9,6 +9,8 @@ import { endOfDay, startOfToday } from '../tracking/TodayDistance';
 import { cursorHaptic, screenCursor } from '../history/screen/HistoryScreenCursor';
 import { nearestRecord } from '../history/screen/HistoryScreenRange';
 import { dateNavigation, dayBounds, dayKey } from '../history/screen/HistoryScreenDates';
+import { chooseDay, downloadPanel, knownDays, offlineMessage } from '../history/screen/HistoryCalendar';
+import { useHistoryCloud } from './useHistoryCloud';
 import { historyMapPresentation } from '../history/screen/HistoryMapModel';
 import { rangeTrack } from '../history/screen/HistoryRangeBar';
 import { forgetRange, rememberedRange, rememberRangeFor } from '../history/screen/RangeMemory';
@@ -27,12 +29,13 @@ const CLOCK_MS = 60000;
  * day is today. Returns { rows, version, replayHolds, loaded, error }.
  */
 export function useHistoryDayRows({ read, subject, slaveId, day, source = 'all', owner = null, active = true, clock,
-  scope = '' }) {
+  scope = '', revision = 0 }) {
   const [result, setResult] = useState({ key: null, rows: [], version: 0, error: '', replayHolds: null });
   const now = useRef(clock);
   now.current = clock;
   // `scope`: another reader of the same day (a screen fixture) is another day's rows.
-  const key = subject && day != null ? JSON.stringify([subject, slaveId, day, source, owner, scope]) : null;
+  // `revision`: read the day again from the start (a download ended).
+  const key = subject && day != null ? JSON.stringify([subject, slaveId, day, source, owner, scope, revision]) : null;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
     let alive = true, timer;
@@ -103,7 +106,7 @@ export const routeColorOf = subject => (subject === 'phone' ? colors.phone : col
  * route's end at its last fix (記錄已關閉).
  */
 export function useHistoryScreen({ target, read, readDays, owner = null, clock = Date.now, active = true,
-  recording = null, onDayChange, memoryScope = '', preset = null }) {
+  recording = null, onDayChange, memoryScope = '', preset = null, cloud = null, online = true, cloudSeed = null }) {
   const subject = target?.subject ?? null;
   const slaveId = target?.slaveId ?? null;
   const subjectKey = subject === 'phone' ? 'phone' : `dog:${slaveId}`;
@@ -126,8 +129,11 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
   const setDay = useCallback(value => setDayState({ key: sessionKey, day: value }), [sessionKey]);
   const dayEnd = endOfDay(day);
   const today = day === todayStart;
+  // Bumped when a download ends (done, failed or cancelled): the day is read
+  // again with what arrived.
+  const [readRevision, setReadRevision] = useState(0);
   const day$ = useHistoryDayRows({ read, subject, slaveId: subject === 'dog' ? slaveId : null, day, owner,
-    active: active && !!subject, clock, scope: memoryScope });
+    active: active && !!subject, clock, scope: memoryScope, revision: readRevision });
   // The days with rows (‹ › step between them).
   const [days, setDays] = useState([]);
   useEffect(() => {
@@ -137,13 +143,19 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
       .then(value => { if (alive) setDays(Array.isArray(value) ? value : []); })
       .catch(() => { if (alive) setDays([]); });
     return () => { alive = false; };
-    // Asked again when the day's first rows arrive (today may just have begun).
-  }, [active, readDays, subject, slaveId, owner, day$.version > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Asked again when the day's first rows arrive (today may just have begun)
+    // and after a download.
+  }, [active, readDays, subject, slaveId, owner, day$.version > 0, readRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   const todayKey = dayKey(new Date(todayStart));
-  const navigation = useMemo(() => {
-    const known = [...new Set([...days, ...(day$.rows.length ? [dayKey(new Date(day))] : [])])].sort();
-    return dateNavigation(dayKey(new Date(day)), todayKey, known);
-  }, [days, day, day$.rows.length, todayKey]);
+  const shownKey = dayKey(new Date(day));
+  const localDays = useMemo(() => [...new Set([...days, ...(day$.rows.length ? [shownKey] : [])])].sort(),
+    [days, day$.rows.length, shownKey]);
+  // The cloud's days of a dog (054b): the calendar's dots, ‹ › and downloads.
+  const cloudDays = useHistoryCloud({ cloud: subject === 'dog' ? cloud : null, slaveId,
+    scope: `${sessionKey}|${cloud?.owner ?? ''}`, todayKey, local: localDays, active, seed: cloudSeed });
+  const { knowledge } = cloudDays;
+  const navigation = useMemo(() => dateNavigation(shownKey, todayKey, knownDays(knowledge)),
+    [shownKey, todayKey, knowledge]);
   // ---- the range ----------------------------------------------------------
   // A screen fixture keeps its ranges apart from the real ones (memoryScope),
   // and can start with one already dragged (preset.manual, H2b).
@@ -234,8 +246,48 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     haptic('tick');
     onDayChange?.(start);
   }, [onDayChange, setDay]);
-  const previousDay = useCallback(() => changeDay(navigation.previous), [changeDay, navigation.previous]);
-  const nextDay = useCallback(() => changeDay(navigation.next), [changeDay, navigation.next]);
+  const { startDownload, cancelDownload, downloadingDay } = cloudDays;
+  const reread = useCallback(() => setReadRevision(value => value + 1), []);
+  /** 取消 (and 返回鍵) while downloading: what arrived is shown, marked incomplete. */
+  const cancel = useCallback(() => {
+    if (!cancelDownload()) return false;
+    reread();
+    return true;
+  }, [cancelDownload, reread]);
+  /**
+   * Go to `next` (「YYYY-MM-DD」) from the calendar or ‹ ›: { type: 'none' }
+   * for a day that cannot be chosen, 'offline' (with H3d's words) when a day
+   * only the cloud holds needs the network — the day does not change — else
+   * the day changes ('show') and a cloud day starts downloading ('download').
+   * A running download stops first (下載中點 ‹ ›、換別天＝取消).
+   */
+  const goTo = useCallback(next => {
+    if (next == null) return { type: 'none' };
+    const choice = chooseDay(next, { today: todayKey, knowledge, online });
+    if (choice.type === 'none' || choice.type === 'offline') return choice;
+    if (downloadingDay === next) return { type: 'show', day: next };
+    cancel();
+    if (next !== shownKey) changeDay(next);
+    if (choice.type === 'download') startDownload(next, reread);
+    return choice;
+  }, [todayKey, knowledge, online, downloadingDay, cancel, shownKey, changeDay, startDownload, reread]);
+  const previousDay = useCallback(() => goTo(navigation.previous), [goTo, navigation.previous]);
+  const nextDay = useCallback(() => goTo(navigation.next), [goTo, navigation.next]);
+  /** 重試 after a cancelled or failed download of the day shown. */
+  const retryDownload = useCallback(() => {
+    if (!online) return { type: 'offline', day: shownKey, message: offlineMessage(shownKey) };
+    startDownload(shownKey, reread);
+    return { type: 'download', day: shownKey };
+  }, [online, shownKey, startDownload, reread]);
+  const download = downloadPanel(cloudDays.download, { day: shownKey, hasRows: !!model?.dayRecords });
+  // A screen fixture can open on another day (preset.goTo: H3c starts its
+  // download), once per opening.
+  const presetDay = useRef('');
+  useEffect(() => {
+    if (!preset?.goTo || !sessionKey || presetDay.current === sessionKey) return;
+    presetDay.current = sessionKey;
+    goTo(preset.goTo);
+  }, [preset?.goTo, sessionKey, goTo]);
   // ---- dragging the range -------------------------------------------------
   const dragRange = useCallback(value => setDraft(value), []);
   const commitRange = useCallback(value => {
@@ -257,5 +309,9 @@ export function useHistoryScreen({ target, read, readDays, owner = null, clock =
     target, subject, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
     following, cursor, pressed, focus, map, color, loading: !!subject && !day$.loaded && !day$.error,
     error: day$.error, previousDay, nextDay, changeDay, moveCursor, dragRange, commitRange, draft,
+    // The calendar (054b).
+    dayKey: shownKey, todayKey, knowledge, goTo, download, cancelDownload: cancel, retryDownload,
+    askMonth: cloudDays.askMonth, askYear: cloudDays.askYear, retryQuery: cloudDays.retryQuery,
+    stopQuery: cloudDays.stopQuery,
   };
 }

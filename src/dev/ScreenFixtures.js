@@ -29,6 +29,7 @@ import { budgetHistory } from '../mapHistory/HistoryGeometryBudget';
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
 import { startOfToday } from '../tracking/TodayDistance';
 import { fixtureAddressLookup } from './fixtureGeocoder';
+import { dayKey } from '../history/screen/HistoryScreenDates';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
 export const FIXTURE_NOW = Date.parse('2026-10-07T01:30:00Z');
@@ -289,6 +290,76 @@ function historyPage(now, { slave = null, ble = [], cloudRows = [], phoneDays = 
       : { phone: false, client: true, source: 'ble', timeMode: 'recent', hours: 24, slaves: [slave], masters: [7] },
     // phoneDays: my route on other days ({ time, latitude, longitude }).
     ble, cloudRows, phoneDays,
+  };
+}
+
+// ---- history (054b): the calendar and a day only the cloud holds ----------
+const DAY_MS = 24 * 60 * MINUTE;
+// 小黑's walk `daysAgo` days back: out at 08:00 that day (fixture now 09:30),
+// a fix every 30 s, about two hours near the station.
+const pastWalk = (now, daysAgo, make, bearing = 40) => legsPath(now - daysAgo * DAY_MS + 6 * 60 * MINUTE,
+  7.5 * 60 * MINUTE, at(-20, -60), [{ stay: 10 }, { walk: 20, bearing, speed: 0.6 }, { stay: 15 },
+    { walk: 25, bearing: bearing + 80, speed: 0.6 }, { stay: 8 }, { walk: 15, bearing: bearing + 190, speed: 0.6 }],
+  30 * SECOND).map(row => make({ slave: 6, time: row.time, fix: row.fix }));
+// This phone holds 小黑's 9/29, 9/30, 10/2 and today; the cloud holds 8/12
+// (its earliest), 8/20, 9/5, 9/28, 9/29, 10/3 and today. 9/28 and 10/3 are
+// the days only the cloud holds (H3b's dots, H3c).
+const calendarLocal = now => [8, 7, 5].flatMap((ago, i) => pastWalk(now, ago, bleRow, 30 + i * 40));
+const calendarServer = now => [
+  ...[56, 48, 32, 9, 8, 4].flatMap((ago, i) => pastWalk(now, ago, cloudRow, 200 - i * 30)),
+  ...series(cloudRow, now, { slave: 6, from: 60 * MINUTE, to: 50 * MINUTE, every: MINUTE, start: [0, -80] }),
+];
+const cloudOnlyDay = now => dayKey(new Date(now - 9 * DAY_MS));
+
+// The history's stand-in cloud (HistoryCloud's adapter): answers from
+// `server` (the account's dog_telemetry), downloads by copying a day's rows
+// into `local` (this phone's supabase_dog_status). `query` / `download`:
+// 'ok', 'hang' (never answers), 'fail', 'partial' (half the day, then fails).
+function fixtureHistoryCloud({ server, local, query = 'ok', download = 'ok', online = true, seed = null }) {
+  const timeOfRow = row => row.track_at ?? row.received_at;
+  const stopped = signal => new Promise((_, reject) => signal?.addEventListener?.('abort',
+    () => reject(new Error('已取消'))));
+  const wait = (ms, signal) => Promise.race([new Promise(resolve => setTimeout(resolve, ms)), stopped(signal)]);
+  const times = slaveId => server.filter(row => row.slave_id === slaveId).map(timeOfRow).sort((a, b) => a - b);
+  const ask = async (signal, answer) => {
+    if (query === 'hang') await stopped(signal);
+    await wait(250, signal);
+    if (query === 'fail') throw new Error('雲端的紀錄查不到（逾時）');
+    return answer();
+  };
+  return {
+    online, seed,
+    cloud: {
+      owner: FIXTURE_OWNER,
+      newestBefore: ({ slaveId, cutoff, since, signal }) => ask(signal,
+        () => [...times(slaveId)].reverse().find(time => time >= since && time < cutoff) ?? null),
+      earliest: ({ slaveId, signal }) => ask(signal, () => times(slaveId)[0] ?? null),
+      async download({ slaveId, dayStart, dayEnd, signal }) {
+        const rows = server.filter(row => row.slave_id === slaveId && timeOfRow(row) >= dayStart
+          && timeOfRow(row) < dayEnd);
+        if (download === 'hang') await stopped(signal);
+        await wait(download === 'ok' ? 3500 : 1500, signal);
+        if (download === 'fail') throw new Error('下載失敗');
+        if (download === 'partial') {
+          local.push(...rows.slice(0, Math.floor(rows.length / 2)));
+          throw new Error('下載失敗');
+        }
+        local.push(...rows);
+        return rows.length;
+      },
+    },
+  };
+}
+
+// 小黑's history today with the calendar's days; `view` how it opens.
+function calendarFixture(now, { view = null, signedIn = true, ...cloud } = {}) {
+  const local = [];
+  const base = FIXTURES['all-good'](now);
+  return {
+    ...base, ...(signedIn ? {} : { cloud: SIGNED_OUT }), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: [...calendarLocal(now), ...dogMorning(now)], cloudRows: local }),
+    historyCloud: signedIn ? fixtureHistoryCloud({ server: calendarServer(now), local, ...cloud }) : null,
+    historyView: view, geocoder: { names: HISTORY_NAMES },
   };
 }
 
@@ -957,6 +1028,32 @@ const FIXTURES = {
       ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
   },
+  // ---- history (054b): the calendar and a day only the cloud holds -------
+  // H3b: 小黑's calendar on October; dots on this phone's days and the cloud's
+  // (9/28 and 10/3 only in the cloud); a day only the cloud holds downloads
+  // for 3.5 s when tapped (H3c, then the day).
+  'history-calendar': now => calendarFixture(now, { view: { calendar: 'month' } }),
+  // H3b while the cloud is asked: 查詢中…; days not known yet wait in normal colour.
+  'history-calendar-querying': now => calendarFixture(now, { view: { calendar: 'month' }, query: 'hang' }),
+  // The cloud cannot be asked: 雲端的紀錄查不到　重試; unknown days can be tapped.
+  'history-calendar-failed': now => calendarFixture(now, { view: { calendar: 'month' }, query: 'fail' }),
+  // H3e: 選月份 for 2026 (August, September, October have records).
+  'history-month-picker': now => calendarFixture(now, { view: { calendar: 'months' } }),
+  // H3d: no network; tapping 9/28 (only in the cloud) keeps the calendar
+  // and the day, with 「沒有網路，9/28 的紀錄還沒下載，連上網路再試」.
+  'history-cloud-offline': now => calendarFixture(now, { view: { calendar: 'month' }, online: false }),
+  // Signed out: only this phone's days have dots; the cloud is never asked.
+  'history-calendar-signed-out': now => calendarFixture(now, { view: { calendar: 'month' }, signedIn: false }),
+  // H3c: 9/28 (only in the cloud) chosen, downloading (never ends; 取消 or
+  // 返回鍵 → 這天的紀錄還沒下載完　重試).
+  'history-cloud-downloading': now => calendarFixture(now, { view: { goTo: cloudOnlyDay(now) }, download: 'hang',
+    seed: { cloud: [cloudOnlyDay(now)] } }),
+  // The download of 9/28 failed with nothing on this phone: 這天的紀錄還沒下載完　重試.
+  'history-cloud-failed': now => calendarFixture(now, { view: { goTo: cloudOnlyDay(now) }, download: 'fail',
+    seed: { cloud: [cloudOnlyDay(now)] } }),
+  // The download of 9/28 stopped half-way: that half, 資料不完整　重試.
+  'history-cloud-incomplete': now => calendarFixture(now, { view: { goTo: cloudOnlyDay(now) },
+    download: 'partial', seed: { cloud: [cloudOnlyDay(now)] } }),
 };
 
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
@@ -1074,7 +1171,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
-    permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null,
+    permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -1186,8 +1283,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // of the time-line list, all from the fixture's rows.
     history: history && historyFixture(history, [...(history.phoneDays || []), ...(phone?.today || [])], now),
     // The history screen opened as it was left (H2b: the range bar open, a
-    // range already dragged).
+    // range already dragged; 054b: the calendar open, another day chosen).
     historyView,
+    // The history's stand-in cloud (054b): { cloud, online, seed } or null.
+    historyCloud,
     // Its places' names (053a): made-up answers, none, or this phone's
     // Geocoder; never this phone's address cache.
     addressLookup: fixtureAddressLookup(geocoder),
@@ -1368,6 +1467,8 @@ export function applyScreenFixture(fixture, live, edits = null) {
     recording: fixture.recording,
     account: fixture.account,
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
+    // A history fixture asks its own stand-in cloud (054b), never Supabase.
+    historyCloud: fixture.history ? fixture.historyCloud : live.historyCloud,
     history: history && {
       ...history, preferences: { ...history.preferences, ...fixture.history?.preferences, dogAliases: aliases },
       // A history fixture (054a) draws its own day, never this phone's.

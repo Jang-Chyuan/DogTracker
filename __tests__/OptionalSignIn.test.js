@@ -7,7 +7,7 @@ import AccountSettings from '../src/settings/AccountSettings';
 import { accountPage } from '../src/settings/AccountModel';
 import { useCloudSync } from '../src/cloud/useCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
-import { useHistoryDownload } from '../src/mapHistory/useHistoryDownload';
+import { useHistoryCloudSource } from '../src/mapHistory/HistoryCloud';
 import SettingsHome from '../src/settings/SettingsHome';
 import { settingsHome } from '../src/settings/SettingsModel';
 import LoginScreen, { signInErrorText } from '../src/screens/LoginScreen';
@@ -140,11 +140,11 @@ test('登入失效 while in use is told apart from signing out', async () => {
 test('without an account the cloud hooks stay idle: no sync, no reads of cloud rows, no errors', async () => {
   jest.useFakeTimers();
   const s = supabase(), database = spyDatabase();
-  let sync, dogs, download;
+  let sync, dogs, historyCloud;
   function Probe() {
     sync = useCloudSync(database, true, s.factory);
     dogs = useCloudDogs(database, sync.ownerId, true);
-    download = useHistoryDownload({ database, sync, owner: sync.ownerId, clientFactory: s.factory });
+    historyCloud = useHistoryCloudSource({ database, sync, owner: sync.ownerId, clientFactory: s.factory });
     return null;
   }
   await act(async () => { renderer = Renderer.create(<Probe />); });
@@ -153,8 +153,8 @@ test('without an account the cloud hooks stay idle: no sync, no reads of cloud r
   expect(sync.error).toBeFalsy();
   expect(dogs.error).toBeFalsy();
   expect(dogs.rows).toEqual([]);
-  expect(await download.run({ startAt: 0, endAt: 60000 })).toBe(0);
-  expect(download.message).toBe('');
+  // The history's calendar has nothing to ask and nothing to download.
+  expect(historyCloud.cloud).toBeNull();
   expect(s.client.from).not.toHaveBeenCalled();
   // No cloud sync pass and no read of any account's cloud rows.
   expect(database.calls.filter(([name]) => name === 'initialize' || name === 'savePage')).toEqual([]);

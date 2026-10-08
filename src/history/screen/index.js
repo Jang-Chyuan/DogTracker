@@ -1,6 +1,7 @@
 export * from './HistoryScreenRange';
 export * from './HistoryScreenCursor';
 export * from './HistoryScreenDates';
+export * from './HistoryCalendar';
 export * from './HistoryScreenDogs';
 export * from './HistoryScreenState';
 export * from './HistoryScreenModel';
