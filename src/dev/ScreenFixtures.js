@@ -834,6 +834,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
     // The upload and the notification permission are this phone's: a
     // fixture shows them working.
     cloudProblem: false,
+    signInExpired: false,
     notificationsDenied: false,
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
     history: history && {

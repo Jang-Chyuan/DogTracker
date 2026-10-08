@@ -70,6 +70,27 @@ test('a receiver that never connects lights the gear after 2 minutes, never a ca
   expect(trackReceiverWait(memory, receiving, NOW).waitingSince).toBeNull();
 });
 
+test('a link that drops before its first packet is still a disconnection', () => {
+  const state = { ...receiving, connected: false, receiving: false, lastReceivedAt: 0, disconnectedAt: NOW - 60000 };
+  expect(receiverOutage(state, NOW)).toMatchObject({ since: NOW - 60000 });
+  expect(trackReceiverWait(null, state, NOW).waitingSince).toBeNull();
+});
+
+test('a restarted service with a packet from an earlier run is waiting, not disconnected', () => {
+  const state = { ...receiving, connected: false, receiving: false, lastReceivedAt: NOW - 3600000, disconnectedAt: 0 };
+  expect(receiverOutage(state, NOW)).toBeNull();
+  const memory = trackReceiverWait(null, state, NOW);
+  expect(gearReasons({ receiverState: state, receiverWait: memory, now: NOW + RECEIVER_MISSING_MS }))
+    .toEqual(['receiver-missing']);
+  // Another receiver chosen meanwhile waits from the start again.
+  const other = trackReceiverWait(memory, { ...state, deviceId: 'BB' }, NOW + 60000);
+  expect(other.waitingSince).toBe(NOW + 60000);
+  // The service not running counts as waiting too.
+  expect(trackReceiverWait(null, { ...receiving, running: false }, NOW).waitingSince).toBe(NOW);
+  // Switched off by the user (中斷連線): nothing.
+  expect(trackReceiverWait(null, { ...receiving, enabled: false }, NOW).waitingSince).toBeNull();
+});
+
 // ---- 位置存不進手機 -------------------------------------------------------------
 
 test('storage: phone full → 檢查空間, any other reason → 看原因 with the reason', () => {
@@ -239,6 +260,23 @@ test('receiver-disconnected: 「接收器 7 斷線了」, no range ring; ✕ col
   expect(view.cards()).toEqual([]);
   expect(view.gear()).toBe('設定，有 1 件事要處理');
   await act(async () => view.renderer.unmount());
+});
+
+test('the settings page shows the storage warning above everything (c282) and leads to its fix', async () => {
+  const SettingsScreen = require('../src/screens/SettingsScreen').default;
+  const onStorage = jest.fn();
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<SettingsScreen tracking={{ ready: { real: true }, errors: {} }}
+      storage={storageProblem('database or disk is full')} onStorage={onStorage} />);
+  });
+  expect(JSON.stringify(renderer.toJSON())).toContain('手機空間不足，位置存不進手機');
+  await act(async () => renderer.root.findAll(node => node.props.testID === 'settings-storage-warning'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  expect(onStorage).toHaveBeenCalled();
+  await act(async () => renderer.update(<SettingsScreen tracking={{ ready: { real: true }, errors: {} }} />));
+  expect(renderer.root.findAll(node => node.props.testID === 'settings-storage-warning')).toHaveLength(0);
+  await act(async () => renderer.unmount());
 });
 
 test('map-load-failed draws dogs and ring on a map without a base map; map-unavailable draws grey only', async () => {
