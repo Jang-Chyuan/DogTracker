@@ -1,7 +1,7 @@
 // D0 → 地圖銜接（C）: the launch screen's JavaScript copy and its handover.
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { NativeModules } from 'react-native';
+import { AccessibilityInfo, Animated, NativeModules } from 'react-native';
 import SplashOverlay, {
   flightGeometry,
   HEAD,
@@ -40,7 +40,9 @@ test('everything settles within 600 ms; the other dogs start popping when the ba
   expect(TIMING.flight).toBeLessThanOrEqual(TIMING.settled);
   expect(TIMING.popStart[0]).toBe(TIMING.background);
   expect(TIMING.popStart[1] + TIMING.pop).toBeLessThanOrEqual(TIMING.settled);
-  expect(TIMING.chromeStart + TIMING.chrome).toBeLessThanOrEqual(TIMING.settled);
+  expect(TIMING.chromeStart + TIMING.chrome).toBeLessThanOrEqual(
+    TIMING.settled,
+  );
 });
 
 beforeEach(() => jest.useFakeTimers());
@@ -56,7 +58,9 @@ test('covers the screen while waiting; with animations off it goes straight to t
   await act(async () => {
     renderer = Renderer.create(<SplashOverlay />);
   });
-  expect(renderer.root.findAllByProps({ testID: 'splash-overlay' }).length).toBeGreaterThan(0);
+  expect(
+    renderer.root.findAllByProps({ testID: 'splash-overlay' }).length,
+  ).toBeGreaterThan(0);
   await act(async () => {
     launchInto('map');
     reportMapFramed([{ slaveId: 4, x: 100, y: 300, marker: { size: 40 } }]);
@@ -81,4 +85,57 @@ test('a report made before the copy mounts is not missed (the state is read from
   expect(NativeModules.AppSplash.done).toHaveBeenCalledTimes(1);
   expect(renderer.toJSON()).toBeNull();
   await act(async () => renderer.unmount());
+});
+
+describe('waiting tail lifecycle', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  async function mountWaiting({ reduced = false, scale = 1 } = {}) {
+    jest
+      .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+      .mockResolvedValue(reduced);
+    NativeModules.AppSplash = { launchInfo: () => ({ animatorScale: scale }) };
+    const loop = { start: jest.fn(), stop: jest.fn() };
+    jest.spyOn(Animated, 'loop').mockReturnValue(loop);
+    let renderer;
+    await act(async () => {
+      renderer = Renderer.create(<SplashOverlay />);
+    });
+    await act(async () => {
+      renderer.root.findByProps({ testID: 'splash-overlay' }).props.onLayout({
+        nativeEvent: { layout: { width: 400, height: 800 } },
+      });
+    });
+    return { renderer, loop };
+  }
+
+  test.each(['fly', 'fade'])(
+    'stops the wag when %s handover begins',
+    async mode => {
+      const { renderer, loop } = await mountWaiting();
+      await act(async () => jest.advanceTimersByTime(800));
+      expect(loop.start).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        if (mode === 'fly') {
+          launchInto('map');
+          reportMapFramed([
+            { slaveId: 4, x: 100, y: 300, marker: { size: 40 } },
+          ]);
+        } else launchInto('page');
+      });
+      expect(loop.stop).toHaveBeenCalledTimes(1);
+      await act(async () => renderer.unmount());
+    },
+  );
+
+  test.each([{ reduced: true }, { scale: 0 }])(
+    'does not wag with motion disabled: %j',
+    async options => {
+      const { renderer, loop } = await mountWaiting(options);
+      await act(async () => jest.advanceTimersByTime(3000));
+      expect(Animated.loop).not.toHaveBeenCalled();
+      expect(loop.start).not.toHaveBeenCalled();
+      await act(async () => renderer.unmount());
+    },
+  );
 });

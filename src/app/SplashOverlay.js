@@ -25,6 +25,14 @@ import {
 } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { useTheme } from '../theme/ThemeProvider';
+import {
+  SITTING_DOG_HEAD_LINES as HEAD_LINES,
+  SITTING_DOG_BODY_LINES as BODY_LINES,
+  SITTING_DOG_TAIL_LINES as TAIL_LINES,
+  SITTING_DOG_FACE,
+  SITTING_DOG_TAIL_ROOT,
+} from '../dogs/SittingDogArt';
+import { startTailWag, WAG_TIMING } from './splashTailWag';
 import DogMarkerView, { markerFrame } from '../map/DogMarkerView';
 import {
   finishSplash,
@@ -53,21 +61,6 @@ const strokeOf = color => ({
   strokeLinecap: 'round',
   strokeLinejoin: 'round',
 });
-const HEAD_LINES = [
-  'M38 37c8-7 36-7 44 0',
-  'M39 35C24 35 17 52 21 71c2 7 9 8 12 2 2-5 2-11 4-17',
-  'M81 35c15 0 22 17 18 36-2 7-9 8-12 2-2-5-2-11-4-17',
-  'M41 78c9 9 29 9 38 0',
-  'M54 69q3 4 6 0 3 4 6 0',
-];
-const BODY_LINES = [
-  'M42 90v32c0 6 4 9 9 9s7-3 7-8v-21',
-  'M62 104v19c0 5 3 8 8 8s9-3 9-9V92',
-  'M88 82c10 12 13 30 8 42-2 5-6 7-12 7',
-  'M98 124h9',
-  'M100 129h12',
-];
-
 export const TIMING = {
   background: 280,
   body: 220,
@@ -85,9 +78,9 @@ export const TIMING = {
 const easeOut = Easing.bezier(0.2, 0, 0, 1);
 const flightEase = Easing.bezier(0.3, 0, 0.1, 1);
 
-function Layer({ children, opacity, size }) {
+function Layer({ children, opacity, size, transform = [] }) {
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity }]}>
+    <Animated.View style={[StyleSheet.absoluteFill, { opacity, transform }]}>
       <Svg width={size} height={size} viewBox={`0 0 ${VIEW} ${VIEW}`}>
         <G transform={`translate(${GROUP.x} ${GROUP.y}) scale(${GROUP.scale})`}>
           {children}
@@ -151,6 +144,7 @@ export default function SplashOverlay() {
     return { width, height };
   });
   const values = useRef({
+    tail: new Animated.Value(0),
     whole: new Animated.Value(1),
     background: new Animated.Value(1),
     body: new Animated.Value(1),
@@ -161,17 +155,31 @@ export default function SplashOverlay() {
     pops: [],
   }).current;
   const reduceMotion = useRef(false);
+  const [motionAllowed, setMotionAllowed] = useState(false);
+  const [copyDrawn, setCopyDrawn] = useState(false);
   useEffect(() => {
+    let mounted = true;
+    const updateMotion = value => {
+      if (!mounted) return;
+      reduceMotion.current = !!value;
+      setReducedMotion(value);
+      setReduceMotion(value);
+      setMotionAllowed(!value);
+    };
     AccessibilityInfo.isReduceMotionEnabled?.()
-      .then(value => {
-        reduceMotion.current = !!value;
-        setReducedMotion(value);
-        setReduceMotion(value);
-      })
+      .then(updateMotion)
       .catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener?.(
+      'reduceMotionChanged',
+      updateMotion,
+    );
     // A hang somewhere (nothing ever reported): fade to what is there.
     const timer = setTimeout(giveUpWaiting, 30000);
-    return () => clearTimeout(timer);
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+      subscription?.remove();
+    };
   }, []);
   const drawn = useRef(false);
   const onLayout = event => {
@@ -179,17 +187,31 @@ export default function SplashOverlay() {
     setBox({ width, height });
     if (drawn.current) return;
     drawn.current = true;
+    setCopyDrawn(true);
     // The copy is on screen (a frame later): the system launch screen can go.
     requestAnimationFrame(() => requestAnimationFrame(hideSplash));
   };
 
   const { phase, mode, targets } = splash;
+  useEffect(() => {
+    if (
+      !copyDrawn ||
+      phase !== 'waiting' ||
+      !motionAllowed ||
+      launchInfo().animatorScale === 0
+    )
+      return;
+    return startTailWag(values.tail);
+  }, [copyDrawn, phase, motionAllowed, values]);
+
   // One pop-in value per other dog, made with the targets so the copies are
   // drawn at scale 0 from their first frame.
   if (values.pops.length !== Math.max(0, targets.length - 1))
     values.pops = targets.slice(1).map(() => new Animated.Value(0));
   useEffect(() => {
     if (phase !== 'handover') return;
+    values.tail.stopAnimation();
+    values.tail.setValue(0);
     const { animatorScale } = launchInfo();
     const timing = (value, toValue, duration, delay = 0, easing = easeOut) =>
       Animated.timing(value, {
@@ -257,6 +279,26 @@ export default function SplashOverlay() {
 
   if (phase === 'done') return null;
   const size = SPLASH_ICON;
+  const tailPivot = {
+    x:
+      ((GROUP.x + GROUP.scale * SITTING_DOG_TAIL_ROOT.x) * size) / VIEW -
+      size / 2,
+    y:
+      ((GROUP.y + GROUP.scale * SITTING_DOG_TAIL_ROOT.y) * size) / VIEW -
+      size / 2,
+  };
+  const tailTransform = [
+    { translateX: tailPivot.x },
+    { translateY: tailPivot.y },
+    {
+      rotate: values.tail.interpolate({
+        inputRange: [-WAG_TIMING.angle, WAG_TIMING.angle],
+        outputRange: [`-${WAG_TIMING.angle}deg`, `${WAG_TIMING.angle}deg`],
+      }),
+    },
+    { translateX: -tailPivot.x },
+    { translateY: -tailPivot.y },
+  ];
   const iconBox = box && {
     x: (box.width - size) / 2,
     y: (box.height - size) / 2,
@@ -344,6 +386,13 @@ export default function SplashOverlay() {
               ))}
             </G>
           </Layer>
+          <Layer size={size} opacity={values.body} transform={tailTransform}>
+            <G {...strokeOf(colors.splashLine)}>
+              {TAIL_LINES.map(d => (
+                <Path key={d} d={d} />
+              ))}
+            </G>
+          </Layer>
           <Layer size={size} opacity={1}>
             <G {...strokeOf(colors.splashLine)}>
               {HEAD_LINES.map(d => (
@@ -351,9 +400,9 @@ export default function SplashOverlay() {
               ))}
             </G>
             <G fill={colors.splashLine}>
-              <Circle cx={49} cy={58} r={3.4} />
-              <Circle cx={71} cy={58} r={3.4} />
-              <Path d="M56.158 64.5a3.842 2.822 0 1 0 7.684 0a3.842 2.822 0 1 0 -7.684 0" />
+              {SITTING_DOG_FACE.map(d => (
+                <Path key={d} d={d} />
+              ))}
             </G>
           </Layer>
         </Animated.View>
