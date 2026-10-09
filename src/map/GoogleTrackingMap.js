@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Animated,
   PixelRatio,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -48,6 +49,7 @@ import {
   HISTORY_FRAME_PADDING,
   historyFramePadding,
   nearestRouteSpot,
+  routeGeometryIdentity,
   uncrowded,
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
@@ -161,7 +163,7 @@ const ROUTE_TAP_DP = 24;
 const QUICK_TAP_MS = 250;
 const QUICK_TAP_SLOP = 10;
 // The map reports the same tap at most this long after the touch ended.
-const QUICK_TAP_HANDLED_MS = 1000;
+const QUICK_TAP_HANDLED_MS = 600;
 // Metres between two coordinates (equirectangular: a few km at most).
 const metresApartOf = (a, b) =>
   Math.hypot(
@@ -1209,14 +1211,37 @@ function GoogleTrackingMapRenderer({
   // 300 ms). A quick tap on the route is answered from the touch itself
   // (068: tap → cursor under 100 ms); the map's own report of the same tap
   // then does nothing. A tap on a stop number is left to its marker.
-  const quickTap = useRef({ start: null, handledAt: 0 });
+  const quickTap = useRef({ start: null, gesture: null, recent: [] });
+  const touchSurface = useRef(null);
+  const tapContext = useRef(null);
+  tapContext.current = { route: routeGeometryIdentity(historyRoute?.points) };
+  const validTap = gesture => quickTap.current.gesture === gesture &&
+    tapContext.current.route === gesture.route && mapRef.current === gesture.map;
   const STOP_TAP_DP = 20;
   const touchStart = event => {
     const finger = event.nativeEvent;
-    quickTap.current.start =
-      historyRoute && !(finger.touches?.length > 1)
-        ? { x: finger.pageX, y: finger.pageY, at: Date.now() }
-        : null;
+    if (!Number.isFinite(finger.pageX) || !Number.isFinite(finger.pageY)) {
+      quickTap.current.start = null;
+      quickTap.current.gesture = null;
+      return;
+    }
+    const gesture = {
+      x: finger.pageX, y: finger.pageY, at: Date.now(),
+      route: tapContext.current.route, map: mapRef.current, owner: null,
+    };
+    gesture.origin = new Promise(resolve => {
+      if (!touchSurface.current?.measure) { resolve(null); return; }
+      // measure's page origin shares the touch pageX/pageY frame, including
+      // configurations where the app root does not start at the window origin.
+      touchSurface.current.measure((_x, _y, _width, _height, x, y) => {
+        gesture.windowOrigin = { x, y };
+        resolve(gesture.windowOrigin);
+      });
+    });
+    quickTap.current.recent = quickTap.current.recent.filter(tap => Date.now() - (tap.endedAt ?? tap.at) < QUICK_TAP_HANDLED_MS);
+    quickTap.current.recent.push(gesture);
+    quickTap.current.gesture = gesture;
+    quickTap.current.start = historyRoute && !(finger.touches?.length > 1) ? gesture : null;
   };
   const touchMove = event => {
     const start = quickTap.current.start;
@@ -1224,57 +1249,96 @@ function GoogleTrackingMapRenderer({
     if (start && Math.hypot(finger.pageX - start.x, finger.pageY - start.y) > QUICK_TAP_SLOP)
       quickTap.current.start = null;
   };
-  const touchEnd = async event => {
+  const touchEnd = async () => {
     const start = quickTap.current.start;
     quickTap.current.start = null;
     const map = mapRef.current;
     const points = historyRoute?.points;
     if (!start || Date.now() - start.at > QUICK_TAP_MS || !points?.length) return;
     if (!map?.coordinateForPoint || !map?.pointForCoordinate) return;
-    const at = { x: start.x - (cursorLayout.x ?? 0), y: start.y - (cursorLayout.y ?? 0) };
+    start.endedAt = Date.now();
     try {
+      const origin = await start.origin;
+      if (!Number.isFinite(origin?.x) || !Number.isFinite(origin?.y) || !validTap(start) || start.owner) return;
+      const at = { x: start.x - origin.x, y: start.y - origin.y };
+      start.position = at;
       const coordinate = await map.coordinateForPoint(at);
+      if (!validTap(start) || start.owner) return;
       if (metresPerDp > 0 && (historyRoute.places || []).some(place =>
         metresApartOf(place.coordinate, coordinate) / metresPerDp <= STOP_TAP_DP)) return;
       const found = nearestRouteSpot(points, coordinate, historyRoute?.cursor?.time ?? null);
       if (!found) return;
       const point = await map.pointForCoordinate(found.coordinate);
-      if (Math.hypot(point.x - at.x, point.y - at.y) > ROUTE_TAP_DP) return;
-      quickTap.current.handledAt = Date.now();
+      if (!(Math.hypot(point.x - at.x, point.y - at.y) <= ROUTE_TAP_DP)) return;
+      if (!validTap(start) || start.owner) return;
+      start.owner = 'quick';
       onCursorMove?.(found.point.time, 'route');
     } catch {
       /* The map's own report of the tap decides. */
     }
   };
   const pressHistoryMap = async event => {
-    if (Date.now() - quickTap.current.handledAt < QUICK_TAP_HANDLED_MS) return;
+    const gesture = quickTap.current.gesture;
+    const map = mapRef.current;
+    const route = tapContext.current.route;
+    const receivedAt = Date.now();
+    const nativeScale = Platform.OS === 'android' ? PixelRatio.get() : 1;
+    const position = event?.position && {
+      x: event.position.x / nativeScale, y: event.position.y / nativeScale,
+    };
+    const origin = gesture ? await gesture.origin : null;
+    // Native coordinates are usable against the route current at handler
+    // start, even if it changed since touchStart. Reject later async changes.
+    if (gesture && (quickTap.current.gesture !== gesture || mapRef.current !== gesture.map)) return;
+    if (tapContext.current.route !== route) return;
+    if (!position) {
+      if (gesture?.owner) return;
+      if (gesture) gesture.owner = 'native';
+      onMapPress?.();
+      return;
+    }
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+    // The current touch token proves ownership even if the JS thread delays
+    // delivery beyond 600 ms. Time bounds associate reports with older tokens.
+    const matching = gesture && origin &&
+      Math.hypot(position.x - (gesture.x - origin.x), position.y - (gesture.y - origin.y)) <= QUICK_TAP_SLOP;
+    const earlier = quickTap.current.recent.find(tap => tap !== gesture && tap.windowOrigin && position &&
+      receivedAt - (tap.endedAt ?? tap.at) <= QUICK_TAP_HANDLED_MS &&
+      Math.hypot(position.x - (tap.x - tap.windowOrigin.x), position.y - (tap.y - tap.windowOrigin.y)) <= QUICK_TAP_SLOP);
+    if (!matching && earlier) return; // A delayed report from an older gesture has no authority.
+    if (matching && gesture.owner) return;
+    // Claim before projection: a pending quick result cannot also act.
+    if (matching) gesture.owner = 'native';
+    const nativeToken = {};
+    quickTap.current.native = nativeToken;
+    const active = () => quickTap.current.native === nativeToken && mapRef.current === map && tapContext.current.route === route &&
+      quickTap.current.gesture === gesture;
     const found = nearestRouteSpot(
       historyRoute?.points,
       event?.coordinate,
       historyRoute?.cursor?.time ?? null,
     );
-    const map = mapRef.current;
     if (found && map?.pointForCoordinate && event?.position) {
       try {
         // The place on the drawn line, not its nearest fix: a tap in the
         // middle of a long segment is on the route.
         const point = await map.pointForCoordinate(found.coordinate);
-        const scale = PixelRatio.get();
-        // position is in pixels, the projection in dp.
+        const scale = nativeScale;
+        // Android emits pixels; iOS emits points. Projection uses map dp/points.
         if (
           Math.hypot(
             point.x - event.position.x / scale,
             point.y - event.position.y / scale,
           ) <= ROUTE_TAP_DP
         ) {
-          onCursorMove?.(found.point.time, 'route');
+          if (active()) onCursorMove?.(found.point.time, 'route');
           return;
         }
       } catch {
         /* Fall through: an empty tap. */
       }
     }
-    onMapPress?.();
+    if (active()) onMapPress?.();
   };
   const routeCamera = historyRoute?.camera;
   const frameRoute = (extraBottom = 0, animated = true) => {
@@ -1450,6 +1514,8 @@ function GoogleTrackingMapRenderer({
           over it: Android ignores accessibilityViewIsModal. */}
       <View
         style={StyleSheet.absoluteFill}
+        ref={touchSurface}
+        collapsable={false}
         pointerEvents="box-none"
         importantForAccessibility={behindSheet(a11yHidden)}
         onTouchStart={historyRoute ? touchStart : undefined}

@@ -73,13 +73,15 @@ export function vehiclesSettledAt(scan, edges, i, config) {
 }
 
 /**
- * 判定表「距離怎麼加」: the range is cut into runs of continuous walking (or
- * a dog's movement), broken by a gap over 3 minutes, a vehicle or an indoor
- * hold. The first fix of a run is only a reference; each later fix is
- * compared with the last COUNTED one and counts once it is farther than the
- * larger accuracy of the two (at least 5 m, 10 m without an accuracy). The
- * distance lands on the edge that crossed the threshold.
+ * Where counting a run stands between two edges: `anchor` is the last COUNTED
+ * fix the next move is measured from, `budget` how far the phone's own
+ * measured speeds say it went since that fix (config.speedBudget, phone only;
+ * Infinity once a fix has no speed). Today's distance (TodayRouteEngine)
+ * keeps one at the last edge that can no longer change, so a day of
+ * uninterrupted walking is not added up again every poll.
  */
+export const countState = () => ({ anchor: null, budget: 0 });
+
 // The step's speed for the budget: the speed measured at the fix it
 // reaches; a long step (over 10 s, sparse fixes) also takes the speed it
 // left with, so a walk that ends on a fix taken standing still still counts
@@ -91,32 +93,40 @@ function stepSpeed(edge) {
   return Math.max(to ?? 0, from ?? 0);
 }
 
-export function countDistances(edges, config = configFor('dog')) {
-  let anchor = null;
-  // How far the phone's own measured speeds say it went since the anchor
-  // (config.speedBudget, phone only; Infinity once a fix has no speed).
-  let budget = 0;
-  for (const edge of edges) {
-    if (edge.mode !== 'walking' && edge.mode !== 'moving') {
-      edge.countedDistanceM = 0; anchor = null; continue;
-    }
-    if (!anchor) { anchor = edge.from; budget = 0; }
-    // A break at one place (samePlaceGap) is no walk.
-    if (edge.bridged) { edge.countedDistanceM = 0; continue; }
-    // With neither fix's speed measured, the old rule (Infinity).
-    const speed = config.speedBudget ? stepSpeed(edge) : null;
-    // Speeds under stillMps are a phone standing still (measurement noise).
-    budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
-    const moved = distanceMeters(anchor, edge.to);
-    const threshold = Math.max(config.minMoveM, accuracyOf(anchor, config), accuracyOf(edge.to, config));
-    // 067: indoors all day the position drifts 50–110 m for minutes while the
-    // phone measures 0–1 km/h. A move the measured speeds cannot cover (half
-    // again what they add up to, plus minMoveM) is drift: it neither counts
-    // nor becomes the anchor.
-    if (moved > threshold && moved <= budget * 1.5 + config.minMoveM) {
-      edge.countedDistanceM = moved; anchor = edge.to; budget = 0;
-    } else edge.countedDistanceM = 0;
+/** countDistances below for one edge, carrying `state` (countState). */
+export function countEdge(state, edge, config) {
+  if (edge.mode !== 'walking' && edge.mode !== 'moving') {
+    edge.countedDistanceM = 0; state.anchor = null; return;
   }
+  if (!state.anchor) { state.anchor = edge.from; state.budget = 0; }
+  // A break at one place (samePlaceGap) is no walk.
+  if (edge.bridged) { edge.countedDistanceM = 0; return; }
+  const speed = config.speedBudget ? stepSpeed(edge) : null;
+  // Speeds under stillMps are a phone standing still (measurement noise).
+  state.budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
+  const moved = distanceMeters(state.anchor, edge.to);
+  const threshold = Math.max(config.minMoveM, accuracyOf(state.anchor, config), accuracyOf(edge.to, config));
+  // 067: indoors all day the position drifts 50–110 m for minutes while the
+  // phone measures 0–1 km/h. A move the measured speeds cannot cover (half
+  // again what they add up to, plus minMoveM) is drift: it neither counts
+  // nor becomes the anchor.
+  if (moved > threshold && moved <= state.budget * 1.5 + config.minMoveM) {
+    edge.countedDistanceM = moved; state.anchor = edge.to; state.budget = 0;
+  } else edge.countedDistanceM = 0;
+}
+
+/**
+ * 判定表「距離怎麼加」: the range is cut into runs of continuous walking (or
+ * a dog's movement), broken by a gap over 3 minutes, a vehicle or an indoor
+ * hold. The first fix of a run is only a reference; each later fix is
+ * compared with the last COUNTED one and counts once it is farther than the
+ * larger accuracy of the two (at least 5 m, 10 m without an accuracy). The
+ * distance lands on the edge that crossed the threshold. `state` carries a
+ * run on from an earlier call (TodayRouteEngine); without one each call
+ * starts a fresh run.
+ */
+export function countDistances(edges, config = configFor('dog'), state = countState()) {
+  for (const edge of edges) countEdge(state, edge, config);
   return edges;
 }
 

@@ -92,3 +92,42 @@ test('a one-second feed refresh leaves the tracking state alone', () => {
   state = trackingSourceReducer(state, { type: 'caught-up', source: 'real' });
   expect(state).toBe(settled);
 });
+
+test('coordinate reconciliation changes line identity with the same times, count and style', () => {
+  const point = (time, latitude) => ({ time, latitude, longitude: 121 });
+  const edges = [{ start: 1, end: 2, mode: 'walking', from: point(1, 25), to: point(2, 25.001) }];
+  const before = routeLines(edges, { color: '#2a6fdb' });
+  const changed = [{ ...edges[0], to: point(2, 25.002) }];
+  expect(routeLines(changed, { color: '#2a6fdb' })[0].id).not.toBe(before[0].id);
+  expect(routeLines(edges.map(edge => ({ ...edge })), { color: '#2a6fdb' })[0].id).toBe(before[0].id);
+});
+
+test('cursor-only presentations reuse the route points and spatial grid', () => {
+  const { historyMapPresentation, routeSpotGrid } = require('../src/history/screen/HistoryMapModel');
+  const points = [{ time: 1, latitude: 25, longitude: 121 }, { time: 2, latitude: 25.001, longitude: 121 }];
+  const model = { points, edges: [] };
+  const first = historyMapPresentation(model, { color: '#2a6fdb' });
+  const next = historyMapPresentation(model, { color: '#2a6fdb', cursor: { point: points[1] } });
+  expect(next.points).toBe(first.points);
+  expect(routeSpotGrid(next.points)).toBe(routeSpotGrid(first.points));
+});
+
+test('in-place hold replay invalidates coordinate, line, route and grid snapshots', () => {
+  const { historyMapPresentation, routeSpotGrid, routeGeometryIdentity } = require('../src/history/screen/HistoryMapModel');
+  const points = [{ time: 1, latitude: 25, longitude: 121 }, { time: 2, latitude: 25.001, longitude: 121 }];
+  const edges = [{ start: 1, end: 2, mode: 'walking', from: points[0], to: points[1] }];
+  const model = { points, edges };
+  const before = historyMapPresentation(model, { color: '#2a6fdb', cursor: { point: points[1] } });
+  const grid = routeSpotGrid(before.points);
+  const identity = routeGeometryIdentity(points);
+  points[1].latitude = 25.002;
+  const after = historyMapPresentation(model, { color: '#2a6fdb', cursor: { point: points[1] } });
+  expect(after.lines[0].id).not.toBe(before.lines[0].id);
+  expect(after.lines[0].coordinates[1].latitude).toBe(25.002);
+  expect(after.cursor.coordinate.latitude).toBe(25.002);
+  expect(after.camera[1].latitude).toBe(25.002);
+  expect(after.points[1].latitude).toBe(25.002);
+  expect(before.points[1].latitude).toBe(25.001);
+  expect(routeSpotGrid(after.points)).not.toBe(grid);
+  expect(routeGeometryIdentity(points)).not.toBe(identity);
+});
