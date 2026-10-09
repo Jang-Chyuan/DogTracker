@@ -1,3 +1,4 @@
+import { LoadingContent } from '../components/Skeleton';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
@@ -193,10 +194,10 @@ export default function AccountSettings({
           <>
             <ListRow
               testID="account-upload-pending"
-              title="手機還沒上傳"
-              right={upload.pendingText}
+              title={upload.pending > 0 ? '手機還沒上傳' : '都已上傳'}
+              right={upload.pending > 0 ? upload.pendingText : null}
               rightTone={['mutedBold']}
-              label={`手機還沒上傳 ${upload.pendingText}`}
+              label={upload.pending > 0 ? `手機還沒上傳 ${upload.pendingText}` : '都已上傳'}
             />
             <ListRow
               testID="account-upload-last"
@@ -207,9 +208,7 @@ export default function AccountSettings({
             />
           </>
         )}
-        {page.routesLoading && (
-          <ListRow title="讀取上傳方式中…" titleTone="muted" />
-        )}
+        <LoadingContent loading={page.routesLoading} skeletonTestID="account-loading">
         {page.routes.map(item => (
           <ListRow
             key={item.master}
@@ -228,6 +227,7 @@ export default function AccountSettings({
             }
           />
         ))}
+        </LoadingContent>
       </GroupCard>
 
       <ConfirmDialog

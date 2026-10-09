@@ -18,17 +18,35 @@ export const SITTING_DOG_PATHS = [
   'M56.158,64.5a3.8419999999999996,2.8219999999999996 0 1,0 7.683999999999999,0a3.8419999999999996,2.8219999999999996 0 1,0 -7.683999999999999,0',
 ];
 
+// Separate groups let the splash move only the tail without changing the art.
+export const SITTING_DOG_HEAD_LINES = SITTING_DOG_PATHS.slice(0, 5);
+export const SITTING_DOG_BODY_LINES = SITTING_DOG_PATHS.slice(5, 7);
+export const SITTING_DOG_TAIL_LINES = SITTING_DOG_PATHS.slice(7, 9);
+export const SITTING_DOG_FACE = SITTING_DOG_PATHS.slice(9);
+export const SITTING_DOG_TAIL_ROOT = { x: 88, y: 84 };
+
 // Includes rounded stroke caps on the tail marks, with breathing room.
 export const SITTING_DOG_VIEW_BOX = '12 24 106 112';
 
 export default function SittingDogArt({ size = sizes.sittingDog.canvas }) {
   const { colors } = useTheme();
   return (
-    <Svg width={size} height={size} viewBox={SITTING_DOG_VIEW_BOX} accessible={false}>
+    <Svg
+      width={size}
+      height={size}
+      viewBox={SITTING_DOG_VIEW_BOX}
+      accessible={false}
+    >
       {SITTING_DOG_PATHS.map((d, index) => (
-        <Path key={d} d={d} fill={index < 9 ? 'none' : colors.text}
-          stroke={index < 9 ? colors.text : 'none'} strokeWidth={5}
-          strokeLinecap="round" strokeLinejoin="round" />
+        <Path
+          key={d}
+          d={d}
+          fill={index < 9 ? 'none' : colors.text}
+          stroke={index < 9 ? colors.text : 'none'}
+          strokeWidth={5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       ))}
     </Svg>
   );

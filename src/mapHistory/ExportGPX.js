@@ -57,7 +57,7 @@ export function buildGPX(snapshot) {
       const segments = groups.get(`ride-${index}`) || [];
       if (!segments.length) return;
       number += 1;
-      tracks.push(track(subject, `${subject.kind === 'phone' ? '' : `${subjectName(subject)} `}${subject.kind === 'phone' ? '開車' : '坐車'} ${number}（不算距離）`, 'drive', segments));
+      tracks.push(track(subject, `${subject.kind === 'phone' ? '' : `${subjectName(subject)} `}${subject.kind === 'phone' ? '開車' : '坐車'} ${number}`, 'drive', segments));
     });
   }
   return ['<?xml version="1.0" encoding="UTF-8"?>', '<gpx version="1.1" creator="DogTracker" xmlns="http://www.topografix.com/GPX/1/1">', ...wpts.filter(Boolean), ...tracks.filter(Boolean), '</gpx>'].join('\n');

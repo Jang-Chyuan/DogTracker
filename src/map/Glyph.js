@@ -1,4 +1,5 @@
 import { size as sizes } from '../theme/tokens';
+import { PAW_STROKE } from './PawGeometry';
 import { useTheme } from '../theme/ThemeProvider';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
@@ -119,16 +120,7 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
       )}
       {name === 'paw' && (
         // History list: a dog's movement row (H1 狗的歷史).
-        <>
-          <Circle cx={6.5} cy={10} r={2} {...stroke} />
-          <Circle cx={10} cy={5.5} r={2} {...stroke} />
-          <Circle cx={14} cy={5.5} r={2} {...stroke} />
-          <Circle cx={17.5} cy={10} r={2} {...stroke} />
-          <Path
-            d="M12 12c-3 0-5.5 3.2-5.5 5.4 0 1.6 1.3 2.6 2.8 2.6 1 0 1.7-.5 2.7-.5s1.7.5 2.7.5c1.5 0 2.8-1 2.8-2.6C17.5 15.2 15 12 12 12z"
-            {...stroke}
-          />
-        </>
+        <Path d={PAW_STROKE} {...stroke} />
       )}
       {name === 'car' && (
         // History list: 開車 (my route) and 坐車 (a dog), seen from the side.

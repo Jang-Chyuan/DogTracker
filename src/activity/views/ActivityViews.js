@@ -1,3 +1,4 @@
+import { size } from '../../theme/tokens';
 import { ACTIVITY, activityMinutes, durationText, minuteOf } from '../ActivityMinutes';
 
 const MINUTE = 60000;
@@ -11,10 +12,9 @@ export const ACTIVITY_VIEW_COPY = Object.freeze({
   tabs: Object.freeze(['日', '週', '月', '年']),
   previous: '‹',
   next: '›',
-  legend: Object.freeze(STATES.map(state => Object.freeze({ state, label: WORDS[state] }))),
-  low: `低活動 ${ACTIVITY.restMax} 以下`,
-  high: `高活動 ${ACTIVITY.vigorousMin} 以上`,
-  explanation: `休息：最近 ${ACTIVITY.restMinutes} 分鐘幾乎沒動；劇烈：最近 ${ACTIVITY.vigorousMinutes} 分鐘一直在激烈活動`,
+  legend: Object.freeze([...STATES, 'missing'].map(state => Object.freeze({ state, label: WORDS[state] }))),
+  low: '休息',
+  high: '劇烈',
   provisional: '門檻暫定',
   empty: '沒有活動量資料',
   missing: '沒有資料',
@@ -258,7 +258,7 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
   const own = { rest: runsOf(states, CODE.rest), vigorous: runsOf(states, CODE.vigorous), missing: gaps };
   const ranges = {};
   for (const state of ['rest', 'vigorous', 'missing']) ranges[state] = mode === 'day' ? own[state] : splitByDay(own[state]);
-  const bars = [];
+  const bars = mode === 'day' ? bucketDayMinutes(points, now, period.start) : [];
   if (mode !== 'day') {
     let index = 0;
     for (let start = period.start; start < period.end;) {
@@ -273,6 +273,41 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
     }
   }
   return finish({ mode, period, navigation, now, end, totals, ranges, bars, points, bands, gaps });
+}
+
+/** 96 local-clock quarter hours, including on DST days. Repeated clock
+ * minutes share a bucket; skipped clock minutes leave an empty slot.
+ * Ties between rest and normal use normal. Heights average only data. */
+export function bucketDayMinutes(points, now, start) {
+  const today = dayStart(now) === start;
+  const current = new Date(now);
+  const last = today ? Math.floor((current.getHours() * 60 + current.getMinutes()) / 15) : 95;
+  const buckets = Array.from({ length: 96 }, (_, index) => ({
+    index, pending: index > last, count: 0, sum: 0,
+    totals: { rest: 0, normal: 0, vigorous: 0 },
+  }));
+  for (const point of points) {
+    if (point.value == null || point.minute >= minuteOf(now)) continue;
+    const date = new Date(point.minute);
+    const index = Math.floor((date.getHours() * 60 + date.getMinutes()) / 15);
+    const bucket = buckets[index];
+    if (bucket.pending || !Object.hasOwn(bucket.totals, point.state)) continue;
+    bucket.count += 1;
+    bucket.sum += point.value;
+    bucket.totals[point.state] += 1;
+  }
+  return buckets.map(({ sum, ...bucket }) => {
+    const value = bucket.count ? sum / bucket.count : null;
+    const state = value == null ? 'missing' : bucket.totals.vigorous >= 2 ? 'vigorous'
+      : bucket.totals.rest > bucket.totals.normal ? 'rest' : 'normal';
+    return { ...bucket, value, state, height: value == null ? 0 : Math.max(size.activity.dayBarMin, value * size.activity.chart) };
+  });
+}
+
+export function activityChartSummary(totals) {
+  return ['vigorous', 'rest', 'normal', 'missing']
+    .filter(state => totals[state] > 0)
+    .map(state => `${WORDS[state]} ${totalText(totals[state])}`).join('，') || ACTIVITY_VIEW_COPY.empty;
 }
 
 function barOf(mode, start, stop, tally) {

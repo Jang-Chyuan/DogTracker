@@ -1,3 +1,4 @@
+import { normalizeWaitingSources } from '../map/WaitingSources';
 import { getErrorMessage } from '../utils/errors';
 import { DEFAULT_ALERT_PREFERENCES, normalizeAlertPreferences } from '../alerts/AlertPreferences';
 import { ONBOARDING_DONE, ONBOARDING_SIGN_IN, ONBOARDING_STEPS } from '../app/Launch';
@@ -15,6 +16,7 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   windowMinutes: 2,
   // A6 (還沒有狗) was closed with ✕: it never shows again.
   noDataCardDismissed: false,
+  waitingLocationSources: null,
   diagnosticsEnabled: false,
   // 設定 → 提醒 (S6): AlertPreferences.
   alerts: DEFAULT_ALERT_PREFERENCES,
@@ -57,6 +59,7 @@ export function validateTrackingPreferences(value) {
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
     noDataCardDismissed: settings.noDataCardDismissed,
+    waitingLocationSources: normalizeWaitingSources(settings.waitingLocationSources),
     diagnosticsEnabled: settings.diagnosticsEnabled === true,
     // Missing before v3 (051b); a damaged value falls back to the defaults
     // rather than failing every other preference.

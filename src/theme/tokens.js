@@ -8,6 +8,8 @@ export const colors = {
   text: '#222222',
   textMuted: '#5E5E5E',
   line: '#EDE6E4',
+  skeleton: '#EDE6E4',
+  skeletonHighlight: '#F7F2F0',
   // Saturated coral is a shape colour (default dog avatar, range selection,
   // selected-row edge). White text on it is only 2.49:1, so never put text on it.
   accent: '#F2867A',
@@ -170,11 +172,11 @@ export const radius = {
   alertCard: 14,
   rangeFrame: 14,
   input: 12,
-  snackbar: 12,
+  snackbar: 999,
   stayRow: 12,
-  settingIcon: 10,
-  cursorLabel: 10,
-  mapLabel: 6,
+  settingIcon: 999,
+  cursorLabel: 16,
+  mapLabel: 999,
   dialog: 24,
 };
 
@@ -230,6 +232,8 @@ export const size = {
 
     // Dog marker bitmap canvas, shadow placement and stale-ring clearance (§15).
     canvas: 168,
+    // The widest name text in a tag (D14 MARKER_WIDTH adds the capsule).
+    textWidth: 156,
     headroom: 8,
     staleRingOutset: 3,
     selectedShadowDrop: 3,
@@ -247,9 +251,12 @@ export const size = {
     problemWeight: '900',
     cardWeight: '800',
   },
+  // D14: capsules (full radius), 12 when the name wraps to two lines.
   mapLabel: {
+    radius: radius.full,
+    radiusWrapped: 12,
     paddingV: 2,
-    paddingH: 6,
+    paddingH: 8,
     border: border.hairline,
     halo: 3,
     maxLines: 2,
@@ -265,7 +272,7 @@ export const size = {
   floatingButton: 48,
   chip: { height: 36, paddingH: 12, avatar: 20, leadBorder: border.strong },
   todayPill: { height: 48, paddingH: 16, iconGap: 6 },
-  groupTag: { height: 32, paddingH: 10, problemDot: 8 },
+  groupTag: { height: 32, paddingH: 8, problemDot: 8, dotGap: 6, safety: 8 },
   edgeHint: {
     height: 36,
     avatar: 24,
@@ -293,6 +300,13 @@ export const size = {
     barLabel: 40,
     legendSwatch: 10,
     zoneLabelInset: 2,
+    // D20 day view: 96 quarter-hour bars, 1dp apart, 1.5dp top corners; an
+    // empty quarter is a 3dp no-data line.
+    dayBarGap: 1,
+    dayBarRadius: 1.5,
+    dayGapHeight: 3,
+    // A quarter with readings is at least this tall (visible at 0).
+    dayBarMin: 3,
 
     // activity axis label in its illustration/layout specification.
     axisLabel: 44,
@@ -376,7 +390,7 @@ export const size = {
     halo: 32,
     labelGap: 12,
     labelPaddingV: 4,
-    labelPaddingH: 8,
+    labelPaddingH: 10,
 
     // History cursor label collision footprint and graphic text metrics.
     collisionBoxWidth: 146,
@@ -642,6 +656,13 @@ export const size = {
   // History loading placeholder line.
   skeleton: {
     line: 14,
+    // D8 shaped skeletons (H3c list, A4, S3, S8).
+    padding: 16,
+    rowGap: 12,
+    rowSpacing: 24,
+    timelineRow: 64,
+    labelGap: 10,
+    chart: 180,
   },
 
   // History dog-picker avatar and selected radio indicator.

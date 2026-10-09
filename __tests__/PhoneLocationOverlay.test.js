@@ -1,5 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
+import { StyleSheet, Text } from 'react-native';
 import { Circle, Marker } from 'react-native-maps';
 import PhoneLocationOverlay from '../src/map/PhoneLocationOverlay';
 import { locationTrackerNative } from '../src/locationTracker/LocationTrackerService';
@@ -222,4 +223,16 @@ test('stationary locks immediately, stale shows last fix and inactive cancels ti
   await render({ ...position, latitude: 25.0003, timestamp: 13000 }, 0, false);
   expect(cleared).toHaveBeenCalled();
   cleared.mockRestore();
+});
+
+test('phone name is a capsule and the expanded bitmap stays anchored on the dot', async () => {
+  await render(position);
+  const tag = renderer.root.findAllByProps({ testID: 'phone-name-tag' }).find(node => typeof node.type === 'string');
+  expect(StyleSheet.flatten(tag.props.style)).toMatchObject({ borderRadius: 999, paddingHorizontal: 8 });
+  expect(tag.findByType(Text).props.children).toBe('手機');
+  const marker = renderer.root.findByType(Marker);
+  const container = renderer.root.findAll(node => typeof node.type === 'string' && node.props.collapsable === false)[0];
+  const frame = StyleSheet.flatten(container.props.style);
+  expect(marker.props.anchor.y * frame.height).toBe(15);
+  expect(frame.width).toBeGreaterThan(30);
 });

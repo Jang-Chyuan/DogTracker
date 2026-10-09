@@ -302,12 +302,12 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       // Read both the latest packet and last valid fix per local dog. No raw
       // history pages are retained in React, including after a restart.
       const local = rows(await connection.executeAsync(`SELECT slave_id, master_id,
-        MAX(received_at) AS track_at, received_at, slave_lat, slave_lon,
+        MAX(received_at) AS track_at, received_at, slave_lat, slave_lon, (SELECT MIN(first.received_at) FROM dog_status first WHERE first.master_id = dog_status.master_id AND first.slave_id = dog_status.slave_id) AS first_received_at,
         speed_kmh, battery_percentage, battery_valid, usb_present, distance_meters, 'ble' AS source
         FROM dog_status WHERE received_at >= ? GROUP BY slave_id
         UNION ALL
         SELECT slave_id, master_id, MAX(received_at) AS track_at, received_at,
-        slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present,
+        slave_lat, slave_lon, (SELECT MIN(first.received_at) FROM dog_status first WHERE first.master_id = dog_status.master_id AND first.slave_id = dog_status.slave_id) AS first_received_at, speed_kmh, battery_percentage, battery_valid, usb_present,
         distance_meters, 'ble' AS source
         FROM dog_status WHERE received_at >= ? AND slave_lat IS NOT NULL
           AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)

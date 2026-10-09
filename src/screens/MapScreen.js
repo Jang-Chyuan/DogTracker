@@ -1,3 +1,4 @@
+import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
@@ -142,6 +143,8 @@ export default function MapScreen({
   // A top card's button that leaves the map: 'receiver-settings',
   // 'storage-settings', 'storage-reason', 'connect-receiver', 'sign-in'.
   onAlertAction,
+  switchingReceiver = false,
+  pausedReceiver = false,
   // The alerts' view of the dogs (058a, App's useAlertEngine): { source,
   // ready, dogs (named, with their range judgement), receiverBattery }.
   onAlertInput,
@@ -419,11 +422,30 @@ export default function MapScreen({
     alertBatteryValid,
     alertBatteryPercentage,
   ]);
+  const waitingMemory = useRef(null);
+  const waitingSaved = tracking.preferences.value?.waitingLocationSources;
+  const [waitingRevision, setWaitingRevision] = useState(0);
+  const currentReceiver = receiver?.state ?? receiverState;
+  const waitingReceiver = pausedReceiver ? { ...currentReceiver, enabled: false } : currentReceiver;
+  const waitingReady = tracking.preferences.ready && cloudDogs?.loaded && !!waitingReceiver;
+  const waitingState = !active && !switchingReceiver
+    ? waitingMemory.current ?? waitingSaved ?? waitingSourcesState(null, waitingReceiver, [], now)
+    : waitingSourcesState(waitingMemory.current ?? waitingSaved, waitingReceiver,
+      cloudDogs?.packets, now, switchingReceiver);
+  const waitingKey = JSON.stringify(waitingState);
+  if (waitingReady) waitingMemory.current = waitingState;
+  const lastWaitingSaved = useRef(null);
+  useEffect(() => {
+    if (!waitingReady || waitingKey === lastWaitingSaved.current || waitingKey === JSON.stringify(waitingSaved)) return;
+    lastWaitingSaved.current = waitingKey;
+    tracking.saveTrackingPreferences?.({ waitingLocationSources: JSON.parse(waitingKey) });
+  }, [waitingKey, waitingSaved, tracking, waitingRevision, waitingReady]);
+  const waitingSources = waitingReady ? waitingSourcesCount(waitingState, now) : 0;
   // History shares the map: only the map's own card follows it there.
   const cards = topCards({
     map: mapState === 'retrying' ? 'load-failed' : mapState,
     retrying: mapState === 'retrying',
-    ...(historical ? {} : { outage, storage, noDogs, signedIn, dismissed }),
+    ...(historical ? {} : { outage, storage, noDogs, signedIn, dismissed, waitingSources }),
   });
   const reasons = historical
     ? []
@@ -461,6 +483,12 @@ export default function MapScreen({
         setDismissed(current => ({ ...current, receiver: outage.key }));
       else if (id === 'storage')
         setDismissed(current => ({ ...current, storage: true }));
+      else if (id === 'waiting-sources') {
+        const closed = dismissWaitingSources(waitingMemory.current);
+        waitingMemory.current = closed;
+        tracking.saveTrackingPreferences?.({ waitingLocationSources: closed });
+        setWaitingRevision(value => value + 1);
+      }
       else if (id === 'no-dogs') {
         setNoDogsClosed(true);
         tracking.saveTrackingPreferences?.({ noDataCardDismissed: true });
@@ -1033,7 +1061,7 @@ export default function MapScreen({
         frameRequest={historical ? null : mapFrameRequest}
         coverBottom={coverBottom}
         today={historical ? null : today}
-        onToday={openMyRoute}
+        onToday={today?.unrecorded ? () => onAlertAction?.('phone-unrecorded') : openMyRoute}
       />
 
       {/* The launch screen's handover fades these in (splashChrome). */}

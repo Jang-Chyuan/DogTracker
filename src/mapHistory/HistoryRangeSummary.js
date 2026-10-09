@@ -12,6 +12,7 @@ import {
   spoken,
   summaryDuration,
   summaryText,
+  vehicleExclusion,
 } from '../history/HistoryText';
 import {
   dragRangeHandle,
@@ -42,10 +43,10 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
   if (!model?.points.length) return null;
   // Several dogs: the second line names the protagonist (c158: 「豆豆・移動 7.4 km」).
   const moved = who
-    ? `${who}・移動 ${km(model.distanceM)}`
+    ? `${who}・移動 ${km(model.distanceM)}${vehicleExclusion(model, subject)}`
     : `${subject === 'phone' ? '走了' : '移動'} ${km(
         model.distanceM,
-      )}・${summaryDuration(model.durationMs)}`;
+      )}${vehicleExclusion(model, subject)}・${summaryDuration(model.durationMs)}`;
   const until = range?.following ? '現在' : clock(range?.end);
   if (!open && !who) return summaryText(model, { subject });
   // Several dogs share one range: the title is that range, whoever leads.
@@ -287,7 +288,7 @@ export default function HistoryRangeSummary({
     dayPoints?.length > 1 &&
     dayPoints[dayPoints.length - 1].time - dayPoints[0].time >= 60000;
   // 「08:03 到現在，走了 5.2 公里，點兩下調整範圍」 (設計稿「無障礙」範圍條).
-  const speech = `${lines.title.replace(' – ', ' 到')}，${spoken(lines.detail)}${
+  const speech = `${lines.title.replace(' – ', ' 到')}，${spoken(lines.detail.replace(/（([^）]+)）/g, '，$1'))}${
     enabled ? '，點兩下調整範圍' : ''
   }`;
   // 大字體: 「調整範圍」 goes under the times, which keep the full width.
@@ -346,7 +347,6 @@ export default function HistoryRangeSummary({
       )}
       {open && (
         <>
-          <Text style={styles.hint}>拖兩端的圓點改開始、結束</Text>
           <RangeBar
             range={range}
             track={track}
@@ -411,16 +411,8 @@ const getStyles = makeStyles(theme => {
     adjustText: { color: colors.text, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
     adjustTextOpen: { color: colors.tonalText },
     closed: { color: colors.textMuted, fontSize: type.caption.fontSize, marginTop: space.xs },
-    // 12sp textMuted, 4dp above and below, right on top of the bar.
-    hint: {
-      color: colors.textMuted,
-      fontSize: type.small.fontSize,
-      lineHeight: type.small.lineHeight,
-      marginTop: space.xs,
-      marginBottom: space.xs,
-    },
-    // The 48dp touch row overlaps the hint's 4dp: the track sits right under it.
-    bar: { paddingBottom: space.xs, marginTop: -sizes.rangeBar.summaryOverlap },
+    // No hint above the bar (D6): the track sits right under the summary.
+    bar: { paddingBottom: space.xs, marginTop: space.xs },
     trackArea: { height: TOUCH, justifyContent: 'center' },
     track: {
       marginHorizontal: TOUCH / 2,

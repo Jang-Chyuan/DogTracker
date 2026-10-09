@@ -2,6 +2,8 @@
 // holds (H3c, H3d), drawn from the fixtures through useHistoryScreen as
 // MapScreen does.
 import React from 'react';
+import { StyleSheet } from 'react-native';
+import { radius } from '../src/theme/tokens';
 import Renderer, { act } from 'react-test-renderer';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
@@ -72,6 +74,8 @@ test('H3b: dots on this phone\'s and the cloud\'s days, grey empty and future da
   expect(s.cell('2026-10-08').props.accessibilityLabel).toBe('10 月 8 日，還沒到');
   expect(s.cell('2026-10-07').props.accessibilityState).toEqual({ disabled: false, selected: true });
   expect(s.text()).not.toContain('查詢中…');
+  const frame = s.cell('2026-10-07').findAll(n => n.props.collapsable === false && StyleSheet.flatten(n.props.style)?.borderRadius === radius.full)[0];
+  expect(StyleSheet.flatten(frame.props.style)).toMatchObject({ width: 44, maxWidth: '100%', aspectRatio: 1, borderRadius: radius.full });
   const today = s.renderer.root.findAll(n => n.props.testID === 'calendar-today' && n.props.accessibilityState)[0];
   expect(today.props.accessibilityState.disabled).toBe(true);
   // A day without records does nothing at all.
@@ -192,6 +196,9 @@ test('H3e: 選月份, the months with records, back to the month; 返回鍵 orde
   expect(s.text()).not.toContain('灰字＝沒有紀錄或還沒到，不能點');
   const month = n => s.renderer.root.findAll(node => node.props.testID === `calendar-month-${n}`
     && node.props.accessibilityLabel)[0];
+  const monthStyle = month(8).props.style;
+  expect(StyleSheet.flatten(typeof monthStyle === 'function' ? monthStyle({ pressed: false }) : monthStyle))
+    .toMatchObject({ borderRadius: radius.full, minHeight: 56 });
   expect(month(8).props.accessibilityLabel).toBe('8 月，有紀錄');
   expect(month(7).props.accessibilityLabel).toBe('7 月，沒有紀錄');
   expect(month(11).props.onPress).toBeUndefined();

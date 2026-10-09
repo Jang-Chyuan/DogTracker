@@ -2,7 +2,7 @@
 // phone's own recorded route went today, and what the bottom-right pill says.
 //
 // stops.txt: the pill is my route's range for today — from the departure
-// detection (or the whole day while 還沒出發), the same number as the history
+// detection (or the whole day before departure), the same number as the history
 // summary; driving is not counted, nor moves inside the fixes' accuracy. The
 // rows go through the same history logic (src/history) as the list.
 // Pure functions: the hook (useTodayRoute) feeds them rows as they are
@@ -97,6 +97,8 @@ export function todayPill({ route, livePhone, phone, now = null, waitingSince = 
     icon,
     muted: icon !== 'walk',
     recorded,
-    label: [spoken, reason].filter(Boolean).join('，'),
+    unrecorded,
+    destination: unrecorded ? 'phone-settings' : 'history',
+    label: [spoken, reason, unrecorded ? '點兩下到手機設定' : null].filter(Boolean).join('，'),
   };
 }

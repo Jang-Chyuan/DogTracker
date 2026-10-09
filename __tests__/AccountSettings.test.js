@@ -329,7 +329,10 @@ test.each([
   for (const id of ['account-upload-pending', 'account-upload-last']) {
     expect(renderer.root.findAllByProps({ testID: id }).length > 0).toBe(visible);
   }
-  if (visible) expect(text(renderer)).toContain(`手機還沒上傳 ${page.upload.pendingText}`);
+  if (visible) {
+    expect(text(renderer)).toContain(page.upload.pending > 0 ? `手機還沒上傳 ${page.upload.pendingText}` : '都已上傳');
+    if (!page.upload.pending) expect(text(renderer)).not.toContain('0 筆');
+  }
   else {
     expect(text(renderer)).not.toContain('最後上傳成功');
     expect(text(renderer)).not.toContain('手機還沒上傳');

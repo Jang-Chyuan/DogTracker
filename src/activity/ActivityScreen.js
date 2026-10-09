@@ -1,11 +1,11 @@
-// A4 活動量: one dog's activity by 日 (a curve of every minute) and 週／月／年
+import { LoadingContent } from '../components/Skeleton';
+// A4 活動量: one dog's activity by 日 (15-minute mean bars) and 週／月／年
 // (one segmented bar per day, or per month for 年: 休息、一般、劇烈 from the
 // bottom, the minutes without data left blank on top). Opened from the 活動量
 // row of the dog's card; ‹ and the back key return to the card.
-// Design v3 A4, 判定表「A4 活動量」「A4 怎麼算」「A4 日的曲線」「A4 柱子的比例」.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+// Design v3 A4, 判定表「A4 活動量」「A4 怎麼算」「A4 日的柱子」「A4 柱子的比例」.
+import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   BackHandler,
   Pressable,
   ScrollView,
@@ -14,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Line, Polyline, Rect } from 'react-native-svg';
 import { makeStyles, useStyles, useTheme } from '../theme/ThemeProvider';
 import {
   layout,
@@ -29,7 +28,7 @@ import {
 } from '../theme/tokens';
 import Glyph from '../map/Glyph';
 import { TextButton } from '../settings/DataTable';
-import { ACTIVITY_VIEW_COPY, activityPeriod } from './views';
+import { ACTIVITY_VIEW_COPY, activityPeriod, activityChartSummary } from './views';
 import { useActivityView } from './useActivityView';
 import { linesFor } from '../utils/textScale';
 
@@ -41,6 +40,7 @@ export const ACTIVITY_MODES = Object.freeze([
 ]);
 const CHART = size.activity.chart;
 const STATE_COLOR = {
+  missing: 'noDataLine',
   rest: 'activityLow',
   normal: 'activityNormal',
   vigorous: 'activityHigh',
@@ -143,9 +143,10 @@ export default function ActivityScreen({
           onPrevious={() => go(navigation?.previous)}
           onNext={() => go(navigation?.next)}
         />
-        {status === 'loading' && <Loading />}
-        {status === 'error' && <Failure onRetry={retry} />}
-        {status === 'ready' && view && <ActivityBody view={view} />}
+        <LoadingContent loading={status === 'loading'} shape={mode === 'day' ? 'chart' : 'bars'} skeletonTestID="activity-loading">
+          {status === 'error' && <Failure onRetry={retry} />}
+          {status === 'ready' && view && <ActivityBody view={view} />}
+        </LoadingContent>
       </ScrollView>
     </View>
   );
@@ -246,24 +247,6 @@ function PeriodRow({ label, navigation, onPrevious, onNext }) {
   );
 }
 
-// 判定表「載入中、產生中」: a 48dp row, a 20dp spinner and the words.
-function Loading() {
-  const { colors } = useTheme();
-  const styles = useStyles(getStyles);
-  return (
-    <View style={styles.stateBox} testID="activity-loading">
-      <View style={styles.loadingRow}>
-        <ActivityIndicator
-          size={size.spinner}
-          color={colors.tonalText}
-          accessibilityLabel="載入中"
-        />
-        <Text style={styles.loadingText}>載入中…</Text>
-      </View>
-    </View>
-  );
-}
-
 function Failure({ onRetry }) {
   const styles = useStyles(getStyles);
   return (
@@ -282,44 +265,14 @@ function ActivityBody({ view }) {
   return (
     <View>
       {view.mode === 'day' ? <DayChart view={view} /> : <Bars view={view} />}
-      {view.mode !== 'day' && <Legend />}
-      {empty ? (
+      <Legend />
+      {empty && (
         <Text style={styles.empty} testID="activity-empty">
           {view.emptyText}
         </Text>
-      ) : (
-        <Summary view={view} />
       )}
-      <Text style={styles.explanation}>{ACTIVITY_VIEW_COPY.explanation}</Text>
+      <Summary view={view} />
     </View>
-  );
-}
-
-// Polylines of the curve, broken wherever a minute has no data.
-export function curveRuns(points, width, height) {
-  const runs = [];
-  let run = [];
-  const count = Math.max(1, points.length);
-  points.forEach((point, index) => {
-    if (point.value == null) {
-      if (run.length) runs.push(run);
-      run = [];
-      return;
-    }
-    // Each minute sits in the middle of its own slice of the width.
-    const x = ((index + 0.5) / count) * width;
-    const y = (1 - point.value) * height;
-    run.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-  });
-  if (run.length) runs.push(run);
-  // A lone minute between two gaps still shows as a short dash.
-  return runs.map(items =>
-    items.length === 1
-      ? [
-          items[0].replace(/^([\d.]+)/, x => String(Number(x) - 1)),
-          items[0].replace(/^([\d.]+)/, x => String(Number(x) + 1)),
-        ].join(' ')
-      : items.join(' '),
   );
 }
 
@@ -327,139 +280,29 @@ function DayChart({ view }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
-  // The whole day is the width, also while today is still running.
-  const total = (view.end - view.start) / 60000;
-  const points = view.points;
-  const x = time => ((time - view.start) / (view.end - view.start)) * width;
-  const highTop = 0;
-  const highBottom = CHART * (1 - view.thresholds.vigorousMin);
-  const lowTop = CHART * (1 - view.thresholds.restMax);
-  const runs = useMemo(
-    () =>
-      width
-        ? curveRuns(
-            points.concat(
-              Array.from({ length: total - points.length }, () => ({
-                value: null,
-              })),
-            ),
-            width,
-            CHART,
-          )
-        : [],
-    [points, total, width],
-  );
   return (
-    <View>
-      <View
-        style={styles.chart}
-        onLayout={event => setWidth(event.nativeEvent.layout.width)}
-        testID="activity-day-chart"
-      >
-        {width > 0 && (
-          <Svg width={width} height={CHART}>
-            {/* 休息／劇烈 runs: the band colour over the run's whole time. */}
-            {view.bands.rest.map(band => (
-              <Rect
-                key={`r${band.start}`}
-                x={x(band.start)}
-                y={0}
-                width={Math.max(size.activity.bandMin, x(band.end) - x(band.start))}
-                height={CHART}
-                fill={colors.activityLowBand}
-              />
-            ))}
-            {view.bands.vigorous.map(band => (
-              <Rect
-                key={`v${band.start}`}
-                x={x(band.start)}
-                y={0}
-                width={Math.max(size.activity.bandMin, x(band.end) - x(band.start))}
-                height={CHART}
-                fill={colors.activityHighBand}
-              />
-            ))}
-            {/* Threshold zones: 高活動 0.8 以上 on top, 低活動 0.05 以下 below. */}
-            <Rect
-              x={0}
-              y={highTop}
-              width={width}
-              height={highBottom - highTop}
-              fill={colors.activityHighBand}
-            />
-            <Rect
-              x={0}
-              y={lowTop}
-              width={width}
-              height={CHART - lowTop}
-              fill={colors.activityLowBand}
-            />
-            <Line
-              x1={0}
-              x2={width}
-              y1={CHART - 0.5}
-              y2={CHART - 0.5}
-              stroke={colors.line}
-              strokeWidth={1}
-            />
-            {runs.map((pointsText, index) => (
-              <Polyline
-                key={index}
-                points={pointsText}
-                fill="none"
-                stroke={colors.route1}
-                strokeWidth={2}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            ))}
-          </Svg>
-        )}
-        <Text
-          style={[styles.zoneLabel, styles.highLabel]}
-          maxFontSizeMultiplier={CHART_TEXT_MAX_SCALE}
-        >
-          {ACTIVITY_VIEW_COPY.high}
-        </Text>
-        <Text
-          style={[
-            styles.zoneLabel,
-            styles.lowLabel,
-            { top: lowTop - type.small.lineHeight - size.activity.zoneLabelInset },
-          ]}
-          maxFontSizeMultiplier={CHART_TEXT_MAX_SCALE}
-        >
-          {ACTIVITY_VIEW_COPY.low}
-        </Text>
-      </View>
-      {/* Hours at their local time (a 23 or 25-hour day moves them). */}
-      <View style={styles.axis}>
-        {width > 0 &&
-          HOURS.map((hour, index) => {
-            const day = new Date(view.start);
-            const time = new Date(
-              day.getFullYear(),
-              day.getMonth(),
-              day.getDate(),
-              index * 6,
-            ).getTime();
-            const left = Math.min(
-              Math.max(x(time) - AXIS_LABEL / 2, 0),
-              width - AXIS_LABEL,
-            );
-            const align =
-              index === 0 ? 'left' : index === HOURS.length - 1 ? 'right' : 'center';
-            return (
-              <Text
-                key={hour}
-                style={[styles.axisText, { left, textAlign: align }]}
-                maxFontSizeMultiplier={CHART_TEXT_MAX_SCALE}
-                numberOfLines={1}
-              >
-                {hour}
-              </Text>
-            );
-          })}
+    <View accessible accessibilityRole="image" accessibilityLabel={activityChartSummary(view.totals)}
+      testID="activity-day-summary">
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <View style={[styles.chart, styles.dayBars]}
+          onLayout={event => setWidth(event.nativeEvent.layout.width)} testID="activity-day-chart">
+          {view.bars.map(bar => (
+            <View key={bar.index} style={styles.daySlot}>
+              {!bar.pending && (bar.count > 0 ? (
+                <View testID={`activity-day-bar-${bar.index}`} style={[styles.dayBar, { height: bar.height,
+                  backgroundColor: colors[STATE_COLOR[bar.state]] }]} />
+              ) : <View testID={`activity-day-gap-${bar.index}`}
+                style={styles.dayGap} />)}
+            </View>
+          ))}
+        </View>
+        <View style={styles.axis}>
+          {width > 0 && HOURS.map((hour, index) => (
+            <Text key={hour} style={[styles.axisText, index === 0 ? styles.axisLeft : index === 4 ? styles.axisRight : styles.axisCenter, {
+              left: Math.min(Math.max(index / 4 * width - AXIS_LABEL / 2, 0), width - AXIS_LABEL),
+            }]} maxFontSizeMultiplier={CHART_TEXT_MAX_SCALE} numberOfLines={1}>{hour}</Text>
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -550,7 +393,7 @@ function Summary({ view }) {
                 ...(row.additionalText ? [row.additionalText] : []),
               ]
             : [row.durationText];
-        // The total under the gaps (判定表「A4 日的曲線」: 合計 h 小時 m 分).
+        // The total under the gaps (判定表「A4 日的柱子」: 合計 h 小時 m 分).
         const total =
           row.state === 'missing' ? `合計 ${row.durationText}` : null;
         return (
@@ -657,13 +500,13 @@ const getStyles = makeStyles(theme => {
     loadingText: { ...type.body, color: colors.textMuted },
     error: { ...type.body, color: colors.critAction },
     chart: { height: CHART, marginTop: space.s },
-    zoneLabel: {
-      ...type.small,
-      position: 'absolute',
-      left: space.xs,
-    },
-    highLabel: { top: size.activity.zoneLabelInset, color: colors.warn },
-    lowLabel: { color: colors.textMuted },
+    dayBars: { flexDirection: 'row', alignItems: 'flex-end', gap: size.activity.dayBarGap },
+    daySlot: { flex: 1, justifyContent: 'flex-end' },
+    dayBar: { borderTopLeftRadius: size.activity.dayBarRadius, borderTopRightRadius: size.activity.dayBarRadius },
+    dayGap: { height: size.activity.dayGapHeight, backgroundColor: colors.noDataLine },
+    axisLeft: { textAlign: 'left' },
+    axisRight: { textAlign: 'right' },
+    axisCenter: { textAlign: 'center' },
     // The axis times may grow to 1.15× (CHART_TEXT_MAX_SCALE): room for that.
     axis: { height: Math.ceil(type.small.lineHeight * fontScale.graphicTextMax), marginTop: space.xs },
     axisText: {
@@ -697,7 +540,8 @@ const getStyles = makeStyles(theme => {
     },
     legend: {
       flexDirection: 'row',
-      gap: space.l,
+      gap: space.s,
+      flexWrap: 'wrap',
       marginTop: space.s,
     },
     legendItem: { flexDirection: 'row', alignItems: 'center', gap: space.xs },

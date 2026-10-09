@@ -48,14 +48,14 @@ const Flat = createContext(false);
  * (settings home, S1), or `flat` on the page with a line above each row
  * (subpages, S2/S4), as in the mockups.
  */
-export function GroupCard({ children, testID, flat = false }) {
+export function GroupCard({ children, testID, flat = false, onRowLayout }) {
   const styles = useStyles(getStyles);
   const rows = React.Children.toArray(children).filter(Boolean);
   return (
     <Flat.Provider value={flat}>
       <View style={flat ? styles.flat : styles.card} testID={testID}>
         {rows.map((row, index) => (
-          <View key={row.key ?? index}>
+          <View key={row.key ?? index} onLayout={onRowLayout ? event => onRowLayout(index, event.nativeEvent.layout.y) : undefined}>
             {(flat || index > 0) && <View style={styles.divider} />}
             {row}
           </View>
@@ -66,7 +66,7 @@ export function GroupCard({ children, testID, flat = false }) {
 }
 
 // The 2dp line icons of the settings home (design 「設定首頁」 icons), drawn
-// on their tinted squares (tokens.settingIcon).
+// on their tinted circles (tokens.settingIcon).
 const ICONS = {
   receiver: (
     <>

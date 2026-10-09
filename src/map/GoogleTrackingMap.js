@@ -96,7 +96,6 @@ const dash = () =>
 const Z = { ring: 1, rangeLine: 2, route: 3 };
 // A base map that draws nothing but grey (design #ECEEEC): what a map without
 // tiles looks like, for the 地圖載入失敗 fixture.
-const PLAIN_MAP = [];
 const getNO_BASE_MAP = makeStyles(theme => {
   const { colors: tokens } = theme;
   return [
@@ -1340,15 +1339,13 @@ function GoogleTrackingMapRenderer({
           // Google's own scheme for the frames before customMapStyle lands
           // (loading tiles drew a light-grey grid on a dark cold start).
           userInterfaceStyle={isDark ? 'dark' : 'light'}
-          // An empty style puts the normal map back (undefined would keep the grey).
+          // Apply the theme style again after a failed-tile fixture.
           customMapStyle={
             failure === 'tiles'
               ? isDark
                 ? mapStyle.noBaseMap
                 : NO_BASE_MAP
-              : isDark
-              ? mapStyle.google
-              : PLAIN_MAP
+              : mapStyle.google
           }
           // Dark: no 3D buildings. Google draws them as light-grey blocks the
           // dark style cannot recolour (DESIGN.md 深色模式「地圖」: land, roads,

@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react';
+import { FocusedPhoneRow, firstPhoneProblem } from './PhoneProblemFocus';
 import { useStyles } from '../theme/ThemeProvider';
 import { ScrollView } from 'react-native';
 
@@ -11,20 +13,32 @@ import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
  */
 export default function PhoneSettings({
   page,
+  fromUnrecorded = false,
   onRecording,
   onPermissions,
   onLocationServices,
   onBattery,
 }) {
   const settingsStyles = useStyles(getSettingsStyles);
+  const scroll = useRef(null);
+  const focused = useRef(false);
+  const [target] = useState(() => fromUnrecorded ? firstPhoneProblem(page) : null);
+  const onPosition = (id, y) => {
+    if (id === target && !focused.current) {
+      focused.current = true;
+      scroll.current?.scrollTo({ y, animated: false });
+    }
+  };
   const { recording, permission, services, battery } = page;
   return (
     <ScrollView
+      ref={scroll}
       testID="phone-settings"
       style={settingsStyles.page}
       contentContainerStyle={[settingsStyles.content, settingsStyles.firstCard]}
     >
-      <GroupCard flat>
+      <GroupCard flat onRowLayout={(index, y) => onPosition(['recording', 'permission', 'services'][index], y)}>
+        <FocusedPhoneRow id="recording" target={target}>
         <ListRow
           title="位置記錄"
           detail={recording.detail}
@@ -37,6 +51,8 @@ export default function PhoneSettings({
             onChange: onRecording,
           }}
         />
+        </FocusedPhoneRow>
+        <FocusedPhoneRow id="permission" target={target}>
         <ListRow
           testID="phone-permissions"
           title="權限"
@@ -51,6 +67,8 @@ export default function PhoneSettings({
               : '權限，已允許'
           }
         />
+        </FocusedPhoneRow>
+        <FocusedPhoneRow id="services" target={target}>
         <ListRow
           testID="phone-location-services"
           title="定位服務"
@@ -65,6 +83,7 @@ export default function PhoneSettings({
               : '定位服務，已開啟'
           }
         />
+        </FocusedPhoneRow>
         <ListRow
           testID="phone-battery"
           title="忽略電池最佳化"

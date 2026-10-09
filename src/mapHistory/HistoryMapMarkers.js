@@ -70,7 +70,7 @@ export const CURSOR_BELOW = sizes.cursor.halo / 2;
 
 /**
  * The cursor: a 16dp dot in the route colour with a 3dp white ring and a
- * 32dp halo (18%); its two-line label 12dp above (radius 10, surface, 1dp
+ * 32dp halo (18%); its two-line label 12dp above (radius 16, surface, 1dp
  * line, shadow). In a stretch without data: grey, with a dashed staleRing.
  * `onLabelHeight` reports the label's height (the marker's anchor needs it).
  */
@@ -279,7 +279,7 @@ const getStyles = makeStyles(theme => {
     faceTag: {
       height: FACE_TAG,
       paddingHorizontal: sizes.mapLabel.paddingH,
-      borderRadius: radius.mapLabel,
+      borderRadius: sizes.mapLabel.radius,
       borderWidth: borders.hairline,
       borderColor: colors.floatingOutline,
       backgroundColor: colors.surface,

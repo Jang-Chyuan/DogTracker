@@ -72,7 +72,7 @@ test('history-dog (H1 狗的歷史): the dog capsule, ＋ 加入, 移動 and 坐
 test('history-range-open (H2b): the bar open in its frame, 完成, the dragged start; no 「已手動調整」', async () => {
   const s = await mountFixture('history-range-open');
   expect(s.ids('history-range-bar')).toEqual(['history-range-bar']);
-  expect(s.text()).toContain('拖兩端的圓點改開始、結束');
+  expect(s.text()).not.toContain('拖兩端的圓點改開始、結束');
   expect(s.text()).toContain('完成');
   expect(s.text()).toContain('出發');
   expect(s.text()).not.toContain('已手動調整');
@@ -147,9 +147,24 @@ test('history-indoor: the house on the map, 室內・N 分 at the cursor inside 
 test('history-single-point (只有一筆): one point, no distance, no range bar', async () => {
   const s = await mountFixture('history-single-point');
   expect(s.screen.model.points).toHaveLength(1);
+  expect(s.text()).toContain('09:10 – 09:10');
   expect(s.ids('history-adjust')).toEqual([]);
   expect(s.screen.map.lines).toEqual([]);
   expect(s.screen.cursor.label[1]).toBe('已移動 0.0 km');
+  await unmount(s);
+});
+
+test.each([
+  ['history-no-departure', 'not-departed', '06:30 – 現在'],
+  ['history-confirming', 'confirming', '09:22 – 現在'],
+])('%s: summary and TalkBack show only the selected time range', async (fixture, status, title) => {
+  const s = await mountFixture(fixture);
+  expect(s.screen.model.departure.status).toBe(status);
+  expect(s.text()).toContain(title);
+  const summary = s.renderer.root.findByProps({ testID: 'history-summary' });
+  const speech = summary.findAll(node => typeof node.type === 'string' && node.props.accessibilityLabel)
+    .map(node => node.props.accessibilityLabel);
+  expect(speech).toContainEqual(expect.stringContaining(`${title.replace(' – ', ' 到')}，走了 `));
   await unmount(s);
 });
 
@@ -255,14 +270,18 @@ describe('the screen over time', () => {
 
 
 test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
-  'history-export-multi', 'history-export-day'])('%s: export formats stay PNG / GPX / CSV without a last-used marker', async name => {
+  'history-export-multi', 'history-export-day'])('%s: export descriptions match D16 on screen and TalkBack in PNG / GPX / CSV order', async name => {
   const s = await mountFixture(name);
   const rows = s.renderer.root.findAll(node => typeof node.type === 'string'
     && ['history-export-png', 'history-export-gpx', 'history-export-csv'].includes(node.props.testID));
   expect(rows.map(node => node.props.testID)).toEqual(['history-export-png', 'history-export-gpx', 'history-export-csv']);
   expect(rows.map(node => node.props.accessibilityLabel)).toEqual([
-    'PNG 長圖，地圖＋時間軸清單，傳 LINE 最方便', 'GPX，給地圖 App 用', 'CSV，每一筆位置',
+    'PNG 長圖，地圖＋時間軸清單', 'GPX，軌跡檔，可匯入地圖 App', 'CSV，每一筆位置',
   ]);
+  expect(rows.map(node => node.findAllByType('Text').map(text => text.props.children))).toEqual([
+    ['PNG 長圖', '地圖＋時間軸清單'], ['GPX', '軌跡檔，可匯入地圖 App'], ['CSV', '每一筆位置'],
+  ]);
+  expect(s.text()).not.toContain('傳 LINE 最方便');
   expect(s.text()).not.toContain('上次用');
   await unmount(s);
 });

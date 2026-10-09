@@ -5,7 +5,7 @@
 // the hook hands in the day's model (HistoryMultiModel.multiDayModel), the
 // dogs' looks and the addresses already looked up.
 import { historyMapPresentation, placeMarkers, routeLines, timeMarkers, uncrowded } from '../history/screen/HistoryMapModel';
-import { interruptionText, km, nodePill, nodeTimes, placeLines, sectionText } from '../history/HistoryText';
+import { interruptionText, km, nodePill, nodeTimes, placeLines, sectionText, vehicleExclusion } from '../history/HistoryText';
 import { captureExportSnapshot } from './ExportData';
 import { exportLightTheme, exportRouteColor } from '../theme/exportPalette';
 
@@ -144,6 +144,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       rides: vehicleTrips(nodes, last?.time),
       gaps: nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
       distanceKm: km(model.distanceM),
+      distanceExclusion: vehicleExclusion(model, subject),
       distanceWord: phone ? '走了' : '移動',
       start: first?.time ?? null,
       end: last?.time ?? null,

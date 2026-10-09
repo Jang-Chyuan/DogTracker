@@ -1,10 +1,12 @@
 import { size as tokenSize } from '../theme/tokens';
+import { PAW_STROKE } from '../map/PawGeometry';
 // The PNG pages as drawing operations for the native renderer
 // (HistoryExportPackage.kt): text lines, circles, rectangles, lines, the list
 // icons and the map block. Pure: everything is placed here so the Kotlin side
 // only paints, and a test can read what each page holds. Colours come from
 // the theme tokens only.
 import { exportColors as colors } from '../theme/exportPalette';
+import lightMapStyle from '../theme/light-map-style.json';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { PLACE_X, PNG_STYLE as S } from './ExportPNG';
 
@@ -12,7 +14,7 @@ import { PLACE_X, PNG_STYLE as S } from './ExportPNG';
 // path data the renderer strokes 2 units wide (dots are filled).
 export const EXPORT_ICONS = {
   walk: { stroke: 'M14.8 4.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0M10 21l2-6 3 3v3M8 12l2-4 4 1 2 4 2 1M12 15l-1-4' },
-  paw: { stroke: 'M8.5 10a2 2 0 1 1-4 0a2 2 0 1 1 4 0M12 5.5a2 2 0 1 1-4 0a2 2 0 1 1 4 0M16 5.5a2 2 0 1 1-4 0a2 2 0 1 1 4 0M19.5 10a2 2 0 1 1-4 0a2 2 0 1 1 4 0M12 12c-3 0-5.5 3.2-5.5 5.4 0 1.6 1.3 2.6 2.8 2.6 1 0 1.7-.5 2.7-.5s1.7.5 2.7.5c1.5 0 2.8-1 2.8-2.6C17.5 15.2 15 12 12 12z' },
+  paw: { stroke: PAW_STROKE },
   car: { stroke: 'M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7M7.8 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0M18.3 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0' },
   dots: { fill: 'M6.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M13.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M20.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0' },
   house: { stroke: 'M4 11l8-7 8 7M6.5 9.5V20h11V9.5' },
@@ -142,6 +144,7 @@ function sectionOps(block) {
 /** The map block for the renderer: geography it projects itself (it knows the base map's camera). */
 export function mapOp(block) {
   return {
+    mapStyle: lightMapStyle,
     t: 'map', x: 0, y: block.y, w: block.width, h: block.height, padding: block.padding,
     background: colors.mapFallback, halo: colors.mapLabelHalo, text: colors.text, surface: colors.surface,
     indoor: colors.receiver, onRoute: colors.onRoute, attribution: block.attribution, attributionColor: colors.textMuted,
@@ -167,7 +170,6 @@ export function pngDrawPages(layout) {
       else ops.push(...rowOps(block));
     }
     const footer = page.footer;
-    ops.push(text(footer.text, S.side, footer.y, footer.height, S.footerFont, colors.textMuted));
     ops.push(text(footer.page, page.width - S.side, footer.y, footer.height, S.footerFont, colors.textMuted, { align: 'right' }));
     return { width: page.width, height: page.height, ops };
   });

@@ -35,16 +35,16 @@ test('multi-dog GPX separates names, stays and numbered rides, excludes empty do
   for (const name of ['小黑-4', '豆豆-5']) {
     expect(gpx).toContain(`<name>${name}</name>`);
     expect(gpx).toContain(`${name} 停留 1・1 分`);
-    expect(gpx).toContain(`${name} 坐車 2（不算距離）`);
+    expect(gpx).toContain(`${name} 坐車 2`);
   }
   expect(gpx).not.toContain('空');
 });
 
-// Design spec.txt:488:「我的路線…每一次開車各自一個 trk，名稱依序『開車 1（不算距離）』『開車 2（不算距離）』、type＝drive」。
+// Design spec.txt:488:「我的路線…每一次開車各自一個 trk，名稱依序『開車 1』『開車 2』、type＝drive」。
 test('phone driving gaps retain one drive track with disconnected segments', () => {
   const gpx = buildGPX(snap(dog({ kind: 'phone', rows: [0, 1, 2, 6, 7, 8, 9].map(t => point(t * m)), rides: [{ start: m, end: 7 * m }, { start: 8 * m, end: 9 * m }] })));
   expect(count(gpx, 'trk')).toBe(3);
-  expect(gpx).toContain('<name>開車 2（不算距離）</name><type>drive</type>');
+  expect(gpx).toContain('<name>開車 2</name><type>drive</type>');
   expect(count(gpx, 'trkseg')).toBe(6);
 });
 

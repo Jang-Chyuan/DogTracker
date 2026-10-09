@@ -1,3 +1,4 @@
+import { dismissWaitingSources, waitingSourcesState } from '../map/WaitingSources';
 // Debug builds only: named screen states the emulator cannot reach on demand
 // (a receiver that dropped, a dog held indoors, cloud data), so each can be
 // opened with dogtracker://dev/fixture?name=<name> and screenshotted.
@@ -1038,6 +1039,20 @@ const FIXTURES = {
   // S2 收到的訊號源: 豆豆 (4) and dog 5 (never named: 「狗 5」) located;
   // collar 9 talks to receiver 7 but never had a fix: only 「訊號源 9」 with
   // 「還沒定位」.
+  'waiting-sources': now => ({ receiver: receiving(now), phone: walkingPhone(now), cloud: synced(now),
+    ble: [4, 6, 8].map(slave => bleRow({ slave, time: now - 20 * SECOND })), cloudRows: [] }),
+  'waiting-sources-grace': now => ({ ...FIXTURES['waiting-sources'](now),
+    ble: [4, 6, 8].map(slave => bleRow({ slave, time: now - 9 * SECOND })) }),
+  'waiting-sources-partial': now => ({ ...FIXTURES['waiting-sources'](now),
+    ble: [bleRow({ slave: 4, time: now - 20 * SECOND, fix: at(10, 10) }),
+      ...[6, 8].map(slave => bleRow({ slave, time: now - 20 * SECOND }))] }),
+  'waiting-sources-dismissed': now => ({ ...FIXTURES['waiting-sources'](now), waitingDismissed: true }),
+  'waiting-sources-new': now => ({ ...FIXTURES['waiting-sources'](now), waitingDismissed: true, waitingNew: true,
+    ble: [4, 6, 8, 9].map(slave => bleRow({ slave, time: now - 20 * SECOND })) }),
+  'waiting-sources-disconnected': now => ({ ...FIXTURES['waiting-sources'](now),
+    receiver: { ...receiving(now), connected: false, receiving: false, disconnectedAt: now - MINUTE } }),
+  'waiting-sources-cloud-only': now => ({ ...FIXTURES['waiting-sources'](now), ble: [],
+    cloudRows: [4, 6, 8].map(slave => cloudRow({ slave, time: now - 20 * SECOND })) }),
   'receiver-sources-unfixed': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openRoute: 'receiver',
     ble: inTimeOrder([
@@ -1133,8 +1148,8 @@ const FIXTURES = {
   'alerts-in-history-off': now => ({ ...FIXTURES['alerts-in-dog-history'](now),
     alerts: { dogOutOfRange: false, dogStale: false } }),
   // S6 open while receiver 7 drops (alerts-receiver-down): N3 「接收器 7 斷線了
-  // （3 隻狗收不到）」 under the title row, then 「⚠ 1」 on its right; either
-  // opens S2 接收器, back returns to S6.
+  // （3 隻狗收不到）」 under the title row for 5 s, then no badge (D17).
+  // Tap the card to open S2 接收器; back returns to the same S6 snapshot.
   'alerts-in-settings': now => ({ ...FIXTURES['alerts-receiver-down'](now), openRoute: 'alerts' }),
   // ---- S7 進階, S8 診斷 (051c) ---------------------------------------------
   // S8 with everything readable: 豆豆 (4) from receiver 7 walking (速度緩衝
@@ -1180,13 +1195,18 @@ const FIXTURES = {
         { line: '330台灣桃園市桃園區同德六街76號', awayM: 120 }, null,
         { line: '330台灣桃園市桃園區中山路552號' }] } };
   },
-  // Still at home (a few metres of wander since 06:30): 還沒出發, the range is
+  // Still at home (a few metres of wander since 06:30): the summary shows the time range of
   // the whole day.
   'history-no-departure': now => {
     const phone = routePhone(legsPath(now, 180 * MINUTE, at(-40, -60), [{ stay: 120 }, { walk: 1, speed: 0.3 },
       { stay: 60 }]), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
   },
+  // A candidate after staying home: show its tentative start, without status copy.
+  'history-confirming': now => ({ ...FIXTURES['all-good'](now),
+    phone: routePhone(legsPath(now, 20 * MINUTE, at(-40, -60),
+      [{ stay: 15 }, { walk: 5, speed: 1, bearing: 90 }]), now),
+    openRoute: 'history', history: historyPage(now) }),
   // My route: walk, drive 12 minutes, walk — a numbered switch point where
   // each mode starts (H2 開車換走路的地方多一個點).
   'history-mode-switch': now => {
@@ -1291,7 +1311,8 @@ const FIXTURES = {
   'history-dogs-sheet-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4, sheet: 'dogs' }),
   'history-dogs-sheet-no-record': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, fiveToday: false, sheet: 'dogs' }),
   // ---- history (056): the export (H9/H10) ---------------------------------
-  // H9: my route like the mockup, the export window open (PNG / GPX / CSV in fixed order).
+  // H9 / D16: export window in fixed PNG / GPX / CSV order; shared sheet copy:
+  // 地圖＋時間軸清單 / 軌跡檔，可匯入地圖 App / 每一筆位置 (also TalkBack).
   'history-export': now => ({ ...FIXTURES['history-my-route'](now), historyView: { export: { phase: 'choose' } } }),
   // 產生中 that never ends (the export icon a spinner; 取消 or the back key stops it).
   'history-export-generating': now => ({ ...FIXTURES['history-my-route'](now), historyExport: 'hang',
@@ -1459,6 +1480,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
     historyExport = null, activityView = null, activity = null, activityClock = null, alertPause = null,
+    waitingDismissed = false, waitingNew = false,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   const fixtureHistory = history || historyPage(now, { ble, cloudRows });
   const genericActivity = {
@@ -1493,16 +1515,21 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const recent = () => true;
   const recentFix = row => hasFix(row);
   const packets = [
-    ...newestBy(ble, recent).map(row => withEnvironment(packet(row, 'ble'), ble, now)),
+    ...newestBy(ble, recent).map(row => withEnvironment({ ...packet(row, 'ble'),
+      first_received_at: Math.min(...ble.filter(other => other.slave_id === row.slave_id && other.master_id === row.master_id).map(other => other.received_at)) }, ble, now)),
     ...newestBy(ble, recentFix).map(row => withEnvironment(packet(row, 'ble'), ble, now)),
     ...newestBy(cloudRows, recent).map(row => withEnvironment(packet(row, 'cloud'), cloudRows, now)),
   ];
   // RideAlong: the handler's phone speeds over the last half minute.
   const rides = createRideDetector();
   for (const position of phone?.route || []) rides.add(position, now);
+  const waitingSeed = waitingSourcesState(null, receiver, packets, now);
+  const waitingLocationSources = waitingDismissed ? dismissWaitingSources({ ...waitingSeed,
+    sources: Object.fromEntries(Object.entries(waitingSeed.sources).filter(([id]) => !waitingNew || id !== '9')) }) : null;
   return {
     name,
     now,
+    waitingLocationSources,
     receiverState: receiver,
     readReceiverState: { getState: async () => receiver },
     cloudSync: cloud,
@@ -1758,6 +1785,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       realWriteError: fixture.storageError,
       preferences: { ...tracking.preferences, ready: true, busy: false, error: null,
         value: { ...tracking.preferences.value, ...FIXTURE_PREFERENCES,
+          waitingLocationSources: fixture.waitingLocationSources,
           alerts: edits?.alerts ?? fixture.alerts,
           diagnosticsEnabled: edits?.diagnosticsEnabled ?? fixture.diagnosticsEnabled } },
       // A tap on a fixture's eye or follow button must not save the fixture's

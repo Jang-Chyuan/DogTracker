@@ -67,7 +67,7 @@ import {
   openAlertTarget,
   openTrackFrom,
 } from './src/alerts/ReturnSnapshot';
-import { AlertBadge, N3Card } from './src/map/TopAlertCards';
+import { N3Card } from './src/map/TopAlertCards';
 import AlertPreview from './src/dev/AlertPreview';
 import {
   phonePage,
@@ -351,6 +351,7 @@ function TrackerApp({ resume = null, onRestart }) {
   // D3 連接接收器 from `entry` (Pairing.pairingFlow): S2 ('receiver', with
   // its mode), A6 ('map'), a mismatch dialog ('alert'; `view` 'manual' when
   // the receiver was typed in) or the guide ('onboarding').
+  const [waitingSourcesPaused, setWaitingSourcesPaused] = useState(false);
   const openPairing = (entry, mode = 'first', view = 'scan') =>
     open('pair', { entry, mode, view, key: Date.now() });
   const isMap = route.name === 'map';
@@ -474,6 +475,8 @@ function TrackerApp({ resume = null, onRestart }) {
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
     if (id === 'receiver-settings') open('receiver');
+    else if (id === 'waiting-source-settings') open('receiver', { fromWaitingSources: true });
+    else if (id === 'phone-unrecorded') open('phone', { fromUnrecorded: true });
     else if (id === 'connect-receiver') openPairing('map');
     // 診斷 (S8) starts with the reason.
     else if (id === 'storage-reason') open('diagnostics');
@@ -1151,13 +1154,10 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <ReceiverSettings
           page={receiverPage(settingsData)}
-          onDisconnect={receiverControl.disconnect}
-          onReconnect={receiverControl.reconnect}
-          onRescan={() => {
-            receiverControl.disconnect();
-            openPairing('receiver', 'rescan');
-          }}
-          onChange={() => openPairing('receiver', 'change')}
+          fromWaitingSources={route.fromWaitingSources}
+          onDisconnect={() => { setWaitingSourcesPaused(true); receiverControl.disconnect(); }}
+          onReconnect={() => { setWaitingSourcesPaused(false); receiverControl.reconnect(); }}
+          onChange={() => { setWaitingSourcesPaused(false); openPairing('receiver', 'change'); }}
           onConnect={() => openPairing('receiver')}
         />
       );
@@ -1184,6 +1184,7 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <PhoneSettings
           page={phonePage(settingsData)}
+          fromUnrecorded={route.fromUnrecorded}
           onRecording={on => settingsData.recording.toggle?.(on)}
           onPermissions={() => Linking.openSettings()}
           onLocationServices={openLocationServices}
@@ -1279,12 +1280,6 @@ function TrackerApp({ resume = null, onRestart }) {
             >
               <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
             </Pressable>
-            {/* 「⚠ N」 on the right of the title row (歷史、設定的紅色「⚠ N」). */}
-            <AlertBadge
-              badge={offMap.badge}
-              onPress={pressAlertBadge}
-              style={styles.headerBadge}
-            />
           </View>
         )}
         <View
@@ -1334,6 +1329,8 @@ function TrackerApp({ resume = null, onRestart }) {
               wait: receiverWait.current,
             }}
             onAlertAction={alertAction}
+            pausedReceiver={waitingSourcesPaused}
+            switchingReceiver={route.name === 'pair' && route.mode === 'change'}
             onAlertInput={onAlertInput}
             openDogRequest={openDogRequest}
             frameRequest={frameRequest}
@@ -1516,7 +1513,6 @@ const getStyles = makeStyles(theme => {
       alignSelf: 'flex-start',
     },
     pressed: { opacity: 0.7 },
-    headerBadge: { marginRight: space.s },
     brand: { ...type.title, color: colors.text },
     page: {
       flex: 1,

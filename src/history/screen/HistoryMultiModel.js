@@ -324,7 +324,7 @@ export const OTHER_FACE = sizes.historyFace.companion;
  * The other dogs' faces as the map's dog markers (DogMarkerView): 32dp, the
  * face drawn on the dog's route colour, a grey dashed ring while it has no
  * data at the cursor's time, and what TalkBack says (c381: 「豆豆的游標，
- * 10:24，已移動 2.1 km，點兩下設為主角」).
+ * 10:24，已移動 2.1 km，點兩下選擇這隻狗」).
  */
 export function faceMarkers(faces = []) {
   return (faces || []).map(face => ({
@@ -342,9 +342,9 @@ export function faceMarkers(faces = []) {
     label: face.stale
       ? `${face.name}的游標，這段沒資料，最後 ${
           face.lines?.[0] ?? ''
-        }，點兩下設為主角`
+        }，點兩下選擇這隻狗`
       : `${face.name}的游標，${face.lines?.[0] ?? ''}，${
           face.lines?.[1] ?? ''
-        }，點兩下設為主角`,
+        }，點兩下選擇這隻狗`,
   }));
 }

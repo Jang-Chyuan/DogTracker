@@ -30,16 +30,15 @@ export const DogsSheet = forwardRef(function DogsSheet(
   return (
     <HistoryBottomSheet ref={sheet} title="看哪幾隻狗" onClosed={onClosed}
       bottomInset={bottomInset} testID="history-dogs-sheet" closeLabel="關閉看哪幾隻狗">
-      <Text style={styles.section}>一起看的狗（點一下換主角）</Text>
+      <Text style={styles.section}>一起看的狗</Text>
       {model.shown.map(dog => <View key={dog.id} style={styles.row}>
         <Pressable testID={`history-dog-${dog.id}`} accessibilityRole="radio"
           accessibilityState={{ checked: dog.protagonist }}
-          accessibilityLabel={`${dog.name}${dog.protagonist ? '，主角' : '，換成主角'}`}
+          accessibilityLabel={`${dog.name}${dog.protagonist ? '，目前選擇' : '，點兩下選擇這隻狗'}`}
           onPress={() => onSelect(dog.id)} style={({ pressed }) => [styles.choice, pressed && styles.pressed]}>
           <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} tint={routeTint(dog, theme.colors)} />
           <Text style={styles.name} numberOfLines={linesFor(1)}>{dog.name}</Text>
           {dog.downloadFailed && <View testID={`history-download-failed-${dog.id}`} style={styles.failure}><BangGlyph size={sizes.badge.size} background={theme.colors.problemBadge} color={theme.colors.avatarFrameMap} /></View>}
-          {dog.protagonist && <View style={styles.tag}><Text style={styles.tagText}>主角</Text></View>}
           <View style={styles.spacer} />
           <View style={[styles.radio, dog.protagonist && styles.radioOn]} />
         </Pressable>

@@ -8,7 +8,7 @@ export function historyDogsPill(dogs = [], candidates = [], subject = 'dog') {
   const name = lead?.name ?? '';
   return { lead, name, faces: others.slice(0, 2), more: Math.max(0, others.length - 2),
     plus: !others.length && addable, caret: others.length > 0, tappable,
-    label: others.length ? `${name}，主角，另外 ${others.length} 隻，點兩下選擇要看的狗`
+    label: others.length ? `${name}，目前選擇，另外 ${others.length} 隻，點兩下選擇要看的狗`
       : addable ? `${name}，點兩下加入其他狗` : name };
 }
 

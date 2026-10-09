@@ -1178,6 +1178,8 @@ test('leak: hiding the map layer never re-parents the native map', async () => {
 
 test('E15: settings content reserves measured N3 height and restores spacing when hidden', () => {
   const source = require('fs').readFileSync(require.resolve('../App'), 'utf8');
+  expect(source).not.toContain('<AlertBadge');
+  expect(source).toContain('alertBadge={isHistory ? { badge: offMap.badge, onPress: pressAlertBadge } : null}');
   expect(source).toContain('paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0');
   expect(source).toMatch(/top=\{layout.belowStatusBar\}\s*onHeight=\{setN3Height\}/);
 });

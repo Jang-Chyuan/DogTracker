@@ -1,3 +1,4 @@
+import { LoadingContent } from '../components/Skeleton';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -65,9 +66,10 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
           disabled={!tracker.hasMore || tracker.loading}
         />
       </View>
+      <LoadingContent loading={tracker.loading && !rows.length && !tracker.error} skeletonTestID="location-records-loading">
       <LoadState
         testID="location-records"
-        loading={tracker.loading && !rows.length}
+        loading={false}
         error={tracker.error ? `讀取失敗：${tracker.error}` : ''}
         empty={!rows.length}
         emptyText="還沒有位置記錄"
@@ -166,6 +168,7 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
           </View>
         );
       })}
+      </LoadingContent>
     </ScrollView>
   );
 }

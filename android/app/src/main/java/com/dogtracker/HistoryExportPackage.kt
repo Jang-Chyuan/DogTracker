@@ -21,6 +21,7 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.GoogleMapOptions
 import com.google.android.gms.maps.MapView
 import com.google.android.gms.maps.MapsInitializer
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.LatLng
 import org.json.JSONArray
 import org.json.JSONObject
@@ -335,7 +336,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
    * drawn): centred on the routes at the largest whole zoom that keeps them
    * `padding` from the edges, so pixels follow Web Mercator exactly.
    */
-  private fun baseMap(coords: List<LatLng>, w: Int, h: Int, padding: Int): Pair<Bitmap, Projector>? {
+  private fun baseMap(coords: List<LatLng>, w: Int, h: Int, padding: Int, mapStyle: JSONArray?): Pair<Bitmap, Projector>? {
     val activity = context.currentActivity ?: return null
     val density = activity.resources.displayMetrics.density.toDouble()
     val pts = coords.map { mercator(it.latitude, it.longitude) }
@@ -366,6 +367,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         (activity.window.decorView as ViewGroup).addView(map, 0, FrameLayout.LayoutParams(viewW, viewH))
         map.onResume()
         map.getMapAsync { google ->
+          mapStyle?.let { google.setMapStyle(MapStyleOptions(it.toString())) }
           google.uiSettings.isMapToolbarEnabled = false
           google.setOnMapLoadedCallback {
             try {
@@ -399,7 +401,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     canvas.translate(x, y)
     canvas.drawColor(color(op.getString("background")))
     if (coords.isEmpty()) { canvas.restore(); return }
-    val base = if (exportId in cancelled) null else baseMap(coords, w, h, padding)
+    val base = if (exportId in cancelled) null else baseMap(coords, w, h, padding, op.optJSONArray("mapStyle"))
     val projector = base?.second?.takeIf { it.metresPerPixel.isFinite() && it.metresPerPixel > 0 }
       ?: ownFit(coords, w, h, padding.toFloat())
     base?.first?.let { canvas.drawBitmap(it, 0f, 0f, null); it.recycle() }

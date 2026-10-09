@@ -1,7 +1,10 @@
-import { size as sizes, border } from '../theme/tokens';
+import { size as sizes, border, type } from '../theme/tokens';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { PixelRatio, StyleSheet, View } from 'react-native';
+
+import MapNameTag from './MapNameTag';
+import { MARKER_WIDTH } from './DogMarkerView';
 
 import { locationTrackerNative } from '../locationTracker/LocationTrackerService';
 import { withAlpha } from '../history/screen/HistoryMapModel';
@@ -136,6 +139,13 @@ export default function PhoneLocationOverlay({
   useEffect(() => {
     marker.current?.redraw?.();
   }, [stale, colors]);
+  const height =
+    sizes.phoneDot.canvas +
+    sizes.marker.labelGap +
+    type.mapLabel.lineHeight *
+      (PixelRatio.getFontScale?.() || 1) *
+      sizes.mapLabel.maxLines +
+    2 * (sizes.mapLabel.paddingV + sizes.mapLabel.border);
   const title = historical
     ? '手機 · 歷史最後位置'
     : stale
@@ -176,7 +186,7 @@ export default function PhoneLocationOverlay({
         ref={marker}
         identifier={historical ? 'phone-history-last' : 'phone-timeline-live'}
         coordinate={coordinate}
-        anchor={{ x: 0.5, y: 0.5 }}
+        anchor={{ x: 0.5, y: sizes.phoneDot.canvas / 2 / height }}
         tracksViewChanges={false}
         zIndex={historical ? 25 : 30}
         onPress={onPress}
@@ -197,10 +207,19 @@ export default function PhoneLocationOverlay({
       >
         <View
           collapsable={false}
-          style={styles.container}
+          style={[styles.container, { height }]}
           onLayout={() => marker.current?.redraw?.()}
         >
-          <View style={[styles.dot, stale && styles.stale]} />
+          <View style={styles.dotArea}>
+            <View style={[styles.dot, stale && styles.stale]} />
+          </View>
+          <MapNameTag
+            text="手機"
+            testID="phone-name-tag"
+            color={colors.phone}
+            maxWidth={MARKER_WIDTH - sizes.marker.labelSafety}
+            onLayout={() => marker.current?.redraw?.()}
+          />
         </View>
       </Marker>
     </>
@@ -211,8 +230,12 @@ const getStyles = makeStyles(theme => {
   const { literalColors: themeLiteral } = theme;
   return StyleSheet.create({
     container: {
-      width: sizes.phoneDot.canvas,
+      width: MARKER_WIDTH,
+      alignItems: 'center',
+    },
+    dotArea: {
       height: sizes.phoneDot.canvas,
+      marginBottom: sizes.marker.labelGap,
       alignItems: 'center',
       justifyContent: 'center',
     },

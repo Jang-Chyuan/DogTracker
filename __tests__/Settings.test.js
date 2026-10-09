@@ -240,11 +240,11 @@ test('S2 draws 中斷連線 in red under the receiver, or 重新連線 after it;
     && typeof node.props.onPress === 'function')[0].props.onPress());
   const out = text(renderer);
   for (const words of ['目前的接收器', '接收器 7', 'DogGPS-Master7・已連線', '電量 64%', '最後收訊 09:29', '位置',
-    '中斷連線', '中斷並重新掃描', '掃 QR Code 換接收器', '收到的訊號源', '訊號源 9', '還沒定位']) {
+    '中斷連線', '換接收器', '收到的訊號源', '訊號源 9', '還沒定位']) {
     expect(out).toContain(words);
   }
   // Order: the receiver, its position, then its actions, then the sources.
-  const order = ['接收器 7', '位置', '中斷連線', '中斷並重新掃描', '掃 QR Code 換接收器', '收到的訊號源'];
+  const order = ['接收器 7', '位置', '中斷連線', '換接收器', '收到的訊號源'];
   expect(order.map(words => out.indexOf(`"${words}"`))).toEqual([...order.map(words => out.indexOf(`"${words}"`))]
     .sort((left, right) => left - right));
   // A source row has nothing to press.
@@ -252,8 +252,8 @@ test('S2 draws 中斷連線 in red under the receiver, or 重新連線 after it;
     && typeof node.props.onPress === 'function')).toHaveLength(0);
   await press('receiver-disconnect');
   expect(actions.onDisconnect).toHaveBeenCalled();
-  await press('receiver-rescan');
-  expect(actions.onRescan).toHaveBeenCalled();
+  expect(out).not.toContain('中斷並重新掃描');
+  expect(renderer.root.findAllByProps({ testID: 'receiver-rescan' })).toHaveLength(0);
   await press('receiver-change');
   expect(actions.onChange).toHaveBeenCalled();
   await act(async () => renderer.update(<ReceiverSettings
@@ -361,7 +361,7 @@ test('phone-permissions-missing: one 權限 cell naming what is missing, 定位�
   const page = phonePage(data);
   expect(page.recording).toMatchObject({ on: true, problem: false });
   expect(page.recording.detail).toMatch(/^今天 \d{3} 筆$/);
-  expect(page.permission).toEqual({ problem: true, detail: '精確位置、通知未允許', status: null, action: '開系統設定 ›' });
+  expect(page.permission).toEqual({ problem: true, detail: '位置未允許、通知未允許', status: null, action: '開系統設定 ›' });
   expect(page.services).toEqual({ problem: true, detail: '定位服務關著', status: null, action: '打開 ›' });
   expect(page.battery).toEqual({ status: '已允許', action: null });
   // The same problems put the 「!」 on S1's 手機 and 提醒 rows.
@@ -381,7 +381,7 @@ test('S4 when all is given, and what each permission is called', () => {
   expect(missingPermissions({ permission: 'approximate' }, {})).toBe('精確位置只給了大概');
   expect(missingPermissions({ permission: 'approximate' }, { nearbyDenied: true, notificationsDenied: true }))
     .toBe('精確位置只給了大概、附近的裝置、通知未允許');
-  expect(missingPermissions({ permission: 'blocked' }, {})).toBe('精確位置未允許');
+  expect(missingPermissions({ permission: 'blocked' }, {})).toBe('位置未允許');
   expect(missingPermissions({ permission: 'precise' }, {})).toBe('');
   // Turning recording on failed: why, in red, in place of the count.
   expect(phonePage({ phone: {}, recording: { enabled: false, error: '請允許定位權限後再開始記錄' }, todayCount: 5 })
@@ -397,7 +397,7 @@ test('S4 draws the rows and opens the system pages', async () => {
       {...actions} />);
   });
   const out = text(renderer);
-  for (const words of ['位置記錄', '權限', '精確位置、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
+  for (const words of ['位置記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
     '忽略電池最佳化', '讓 App 在背景也能一直收資料', '已允許']) expect(out).toContain(words);
   const press = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress());

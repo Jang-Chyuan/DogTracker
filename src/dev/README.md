@@ -129,7 +129,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `alerts-in-history` | 我的路線（像 N3 設計稿）時豆豆走出接收範圍：N3 提醒卡「豆豆 不在接收範圍」滑下 5 秒，收成匯出 icon 左邊的「⚠ 1」；點卡片或「⚠ 1」打開豆豆的卡片，返回鍵、往下滑、點地圖空白處都回到原本的歷史 |
 | `alerts-in-dog-history` | 小黑的歷史加了豆豆（H7），豆豆不在接收範圍、狗 5 10 分鐘沒有新位置：N3 是豆豆（最嚴重），之後「⚠ 2」；移游標、拖範圍、加狗後再打開提醒，回來時都保留（返回快照） |
 | `alerts-in-history-off` | 同上但 S6 關了「不在接收範圍」「沒有新位置」：不滑下 N3，「⚠ 2」照算（狀態不是提醒） |
-| `alerts-in-settings` | S6 開著時接收器 7 斷線：標題列下面 N3「接收器 7 斷線了（3 隻狗收不到）」，之後標題列右邊「⚠ 1」；點了開接收器頁，返回回到 S6 |
+| `alerts-in-settings` | S6 開著時接收器 7 斷線：標題列下面 N3「接收器 7 斷線了（3 隻狗收不到）」，5 秒後收起，不留「⚠ N」（D17）；點提醒卡開接收器頁，返回回到原本 S6 快照 |
 | `onboarding-first-launch` | 第一次開 App、沒登入 → D1「登入 Supabase 帳號」，上方引導進度條第 1 步（共 4 步）、下方「登入」「稍後再說」；情境裡的「稍後再說」不寫進這支手機的設定 |
 | `auth-restore-slow` | 恢復登入超過 10 秒還連不上 Supabase → 先用手機裡的資料進地圖（只有接收器 7 的豆豆、狗 5）；`&page=cloud` 的 S3 寫「暫時連不上，會自動重試」 |
 | `auth-expired` | 冷啟動時恢復登入發現登入已失效 → D1 上方紅字「需要重新登入」（沒有進度條）；完成、「稍後再說」、返回鍵都回地圖 |
@@ -149,7 +149,8 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-single-point` | 只有一筆：豆豆今天只有 09:10 一筆 → 一個點、距離 0、沒有「調整範圍」 |
 | `history-empty-day` | H8：我的路線今天沒有紀錄（昨天有）→「今天還沒有路線」、右上匯出變淡、‹ 跳到昨天 |
 | `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（第一行座標、第二行膠囊）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
-| `history-no-departure` | 我的路線：06:30 起一直在家附近 →「還沒出發」，範圍＝今天全部記錄，沒有停留 |
+| `history-confirming` | 我的路線：原地後開始走路 → 暫定時間範圍，確認失敗回全天 |
+| `history-no-departure` | 我的路線：06:30 起一直在家附近 →「06:30 – 現在」，範圍＝今天全部記錄，沒有停留 |
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
 | `history-gap` | 豆豆：中斷 12 分（「沒有資料」）和 40 分（「沒有資料」＋「恢復記錄」） |
 | `history-indoor` | 豆豆：走路、停留，進室內 25 分（小房子節點「室內・N 分」，不編號、不算距離），再走路 |
@@ -167,7 +168,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-cloud-downloading` | H3c：開在 9/28 下載中（不會結束；取消或返回鍵 →「這天的紀錄還沒下載完　重試」） |
 | `history-cloud-failed` | 9/28 下載失敗、手機裡沒有：「這天的紀錄還沒下載完」＋「重試」（不是 H8） |
 | `history-cloud-incomplete` | 9/28 下載到一半失敗：那一半的路線＋「資料不完整　重試」 |
-| `history-export` | H9：我的路線，匯出小視窗打開（PNG／GPX／CSV 固定順序） |
+| `history-export` | H9／D16：我的路線，匯出小視窗打開（PNG／GPX／CSV 固定順序；說明依序為「地圖＋時間軸清單」「軌跡檔，可匯入地圖 App」「每一筆位置」，TalkBack 同步） |
 | `history-export-generating` | 產生中（右上 icon 轉圈；情境的匯出永遠不結束） |
 | `history-export-hang` | 匯出小視窗打開、選了格式就一直產生中（看產生中、取消、返回鍵） |
 | `history-export-failed` | 匯出失敗　重試（重試是真的匯出） |
@@ -227,3 +228,10 @@ adb shell am start -a android.intent.action.VIEW -d 'dogtracker://dev/fixture?na
 - d：Google 預設紅色圖釘；深色截圖的大片白色。
 
 每組在 `<輸出>/<字體>-<light|dark>/report.txt`（`report.json`）。結束時字體回 1.0、主題回淺色。需要 debug 版＋Metro，和 `fixture-screenshots.sh` 一樣。命中的每一項都要人看：c 會把被小視窗蓋住的膠囊、TalkBack 焦點框也算進去。
+
+### Final review A6b fixtures
+
+`waiting-sources` (3 local sources), `waiting-sources-grace` (under 10 seconds),
+`waiting-sources-partial` (2 still waiting), `waiting-sources-dismissed` (persisted ✕),
+`waiting-sources-new` (a new source after ✕), `waiting-sources-disconnected` (below the outage card),
+and `waiting-sources-cloud-only` (no A6b). These fixtures use the real source-state rules and never save to the live phone.

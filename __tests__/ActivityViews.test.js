@@ -136,13 +136,13 @@ test('empty data, durations, legend and thresholds use A4 text', () => {
   expect(view.rows[2].rangeLabels).toEqual(['00:00–24:00']);
   expect(view.thresholds).toEqual({ restMax: 0.05, vigorousMin: 0.8 });
   expect(view.thresholdBands).toEqual([
-    { state: 'rest', min: 0, max: 0.05, label: '低活動 0.05 以下' },
-    { state: 'vigorous', min: 0.8, max: 1, label: '高活動 0.8 以上' },
+    { state: 'rest', min: 0, max: 0.05, label: '休息' },
+    { state: 'vigorous', min: 0.8, max: 1, label: '劇烈' },
   ]);
-  expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual(['休息', '一般', '劇烈']);
-  expect(ACTIVITY_VIEW_COPY.low).toBe('低活動 0.05 以下');
-  expect(ACTIVITY_VIEW_COPY.high).toBe('高活動 0.8 以上');
-  expect(ACTIVITY_VIEW_COPY.explanation).toBe('休息：最近 10 分鐘幾乎沒動；劇烈：最近 2 分鐘一直在激烈活動');
+  expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual(['休息', '一般', '劇烈', '沒有資料']);
+  expect(ACTIVITY_VIEW_COPY.low).toBe('休息');
+  expect(ACTIVITY_VIEW_COPY.high).toBe('劇烈');
+  expect(ACTIVITY_VIEW_COPY.explanation).toBeUndefined();
   const totals = buildDayView({ ...options, readings: input(START, Array(340).fill(0)) });
   expect(totals.rows[0].durationText).toBe('5 小時 40 分');
 });
@@ -181,6 +181,14 @@ test('local calendar days retain DST capacity rather than adding fixed 24 hours'
     expect(period.end).toBe(next);
     const view = buildDayView({ date: start, now: next });
     expect(view.points.length).toBe((next - start) / M);
+    expect(view.bars).toHaveLength(96);
+    const minutes = Array.from({ length: (next - start) / M }, (_, i) => ({
+      minute: start + i * M, value: 0.3, count: 1,
+    }));
+    const filled = buildDayView({ date: start, now: next, minutes });
+    expect(filled.bars.reduce((sum, bar) => sum + bar.count, 0)).toBe(minutes.length);
+    if (minutes.length === 1380) expect(filled.bars.slice(8, 12).every(bar => bar.count === 0)).toBe(true);
+    if (minutes.length === 1500) expect(filled.bars.slice(4, 8).every(bar => bar.count === 30)).toBe(true);
     const monthView = buildMonthView({ date: start, now: next });
     expect(monthView.bars[day - 1].capacityMinutes).toBe((next - start) / M);
   }
@@ -287,4 +295,39 @@ test('totals longer than a day read in days and hours (060)', () => {
   expect(totalText(1981 * 60 + 58)).toBe('82 天 14 小時');
   expect(totalText(48 * 60 + 10)).toBe('2 天');
   expect(totalText(25 * 60)).toBe('1 天 1 小時');
+});
+
+test('day has 96 quarter-hour means, exact two-minute vigorous burst wins', () => {
+  const values = [0.8, 0.9, ...Array(13).fill(0.02), 0];
+  const view = buildDayView({ ...options, readings: input(START, values) });
+  expect(view.bars).toHaveLength(96);
+  expect(view.bars[0].state).toBe('vigorous');
+  expect(view.bars[0].totals.vigorous).toBe(2);
+  expect(view.bars[0].value).toBeCloseTo((1.7 + 13 * 0.02) / 15);
+  expect(view.bars[0].height).toBeCloseTo(view.bars[0].value * 200);
+  expect(view.bars[1]).toMatchObject({ count: 1, value: 0, height: 3 });
+});
+
+test('partial today averages present minutes and leaves future slots pending', () => {
+  const view = buildDayView({ ...options, now: START + 18 * M + 1000,
+    readings: input(START + 15 * M, [0.2, null, 0.6, 1]) });
+  expect(view.bars[1]).toMatchObject({ count: 2, value: 0.4, height: 80, pending: false });
+  expect(view.bars[2]).toMatchObject({ count: 0, height: 0, pending: true });
+  expect(view.bars[0]).toMatchObject({ state: 'missing', height: 0, pending: false });
+});
+
+test('all-gap day has no bars but keeps gap summary', () => {
+  const view = buildDayView(options);
+  expect(view.bars.every(bar => bar.height === 0 && bar.state === 'missing')).toBe(true);
+  expect(view.rows[2].durationMinutes).toBe(1440);
+});
+
+test('rest versus normal majority uses classified minutes and normal wins ties', () => {
+  const { bucketDayMinutes } = require('../src/activity/views');
+  const points = ['rest', 'normal', 'vigorous'].map((state, i) => ({
+    minute: START + i * M, value: 0.3, state,
+  }));
+  expect(bucketDayMinutes(points, NOW, START)[0].state).toBe('normal');
+  points.push({ minute: START + 3 * M, value: 0, state: 'rest' });
+  expect(bucketDayMinutes(points, NOW, START)[0].state).toBe('rest');
 });
