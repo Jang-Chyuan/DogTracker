@@ -24,7 +24,6 @@ import { signalBars, signalBarsLabel } from './Pairing';
 import SignalBars from './SignalBars';
 import { radius, space, type, size as sizes, border, touch } from '../theme/tokens';
 import { useReduceMotion } from '../utils/reduceMotion';
-import { isLargeFont } from '../utils/textScale';
 
 // The frame's backdrop before (or without) the camera picture.
 const getCAMERA_DARK = makeStyles(theme => {
@@ -322,16 +321,8 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           returnKeyType="search"
           onSubmitEditing={pairing.searchName}
         />
-        {!isLargeFont() && (
-          <Text style={styles.example}>例：DogGPS-Master7</Text>
-        )}
       </View>
-      {/* 大字體: the example goes under the field, which keeps its width for the name. */}
-      {isLargeFont() && (
-        <Text style={[styles.example, styles.exampleBelow]}>
-          例：DogGPS-Master7
-        </Text>
-      )}
+      <Text testID="pair-name-example" style={styles.example}>例：DogGPS-Master7</Text>
       {pairing.inputError ? (
         <Text
           testID="pair-name-error"
@@ -540,8 +531,7 @@ const getStyles = makeStyles(theme => {
       flex: 1,
       paddingVertical: space.s,
     },
-    example: { ...type.caption, color: colors.textMuted, marginLeft: space.s },
-    exampleBelow: { marginLeft: 0, marginTop: space.xs },
+    example: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
     error: { ...type.caption, color: colors.crit, marginTop: space.xs },
     searchButton: { marginTop: space.m },
     sectionRow: {
