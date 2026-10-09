@@ -21,6 +21,7 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { useTrackingSession } from './src/app/useTrackingSession';
+import { StableInsets } from './src/app/StableInsets';
 import { handleRootBack } from './src/app/handleRootBack';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
@@ -123,13 +124,15 @@ export default function App() {
   return (
     <ThemeProvider>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <AuthProvider>
-          <AuthGate>
-            <TrackerRoot />
-          </AuthGate>
-        </AuthProvider>
-        {/* D0's copy over everything until the first screen is ready. */}
-        <SplashOverlay />
+        <StableInsets>
+          <AuthProvider>
+            <AuthGate>
+              <TrackerRoot />
+            </AuthGate>
+          </AuthProvider>
+          {/* D0's copy over everything until the first screen is ready. */}
+          <SplashOverlay />
+        </StableInsets>
       </SafeAreaProvider>
     </ThemeProvider>
   );
