@@ -1,4 +1,5 @@
 import { downloadCloudHistory } from './CloudDownload';
+import { cloudError } from './CloudErrors';
 
 const DAY = 86400000;
 const OVERLAP = 300000;
@@ -7,11 +8,11 @@ export async function listCloudMasters(client, owner, signal, check) {
   const masters = new Set();
   for (let offset = 0; ; ) {
     await check();
-    const { data, error } = await client.from('device_members').select('gateway_id,slave_id')
+    const { data, error, status } = await client.from('device_members').select('gateway_id,slave_id')
       .eq('user_id', owner).order('gateway_id').order('slave_id')
       .range(offset, offset + 499).abortSignal(signal);
     await check();
-    if (error || !Array.isArray(data)) throw new Error('無法讀取 Master 清單，請確認連線及權限');
+    if (error || !Array.isArray(data)) throw cloudError('無法讀取 Master 清單，請確認連線及權限', error, status);
     if (!data.length) return [...masters];
     for (const row of data) {
       const match = /^master_(\d+)$/.exec(row.gateway_id);

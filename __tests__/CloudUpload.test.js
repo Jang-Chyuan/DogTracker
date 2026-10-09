@@ -20,23 +20,21 @@ function insert(connection, event, owner = 'alice', master = 7, data = payload) 
   connection.sqlite.prepare('INSERT INTO ble_upload_queue(event_id,owner_user_id,master_id,received_at,payload_json,fingerprint,slave_id) VALUES(?,?,?,?,?,?,?)')
     .run(event, owner, master, 1000, JSON.stringify(data), event, data.sid);
 }
-test('Master 5 defaults to persisted phone relay without overriding manual routes on resume or login', async () => {
+test('no receiver uploads through this phone by default; saved routes survive resume and login', async () => {
   const { connection, database } = setup();
   try {
+    // Design S3: 不再預設 Master 5.
     await database.owner('alice');
-    expect(await database.settings('alice')).toEqual([
-      { owner_user_id: 'alice', master_id: 5, mode: 'phone' },
-    ]);
-    insert(connection, 'five', 'alice', 5);
-    insert(connection, 'seven', 'alice', 7);
-    expect((await database.pending('alice', Date.now())).map(r => r.master_id)).toEqual([5]);
+    expect(await database.settings('alice')).toEqual([]);
+    await database.setMode('alice', 5, 'phone');
+    expect(await database.settings('alice')).toEqual([{ owner_user_id: 'alice', master_id: 5, mode: 'phone' }]);
     await database.setMode('alice', 5, 'wifi');
     await database.owner(null);
     await createUploadDatabase(connection).owner('alice');
     expect((await database.settings('alice'))[0].mode).toBe('wifi');
     await database.owner('bob');
-    expect((await database.settings('bob'))[0].mode).toBe('phone');
-    expect((await database.settings('alice'))[0].mode).toBe('wifi');
+    expect(await database.settings('bob')).toEqual([]);
+    expect(connection.sqlite.prepare("SELECT value FROM ble_upload_meta WHERE key='owner'").get().value).toBe('bob');
   } finally { connection.close(); }
 });
 test('BLE units reconstruct the Wi-Fi wire payload without substituting display coordinates', () => {
@@ -69,7 +67,7 @@ test('queue survives new adapter, route disable and account switch; lost respons
     expect(client.functions.invoke).toHaveBeenCalledTimes(2);
   } finally { connection.close(); }
 });
-test('enabling starts a new upload period without changing local history or other Masters', async () => {
+test('changing a route deletes nothing: waiting rows stay, local history and other Masters untouched', async () => {
   const { connection, database } = setup();
   try {
     connection.sqlite.exec('CREATE TABLE dog_status (id INTEGER PRIMARY KEY, lat REAL)');
@@ -77,22 +75,47 @@ test('enabling starts a new upload period without changing local history or othe
     insert(connection, 'old'); insert(connection, 'other-owner', 'bob');
     insert(connection, 'other-master', 'alice', 5);
     await database.setMode('alice', 7, 'phone');
-    expect(await database.pending('alice', Date.now())).toEqual([]);
-    insert(connection, 'new');
-    const fetched = (await database.pending('alice', Date.now()))[0];
-    expect(await database.isPending(fetched)).toBe(true);
-    // Saving unchanged settings is not a new start; offline retries remain valid.
-    await database.setMode('alice', 7, 'phone');
-    expect(await database.isPending(fetched)).toBe(true);
     await database.setMode('alice', 7, 'wifi');
-    expect(await database.isPending(fetched)).toBe(false);
+    // Queued here, it is still this phone's to send whatever the route now.
+    expect((await database.pending('alice', Date.now())).map(r => r.event_id).sort()).toEqual(['old', 'other-master']);
     await database.setMode('alice', 7, 'phone');
+    // 重試 also clears a waiting row's backoff.
+    connection.sqlite.exec("UPDATE ble_upload_queue SET next_retry_at=9999999999999 WHERE event_id='old'");
+    expect((await database.pending('alice', Date.now())).map(r => r.event_id)).toEqual(['other-master']);
     await database.retry('alice');
-    expect(await database.isPending(fetched)).toBe(false);
-    expect(await database.pending('alice', Date.now())).toEqual([]);
+    expect((await database.pending('alice', Date.now())).map(r => r.event_id).sort()).toEqual(['old', 'other-master']);
+    expect(await database.pendingCount('alice', 7)).toBe(1);
+    expect((await database.summary('alice')).pendingByMaster).toEqual({ 5: 1, 7: 1 });
     expect(connection.sqlite.prepare('SELECT COUNT(*) n FROM dog_status').get().n).toBe(1);
-    expect(connection.sqlite.prepare('SELECT event_id FROM ble_upload_queue ORDER BY event_id').all()
-      .map(r => r.event_id)).toEqual(['other-master', 'other-owner']);
+    expect(connection.sqlite.prepare('SELECT COUNT(*) n FROM ble_upload_queue').get().n).toBe(3);
+  } finally { connection.close(); }
+});
+
+test('flush sends every waiting row of one Master whatever its route; offline keeps the rest', async () => {
+  const { connection, database } = setup();
+  try {
+    // Receiver 7 uploads by Wi-Fi now; rows from an earlier phone period wait.
+    await database.setMode('alice', 7, 'wifi');
+    for (let n = 0; n < 3; n++) insert(connection, `left-${n}`);
+    insert(connection, 'other-master', 'alice', 5);
+    connection.sqlite.exec("UPDATE ble_upload_queue SET next_retry_at=9999999999999 WHERE event_id='left-1'");
+    const ack = jest.fn(async (_name, { body }) => ({ data: { ok: true, event_id: body.event_id } }));
+    const client = { auth: { getSession: async () => ({ data: { session: { user: { id: 'alice' }, access_token: 't' } } }) },
+      functions: { invoke: ack } };
+    const service = createUploadService({ database, client });
+    expect(await service.flush('alice', 7)).toEqual({ result: 'done', remaining: 0 });
+    expect(ack.mock.calls.map(call => call[1].body.event_id)).toEqual(['left-0', 'left-1', 'left-2']);
+    expect(await database.pendingCount('alice', 5)).toBe(1);
+    // Offline: the first failure stops and says how many are left.
+    for (let n = 0; n < 2; n++) insert(connection, `more-${n}`);
+    client.functions.invoke = jest.fn(async () => { throw new TypeError('Network request failed'); });
+    expect(await service.flush('alice', 7)).toEqual({ result: 'offline', remaining: 2 });
+    // A refused sign-in is told apart.
+    connection.sqlite.exec('UPDATE ble_upload_queue SET next_retry_at=0');
+    client.functions.invoke = jest.fn(async () => ({ error: { message: 'unauthorized', context: { status: 401 } } }));
+    expect(await service.flush('alice', 7)).toEqual({ result: 'unauthorized', remaining: 2 });
+    await database.setMode('alice', 7, 'phone');
+    expect(await service.run('alice')).toBe('unauthorized');
   } finally { connection.close(); }
 });
 

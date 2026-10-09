@@ -39,6 +39,9 @@ export function settingsInput(inputs, { now, receiverState, receiverWait = null,
     recording: inputs.recording ?? recording ?? {},
     todayCount: inputs.todayRoute?.count ?? null,
     account: inputs.account || {},
+    // S3: the download (useCloudSync) and upload (useCloudUpload) states.
+    sync,
+    upload: inputs.upload || {},
     cloudFailing: !!sync.ownerId && (sync.failingSince != null || !!inputs.cloudProblem),
     signInExpired: !!inputs.signInExpired,
     storage: storageProblem(inputs.tracking?.realWriteError),
@@ -176,8 +179,9 @@ export function settingsHome(input) {
       ] },
       // v3 has no 地圖 row (map display options were removed): 提醒 alone.
       { title: '提醒', rows: [row('alerts', '提醒', '震動、聲音、各項開關', ['震動'])] },
-      // Until S7 (051): the old Wi-Fi and upload pages live behind 進階.
-      { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi、上傳設定', [])] },
+      // Until S7 (051c): the old Wi-Fi page lives behind 進階 (刪除資料
+      // arrives with S7).
+      { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi', [])] },
     ],
     reasons,
   };

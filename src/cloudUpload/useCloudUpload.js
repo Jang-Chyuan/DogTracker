@@ -5,10 +5,28 @@ import { getCloudClient } from '../cloud/CloudClient';
 import { createUploadDatabase } from './UploadDatabase';
 import { createUploadService } from './UploadService';
 
-export function useCloudUpload(ready, owner, foreground) {
+/** A route switch that could not send what was waiting first (S3). */
+export class UploadSwitchError extends Error {
+  constructor(reason, remaining) {
+    super(reason === 'offline' ? `要先上傳完 ${remaining} 筆，請連上網路`
+      : reason === 'unauthorized' ? '需要重新登入' : '上傳方式沒有切換，請重試');
+    this.reason = reason;
+    this.remaining = remaining;
+  }
+}
+
+// `onAuthFailure`: an upload was refused for the sign-in (401); AuthProvider
+// decides whether it really ended (判定表「使用中登入失效」).
+export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
   const db = useRef(null), service = useRef(null);
+  const authFailure = useRef(onAuthFailure);
+  authFailure.current = onAuthFailure;
+  // The account now: a switch started for another one stops (S3).
+  const currentOwner = useRef(owner);
+  currentOwner.current = owner;
   const [revision, refresh] = useState(0);
-  const [state, setState] = useState({ settings: [], settingsOwner: null, masters: [], counts: [], phoneId: '', error: '' });
+  const [state, setState] = useState({ settings: [], settingsOwner: null, masters: [], counts: [],
+    pendingByMaster: {}, phoneId: '', error: '' });
   const supported = Platform.OS === 'android' && !!NativeModules.BleBackground?.executeDatabase;
   useEffect(() => {
     if (!ready || !supported) return undefined;
@@ -24,7 +42,7 @@ export function useCloudUpload(ready, owner, foreground) {
     const database = db.current;
     // This update also controls native enqueue while the JS screen is suspended.
     setState(s => s.settingsOwner === owner ? s
-      : { ...s, settings: [], settingsOwner: null, counts: [], last: null, error: '' });
+      : { ...s, settings: [], settingsOwner: null, counts: [], pendingByMaster: {}, last: null, error: '' });
     const binding = database.owner(owner);
     async function tick() {
       try {
@@ -43,7 +61,10 @@ export function useCloudUpload(ready, owner, foreground) {
               owner, savedSettings.some(s => s.mode === 'phone'));
           } catch (error) { searchError = `搜尋背景轉送無法啟動：${error.message}；前景仍可上傳`; }
         }
-        if (foreground) await service.current?.run(owner, () => alive);
+        if (foreground) {
+          const outcome = await service.current?.run(owner, () => alive);
+          if (outcome === 'unauthorized' && alive) authFailure.current?.();
+        }
         const [settings, summary] = await Promise.all([database.settings(owner), database.summary(owner)]);
         if (alive) setState(s => ({ ...s, phoneId, settings, settingsOwner: owner, ...summary,
           error: searchError || summary.error || '' }));
@@ -68,12 +89,42 @@ export function useCloudUpload(ready, owner, foreground) {
     return () => { alive = false; };
   }, [ready, owner, foreground, supported]);
   const settingsReady = !!owner && state.settingsOwner === owner;
-  return { ...state, settings: settingsReady ? state.settings : [], settingsReady, owner, supported,
-    async setMode(master, mode) {
-      await db.current.setMode(owner, master, mode);
-      refresh(n => n + 1);
-      if (foreground) await NativeModules.CloudBackgroundSync?.configureSearch?.(
-        owner, (await db.current.settings(owner)).some(s => s.mode === 'phone'));
+  async function setMode(master, mode) {
+    await db.current.setMode(owner, master, mode);
+    refresh(n => n + 1);
+    if (foreground) await NativeModules.CloudBackgroundSync?.configureSearch?.(
+      owner, (await db.current.settings(owner)).some(s => s.mode === 'phone'));
+  }
+  return { ...state, settings: settingsReady ? state.settings : [],
+    pendingByMaster: settingsReady ? state.pendingByMaster || {} : {}, settingsReady, owner, supported,
+    setMode,
+    /**
+     * S3 切換上傳方式: what this phone still holds for that receiver is sent
+     * first (it needs the network), then the route changes. Nothing is
+     * deleted. Throws UploadSwitchError when rows are left.
+     */
+    async switchMode(master, mode) {
+      if (!db.current || !service.current) throw new UploadSwitchError('failed', 0);
+      const ownerAtStart = owner;
+      const same = () => currentOwner.current === ownerAtStart;
+      const send = async () => {
+        const { result, remaining } = await service.current.flush(ownerAtStart, master, same);
+        refresh(n => n + 1);
+        if (result === 'unauthorized') authFailure.current?.();
+        return { result, remaining };
+      };
+      if (await db.current.pendingCount(ownerAtStart, master) > 0) {
+        const { result, remaining } = await send();
+        if (result !== 'done' || remaining > 0) {
+          throw new UploadSwitchError(result === 'done' ? 'failed' : result, remaining);
+        }
+      }
+      if (!same()) throw new UploadSwitchError('cancelled', 0);
+      await setMode(master, mode);
+      // Rows the receiver service queued between the last send and the route
+      // change: send them now (the route no longer queues more). Whatever
+      // cannot go now stays queued and the normal pass sends it later.
+      if (same() && await db.current.pendingCount(ownerAtStart, master) > 0) await send().catch(() => {});
     },
     async retry() { await db.current.retry(owner); refresh(n => n + 1); },
   };

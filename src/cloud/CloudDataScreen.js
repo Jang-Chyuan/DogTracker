@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton, ui } from '../components/ScreenUI';
-import { useAuth } from '../auth/AuthProvider';
-import LoginScreen from '../screens/LoginScreen';
 import { getCloudClient } from './CloudClient';
 import { CLOUD_BUDGET_BYTES } from './CloudDatabase';
 
@@ -27,10 +25,12 @@ const columns = [
 
 const megabytes = bytes => `${Math.round(bytes / (1024 * 1024))} MB`;
 
-// Signed out (by choice, or 登入失效 while in use) this page is where to sign
-// in: the map works without an account, so nothing blocks in front of it.
-export default function CloudScreen({ database, sync, onLater, clientFactory = getCloudClient }) {
-  const auth = useAuth();
+// 診斷 → 本機／雲端資料: the cloud rows downloaded to this phone, page by
+// page, each with its original Supabase JSON. Signing in and out, and the
+// download/upload status, live on 設定 → Supabase 帳號 (S3); this old page
+// stays until S8 (051c) replaces it. `phoneId`: this phone's upload ID, for
+// authorizing it on a receiver in the cloud.
+export default function CloudDataScreen({ database, sync, phoneId = '', clientFactory = getCloudClient }) {
   const [connection] = useState(() => {
     try { return { client: clientFactory() }; }
     catch (configurationError) { return { error: configurationError.message }; }
@@ -124,11 +124,11 @@ export default function CloudScreen({ database, sync, onLater, clientFactory = g
   }
 
   return <View>
-    {/* Signed out the page is the sign-in form (D1), under the 「‹ 雲端資料」 header. */}
-    {session ? <Text style={ui.title}>雲端資料</Text> : null}
+    <Text style={ui.title}>本機／雲端資料</Text>
     {connection.error ? <Text style={ui.error}>{connection.error}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={ui.error}>{error}</Text> : null}
-    {!session ? <LoginScreen onLater={onLater} /> : <>
+    {phoneId ? <Text selectable style={ui.hint}>這支手機的上傳 ID：{phoneId}</Text> : null}
+    {!session ? <Text style={ui.hint}>登入 Supabase 帳號後，這裡會列出下載到這支手機的雲端資料。</Text> : <>
       <View style={ui.card}>
         <Text style={ui.text}>{session.user.email}</Text>
         <Text style={ui.hint}>下載範圍由此帳號的 Master 授權決定，包含該 Master 的所有 Slave。</Text>
@@ -143,10 +143,6 @@ export default function CloudScreen({ database, sync, onLater, clientFactory = g
             : '等待自動同步'}
         </Text> : null}
         {sync?.error ? <Text style={ui.error}>{sync.error}</Text> : null}
-        <ActionButton title="登出" secondary disabled={busy} onPress={() => perform(async () => {
-          try { await auth.signOut(); }
-          catch { throw new Error('登出失敗，請確認連線後重試'); }
-        })} />
       </View>
 
       <View style={ui.card}>

@@ -5,8 +5,12 @@ import { createCloudSync } from './CloudSync';
 
 // Foreground uses the existing 30-second scheduler; Android WorkManager owns
 // bounded background passes. Do not cancel durable jobs on a React unmount.
-export function useCloudSync(database, ready, clientFactory = getCloudClient) {
+// `onAuthFailure`: a pass was refused for the sign-in (401 / expired JWT);
+// AuthProvider.reportAuthFailure decides whether the sign-in really ended.
+export function useCloudSync(database, ready, clientFactory = getCloudClient, onAuthFailure = null) {
   const engine = useRef(null);
+  const authFailure = useRef(onAuthFailure);
+  authFailure.current = onAuthFailure;
   const [ownerId, setOwnerId] = useState(null);
   const [status, setStatus] = useState({ busy: false, error: '', revision: 0 });
   useEffect(() => {
@@ -16,8 +20,12 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient) {
     catch { setStatus(current => ({ ...current, error: '雲端登入設定無法載入' })); return undefined; }
     let disposed = false;
     let eventSeen = false;
+    let refused = false;
     const sync = createCloudSync({ client, database, onChange: value => {
       setStatus(current => ({ ...current, ...value }));
+      // Once per refusal, not on every later publish of the same state.
+      if (value.authFailed && !refused) authFailure.current?.();
+      refused = !!value.authFailed;
     } });
     engine.current = sync;
     const sessionChanged = session => {
@@ -56,6 +64,6 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient) {
       sync.dispose()?.catch(() => {});
     };
   }, [database, ready, clientFactory]);
-  return { ...status, ownerId, runManual: (work, abort) => engine.current
+  return { ...status, ownerId, retry: () => engine.current?.retry(), runManual: (work, abort) => engine.current
     ? engine.current.runManual(work, abort) : Promise.reject(new Error('自動同步尚未就緒')) };
 }
