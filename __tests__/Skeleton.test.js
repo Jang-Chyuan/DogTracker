@@ -43,3 +43,24 @@ test('exact loading tokens and shared timing contract', () => {
   expect(lightTheme.colors).toMatchObject({ skeleton: '#EDE6E4', skeletonHighlight: '#F7F2F0' });
   expect(darkTheme.colors).toMatchObject({ skeleton: '#3D3432', skeletonHighlight: '#4A3F3D' });
 });
+
+
+test('D8: a short reload after an interrupted fade restores full content opacity', async () => {
+  let renderer, fadeValue;
+  const original = Animated.timing;
+  jest.spyOn(Animated, 'timing').mockImplementation((value, config) => {
+    if (config.duration !== SKELETON_TIMING.fade) return original(value, config);
+    fadeValue = value;
+    return { start: () => value.setValue(0.4), stop: jest.fn() };
+  });
+  const view = loading => <LoadingContent loading={loading}><Text>content</Text></LoadingContent>;
+  await act(async () => { renderer = Renderer.create(view(true)); });
+  await act(async () => jest.advanceTimersByTime(300));
+  await act(async () => renderer.update(view(false)));
+  expect(fadeValue.__getValue()).toBe(0.4);
+  await act(async () => renderer.update(view(true)));
+  await act(async () => jest.advanceTimersByTime(100));
+  await act(async () => renderer.update(view(false)));
+  expect(fadeValue.__getValue()).toBe(1);
+  await act(async () => renderer.unmount());
+});

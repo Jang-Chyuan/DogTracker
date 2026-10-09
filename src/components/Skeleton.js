@@ -68,11 +68,17 @@ export function LoadingContent({ loading, children, shape, label = '載入中', 
     if (!loading) return undefined;
     AccessibilityInfo.announceForAccessibility?.(label);
     setVisible(false);
+    wasVisible.current = false;
+    opacity.setValue(1);
     const timer = setTimeout(() => { wasVisible.current = true; setVisible(true); }, SKELETON_TIMING.delay);
     return () => clearTimeout(timer);
-  }, [loading, label]);
+  }, [loading, label, opacity]);
   useEffect(() => {
-    if (loading || !wasVisible.current) return undefined;
+    if (loading) return undefined;
+    if (!wasVisible.current) {
+      opacity.setValue(1);
+      return undefined;
+    }
     wasVisible.current = false;
     setVisible(false);
     opacity.setValue(0);
