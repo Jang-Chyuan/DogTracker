@@ -112,3 +112,36 @@ test('resume keeps saved routes visible while uploads are slow, and account swit
     Platform.OS = previousOS; NativeModules.BleBackground = previousNative;
   }
 });
+
+test('先上傳 (S7) retries refused rows, sends every receiver this account has waiting, and stops offline', async () => {
+  const previousOS = Platform.OS, previousNative = NativeModules.BleBackground;
+  Platform.OS = 'android'; NativeModules.BleBackground = { executeDatabase: jest.fn() };
+  const database = {
+    owner: async () => {}, identity: async () => 'phone', settings: async () => [],
+    summary: async () => ({ counts: [] }), retry: jest.fn(async () => {}),
+    pendingMasters: jest.fn(async () => [5, 7]),
+  };
+  createUploadDatabase.mockReturnValue(database);
+  const flush = jest.fn(async () => ({ result: 'done', remaining: 0 }));
+  createUploadService.mockReturnValue({ run: async () => 'idle', flush });
+  let upload, renderer;
+  function Probe({ owner }) { upload = useCloudUpload(true, owner, true); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe owner="alice" />); });
+    let result;
+    await act(async () => { result = await upload.flushAll(); });
+    expect(result).toBe('done');
+    expect(database.retry).toHaveBeenCalledWith('alice');
+    expect(flush.mock.calls.map(call => call.slice(0, 2))).toEqual([['alice', 5], ['alice', 7]]);
+    flush.mockImplementationOnce(async () => ({ result: 'offline', remaining: 4 }));
+    await act(async () => { result = await upload.flushAll(); });
+    expect(result).toBe('offline');
+    expect(flush).toHaveBeenCalledTimes(3);
+    await act(async () => renderer.update(<Probe owner={null} />));
+    await act(async () => { result = await upload.flushAll(); });
+    expect(result).toBe('signed-out');
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    Platform.OS = previousOS; NativeModules.BleBackground = previousNative;
+  }
+});

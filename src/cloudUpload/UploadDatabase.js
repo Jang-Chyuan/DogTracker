@@ -46,6 +46,11 @@ export function createUploadDatabase(db) {
       return rows(await db.executeAsync(`SELECT * FROM ble_upload_queue
         WHERE owner_user_id=? AND master_id=? AND status='pending' ORDER BY id LIMIT ?`, [owner, master, limit]));
     },
+    // The receivers this account still has rows waiting for (先上傳, S7).
+    async pendingMasters(owner) {
+      return rows(await db.executeAsync(`SELECT DISTINCT master_id FROM ble_upload_queue
+        WHERE owner_user_id=? AND status='pending' ORDER BY master_id`, [owner])).map(row => Number(row.master_id));
+    },
     async pendingCount(owner, master) {
       return Number(rows(await db.executeAsync(
         "SELECT COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? AND master_id=? AND status='pending'",
@@ -69,7 +74,11 @@ export function createUploadDatabase(db) {
     async summary(owner) {
       const counts = rows(await db.executeAsync('SELECT status,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? GROUP BY status', [owner]));
       const byMaster = rows(await db.executeAsync("SELECT master_id,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? AND status='pending' GROUP BY master_id", [owner]));
-      const last = rows(await db.executeAsync('SELECT MAX(sent_at) time FROM ble_upload_queue WHERE owner_user_id=?', [owner]))[0]?.time;
+      // 刪除全部狗資料 (S7) removes the sent rows but keeps their last time.
+      const last = Number(rows(await db.executeAsync(`SELECT MAX(
+        COALESCE((SELECT MAX(sent_at) FROM ble_upload_queue WHERE owner_user_id=?), 0),
+        COALESCE((SELECT CAST(value AS INTEGER) FROM ble_upload_meta WHERE key='last_sent_at:' || ?), 0)) time`,
+      [owner, owner]))[0]?.time) || null;
       const error = rows(await db.executeAsync("SELECT last_error FROM ble_upload_queue WHERE owner_user_id=? AND last_error<>'' ORDER BY id DESC LIMIT 1", [owner]))[0]?.last_error;
       const queueError = rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='queue_error'"))[0]?.value;
       const pendingByMaster = Object.fromEntries(byMaster.map(row => [row.master_id, Number(row.count)]));

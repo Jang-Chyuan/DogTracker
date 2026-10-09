@@ -1,11 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -26,6 +23,17 @@ import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
 import CloudDataScreen from './src/cloud/CloudDataScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
+import AdvancedSettings from './src/settings/AdvancedSettings';
+import DiagnosticsSettings from './src/settings/DiagnosticsSettings';
+import LiveDataSettings from './src/settings/LiveDataSettings';
+import WifiSettings from './src/settings/WifiSettings';
+import { useReceiverWifi } from './src/settings/useReceiverWifi';
+import { useDeleteDogData } from './src/settings/DeleteDogData';
+import { diagnosticsPage } from './src/diagnostics/DiagnosticsModel';
+import { useRecentRows } from './src/diagnostics/useRecentRows';
+import { sharedBleService } from './src/ble/sharedBle';
+import { receiverNumber } from './src/map/ReceiverState';
+import { formatClock } from './src/map/MapFormat';
 import AccountSettings from './src/settings/AccountSettings';
 import { accountPage } from './src/settings/AccountModel';
 import SettingsHome from './src/settings/SettingsHome';
@@ -34,7 +42,6 @@ import PhoneSettings from './src/settings/PhoneSettings';
 import AlertSettings from './src/settings/AlertSettings';
 import { alertsPage } from './src/alerts/AlertPreferences';
 import { useAlertPreferences } from './src/settings/useAlertPreferences';
-import SettingsLinks, { SETTINGS_LINKS } from './src/settings/SettingsLinks';
 import { phonePage, receiverPage, settingsHome, settingsInput } from './src/settings/SettingsModel';
 import { useReceiverControl } from './src/settings/useReceiverControl';
 import { useRecordingSwitch } from './src/settings/useRecordingSwitch';
@@ -62,7 +69,7 @@ export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <AuthProvider>
-        <AuthGate><TrackerApp /></AuthGate>
+        <AuthGate><TrackerRoot /></AuthGate>
       </AuthProvider>
     </SafeAreaProvider>
   );
@@ -105,16 +112,24 @@ const PAGE_TITLES = {
   alerts: '提醒',
   diagnostics: '診斷',
   advanced: '進階',
-  locationRecords: '記錄清單',
+  liveData: '即時資料',
   cloudData: '本機／雲端資料',
+  locationRecords: '記錄清單',
+  wifi: '接收器 Wi-Fi',
 };
-// The old hardware pages, by what they were opened for.
-const HARDWARE_TITLES = { scan: '連接接收器', qr: '連接接收器', wifi: '接收器 Wi-Fi', data: '即時資料' };
-const pageTitle = route => (route.name === 'hardware' ? HARDWARE_TITLES[route.entry?.screen] || '連接接收器'
-  : PAGE_TITLES[route.name] || '設定');
-// The v3 settings pages (light); the old pages keep their dark look until
-// their v3 pages replace them (051–053).
-const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'diagnostics', 'advanced']);
+const pageTitle = route => (route.name === 'hardware' ? '連接接收器' : PAGE_TITLES[route.name] || '設定');
+// The v3 settings pages (light). The receiver scan (hardware) keeps its old
+// dark look until D3 (053) replaces it; it is the only old page left.
+const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'diagnostics', 'advanced',
+  'liveData', 'cloudData', 'locationRecords', 'wifi']);
+// The page under each settings page (a fixture opens the whole way there).
+const PARENT_PAGES = { liveData: 'diagnostics', cloudData: 'diagnostics', locationRecords: 'diagnostics',
+  wifi: 'advanced' };
+const stackTo = page => {
+  if (page === 'settings') return [{ name: 'map' }, { name: 'settings' }];
+  const parent = PARENT_PAGES[page];
+  return [{ name: 'map' }, { name: 'settings' }, ...(parent ? [{ name: parent }] : []), { name: page }];
+};
 // Where each settings home row leads.
 const SETTINGS_ROUTES = { receiver: 'receiver', phone: 'phone', account: 'cloud', alerts: 'alerts',
   diagnostics: 'diagnostics', advanced: 'advanced' };
@@ -135,7 +150,16 @@ const authStyles = StyleSheet.create({
   loading: { padding: 24 },
 });
 
-function TrackerApp() {
+// 刪除全部狗資料 (S7) starts every reader of the deleted tables over: the live
+// feed, the downloaded dogs and their indoor holds, the history and activity
+// caches. TrackerApp mounts again on the page the user was on (`resume`).
+function TrackerRoot() {
+  const [session, setSession] = useState({ generation: 0, resume: null });
+  return <TrackerApp key={session.generation} resume={session.resume}
+    onRestart={resume => setSession(current => ({ generation: current.generation + 1, resume }))} />;
+}
+
+function TrackerApp({ resume = null, onRestart }) {
   const auth = useAuth();
   const tracking = useTrackingSession();
   // An upload or download refused for the sign-in (401) asks AuthProvider
@@ -146,7 +170,7 @@ function TrackerApp() {
   const insets = useSafeAreaInsets();
   // The pages opened from the map, newest last; back (the key or 「‹ 標題」)
   // returns to the one before.
-  const [stack, setStack] = useState([{ name: 'map' }]);
+  const [stack, setStack] = useState(() => resume?.stack ?? [{ name: 'map' }]);
   const route = stack[stack.length - 1];
   // The hardware page keeps its own back stack: its header back is passed in.
   const [hardwareBack, setHardwareBack] = useState(0);
@@ -162,7 +186,7 @@ function TrackerApp() {
     setCardHistory(null);
     setStack(current => (current.length > 1 ? current.slice(0, -1) : current));
   };
-  // A hardware page opened for `screen` ('scan', 'qr', 'wifi', 'data').
+  // The receiver scan opened for `screen` ('scan', 'qr').
   const openHardware = screen => open('hardware', { entry: { screen, key: Date.now() } });
   const isMap = route.name === 'map';
   const isHistory = route.name === 'history';
@@ -190,7 +214,8 @@ function TrackerApp() {
   const fixture = useScreenFixture();
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
     tracking.ready.real,
-    undefined, null, { active: tracking.foreground && (showsMap || route.name === 'receiver') && !fixture, revision: cloudSync.revision });
+    undefined, null, { active: tracking.foreground && (showsMap || route.name === 'receiver'
+      || route.name === 'diagnostics') && !fixture, revision: cloudSync.revision });
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
@@ -213,7 +238,7 @@ function TrackerApp() {
   const alertAction = id => {
     if (id === 'receiver-settings') open('receiver');
     else if (id === 'connect-receiver') openHardware('scan');
-    // Until S8 (051), 診斷 lists the reason above its old pages.
+    // 診斷 (S8) starts with the reason.
     else if (id === 'storage-reason') open('diagnostics');
     else if (id === 'sign-in') open('cloud');
     else if (id === 'storage-settings') {
@@ -225,8 +250,7 @@ function TrackerApp() {
   const fixtureName = fixture?.name ?? null;
   useEffect(() => {
     if (!fixturePage) return;
-    setStack(fixturePage === 'settings' ? [{ name: 'map' }, { name: 'settings' }]
-      : [{ name: 'map' }, { name: 'settings' }, { name: fixturePage }]);
+    setStack(stackTo(fixturePage));
   }, [fixtureName, fixturePage]);
   // ---- what the settings pages say ---------------------------------------
   const recordingSwitch = useRecordingSwitch(tracking.foreground && route.name === 'phone' && !fixture);
@@ -236,6 +260,37 @@ function TrackerApp() {
   // memory). Nothing sends alerts yet: 058 reads the same AlertPreferences.
   const alertPreferences = useAlertPreferences(settingsData.alerts, mapInputs.tracking.saveTrackingPreferences,
     fixtureName ?? 'live');
+
+  // ---- S7 進階, S8 診斷 -----------------------------------------------------
+  // A fixture's rows, Wi-Fi and deletion stand in for the real ones; nothing
+  // it shows reads or writes this phone's data.
+  const sources = fixture?.diagnostics ?? null;
+  const listRecent = sources?.listHistory ?? tracking.hardwareDatabase.listHistory;
+  const wifi = useReceiverWifi(fixture?.wifiService ?? sharedBleService, {
+    active: tracking.foreground && (route.name === 'advanced' || route.name === 'wifi'),
+    connected: !!receiverState?.connected,
+  });
+  const receiverName = receiverNumber(receiverState) != null ? `接收器 ${receiverNumber(receiverState)}` : '接收器';
+  // When the last deletion went through (「已刪除・10:21」 on S7).
+  const [deletedAt, setDeletedAt] = useState(resume?.deletedAt ?? null);
+  useEffect(() => { setDeletedAt(resume?.deletedAt ?? null); }, [fixtureName, resume]);
+  const deletion = useDeleteDogData(fixture ? {
+    countUnsent: async () => fixture.deletion.unsent,
+    // A fixture has no network to upload on (判定表「先上傳」但沒網路).
+    uploadAll: async () => 'offline',
+    deleteAll: async () => {},
+    onDeleted: () => setDeletedAt(fixture.now),
+  } : {
+    countUnsent: tracking.countUnsentUploads,
+    uploadAll: alive => upload.flushAll?.(alive) ?? Promise.resolve('failed'),
+    deleteAll: options => tracking.deleteDogData(options),
+    onDeleted: async () => {
+      // A6 comes back after 刪除全部狗資料 (判定表「A6 的 ✕ 什麼時候重來」).
+      await Promise.resolve(tracking.saveTrackingPreferences?.({ noDataCardDismissed: false })).catch(() => {});
+      onRestart?.({ stack, deletedAt: Date.now() });
+    },
+  }, fixture?.deletion?.open ? { unsent: fixture.deletion.unsent } : null, fixtureName);
+  const recentRows = useRecentRows(listRecent, tracking.foreground && route.name === 'diagnostics');
 
   // Background work that keeps going when the map is left (返回鍵 on the
   // map): this phone uploads for a receiver and still has rows waiting.
@@ -258,11 +313,11 @@ function TrackerApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route, cardHistory, uploading]);
 
-  let content = null;
   let page = null;
   switch (route.name) {
     case 'locationRecords':
-      content = <LocationTrackerScreen foreground={tracking.foreground} />;
+      page = <LocationTrackerScreen key={fixtureName ?? 'live'} foreground={tracking.foreground}
+        readPage={sources?.readLocationPage} />;
       break;
     case 'cloud':
       // S3: signed out it is the sign-in form (「稍後再說」 goes back). A
@@ -279,7 +334,17 @@ function TrackerApp() {
         onSwitch={(master, mode) => mapInputs.upload.switchMode(master, mode)} />;
       break;
     case 'cloudData':
-      content = <CloudDataScreen database={tracking.cloudDatabase} sync={cloudSync} phoneId={upload.phoneId} />;
+      page = sources
+        ? <CloudDataScreen key={fixtureName} database={sources.cloudDatabase} sync={mapInputs.cloudSync}
+          phoneId="fixture-phone" clientFactory={sources.cloudClient} />
+        : <CloudDataScreen key="live" database={tracking.cloudDatabase} sync={cloudSync} phoneId={upload.phoneId} />;
+      break;
+    case 'liveData':
+      page = <LiveDataSettings key={fixtureName ?? 'live'}
+        dogDatabase={sources ? { listHistory: sources.listHistory } : tracking.hardwareDatabase} />;
+      break;
+    case 'wifi':
+      page = <WifiSettings key={fixtureName ?? 'live'} wifi={wifi} receiver={receiverName} />;
       break;
     case 'settings': {
       const home = settingsHome(settingsData);
@@ -307,11 +372,13 @@ function TrackerApp() {
         onBattery={openBatterySettings} />;
       break;
     case 'diagnostics':
+      page = <DiagnosticsSettings page={diagnosticsPage({ packets: mapInputs.cloudDogs?.packets,
+        rows: sources ? fixture.raw.ble : recentRows, aliases: settingsData.aliases, storage: settingsData.storage,
+        now })} onOpen={open} />;
+      break;
     case 'advanced':
-      page = <SettingsLinks links={SETTINGS_LINKS[route.name]}
-        storage={route.name === 'diagnostics' ? settingsData.storage : null}
-        onOpen={id => (id === 'records' ? open('locationRecords') : id === 'cloudData' ? open('cloudData')
-          : openHardware(id))} />;
+      page = <AdvancedSettings wifi={wifi} deletion={deletion} onWifi={() => open('wifi')}
+        deletedText={deletedAt ? `已刪除・${formatClock(deletedAt)}` : null} />;
       break;
     default:
       break;
@@ -401,21 +468,6 @@ function TrackerApp() {
         />
       )}
       {light && <View style={styles.page}>{page}</View>}
-      {!showsMap && !light && route.name !== 'hardware' && (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-        >
-          <ScrollView
-            key={route.name}
-            contentContainerStyle={styles.container}
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="handled"
-          >
-            {content}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      )}
     </SafeAreaView>
   );
 }
@@ -424,8 +476,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#0f172a' },
   mapLayer: { backgroundColor: '#0f172a' },
   hiddenMapLayer: { opacity: 0, zIndex: -1 },
-  keyboardView: { flex: 1 },
-  container: { padding: 20, paddingBottom: 28 },
   header: {
     paddingHorizontal: 12,
     paddingVertical: 4,

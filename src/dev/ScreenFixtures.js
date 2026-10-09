@@ -694,6 +694,26 @@ const FIXTURES = {
   // (and 手機) row only the red 「!」; the gear's red dot on the map.
   'notifications-denied': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts',
     permissions: { notificationsDenied: true } }),
+  // ---- S7 進階, S8 診斷 (051c) ---------------------------------------------
+  // S8 with everything readable: 豆豆 (4) from receiver 7 walking (速度緩衝
+  // 移動中), 小黑 and 阿福 from the cloud; each dog's environment model result.
+  'diagnostics-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'diagnostics' }),
+  // S8 on a first start: no receiver, signed out, no dog, no phone record —
+  // every data page shows its empty state.
+  'diagnostics-empty': now => ({ ...FIXTURES['no-data'](now), openRoute: 'diagnostics',
+    phone: { ...walkingPhone(now), recording: false, today: [] } }),
+  // Dog positions cannot be written (another reason than a full phone): S8
+  // starts with the reason, where 「看原因」 leads.
+  'diagnostics-error': now => ({ ...FIXTURES['storage-failed-other'](now), openRoute: 'diagnostics' }),
+  // The phone's own data cannot be read: each data page shows 「讀取失敗」
+  // with 「重試」.
+  'diagnostics-read-failed': now => ({ ...FIXTURES['all-good'](now), openRoute: 'diagnostics',
+    readFailure: 'database disk image is malformed' }),
+  // S7 with 刪除全部狗資料 pressed while 120 rows still wait to be uploaded:
+  // 「還有 120 筆沒上傳：先上傳／一起刪除」 (c296). Here 「先上傳」 finds no
+  // network (判定表) and 「一起刪除」 deletes nothing real.
+  'advanced-delete-confirm': now => ({ ...FIXTURES['all-good'](now), openRoute: 'advanced',
+    deletion: { unsent: 120, open: true } }),
   'card-readings-old': now => {
     const until = now - 18 * MINUTE - 30 * SECOND;
     return {
@@ -711,8 +731,9 @@ const FIXTURES = {
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
 
 // A settings page a fixture can be opened on (&page=…), whatever its own.
-export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud', 'alerts']);
-const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-z]+))?$/;
+export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'advanced',
+  'diagnostics', 'wifi', 'liveData', 'cloudData', 'locationRecords']);
+const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-zA-Z]+))?$/;
 
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.
 export function fixtureNameFromUrl(url) {
@@ -819,7 +840,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
-    alertsOpen = false } = make(now);
+    alertsOpen = false, readFailure = null, deletion = null,
+    wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -910,6 +932,68 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     avatars,
     // CloudDatabase.dogCardRows over the fixture's rows (DogCardReadings).
     readCardRows: async (slaveId, since) => cardRows(ble, cloud?.ownerId ? cloudRows : [], slaveId, since),
+    // 診斷 (S8): the same rows as the data pages would read them.
+    diagnostics: diagnosticsSources({ ble, cloudRows, owner: cloud?.ownerId ?? null,
+      today: phone?.today || [], readFailure }),
+    // 接收器 Wi-Fi (S7): the receiver's saved networks, changed in memory only.
+    wifiService: fakeWifi(wifi),
+    // 刪除全部狗資料 (S7): rows still to upload, the dialog open at once.
+    deletion: { unsent: deletion?.unsent ?? 0, open: !!deletion?.open },
+  };
+}
+
+const rejectRead = reason => async () => { throw new Error(reason); };
+
+// What the 診斷 data pages read, from the fixture's rows: dog_status newest
+// first (即時資料), the account's downloaded rows with their raw JSON (本機／
+// 雲端資料, signed in only), the phone's records newest first (記錄清單).
+function diagnosticsSources({ ble, cloudRows, owner, today, readFailure }) {
+  const newest = rows => [...rows].sort((left, right) => timeOf(right) - timeOf(left) || right.id - left.id);
+  const cloudList = newest(cloudRows).map(row => ({ ...row, raw_payload: JSON.stringify({
+    event_id: `fixture-${row.id}`, master_id: row.master_id, slave_id: row.slave_id,
+    received_at: new Date(timeOf(row)).toISOString(),
+    payload: { lat: Math.round(row.slave_lat * 1e6), lon: Math.round(row.slave_lon * 1e6), sat: row.satellites,
+      bat: row.battery_percentage },
+  }) }));
+  // myLocationTracker rows, one per recorded point, ids in time order.
+  const records = today.map((point, index) => ({
+    id: index + 1, session_id: 'fixture-walk', location_at: point.time, recorded_at: point.time + 400,
+    latitude: point.latitude, longitude: point.longitude, accuracy_meters: point.accuracy ?? 6,
+    speed_kmh: 3.6, altitude_meters: 112, heading_degrees: 40, motion_state: 'moving',
+    raw_speed_kmh: 3.8, speed_accuracy_mps: 0.4,
+  })).reverse();
+  const PAGE = 50;
+  return {
+    listHistory: readFailure ? rejectRead(readFailure)
+      : async (limit = 100) => newest(ble).slice(0, limit),
+    cloudDatabase: {
+      initialize: async () => {},
+      listHistory: readFailure ? rejectRead(readFailure)
+        : async (account, from = 0) => (account === owner ? cloudList.slice(from, from + PAGE) : []),
+      count: async account => (account === owner ? cloudList.length : 0),
+      usage: async () => ({ rows: cloudList.length, bytes: cloudList.length * 560 }),
+    },
+    // CloudDataScreen follows the shared client's session: the fixture's.
+    cloudClient: () => ({ auth: {
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      getSession: async () => ({ data: { session: owner ? { user: { id: owner, email: 'tim@example.com' } } : null },
+        error: null }),
+    } }),
+    readLocationPage: readFailure ? rejectRead(readFailure) : async (before = 0) => {
+      const from = records.filter(row => !before || row.id < before);
+      return { rows: from.slice(0, PAGE), hasMore: from.length > PAGE, total: records.length,
+        running: false };
+    },
+  };
+}
+
+// BleService's Wi-Fi commands on a receiver that keeps `ssids`.
+function fakeWifi({ ssids = [], activeSsid = '' } = {}) {
+  let saved = [...ssids];
+  return {
+    getWifiList: async () => ({ ssids: [...saved], activeSsid: saved.includes(activeSsid) ? activeSsid : '' }),
+    configureWifi: async ssid => { if (!saved.includes(ssid)) saved = [...saved, ssid]; },
+    removeWifi: async ssid => { saved = saved.filter(item => item !== ssid); },
   };
 }
 

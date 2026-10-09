@@ -107,7 +107,7 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 1. 開啟 App 並允許必要權限。
 2. 點選「自動 BLE QR Code 掃描」，將裝置 QR Code 對準相機；也可以選擇「手動 BLE 掃描」。
 3. App 驗證 QR 內容後，依其中的 Master ID、BLE 名稱與 UUID 尋找並連接裝置。
-4. 連線成功後查看即時資料，或進入 Wi-Fi 設定及資料表畫面。
+4. 連線成功後，在 設定 → 診斷 → 即時資料 查看收到的資料，在 設定 → 進階 → 接收器 Wi-Fi 設定接收器的 Wi-Fi。
 5. 需要長期接收時選擇「切到背景執行」。若要停止自動恢復與背景接收，請在 App 內選擇「停止背景接收」。
 
 > 若 BLE 掃描持續找不到裝置，請先確認 Master 已開機、正在廣播且未被其他手機連線；必要時重新啟動或重設 Master 後再掃描。
@@ -130,7 +130,8 @@ Wi-Fi 設定透過 write-with-response 傳送 Base64 編碼的 UTF-8 JSON；相�
 App.js                              App 畫面流程與即時 BLE 狀態
 src/ble/                            BLE 掃描、連線與資料解析
 src/qr/MasterQrParser.js            Master QR 設定驗證
-src/screens/                        Wi-Fi 與資料畫面
+src/screens/                        地圖、接收器掃描
+src/settings/                       設定各頁（含 進階：Wi-Fi、刪除狗資料；診斷：資料表）
 src/database/                       SQLite 儲存
 src/models/DogStatus.js             共用資料模型
 android/app/src/main/java/com/dogtracker/

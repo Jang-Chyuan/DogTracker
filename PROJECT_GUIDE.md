@@ -42,8 +42,7 @@ src/
 ├─ qr/
 │  └─ MasterQrParser.js                 QR 設定格式與安全驗證
 └─ screens/
-   ├─ DataTableScreen.js                SQLite 資料表檢視
-   ├─ WifiSettingsScreen.js             Master Wi-Fi 管理
+   ├─ HardwareScreen.js                 接收器掃描（QR／手動，D3 取代前）
    ├─ MapScreen.js                      地圖畫面（預留）
    └─ HistoryScreen.js                  歷史畫面（預留）
 
@@ -148,7 +147,7 @@ Android 的 React Native BLE 層只負責掃描。選定裝置後，Kotlin 前�
 
 首頁返回鍵規則：
 
-- 位於 Wi-Fi 或資料表畫面時返回功能選單。
+- 設定的子頁（含 進階 → 接收器 Wi-Fi、診斷 → 即時資料）按返回回到上一層。
 - 位於功能選單時返回掃描首頁。
 - 掃描首頁若 BLE 已連線或背景服務已啟動，將 App 移至背景。
 - 掃描首頁若未連線且背景服務未啟動，顯示退出確認。
