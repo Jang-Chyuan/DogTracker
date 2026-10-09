@@ -1,10 +1,10 @@
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { ensureBleDisplayColumns } from '../src/ble/BleDisplayCoordinates';
-import { persistCloudDisplayCoordinates } from '../src/cloud/CloudDisplayCoordinates';
+import { ensureBleDisplayColumns, persistBleDisplayCoordinates } from '../src/ble/BleDisplayCoordinates';
 
-test.each([true,false])('bounded predecessor seeks preserve smoothing with statistics (BLE=%s)', async ble => {
+// The cloud copy's display cache is retired (2026-10-09): the live rows only.
+test.each([true])('bounded predecessor seeks preserve smoothing with statistics (BLE=%s)', async ble => {
   const db = createMemoryConnection();
   try {
     await createDogDatabase(db).initialize(); await ensureBleDisplayColumns(db);
@@ -30,7 +30,7 @@ test.each([true,false])('bounded predecessor seeks preserve smoothing with stati
     for (let pass = 0; pass < 2; pass++) {
       db.sqlite.exec('UPDATE ' + table + ' SET display_version=NULL');
       db.executeAsync.mockClear();
-      const output = await persistCloudDisplayCoordinates(db,page,'a',ble);
+      const output = await persistBleDisplayCoordinates(db,page);
       const [query,params] = db.executeAsync.mock.calls.find(([q]) => q.includes('UNION ALL'));
       expect(db.sqlite.prepare(query).all(...params)).toEqual(reference);
       if (prior) expect(output).toEqual(prior);

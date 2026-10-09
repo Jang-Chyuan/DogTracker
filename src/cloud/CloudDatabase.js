@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
-import { withCloudDisplayLock } from './CloudDisplayCoordinates';
+import { withConnectionLock } from '../database/connectionLock';
 import { cloudTrackTime } from './CloudTrackTime';
 import { readActivityEarliest, readActivityPeriod } from '../activity/ActivityData';
 import { readDogCardRows } from '../activity/DogCardReadings';
@@ -101,14 +101,13 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       // Share in-flight and completed migration work among wrappers of this
       // open connection. Failed opens remain retryable; a new handle migrates again.
       if (initialization.has(connection)) return initialization.get(connection);
-      const ready = withCloudDisplayLock(connection, async () => {
+      const ready = withConnectionLock(connection, async () => {
       const columns = new Set(rows(await connection.executeAsync(
         'PRAGMA table_info(supabase_dog_status)',
       )).map(column => column.name));
       for (const [name, type] of [
         ['owner_user_id', 'TEXT'], ['event_id', 'TEXT'],
         ['downloaded_at', 'INTEGER'], ['remote_received_at', 'TEXT'],
-        ['display_latitude', 'REAL'], ['display_longitude', 'REAL'], ['display_version', 'INTEGER'],
         ['track_at', 'INTEGER'], ['upload_source', 'TEXT'], ['phone_received_at', 'INTEGER'],
         ['track_time_version', 'INTEGER'], ['usb_present', 'INTEGER'],
       ]) {
@@ -118,8 +117,12 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       }
       // Restartable migration. Old downloads omitted phone metadata entirely;
       // fill safe fallback times now and repair metadata in bounded network pages.
-      await connection.executeAsync(`UPDATE supabase_dog_status SET track_at=received_at,
-        display_latitude=NULL, display_longitude=NULL, display_version=NULL WHERE track_at IS NULL`);
+      // The display-coordinate cache (display_latitude, display_longitude,
+      // display_version) is retired (2026-10-09): nothing read it after the
+      // range read went (064). Installs that had it keep the columns, unused;
+      // new installs never add them.
+      await connection.executeAsync(`UPDATE supabase_dog_status SET track_at=received_at
+        WHERE track_at IS NULL`);
       await connection.executeAsync('DROP INDEX IF EXISTS idx_cloud_track_stream');
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_stream_numeric
         ON supabase_dog_status(owner_user_id, master_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER), id)`);
@@ -141,6 +144,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         ON supabase_dog_status(owner_user_id, received_at DESC, id DESC)`);
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_master_received
         ON supabase_dog_status(owner_user_id, master_id, received_at)`);
+      // Per-stream order (owner, Master, Slave, time); its name is from the
+      // retired display cache, kept so an upgrade does not build it twice.
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_display_stream
         ON supabase_dog_status(owner_user_id, master_id, slave_id, received_at, id)`);
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_state (
@@ -180,17 +185,11 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     },
     async repairTrackTimes(owner, metadata, requested) {
       requireOwner(owner);
-      return withCloudDisplayLock(connection, async () => {
+      return withConnectionLock(connection, async () => {
         const commands = [];
         for (const item of metadata) {
           const time = cloudTrackTime(item);
           if (!Number.isFinite(time.track_at) || !requested.includes(item.event_id)) continue;
-          // Both old and new neighbours can change when a row moves in time.
-          commands.push({ query: `UPDATE supabase_dog_status SET display_latitude=NULL,
-            display_longitude=NULL, display_version=NULL WHERE owner_user_id=?
-            AND (master_id,slave_id) IN (SELECT master_id,slave_id FROM supabase_dog_status
-              WHERE owner_user_id=? AND event_id=? AND track_at IS NOT ?)`,
-          params: [owner, owner, item.event_id, time.track_at] });
           commands.push({ query: `UPDATE supabase_dog_status SET track_at=?, upload_source=?,
             phone_received_at=?, track_time_version=1 WHERE owner_user_id=? AND event_id=?`,
           params: [time.track_at, time.upload_source, time.phone_received_at, owner, item.event_id] });
@@ -205,7 +204,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       });
     },
     async savePage(owner, records, checkpoint = null) {
-      return withCloudDisplayLock(connection, async () => {
+      return withConnectionLock(connection, async () => {
         requireOwner(owner);
         if (!records.length && !checkpoint) return;
         const columns = [
@@ -223,20 +222,10 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status
             WHERE owner_user_id = ? AND event_id = ?)`;
         const now = Date.now();
-        const commands = records.flatMap(record => ([{
-          // A late insertion changes subsequent rolling windows. Invalidate in
-          // the same transaction; a duplicate download leaves saved coordinates alone.
-          query: `UPDATE supabase_dog_status SET display_latitude=NULL, display_longitude=NULL, display_version=NULL
-            WHERE id IN (SELECT id FROM supabase_dog_status
-              WHERE owner_user_id=? AND master_id=? AND slave_id=? AND track_at>?
-              ORDER BY track_at, id LIMIT 2)
-            AND display_version IS NOT NULL AND NOT EXISTS
-            (SELECT 1 FROM supabase_dog_status WHERE owner_user_id=? AND event_id=?)`,
-          params: [owner, record.master_id ?? null, record.slave_id ?? null, record.track_at ?? record.received_at ?? null, owner, record.event_id ?? null],
-        }, {
+        const commands = records.map(record => ({
           query,
           params: [owner, now, ...columns.map(key => key === 'track_at' ? record.track_at ?? record.received_at : record[key] ?? null), owner, record.event_id],
-        }]));
+        }));
         if (checkpoint) {
           if (!Number.isInteger(checkpoint.masterId) || !Number.isFinite(Date.parse(checkpoint.throughAt))) {
             throw new Error(t("c574"));

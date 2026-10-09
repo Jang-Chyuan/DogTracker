@@ -25,9 +25,9 @@
 
 ## 共用的資料
 
-雲端 Client 以帳號／Master／Slave 分別使用最近 3 個原始點平滑；速度超過 10 km/h 時最新點占 90%。無效座標、超過 2 分鐘中斷或跨日期變更線重置平滑，Master 切換處斷線。結果另存於 `supabase_dog_status` 的 `display_latitude`、`display_longitude`、`display_version`（目前為 1）；`slave_lat`／`slave_lon` 不變。
+即時資料的狗（`dog_status`）以 Master／Slave 分別使用最近 3 個原始點平滑（`SmoothCloudHistory`）；速度超過 10 km/h 時最新點占 90%。無效座標、超過 2 分鐘中斷或跨日期變更線重置平滑，Master 切換處斷線。結果另存於 `dog_status` 的 `display_latitude`、`display_longitude`、`display_version`（目前為 1）；`slave_lat`／`slave_lon` 不變。雲端（`supabase_dog_status`）不再存顯示座標：2026-10-09 退役（064 後沒有畫面讀它）；舊安裝留著的三個欄位不再讀寫，新安裝不建。
 
-顯示座標快取由 `CloudDisplayCoordinates.persistCloudDisplayCoordinates` 依讀到的頁面補算，使用各來源串流在頁面前的兩筆作為平滑上下文；晚到資料會使後續最多兩筆快取失效。目前讀它的是即時資料（`DogDatabase` 經 `BleDisplayCoordinates.bleDisplayRows`）；舊的區間歷史查詢（`HistoryDatabase.read`）已在 064 移除，雲端那份快取目前沒有畫面讀取。第三版歷史的 `HistoryDatabase.historyDayRows` 不讀狗的平滑快取：狗以項圈原始定位建立日模型，再套用停住與歷史過濾規則；手機以 `myLocationTracker.latitude`／`longitude` 的 recorded route 建立日模型。第三版路線與游標使用日模型，不重複套用三點平滑；狗的 GPX／CSV 使用原始定位，手機使用 recorded route。
+顯示座標快取由 `BleDisplayCoordinates.persistBleDisplayCoordinates` 依讀到的頁面補算，使用各串流在頁面前的兩筆作為平滑上下文；晚到資料會使後續最多兩筆快取失效。讀它的是即時資料（`DogDatabase` 經 `BleDisplayCoordinates.bleDisplayRows`）。第三版歷史的 `HistoryDatabase.historyDayRows` 不讀狗的平滑快取：狗以項圈原始定位建立日模型，再套用停住與歷史過濾規則；手機以 `myLocationTracker.latitude`／`longitude` 的 recorded route 建立日模型。第三版路線與游標使用日模型，不重複套用三點平滑；狗的 GPX／CSV 使用原始定位，手機使用 recorded route。
 
 ## 匯出（056，H9／H10）
 

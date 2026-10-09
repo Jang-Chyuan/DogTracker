@@ -52,7 +52,7 @@ test.each([false, true])('the day read places cloud rows by track time with nume
   } finally { db.close(); }
 });
 
-test('legacy metadata repair preserves raw rows/checkpoints, isolates owners, invalidates smoothing and survives restart', async () => {
+test('legacy metadata repair preserves raw rows/checkpoints, isolates owners and survives restart', async () => {
   const db = createMemoryConnection();
   try {
     await createDogDatabase(db).initialize();
@@ -61,7 +61,7 @@ test('legacy metadata repair preserves raw rows/checkpoints, isolates owners, in
     await cloud.savePage('a', [original], { masterId: 5, throughAt: iso(1300) });
     await cloud.savePage('b', [original]);
     await db.executeAsync(`UPDATE supabase_dog_status SET track_at=NULL, track_time_version=NULL,
-      upload_source=NULL, phone_received_at=NULL, display_version=1, display_latitude=99`);
+      upload_source=NULL, phone_received_at=NULL`);
     await createCloudDatabase({ ...db }).initialize();
     expect((await cloud.pendingTrackTimes('a')).map(r => r.event_id)).toEqual([original.event_id]);
     const before = (await cloud.listHistory('a'))[0];
@@ -70,7 +70,7 @@ test('legacy metadata repair preserves raw rows/checkpoints, isolates owners, in
     await repairCloudTrackTimes({ client: { from: () => query }, database: cloud,
       owner: 'a', check: () => {}, onChange: jest.fn() });
     const after = (await cloud.listHistory('a'))[0];
-    expect(after).toMatchObject({ track_at: base + 20000, display_version: null,
+    expect(after).toMatchObject({ track_at: base + 20000,
       raw_payload: before.raw_payload, received_at: before.received_at, slave_lat: before.slave_lat });
     expect((await cloud.loadSyncState('a', 5)).through_at).toBe(iso(1300));
     expect(await cloud.pendingTrackTimes('a')).toHaveLength(0);
