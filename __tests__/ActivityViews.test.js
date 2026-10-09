@@ -136,13 +136,13 @@ test('empty data, durations, legend and thresholds use A4 text', () => {
   expect(view.rows[2].rangeLabels).toEqual(['00:00–24:00']);
   expect(view.thresholds).toEqual({ restMax: 0.05, vigorousMin: 0.8 });
   expect(view.thresholdBands).toEqual([
-    { state: 'rest', min: 0, max: 0.05, label: '低活動 0.05 以下' },
-    { state: 'vigorous', min: 0.8, max: 1, label: '高活動 0.8 以上' },
+    { state: 'rest', min: 0, max: 0.05, label: '休息' },
+    { state: 'vigorous', min: 0.8, max: 1, label: '劇烈' },
   ]);
   expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual(['休息', '一般', '劇烈']);
-  expect(ACTIVITY_VIEW_COPY.low).toBe('低活動 0.05 以下');
-  expect(ACTIVITY_VIEW_COPY.high).toBe('高活動 0.8 以上');
-  expect(ACTIVITY_VIEW_COPY.explanation).toBe('休息：最近 10 分鐘幾乎沒動；劇烈：最近 2 分鐘一直在激烈活動');
+  expect(ACTIVITY_VIEW_COPY.low).toBe('休息');
+  expect(ACTIVITY_VIEW_COPY.high).toBe('劇烈');
+  expect(ACTIVITY_VIEW_COPY.explanation).toBeUndefined();
   const totals = buildDayView({ ...options, readings: input(START, Array(340).fill(0)) });
   expect(totals.rows[0].durationText).toBe('5 小時 40 分');
 });

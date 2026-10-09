@@ -290,7 +290,6 @@ function ActivityBody({ view }) {
       ) : (
         <Summary view={view} />
       )}
-      <Text style={styles.explanation}>{ACTIVITY_VIEW_COPY.explanation}</Text>
     </View>
   );
 }
@@ -379,7 +378,7 @@ function DayChart({ view }) {
                 fill={colors.activityHighBand}
               />
             ))}
-            {/* Threshold zones: 高活動 0.8 以上 on top, 低活動 0.05 以下 below. */}
+            {/* Threshold zones: 劇烈 on top, 休息 below. */}
             <Rect
               x={0}
               y={highTop}

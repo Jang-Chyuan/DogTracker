@@ -68,7 +68,9 @@ test('opens on 今天: the title, tabs, period, summary and explanation; › is 
   expect(all).toContain('日週月年');
   expect(text('activity-period')).toBe('10/7（三）今天');
   expect(all).toContain('今天休息6 小時劇烈0 分');
-  expect(all).toContain('休息：最近 10 分鐘幾乎沒動；劇烈：最近 2 分鐘一直在激烈活動');
+  expect(all).not.toContain('休息：最近');
+  expect(all).not.toContain('0.05');
+  expect(all).not.toContain('0.8');
   expect(calls[0]).toMatchObject({ detail: 'raw' });
   const next = renderer.root.findAll(node => node.props.testID === 'activity-next' && node.props.accessibilityState)[0];
   expect(next.props.accessibilityState.disabled).toBe(true);
