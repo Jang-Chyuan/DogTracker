@@ -8,6 +8,7 @@
     android:insetBottom="16dp">
     <shape android:shape="rectangle">
         <corners android:radius="24dp" />
-        <solid android:color="#FFFFFF" />
+        <solid android:color="@color/dialog_surface" />
+        <stroke android:width="@dimen/dialog_outline" android:color="@color/dialog_outline" />
     </shape>
 </inset>

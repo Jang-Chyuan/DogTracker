@@ -16,73 +16,74 @@
 
 ## 2. 顏色
 
-只做淺色主題（這輪不做深色模式、不依桌布變色）。所有顏色從 `src/theme/tokens.js` 取用，元件裡不寫色碼。
+依手機系統設定即時切換淺色／深色主題（2026-10-08 決定），不另設 App 開關、不依桌布變色。元件透過主題 hook 取得顏色；淺色 tokens 保留原值。深色以 v3 設計「深色模式」與 dark-tokens.json 為準。
 
 ### 基本色
 
-| Token | 色碼 | 用途 |
-|---|---|---|
-| `bg` | `#FAF7F6` | 頁面底色 |
-| `surface` | `#FFFFFF` | 卡片、面板、膠囊、浮動按鈕 |
-| `text` | `#222222` | 主要文字 |
-| `textMuted` | `#5E5E5E` | 次要文字 |
-| `line` | `#EDE6E4` | 分隔線、外框 |
-| `accent` | `#F2867A` | 預設狗頭像、範圍條選取區、選取列左側線、A6 卡片左線、D0 啟動畫面底色。是圖形色，不放白字（白字對比只有 2.49:1）；地圖上選中的狗不畫彩色外框 |
-| `tonal` / `tonalText` | `#FFE4DF` / `#A3413A` | 主要按鈕：淡底深字（5.16:1）；`tonalText` 也用在文字按鈕（稍後再說）、「✓ 上次用」、調整範圍時摘要標題的時間 |
-| `brandSoft` | `#FFF1EE` | 選取列、按下的列、D2 正在問的那一列 |
-| `ok` / `okBg` | `#1E7A3C` / `#E4F2E8` | 正常（D2 已允許的勾、設定首頁「已連線」） |
-| `warn` / `warnBg` | `#9A5B00` / `#FFF1D6` | 注意的文字：琥珀數值、卡片「快離開接收範圍」的字（4.86:1）；卡片的列不用底色 |
-| `crit` / `critBg` | `#7A1D18` / `#FFF3F1` | 出問題：卡片文字（9.59:1）、會刪資料的動作、欄位錯誤字 |
-| `critLine` | `#D64545` | 提醒卡的左線、圈外的紅色虛線、輸入欄錯誤框（線條，不放字：白字只有 4.38:1） |
-| `receiver` | `#3E5A6B` | 設定裡的接收器 icon、停在原處的小房子角標 |
-| `receiverRing` | `#5B7A8C` | 設定裡接收器 icon 的外框、編號小標底色 |
-| `phone` | `#1A73E8` | 手機藍點、我的路線、「我的位置」準心、手機名稱牌的字 |
-| `phoneStale` | `#9AA59F` | 手機藍點超過 3 秒沒更新 |
-| `iconMuted` | `#8A948F` | 停用的 icon、未記錄的走路 icon、時間軸「沒資料」的三個點 |
-| `snackbar` | `#FFFFFF` | 下方提示的底色（白底、陰影，和卡片同一種，不用黑底） |
-| `scrim` | `rgba(20,24,22,0.45)` | 小視窗背後的遮罩 |
-| `pressedOverlay` | `rgba(0,0,0,0.08)` | 浮動按鈕、膠囊按下時疊上去 |
+| Token | 淺色 | 深色 | 用途 |
+|---|---|---|---|
+| `bg` | `#FAF7F6` | `#171211` | 頁面底色 |
+| `surface` | `#FFFFFF` | `#262020` | 卡片、面板、膠囊、浮動按鈕 |
+| `text` | `#222222` | `#F2EBE9` | 主要文字 |
+| `textMuted` | `#5E5E5E` | `#BAB0AD` | 次要文字 |
+| `line` | `#EDE6E4` | `#463C3A` | 分隔線、外框 |
+| `accent` | `#F2867A` | `#F2867A` | 預設狗頭像、範圍條選取區、選取列左側線、A6 卡片左線、D0 啟動畫面底色。是圖形色，不放白字（白字對比只有 2.49:1）；地圖上選中的狗不畫彩色外框 |
+| `tonal` / `tonalText` | `#FFE4DF` / `#A3413A` | `#4F2C28` / `#FFCFC7` | 主要按鈕：淡底深字（5.16:1）；`tonalText` 也用在文字按鈕（稍後再說）、「✓ 上次用」、調整範圍時摘要標題的時間 |
+| `brandSoft` | `#FFF1EE` | `#3A2724` | 選取列、按下的列、D2 正在問的那一列 |
+| `ok` / `okBg` | `#1E7A3C` / `#E4F2E8` | `#79C98F` / `#1D3324` | 正常（D2 已允許的勾、設定首頁「已連線」） |
+| `warn` / `warnBg` | `#9A5B00` / `#FFF1D6` | `#EDB65B` / `#3A2C15` | 注意的文字：琥珀數值、卡片「快離開接收範圍」的字（4.86:1）；卡片的列不用底色 |
+| `crit` / `critBg` | `#7A1D18` / `#FFF3F1` | `#FFB4AB` / `#3A1F1D` | 出問題：卡片文字（9.59:1）、會刪資料的動作、欄位錯誤字 |
+| `critLine` | `#D64545` | `#F0716B` | 提醒卡的左線、圈外的紅色虛線、輸入欄錯誤框（線條，不放字：白字只有 4.38:1） |
+| `receiver` | `#3E5A6B` | `#9DBACB` | 設定裡的接收器 icon、停在原處的小房子角標 |
+| `receiverRing` | `#5B7A8C` | `#7E9DAF` | 設定裡接收器 icon 的外框、編號小標底色 |
+| `phone` | `#1A73E8` | `#7AB1FF` | 手機藍點、我的路線、「我的位置」準心、手機名稱牌的字 |
+| `phoneStale` | `#9AA59F` | `#79837F` | 手機藍點超過 3 秒沒更新 |
+| `iconMuted` | `#8A948F` | `#8D9692` | 停用的 icon、未記錄的走路 icon、時間軸「沒資料」的三個點 |
+| `snackbar` | `#FFFFFF` | `#302827` | 下方提示的底色（白底、陰影，和卡片同一種，不用黑底） |
+| `scrim` | `rgba(20,24,22,0.45)` | `rgba(0,0,0,0.60)` | 小視窗背後的遮罩 |
+| `pressedOverlay` | `rgba(0,0,0,0.08)` | `rgba(255,255,255,0.10)` | 浮動按鈕、膠囊按下時疊上去 |
 
 ### 第三版新增
 
-| Token | 色碼 | 用途 |
-|---|---|---|
-| `problemBadge` | `#B3261E` | 右上紅色「!」底色（所有狗的問題共用）；卡片問題列的「!」、畫面外提示的紅框、群組小標的紅點也用它（白字 6.54:1） |
-| `warnIcon` | `#9A5B00` | 卡片注意列（快離開接收範圍）前面 18dp 圓底，白色「!」（白字 5.43:1） |
-| `rangeRing` | `#5B7A8C` | 接收範圍圈：線透明度 55%、填色 6%（`opacity.rangeRingStroke`、`opacity.rangeRingFill`） |
-| `activityLow` | `#3E5A8C` | 低活動：A4 圖、卡片「休息中」 |
-| `activityNormal` | `#D3CCC4` | 一般活動：A4 圖 |
-| `activityHigh` | `#E07A2E` | 高活動：A4 圖（圖形，不放字） |
-| `activityHighText` | `#B85A12` | 卡片「劇烈活動」的字 |
-| `staleFace` | `#C9CFCC` | 沒有新位置時插圖頭像的底色（照片轉灰階） |
-| `staleRing` | `#6B7470` | 歷史游標停在沒資料時段時的灰色虛線外圈（即時地圖不用） |
-| `route1` | `#D9604F` | 狗的路線色槽 1（從卡片進來的那隻） |
-| `route2` | `#2F6FA8` | 狗的路線色槽 2 |
-| `route3` | `#4E8A2E` | 狗的路線色槽 3 |
-| `route4` | `#8A55B0` | 狗的路線色槽 4 |
-| `onRoute` | `#FFFFFF` | 多隻狗時歷史游標頭像畫在路線色上的線條（H7） |
-| `sheetHandle` | `#B9C3BD` | 底部小視窗、歷史面板上方的拖拉把手 |
-| `routeFaded` | `#7C8796` | 我的路線：範圍外的路線（淡虛線） |
-| `noDataLine` | `#C9CFCC` | 時間軸清單「沒資料」的長虛線 |
-| `mapLabelHalo` | `#FFFFFF` | 地圖上的文字外框（3dp），讓字在任何底圖上都看得清楚 |
-| `alertBorder` | `#F4CFC9` | 提醒卡和「⚠ N」的 1dp 框 |
-| `alertIconBg` | `#FDE7E4` | 提醒卡左側圖示的圓底 |
-| `alertDetail` | `#8A5A55` | 提醒卡的說明（第二行） |
-| `mapFallback` | `#ECEEEC` | 底圖載不出來時的灰底（狗、手機、接收範圍圈照畫，不加比例尺）；匯出 PNG 沒有底圖時的地圖底（加比例尺） |
-| `pillPlain` | `#F1EEEC` | 時間軸清單（畫面和匯出 PNG）的一般膠囊底：出發、結束、恢復記錄、接續前一天 |
-| `pillIndoor` | `#E6EEF3` | 時間軸清單「室內・N 分」膠囊底（字用 `receiver`） |
+| Token | 淺色 | 深色 | 用途 |
+|---|---|---|---|
+| `problemBadge` | `#B3261E` | `#CF3F37` | 右上紅色「!」底色（所有狗的問題共用）；卡片問題列的「!」、畫面外提示的紅框、群組小標的紅點也用它（白字 6.54:1） |
+| `warnIcon` | `#9A5B00` | `#EDB65B` | 卡片注意列（快離開接收範圍）前面 18dp 圓底，白色「!」（白字 5.43:1） |
+| `rangeRing` | `#5B7A8C` | `#93B3C6` | 接收範圍圈：線透明度 55%、填色 6%（`opacity.rangeRingStroke`、`opacity.rangeRingFill`） |
+| `activityLow` | `#3E5A8C` | `#92ACE0` | 低活動：A4 圖、卡片「休息中」 |
+| `activityNormal` | `#D3CCC4` | `#7A706A` | 一般活動：A4 圖 |
+| `activityHigh` | `#E07A2E` | `#F0944A` | 高活動：A4 圖（圖形，不放字） |
+| `activityHighText` | `#B85A12` | `#F5A86A` | 卡片「劇烈活動」的字 |
+| `staleFace` | `#C9CFCC` | `#59615E` | 沒有新位置時插圖頭像的底色（照片轉灰階） |
+| `staleRing` | `#6B7470` | `#96A09B` | 歷史游標停在沒資料時段時的灰色虛線外圈（即時地圖不用） |
+| `route1` | `#D9604F` | `#FF8A78` | 狗的路線色槽 1（從卡片進來的那隻） |
+| `route2` | `#2F6FA8` | `#6FAEE0` | 狗的路線色槽 2 |
+| `route3` | `#4E8A2E` | `#84C766` | 狗的路線色槽 3 |
+| `route4` | `#8A55B0` | `#C89BEA` | 狗的路線色槽 4 |
+| `onRoute` | `#FFFFFF` | `#171211` | 多隻狗時歷史游標頭像畫在路線色上的線條（H7） |
+| `sheetHandle` | `#B9C3BD` | `#8D827D` | 底部小視窗、歷史面板上方的拖拉把手 |
+| `routeFaded` | `#7C8796` | `#8F9AAA` | 我的路線：範圍外的路線（淡虛線） |
+| `noDataLine` | `#C9CFCC` | `#767E7B` | 時間軸清單「沒資料」的長虛線 |
+| `mapLabelHalo` | `#FFFFFF` | `#171211` | 地圖上的文字外框（3dp），讓字在任何底圖上都看得清楚 |
+| `alertBorder` | `#F4CFC9` | `#6A3833` | 提醒卡和「⚠ N」的 1dp 框 |
+| `alertIconBg` | `#FDE7E4` | `#4A2623` | 提醒卡左側圖示的圓底 |
+| `alertDetail` | `#8A5A55` | `#E2B9B3` | 提醒卡的說明（第二行） |
+| `mapFallback` | `#ECEEEC` | `#2A2726` | 底圖載不出來時的灰底（狗、手機、接收範圍圈照畫，不加比例尺）；匯出 PNG 沒有底圖時的地圖底（加比例尺，一律用淺色值） |
+| `pillPlain` | `#F1EEEC` | `#3D3432` | 時間軸清單（畫面和匯出 PNG）的一般膠囊底：出發、結束、恢復記錄、接續前一天（匯出 PNG 一律用淺色值） |
+| `pillIndoor` | `#E6EEF3` | `#2A3A44` | 時間軸清單「室內・N 分」膠囊底（字用 `receiver`；匯出 PNG 一律用淺色值） |
+| `critAction` | `#B3261E` | `#FFB4AB` | 會刪資料、失敗後要處理的動作字：中斷連線、刪除全部狗資料、Wi-Fi 刪除／重試、資料頁的錯誤字（淺色同 `problemBadge`；深色同 `crit` 淡紅字，9.44:1） |
 
 ### 設定首頁 icon（底色／線色）
 
-| Token | 色碼 | 用途 |
-|---|---|---|
-| `settingIcon.receiver` | `#E6EEF3` / `#3E5A6B` | 接收器（盒子＋天線） |
-| `settingIcon.phone` | `#E8F0FD` / `#1A73E8` | 手機 |
-| `settingIcon.account` | `#EEEAF7` / `#5E4FA3` | Supabase 帳號（雲） |
-| `settingIcon.diagnostics` | `#F1EEEC` / `#6B7470` | 診斷（清單） |
-| `settingIcon.advanced` | `#F1EEEC` / `#6B7470` | 進階（工具） |
-| `settingIcon.map` | `#EAF2E4` / `#4E7A2E` | 地圖（摺頁地圖；設定首頁目前沒有「地圖」列，色碼先保留） |
-| `settingIcon.alerts` | `#FBECE9` / `#B3261E` | 提醒（鈴鐺） |
+| Token | 淺色 | 深色 | 用途 |
+|---|---|---|---|
+| `settingIcon.receiver` | `#E6EEF3` / `#3E5A6B` | `#22313A` / `#9DC3D6` | 接收器（盒子＋天線） |
+| `settingIcon.phone` | `#E8F0FD` / `#1A73E8` | `#1C2B42` / `#8AB8FF` | 手機 |
+| `settingIcon.account` | `#EEEAF7` / `#5E4FA3` | `#2B2742` / `#B9ABF2` | Supabase 帳號（雲） |
+| `settingIcon.diagnostics` | `#F1EEEC` / `#6B7470` | `#302A29` / `#B5BDB9` | 診斷（清單） |
+| `settingIcon.advanced` | `#F1EEEC` / `#6B7470` | `#302A29` / `#B5BDB9` | 進階（工具） |
+| `settingIcon.map` | `#EAF2E4` / `#4E7A2E` | `#232F1F` / `#9CCB7A` | 地圖（摺頁地圖；設定首頁目前沒有「地圖」列，色碼先保留） |
+| `settingIcon.alerts` | `#FBECE9` / `#B3261E` | `#3D2220` / `#FF9C92` | 提醒（鈴鐺） |
 
 整體輕盈：邊框 1dp、陰影很淡且只用一種。
 
@@ -399,3 +400,11 @@
 - 卡片狀態列照順序唸（停在原處的位置列兩行一起唸）。
 - 範圍條兩端、地圖上的游標點是可調整元件（上下滑每次 1 分鐘／逐筆）；停留編號可以聚焦；時間軸每個節點和移動段各一個項目。
 - TalkBack 開著時關掉操作的觸控震動，提醒的震動照常。
+
+## 深色模式實作規則（2026-10-08）
+
+頁面為 bg，卡片為 surface；底部視窗、對話框與下方提示使用 elevated（#302827），浮動層加 1dp floatingOutline（#887B75）框。拖拉把手 grabHandle 為 #8D827D；關閉的開關 switchOff 為 #5A504D，圓點始終白色。onRoute、onWarnIcon 與路線 casing 為 #171211。未更新插圖底色 #59615E、線色 #DCE1DE；照片只轉灰階。狗的識別色與照片保持不變；地圖頭像保留白框，頁面頭像外框跟隨所在表面。
+
+Google 底圖使用 dark-tokens.json 中完整 night style；無底圖時使用其 noBaseMap。接收範圍線／填色為 75%／10%，手機精度圈 20%，游標 halo 25%，主角後段 60%，其他狗游標前／後 75%／60%。地圖 bitmap marker 在系統主題切換時重繪。PNG 匯出仍固定淺色（L16），不隨 App 主題改變。
+
+Android 使用 DayNight 資源；深色啟動背景 #171211、對話框 #302827、文字 #F2EBE9／#BAB0AD、按鈕 #FFCFC7。狀態列／導覽列圖示跟隨系統，forceDarkAllowed=false 防止系統再自動反轉已自行配色的 UI。

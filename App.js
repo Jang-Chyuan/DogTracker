@@ -1,3 +1,9 @@
+import {
+  ThemeProvider,
+  useTheme,
+  useStyles,
+  makeStyles,
+} from './src/theme/ThemeProvider';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
@@ -19,7 +25,10 @@ import { handleRootBack } from './src/app/handleRootBack';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
-import { AddressLookupContext, addressLookup } from './src/placement/AddressLookup';
+import {
+  AddressLookupContext,
+  addressLookup,
+} from './src/placement/AddressLookup';
 import CloudDataScreen from './src/cloud/CloudDataScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
 import AdvancedSettings from './src/settings/AdvancedSettings';
@@ -41,7 +50,12 @@ import PhoneSettings from './src/settings/PhoneSettings';
 import AlertSettings from './src/settings/AlertSettings';
 import { alertsPage } from './src/alerts/AlertPreferences';
 import { useAlertPreferences } from './src/settings/useAlertPreferences';
-import { phonePage, receiverPage, settingsHome, settingsInput } from './src/settings/SettingsModel';
+import {
+  phonePage,
+  receiverPage,
+  settingsHome,
+  settingsInput,
+} from './src/settings/SettingsModel';
 import { useReceiverControl } from './src/settings/useReceiverControl';
 import { useRecordingSwitch } from './src/settings/useRecordingSwitch';
 import { useReceiverState } from './src/map/useReceiverState';
@@ -59,12 +73,21 @@ import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { useTodayRoute } from './src/locationTracker/useTodayRoute';
-import { colors, layout, touch, type } from './src/theme/tokens';
+import { layout, touch, type } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
 import { holdSplash, launchInto } from './src/app/hideSplash';
-import { GUIDE_STEP_OF, guideStack, launchScreen, leaveSignIn, ONBOARDING_DONE, ONBOARDING_PAIRED,
-  ONBOARDING_RECEIVER, ONBOARDING_SIGN_IN, signInStack } from './src/app/Launch';
+import {
+  GUIDE_STEP_OF,
+  guideStack,
+  launchScreen,
+  leaveSignIn,
+  ONBOARDING_DONE,
+  ONBOARDING_PAIRED,
+  ONBOARDING_RECEIVER,
+  ONBOARDING_SIGN_IN,
+  signInStack,
+} from './src/app/Launch';
 import { useReceiverService } from './src/ble/useReceiverService';
 import PermissionsScreen from './src/onboarding/PermissionsScreen';
 import { usePermissionsGuide } from './src/onboarding/usePermissionsGuide';
@@ -73,17 +96,21 @@ import PairedScreen from './src/onboarding/PairedScreen';
 import { usePairing } from './src/onboarding/usePairing';
 import { pairedPage, pairingFlow } from './src/onboarding/Pairing';
 import LoginScreen from './src/screens/LoginScreen';
-import StartFailedScreen, { START_FAILED_TITLE } from './src/screens/StartFailedScreen';
-
-
+import StartFailedScreen, {
+  START_FAILED_TITLE,
+} from './src/screens/StartFailedScreen';
 
 export default function App() {
   return (
-    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <AuthProvider>
-        <AuthGate><TrackerRoot /></AuthGate>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <ThemeProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <AuthProvider>
+          <AuthGate>
+            <TrackerRoot />
+          </AuthGate>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 
@@ -103,7 +130,8 @@ export function AuthGate({ children }) {
 // signed-out app (also after signing out of another account) keeps the page
 // the user signed in on: every account-bound hook follows the owner itself.
 function useAccountGeneration(userId) {
-  const last = useRef(null), generation = useRef(0);
+  const last = useRef(null),
+    generation = useRef(0);
   if (userId !== last.current) {
     if (userId && last.current) generation.current += 1;
     last.current = userId;
@@ -127,14 +155,35 @@ const PAGE_TITLES = {
 };
 // Pages of their own, without the 「‹ 標題」 header: the first-use pages
 // (D1 登入, D2 權限, D3 連接接收器, D4 完成) and D0's failure screen.
-const FULL_PAGES = new Set(['signIn', 'permissions', 'pair', 'paired', 'startFailed']);
+const FULL_PAGES = new Set([
+  'signIn',
+  'permissions',
+  'pair',
+  'paired',
+  'startFailed',
+]);
 const pageTitle = route => PAGE_TITLES[route.name] || '設定';
 // The v3 settings pages (light).
-const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'diagnostics', 'advanced',
-  'liveData', 'cloudData', 'locationRecords', 'wifi']);
+const LIGHT_PAGES = new Set([
+  'settings',
+  'receiver',
+  'phone',
+  'cloud',
+  'alerts',
+  'diagnostics',
+  'advanced',
+  'liveData',
+  'cloudData',
+  'locationRecords',
+  'wifi',
+]);
 // The page under each settings page (a fixture opens the whole way there).
-const PARENT_PAGES = { liveData: 'diagnostics', cloudData: 'diagnostics', locationRecords: 'diagnostics',
-  wifi: 'advanced' };
+const PARENT_PAGES = {
+  liveData: 'diagnostics',
+  cloudData: 'diagnostics',
+  locationRecords: 'diagnostics',
+  wifi: 'advanced',
+};
 // A fixture on a page of the guide opens it as the guide has it (D2 → D3 →
 // D4, with the progress bar).
 const GUIDE_FIXTURE_PAGES = ['permissions', 'pair', 'paired'];
@@ -144,25 +193,51 @@ const stackTo = page => {
   if (page === 'history') return [{ name: 'map' }, { name: 'history' }];
   if (page === 'settings') return [{ name: 'map' }, { name: 'settings' }];
   if (GUIDE_FIXTURE_PAGES.includes(page)) {
-    return [{ name: 'map' }, ...GUIDE_FIXTURE_PAGES.slice(0, GUIDE_FIXTURE_PAGES.indexOf(page) + 1)
-      .map(name => ({ name, entry: 'onboarding' }))];
+    return [
+      { name: 'map' },
+      ...GUIDE_FIXTURE_PAGES.slice(
+        0,
+        GUIDE_FIXTURE_PAGES.indexOf(page) + 1,
+      ).map(name => ({ name, entry: 'onboarding' })),
+    ];
   }
   const parent = PARENT_PAGES[page];
-  return [{ name: 'map' }, { name: 'settings' }, ...(parent ? [{ name: parent }] : []), { name: page }];
+  return [
+    { name: 'map' },
+    { name: 'settings' },
+    ...(parent ? [{ name: parent }] : []),
+    { name: page },
+  ];
 };
 // Where each settings home row leads.
-const SETTINGS_ROUTES = { receiver: 'receiver', phone: 'phone', account: 'cloud', alerts: 'alerts',
-  diagnostics: 'diagnostics', advanced: 'advanced' };
+const SETTINGS_ROUTES = {
+  receiver: 'receiver',
+  phone: 'phone',
+  account: 'cloud',
+  alerts: 'alerts',
+  diagnostics: 'diagnostics',
+  advanced: 'advanced',
+};
 
 // Android's own settings pages.
-const openNotificationSettings = () => Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS',
-  [{ key: 'android.provider.extra.APP_PACKAGE', value: 'com.dogtracker' }]).catch(() => Linking.openSettings());
-const openLocationServices = () => Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS')
-  .catch(() => Linking.openSettings());
-const openBatterySettings = () => Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS')
-  .catch(() => Linking.openSettings());
+const openNotificationSettings = () =>
+  Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+    { key: 'android.provider.extra.APP_PACKAGE', value: 'com.dogtracker' },
+  ]).catch(() => Linking.openSettings());
+const openLocationServices = () =>
+  Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() =>
+    Linking.openSettings(),
+  );
+const openBatterySettings = () =>
+  Linking.sendIntent(
+    'android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS',
+  ).catch(() => Linking.openSettings());
 const appVersion = (() => {
-  try { return NativeTrackingPlatform?.appVersion?.() || ''; } catch { return ''; }
+  try {
+    return NativeTrackingPlatform?.appVersion?.() || '';
+  } catch {
+    return '';
+  }
 })();
 
 // 刪除全部狗資料 (S7) starts every reader of the deleted tables over: the live
@@ -172,19 +247,38 @@ function TrackerRoot() {
   // Deciding what opens first starts now: D0 waits for it (hideSplash.js).
   useState(holdSplash);
   const [session, setSession] = useState({ generation: 0, resume: null });
-  return <TrackerApp key={session.generation} resume={session.resume}
-    onRestart={resume => setSession(current => ({ generation: current.generation + 1, resume }))} />;
+  return (
+    <TrackerApp
+      key={session.generation}
+      resume={session.resume}
+      onRestart={resume =>
+        setSession(current => ({ generation: current.generation + 1, resume }))
+      }
+    />
+  );
 }
 
 function TrackerApp({ resume = null, onRestart }) {
+  const { isDark } = useTheme();
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
   const auth = useAuth();
   const tracking = useTrackingSession();
   // An upload or download refused for the sign-in (401) asks AuthProvider
   // whether it ended (判定表「使用中登入失效」).
-  const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real, undefined, auth.reportAuthFailure,
-    auth.isDiscarded);
-  const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground,
-    auth.reportAuthFailure);
+  const cloudSync = useCloudSync(
+    tracking.cloudDatabase,
+    tracking.ready.real,
+    undefined,
+    auth.reportAuthFailure,
+    auth.isDiscarded,
+  );
+  const upload = useCloudUpload(
+    tracking.ready.real,
+    cloudSync.ownerId,
+    tracking.foreground,
+    auth.reportAuthFailure,
+  );
   const insets = useSafeAreaInsets();
   // The pages opened from the map, newest last; back (the key or 「‹ 標題」)
   // returns to the one before.
@@ -204,7 +298,8 @@ function TrackerApp({ resume = null, onRestart }) {
   // again (design: history from a dog's card returns to that card).
   const [cardHistory, setCardHistory] = useState(null);
   const [openDogRequest, setOpenDogRequest] = useState(null);
-  const open = (name, extra = {}) => setStack(current => [...current, { name, ...extra }]);
+  const open = (name, extra = {}) =>
+    setStack(current => [...current, { name, ...extra }]);
   const goBack = () => {
     if (route.name === 'history' && cardHistory != null) {
       setOpenDogRequest({ slaveId: cardHistory, key: Date.now() });
@@ -215,67 +310,124 @@ function TrackerApp({ resume = null, onRestart }) {
   // D3 連接接收器 from `entry` (Pairing.pairingFlow): S2 ('receiver', with
   // its mode), A6 ('map'), a mismatch dialog ('alert'; `view` 'manual' when
   // the receiver was typed in) or the guide ('onboarding').
-  const openPairing = (entry, mode = 'first', view = 'scan') => open('pair', { entry, mode, view, key: Date.now() });
+  const openPairing = (entry, mode = 'first', view = 'scan') =>
+    open('pair', { entry, mode, view, key: Date.now() });
   const isMap = route.name === 'map';
   const isHistory = route.name === 'history';
   // Both tabs draw on the same persistent map layer; only one of them is live.
   const showsMap = isMap || isHistory;
   // Each dog's face (dog_avatars); the default illustration until one is set.
-  const dogAvatars = useDogAvatars(tracking.historyDatabase, tracking.ready.real);
-  const history = useMapHistory(tracking.historyDatabase, tracking.ready.real,
-    tracking.foreground && isHistory, cloudSync.ownerId);
+  const dogAvatars = useDogAvatars(
+    tracking.historyDatabase,
+    tracking.ready.real,
+  );
+  const history = useMapHistory(
+    tracking.historyDatabase,
+    tracking.ready.real,
+    tracking.foreground && isHistory,
+    cloudSync.ownerId,
+  );
   // The history's calendar asks the cloud which days hold a dog's rows and
   // downloads a day only the cloud holds (054b), through the same writer and
   // the same exclusive slot as the sync.
   const historyCloud = useHistoryCloudSource({
-    database: tracking.cloudDatabase, sync: cloudSync, owner: cloudSync.ownerId,
+    database: tracking.cloudDatabase,
+    sync: cloudSync,
+    owner: cloudSync.ownerId,
   });
   // The first location question waits for the map itself: never under the
   // launch screen or over D1 (D2 asks for permissions in the guide, 053).
-  const phone = usePhoneLocation(tracking.foreground, undefined, showsMap && launch.key !== null);
+  const phone = usePhoneLocation(
+    tracking.foreground,
+    undefined,
+    showsMap && launch.key !== null,
+  );
   useDefaultLocationRecording(tracking.foreground, phone);
   // 「今天 x km」: today's recorded route of this phone, while the live map
   // is in front.
-  const liveTodayRoute = useTodayRoute(tracking.historyDatabase, tracking.ready.real,
-    tracking.foreground && (isMap || route.name === 'phone'));
+  const liveTodayRoute = useTodayRoute(
+    tracking.historyDatabase,
+    tracking.ready.real,
+    tracking.foreground && (isMap || route.name === 'phone'),
+  );
   // Cache eligibility is separate from polling visibility. Background/navigation
   // pauses reads; logout invalidates the account-bound cache.
   // Debug builds only: a named screen state (dogtracker://dev/fixture?name=…)
   // replaces the live map's inputs. Always null in release builds.
   const fixture = useScreenFixture();
-  const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
+  const cloudDogs = useCloudDogs(
+    tracking.cloudDatabase,
+    cloudSync.ownerId,
     tracking.ready.real,
-    undefined, null, { active: tracking.foreground && (showsMap || route.name === 'receiver'
-      || route.name === 'diagnostics' || route.name === 'paired') && !fixture, revision: cloudSync.revision });
+    undefined,
+    null,
+    {
+      active:
+        tracking.foreground &&
+        (showsMap ||
+          route.name === 'receiver' ||
+          route.name === 'diagnostics' ||
+          route.name === 'paired') &&
+        !fixture,
+      revision: cloudSync.revision,
+    },
+  );
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   // The history page shows live data unless a history fixture (054a) is on.
   const historyFixture = !!fixture?.history;
-  const mapInputs = applyScreenFixture(isHistory && !historyFixture ? null : fixture,
-    { tracking, phone, cloudDogs, cloudSync, history, historyCloud, dogAvatars, todayRoute: liveTodayRoute,
+  const mapInputs = applyScreenFixture(
+    isHistory && !historyFixture ? null : fixture,
+    {
+      tracking,
+      phone,
+      cloudDogs,
+      cloudSync,
+      history,
+      historyCloud,
+      dogAvatars,
+      todayRoute: liveTodayRoute,
       // The gear's red dot: the upload failing or the sign-in expired.
       cloudProblem: !!cloudSync.ownerId && !!upload.error,
       signInExpired: !!auth.expired,
       // The sign-in restore still waits for Supabase (S3 「暫時連不上…」).
       restoring: !!auth.restoring,
-      permissions, upload,
-      account: { signedIn: !!auth.user, email: auth.user?.email || '' } }, fixtureEdits);
+      permissions,
+      upload,
+      account: { signedIn: !!auth.user, email: auth.user?.email || '' },
+    },
+    fixtureEdits,
+  );
   // ---- the receiver, for the map and the settings pages ------------------
   const settingsOpen = LIGHT_PAGES.has(route.name);
-  const settingsClock = useMapClock(tracking.foreground && settingsOpen && !fixture);
+  const settingsClock = useMapClock(
+    tracking.foreground && settingsOpen && !fixture,
+  );
   const now = fixture ? fixture.now : settingsClock;
-  const receiverState = useReceiverState(tracking.foreground && !isHistory, fixture?.readReceiverState);
+  const receiverState = useReceiverState(
+    tracking.foreground && !isHistory,
+    fixture?.readReceiverState,
+  );
   const receiverWait = useRef(null);
-  receiverWait.current = trackReceiverWait(receiverWait.current, receiverState,
-    fixture ? fixture.now : Date.now());
+  receiverWait.current = trackReceiverWait(
+    receiverWait.current,
+    receiverState,
+    fixture ? fixture.now : Date.now(),
+  );
   // A receiver set up in D3 that turns out to be another Master: 重新掃描 /
   // 重新搜尋 opens D3 again over the page the user is on.
-  const receiverControl = useReceiverControl({ receiverState,
-    onRescan: method => openPairing('alert', 'first', method === 'manual' ? 'manual' : 'scan') });
+  const receiverControl = useReceiverControl({
+    receiverState,
+    onRescan: method =>
+      openPairing('alert', 'first', method === 'manual' ? 'manual' : 'scan'),
+  });
   // The receiver's background work (it was the old scan page's): restoring
   // the service, the JS-side packets, the native storage error.
-  const receiverService = useReceiverService({ dogDatabase: tracking.hardwareDatabase, enabled: tracking.ready.real,
-    onStorageError: tracking.reportNativeWriteError });
+  const receiverService = useReceiverService({
+    dogDatabase: tracking.hardwareDatabase,
+    enabled: tracking.ready.real,
+    onStorageError: tracking.reportNativeWriteError,
+  });
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
     if (id === 'receiver-settings') open('receiver');
@@ -285,7 +437,9 @@ function TrackerApp({ resume = null, onRestart }) {
     // A6 「登入 Supabase」: D1, back on the map afterwards.
     else if (id === 'sign-in') open('signIn', { entry: 'map' });
     else if (id === 'storage-settings') {
-      Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(() => Linking.openSettings());
+      Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(
+        () => Linking.openSettings(),
+      );
     }
   };
   // A settings fixture opens its page (settings-*, receiver-*, phone-*).
@@ -302,10 +456,15 @@ function TrackerApp({ resume = null, onRestart }) {
   // with a `launch` shows its own start.
   const preferences = tracking.preferences;
   const liveLaunch = {
-    databaseReady: tracking.ready.real, databaseError: tracking.errors.real,
+    databaseReady: tracking.ready.real,
+    databaseError: tracking.errors.real,
     preferencesSettled: preferences.ready || !!preferences.error,
-    onboarding: preferences.ready ? preferences.value.onboarding : ONBOARDING_DONE,
-    authSettled: !auth.loading, signedIn: !!auth.user, expiredAtStart: !!auth.expiredAtStart,
+    onboarding: preferences.ready
+      ? preferences.value.onboarding
+      : ONBOARDING_DONE,
+    authSettled: !auth.loading,
+    signedIn: !!auth.user,
+    expiredAtStart: !!auth.expiredAtStart,
   };
   const launchInput = fixture?.launch ?? liveLaunch;
   const decided = launchScreen(launchInput);
@@ -321,9 +480,13 @@ function TrackerApp({ resume = null, onRestart }) {
     else if (decided === 'expired') setStack(signInStack(decided));
     // The guide continues at its saved step (D1, D2 or D3).
     else if (decided === 'onboarding') {
-      setStack(guideStack(launchInput.onboarding, { signedIn: !!launchInput.signedIn }));
-    }
-    else if ((fixture?.launch || leaving) && !fixturePage) setStack([{ name: 'map' }]);
+      setStack(
+        guideStack(launchInput.onboarding, {
+          signedIn: !!launchInput.signedIn,
+        }),
+      );
+    } else if ((fixture?.launch || leaving) && !fixturePage)
+      setStack([{ name: 'map' }]);
     if (leaving) return;
     if (launchKey !== 'live') {
       // A fixture opened at a cold start lets the launch screen go too (its
@@ -337,7 +500,9 @@ function TrackerApp({ resume = null, onRestart }) {
       launchInto('map');
       // Signed in from before the guide existed (an update): it is passed.
       if (liveLaunch.onboarding === ONBOARDING_SIGN_IN) {
-        Promise.resolve(tracking.saveTrackingPreferences?.({ onboarding: ONBOARDING_DONE })).catch(() => {});
+        Promise.resolve(
+          tracking.saveTrackingPreferences?.({ onboarding: ONBOARDING_DONE }),
+        ).catch(() => {});
       }
     }
     // liveLaunch and fixture are read at the moment of the decision only.
@@ -345,17 +510,26 @@ function TrackerApp({ resume = null, onRestart }) {
   }, [decided, launchKey, launch.key]);
   // The guide's step, saved as it moves forward (a fixture's in memory only).
   const saveGuideStep = step => {
-    Promise.resolve(mapInputs.tracking.saveTrackingPreferences?.({ onboarding: step })).catch(() => {});
+    Promise.resolve(
+      mapInputs.tracking.saveTrackingPreferences?.({ onboarding: step }),
+    ).catch(() => {});
   };
   // D1's ways out (判定表「D1 的四種入口」): 'done', 'later', 'back'.
   const leaveSignInPage = how => {
     const result = leaveSignIn(route.entry, how);
-    if (result.exit) { BackHandler.exitApp(); return; }
+    if (result.exit) {
+      BackHandler.exitApp();
+      return;
+    }
     if (result.next) {
       saveGuideStep(result.next);
       // Signed in, D1 has nothing left to show: back from D2 does not
       // return to it (it leaves the app, as on D1).
-      if (how === 'done') setStack(current => [...current.slice(0, -1), { name: 'permissions', entry: 'onboarding' }]);
+      if (how === 'done')
+        setStack(current => [
+          ...current.slice(0, -1),
+          { name: 'permissions', entry: 'onboarding' },
+        ]);
       else open('permissions', { entry: 'onboarding' });
       return;
     }
@@ -370,7 +544,10 @@ function TrackerApp({ resume = null, onRestart }) {
   // Back in the guide: the step before (saved, so a restart continues there),
   // or out of the app from its first page.
   const guideBack = () => {
-    if (stack.length <= 2) { BackHandler.exitApp(); return; }
+    if (stack.length <= 2) {
+      BackHandler.exitApp();
+      return;
+    }
     const before = stack[stack.length - 2];
     const step = GUIDE_STEP_OF[before.name];
     if (step && !fixture) saveGuideStep(step);
@@ -381,7 +558,9 @@ function TrackerApp({ resume = null, onRestart }) {
   const permissionsNext = () => {
     if (route.entry === 'onboarding' && !fixture) {
       saveGuideStep(ONBOARDING_RECEIVER);
-      Promise.resolve(NativeTrackingPlatform?.claimLocationPermissionPrompt?.()).catch(() => {});
+      Promise.resolve(
+        NativeTrackingPlatform?.claimLocationPermissionPrompt?.(),
+      ).catch(() => {});
     }
     openPairing(route.entry === 'onboarding' ? 'onboarding' : 'receiver');
   };
@@ -391,14 +570,19 @@ function TrackerApp({ resume = null, onRestart }) {
   const pairConnected = ({ number, method, previous, kept, again }) => {
     const flow = pairingFlow(route.entry, route.mode);
     if (!again && number != null && !fixture && (!flow.waitForData || kept)) {
-      receiverControl.watchSwitch(number, { previous: kept ? previous : null, session: null, method });
+      receiverControl.watchSwitch(number, {
+        previous: kept ? previous : null,
+        session: null,
+        method,
+      });
     }
     if (flow.guide) {
       saveGuideStep(ONBOARDING_PAIRED);
       open('paired', { entry: 'onboarding' });
       return;
     }
-    if (route.entry === 'map') setFrameRequest({ key: Date.now(), receiverId: number });
+    if (route.entry === 'map')
+      setFrameRequest({ key: Date.now(), receiverId: number });
     goBack();
   };
   // Out of D3 without a new receiver: 稍後再說 ends the guide; otherwise back
@@ -413,52 +597,88 @@ function TrackerApp({ resume = null, onRestart }) {
   };
   // 「重試」 on the failure screen opens the database again (a fixture's keeps
   // failing, as it would).
-  const retryStart = () => { if (!fixture) onRestart?.({ stack: [{ name: 'map' }] }); };
+  const retryStart = () => {
+    if (!fixture) onRestart?.({ stack: [{ name: 'map' }] });
+  };
   const startFailure = launchInput.databaseError || '';
   // ---- what the settings pages say ---------------------------------------
-  const recordingSwitch = useRecordingSwitch(tracking.foreground && route.name === 'phone' && !fixture);
-  const settingsData = settingsInput(mapInputs, { now, receiverState, receiverWait: receiverWait.current,
-    recording: recordingSwitch });
+  const recordingSwitch = useRecordingSwitch(
+    tracking.foreground && route.name === 'phone' && !fixture,
+  );
+  const settingsData = settingsInput(mapInputs, {
+    now,
+    receiverState,
+    receiverWait: receiverWait.current,
+    recording: recordingSwitch,
+  });
   // S6's switches, saved with the tracking preferences (a fixture's only in
   // memory). Nothing sends alerts yet: 058 reads the same AlertPreferences.
-  const alertPreferences = useAlertPreferences(settingsData.alerts, mapInputs.tracking.saveTrackingPreferences,
-    fixtureName ?? 'live');
+  const alertPreferences = useAlertPreferences(
+    settingsData.alerts,
+    mapInputs.tracking.saveTrackingPreferences,
+    fixtureName ?? 'live',
+  );
 
   // ---- S7 進階, S8 診斷 -----------------------------------------------------
   // A fixture's rows, Wi-Fi and deletion stand in for the real ones; nothing
   // it shows reads or writes this phone's data.
   const sources = fixture?.diagnostics ?? null;
-  const listRecent = sources?.listHistory ?? tracking.hardwareDatabase.listHistory;
+  const listRecent =
+    sources?.listHistory ?? tracking.hardwareDatabase.listHistory;
   const wifi = useReceiverWifi(fixture?.wifiService ?? sharedBleService, {
-    active: tracking.foreground && (route.name === 'advanced' || route.name === 'wifi'),
+    active:
+      tracking.foreground &&
+      (route.name === 'advanced' || route.name === 'wifi'),
     connected: !!receiverState?.connected,
   });
-  const receiverName = receiverNumber(receiverState) != null ? `接收器 ${receiverNumber(receiverState)}` : '接收器';
+  const receiverName =
+    receiverNumber(receiverState) != null
+      ? `接收器 ${receiverNumber(receiverState)}`
+      : '接收器';
   // When the last deletion went through (「已刪除・10:21」 on S7).
   const [deletedAt, setDeletedAt] = useState(resume?.deletedAt ?? null);
-  useEffect(() => { setDeletedAt(resume?.deletedAt ?? null); }, [fixtureName, resume]);
-  const deletion = useDeleteDogData(fixture ? {
-    countUnsent: async () => fixture.deletion.unsent,
-    // A fixture has no network to upload on (判定表「先上傳」但沒網路).
-    uploadAll: async () => 'offline',
-    deleteAll: async () => {},
-    onDeleted: () => setDeletedAt(fixture.now),
-  } : {
-    countUnsent: tracking.countUnsentUploads,
-    uploadAll: alive => upload.flushAll?.(alive) ?? Promise.resolve('failed'),
-    deleteAll: options => tracking.deleteDogData(options),
-    onDeleted: async () => {
-      // A6 comes back after 刪除全部狗資料 (判定表「A6 的 ✕ 什麼時候重來」).
-      await Promise.resolve(tracking.saveTrackingPreferences?.({ noDataCardDismissed: false })).catch(() => {});
-      onRestart?.({ stack, deletedAt: Date.now() });
-    },
-  }, fixture?.deletion?.open ? { unsent: fixture.deletion.unsent } : null, fixtureName);
-  const recentRows = useRecentRows(listRecent, tracking.foreground && route.name === 'diagnostics');
+  useEffect(() => {
+    setDeletedAt(resume?.deletedAt ?? null);
+  }, [fixtureName, resume]);
+  const deletion = useDeleteDogData(
+    fixture
+      ? {
+          countUnsent: async () => fixture.deletion.unsent,
+          // A fixture has no network to upload on (判定表「先上傳」但沒網路).
+          uploadAll: async () => 'offline',
+          deleteAll: async () => {},
+          onDeleted: () => setDeletedAt(fixture.now),
+        }
+      : {
+          countUnsent: tracking.countUnsentUploads,
+          uploadAll: alive =>
+            upload.flushAll?.(alive) ?? Promise.resolve('failed'),
+          deleteAll: options => tracking.deleteDogData(options),
+          onDeleted: async () => {
+            // A6 comes back after 刪除全部狗資料 (判定表「A6 的 ✕ 什麼時候重來」).
+            await Promise.resolve(
+              tracking.saveTrackingPreferences?.({
+                noDataCardDismissed: false,
+              }),
+            ).catch(() => {});
+            onRestart?.({ stack, deletedAt: Date.now() });
+          },
+        },
+    fixture?.deletion?.open ? { unsent: fixture.deletion.unsent } : null,
+    fixtureName,
+  );
+  const recentRows = useRecentRows(
+    listRecent,
+    tracking.foreground && route.name === 'diagnostics',
+  );
 
   // Background work that keeps going when the map is left (返回鍵 on the
   // map): this phone uploads for a receiver and still has rows waiting.
-  const uploading = (upload.settings || []).some(setting => setting.mode === 'phone')
-    && (upload.counts || []).some(row => row.status === 'pending' && Number(row.count) > 0);
+  const uploading =
+    (upload.settings || []).some(setting => setting.mode === 'phone') &&
+    (upload.counts || []).some(
+      row => row.status === 'pending' && Number(row.count) > 0,
+    );
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -469,7 +689,8 @@ function TrackerApp({ resume = null, onRestart }) {
         // D3's own steps first (a dialog, D3c, a connection), then out.
         else if (route.name === 'pair') pairBack.current?.();
         // The history's own layers first (the range bar, the panel at 75%).
-        else if (route.name === 'history' && historyBack.current?.()) return true;
+        else if (route.name === 'history' && historyBack.current?.())
+          return true;
         else if (route.entry === 'onboarding') guideBack();
         // Nothing under the failure screen: back leaves the app.
         else if (route.name === 'startFailed') BackHandler.exitApp();
@@ -486,101 +707,233 @@ function TrackerApp({ resume = null, onRestart }) {
   switch (route.name) {
     case 'signIn':
       // D1, from any of its four entries (Launch.signInStack).
-      page = <LoginScreen key={`${route.entry}-${fixtureName ?? 'live'}`}
-        step={route.entry === 'onboarding' ? 1 : null}
-        expired={route.entry === 'expired' || (route.entry === 'cloud' && !!mapInputs.signInExpired)}
-        onDone={() => leaveSignInPage('done')} onLater={() => leaveSignInPage('later')}
-        onLayout={() => launchInto('page')} />;
+      page = (
+        <LoginScreen
+          key={`${route.entry}-${fixtureName ?? 'live'}`}
+          step={route.entry === 'onboarding' ? 1 : null}
+          expired={
+            route.entry === 'expired' ||
+            (route.entry === 'cloud' && !!mapInputs.signInExpired)
+          }
+          onDone={() => leaveSignInPage('done')}
+          onLater={() => leaveSignInPage('later')}
+          onLayout={() => launchInto('page')}
+        />
+      );
       break;
     case 'permissions':
       // D2, in the guide (step 2 of 4).
-      page = <PermissionsRoute key={fixtureName ?? 'live'} tracking={mapInputs.tracking} fixture={fixture}
-        step={route.entry === 'onboarding' ? 2 : null} onNext={permissionsNext}
-        onLayout={() => launchInto('page')} />;
+      page = (
+        <PermissionsRoute
+          key={fixtureName ?? 'live'}
+          tracking={mapInputs.tracking}
+          fixture={fixture}
+          step={route.entry === 'onboarding' ? 2 : null}
+          onNext={permissionsNext}
+          onLayout={() => launchInto('page')}
+        />
+      );
       break;
     case 'pair':
       // D3, from the guide, S2, A6 or a mismatch dialog (Pairing.pairingFlow).
-      page = <PairRoute key={`${route.key ?? 'guide'}-${fixtureName ?? 'live'}`} route={route}
-        tracking={mapInputs.tracking} receiverState={receiverState} service={receiverService}
-        restore={receiverControl.restore} locationServices={mapInputs.phone?.services} fixture={fixture}
-        backRef={pairBack} onConnected={pairConnected} onLeave={pairLeave} onLayout={() => launchInto('page')} />;
+      page = (
+        <PairRoute
+          key={`${route.key ?? 'guide'}-${fixtureName ?? 'live'}`}
+          route={route}
+          tracking={mapInputs.tracking}
+          receiverState={receiverState}
+          service={receiverService}
+          restore={receiverControl.restore}
+          locationServices={mapInputs.phone?.services}
+          fixture={fixture}
+          backRef={pairBack}
+          onConnected={pairConnected}
+          onLeave={pairLeave}
+          onLayout={() => launchInto('page')}
+        />
+      );
       break;
     case 'paired':
       // D4 / D4b: what this receiver has sent so far.
-      page = <PairedScreen page={pairedPage(receiverNumber(receiverState), mapInputs.cloudDogs?.packets)}
-        step={route.entry === 'onboarding' ? 4 : null} onStart={finishGuide} onLayout={() => launchInto('page')} />;
+      page = (
+        <PairedScreen
+          page={pairedPage(
+            receiverNumber(receiverState),
+            mapInputs.cloudDogs?.packets,
+          )}
+          step={route.entry === 'onboarding' ? 4 : null}
+          onStart={finishGuide}
+          onLayout={() => launchInto('page')}
+        />
+      );
       break;
     case 'startFailed':
-      page = <StartFailedScreen onRetry={retryStart} onDiagnostics={() => open('diagnostics')}
-        onLayout={() => launchInto('page')} />;
+      page = (
+        <StartFailedScreen
+          onRetry={retryStart}
+          onDiagnostics={() => open('diagnostics')}
+          onLayout={() => launchInto('page')}
+        />
+      );
       break;
     case 'locationRecords':
-      page = <LocationTrackerScreen key={fixtureName ?? 'live'} foreground={tracking.foreground}
-        readPage={sources?.readLocationPage} />;
+      page = (
+        <LocationTrackerScreen
+          key={fixtureName ?? 'live'}
+          foreground={tracking.foreground}
+          readPage={sources?.readLocationPage}
+        />
+      );
       break;
     case 'cloud':
       // S3: signed out it is the sign-in form (「稍後再說」 goes back). A
       // fixture's page writes nothing and signs nobody out.
-      page = <AccountSettings page={accountPage(settingsData)} onSignIn={() => open('signIn', { entry: 'cloud' })}
-        dialog={fixture?.dialog ?? null}
-        onSignOut={fixture ? async () => {} : async () => {
-          await auth.signOut();
-          // A6 comes back after signing out (判定表「A6 的 ✕ 什麼時候重來」).
-          tracking.saveTrackingPreferences?.({ noDataCardDismissed: false })?.catch?.(() => {});
-        }}
-        onRetryDownload={fixture ? () => {} : () => cloudSync.retry?.()}
-        onRetryUpload={() => mapInputs.upload?.retry?.()?.catch?.(() => {})}
-        onSwitch={(master, mode) => mapInputs.upload.switchMode(master, mode)} />;
+      page = (
+        <AccountSettings
+          page={accountPage(settingsData)}
+          onSignIn={() => open('signIn', { entry: 'cloud' })}
+          dialog={fixture?.dialog ?? null}
+          onSignOut={
+            fixture
+              ? async () => {}
+              : async () => {
+                  await auth.signOut();
+                  // A6 comes back after signing out (判定表「A6 的 ✕ 什麼時候重來」).
+                  tracking
+                    .saveTrackingPreferences?.({ noDataCardDismissed: false })
+                    ?.catch?.(() => {});
+                }
+          }
+          onRetryDownload={fixture ? () => {} : () => cloudSync.retry?.()}
+          onRetryUpload={() => mapInputs.upload?.retry?.()?.catch?.(() => {})}
+          onSwitch={(master, mode) => mapInputs.upload.switchMode(master, mode)}
+        />
+      );
       break;
     case 'cloudData':
-      page = sources
-        ? <CloudDataScreen key={fixtureName} database={sources.cloudDatabase} sync={mapInputs.cloudSync}
-          phoneId="fixture-phone" clientFactory={sources.cloudClient} />
-        : <CloudDataScreen key="live" database={tracking.cloudDatabase} sync={cloudSync} phoneId={upload.phoneId} />;
+      page = sources ? (
+        <CloudDataScreen
+          key={fixtureName}
+          database={sources.cloudDatabase}
+          sync={mapInputs.cloudSync}
+          phoneId="fixture-phone"
+          clientFactory={sources.cloudClient}
+        />
+      ) : (
+        <CloudDataScreen
+          key="live"
+          database={tracking.cloudDatabase}
+          sync={cloudSync}
+          phoneId={upload.phoneId}
+        />
+      );
       break;
     case 'liveData':
-      page = <LiveDataSettings key={fixtureName ?? 'live'}
-        dogDatabase={sources ? { listHistory: sources.listHistory } : tracking.hardwareDatabase} />;
+      page = (
+        <LiveDataSettings
+          key={fixtureName ?? 'live'}
+          dogDatabase={
+            sources
+              ? { listHistory: sources.listHistory }
+              : tracking.hardwareDatabase
+          }
+        />
+      );
       break;
     case 'wifi':
-      page = <WifiSettings key={fixtureName ?? 'live'} wifi={wifi} receiver={receiverName} />;
+      page = (
+        <WifiSettings
+          key={fixtureName ?? 'live'}
+          wifi={wifi}
+          receiver={receiverName}
+        />
+      );
       break;
     case 'settings': {
       const home = settingsHome(settingsData);
-      page = <SettingsHome home={home} version={appVersion}
-        onOpen={id => open(SETTINGS_ROUTES[id])}
-        onStorage={() => alertAction(home.storage?.full ? 'storage-settings' : 'storage-reason')} />;
+      page = (
+        <SettingsHome
+          home={home}
+          version={appVersion}
+          onOpen={id => open(SETTINGS_ROUTES[id])}
+          onStorage={() =>
+            alertAction(
+              home.storage?.full ? 'storage-settings' : 'storage-reason',
+            )
+          }
+        />
+      );
       break;
     }
     case 'receiver':
-      page = <ReceiverSettings page={receiverPage(settingsData)}
-        onDisconnect={receiverControl.disconnect} onReconnect={receiverControl.reconnect}
-        onRescan={() => { receiverControl.disconnect(); openPairing('receiver', 'rescan'); }}
-        onChange={() => openPairing('receiver', 'change')} onConnect={() => openPairing('receiver')} />;
+      page = (
+        <ReceiverSettings
+          page={receiverPage(settingsData)}
+          onDisconnect={receiverControl.disconnect}
+          onReconnect={receiverControl.reconnect}
+          onRescan={() => {
+            receiverControl.disconnect();
+            openPairing('receiver', 'rescan');
+          }}
+          onChange={() => openPairing('receiver', 'change')}
+          onConnect={() => openPairing('receiver')}
+        />
+      );
       break;
     case 'alerts':
       // 「開系統設定 ›」 opens this app's notification settings.
-      page = <AlertSettings key={fixtureName ?? 'live'} page={alertsPage(alertPreferences.value, settingsData.permissions)}
-        onChange={alertPreferences.change} onNotificationSettings={openNotificationSettings}
-        initiallyOpen={!!fixture?.alertsOpen} />;
+      page = (
+        <AlertSettings
+          key={fixtureName ?? 'live'}
+          page={alertsPage(alertPreferences.value, settingsData.permissions)}
+          onChange={alertPreferences.change}
+          onNotificationSettings={openNotificationSettings}
+          initiallyOpen={!!fixture?.alertsOpen}
+        />
+      );
       break;
     case 'phone':
-      page = <PhoneSettings page={phonePage(settingsData)}
-        onRecording={on => settingsData.recording.toggle?.(on)}
-        onPermissions={() => Linking.openSettings()} onLocationServices={openLocationServices}
-        onBattery={openBatterySettings} />;
+      page = (
+        <PhoneSettings
+          page={phonePage(settingsData)}
+          onRecording={on => settingsData.recording.toggle?.(on)}
+          onPermissions={() => Linking.openSettings()}
+          onLocationServices={openLocationServices}
+          onBattery={openBatterySettings}
+        />
+      );
       break;
     case 'diagnostics':
-      page = <DiagnosticsSettings page={diagnosticsPage({ packets: mapInputs.cloudDogs?.packets,
-        rows: sources ? fixture.raw.ble : recentRows, aliases: settingsData.aliases,
-        // Opened from D0's failure screen: why the database cannot be opened.
-        storage: launch.screen === 'failed' && startFailure
-          ? { heading: START_FAILED_TITLE, reason: startFailure, full: false } : settingsData.storage,
-        now })} onOpen={open} />;
+      page = (
+        <DiagnosticsSettings
+          page={diagnosticsPage({
+            packets: mapInputs.cloudDogs?.packets,
+            rows: sources ? fixture.raw.ble : recentRows,
+            aliases: settingsData.aliases,
+            // Opened from D0's failure screen: why the database cannot be opened.
+            storage:
+              launch.screen === 'failed' && startFailure
+                ? {
+                    heading: START_FAILED_TITLE,
+                    reason: startFailure,
+                    full: false,
+                  }
+                : settingsData.storage,
+            now,
+          })}
+          onOpen={open}
+        />
+      );
       break;
     case 'advanced':
-      page = <AdvancedSettings wifi={wifi} deletion={deletion} onWifi={() => open('wifi')}
-        deletedText={deletedAt ? `已刪除・${formatClock(deletedAt)}` : null} />;
+      page = (
+        <AdvancedSettings
+          wifi={wifi}
+          deletion={deletion}
+          onWifi={() => open('wifi')}
+          deletedText={deletedAt ? `已刪除・${formatClock(deletedAt)}` : null}
+        />
+      );
       break;
     default:
       break;
@@ -591,87 +944,111 @@ function TrackerApp({ resume = null, onRestart }) {
   return (
     // Addresses (053a): the card and the history list share one lookup and
     // its cache; a fixture brings its own.
-    <AddressLookupContext.Provider value={mapInputs.addressLookup ?? addressLookup}>
-    <SafeAreaView
-      style={[styles.safeArea, (light || full) && styles.page]}
-      edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
+    <AddressLookupContext.Provider
+      value={mapInputs.addressLookup ?? addressLookup}
     >
-      <StatusBar barStyle="dark-content" backgroundColor={light || full ? colors.surface : undefined} />
-      {light && (
-        // No bottom tabs (v3): every settings page says where it is and
-        // goes back the way the back key does (「‹ 標題」).
-        <View style={styles.header}>
-          <Pressable
-            testID="page-back"
-            accessibilityRole="button"
-            accessibilityLabel={`返回，${pageTitle(route)}`}
-            onPress={goBack}
-            hitSlop={8}
-            style={({ pressed }) => [styles.back, pressed && styles.pressed]}
-          >
-            <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
-          </Pressable>
-        </View>
-      )}
-      <View
-        testID="persistent-map-layer"
-        pointerEvents={showsMap ? 'auto' : 'none'}
-        accessibilityElementsHidden={!showsMap}
-        importantForAccessibility={showsMap ? 'auto' : 'no-hide-descendants'}
-        style={[
-          StyleSheet.absoluteFill,
-          styles.mapLayer,
-          !showsMap && styles.hiddenMapLayer,
-        ]}
+      <SafeAreaView
+        style={[styles.safeArea, (light || full) && styles.page]}
+        edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
       >
-        <MapScreen
-          history={mapInputs.history}
-          historyCloud={mapInputs.historyCloud}
-          tracking={mapInputs.tracking}
-          phone={mapInputs.phone}
-          cloudDogs={mapInputs.cloudDogs}
-          cloudOwner={mapInputs.cloudSync.ownerId}
-          cloudSync={mapInputs.cloudSync}
-          dogAvatars={mapInputs.dogAvatars}
-          historical={isHistory}
-          active={showsMap}
-          // No bottom tabs (v3): the map's buttons sit 16dp above the
-          // screen's bottom edge.
-          bottomInset={insets.bottom + layout.screenEdge}
-          mapProvider={GOOGLE_MAP_PROVIDER}
-          fixture={isHistory && !historyFixture ? null : fixture}
-          todayRoute={mapInputs.todayRoute}
-          onOpenSettings={() => open('settings')}
-          // Restoring a saved sign-in counts: A6 offers no 「登入 Supabase」.
-          signedIn={!!mapInputs.cloudSync.ownerId || !!mapInputs.restoring}
-          cloudProblem={mapInputs.cloudProblem}
-          signInExpired={mapInputs.signInExpired}
-          notificationsDenied={mapInputs.permissions.notificationsDenied}
-          nearbyDenied={mapInputs.permissions.nearbyDenied}
-          receiver={{ state: isHistory ? null : receiverState, wait: receiverWait.current }}
-          onAlertAction={alertAction}
-          openDogRequest={openDogRequest}
-          frameRequest={frameRequest}
-          onOpenHistory={slaveId => {
-            setCardHistory(slaveId);
-            open('history', { target: slaveId == null ? { subject: 'phone', slaveId: null }
-              : { subject: 'dog', slaveId } });
-          }}
-          // A fixture's history page (no route target): whom its query is about.
-          historyTarget={isHistory ? route.target ?? historyTargetOf(mapInputs.history?.preferences) : null}
-          onLeaveHistory={goBack}
-          historyBack={historyBack}
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={light || full ? colors.surface : undefined}
         />
-
-
-      </View>
-      {/* The map's surface shows through anything transparent above it, even
-          hidden (opacity 0): off the map, an opaque cover in the page colour
-          keeps it out of the status bar and navigation bar insets. */}
-      {!showsMap && <View testID="map-cover" pointerEvents="none"
-        style={[StyleSheet.absoluteFill, styles.mapCover, (light || full) && styles.page]} />}
-      {(light || full) && <View style={styles.page}>{page}</View>}
-    </SafeAreaView>
+        {light && (
+          // No bottom tabs (v3): every settings page says where it is and
+          // goes back the way the back key does (「‹ 標題」).
+          <View style={styles.header}>
+            <Pressable
+              testID="page-back"
+              accessibilityRole="button"
+              accessibilityLabel={`返回，${pageTitle(route)}`}
+              onPress={goBack}
+              hitSlop={8}
+              style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+            >
+              <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
+            </Pressable>
+          </View>
+        )}
+        <View
+          testID="persistent-map-layer"
+          pointerEvents={showsMap ? 'auto' : 'none'}
+          accessibilityElementsHidden={!showsMap}
+          importantForAccessibility={showsMap ? 'auto' : 'no-hide-descendants'}
+          style={[
+            StyleSheet.absoluteFill,
+            styles.mapLayer,
+            !showsMap && styles.hiddenMapLayer,
+          ]}
+        >
+          <MapScreen
+            history={mapInputs.history}
+            historyCloud={mapInputs.historyCloud}
+            tracking={mapInputs.tracking}
+            phone={mapInputs.phone}
+            cloudDogs={mapInputs.cloudDogs}
+            cloudOwner={mapInputs.cloudSync.ownerId}
+            cloudSync={mapInputs.cloudSync}
+            dogAvatars={mapInputs.dogAvatars}
+            historical={isHistory}
+            active={showsMap}
+            // No bottom tabs (v3): the map's buttons sit 16dp above the
+            // screen's bottom edge.
+            bottomInset={insets.bottom + layout.screenEdge}
+            mapProvider={GOOGLE_MAP_PROVIDER}
+            fixture={isHistory && !historyFixture ? null : fixture}
+            todayRoute={mapInputs.todayRoute}
+            onOpenSettings={() => open('settings')}
+            // Restoring a saved sign-in counts: A6 offers no 「登入 Supabase」.
+            signedIn={!!mapInputs.cloudSync.ownerId || !!mapInputs.restoring}
+            cloudProblem={mapInputs.cloudProblem}
+            signInExpired={mapInputs.signInExpired}
+            notificationsDenied={mapInputs.permissions.notificationsDenied}
+            nearbyDenied={mapInputs.permissions.nearbyDenied}
+            receiver={{
+              state: isHistory ? null : receiverState,
+              wait: receiverWait.current,
+            }}
+            onAlertAction={alertAction}
+            openDogRequest={openDogRequest}
+            frameRequest={frameRequest}
+            onOpenHistory={slaveId => {
+              setCardHistory(slaveId);
+              open('history', {
+                target:
+                  slaveId == null
+                    ? { subject: 'phone', slaveId: null }
+                    : { subject: 'dog', slaveId },
+              });
+            }}
+            // A fixture's history page (no route target): whom its query is about.
+            historyTarget={
+              isHistory
+                ? route.target ??
+                  historyTargetOf(mapInputs.history?.preferences)
+                : null
+            }
+            onLeaveHistory={goBack}
+            historyBack={historyBack}
+          />
+        </View>
+        {/* The map's surface shows through anything transparent above it, even
+                hidden (opacity 0): off the map, an opaque cover in the page colour
+                keeps it out of the status bar and navigation bar insets. */}
+        {!showsMap && (
+          <View
+            testID="map-cover"
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              styles.mapCover,
+              (light || full) && styles.page,
+            ]}
+          />
+        )}
+        {(light || full) && <View style={styles.page}>{page}</View>}
+      </SafeAreaView>
     </AddressLookupContext.Provider>
   );
 }
@@ -679,37 +1056,97 @@ function TrackerApp({ resume = null, onRestart }) {
 // D2, asking for real (or drawing a fixture's rows).
 function PermissionsRoute({ tracking, fixture, step, onNext, onLayout }) {
   const prefs = tracking.preferences?.value || {};
-  const guide = usePermissionsGuide({ asked: prefs.askedPermissions || [],
+  const guide = usePermissionsGuide({
+    asked: prefs.askedPermissions || [],
     fixture: fixture?.permissionsGuide ?? null,
-    onAsked: list => tracking.saveTrackingPreferences?.({ askedPermissions: list }) });
-  return <PermissionsScreen page={guide} step={step} onNext={onNext} onSystemSettings={() => Linking.openSettings()}
-    onLayout={onLayout} />;
+    onAsked: list =>
+      tracking.saveTrackingPreferences?.({ askedPermissions: list }),
+  });
+  return (
+    <PermissionsScreen
+      page={guide}
+      step={step}
+      onNext={onNext}
+      onSystemSettings={() => Linking.openSettings()}
+      onLayout={onLayout}
+    />
+  );
 }
 
 // D3 for one opening (route.key): usePairing with this app's receiver.
-function PairRoute({ route, tracking, receiverState, service, restore, locationServices, fixture, backRef,
-  onConnected, onLeave, onLayout }) {
+function PairRoute({
+  route,
+  tracking,
+  receiverState,
+  service,
+  restore,
+  locationServices,
+  fixture,
+  backRef,
+  onConnected,
+  onLeave,
+  onLayout,
+}) {
   const flow = pairingFlow(route.entry, route.mode);
   const prefs = tracking.preferences?.value || {};
-  const pairing = usePairing({ flow, receiverState, service, restore,
+  const pairing = usePairing({
+    flow,
+    receiverState,
+    service,
+    restore,
     asked: prefs.askedPermissions || [],
-    onAsked: list => tracking.saveTrackingPreferences?.({ askedPermissions: list }),
-    locationServices, fixture: fixture?.pairing ?? null, initialView: route.view || 'scan', onConnected, onLeave });
+    onAsked: list =>
+      tracking.saveTrackingPreferences?.({ askedPermissions: list }),
+    locationServices,
+    fixture: fixture?.pairing ?? null,
+    initialView: route.view || 'scan',
+    onConnected,
+    onLeave,
+  });
   backRef.current = pairing.back;
-  return <PairingScreen pairing={pairing} step={flow.guide ? 3 : null} camera={!fixture} onLayout={onLayout} />;
+  return (
+    <PairingScreen
+      pairing={pairing}
+      step={flow.guide ? 3 : null}
+      camera={!fixture}
+      onLayout={onLayout}
+    />
+  );
 }
 
-const styles = StyleSheet.create({
-  // No dark slab anywhere (v3): the old dark pages' navy is gone.
-  safeArea: { flex: 1, backgroundColor: colors.surface },
-  mapLayer: { backgroundColor: colors.surface },
-  hiddenMapLayer: { opacity: 0, zIndex: -1 },
-  mapCover: { backgroundColor: colors.surface, zIndex: -1 },
-  // The settings pages: a 56dp header 「‹ 標題」 over the page colour.
-  header: { backgroundColor: colors.surface, minHeight: touch.subpageHeader, justifyContent: 'center',
-    paddingHorizontal: 8, paddingVertical: 4 },
-  back: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 8, alignSelf: 'flex-start' },
-  pressed: { opacity: 0.7 },
-  brand: { ...type.title, color: colors.text },
-  page: { flex: 1, backgroundColor: colors.surface },
+const getStyles = makeStyles(theme => {
+  const { colors } = theme;
+  return StyleSheet.create({
+    // No dark slab anywhere (v3): the old dark pages' navy is gone.
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+    },
+    mapLayer: { backgroundColor: theme.isDark ? colors.bg : colors.surface },
+    hiddenMapLayer: { opacity: 0, zIndex: -1 },
+    mapCover: {
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+      zIndex: -1,
+    },
+    // The settings pages: a 56dp header 「‹ 標題」 over the page colour.
+    header: {
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+      minHeight: touch.subpageHeader,
+      justifyContent: 'center',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    back: {
+      minHeight: 48,
+      justifyContent: 'center',
+      paddingHorizontal: 8,
+      alignSelf: 'flex-start',
+    },
+    pressed: { opacity: 0.7 },
+    brand: { ...type.title, color: colors.text },
+    page: {
+      flex: 1,
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+    },
+  });
 });

@@ -2,7 +2,11 @@
 
     <!-- Base application theme. -->
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
         <!-- Confirmation dialogs (Alert.alert), design v3 確認對話框: white,
              24dp corners, dark text, coral-red (tonalText) buttons. -->
@@ -20,7 +24,7 @@
     <!-- Launch theme for MainActivity; installSplashScreen() swaps to AppTheme.
          Before Android 12 the compat library shows the static drawing. -->
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@style/AppTheme</item>
     </style>

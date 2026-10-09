@@ -7,14 +7,23 @@
 // going away stores it. Empty or only spaces is not an error: the dog keeps
 // the name it had. ‹ and the back key store a name being edited, then return
 // to the card; with A5c open they cancel A5c instead.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  BackHandler,
+  Keyboard,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AvatarEditor from './AvatarEditor';
 import DogAvatar from './DogAvatar';
 import { NAME_MAX, clampName, nameLength, nameToSave } from './DogName';
 import Glyph from '../map/Glyph';
-import { colors, radius, shadow, size as sizes, space, touch, type } from '../theme/tokens';
+import { radius, size as sizes, space, touch, type } from '../theme/tokens';
 
 const AVATAR = sizes.edit.avatar;
 const CAMERA = sizes.edit.camera;
@@ -27,7 +36,18 @@ const CAMERA = sizes.edit.camera;
  * @param onSaveName(name) / onSaveAvatar(avatar) resolve true once stored
  * @param onBack back to the card
  */
-export default function DogProfile({ slaveId, name, alias, avatar, onSaveName, onSaveAvatar, onBack, picker }) {
+export default function DogProfile({
+  slaveId,
+  name,
+  alias,
+  avatar,
+  onSaveName,
+  onSaveAvatar,
+  onBack,
+  picker,
+}) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
   const insets = useSafeAreaInsets();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
@@ -42,7 +62,9 @@ export default function DogProfile({ slaveId, name, alias, avatar, onSaveName, o
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const startEditing = () => {
     if (editing) return;
@@ -61,7 +83,11 @@ export default function DogProfile({ slaveId, name, alias, avatar, onSaveName, o
       let ok = true;
       if (next != null) {
         setSaving(true);
-        try { ok = await onSaveName(next); } catch { ok = false; }
+        try {
+          ok = await onSaveName(next);
+        } catch {
+          ok = false;
+        }
       }
       if (!alive.current) return ok;
       setSaving(false);
@@ -75,7 +101,9 @@ export default function DogProfile({ slaveId, name, alias, avatar, onSaveName, o
   // The keyboard going away (Android's back key closes it first) ends the edit.
   useEffect(() => {
     if (!editing) return undefined;
-    const subscription = Keyboard.addListener('keyboardDidHide', () => { finish(); });
+    const subscription = Keyboard.addListener('keyboardDidHide', () => {
+      finish();
+    });
     return () => subscription.remove();
   }, [editing, finish]);
   const back = useCallback(async () => {
@@ -88,11 +116,14 @@ export default function DogProfile({ slaveId, name, alias, avatar, onSaveName, o
   const avatarOpenRef = useRef(false);
   avatarOpenRef.current = avatarOpen;
   useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (avatarOpenRef.current) return false;
-      backRef.current();
-      return true;
-    });
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (avatarOpenRef.current) return false;
+        backRef.current();
+        return true;
+      },
+    );
     return () => subscription.remove();
   }, []);
   const tapOutside = () => {
@@ -104,81 +135,204 @@ export default function DogProfile({ slaveId, name, alias, avatar, onSaveName, o
   return (
     <View style={[StyleSheet.absoluteFill, styles.page]} testID="dog-profile">
       {/* Behind the content: a tap anywhere else ends a name edit. Not a
-          control for TalkBack (the keyboard's 完成 and ‹ are). */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={tapOutside} accessible={false}
-        importantForAccessibility="no-hide-descendants" testID="dog-profile-outside" />
+             control for TalkBack (the keyboard's 完成 and ‹ are). */}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={tapOutside}
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        testID="dog-profile-outside"
+      />
       {/* With A5c open, TalkBack stays in the sheet. */}
-      <View style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]} pointerEvents="box-none"
-        importantForAccessibility={avatarOpen ? 'no-hide-descendants' : 'auto'}>
+      <View
+        style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}
+        pointerEvents="box-none"
+        importantForAccessibility={avatarOpen ? 'no-hide-descendants' : 'auto'}
+      >
         <View style={styles.header} pointerEvents="box-none">
-          <Pressable accessibilityRole="button" accessibilityLabel="返回" onPress={back} testID="dog-profile-back"
-            style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="返回"
+            onPress={back}
+            testID="dog-profile-back"
+            style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+          >
             <Glyph name="back" color={colors.text} size={22} />
           </Pressable>
         </View>
         <View style={styles.profile} pointerEvents="box-none">
           <View style={styles.avatarWrap}>
-            <Pressable accessibilityRole="button" accessibilityLabel={`改${name}的頭像`} testID="dog-profile-avatar"
-              onPress={() => { tapOutside(); setAvatarOpen(true); }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`改${name}的頭像`}
+              testID="dog-profile-avatar"
+              onPress={() => {
+                tapOutside();
+                setAvatarOpen(true);
+              }}
+            >
               <DogAvatar avatar={avatar} size={AVATAR} border={0} />
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={`改${name}的頭像`} testID="dog-profile-camera"
-              hitSlop={(touch.min - CAMERA) / 2} onPress={() => { tapOutside(); setAvatarOpen(true); }}
-              style={({ pressed }) => [styles.camera, pressed && styles.cameraPressed]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`改${name}的頭像`}
+              testID="dog-profile-camera"
+              hitSlop={(touch.min - CAMERA) / 2}
+              onPress={() => {
+                tapOutside();
+                setAvatarOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.camera,
+                pressed && styles.cameraPressed,
+              ]}
+            >
               <Glyph name="camera" color={colors.text} size={18} />
             </Pressable>
           </View>
           {editing ? (
             <View style={styles.nameEdit} testID="dog-profile-name-input">
-              <TextInput ref={input} value={text} autoFocus accessibilityLabel="狗的名字"
-                onChangeText={value => { setFailed(false); setText(clampName(value)); }} editable={!saving}
-                maxLength={NAME_MAX * 2} placeholder="狗的名字" placeholderTextColor={colors.textMuted}
-                returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={() => finish()}
-                onBlur={() => finish()} style={styles.input} selectionColor={colors.accent} />
-              <Text style={styles.count}>{`${nameLength(text)}/${NAME_MAX}`}</Text>
+              <TextInput
+                cursorColor={colors.accent}
+                selectionColor={`${colors.accent}66`}
+                selectionHandleColor={colors.accent}
+                ref={input}
+                value={text}
+                autoFocus
+                accessibilityLabel="狗的名字"
+                onChangeText={value => {
+                  setFailed(false);
+                  setText(clampName(value));
+                }}
+                editable={!saving}
+                maxLength={NAME_MAX * 2}
+                placeholder="狗的名字"
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="done"
+                submitBehavior="blurAndSubmit"
+                onSubmitEditing={() => finish()}
+                onBlur={() => finish()}
+                style={styles.input}
+              />
+              <Text style={styles.count}>{`${nameLength(
+                text,
+              )}/${NAME_MAX}`}</Text>
             </View>
           ) : (
-            <Pressable accessibilityRole="button" accessibilityLabel={`${name}，改名字`} onPress={startEditing}
-              testID="dog-profile-name" style={styles.nameRow}>
-              <Text style={styles.name} numberOfLines={1}>{name}</Text>
-              <Glyph name="pencil" color={colors.textMuted} size={sizes.edit.pencil} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${name}，改名字`}
+              onPress={startEditing}
+              testID="dog-profile-name"
+              style={styles.nameRow}
+            >
+              <Text style={styles.name} numberOfLines={1}>
+                {name}
+              </Text>
+              <Glyph
+                name="pencil"
+                color={colors.textMuted}
+                size={sizes.edit.pencil}
+              />
             </Pressable>
           )}
           <Text style={styles.source}>{`訊號源 ${slaveId}`}</Text>
-          {failed && <Text style={styles.error} accessibilityRole="alert">沒有存成功，再試一次</Text>}
+          {failed && (
+            <Text style={styles.error} accessibilityRole="alert">
+              沒有存成功，再試一次
+            </Text>
+          )}
         </View>
       </View>
       {avatarOpen && (
-        <AvatarEditor avatar={avatar} name={name} picker={picker} onSave={onSaveAvatar}
-          onClose={() => setAvatarOpen(false)} />
+        <AvatarEditor
+          avatar={avatar}
+          name={name}
+          picker={picker}
+          onSave={onSaveAvatar}
+          onClose={() => setAvatarOpen(false)}
+        />
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  page: { zIndex: 40, elevation: 12, backgroundColor: colors.surface },
-  header: { flexDirection: 'row', alignItems: 'center', minHeight: touch.subpageHeader, paddingHorizontal: 4 },
-  back: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center',
-    borderRadius: radius.full },
-  profile: { alignItems: 'center', paddingHorizontal: space.l, paddingTop: space.s },
-  avatarWrap: { width: AVATAR, height: AVATAR },
-  camera: {
-    position: 'absolute', right: -2, bottom: 0, width: CAMERA, height: CAMERA, borderRadius: CAMERA / 2,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, alignItems: 'center',
-    justifyContent: 'center', ...shadow.floating, elevation: 4,
-  },
-  cameraPressed: { backgroundColor: colors.bg },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: touch.min, marginTop: space.s,
-    paddingHorizontal: space.s, maxWidth: '100%' },
-  name: { ...type.nameEdit, color: colors.text, flexShrink: 1 },
-  // In place of the name: a 2dp accent underline, 「N/20」 on the same line.
-  nameEdit: { flexDirection: 'row', alignItems: 'center', minHeight: touch.min, marginTop: space.s,
-    maxWidth: '100%' },
-  input: { ...type.nameEdit, color: colors.text, minWidth: 64, flexShrink: 1, paddingVertical: 2,
-    paddingHorizontal: 4, textAlign: 'center', borderBottomWidth: 2, borderBottomColor: colors.accent },
-  count: { ...type.caption, color: colors.textMuted, marginLeft: space.s },
-  source: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
-  error: { ...type.caption, color: colors.crit, marginTop: space.s },
-  pressed: { backgroundColor: colors.pressedOverlay },
+const getStyles = makeStyles(theme => {
+  const { colors, shadow } = theme;
+  return StyleSheet.create({
+    page: {
+      zIndex: 40,
+      elevation: 12,
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: touch.subpageHeader,
+      paddingHorizontal: 4,
+    },
+    back: {
+      width: touch.min,
+      height: touch.min,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.full,
+    },
+    profile: {
+      alignItems: 'center',
+      paddingHorizontal: space.l,
+      paddingTop: space.s,
+    },
+    avatarWrap: { width: AVATAR, height: AVATAR },
+    camera: {
+      position: 'absolute',
+      right: -2,
+      bottom: 0,
+      width: CAMERA,
+      height: CAMERA,
+      borderRadius: CAMERA / 2,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      // floatingOutline is line in light, the visible dark outline in dark.
+      borderColor: colors.floatingOutline,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...shadow.floating,
+      elevation: 4,
+    },
+    cameraPressed: { backgroundColor: colors.bg },
+    nameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      minHeight: touch.min,
+      marginTop: space.s,
+      paddingHorizontal: space.s,
+      maxWidth: '100%',
+    },
+    name: { ...type.nameEdit, color: colors.text, flexShrink: 1 },
+    // In place of the name: a 2dp accent underline, 「N/20」 on the same line.
+    nameEdit: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: touch.min,
+      marginTop: space.s,
+      maxWidth: '100%',
+    },
+    input: {
+      ...type.nameEdit,
+      color: colors.text,
+      minWidth: 64,
+      flexShrink: 1,
+      paddingVertical: 2,
+      paddingHorizontal: 4,
+      textAlign: 'center',
+      borderBottomWidth: 2,
+      borderBottomColor: colors.accent,
+    },
+    count: { ...type.caption, color: colors.textMuted, marginLeft: space.s },
+    source: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
+    error: { ...type.caption, color: colors.crit, marginTop: space.s },
+    pressed: { backgroundColor: colors.pressedOverlay },
+  });
 });

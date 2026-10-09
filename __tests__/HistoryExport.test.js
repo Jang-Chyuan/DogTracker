@@ -364,3 +364,36 @@ describe('056 review fixes', () => {
     expect(sections[1].oneLine).toBe(true);
   });
 });
+
+describe('the PNG is light whatever the phone theme (深色模式「匯出的 PNG 一律用淺色」)', () => {
+  const { Appearance } = require('react-native');
+  const darkSpec = require('../src/theme/dark-tokens.json');
+  const darkLook = { 6: { color: darkSpec.colors.route1, name: '小黑' },
+    4: { color: darkSpec.colors.route2, name: '豆豆' }, phone: { color: darkSpec.colors.phone, name: '我的路線' } };
+
+  test('a snapshot taken in dark mode draws light route colours at full strength, solid', () => {
+    const spy = jest.spyOn(Appearance, 'getColorScheme').mockReturnValue('dark');
+    try {
+      const day = dayOf([[6, dogRows(6, legs(DOG_DAY))], [4, dogRows(4, legs([{ walk: 30 }], { from: 5, east: 300 }))]]);
+      const snapshot = buildExportSnapshot({ day, range: day.range, subject: 'dog', look: darkLook });
+      expect(snapshot.subjects.map(s => s.routeColor)).toEqual([routeColors[0], routeColors[1]]);
+      expect(snapshot.subjects[0].map.lines.every(line => !line.dashed)).toBe(true);
+      const layout = buildPNGLayout(snapshot);
+      const map = layout.pages[0].blocks.find(block => block.type === 'map');
+      expect(map.subjects.map(s => s.color)).toEqual([routeColors[0], routeColors[1]]);
+      expect(layout.pages[0].legend.map(item => item.color)).toEqual([routeColors[0], routeColors[1]]);
+      const json = JSON.stringify(pngDrawPages(layout));
+      for (const value of [darkSpec.colors.route1, darkSpec.colors.route2, darkSpec.darkOnly.elevated, darkSpec.colors.bg])
+        expect(json.toUpperCase()).not.toContain(value.toUpperCase());
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('my route in dark mode exports the light phone blue', () => {
+    const { exportRouteColor } = require('../src/theme/exportPalette');
+    expect(exportRouteColor(darkSpec.colors.phone)).toBe(colors.phone);
+    expect(exportRouteColor(colors.route3)).toBe(colors.route3);
+    expect(exportRouteColor('#123456')).toBe('#123456');
+  });
+});

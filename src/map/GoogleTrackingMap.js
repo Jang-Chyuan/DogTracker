@@ -1,4 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useTheme,
+  useStyles,
+  makeStyles,
+} from '../theme/ThemeProvider';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   PixelRatio,
@@ -7,52 +18,89 @@ import {
   View,
 } from 'react-native';
 import MapView, {
-  Marker,
+  Marker as GoogleMarker,
+  Circle,
   Polygon,
   Polyline,
   PROVIDER_GOOGLE,
 } from 'react-native-maps';
-import { colors as tokens, layout, motion, opacity, size as sizes } from '../theme/tokens';
-import { floatingShadow, mapColors as colors } from './MapTheme';
+import { layout, motion, size as sizes } from '../theme/tokens';
+
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
 import {
-  CursorFaceView, CursorMarkerView, cursorAnchor, IndoorMarkerView, StopMarkerView, TimeMarkerView,
+  CursorFaceView,
+  CursorMarkerView,
+  cursorAnchor,
+  IndoorMarkerView,
+  StopMarkerView,
+  TimeMarkerView,
 } from '../mapHistory/HistoryMapMarkers';
-import { HISTORY_FRAME_PADDING, historyFramePadding, nearestRouteSpot, uncrowded } from '../history/screen/HistoryMapModel';
+import {
+  HISTORY_FRAME_PADDING,
+  historyFramePadding,
+  nearestRouteSpot,
+  uncrowded,
+} from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { nameTags } from './DogMarkers';
 import { reportMapFramed } from '../app/hideSplash';
 import {
-  framedCoordinates, framePadding, frameAllCoordinates, receiverDogsCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S, regionForFrame,
+  framedCoordinates,
+  framePadding,
+  frameAllCoordinates,
+  receiverDogsCoordinates,
+  phoneFix,
+  PHONE_FIX_MAX_AGE_S,
+  regionForFrame,
 } from './MapFraming';
 import { edgeHints } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 import OverlapPicker, { overlapMenuPlace } from './OverlapPicker';
 
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
-const withOpacity = (hex, alpha) => hex + Math.round(alpha * 255).toString(16).padStart(2, '0').toUpperCase();
+const withOpacity = (hex, alpha) =>
+  hex +
+  Math.round(alpha * 255)
+    .toString(16)
+    .padStart(2, '0')
+    .toUpperCase();
 // Range ring (DESIGN.md 判定表「接收範圍圈」): 1.5dp dashed 6/4 in rangeRing at
 // 55%, filled with the same colour at 6%. Out-of-range line: critLine, 2dp,
 // dashed 6/4. Widths are dp; Android takes dash lengths in pixels.
-const RANGE_RING = {
-  stroke: withOpacity(tokens.rangeRing, opacity.rangeRingStroke),
-  fill: withOpacity(tokens.rangeRing, opacity.rangeRingFill),
-  width: 1.5,
-};
+const getRANGE_RING = makeStyles(theme => {
+  const { colors: tokens, opacity } = theme;
+  return {
+    stroke: withOpacity(tokens.rangeRing, opacity.rangeRingStroke),
+    fill: withOpacity(tokens.rangeRing, opacity.rangeRingFill),
+    width: 1.5,
+  };
+});
 const OUT_OF_RANGE_WIDTH = 2;
-const dash = () => [6, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length));
+const dash = () =>
+  [6, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length));
 // Drawing order: base map, ring, red lines, routes, dogs and phone.
 const Z = { ring: 1, rangeLine: 2, route: 3 };
 // A base map that draws nothing but grey (design #ECEEEC): what a map without
 // tiles looks like, for the 地圖載入失敗 fixture.
 const PLAIN_MAP = [];
-const NO_BASE_MAP = [
-  { stylers: [{ visibility: 'off' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: tokens.mapFallback }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: tokens.mapFallback }] },
-];
+const getNO_BASE_MAP = makeStyles(theme => {
+  const { colors: tokens } = theme;
+  return [
+    { stylers: [{ visibility: 'off' }] },
+    {
+      featureType: 'landscape',
+      elementType: 'geometry',
+      stylers: [{ visibility: 'on' }, { color: tokens.mapFallback }],
+    },
+    {
+      featureType: 'water',
+      elementType: 'geometry',
+      stylers: [{ visibility: 'on' }, { color: tokens.mapFallback }],
+    },
+  ];
+});
 
 // The launch screen is released once the first framing has been drawn, or
 // this long after the map loaded when there is still nothing to frame (the
@@ -67,11 +115,35 @@ const MAP_SIDE_PADDING = 12;
 const HISTORY_FRAME = HISTORY_FRAME_PADDING;
 // Coordinates all within about 30 m of each other.
 const tinySpan = points => {
-  const lat = points.map(p => p.latitude), lon = points.map(p => p.longitude);
-  return Math.max(...lat) - Math.min(...lat) < 0.0003 && Math.max(...lon) - Math.min(...lon) < 0.0003;
+  const lat = points.map(p => p.latitude),
+    lon = points.map(p => p.longitude);
+  return (
+    Math.max(...lat) - Math.min(...lat) < 0.0003 &&
+    Math.max(...lon) - Math.min(...lon) < 0.0003
+  );
 };
 // A tap this close to the route (dp) is a tap on it.
 const ROUTE_TAP_DP = 24;
+
+// Every marker on our maps (「地圖標記一律用自己的樣式」) goes through here and
+// draws a view of its own: react-native-maps draws Google's red default pin
+// for a marker with no view. Debug builds report a marker given nothing to
+// draw (MarkerArchitecture.test.js checks every marker element in src).
+export const StyledMarker = React.forwardRef(function StyledMarker(
+  { children, ...props },
+  ref,
+) {
+  if (__DEV__ && React.Children.count(children) === 0) {
+    console.error(
+      `[Marker] ${props.identifier || 'a marker'} has no view of its own: it would be drawn as Google's default pin`,
+    );
+  }
+  return (
+    <GoogleMarker ref={ref} {...props}>
+      {children}
+    </GoogleMarker>
+  );
+});
 
 const EMPTY_REGION = {
   latitude: 23.7,
@@ -91,13 +163,16 @@ function usePhotoMarker(avatar, ref) {
   const photoKey = photo ? `${photo.length}:${photo.slice(-24)}` : '';
   const [tracking, setTracking] = useState(!!photoKey);
   const timer = useRef(null);
-  const settle = useCallback(delay => {
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      setTracking(false);
-      ref.current?.redraw?.();
-    }, delay);
-  }, [ref]);
+  const settle = useCallback(
+    delay => {
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        setTracking(false);
+        ref.current?.redraw?.();
+      }, delay);
+    },
+    [ref],
+  );
   useEffect(() => {
     if (!photoKey) return;
     setTracking(true);
@@ -115,15 +190,31 @@ function usePhotoMarker(avatar, ref) {
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
 function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
+  const { isDark } = useTheme();
   const ref = useRef(null);
   const photo = usePhotoMarker(avatar, ref);
   const settled = useSettledMarker(ref);
   const frame = markerFrame(marker.size);
-  const look = [marker.size, marker.problem, marker.stale, marker.indoor, marker.selected, marker.staleRing, marker.tint,
-    tag?.text, tag?.problem, avatar?.kind, avatar?.art, avatar?.color, avatar?.uri?.length].join('|');
-  useEffect(() => { ref.current?.redraw?.(); }, [look]);
+  const look = [
+    marker.size,
+    marker.problem,
+    marker.stale,
+    marker.indoor,
+    marker.selected,
+    marker.staleRing,
+    marker.tint,
+    tag?.text,
+    tag?.problem,
+    avatar?.kind,
+    avatar?.art,
+    avatar?.color,
+    avatar?.uri?.length,
+  ].join('|');
+  useEffect(() => {
+    ref.current?.redraw?.();
+  }, [look, isDark]);
   return (
-    <Marker
+    <StyledMarker
       ref={ref}
       identifier={source + '-dog-' + marker.slaveId}
       coordinate={marker.coordinate}
@@ -134,18 +225,29 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
       // already opens the dog. The label below is what TalkBack reads.
       onPress={onPress}
     >
-      <View collapsable={false} accessible accessibilityLabel={label || marker.label}
-        onLayout={settled.onLayout}>
-        <DogMarkerView marker={marker} tag={tag} avatar={avatar} onAvatarLoad={photo.onLoad} />
+      <View
+        collapsable={false}
+        accessible
+        accessibilityLabel={label || marker.label}
+        onLayout={settled.onLayout}
+      >
+        <DogMarkerView
+          marker={marker}
+          tag={tag}
+          avatar={avatar}
+          onAvatarLoad={photo.onLoad}
+        />
       </View>
-    </Marker>
+    </StyledMarker>
   );
 }
 
 // TalkBack for the face carrying a 「3 隻」 tag: the dogs in it, and what a
 // double tap does.
 function groupSpeech(tag, markers) {
-  const names = tag.members.map(id => markers.find(marker => marker.slaveId === id)?.name).filter(Boolean);
+  const names = tag.members
+    .map(id => markers.find(marker => marker.slaveId === id)?.name)
+    .filter(Boolean);
   return `${tag.text}：${names.join('、')}，點兩下選一隻`;
 }
 
@@ -159,7 +261,10 @@ function useSettledMarker(ref) {
   const frame = useRef(null);
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
   const onLayout = useCallback(() => {
-    if (!tracking) { ref.current?.redraw?.(); return; }
+    if (!tracking) {
+      ref.current?.redraw?.();
+      return;
+    }
     cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => {
       setTracking(false);
@@ -171,36 +276,89 @@ function useSettledMarker(ref) {
 
 // Fixed bitmaps, like DogMarker: every change of what one shows asks for one
 // redraw. Time markers sit under the stop numbers, the cursor on top.
-function RouteMarker({ coordinate, look, zIndex, anchor = CENTER, onPress, children, label }) {
+function RouteMarker({
+  coordinate,
+  look,
+  zIndex,
+  anchor = CENTER,
+  onPress,
+  children,
+  label,
+}) {
+  const { isDark } = useTheme();
   const ref = useRef(null);
   const settled = useSettledMarker(ref);
-  useEffect(() => { ref.current?.redraw?.(); }, [look]);
+  useEffect(() => {
+    ref.current?.redraw?.();
+  }, [look, isDark]);
   return (
-    <Marker ref={ref} coordinate={coordinate} anchor={anchor} tracksViewChanges={settled.tracking} zIndex={zIndex}
-      onPress={onPress} tappable={!!onPress}>
-      <View collapsable={false} accessible={!!label} accessibilityLabel={label}
-        onLayout={settled.onLayout}>{children}</View>
-    </Marker>
+    <StyledMarker
+      ref={ref}
+      coordinate={coordinate}
+      anchor={anchor}
+      tracksViewChanges={settled.tracking}
+      zIndex={zIndex}
+      onPress={onPress}
+      tappable={!!onPress}
+    >
+      <View
+        collapsable={false}
+        accessible={!!label}
+        accessibilityLabel={label}
+        onLayout={settled.onLayout}
+      >
+        {children}
+      </View>
+    </StyledMarker>
   );
 }
 const CENTER = { x: 0.5, y: 0.5 };
 
 function CursorMarker({ cursor, color }) {
+  const { isDark } = useTheme();
   const [labelHeight, setLabelHeight] = useState(44);
   const ref = useRef(null);
   const settled = useSettledMarker(ref);
   const face = cursor.face ?? null;
-  const look = `${cursor.lines?.join('|')}:${cursor.stale}:${labelHeight}:${color}:${face?.name ?? ''}:${face?.avatar?.uri?.length ?? face?.avatar?.art ?? ''}`;
-  useEffect(() => { ref.current?.redraw?.(); }, [look, cursor.key]);
-  const height = value => { if (Math.abs(value - labelHeight) > 0.5) setLabelHeight(value); };
+  const look = `${cursor.lines?.join('|')}:${
+    cursor.stale
+  }:${labelHeight}:${color}:${face?.name ?? ''}:${
+    face?.avatar?.uri?.length ?? face?.avatar?.art ?? ''
+  }`;
+  useEffect(() => {
+    ref.current?.redraw?.();
+  }, [look, cursor.key, isDark]);
+  const height = value => {
+    if (Math.abs(value - labelHeight) > 0.5) setLabelHeight(value);
+  };
   return (
-    <Marker ref={ref} coordinate={cursor.coordinate} anchor={cursorAnchor(labelHeight, !!face)}
-      tracksViewChanges={settled.tracking} zIndex={60} tappable={false}>
+    <StyledMarker
+      ref={ref}
+      coordinate={cursor.coordinate}
+      anchor={cursorAnchor(labelHeight, !!face)}
+      tracksViewChanges={settled.tracking}
+      zIndex={60}
+      tappable={false}
+    >
       <View collapsable={false} onLayout={settled.onLayout}>
-        {face ? <CursorFaceView lines={cursor.lines} color={color} stale={cursor.stale} face={face} onLabelHeight={height} />
-          : <CursorMarkerView lines={cursor.lines} color={color} stale={cursor.stale} onLabelHeight={height} />}
+        {face ? (
+          <CursorFaceView
+            lines={cursor.lines}
+            color={color}
+            stale={cursor.stale}
+            face={face}
+            onLabelHeight={height}
+          />
+        ) : (
+          <CursorMarkerView
+            lines={cursor.lines}
+            color={color}
+            stale={cursor.stale}
+            onLabelHeight={height}
+          />
+        )}
       </View>
-    </Marker>
+    </StyledMarker>
   );
 }
 
@@ -209,39 +367,90 @@ function CursorMarker({ cursor, color }) {
 const TIME_APART_DP = 48;
 
 function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
-  const dashed = useMemo(() => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)), []);
+  const { colors, isDark } = useTheme();
+  const dashed = useMemo(
+    () => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)),
+    [],
+  );
   // The model leaves out times within 150 m; zoomed out, 150 m is a few dp,
   // so the labels would sit on each other: the same rule in screen distance.
   const apartM = metresPerDp * TIME_APART_DP;
   // Until the map has told its zoom, only the ends (a middle time drawn and
   // then taken away again flickers).
-  const times = useMemo(() => (!metresPerDp ? route.times.filter(marker => marker.end)
-    : apartM > 150 ? uncrowded(route.times, route.places, apartM) : route.times),
-  [route.times, route.places, apartM, metresPerDp]);
+  const times = useMemo(
+    () =>
+      !metresPerDp
+        ? route.times.filter(marker => marker.end)
+        : apartM > 150
+        ? uncrowded(route.times, route.places, apartM)
+        : route.times,
+    [route.times, route.places, apartM, metresPerDp],
+  );
   return (
     <>
       {route.lines.map((line, index) => (
         // A dashed line and a solid one are never the same native line: the
         // SDK keeps an old dash pattern when it is taken away.
-        <Polyline key={`route-${line.dashed ? 'dashed' : 'solid'}-${index}-${line.start}`} coordinates={line.coordinates} geodesic={false}
-          strokeColor={line.color} strokeWidth={line.width} zIndex={line.dashed ? Z.route - 0.5 : Z.route}
-          lineDashPattern={line.dashed ? dashed : undefined} lineCap={line.dashed ? 'butt' : 'round'}
-          lineJoin="round" tappable={false} />
+        <React.Fragment key={`route-${index}-${line.start}`}>
+          {isDark && (
+            <Polyline
+              coordinates={line.coordinates}
+              strokeColor={colors.routeCasing}
+              strokeWidth={line.width + 2}
+              zIndex={Z.route - 0.6}
+              lineDashPattern={line.dashed ? dashed : undefined}
+              tappable={false}
+            />
+          )}
+          <Polyline
+            key={`route-${line.dashed ? 'dashed' : 'solid'}-${index}-${
+              line.start
+            }`}
+            coordinates={line.coordinates}
+            geodesic={false}
+            strokeColor={line.color}
+            strokeWidth={line.width}
+            zIndex={line.dashed ? Z.route - 0.5 : Z.route}
+            lineDashPattern={line.dashed ? dashed : undefined}
+            lineCap={line.dashed ? 'butt' : 'round'}
+            lineJoin="round"
+            tappable={false}
+          />
+        </React.Fragment>
       ))}
       {times.map(marker => (
-        <RouteMarker key={marker.key} coordinate={marker.coordinate} look={`${marker.label}:${marker.end}`} zIndex={20}>
-          <TimeMarkerView label={marker.label} end={marker.end} color={route.color} />
+        <RouteMarker
+          key={marker.key}
+          coordinate={marker.coordinate}
+          look={`${marker.label}:${marker.end}`}
+          zIndex={20}
+        >
+          <TimeMarkerView
+            label={marker.label}
+            end={marker.end}
+            color={route.color}
+          />
         </RouteMarker>
       ))}
       {route.places.map(place => (
-        <RouteMarker key={place.key} coordinate={place.coordinate} look={`${place.kind}:${place.number}`}
+        <RouteMarker
+          key={place.key}
+          coordinate={place.coordinate}
+          look={`${place.kind}:${place.number}`}
           zIndex={place.kind === 'indoor' ? 26 : 25}
           label={place.kind === 'indoor' ? '室內' : `停留 ${place.number}`}
-          onPress={onStopPress ? () => onStopPress(place) : undefined}>
-          {place.kind === 'indoor' ? <IndoorMarkerView /> : <StopMarkerView number={place.number} color={route.color} />}
+          onPress={onStopPress ? () => onStopPress(place) : undefined}
+        >
+          {place.kind === 'indoor' ? (
+            <IndoorMarkerView />
+          ) : (
+            <StopMarkerView number={place.number} color={route.color} />
+          )}
         </RouteMarker>
       ))}
-      {route.cursor && <CursorMarker cursor={route.cursor} color={route.color} />}
+      {route.cursor && (
+        <CursorMarker cursor={route.cursor} color={route.color} />
+      )}
     </>
   );
 }
@@ -302,6 +511,11 @@ function GoogleTrackingMapRenderer({
   supported,
   configured,
 }) {
+  const { appColors: colors, colors: tokens } = useTheme();
+  const { isDark, mapStyle } = useTheme();
+  const NO_BASE_MAP = useStyles(getNO_BASE_MAP);
+  const RANGE_RING = useStyles(getRANGE_RING);
+  const styles = useStyles(getStyles);
   const {
     slaveSegments,
     rangeRing,
@@ -324,7 +538,10 @@ function GoogleTrackingMapRenderer({
   const instance = String(attempt);
   // Where each dog is on screen, read after every camera move, so name tags
   // that would run into each other merge into one 「3 隻」 tag.
-  const dogMarkers = useMemo(() => presentation.dogMarkers || [], [presentation.dogMarkers]);
+  const dogMarkers = useMemo(
+    () => presentation.dogMarkers || [],
+    [presentation.dogMarkers],
+  );
   // { source, points }: points from another source (a fixture or data
   // source switch moves every dog) are never used for this one.
   const [dogPoints, setDogPoints] = useState({ source: null, points: {} });
@@ -345,8 +562,13 @@ function GoogleTrackingMapRenderer({
     }, 1500);
   }, []);
   useEffect(() => () => clearTimeout(movingTimer.current), []);
-  const pointsKey = dogMarkers.map(marker => `${marker.slaveId}:${marker.coordinate.latitude},`
-    + `${marker.coordinate.longitude}:${marker.size}`).join('|');
+  const pointsKey = dogMarkers
+    .map(
+      marker =>
+        `${marker.slaveId}:${marker.coordinate.latitude},` +
+        `${marker.coordinate.longitude}:${marker.size}`,
+    )
+    .join('|');
   const activeInstance = useRef(instance);
   activeInstance.current = instance;
   const ready = readyInstance === instance;
@@ -377,8 +599,11 @@ function GoogleTrackingMapRenderer({
   const bottomRow = historyMode ? 0 : sizes.floatingButton;
   const padding = useMemo(() => {
     const value = framePadding(dogMarkers, fontScale);
-    return { ...value, right: value.right + layout.screenEdge + sizes.floatingButton,
-      bottom: value.bottom + bottomRow };
+    return {
+      ...value,
+      right: value.right + layout.screenEdge + sizes.floatingButton,
+      bottom: value.bottom + bottomRow,
+    };
   }, [dogMarkers, fontScale, bottomRow]);
   const cameraRead = useRef(0);
   // Android owns pause/resume. Replacing a healthy map on every resume retains
@@ -394,31 +619,57 @@ function GoogleTrackingMapRenderer({
   useEffect(() => {
     const map = mapRef.current;
     // Read for one dog too: the off-screen hints need to know where it is.
-    if (!usable || dogMarkers.length < 1 || !map?.pointForCoordinate) return undefined;
+    if (!usable || dogMarkers.length < 1 || !map?.pointForCoordinate)
+      return undefined;
     let alive = true;
-    Promise.all(dogMarkers.map(marker => map.pointForCoordinate(marker.coordinate)
-      .then(point => [marker.slaveId, point]).catch(() => null)))
-      .then(entries => {
-        if (!alive) return;
-        setDogPoints({ source, points: Object.fromEntries(entries.filter(Boolean)) });
-        // Read after the camera stopped: the off-screen hints are right again.
-        if (moving.current) {
-          moving.current = false;
-          setMovingState(false);
-        }
+    Promise.all(
+      dogMarkers.map(marker =>
+        map
+          .pointForCoordinate(marker.coordinate)
+          .then(point => [marker.slaveId, point])
+          .catch(() => null),
+      ),
+    ).then(entries => {
+      if (!alive) return;
+      setDogPoints({
+        source,
+        points: Object.fromEntries(entries.filter(Boolean)),
       });
-    return () => { alive = false; };
+      // Read after the camera stopped: the off-screen hints are right again.
+      if (moving.current) {
+        moving.current = false;
+        setMovingState(false);
+      }
+    });
+    return () => {
+      alive = false;
+    };
     // pointsKey stands for dogMarkers' positions and sizes; a new size or
     // padding of the map moves every dog on screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usable, pointsKey, cursorRevision, source, cursorLayout.width, cursorLayout.height, topInset, bottomInset]);
-  const projecting = usable && dogMarkers.length > 1 && typeof mapRef.current?.pointForCoordinate === 'function';
+  }, [
+    usable,
+    pointsKey,
+    cursorRevision,
+    source,
+    cursorLayout.width,
+    cursorLayout.height,
+    topInset,
+    bottomInset,
+  ]);
+  const projecting =
+    usable &&
+    dogMarkers.length > 1 &&
+    typeof mapRef.current?.pointForCoordinate === 'function';
   const tags = useMemo(() => {
     const points = dogPoints.source === source ? dogPoints.points : null;
     // Just switched source: no tags for the moment it takes to place them,
     // rather than separate tags that then jump into a group (or a group made
     // from where the previous source's dogs were).
-    if (projecting && !points) return Object.fromEntries(dogMarkers.map(marker => [marker.slaveId, null]));
+    if (projecting && !points)
+      return Object.fromEntries(
+        dogMarkers.map(marker => [marker.slaveId, null]),
+      );
     // Within one source a dog that moved keeps its last screen point until the
     // next read (a moment), so its tag does not blink on every new position.
     return nameTags(dogMarkers, points || {}, PixelRatio.getFontScale?.() || 1);
@@ -449,7 +700,8 @@ function GoogleTrackingMapRenderer({
   }, [component, loaded, instance, foreground, mountedMap]);
   let mapState;
   if (component) mapState = 'unavailable';
-  else if (failure === 'tiles') mapState = loaded ? 'load-failed' : attempt > 0 ? 'retrying' : 'loading';
+  else if (failure === 'tiles')
+    mapState = loaded ? 'load-failed' : attempt > 0 ? 'retrying' : 'loading';
   else if (loaded) mapState = 'ok';
   else if (timedOut) mapState = 'load-failed';
   else mapState = attempt > 0 ? 'retrying' : 'loading';
@@ -478,19 +730,33 @@ function GoogleTrackingMapRenderer({
     const shouldFit = sourceToFit.current === source || needsFirstPositionFit;
     // A switched source frames once what it will keep drawing: wait until
     // whatever decides that (the receiver's link, for the range ring) is known.
-    if (!usable || !shouldFit || !framingReady || interacted.current || !positions.length)
+    if (
+      !usable ||
+      !shouldFit ||
+      !framingReady ||
+      interacted.current ||
+      !positions.length
+    )
       return;
     // One place only (只有一筆, a day indoors): a street-level view of it, not
     // the closest zoom.
     if (historyRoute && tinySpan(positions)) {
-      mapRef.current?.animateCamera({ center: positions[0], zoom: 16 }, { duration: 0 });
-    } else mapRef.current?.fitToCoordinates(positions, {
-      animated: false,
-      // Room for the faces' "!" and name tags; in history for the cursor's
-      // label over the route's newest fix (判定表「地圖相機」).
-      edgePadding: historyRoute ? historyFramePadding(positions, historyRoute.cursor?.coordinate)
-        : { ...padding, top: padding.top + Math.max(0, (coverTop || 0) - topInset) },
-    });
+      mapRef.current?.animateCamera(
+        { center: positions[0], zoom: 16 },
+        { duration: 0 },
+      );
+    } else
+      mapRef.current?.fitToCoordinates(positions, {
+        animated: false,
+        // Room for the faces' "!" and name tags; in history for the cursor's
+        // label over the route's newest fix (判定表「地圖相機」).
+        edgePadding: historyRoute
+          ? historyFramePadding(positions, historyRoute.cursor?.coordinate)
+          : {
+              ...padding,
+              top: padding.top + Math.max(0, (coverTop || 0) - topInset),
+            },
+      });
     sourceToFit.current = null;
     setFitCount(value => value + 1);
     if (needsFirstPositionFit) {
@@ -523,9 +789,28 @@ function GoogleTrackingMapRenderer({
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const overlayTop = Math.max(topInset, coverTop || 0);
-  const hints = useMemo(() => (live && screenPoints ? edgeHints(dogMarkers, screenPoints, {
-    width: cursorLayout.width, height: cursorLayout.height, top: overlayTop, bottom: overlayBottom, bottomRow,
-  }) : []), [live, screenPoints, dogMarkers, cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom, bottomRow]);
+  const hints = useMemo(
+    () =>
+      live && screenPoints
+        ? edgeHints(dogMarkers, screenPoints, {
+            width: cursorLayout.width,
+            height: cursorLayout.height,
+            top: overlayTop,
+            bottom: overlayBottom,
+            bottomRow,
+          })
+        : [],
+    [
+      live,
+      screenPoints,
+      dogMarkers,
+      cursorLayout.width,
+      cursorLayout.height,
+      overlayTop,
+      overlayBottom,
+      bottomRow,
+    ],
+  );
   // When the map's own blue dot last reported (kept coarse: one update a
   // minute is enough to know whether there is a fix).
   const [nativeFixAt, setNativeFixAt] = useState(null);
@@ -535,12 +820,17 @@ function GoogleTrackingMapRenderer({
     const recorded = phoneFix(livePhone);
     if (recorded) return recorded;
     const native = nativePhone.current;
-    return native && Date.now() - native.receivedAt <= PHONE_FIX_MAX_AGE_S * 1000
-      && Number.isFinite(native.latitude) && Number.isFinite(native.longitude)
-      ? { latitude: native.latitude, longitude: native.longitude } : null;
+    return native &&
+      Date.now() - native.receivedAt <= PHONE_FIX_MAX_AGE_S * 1000 &&
+      Number.isFinite(native.latitude) &&
+      Number.isFinite(native.longitude)
+      ? { latitude: native.latitude, longitude: native.longitude }
+      : null;
   };
-  const phoneAvailable = !!phoneFix(livePhone)
-    || (nativeFixAt != null && Date.now() - nativeFixAt <= PHONE_FIX_MAX_AGE_S * 1000);
+  const phoneAvailable =
+    !!phoneFix(livePhone) ||
+    (nativeFixAt != null &&
+      Date.now() - nativeFixAt <= PHONE_FIX_MAX_AGE_S * 1000);
   const [tip, setTip] = useState(null);
   // The map's rotation: the compass shows only while it is turned.
   const [heading, setHeading] = useState(0);
@@ -559,53 +849,102 @@ function GoogleTrackingMapRenderer({
     takeCamera();
     const points = framedCoordinates(coordinates);
     // Inside the map's own padding, and above an open card.
-    const framing = { ...padding, top: padding.top + overlayTop - topInset,
-      bottom: padding.bottom + overlayBottom - bottomInset };
+    const framing = {
+      ...padding,
+      top: padding.top + overlayTop - topInset,
+      bottom: padding.bottom + overlayBottom - bottomInset,
+    };
     // 300 ms (motion.camera).
     const region = regionForFrame(points, framing, {
       width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
       height: cursorLayout.height - topInset - bottomInset,
     });
     if (region) mapRef.current?.animateToRegion(region, motion.camera.duration);
-    else mapRef.current?.fitToCoordinates(points, { animated: true, edgePadding: framing });
+    else
+      mapRef.current?.fitToCoordinates(points, {
+        animated: true,
+        edgePadding: framing,
+      });
   };
   // A dog whose card just opened: when the card (or a screen edge) covers it,
   // move the map so it shows in the middle of what is left above the card
   // (300 ms). Asked once per opening.
   const focused = useRef(null);
   useEffect(() => {
-    if (!focusDog || focused.current === focusDog.key || !usable || !cursorLayout.height) return;
+    if (
+      !focusDog ||
+      focused.current === focusDog.key ||
+      !usable ||
+      !cursorLayout.height
+    )
+      return;
     // A source switch (or the first view) is still to be framed: wait for it,
     // or this move would count as the user's and cancel that framing.
-    if ((sourceToFit.current === source && !interacted.current) || needsFirstPositionFit) return;
+    if (
+      (sourceToFit.current === source && !interacted.current) ||
+      needsFirstPositionFit
+    )
+      return;
     focused.current = focusDog.key;
     const map = mapRef.current;
     if (!map?.pointForCoordinate) return;
     const { width, height } = cursorLayout;
-    map.pointForCoordinate(focusDog.coordinate).then(async point => {
-      const margin = sizes.marker.attention + layout.framePadding;
-      const hidden = !point || point.x < margin || point.x > width - margin
-        || point.y < overlayTop + margin || point.y > height - overlayBottom - margin;
-      if (!hidden || focused.current !== focusDog.key) return;
-      // The camera's centre is the middle of the padded map; move it by how
-      // far the dog is from where it should be.
-      const target = { x: width / 2, y: (overlayTop + height - overlayBottom) / 2 };
-      const middle = { x: width / 2, y: topInset + (height - topInset - bottomInset) / 2 };
-      const moved = point && map.coordinateForPoint
-        ? await map.coordinateForPoint({ x: middle.x + point.x - target.x, y: middle.y + point.y - target.y })
-        : null;
-      if (focused.current !== focusDog.key) return;
-      takeCamera();
-      map.animateCamera({ center: moved || focusDog.coordinate }, { duration: motion.camera.duration });
-    }).catch(() => {});
+    map
+      .pointForCoordinate(focusDog.coordinate)
+      .then(async point => {
+        const margin = sizes.marker.attention + layout.framePadding;
+        const hidden =
+          !point ||
+          point.x < margin ||
+          point.x > width - margin ||
+          point.y < overlayTop + margin ||
+          point.y > height - overlayBottom - margin;
+        if (!hidden || focused.current !== focusDog.key) return;
+        // The camera's centre is the middle of the padded map; move it by how
+        // far the dog is from where it should be.
+        const target = {
+          x: width / 2,
+          y: (overlayTop + height - overlayBottom) / 2,
+        };
+        const middle = {
+          x: width / 2,
+          y: topInset + (height - topInset - bottomInset) / 2,
+        };
+        const moved =
+          point && map.coordinateForPoint
+            ? await map.coordinateForPoint({
+                x: middle.x + point.x - target.x,
+                y: middle.y + point.y - target.y,
+              })
+            : null;
+        if (focused.current !== focusDog.key) return;
+        takeCamera();
+        map.animateCamera(
+          { center: moved || focusDog.coordinate },
+          { duration: motion.camera.duration },
+        );
+      })
+      .catch(() => {});
     // takeCamera only flips refs; the effect runs per opening (focusDog.key).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusDog, usable, cursorLayout.height, overlayTop, overlayBottom, fitCount, needsFirstPositionFit]);
+  }, [
+    focusDog,
+    usable,
+    cursorLayout.height,
+    overlayTop,
+    overlayBottom,
+    fitCount,
+    needsFirstPositionFit,
+  ]);
   // ---- the history screen -------------------------------------------------
   // A tap on the map: on the route (within 24dp of a fix) moves the cursor
   // there; anywhere else is a tap on empty map.
   const pressHistoryMap = async event => {
-    const found = nearestRouteSpot(historyRoute?.points, event?.coordinate, historyRoute?.cursor?.time ?? null);
+    const found = nearestRouteSpot(
+      historyRoute?.points,
+      event?.coordinate,
+      historyRoute?.cursor?.time ?? null,
+    );
     const map = mapRef.current;
     if (found && map?.pointForCoordinate && event?.position) {
       try {
@@ -614,11 +953,18 @@ function GoogleTrackingMapRenderer({
         const point = await map.pointForCoordinate(found.coordinate);
         const scale = PixelRatio.get();
         // position is in pixels, the projection in dp.
-        if (Math.hypot(point.x - event.position.x / scale, point.y - event.position.y / scale) <= ROUTE_TAP_DP) {
+        if (
+          Math.hypot(
+            point.x - event.position.x / scale,
+            point.y - event.position.y / scale,
+          ) <= ROUTE_TAP_DP
+        ) {
           onCursorMove?.(found.point.time, 'route');
           return;
         }
-      } catch { /* Fall through: an empty tap. */ }
+      } catch {
+        /* Fall through: an empty tap. */
+      }
     }
     onMapPress?.();
   };
@@ -626,18 +972,29 @@ function GoogleTrackingMapRenderer({
   const frameRoute = (extraBottom = 0, animated = true) => {
     if (!usable || !routeCamera?.length) return;
     if (tinySpan(routeCamera)) {
-      mapRef.current?.animateCamera({ center: routeCamera[0], zoom: 16 }, { duration: motion.camera.duration });
+      mapRef.current?.animateCamera(
+        { center: routeCamera[0], zoom: 16 },
+        { duration: motion.camera.duration },
+      );
       return;
     }
     // At 75% little map is left: a slim frame, or the SDK refuses the fit.
-    const room = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate,
-      extraBottom > 0 ? { top: 16, right: 24, bottom: 8, left: 24 } : HISTORY_FRAME);
-    mapRef.current?.fitToCoordinates(routeCamera, { animated,
-      edgePadding: { ...room, bottom: room.bottom + extraBottom } });
+    const room = historyFramePadding(
+      routeCamera,
+      historyRoute?.cursor?.coordinate,
+      extraBottom > 0
+        ? { top: 16, right: 24, bottom: 8, left: 24 }
+        : HISTORY_FRAME,
+    );
+    mapRef.current?.fitToCoordinates(routeCamera, {
+      animated,
+      edgePadding: { ...room, bottom: room.bottom + extraBottom },
+    });
   };
   const historyFramed = useRef(null);
   useEffect(() => {
-    if (!historyFrame || historyFramed.current === historyFrame.key || !usable) return;
+    if (!historyFrame || historyFramed.current === historyFrame.key || !usable)
+      return;
     historyFramed.current = historyFrame.key;
     takeCamera();
     frameRoute(historyPanel?.extraBottom || 0);
@@ -655,10 +1012,12 @@ function GoogleTrackingMapRenderer({
     if (!historyRoute || !usable) return;
     // Moved by hand: the map stays, unless the panel now covers the cursor.
     if (interacted.current) {
-      if (historyRoute.cursor) showCursor(historyRoute.cursor.coordinate, false);
+      if (historyRoute.cursor)
+        showCursor(historyRoute.cursor.coordinate, false);
       return;
     }
-    if (panelLevel === 'full' || was === 'full') frameRoute(historyPanel?.extraBottom || 0);
+    if (panelLevel === 'full' || was === 'full')
+      frameRoute(historyPanel?.extraBottom || 0);
     // On a new level only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelLevel]);
@@ -666,35 +1025,49 @@ function GoogleTrackingMapRenderer({
   // middle of the map above the panel (220 ms, motion.cursorJump).
   // 判定表「使用者拖過地圖之後的游標」: otherwise the map moves only when the
   // cursor point or its label (about 60dp above it) would be out of sight.
-  const showCursor = useCallback(async (coordinate, centre) => {
-    const map = mapRef.current;
-    if (!map || !coordinate) return;
-    if (!centre && map.pointForCoordinate) {
-      try {
-        const point = await map.pointForCoordinate(coordinate);
-        const seen = point.x >= 24 && point.x <= cursorLayout.width - 24 && point.y >= overlayTop + 72
-          && point.y <= cursorLayout.height - overlayBottom - 24;
-        if (seen) return;
-      } catch { /* Move anyway. */ }
-    }
-    map.animateCamera({ center: coordinate }, { duration: motion.cursorJump.duration });
-  }, [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom]);
+  const showCursor = useCallback(
+    async (coordinate, centre) => {
+      const map = mapRef.current;
+      if (!map || !coordinate) return;
+      if (!centre && map.pointForCoordinate) {
+        try {
+          const point = await map.pointForCoordinate(coordinate);
+          const seen =
+            point.x >= 24 &&
+            point.x <= cursorLayout.width - 24 &&
+            point.y >= overlayTop + 72 &&
+            point.y <= cursorLayout.height - overlayBottom - 24;
+          if (seen) return;
+        } catch {
+          /* Move anyway. */
+        }
+      }
+      map.animateCamera(
+        { center: coordinate },
+        { duration: motion.cursorJump.duration },
+      );
+    },
+    [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom],
+  );
   const focusedHistory = useRef(null);
   useEffect(() => {
-    if (!historyFocus || focusedHistory.current === historyFocus.key || !usable) return;
+    if (!historyFocus || focusedHistory.current === historyFocus.key || !usable)
+      return;
     focusedHistory.current = historyFocus.key;
     showCursor(historyFocus.coordinate, historyFocus.centre);
   }, [historyFocus, usable, showCursor]);
   const framedRequest = useRef(null);
   useEffect(() => {
-    if (!frameRequest || framedRequest.current === frameRequest.key || !usable) return;
+    if (!frameRequest || framedRequest.current === frameRequest.key || !usable)
+      return;
     framedRequest.current = frameRequest.key;
     const points = receiverDogsCoordinates(dogMarkers, frameRequest.receiverId);
     if (points.length) frame(points);
     // Once per request; the markers are read at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frameRequest?.key, usable]);
-  const pressFrameAll = () => frame(frameAllCoordinates(dogMarkers, currentPhone()));
+  const pressFrameAll = () =>
+    frame(frameAllCoordinates(dogMarkers, currentPhone()));
   const pressMyLocation = () => {
     const position = currentPhone();
     if (!position) {
@@ -703,14 +1076,18 @@ function GoogleTrackingMapRenderer({
     }
     if (!usable) return;
     takeCamera();
-    mapRef.current?.animateCamera({ center: position }, { duration: motion.camera.duration });
+    mapRef.current?.animateCamera(
+      { center: position },
+      { duration: motion.camera.duration },
+    );
   };
   // The overlap menu: which group tag was tapped (by the dog carrying it).
   const [picker, setPicker] = useState(null);
   const closePicker = useCallback(() => setPicker(null), []);
   const pressDog = slaveId => {
     const tag = tags[slaveId];
-    if (tag?.group > 1) setPicker({ source, lead: slaveId, members: tag.members });
+    if (tag?.group > 1)
+      setPicker({ source, lead: slaveId, members: tag.members });
     else onDogPress?.(slaveId);
   };
   const pickerMarkers = useMemo(() => {
@@ -720,11 +1097,22 @@ function GoogleTrackingMapRenderer({
     return members.length > 1 ? members : null;
   }, [picker, source, dogMarkers]);
   const leadPoint = picker && screenPoints?.[picker.lead];
-  const leadSize = picker && dogMarkers.find(marker => marker.slaveId === picker.lead)?.size;
-  const pickerPlace = pickerMarkers && leadPoint ? overlapMenuPlace({ ...leadPoint, size: leadSize },
-    // Above the card: the card is drawn over the map and would cover it.
-    pickerMarkers.length, { width: cursorLayout.width, height: cursorLayout.height, top: overlayTop, bottom: overlayBottom })
-    : null;
+  const leadSize =
+    picker && dogMarkers.find(marker => marker.slaveId === picker.lead)?.size;
+  const pickerPlace =
+    pickerMarkers && leadPoint
+      ? overlapMenuPlace(
+          { ...leadPoint, size: leadSize },
+          // Above the card: the card is drawn over the map and would cover it.
+          pickerMarkers.length,
+          {
+            width: cursorLayout.width,
+            height: cursorLayout.height,
+            top: overlayTop,
+            bottom: overlayBottom,
+          },
+        )
+      : null;
   // The menu goes when its dogs no longer overlap, on a source switch, and
   // when a dog is opened some other way (its card row).
   useEffect(() => {
@@ -733,8 +1121,11 @@ function GoogleTrackingMapRenderer({
   const openDogId = dogMarkers.find(marker => marker.selected)?.slaveId ?? null;
   useEffect(() => setPicker(null), [openDogId]);
   return (
-    <View style={StyleSheet.absoluteFill} testID="tracking-map-container"
-      onLayout={event => setCursorLayout(event.nativeEvent.layout)}>
+    <View
+      style={StyleSheet.absoluteFill}
+      testID="tracking-map-container"
+      onLayout={event => setCursorLayout(event.nativeEvent.layout)}
+    >
       {!component && mountedMap ? (
         <MapView
           key={instance}
@@ -750,14 +1141,39 @@ function GoogleTrackingMapRenderer({
           // Without a base map (a fixture of a failed load) the dogs, the phone
           // and the ring are drawn on plain grey, as when no tile arrives.
           mapType="standard"
+          // Google's own scheme for the frames before customMapStyle lands
+          // (loading tiles drew a light-grey grid on a dark cold start).
+          userInterfaceStyle={isDark ? 'dark' : 'light'}
           // An empty style puts the normal map back (undefined would keep the grey).
-          customMapStyle={failure === 'tiles' ? NO_BASE_MAP : PLAIN_MAP}
-          showsBuildings={failure !== 'tiles'}
+          customMapStyle={
+            failure === 'tiles'
+              ? isDark
+                ? mapStyle.noBaseMap
+                : NO_BASE_MAP
+              : isDark
+              ? mapStyle.google
+              : PLAIN_MAP
+          }
+          // Dark: no 3D buildings. Google draws them as light-grey blocks the
+          // dark style cannot recolour (DESIGN.md 深色模式「地圖」: land, roads,
+          // water and parks only).
+          showsBuildings={failure !== 'tiles' && !isDark}
           moveOnMarkerPress={false}
           // Google reports a tap only (a drag or a long press is not one).
-          onPress={historyRoute ? event => pressHistoryMap(event.nativeEvent)
-            : onMapPress ? () => onMapPress() : undefined}
-          showsUserLocation={ready && foreground && phoneEnabled && !historyMode && !(livePhone?.running && livePhone.position)}
+          onPress={
+            historyRoute
+              ? event => pressHistoryMap(event.nativeEvent)
+              : onMapPress
+              ? () => onMapPress()
+              : undefined
+          }
+          showsUserLocation={
+            ready &&
+            foreground &&
+            phoneEnabled &&
+            !historyMode &&
+            !(livePhone?.running && livePhone.position)
+          }
           userLocationPriority="high"
           userLocationUpdateInterval={1000}
           toolbarEnabled={false}
@@ -767,7 +1183,8 @@ function GoogleTrackingMapRenderer({
             if (!value) return;
             const receivedAt = Date.now();
             nativePhone.current = { ...value, receivedAt };
-            if (nativeFixAt == null || receivedAt - nativeFixAt > 60000) setNativeFixAt(receivedAt);
+            if (nativeFixAt == null || receivedAt - nativeFixAt > 60000)
+              setNativeFixAt(receivedAt);
           }}
           // The compass is ours (CompassButton): Android's own sits top left
           // and cannot be moved under the gear.
@@ -780,7 +1197,12 @@ function GoogleTrackingMapRenderer({
           // specific map instance is ready, including retry/source replacement.
           mapPadding={
             ready
-              ? { top: topInset, right: MAP_SIDE_PADDING, bottom: bottomInset, left: MAP_SIDE_PADDING }
+              ? {
+                  top: topInset,
+                  right: MAP_SIDE_PADDING,
+                  bottom: bottomInset,
+                  left: MAP_SIDE_PADDING,
+                }
               : undefined
           }
           onMapReady={() => {
@@ -796,29 +1218,43 @@ function GoogleTrackingMapRenderer({
             setCursorRevision(value => value + 1);
             if (details?.isGesture) interacted.current = true;
             const request = ++cameraRead.current;
-            mapRef.current?.getCamera?.().then(camera => {
-              if (
-                activeInstance.current === instance &&
-                cameraRead.current === request &&
-                camera
-              ) {
-                savedView.current = { source, camera };
-                if (historyRoute && Number.isFinite(camera.zoom) && camera.center) {
-                  // A Google map is 256 dp wide at zoom 0. Rounded so a small
-                  // pan does not redraw the markers.
-                  const value = Number(((40075016 * Math.cos((camera.center.latitude * Math.PI) / 180))
-                    / (256 * 2 ** camera.zoom)).toPrecision(2));
-                  setMetresPerDp(current => (current === value ? current : value));
+            mapRef.current
+              ?.getCamera?.()
+              .then(camera => {
+                if (
+                  activeInstance.current === instance &&
+                  cameraRead.current === request &&
+                  camera
+                ) {
+                  savedView.current = { source, camera };
+                  if (
+                    historyRoute &&
+                    Number.isFinite(camera.zoom) &&
+                    camera.center
+                  ) {
+                    // A Google map is 256 dp wide at zoom 0. Rounded so a small
+                    // pan does not redraw the markers.
+                    const value = Number(
+                      (
+                        (40075016 *
+                          Math.cos((camera.center.latitude * Math.PI) / 180)) /
+                        (256 * 2 ** camera.zoom)
+                      ).toPrecision(2),
+                    );
+                    setMetresPerDp(current =>
+                      current === value ? current : value,
+                    );
+                  }
+                  if (Number.isFinite(camera.heading)) {
+                    onHeading?.(camera.heading);
+                    setHeading(camera.heading);
+                  }
                 }
-                if (Number.isFinite(camera.heading)) {
-                  onHeading?.(camera.heading);
-                  setHeading(camera.heading);
-                }
-              }
-            }).catch(() => {
-              // Keep the last successful camera snapshot if native teardown
-              // races this read. A map with no snapshot uses SQLite framing.
-            });
+              })
+              .catch(() => {
+                // Keep the last successful camera snapshot if native teardown
+                // races this read. A map with no snapshot uses SQLite framing.
+              });
           }}
           onMapLoaded={() => {
             // The launch screen stays until the first framing is drawn (see
@@ -828,23 +1264,46 @@ function GoogleTrackingMapRenderer({
           }}
         >
           {/* History draws no live phone (flow.txt: 只有可以拖的游標點). */}
-          {!historyMode && livePhone?.running && livePhone.position && <PhoneLocationOverlay location={livePhone} active={foreground} />}
-          {historyRoute && <HistoryRoute route={historyRoute} onStopPress={onStopPress} metresPerDp={metresPerDp} />}
-          {slaveSegments.map((segment, index) => (
-            <Polyline
-              key={source + '-slave-' + index}
-              coordinates={segment}
-              geodesic={false}
-              strokeColor={colors.dog}
-              strokeWidth={4}
-              zIndex={Z.route}
+          {!historyMode && livePhone?.running && livePhone.position && (
+            <PhoneLocationOverlay
+              Circle={Circle}
+              Marker={StyledMarker}
+              location={livePhone}
+              active={foreground}
             />
+          )}
+          {historyRoute && (
+            <HistoryRoute
+              route={historyRoute}
+              onStopPress={onStopPress}
+              metresPerDp={metresPerDp}
+            />
+          )}
+          {slaveSegments.map((segment, index) => (
+            <React.Fragment key={index}>
+              {isDark && (
+                <Polyline
+                  coordinates={segment}
+                  strokeColor={tokens.routeCasing}
+                  strokeWidth={6}
+                  zIndex={Z.route - 0.1}
+                />
+              )}
+              <Polyline
+                key={source + '-slave-' + index}
+                coordinates={segment}
+                geodesic={false}
+                strokeColor={colors.dog}
+                strokeWidth={4}
+                zIndex={Z.route}
+              />
+            </React.Fragment>
           ))}
           {/* The receiver itself is not drawn: no marker, no name tag, no track
-              (v3). Only its 1 km range ring, which cannot be turned off. */}
+           (v3). Only its 1 km range ring, which cannot be turned off. */}
           {/* Fabric's Polygon ignores dash patterns and zIndex: the fill is a
-              polygon with no outline, the dashed outline a closed polyline.
-              Butt caps, or Android turns every dash into a dot. */}
+           polygon with no outline, the dashed outline a closed polyline.
+           Butt caps, or Android turns every dash into a dot. */}
           {rangeRing && (
             <Polygon
               key="range-ring-fill"
@@ -853,6 +1312,16 @@ function GoogleTrackingMapRenderer({
               strokeWidth={0}
               fillColor={RANGE_RING.fill}
               tappable={false}
+            />
+          )}
+          {rangeRing && isDark && (
+            <Polyline
+              coordinates={[...rangeRing.coordinates, rangeRing.coordinates[0]]}
+              strokeColor={tokens.routeCasing}
+              strokeWidth={RANGE_RING.width + 2}
+              lineDashPattern={dash()}
+              lineCap="butt"
+              zIndex={Z.ring - 0.1}
             />
           )}
           {rangeRing && (
@@ -887,8 +1356,23 @@ function GoogleTrackingMapRenderer({
           {(presentation.dogPaths || []).map(track => (
             <React.Fragment key={source + '-dogpath-' + track.slaveId}>
               {track.segments.map((segment, index) => (
-                <Polyline key={index} coordinates={segment} geodesic={false}
-                  strokeColor={track.color} strokeWidth={3} zIndex={Z.route} />
+                <React.Fragment key={index}>
+                  {isDark && (
+                    <Polyline
+                      coordinates={segment}
+                      strokeColor={tokens.routeCasing}
+                      strokeWidth={5}
+                      zIndex={Z.route - 0.1}
+                    />
+                  )}
+                  <Polyline
+                    coordinates={segment}
+                    geodesic={false}
+                    strokeColor={track.color}
+                    strokeWidth={3}
+                    zIndex={Z.route}
+                  />
+                </React.Fragment>
               ))}
             </React.Fragment>
           ))}
@@ -902,8 +1386,17 @@ function GoogleTrackingMapRenderer({
               // Above the phone's dot (30), whose name tag layer they carry:
               // the open dog on top, then problems, then the dog carrying a
               // group tag over the faces it covers.
-              zIndex={marker.selected ? 40 : (marker.problem ? 34 : 31) + (tags[marker.slaveId]?.group > 1 ? 2 : 0)}
-              label={tags[marker.slaveId]?.group > 1 ? groupSpeech(tags[marker.slaveId], dogMarkers) : undefined}
+              zIndex={
+                marker.selected
+                  ? 40
+                  : (marker.problem ? 34 : 31) +
+                    (tags[marker.slaveId]?.group > 1 ? 2 : 0)
+              }
+              label={
+                tags[marker.slaveId]?.group > 1
+                  ? groupSpeech(tags[marker.slaveId], dogMarkers)
+                  : undefined
+              }
               onPress={onDogPress ? () => pressDog(marker.slaveId) : undefined}
             />
           ))}
@@ -917,10 +1410,20 @@ function GoogleTrackingMapRenderer({
         </View>
       )}
       {usable && cursorLayout.width > 0 && historyRoute?.cursor && (
-        <HistoryCursor key={source + ':' + instance} mapRef={mapRef} cursor={historyRoute.cursor}
-          points={historyRoute.points} hidden={!foreground} onMove={onCursorMove}
-          onDraggingChange={setCursorDragging} revision={cursorRevision} width={cursorLayout.width}
-          height={cursorLayout.height} top={topInset} bottom={overlayBottom} />
+        <HistoryCursor
+          key={source + ':' + instance}
+          mapRef={mapRef}
+          cursor={historyRoute.cursor}
+          points={historyRoute.points}
+          hidden={!foreground}
+          onMove={onCursorMove}
+          onDraggingChange={setCursorDragging}
+          revision={cursorRevision}
+          width={cursorLayout.width}
+          height={cursorLayout.height}
+          top={topInset}
+          bottom={overlayBottom}
+        />
       )}
       {!component && mountedMap && !loaded && !timedOut && (
         <View
@@ -934,29 +1437,59 @@ function GoogleTrackingMapRenderer({
           />
         </View>
       )}
-      {live && usable && foreground && !movingState && hints.map(value => (
-        <EdgeHintView key={value.side} value={value} avatars={presentation.dogAvatars || {}}
-          onPress={() => frame(value.coordinates)} />
-      ))}
+      {live &&
+        usable &&
+        foreground &&
+        !movingState &&
+        hints.map(value => (
+          <EdgeHintView
+            key={value.side}
+            value={value}
+            avatars={presentation.dogAvatars || {}}
+            onPress={() => frame(value.coordinates)}
+          />
+        ))}
       {live && !component && foreground && (loaded || timedOut) && (
         // 框住全部, 我的位置 and 「今天 x km」 (A1), 12dp above the card; above the tip
         // while it shows.
-        <MapButtons bottom={overlayBottom + (tip ? sizes.floatingButton + layout.floatingGap : 0)}
-          phoneAvailable={phoneAvailable} onFrameAll={pressFrameAll} onMyLocation={pressMyLocation}
-          today={today} onToday={onToday} />
+        <MapButtons
+          bottom={
+            overlayBottom +
+            (tip ? sizes.floatingButton + layout.floatingGap : 0)
+          }
+          phoneAvailable={phoneAvailable}
+          onFrameAll={pressFrameAll}
+          onMyLocation={pressMyLocation}
+          today={today}
+          onToday={onToday}
+        />
       )}
-      {live && <MapTip message={tip} bottom={overlayBottom} onDone={clearTip} />}
+      {live && (
+        <MapTip message={tip} bottom={overlayBottom} onDone={clearTip} />
+      )}
       {usable && foreground && compassTop != null && turned && (
-        <CompassButton top={compassTop} heading={heading}
-          onPress={() => mapRef.current?.animateCamera({ heading: 0 }, { duration: motion.camera.duration })} />
+        <CompassButton
+          top={compassTop}
+          heading={heading}
+          onPress={() =>
+            mapRef.current?.animateCamera(
+              { heading: 0 },
+              { duration: motion.camera.duration },
+            )
+          }
+        />
       )}
       {pickerMarkers && pickerPlace && (
-        <OverlapPicker markers={pickerMarkers} place={pickerPlace} avatars={presentation.dogAvatars || {}}
+        <OverlapPicker
+          markers={pickerMarkers}
+          place={pickerPlace}
+          avatars={presentation.dogAvatars || {}}
           onClose={closePicker}
           onPick={slaveId => {
             setPicker(null);
             onDogPress?.(slaveId);
-          }} />
+          }}
+        />
       )}
     </View>
   );
@@ -969,23 +1502,31 @@ const MemoizedGoogleTrackingMap = React.memo(GoogleTrackingMapRenderer);
 export default function GoogleTrackingMap(props) {
   return <MemoizedGoogleTrackingMap {...props} />;
 }
-const styles = StyleSheet.create({
-  fallback: { flex: 1, backgroundColor: tokens.mapFallback },
-  unavailable: {
-    flex: 1,
-    backgroundColor: '#E9EEEA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  unavailableText: { color: colors.master, fontWeight: '700', fontSize: 20 },
-  loading: {
-    position: 'absolute',
-    left: 14,
-    width: 36,
-    height: 36,
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    justifyContent: 'center',
-    ...floatingShadow,
-  },
+const getStyles = makeStyles(theme => {
+  const {
+    colors: tokens,
+    literalColors: themeLiteral,
+    appColors: colors,
+    floatingShadow,
+  } = theme;
+  return StyleSheet.create({
+    fallback: { flex: 1, backgroundColor: tokens.mapFallback },
+    unavailable: {
+      flex: 1,
+      backgroundColor: themeLiteral.mapUnavailableBackground,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    unavailableText: { color: colors.master, fontWeight: '700', fontSize: 20 },
+    loading: {
+      position: 'absolute',
+      left: 14,
+      width: 36,
+      height: 36,
+      backgroundColor: colors.surface,
+      borderRadius: 18,
+      justifyContent: 'center',
+      ...floatingShadow,
+    },
+  });
 });

@@ -2,4 +2,9 @@
 <resources>
     <!-- Brand coral from the 2026-09-30 UI review (section 9). -->
     <color name="ic_launcher_background">#F2867A</color>
+    <color name="app_background">#FAF7F6</color>
+    <color name="splash_background">#F2867A</color>
+    <color name="splash_icon_background">#F2867A</color>
+    <color name="dialog_surface">#FFFFFF</color>
+    <color name="dialog_outline">#EDE6E4</color>
 </resources>

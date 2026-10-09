@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Native dialog edge: none in light (white dialog with a shadow). -->
+    <dimen name="dialog_outline">0dp</dimen>
+</resources>
