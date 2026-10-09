@@ -192,14 +192,14 @@ test('D3 dialogs say what the copy deck says', () => {
     .toMatchObject({ title: '接收器 8 還沒有送資料' });
   expect(pairingDialog('noData', { number: 8, mode: 'change', previous: { number: 7 } }).buttons
     .map(button => button.label)).toEqual(['恢復接收器 7', '先換過去']);
-  expect(pairingDialog('noData', { number: 8, mode: 'rescan', previous: { number: 7 } }).buttons[0].label).toBe('不換');
+  expect(pairingDialog('noData', { number: 8, mode: 'change', previous: { number: 7, enabled: false } }).buttons[0].label).toBe('恢復接收器 7');
   expect(pairingDialog('bluetoothOff').title).toBe('請打開藍牙');
   expect(pairingDialog('locationOff').title).toBe('請打開定位');
   expect(pairingDialog('nearbyDenied').title).toBe('需要『附近的裝置』才能連接接收器');
   expect(pairingDialog('locationDenied').title).toBe('需要位置權限才能找接收器');
   expect(pairingDialog('nearbyDenied').buttons[1].label).toBe('開系統設定 ›');
   expect(pairingFlow('receiver', 'change')).toMatchObject({ waitForData: true, restoreConnected: true, guide: false });
-  expect(pairingFlow('receiver', 'rescan')).toMatchObject({ waitForData: true, restoreConnected: false });
+  expect(pairingFlow('receiver', 'change')).toMatchObject({ waitForData: true, restoreConnected: true });
   expect(pairingFlow('onboarding')).toMatchObject({ guide: true, waitForData: false });
 });
 
@@ -450,10 +450,10 @@ test('換接收器: the first packet from 8 takes it; leaving without one puts 7
     expect(toast).toHaveBeenCalledWith('沒有更換，還是接收器 7', expect.anything());
     hook.unmount();
     expect(restore).toHaveBeenCalledTimes(1);
-    // 中斷並重新掃描: back out → the old receiver stays disconnected.
+    // Change after disconnect: back out keeps the old receiver disconnected.
     native.reconnect.mockClear();
     const rescanRestore = jest.fn(async () => {});
-    hook = pairing({ flow: pairingFlow('receiver', 'rescan'), ble: fakeBle(), native, restore: rescanRestore,
+    hook = pairing({ flow: pairingFlow('receiver', 'change'), ble: fakeBle(), native, restore: rescanRestore,
       receiverState: { ...receiver7, enabled: false }, onLeave: jest.fn() });
     await act(async () => {});
     await act(async () => { hook.get().back(); });

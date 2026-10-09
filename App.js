@@ -1153,10 +1153,6 @@ function TrackerApp({ resume = null, onRestart }) {
           page={receiverPage(settingsData)}
           onDisconnect={receiverControl.disconnect}
           onReconnect={receiverControl.reconnect}
-          onRescan={() => {
-            receiverControl.disconnect();
-            openPairing('receiver', 'rescan');
-          }}
           onChange={() => openPairing('receiver', 'change')}
           onConnect={() => openPairing('receiver')}
         />

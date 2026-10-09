@@ -240,11 +240,11 @@ test('S2 draws 中斷連線 in red under the receiver, or 重新連線 after it;
     && typeof node.props.onPress === 'function')[0].props.onPress());
   const out = text(renderer);
   for (const words of ['目前的接收器', '接收器 7', 'DogGPS-Master7・已連線', '電量 64%', '最後收訊 09:29', '位置',
-    '中斷連線', '中斷並重新掃描', '掃 QR Code 換接收器', '收到的訊號源', '訊號源 9', '還沒定位']) {
+    '中斷連線', '換接收器', '收到的訊號源', '訊號源 9', '還沒定位']) {
     expect(out).toContain(words);
   }
   // Order: the receiver, its position, then its actions, then the sources.
-  const order = ['接收器 7', '位置', '中斷連線', '中斷並重新掃描', '掃 QR Code 換接收器', '收到的訊號源'];
+  const order = ['接收器 7', '位置', '中斷連線', '換接收器', '收到的訊號源'];
   expect(order.map(words => out.indexOf(`"${words}"`))).toEqual([...order.map(words => out.indexOf(`"${words}"`))]
     .sort((left, right) => left - right));
   // A source row has nothing to press.
@@ -252,8 +252,8 @@ test('S2 draws 中斷連線 in red under the receiver, or 重新連線 after it;
     && typeof node.props.onPress === 'function')).toHaveLength(0);
   await press('receiver-disconnect');
   expect(actions.onDisconnect).toHaveBeenCalled();
-  await press('receiver-rescan');
-  expect(actions.onRescan).toHaveBeenCalled();
+  expect(out).not.toContain('中斷並重新掃描');
+  expect(renderer.root.findAllByProps({ testID: 'receiver-rescan' })).toHaveLength(0);
   await press('receiver-change');
   expect(actions.onChange).toHaveBeenCalled();
   await act(async () => renderer.update(<ReceiverSettings

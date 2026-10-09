@@ -27,9 +27,9 @@ const sayNotChanged = message => {
  * one) and connected with its number as the expected Master, so the native
  * service drops a packet from another Master at once. A first set up is done
  * when the link stands (D4 waits for nothing); changing receivers
- * ('change' / 'rescan') pauses the old link on the way in, waits up to 60 s
+ * ('change') pauses the old link on the way in, waits up to 60 s
  * for the first packet and puts the old receiver back when the change does
- * not happen (判定表「換接收器」「中斷並重新掃描」).
+ * not happen (判定表「換接收器」).
  *
  * options:
  * - flow            Pairing.pairingFlow(entry, mode)
@@ -94,8 +94,7 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
     ...params }));
 
   // ---- the way in, the way out ------------------------------------------
-  // Changing receivers pauses the old link while scanning (中斷並重新掃描 did
-  // it already): its dogs keep their 「未更新」 clock paused meanwhile.
+  // Changing receivers pauses the old link while scanning: its dogs keep their 「未更新」 clock paused meanwhile.
   useEffect(() => {
     alive.current = true;
     if (!fixture && flow.waitForData && previous.current?.enabled) ble.disconnect();
@@ -111,7 +110,7 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
   }, []);
 
   // Putting the receiver used before back: its settings, and its link if it
-  // was connected (never after 中斷並重新掃描, which leaves it disconnected).
+  // was connected; a previously disconnected receiver remains disconnected.
   // `oldLink` is 'paused' while an attempt has it off, 'back' once restored.
   const oldLink = useRef(flow.waitForData ? 'paused' : 'back');
   const restoring = useRef(Promise.resolve());
@@ -119,7 +118,7 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
     oldLink.current = 'back';
     const old = previous.current;
     restoring.current = Promise.resolve(callbacks.current.restore?.(old)).then(() => {
-      if (old?.enabled && flow.mode !== 'rescan') return native?.reconnect?.();
+      if (old?.enabled) return native?.reconnect?.();
       return null;
     }).catch(() => {});
     return restoring.current;

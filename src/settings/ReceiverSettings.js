@@ -12,7 +12,7 @@ import { space } from '../theme/tokens';
 /**
  * S2 接收器: the current receiver (its link, battery, last packet, position)
  * with its connection actions right under it — 中斷連線 (red; after it the
- * same row is 重新連線), 中斷並重新掃描, 掃 QR Code 換接收器 › — then the
+ * same row is 重新連線), 換接收器 › — then the
  * sources it has heard. Sources are only listed: the phone cannot stop one.
  * `page` is SettingsModel.receiverPage.
  */
@@ -20,7 +20,6 @@ export default function ReceiverSettings({
   page,
   onDisconnect,
   onReconnect,
-  onRescan,
   onChange,
   onConnect,
 }) {
@@ -102,17 +101,11 @@ export default function ReceiverSettings({
           />
         )}
         <ListRow
-          testID="receiver-rescan"
-          title="中斷並重新掃描"
-          onPress={onRescan}
-          label="中斷並重新掃描"
-        />
-        <ListRow
           testID="receiver-change"
-          title="掃 QR Code 換接收器"
+          title="換接收器"
           chevron
           onPress={onChange}
-          label="掃 QR Code 換接收器"
+          label="換接收器"
         />
       </GroupCard>
       <GroupTitle>收到的訊號源</GroupTitle>

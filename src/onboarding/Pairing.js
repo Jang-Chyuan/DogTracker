@@ -118,15 +118,14 @@ export function pairingDialog(kind, { number = null, expected = null, got = null
  * - entry 'map'        A6 「連接接收器」 (connected → back to the map, which
  *   frames the dogs heard and located)
  * - entry 'receiver'   S2, with mode 'first' (no receiver yet), 'change'
- *   (掃 QR Code 換接收器) or 'rescan' (中斷並重新掃描)
+ *   (換接收器)
  * - entry 'alert'      a mismatch dialog's 重新掃描／重新搜尋 (back to that page)
- * mode 'change' / 'rescan' waits for the first packet before taking the new
+ * mode 'change' waits for the first packet before taking the new
  * receiver, and puts the old one back when the change does not happen
- * ('change' reconnects it if it was connected; 'rescan' leaves it
- * disconnected).
+ * (reconnects it only if it was connected).
  */
 export function pairingFlow(entry = 'onboarding', mode = 'first') {
-  const switching = mode === 'change' || mode === 'rescan';
+  const switching = mode === 'change';
   return {
     entry,
     mode: switching ? mode : 'first',
