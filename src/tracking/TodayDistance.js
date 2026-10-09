@@ -12,6 +12,9 @@ import { t } from '../i18n';
 import { historyTimeline } from '../history/HistoryTimeline';
 import { phoneHistoryRow } from '../history/HistoryRows';
 import { PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
+import { HISTORY_CONFIG } from '../history/HistoryConfig';
+
+const STILL_MPS = HISTORY_CONFIG.phone.stillMps;
 
 const valid = point => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude)
   && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180
@@ -83,7 +86,15 @@ export function todayPill({ route, livePhone, phone, now = null, waitingSince = 
   const recording = !!livePhone?.running;
   const fixAge = Number.isFinite(livePhone?.ageSeconds) ? livePhone.ageSeconds : null;
   // Not before the first live read (livePhone null): no slash flashes at start.
-  const noFix = recording && (livePhone.position && fixAge != null ? fixAge > PHONE_FIX_MAX_AGE_S
+  // 067 (user 2026-10-09): indoors the GPS gets weak and the last good fix
+  // ages; that is no reason to look as if recording stopped. A last fix taken
+  // standing still (its measured speed under 0.3 m/s) keeps the walker as it
+  // is; the slash is for a phone that lost its fix while moving, or never had
+  // one.
+  const lastSpeed = Number(livePhone?.position?.rawSpeedKmh ?? livePhone?.position?.speedKmh);
+  const stillAtLastFix = livePhone?.position?.rawSpeedKmh != null || livePhone?.position?.speedKmh != null
+    ? Number.isFinite(lastSpeed) && lastSpeed / 3.6 < STILL_MPS : false;
+  const noFix = recording && (livePhone.position && fixAge != null ? fixAge > PHONE_FIX_MAX_AGE_S && !stillAtLastFix
     : Number.isFinite(now) && Number.isFinite(waitingSince) && now - waitingSince > PHONE_FIX_MAX_AGE_S * 1000);
   const recorded = (route?.count || 0) > 0;
   const icon = permissionProblem || noFix ? 'walk-off' : livePhone && !recording ? 'walk-muted' : 'walk';

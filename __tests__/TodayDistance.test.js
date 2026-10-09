@@ -109,6 +109,19 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
     expect(todayPill({ route, livePhone: { running: false }, phone: precise }).icon).toBe('walk-muted');
   });
 
+  // 067 (user 2026-10-09, captured live: indoors, the GPS fix 8 minutes old
+  // at 238 m): weak indoor GPS is not 「記錄關閉」 — the walker stays as it is
+  // when the last fix was taken standing still; it is slashed after losing
+  // the fix while moving.
+  test('weak indoor GPS: the walker stays normal', () => {
+    const indoors = { running: true, ageSeconds: 30 * 60, position: { ...START, rawSpeedKmh: 0 } };
+    expect(todayPill({ route, livePhone: indoors, phone: precise })).toMatchObject({ icon: 'walk', muted: false });
+    const lostWhileWalking = { running: true, ageSeconds: 11 * 60, position: { ...START, rawSpeedKmh: 4.5 } };
+    expect(todayPill({ route, livePhone: lostWhileWalking, phone: precise }).icon).toBe('walk-off');
+    const unknownSpeed = { running: true, ageSeconds: 11 * 60, position: START };
+    expect(todayPill({ route, livePhone: unknownSpeed, phone: precise }).icon).toBe('walk-off');
+  });
+
   test('recording: walker in the phone colour and today\'s distance', () => {
     expect(todayPill({ route, livePhone: recording, phone: precise }))
       .toMatchObject({ text: '今天 2.7 km', icon: 'walk', muted: false, label: '今天 2.7 公里' });
