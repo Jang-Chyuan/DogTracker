@@ -14,5 +14,6 @@ export const fontScaleAtLeast = (scale, threshold) =>
 export const isLargeFont = () =>
   fontScaleAtLeast(PixelRatio.getFontScale?.(), LARGE_FONT_SCALE);
 
-/** `count` lines at the normal size; twice as many with a large system font. */
-export const linesFor = count => (isLargeFont() ? count * 2 : count);
+/** `count` lines at the normal size; no limit with a large system font (the
+ * words wrap instead of being cut). */
+export const linesFor = count => (isLargeFont() ? undefined : count);

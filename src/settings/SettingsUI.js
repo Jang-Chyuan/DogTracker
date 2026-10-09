@@ -4,6 +4,8 @@ import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { radius, size, space, touch, type, border } from '../theme/tokens';
 import { isLargeFont, linesFor } from '../utils/textScale';
+import BangGlyph from '../components/BangGlyph';
+import Glyph from '../map/Glyph';
 
 // The v3 settings look (design 「設定首頁的分組」「設定裡的紅色「!」」): light
 // pages, white rounded cards of 56dp rows, group names in 12sp muted text,
@@ -11,6 +13,7 @@ import { isLargeFont, linesFor } from '../utils/textScale';
 
 /** The 16dp red 「!」 (design 「設定裡的紅色「!」」). */
 export function ProblemBang({ style }) {
+  const { colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
     <View
@@ -18,9 +21,11 @@ export function ProblemBang({ style }) {
       accessible={false}
       importantForAccessibility="no-hide-descendants"
     >
-      <Text style={styles.bangText} allowFontScaling={false}>
-        !
-      </Text>
+      <BangGlyph
+        size={size.badge.size}
+        background={colors.problemBadge}
+        color={colors.avatarFrameMap}
+      />
     </View>
   );
 }
@@ -124,11 +129,12 @@ export function SettingIcon({ kind }) {
 }
 
 const Chevron = () => {
+  const { colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
-    <Text style={styles.chevron} allowFontScaling={false}>
-      ›
-    </Text>
+    <View style={styles.chevron} accessible={false}>
+      <Glyph name="chevron" color={colors.iconMuted} size={size.icon.row} />
+    </View>
   );
 };
 
@@ -249,7 +255,7 @@ export function ListRow({
         {detail ? (
           <Text
             style={[styles.rowDetail, detailTone && TONES[detailTone]]}
-            numberOfLines={stackRights ? undefined : 2}
+            numberOfLines={linesFor(2)}
           >
             {detail}
           </Text>
@@ -368,12 +374,6 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    bangText: {
-      color: colors.avatarFrameMap,
-      fontSize: type.micro.fontSize,
-      lineHeight: type.micro.lineHeight,
-      fontWeight: size.badge.problemWeight,
-    },
     leadBang: { marginRight: space.m },
     // DESIGN.md 「設定區塊」: group names 13sp bold textMuted, 24dp above.
     group: {
@@ -423,12 +423,7 @@ const getStyles = makeStyles(theme => {
     statusText: { ...type.caption, color: colors.textMuted },
     // S1 提醒 「暫停到 11:10」.
     statusWarn: { color: colors.warn },
-    chevron: {
-      fontSize: type.title.fontSize,
-      lineHeight: type.body.lineHeight,
-      color: colors.iconMuted,
-      marginLeft: space.s,
-    },
+    chevron: { marginLeft: space.xs },
     rowTitle: { ...type.status, color: colors.text },
     rowDetail: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     rowRight: { ...type.caption, color: colors.textMuted },

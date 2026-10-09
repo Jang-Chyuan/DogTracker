@@ -1181,7 +1181,7 @@ const getStyles = makeStyles(theme => {
       borderRadius: radius.full,
       backgroundColor: colors.surface,
       paddingHorizontal: space.m,
-      height: sizes.mapSource.height,
+      minHeight: sizes.mapSource.height,
       flexDirection: 'row',
       alignItems: 'center',
       ...floatingShadow,

@@ -1471,9 +1471,10 @@ const getStyles = makeStyles(theme => {
     },
     mapLayer: { backgroundColor: theme.isDark ? colors.bg : colors.surface },
     hiddenMapLayer: { opacity: 0, zIndex: -1 },
+    // Above the (hidden) map, below the page: the page colour edge to edge,
+    // status bar and navigation bar insets included.
     mapCover: {
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
-      zIndex: -1,
     },
     // The settings pages: a 56dp header 「‹ 標題」 over the page colour.
     header: {

@@ -89,6 +89,8 @@ function PermissionRow({ row, onSystemSettings }) {
             row.state === 'ok' && styles.okMark,
             row.state === 'problem' && styles.problemMark,
           ]}
+          // A glyph in a fixed 24dp circle: it does not grow with the font.
+          allowFontScaling={false}
         >
           {mark}
         </Text>
@@ -148,7 +150,13 @@ const getStyles = makeStyles(theme => {
     },
     okCircle: { backgroundColor: colors.okBg },
     problemCircle: { backgroundColor: colors.critBg },
-    mark: { ...type.captionBold, color: colors.textMuted },
+    mark: {
+      ...type.captionBold,
+      color: colors.textMuted,
+      includeFontPadding: false,
+      textAlign: 'center',
+      textAlignVertical: 'center',
+    },
     okMark: { color: colors.ok },
     problemMark: { color: colors.crit },
     words: { flex: 1 },

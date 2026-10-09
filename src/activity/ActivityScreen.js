@@ -664,7 +664,8 @@ const getStyles = makeStyles(theme => {
     },
     highLabel: { top: size.activity.zoneLabelInset, color: colors.warn },
     lowLabel: { color: colors.textMuted },
-    axis: { height: type.small.lineHeight, marginTop: space.xs },
+    // The axis times may grow to 1.15× (CHART_TEXT_MAX_SCALE): room for that.
+    axis: { height: Math.ceil(type.small.lineHeight * fontScale.graphicTextMax), marginTop: space.xs },
     axisText: {
       ...type.small,
       ...tabularNumbers,

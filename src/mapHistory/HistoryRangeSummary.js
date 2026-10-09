@@ -400,7 +400,7 @@ const getStyles = makeStyles(theme => {
       flexDirection: 'row',
       alignItems: 'center',
       gap: space.xs,
-      height: sizes.chip.height,
+      minHeight: sizes.chip.height,
       paddingHorizontal: space.m,
       borderRadius: radius.full,
       borderWidth: border.hairline,

@@ -125,9 +125,9 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
             {pill.faces.map((dog, index) => <View key={dog.id} style={index > 0 && styles.overlap}>
               <DogAvatar avatar={dog.avatar} size={sizes.historyTop.companionAvatar} border={border.regular} tint={routeTint(dog, colors)} />
             </View>)}
-            {pill.more > 0 && <Text style={styles.more}>{`+${pill.more}`}</Text>}
+            {pill.more > 0 && <Text style={styles.more} maxFontSizeMultiplier={fontScales.graphicTextMax}>{`+${pill.more}`}</Text>}
           </View>}
-          {pill.plus && <Text style={styles.plus}>＋</Text>}
+          {pill.plus && <Text style={styles.plus} maxFontSizeMultiplier={fontScales.graphicTextMax}>＋</Text>}
           {pill.caret && <Text style={styles.caret}>▾</Text>}
         </Capsule>
       </View>
@@ -734,7 +734,7 @@ const getStyles = makeStyles(theme => {
       textAlign: 'center',
     },
     retryButton: {
-      height: touch.min,
+      minHeight: touch.min,
       paddingHorizontal: space.xl,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,

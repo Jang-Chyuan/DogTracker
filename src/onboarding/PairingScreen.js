@@ -468,7 +468,7 @@ function ConnectedPage({ pairing, step, onLayout }) {
     >
       <View style={styles.connectedRow} accessible accessibilityLabel={text}>
         <View style={styles.okCircle}>
-          <Text style={styles.okMark}>✓</Text>
+          <Text style={styles.okMark} allowFontScaling={false}>✓</Text>
         </View>
         <Text style={styles.connectedText}>{text}</Text>
       </View>

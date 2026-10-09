@@ -16,6 +16,7 @@ import {
   BackHandler,
   Easing,
   PanResponder,
+  PixelRatio,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DogAvatar from '../dogs/DogAvatar';
 import Glyph from './Glyph';
 import { PressScale } from './MapControls';
+import BangGlyph from '../components/BangGlyph';
 import { slideOrFade } from '../utils/reduceMotion';
 import { linesFor } from '../utils/textScale';
 import {
@@ -76,21 +78,18 @@ function Mark({ tone }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const TONE = useStyles(getTONE);
+  // Level with the value's first line as the font grows (設計稿「卡片狀態列
+  // 的長字」: 「!」靠第一行對齊); the mark itself is a vector, always centred.
+  const grow =
+    (type.value.lineHeight * ((PixelRatio.getFontScale?.() || 1) - 1)) / 2;
   return (
-    <View
-      style={[styles.mark, { backgroundColor: TONE[tone].badge }]}
-      accessible={false}
-    >
-      <Text
-        style={[
-          styles.markText,
-          {
-            color: tone === 'warn' ? colors.onWarnIcon : colors.avatarFrameMap,
-          },
-        ]}
-      >
-        !
-      </Text>
+    <View style={[styles.mark, { marginTop: styles.mark.marginTop + grow }]}>
+      <BangGlyph
+        size={sizes.card.warnIcon}
+        background={TONE[tone].badge}
+        color={tone === 'warn' ? colors.onWarnIcon : colors.avatarFrameMap}
+        testID={`dog-card-mark-${tone}`}
+      />
     </View>
   );
 }
@@ -523,14 +522,9 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
       marginTop: space.xs,
     },
-    markText: {
-      color: colors.avatarFrameMap,
-      fontSize: type.stopNumber.fontSize,
-      lineHeight: type.stopNumber.lineHeight,
-      fontWeight: sizes.badge.cardWeight,
-    },
     track: {
-      height: touch.primary,
+      minHeight: touch.primary,
+      paddingVertical: space.s,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
       alignItems: 'center',

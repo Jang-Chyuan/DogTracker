@@ -47,7 +47,7 @@ import {
   border,
 } from '../theme/tokens';
 import { useInitialFocus } from '../utils/a11yFocus';
-import { fontScaleAtLeast } from '../utils/textScale';
+import { fontScaleAtLeast, linesFor } from '../utils/textScale';
 
 const ease = Easing.bezier(...motion.easeOut);
 const CLOSE_MS = motion.rangeCollapse.duration;
@@ -108,7 +108,7 @@ function QueryStatus({ status, onRetry }) {
       <View style={styles.statusRow}>
         <Text
           style={styles.status}
-          numberOfLines={1}
+          numberOfLines={linesFor(1)}
           testID="calendar-querying"
         >
           查詢中…
@@ -119,7 +119,7 @@ function QueryStatus({ status, onRetry }) {
   if (status !== 'failed') return <View style={styles.statusRow} />;
   return (
     <View style={styles.statusRow} testID="calendar-query-failed">
-      <Text style={styles.status} numberOfLines={1}>
+      <Text style={styles.status} numberOfLines={linesFor(1)}>
         雲端的紀錄查不到
       </Text>
       <Pressable
@@ -626,7 +626,7 @@ const getStyles = makeStyles(theme => {
     todayButton: {
       minHeight: sizes.calendar.todayPill,
       paddingHorizontal: space.m,
-      borderRadius: radius.input,
+      borderRadius: radius.full,
       borderWidth: border.regular,
       borderColor: colors.line,
       alignItems: 'center',
@@ -718,7 +718,8 @@ const getStyles = makeStyles(theme => {
     },
     monthCell: {
       width: '31.5%',
-      height: MONTH_CELL,
+      minHeight: MONTH_CELL,
+      paddingVertical: space.s,
       borderRadius: radius.input,
       alignItems: 'center',
       justifyContent: 'center',

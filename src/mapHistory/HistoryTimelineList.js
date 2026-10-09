@@ -106,7 +106,8 @@ function Node({ node, color }) {
     case 'switch':
       return (
         <View style={[styles.numbered, { backgroundColor: color }]}>
-          <Text style={styles.number}>{node.number}</Text>
+          {/* A number in a fixed 24dp circle: it does not grow with the font. */}
+          <Text style={styles.number} allowFontScaling={false}>{node.number}</Text>
         </View>
       );
 
@@ -375,7 +376,8 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
       marginTop: -sizes.timeline.node.stayLift,
     },
-    number: { color: colors.onRoute, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
+    number: { color: colors.onRoute, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight,
+      lineHeight: type.stopNumber.lineHeight, includeFontPadding: false, textAlign: 'center', textAlignVertical: 'center' },
     indoor: {
       width: sizes.timeline.node.hold + border.heavy * 2,
       height: sizes.timeline.node.hold + border.heavy * 2,
@@ -430,7 +432,7 @@ const getStyles = makeStyles(theme => {
     pill: {
       // 18dp, taller with a large system font (膠囊可以變高、不裁字).
       minHeight: sizes.timeline.pill.height,
-      borderRadius: sizes.timeline.pill.height / 2,
+      borderRadius: radius.full,
       paddingHorizontal: space.s,
       justifyContent: 'center',
     },

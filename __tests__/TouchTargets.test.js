@@ -197,3 +197,29 @@ test('every tappable element has a role, a label, a pressed state and a 48dp tar
   expect(count).toBeGreaterThan(60);
   expect(problems).toEqual([]);
 });
+
+// 060: a glyph or number drawn inside a fixed shape never grows with the
+// system font past that shape (「!」, stop numbers, ✓, ✕, ＋, ›): such a Text
+// has allowFontScaling={false}, or the glyph is a vector (BangGlyph, Glyph).
+test('glyphs inside fixed shapes do not scale with the font', () => {
+  const problems = [];
+  for (const file of [...files(path.join(root, 'src')), path.join(root, 'App.js')]) {
+    const source = fs.readFileSync(file, 'utf8');
+    const ast = parser.parse(source, { sourceType: 'module', plugins: ['jsx'] });
+    traverse(ast, {
+      JSXElement(p) {
+        if (p.node.openingElement.name.name !== 'Text') return;
+        const only = p.node.children.filter(c => !(c.type === 'JSXText' && !c.value.trim()));
+        if (only.length !== 1) return;
+        const child = only[0];
+        const glyph = child.type === 'JSXText' && /^\s*[!✓✕＋›‹]\s*$/.test(child.value);
+        const number = child.type === 'JSXExpressionContainer' && /\.number$/.test(source.slice(child.expression.start, child.expression.end));
+        if (!glyph && !number) return;
+        const attrs = attributes(p.node.openingElement);
+        const fixed = attrs.allowFontScaling?.expression?.value === false || !!attrs.maxFontSizeMultiplier;
+        if (!fixed) problems.push(`${path.relative(root, file)}:${p.node.loc.start.line} ${source.slice(child.start, child.end).trim()}`);
+      },
+    });
+  }
+  expect(problems).toEqual([]);
+});

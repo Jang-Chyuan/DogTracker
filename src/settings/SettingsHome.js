@@ -10,6 +10,7 @@ import {
   ProblemBang,
   getSettingsStyles,
 } from './SettingsUI';
+import { linesFor } from '../utils/textScale';
 
 /**
  * 「位置存不進手機」 above the groups (design 「位置存不進手機收起之後」): phone
@@ -35,7 +36,7 @@ export function StorageWarning({
       <View style={styles.body}>
         <Text style={styles.title}>{title}</Text>
         {reason ? (
-          <Text style={styles.reason} numberOfLines={onPress ? 2 : undefined}>
+          <Text style={styles.reason} numberOfLines={onPress ? linesFor(2) : undefined}>
             {reason}
           </Text>
         ) : null}

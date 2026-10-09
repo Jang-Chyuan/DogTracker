@@ -18,6 +18,7 @@ import DogAvatar from '../dogs/DogAvatar';
 import { problemBadgePosition } from './BadgeGeometry';
 import { radius, size as sizes, type, space, border } from '../theme/tokens';
 import { useInitialFocus } from '../utils/a11yFocus';
+import { linesFor } from '../utils/textScale';
 
 const menu = sizes.overlapMenu;
 const PADDING_V = space.s;
@@ -108,7 +109,8 @@ export default function OverlapPicker({
       >
         <ScrollView
           contentContainerStyle={styles.content}
-          scrollEnabled={markers.length > menu.maxRows}
+          // Rows grow with the font: always able to scroll what does not fit.
+          scrollEnabled
         >
           {markers.map((marker, index) => (
             <Pressable
@@ -142,7 +144,7 @@ export default function OverlapPicker({
                 )}
               </View>
               <View style={styles.words}>
-                <Text style={styles.name} numberOfLines={1}>
+                <Text style={styles.name} numberOfLines={linesFor(1)}>
                   {marker.name}
                 </Text>
                 {marker.note && (
@@ -151,7 +153,7 @@ export default function OverlapPicker({
                       styles.note,
                       { color: NOTE_COLOR[marker.note.level] },
                     ]}
-                    numberOfLines={1}
+                    numberOfLines={linesFor(1)}
                   >
                     {marker.note.text}
                   </Text>
@@ -180,7 +182,8 @@ const getStyles = makeStyles(theme => {
     },
     content: { paddingVertical: PADDING_V },
     row: {
-      height: menu.row,
+      minHeight: menu.row,
+      paddingVertical: space.xs,
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: space.m,

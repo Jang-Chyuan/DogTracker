@@ -8,11 +8,11 @@ test('Android reports 130% as 1.2999…; it still counts as 130%', () => {
   expect(fontScaleAtLeast(undefined, 1.3)).toBe(false);
 });
 
-test('a capped line gets twice the lines with a large font', () => {
+test('a capped line is not capped with a large font', () => {
   const spy = jest.spyOn(PixelRatio, 'getFontScale');
   spy.mockReturnValue(1);
   expect(linesFor(1)).toBe(1);
   spy.mockReturnValue(2);
-  expect(linesFor(2)).toBe(4);
+  expect(linesFor(2)).toBeUndefined();
   spy.mockRestore();
 });

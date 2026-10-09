@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
 import { historyDogsSheet, routeTint } from '../history/screen/HistoryDogsPill';
 import HistoryBottomSheet from './HistoryBottomSheet';
+import { linesFor } from '../utils/textScale';
 
 /** Dog choices take effect while the window remains open. */
 export const DogsSheet = forwardRef(function DogsSheet(
@@ -35,14 +36,14 @@ export const DogsSheet = forwardRef(function DogsSheet(
           accessibilityLabel={`${dog.name}${dog.protagonist ? '，主角' : '，換成主角'}`}
           onPress={() => onSelect(dog.id)} style={({ pressed }) => [styles.choice, pressed && styles.pressed]}>
           <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} tint={routeTint(dog, theme.colors)} />
-          <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
+          <Text style={styles.name} numberOfLines={linesFor(1)}>{dog.name}</Text>
           {dog.protagonist && <View style={styles.tag}><Text style={styles.tagText}>主角</Text></View>}
           <View style={styles.spacer} />
           <View style={[styles.radio, dog.protagonist && styles.radioOn]} />
         </Pressable>
         {dog.removable && <Pressable testID={`history-remove-${dog.id}`} accessibilityRole="button"
           accessibilityLabel={`移除${dog.name}`} onPress={() => onRemove(dog.id)} style={({ pressed }) => [styles.remove, pressed && styles.pressedRow]}>
-          <Text style={styles.detail}>✕</Text>
+          <Text style={styles.detail} allowFontScaling={false}>✕</Text>
         </Pressable>}
       </View>)}
       {(model.full || model.addable.length > 0) && <View testID="history-dogs-add-section">
@@ -56,10 +57,10 @@ export const DogsSheet = forwardRef(function DogsSheet(
           disabled={dog.disabled} onPress={() => onAdd(dog)}
           style={({ pressed }) => [styles.row, dog.opacity < 1 && styles.faded, pressed && styles.pressed]}>
           <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} />
-          <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
-          <Text style={styles.detail} numberOfLines={1}>{dog.detail}</Text>
+          <Text style={styles.name} numberOfLines={linesFor(1)}>{dog.name}</Text>
+          <Text style={styles.detail} numberOfLines={linesFor(1)}>{dog.detail}</Text>
           <View style={styles.spacer} />
-          <Text style={styles.plus}>＋</Text>
+          <Text style={styles.plus} allowFontScaling={false}>＋</Text>
         </Pressable>)}
       </View>}
     </HistoryBottomSheet>

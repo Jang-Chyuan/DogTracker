@@ -409,7 +409,8 @@ const getStyles = makeStyles(theme => {
     sources: { flexDirection: 'row', gap: space.s },
     source: {
       flex: 1,
-      height: touch.min,
+      minHeight: touch.min,
+      paddingVertical: space.xs,
       borderRadius: radius.input,
       borderWidth: border.hairline,
       borderColor: colors.line,

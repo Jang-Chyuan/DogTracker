@@ -184,6 +184,7 @@ export function GuideDialog({
       transparent
       animationType="fade"
       statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
       <Pressable
