@@ -1291,8 +1291,10 @@ function TrackerApp({ resume = null, onRestart }) {
     default:
       break;
   }
-  const headerTitle = route.name === 'wifi'
-    ? wifiSummary(wifi, receiverName, receiverSetUp(receiverState)) : pageTitle(route);
+  // Never paired: the page body already says 「還沒有配對接收器」, so the
+  // header keeps the page name instead of repeating it.
+  const headerTitle = route.name === 'wifi' && receiverSetUp(receiverState)
+    ? wifiSummary(wifi, receiverName, true) : pageTitle(route);
   const light = LIGHT_PAGES.has(route.name);
   const full = FULL_PAGES.has(route.name);
 

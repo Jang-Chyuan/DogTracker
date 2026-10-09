@@ -284,7 +284,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   // No receiver connected: the Wi-Fi row says so; nothing is read.
   expect(text()).toContain(i18nT('c1245'));
   await tap('advanced-wifi');
-  expect(title()).toBe('返回，還沒有配對接收器');
+  expect(title()).toBe(`返回，${i18nT('c247')}`);
   expect(renderer.root.findAllByProps({ testID: 'wifi-settings' }).length).toBeGreaterThan(0);
   expect(text()).toContain('還沒有配對接收器');
   await tap('wifi-pair');
@@ -294,7 +294,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(firstPair.props.route.mode).toBe('first');
   await act(async () => firstPair.props.onConnected({ number: 23, again: true }));
   expect(page('wifi-settings')).toBe(true);
-  await press('返回，還沒有配對接收器');
+  await press(`返回，${i18nT('c247')}`);
   expect(title()).toBe('返回，進階');
   expect(row('settings-link-upload')).toBeUndefined();
   // No old dark page is left behind S7/S8.
