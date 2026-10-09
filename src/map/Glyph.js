@@ -200,6 +200,9 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
           {...stroke}
         />
       )}
+      {name === 'download' && (
+        <Path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 16v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" {...stroke} />
+      )}
       {name === 'sliders' && (
         // 調整範圍: two sliders with their knobs.
         <>

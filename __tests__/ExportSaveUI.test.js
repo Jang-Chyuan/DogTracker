@@ -1,7 +1,9 @@
 // 067: 「存到下載」 beside each export format, and the tip after saving.
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { ThemeProvider } from '../src/theme/ThemeProvider';
+import { ThemeProvider, ThemeScope, lightTheme, darkTheme } from '../src/theme/ThemeProvider';
+import { StyleSheet, Text } from 'react-native';
+import Glyph from '../src/map/Glyph';
 import HistoryExportSheet from '../src/mapHistory/HistoryExportSheet';
 import { MapTip } from '../src/map/MapControls';
 
@@ -15,19 +17,32 @@ const mount = async element => {
 const pressable = (renderer, testID) => renderer.root.findAll(node => node.props.testID === testID
   && typeof node.props.onPress === 'function')[0];
 
-test('each format row: the row shares, 「存到下載」 saves', async () => {
+test.each([lightTheme, darkTheme])('each format has independent share/download icons ($isDark)', async theme => {
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
+    width: 400, height: 800, scale: 1, fontScale: 2,
+  });
   const exporter = exporterOf();
-  const renderer = await mount(<HistoryExportSheet exporter={exporter} bottomInset={0} />);
+  const renderer = await mount(<ThemeScope theme={theme}><HistoryExportSheet exporter={exporter} bottomInset={0} /></ThemeScope>);
   for (const id of ['png', 'gpx', 'csv']) {
     const save = pressable(renderer, `history-export-save-${id}`);
     expect(save.props.accessibilityLabel).toMatch(/，存到下載$/);
+    const share = pressable(renderer, `history-export-${id}`);
+    expect(share.props.accessibilityLabel).toMatch(/，分享$/);
+    for (const [button, name] of [[share, 'share'], [save, 'download']]) {
+      const style = StyleSheet.flatten(button.props.style({ pressed: false }));
+      expect(style.minHeight).toBeGreaterThanOrEqual(48);
+      expect(style.minWidth).toBeGreaterThanOrEqual(48);
+      expect(button.findByType(Glyph).props).toMatchObject({ name, color: theme.colors.tonalText });
+      expect(button.findAllByType(Text)).toHaveLength(0);
+    }
     await act(async () => save.props.onPress());
     expect(exporter.save).toHaveBeenLastCalledWith(id);
     await act(async () => pressable(renderer, `history-export-${id}`).props.onPress());
     expect(exporter.start).toHaveBeenLastCalledWith(id);
   }
-  expect(JSON.stringify(renderer.toJSON())).toContain('存到下載');
+  expect(renderer.root.findAllByType(Text).map(node => node.props.children)).not.toContain('存到下載');
   await act(async () => renderer.unmount());
+  dimensions.mockRestore();
 });
 
 test('no native save (an older build): no 「存到下載」', async () => {
