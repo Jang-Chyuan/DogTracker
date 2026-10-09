@@ -22,6 +22,7 @@ import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import { useReceiverState } from '../map/useReceiverState';
 import { isOtherReceiver, receiverLink } from '../map/ReceiverState';
+import { dogMarkers } from '../map/DogMarkers';
 
 // The first fit frames what this handler is working with: the connected pair
 // and the path inside the chosen window. Framing every cloud dog as well zoomed
@@ -56,6 +57,11 @@ export default function MapScreen({
   historical = false,
   cloudDogs,
   cloudOwner,
+  // The live cloud sync (useCloudSync): when the last download succeeded and
+  // since when it has been failing, for judging cloud dogs' freshness.
+  cloudSync = null,
+  // { avatars } from useDogAvatars: each dog's face by collar number.
+  dogAvatars = null,
   historyDownload,
   // Debug builds only (src/dev/ScreenFixtures.js): the clock, the phone's live
   // position and the receiver reader of a named screen state.
@@ -97,6 +103,14 @@ export default function MapScreen({
     setSelected(null);
   }, [mode, point.masterId]);
   const link = receiverLink(receiverState, now);
+  // When the user switched this receiver off and on (DogFreshness grace),
+  // recorded by the native service whatever screen was open.
+  const pausesKey = JSON.stringify(Array.isArray(receiverState?.receiverPauses) ? receiverState.receiverPauses : []);
+  const pauses = useMemo(() => JSON.parse(pausesKey), [pausesKey]);
+  const lastDownloadAt = cloudSync?.lastDownloadAt ?? null;
+  const failingSince = cloudSync?.failingSince ?? null;
+  const cloudClockInput = useMemo(() => ({ lastDownloadAt, failingSince }), [lastDownloadAt, failingSince]);
+  const avatars = useMemo(() => dogAvatars?.avatars || {}, [dogAvatars?.avatars]);
   const basePresentation = useMemo(
     () => {
       const base = createTrackingMapPresentation(
@@ -145,16 +159,22 @@ export default function MapScreen({
   const focusSlaveId = tracking.preferences.value.focusSlaveId;
   const dogsVisible = tracking.preferences.value.showSlaveMarker;
   const hiddenSlaveIds = tracking.preferences.value.hiddenSlaveIds;
+  const selectedDogId = selected?.kind === 'dog' ? selected.slaveId : null;
+  const dogAliases = history?.preferences.dogAliases;
   const livePresentation = useMemo(() => {
-    if (!dogs.length) return { ...basePresentation, slaveSegments: [] };
+    // The connected pair's single dog marker is not drawn: every dog is one
+    // of `dogMarkers`.
+    if (!dogs.length) return { ...basePresentation, slave: null, slaveSegments: [], dogMarkers: [] };
     // Following a dog means the camera reads that dog; the others stay drawn.
     // A followed dog that is not reporting is ignored rather than forgotten, so
     // the camera returns to it when its next row arrives. Hiding the markers
     // does not cancel following: the card still lists the dogs, and a card that
     // says 跟隨中 while the map ignores it would be a lie.
     const focused = dogs.find(dog => !dog.stale && dog.slaveId === focusSlaveId) || null;
-    // A dog hidden by its own eye leaves the map but stays in the card.
-    const drawn = dogs.filter(dog => !dog.stale && !hiddenSlaveIds.includes(dog.slaveId));
+    // Every dog that has ever had a position is drawn, however old (v3 §6:
+    // grey after 10 minutes, kept after 24 hours). A dog hidden by its own eye
+    // leaves the map but stays in the card.
+    const drawn = dogs.filter(dog => dog.coordinate && !hiddenSlaveIds.includes(dog.slaveId));
     const marked = focused
       ? drawn.map(dog => (dog === focused ? { ...dog, focused: true } : dog))
       : drawn;
@@ -166,6 +186,8 @@ export default function MapScreen({
       slave: null,
       slaveSegments: [],
       dogs: dogsVisible ? marked : [],
+      dogMarkers: dogsVisible ? dogMarkers(drawn, { now, cloud: cloudClockInput, pauses,
+        ranges: cloudDogs?.ranges, aliases: dogAliases, selectedId: selectedDogId }) : [],
       // Hidden dogs take their line with them, like the markers.
       dogPaths: dogsVisible
         ? dogPaths.filter(track => !hiddenSlaveIds.includes(track.slaveId))
@@ -177,13 +199,14 @@ export default function MapScreen({
         ? framedCoordinates(focused.coordinate)
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, cloudDogs?.ranges]);
+  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, cloudDogs?.ranges,
+    now, cloudClockInput, pauses, dogAliases, selectedDogId]);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is decided by the card's own
     // eyes and time window, never by the history tab's parameters.
-    if (!historical) return { ...livePresentation, dogAliases: history?.preferences.dogAliases };
+    if (!historical) return { ...livePresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
     const data = history.data;
     // Playback draws the same tracks up to the cursor, so the map never shows a
     // position the replayed moment did not have yet.
@@ -197,6 +220,7 @@ export default function MapScreen({
       ...(data.clients || []).map((track, index) => ({
         ...clip(track),
         name: dogHistoryLabel(track.slaveId, history.preferences.dogAliases),
+        avatar: avatars[track.slaveId],
         color: dogColor(track.slaveId, index),
         role: 'slave',
         sourceLabel: history.preferences.source === 'cloud'
@@ -212,8 +236,8 @@ export default function MapScreen({
     }
     return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], cameraPositions, historyTracks: tracks };
   }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, livePresentation,
-    playbackAt]);
-  const { master, slave } = presentation.positions;
+    playbackAt, avatars]);
+  const { master } = presentation.positions;
   // A panel closes itself when its subject leaves the map: a dog that stopped
   // reporting, or the handler's marker being hidden.
   const detailSubject = useMemo(() => {
@@ -266,8 +290,6 @@ export default function MapScreen({
     messages.push(
       `追蹤設定失敗：${tracking.preferences.error}。請上滑卡片重試。`,
     );
-  // The receiver is not drawn, so only the dog's fallback position is news.
-  if (slave?.retained) messages.push('狗顯示最後有效位置，非最新定位。');
   const top = insets.top + 12;
   const controlsTop = top + 44 + (messages.length ? noticeHeight + 8 : 0);
   return (

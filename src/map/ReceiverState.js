@@ -41,3 +41,4 @@ export function isOtherReceiver(point, state) {
   const number = state ? receiverNumber(state) : null;
   return number != null && point?.id != null && point.masterId !== number;
 }
+

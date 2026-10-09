@@ -27,11 +27,15 @@ const slave = {
   coordinate: { latitude: 25.001, longitude: 121.001 },
   retained: true,
 };
+// The dog's marker as DogMarkers.dogMarker describes it.
+const slaveMarker = { slaveId: 7, coordinate: slave.coordinate, name: '狗 7', tag: '狗 7', indoor: false,
+  stale: false, problem: false, selected: false, size: 40, label: '狗 7' };
 const defaults = {
   source: 'real',
   presentation: {
     positions: { master, slave },
     slave,
+    dogMarkers: [slaveMarker],
     cameraPositions: cameraCoordinates(master, slave),
     slaveSegments: [[master.coordinate, slave.coordinate]],
     rangeRing: receiverRangeRing(master, 'receiving'),
@@ -137,8 +141,9 @@ test('Google provider, DB markers, dog trail and a dashed 1000 metre range ring;
   expect(fill.tappable).toBe(false);
   // The marker draws no bubble of its own; the text is on its view, where a
   // screen reader finds it.
+  expect(renderer.root.findAllByType(Marker)[0].props.title).toBeUndefined();
   expect(renderer.root.findAllByType(Marker)[0].findAll(node =>
-    node.props.accessibilityLabel?.includes('非最新定位')).length).toBeGreaterThan(0);
+    node.props.accessibilityLabel === '狗 7').length).toBeGreaterThan(0);
 });
 
 test('out-of-range lines are critLine, 2dp, dashed, drawn above the ring and below routes', async () => {
@@ -514,4 +519,27 @@ test('phone blue dot requires permission, ready map and foreground; never adds p
     renderer.update(<TrackingMap {...defaults} phoneEnabled={false} />),
   );
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(false);
+});
+
+test('name tags that would overlap on screen merge into 「N 隻」; a source switch never reuses old places', async () => {
+  const at = (slaveId, latitude, extra = {}) => ({ ...slaveMarker, slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`,
+    label: `狗 ${slaveId}`, coordinate: { latitude, longitude: 121.001 }, ...extra });
+  // One degree of latitude is 100000 dp on this pretend screen.
+  mockCamera.pointForCoordinate = jest.fn(async ({ latitude, longitude }) =>
+    ({ x: (longitude - 121) * 100000, y: (25.01 - latitude) * 100000 }));
+  try {
+    const markers = [at(4, 25.0010), at(6, 25.00101, { indoor: true, tag: '狗 6・室內' }), at(8, 25.005)];
+    await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
+    await readyMap();
+    const tagTexts = () => renderer.root.findAll(node => ['dog-name-tag', 'dog-group-tag'].includes(node.props.testID)
+      && typeof node.type === 'string').map(node => node.findByType(require('react-native').Text).props.children);
+    expect(tagTexts().sort()).toEqual(['2 隻', '狗 8']);
+    // Another source: nothing drawn from the old places until the new ones are read.
+    mockCamera.pointForCoordinate.mockImplementation(() => new Promise(() => {}));
+    await act(async () => renderer.update(<TrackingMap {...defaults} source="other"
+      presentation={{ ...defaults.presentation, dogMarkers: markers }} />));
+    expect(tagTexts()).toEqual([]);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+  }
 });

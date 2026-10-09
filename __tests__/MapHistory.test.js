@@ -223,3 +223,20 @@ test('the card is offered the Master/Slave pairs this phone actually holds', asy
     expect(await history.listDevices('cloud')).toEqual([]);
   } finally { connection.close(); }
 });
+
+test('each dog\'s face is stored by collar number; a damaged or unknown one falls back to the default', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const db = createHistoryDatabase(connection);
+    expect(await db.loadDogAvatars()).toEqual({});
+    await db.saveDogAvatar(6, { kind: 'art', art: 'prick', color: 'mint' });
+    await connection.executeAsync('INSERT INTO dog_avatars(slave_id,value) VALUES(?,?)', [8, '{broken']);
+    await connection.executeAsync('INSERT INTO dog_avatars(slave_id,value) VALUES(?,?)', [9, '{"kind":"art","art":"wolf","color":"coral"}']);
+    expect(await createHistoryDatabase(connection).loadDogAvatars())
+      .toEqual({ 6: { kind: 'art', art: 'prick', color: 'mint' } });
+    await expect(db.saveDogAvatar(6, { kind: 'photo', uri: 'file:///x.jpg' })).rejects.toThrow('頭像格式錯誤');
+    await expect(db.saveDogAvatar(0, null)).rejects.toThrow('狗的編號格式錯誤');
+    await db.saveDogAvatar(6, null);
+    expect(await db.loadDogAvatars()).toEqual({});
+  } finally { connection.close(); }
+});

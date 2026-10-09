@@ -78,9 +78,12 @@ test('without any BLE row the cloud copy is the only source', () => {
   expect(dogs.map(dog => dog.slaveId)).toEqual([4]);
 });
 
-test('positions older than 24 hours leave the home map, and broken rows are ignored', () => {
+test('positions older than 24 hours stay on the home map (v3 §6), and broken rows are ignored', () => {
   const now = trackingPoint.receivedAt + MAX_AGE_MS + 1000;
-  expect(mergeDogMarkers({ point: trackingPoint, now, cloudRows: [] })).toEqual([]);
+  const old = mergeDogMarkers({ point: trackingPoint, now, cloudRows: [] });
+  expect(old.map(dog => [dog.slaveId, dog.fixAt, dog.fixSource])).toEqual([[7, trackingPoint.receivedAt, 'ble']]);
+  // A caller may still limit what it reads.
+  expect(mergeDogMarkers({ point: trackingPoint, now, cloudRows: [], maxAgeMs: MAX_AGE_MS })).toEqual([]);
   const dogs = mergeDogMarkers({ point: null, now: NOW, cloudRows: [
     { ...cloudRow(4, NOW - 1000), slave_lat: null },
     { ...cloudRow(5, NOW - 1000), slave_lon: 'x' },

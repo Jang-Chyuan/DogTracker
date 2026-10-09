@@ -217,7 +217,8 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
       owner="account-a" enabled {...props} />;
     let renderer;
     await act(async () => { renderer = Renderer.create(view()); });
-    expect(database.latestBySlave).toHaveBeenCalledWith('account-a', NOW - MAX_AGE_MS);
+    // Every dog's newest row, however old (v3 §6: kept after 24 hours).
+    expect(database.latestBySlave).toHaveBeenCalledWith('account-a', 0);
     expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '' });
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
@@ -232,7 +233,7 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
   } finally { jest.useRealTimers(); }
 });
 
-test('the home map draws one marker per dog and names the source', async () => {
+test('the home map draws one marker per dog, at its newest position', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -265,7 +266,8 @@ test('the home map draws one marker per dog and names the source', async () => {
     .filter(node => typeof node.props.identifier === 'string');
   const dog = markers.filter(node => node.props.identifier === 'real-dog-7');
   expect(dog).toHaveLength(1);
-  expect(dog[0].findAll(node => typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel).toContain('經 Master 5・雲端');
+  // The map says only the name; where the position came from is in the card.
+  expect(dog[0].findAll(node => typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel).toBe('狗 7');
   expect(dog[0].props.coordinate).toEqual({ latitude: 25.2, longitude: 121.7 });
   // The single-pair marker is replaced, not drawn on top of the merged one.
   expect(markers.some(node => node.props.identifier === 'real-slave')).toBe(false);

@@ -213,3 +213,21 @@ test('the hourly count check runs every ten minutes and only fetches what change
   // follows the 30-second pass, which by now has reached 12:10.
   expect(states.get('a:7').through_at).toBe('2026-09-17T12:10:00.000Z');
 });
+
+test('cloud dogs\' clock: when the last download started, and since when downloads keep failing', async () => {
+  const { database, changed } = fixture();
+  database.savePage.mockRejectedValue(new Error('offline'));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  const last = () => changed.mock.calls.at(-1)[0];
+  expect(last()).toMatchObject({ error: 'offline', lastDownloadAt: null, failingSince: NOW });
+  // A second failure keeps the time of the first.
+  await jest.advanceTimersByTimeAsync(30000);
+  expect(last()).toMatchObject({ failingSince: NOW });
+  database.savePage.mockImplementation(async () => {});
+  await jest.advanceTimersByTimeAsync(30000);
+  expect(last()).toMatchObject({ error: '', lastDownloadAt: NOW + 60000, failingSince: null });
+  // Another account starts over.
+  engine.setSession(account('b'));
+  expect(changed.mock.calls.find(([state]) => state.owner === 'b')[0])
+    .toMatchObject({ lastDownloadAt: null, failingSince: null });
+});
