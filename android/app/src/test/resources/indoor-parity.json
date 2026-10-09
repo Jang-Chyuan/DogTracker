@@ -771,12 +771,12 @@
      "usb_present": 0
     },
     "expect": {
-     "held": false,
+     "held": true,
      "coordinate": {
-      "latitude": 24.990712720086236,
+      "latitude": 24.9895,
       "longitude": 121.314
      },
-     "why": "good-fixes-away"
+     "why": null
     }
    }
   ]
@@ -1091,12 +1091,12 @@
      "usb_present": 0
     },
     "expect": {
-     "held": false,
+     "held": true,
      "coordinate": {
-      "latitude": 24.990326446280992,
+      "latitude": 24.9895,
       "longitude": 121.314
      },
-     "why": "good-fixes-away"
+     "why": null
     }
    },
    {
@@ -1116,12 +1116,12 @@
      "usb_present": 0
     },
     "expect": {
-     "held": false,
+     "held": true,
      "coordinate": {
-      "latitude": 24.990353395616243,
+      "latitude": 24.9895,
       "longitude": 121.314
      },
-     "why": "good-fixes-away"
+     "why": null
     }
    }
   ]
@@ -1436,12 +1436,12 @@
      "usb_present": 1
     },
     "expect": {
-     "held": false,
+     "held": true,
      "coordinate": {
-      "latitude": 24.99031746316924,
+      "latitude": 24.9895,
       "longitude": 121.314
      },
-     "why": "good-fixes-away"
+     "why": null
     }
    },
    {
@@ -1461,12 +1461,12 @@
      "usb_present": 1
     },
     "expect": {
-     "held": false,
+     "held": true,
      "coordinate": {
-      "latitude": 24.990326446280992,
+      "latitude": 24.9895,
       "longitude": 121.314
      },
-     "why": "good-fixes-away"
+     "why": null
     }
    },
    {
@@ -4447,6 +4447,3705 @@
       "longitude": 121.314
      },
      "why": "weak-fixes-away"
+    }
+   }
+  ]
+ },
+ {
+  "name": "continuity: opposed near-anchor good jumps stay held after handover",
+  "initial": {
+   "slaveId": 4,
+   "name": "豆豆",
+   "coordinate": {
+    "latitude": 24.9895,
+    "longitude": 121.314
+   },
+   "fixAt": 1760000195000,
+   "packetAt": 1760000195000,
+   "held": true,
+   "farFixes": 0,
+   "batteryPercentage": 80,
+   "charging": false,
+   "range": {
+    "status": "in",
+    "clearing": [],
+    "nearBack": 0,
+    "cloudOnly": false
+   },
+   "indoorState": {
+    "goods": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000120000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000125000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000130000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000135000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "weak": [],
+    "lastGoodAt": 1760000195000,
+    "lastTime": 1760000195000,
+    "usb": true,
+    "environment": {
+     "environment": "window",
+     "source": "random_forest",
+     "modelEnvironment": "window",
+     "modelConfidence": 0.9934126984126984,
+     "probabilities": {
+      "indoor": 0,
+      "outdoor": 0.006587301587301586,
+      "window": 0.9934126984126984
+     },
+     "samples": 11,
+     "hasSignal": true,
+     "windowStart": 1760000040000,
+     "windowEnd": 1760000160000,
+     "observedAt": 1760000155000
+    },
+    "held": {
+     "anchor": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "source": "good",
+     "reason": "充電中",
+     "refine": [
+      {
+       "time": 1760000010000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000015000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000020000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000025000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000030000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000035000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000040000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000045000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000125000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000130000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000135000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000140000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000145000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000150000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000155000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000160000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000165000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000170000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000175000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000180000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000185000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000190000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000195000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "weak": [
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "farGood": [],
+     "lately": [
+      {
+       "time": 1760000135000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000140000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000145000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000150000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000155000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000160000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000165000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000170000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000175000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000180000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000185000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000190000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000195000,
+       "quality": "good"
+      }
+     ],
+     "nearby": [],
+     "since": 1760000045000,
+     "anchorAt": 1760000045000,
+     "startedAt": 1760000065000
+    },
+    "previous": {
+     "time": 1760000195000,
+     "quality": "good",
+     "point": {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "trusted": true
+    },
+    "previousHold": null,
+    "recentFixes": [
+     {
+      "time": 1760000135000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "bleSignal": {
+     "rssi": -55,
+     "time": 1760000195000
+    },
+    "buckets": {
+     "7": [
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000160000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000165000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000170000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000175000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000180000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000185000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000190000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000195000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      }
+     ]
+    },
+    "bucketStart": 1760000160000
+   }
+  },
+  "rows": [
+   {
+    "row": {
+     "time": 1760000240000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990308480057493,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000245000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.988691519942506,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   }
+  ]
+ },
+ {
+  "name": "continuity: a weak return interrupts separate good excursions",
+  "initial": {
+   "slaveId": 4,
+   "name": "豆豆",
+   "coordinate": {
+    "latitude": 24.9895,
+    "longitude": 121.314
+   },
+   "fixAt": 1760000195000,
+   "packetAt": 1760000195000,
+   "held": true,
+   "farFixes": 0,
+   "batteryPercentage": 80,
+   "charging": false,
+   "range": {
+    "status": "in",
+    "clearing": [],
+    "nearBack": 0,
+    "cloudOnly": false
+   },
+   "indoorState": {
+    "goods": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000120000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000125000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000130000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000135000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "weak": [],
+    "lastGoodAt": 1760000195000,
+    "lastTime": 1760000195000,
+    "usb": true,
+    "environment": {
+     "environment": "window",
+     "source": "random_forest",
+     "modelEnvironment": "window",
+     "modelConfidence": 0.9934126984126984,
+     "probabilities": {
+      "indoor": 0,
+      "outdoor": 0.006587301587301586,
+      "window": 0.9934126984126984
+     },
+     "samples": 11,
+     "hasSignal": true,
+     "windowStart": 1760000040000,
+     "windowEnd": 1760000160000,
+     "observedAt": 1760000155000
+    },
+    "held": {
+     "anchor": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "source": "good",
+     "reason": "充電中",
+     "refine": [
+      {
+       "time": 1760000010000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000015000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000020000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000025000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000030000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000035000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000040000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000045000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000125000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000130000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000135000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000140000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000145000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000150000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000155000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000160000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000165000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000170000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000175000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000180000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000185000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000190000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000195000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "weak": [
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "farGood": [],
+     "lately": [
+      {
+       "time": 1760000135000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000140000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000145000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000150000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000155000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000160000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000165000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000170000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000175000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000180000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000185000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000190000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000195000,
+       "quality": "good"
+      }
+     ],
+     "nearby": [],
+     "since": 1760000045000,
+     "anchorAt": 1760000045000,
+     "startedAt": 1760000065000
+    },
+    "previous": {
+     "time": 1760000195000,
+     "quality": "good",
+     "point": {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "trusted": true
+    },
+    "previousHold": null,
+    "recentFixes": [
+     {
+      "time": 1760000135000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "bleSignal": {
+     "rssi": -55,
+     "time": 1760000195000
+    },
+    "buckets": {
+     "7": [
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000160000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000165000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000170000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000175000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000180000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000185000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000190000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000195000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      }
+     ]
+    },
+    "bucketStart": 1760000160000
+   }
+  },
+  "rows": [
+   {
+    "row": {
+     "time": 1760000240000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990308480057493,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000245000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990308480057493,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000250000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.9895,
+     "longitude": 121.314,
+     "satellites": 2,
+     "hdop": 5,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000270000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990308480057493,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000275000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990308480057493,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   }
+  ]
+ },
+ {
+  "name": "continuity: old parked fixes cannot swallow a nearby release",
+  "initial": {
+   "slaveId": 4,
+   "name": "豆豆",
+   "coordinate": {
+    "latitude": 24.9895,
+    "longitude": 121.314
+   },
+   "fixAt": 1760000195000,
+   "packetAt": 1760000195000,
+   "held": true,
+   "farFixes": 0,
+   "batteryPercentage": 80,
+   "charging": false,
+   "range": {
+    "status": "in",
+    "clearing": [],
+    "nearBack": 0,
+    "cloudOnly": false
+   },
+   "indoorState": {
+    "goods": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000120000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000125000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000130000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000135000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "weak": [],
+    "lastGoodAt": 1760000195000,
+    "lastTime": 1760000195000,
+    "usb": true,
+    "environment": {
+     "environment": "window",
+     "source": "random_forest",
+     "modelEnvironment": "window",
+     "modelConfidence": 0.9934126984126984,
+     "probabilities": {
+      "indoor": 0,
+      "outdoor": 0.006587301587301586,
+      "window": 0.9934126984126984
+     },
+     "samples": 11,
+     "hasSignal": true,
+     "windowStart": 1760000040000,
+     "windowEnd": 1760000160000,
+     "observedAt": 1760000155000
+    },
+    "held": {
+     "anchor": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "source": "good",
+     "reason": "充電中",
+     "refine": [
+      {
+       "time": 1760000010000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000015000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000020000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000025000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000030000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000035000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000040000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000045000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000125000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000130000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000135000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000140000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000145000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000150000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000155000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000160000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000165000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000170000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000175000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000180000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000185000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000190000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000195000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "weak": [
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "farGood": [],
+     "lately": [
+      {
+       "time": 1760000135000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000140000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000145000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000150000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000155000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000160000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000165000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000170000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000175000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000180000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000185000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000190000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000195000,
+       "quality": "good"
+      }
+     ],
+     "nearby": [],
+     "since": 1760000045000,
+     "anchorAt": 1760000045000,
+     "startedAt": 1760000065000
+    },
+    "previous": {
+     "time": 1760000195000,
+     "quality": "good",
+     "point": {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "trusted": true
+    },
+    "previousHold": null,
+    "recentFixes": [
+     {
+      "time": 1760000135000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "bleSignal": {
+     "rssi": -55,
+     "time": 1760000195000
+    },
+    "buckets": {
+     "7": [
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000160000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000165000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000170000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000175000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000180000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000185000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000190000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000195000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      }
+     ]
+    },
+    "bucketStart": 1760000160000
+   }
+  },
+  "rows": [
+   {
+    "row": {
+     "time": 1760000240000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000250000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000260000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000270000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000280000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000290000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000300000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.990083902263745,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-nearby"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000310000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.990083902263745,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-nearby"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000320000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.990083902263745,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-nearby"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000330000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.990083902263745,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-nearby"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000340000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.990083902263745,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-nearby"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000350000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.990083902263745,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-nearby"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000360000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.990083902263745,
+     "longitude": 121.314,
+     "satellites": 2,
+     "hdop": 5,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.990083902263745,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-nearby"
+    }
+   }
+  ]
+ },
+ {
+  "name": "continuity: charging drive releases on consistent far good progression",
+  "initial": {
+   "slaveId": 4,
+   "name": "豆豆",
+   "coordinate": {
+    "latitude": 24.9895,
+    "longitude": 121.314
+   },
+   "fixAt": 1760000045000,
+   "packetAt": 1760000065000,
+   "held": true,
+   "farFixes": 0,
+   "batteryPercentage": 80,
+   "charging": false,
+   "range": {
+    "status": "in",
+    "clearing": [],
+    "nearBack": 0,
+    "cloudOnly": false
+   },
+   "indoorState": {
+    "goods": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "weak": [],
+    "lastGoodAt": 1760000045000,
+    "lastTime": 1760000065000,
+    "usb": true,
+    "environment": {
+     "environment": "window",
+     "source": "random_forest",
+     "modelEnvironment": "window",
+     "modelConfidence": 0.9934126984126984,
+     "probabilities": {
+      "indoor": 0,
+      "outdoor": 0.006587301587301586,
+      "window": 0.9934126984126984
+     },
+     "samples": 8,
+     "hasSignal": true,
+     "windowStart": 1759999920000,
+     "windowEnd": 1760000040000,
+     "observedAt": 1760000035000
+    },
+    "held": {
+     "anchor": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "source": "good",
+     "reason": "充電中",
+     "refine": [
+      {
+       "time": 1760000010000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000015000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000020000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000025000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000030000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000035000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000040000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000045000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "weak": [],
+     "farGood": [],
+     "lately": [],
+     "nearby": [],
+     "since": 1760000045000,
+     "anchorAt": 1760000045000,
+     "startedAt": 1760000065000
+    },
+    "previous": {
+     "time": 1760000065000,
+     "quality": "none",
+     "point": null,
+     "trusted": false
+    },
+    "previousHold": null,
+    "recentFixes": [
+     {
+      "time": 1760000000000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "bleSignal": {
+     "rssi": -55,
+     "time": 1760000065000
+    },
+    "buckets": {
+     "7": [
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000040000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 0
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000045000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 0
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000065000,
+       "slave_lat": 0,
+       "slave_lon": 0,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      }
+     ]
+    },
+    "bucketStart": 1760000040000
+   }
+  },
+  "rows": [
+   {
+    "row": {
+     "time": 1760000120000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.99129662234998,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000125000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.991745777937478,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000130000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.992194933524974,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.992194933524974,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000135000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.992644089112467,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.992644089112467,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000140000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.993093244699963,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.993093244699963,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000145000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.99354240028746,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.99354240028746,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   }
+  ]
+ },
+ {
+  "name": "continuity: window drive releases on consistent far good progression",
+  "initial": {
+   "slaveId": 4,
+   "name": "豆豆",
+   "coordinate": {
+    "latitude": 24.9895,
+    "longitude": 121.314
+   },
+   "fixAt": 1760000045000,
+   "packetAt": 1760000065000,
+   "held": true,
+   "farFixes": 0,
+   "batteryPercentage": 80,
+   "charging": false,
+   "range": {
+    "status": "in",
+    "clearing": [],
+    "nearBack": 0,
+    "cloudOnly": false
+   },
+   "indoorState": {
+    "goods": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "weak": [],
+    "lastGoodAt": 1760000045000,
+    "lastTime": 1760000065000,
+    "usb": true,
+    "environment": {
+     "environment": "window",
+     "source": "random_forest",
+     "modelEnvironment": "window",
+     "modelConfidence": 0.9934126984126984,
+     "probabilities": {
+      "indoor": 0,
+      "outdoor": 0.006587301587301586,
+      "window": 0.9934126984126984
+     },
+     "samples": 8,
+     "hasSignal": true,
+     "windowStart": 1759999920000,
+     "windowEnd": 1760000040000,
+     "observedAt": 1760000035000
+    },
+    "held": {
+     "anchor": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "source": "good",
+     "reason": "充電中",
+     "refine": [
+      {
+       "time": 1760000010000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000015000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000020000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000025000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000030000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000035000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000040000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000045000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "weak": [],
+     "farGood": [],
+     "lately": [],
+     "nearby": [],
+     "since": 1760000045000,
+     "anchorAt": 1760000045000,
+     "startedAt": 1760000065000
+    },
+    "previous": {
+     "time": 1760000065000,
+     "quality": "none",
+     "point": null,
+     "trusted": false
+    },
+    "previousHold": null,
+    "recentFixes": [
+     {
+      "time": 1760000000000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "bleSignal": {
+     "rssi": -55,
+     "time": 1760000065000
+    },
+    "buckets": {
+     "7": [
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000040000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 0
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000045000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 0
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000065000,
+       "slave_lat": 0,
+       "slave_lon": 0,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      }
+     ]
+    },
+    "bucketStart": 1760000040000
+   }
+  },
+  "rows": [
+   {
+    "row": {
+     "time": 1760000120000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.99129662234998,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000125000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.991745777937478,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000130000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.992194933524974,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.992194933524974,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000135000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.992644089112467,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.992644089112467,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000140000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.993093244699963,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.993093244699963,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000145000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.99354240028746,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.99354240028746,
+      "longitude": 121.314
+     },
+     "why": "good-fixes-away"
+    }
+   }
+  ]
+ },
+ {
+  "name": "continuity: opposed far fixes are not a charging drive",
+  "initial": {
+   "slaveId": 4,
+   "name": "豆豆",
+   "coordinate": {
+    "latitude": 24.9895,
+    "longitude": 121.314
+   },
+   "fixAt": 1760000195000,
+   "packetAt": 1760000195000,
+   "held": true,
+   "farFixes": 0,
+   "batteryPercentage": 80,
+   "charging": false,
+   "range": {
+    "status": "in",
+    "clearing": [],
+    "nearBack": 0,
+    "cloudOnly": false
+   },
+   "indoorState": {
+    "goods": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000120000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000125000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000130000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000135000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "weak": [],
+    "lastGoodAt": 1760000195000,
+    "lastTime": 1760000195000,
+    "usb": true,
+    "environment": {
+     "environment": "window",
+     "source": "random_forest",
+     "modelEnvironment": "window",
+     "modelConfidence": 0.9934126984126984,
+     "probabilities": {
+      "indoor": 0,
+      "outdoor": 0.006587301587301586,
+      "window": 0.9934126984126984
+     },
+     "samples": 11,
+     "hasSignal": true,
+     "windowStart": 1760000040000,
+     "windowEnd": 1760000160000,
+     "observedAt": 1760000155000
+    },
+    "held": {
+     "anchor": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "source": "good",
+     "reason": "充電中",
+     "refine": [
+      {
+       "time": 1760000010000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000015000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000020000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000025000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000030000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000035000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000040000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000045000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000125000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000130000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000135000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000140000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000145000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000150000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000155000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000160000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000165000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000170000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000175000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000180000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000185000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000190000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      {
+       "time": 1760000195000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "weak": [
+      {
+       "time": 1760000120000,
+       "latitude": 24.9895,
+       "longitude": 121.314
+      }
+     ],
+     "farGood": [],
+     "lately": [
+      {
+       "time": 1760000135000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000140000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000145000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000150000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000155000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000160000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000165000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000170000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000175000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000180000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000185000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000190000,
+       "quality": "good"
+      },
+      {
+       "time": 1760000195000,
+       "quality": "good"
+      }
+     ],
+     "nearby": [],
+     "since": 1760000045000,
+     "anchorAt": 1760000045000,
+     "startedAt": 1760000065000
+    },
+    "previous": {
+     "time": 1760000195000,
+     "quality": "good",
+     "point": {
+      "time": 1760000195000,
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "trusted": true
+    },
+    "previousHold": null,
+    "recentFixes": [
+     {
+      "time": 1760000135000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000140000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000145000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000150000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000155000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000160000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000165000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000170000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000175000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000180000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000185000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000190000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000195000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "bleSignal": {
+     "rssi": -55,
+     "time": 1760000195000
+    },
+    "buckets": {
+     "7": [
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000160000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000165000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000170000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000175000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000180000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000185000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000190000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000195000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      }
+     ]
+    },
+    "bucketStart": 1760000160000
+   }
+  },
+  "rows": [
+   {
+    "row": {
+     "time": 1760000240000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.99129662234998,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000245000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.987703377650018,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000250000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.99129662234998,
+     "longitude": 121.314,
+     "satellites": 9,
+     "hdop": 1,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 1
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
     }
    }
   ]

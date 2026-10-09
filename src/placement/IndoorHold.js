@@ -63,6 +63,14 @@ export const HOLD_CONFIG = Object.freeze({
   releaseGoodFixes: 2,
   releaseGoodFixesIndoor: 3,
   releaseAgreeM: 30,
+  // With fresh indoor/window evidence, a brief group of multipath fixes must
+  // not free the anchor. Confirm agreement over time, or a continuing walk.
+  releaseIndoorMinSpanMs: 30000,
+  // Good fixes on a run or in a car do not cluster within releaseAgreeM.
+  // A short, mostly direct progression well outside the anchor is stronger
+  // departure evidence than waiting for the weak-fix travel slices.
+  releaseGoodTravelMinSpanMs: 10000,
+  releaseGoodTravelDirectness: 0.8,
   goodShareWindowMs: 60000,
   // Good fixes whose median over nearbyMinSpanMs (at least nearbyFixes, with
   // nearbyGoodShare of rows good) sits beyond nearbyAwayM also let go.
@@ -302,6 +310,13 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
   // strict: nothing but the fixes says the dog stopped, so missing data is not
   // good enough to start a hold.
   function settled(time, strict) {
+    if (strict && previousHold && time - previousHold.time <= config.cautiousAfterReleaseMs) {
+      // Evidence that released the old hold cannot also prove a new stop.
+      // Observe a fresh minute after release before accepting another stay.
+      const afterRelease = [...goods, ...weak].filter(fix => fix.time > previousHold.time);
+      const first = Math.min(...afterRelease.map(fix => fix.time));
+      if (afterRelease.length < config.weakAnchorMin || time - first < config.anchorStayMs) return false;
+    }
     const window = goods.filter(good => time - good.time <= 3 * config.travelSliceMs);
     // Good fixes that keep moving belong to a dog on the move.
     if (window.length >= 2
@@ -386,16 +401,24 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
   function whileHeld(point, quality, time) {
     held.lately.push({ time, quality });
     held.lately = held.lately.filter(entry => time - entry.time <= Math.max(shareWindow(), config.goodShareWindowMs));
+    // A measured return interrupts departure evidence, even if that return's
+    // GPS quality is weak. No-fix packets carry no evidence of a return.
+    if (point && distanceMeters(point, held.anchor) <= config.releaseRadiusM) held.farGood = [];
+    if (point && distanceMeters(point, held.anchor) <= config.nearbyAwayM) held.nearby = [];
     if (quality === 'good') {
       const away = distanceMeters(point, held.anchor);
+      const why = evidence(point.time);
       // Searching around the house: steady good fixes settled somewhere else,
       // even if not far, mean the dog is outside again.
       held.nearby = held.nearby.filter(fix => point.time - fix.time <= config.nearbyWindowMs);
-      held.nearby.push(point);
+      // Returning within the nearby radius interrupts an attempted departure;
+      // separated excursions must not accumulate into one minute outside.
+      if (away > config.nearbyAwayM) held.nearby.push(point);
       if (held.nearby.length >= config.nearbyFixes
         && point.time - held.nearby[0].time >= config.nearbyMinSpanMs
         && held.lately.filter(entry => entry.quality === 'good').length >= held.lately.length * config.nearbyGoodShare
-        && distanceMeters(medianPoint(held.nearby), held.anchor) > config.nearbyAwayM) {
+        && distanceMeters(medianPoint(held.nearby), held.anchor) > config.nearbyAwayM
+        && (!why || near(medianPoint(held.nearby), held.nearby, config.releaseAgreeM).length === held.nearby.length)) {
         return release(point.time, 'good-fixes-nearby');
       }
       if (away <= config.refineRadiusM) {
@@ -413,7 +436,6 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       // Between the refine and release radii a fix neither moves nor frees the dog.
       if (away <= config.releaseRadiusM) return null;
       held.farGood.push({ ...point, away });
-      const why = evidence(point.time);
       const needed = why ? config.releaseGoodFixesIndoor : config.releaseGoodFixes;
       // Stray fixes through a window scatter around the house; a dog that has
       // left gives fixes that agree with each other, or lands well beyond any
@@ -427,9 +449,37 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         && lately.filter(entry => entry.quality === 'good').length >= lately.length * config.goodShareOutside;
       const beyond = held.farGood.slice(-2);
       const farAway = beyond.length === 2 && beyond.every(fix => fix.away > config.releaseFarM);
+      const agreeingRun = [];
+      if (agree) {
+        const centre = medianPoint(latest);
+        for (let index = held.farGood.length - 1; index >= 0; index -= 1) {
+          const fix = held.farGood[index];
+          if (distanceMeters(fix, centre) > config.releaseAgreeM) break;
+          agreeingRun.push(fix);
+        }
+      }
+      const sustained = agree && point.time - agreeingRun[agreeingRun.length - 1]?.time >= config.releaseIndoorMinSpanMs;
+      // A car's good fixes can be fifty metres apart every few seconds, so
+      // they never form an agreeing stationary group. Confirm at least three
+      // far fixes progressing away, rather than holding the car for minutes.
+      let lastInside = -1;
+      held.farGood.forEach((fix, index) => { if (fix.away <= config.releaseFarM) lastInside = index; });
+      const farRun = held.farGood.slice(lastInside + 1);
+      let goodTravel = false;
+      if (farRun.length >= config.releaseGoodFixesIndoor) {
+        const first = farRun[0], last = farRun[farRun.length - 1];
+        const direct = distanceMeters(first, last);
+        const path = farRun.slice(1).reduce((sum, fix, index) => sum + distanceMeters(farRun[index], fix), 0);
+        goodTravel = last.time - first.time >= config.releaseGoodTravelMinSpanMs
+          && direct >= config.travelTotalM && direct >= path * config.releaseGoodTravelDirectness
+          && last.away - first.away >= config.travelStepM
+          && farRun.slice(1).every((fix, index) => fix.away >= farRun[index].away - config.refineStepM);
+      }
+      const travel = why ? travelling(time) : null;
       // Outdoors two good fixes away are enough, however far apart a sparse
       // collar sends them; with few good rows they must also agree.
-      if ((outside && beyond.length === 2) || agree || farAway) {
+      if (why ? sustained || goodTravel || (travel?.moving && distanceMeters(travel.newest, held.anchor) > config.travelReleaseM)
+        : (outside && beyond.length === 2) || agree || farAway) {
         return release(point.time, 'good-fixes-away');
       }
       return null;
@@ -556,17 +606,20 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       const wait = why === 'window' || !why ? config.enterWindowAfterMs : config.enterIndoorAfterMs;
       // Only "indoor" and the charger are trusted on their own; "window" is
       // what the model also says under trees, so the fixes must show the stop.
-      const cautious = !why || why === 'window' || (previousHold
-        && row.time - previousHold.time <= config.cautiousAfterReleaseMs);
+      const recentlyReleased = previousHold && row.time - previousHold.time <= config.cautiousAfterReleaseMs;
+      const cautious = !why || why === 'window' || recentlyReleased;
       // By a window good fixes keep coming, all in one spot, with drift in
       // between: that spot is the anchor, no need to wait for silence.
-      const recentGood = goods.filter(good => row.time - good.time <= config.anchorRecentMs);
+      const recentGood = goods.filter(good => row.time - good.time <= config.anchorRecentMs
+        && (!previousHold || good.time > previousHold.time));
       const parked = why && quality === 'weak' && recentGood.length >= config.parkedFixes
         && recentGood[recentGood.length - 1].time - recentGood[0].time >= config.anchorStayMs
         && near(medianPoint(recentGood), recentGood, config.parkedRadiusM).length === recentGood.length;
-      if (parked || ((why || weakSinceGood) && quietFor >= wait && settled(row.time, cautious))) {
+      if ((parked && (!recentlyReleased || settled(row.time, true)))
+        || ((why || weakSinceGood) && quietFor >= wait && settled(row.time, cautious))) {
         event = start(row.time, REASONS[why ?? 'weak']);
-      } else if (!weakSinceGood && quietFor >= config.enterAfterMs && !travelling(row.time)?.moving) {
+      } else if (!weakSinceGood && quietFor >= config.enterAfterMs && !travelling(row.time)?.moving
+        && (!recentlyReleased || settled(row.time, true))) {
         // Silence after a walk is a dog under trees until the fixes stop moving.
         event = start(row.time, REASONS.noFix);
       }
