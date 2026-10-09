@@ -37,6 +37,9 @@ class LocationTrackerStore(context: Context) {
           .put(if (display == null) "pipeline" else "animated").put(display?.fixTime ?: location.timestamp)))
       .put(command(trim)))
   }
+  fun deleteAll() {
+    store.executeSql("DELETE FROM myLocationTracker", JSONArray())
+  }
   fun page(before: Long): JSONObject {
     val where = if (before > 0) "WHERE id < ?" else ""
     val params = if (before > 0) JSONArray().put(before) else JSONArray()

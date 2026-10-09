@@ -23,7 +23,7 @@ export function forgetRange(key) {
   memory.delete(key);
 }
 
-/** Tests only. */
+/** Forget derived ranges after deleting route data. */
 export function forgetRanges() {
   memory.clear();
 }

@@ -450,3 +450,24 @@ test('settings-diagnostics-on adds diagnostics only beneath advanced in 其他',
   expect(settingsHome(data).groups.map(group => group.rows.map(row => row.id)))
     .toEqual([['receiver', 'phone'], ['account'], ['alerts'], ['advanced', 'diagnostics']]);
 });
+
+test('S4 route deletion confirms, cancels and retries failures', async () => {
+  const remove = jest.fn().mockRejectedValueOnce(new Error('disk')).mockResolvedValueOnce();
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<PhoneSettings page={phonePage({})} onDeleteRoutes={remove} />); });
+  const row = () => renderer.root.findAll(n => n.props.testID === 'phone-delete-routes' && n.props.onPress)[0];
+  const dialog = () => renderer.root.findByType(require('../src/settings/ConfirmDialog').default);
+  await act(async () => row().props.onPress());
+  expect(dialog().props).toMatchObject({ visible: true, title: '刪除我的路線？',
+    body: '這支手機記錄的所有路線都會刪除，不能復原。狗的資料、名字和頭像不受影響。', confirm: '刪除', destructive: true });
+  await act(async () => dialog().props.onCancel());
+  expect(remove).not.toHaveBeenCalled();
+  expect(dialog().props.visible).toBe(false);
+  await act(async () => row().props.onPress());
+  await act(async () => dialog().props.onConfirm());
+  expect(dialog().props.problem).toContain('disk');
+  expect(dialog().props.visible).toBe(true);
+  await act(async () => dialog().props.onConfirm());
+  expect(dialog().props.visible).toBe(false);
+  await act(async () => renderer.unmount());
+});

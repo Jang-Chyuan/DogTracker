@@ -1,3 +1,5 @@
+import { NativeModules } from 'react-native';
+import { forgetRanges } from '../history/screen/RangeMemory';
 import { locationTrackerNative } from './LocationTrackerService';
 
 export const LOCATION_PAGE_SIZE = 50;
@@ -12,4 +14,11 @@ export async function readLocationPage(before = 0) {
     hasMore: result.rows.length > LOCATION_PAGE_SIZE,
     rows: result.rows.slice(0, LOCATION_PAGE_SIZE),
   };
+}
+
+export async function deletePhoneRoutes() {
+  if (!locationTrackerNative) throw new Error('此版本不支援手機位置記錄');
+  await locationTrackerNative.deleteAll();
+  forgetRanges();
+  await NativeModules.HistoryExport?.clearExports?.();
 }

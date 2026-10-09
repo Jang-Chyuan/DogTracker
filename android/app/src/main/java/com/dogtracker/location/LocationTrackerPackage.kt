@@ -62,6 +62,12 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
       promise.reject("LOCATION_AUTO_START", e.message, e)
     }
   }
+  @ReactMethod fun deleteAll(promise: Promise) {
+    executor.execute {
+      try { store.deleteAll(); promise.resolve(null) }
+      catch (e: Exception) { promise.reject("LOCATION_DELETE", "無法刪除手機路線", e) }
+    }
+  }
   @ReactMethod fun page(before: Double, promise: Promise) {
     executor.execute {
       try {
