@@ -216,7 +216,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         historyCommand(method, args) {
           const task = initialization.real.then(async () => {
             if (disposed || !databases.history) throw new Error(t("c485"));
-            if (method === 'read' && args[0].source === 'cloud' && args[1]) {
+            // A day read of an account's cloud rows waits for the cloud table's migrations.
+            if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner) {
               if (!cloudInitialization) cloudInitialization = databases.cloud.initialize().catch(error => { cloudInitialization = null; throw error; });
               await cloudInitialization;
             }

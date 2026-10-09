@@ -1,17 +1,4 @@
 import { t } from '../i18n';
-const pad = value => String(value).padStart(2, '0');
-
-export function localDateString(date = new Date()) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** Local midnight of the day a timestamp falls in. */
-export function startOfDay(value) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-}
-
 /**
  * Both ends of a fixed range are stored as epoch milliseconds: the card now
  * picks them with the platform's own date/time picker instead of parsing what
@@ -25,8 +12,3 @@ export function parseHistoryRange(startAt, endAt) {
   return { since: startAt, until: endAt };
 }
 
-export function historyWindow(preferences, now = Date.now()) {
-  if (preferences.timeMode === 'fixed')
-    return parseHistoryRange(preferences.startAt, preferences.endAt);
-  return { since: now - preferences.hours * 3600000, until: now };
-}

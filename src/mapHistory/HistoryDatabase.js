@@ -1,18 +1,8 @@
 import { t } from '../i18n';
-import { logger } from '../logger';
-import { simplifyRoute } from '../tracking/SimplifyRoute';
 import { normalizeAvatar } from '../dogs/DogArt';
-import { createHistoryHolds, HOLD_CONFIG } from '../placement/IndoorHold';
-
-// A hold can start before the window: read this much earlier as context.
-const HOLD_CONTEXT_MS = 10 * 60000;
-import { safePhoneHistoryCoordinate } from './PhoneHistoryCoordinates';
-import { coordinate } from '../tracking/RouteSamples';
-import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
-import { historyWindow, parseHistoryRange } from './HistoryTime';
+import { HOLD_CONFIG } from '../placement/IndoorHold';
+import { parseHistoryRange } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
-import { ensureBleDisplayColumns } from '../ble/BleDisplayCoordinates';
-import { budgetHistory, budgetHistoryTracks, groupHistoryStreams } from './HistoryGeometryBudget';
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
 
 // The history list reads this much before the day too: a visit or a drive
@@ -23,7 +13,7 @@ const DAY_PAGE = 2000;
 
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
-export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar', 'read',
+export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar',
   'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
 // Several dogs can be out with several Masters, so both are lists.
@@ -73,46 +63,7 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
-// A cached hold pass is rebuilt once it carries this many rows the window
-// has already left behind.
-const HOLD_CACHE_SLACK = 5000;
-
-/**
- * The hold pass of one dog's history, continued across polls: the screen
- * re-reads the same window every 10 s, and a day of rows through the tracker
- * takes the better part of a second per dog on a phone.
- */
-export function continueHistoryHolds(cache, key, points, seed) {
-  // The seed only matters to a new pass; a continued one already holds the
-  // points before the window.
-  let entry = cache.get(key);
-  const first = points.length ? entry?.index.get(points[0].id) : undefined;
-  const reuse = entry && first !== undefined
-    && first <= HOLD_CACHE_SLACK
-    && points.slice(0, entry.ids.length - first).every((row, at) => entry.ids[first + at] === row.id
-      && entry.times[first + at] === row.time);
-  if (!reuse) {
-    entry = { holds: createHistoryHolds({ seed }), ids: [], times: [], index: new Map() };
-    cache.set(key, entry);
-  }
-  const offset = reuse ? first : 0;
-  const added = points.slice(entry.ids.length - offset);
-  entry.holds.append(added);
-  for (const row of added) {
-    entry.index.set(row.id, entry.ids.length);
-    entry.ids.push(row.id);
-    entry.times.push(row.time);
-  }
-  // Fresh points keep their newest display fields; only the hold is carried over.
-  return points.map((row, at) => {
-    const held = entry.holds.output[offset + at];
-    return held?.heldReason ? { ...row, latitude: held.latitude, longitude: held.longitude, speed_kmh: null,
-      heldReason: held.heldReason, heldSince: held.heldSince, heldSource: held.heldSource } : row;
-  });
-}
-
 export function createHistoryDatabase(db) {
-  const holdCache = new Map();
   return {
     async load() {
       await db.executeAsync('CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
@@ -292,158 +243,6 @@ export function createHistoryDatabase(db) {
         // queried a dog that does not exist and looked like "no data".
         .filter(pair => pair.master > 0 && pair.slave > 0);
     },
-    async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null) {
-      const queuedAt = Date.now();
-      return withCloudDisplayLock(db, async () => {
-        const startedAt = Date.now();
-        if (startedAt - queuedAt >= 250) logger.info(`[History timing] lockWaitMs=${startedAt - queuedAt}`);
-        if (!alive()) return null;
-        const p = validateHistory(value);
-        if (p.client && p.source === 'ble') await ensureBleDisplayColumns(db);
-        const { since, until } = bounds || historyWindow(p, now);
-        async function scan(table, time, extra, params, lat, lon) {
-          const scanStarted = Date.now();
-          const holdsApply = table !== 'myLocationTracker' && !raw;
-          const scanSince = holdsApply ? since - HOLD_CONTEXT_MS : since;
-          let cursor = scanSince, id = 0, all = [];
-          const columns = table === 'myLocationTracker' || raw || holdsApply
-            ? new Set(rows(await db.executeAsync(`PRAGMA table_info(${table})`)).map(column => column.name)) : new Set();
-          const displayColumns = table === 'myLocationTracker' && columns.has('display_latitude') && columns.has('display_longitude');
-          const selectedLat = displayColumns ? `COALESCE(display_latitude, ${lat})` : lat;
-          const selectedLon = displayColumns ? `COALESCE(display_longitude, ${lon})` : lon;
-          const provenance = ['session_id', ...(raw ? ['raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state', 'display_source', 'display_location_at'] : [])]
-            .filter(column => columns.has(column)).map(column => ', ' + column).join('');
-          while (alive()) {
-            // `raw` requests all records for export, not unsmoothed coordinates.
-            const cloudDisplay = table === 'supabase_dog_status';
-            const bleDisplay = table === 'dog_status';
-            const quality = table !== 'myLocationTracker'
-              ? ['satellites', 'hdop', 'rssi', 'snr', 'usb_present'].filter(column => columns.has(column)).map(column => ', ' + column).join('') : '';
-            const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + quality + (cloudDisplay || bleDisplay
-              ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
-            const queryStarted = Date.now();
-            const recovery = displayColumns ? `, ${lat} AS pipeline_latitude, ${lon} AS pipeline_longitude${raw ? '' : ', accuracy_meters, location_at'}` : '';
-            const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} ${recovery} FROM ${table}
-              WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
-              ORDER BY ${time},id LIMIT 1000`, [scanSince, until, ...params, cursor, cursor, id]));
-            if (Date.now() - queryStarted >= 250) logger.info(`[History timing] table=${table} pageMs=${Date.now() - queryStarted} rows=${page.length}`);
-            if (!page.length) break;
-            all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay)
-              : page.map(safePhoneHistoryCoordinate)));
-            const last = page[page.length - 1]; cursor = last.time; id = last.id;
-            if (page.length < 1000) break;
-          }
-          logger.info(`[History timing] table=${table} scanMs=${Date.now() - scanStarted} rows=${all.length}`);
-          return all;
-        }
-        // Every selected dog gets an entry, with or without rows: the card lists
-        // what was asked for, and "0 筆" is an answer.
-        let phone = [], coverage = null;
-        const clients = p.slaves.map(slaveId => ({ slaveId, rows: [] }));
-        if (p.phone) {
-          const exists = rows(await db.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
-          if (exists.length) phone = await scan('myLocationTracker', 'recorded_at', '', [], 'latitude', 'longitude');
-        }
-        if (p.client && (p.source === 'ble' || owner)) {
-          const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
-          const time = p.source === 'ble' ? 'received_at' : 'CAST(COALESCE(track_at, received_at) AS INTEGER)';
-          const masters = p.masters.map(() => '?').join(',');
-          const extra = `AND master_id IN (${masters}) AND slave_id=?`
-            + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
-          // One query per dog: each keeps its own line and marker on the map, so
-          // a track can never mix two dogs.
-          const usedKeys = new Set();
-          for (const entry of clients) {
-            const params = p.source === 'cloud'
-              ? [...p.masters, entry.slaveId, owner] : [...p.masters, entry.slaveId];
-            entry.rows = await scan(table, time, extra, params, 'slave_lat', 'slave_lon');
-            if (!raw) {
-              // Indoors the line stops where the dog was last seen clearly. The
-              // last good fixes before the context window tell where that was
-              // when the dog has been inside since before it, however long ago.
-              const seed = rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude,
-                slave_lon AS longitude, master_id, satellites, hdop FROM ${table}
-                WHERE ${time} < ? ${extra} AND satellites >= ?
-                  AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
-                ORDER BY ${time} DESC LIMIT 40`,
-              [since - HOLD_CONTEXT_MS, ...params, HOLD_CONFIG.goodMinSatellites]));
-              const key = [table, owner ?? '', p.masters.join(','), entry.slaveId].join('|');
-              usedKeys.add(key);
-              entry.rows = continueHistoryHolds(holdCache, key, entry.rows, seed)
-                .filter(point => point.time >= since);
-            }
-          }
-          // Dogs no longer on the card free their cached pass.
-          if (!raw) for (const key of holdCache.keys()) if (!usedKeys.has(key)) holdCache.delete(key);
-          const client = clients.flatMap(entry => entry.rows);
-          // This screen only reads what the phone already stores: the cloud copy
-          // holds what was downloaded, and both tables are trimmed by retention.
-          // Without the oldest stored row the map cannot tell "nothing happened"
-          // from "never downloaded", and neither could the person reading it.
-          const slaves = p.slaves.map(() => '?').join(',');
-          const coverageParams = p.source === 'cloud'
-            ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
-          const stored = rows(await db.executeAsync(`SELECT MIN(${time}) AS from_at, COUNT(*) AS rows
-            FROM ${table} WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
-            ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}`, coverageParams))[0];
-          coverage = { source: p.source, rows: Number(stored?.rows || 0),
-            from: Number.isFinite(stored?.from_at) ? stored.from_at : null };
-          if (raw) return { phone, client, clients, since, until, coverage, message: '' };
-        }
-        if (!alive()) return null;
-        const result = {
-          phone: raw ? phone : historyGeometry(phone),
-          clients: clients.map(entry => ({
-            slaveId: entry.slaveId,
-            ...(raw ? { rows: entry.rows } : historyGeometry(entry.rows)),
-          })),
-          since, until, coverage,
-          message: p.client && p.source === 'cloud' && !owner ? t("c814") : '' };
-        const output = raw ? result : budgetHistory(result);
-        logger.info(`[History timing] totalMs=${Date.now() - startedAt} raw=${raw}`);
-        return output;
-      });
-    },
   };
 }
 
-export function historyGeometry(points) {
-  let segments = [], segment = [], last = null;
-  for (const stream of groupHistoryStreams(points)) {
-    segment = []; last = null;
-    for (const point of stream) {
-      // Preserve actual signal gaps within each receiver/session stream.
-      const valid = !!coordinate(point.latitude, point.longitude);
-      if (!valid || (last && (point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180
-        || point.heldReason !== last.heldReason || point.heldSince !== last.heldSince))) {
-        if (segment.length) segments.push(segment);
-        segment = [];
-      }
-      if (valid) { segment.push(point); last = point; }
-      else last = null;
-    }
-    if (segment.length) segments.push(segment);
-  }
-  segments.sort((a, b) => a[a.length - 1].time - b[b.length - 1].time);
-  segments = segments.map(part => simplifyRoute(part, 3));
-  const validPoints = points.filter(p => coordinate(p.latitude, p.longitude));
-  return budgetHistoryTracks([{ segments, latest: validPoints[validPoints.length - 1] || null,
-    count: validPoints.length, limited: false,
-    times: validPoints.map(point => point.time), sourcePoints: points }])[0];
-}
-
-// Expire cached drawings even when the database has no new rows or a read fails.
-export function expireHistory(data, preferences, now) {
-  if (!data || preferences.timeMode === 'fixed') return data;
-  const since = Math.max(data.since, historyWindow(preferences, now).since);
-  const clip = track => {
-    // Simplified endpoints cannot be time-clipped: removing the first endpoint
-    // can erase a whole valid straight section. Always rebuild from source rows,
-    // including invalid fixes/session boundaries, before simplifying and capping.
-    const points = track.sourcePoints;
-    if (!points.length || points[0].time >= since) return track;
-    return historyGeometry(points.filter(point => point.time >= since));
-  };
-  return budgetHistory({ ...data, since, until: Math.max(data.until, since), phone: clip(data.phone),
-    clients: (data.clients || []).map(track => ({ ...clip(track), slaveId: track.slaveId })) });
-}

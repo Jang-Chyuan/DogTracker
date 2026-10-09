@@ -12,7 +12,7 @@ GPS 在室內會失去定位，或定位一直飄（幾十到幾百公尺）。�
 
 同一個 `HoldStore` 也用同一批列、同樣的順序算每隻狗的**接收範圍判定**（`src/tracking/ReceiverRange.js`，`ranges()`）：只有它知道每一筆當時狗是不是停住（停住期間不重新判定、不累積解除）。本機 BLE 列帶著當時接收器的位置（`master_latitude/longitude`）；雲端列沒有，不判定也不解除。
 
-資料來源：`CloudDatabase.holdRows()` 讀 `dog_status` 與 `supabase_dog_status`（冷啟動讀最近 30 分鐘，加上每隻狗最後 40 筆好定位，不限多久以前（在狗舍充好幾天電也停得住）；之後每 10 秒只讀新增的列）。`useCloudDogs` 把結果放在 `holds`，`mergeDogMarkers` 用它畫狗。歷史由 `HistoryDatabase.read()` 對每隻狗套用同一套規則（往前多讀 10 分鐘當脈絡，並讀區間前最後的好定位）。匯出（`raw`）不套用，保留原始資料。
+資料來源：`CloudDatabase.holdRows()` 讀 `dog_status` 與 `supabase_dog_status`（冷啟動讀最近 30 分鐘，加上每隻狗最後 40 筆好定位，不限多久以前（在狗舍充好幾天電也停得住）；之後每 10 秒只讀新增的列）。`useCloudDogs` 把結果放在 `holds`，`mergeDogMarkers` 用它畫狗。歷史由 `HistoryDatabase.historyDayRows()` 讀一天（往前多讀 30 分鐘當脈絡，第一次讀時另附區間前最後 40 筆好定位當 `seed`），`useHistoryScreen` 用 `createHistoryHolds({ seed })` 套用同一套規則。匯出用原始定位，不套用。
 
 ## 規則
 
@@ -74,7 +74,7 @@ RSSI 是 Master 收到項圈 LoRa 封包的強度，主要反映項圈離接收�
 
 ## 模擬驗證
 
-`__fixtures__/IndoorScenarios.js` 產生 25 種情境的假資料（在家沒定位、飄移、時有時無、窗邊、充電、坐車充電、空曠地、樹下走路、室內開機、別的建築、隧道、離開接收範圍、大型建築、院子；機場的航廈、金屬機棚、停機坪、停車塔、貨倉、圍界；坐廂型車項圈沒定位；狗舍整晚充電、換到 20 m 外的狗籠、屋旁的戶外狗籠），每種 8 組亂數，室內判斷用真正的環境模型。`__tests__/IndoorHoldSimulation.test.js` 比較 main（不設定點／設定點在家）與這個做法：
+`__fixtures__/IndoorScenarios.js` 產生 25 種情境的假資料（在家沒定位、飄移、時有時無、窗邊、充電、坐車充電、空曠地、樹下走路、室內開機、別的建築、隧道、離開接收範圍、大型建築、院子；機場的航廈、金屬機棚、停機坪、停車塔、貨倉、圍界；坐廂型車項圈沒定位；狗舍整晚充電、換到 20 m 外的狗籠、屋旁的戶外狗籠），每種預設 5 組亂數（`runAll` 的 seeds 為 `[1, 2, 3, 4, 5]`，可傳入自訂 seeds），室內判斷用真正的環境模型。`__tests__/IndoorHoldSimulation.test.js` 比較 main（不設定點／設定點在家）與這個做法：
 
 ```bash
 REPORT=1 npm test -- --runInBand __tests__/IndoorHoldSimulation.test.js

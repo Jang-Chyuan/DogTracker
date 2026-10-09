@@ -1,9 +1,9 @@
 import { t as i18nT } from '../src/i18n';
-import { createHoldTracker, applyHistoryHolds, fixQuality, distanceMeters, HOLD_CONFIG }
+import { createHoldTracker, createHistoryHolds, applyHistoryHolds, fixQuality, distanceMeters, HOLD_CONFIG }
   from '../src/placement/IndoorHold';
 import { createHoldStore } from '../src/placement/HoldStore';
 import { mergeDogMarkers } from '../src/map/DogMerge';
-import { historyGeometry, createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
+import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
@@ -155,14 +155,6 @@ describe('the map draws a held dog', () => {
   });
 });
 
-test('history segments break where a hold starts and ends', () => {
-  const points = [{ time: 1000, latitude: 26, longitude: 122 },
-    { time: 2000, latitude: 25, longitude: 121, heldReason: '室內', heldSince: 1500 },
-    { time: 3000, latitude: 25, longitude: 121, heldReason: '室內', heldSince: 1500 },
-    { time: 4000, latitude: 26, longitude: 122 }];
-  expect(historyGeometry(points).segments.map(part => part.length)).toEqual([1, 2, 1]);
-});
-
 test('SQLite history holds a dog indoors since before the window and leaves stored GPS alone', async () => {
   const db = createMemoryConnection();
   try {
@@ -173,17 +165,17 @@ test('SQLite history holds a dog indoors since before the window and leaves stor
     await insert(3600000, 25, 121, 9, 0.9);
     await insert(3605000, 25, 121, 9, 0.9);
     for (let time = 4200000; time < 7200000; time += 30000) await insert(time, 25.0006, 121.0004, 4, 5);
-    const preferences = { ...HISTORY_DEFAULTS, phone: false, masters: [7], slaves: [4] };
+    // Moved from the retired range read (064, audit D06/T06): the day read's
+    // seed and rows through the history screen's hold pass (useHistoryScreen).
     const history = createHistoryDatabase(db);
-    const result = await history.read(preferences, null, 7200000, () => true, false,
-      { since: 6600000, until: 7200000 });
-    const rows = result.clients[0].sourcePoints.filter(row => row.latitude || row.longitude);
+    const day = await history.historyDayRows({ slaveId: 4, start: 6600000, end: 7200000 });
+    expect(day.seed.map(row => row.time)).toEqual([3600000, 3605000]);
+    const pass = createHistoryHolds({ seed: day.seed });
+    pass.append(day.rows);
+    const rows = pass.output.filter(row => row.time >= 6600000 && (row.latitude || row.longitude));
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every(row => row.heldReason && distanceMeters(row, HOME) < 1)).toBe(true);
-    expect(result.clients[0].latest.heldReason).toBeTruthy();
-    const raw = await history.read(preferences, null, 7200000, () => true, true,
-      { since: 6600000, until: 7200000 });
-    expect(raw.clients[0].rows[0].heldReason).toBeUndefined();
+    expect(day.rows.every(row => row.heldReason === undefined)).toBe(true); // the rows themselves are raw
     const stored = await db.executeAsync('SELECT slave_lat FROM dog_status WHERE received_at >= 4200000');
     expect(stored.results.every(row => row.slave_lat === 25.0006)).toBe(true);
   } finally { db.close(); }
@@ -300,28 +292,6 @@ test('the phone\'s own row coming back from the cloud is the same row, not a lat
   const before = store.holds(50 * 60000)[4];
   store.ingest({ rows: [{ ...rows[rows.length - 30], source: 'cloud' }] });
   expect(store.holds(50 * 60000)[4]).toEqual(before);
-});
-
-test('history continued poll by poll matches one pass over the whole window', () => {
-  const { continueHistoryHolds } = require('../src/mapHistory/HistoryDatabase');
-  const rows = [];
-  let id = 0;
-  for (let time = 0; time < 40 * 60000; time += 10000) {
-    const minute = time / 60000;
-    const point = minute < 5 ? offset(HOME, minute * 60, 0)
-      : minute < 30 ? null : offset(HOME, 300 + (minute - 30) * 60, 0);
-    rows.push({ id: ++id, ...(point ? good(time, point) : weak(time, offset(HOME, 300 + (time % 70000) / 300, (time % 50000) / 400))) });
-  }
-  const full = applyHistoryHolds(rows);
-  const cache = new Map();
-  let shown;
-  for (let end = 30; end <= rows.length; end += 30) shown = continueHistoryHolds(cache, 'dog', rows.slice(0, end), []);
-  shown = continueHistoryHolds(cache, 'dog', rows, []);
-  expect(shown.map(row => [row.latitude, row.longitude, row.heldReason ?? null]))
-    .toEqual(full.map(row => [row.latitude, row.longitude, row.heldReason ?? null]));
-  // The window slides forward: the earlier pass is reused, not restarted.
-  const slid = continueHistoryHolds(cache, 'dog', rows.slice(12), []);
-  expect(slid.map(row => row.heldReason ?? null)).toEqual(full.slice(12).map(row => row.heldReason ?? null));
 });
 
 test('a cold start replays a dog silent for longer than the window, and seeds it', async () => {
