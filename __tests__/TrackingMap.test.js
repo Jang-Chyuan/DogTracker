@@ -1096,3 +1096,90 @@ test('resume pill and dog dimming are wired through the live map and clear on fi
   expect(map().props.presentation.dogMarkers[0]).toMatchObject({ stale: true, dimmed: false });
   expect(nativeDog().props.opacity).toBe(1);
 });
+
+const historyFramingProps = camera => ({ ...defaults,
+  source: 'history:race', coverBottom: 500,
+  presentation: { ...defaults.presentation, dogMarkers: [],
+    historyRoute: { color: colors.phone, lines: [], places: [], times: [], camera, points: [], cursor: null } },
+});
+const deferredProjection = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+};
+
+async function readyHistory(props) {
+  await render(props);
+  await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+    .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+  await readyMap();
+  mockCamera.animateCamera.mockClear();
+}
+
+test.each(['point', 'coordinate'])('only the newest history focus animates when %s projection finishes late', async stage => {
+  const a = { latitude: 25, longitude: 121 };
+  const b = { latitude: 25.01, longitude: 121.01 };
+  const props = historyFramingProps([a, b]);
+  const pending = deferredProjection();
+  await readyHistory(props);
+  mockCamera.pointForCoordinate = jest.fn().mockResolvedValue({ x: 200, y: 400 });
+  mockCamera.coordinateForPoint = jest.fn().mockResolvedValue(b);
+  const delayed = stage === 'point' ? mockCamera.pointForCoordinate : mockCamera.coordinateForPoint;
+  delayed.mockImplementationOnce(() => pending.promise);
+  try {
+    await act(async () => renderer.update(<TrackingMap {...props}
+      historyFocus={{ key: 'a', coordinate: a, centre: true }} />));
+    await act(async () => renderer.update(<TrackingMap {...props}
+      historyFocus={{ key: 'b', coordinate: b, centre: true }} />));
+    await act(async () => pending.resolve(stage === 'point' ? { x: 200, y: 400 } : a));
+    expect(mockCamera.animateCamera.mock.calls).toEqual([[{ center: b }, { duration: 220 }]]);
+    expect(mockCamera.coordinateForPoint).toHaveBeenCalledTimes(stage === 'point' ? 1 : 2);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});
+
+test.each(['source', 'focus', 'unmount'])('a pending history projection cannot animate after %s leaves history', async change => {
+  const coordinate = { latitude: 25, longitude: 121 };
+  const props = historyFramingProps([coordinate]);
+  const pending = deferredProjection();
+  await readyHistory(props);
+  mockCamera.pointForCoordinate = jest.fn().mockResolvedValue({ x: 200, y: 400 });
+  mockCamera.coordinateForPoint = jest.fn(() => pending.promise);
+  try {
+    const historyFocus = { key: 'pending', coordinate, centre: true };
+    await act(async () => renderer.update(<TrackingMap {...props} historyFocus={historyFocus} />));
+    if (change === 'unmount') {
+      await act(async () => renderer.unmount());
+      renderer = null;
+    } else {
+      await act(async () => renderer.update(<TrackingMap {...props}
+        source={change === 'source' ? 'real' : props.source}
+        historyFocus={change === 'source' ? historyFocus : null} />));
+    }
+    mockCamera.animateCamera.mockClear();
+    await act(async () => pending.resolve(coordinate));
+    expect(mockCamera.animateCamera).not.toHaveBeenCalled();
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});
+
+test.each([0, 0.0001])('frame all keeps clustered history points at street scale (span %s)', async span => {
+  const camera = [{ latitude: 25, longitude: 121 },
+    { latitude: 25 + span, longitude: 121 + span }, { latitude: 25, longitude: 121 }];
+  const props = historyFramingProps(camera);
+  await readyHistory(props);
+  await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'cluster' }} />));
+  const [region, duration] = mockCamera.animateToRegion.mock.calls.at(-1);
+  const { layout } = require('../src/theme/tokens');
+  const longitudePerDp = 360 / (256 * 2 ** 16);
+  expect(region.longitudeDelta).toBeGreaterThanOrEqual((400 - 2 * layout.floatingGap) * longitudePerDp - 1e-10);
+  expect(region.latitudeDelta).toBeGreaterThanOrEqual(400 * longitudePerDp * Math.cos(25 * Math.PI / 180) - 1e-8);
+  // The panel occupies more space than SDK padding: the route's middle
+  // remains above the camera centre, in the exposed part of the map.
+  expect(region.latitude).toBeLessThan(25 + span / 2);
+  expect(duration).toBe(300);
+});

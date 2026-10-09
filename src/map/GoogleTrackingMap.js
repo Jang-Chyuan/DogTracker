@@ -1345,7 +1345,24 @@ function GoogleTrackingMapRenderer({
     if (!usable || !routeCamera?.length) return;
     const room = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
     const framing = overlayFramePadding(room, { topInset, bottomInset, overlayTop, overlayBottom });
-    const points = framedCoordinates(routeCamera);
+    let points = framedCoordinates(routeCamera);
+    if (tinySpan(routeCamera)) {
+      // Zoom 16 in the local Mercator projection (256dp tiles). Expand the
+      // bounds before framing so the panel-aware centre is preserved.
+      const latitude = (Math.min(...routeCamera.map(p => p.latitude))
+        + Math.max(...routeCamera.map(p => p.latitude))) / 2;
+      const longitude = (Math.min(...routeCamera.map(p => p.longitude))
+        + Math.max(...routeCamera.map(p => p.longitude))) / 2;
+      const longitudePerDp = 360 / (256 * 2 ** 16);
+      const latitudePerDp = longitudePerDp * Math.cos(latitude * Math.PI / 180);
+      const halfLat = Math.max(1, cursorLayout.height - topInset - bottomInset
+        - framing.top - framing.bottom) * latitudePerDp / 2;
+      const halfLon = Math.max(1, cursorLayout.width - 2 * MAP_SIDE_PADDING
+        - framing.left - framing.right) * longitudePerDp / 2;
+      points = [...routeCamera,
+        { latitude: latitude - halfLat, longitude: longitude - halfLon },
+        { latitude: latitude + halfLat, longitude: longitude + halfLon }];
+    }
     const region = regionForFrame(points, framing, {
       width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
       height: cursorLayout.height - topInset - bottomInset,
@@ -1368,13 +1385,20 @@ function GoogleTrackingMapRenderer({
   // middle of the map above the panel (220 ms, motion.cursorJump).
   // 判定表「使用者拖過地圖之後的游標」: otherwise the map moves only when the
   // cursor point or its label (about 60dp above it) would be out of sight.
+  const historyFocusGeneration = useRef(0);
+  useEffect(() => {
+    historyFocusGeneration.current += 1;
+    return () => { historyFocusGeneration.current += 1; };
+  }, [source, historyFocus?.key]);
   const showCursor = useCallback(
-    async (coordinate, centre) => {
+    async (coordinate, centre, generation) => {
+      const current = () => historyFocusGeneration.current === generation;
       const map = mapRef.current;
       if (!map || !coordinate) return;
       if (!centre && map.pointForCoordinate) {
         try {
           const point = await map.pointForCoordinate(coordinate);
+          if (!current()) return;
           const seen =
             point.x >= 24 &&
             point.x <= cursorLayout.width - 24 &&
@@ -1389,9 +1413,12 @@ function GoogleTrackingMapRenderer({
       if (map.pointForCoordinate) {
         try {
           const point = await map.pointForCoordinate(coordinate);
+          if (!current()) return;
           cursorCenter = await centreInView(point) || coordinate;
+          if (!current()) return;
         } catch { /* Keep the requested coordinate if projection fails. */ }
       }
+      if (!current()) return;
       map.animateCamera(
         { center: cursorCenter },
         { duration: moveDuration(motion.cursorJump.duration) },
@@ -1404,7 +1431,7 @@ function GoogleTrackingMapRenderer({
     if (!historyFocus || focusedHistory.current === historyFocus.key || !usable)
       return;
     focusedHistory.current = historyFocus.key;
-    showCursor(historyFocus.coordinate, historyFocus.centre);
+    showCursor(historyFocus.coordinate, historyFocus.centre, historyFocusGeneration.current);
   }, [historyFocus, usable, showCursor]);
   const framedRequest = useRef(null);
   useEffect(() => {
