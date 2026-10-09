@@ -23,4 +23,11 @@ class BleReconnectBackoffTest {
     assertEquals(30000L,policy.next(0,30000))
     assertEquals(120000L,policy.next(600000,30000))
   }
+  @Test fun notificationUsesFieldWordsAndSaysOnlyAWidenedWait() {
+    assertEquals("正在接收狗的位置", ReceiverNotificationText.of(true, false, 0))
+    assertEquals("正在連線接收器", ReceiverNotificationText.of(false, false, 30000))
+    assertEquals("斷線了，正在自動重連", ReceiverNotificationText.of(false, true, 30000))
+    assertEquals("斷線了，2 分鐘後再試著連線", ReceiverNotificationText.of(false, true, 120000))
+    assertEquals("斷線了，5 分鐘後再試著連線", ReceiverNotificationText.of(false, true, 300000))
+  }
 }
