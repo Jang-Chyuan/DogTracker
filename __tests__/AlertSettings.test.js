@@ -74,10 +74,10 @@ test('S6 page model: the 狗 group, the switches, 通知權限', () => {
     { key: 'dogBattery', title: i18nT("c476"), on: false },
   ] });
   // 判定表「S6 的「通知權限」列」: a row only while not allowed.
-  expect(page).toMatchObject({ receiverBattery: true, vibrate: true, sound: true, notifications: null,
+  expect(page).toMatchObject({ receiverBattery: true, vibrate: true, sound: true, notifications: { denied: false, detail: '已允許', action: null },
     pause: null });
   expect(alertsPage({}, { notificationsDenied: true }).notifications)
-    .toEqual({ denied: true, detail: i18nT('c028'), action: i18nT('c225') });
+    .toEqual({ denied: true, detail: '沒有允許', action: '允許' });
   // 「已暫停提醒到 11:10」＋「恢復」 (c298, c299) while a pause is in force.
   const until = new Date(2026, 9, 7, 11, 10).getTime();
   expect(alertsPage({}, {}, { until }, until - 60000).pause).toEqual({ title: '已暫停提醒到 11:10', action: i18nT('dev.alertPreview.AlertPreview.label') });
@@ -105,7 +105,7 @@ test('S6: rows in order; disconnect/storage has a default-on switch', async () =
   }
   // No 「可以關」 subtitle (c237: removed; the switch says it); 通知權限 allowed: no row.
   expect(shown).not.toContain('可以關');
-  expect(shown).not.toContain(i18nT('c245'));
+  expect(shown).toContain(i18nT('c245'));
   // Four switches while the 狗 group is closed.
   expect(renderer.root.findAllByType(Switch).map(item => item.props.testID))
     .toEqual(['alerts-receiverBattery', 'alerts-receiverDisconnectedStorage', 'alerts-vibrate', 'alerts-sound']);
@@ -148,8 +148,8 @@ test('S6: notifications not allowed → 未允許 and 「開系統設定 ›」 
     renderer = Renderer.create(<AlertSettings page={alertsPage({}, { notificationsDenied: true })}
       onChange={jest.fn()} onNotificationSettings={onNotificationSettings} />);
   });
-  expect(text(renderer)).toContain(i18nT('c028'));
-  expect(text(renderer)).toContain(i18nT('c225'));
+  expect(text(renderer)).toContain('沒有允許');
+  expect(text(renderer)).toContain('允許');
   expect(text(renderer)).not.toContain(i18nT('c017'));
   // E11: same problem-row contract as S4 permissions.
   expect(byId(renderer, 'alerts-notifications').props.problem).toBe(true);
@@ -168,7 +168,7 @@ test('S6: 通知權限 comes first, under 「已暫停提醒到」 while paused'
       { until: now + 50 * 60000 }, now)} onChange={jest.fn()} />);
   });
   const shown = text(renderer);
-  const order = ['已暫停提醒到 11:10', '通知權限', '未允許', '狗', '接收器電量低', '震動', '聲音'];
+  const order = ['已暫停提醒到 11:10', '通知權限', '沒有允許', '狗', '接收器電量低', '震動', '聲音'];
   let at = -1;
   for (const words of order) {
     const next = shown.indexOf(`"${words}"`, at + 1);
@@ -254,7 +254,7 @@ test('alerts-default: opens S6; every alert on; S1 says 「震動」', () => {
   expect(fixture.openRoute).toBe('alerts');
   expect(data.alerts).toEqual(DEFAULT_ALERT_PREFERENCES);
   expect(alertsPage(data.alerts, data.permissions)).toMatchObject({ dogs: { status: i18nT("c472") },
-    receiverBattery: true, vibrate: true, sound: false, notifications: null });
+    receiverBattery: true, vibrate: true, sound: false, notifications: { denied: false, detail: '已允許', action: null } });
   expect(alertsRow(data)).toMatchObject({ problem: false, status: [i18nT('c241')] });
 });
 
@@ -383,4 +383,20 @@ test('S6 dog group says paused until the pause expires, preserving its switches'
   expect(active.dogs.status).toBe('暫停中');
   expect(active.dogs.items.map(item => item.on)).toEqual([true, false, true]);
   expect(alertsPage(preferences, {}, pause, 120000).dogs.status).toBe('部分開');
+});
+
+
+test.each([false, true])('notification row matches visible text and action, denied=%s', async denied => {
+  let renderer;
+  const open = jest.fn();
+  await act(async () => { renderer = Renderer.create(<AlertSettings page={alertsPage({}, { notificationsDenied: denied })} onNotificationSettings={open} />); });
+  const row = renderer.root.findAllByType(require('../src/settings/SettingsUI').ListRow)
+    .find(item => item.props.testID === 'alerts-notifications');
+  expect(row.props.detail).toBe(denied ? '沒有允許' : '已允許');
+  expect(row.props.label).toBe(denied ? '通知權限，沒有允許，允許' : '通知權限，已允許');
+  if (denied) {
+    await act(async () => row.props.onPress());
+    expect(open).toHaveBeenCalledTimes(1);
+  } else expect(row.props.onPress).toBeUndefined();
+  await act(async () => renderer.unmount());
 });

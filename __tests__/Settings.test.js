@@ -362,8 +362,7 @@ test('phone-permissions-missing: one 權限 cell naming what is missing, 定位�
   const page = phonePage(data);
   expect(page.recording).toMatchObject({ on: true, problem: false });
   expect(page.recording.detail).toMatch(/^今天 \d{3} 筆$/);
-  expect(page.permission).toEqual({ problem: true, detail: '位置未允許、通知未允許', status: null, action: i18nT('c225') });
-  expect(page.services).toEqual({ problem: true, detail: i18nT("c1006"), status: null, action: i18nT('c228') });
+  expect(page.location).toEqual({ problem: true, detail: '手機定位關著', action: '打開', destination: 'services' });
   expect(page.battery).toEqual({ status: i18nT('c017'), action: null });
   // The same problems put the 「!」 on S1's 手機 and 提醒 rows.
   const rows = rowsOf(settingsHome(data));
@@ -373,8 +372,7 @@ test('phone-permissions-missing: one 權限 cell naming what is missing, 定位�
 
 test('S4 when all is given, and what each permission is called', () => {
   const page = phonePage(input('settings-all-ok').data);
-  expect(page.permission).toEqual({ problem: false, detail: null, status: i18nT('c017'), action: null });
-  expect(page.services).toMatchObject({ problem: false, status: i18nT("c1013") });
+  expect(page.location).toEqual({ problem: false, detail: '精確位置・使用 App 時', action: null });
   expect(page.recording.detail).toMatch(/^今天 \d{3} 筆$/);
   expect(phonePage({ phone: {}, todayCount: 1842 }).recording.detail).toBe('今天 1,842 筆');
   expect(phonePage({ phone: {}, permissions: { batteryIgnored: false } }).battery)
@@ -398,13 +396,12 @@ test('S4 draws the rows and opens the system pages', async () => {
       {...actions} />);
   });
   const out = text(renderer);
-  for (const words of ['位置記錄', '離開 App、鎖螢幕時也會繼續在背景記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
+  for (const words of ['位置記錄', '離開 App、鎖螢幕時也會繼續在背景記錄', '位置', '手機定位關著', '打開',
     '忽略電池最佳化', '背景收資料比較不會被停', '已允許']) expect(out).toContain(words);
   const press = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress());
-  await press('phone-permissions');
-  expect(actions.onPermissions).toHaveBeenCalled();
-  await press('phone-location-services');
+  await press('phone-location');
+  expect(actions.onPermissions).not.toHaveBeenCalled();
   expect(actions.onLocationServices).toHaveBeenCalled();
   // Battery optimization already allowed: nothing to press.
   expect(renderer.root.findAll(node => node.props.testID === 'phone-battery'
@@ -470,5 +467,36 @@ test('S4 route deletion confirms, cancels and retries failures', async () => {
   expect(dialog().props.visible).toBe(true);
   await act(async () => dialog().props.onConfirm());
   expect(dialog().props.visible).toBe(false);
+  await act(async () => renderer.unmount());
+});
+
+test.each([
+  ['denied', false, false, '手機定位關著', '打開', 'services'],
+  ['approximate', false, false, '手機定位關著', '打開', 'services'],
+  ['precise', false, false, '手機定位關著', '打開', 'services'],
+  ['denied', true, false, '沒有允許', '允許', 'permission'],
+  ['blocked', true, false, '沒有允許', '允許', 'permission'],
+  ['approximate', true, false, '只允許大概位置', '改成精確', 'permission'],
+  ['precise', true, false, '精確位置・使用 App 時', null, undefined],
+  ['precise', true, true, '精確位置・一律允許', null, undefined],
+])('location %s services=%s background=%s has one row and one problem', async (permission, services, backgroundGranted, detail, action, destination) => {
+  const data = { phone: { permission, services, backgroundGranted }, now: FIXTURE_NOW };
+  const page = phonePage(data);
+  expect(page.location).toMatchObject({ detail, action, problem: !!action });
+  expect(page.location.destination).toBe(destination);
+  expect(settingsHome(data).reasons.filter(reason => reason === 'phone-location')).toHaveLength(action ? 1 : 0);
+  const onPermissions = jest.fn();
+  const onLocationServices = jest.fn();
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<PhoneSettings page={page} onPermissions={onPermissions} onLocationServices={onLocationServices} />); });
+  const rows = renderer.root.findAllByType(require('../src/settings/SettingsUI').ListRow);
+  const row = rows.find(item => item.props.testID === 'phone-location');
+  expect(row.props.label).toBe(['位置', detail, action].filter(Boolean).join('，'));
+  expect(rows.filter(item => item.props.title === '位置')).toHaveLength(1);
+  if (action) {
+    await act(async () => row.props.onPress());
+    expect(destination === 'services' ? onLocationServices : onPermissions).toHaveBeenCalledTimes(1);
+    expect(destination === 'services' ? onPermissions : onLocationServices).not.toHaveBeenCalled();
+  } else expect(row.props.onPress).toBeUndefined();
   await act(async () => renderer.unmount());
 });

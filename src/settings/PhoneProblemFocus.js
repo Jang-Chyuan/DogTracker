@@ -5,8 +5,7 @@ import { useReducedMotion } from '../components/Skeleton';
 
 export function firstPhoneProblem(page) {
   if (!page.recording.on) return 'recording';
-  if (page.locationPermissionProblem) return 'permission';
-  if (page.services.problem) return 'services';
+  if (page.location.problem) return 'location';
   return null;
 }
 

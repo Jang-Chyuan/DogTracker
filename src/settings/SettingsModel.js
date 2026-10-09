@@ -290,17 +290,12 @@ export function missingPermissions(phone, permissions = {}) {
   return parts.join('、');
 }
 
-/**
- * S4. { recording: { on, detail }, permission: { problem, detail, status,
- * action }, services: { problem, detail, status, action }, battery: { status,
- * action } }. Battery optimization is a recommendation: never a 「!」.
- */
+/** Phone page: location services take precedence over denied or approximate access. */
 export function phonePage(input) {
   const { phone = {}, permissions = {}, recording = {}, todayCount = null } = input;
-  const missing = missingPermissions(phone, permissions);
+
   const servicesOff = phone.permission !== 'checking' && phone.permission !== 'unsupported' && phone.services === false;
   return {
-    locationPermissionProblem: ['denied', 'blocked', 'approximate'].includes(phone.permission),
     recording: {
       on: recording.enabled !== false,
       busy: !!recording.busy,
@@ -308,12 +303,14 @@ export function phonePage(input) {
       detail: recording.error || (Number.isFinite(todayCount) ? t('c222', { count: formatCount(todayCount) }) : null),
       problem: !!recording.error,
     },
-    permission: missing
-      ? { problem: true, detail: missing, status: null, action: t('c225') }
-      : { problem: false, detail: null, status: t('c017'), action: null },
-    services: servicesOff
-      ? { problem: true, detail: t("c1006"), status: null, action: t('c228') }
-      : { problem: false, detail: null, status: t("c1013"), action: null },
+    location: servicesOff
+      ? { problem: true, detail: t('c1222'), action: t('c859'), destination: 'services' }
+      : ['denied', 'blocked'].includes(phone.permission)
+        ? { problem: true, detail: t('c1223'), action: t('c1225'), destination: 'permission' }
+        : phone.permission === 'approximate'
+          ? { problem: true, detail: t('c1224'), action: t('c1226'), destination: 'permission' }
+          : { problem: false, detail: phone.permission === 'precise'
+            ? (phone.backgroundGranted ? t('c1221') : t('c1220')) : null, action: null },
     battery: permissions.batteryIgnored === true
       ? { status: t('c017'), action: null }
       : { status: null, action: t('c225') },

@@ -1205,7 +1205,7 @@ test.each(['com.antgo.dogtracker', 'com.antgo.dogtracker.debug'])(
     );
     await mount();
     await advance(100);
-    await press('通知權限，有問題：未允許，開系統設定');
+    await press('通知權限，沒有允許，允許');
     expect(NativeTrackingPlatform.packageName).toHaveBeenCalled();
     expect(sendIntent).toHaveBeenCalledWith(
       'android.settings.APP_NOTIFICATION_SETTINGS',

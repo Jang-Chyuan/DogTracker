@@ -56,10 +56,10 @@ export default function AlertSettings({
             testID="alerts-notifications"
             title={t('c245')}
             detail={notifications.detail}
-            problem
+            problem={notifications.denied}
             action={notifications.action}
-            onPress={onNotificationSettings}
-            label={t("c944")}
+            onPress={notifications.denied ? onNotificationSettings : undefined}
+            label={[t('c245'), notifications.detail, notifications.action].filter(Boolean).join('，')}
           />
         )}
         <ListRow

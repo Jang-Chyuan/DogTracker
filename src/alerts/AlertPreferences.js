@@ -131,6 +131,6 @@ export function alertsPage(preferences, permissions = {}, pause = null, now = Da
     receiverDisconnectedStorage: value.receiverDisconnectedStorage,
     vibrate: value.vibrate,
     sound: value.sound,
-    notifications: denied ? { denied: true, detail: t('c028'), action: t('c225') } : null,
+    notifications: { denied, detail: denied ? t('c1223') : t('c017'), action: denied ? t('c1225') : null },
   };
 }
