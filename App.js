@@ -51,7 +51,7 @@ import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLoc
 import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { historyTargetOf } from './src/mapHistory/useHistoryScreen';
 import { useDogAvatars } from './src/dogs/useDogAvatars';
-import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
+import { useHistoryCloudSource } from './src/mapHistory/HistoryCloud';
 import { useCloudSync } from './src/cloud/useCloudSync';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
 import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
@@ -224,9 +224,10 @@ function TrackerApp({ resume = null, onRestart }) {
   const dogAvatars = useDogAvatars(tracking.historyDatabase, tracking.ready.real);
   const history = useMapHistory(tracking.historyDatabase, tracking.ready.real,
     tracking.foreground && isHistory, cloudSync.ownerId);
-  // The history card downloads a cloud range it does not hold, through the same
-  // writer and the same exclusive slot as the cloud page.
-  const historyDownload = useHistoryDownload({
+  // The history's calendar asks the cloud which days hold a dog's rows and
+  // downloads a day only the cloud holds (054b), through the same writer and
+  // the same exclusive slot as the sync.
+  const historyCloud = useHistoryCloudSource({
     database: tracking.cloudDatabase, sync: cloudSync, owner: cloudSync.ownerId,
   });
   // The first location question waits for the map itself: never under the
@@ -251,7 +252,7 @@ function TrackerApp({ resume = null, onRestart }) {
   // The history page shows live data unless a history fixture (054a) is on.
   const historyFixture = !!fixture?.history;
   const mapInputs = applyScreenFixture(isHistory && !historyFixture ? null : fixture,
-    { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute,
+    { tracking, phone, cloudDogs, cloudSync, history, historyCloud, dogAvatars, todayRoute: liveTodayRoute,
       // The gear's red dot: the upload failing or the sign-in expired.
       cloudProblem: !!cloudSync.ownerId && !!upload.error,
       signInExpired: !!auth.expired,
@@ -625,7 +626,7 @@ function TrackerApp({ resume = null, onRestart }) {
       >
         <MapScreen
           history={mapInputs.history}
-          historyDownload={historyDownload}
+          historyCloud={mapInputs.historyCloud}
           tracking={mapInputs.tracking}
           phone={mapInputs.phone}
           cloudDogs={mapInputs.cloudDogs}

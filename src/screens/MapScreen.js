@@ -53,7 +53,9 @@ export default function MapScreen({
   cloudSync = null,
   // { avatars } from useDogAvatars: each dog's face by collar number.
   dogAvatars = null,
-  historyDownload,
+  // The history's cloud days and downloads (054b; HistoryCloud's
+  // useHistoryCloudSource, or a fixture's): { cloud, online }.
+  historyCloud = null,
   // Debug builds only (src/dev/ScreenFixtures.js): the clock, the phone's live
   // position and the receiver reader of a named screen state.
   fixture = null,
@@ -334,9 +336,11 @@ export default function MapScreen({
     clock: fixtureClock, active: historical && active && tracking.foreground !== false,
     recording: livePhone ? !!livePhone.running : null, onDayChange: followDay,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
-    memoryScope: fixture ? `fixture:${fixture.name}:` : '', preset: fixture?.historyView ?? null });
+    memoryScope: fixture ? `fixture:${fixture.name}:` : '', preset: fixture?.historyView ?? null,
+    cloud: historyCloud?.cloud ?? null, online: historyCloud?.online !== false, cloudSeed: historyCloud?.seed ?? null });
   const window = useWindowDimensions();
-  const historyEmpty = !!screen.model && !screen.model.dayRecords;
+  // A day downloading (H3c) or not finished keeps the half height.
+  const historyEmpty = !!screen.model && !screen.model.dayRecords && !screen.download;
   const levels = useMemo(() => panelLevels(window.height, insets.bottom, { empty: historyEmpty }),
     [window.height, insets.bottom, historyEmpty]);
   const [panel, setPanel] = useState({ level: 'half' });
@@ -590,6 +594,7 @@ export default function MapScreen({
       {historical && target && (
         <HistoryScreen key={fixture ? `fixture:${fixture.name}` : 'live'} ref={historyScreen} screen={screen}
           top={gearTop} initialRangeOpen={!!fixture?.historyView?.rangeOpen}
+          initialCalendar={fixture?.historyView?.calendar ?? null}
           name={target.subject === 'dog' ? displayName(target.slaveId, dogAliases) : ''}
           avatar={target.subject === 'dog' ? avatars[target.slaveId] : null}
           levels={levels} bottomInset={insets.bottom} onBack={onLeaveHistory}
