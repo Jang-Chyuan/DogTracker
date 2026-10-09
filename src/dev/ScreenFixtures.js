@@ -12,6 +12,7 @@
 // Every place is invented, around Taoyuan station; every time is relative to
 // one fixed clock, so a screenshot taken today and next month look the same.
 
+import { normalizeAlertPreferences } from '../alerts/AlertPreferences';
 import { emptyTrackingPoint, mapDogStatusRow } from '../models/TrackingPoint';
 import { FIXTURE_PHOTO } from './fixturePhoto';
 import { mergePositionSamples } from '../tracking/RouteSamples';
@@ -680,6 +681,19 @@ const FIXTURES = {
         today: morningWalk(position, now - 20 * MINUTE, 4200) },
       permissions: { notificationsDenied: true } };
   },
+  // ---- S6 提醒 (051b): open on the alert settings -------------------------
+  // Everything as it comes: every alert on, 震動 on, 聲音 off, notifications
+  // allowed.
+  'alerts-default': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts' }),
+  // Some switched off: 不在接收範圍 and 接收器電量低 off, 聲音 on; the 狗
+  // group open on its three switches (「部分開」). S1 says 「震動、聲音」 and
+  // 「部分開」.
+  'alerts-some-off': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts', alertsOpen: true,
+    alerts: { dogOutOfRange: false, receiverBattery: false, sound: true } }),
+  // Notifications not allowed: S6 「通知權限 未允許 開系統設定 ›」; S1's 提醒
+  // (and 手機) row only the red 「!」; the gear's red dot on the map.
+  'notifications-denied': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts',
+    permissions: { notificationsDenied: true } }),
   'card-readings-old': now => {
     const until = now - 18 * MINUTE - 30 * SECOND;
     return {
@@ -697,7 +711,7 @@ const FIXTURES = {
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
 
 // A settings page a fixture can be opened on (&page=…), whatever its own.
-export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud']);
+export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud', 'alerts']);
 const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-z]+))?$/;
 
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.
@@ -804,7 +818,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   nextId = 1;
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
-    upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null } = make(now);
+    upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
+    alertsOpen = false } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -875,6 +890,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     upload,
     expired,
     dialog,
+    // 設定 → 提醒 (S6): the saved AlertPreferences (defaults when null), and
+    // whether the 狗 group shows its three switches.
+    alerts: normalizeAlertPreferences(alerts),
+    alertsOpen,
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
     todayRoute: (() => {
@@ -942,10 +961,15 @@ export function applyScreenFixture(fixture, live, edits = null) {
       errors: { ...tracking.errors, real: null },
       realWriteError: fixture.storageError,
       preferences: { ...tracking.preferences, ready: true, busy: false, error: null,
-        value: { ...tracking.preferences.value, ...FIXTURE_PREFERENCES } },
+        value: { ...tracking.preferences.value, ...FIXTURE_PREFERENCES,
+          alerts: edits?.alerts ?? fixture.alerts } },
       // A tap on a fixture's eye or follow button must not save the fixture's
-      // dog ids into this phone's real preferences.
-      saveTrackingPreferences: ignoreWrite,
+      // dog ids into this phone's real preferences; a switch on S6 changes
+      // the fixture's alerts in memory only (useFixtureEdits).
+      saveTrackingPreferences: patch => {
+        if (patch?.alerts) edits?.setAlerts?.(patch.alerts);
+        return Promise.resolve(true);
+      },
       retryTrackingPreferences: ignoreWrite,
       resetTrackingPreferences: ignoreWrite,
       saveRealStatus: ignoreWrite,

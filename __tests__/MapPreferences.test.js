@@ -5,6 +5,7 @@ import {
   DROPPED_PREFERENCES,
   WINDOW_PRESETS,
 } from '../src/tracking/TrackingPreferences';
+import { DEFAULT_ALERT_PREFERENCES } from '../src/alerts/AlertPreferences';
 import { createSettingsDatabase } from '../src/database/SettingsDatabase';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 
@@ -75,6 +76,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showTrails: true,
     windowMinutes: 2,
     noDataCardDismissed: false,
+    alerts: DEFAULT_ALERT_PREFERENCES,
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -127,6 +129,8 @@ test('every setting survives a new controller and shares no tracking-row writes'
       showTrails: true,
       windowMinutes: 30,
       noDataCardDismissed: false,
+      // S6: 不在接收範圍 and 接收器電量低 off, 聲音 on.
+      alerts: { ...DEFAULT_ALERT_PREFERENCES, dogOutOfRange: false, receiverBattery: false, sound: true },
     };
     await first.save(value);
     await first.close();
@@ -206,4 +210,13 @@ test('changes made while a write is in flight are written after it; the last cho
   expect(await third).toBe(true);
   expect(state().value).toMatchObject({ showMasterMarker: false, showTrails: false });
   expect(database.save).toHaveBeenCalledTimes(2);
+});
+
+test('alert settings (S6): missing before v3 → the defaults; damaged → the defaults, nothing else lost', () => {
+  const old = { mode: 'real', showMasterMarker: true, showSlaveMarker: true, showTrails: false, windowMinutes: 10 };
+  expect(validateTrackingPreferences(old).alerts).toEqual(DEFAULT_ALERT_PREFERENCES);
+  const damaged = validateTrackingPreferences({ ...old, alerts: { sound: 'yes', dogStale: false, extra: 1 } });
+  expect(damaged.windowMinutes).toBe(10);
+  expect(damaged.alerts).toEqual({ ...DEFAULT_ALERT_PREFERENCES, dogStale: false });
+  expect(validateTrackingPreferences({ ...old, alerts: [true] }).alerts).toEqual(DEFAULT_ALERT_PREFERENCES);
 });

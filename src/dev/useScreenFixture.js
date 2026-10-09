@@ -3,7 +3,7 @@ import { Linking, LogBox } from 'react-native';
 import { buildFixture, fixtureNameFromUrl, fixturePageFromUrl } from './ScreenFixtures';
 
 // Debug builds only (__DEV__): listens for dogtracker://dev/fixture?name=…
-// (&page=settings|receiver|phone|cloud opens that settings page of the state) and
+// (&page=settings|receiver|phone|cloud|alerts opens that settings page of the state) and
 // hands back the fixture to draw, or null for the live data (?name=off). Release builds never subscribe, and only the debug manifest
 // (android/app/src/debug/AndroidManifest.xml) declares the scheme.
 export function useScreenFixture(enabled = __DEV__) {
@@ -35,15 +35,17 @@ export function useScreenFixture(enabled = __DEV__) {
 
 /**
  * In-memory names and faces for a fixture's dogs, changed on the dog's page
- * (A5) while the fixture is shown; forgotten when it changes or goes off.
+ * (A5), and its alert switches (S6), while the fixture is shown; forgotten when it changes or goes off.
  */
 export function useFixtureEdits(fixture) {
   const [aliases, setAliases] = useState(null);
   const [avatars, setAvatars] = useState(null);
+  const [alerts, setAlerts] = useState(null);
   const name = fixture?.name ?? null;
   useEffect(() => {
     setAliases(null);
     setAvatars(null);
+    setAlerts(null);
   }, [name]);
-  return useMemo(() => ({ aliases, avatars, setAliases, setAvatars }), [aliases, avatars]);
+  return useMemo(() => ({ aliases, avatars, alerts, setAliases, setAvatars, setAlerts }), [aliases, avatars, alerts]);
 }

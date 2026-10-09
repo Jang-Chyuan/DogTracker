@@ -1,4 +1,5 @@
 import { getErrorMessage } from '../utils/errors';
+import { DEFAULT_ALERT_PREFERENCES, normalizeAlertPreferences } from '../alerts/AlertPreferences';
 
 // Home map presets, confirmed 2026-09-16: minutes for working close to the
 // dog, hours for reviewing the outing. 24 hours is the upper bound of the home
@@ -13,6 +14,8 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   windowMinutes: 2,
   // A6 (還沒有狗) was closed with ✕: it never shows again.
   noDataCardDismissed: false,
+  // 設定 → 提醒 (S6): AlertPreferences.
+  alerts: DEFAULT_ALERT_PREFERENCES,
 });
 
 // Saved by versions before v3, which had a dog to follow and dogs hidden one by
@@ -42,6 +45,9 @@ export function validateTrackingPreferences(value) {
     showTrails: settings.showTrails,
     windowMinutes: settings.windowMinutes,
     noDataCardDismissed: settings.noDataCardDismissed,
+    // Missing before v3 (051b); a damaged value falls back to the defaults
+    // rather than failing every other preference.
+    alerts: normalizeAlertPreferences(settings.alerts),
   };
 }
 

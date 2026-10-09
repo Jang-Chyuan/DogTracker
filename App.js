@@ -31,6 +31,9 @@ import { accountPage } from './src/settings/AccountModel';
 import SettingsHome from './src/settings/SettingsHome';
 import ReceiverSettings from './src/settings/ReceiverSettings';
 import PhoneSettings from './src/settings/PhoneSettings';
+import AlertSettings from './src/settings/AlertSettings';
+import { alertsPage } from './src/alerts/AlertPreferences';
+import { useAlertPreferences } from './src/settings/useAlertPreferences';
 import SettingsLinks, { SETTINGS_LINKS } from './src/settings/SettingsLinks';
 import { phonePage, receiverPage, settingsHome, settingsInput } from './src/settings/SettingsModel';
 import { useReceiverControl } from './src/settings/useReceiverControl';
@@ -99,6 +102,7 @@ const PAGE_TITLES = {
   receiver: '接收器',
   phone: '手機',
   cloud: 'Supabase 帳號',
+  alerts: '提醒',
   diagnostics: '診斷',
   advanced: '進階',
   locationRecords: '記錄清單',
@@ -110,10 +114,10 @@ const pageTitle = route => (route.name === 'hardware' ? HARDWARE_TITLES[route.en
   : PAGE_TITLES[route.name] || '設定');
 // The v3 settings pages (light); the old pages keep their dark look until
 // their v3 pages replace them (051–053).
-const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'cloud', 'diagnostics', 'advanced']);
+const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'diagnostics', 'advanced']);
 // Where each settings home row leads.
-const SETTINGS_ROUTES = { receiver: 'receiver', phone: 'phone', account: 'cloud', diagnostics: 'diagnostics',
-  advanced: 'advanced' };
+const SETTINGS_ROUTES = { receiver: 'receiver', phone: 'phone', account: 'cloud', alerts: 'alerts',
+  diagnostics: 'diagnostics', advanced: 'advanced' };
 
 // Android's own settings pages.
 const openNotificationSettings = () => Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS',
@@ -228,6 +232,10 @@ function TrackerApp() {
   const recordingSwitch = useRecordingSwitch(tracking.foreground && route.name === 'phone' && !fixture);
   const settingsData = settingsInput(mapInputs, { now, receiverState, receiverWait: receiverWait.current,
     recording: recordingSwitch });
+  // S6's switches, saved with the tracking preferences (a fixture's only in
+  // memory). Nothing sends alerts yet: 058 reads the same AlertPreferences.
+  const alertPreferences = useAlertPreferences(settingsData.alerts, mapInputs.tracking.saveTrackingPreferences,
+    fixtureName ?? 'live');
 
   // Background work that keeps going when the map is left (返回鍵 on the
   // map): this phone uploads for a receiver and still has rows waiting.
@@ -276,7 +284,7 @@ function TrackerApp() {
     case 'settings': {
       const home = settingsHome(settingsData);
       page = <SettingsHome home={home} version={appVersion}
-        onOpen={id => (id === 'alerts' ? openNotificationSettings() : open(SETTINGS_ROUTES[id]))}
+        onOpen={id => open(SETTINGS_ROUTES[id])}
         onStorage={() => alertAction(home.storage?.full ? 'storage-settings' : 'storage-reason')} />;
       break;
     }
@@ -285,6 +293,12 @@ function TrackerApp() {
         onDisconnect={receiverControl.disconnect} onReconnect={receiverControl.reconnect}
         onRescan={() => { receiverControl.disconnect(); openHardware('qr'); }}
         onChange={() => openHardware('qr')} onConnect={() => openHardware('qr')} />;
+      break;
+    case 'alerts':
+      // 「開系統設定 ›」 opens this app's notification settings.
+      page = <AlertSettings key={fixtureName ?? 'live'} page={alertsPage(alertPreferences.value, settingsData.permissions)}
+        onChange={alertPreferences.change} onNotificationSettings={openNotificationSettings}
+        initiallyOpen={!!fixture?.alertsOpen} />;
       break;
     case 'phone':
       page = <PhoneSettings page={phonePage(settingsData)}
