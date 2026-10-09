@@ -213,7 +213,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(renderer.root.findAllByProps({ testID: 'bottom-navigation' })).toHaveLength(0);
   expect(button('歷史軌跡', 'tab')).toBeUndefined();
   await press('設定');
-  expect(text()).toContain('‹ 設定');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: '返回，設定' }).length).toBeGreaterThan(0);
   // S1: four groups, no 地圖 row; the old dark settings cards are gone.
   for (const group of ['裝置', '帳號與資料', '提醒', '其他']) expect(text()).toContain(group);
   for (const id of ['receiver', 'phone', 'account', 'alerts', 'advanced']) {
@@ -585,7 +585,7 @@ test('page changes keep the same native map, source and saved switches', async (
   expect(renderer.root.findByType(MapView).props.initialRegion).toEqual(initialRegion);
   await press('設定');
   expect(renderer.root.findByType(MapView) === map).toBe(true);
-  expect(text()).toContain('‹ 設定');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: '返回，設定' }).length).toBeGreaterThan(0);
   await press('返回，設定');
   expect(renderer.root.findByType(MapView) === map).toBe(true);
   expect(preferences()).toEqual(saved);
@@ -1215,3 +1215,22 @@ test.each(['com.antgo.dogtracker', 'com.antgo.dogtracker.debug'])(
   },
 );
 
+
+test('066: the settings header back is a real icon with room before the title, the whole row a 48dp target', async () => {
+  const { StyleSheet } = require('react-native');
+  const Glyph = require('../src/map/Glyph').default;
+  await mount();
+  await advance(100);
+  await act(async () => {
+    renderer.root.findAll(node => typeof node.props.onOpenSettings === 'function')[0].props.onOpenSettings();
+  });
+  await advance(100);
+  const back = renderer.root.findAll(node => node.props.testID === 'page-back' && typeof node.props.onPress === 'function')[0];
+  const style = StyleSheet.flatten(typeof back.props.style === 'function' ? back.props.style({ pressed: false }) : back.props.style);
+  expect(style.minHeight).toBeGreaterThanOrEqual(48);
+  expect(style.flexDirection).toBe('row');
+  expect(style.gap).toBeGreaterThanOrEqual(8);
+  const glyph = back.findByType(Glyph);
+  expect(glyph.props.name).toBe('back');
+  expect(glyph.props.size).toBeGreaterThanOrEqual(28);
+});

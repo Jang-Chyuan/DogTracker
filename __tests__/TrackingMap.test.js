@@ -650,32 +650,68 @@ describe('off-screen hints and the overlap menu', () => {
     const left = () => renderer.root.findAll(node => node.props.testID === 'edge-hint-left' && node.props.onPress);
     expect(left()).toHaveLength(0);
     await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
+    // Once two reads agree (066: a move's end is not always reported).
+    for (let i = 0; i < 4; i += 1) await act(async () => jest.advanceTimersByTime(400));
     expect(left()).toHaveLength(1);
   });
 
-  test('tapping the face carrying 「3 隻」 opens the menu; picking a dog opens it; outside closes', async () => {
+  test('066: tapping the dog carrying 「3 隻」 opens that dog — there is no list of dogs', async () => {
     const onDogPress = jest.fn();
-    const markers = [at(4, 25.005, 121.002), at(6, 25.00501, 121.0021, { problem: true, size: 48,
-      note: { text: '電量 12%・偏低', level: 'crit' } }), at(8, 25.00499, 121.0019)];
+    const markers = [at(4, 25.005, 121.002), at(6, 25.00501, 121.0021, { problem: true, size: 48 }),
+      at(8, 25.00499, 121.0019)];
     await render({ onDogPress, presentation: { ...defaults.presentation, dogMarkers: markers } });
     await layout();
     await readyMap();
     const lead = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-')
       && /^3 隻/.test(node.props.children.props.accessibilityLabel || ''));
     expect(lead).toHaveLength(1);
-    expect(lead[0].props.children.props.accessibilityLabel).toBe('3 隻：狗 6、狗 4、狗 8，點兩下選一隻');
     await act(async () => lead[0].props.onPress());
-    expect(onDogPress).not.toHaveBeenCalled();
-    const rows = () => renderer.root.findAll(node => /^overlap-row-\d+$/.test(node.props.testID || '')
-      && node.props.onPress);
-    expect(rows().map(node => node.props.accessibilityLabel)).toEqual(['狗 6，電量 12%・偏低', '狗 4', '狗 8']);
-    await act(async () => rows()[1].props.onPress());
-    expect(onDogPress).toHaveBeenCalledWith(4);
-    expect(rows()).toHaveLength(0);
-    await act(async () => lead[0].props.onPress());
-    await act(async () => renderer.root.find(node => node.props.testID === 'overlap-picker-outside'
-      && node.props.onPress).props.onPress());
-    expect(rows()).toHaveLength(0);
+    expect(onDogPress).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAll(node => /^overlap-row-\d+$/.test(node.props.testID || ''))).toHaveLength(0);
+    // TalkBack reaches every dog of the group on its own (no list to go through).
+    const items = renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '') && typeof node.type === 'string');
+    expect(items.map(node => node.props.testID).sort()).toEqual(['marker-a11y-4', 'marker-a11y-6', 'marker-a11y-8']);
+  });
+
+  test('066: zoomed in, every dog keeps its own name tag (no 「N 隻」)', async () => {
+    const markers = [at(4, 25.005, 121.002, { indoor: true }), at(6, 25.00501, 121.0021, { indoor: true }),
+      at(8, 25.00499, 121.0019, { indoor: true })];
+    mockCamera.getCamera.mockResolvedValue({ center: { latitude: 25, longitude: 121 }, heading: 0, zoom: 19 });
+    try {
+      await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
+      await layout();
+      await readyMap();
+      await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
+      await act(async () => jest.advanceTimersByTime(5000));
+      const groups = renderer.root.findAll(node => node.props.testID === 'dog-group-tag' && typeof node.type === 'string');
+      expect(groups).toHaveLength(0);
+      expect(renderer.root.findAll(node => node.props.testID === 'dog-name-tag'
+        && typeof node.type === 'string')).toHaveLength(3);
+    } finally {
+      mockCamera.getCamera.mockResolvedValue(null);
+    }
+  });
+
+  test('066: a camera move whose end is never reported still refreshes the hints', async () => {
+    const markers = [at(4, 25.005, 121.002), at(6, 25.005, 120.99)];
+    await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
+    await layout();
+    await readyMap();
+    const left = () => renderer.root.findAll(node => node.props.testID === 'edge-hint-left' && node.props.onPress);
+    expect(left()).toHaveLength(1);
+    // The camera moves so that dog 6 is on screen, slowly (a busy phone): the
+    // first read after the move still finds the old places; its end is never
+    // reported (no onRegionChangeComplete).
+    const before = mockCamera.pointForCoordinate.getMockImplementation();
+    let calls = 0;
+    mockCamera.pointForCoordinate.mockImplementation(async coordinate => {
+      calls += 1;
+      if (calls <= 4) return before(coordinate);
+      return { x: (coordinate.longitude - 120.985) * 20000, y: (25.01 - coordinate.latitude) * 100000 };
+    });
+    await act(async () => left()[0].props.onPress());
+    for (let i = 0; i < 12; i += 1) await act(async () => jest.advanceTimersByTime(400));
+    expect(left()).toHaveLength(0);
   });
 });
 
@@ -718,6 +754,76 @@ test('a dog whose card opens is moved into view once, only when the card or an e
   }
 });
 
+test('066: a dog tapped with a card open switches the card in one tap (the map tap that comes with it is dropped)', async () => {
+  const onMapPress = jest.fn();
+  const onDogPress = jest.fn();
+  await render({ onMapPress, onDogPress });
+  await readyMap();
+  const dog = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'))[0];
+  // Either order: the map tap first, then the marker; or the marker first.
+  await act(async () => renderer.root.findByType(MapView).props.onPress());
+  await act(async () => dog.props.onPress());
+  await act(async () => jest.advanceTimersByTime(600));
+  await act(async () => dog.props.onPress());
+  await act(async () => jest.advanceTimersByTime(10));
+  await act(async () => renderer.root.findByType(MapView).props.onPress());
+  await act(async () => jest.advanceTimersByTime(600));
+  expect(onDogPress).toHaveBeenCalledTimes(2);
+  expect(onMapPress).not.toHaveBeenCalled();
+});
+
+test('066: a tap Google reports as a map tap but lands on a dog face opens that dog (one tap)', async () => {
+  const { PixelRatio } = require('react-native');
+  const onMapPress = jest.fn();
+  const onDogPress = jest.fn();
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 150, y: 300 }));
+  try {
+    await render({ onMapPress, onDogPress });
+    await readyMap();
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    await act(async () => jest.advanceTimersByTime(2000));
+    const ratio = PixelRatio.get();
+    // On the face (5dp off its centre), in screen pixels as Google reports it.
+    await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 155 * ratio, y: 300 * ratio } } }));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onDogPress).toHaveBeenCalledWith(7);
+    expect(onMapPress).not.toHaveBeenCalled();
+    // Empty map further away still closes the card.
+    await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 300 * ratio, y: 600 * ratio } } }));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onMapPress).toHaveBeenCalledTimes(1);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+  }
+});
+
+test('066: 我的位置 with a card open puts the phone in the middle of the map above the card', async () => {
+  // 400 × 800, the card covers the bottom 300dp, the map's own padding 80.
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 200, y: 700 }));
+  mockCamera.coordinateForPoint = jest.fn(async ({ x, y }) => ({ latitude: y, longitude: x }));
+  const props = { bottomInset: 80, coverBottom: 300, phoneEnabled: true };
+  try {
+    await render(props);
+    await readyMap();
+    await act(async () => renderer.root.findByType(MapView).props.onUserLocationChange({
+      nativeEvent: { coordinate: { latitude: 25.002, longitude: 121.002 } } }));
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    mockCamera.animateCamera.mockClear();
+    await act(async () => renderer.root.findAll(node => node.props.testID === 'map-my-location'
+      && typeof node.props.onPress === 'function')[0].props.onPress());
+    // As an opened dog: the phone (y 700) goes to the middle above the card.
+    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 810 });
+    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({ center: { latitude: 810, longitude: 200 } });
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});
+
 test('a tap on the map reaches onMapPress, and the camera heading is reported', async () => {
   const onMapPress = jest.fn();
   const onHeading = jest.fn();
@@ -725,6 +831,9 @@ test('a tap on the map reaches onMapPress, and the camera heading is reported', 
   await render({ onMapPress, onHeading });
   await readyMap();
   await act(async () => renderer.root.findByType(MapView).props.onPress());
+  // Held back a moment (a dog tap may come with it, 066).
+  expect(onMapPress).not.toHaveBeenCalled();
+  await act(async () => jest.advanceTimersByTime(300));
   expect(onMapPress).toHaveBeenCalledTimes(1);
   await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
   expect(onHeading).toHaveBeenCalledWith(33);

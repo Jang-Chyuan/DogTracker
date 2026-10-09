@@ -3,7 +3,6 @@ import {
   SINGLE_POINT_DEGREES,
 } from '../src/map/MapFraming';
 import { edgeHints, edgeHintSpeech, edgeHintWidth } from '../src/map/EdgeHints';
-import { overlapMenuHeight, overlapMenuPlace } from '../src/map/OverlapPicker';
 
 const marker = (slaveId, latitude, longitude, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`,
   size: 40, problem: false, stale: false, source: 'ble', coordinate: { latitude, longitude }, ...extra });
@@ -134,22 +133,6 @@ describe('off-screen hints', () => {
   });
 });
 
-describe('overlap menu placement', () => {
-  const screen = { width: 400, height: 800, top: 100, bottom: 0 };
-  test('above the tapped face, 240dp wide, inside the screen', () => {
-    const place = overlapMenuPlace({ x: 390, y: 500, size: 48 }, 3, screen);
-    expect(place.height).toBe(overlapMenuHeight(3));
-    expect(place.left).toBe(400 - 8 - 240);
-    expect(place.top + place.height).toBe(500 - 24 - 8);
-  });
-  test('below it when there is no room above; 5 rows at most', () => {
-    const place = overlapMenuPlace({ x: 20, y: 150, size: 40 }, 7, screen);
-    expect(place.left).toBe(8);
-    expect(place.height).toBe(5 * 56 + 16);
-    expect(place.top).toBeGreaterThan(150);
-  });
-});
-
 test('E08 edge hints avoid the selected dog face and name tag', () => {
   const { markerBox, boxesOverlap, hintBox, mapButtonsBox, mapControlBoxes } = require('../src/map/EdgeHints');
   const selected = { ...marker(2, 0, 0), name: '小黑', tag: '小黑・室內', size: 52, selected: true };
@@ -161,4 +144,16 @@ test('E08 edge hints avoid the selected dog face and name tag', () => {
   expect(boxesOverlap(markerBox(selected, { x: 345, y: 510 }), mapButtonsBox(view))).toBe(true);
   expect(mapControlBoxes({ ...view, bottomRow: 48 }).some(box =>
     boxesOverlap(markerBox(selected, { x: 160, y: 520 }), box))).toBe(true);
+});
+
+test('066: no hint for a dog the user can see (under the gear row, or half at an edge); a dog behind the card gets one', () => {
+  const view = { width: 400, height: 800, top: 100, bottom: 300, shownTop: 0 };
+  const dogs = [marker(1, 0, 0), marker(2, 0, 0), marker(3, 0, 0)];
+  const points = {
+    1: { x: 200, y: 60 }, // under the gear row (inside the map's top padding)
+    2: { x: -10, y: 300 }, // centre just off the left edge, face half on screen
+    3: { x: 200, y: 650 }, // behind the card
+  };
+  const hints = edgeHints(dogs, points, view);
+  expect(hints.flatMap(hint => hint.slaveIds)).toEqual([3]);
 });

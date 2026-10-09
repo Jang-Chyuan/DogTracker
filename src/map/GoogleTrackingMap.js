@@ -51,7 +51,7 @@ import {
   uncrowded,
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
-import { nameTags } from './DogMarkers';
+import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
   splashChrome,
@@ -71,7 +71,6 @@ import {
 } from './MapFraming';
 import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
-import OverlapPicker, { overlapMenuPlace } from './OverlapPicker';
 
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
 const withOpacity = (hex, alpha) =>
@@ -127,6 +126,23 @@ export const FRAMING_WAIT_MAX_MS = 9000;
 const AFTER_FIT_MS = 250;
 // The map's own padding at the sides (dp).
 const MAP_SIDE_PADDING = layout.floatingGap;
+// How long a map tap waits for a dog tap that came with it (066).
+export const MAP_TAP_HOLD_MS = 250;
+// Dogs' screen places are read again this often, at most this many times,
+// until two reads agree (the camera stopped).
+const POINTS_SETTLE_MS = 400;
+const POINTS_SETTLE_READS = 10;
+const POINTS_MIN_SETTLE_MS = 800;
+const POINTS_SLOW_MS = 1500;
+const POINTS_SLOW_READS = 20;
+/** Two reads of the dogs' screen places agree (within 1 dp). */
+export function pointsSettled(previous, next) {
+  if (!previous) return false;
+  const ids = Object.keys(next);
+  if (ids.length !== Object.keys(previous).length) return false;
+  return ids.every(id => previous[id] && Math.abs(previous[id].x - next[id].x) <= 1
+    && Math.abs(previous[id].y - next[id].y) <= 1);
+}
 // History framing: 24dp all round, the cursor label on top, 框住全部 below.
 const HISTORY_FRAME = HISTORY_FRAME_PADDING;
 // Coordinates all within about 30 m of each other.
@@ -271,12 +287,13 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownK
 }
 
 // TalkBack for the face carrying a 「3 隻」 tag: the dogs in it, and what a
-// double tap does.
-function groupSpeech(tag, markers) {
+// double tap does (it opens the dog carrying the tag; no list, 066).
+function groupSpeech(tag, markers, carrier) {
   const names = tag.members
     .map(id => markers.find(marker => marker.slaveId === id)?.name)
     .filter(Boolean);
-  return t("c754", { text: tag.text, value: names.join('、') });
+  const name = markers.find(marker => marker.slaveId === carrier)?.name ?? names[0];
+  return t("c1162", { text: tag.text, value: names.join('、'), name });
 }
 
 // ---- the history route (055a) -------------------------------------------
@@ -620,12 +637,20 @@ function GoogleTrackingMapRenderer({
   // { source, points }: points from another source (a fixture or data
   // source switch moves every dog) are never used for this one.
   const [dogPoints, setDogPoints] = useState({ source: null, points: {} });
+  // The last read places and the re-reads made while they still change.
+  const lastRead = useRef(null);
+  const settleReads = useRef(0);
+  const settleTimer = useRef(null);
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
   // While the camera moves (a drag, or a move the user asked for) the screen
   // points are out of date: the off-screen hints wait for the next read.
   const moving = useRef(false);
   const [movingState, setMovingState] = useState(false);
   const movingTimer = useRef(null);
+  const moveStartedAt = useRef(0);
   const startMoving = useCallback(() => {
+    moveStartedAt.current = Date.now();
+    settleReads.current = 0;
     if (moving.current) return;
     moving.current = true;
     setMovingState(true);
@@ -634,7 +659,7 @@ function GoogleTrackingMapRenderer({
     clearTimeout(movingTimer.current);
     movingTimer.current = setTimeout(() => {
       if (moving.current) setCursorRevision(value => value + 1);
-    }, 1500);
+    }, POINTS_SETTLE_MS);
   }, []);
   useEffect(() => () => clearTimeout(movingTimer.current), []);
   const pointsKey = dogMarkers
@@ -762,10 +787,30 @@ function GoogleTrackingMapRenderer({
       ),
     ).then(entries => {
       if (!alive) return;
-      setDogPoints({
-        source,
-        points: Object.fromEntries(entries.filter(Boolean)),
-      });
+      const points = Object.fromEntries(entries.filter(Boolean));
+      setDogPoints({ source, points });
+      // A camera move does not always report its end (a move the app asked
+      // for, on a busy phone): read again until two reads agree, so the
+      // off-screen hints never use the places from before the move (066:
+      // hints for dogs that were on screen after a card opened).
+      // During a move, places read before the camera can have got going
+      // (a busy phone) do not count as settled.
+      const settled = pointsSettled(lastRead.current, points)
+        && (!moving.current || Date.now() - moveStartedAt.current >= POINTS_MIN_SETTLE_MS);
+      lastRead.current = points;
+      clearTimeout(settleTimer.current);
+      if (!settled && settleReads.current < POINTS_SETTLE_READS + POINTS_SLOW_READS) {
+        // Quick re-reads first, then slower ones; the hints stay hidden
+        // until two reads agree (or, at the very end, the last read is used).
+        const delay = settleReads.current < POINTS_SETTLE_READS ? POINTS_SETTLE_MS : POINTS_SLOW_MS;
+        settleReads.current += 1;
+        settleTimer.current = setTimeout(
+          () => setCursorRevision(value => value + 1),
+          delay,
+        );
+        return;
+      }
+      settleReads.current = 0;
       // Read after the camera stopped: the off-screen hints are right again.
       if (moving.current) {
         moving.current = false;
@@ -834,8 +879,10 @@ function GoogleTrackingMapRenderer({
       );
     // Within one source a dog that moved keeps its last screen point until the
     // next read (a moment), so its tag does not blink on every new position.
-    return nameTags(dogMarkers, points || {}, PixelRatio.getFontScale?.() || 1);
-  }, [dogMarkers, dogPoints, source, projecting]);
+    return nameTags(dogMarkers, points || {}, PixelRatio.getFontScale?.() || 1, {
+      group: groupsAtZoom(metresPerDp),
+    });
+  }, [dogMarkers, dogPoints, source, projecting, metresPerDp]);
   useEffect(() => {
     onReadyChange?.(configured && usable);
   }, [configured, usable, onReadyChange]);
@@ -970,6 +1017,7 @@ function GoogleTrackingMapRenderer({
             bottom: overlayBottom,
             bottomRow,
             fontScale,
+            shownTop: coverTop || 0,
           })
         : [],
     [
@@ -982,6 +1030,7 @@ function GoogleTrackingMapRenderer({
       overlayBottom,
       bottomRow,
       fontScale,
+      coverTop,
     ],
   );
   // When the map's own blue dot last reported (kept coarse: one update a
@@ -1039,6 +1088,24 @@ function GoogleTrackingMapRenderer({
         edgePadding: framing,
       });
   };
+  // The camera centre that puts a point now at `point` in the middle of
+  // what the map shows above an open card (and below the top cards): the
+  // camera's centre is the middle of the padded map, so it moves by how far
+  // the point is from where it should be.
+  const centreInView = point => {
+    const map = mapRef.current;
+    if (!map?.coordinateForPoint) return Promise.resolve(null);
+    const { width, height } = cursorLayout;
+    const target = { x: width / 2, y: (overlayTop + height - overlayBottom) / 2 };
+    const middle = {
+      x: width / 2,
+      y: topInset + (height - topInset - bottomInset) / 2,
+    };
+    return map.coordinateForPoint({
+      x: middle.x + point.x - target.x,
+      y: middle.y + point.y - target.y,
+    });
+  };
   // A dog whose card just opened: when the card (or a screen edge) covers it,
   // move the map so it shows in the middle of what is left above the card
   // (300 ms). Asked once per opening.
@@ -1086,23 +1153,7 @@ function GoogleTrackingMapRenderer({
           point.y < overlayTop + margin ||
           point.y > height - overlayBottom - margin - buttons - tag;
         if (!hidden || focused.current !== focusDog.key) return;
-        // The camera's centre is the middle of the padded map; move it by how
-        // far the dog is from where it should be.
-        const target = {
-          x: width / 2,
-          y: (overlayTop + height - overlayBottom) / 2,
-        };
-        const middle = {
-          x: width / 2,
-          y: topInset + (height - topInset - bottomInset) / 2,
-        };
-        const moved =
-          point && map.coordinateForPoint
-            ? await map.coordinateForPoint({
-                x: middle.x + point.x - target.x,
-                y: middle.y + point.y - target.y,
-              })
-            : null;
+        const moved = point ? await centreInView(point) : null;
         if (focused.current !== focusDog.key) return;
         takeCamera();
         map.animateCamera(
@@ -1266,50 +1317,58 @@ function GoogleTrackingMapRenderer({
     }
     if (!usable) return;
     takeCamera();
-    mapRef.current?.animateCamera(
-      { center: position },
-      { duration: moveDuration(motion.camera.duration) },
-    );
+    const map = mapRef.current;
+    const animate = to =>
+      map?.animateCamera(
+        { center: to },
+        { duration: moveDuration(motion.camera.duration) },
+      );
+    // With a card open the phone goes to the middle of the map left above
+    // it (as an opened dog does), not the middle of the screen (066).
+    if (!map?.pointForCoordinate || !map.coordinateForPoint) {
+      animate(position);
+      return;
+    }
+    map
+      .pointForCoordinate(position)
+      .then(point => (point ? centreInView(point) : null))
+      .then(to => animate(to || position))
+      .catch(() => animate(position));
   };
-  // The overlap menu: which group tag was tapped (by the dog carrying it).
-  const [picker, setPicker] = useState(null);
-  const closePicker = useCallback(() => setPicker(null), []);
+  // A tap on a dog always opens that dog's card (no list of dogs, 066).
+  // Google reports a map tap for a tap on a marker too while a card is open
+  // (the card then closed and the dog's own card needed a second tap): a map
+  // tap is held back a moment and dropped when a dog was tapped around it.
+  const lastDogPress = useRef(0);
+  const mapPressTimer = useRef(null);
+  useEffect(() => () => clearTimeout(mapPressTimer.current), []);
   const pressDog = slaveId => {
-    const tag = tags[slaveId];
-    if (tag?.group > 1)
-      setPicker({ source, lead: slaveId, members: tag.members });
-    else onDogPress?.(slaveId);
+    lastDogPress.current = Date.now();
+    clearTimeout(mapPressTimer.current);
+    onDogPress?.(slaveId);
   };
-  const pickerMarkers = useMemo(() => {
-    if (!picker || picker.source !== source) return null;
-    const byId = new Map(dogMarkers.map(marker => [marker.slaveId, marker]));
-    const members = picker.members.map(id => byId.get(id)).filter(Boolean);
-    return members.length > 1 ? members : null;
-  }, [picker, source, dogMarkers]);
-  const leadPoint = picker && screenPoints?.[picker.lead];
-  const leadSize =
-    picker && dogMarkers.find(marker => marker.slaveId === picker.lead)?.size;
-  const pickerPlace =
-    pickerMarkers && leadPoint
-      ? overlapMenuPlace(
-          { ...leadPoint, size: leadSize },
-          // Above the card: the card is drawn over the map and would cover it.
-          pickerMarkers.length,
-          {
-            width: cursorLayout.width,
-            height: cursorLayout.height,
-            top: overlayTop,
-            bottom: overlayBottom,
-          },
-        )
+  const pressMapLive = event => {
+    // Google can report a tap on a dog as a tap on the map (a card open):
+    // a tap on a dog's face opens that dog.
+    const position = event?.nativeEvent?.position;
+    const scale = PixelRatio.get?.() || 1;
+    const hit = position && screenPoints
+      ? dogAtPoint(dogMarkers, screenPoints, { x: position.x / scale, y: position.y / scale })
       : null;
-  // The menu goes when its dogs no longer overlap, on a source switch, and
-  // when a dog is opened some other way (its card row).
-  useEffect(() => {
-    if (picker && !pickerMarkers) setPicker(null);
-  }, [picker, pickerMarkers]);
-  const openDogId = dogMarkers.find(marker => marker.selected)?.slaveId ?? null;
-  useEffect(() => setPicker(null), [openDogId]);
+    if (hit != null) {
+      pressDog(hit);
+      return;
+    }
+    const at = Date.now();
+    // A dog tap just before it (the marker reported first): this map tap
+    // belongs to it.
+    if (at - lastDogPress.current < 2 * MAP_TAP_HOLD_MS) return;
+    clearTimeout(mapPressTimer.current);
+    // A dog tap after it (the map reported first) cancels it.
+    mapPressTimer.current = setTimeout(() => {
+      if (lastDogPress.current < at) onMapPress?.();
+    }, MAP_TAP_HOLD_MS);
+  };
   return (
     <View
       style={StyleSheet.absoluteFill}
@@ -1321,7 +1380,7 @@ function GoogleTrackingMapRenderer({
       <View
         style={StyleSheet.absoluteFill}
         pointerEvents="box-none"
-        importantForAccessibility={behindSheet(a11yHidden || !!picker)}
+        importantForAccessibility={behindSheet(a11yHidden)}
       >
       {!component && mountedMap ? (
         <MapView
@@ -1359,7 +1418,7 @@ function GoogleTrackingMapRenderer({
             historyRoute
               ? event => pressHistoryMap(event.nativeEvent)
               : onMapPress
-              ? () => onMapPress()
+              ? pressMapLive
               : undefined
           }
           showsUserLocation={
@@ -1423,11 +1482,8 @@ function GoogleTrackingMapRenderer({
                   camera
                 ) {
                   savedView.current = { source, camera };
-                  if (
-                    historyRoute &&
-                    Number.isFinite(camera.zoom) &&
-                    camera.center
-                  ) {
+                  // The live map too: name tags group only when zoomed out.
+                  if (Number.isFinite(camera.zoom) && camera.center) {
                     // A Google map is 256 dp wide at zoom 0. Rounded so a small
                     // pan does not redraw the markers.
                     const value = Number(
@@ -1591,7 +1647,7 @@ function GoogleTrackingMapRenderer({
               }
               label={
                 tags[marker.slaveId]?.group > 1
-                  ? groupSpeech(tags[marker.slaveId], dogMarkers)
+                  ? groupSpeech(tags[marker.slaveId], dogMarkers, marker.slaveId)
                   : undefined
               }
               onPress={onDogPress ? () => pressDog(marker.slaveId) : undefined}
@@ -1658,11 +1714,10 @@ function GoogleTrackingMapRenderer({
             items={markerA11yItems(dogMarkers, screenPoints, {
               width: cursorLayout.width,
               height: cursorLayout.height,
-              groupLabel: marker =>
-                tags[marker.slaveId]?.group > 1
-                  ? groupSpeech(tags[marker.slaveId], dogMarkers)
-                  : null,
-              grouped: marker => tags[marker.slaveId] === null,
+              // Every dog its own TalkBack item, also inside a 「N 隻」 tag:
+              // there is no list to reach the others from (066).
+              groupLabel: () => null,
+              grouped: () => false,
             })}
             onActivate={pressDog}
           />
@@ -1711,18 +1766,6 @@ function GoogleTrackingMapRenderer({
         />
       )}
       </View>
-      {pickerMarkers && pickerPlace && (
-        <OverlapPicker
-          markers={pickerMarkers}
-          place={pickerPlace}
-          avatars={presentation.dogAvatars || {}}
-          onClose={closePicker}
-          onPick={slaveId => {
-            setPicker(null);
-            onDogPress?.(slaveId);
-          }}
-        />
-      )}
     </View>
   );
 }

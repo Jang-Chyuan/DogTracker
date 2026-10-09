@@ -218,7 +218,8 @@ export const size = {
 
     // Icon roles used by compact actions and navigation (§5 / §15).
     inline: 16,
-    navigation: 22,
+    // The back icon of every page header (066: 22 was too small to hit).
+    navigation: 28,
     smallAction: 18,
     visibility: 26,
     stat: 15,
@@ -283,7 +284,6 @@ export const size = {
     // Width of the outward-pointing edge-hint arrow (§15).
     arrow: 10,
   },
-  overlapMenu: { width: 240, row: 56, avatar: 32, maxRows: 5 },
   card: {
     avatar: 40,
     labelWidth: 72,

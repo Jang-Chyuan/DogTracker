@@ -202,3 +202,13 @@ test.each(['light', 'dark'])('day bars use %s tokens, 1dp gaps and rounded tops;
   expect(StyleSheet.flatten(gap.props.style).backgroundColor).toBe(theme.colors.noDataLine);
   expect(text('activity-row-missing')).toContain('合計');
 });
+
+test('066: the back icon and the title are one 48dp row whose TalkBack label names the page', async () => {
+  const { StyleSheet } = require('react-native');
+  await mount();
+  const back = renderer.root.findAll(node => node.props.testID === 'activity-back' && typeof node.props.onPress === 'function')[0];
+  const style = StyleSheet.flatten(typeof back.props.style === 'function' ? back.props.style({ pressed: false }) : back.props.style);
+  expect(style.minHeight).toBeGreaterThanOrEqual(48);
+  expect(style.gap).toBeGreaterThanOrEqual(8);
+  expect(back.props.accessibilityLabel).toMatch(/^返回，.+・活動量$/);
+});
