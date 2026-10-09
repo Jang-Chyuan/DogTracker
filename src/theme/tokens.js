@@ -41,6 +41,8 @@ export const colors = {
   // v3 additions.
   activityLow: '#3E5A8C',
   activityNormal: '#D3CCC4',
+  // No activity evidence: neutral, readable as both text and chart graphics.
+  activityMissing: '#686868',
   // Chart fill only; the card's 劇烈活動 text uses activityHighText.
   activityHigh: '#E07A2E',
   activityHighText: '#B85A12',

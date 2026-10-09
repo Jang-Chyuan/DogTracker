@@ -41,7 +41,7 @@ export const ACTIVITY_MODES = Object.freeze([
 ]);
 const CHART = size.activity.chart;
 const STATE_COLOR = {
-  missing: 'noDataLine',
+  missing: 'activityMissing',
   rest: 'activityLow',
   normal: 'activityNormal',
   vigorous: 'activityHigh',
@@ -366,6 +366,7 @@ function Legend() {
       {ACTIVITY_VIEW_COPY.legend.map(item => (
         <View key={item.state} style={styles.legendItem}>
           <View
+            testID={`activity-legend-${item.state}`}
             style={[
               styles.swatch,
               { backgroundColor: colors[STATE_COLOR[item.state]] },
@@ -507,7 +508,7 @@ const getStyles = makeStyles(theme => {
     dayBars: { flexDirection: 'row', alignItems: 'flex-end', gap: size.activity.dayBarGap },
     daySlot: { flex: 1, justifyContent: 'flex-end' },
     dayBar: { borderTopLeftRadius: size.activity.dayBarRadius, borderTopRightRadius: size.activity.dayBarRadius },
-    dayGap: { height: size.activity.dayGapHeight, backgroundColor: colors.noDataLine },
+    dayGap: { height: size.activity.dayGapHeight, backgroundColor: colors.activityMissing },
     axisLeft: { textAlign: 'left' },
     axisRight: { textAlign: 'right' },
     axisCenter: { textAlign: 'center' },

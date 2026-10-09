@@ -1,12 +1,13 @@
 import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { BackHandler, Text } from 'react-native';
+import { BackHandler, Text, StyleSheet } from 'react-native';
 import DogCard from '../src/map/DogCard';
 import { dogCard, phoneReading } from '../src/map/DogCardModel';
 import { dogCardReadings, readDogCardRows } from '../src/activity/DogCardReadings';
 import { RANGE_STATUS } from '../src/tracking/ReceiverRange';
 import { colors } from '../src/theme/tokens';
+import { ThemeScope, lightTheme, darkTheme } from '../src/theme/ThemeProvider';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
@@ -210,4 +211,21 @@ test('E06: status labels reserve scaled width instead of wrapping at 1.3x', asyn
   const { size: sizes } = require('../src/theme/tokens');
   expect(rn.StyleSheet.flatten(label.props.style).width).toBe(sizes.card.labelWidth * 1.3);
   jest.restoreAllMocks();
+});
+
+
+test.each([lightTheme, darkTheme])('normal and missing activity use distinct card text ($isDark)', async theme => {
+  const card = model();
+  const render = activityTone => <ThemeScope theme={theme}><DogCard card={{ ...card,
+    rows: card.rows.map(row => row.key === 'activity' ? { ...row, activityTone, value: activityTone ? '一般' : '—' } : row),
+  }} /></ThemeScope>;
+  await act(async () => { renderer = Renderer.create(render('normal')); });
+  const valueColor = () => {
+    const row = renderer.root.findAll(node => node.props.testID === 'dog-card-row-activity')[0];
+    return row.findAllByType(Text).map(node => StyleSheet.flatten(node.props.style)?.color);
+  };
+  expect(valueColor()).toContain(theme.colors.text);
+  await act(async () => renderer.update(render(null)));
+  expect(valueColor()).toContain(theme.colors.activityMissing);
+  expect(valueColor()).not.toContain(theme.colors.activityLow);
 });

@@ -294,8 +294,10 @@ test('the original light palette is unchanged', () => {
       'utf8',
     ),
   );
+  const originalColors = { ...tokens.colors };
+  delete originalColors.activityMissing;
   Object.entries(baseline).forEach(([group, value]) =>
-    expect(tokens[group]).toEqual(value),
+    expect(group === 'colors' ? originalColors : tokens[group]).toEqual(value),
   );
 });
 
@@ -351,4 +353,15 @@ test('D18 small shape tokens preserve container radii and cursor padding', () =>
     cursorLabel: 16, card: 16, sheet: 16, dialog: 24, alertCard: 14,
     input: 12, stayRow: 12, scanFrame: 16 });
   expect(tokens.size.cursor).toMatchObject({ labelPaddingV: 4, labelPaddingH: 10 });
+});
+
+
+test.each([lightTheme, darkTheme])('missing activity is neutral, distinct and readable ($isDark)', theme => {
+  const c = theme.colors;
+  expect(c.activityMissing).not.toBe(c.text);
+  expect(c.activityMissing).not.toBe(c.activityNormal);
+  expect(c.activityMissing).not.toBe(c.activityLow);
+  // Text AA is stricter than the 3:1 minimum for gaps and legend swatches.
+  expect(contrast(c.activityMissing, c.surface)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(c.activityMissing, c.bg)).toBeGreaterThanOrEqual(4.5);
 });
