@@ -57,7 +57,7 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -101,6 +101,30 @@ static int versionCodeOf(String versionName) {
     (parsed[0][1] as int) * 1000000 + (parsed[0][2] as int) * 1000 + (parsed[0][3] as int)
 }
 
+// Only environment variables and this ignored file may supply release credentials.
+def uploadProperties = new Properties()
+def uploadPropertiesFile = rootProject.file('keystore.properties')
+if (uploadPropertiesFile.exists()) uploadPropertiesFile.withInputStream { uploadProperties.load(it) }
+def uploadNames = ['DOGTRACKER_UPLOAD_STORE_FILE', 'DOGTRACKER_UPLOAD_STORE_PASSWORD',
+                   'DOGTRACKER_UPLOAD_KEY_ALIAS', 'DOGTRACKER_UPLOAD_KEY_PASSWORD']
+def uploadValues = uploadNames.collectEntries { name ->
+    [(name): System.getenv(name) ?: uploadProperties.getProperty(name)]
+}
+def hasUploadSigning = uploadNames.every { uploadValues[it]?.trim() }
+def hasPartialUploadSigning = uploadNames.any { uploadValues[it]?.trim() }
+if (hasPartialUploadSigning && !hasUploadSigning) {
+    throw new GradleException('Incomplete DogTracker release signing configuration: all four DOGTRACKER_UPLOAD_* values are required.')
+}
+// Guard the actual task graph, including aggregate/abbreviated release tasks.
+gradle.taskGraph.whenReady { graph ->
+    if (!hasUploadSigning && graph.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }) {
+        if ('true'.equalsIgnoreCase(System.getenv('CI'))) {
+            throw new GradleException('CI release builds require the DogTracker release key (all four DOGTRACKER_UPLOAD_* values). Debug signing is forbidden in CI.')
+        }
+        logger.warn('WARNING: DOGTRACKER RELEASE KEY IS MISSING. Local release APK/AAB uses the PUBLIC DEBUG KEY; DO NOT PUBLISH OR DISTRIBUTE THESE ARTIFACTS.')
+    }
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -108,7 +132,7 @@ android {
 
     namespace "com.dogtracker"
     defaultConfig {
-        applicationId "com.dogtracker"
+        applicationId "com.antgo.dogtracker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersionCode.isEmpty() ? versionCodeOf(appVersionName) : appVersionCode as int
@@ -117,6 +141,14 @@ android {
         buildConfigField 'boolean', 'GOOGLE_MAPS_CONFIGURED', (!googleMapsApiKey.isEmpty()).toString()
     }
     signingConfigs {
+        release {
+            if (hasUploadSigning) {
+                storeFile rootProject.file(uploadValues.DOGTRACKER_UPLOAD_STORE_FILE)
+                storePassword uploadValues.DOGTRACKER_UPLOAD_STORE_PASSWORD
+                keyAlias uploadValues.DOGTRACKER_UPLOAD_KEY_ALIAS
+                keyPassword uploadValues.DOGTRACKER_UPLOAD_KEY_PASSWORD
+            }
+        }
         debug {
             storeFile file('debug.keystore')
             storePassword 'android'
@@ -129,9 +161,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig hasUploadSigning ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

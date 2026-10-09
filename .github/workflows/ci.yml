@@ -46,7 +46,7 @@ jobs:
         run: npx eslint src __tests__ App.js
 
   release-apk:
-    name: Build release APK
+    name: Build beta APK and Play bundle
     needs: checks
     # Build on push/merge to main and on a manual run; a pull request just runs
     # the checks above.
@@ -141,17 +141,43 @@ jobs:
           echo "name=$base.$count" >> "$GITHUB_OUTPUT"
           echo "code=$count" >> "$GITHUB_OUTPUT"
 
-      - name: Assemble release APK
+      - name: Prepare release keystore
+        env:
+          DOGTRACKER_UPLOAD_KEYSTORE_BASE64: ${{ secrets.DOGTRACKER_UPLOAD_KEYSTORE_BASE64 }}
+          DOGTRACKER_UPLOAD_STORE_FILE: ${{ secrets.DOGTRACKER_UPLOAD_STORE_FILE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -z "$DOGTRACKER_UPLOAD_KEYSTORE_BASE64" ]; then
+            echo "Missing DOGTRACKER_UPLOAD_KEYSTORE_BASE64 release signing secret" >&2
+            exit 1
+          fi
+          # The secret names the file, never a repository path or arbitrary path.
+          if [ "$DOGTRACKER_UPLOAD_STORE_FILE" != "dogtracker-upload.jks" ]; then
+            echo "DOGTRACKER_UPLOAD_STORE_FILE must be dogtracker-upload.jks" >&2
+            exit 1
+          fi
+          printf '%s' "$DOGTRACKER_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/dogtracker-upload.jks"
+
+      - name: Assemble beta APK and upload-key-signed AAB
         # Without the GOOGLE_MAPS_ANDROID_API_KEY secret the build still
         # succeeds, but BuildConfig.GOOGLE_MAPS_CONFIGURED stays false and the
         # in-app map is unusable. Note that a run created before the secret
         # existed keeps an empty value for its whole life.
         working-directory: android
         env:
+          DOGTRACKER_UPLOAD_STORE_FILE: ${{ runner.temp }}/${{ secrets.DOGTRACKER_UPLOAD_STORE_FILE }}
+          DOGTRACKER_UPLOAD_STORE_PASSWORD: ${{ secrets.DOGTRACKER_UPLOAD_STORE_PASSWORD }}
+          DOGTRACKER_UPLOAD_KEY_ALIAS: ${{ secrets.DOGTRACKER_UPLOAD_KEY_ALIAS }}
+          DOGTRACKER_UPLOAD_KEY_PASSWORD: ${{ secrets.DOGTRACKER_UPLOAD_KEY_PASSWORD }}
           GOOGLE_MAPS_ANDROID_API_KEY: ${{ secrets.GOOGLE_MAPS_ANDROID_API_KEY }}
           APP_VERSION_NAME: ${{ steps.version.outputs.name }}
           APP_VERSION_CODE: ${{ steps.version.outputs.code }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease bundleRelease --stacktrace
+
+      - name: Delete release keystore
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/dogtracker-upload.jks"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
@@ -161,6 +187,14 @@ jobs:
           # artifact is then named after the file and the name input is ignored.
           archive: false
           path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload Play bundle artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: DogTracker-Play-${{ steps.version.outputs.name }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 30
           if-no-files-found: error
 
@@ -180,7 +214,7 @@ jobs:
             "" \
             "> $(git log -1 --pretty=%s)" \
             "" \
-            "簽章使用 repo 內的 debug keystore，僅供內部測試，不可上架。" \
+            "0.3.x beta，使用 DogTracker 專用 upload key 簽章；APK 供側載測試。" \
             "手機安裝前可能需要允許「安裝未知來源的應用程式」。")"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release upload "$tag" "$asset" --clobber
