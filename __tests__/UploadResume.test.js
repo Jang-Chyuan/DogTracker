@@ -54,6 +54,19 @@ test('a route switch sends what waits first, then changes; offline it does not c
     await act(async () => { await upload.switchMode(7, 'phone').catch(error => { failure = error; }); });
     expect(failure.message).toBe('需要重新登入');
     expect(failures).toHaveBeenCalledTimes(1);
+    // K14: a cancellation during the last flush preserves the old route.
+    const controller = new AbortController();
+    database.setMode.mockClear();
+    flush.mockImplementation(async (account, master, same) => {
+      controller.abort();
+      expect(same()).toBe(false);
+      waiting = 0;
+      return { result: 'done', remaining: 0 };
+    });
+    await act(async () => { await upload.switchMode(7, 'phone', controller.signal).catch(error => { failure = error; }); });
+    expect(failure.reason).toBe('cancelled');
+    expect(database.setMode).not.toHaveBeenCalled();
+
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     Platform.OS = previousOS; NativeModules.BleBackground = previousNative;

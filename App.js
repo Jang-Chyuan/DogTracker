@@ -1080,7 +1080,7 @@ function TrackerApp({ resume = null, onRestart }) {
           }
           onRetryDownload={fixture ? () => {} : () => cloudSync.retry?.()}
           onRetryUpload={() => mapInputs.upload?.retry?.()?.catch?.(() => {})}
-          onSwitch={(master, mode) => mapInputs.upload.switchMode(master, mode)}
+          onSwitch={(master, mode, signal) => mapInputs.upload.switchMode(master, mode, signal)}
         />
       );
       break;

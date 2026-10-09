@@ -103,10 +103,10 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
      * first (it needs the network), then the route changes. Nothing is
      * deleted. Throws UploadSwitchError when rows are left.
      */
-    async switchMode(master, mode) {
+    async switchMode(master, mode, signal = null) {
       if (!db.current || !service.current) throw new UploadSwitchError('failed', 0);
       const ownerAtStart = owner;
-      const same = () => currentOwner.current === ownerAtStart;
+      const same = () => currentOwner.current === ownerAtStart && !signal?.aborted;
       const send = async () => {
         const { result, remaining } = await service.current.flush(ownerAtStart, master, same);
         refresh(n => n + 1);
