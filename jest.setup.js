@@ -8,6 +8,7 @@ jest.mock('./specs/NativeTrackingPlatform', () => ({
     claimLocationPermissionPrompt: jest.fn(async () => false),
     batteryOptimizationIgnored: jest.fn(async () => true),
     appVersion: jest.fn(() => '3.0.0'),
+    packageName: jest.fn(() => 'com.antgo.dogtracker'),
     performHaptic: jest.fn(),
   },
 }));

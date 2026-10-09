@@ -10,6 +10,8 @@ export interface Spec extends TurboModule {
   batteryOptimizationIgnored(): Promise<boolean>;
   // The installed version name (S1's last line, 「DogTracker 3.0.0」).
   appVersion(): string;
+  // Runtime applicationId, including any build variant suffix.
+  packageName(): string;
   // A touch haptic (src/utils/haptics.js): 'EFFECT_TICK', 'EFFECT_CLICK',
   // 'EFFECT_DOUBLE_CLICK' or 'EFFECT_HEAVY_CLICK', played through the window's
   // haptic feedback (follows the system's touch-feedback setting).

@@ -13,6 +13,9 @@
 # receiver, cloud, phone); its screenshot is receiver-connecting@receiver.png. The status
 # bar clock is set to the fixtures' fixed clock (09:30) with Android's demo mode,
 # and both are switched back off at the end (name=off returns to live data).
+# Override PACKAGE for other installed builds. No debug applicationIdSuffix is
+# currently configured; if one is added, include it (e.g. com.antgo.dogtracker.debug).
+PACKAGE=${PACKAGE:-com.antgo.dogtracker}
 set -e
 cd "$(dirname "$0")/.."
 OUT=${1:-fixture-screenshots}
@@ -27,7 +30,7 @@ open_link() {
     *) query="name=$1" ;;
   esac
   adb shell am start -W -a android.intent.action.VIEW \
-    -d "dogtracker://dev/fixture?$query" com.dogtracker >/dev/null
+    -d "dogtracker://dev/fixture?$query" "$PACKAGE" >/dev/null
 }
 
 # useScreenFixture logs "[ScreenFixture] showing <name>" once the app has

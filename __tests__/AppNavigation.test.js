@@ -1147,3 +1147,23 @@ test('E03: native phone fix participates in the first frame without recording', 
   const updated = renderer.root.findAll(node => typeof node.props.onNativePhone === 'function', { deep: false })[0];
   expect(updated.props.presentation.cameraPositions).toEqual(expect.arrayContaining([coordinate]));
 });
+
+test.each(['com.antgo.dogtracker', 'com.antgo.dogtracker.debug'])(
+  'notification settings targets the runtime package %s',
+  async packageName => {
+    const sendIntent = jest.spyOn(Linking, 'sendIntent').mockResolvedValue();
+    NativeTrackingPlatform.packageName.mockReturnValueOnce(packageName);
+    Linking.getInitialURL.mockResolvedValueOnce(
+      'dogtracker://dev/fixture?name=settings-problems&page=alerts',
+    );
+    await mount();
+    await advance(100);
+    await press('通知權限，有問題：未允許，開系統設定');
+    expect(NativeTrackingPlatform.packageName).toHaveBeenCalled();
+    expect(sendIntent).toHaveBeenCalledWith(
+      'android.settings.APP_NOTIFICATION_SETTINGS',
+      [{ key: 'android.provider.extra.APP_PACKAGE', value: packageName }],
+    );
+    sendIntent.mockRestore();
+  },
+);

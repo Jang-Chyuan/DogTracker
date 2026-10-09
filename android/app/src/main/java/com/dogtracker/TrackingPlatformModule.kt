@@ -61,6 +61,7 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
   }
 
   override fun appVersion(): String = BuildConfig.VERSION_NAME
+  override fun packageName(): String = reactApplicationContext.packageName
 
   // Touch haptics through the window (no VIBRATE permission; follows the
   // system's touch-feedback setting). EFFECT_DOUBLE_CLICK is two light taps.

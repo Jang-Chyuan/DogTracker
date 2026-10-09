@@ -247,7 +247,10 @@ const SETTINGS_ROUTES = {
 // Android's own settings pages.
 const openNotificationSettings = () =>
   Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
-    { key: 'android.provider.extra.APP_PACKAGE', value: 'com.dogtracker' },
+    {
+      key: 'android.provider.extra.APP_PACKAGE',
+      value: NativeTrackingPlatform.packageName(),
+    },
   ]).catch(() => Linking.openSettings());
 const openLocationServices = () =>
   Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() =>
