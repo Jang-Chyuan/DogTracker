@@ -557,6 +557,22 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
   expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
 });
+test('a history map never carries the receiver range ring', async () => {
+  await mount();
+  await advance();
+  await tapDog(7);
+  await act(async () => renderer.root.findAll(node => node.props.testID === 'dog-card-track'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  await advance();
+  expect(renderer.root.findByType(MapScreen).props.historical).toBe(true);
+  const maps = renderer.root.findAll(node => node.props.presentation && typeof node.props.onNativePhone === 'function');
+  expect(maps.length).toBeGreaterThan(0);
+  for (const map of maps) {
+    expect(map.props.presentation.historyMode).toBe(true);
+    expect(map.props.presentation.rangeRing).toBeNull();
+    expect(map.props.presentation.rangeLines).toEqual([]);
+  }
+});
 test('page changes keep the same native map, source and saved switches', async () => {
   await mount();
   await setTrails(true);

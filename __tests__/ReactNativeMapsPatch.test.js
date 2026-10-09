@@ -84,3 +84,20 @@ test('the installed MapView.java removes features completely', () => {
   for (const lookup of ['markerMap', 'heatmapMap', 'overlayMap', 'polygonMap', 'polylineMap', 'gradientPolylineMap'])
     expect(remove).toContain(`${lookup}.remove(feature.getFeature());`);
 });
+
+// One GoogleMap per MapView (DOGTRACKER_KEEP_MAP): a re-attached MapView is
+// started again, never re-created, and keeps its features, so nothing can be
+// lost or left behind on the map (a leak per re-attach, a receiver ring on a
+// history map).
+test('the installed MapView.java never re-creates its map on re-attach', () => {
+  const source = fs.readFileSync(path.join(javaRoot, 'maps/MapView.java'), 'utf8');
+  expect(source).toContain('DOGTRACKER_KEEP_MAP');
+  expect(source).toMatch(/public void onCreate\(LifecycleOwner owner\) \{\s*if \(mapCreated\) return;\s*mapCreated = true;\s*super\.onCreate\(null\);/);
+  const attach = source.slice(source.indexOf('protected void onAttachedToWindow()'), source.indexOf('protected void onDetachedFromWindow()'));
+  expect(attach).not.toMatch(/onCreate\(/);
+  expect(attach).not.toContain('savedFeatures');
+  const detach = source.slice(source.indexOf('protected void onDetachedFromWindow()'), source.indexOf('private void attachLifecycleObserver()'));
+  expect(detach).not.toContain('savedFeatures = new ArrayList');
+  expect(detach).not.toContain('features.clear()');
+  expect(detach).not.toContain('removeView(attacherGroup)');
+});
