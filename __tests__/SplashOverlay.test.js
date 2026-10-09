@@ -91,12 +91,12 @@ test('a report made before the copy mounts is not missed (the state is read from
 // O2 (lane C, 061c/061d): under load the map showed under a coral navigation
 // bar — done() waits for JavaScript's animation callback. The handover tells
 // the native side how long it runs, so the bar changes on the UI thread.
-test('the handover tells the native side how long it runs (the bar does not wait for JavaScript)', async () => {
+test.each([0.5, 1, 2])('the handover tells the native side how long it runs (animator scale %s)', async scale => {
   NativeModules.AppSplash = {
     hide: jest.fn(),
     done: jest.fn(),
     handover: jest.fn(),
-    launchInfo: () => ({ animatorScale: 1 }),
+    launchInfo: () => ({ animatorScale: scale }),
   };
   let renderer;
   await act(async () => {

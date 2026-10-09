@@ -246,9 +246,9 @@ export default function SplashOverlay() {
       finish();
       return;
     }
-    handoverStarted(
-      handoverDuration(mode, reduceMotion.current) * (animatorScale || 1),
-    );
+    // React Native's timing animations run their given duration whatever the
+    // system animator scale (only 0 is special, above).
+    handoverStarted(handoverDuration(mode, reduceMotion.current));
     if (mode !== 'fly' || reduceMotion.current) {
       timing(
         values.whole,
