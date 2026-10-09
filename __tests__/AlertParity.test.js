@@ -26,12 +26,23 @@ const receiver = (extra = {}) => ({
 // The JavaScript's view of the same dog (DogMerge's fields).
 const jsDog = value => ({
   slaveId: value.slaveId, name: value.name, coordinate: value.coordinate,
-  fixAt: value.fixAt, fixSource: 'ble', packetAt: value.packetAt, packetSource: 'ble',
+  fixAt: value.fixAt, fixSource: value.range?.cloudOnly ? 'cloud' : 'ble', packetAt: value.packetAt, packetSource: value.range?.cloudOnly ? 'cloud' : 'ble',
   ...(value.held ? { heldReason: '室內', heldSource: 'indoor' } : {}),
   batteryPercentage: value.batteryPercentage, charging: value.charging, range: value.range,
 });
 
 const SCENARIOS = [
+  {
+    name: 'K06: a local range episode survives cloud takeover and does not restart on local return',
+    preferences: {},
+    steps: [
+      { at: T, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })] },
+      { at: T + M, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: true } })] },
+      { at: T + 2 * M, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })] },
+      { at: T + 3 * M, dogs: [dog(4, '豆豆')] },
+    ],
+  },
+
   {
     name: 'two dogs, the gap, a pause, a new problem during it, the end of the pause',
     preferences: {},

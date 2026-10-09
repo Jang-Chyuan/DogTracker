@@ -100,7 +100,7 @@ export function updateAlertEvents(previous = {}, {
       add('dog-stale', dog.slaveId, { ...detail, basis: freshness.basis, lastAt: freshness.lastAt,
         ageMs: freshness.ageMs });
     }
-    if (problems.outOfRange && local) add('dog-out-of-range', dog.slaveId, detail);
+    if (problems.outOfRange && (local || previous.active?.[alertKey('dog-out-of-range', dog.slaveId)])) add('dog-out-of-range', dog.slaveId, detail);
     battery('dog-battery', dog.slaveId, dog.batteryPercentage, !!dog.charging, detail);
   }
   const outage = receiverOutage(receiver, now);

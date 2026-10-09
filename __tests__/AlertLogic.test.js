@@ -388,3 +388,16 @@ test('a paused critical problem comes back at the end with the normal pattern', 
   const ended = tick(30 * M, out, state);
   expect(ended.effects).toMatchObject({ critical: false, vibration: [...VIBRATION_PATTERNS.normal] });
 });
+
+test('K06: cloud takeover preserves an established range episode until local clearing', () => {
+  const out = { ...dog, range: { status: 'out' } };
+  const first = events(0, [out]);
+  const cloud = { ...out, fixSource: 'cloud', packetSource: 'cloud', range: { status: 'out', cloudOnly: true } };
+  const taken = events(M, [cloud], {}, first);
+  expect(taken.active['dog-out-of-range:4'].startedAt).toBe(0);
+  expect(taken.events).toEqual([]);
+  const returned = events(2 * M, [out], {}, taken);
+  expect(returned.events).toEqual([]);
+  expect(events(3 * M, [dog], {}, returned).events[0].type).toBe('clear');
+  expect(events(0, [cloud]).active['dog-out-of-range:4']).toBeUndefined();
+});

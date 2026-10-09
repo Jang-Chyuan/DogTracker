@@ -231,6 +231,7 @@ data class AlertEvent(
   val dogCount: Int = 0,
   val storageFull: Boolean = false,
   val receiverAffected: Boolean = false,
+  val source: String = "ble",
 ) {
   val severity get() = Events.SEVERITY[kind] ?: 0
   val token get() = "$startedAt:$level"
@@ -336,13 +337,14 @@ object Events {
       heard.add(subject)
       val freshness = FreshnessRule.of(dog, now, receiver.pauses)
       if (!freshness.drawn) continue
-      localDogs += 1
+      val local = !dog.range.cloudOnly
+      if (local) localDogs += 1
       val name = dog.name?.takeIf { it.isNotBlank() } ?: "狗 ${dog.slaveId}"
       if (freshness.stale) add("dog-stale", subject, null) {
-        it.copy(name = name, basis = freshness.basis, ageMs = freshness.ageMs, receiverAffected = true)
+        it.copy(name = name, basis = freshness.basis, ageMs = freshness.ageMs, receiverAffected = local, source = if (local) "ble" else "cloud")
       }
-      if (dog.range.status == Range.OUT) add("dog-out-of-range", subject, null) {
-        it.copy(name = name, receiverAffected = true)
+      if (dog.range.status == Range.OUT && (local || previous.active.containsKey(key("dog-out-of-range", subject)))) add("dog-out-of-range", subject, null) {
+        it.copy(name = name, receiverAffected = local, source = if (local) "ble" else "cloud")
       }
       battery("dog-battery", subject, dog.batteryPercentage, dog.charging, name, null)
     }
@@ -494,6 +496,7 @@ object Scheduler {
     val pending = previous.pending.toMutableMap()
     var pause = previous.pause
     val present = active.values.filter { it.present }.sortedWith(Events.bySeverity)
+    val deferred = { event: AlertEvent -> !foreground && event.source == "cloud" }
     val enabled = { event: AlertEvent -> preferences.enabled(event.kind) }
     val outageAlerts = present.any { it.kind == "receiver-disconnected" && enabled(it) }
     val covered = { event: AlertEvent -> outageAlerts && event.kind == "dog-stale" && event.receiverAffected }
@@ -504,6 +507,7 @@ object Scheduler {
     val paused = on(pause, now)
     val ended = pause != null && !paused
     for (event in present) {
+      if (deferred(event)) continue
       val token = event.token
       val before = seen[event.key]
       if (!enabled(event) || covered(event)) {
@@ -522,7 +526,7 @@ object Scheduler {
     }
     if (ended) pause = null
 
-    val queued = present.filter { pending.containsKey(it.key) }
+    val queued = present.filter { pending.containsKey(it.key) && !deferred(it) }
     val critical = queued.any { it.kind in CRITICAL_KINDS && !pending[it.key]!!.repeat }
     val deliver = queued.isNotEmpty() && (critical || previous.lastAttentionAt == null ||
       now - previous.lastAttentionAt >= ATTENTION_GAP_MS)
@@ -539,7 +543,7 @@ object Scheduler {
       lastAttentionAt = now
     }
 
-    val listed = present.filter(enabled)
+    val listed = present.filter { enabled(it) && !deferred(it) }
     val content = Content.of(listed)
     val silenced = on(pause, now) && listed.all { pause!!.known[it.key] == it.token }
     val effects = Effects(
