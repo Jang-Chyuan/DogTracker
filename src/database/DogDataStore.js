@@ -1,3 +1,4 @@
+import { NativeModules } from 'react-native';
 // 設定 → 進階 → 刪除全部狗資料 (design S7; 判定表「刪除全部狗資料」): only this
 // phone's dog position records and its downloaded copy. It does not touch
 // the cloud, the phone's own route, the dogs' names and faces, or any
@@ -74,6 +75,7 @@ export function createDogDataStore(connection) {
           : `DELETE FROM ${UPLOAD_QUEUE} WHERE NOT (${UNSENT})`, params: [] });
       }
       await connection.executeBatchAsync(commands);
+      await NativeModules.HistoryExport?.clearExports?.();
     },
   };
 }

@@ -94,6 +94,7 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     const id = ++run.current;
     const alive = () => run.current === id;
     setState({ phase: 'generating', format });
+    let directory;
     try {
       if (!exporter) throw new Error('請安裝支援匯出的 Android 版本');
       let snapshot = snapshotReady;
@@ -114,6 +115,7 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       await cleanExports(exporter, createdAt);
       if (!alive()) return;
       const exportId = `${createdAt}-${id}`;
+      directory = `history_exports/${exportId}`;
       exporting.current = exportId;
       const paths = await makeExportFiles(snapshot, format, exporter, { exportId, createdAt, alive });
       if (!alive()) return;
@@ -127,6 +129,10 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       if (!alive()) return;
       logger.warn('[History export]', error?.message || error);
       setState({ phase: 'failed', format });
+    } finally {
+      if (directory) {
+        try { await exporter.removeExports([directory]); } catch { /* startup and daily cleanup retry */ }
+      }
     }
   }, [exporter, screen, lookup, now]);
   const start = useCallback(format => generate(format, null), [generate]);

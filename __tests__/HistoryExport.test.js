@@ -284,6 +284,7 @@ describe('the export window (useHistoryExport)', () => {
     await act(async () => running);
     expect(lookup.lookupAddresses).toHaveBeenCalledWith(expect.any(Array), { timeoutMs: 5000 });
     expect(exporter.calls.share[0]).toMatchObject({ mime: 'application/gpx+xml' });
+    expect(exporter.calls.removeExports).toContainEqual([`history_exports/${DAY + 5000}-1`]);
     expect(state.phase).toBe('closed');
     act(() => renderer.unmount());
   });
@@ -323,6 +324,7 @@ describe('the export window (useHistoryExport)', () => {
     expect(exporter.calls.cancel).toHaveLength(1);
     await act(async () => { finish(); await running; });
     expect(exporter.calls.share).toHaveLength(0);
+    expect(exporter.calls.removeExports).toContainEqual([`history_exports/${DAY + 5000}-1`]);
     expect(state.back()).toBe(false);
     act(() => renderer.unmount());
   });
