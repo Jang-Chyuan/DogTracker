@@ -89,9 +89,26 @@ class LocationTrackerService : Service(), LocationListener {
         .setColor(com.dogtracker.NotificationChannels.accent(this)).setOnlyAlertOnce(true).setContentIntent(launch).setOngoing(true).addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1130), stop).build())
       val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
       check(precise) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1131) }
-      val providers = listOf(LocationManager.GPS_PROVIDER).filter { manager.isProviderEnabled(it) }
-      check(providers.isNotEmpty()) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1132) }
-      for (provider in providers) manager.requestLocationUpdates(provider, 1000L, 0f, this, worker.looper)
+      // 067: fused location (GPS + Wi-Fi + cell + sensors) where it can be had.
+      val choice = LocationSource.choose(playServicesAvailable(), Build.VERSION.SDK_INT,
+        androidx.core.location.LocationManagerCompat.isLocationEnabled(manager),
+        manager.allProviders.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }.toSet())
+      source = choice
+      when (choice) {
+        LocationSource.Choice.PlayFused -> {
+          val client = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+          val request = com.google.android.gms.location.LocationRequest.Builder(
+            com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, LocationSource.INTERVAL_MS)
+            .setMinUpdateIntervalMillis(LocationSource.INTERVAL_MS).build()
+          client.requestLocationUpdates(request, fusedCallback, worker.looper)
+          fused = client
+        }
+        LocationSource.Choice.FrameworkFused -> if (Build.VERSION.SDK_INT >= 31)
+          manager.requestLocationUpdates(LocationManager.FUSED_PROVIDER, LocationSource.INTERVAL_MS, 0f, this, worker.looper)
+        is LocationSource.Choice.Framework -> for (provider in choice.providers)
+          manager.requestLocationUpdates(provider, LocationSource.INTERVAL_MS, 0f, this, worker.looper)
+        LocationSource.Choice.None -> error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1132))
+      }
       running = true
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
       handler.post(tick)
@@ -101,6 +118,18 @@ class LocationTrackerService : Service(), LocationListener {
     }
     return if (running) START_STICKY else START_NOT_STICKY
   }
+  private var source: LocationSource.Choice = LocationSource.Choice.None
+  private var fused: com.google.android.gms.location.FusedLocationProviderClient? = null
+  private val fusedCallback = object : com.google.android.gms.location.LocationCallback() {
+    override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+      result.locations.forEach { onLocationChanged(it) }
+    }
+  }
+  private fun playServicesAvailable() = try {
+    com.google.android.gms.common.GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) ==
+      com.google.android.gms.common.ConnectionResult.SUCCESS
+  } catch (_: Throwable) { false }
+
   override fun onLocationChanged(location: Location) {
     if (stopped) return
     val now = SystemClock.elapsedRealtimeNanos()
@@ -111,7 +140,8 @@ class LocationTrackerService : Service(), LocationListener {
       if (location.hasAltitude() && location.altitude.isFinite()) location.altitude else null,
       speedAccuracy = if (Build.VERSION.SDK_INT >= 26 && location.hasSpeedAccuracy() &&
         location.speedAccuracyMetersPerSecond.isFinite() && location.speedAccuracyMetersPerSecond >= 0)
-        location.speedAccuracyMetersPerSecond else null), now)
+        location.speedAccuracyMetersPerSecond else null,
+      provider = LocationSource.label(source, location.provider)), now)
   }
   override fun onProviderDisabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1135) }
   override fun onProviderEnabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117) }
@@ -123,6 +153,8 @@ class LocationTrackerService : Service(), LocationListener {
     liveJson = "{}"
     displayLocation = null
     manager.removeUpdates(this)
+    fused?.removeLocationUpdates(fusedCallback)
+    fused = null
     worker.quitSafely()
     if (running) status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1136)
     running = false

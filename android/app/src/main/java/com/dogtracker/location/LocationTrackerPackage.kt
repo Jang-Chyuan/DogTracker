@@ -51,7 +51,9 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
         android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
       val manager = context.getSystemService(android.location.LocationManager::class.java)
       if (!enabled || LocationTrackerService.running || context.lifecycleState != LifecycleState.RESUMED ||
-        !precise || !manager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
+        // The phone's location setting (067: fused location works without the
+        // GPS provider on its own), not the GPS provider alone.
+        !precise || !androidx.core.location.LocationManagerCompat.isLocationEnabled(manager)) {
         promise.resolve(false); return
       }
       val intent = Intent(context, LocationTrackerService::class.java)
