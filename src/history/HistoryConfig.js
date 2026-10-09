@@ -8,10 +8,29 @@ const common = { radiusM: 25, leaveMs: 20000, stayMs: 180000, stayRatio: 3,
   minMoveM: 5, missingAccuracyM: 10,
   // 判定表「恢復記錄節點」: after a break longer than this the list adds a
   // 恢復記錄 node at the first fix after it.
-  resumeAfterMs: 1800000 };
+  resumeAfterMs: 1800000,
+  // 067 (user 2026-10-09): a break whose two ends are at the same place
+  // (within radiusM) is one continuous stay, up to this long — no 「沒有資料」
+  // row, no 恢復記錄 node (battery saving stops a phone overnight; the user's
+  // breaks at home were 72–130 min, many in a row).
+  samePlaceGapMaxMs: 16 * 3600000,
+  // 067: a visit this long is a stay even before five visits give a baseline
+  // (a phone at home all day has only a few, very long visits).
+  alwaysStayMs: 30 * 60000,
+  // 067: a hold the dog walked on out of — its next real fix this far from
+  // the hold spot (IndoorHold releases at travelReleaseM 80 m) — was
+  // 「收不到 GPS」 while moving, not a stay.
+  movedOnM: 150 };
 export const HISTORY_CONFIG = Object.freeze({
+  // stillMps (phone only): a fix whose own measured speed is under this, with
+  // a speed accuracy within stillSpeedAccuracyMps, was taken standing still
+  // (067: indoors all day the position drifts 50–110 m for minutes while the
+  // speed says 0–0.9 km/h; walking measures 1 m/s and more).
   phone: Object.freeze({ ...common, maxSpeed: 50, vehicleSpeed: 5,
-    enterMs: 30000, exitMs: 30000, departureMaxSpeed: 3, backtrackSpeed: 4 }),
+    enterMs: 30000, exitMs: 30000, departureMaxSpeed: 3, backtrackSpeed: 4,
+    stillMps: 0.3, stillSpeedAccuracyMps: 1.5, speedBudget: true,
+    // samePlaceGap between two still fixes (IndoorHold's anchorCheckM).
+    stillPlaceM: 100 }),
   dog: Object.freeze({ ...common, maxSpeed: 15, vehicleSpeed: 9,
     enterMs: 60000, exitMs: 60000, departureMaxSpeed: 15, backtrackSpeed: null }),
 });
@@ -30,6 +49,49 @@ export const coordinateValid = p => Number.isFinite(p.latitude) && Number.isFini
 export function median(values) {
   const sorted = [...values].sort((a, b) => a - b), n = sorted.length;
   return n ? (sorted[Math.floor(n / 2)] + sorted[Math.floor((n - 1) / 2)]) / 2 : null;
+}
+
+/**
+ * A fix measured standing still: its own speed (raw_speed_kmh, else
+ * speed_kmh) under config.stillMps, with a speed accuracy within
+ * config.stillSpeedAccuracyMps. Without a speed or its accuracy, or for a
+ * subject without stillMps, it says nothing (false).
+ */
+export function stillFix(p, config) {
+  if (!config?.stillMps || !p) return false;
+  const number = value => (value == null || value === '' ? null
+    : Number.isFinite(Number(value)) ? Number(value) : null);
+  const kmh = number(p.raw_speed_kmh) ?? number(p.speed_kmh);
+  const spread = number(p.speed_accuracy_mps);
+  if (kmh == null || kmh < 0 || spread == null || spread < 0) return false;
+  return kmh / 3.6 < config.stillMps && spread <= config.stillSpeedAccuracyMps;
+}
+
+/**
+ * A break longer than gapMs (and at most samePlaceGapMaxMs) whose two ends are
+ * at the same place (within radiusM): one continuous stay, not 「沒有資料」.
+ */
+export function samePlaceGap(a, b, config) {
+  if (!a || !b || !config?.samePlaceGapMaxMs) return false;
+  const dt = b.time - a.time;
+  if (!(dt > config.gapMs && dt <= config.samePlaceGapMaxMs)) return false;
+  const apart = distanceMeters(a, b);
+  if (!(apart > config.radiusM + 1e-8)) return true;
+  // Both ends measured standing still (the phone's own speed): indoors the
+  // position drifts tens of metres while the phone stays put; within
+  // stillPlaceM it is the same place.
+  return !!config.stillPlaceM && stillFix(a, config) && stillFix(b, config) && apart <= config.stillPlaceM;
+}
+
+/**
+ * The fix's own measured speed in m/s (raw_speed_kmh, else speed_kmh), or
+ * null when the phone did not measure one.
+ */
+export function measuredSpeedMps(p) {
+  const number = value => (value == null || value === '' ? null
+    : Number.isFinite(Number(value)) ? Number(value) : null);
+  const kmh = number(p?.raw_speed_kmh) ?? number(p?.speed_kmh);
+  return kmh == null || kmh < 0 ? null : kmh / 3.6;
 }
 
 /** 判定表「缺誤差值的位置」: a fix without an accuracy counts as 10 m. */

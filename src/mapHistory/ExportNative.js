@@ -11,6 +11,11 @@ export function nativeExporter(native = NativeModules.HistoryExport) {
     writeText: (directory, filename, text) => native.writeText(directory, filename, text),
     renderPng: (exportId, directory, pages) => native.renderPng(exportId, directory, JSON.stringify(pages)),
     share: (paths, mime) => native.share(paths, mime),
+    // 「存到下載」 (067): Download/DogTracker/; { files: [{ name, uri }], cancelled }.
+    ...(native.saveToDownloads ? {
+      saveToDownloads: (paths, mime) => native.saveToDownloads(paths, mime),
+      openDownload: (uri, mime) => native.openDownload(uri, mime),
+    } : {}),
     cancel: exportId => native.cancel(exportId),
     listExports: () => native.listExports(),
     removeExports: directories => native.removeExports(directories),

@@ -42,9 +42,10 @@ test('a visit is placed at the mean of its fixes, entered by its first fix', () 
 // 判定表「恢復記錄節點」: over 30 minutes → 沒有資料 then 恢復記錄; within 30
 // minutes only the 沒有資料 row.
 test('a break over thirty minutes adds a resume node after the no-data row', () => {
-  const long = historyTimeline(path([...leg(0, 300, 0, 1), ...leg(2200, 2500, 300, 1)]), { range: { start: 0, end: 2500000 } });
+  // Resumed 100 m on (067: a break that ends where it began is a stay).
+  const long = historyTimeline(path([...leg(0, 300, 0, 1), ...leg(2200, 2500, 400, 1)]), { range: { start: 0, end: 2500000 } });
   expect(long.nodes.map(n => n.type)).toEqual(['departure', 'movement', 'gap', 'resume', 'movement', 'end']);
-  const short = historyTimeline(path([...leg(0, 300, 0, 1), ...leg(1500, 1800, 300, 1)]), { range: { start: 0, end: 1800000 } });
+  const short = historyTimeline(path([...leg(0, 300, 0, 1), ...leg(1500, 1800, 400, 1)]), { range: { start: 0, end: 1800000 } });
   expect(short.nodes.map(n => n.type)).toEqual(['departure', 'movement', 'gap', 'movement', 'end']);
 });
 
@@ -126,8 +127,11 @@ test('the edge into a hold adds no distance, the release does', () => {
 });
 // Codex review #7 — fixes over 25 m are not judged: they cannot bridge a
 // 10-minute interruption between judged fixes (判定表「造訪的起訖」).
-test('a poor fix in the middle does not join two visits across ten minutes', () => {
-  expect(historyVisits([point(0), point(500, 0, { accuracy: 30 }), point(700)])).toHaveLength(2);
+// 067 (user 2026-10-09): a break whose two ends are at the same place is one
+// continuous stay; at another place it still splits.
+test('a poor fix in the middle: ten minutes at the same place is one visit, elsewhere two', () => {
+  expect(historyVisits([point(0), point(500, 0, { accuracy: 30 }), point(700)])).toHaveLength(1);
+  expect(historyVisits([point(0), point(500, 0, { accuracy: 30 }), point(700, 30)])).toHaveLength(2);
 });
 // Codex review #9 — a drive cut off by the end of the data keeps its last fix
 // in the car: no zero-length visit there.
@@ -144,4 +148,34 @@ test('a long slow stretch before the car keeps its row and the switch point', ()
   const model = historyTimeline(path(pairs), { subject: 'phone', range: { start: 0, end: 400000 } });
   expect(model.nodes.map(n => (n.type === 'movement' ? n.mode : n.type))).toEqual(
     ['departure', 'walking', 'switch', 'driving', 'end']);
+});
+
+// 067 (user 2026-10-09): battery saving stops a phone overnight. A break whose
+// two ends are at the same place is one continuous stay — no 「沒有資料」, no
+// 恢復記錄 — up to 16 hours; one that ends elsewhere is still 「沒有資料」.
+test('an overnight break at the same place is one stay; one that ends elsewhere stays a break', () => {
+  const home = [...leg(0, 1200, 0, 0), ...leg(1200 + 130 * 60, 1200 + 130 * 60 + 1200, 0, 0)];
+  const night = historyTimeline(path([...leg(-600, 0, -600, 1), ...home, ...leg(10000, 10600, 0, 1)]),
+    { subject: 'phone', range: { start: -600000, end: 10600000 } });
+  const kinds = night.nodes.map(n => n.type);
+  expect(kinds).not.toContain('gap');
+  expect(kinds).not.toContain('resume');
+  const stay = night.nodes.find(n => n.type === 'stop');
+  expect(stay.durationMs).toBeGreaterThanOrEqual((1200 + 130 * 60 + 1200) * 1000);
+  const moved = historyTimeline(path([...leg(0, 1200, 0, 0), ...leg(1200 + 130 * 60, 1200 + 130 * 60 + 1200, 200, 0)]),
+    { subject: 'phone', range: { start: 0, end: 20000000 } });
+  expect(moved.nodes.map(n => n.type)).toEqual(expect.arrayContaining(['gap', 'resume']));
+  // Longer than 16 hours: a break even at the same place.
+  const days = historyTimeline(path([...leg(0, 1200, 0, 0), ...leg(1200 + 17 * 3600, 1200 + 17 * 3600 + 1200, 0, 0)]),
+    { subject: 'phone', range: { start: 0, end: 70000000 } });
+  expect(days.nodes.map(n => n.type)).toContain('gap');
+});
+
+// Codex review: back after a break 20 m from the last fix (inside the 25 m
+// rule) but 40 m from where the stay began is still the same stay, which
+// goes on around where it resumed.
+test('a stay resumed after a break near its last fix is the same visit', () => {
+  const visits = historyVisits(path([[0, 0], [60, 10], [120, 20], [2000, 40], [2060, 42], [2120, 45]]));
+  expect(visits).toHaveLength(1);
+  expect(visits[0].end).toBe(2120000);
 });

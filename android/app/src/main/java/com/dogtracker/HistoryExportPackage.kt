@@ -96,6 +96,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   override fun onNewIntent(intent: Intent) {}
   override fun onActivityResult(activity: android.app.Activity, requestCode: Int, resultCode: Int, data: Intent?) {
     if (shares.owns(requestCode)) shares.closed(requestCode)?.resolve("cancelled")
+    if (requestCode == CREATE_DOCUMENT_CODE) createDocumentResult(resultCode, data?.data)
   }
 
   @ReactMethod
@@ -108,7 +109,12 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
 
   override fun getName() = "HistoryExport"
 
-  private companion object { const val SHARE_CODE = "shareCode" }
+  private companion object {
+    const val SHARE_CODE = "shareCode"
+    // 「存到下載」 on Android 7–9 (the system's "save as"); outside the share
+    // sheet's 7401–7464.
+    const val CREATE_DOCUMENT_CODE = 7500
+  }
 
   private fun folder(directory: String): File {
     require(Regex("^history_exports/[A-Za-z0-9_-]+$").matches(directory)) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1056) }
@@ -233,6 +239,141 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         // after invalidate() its Promise was rejected already.
         val settle = code?.let { shares.failed(it) } ?: promise.takeIf { code == null }
         settle?.reject("EXPORT_SHARE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1066), e)
+      }
+    }
+  }
+
+  // ---- 「存到下載」 (067; ExportDownloads) ---------------------------------------
+
+  private fun exportFile(path: String?): File {
+    val file = File(path ?: "").canonicalFile
+    require(file.path.startsWith(root.canonicalPath + File.separator) && file.isFile) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1063) }
+    return file
+  }
+
+  private fun savedArray(saved: List<ExportDownloads.Saved>) = Arguments.createArray().apply {
+    saved.forEach { item -> pushMap(Arguments.createMap().apply { putString("name", item.name); putString("uri", item.uri) }) }
+  }
+
+  // The "save as" in progress (Android 7–9): its queue, files and Promise.
+  // Touched on the UI thread only; after invalidate() none starts.
+  private var createDocument: Triple<CreateDocumentQueue<File>, String, Promise>? = null
+  @Volatile private var downloadsDisposed = false
+
+  /**
+   * Copies the export's files to Download/DogTracker/: resolves
+   * { files: [{ name, uri }], cancelled } — the final names (a clash renamed
+   * by the system), and whether the user backed out of the "save as".
+   */
+  @ReactMethod
+  fun saveToDownloads(paths: ReadableArray, mime: String, promise: Promise) {
+    val files = try { (0 until paths.size()).map { exportFile(paths.getString(it)) } }
+      catch (e: Exception) { promise.reject("EXPORT_DOWNLOAD", e.message, e); return }
+    if (files.isEmpty()) { promise.reject("EXPORT_DOWNLOAD", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1064)); return }
+    // ExportDownloads.mode: MediaStore from Android 10 (API 29).
+    if (Build.VERSION.SDK_INT >= 29) {
+      onWorker(promise, "EXPORT_DOWNLOAD", "export worker stopped") {
+        val saved = ArrayList<ExportDownloads.Saved>()
+        try {
+          for (file in files) saved.add(saveToMediaStore(file, mime))
+          promise.resolve(Arguments.createMap().apply { putArray("files", savedArray(saved)); putBoolean("cancelled", false) })
+        } catch (e: Exception) {
+          com.dogtracker.AppLog.w("HistoryExport", "save to Downloads failed", e)
+          // All pages or none: the pages this save already published go, so
+          // 重試 does not leave a second copy of them (Codex review).
+          saved.forEach { runCatching { context.contentResolver.delete(Uri.parse(it.uri), null, null) } }
+          promise.reject("EXPORT_DOWNLOAD", e.message, e)
+        }
+      }
+      return
+    }
+    UiThreadUtil.runOnUiThread {
+      if (downloadsDisposed) { promise.reject("EXPORT_DOWNLOAD", "module invalidated"); return@runOnUiThread }
+      if (createDocument != null) { promise.reject("EXPORT_DOWNLOAD", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1065)); return@runOnUiThread }
+      val queue = CreateDocumentQueue(files)
+      createDocument = Triple(queue, mime, promise)
+      askCreateDocument()
+    }
+  }
+
+  @androidx.annotation.RequiresApi(29)
+  private fun saveToMediaStore(file: File, mime: String): ExportDownloads.Saved {
+    val resolver = context.contentResolver
+    val values = android.content.ContentValues().apply {
+      put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+      put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+      put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, ExportDownloads.RELATIVE_PATH)
+      put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+    }
+    val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+      ?: error("MediaStore insert failed")
+    try {
+      resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: error("no output stream")
+      resolver.update(uri, android.content.ContentValues().apply { put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+    } catch (e: Exception) {
+      resolver.delete(uri, null, null)
+      throw e
+    }
+    val name = resolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use {
+      if (it.moveToFirst()) it.getString(0) else null
+    } ?: file.name
+    return ExportDownloads.Saved(name, uri.toString())
+  }
+
+  private fun askCreateDocument() {
+    if (downloadsDisposed) return
+    val (queue, mime, promise) = createDocument ?: return
+    val file = queue.current() ?: return finishCreateDocument(false)
+    try {
+      val activity = context.currentActivity ?: error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1062))
+      activity.startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+        .setType(mime).putExtra(Intent.EXTRA_TITLE, file.name), CREATE_DOCUMENT_CODE)
+    } catch (e: Exception) {
+      createDocument = null
+      promise.reject("EXPORT_DOWNLOAD", e.message, e)
+    }
+  }
+
+  private fun createDocumentResult(resultCode: Int, uri: Uri?) {
+    val (queue, _, promise) = createDocument ?: return
+    val file = queue.current() ?: return
+    if (resultCode != android.app.Activity.RESULT_OK || uri == null) { queue.cancel(); return finishCreateDocument(true) }
+    onWorker(promise, "EXPORT_DOWNLOAD", "export worker stopped") {
+      try {
+        context.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: error("no output stream")
+        val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+          if (it.moveToFirst()) it.getString(0) else null
+        } ?: file.name
+        UiThreadUtil.runOnUiThread {
+          // Only this save's own session, and not after invalidate().
+          if (downloadsDisposed || createDocument?.first !== queue) return@runOnUiThread
+          if (queue.done(ExportDownloads.Saved(name, uri.toString())) == null) finishCreateDocument(false) else askCreateDocument()
+        }
+      } catch (e: Exception) {
+        UiThreadUtil.runOnUiThread {
+          if (createDocument?.first === queue) { createDocument = null; promise.reject("EXPORT_DOWNLOAD", e.message, e) }
+        }
+      }
+    }
+  }
+
+  private fun finishCreateDocument(cancelled: Boolean) {
+    val (queue, _, promise) = createDocument ?: return
+    createDocument = null
+    promise.resolve(Arguments.createMap().apply { putArray("files", savedArray(queue.result())); putBoolean("cancelled", cancelled) })
+  }
+
+  /** 「開啟」: the saved file in an app that opens it (ACTION_VIEW). */
+  @ReactMethod
+  fun openDownload(uri: String, mime: String, promise: Promise) {
+    UiThreadUtil.runOnUiThread {
+      try {
+        val activity = context.currentActivity ?: error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1062))
+        activity.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(uri), mime)
+          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        promise.resolve(true)
+      } catch (e: Exception) {
+        promise.reject("EXPORT_OPEN", e.message, e)
       }
     }
   }
@@ -640,6 +781,11 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   override fun invalidate() {
+    downloadsDisposed = true
+    UiThreadUtil.runOnUiThread {
+      createDocument?.third?.reject("EXPORT_DOWNLOAD", "module invalidated")
+      createDocument = null
+    }
     try { context.unregisterReceiver(shareChosen) } catch (_: IllegalArgumentException) { }
     context.removeActivityEventListener(this)
     // Every running/queued export stops at its next check (the base map's

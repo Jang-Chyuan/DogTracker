@@ -7,7 +7,7 @@ import { t } from '../i18n';
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { clock } from '../history/HistoryText';
-import { size as sizes, space, touch, type, border } from '../theme/tokens';
+import { size as sizes, space, touch, type, border, radius } from '../theme/tokens';
 import { makeStyles, useTheme } from '../theme/ThemeProvider';
 import HistoryBottomSheet from './HistoryBottomSheet';
 import { EXPORT_FORMATS } from './useHistoryExport';
@@ -55,15 +55,23 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
   } else {
     body = <View onLayout={event => setListHeight(event.nativeEvent.layout.height)}>{EXPORT_FORMATS.map((format, index) => {
       return (
-        <Pressable key={format.id} testID={`history-export-${format.id}`} accessibilityRole="button"
-          accessibilityLabel={`${format.title}，${format.detail}`}
-          onPress={() => exporter.start(format.id)}
-          style={({ pressed }) => [styles.row, index > 0 && styles.divided, pressed && styles.pressed]}>
-          <View style={styles.texts}>
-            <Text style={styles.format}>{format.title}</Text>
-            <Text style={styles.detail}>{format.detail}</Text>
-          </View>
-        </Pressable>
+        <View key={format.id} style={[styles.formatRow, index > 0 && styles.divided]}>
+          <Pressable testID={`history-export-${format.id}`} accessibilityRole="button"
+            accessibilityLabel={`${format.title}，${format.detail}`}
+            onPress={() => exporter.start(format.id)}
+            style={({ pressed }) => [styles.row, styles.share, pressed && styles.pressed]}>
+            <View style={styles.texts}>
+              <Text style={styles.format}>{format.title}</Text>
+              <Text style={styles.detail}>{format.detail}</Text>
+            </View>
+          </Pressable>
+          {/* 「存到下載」 (067): Samsung's share sheet has no "save to the phone". */}
+          {exporter.canSave && <Pressable testID={`history-export-save-${format.id}`} accessibilityRole="button"
+            accessibilityLabel={t('c1166', { format: format.title })} onPress={() => exporter.save(format.id)}
+            hitSlop={space.s} style={({ pressed }) => [styles.textButton, styles.saveButton, pressed && styles.pressedRow]}>
+            <Text style={styles.textButtonText}>{t('c1163')}</Text>
+          </Pressable>}
+        </View>
       );
     })}</View>;
   }
@@ -85,6 +93,10 @@ const getStyles = makeStyles(({ colors }) => StyleSheet.create({
   row: { minHeight: touch.row, flexDirection: 'row', alignItems: 'center', paddingVertical: space.m,
     gap: space.m },
   divided: { borderTopWidth: border.hairline, borderTopColor: colors.line },
+  // A format: the row shares (its whole width but 「存到下載」 on the right).
+  formatRow: { flexDirection: 'row', alignItems: 'center', gap: space.s },
+  share: { flex: 1 },
+  saveButton: { paddingHorizontal: space.s, borderRadius: radius.full },
   pressed: { backgroundColor: colors.pressedOverlay },
   texts: { flex: 1, minWidth: 0 },
   format: { ...type.status, color: colors.text },

@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { configFor, distanceMeters, median, above } from './HistoryConfig';
+import { configFor, distanceMeters, median, above, samePlaceGap, measuredSpeedMps } from './HistoryConfig';
 import { isVehiclePoint } from './HistoryMovement';
 
 // 判定表「停留的代表位置」: the mean of the visit's judged fixes (accuracy
@@ -30,8 +30,11 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
     if (p.accuracy > config.stayAccuracyM) continue;
     if (current && judged) {
       const dt = p.time - judged.time;
-      if (dt > config.gapMs && (dt >= config.mergeGapMs || above(distanceMeters(judged, p), config.radiusM))) finish();
+      // 067: a break whose two ends are at the same place stays one visit.
+      if (dt > config.gapMs && !samePlaceGap(judged, p, config)
+        && (dt >= config.mergeGapMs || above(distanceMeters(judged, p), config.radiusM))) finish();
     }
+    const judgedBefore = judged;
     judged = p;
     if (!current) {
       insideIndex = i;
@@ -40,13 +43,21 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
         latitude: p.latitude, longitude: p.longitude, points: [p], gaps: [], durationMs: 0, interruptionMs: 0 };
       continue;
     }
-    if (!above(distanceMeters(current.center, p), config.radiusM)) {
+    // Measured standing still (the phone's own speed under stillMps, within
+    // stillPlaceM): the position drifted out of the circle, the phone stayed
+    // (067) — it counts as inside.
+    const still = config.stillMps && measuredSpeedMps(p) != null && measuredSpeedMps(p) < config.stillMps
+      && !(distanceMeters(current.center, p) > (config.stillPlaceM || config.radiusM));
+    // Back after a break at the same place as the last judged fix: still the
+    // same stay, wherever the circle's centre is (Codex review, 067).
+    const resumed = !!judgedBefore && samePlaceGap(judgedBefore, p, config);
+    if (still || resumed || !above(distanceMeters(current.center, p), config.radiusM)) {
       const last = current.points[current.points.length - 1];
       // All signal gaps are deducted, including gaps inside an unconfirmed exit.
       const gaps = points.slice(insideIndex + 1, i + 1).filter(q => !(q.accuracy > config.stayAccuracyM));
       let previous = last, interrupted = 0;
       for (const q of gaps) {
-        if (q.time - previous.time > config.gapMs) {
+        if (q.time - previous.time > config.gapMs && !samePlaceGap(previous, q, config)) {
           interrupted += q.time - previous.time;
           current.gaps.push({ start: previous.time, end: q.time });
         }
@@ -55,6 +66,10 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
       current.durationMs += p.time - last.time - interrupted;
       current.interruptionMs += interrupted;
       current.end = p.time; current.points.push(p); outside = []; insideIndex = i;
+      // The stay goes on around where it resumed (the circle follows).
+      if (resumed && above(distanceMeters(current.center, p), config.radiusM)) {
+        current.center = { latitude: p.latitude, longitude: p.longitude };
+      }
     } else {
       outside.push({ point: p, index: i });
       if (outside.length >= 2 && p.time - outside[0].point.time > config.leaveMs) {
@@ -125,6 +140,16 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
   }
   // The ongoing visit is judged again with every append (and at the end here).
   if (ready) judge(selected.filter(v => !v.completed), typicalMs);
+  // 067: a visit of alwaysStayMs or more is a stay whatever the baseline —
+  // unless it is the whole range: that is 還在原地 (only the time range, no
+  // stay; 判定表「還在原地」).
+  if (config.alwaysStayMs) {
+    const inRange = points.filter(p => p.time >= start && p.time <= end);
+    const first = inRange[0]?.time, last = inRange[inRange.length - 1]?.time;
+    for (const v of selected) {
+      if (v.durationMs >= config.alwaysStayMs && !(v.start <= first && v.end >= last)) marked.add(v.id);
+    }
+  }
   if (ready && !following && fallback) {
     const settled = median(day.filter(v => v.completed).map(v => v.durationMs));
     if (settled != null) { typicalMs = settled; judge(selected, settled); }
@@ -143,7 +168,8 @@ export function historyIndoorNodes(points, { start = -Infinity, end = Infinity, 
   for (const p of points) {
     if (p.time < start || p.time > end) continue;
     if (!p.heldReason) { node = null; previous = p; continue; }
-    if (!node || node.heldSince !== p.heldSince || p.time - previous.time > config.gapMs) {
+    if (!node || node.heldSince !== p.heldSince
+      || (p.time - previous.time > config.gapMs && !samePlaceGap(previous, p, config))) {
       node = { type: 'indoor', start: p.time, end: p.time, durationMs: 0,
         latitude: p.latitude, longitude: p.longitude, reason: p.heldReason,
         heldSince: p.heldSince, label: t('c114'),
@@ -155,7 +181,8 @@ export function historyIndoorNodes(points, { start = -Infinity, end = Infinity, 
   const after = points.find(p => p.time > dayEnd);
   if (after?.heldReason && nodes.length) {
     const last = nodes[nodes.length - 1];
-    last.continuesNextDay = last.heldSince === after.heldSince && after.time - last.end <= config.gapMs;
+    last.continuesNextDay = last.heldSince === after.heldSince
+      && (after.time - last.end <= config.gapMs || samePlaceGap({ ...last, time: last.end }, after, config));
   }
   return nodes;
 }

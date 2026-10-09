@@ -94,6 +94,34 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
   const precise = { permission: 'precise', services: true, busy: false };
   const recording = { running: true, position: START, ageSeconds: 2 };
 
+  // 067: the icon turned grey with every permission given. A check that is
+  // still running or failed says nothing; only a known problem greys it.
+  test('a passing or failed permission check never greys the walker', () => {
+    for (const phone of [{ ...precise, busy: true }, { permission: 'checking', services: false },
+      { ...precise, error: 'not attached to an Activity' }, { ...precise, services: false, error: 'x' }]) {
+      expect(todayPill({ route, livePhone: recording, phone })).toMatchObject({ icon: 'walk', muted: false });
+    }
+    // Known problems still do.
+    expect(todayPill({ route, livePhone: recording, phone: { ...precise, services: false } }).icon).toBe('walk-off');
+    expect(todayPill({ route, livePhone: recording, phone: { ...precise, permission: 'approximate' } }).icon)
+      .toBe('walk-off');
+    expect(todayPill({ route, livePhone: { ...recording, ageSeconds: 11 * 60 }, phone: precise }).icon).toBe('walk-off');
+    expect(todayPill({ route, livePhone: { running: false }, phone: precise }).icon).toBe('walk-muted');
+  });
+
+  // 067 (user 2026-10-09, captured live: indoors, the GPS fix 8 minutes old
+  // at 238 m): weak indoor GPS is not 「記錄關閉」 — the walker stays as it is
+  // when the last fix was taken standing still; it is slashed after losing
+  // the fix while moving.
+  test('weak indoor GPS: the walker stays normal', () => {
+    const indoors = { running: true, ageSeconds: 30 * 60, position: { ...START, rawSpeedKmh: 0 } };
+    expect(todayPill({ route, livePhone: indoors, phone: precise })).toMatchObject({ icon: 'walk', muted: false });
+    const lostWhileWalking = { running: true, ageSeconds: 11 * 60, position: { ...START, rawSpeedKmh: 4.5 } };
+    expect(todayPill({ route, livePhone: lostWhileWalking, phone: precise }).icon).toBe('walk-off');
+    const unknownSpeed = { running: true, ageSeconds: 11 * 60, position: START };
+    expect(todayPill({ route, livePhone: unknownSpeed, phone: precise }).icon).toBe('walk-off');
+  });
+
   test('recording: walker in the phone colour and today\'s distance', () => {
     expect(todayPill({ route, livePhone: recording, phone: precise }))
       .toMatchObject({ text: '今天 2.7 km', icon: 'walk', muted: false, label: '今天 2.7 公里' });
@@ -162,7 +190,8 @@ describe('reading today\'s route from myLocationTracker', () => {
       insert.run(index + 2, day + index * 5 * SECOND, day + index * 5 * SECOND, 24.99 + index * 0.0001, 121.31, 4, 3);
     const first = await database.phoneRouteSince(day, null, 3);
     expect(first.map(row => row.id)).toEqual([2, 3, 4]);
-    expect(first[0]).toEqual({ id: 2, time: day, latitude: 24.99, longitude: 121.31, accuracy: 4 });
+    expect(first[0]).toEqual({ id: 2, time: day, latitude: 24.99, longitude: 121.31, accuracy: 4,
+      raw_speed_kmh: null, speed_accuracy_mps: null });
     const last = first[first.length - 1];
     const rest = await database.phoneRouteSince(day, { time: last.time, id: last.id }, 3);
     expect(rest.map(row => row.id)).toEqual([5, 6]);
@@ -262,3 +291,4 @@ test('a bottom hint sits above the bottom row (「今天 x km」 beside 我的�
   expect(plain.side).toBe('bottom');
   expect(raised.y + raised.height).toBeLessThanOrEqual(830 - 40 - 48 - 12);
 });
+

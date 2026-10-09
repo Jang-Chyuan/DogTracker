@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { configFor } from './HistoryConfig';
+import { configFor, distanceMeters } from './HistoryConfig';
 import { historySourceStream, filterHistoryPoints, replayHistoryHolds } from './HistorySources';
 import { historyMovement } from './HistoryMovement';
 import { historyDeparture } from './HistoryDeparture';
@@ -32,8 +32,16 @@ export function historyTimeline(rows = [], options = {}) {
     dayStart, dayEnd, timezone, !!manualRange]);
   const stays = historyStops(context, { subject, config, start: range.start, end: range.end,
     dayStart, dayEnd: dayEnd - 1, vehicles, following, identity, state });
-  const indoor = historyIndoorNodes(context, { start: Math.max(range.start, dayStart),
+  const held = historyIndoorNodes(context, { start: Math.max(range.start, dayStart),
     end: Math.min(range.end, dayEnd - 1), dayStart, dayEnd: dayEnd - 1, config });
+  // 067: a hold the dog walked on out of (its next real fix more than
+  // movedOnM from the hold spot) was no stay: the collar kept reporting
+  // without GPS while the dog moved — 「收不到 GPS」, not 室內.
+  const movedOn = held.filter(node => {
+    const next = context.find(p => p.time > node.end && !p.heldReason);
+    return next && config.movedOnM && distanceMeters(node, next) > config.movedOnM;
+  });
+  const indoor = held.filter(node => !movedOn.includes(node));
   const locations = [...stays.stops, ...indoor,
     ...switches.filter(s => !stays.stops.some(v => s.start >= v.start && s.start <= v.end))]
     .sort((a, b) => a.start - b.start);
@@ -75,10 +83,19 @@ export function historyTimeline(rows = [], options = {}) {
     }
     if (e.mode === 'indoor') continue;
     const prior = sections[sections.length - 1];
-    if (prior && prior.mode === e.mode && prior.end === e.start && !locations.some(n => n.start === e.start || n.end === e.start)) {
+    // A dog's break keeps its own reason (收不到 GPS / 沒收到訊號): breaks
+    // with different reasons are different rows.
+    const reason = e.gap && subject === 'dog'
+      ? (stream.packets.some(p => p.time > e.start && p.time < e.end) ? 'no-gps' : 'no-signal') : undefined;
+    if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
+      && !locations.some(n => n.start === e.start || n.end === e.start)) {
       prior.end = e.end; prior.durationMs += e.durationMs;
       prior.distanceM += e.gap ? 0 : e.distanceM; prior.countedDistanceM += e.countedDistanceM;
     } else sections.push({ type: e.gap ? 'gap' : 'movement', mode: e.mode,
+      // 067: a dog's break says why — packets came without a fix
+      // (「收不到 GPS」) or nothing came (「沒收到訊號」). A phone's stays
+      // 「沒有資料」.
+      ...(reason ? { reason } : {}),
       start: e.start, end: e.end, durationMs: e.durationMs,
       latitude: e.from.latitude, longitude: e.from.longitude,
       endLatitude: e.to.latitude, endLongitude: e.to.longitude,
@@ -88,6 +105,13 @@ export function historyTimeline(rows = [], options = {}) {
     const row = sections[sections.length - 1];
     if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; carried = 0; }
   }
+  for (const node of movedOn) {
+    sections.push({ type: 'gap', mode: 'gap', reason: 'no-gps', start: node.start, end: node.end,
+      durationMs: node.end - node.start, latitude: node.latitude, longitude: node.longitude,
+      endLatitude: node.latitude, endLongitude: node.longitude, distanceM: 0, countedDistanceM: 0,
+      excluded: true, line: 'long-dashed' });
+  }
+  sections.sort((a, b) => a.start - b.start);
   const rank = node => node.type === 'departure' ? 0 : ['movement', 'gap'].includes(node.type) ? 2 : node.type === 'end' ? 3 : 1;
   let nodes = [...locations, ...sections].sort((a, b) => a.start - b.start || rank(a) - rank(b));
   // A switch right beside another place (a stay ends, the car starts after a

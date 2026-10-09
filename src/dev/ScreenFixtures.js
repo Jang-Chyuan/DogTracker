@@ -260,11 +260,33 @@ function legsPath(now, fromAgo, from, legs, every = 10 * SECOND) {
   for (const leg of legs) {
     const minutes = leg.walk ?? leg.stay ?? leg.drive ?? leg.gap ?? leg.inside;
     const until = time + minutes * MINUTE;
-    if (leg.gap != null) { time = until; continue; }
+    // A break in the data while on the move (the dog walks on unseen, at the
+    // leg's speed and bearing, at most 300 m): it resumes elsewhere, a real 「沒有資料」 —
+    // a break that ends where it began is a stay (067). { gap, still: true }
+    // keeps the place.
+    if (leg.gap != null) {
+      if (!leg.still) {
+        // At most 300 m: far enough to be another place, near the station.
+        const gone = Math.min(300, (leg.speed ?? 1.1) * leg.gap * 60);
+        const turn = ((leg.bearing ?? 45) * Math.PI) / 180;
+        here = offset(here, Math.cos(turn) * gone, Math.sin(turn) * gone);
+      }
+      time = until;
+      continue;
+    }
     const speed = leg.walk != null || leg.drive != null ? leg.speed ?? (leg.drive != null ? 12 : 1.1) : 0;
     const angle = ((leg.bearing ?? 45) * Math.PI) / 180;
     for (; time < until && time <= now - 5 * SECOND; time += every, index += 1) {
-      if (leg.inside != null) { out.push({ time, fix: null }); continue; }
+      if (leg.inside != null) {
+        // { inside, move: true }: packets without a fix while the dog walks on
+        // (at the leg's speed and bearing) — 「收不到 GPS」 mid-walk (067).
+        if (leg.move) {
+          const step = (leg.speed ?? 1.1) * (every / SECOND), turn = ((leg.bearing ?? 45) * Math.PI) / 180;
+          here = offset(here, Math.cos(turn) * step, Math.sin(turn) * step);
+        }
+        out.push({ time, fix: null });
+        continue;
+      }
       if (speed) here = offset(here, Math.cos(angle) * speed * (every / SECOND), Math.sin(angle) * speed * (every / SECOND));
       const wobble = leg.stay != null ? ((index % 5) - 2) * 1.2 : 0;
       out.push({ time, fix: offset(here, wobble, -wobble / 2) });
@@ -1234,6 +1256,22 @@ const FIXTURES = {
   // a stay, walking now.
   'history-my-route': now => ({ ...FIXTURES['all-good'](now), phone: routePhone(myRouteMorning(now), now),
     openRoute: 'history', history: historyPage(now), geocoder: { names: HISTORY_NAMES } }),
+  // 067: 小黑's day with every kind of break. At home after midnight, the
+  // collar silent for 5 h 40 min and back at the same spot (one stay, no
+  // 「沒有資料」); a walk; a stay that goes on without GPS for 40 minutes
+  // (folded into it: 室內); a walk that goes on without GPS for 8 minutes
+  // (「收不到 GPS」); 10 minutes with no packet at all, resuming elsewhere
+  // (「沒收到訊號」); walking now.
+  'history-dog-breaks': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: legsPath(now, 533 * MINUTE, at(-30, -60), [
+      { stay: 20 }, { gap: 340, still: true }, { stay: 20 }, { walk: 20, bearing: 40, speed: 0.8 }, { stay: 15 },
+      { inside: 40 }, { stay: 10 }, { walk: 15, bearing: 120, speed: 0.8 },
+      { inside: 8, move: true, bearing: 120, speed: 0.8 }, { walk: 15, bearing: 120, speed: 0.8 },
+      { gap: 10, bearing: 200, speed: 0.5 }, { walk: 20, bearing: 260, speed: 0.8 },
+    ]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix, ...(row.fix ? {} : { rssi: -96, snr: -4 }) })) }),
+    // The whole day in range, so the night at home shows.
+    historyView: { manual: { start: now - 533 * MINUTE, end: null, following: true } },
+    geocoder: { names: HISTORY_NAMES } }),
   // H1 狗的歷史 (看軌跡 on 小黑's card): stays, a ride (坐車), moving now.
   'history-dog': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: dogMorning(now) }), geocoder: { names: HISTORY_NAMES } }),

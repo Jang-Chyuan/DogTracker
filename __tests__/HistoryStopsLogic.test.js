@@ -44,13 +44,16 @@ test('ongoing vote counts toward five but not median', () => {
   expect(result.visits[4].completed).toBe(false);
 });
 // edges.txt「中斷5分鐘…停留可以合併…中斷時間不算」。
-test('short same-place gap is one vote with interruption deducted', () => {
+// 067: the break at the same place is part of the stay (no deduction).
+test('short same-place gap is one vote and counts as staying', () => {
   const [v] = historyVisits([point(0), point(180), point(480, 10), point(660)]);
-  expect(v.durationMs).toBe(360000); expect(v.interruptionMs).toBe(300000);
+  expect(v.durationMs).toBe(660000); expect(v.interruptionMs).toBe(0);
 });
 // spec.txt「中斷10分鐘以上或前後超過25公尺…中斷前結束」。
 test('ten-minute gap and distant gap split visits', () => {
-  expect(historyVisits([point(0), point(600)])).toHaveLength(2);
+  // 067: at the same place a break of any length (to 16 h) is one stay.
+  expect(historyVisits([point(0), point(600)])).toHaveLength(1);
+  expect(historyVisits([point(0), point(17 * 3600)])).toHaveLength(2);
   expect(historyVisits([point(0), point(300, 26)])).toHaveLength(2);
 });
 // spec.txt「不同時間回到同一個地方是不同停留（不同編號）」。
@@ -101,7 +104,11 @@ test('midnight splits durations at actual fixes and preserves continuation', () 
 // spec.txt「整天停在原處…只有一個節點…封包起訖」「有缺口就拆成好幾個」。
 test('indoor nodes use packet times, split gaps, and carry address placeholder', () => {
   const held = { heldReason: 'indoor', heldSince: -60000 };
-  const nodes = historyIndoorNodes([point(0, 0, held), point(180, 0, held), point(400, 0, held), point(460, 0, held)], { dayStart: 0 });
+  // A break at the same hold spot is one house (067); a new anchor after the
+  // break is another.
+  expect(historyIndoorNodes([point(0, 0, held), point(180, 0, held), point(400, 0, held), point(460, 0, held)],
+    { dayStart: 0 })).toHaveLength(1);
+  const nodes = historyIndoorNodes([point(0, 0, held), point(180, 0, held), point(400, 50, held), point(460, 50, held)], { dayStart: 0 });
   expect(nodes).toHaveLength(2);
   expect(nodes[0]).toMatchObject({ type: 'indoor', label: i18nT('c114'), start: 0, end: 180000, durationMs: 180000, continuesPreviousDay: true });
   expect(nodes[0].number).toBeUndefined();
@@ -137,7 +144,8 @@ test('brief excursion is not mistaken for missing data when range clips visit', 
 // stops.txt「25公尺內」；spec.txt「前後超過25公尺才切開」。
 test('exact twenty-five metres is inside even across short gap', () => {
   const v = historyVisits([point(0), point(180, 25), point(480, 0), point(660, 25)]);
-  expect(v).toHaveLength(1); expect(v[0].durationMs).toBe(360000);
+  // 067: the break at the same place counts as staying.
+  expect(v).toHaveLength(1); expect(v[0].durationMs).toBe(660000);
 });
 
 // edges.txt「精度差的位置不拿來判斷停留，不硬標」。

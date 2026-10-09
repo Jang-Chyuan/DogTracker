@@ -8,7 +8,9 @@ internal data class LocationSample(
   val bearing: Float? = null, val altitude: Double? = null,
   val rawLatitude: Double = latitude, val rawLongitude: Double = longitude,
   val speedAccuracy: Float? = null, val rawSpeed: Float? = speed,
-  val motionState: String = "moving"
+  val motionState: String = "moving",
+  // Where the fix came from (LocationSource.label; 067).
+  val provider: String? = null
 )
 
 /** Acquisition, display and persistence have separate clocks. Never replay old fixes. */
