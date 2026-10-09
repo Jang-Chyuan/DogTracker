@@ -119,8 +119,8 @@ export function vehicleExclusion(model, subject) {
 
 /**
  * The summary above the list (H1 「08:03 – 現在」「走了 5.2 km・4 小時 8 分」):
- * { title, detail }. Before the departure is known the title says so
- * (c306–c308); my route says 走了, a dog 移動.
+ * { title, detail }. Always show the selected time range, including a tentative
+ * departure or the whole day; my route says 走了, a dog 移動.
  */
 export function summaryText(model, { subject }) {
   const first = model.points[0], last = model.points[model.points.length - 1];
@@ -128,11 +128,8 @@ export function summaryText(model, { subject }) {
   const until = end?.type === 'end' && end.label === '現在' ? '現在'
     : end?.type === 'end' && end.label === '最後' ? `最後 ${clock(last.time)}` : clock(last.time);
   const span = `${clock(first.time)} – ${until}`;
-  const status = model.departure.manual ? 'confirmed' : model.departure.status;
-  const title = status === 'not-departed' ? '還沒出發' : status === 'confirming' ? '確認出發中…'
-    : status === 'undetermined' ? '沒辦法自動判斷出發' : span;
   const moved = `${subject === 'phone' ? '走了' : '移動'} ${km(model.distanceM)}${vehicleExclusion(model, subject)}・${summaryDuration(model.durationMs)}`;
-  return { title, detail: title === span ? moved : `${span}　${moved}` };
+  return { title: span, detail: moved };
 }
 
 /** H8: the one line of a day without records (c159, c316). */

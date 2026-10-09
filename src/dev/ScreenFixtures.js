@@ -1195,13 +1195,18 @@ const FIXTURES = {
         { line: '330台灣桃園市桃園區同德六街76號', awayM: 120 }, null,
         { line: '330台灣桃園市桃園區中山路552號' }] } };
   },
-  // Still at home (a few metres of wander since 06:30): 還沒出發, the range is
+  // Still at home (a few metres of wander since 06:30): the summary shows the time range of
   // the whole day.
   'history-no-departure': now => {
     const phone = routePhone(legsPath(now, 180 * MINUTE, at(-40, -60), [{ stay: 120 }, { walk: 1, speed: 0.3 },
       { stay: 60 }]), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
   },
+  // A candidate after staying home: show its tentative start, without status copy.
+  'history-confirming': now => ({ ...FIXTURES['all-good'](now),
+    phone: routePhone(legsPath(now, 20 * MINUTE, at(-40, -60),
+      [{ stay: 15 }, { walk: 5, speed: 1, bearing: 90 }]), now),
+    openRoute: 'history', history: historyPage(now) }),
   // My route: walk, drive 12 minutes, walk — a numbered switch point where
   // each mode starts (H2 開車換走路的地方多一個點).
   'history-mode-switch': now => {

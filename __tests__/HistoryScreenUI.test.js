@@ -147,9 +147,24 @@ test('history-indoor: the house on the map, 室內・N 分 at the cursor inside 
 test('history-single-point (只有一筆): one point, no distance, no range bar', async () => {
   const s = await mountFixture('history-single-point');
   expect(s.screen.model.points).toHaveLength(1);
+  expect(s.text()).toContain('09:10 – 09:10');
   expect(s.ids('history-adjust')).toEqual([]);
   expect(s.screen.map.lines).toEqual([]);
   expect(s.screen.cursor.label[1]).toBe('已移動 0.0 km');
+  await unmount(s);
+});
+
+test.each([
+  ['history-no-departure', 'not-departed', '06:30 – 現在'],
+  ['history-confirming', 'confirming', '09:22 – 現在'],
+])('%s: summary and TalkBack show only the selected time range', async (fixture, status, title) => {
+  const s = await mountFixture(fixture);
+  expect(s.screen.model.departure.status).toBe(status);
+  expect(s.text()).toContain(title);
+  const summary = s.renderer.root.findByProps({ testID: 'history-summary' });
+  const speech = summary.findAll(node => typeof node.type === 'string' && node.props.accessibilityLabel)
+    .map(node => node.props.accessibilityLabel);
+  expect(speech).toContainEqual(expect.stringContaining(`${title.replace(' – ', ' 到')}，走了 `));
   await unmount(s);
 });
 

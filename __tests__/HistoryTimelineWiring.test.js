@@ -156,10 +156,11 @@ describe('fixtures', () => {
     // The hour at home before it is not counted.
     expect(model.range.start).toBeGreaterThan(DAY + 7 * 60 * MINUTE);
   });
-  test('history-no-departure: 還沒出發, the whole day is the range, no stays', async () => {
+  test('history-no-departure: time range, the whole day is the range, no stays', async () => {
     const { model, kinds } = await fixtureList('history-no-departure');
     expect(model.departure.status).toBe('not-departed');
-    expect(summaryText(model, { subject: 'phone' }).title).toBe('還沒出發');
+    expect(summaryText(model, { subject: 'phone' })).toEqual({ title: '06:30 – 現在',
+      detail: `走了 ${km(model.distanceM)}・${summaryDuration(model.durationMs)}` });
     expect(model.range.start).toBe(model.points[0].time);
     expect(kinds).toEqual(['departure', 'walking', 'end']);
   });
