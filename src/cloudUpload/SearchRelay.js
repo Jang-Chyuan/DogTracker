@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { NativeModules } from 'react-native';
 import { getCloudClient } from '../cloud/CloudClient';
 import { openTrackingDatabase } from '../database/TrackingDatabaseConnection';
@@ -28,7 +29,7 @@ export async function runSearchRelay({ owner, runId }, {
       { signal: abort.signal });
   } catch {
     // Keep the persistent queue intact; the next native tick can retry.
-    console.warn('[Search relay] pass interrupted; pending data retained');
+    logger.warn('[Search relay] pass interrupted; pending data retained');
   } finally {
     clearTimeout(timer); clearInterval(poll);
     abort.abort(); subscription?.unsubscribe(); connection?.close();

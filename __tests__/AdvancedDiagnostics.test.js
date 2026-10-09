@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
+import { NativeModules } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
@@ -302,14 +303,18 @@ const KEPT = ['myLocationTracker', 'dog_avatars', 'map_history_settings', 'app_s
 test('刪除全部狗資料 asks about rows not uploaded; 一起刪除 removes only the dog tables', async () => {
   const connection = await phoneDatabase();
   const store = createDogDataStore(connection);
+  NativeModules.HistoryExport = { clearExports: jest.fn() };
   const kept = Object.fromEntries(KEPT.map(table => [table, count(connection, table)]));
   // Waiting and refused rows are both not in the cloud yet.
   expect(await store.unsent()).toBe(2);
   await expect(store.deleteAll()).rejects.toBeInstanceOf(UnsentRowsError);
   await expect(store.deleteAll()).rejects.toMatchObject({ count: 2 });
+  expect(NativeModules.HistoryExport.clearExports).not.toHaveBeenCalled();
   // Nothing was deleted by the refusal.
   expect(count(connection, 'dog_status')).toBe(1);
   await store.deleteAll({ includeUnsent: true });
+  expect(NativeModules.HistoryExport.clearExports).toHaveBeenCalledTimes(1);
+  delete NativeModules.HistoryExport;
   for (const table of [...DOG_DATA_TABLES, 'ble_upload_queue']) expect(count(connection, table)).toBe(0);
   for (const table of KEPT) expect(count(connection, table)).toBe(kept[table]);
   // S3 still knows when alice last uploaded; the phone's upload ID stays.

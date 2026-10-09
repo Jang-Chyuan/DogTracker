@@ -1,3 +1,4 @@
+import { deletePhoneRoutes } from './src/locationTracker/LocationTrackerDatabase';
 import {
   ThemeProvider,
   useTheme,
@@ -1189,6 +1190,12 @@ function TrackerApp({ resume = null, onRestart }) {
           onPermissions={() => Linking.openSettings()}
           onLocationServices={openLocationServices}
           onBattery={openBatterySettings}
+          onDeleteRoutes={async () => {
+            if (!fixture) {
+              await deletePhoneRoutes();
+              onRestart?.({ stack });
+            }
+          }}
         />
       );
       break;

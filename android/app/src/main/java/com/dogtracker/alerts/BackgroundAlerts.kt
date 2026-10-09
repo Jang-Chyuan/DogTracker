@@ -164,7 +164,7 @@ object BackgroundAlerts {
       receiverBattery?.let { edit.putInt(RECEIVER_BATTERY, it) }
       edit.apply()
       if (effects.delivered.isNotEmpty() || changed) {
-        Log.i(AlertPoster.TAG, "background step: ${effects.notification}, delivered ${effects.delivered}")
+        com.dogtracker.AppLog.i(AlertPoster.TAG, "background step: ${effects.notification}, delivered ${effects.delivered}")
       }
       AlertPoster.carryOut(context, effects)
       return effects
@@ -184,6 +184,6 @@ object BackgroundAlerts {
     val state = Scheduler.pause(AlertCodec.readState(prefs.getString(STATE, null)), now)
     write(context, state)
     AlertPoster.cancel(context)
-    Log.i(AlertPoster.TAG, "paused until ${state.pause?.until}")
+    com.dogtracker.AppLog.i(AlertPoster.TAG, "paused until ${state.pause?.until}")
   }
 }

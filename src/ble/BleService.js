@@ -1,3 +1,5 @@
+import { logger } from '../logger';
+import { wifiCommand } from '../settings/WifiValidation';
 import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { decode as decodeBase64, encode as encodeBase64 } from 'base-64';
@@ -258,7 +260,7 @@ export function createBleService(manager = new BleManager()) {
         foundDevice => {
           const foundName = foundDevice.name || foundDevice.localName;
           const normalizedName = normalizeDeviceName(foundName);
-          console.info('BLE 廣播', {
+          logger.info('BLE 廣播', {
             id: foundDevice.id,
             name: foundName || null,
             localName: foundDevice.localName || null,
@@ -337,8 +339,9 @@ export function createBleService(manager = new BleManager()) {
     },
 
     async configureWifi(ssid, password) {
+      const command = wifiCommand('upsert', ssid, password);
       if (nativeBle?.wifiCommand) {
-        await nativeBle.wifiCommand(JSON.stringify({ action: 'upsert', ssid, password }), false);
+        await nativeBle.wifiCommand(command, false);
         return;
       }
       if (!device || !(await device.isConnected())) {
@@ -348,13 +351,14 @@ export function createBleService(manager = new BleManager()) {
       await device.writeCharacteristicWithResponseForService(
         activeConfig.serviceUuid,
         BLE_WIFI_CONFIG_UUID,
-        encodeUtf8Base64(JSON.stringify({ action: 'upsert', ssid, password })),
+        encodeUtf8Base64(command),
       );
     },
 
     async removeWifi(ssid) {
+      const command = wifiCommand('remove', ssid);
       if (nativeBle?.wifiCommand) {
-        await nativeBle.wifiCommand(JSON.stringify({ action: 'remove', ssid }), false);
+        await nativeBle.wifiCommand(command, false);
         return;
       }
       if (!device || !(await device.isConnected())) {
@@ -364,7 +368,7 @@ export function createBleService(manager = new BleManager()) {
       await device.writeCharacteristicWithResponseForService(
         activeConfig.serviceUuid,
         BLE_WIFI_CONFIG_UUID,
-        encodeUtf8Base64(JSON.stringify({ action: 'remove', ssid })),
+        encodeUtf8Base64(command),
       );
     },
 

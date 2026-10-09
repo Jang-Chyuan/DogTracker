@@ -284,7 +284,21 @@ describe('the export window (useHistoryExport)', () => {
     await act(async () => running);
     expect(lookup.lookupAddresses).toHaveBeenCalledWith(expect.any(Array), { timeoutMs: 5000 });
     expect(exporter.calls.share[0]).toMatchObject({ mime: 'application/gpx+xml' });
+    expect(exporter.calls.removeExports).not.toContainEqual([`history_exports/${DAY + 5000}-1`]);
     expect(state.phase).toBe('closed');
+    act(() => renderer.unmount());
+  });
+
+  test.each(['cancelled', 'failed'])('S10: unshared export (%s) is removed immediately', async outcome => {
+    const exporter = fakeExporter();
+    exporter.share = async () => {
+      if (outcome === 'failed') throw new Error('share unavailable');
+      return 'cancelled';
+    };
+    const renderer = await mount({ exporter, lookup: lookupOf() });
+    act(() => state.open());
+    await act(async () => state.start('gpx'));
+    expect(exporter.calls.removeExports).toContainEqual([`history_exports/${DAY + 5000}-1`]);
     act(() => renderer.unmount());
   });
 
@@ -323,6 +337,7 @@ describe('the export window (useHistoryExport)', () => {
     expect(exporter.calls.cancel).toHaveLength(1);
     await act(async () => { finish(); await running; });
     expect(exporter.calls.share).toHaveLength(0);
+    expect(exporter.calls.removeExports).toContainEqual([`history_exports/${DAY + 5000}-1`]);
     expect(state.back()).toBe(false);
     act(() => renderer.unmount());
   });

@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { bleUploadPayload } from './BleUploadPayload';
 // Foreground and Headless JS use separate service objects in the same runtime.
 let uploading = false;
@@ -41,7 +42,7 @@ export function createUploadService({ database, client }) {
       }
       if (result.data?.ok === true && result.data.event_id === row.event_id) {
         await database.sent(row);
-        if (signal) console.info(`[BLE relay background] Master ${row.master_id}: upload acknowledged`);
+        if (signal) logger.info(`[BLE relay background] Master ${row.master_id}: upload acknowledged`);
         return 'sent';
       }
       await database.failed(row, '雲端回覆未確認事件，稍後重試', false, Date.now());

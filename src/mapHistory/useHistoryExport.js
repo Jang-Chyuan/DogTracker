@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 // The export of the history screen (H9/H10; 判定表「匯出產生中」, flow.txt
 // 「匯出」): the small window's state, one export at a time from the moment a
 // format is chosen — the day shown (range, dogs) captured then, the
@@ -93,6 +94,8 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     const id = ++run.current;
     const alive = () => run.current === id;
     setState({ phase: 'generating', format });
+    let directory;
+    let shared = false;
     try {
       if (!exporter) throw new Error('請安裝支援匯出的 Android 版本');
       let snapshot = snapshotReady;
@@ -113,19 +116,25 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       await cleanExports(exporter, createdAt);
       if (!alive()) return;
       const exportId = `${createdAt}-${id}`;
+      directory = `history_exports/${exportId}`;
       exporting.current = exportId;
       const paths = await makeExportFiles(snapshot, format, exporter, { exportId, createdAt, alive });
       if (!alive()) return;
       if (exporting.current === exportId) exporting.current = null;
       // 打開 Android 分享時才關掉小視窗.
-      await exporter.share(paths, EXPORT_MIME[format]);
+      const result = await exporter.share(paths, EXPORT_MIME[format]);
+      shared = result !== 'cancelled';
       if (!alive()) return;
       prepared.current = null;
       setState({ phase: 'closed', format: null });
     } catch (error) {
       if (!alive()) return;
-      console.warn('[History export]', error?.message || error);
+      logger.warn('[History export]', error?.message || error);
       setState({ phase: 'failed', format });
+    } finally {
+      if (directory && !shared) {
+        try { await exporter.removeExports([directory]); } catch { /* startup and daily cleanup retry */ }
+      }
     }
   }, [exporter, screen, lookup, now]);
   const start = useCallback(format => generate(format, null), [generate]);

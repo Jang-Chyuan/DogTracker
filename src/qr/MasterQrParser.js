@@ -8,6 +8,8 @@ export function parseMasterQr(rawValue) {
     throw new Error('QR Code 內容為空');
   }
 
+  if (rawValue.length > 1024) throw new Error('QR Code 內容太長，請重新產生');
+
   let config;
   try {
     config = JSON.parse(rawValue);
@@ -34,6 +36,10 @@ export function parseMasterQr(rawValue) {
     throw new Error('BLE 裝置名稱格式錯誤');
   }
 
+  if (config.bleName !== `DogGPS-Master${config.masterId}`) {
+    throw new Error('接收器編號與名稱不一致，請重新掃描');
+  }
+
   if (typeof config.serviceUuid !== 'string') {
     throw new Error('缺少 BLE Service UUID');
   }
@@ -43,8 +49,8 @@ export function parseMasterQr(rawValue) {
     throw new Error('BLE Service UUID 不符合 DogTracker');
   }
 
-  if (config.profile !== undefined && typeof config.profile !== 'string') {
-    throw new Error('Profile 格式錯誤');
+  if (config.profile !== undefined && (typeof config.profile !== 'string' || config.profile.length > 16 || !['default'].includes(config.profile))) {
+    throw new Error('不支援這個接收器設定，請重新產生 QR Code');
   }
 
   return {

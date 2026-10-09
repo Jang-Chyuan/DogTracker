@@ -30,6 +30,7 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    HistoryExportCleanup.start(this)
     NotificationChannels.create(this)
     loadReactNative(this)
   }

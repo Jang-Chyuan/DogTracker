@@ -101,3 +101,26 @@ test('the installed MapView.java never re-creates its map on re-attach', () => {
   expect(detach).not.toContain('features.clear()');
   expect(detach).not.toContain('removeView(attacherGroup)');
 });
+
+// S-media: the avatar picker asks for no storage permission (system photo
+// picker, camera output through the app's FileProvider); the change lives in
+// patches/react-native-image-crop-picker+<version>.patch, applied by the same
+// patch-package postinstall.
+test('the installed avatar picker never requests WRITE_EXTERNAL_STORAGE', () => {
+  const pickerPackage = require('react-native-image-crop-picker/package.json');
+  const patch = fs.readFileSync(
+    path.join(root, 'patches', `react-native-image-crop-picker+${pickerPackage.version}.patch`),
+    'utf8',
+  );
+  expect(patch).not.toMatch(/^diff --git .*\/build\//m);
+  const source = fs.readFileSync(
+    path.join(
+      path.dirname(require.resolve('react-native-image-crop-picker/package.json')),
+      'android/src/main/java/com/reactnative/ivpusic/imagepicker/ImageCropPicker.java',
+    ),
+    'utf8',
+  );
+  expect(source).toMatch(
+    /DogTracker: system picker[^\n]*\n\s*supportedPermissions\.remove\(Manifest\.permission\.WRITE_EXTERNAL_STORAGE\);/,
+  );
+});

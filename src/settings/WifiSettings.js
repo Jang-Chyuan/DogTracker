@@ -1,3 +1,4 @@
+import { wifiCommand } from './WifiValidation';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useState } from 'react';
 import {
@@ -45,8 +46,10 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
 
   const send = async () => {
     const name = ssid.trim();
-    if (!name) {
-      setResult({ ok: false, text: '請輸入 Wi-Fi 名稱' });
+    try {
+      wifiCommand('upsert', name, password);
+    } catch (error) {
+      setResult({ ok: false, text: error.message });
       return;
     }
     setSending(true);

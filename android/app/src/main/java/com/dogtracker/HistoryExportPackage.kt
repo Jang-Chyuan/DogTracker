@@ -1,5 +1,10 @@
 package com.dogtracker
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import android.os.Build
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
@@ -51,10 +56,36 @@ import kotlin.math.sinh
  * share sheet, and the temporary files (cache/history_exports/<export id>/,
  * removed the next day by the JS side).
  */
-class HistoryExportModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
+class HistoryExportModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context), ActivityEventListener {
   private val worker = Executors.newSingleThreadExecutor()
   private val cancelled = ConcurrentHashMap.newKeySet<String>()
   private val root get() = File(context.cacheDir, "history_exports").apply { mkdirs() }
+
+  private var sharePromise: Promise? = null
+  private val shareAction = "${context.packageName}.HISTORY_EXPORT_CHOSEN"
+  private val shareChosen = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      sharePromise?.resolve("shared")
+      sharePromise = null
+    }
+  }
+  init {
+    context.addActivityEventListener(this)
+    if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(shareChosen, IntentFilter(shareAction), Context.RECEIVER_NOT_EXPORTED)
+    else context.registerReceiver(shareChosen, IntentFilter(shareAction))
+  }
+  override fun onNewIntent(intent: Intent) {}
+  override fun onActivityResult(activity: android.app.Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+    if (requestCode == 7401) { sharePromise?.resolve("cancelled"); sharePromise = null }
+  }
+
+  @ReactMethod
+  fun clearExports(promise: Promise) {
+    worker.execute {
+      try { HistoryExportCleanup.clear(context); promise.resolve(null) }
+      catch (e: Exception) { promise.reject("EXPORT_CLEANUP", "無法清除匯出暫存檔", e) }
+    }
+  }
 
   override fun getName() = "HistoryExport"
 
@@ -135,7 +166,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         if (exportId in cancelled) throw InterruptedException("cancelled")
         promise.resolve(paths)
       } catch (e: Exception) {
-        android.util.Log.w("HistoryExport", "PNG export failed", e)
+        com.dogtracker.AppLog.w("HistoryExport", "PNG export failed", e)
         written.forEach { it.delete() }
         promise.reject("EXPORT_PNG", if (e is InterruptedException) "已取消" else "無法產生圖片", e)
       } finally { cancelled.remove(exportId) }
@@ -158,9 +189,12 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
         intent.setType(mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         intent.clipData = ClipData.newRawUri("DogTracker", uris[0]).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
-        activity.startActivity(Intent.createChooser(intent, null))
-        promise.resolve("opened")
-      } catch (e: Exception) { android.util.Log.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", "無法開啟分享選單", e) }
+        check(sharePromise == null) { "分享進行中" }
+        sharePromise = promise
+        val chosen = PendingIntent.getBroadcast(context, 7401,
+          Intent(shareAction).setPackage(context.packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        activity.startActivityForResult(Intent.createChooser(intent, null, chosen.intentSender), 7401)
+      } catch (e: Exception) { sharePromise = null; com.dogtracker.AppLog.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", "無法開啟分享選單", e) }
     }
   }
 
@@ -528,6 +562,8 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   override fun invalidate() {
+    context.unregisterReceiver(shareChosen)
+    context.removeActivityEventListener(this)
     worker.shutdown()
     super.invalidate()
   }

@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import React, {
   useCallback,
@@ -152,7 +153,7 @@ export const StyledMarker = React.forwardRef(function StyledMarker(
   ref,
 ) {
   if (__DEV__ && React.Children.count(children) === 0) {
-    console.error(
+    logger.error(
       `[Marker] ${
         props.identifier || 'a marker'
       } has no view of its own: it would be drawn as Google's default pin`,

@@ -61,13 +61,13 @@ class CloudHistoryWorker(context: Context, params: WorkerParameters) : Worker(co
       }
       // JS has a 90-second budget. The native bound also covers JS boot failure.
       if (!run.finished.await(120, TimeUnit.SECONDS)) run.finish("retry")
-      Log.i("CloudHistoryWorker", "History sync finished: ${run.outcome}")
+      com.dogtracker.AppLog.i("CloudHistoryWorker", "History sync finished: ${run.outcome}")
       return if (run.outcome == "retry") Result.retry() else Result.success()
     } catch (_: InterruptedException) {
       Thread.currentThread().interrupt()
       return Result.retry()
     } catch (_: Exception) {
-      Log.w("CloudHistoryWorker", "History sync could not start; will retry")
+      com.dogtracker.AppLog.w("CloudHistoryWorker", "History sync could not start; will retry")
       return Result.retry()
     } finally {
       run.active = false

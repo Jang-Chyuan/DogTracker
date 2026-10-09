@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { useEffect, useMemo, useState } from 'react';
 import { Linking, LogBox } from 'react-native';
 import { buildFixture, fixtureNameFromUrl, fixturePageFromUrl } from './ScreenFixtures';
@@ -28,7 +29,7 @@ export function useScreenFixture(enabled = __DEV__) {
     if (!enabled) return;
     LogBox.ignoreAllLogs(!!name);
     // scripts/fixture-screenshots.sh waits for this line before its screenshot.
-    console.log(`[ScreenFixture] showing ${name || 'off'}${page ? ` on ${page}` : ''}`);
+    logger.log(`[ScreenFixture] showing ${name || 'off'}${page ? ` on ${page}` : ''}`);
   }, [enabled, name, page]);
   return useMemo(() => (enabled && name ? buildFixture(name, undefined, page) : null), [enabled, name, page]);
 }

@@ -3,6 +3,7 @@ import { FocusedPhoneRow, firstPhoneProblem } from './PhoneProblemFocus';
 import { useStyles } from '../theme/ThemeProvider';
 import { ScrollView } from 'react-native';
 
+import ConfirmDialog from './ConfirmDialog';
 import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
 
 /**
@@ -18,8 +19,28 @@ export default function PhoneSettings({
   onPermissions,
   onLocationServices,
   onBattery,
+  onDeleteRoutes,
 }) {
   const settingsStyles = useStyles(getSettingsStyles);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+  const deleteBusy = useRef(false);
+  const removeRoutes = async () => {
+    if (deleteBusy.current) return;
+    deleteBusy.current = true;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteRoutes();
+      setDeleteOpen(false);
+    } catch (error) {
+      setDeleteError(`刪除失敗：${error.message || '請再試一次'}`);
+    } finally {
+      deleteBusy.current = false;
+      setDeleting(false);
+    }
+  };
   const scroll = useRef(null);
   const focused = useRef(false);
   const [target] = useState(() => fromUnrecorded ? firstPhoneProblem(page) : null);
@@ -41,9 +62,9 @@ export default function PhoneSettings({
         <FocusedPhoneRow id="recording" target={target}>
         <ListRow
           title="位置記錄"
-          detail={recording.detail}
+          detail={['離開 App、鎖螢幕時也會繼續在背景記錄', recording.detail].filter(Boolean).join('；')}
           detailTone={recording.problem ? 'crit' : undefined}
-          label={['位置記錄', recording.detail].filter(Boolean).join('，')}
+          label={['位置記錄', '離開 App、鎖螢幕時也會繼續在背景記錄', recording.detail].filter(Boolean).join('，')}
           toggle={{
             testID: 'phone-recording',
             value: recording.on,
@@ -98,7 +119,14 @@ export default function PhoneSettings({
               : '忽略電池最佳化，已允許'
           }
         />
+        <ListRow testID="phone-delete-routes" title="刪除我的路線" titleTone="danger"
+          onPress={() => { setDeleteError(null); setDeleteOpen(true); }} />
       </GroupCard>
+      <ConfirmDialog testID="delete-phone-routes" visible={deleteOpen}
+        title="刪除我的路線？"
+        body="這支手機記錄的所有路線都會刪除，不能復原。狗的資料、名字和頭像不受影響。"
+        confirm="刪除" destructive busy={deleting} problem={deleteError} problemBlocks={false}
+        onConfirm={removeRoutes} onCancel={() => { if (!deleteBusy.current) setDeleteOpen(false); }} />
     </ScrollView>
   );
 }

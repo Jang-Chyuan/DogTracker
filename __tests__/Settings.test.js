@@ -397,7 +397,7 @@ test('S4 draws the rows and opens the system pages', async () => {
       {...actions} />);
   });
   const out = text(renderer);
-  for (const words of ['位置記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
+  for (const words of ['位置記錄', '離開 App、鎖螢幕時也會繼續在背景記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
     '忽略電池最佳化', '讓 App 在背景也能一直收資料', '已允許']) expect(out).toContain(words);
   const press = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress());
@@ -449,4 +449,25 @@ test('settings-diagnostics-on adds diagnostics only beneath advanced in 其他',
   expect(fixture.openRoute).toBe('settings');
   expect(settingsHome(data).groups.map(group => group.rows.map(row => row.id)))
     .toEqual([['receiver', 'phone'], ['account'], ['alerts'], ['advanced', 'diagnostics']]);
+});
+
+test('S4 route deletion confirms, cancels and retries failures', async () => {
+  const remove = jest.fn().mockRejectedValueOnce(new Error('disk')).mockResolvedValueOnce();
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<PhoneSettings page={phonePage({})} onDeleteRoutes={remove} />); });
+  const row = () => renderer.root.findAll(n => n.props.testID === 'phone-delete-routes' && n.props.onPress)[0];
+  const dialog = () => renderer.root.findByType(require('../src/settings/ConfirmDialog').default);
+  await act(async () => row().props.onPress());
+  expect(dialog().props).toMatchObject({ visible: true, title: '刪除我的路線？',
+    body: '這支手機記錄的所有路線都會刪除，不能復原。狗的資料、名字和頭像不受影響。', confirm: '刪除', destructive: true });
+  await act(async () => dialog().props.onCancel());
+  expect(remove).not.toHaveBeenCalled();
+  expect(dialog().props.visible).toBe(false);
+  await act(async () => row().props.onPress());
+  await act(async () => dialog().props.onConfirm());
+  expect(dialog().props.problem).toContain('disk');
+  expect(dialog().props.visible).toBe(true);
+  await act(async () => dialog().props.onConfirm());
+  expect(dialog().props.visible).toBe(false);
+  await act(async () => renderer.unmount());
 });
