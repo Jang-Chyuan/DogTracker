@@ -934,7 +934,14 @@ export default function MapScreen({
       : null;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
-      <View testID="map-background-layer" style={[StyleSheet.absoluteFill, cardPage && styles.hiddenBackground]}
+      {/* Under A4/A5 the map and its card stay mounted, only out of reach of
+          touch and TalkBack. Never display:none or a style that changes
+          whether this view is flattened: either one detaches the native
+          MapView, and react-native-maps re-creates its GoogleMap on every
+          re-attach without destroying the old one (a leak per opening).
+          collapsable={false} keeps this one native view for good. */}
+      <View testID="map-background-layer" style={StyleSheet.absoluteFill}
+        collapsable={false}
         pointerEvents={cardPage ? 'none' : 'auto'}
         accessibilityElementsHidden={!!cardPage}
         importantForAccessibility={cardPage ? 'no-hide-descendants' : 'auto'}>
@@ -1020,7 +1027,8 @@ export default function MapScreen({
         style={[
           StyleSheet.absoluteFill,
           styles.chrome,
-          cardPage && { display: 'none' },
+          // The gear and top cards go under A4/A5 (not an ancestor of the map).
+          cardPage && styles.hiddenChrome,
           { opacity: splashChrome },
         ]}
       >
@@ -1148,7 +1156,7 @@ const getStyles = makeStyles(theme => {
   return StyleSheet.create({
     // The gear and the top cards, above the map and the card (as before).
     chrome: { zIndex: 70, elevation: 32 },
-    hiddenBackground: { display: 'none' },
+    hiddenChrome: { display: 'none' },
     // MapScreen lives in App's persistent absolute map layer. A flex-only child
     // can measure to zero under Fabric, sending bottom-anchored overlays above
     // the viewport, so make this screen an explicit inset box as well.

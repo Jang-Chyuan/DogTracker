@@ -1289,6 +1289,13 @@ function TrackerApp({ resume = null, onRestart }) {
         )}
         <View
           testID="persistent-map-layer"
+          // The map layer is one native view for the app's whole life: hiding
+          // it (opacity, pointerEvents) must not change whether Fabric
+          // flattens it or how it orders it, or every child is re-parented
+          // and the native MapView detached; react-native-maps then builds a
+          // new GoogleMap on re-attach and never frees the old one (~10 MB
+          // native heap and ~50 Views per settings page opened).
+          collapsable={false}
           pointerEvents={showsMap ? 'auto' : 'none'}
           accessibilityElementsHidden={!showsMap}
           importantForAccessibility={showsMap ? 'auto' : 'no-hide-descendants'}
@@ -1473,8 +1480,13 @@ const getStyles = makeStyles(theme => {
       flex: 1,
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
     },
-    mapLayer: { backgroundColor: theme.isDark ? colors.bg : colors.surface },
-    hiddenMapLayer: { opacity: 0, zIndex: -1 },
+    // Always under the pages, zIndex fixed: changing it re-orders the layer,
+    // which detaches the native map.
+    mapLayer: {
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+      zIndex: -1,
+    },
+    hiddenMapLayer: { opacity: 0 },
     // Above the (hidden) map, below the page: the page colour edge to edge,
     // status bar and navigation bar insets included.
     mapCover: {

@@ -1128,8 +1128,31 @@ test('E01/E16: A4 and A5 isolate background controls and accessibility', async (
     await act(async () => card.props[action]());
     const layer = renderer.root.findAllByProps({ testID: 'map-background-layer' })[0];
     expect(layer.props).toMatchObject({ pointerEvents: 'none', accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' });
-    expect(StyleSheet.flatten(layer.props.style).display).toBe('none');
+    // The map stays mounted under A4/A5 (display:none would detach the
+    // native MapView, which leaks a GoogleMap per opening).
+    expect(layer.props.collapsable).toBe(false);
+    expect(StyleSheet.flatten(layer.props.style).display).toBeUndefined();
   }
+});
+
+test('leak: hiding the map layer never re-parents the native map', async () => {
+  await mount();
+  await advance(100);
+  const layerStyle = () => {
+    const layer = renderer.root.findAllByProps({ testID: 'persistent-map-layer' })[0];
+    expect(layer.props.collapsable).toBe(false);
+    return StyleSheet.flatten(layer.props.style);
+  };
+  const onMap = layerStyle();
+  await act(async () => {
+    renderer.root.findAll(node => typeof node.props.onOpenSettings === 'function')[0].props.onOpenSettings();
+  });
+  await advance(100);
+  const onSettings = layerStyle();
+  // Hidden by opacity only; the order (zIndex) and display never change.
+  expect(onSettings.opacity).toBe(0);
+  expect(onSettings.zIndex).toBe(onMap.zIndex);
+  expect(onSettings.display).toBeUndefined();
 });
 
 test('E15: settings content reserves measured N3 height and restores spacing when hidden', () => {
