@@ -74,7 +74,7 @@ RSSI 是 Master 收到項圈 LoRa 封包的強度，主要反映項圈離接收�
 
 ## 模擬驗證
 
-`__fixtures__/IndoorScenarios.js` 產生 25 種情境的假資料（在家沒定位、飄移、時有時無、窗邊、充電、坐車充電、空曠地、樹下走路、室內開機、別的建築、隧道、離開接收範圍、大型建築、院子；機場的航廈、金屬機棚、停機坪、停車塔、貨倉、圍界；坐廂型車項圈沒定位；狗舍整晚充電、換到 20 m 外的狗籠、屋旁的戶外狗籠），每種 8 組亂數，室內判斷用真正的環境模型。`__tests__/IndoorHoldSimulation.test.js` 比較 main（不設定點／設定點在家）與這個做法：
+`__fixtures__/IndoorScenarios.js` 產生 25 種情境的假資料（在家沒定位、飄移、時有時無、窗邊、充電、坐車充電、空曠地、樹下走路、室內開機、別的建築、隧道、離開接收範圍、大型建築、院子；機場的航廈、金屬機棚、停機坪、停車塔、貨倉、圍界；坐廂型車項圈沒定位；狗舍整晚充電、換到 20 m 外的狗籠、屋旁的戶外狗籠），每種預設 5 組亂數（`runAll` 的 seeds 為 `[1, 2, 3, 4, 5]`，可傳入自訂 seeds），室內判斷用真正的環境模型。`__tests__/IndoorHoldSimulation.test.js` 比較 main（不設定點／設定點在家）與這個做法：
 
 ```bash
 REPORT=1 npm test -- --runInBand __tests__/IndoorHoldSimulation.test.js

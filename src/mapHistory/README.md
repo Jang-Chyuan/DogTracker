@@ -27,7 +27,7 @@
 
 雲端 Client 以帳號／Master／Slave 分別使用最近 3 個原始點平滑；速度超過 10 km/h 時最新點占 90%。無效座標、超過 2 分鐘中斷或跨日期變更線重置平滑，Master 切換處斷線。結果另存於 `supabase_dog_status` 的 `display_latitude`、`display_longitude`、`display_version`（目前為 1）；`slave_lat`／`slave_lon` 不變。
 
-首次查看歷史或匯出時每 1000 筆補算缺少的顯示座標，查詢範圍外的前兩筆也納入計算，跨頁與改時間範圍不會重新起算。歷史線、標記、回放與三角游標共用這份座標，不重複平滑。補下載舊資料會在同一交易內清除其後最多兩筆受影響的顯示座標，下次查看或匯出再補算；重複下載不會清除。（056 起匯出不再讀這份平滑座標：狗的 GPX／CSV 寫項圈原始座標 slave_lat／slave_lon，和第三版歷史畫面用的一樣。）手機仍使用原本儲存的顯示座標；此功能不模擬動畫影格或推定 Client 靜止鎖定。
+顯示座標快取由 `CloudDisplayCoordinates` 與 `BleDisplayCoordinates` 的讀取流程依查詢頁面補算，使用各來源串流在頁面前的兩筆作為平滑上下文；晚到資料會使後續最多兩筆快取失效。這份快取供讀取顯示座標的介面使用。第三版歷史的 `HistoryDatabase.historyDayRows` 不讀狗的平滑快取：狗以項圈原始定位建立日模型，再套用停住與歷史過濾規則；手機以 `myLocationTracker.latitude`／`longitude` 的 recorded route 建立日模型。第三版路線與游標使用日模型，不重複套用三點平滑；狗的 GPX／CSV 使用原始定位，手機使用 recorded route。
 
 ## 匯出（056，H9／H10）
 
@@ -39,13 +39,11 @@
 
 歷史地圖只讀本機 SQLite（下載完成後由下一次刷新帶出來）；只在雲端的日子由月曆下載（054b），沒下載完的寫「資料不完整　重試」。匯出讀的是同一份本機資料，因此同樣受限。
 
-雲端僅顯示目前登入帳號下載的 owner_user_id，不登入不讀雲端。帳號／選項變更立即隱藏舊查詢結果；雲端查詢前先完成原有 migration。BLE 與雲端不合併。
-
-最近時間窗每秒清除過期顯示；快取保留本次查詢的原始點，先依時間篩選，再重新分段、簡化與套用繪圖上限。不可直接刪除簡化線段的過期端點，否則會連帶清除仍在時間窗內的直線軌跡。固定日期區間不隨時間清除；此流程不刪除 SQLite 資料。
+雲端僅顯示目前登入帳號下載的 owner_user_id，不登入不讀雲端。帳號／選項變更立即隱藏舊查詢結果；雲端查詢前先完成原有 migration。先以 `owner_user_id` 隔離雲端資料，再合併本機 BLE 與該帳號的雲端列；`HistorySources` 依狗編號與封包／定位時間去重，同筆資料優先保留本機列。
 
 繪圖維持全圖最多 120 段、4,000 點，額度公平分配到手機與各隻狗，未用額度再分配。路段過多時依整段時間挑選代表路段，保留最早與最晚路段；路段內點數過多時，保留兩端並從依序分桶的點中挑選較明顯的轉折。省略路段不會與相鄰路段連接。這是顯示近似，不保证保留每一個轉彎；`sourcePoints`、`latest`、時間列表與匯出資料維持完整。放大後載入更多細節尚未實作。
 # BLE 顯示座標
 
 `dog_status` 原始 `slave_lat`、`slave_lon` 與 `raw_payload` 保留不變。首次讀取 BLE 顯示資料時，增加 `display_latitude`、`display_longitude`、`display_version`，依 Master／Slave 分組使用與雲端相同的最近三點平滑，高於 10 km/h 時最新點權重為 90%。無效座標或超過兩分鐘間隔會重設平滑窗口。
 
-顯示座標在即時位置、歷史或匯出讀取時計算並另存，不在 BLE 接收時修改原始資料；Android 原生背景寫入的資料也在之後讀取時處理。CSV 使用平滑座標並保留原始座標欄位，GPX 使用平滑座標。晚到或手機時鐘調整造成的較早插入，會使同一 Master／Slave 後續兩筆顯示座標失效，下一次讀取重算。這不是異常 GPS 跳點剔除功能。
+顯示座標在 `BleDisplayCoordinates.bleDisplayRows` 或讀取顯示座標的查詢流程中計算並另存，不在 BLE 接收時修改原始資料；Android 原生背景寫入的資料也在之後讀取時處理。第三版狗的 CSV／GPX 使用項圈原始定位；CSV 的主座標與 raw 欄位保留原始定位。手機的 CSV／GPX 使用 recorded route（`latitude`／`longitude`），CSV 另存 `raw_latitude`／`raw_longitude`，不以 raw 欄位覆寫主座標。晚到或手機時鐘調整造成的較早插入，會使同一 Master／Slave 後續兩筆顯示座標失效，下一次讀取重算。這不是異常 GPS 跳點剔除功能。

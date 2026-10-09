@@ -1,6 +1,6 @@
 # 手機位置記錄
 
-另存 display_latitude/display_longitude、display_source、display_location_at。前景即時藍點每 100 ms 向原生記憶體提供動畫座標，原生 writer 依原有 1/3/5 秒節奏在同一交易另存。僅接受同 session、來源定位不晚於本筆且差距 ≤ 3 秒、快照接收時間距今 ≤ 1.5 秒的座標；無有效快照時保存定位管線位置並標示 pipeline。歷史動畫不回寫，原有 latitude/longitude 和 raw_latitude/raw_longitude 不覆寫。歷史與 CSV/GPX 優先使用 display 座標，舊資料無新欄位或為 NULL 時沿用原座標；CSV 另含來源與來源定位時間。
+另存 display_latitude/display_longitude、display_source、display_location_at。前景即時藍點每 100 ms 向原生記憶體提供動畫座標，原生 writer 依原有 1/3/5 秒節奏在同一交易另存。僅接受同 session、來源定位不晚於本筆且差距 ≤ 3 秒、快照接收時間距今 ≤ 1.5 秒的座標；無有效快照時保存定位管線位置並標示 pipeline。歷史動畫不回寫，原有 latitude/longitude 和 raw_latitude/raw_longitude 不覆寫。第三版歷史與 CSV／GPX 使用 recorded route（`latitude`／`longitude`）；display 座標與來源另存供診斷，CSV 另含來源與來源定位時間。
 
 預設啟用：App 進入前景、已取得精確定位權限且 GPS 開啟後，自動啟動 Android 定位前景服務，使用常駐通知，離開畫面後繼續記錄。首次及舊版升級未有偏好時使用此預設；尚未授權時沿用 App 的定位權限流程，不額外重複要求權限。
 
@@ -12,9 +12,9 @@
 - 無新定位不補空白筆數、不重複舊定位；超過 3 秒的定位丟棄。實際頻率受 Android、接收狀況及省電影響。
 - 新定位必須具有有效、有限、非負的水平估計精度；原始速度 > 20 km/h 時要求 < 50 公尺，其餘情況要求 ≤ 30 公尺；未知或超過門檻時顯示等待提示，不寫入且不推進記錄時間限制。既有資料不刪除。
 - 最近 3 個有效樣本平均；速度 > 10 km/h 時，最新點權重為 90%。超過 3 秒的樣本間隔重設平滑視窗。平滑不代表實際精度提高；估計精度仍保留定位來源回報值。
-- 地圖與 Timeline 頁面每秒讀取原生記憶體快照，顯示最新平滑位置、樣本與拒收計數；不以每秒查詢 SQLite 更新地圖。
+- 即時地圖由 `useLiveLocation` 每秒讀取原生記憶體快照；診斷記錄清單由 `useLocationTracker` 呼叫 `readPage` 讀取 SQLite，每次讀取完成後 10 秒再讀。歷史由 `HistoryDatabase.historyDayRows` 讀取 SQLite 的日期資料，不使用即時記憶體快照。
 - `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 2 分鐘間隔時分段。
-- Timeline 與 CSV／GPX 都依選定時間範圍從 SQLite 讀取；CSV 同時包含原始和平滑座標，GPX 使用平滑座標。每秒樣本僅用於平滑，不全部存入資料庫。
+- `LocationTrackerScreen` 是設定 → 診斷 → 記錄清單的分頁清單；日期／時間範圍與匯出在 `src/mapHistory/HistoryScreen.js`。第三版手機 CSV／GPX 以 recorded route 為主座標，CSV 另保留 raw 欄位；裁切與時間用途見 `../mapHistory/ExportBuilders.md`。每秒樣本僅用於定位管線，不全部存入資料庫。
 - `recorded_at` 和 `location_at` 是 Unix 毫秒；緯經度為十進位度；速度由 m/s 轉為 km/h。無精度／海拔／速度／方向時為 NULL。
 - 每次寫入與修剪在同一交易，依 recorded_at、id 保留最新 80,000 筆。初始化也修剪舊資料。
 - 畫面使用 id 游標每頁 50 筆，前景每 10 秒更新，離開頁面不再輪詢；停止記錄不刪除資料。

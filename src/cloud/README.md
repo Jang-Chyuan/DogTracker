@@ -5,7 +5,7 @@
 1. 使用 Supabase Auth 中已建立並獲授權的 Email／密碼登入一次。
 2. 首次同步每個已授權 Master 的最近 24 小時；前景每 30 秒下載增量，Android 背景／鎖屏每 15 分鐘由 WorkManager 排程，回到 App 先顯示本機歷史並立即補下載。
 3. 在下方查看本機紀錄，每頁 50 筆。重新讀取本機資料不使用網路。
-4. 手動下載入口已移除；已下載的較早資料仍可查看，未下載的舊資料目前沒有日期範圍補下載入口。
+4. 雲端診斷頁沒有手動下載入口；已下載的較早資料仍可查看。歷史畫面的日期列／月曆可補下載指定日期，由 `HistoryCloud`、`useHistoryCloud` 寫入同一份本機快取。
 
 ## 設定與授權
 
@@ -68,7 +68,7 @@ WorkManager 不保存 JWT，執行時從既有安全儲存恢復並更新 Sessio
 
 `cloud_sync_buckets` 以 `(owner_user_id, master_id, bucket_start)` 為主鍵，保存**雲端**筆數，不是本機筆數：本機容量上限會刪掉較早的資料，若拿本機筆數當基準，同一小時會每輪重複下載。保留 48 小時的核對紀錄。核對掃描不使用 checkpoint，因此不會移動 `cloud_sync_state` 的自動同步進度；取消、逾時或失敗時已記錄的小時保留，下一輪從未核對的小時繼續。
 
-每輪每台 Master 最多 24 次筆數查詢；沒有補傳時不會下載任何資料。核對只涵蓋最近 24 小時，更早的延遲補傳目前不提供手動補下載入口。
+每輪每台 Master 最多 24 次筆數查詢；沒有補傳時不會下載任何資料。自動核對只涵蓋最近 24 個已結束的整點小時；更早的資料可從歷史畫面的日期列／月曆手動補下載。
 
 ## 範圍與限制
 
@@ -77,16 +77,16 @@ WorkManager 不保存 JWT，執行時從既有安全儲存恢復並更新 Sessio
 - 假設雲端事件為追加且不可變；相同事件重複下載不新增，不更新已下載事件，也不同步刪除。
 - 同步中斷／失敗保留已提交批次，下輪依進度補齊。離開雲端頁但仍在 App 前景時，自動同步繼續。
 - 登出隱藏本機快取；帳號切換隔離顯示。雲端撤銷 Master 授權不會自動刪除以前合法下載的離線資料。
-- 本機表格目前提供常用解析欄位，不將雲端資料接入 BLE 地圖。
+- 本機表格目前提供常用解析欄位；即時地圖由 `DogMerge` 合併本機 BLE 與登入帳號已下載的雲端資料。
 
 ## 首頁的狗 marker
 
 `slave_id` 全隊唯一，所以首頁每隻狗只有一個 marker，取 BLE 與各台 Master 的雲端資料中**最新的一筆**，並標示來源（`BLE` 或 `經 Master N・雲端`）。合併規則在 `src/map/DogMerge.js`，不依賴地圖 SDK。
 
 - 地圖只讀本機 `supabase_dog_status`（`latestBySlave`，每 10 秒一次），不直接查 Supabase；離線仍可顯示已下載的位置。
-- BLE 最後一筆在 10 分鐘內視為連線中：只顯示該 Master 收到的狗，只在雲端的狗仍隱藏。BLE 沉默超過 10 分鐘就改以雲端為準，顯示雲端有的每隻狗（挑選介面另計）。
-- 同一時間的兩筆保留 BLE，因為那是手機自己的時鐘；雲端的時間來自 Master。
-- 超過 24 小時的位置不放 marker。沒有有效座標的資料不能當最新位置。
+- 每隻狗分別比較有效定位時間，雲端優先使用修正後的 `track_at`，否則使用 `received_at`；有效的 cloud-only 狗也加入集合，不受其他狗的 BLE 新鮮度限制。來源與新鮮度逐隻判斷。
+- 同一定位時間的兩筆保留 BLE；雲端比較時間優先採用修正後的 `track_at`。
+- `mergeDogMarkers` 預設 `maxAgeMs = Infinity`，超過 24 小時的最後有效位置仍保留。即時 marker 由 `DogFreshness` 判斷灰化：一般看最後有效定位，室內停住看最後封包，超過 10 分鐘標為未更新；BLE 使用目前時間（另套用手動中斷／重連規則），雲端使用最近成功即時下載的時間，尚未成功或連續失敗超過 10 分鐘才改用目前時間。即時路線的選定時間窗只裁切路線；`DogMerge.windowMs` 判斷通訊狀態（畫面傳入 3 分鐘），不等於 marker 的保留期限。從未有有效位置且沒有停住座標的狗不繪製 marker。
 - 未登入不讀雲端資料。
 
 BLE 是手機收到的時間、雲端是 Master 收到的時間，兩個時鐘不同；Master 時鐘來源未確認前，「哪筆最新」的判斷仍可能受時鐘誤差影響。
@@ -94,7 +94,7 @@ BLE 是手機收到的時間、雲端是 Master 收到的時間，兩個時鐘�
 ## 驗證
 
 ```powershell
-npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudScreen.test.js __tests__/CloudSync.test.js __tests__/CloudForeground.test.js __tests__/CloudReconcile.test.js
+npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudDataScreen.test.js __tests__/CloudSync.test.js __tests__/CloudForeground.test.js __tests__/CloudReconcile.test.js
 ```
 
 實機驗收：已授權帳號讀取對應 Master 全部 Slave；無授權帳號下載為空；重複同步筆數不增加；斷網後重新讀取本機資料；登出與換帳號不顯示前一帳號資料；確認頁面沒有手動下載、日期或 Master 篩選欄位。
