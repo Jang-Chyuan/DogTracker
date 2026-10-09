@@ -386,12 +386,12 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             ref={titleRef}
             testID="calendar-months-back"
             accessibilityRole="button"
-            accessibilityLabel="選月份，回到月曆"
+            accessibilityLabel="返回選日期"
             onPress={() => setPicker(null)}
             style={({ pressed }) => [styles.backTitle, pressed && styles.pressed]}
             hitSlop={space.s}
           >
-            <Text style={styles.title}>‹ 選月份</Text>
+            <Text style={styles.title}>‹ 選日期</Text>
           </Pressable>
           <QueryStatus status={months.status} onRetry={screen.retryQuery} />
         </View>
