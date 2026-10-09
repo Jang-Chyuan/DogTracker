@@ -144,6 +144,7 @@ export default function MapScreen({
   // 'storage-settings', 'storage-reason', 'connect-receiver', 'sign-in'.
   onAlertAction,
   switchingReceiver = false,
+  pausedReceiver = false,
   // The alerts' view of the dogs (058a, App's useAlertEngine): { source,
   // ready, dogs (named, with their range judgement), receiverBattery }.
   onAlertInput,
@@ -424,7 +425,8 @@ export default function MapScreen({
   const waitingMemory = useRef(null);
   const waitingSaved = tracking.preferences.value?.waitingLocationSources;
   const [waitingRevision, setWaitingRevision] = useState(0);
-  const waitingReceiver = receiver?.state ?? receiverState;
+  const currentReceiver = receiver?.state ?? receiverState;
+  const waitingReceiver = pausedReceiver ? { ...currentReceiver, enabled: false } : currentReceiver;
   const waitingReady = tracking.preferences.ready && cloudDogs?.loaded && !!waitingReceiver;
   const waitingState = !active && !switchingReceiver
     ? waitingMemory.current ?? waitingSaved ?? waitingSourcesState(null, waitingReceiver, [], now)

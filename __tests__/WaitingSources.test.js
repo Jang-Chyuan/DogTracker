@@ -46,7 +46,7 @@ test('dismissal survives preference save/restart and reductions; only a new sour
 test('radio disconnect keeps the card; user disconnect or change resets it and fresh packets recompute', () => {
   const state = next(null, [packet(4)]);
   expect(waitingSourcesCount(next(state, [], now, { ...receiver, connected: false }), now)).toBe(1);
-  for (const stopped of [next(state, [], now, { ...receiver, enabled: false }), next(state, [], now, receiver, true)]) {
+  for (const stopped of [next(state, [], now, { ...receiver, enabled: false })]) {
     expect(waitingSourcesCount(stopped, now)).toBe(0);
     expect(waitingSourcesCount(next(stopped, [packet(4)]), now)).toBe(0);
     expect(waitingSourcesCount(next(stopped, [packet(4, now + 1)], now + 10001), now + 10001)).toBe(1);
@@ -110,4 +110,19 @@ test('reconnection never treats a previously located dog as waiting when its new
   const paused = next(null, [], now, { ...receiver, enabled: false });
   const state = next(paused, [packet(4, now + 1), packet(4, now - 60000, { slave_lat: 25, slave_lon: 121 })], now + 10001);
   expect(waitingSourcesCount(state, now + 10001)).toBe(0);
+});
+
+
+test('D10: switch cancellation preserves dismissal; success resets the checkpoint', () => {
+  const original = dismissWaitingSources(next(null, [packet(4)]));
+  const switching = next(original, [], now, { ...receiver, enabled: false }, true);
+  expect(waitingSourcesCount(switching, now)).toBe(0);
+  const cancelled = next(JSON.parse(JSON.stringify(switching)), [packet(4, now + 1)], now + 10001);
+  expect(cancelled.sources).toEqual(original.sources);
+  expect(cancelled.dismissed).toEqual(original.dismissed);
+  expect(waitingSourcesCount(cancelled, now + 10001)).toBe(0);
+  const succeeded = next(switching, [packet(4, now + 1, { master_id: 8 })], now + 10001,
+    { ...receiver, deviceId: 'BB', expectedMasterId: 8 });
+  expect(succeeded.dismissed).toEqual([]);
+  expect(waitingSourcesCount(succeeded, now + 10001)).toBe(1);
 });

@@ -1335,7 +1335,8 @@ function TrackerApp({ resume = null, onRestart }) {
               wait: receiverWait.current,
             }}
             onAlertAction={alertAction}
-            switchingReceiver={waitingSourcesPaused || (route.name === 'pair' && route.mode === 'change')}
+            pausedReceiver={waitingSourcesPaused}
+            switchingReceiver={route.name === 'pair' && route.mode === 'change'}
             onAlertInput={onAlertInput}
             openDogRequest={openDogRequest}
             frameRequest={frameRequest}

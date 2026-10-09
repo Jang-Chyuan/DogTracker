@@ -23,11 +23,14 @@ export function waitingSourcesState(previous, receiverState, packets, now, switc
   const number = receiverNumber(receiverState);
   const receiver = `${receiverState?.deviceId || receiverState?.deviceName || ''}:${number ?? ''}`;
   const prior = normalizeWaitingSources(previous);
+  // A provisional switch hides the card but preserves its original checkpoint.
+  // Cancellation restores this receiver; success changes the identity below.
+  if (switching && prior) return { ...prior, paused: true };
   const same = prior?.receiver === receiver;
   const next = same ? { ...prior, sources: { ...prior.sources } }
     : { receiver, sources: {}, dismissed: [], paused: false, since: null };
   // Deliberate disconnect/change hides immediately; a dropped radio link keeps the card.
-  if (switching || receiverState?.enabled === false) {
+  if (receiverState?.enabled === false) {
     return next.paused ? next : { receiver, sources: {}, dismissed: [], paused: true, since: now };
   }
   if (!receiverState?.enabled || number == null) return next;
