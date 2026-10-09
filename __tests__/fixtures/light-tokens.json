@@ -51,7 +51,9 @@
     "noDataLine": "#C9CFCC",
     "mapFallback": "#ECEEEC",
     "pillPlain": "#F1EEEC",
-    "pillIndoor": "#E6EEF3"
+    "pillIndoor": "#E6EEF3",
+    "skeleton": "#EDE6E4",
+    "skeletonHighlight": "#F7F2F0"
   },
   "routeColors": [
     "#D9604F",

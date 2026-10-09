@@ -1,3 +1,4 @@
+import { LoadingContent } from '../components/Skeleton';
 // History over the map: one dog capsule (or 我的路線), immediate dog chooser,
 // shared range and cursor, calendar, timeline and export.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
@@ -217,18 +218,6 @@ function DownloadSummary({ panel, onCancel }) {
       >
         <Text style={styles.textButtonText}>{panel.action}</Text>
       </Pressable>
-    </View>
-  );
-}
-
-/** While the day downloads: grey lines where the list will be (no motion). */
-function Skeleton() {
-  const styles = useStyles(getStyles);
-  return (
-    <View style={styles.skeleton} testID="history-skeleton" accessible={false}>
-      {['70%', '45%', '80%', '55%'].map(width => (
-        <View key={width} style={[styles.skeletonLine, { width }]} />
-      ))}
     </View>
   );
 }
@@ -487,7 +476,7 @@ ref) {
   );
 
   let body;
-  if (downloading) body = <Skeleton />;
+  if (downloading) body = null;
   else if (download?.kind === 'unfinished' && !model?.dayRecords) {
     // Not H8: the day is not known to be empty (判定表「下載取消或失敗、手機裡又完全沒有」).
     body = (
@@ -506,7 +495,7 @@ ref) {
     );
   } else if (screen.error)
     body = <Text style={styles.empty}>{screen.error}</Text>;
-  else if (!model) body = <Text style={styles.empty}>讀取中…</Text>;
+  else if (!model) body = null;
   else if (empty)
     body = (
       <Text style={styles.empty} testID="history-empty">
@@ -549,7 +538,11 @@ ref) {
           disabled={!rangeOpen}
           accessible={false}
         >
-          {body}
+          {!model && !downloading && !screen.error && <Text style={styles.empty}>讀取中…</Text>}
+          <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
+            shape="timeline" label={downloading ? download.title.replace('…', '') : '讀取中'} skeletonTestID="history-skeleton">
+            {body}
+          </LoadingContent>
         </Pressable>
       </HistoryPanel>
       {exporting && <HistoryExportSheet ref={exportSheet} exporter={exporter} bottomInset={bottomInset} />}

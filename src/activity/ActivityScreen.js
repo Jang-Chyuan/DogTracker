@@ -1,3 +1,4 @@
+import { LoadingContent } from '../components/Skeleton';
 // A4 活動量: one dog's activity by 日 (a curve of every minute) and 週／月／年
 // (one segmented bar per day, or per month for 年: 休息、一般、劇烈 from the
 // bottom, the minutes without data left blank on top). Opened from the 活動量
@@ -5,7 +6,6 @@
 // Design v3 A4, 判定表「A4 活動量」「A4 怎麼算」「A4 日的曲線」「A4 柱子的比例」.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   BackHandler,
   Pressable,
   ScrollView,
@@ -143,9 +143,10 @@ export default function ActivityScreen({
           onPrevious={() => go(navigation?.previous)}
           onNext={() => go(navigation?.next)}
         />
-        {status === 'loading' && <Loading />}
-        {status === 'error' && <Failure onRetry={retry} />}
-        {status === 'ready' && view && <ActivityBody view={view} />}
+        <LoadingContent loading={status === 'loading'} shape={mode === 'day' ? 'chart' : 'bars'} skeletonTestID="activity-loading">
+          {status === 'error' && <Failure onRetry={retry} />}
+          {status === 'ready' && view && <ActivityBody view={view} />}
+        </LoadingContent>
       </ScrollView>
     </View>
   );
@@ -242,24 +243,6 @@ function PeriodRow({ label, navigation, onPrevious, onNext }) {
         '下一段',
         'activity-next',
       )}
-    </View>
-  );
-}
-
-// 判定表「載入中、產生中」: a 48dp row, a 20dp spinner and the words.
-function Loading() {
-  const { colors } = useTheme();
-  const styles = useStyles(getStyles);
-  return (
-    <View style={styles.stateBox} testID="activity-loading">
-      <View style={styles.loadingRow}>
-        <ActivityIndicator
-          size={size.spinner}
-          color={colors.tonalText}
-          accessibilityLabel="載入中"
-        />
-        <Text style={styles.loadingText}>載入中…</Text>
-      </View>
     </View>
   );
 }

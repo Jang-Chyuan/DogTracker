@@ -101,7 +101,8 @@ test('‹ › move by the tab\'s period and stop at the first reading; tabs keep
   await press('activity-tab-year');
   expect(text('activity-period')).toBe('2026 年');
   // Hold the first year read so loading does not depend on act/timer speed.
-  expect(flatten(renderer.toJSON())).toContain('載入中…');
+  expect(flatten(renderer.toJSON())).not.toContain('載入中…');
+  expect(renderer.root.findByType(require('../src/components/Skeleton').LoadingContent).props.loading).toBe(true);
   await act(async () => releaseYear());
   for (let i = 0; i < 20 && !flatten(renderer.toJSON()).includes('這一年'); i += 1) {
     await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
@@ -129,7 +130,8 @@ test('載入中 with the period, then 讀取失敗 and 重試 reads again', asyn
     && typeof node.props.onPress === 'function')[0];
   await act(async () => retry.props.onPress());
   expect(read).toHaveBeenCalledTimes(2);
-  expect(flatten(renderer.toJSON())).toContain('載入中…');
+  expect(flatten(renderer.toJSON())).not.toContain('載入中…');
+  expect(renderer.root.findByType(require('../src/components/Skeleton').LoadingContent).props.loading).toBe(true);
 });
 
 test('沒有活動量資料 for a dog without readings; both arrows off', async () => {
@@ -176,5 +178,6 @@ test('another reader (account) never shows the old answer; the first reading is 
   const pending = jest.fn(() => new Promise(() => {}));
   await act(async () => renderer.update(<ActivityScreen name="小黑" slaveId={6} now={NOW + M} read={pending}
     readEarliest={readEarliest} onBack={jest.fn()} />));
-  expect(flatten(renderer.toJSON())).toContain('載入中…');
+  expect(flatten(renderer.toJSON())).not.toContain('載入中…');
+  expect(renderer.root.findByType(require('../src/components/Skeleton').LoadingContent).props.loading).toBe(true);
 });

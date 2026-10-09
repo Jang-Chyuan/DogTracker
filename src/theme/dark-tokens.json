@@ -1,5 +1,5 @@
 {
-  "_note": "DogTracker dark theme (design v3 \u6df1\u8272\u6a21\u5f0f, 2026-10-08). Same keys as src/theme/tokens.js; only colour-bearing groups. Values not listed here (type, space, radius, size, motion, haptics) are the same in both themes.",
+  "_note": "DogTracker dark theme (design v3 深色模式, 2026-10-08). Same keys as src/theme/tokens.js; only colour-bearing groups. Values not listed here (type, space, radius, size, motion, haptics) are the same in both themes.",
   "colors": {
     "bg": "#171211",
     "surface": "#262020",
@@ -44,9 +44,16 @@
     "alertDetail": "#E2B9B3",
     "rangeRing": "#93B3C6",
     "noDataLine": "#767E7B",
-    "mapFallback": "#2A2726"
+    "mapFallback": "#2A2726",
+    "skeleton": "#3D3432",
+    "skeletonHighlight": "#4A3F3D"
   },
-  "routeColors": ["#FF8A78", "#6FAEE0", "#84C766", "#C89BEA"],
+  "routeColors": [
+    "#FF8A78",
+    "#6FAEE0",
+    "#84C766",
+    "#C89BEA"
+  ],
   "settingIcon": {
     "receiver": {
       "bg": "#22313A",

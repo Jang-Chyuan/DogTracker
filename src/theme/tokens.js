@@ -8,6 +8,8 @@ export const colors = {
   text: '#222222',
   textMuted: '#5E5E5E',
   line: '#EDE6E4',
+  skeleton: '#EDE6E4',
+  skeletonHighlight: '#F7F2F0',
   // Saturated coral is a shape colour (default dog avatar, range selection,
   // selected-row edge). White text on it is only 2.49:1, so never put text on it.
   accent: '#F2867A',
