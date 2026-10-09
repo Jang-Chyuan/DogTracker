@@ -1369,12 +1369,15 @@ function TrackerApp({ resume = null, onRestart }) {
         )}
         {(light || full) && (
           <View style={styles.page}>
-            {page}
+            <View testID="settings-page-content" style={[styles.page, { paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0 }]}>
+              {page}
+            </View>
             {light && n3Shown && (
               <N3Card
                 value={n3Shown}
                 leaving={n3Leaving}
                 top={layout.belowStatusBar}
+                onHeight={setN3Height}
                 onPress={pressN3}
                 onGone={n3Gone}
               />

@@ -1131,3 +1131,9 @@ test('E01/E16: A4 and A5 isolate background controls and accessibility', async (
     expect(StyleSheet.flatten(layer.props.style).display).toBe('none');
   }
 });
+
+test('E15: settings content reserves measured N3 height and restores spacing when hidden', () => {
+  const source = require('fs').readFileSync(require.resolve('../App'), 'utf8');
+  expect(source).toContain('paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0');
+  expect(source).toMatch(/top=\{layout.belowStatusBar\}\s*onHeight=\{setN3Height\}/);
+});
