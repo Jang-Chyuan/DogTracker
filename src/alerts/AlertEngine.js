@@ -40,8 +40,10 @@ export function persistedAlertState(state = {}) {
   for (const [key, event] of Object.entries(state.events?.active || {})) {
     active[key] = { key, startedAt: event.startedAt, level: event.level || 1 };
   }
-  const { seen = {}, lastAttentionAt = null, pause = null } = state.scheduler || {};
-  return { version: 1, active, batteries: state.events?.batteries || {}, seen, lastAttentionAt, pause };
+  const { seen = {}, pending = {}, lastAttentionAt = null, pause = null } = state.scheduler || {};
+  // `pending` (waiting for the 2-minute gap) is kept too: the app and the
+  // background check hand the state to each other (058b).
+  return { version: 1, active, batteries: state.events?.batteries || {}, seen, pending, lastAttentionAt, pause };
 }
 
 /** The saved value back as a state (anything damaged is dropped). */
@@ -52,6 +54,8 @@ export function restoreAlertState(saved) {
   const active = pick(saved.active, value => finite(value.startedAt));
   const batteries = pick(saved.batteries, value => finite(value.startedAt) && finite(value.level));
   const seen = pick(saved.seen, value => typeof value.token === 'string' && finite(value.at));
+  const pending = Object.fromEntries(Object.entries(pick(saved.pending, value => typeof value.token === 'string'))
+    .map(([key, value]) => [key, { token: value.token, reminder: !!value.reminder, repeat: !!value.repeat }]));
   const pause = plainObject(saved.pause) && finite(saved.pause.until) && plainObject(saved.pause.known)
     ? { since: finite(saved.pause.since) ? saved.pause.since : null, until: saved.pause.until,
       known: pick(Object.fromEntries(Object.entries(saved.pause.known).map(([key, token]) => [key, { token }])),
@@ -60,7 +64,7 @@ export function restoreAlertState(saved) {
   if (pause) pause.known = Object.fromEntries(Object.entries(pause.known).map(([key, value]) => [key, value.token]));
   return {
     events: { active, batteries },
-    scheduler: { seen, pending: {}, lastAttentionAt: finite(saved.lastAttentionAt) ? saved.lastAttentionAt : null,
+    scheduler: { seen, pending, lastAttentionAt: finite(saved.lastAttentionAt) ? saved.lastAttentionAt : null,
       pause },
   };
 }

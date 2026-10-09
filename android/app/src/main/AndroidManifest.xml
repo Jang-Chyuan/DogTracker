@@ -32,6 +32,7 @@
         android:authorities="${applicationId}.historyexports" android:exported="false" android:grantUriPermissions="true">
         <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/history_export_paths" />
       </provider>
+      <receiver android:name=".alerts.AlertPauseReceiver" android:exported="false" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

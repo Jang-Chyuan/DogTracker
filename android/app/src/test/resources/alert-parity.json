@@ -1,0 +1,2533 @@
+[
+ {
+  "name": "two dogs, the gap, a pause, a new problem during it, the end of the pause",
+  "preferences": {},
+  "steps": [
+   {
+    "at": 1760000000000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {},
+      "batteries": {},
+      "seen": {},
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000660000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000660000,
+      "packetAt": 1760000660000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・1 隻狗要注意",
+     "lines": [
+      "豆豆 11 分鐘沒有新位置"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [
+      "dog-stale:4"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000660000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000690000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000660000,
+      "packetAt": 1760000660000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "out",
+       "outSince": 1760000660000,
+       "judgedAt": 1760000660000,
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・2 隻狗要注意",
+     "lines": [
+      "小黑 不在接收範圍",
+      "豆豆 11 分鐘沒有新位置"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [
+      "dog-out-of-range:5"
+     ],
+     "vibration": [
+      0,
+      500,
+      150,
+      200,
+      150,
+      500
+     ],
+     "critical": true,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-out-of-range:5": {
+        "key": "dog-out-of-range:5",
+        "startedAt": 1760000690000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": false
+       },
+       "dog-out-of-range:5": {
+        "token": "1760000690000:1",
+        "at": 1760000690000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000690000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000720000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 18,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000720000,
+      "packetAt": 1760000720000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "out",
+       "outSince": 1760000660000,
+       "judgedAt": 1760000720000,
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・2 隻狗要注意",
+     "lines": [
+      "小黑 不在接收範圍",
+      "豆豆 12 分鐘沒有新位置",
+      "豆豆 電量低 18%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000720000,
+        "level": 1
+       },
+       "dog-out-of-range:5": {
+        "key": "dog-out-of-range:5",
+        "startedAt": 1760000690000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000720000,
+        "level": 1,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 18
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": false
+       },
+       "dog-out-of-range:5": {
+        "token": "1760000690000:1",
+        "at": 1760000690000,
+        "reminded": false
+       }
+      },
+      "pending": {
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "reminder": false,
+        "repeat": false
+       }
+      },
+      "lastAttentionAt": 1760000690000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000840000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 18,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000840000,
+      "packetAt": 1760000840000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "out",
+       "outSince": 1760000660000,
+       "judgedAt": 1760000840000,
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "action": "pause",
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・2 隻狗要注意",
+     "lines": [
+      "小黑 不在接收範圍",
+      "豆豆 14 分鐘沒有新位置",
+      "豆豆 電量低 18%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [
+      "dog-battery:4"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000720000,
+        "level": 1
+       },
+       "dog-out-of-range:5": {
+        "key": "dog-out-of-range:5",
+        "startedAt": 1760000690000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000720000,
+        "level": 1,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 18
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": false
+       },
+       "dog-out-of-range:5": {
+        "token": "1760000690000:1",
+        "at": 1760000690000,
+        "reminded": false
+       },
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "at": 1760000840000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000840000,
+      "pause": {
+       "since": 1760000840000,
+       "until": 1760002640000,
+       "known": {
+        "dog-stale:4": "1760000660000:1",
+        "dog-battery:4": "1760000720000:1",
+        "dog-out-of-range:5": "1760000690000:1"
+       }
+      }
+     }
+    }
+   },
+   {
+    "at": 1760000900000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 18,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000900000,
+      "packetAt": 1760000900000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "out",
+       "outSince": 1760000660000,
+       "judgedAt": 1760000900000,
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": "DogTracker・2 隻狗要注意",
+     "lines": [
+      "小黑 不在接收範圍",
+      "豆豆 15 分鐘沒有新位置",
+      "豆豆 電量低 18%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000720000,
+        "level": 1
+       },
+       "dog-out-of-range:5": {
+        "key": "dog-out-of-range:5",
+        "startedAt": 1760000690000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000720000,
+        "level": 1,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 18
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": false
+       },
+       "dog-out-of-range:5": {
+        "token": "1760000690000:1",
+        "at": 1760000690000,
+        "reminded": false
+       },
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "at": 1760000840000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000840000,
+      "pause": {
+       "since": 1760000840000,
+       "until": 1760002640000,
+       "known": {
+        "dog-stale:4": "1760000660000:1",
+        "dog-battery:4": "1760000720000:1",
+        "dog-out-of-range:5": "1760000690000:1"
+       }
+      }
+     }
+    }
+   },
+   {
+    "at": 1760000960000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 18,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000960000,
+      "packetAt": 1760000960000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 9,
+      "charging": false,
+      "range": {
+       "status": "out",
+       "outSince": 1760000660000,
+       "judgedAt": 1760000960000,
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "storageError": "SQLITE_FULL: database or disk is full",
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・5 件事要注意",
+     "lines": [
+      "小黑 不在接收範圍",
+      "手機空間不足，位置存不進手機",
+      "豆豆 16 分鐘沒有新位置",
+      "豆豆 電量低 18%",
+      "小黑 電量低 9%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [
+      "storage:phone",
+      "dog-battery:5"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000720000,
+        "level": 1
+       },
+       "dog-out-of-range:5": {
+        "key": "dog-out-of-range:5",
+        "startedAt": 1760000690000,
+        "level": 1
+       },
+       "dog-battery:5": {
+        "key": "dog-battery:5",
+        "startedAt": 1760000960000,
+        "level": 2
+       },
+       "storage:phone": {
+        "key": "storage:phone",
+        "startedAt": 1760000960000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000720000,
+        "level": 1,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 18
+       },
+       "dog-battery:5": {
+        "kind": "dog-battery",
+        "subject": 5,
+        "startedAt": 1760000960000,
+        "level": 2,
+        "detail": {
+         "name": "小黑",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 9
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": false
+       },
+       "dog-out-of-range:5": {
+        "token": "1760000690000:1",
+        "at": 1760000690000,
+        "reminded": false
+       },
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "at": 1760000840000,
+        "reminded": false
+       },
+       "storage:phone": {
+        "token": "1760000960000:1",
+        "at": 1760000960000,
+        "reminded": false
+       },
+       "dog-battery:5": {
+        "token": "1760000960000:2",
+        "at": 1760000960000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000960000,
+      "pause": {
+       "since": 1760000840000,
+       "until": 1760002640000,
+       "known": {
+        "dog-stale:4": "1760000660000:1",
+        "dog-battery:4": "1760000720000:1",
+        "dog-out-of-range:5": "1760000690000:1"
+       }
+      }
+     }
+    }
+   },
+   {
+    "at": 1760002700000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 18,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760002700000,
+      "packetAt": 1760002700000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 9,
+      "charging": false,
+      "range": {
+       "status": "out",
+       "outSince": 1760000660000,
+       "judgedAt": 1760002700000,
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "storageError": "SQLITE_FULL: database or disk is full",
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・5 件事要注意",
+     "lines": [
+      "小黑 不在接收範圍",
+      "手機空間不足，位置存不進手機",
+      "豆豆 45 分鐘沒有新位置",
+      "豆豆 電量低 18%",
+      "小黑 電量低 9%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [
+      "dog-out-of-range:5",
+      "dog-stale:4",
+      "dog-battery:4"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000720000,
+        "level": 1
+       },
+       "dog-out-of-range:5": {
+        "key": "dog-out-of-range:5",
+        "startedAt": 1760000690000,
+        "level": 1
+       },
+       "dog-battery:5": {
+        "key": "dog-battery:5",
+        "startedAt": 1760000960000,
+        "level": 2
+       },
+       "storage:phone": {
+        "key": "storage:phone",
+        "startedAt": 1760000960000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000720000,
+        "level": 1,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 18
+       },
+       "dog-battery:5": {
+        "kind": "dog-battery",
+        "subject": 5,
+        "startedAt": 1760000960000,
+        "level": 2,
+        "detail": {
+         "name": "小黑",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 9
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "dog-out-of-range:5": {
+        "token": "1760000690000:1",
+        "at": 1760000690000,
+        "reminded": false
+       },
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "at": 1760000840000,
+        "reminded": false
+       },
+       "storage:phone": {
+        "token": "1760000960000:1",
+        "at": 1760000960000,
+        "reminded": false
+       },
+       "dog-battery:5": {
+        "token": "1760000960000:2",
+        "at": 1760000960000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760002700000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760002760000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 35,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760002760000,
+      "packetAt": 1760002760000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 9,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・2 隻狗要注意",
+     "lines": [
+      "豆豆 46 分鐘沒有新位置",
+      "小黑 電量低 9%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:5": {
+        "key": "dog-battery:5",
+        "startedAt": 1760000960000,
+        "level": 2
+       }
+      },
+      "batteries": {
+       "dog-battery:5": {
+        "kind": "dog-battery",
+        "subject": 5,
+        "startedAt": 1760000960000,
+        "level": 2,
+        "detail": {
+         "name": "小黑",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 9
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "dog-battery:5": {
+        "token": "1760000960000:2",
+        "at": 1760000960000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760002700000,
+      "pause": null
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "the receiver drops: one line for it, its quiet dogs not listed; a reminder after 30 minutes",
+  "preferences": {},
+  "steps": [
+   {
+    "at": 1760000000000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {},
+      "batteries": {},
+      "seen": {},
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000300000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": false,
+     "disconnectedAt": 1760000290000,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {},
+      "batteries": {},
+      "seen": {},
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000325000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": false,
+     "disconnectedAt": 1760000290000,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・接收器與手機要注意",
+     "lines": [
+      "接收器 7 斷線了（2 隻狗收不到）"
+     ],
+     "target": {
+      "screen": "receiver-settings"
+     },
+     "delivered": [
+      "receiver-disconnected:receiver"
+     ],
+     "vibration": [
+      0,
+      500,
+      150,
+      200,
+      150,
+      500
+     ],
+     "critical": true,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "receiver-disconnected:receiver": {
+        "key": "receiver-disconnected:receiver",
+        "startedAt": 1760000290000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "receiver-disconnected:receiver": {
+        "token": "1760000290000:1",
+        "at": 1760000325000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000325000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000660000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": false,
+     "disconnectedAt": 1760000290000,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・接收器與手機要注意",
+     "lines": [
+      "接收器 7 斷線了（2 隻狗收不到）"
+     ],
+     "target": {
+      "screen": "receiver-settings"
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-stale:5": {
+        "key": "dog-stale:5",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "receiver-disconnected:receiver": {
+        "key": "receiver-disconnected:receiver",
+        "startedAt": 1760000290000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "receiver-disconnected:receiver": {
+        "token": "1760000290000:1",
+        "at": 1760000325000,
+        "reminded": false
+       },
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "dog-stale:5": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000325000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000720000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・2 隻狗要注意",
+     "lines": [
+      "豆豆 12 分鐘沒有新位置",
+      "小黑 12 分鐘沒有新位置"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-stale:5": {
+        "key": "dog-stale:5",
+        "startedAt": 1760000660000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "dog-stale:5": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000325000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000780000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000780000,
+      "packetAt": 1760000780000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 15
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・2 件事要注意",
+     "lines": [
+      "豆豆 13 分鐘沒有新位置",
+      "接收器 7 電量低 15%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [
+      "receiver-battery:7"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "receiver-battery:7": {
+        "key": "receiver-battery:7",
+        "startedAt": 1760000780000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "receiver-battery:7": {
+        "kind": "receiver-battery",
+        "subject": 7,
+        "startedAt": 1760000780000,
+        "level": 1,
+        "detail": {
+         "number": 7,
+         "source": "ble"
+        },
+        "percentage": 15
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "receiver-battery:7": {
+        "token": "1760000780000:1",
+        "at": 1760000780000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000780000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760002520000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760002520000,
+      "packetAt": 1760002520000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 15
+    },
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・2 件事要注意",
+     "lines": [
+      "豆豆 42 分鐘沒有新位置",
+      "接收器 7 電量低 15%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "receiver-battery:7": {
+        "key": "receiver-battery:7",
+        "startedAt": 1760000780000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "receiver-battery:7": {
+        "kind": "receiver-battery",
+        "subject": 7,
+        "startedAt": 1760000780000,
+        "level": 1,
+        "detail": {
+         "number": 7,
+         "source": "ble"
+        },
+        "percentage": 15
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "receiver-battery:7": {
+        "token": "1760000780000:1",
+        "at": 1760000780000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000780000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760002640000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760002640000,
+      "packetAt": 1760002640000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 15
+    },
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・2 件事要注意",
+     "lines": [
+      "豆豆 44 分鐘沒有新位置",
+      "接收器 7 電量低 15%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "receiver-battery:7": {
+        "key": "receiver-battery:7",
+        "startedAt": 1760000780000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "receiver-battery:7": {
+        "kind": "receiver-battery",
+        "subject": 7,
+        "startedAt": 1760000780000,
+        "level": 1,
+        "detail": {
+         "number": 7,
+         "source": "ble"
+        },
+        "percentage": 15
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "receiver-battery:7": {
+        "token": "1760000780000:1",
+        "at": 1760000780000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000780000,
+      "pause": null
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "switched off in S6: never listed, no vibration; the sound; an indoor dog timed by its packets",
+  "preferences": {
+   "dogStale": false,
+   "sound": true,
+   "vibrate": false
+  },
+  "steps": [
+   {
+    "at": 1760000000000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 6,
+      "name": "阿福",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1759998200000,
+      "packetAt": 1760000000000,
+      "held": true,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {},
+      "batteries": {},
+      "seen": {},
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000660000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 6,
+      "name": "阿福",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1759998200000,
+      "packetAt": 1760000660000,
+      "held": true,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000720000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 12,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 6,
+      "name": "阿福",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1759998200000,
+      "packetAt": 1760000060000,
+      "held": true,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・1 隻狗要注意",
+     "lines": [
+      "豆豆 電量低 12%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [
+      "dog-battery:4"
+     ],
+     "vibration": null,
+     "critical": false,
+     "sound": true,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000720000,
+        "level": 1
+       },
+       "dog-stale:6": {
+        "key": "dog-stale:6",
+        "startedAt": 1760000720000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000720000,
+        "level": 1,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 12
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "dog-stale:6": {
+        "token": "1760000720000:1",
+        "at": 1760000720000,
+        "reminded": true
+       },
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "at": 1760000720000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000720000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000780000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 12,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 6,
+      "name": "阿福",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1759998200000,
+      "packetAt": 1760000060000,
+      "held": true,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "allowed": false,
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": "DogTracker・1 隻狗要注意",
+     "lines": [
+      "豆豆 電量低 12%"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000660000,
+        "level": 1
+       },
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000720000,
+        "level": 1
+       },
+       "dog-stale:6": {
+        "key": "dog-stale:6",
+        "startedAt": 1760000720000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000720000,
+        "level": 1,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 12
+       }
+      },
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000660000:1",
+        "at": 1760000660000,
+        "reminded": true
+       },
+       "dog-stale:6": {
+        "token": "1760000720000:1",
+        "at": 1760000720000,
+        "reminded": true
+       },
+       "dog-battery:4": {
+        "token": "1760000720000:1",
+        "at": 1760000720000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000720000,
+      "pause": null
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "everything switched off: no notification at all; the user paused the receiver",
+  "preferences": {
+   "dogStale": false,
+   "dogOutOfRange": false,
+   "dogBattery": false,
+   "receiverBattery": false,
+   "receiverDisconnectedStorage": false
+  },
+  "steps": [
+   {
+    "at": 1760000000000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 5,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": false,
+     "disconnectedAt": 1759999940000,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000000000,
+        "level": 2
+       },
+       "receiver-disconnected:receiver": {
+        "key": "receiver-disconnected:receiver",
+        "startedAt": 1759999940000,
+        "level": 1
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000000000,
+        "level": 2,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 5
+       }
+      },
+      "seen": {
+       "receiver-disconnected:receiver": {
+        "token": "1759999940000:1",
+        "at": 1760000000000,
+        "reminded": true
+       },
+       "dog-battery:4": {
+        "token": "1760000000000:2",
+        "at": 1760000000000,
+        "reminded": true
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760001200000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 5,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "pauses": [
+     {
+      "pausedAt": 1760000060000,
+      "resumedAt": null
+     }
+    ],
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-battery:4": {
+        "key": "dog-battery:4",
+        "startedAt": 1760000000000,
+        "level": 2
+       }
+      },
+      "batteries": {
+       "dog-battery:4": {
+        "kind": "dog-battery",
+        "subject": 4,
+        "startedAt": 1760000000000,
+        "level": 2,
+        "detail": {
+         "name": "豆豆",
+         "source": "ble",
+         "receiverAffected": true
+        },
+        "percentage": 5
+       }
+      },
+      "seen": {
+       "dog-battery:4": {
+        "token": "1760000000000:2",
+        "at": 1760000000000,
+        "reminded": true
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   }
+  ]
+ }
+]

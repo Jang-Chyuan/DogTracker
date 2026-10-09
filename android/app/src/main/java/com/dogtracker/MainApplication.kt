@@ -15,6 +15,7 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           add(TrackingPlatformPackage())
+          add(AlertNotificationsPackage())
           // Packages that cannot be autolinked yet can be added manually here, for example:
           add(BleBackgroundPackage())
           add(HistoryExportPackage())
@@ -29,6 +30,7 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    NotificationChannels.create(this)
     loadReactNative(this)
   }
 }

@@ -1,6 +1,5 @@
 import { getErrorMessage } from '../utils/errors';
 import { DEFAULT_ALERT_PREFERENCES, normalizeAlertPreferences } from '../alerts/AlertPreferences';
-import { normalizeAlertState } from '../alerts/AlertEngine';
 import { ONBOARDING_DONE, ONBOARDING_SIGN_IN, ONBOARDING_STEPS } from '../app/Launch';
 
 // Home map presets, confirmed 2026-09-16: minutes for working close to the
@@ -19,10 +18,6 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   diagnosticsEnabled: false,
   // 設定 → 提醒 (S6): AlertPreferences.
   alerts: DEFAULT_ALERT_PREFERENCES,
-  // What the alerts already said and a 暫停提醒 in force (AlertEngine
-  // .persistedAlertState), so a restart neither repeats an alert nor ends a
-  // pause. null until the first problem.
-  alertState: null,
   // The first-launch guide (Launch.js): a phone that saved nothing yet starts
   // at D1 ('signIn'); a saved row from before the guide existed is 'done'.
   onboarding: ONBOARDING_DONE,
@@ -66,7 +61,6 @@ export function validateTrackingPreferences(value) {
     // Missing before v3 (051b); a damaged value falls back to the defaults
     // rather than failing every other preference.
     alerts: normalizeAlertPreferences(settings.alerts),
-    alertState: normalizeAlertState(settings.alertState),
     onboarding: ONBOARDING_STEPS.includes(settings.onboarding) ? settings.onboarding : ONBOARDING_DONE,
     // Missing before 053; anything not a known question is dropped.
     askedPermissions: Array.isArray(settings.askedPermissions)

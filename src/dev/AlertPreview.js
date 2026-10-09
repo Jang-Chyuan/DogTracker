@@ -8,10 +8,11 @@ const MINUTE = 60000;
 const STEPS = [1, 2, 10, 30];
 
 // Debug builds only (a fixture's &page=alertPreview): what the alert engine
-// (058a) decided, while 058b's native notification does not exist yet. Shows
-// the merged notification as the phone would (N1/N2), the problems behind the
-// red 「⚠ N」, and every alert so far with its vibration and N3 card; the
-// fixture's fake clock moves on with 「+N 分」. Not a v3 screen: developers only.
+// (058a) decided. Shows the merged notification's content (N1/N2), the
+// problems behind the red 「⚠ N」, and every alert so far with its vibration
+// and N3 card; the fixture's fake clock moves on with 「+N 分」. 「App 在背景」
+// posts the real notification (058b) from the fixture's fake problems, as the
+// app would off screen. Not a v3 screen: developers only.
 export default function AlertPreview({ alerts, now, fake, background, onAdvance, onBackground }) {
   const settingsStyles = useStyles(getSettingsStyles);
   const styles = useStyles(getStyles);

@@ -50,9 +50,9 @@ export function settingsInput(inputs, { now, receiverState, receiverWait = null,
     storage: storageProblem(inputs.tracking?.realWriteError),
     // 設定 → 提醒 (S6): the saved AlertPreferences.
     alerts: inputs.tracking?.preferences?.value?.alerts,
-    // A 暫停提醒 in force (the alert engine's, else its saved state): S1
-    // 「暫停到 11:10」, S6 「已暫停提醒到 11:10」.
-    alertPause: alertPause !== undefined ? alertPause : inputs.tracking?.preferences?.value?.alertState?.pause ?? null,
+    // A 暫停提醒 in force (the alert engine's): S1 「暫停到 11:10」, S6
+    // 「已暫停提醒到 11:10」.
+    alertPause: alertPause ?? null,
     diagnosticsEnabled: inputs.tracking?.preferences?.value?.diagnosticsEnabled === true,
   };
 }

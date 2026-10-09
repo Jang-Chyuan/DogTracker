@@ -11,5 +11,7 @@
         <data android:scheme="dogtracker" android:host="dev" />
       </intent-filter>
     </activity>
+    <!-- Debug builds only: feeds the background alert check (DebugAlertFeed). -->
+    <receiver android:name=".DebugAlertFeed" android:exported="true" />
   </application>
 </manifest>

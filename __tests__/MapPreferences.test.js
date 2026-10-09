@@ -79,7 +79,6 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     noDataCardDismissed: false,
     diagnosticsEnabled: false,
     alerts: DEFAULT_ALERT_PREFERENCES,
-    alertState: null,
     // Saved before the first-launch guide existed: it counts as passed.
     onboarding: 'done',
     askedPermissions: [],
@@ -138,10 +137,6 @@ test('every setting survives a new controller and shares no tracking-row writes'
       diagnosticsEnabled: true,
       // S6: 不在接收範圍 and 接收器電量低 off, 聲音 on.
       alerts: { ...DEFAULT_ALERT_PREFERENCES, dogOutOfRange: false, receiverBattery: false, sound: true },
-      // 058a: a pause in force and what was already alerted survive a restart.
-      alertState: { version: 1, active: { 'dog-stale:4': { key: 'dog-stale:4', startedAt: 1000, level: 1 } },
-        batteries: {}, seen: { 'dog-stale:4': { token: '1000:1', at: 1000, reminded: false } },
-        lastAttentionAt: 1000, pause: { since: 1000, until: 1801000, known: { 'dog-stale:4': '1000:1' } } },
       // D1 passed (「稍後再說」), D2 asked, the camera not yet.
       onboarding: 'done',
       askedPermissions: ['nearby', 'location', 'camera'],
