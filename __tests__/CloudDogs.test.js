@@ -275,3 +275,15 @@ test('the home map draws one marker per dog, at its newest position', async () =
   Platform.OS = originalOS;
   jest.useRealTimers();
 });
+
+test('K07: receiver range state survives database recreation and isolates accounts', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const first = createCloudDatabase(connection);
+    const range = { 4: { status: 'out', outSince: NOW, lastLocalAt: NOW, clearing: [] } };
+    await first.saveRangeState('a', range);
+    const reopened = createCloudDatabase(connection);
+    expect(await reopened.loadRangeState('a')).toEqual(range);
+    expect(await reopened.loadRangeState('b')).toEqual({});
+  } finally { connection.close(); }
+});

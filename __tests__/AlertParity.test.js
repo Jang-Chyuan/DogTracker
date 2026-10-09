@@ -33,6 +33,15 @@ const jsDog = value => ({
 
 const SCENARIOS = [
   {
+    name: 'K07: out-of-range status survives 25 hours and a restart until local clearing', preferences: { dogStale: false },
+    steps: [
+      { at: T, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })] },
+      { at: T + 25 * 60 * M, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })], action: 'restart' },
+      { at: T + 25 * 60 * M + M, dogs: [dog(4, '豆豆', { fixAt: T + 25 * 60 * M + M, packetAt: T + 25 * 60 * M + M })] },
+    ],
+  },
+
+  {
     name: 'K05: established receiver outage survives a process restart', preferences: {},
     steps: [
       { at: T, dogs: [dog(4, '豆豆')], receiver: receiver({ connected: false, disconnectedAt: T - M }) },

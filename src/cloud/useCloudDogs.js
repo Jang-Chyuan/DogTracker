@@ -68,6 +68,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           if (replaced?.owner !== owner || replaced?.database !== database
             || now() - replaced.polledAt > HOLD_LOOKBACK_MS) {
             const store = createHoldStore();
+            store.seedRanges(await database.loadRangeState?.(owner) ?? {});
             // Same account and database: the receiver-range judgements stay.
             if (replaced?.owner === owner && replaced?.database === database) store.seedRanges(replaced.store.ranges());
             holdState.current = { owner, database, store, cursors: null, polledAt: now() };
@@ -93,6 +94,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           statuses = state.store.statuses();
           // Each dog's receiver-range judgement, fed by the same rows.
           ranges = state.store.ranges();
+          await database.saveRangeState?.(owner, ranges);
         }
         if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, ranges, error: '', loaded: true } });
       } catch (error) {

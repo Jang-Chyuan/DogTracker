@@ -263,6 +263,7 @@ async function phoneDatabase() {
   const connection = createMemoryConnection();
   await createDogDatabase(connection).initialize();
   await createCloudDatabase(connection).initialize();
+  await createCloudDatabase(connection).saveRangeState('alice', { 4: { outOfRange: true } });
   const history = createHistoryDatabase(connection);
   await history.load();
   await history.loadDogAvatars();
