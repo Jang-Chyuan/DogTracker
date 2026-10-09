@@ -146,6 +146,10 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("androidx.core:core-splashscreen:1.2.0")
+    // uCrop (react-native-image-crop-picker's cropper) is published on JitPack
+    // with an empty POM, so its androidx.transition use is never pulled in:
+    // UCropActivity.setupViews -> NoClassDefFoundError AutoTransition (070).
+    implementation("androidx.transition:transition:1.5.0")
     // The history export draws its PNG map on a lite-mode Google map (HistoryExportPackage.kt);
     // the same Maps SDK react-native-maps already brings.
     implementation("com.google.android.gms:play-services-maps:19.1.0")
