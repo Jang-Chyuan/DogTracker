@@ -25,22 +25,33 @@ export const dogName = (slaveId, aliases) => dogMapLabel(dogHistoryLabel(slaveId
  * @param options.ranges receiver-range judgements by dog
  * @param options.aliases the names the handler gave
  * @param options.selectedId the dog whose card is open
+ * @param options.catchUpSince 070: the moment the app went away, while a
+ *   return to it catches the map up (ResumeCatchUp). Freshness is judged
+ *   against that moment instead of now, so no dog turns grey on rows the
+ *   reader has not read yet, and every face is `dimmed` meanwhile. null once
+ *   the catch-up is through: the plain 10-minute judgement is back.
  */
 export function dogMarkers(dogs = [], { now = Date.now(), cloud = null, pauses = [], ranges = {},
-  aliases = {}, selectedId = null } = {}) {
+  aliases = {}, selectedId = null, catchUpSince = null, previousStale = {} } = {}) {
   const markers = [];
+  const catchingUp = Number.isFinite(catchUpSince);
+  // Never later than now: a clock that ran backwards must not age a dog.
+  const judged = catchingUp ? Math.min(catchUpSince, now) : now;
   for (const dog of dogs) {
-    const freshness = dogFreshness(dog, { now, cloud, pauses });
+    const current = dogFreshness(dog, { now: judged, cloud, pauses });
+    const freshness = catchingUp && Object.hasOwn(previousStale, dog.slaveId)
+      ? { ...current, stale: previousStale[dog.slaveId] } : current;
     if (!freshness.drawn) continue;
     const range = ranges?.[dog.slaveId];
     const problems = dogProblems(dog, freshness, range);
-    markers.push(dogMarker(dog, { freshness, problems, now, range,
+    markers.push(dogMarker(dog, { freshness, problems, now: judged, range, dimmed: catchingUp,
       name: dogName(dog.slaveId, aliases), selected: dog.slaveId === selectedId }));
   }
   return markers;
 }
 
-export function dogMarker(dog, { freshness, problems, name, now, range = null, selected = false }) {
+export function dogMarker(dog, { freshness, problems, name, now, range = null, selected = false,
+  dimmed = false }) {
   const indoor = isIndoorHold(dog);
   const base = problems.any ? sizes.marker.attention : sizes.marker.normal;
   const note = problemNote(dog, { freshness, problems, range, indoor, now });
@@ -61,6 +72,9 @@ export function dogMarker(dog, { freshness, problems, name, now, range = null, s
     tag: indoor ? `${name}・${INDOOR_WORD}` : name,
     indoor,
     stale: freshness.stale,
+    // 070: drawn at opacity.catchingUp while a return to the app is still
+    // reading; its colours are the ones the user left it with.
+    dimmed,
     problem: problems.any,
     selected,
     size: base + (selected ? sizes.marker.selectedGrowth : 0),

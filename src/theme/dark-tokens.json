@@ -92,7 +92,8 @@
     "routeUpcoming": 0.6,
     "routeBeforeCursor": 0.75,
     "routeAfterCursor": 0.6,
-    "disabled": 0.4
+    "disabled": 0.4,
+    "catchingUp": 0.6
   },
   "shadow": {
     "floating": {
