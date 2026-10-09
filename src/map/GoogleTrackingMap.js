@@ -133,6 +133,8 @@ export const MAP_TAP_HOLD_MS = 250;
 const POINTS_SETTLE_MS = 400;
 const POINTS_SETTLE_READS = 10;
 const POINTS_MIN_SETTLE_MS = 800;
+const POINTS_SLOW_MS = 1500;
+const POINTS_SLOW_READS = 20;
 /** Two reads of the dogs' screen places agree (within 1 dp). */
 export function pointsSettled(previous, next) {
   if (!previous) return false;
@@ -797,11 +799,14 @@ function GoogleTrackingMapRenderer({
         && (!moving.current || Date.now() - moveStartedAt.current >= POINTS_MIN_SETTLE_MS);
       lastRead.current = points;
       clearTimeout(settleTimer.current);
-      if (!settled && settleReads.current < POINTS_SETTLE_READS) {
+      if (!settled && settleReads.current < POINTS_SETTLE_READS + POINTS_SLOW_READS) {
+        // Quick re-reads first, then slower ones; the hints stay hidden
+        // until two reads agree (or, at the very end, the last read is used).
+        const delay = settleReads.current < POINTS_SETTLE_READS ? POINTS_SETTLE_MS : POINTS_SLOW_MS;
         settleReads.current += 1;
         settleTimer.current = setTimeout(
           () => setCursorRevision(value => value + 1),
-          POINTS_SETTLE_MS,
+          delay,
         );
         return;
       }
@@ -1354,9 +1359,14 @@ function GoogleTrackingMapRenderer({
       pressDog(hit);
       return;
     }
+    const at = Date.now();
+    // A dog tap just before it (the marker reported first): this map tap
+    // belongs to it.
+    if (at - lastDogPress.current < 2 * MAP_TAP_HOLD_MS) return;
     clearTimeout(mapPressTimer.current);
+    // A dog tap after it (the map reported first) cancels it.
     mapPressTimer.current = setTimeout(() => {
-      if (Date.now() - lastDogPress.current > MAP_TAP_HOLD_MS) onMapPress?.();
+      if (lastDogPress.current < at) onMapPress?.();
     }, MAP_TAP_HOLD_MS);
   };
   return (
@@ -1704,11 +1714,10 @@ function GoogleTrackingMapRenderer({
             items={markerA11yItems(dogMarkers, screenPoints, {
               width: cursorLayout.width,
               height: cursorLayout.height,
-              groupLabel: marker =>
-                tags[marker.slaveId]?.group > 1
-                  ? groupSpeech(tags[marker.slaveId], dogMarkers, marker.slaveId)
-                  : null,
-              grouped: marker => tags[marker.slaveId] === null,
+              // Every dog its own TalkBack item, also inside a 「N 隻」 tag:
+              // there is no list to reach the others from (066).
+              groupLabel: () => null,
+              grouped: () => false,
             })}
             onActivate={pressDog}
           />

@@ -120,7 +120,7 @@ export default function ActivityScreen({
         {/* 066: the back icon and the title are one 48dp target. */}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t("c438")}
+          accessibilityLabel={t("c479", { value: t("c439", { name: name }) })}
           onPress={onBack}
           testID="activity-back"
           style={({ pressed }) => [styles.backRow, pressed && styles.pressed]}

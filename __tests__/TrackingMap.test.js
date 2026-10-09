@@ -668,6 +668,9 @@ describe('off-screen hints and the overlap menu', () => {
     await act(async () => lead[0].props.onPress());
     expect(onDogPress).toHaveBeenCalledTimes(1);
     expect(renderer.root.findAll(node => /^overlap-row-\d+$/.test(node.props.testID || ''))).toHaveLength(0);
+    // TalkBack reaches every dog of the group on its own (no list to go through).
+    const items = renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '') && typeof node.type === 'string');
+    expect(items.map(node => node.props.testID).sort()).toEqual(['marker-a11y-4', 'marker-a11y-6', 'marker-a11y-8']);
   });
 
   test('066: zoomed in, every dog keeps its own name tag (no 「N 隻」)', async () => {
@@ -762,6 +765,7 @@ test('066: a dog tapped with a card open switches the card in one tap (the map t
   await act(async () => dog.props.onPress());
   await act(async () => jest.advanceTimersByTime(600));
   await act(async () => dog.props.onPress());
+  await act(async () => jest.advanceTimersByTime(10));
   await act(async () => renderer.root.findByType(MapView).props.onPress());
   await act(async () => jest.advanceTimersByTime(600));
   expect(onDogPress).toHaveBeenCalledTimes(2);
