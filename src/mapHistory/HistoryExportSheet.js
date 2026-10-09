@@ -10,6 +10,7 @@ import { clock } from '../history/HistoryText';
 import { size as sizes, space, touch, type, border, radius } from '../theme/tokens';
 import { makeStyles, useTheme } from '../theme/ThemeProvider';
 import HistoryBottomSheet from './HistoryBottomSheet';
+import Glyph from '../map/Glyph';
 import { EXPORT_FORMATS } from './useHistoryExport';
 
 /** 「匯出 08:03–12:11」 (always one day; the end is the last fix's time). */
@@ -56,20 +57,20 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
     body = <View onLayout={event => setListHeight(event.nativeEvent.layout.height)}>{EXPORT_FORMATS.map((format, index) => {
       return (
         <View key={format.id} style={[styles.formatRow, index > 0 && styles.divided]}>
+          <View testID={`history-export-format-${format.id}`} style={[styles.row, styles.texts]}>
+            <Text style={styles.format}>{format.title}</Text>
+            <Text style={styles.detail}>{format.detail}</Text>
+          </View>
           <Pressable testID={`history-export-${format.id}`} accessibilityRole="button"
-            accessibilityLabel={`${format.title}，${format.detail}`}
+            accessibilityLabel={t('c1171', { format: format.title })}
             onPress={() => exporter.start(format.id)}
-            style={({ pressed }) => [styles.row, styles.share, pressed && styles.pressed]}>
-            <View style={styles.texts}>
-              <Text style={styles.format}>{format.title}</Text>
-              <Text style={styles.detail}>{format.detail}</Text>
-            </View>
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+            <Glyph name="share" color={colors.tonalText} />
           </Pressable>
-          {/* 「存到下載」 (067): Samsung's share sheet has no "save to the phone". */}
           {exporter.canSave && <Pressable testID={`history-export-save-${format.id}`} accessibilityRole="button"
             accessibilityLabel={t('c1166', { format: format.title })} onPress={() => exporter.save(format.id)}
-            hitSlop={space.s} style={({ pressed }) => [styles.textButton, styles.saveButton, pressed && styles.pressedRow]}>
-            <Text style={styles.textButtonText}>{t('c1163')}</Text>
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+            <Glyph name="download" color={colors.tonalText} />
           </Pressable>}
         </View>
       );
@@ -90,13 +91,12 @@ export default HistoryExportSheet;
 const getStyles = makeStyles(({ colors }) => StyleSheet.create({
     // 設計稿「元件狀態」: the pressed state.
     pressedRow: { backgroundColor: colors.brandSoft },
-  row: { minHeight: touch.row, flexDirection: 'row', alignItems: 'center', paddingVertical: space.m,
-    gap: space.m },
+  row: { minHeight: touch.row, justifyContent: 'center', paddingVertical: space.m },
   divided: { borderTopWidth: border.hairline, borderTopColor: colors.line },
-  // A format: the row shares (its whole width but 「存到下載」 on the right).
+  // Format words stay separate from the two independent actions.
   formatRow: { flexDirection: 'row', alignItems: 'center', gap: space.s },
-  share: { flex: 1 },
-  saveButton: { paddingHorizontal: space.s, borderRadius: radius.full },
+  iconButton: { minHeight: touch.min, minWidth: touch.min, alignItems: 'center',
+    justifyContent: 'center', borderRadius: radius.full, flexShrink: 0 },
   pressed: { backgroundColor: colors.pressedOverlay },
   texts: { flex: 1, minWidth: 0 },
   format: { ...type.status, color: colors.text },

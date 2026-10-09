@@ -279,9 +279,12 @@ test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
     && ['history-export-png', 'history-export-gpx', 'history-export-csv'].includes(node.props.testID));
   expect(rows.map(node => node.props.testID)).toEqual(['history-export-png', 'history-export-gpx', 'history-export-csv']);
   expect(rows.map(node => node.props.accessibilityLabel)).toEqual([
-    'PNG 長圖，地圖＋時間軸清單', 'GPX，軌跡檔，可匯入地圖 App', 'CSV，每一筆位置',
+    'PNG 長圖，分享', 'GPX，分享', 'CSV，分享',
   ]);
-  expect(rows.map(node => node.findAllByType('Text').map(text => text.props.children))).toEqual([
+  const descriptions = s.renderer.root.findAll(node => typeof node.type === 'string'
+    && ['history-export-format-png', 'history-export-format-gpx', 'history-export-format-csv'].includes(node.props.testID));
+  expect(rows.every(node => node.findAllByType('Text').length === 0)).toBe(true);
+  expect(descriptions.map(node => node.findAllByType('Text').map(text => text.props.children))).toEqual([
     [i18nT('c161'), i18nT('c162')], ['GPX', i18nT('c165')], ['CSV', i18nT('c167')],
   ]);
   expect(s.text()).not.toContain('傳 LINE 最方便');
