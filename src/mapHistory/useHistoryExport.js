@@ -95,6 +95,7 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     const alive = () => run.current === id;
     setState({ phase: 'generating', format });
     let directory;
+    let shared = false;
     try {
       if (!exporter) throw new Error('請安裝支援匯出的 Android 版本');
       let snapshot = snapshotReady;
@@ -121,7 +122,8 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       if (!alive()) return;
       if (exporting.current === exportId) exporting.current = null;
       // 打開 Android 分享時才關掉小視窗.
-      await exporter.share(paths, EXPORT_MIME[format]);
+      const result = await exporter.share(paths, EXPORT_MIME[format]);
+      shared = result !== 'cancelled';
       if (!alive()) return;
       prepared.current = null;
       setState({ phase: 'closed', format: null });
@@ -130,7 +132,7 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       logger.warn('[History export]', error?.message || error);
       setState({ phase: 'failed', format });
     } finally {
-      if (directory) {
+      if (directory && !shared) {
         try { await exporter.removeExports([directory]); } catch { /* startup and daily cleanup retry */ }
       }
     }

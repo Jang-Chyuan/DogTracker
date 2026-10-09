@@ -1,5 +1,10 @@
 package com.dogtracker
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import android.os.Build
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
@@ -57,10 +62,21 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   private val root get() = File(context.cacheDir, "history_exports").apply { mkdirs() }
 
   private var sharePromise: Promise? = null
-  init { context.addActivityEventListener(this) }
+  private val shareAction = "${context.packageName}.HISTORY_EXPORT_CHOSEN"
+  private val shareChosen = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      sharePromise?.resolve("shared")
+      sharePromise = null
+    }
+  }
+  init {
+    context.addActivityEventListener(this)
+    if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(shareChosen, IntentFilter(shareAction), Context.RECEIVER_NOT_EXPORTED)
+    else context.registerReceiver(shareChosen, IntentFilter(shareAction))
+  }
   override fun onNewIntent(intent: Intent) {}
   override fun onActivityResult(activity: android.app.Activity, requestCode: Int, resultCode: Int, data: Intent?) {
-    if (requestCode == 7401) { sharePromise?.resolve("returned"); sharePromise = null }
+    if (requestCode == 7401) { sharePromise?.resolve("cancelled"); sharePromise = null }
   }
 
   @ReactMethod
@@ -175,7 +191,9 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         intent.clipData = ClipData.newRawUri("DogTracker", uris[0]).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
         check(sharePromise == null) { "分享進行中" }
         sharePromise = promise
-        activity.startActivityForResult(Intent.createChooser(intent, null), 7401)
+        val chosen = PendingIntent.getBroadcast(context, 7401,
+          Intent(shareAction).setPackage(context.packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        activity.startActivityForResult(Intent.createChooser(intent, null, chosen.intentSender), 7401)
       } catch (e: Exception) { sharePromise = null; com.dogtracker.AppLog.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", "無法開啟分享選單", e) }
     }
   }
@@ -544,6 +562,8 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   override fun invalidate() {
+    context.unregisterReceiver(shareChosen)
+    context.removeActivityEventListener(this)
     worker.shutdown()
     super.invalidate()
   }
