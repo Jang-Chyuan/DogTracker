@@ -23,6 +23,12 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
   };
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
+      {name === 'person' && (
+        <>
+          <Circle cx={12} cy={7} r={3} {...stroke} />
+          <Path d="M5 21v-2a7 7 0 0 1 14 0v2" {...stroke} />
+        </>
+      )}
       {name === 'ble' && (
         // The Bluetooth rune: the same shape the platform uses.
         <Path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5" {...stroke} />

@@ -123,6 +123,8 @@ export const opacity = {
 
 // Text styles. Key text is at least 16sp and nothing is below 13sp, except the
 // text inside graphics and the small second lines listed in DESIGN.md §3.
+export const fontWeight = { medium: '500' };
+
 export const type = {
   headline: { fontSize: 24, lineHeight: 32, fontWeight: '700' },
   nameEdit: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
@@ -680,6 +682,7 @@ export const size = {
 
   // History top capsules: avatar sizes, overlap and text reservation (§15).
   historyTop: {
+    phoneAvatar: 32,
     capsuleTextMax: 80,
     avatar: 26,
     companionAvatar: 18,

@@ -28,6 +28,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DogAvatar from '../dogs/DogAvatar';
 import Glyph from './Glyph';
+import { dogCardMaxHeight } from './MapPanelHeight';
 import { PressScale } from './MapControls';
 import BangGlyph from '../components/BangGlyph';
 import { slideOrFade } from '../utils/reduceMotion';
@@ -344,10 +345,7 @@ const DogCard = forwardRef(function DogCard(
   ).current;
   // At most 75% of the screen below the status bar; the header and 看軌跡
   // stay, the headline and rows scroll.
-  const maxHeight =
-    Math.floor((windowHeight - insets.top) * sizes.card.maxRatio) -
-    CARD_INSET -
-    insets.bottom;
+  const maxHeight = dogCardMaxHeight(windowHeight, insets.top, insets.bottom);
   return (
     <Animated.View
       testID="dog-card"
