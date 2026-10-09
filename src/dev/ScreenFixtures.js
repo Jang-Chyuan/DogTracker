@@ -83,6 +83,47 @@ function series(make, now, { from, to = 5 * SECOND, every = 10 * SECOND, start, 
   return rows;
 }
 
+// A position `north` and `east` metres from `base`.
+const METRES_PER_DEGREE = 111195;
+const offset = (base, north, east) => ({
+  latitude: base.latitude + north / METRES_PER_DEGREE,
+  longitude: base.longitude + east / (METRES_PER_DEGREE * Math.cos((base.latitude * Math.PI) / 180)),
+});
+// Receiver 7's resting place in every fixture (bleRow's default).
+const RECEIVER = at(-6, -4);
+
+// Like series, but the dog's and the receiver's positions are functions of the
+// row's progress (0 at `from`, 1 at `to`): a dog walking away from or back to
+// the receiver, a receiver that moves on its own.
+function track(make, now, { from, to = 5 * SECOND, every = 10 * SECOND, dog, receiver = () => RECEIVER, ...rest }) {
+  const rows = [];
+  for (let ago = from; ago >= to; ago -= every) {
+    const progress = from === to ? 1 : (from - ago) / (from - to);
+    const where = receiver(progress);
+    rows.push(make({ ...rest, time: now - ago, receiver: where, fix: dog(progress, where) }));
+  }
+  return rows;
+}
+
+// dog_status ids follow the order the service wrote the rows (time order), and
+// the live feed's newest row is the one with the highest id.
+function inTimeOrder(rows) {
+  const ids = rows.map(row => row.id).sort((left, right) => left - right);
+  return [...rows].sort((left, right) => left.received_at - right.received_at || left.id - right.id)
+    .map((row, index) => ({ ...row, id: ids[index] }));
+}
+
+// A dog `metres` from the receiver towards `bearing` (degrees from north),
+// wandering a few metres sideways from row to row so it reads as walking,
+// never as parked.
+const awayFrom = (where, metres, progress, bearing = 45) => {
+  const side = Math.sin(progress * 12) * 6;
+  const angle = (bearing * Math.PI) / 180;
+  return offset(where, metres * Math.cos(angle) - side * Math.sin(angle),
+    metres * Math.sin(angle) + side * Math.cos(angle));
+};
+const northEastOf = (where, metres, progress) => awayFrom(where, metres, progress, 45);
+
 // ---- receiver, cloud and phone states -------------------------------------
 
 // BleBackground.getState() of a receiver (QR Master 7) delivering packets.
@@ -171,6 +212,74 @@ const FIXTURES = {
         start: [22, -24], step: [-0.05, 0] }),
     ],
   }),
+  // 豆豆 (dog 4) walked north-north-east away from receiver 7: 700 m ten
+  // minutes ago, 1.6 km now. Out of range: a red dashed line from the ring's edge to it. 小黑
+  // (dog 6, also on receiver 7) stays well inside; 阿福 comes from the cloud.
+  'range-out': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+      ...track(bleRow, now, { slave: 4, from: 10 * MINUTE,
+        dog: (progress, where) => awayFrom(where, 700 + 900 * progress, progress, 15) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 豆豆 is 880 m from receiver 7 (快離開 band, 800 m–1 km): inside the ring,
+  // no line, its marker unchanged; only its card turns amber (PR 046).
+  'range-near-edge': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+      ...track(bleRow, now, { slave: 4, from: 10 * MINUTE,
+        dog: (progress, where) => northEastOf(where, 500 + 380 * Math.min(1, progress * 1.4), progress) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 豆豆 went out to 1.3 km and is walking back, 950 m now: back inside the
+  // ring but not cleared (needs 2 positions within 900 m over 2 minutes), so it
+  // is still out of range — but drawn inside the ring, hence no line.
+  'range-returning': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+      ...track(bleRow, now, { slave: 4, from: 10 * MINUTE,
+        dog: (progress, where) => northEastOf(where, 1300 - 350 * progress, progress) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 小黑 (dog 6) has had no new position for almost three minutes. At its last
+  // position it was 780 m from receiver 7: in range. The handler has since
+  // walked 300 m the other way with the receiver, so that position is now
+  // outside the ring — but the judgement stays where it was made: still in
+  // range, no line. 豆豆 walks along with the receiver.
+  'range-stale-inside': now => {
+    // The receiver starts walking off (300 m south) right after 小黑's
+    // last position, 170 s ago.
+    const start = (10 * MINUTE - 170 * SECOND) / (10 * MINUTE - 5 * SECOND);
+    const moving = progress => (progress <= start ? RECEIVER
+      : offset(RECEIVER, -300 * (progress - start) / (1 - start), 0));
+    return {
+      receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+      ble: inTimeOrder([
+        ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 170 * SECOND,
+          dog: progress => awayFrom(RECEIVER, 760 + 20 * progress, progress, 5) }),
+        ...track(bleRow, now, { slave: 4, from: 10 * MINUTE, receiver: moving,
+          dog: (progress, where) => offset(where, 60 + progress * 10, -120) }),
+      ]),
+      cloudRows: dog8Cloud(now),
+    };
+  },
+  // Signed in, no receiver set up: 小黑 and 阿福 come only from the cloud. No
+  // receiver, so no range ring and no range judgement at all.
+  'cloud-only': now => ({
+    receiver: { enabled: false, running: false, connected: false, receiving: false,
+      deviceName: 'DogGPS Master', expectedMasterId: 0, lastReceivedAt: 0 },
+    cloud: synced(now), phone: walkingPhone(now),
+    ble: [], cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
+  }),
 };
 
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
@@ -230,6 +339,8 @@ function holdBatch(ble, cloud, now) {
     id: row.id, master_id: row.master_id, slave_id: row.slave_id,
     latitude: row.slave_lat, longitude: row.slave_lon, satellites: row.satellites, hdop: row.hdop,
     rssi: row.rssi, snr: row.snr, usb_present: row.usb_present, time: timeOf(row), source,
+    // Only dog_status knows where this phone's receiver was.
+    ...(source === 'ble' ? { master_latitude: row.master_lat, master_longitude: row.master_lon } : {}),
   });
   const rows = [], seeds = [];
   for (const [table, source] of [[ble, 'ble'], [cloud, 'cloud']]) {
@@ -306,6 +417,7 @@ export function buildFixture(name, now = FIXTURE_NOW) {
       track: [],
       holds: holds.holds(now),
       statuses: holds.statuses(),
+      ranges: holds.ranges(),
       error: '',
     },
     livePhone: phone?.position ? {

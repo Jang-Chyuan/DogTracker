@@ -4,6 +4,7 @@ import { Platform, StyleSheet, Switch } from 'react-native';
 import MapView, {
   Circle,
   Marker,
+  Polygon,
   Polyline,
   mockCamera,
 } from 'react-native-maps';
@@ -15,6 +16,9 @@ import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 import { emptyLiveRoute } from '../src/tracking/LiveRouteWindow';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 import { cameraCoordinates } from '../src/map/TrackingGeometry';
+import { receiverRangeRing } from '../src/map/TrackingMapPresentation';
+import { distanceMeters } from '../src/tracking/ReceiverRange';
+import { colors, opacity } from '../src/theme/tokens';
 const master = {
   coordinate: { latitude: 25, longitude: 121 },
   retained: false,
@@ -26,12 +30,12 @@ const slave = {
 const defaults = {
   source: 'real',
   presentation: {
-    master,
+    positions: { master, slave },
     slave,
     cameraPositions: cameraCoordinates(master, slave),
-    masterSegments: [],
     slaveSegments: [[master.coordinate, slave.coordinate]],
-    masterRangeMeters: 1000,
+    rangeRing: receiverRangeRing(master, 'receiving'),
+    rangeLines: [],
   },
   topInset: 100,
   bottomInset: 300,
@@ -104,21 +108,53 @@ test('camera read failure still allows recovery using database coordinates', asy
   expect(renderer.root.findByType(MapView).props.initialCamera).toBeUndefined();
   expect(renderer.root.findByType(MapView).props.initialRegion).toMatchObject(master.coordinate);
 });
-test('Google provider, DB markers, dog trail and exactly 1000 metre circle', async () => {
+test('Google provider, DB markers, dog trail and a dashed 1000 metre range ring; no receiver marker', async () => {
   await render();
   expect(renderer.root.findByType(MapView).props.provider).toBe('google');
+  // The receiver itself is not drawn: only the dog has a marker.
   expect(
     renderer.root.findAllByType(Marker).map(node => node.props.coordinate),
-  ).toEqual([master.coordinate, slave.coordinate]);
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(1);
-  expect(renderer.root.findByType(Circle).props.radius).toBe(1000);
-  expect(renderer.root.findByType(Circle).props.center).toEqual(
-    master.coordinate,
-  );
+  ).toEqual([slave.coordinate]);
+  // The dog's route and the ring's dashed outline.
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(2);
+  expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
+  const fill = renderer.root.findByType(Polygon).props;
+  const ring = renderer.root.findAllByType(Polyline).find(node => node.props.testID === 'range-ring').props;
+  for (const point of [...fill.coordinates, ...ring.coordinates]) {
+    expect(distanceMeters(master.coordinate, point)).toBeCloseTo(1000, -1);
+  }
+  // The outline is closed.
+  expect(ring.coordinates.at(-1)).toEqual(ring.coordinates[0]);
+  // Design tokens: rangeRing at 55% for the dashed 1.5dp outline, 6% fill.
+  expect(ring.strokeColor).toBe(colors.rangeRing + Math.round(opacity.rangeRingStroke * 255).toString(16).toUpperCase());
+  expect(fill.fillColor).toBe(colors.rangeRing + '0F');
+  expect(fill.strokeWidth).toBe(0);
+  expect(ring.strokeWidth).toBe(1.5);
+  expect(ring.lineDashPattern).toHaveLength(2);
+  // Round caps make Android draw dots instead of dashes.
+  expect(ring.lineCap).toBe('butt');
+  expect(ring.tappable).toBe(false);
+  expect(fill.tappable).toBe(false);
   // The marker draws no bubble of its own; the text is on its view, where a
   // screen reader finds it.
-  expect(renderer.root.findAllByType(Marker)[1].findAll(node =>
+  expect(renderer.root.findAllByType(Marker)[0].findAll(node =>
     node.props.accessibilityLabel?.includes('非最新定位')).length).toBeGreaterThan(0);
+});
+
+test('out-of-range lines are critLine, 2dp, dashed, drawn above the ring and below routes', async () => {
+  const dog = { latitude: 25.012, longitude: 121.001 };
+  await render({ presentation: { ...defaults.presentation, slaveSegments: [[master.coordinate, slave.coordinate]],
+    rangeLines: [{ slaveId: 4, coordinates: [{ latitude: 25.009, longitude: 121.0008 }, dog] }] } });
+  const lines = renderer.root.findAllByType(Polyline);
+  const red = lines.find(node => node.props.strokeColor === colors.critLine).props;
+  expect(red.coordinates[1]).toEqual(dog);
+  expect(red.strokeWidth).toBe(2);
+  expect(red.lineDashPattern).toHaveLength(2);
+  expect(red.lineCap).toBe('butt');
+  const route = lines.find(node => node.props.strokeColor !== colors.critLine && node.props.testID !== 'range-ring').props;
+  const ring = lines.find(node => node.props.testID === 'range-ring').props;
+  expect(ring.zIndex).toBeLessThan(red.zIndex);
+  expect(red.zIndex).toBeLessThan(route.zIndex);
 });
 test('enables the native Google compass without adding a phone location button', async () => {
   await render();
@@ -132,21 +168,21 @@ test('provider draws the prepared visible segments; empty presentation removes e
   await render({
     presentation: {
       ...defaults.presentation,
-      masterSegments: [[master.coordinate, slave.coordinate]],
+      slaveSegments: [[master.coordinate, slave.coordinate], [slave.coordinate, master.coordinate]],
     },
   });
-  expect(renderer.root.findAllByType(Polyline)).toHaveLength(2);
+  expect(renderer.root.findAllByType(Polyline)).toHaveLength(3);
   await act(async () =>
     renderer.update(
       <TrackingMap
         {...defaults}
         source="history:range"
         presentation={{
-          master: null,
+          positions: {},
           slave: null,
-          masterSegments: [],
           slaveSegments: [],
-          masterRangeMeters: 1000,
+          rangeRing: null,
+          rangeLines: [],
           cameraPositions: [],
         }}
       />,
@@ -154,7 +190,7 @@ test('provider draws the prepared visible segments; empty presentation removes e
   );
   expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
-  expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
+  expect(renderer.root.findAllByType(Polygon)).toHaveLength(0);
 });
 
 test('switching data source reuses the native map and reframes the new source', async () => {
@@ -174,6 +210,17 @@ test('switching data source reuses the native map and reframes the new source', 
   );
   expect(renderer.root.findByType(MapView)).toBe(nativeMap);
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(fits + 1);
+});
+test('a switched source waits for framingReady before its one fit', async () => {
+  await render();
+  await readyMap();
+  await act(async () => renderer.update(<TrackingMap {...defaults} source="real:fixture:x" framingReady={false} />));
+  expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
+  await act(async () => renderer.update(<TrackingMap {...defaults} source="real:fixture:x" framingReady />));
+  expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.update(<TrackingMap {...defaults} source="real:fixture:x" framingReady
+    bottomInset={120} />));
+  expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
 });
 test('missing key never mounts native map and gives an explicit fallback message', async () => {
   NativePlatform.isMapConfigured.mockReturnValue(false);
@@ -330,12 +377,11 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
   expect(JSON.stringify(renderer.toJSON())).not.toContain('LoRa 訊號品質');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('硬體回報的定位與活動');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('定位與接收資料');
+  // No receiver marker on the map any more: its panel opens from the card's
+  // receiver row.
+  expect(renderer.root.findAllByType(Marker).some(node => node.props.identifier === 'real-master')).toBe(false);
   await act(async () =>
-    renderer.root
-      .findAllByType(Marker)
-      .find(node => node.props.identifier === 'real-master')
-      .props.onPress(),
-  );
+    renderer.root.findByProps({ accessibilityLabel: '領犬員（接收器）詳細資料' }).props.onPress());
   // One switch only: whether the path is drawn. Everything else on the card is
   // a tap target of its own.
   expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
@@ -409,7 +455,7 @@ test('waits for initial DB positions; a later readiness change does not remount 
         dataReady={false}
         presentation={{
           ...defaults.presentation,
-          master: null,
+          rangeRing: null,
           slave: null,
         }}
       />,
@@ -456,7 +502,7 @@ test('phone blue dot requires permission, ready map and foreground; never adds p
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(false);
   await readyMap();
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
-  expect(renderer.root.findAllByType(Marker)).toHaveLength(2);
+  expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
   await act(async () =>
     renderer.update(

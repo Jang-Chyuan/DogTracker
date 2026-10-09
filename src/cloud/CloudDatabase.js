@@ -318,9 +318,13 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       // Rows already read may have moved in time: start over from the window.
       const reset = !!cursors && cursors.repairs !== trackRepairs;
       if (reset) cursors = null;
-      const columns = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
+      const shared = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
         satellites, hdop, rssi, snr, usb_present`;
       const read = async (table, clock, account) => {
+        // Only this phone's own rows know where its receiver was (the receiver
+        // range is judged against that); the cloud copy has no such column.
+        const columns = account ? shared
+          : `${shared}, master_lat AS master_latitude, master_lon AS master_longitude`;
         const accountFilter = account ? 'owner_user_id = ? AND ' : '';
         const params = account ? [owner] : [];
         const fresh = rows(await connection.executeAsync(cursors

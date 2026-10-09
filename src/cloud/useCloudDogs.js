@@ -9,7 +9,7 @@ export const POLL_MS = 10000;
  * never queries Supabase: CloudSync owns downloading, this only reads what is
  * already on the phone, so the map keeps working offline.
  */
-const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, error: '' });
+const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '' });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
   { active = true, revision = 0 } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
@@ -52,20 +52,28 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         // query, and the card draws no line while the path switch is off.
         const track = owner && Number.isFinite(trackSinceMs)
           ? await database.trackBySlave(owner, now() - trackSinceMs) : [];
-        let holds = {}, statuses = {};
+        let holds = {}, statuses = {}, ranges = {};
         if (database.holdRows) {
           // A long pause (background) replays from scratch instead of catching
           // up on every row since.
-          if (holdState.current?.owner !== owner || holdState.current?.database !== database
-            || now() - holdState.current.polledAt > HOLD_LOOKBACK_MS) {
-            holdState.current = { owner, database, store: createHoldStore(), cursors: null, polledAt: now() };
+          const replaced = holdState.current;
+          if (replaced?.owner !== owner || replaced?.database !== database
+            || now() - replaced.polledAt > HOLD_LOOKBACK_MS) {
+            const store = createHoldStore();
+            // Same account and database: the receiver-range judgements stay.
+            if (replaced?.owner === owner && replaced?.database === database) store.seedRanges(replaced.store.ranges());
+            holdState.current = { owner, database, store, cursors: null, polledAt: now() };
           }
           const state = holdState.current;
           try {
             const batch = await database.holdRows(owner, now() - HOLD_LOOKBACK_MS, state.cursors);
             if (!alive || holdState.current !== state) return;
             // Stored rows moved in time (cloud time repair): replay them all.
-            if (batch.reset) state.store = createHoldStore();
+            if (batch.reset) {
+              const judged = state.store.ranges();
+              state.store = createHoldStore();
+              state.store.seedRanges(judged);
+            }
             state.store.ingest(batch);
             state.cursors = batch.cursors;
             state.polledAt = now();
@@ -75,8 +83,10 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           }
           holds = state.store.holds(now());
           statuses = state.store.statuses();
+          // Each dog's receiver-range judgement, fed by the same rows.
+          ranges = state.store.ranges();
         }
-        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, error: '' } });
+        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, ranges, error: '' } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
         if (alive) setCache(current => ({ owner, database,

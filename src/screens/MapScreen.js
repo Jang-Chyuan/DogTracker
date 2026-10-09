@@ -8,8 +8,11 @@ import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
-import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
+import {
+  createTrackingMapPresentation, outOfRangeLines, receiverRangeRing,
+} from '../map/TrackingMapPresentation';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
+import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
 import { dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
@@ -18,7 +21,7 @@ import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import { useReceiverState } from '../map/useReceiverState';
-import { isOtherReceiver } from '../map/ReceiverState';
+import { isOtherReceiver, receiverLink } from '../map/ReceiverState';
 
 // The first fit frames what this handler is working with: the connected pair
 // and the path inside the chosen window. Framing every cloud dog as well zoomed
@@ -27,7 +30,6 @@ import { isOtherReceiver } from '../map/ReceiverState';
 function homeCameraPositions(base, dogs, dogsVisible, dogPaths = []) {
   const drawn = [
     ...base.cameraPositions,
-    ...base.masterSegments.flat(),
     ...base.slaveSegments.flat(),
     ...dogPaths.flatMap(track => track.segments.flat()),
   ];
@@ -69,6 +71,8 @@ export default function MapScreen({
   // answer a tap the same way.
   const [selected, setSelected] = useState(null);
   const closeDetails = useCallback(() => setSelected(null), []);
+  // The receiver is not drawn on the map any more; its panel opens from the
+  // receiver row of the card.
   const openMaster = useCallback(() => setSelected({ kind: 'master' }), []);
   const openDog = useCallback(slaveId => setSelected({ kind: 'dog', slaveId }), []);
   const openTrack = useCallback(name => setSelected({ kind: 'track', name }), []);
@@ -80,8 +84,8 @@ export default function MapScreen({
   const now = fixture ? fixture.now : liveNow;
   // The receiver this phone is set up for, read from the native service while
   // the live map is in front (a fixture supplies its own reader).
-  const receiverState = useReceiverState(active && tracking.foreground && !historical,
-    fixture?.readReceiverState);
+  const receiverActive = active && tracking.foreground && !historical;
+  const receiverState = useReceiverState(receiverActive, fixture?.readReceiverState);
   // The newest stored packet can be from a receiver used before this one.
   const otherReceiver = isOtherReceiver(point, receiverState);
   // Its receiver readings (position, battery) are then not this receiver's
@@ -91,7 +95,8 @@ export default function MapScreen({
     masterBatteryMillivolts: null } } : tracking), [otherReceiver, tracking, point]);
   useEffect(() => {
     setSelected(null);
-  }, [mode, point.masterId, tracking.preferences.value.showMasterMarker]);
+  }, [mode, point.masterId]);
+  const link = receiverLink(receiverState, now);
   const basePresentation = useMemo(
     () => {
       const base = createTrackingMapPresentation(
@@ -101,13 +106,16 @@ export default function MapScreen({
         { ...tracking.preferences.value, windowMinutes: 2, showTrails: false },
         now,
       );
-      // Another receiver's last position is not drawn as this one's, nor
-      // framed: the camera would aim at a place where nothing is drawn.
-      return otherReceiver
-        ? { ...base, master: null, positions: { ...base.positions, master: null }, cameraPositions: [] }
-        : base;
+      // Another receiver's last position is not this one's: no ring around
+      // it, and nothing framed there.
+      if (otherReceiver) return { ...base, positions: { ...base.positions, master: null }, cameraPositions: [] };
+      const rangeRing = receiverRangeRing(base.positions.master, link);
+      // The receiver is framed only through its ring: without a ring nothing
+      // of it is drawn, so the camera must not aim at it either.
+      const slave = base.positions.slave?.stale ? null : base.positions.slave;
+      return rangeRing ? { ...base, rangeRing } : { ...base, cameraPositions: cameraCoordinates(null, slave) };
     },
-    [point, positionSamples, route, tracking.preferences.value, now, otherReceiver],
+    [point, positionSamples, route, tracking.preferences.value, now, otherReceiver, link],
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows.
@@ -152,6 +160,7 @@ export default function MapScreen({
       : drawn;
     return {
       ...basePresentation,
+      rangeLines: outOfRangeLines(basePresentation.rangeRing, dogsVisible ? drawn : [], cloudDogs?.ranges),
       // dogs replaces the single slave marker; positions stays untouched so the
       // card and camera keep reading the connected pair.
       slave: null,
@@ -168,7 +177,7 @@ export default function MapScreen({
         ? framedCoordinates(focused.coordinate)
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
-  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds]);
+  }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, cloudDogs?.ranges]);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {
@@ -201,7 +210,7 @@ export default function MapScreen({
       for (const p of points) { minLat = Math.min(minLat, p.latitude); maxLat = Math.max(maxLat, p.latitude); minLon = Math.min(minLon, p.longitude); maxLon = Math.max(maxLon, p.longitude); }
       cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
     }
-    return { positions: {}, master: null, slave: null, masterSegments: [], slaveSegments: [], masterRangeMeters: 0, cameraPositions, historyTracks: tracks };
+    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], cameraPositions, historyTracks: tracks };
   }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, livePresentation,
     playbackAt]);
   const { master, slave } = presentation.positions;
@@ -257,12 +266,8 @@ export default function MapScreen({
     messages.push(
       `追蹤設定失敗：${tracking.preferences.error}。請上滑卡片重試。`,
     );
-  if (master?.retained || slave?.retained)
-    messages.push(
-      `${[master?.retained && '領犬員', slave?.retained && '狗']
-        .filter(Boolean)
-        .join('、')}顯示最後有效位置，非最新定位。`,
-    );
+  // The receiver is not drawn, so only the dog's fallback position is news.
+  if (slave?.retained) messages.push('狗顯示最後有效位置，非最新定位。');
   const top = insets.top + 12;
   const controlsTop = top + 44 + (messages.length ? noticeHeight + 8 : 0);
   return (
@@ -279,6 +284,9 @@ export default function MapScreen({
         livePhone={livePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
+        // A fixture switch (or a return to live data) reads the receiver
+        // again: frame only once its link is known, so the ring is framed.
+        framingReady={historical || (receiverActive && receiverState !== undefined)}
         dataReady={
           tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&
@@ -287,7 +295,6 @@ export default function MapScreen({
           receiverState !== undefined
         }
         phoneEnabled={!!phone?.enabled}
-        onMasterPress={openMaster}
         onDogPress={openDog}
         onTrackPress={openTrack}
       />
@@ -330,6 +337,7 @@ export default function MapScreen({
       ) : (
         <TrackingSheet
           onDogDetails={openDog}
+          onReceiverDetails={openMaster}
           showRouteControls={false}
           tracking={sheetTracking}
           master={master}

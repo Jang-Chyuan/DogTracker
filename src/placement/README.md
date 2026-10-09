@@ -10,6 +10,8 @@ GPS 在室內會失去定位，或定位一直飄（幾十到幾百公尺）。�
 | [HoldStore.js](HoldStore.js) | 即時地圖：每隻狗一個追蹤器，合併本機 BLE 與雲端同一隻狗的資料 |
 | [RideAlong.js](RideAlong.js) | 項圈在車上沒定位時，跟著領犬員的手機畫 |
 
+同一個 `HoldStore` 也用同一批列、同樣的順序算每隻狗的**接收範圍判定**（`src/tracking/ReceiverRange.js`，`ranges()`）：只有它知道每一筆當時狗是不是停住（停住期間不重新判定、不累積解除）。本機 BLE 列帶著當時接收器的位置（`master_latitude/longitude`）；雲端列沒有，不判定也不解除。
+
 資料來源：`CloudDatabase.holdRows()` 讀 `dog_status` 與 `supabase_dog_status`（冷啟動讀最近 30 分鐘，加上每隻狗最後 40 筆好定位，不限多久以前（在狗舍充好幾天電也停得住）；之後每 10 秒只讀新增的列）。`useCloudDogs` 把結果放在 `holds`，`mergeDogMarkers` 用它畫狗。歷史由 `HistoryDatabase.read()` 對每隻狗套用同一套規則（往前多讀 10 分鐘當脈絡，並讀區間前最後的好定位）。匯出（`raw`）不套用，保留原始資料。
 
 ## 規則

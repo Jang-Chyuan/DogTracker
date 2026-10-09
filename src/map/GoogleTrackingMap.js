@@ -2,17 +2,19 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import MapView, {
-  Circle,
   Marker,
+  Polygon,
   Polyline,
   PROVIDER_GOOGLE,
 } from 'react-native-maps';
+import { colors as tokens, opacity } from '../theme/tokens';
 import { floatingShadow, mapColors as colors } from './MapTheme';
 import { describeDogSource, heldLabel } from './DogMerge';
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
@@ -22,6 +24,21 @@ import HistoryCursor from '../mapHistory/HistoryCursor';
 import DogNameMarker, { DOG_NAME_ANCHOR } from './DogNameMarker';
 import { dogHistoryLabel } from '../mapHistory/DogAliases';
 import { hideSplash } from '../app/hideSplash';
+
+// '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
+const withOpacity = (hex, alpha) => hex + Math.round(alpha * 255).toString(16).padStart(2, '0').toUpperCase();
+// Range ring (DESIGN.md 判定表「接收範圍圈」): 1.5dp dashed 6/4 in rangeRing at
+// 55%, filled with the same colour at 6%. Out-of-range line: critLine, 2dp,
+// dashed 6/4. Widths are dp; Android takes dash lengths in pixels.
+const RANGE_RING = {
+  stroke: withOpacity(tokens.rangeRing, opacity.rangeRingStroke),
+  fill: withOpacity(tokens.rangeRing, opacity.rangeRingFill),
+  width: 1.5,
+};
+const OUT_OF_RANGE_WIDTH = 2;
+const dash = () => [6, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length));
+// Drawing order: base map, ring, red lines, routes, dogs and phone.
+const Z = { ring: 1, rangeLine: 2, route: 3 };
 
 const EMPTY_REGION = {
   latitude: 23.7,
@@ -41,7 +58,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   useEffect(() => {
     marker.current?.redraw?.();
   }, [faded, focused, title, position.heldReason]);
-  const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
+  const name = title || '狗 · Slave';
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
   );
@@ -123,20 +140,19 @@ function GoogleTrackingMapRenderer({
   onSnapshotReady,
   foreground,
   dataReady = true,
+  framingReady = true,
   phoneEnabled,
   livePhone,
-  onMasterPress,
   onDogPress,
   onTrackPress,
   supported,
   configured,
 }) {
   const {
-    master,
     slave,
-    masterSegments,
     slaveSegments,
-    masterRangeMeters,
+    rangeRing,
+    rangeLines = [],
     cameraPositions: positions,
   } = presentation;
   const mapRef = useRef(null);
@@ -241,7 +257,9 @@ function GoogleTrackingMapRenderer({
   // one bounds fit only after native tiles/layout are ready.
   useEffect(() => {
     const shouldFit = sourceToFit.current === source || needsFirstPositionFit;
-    if (!usable || !shouldFit || interacted.current || !positions.length)
+    // A switched source frames once what it will keep drawing: wait until
+    // whatever decides that (the receiver's link, for the range ring) is known.
+    if (!usable || !shouldFit || !framingReady || interacted.current || !positions.length)
       return;
     mapRef.current?.fitToCoordinates(positions, {
       animated: false,
@@ -249,7 +267,7 @@ function GoogleTrackingMapRenderer({
     });
     sourceToFit.current = null;
     if (needsFirstPositionFit) setNeedsFirstPositionFit(false);
-  }, [usable, positions, source, needsFirstPositionFit]);
+  }, [usable, positions, source, needsFirstPositionFit, framingReady]);
   return (
     <View style={StyleSheet.absoluteFill} testID="tracking-map-container"
       onLayout={event => setCursorLayout(event.nativeEvent.layout)}>
@@ -323,7 +341,8 @@ function GoogleTrackingMapRenderer({
           {(presentation.historyTracks || []).map(track => (
             <React.Fragment key={track.name}>
               {track.segments.filter(segment => segment.length > 1).map((segment, index) => (
-                <Polyline key={index} coordinates={segment} strokeColor={track.color} strokeWidth={4} geodesic={false} />
+                <Polyline key={index} coordinates={segment} strokeColor={track.color} strokeWidth={4} geodesic={false}
+                  zIndex={Z.route} />
               ))}
               {track.latest && (track.role === 'phone'
                 ? <PhoneLocationOverlay key={source + ':' + (track.latest.session_id || '')} historical active={foreground}
@@ -341,36 +360,53 @@ function GoogleTrackingMapRenderer({
               geodesic={false}
               strokeColor={colors.dog}
               strokeWidth={4}
+              zIndex={Z.route}
             />
           ))}
-          {masterSegments.map((segment, index) => (
+          {/* The receiver itself is not drawn: no marker, no name tag, no track
+              (v3). Only its 1 km range ring, which cannot be turned off. */}
+          {/* Fabric's Polygon ignores dash patterns and zIndex: the fill is a
+              polygon with no outline, the dashed outline a closed polyline.
+              Butt caps, or Android turns every dash into a dot. */}
+          {rangeRing && (
+            <Polygon
+              key="range-ring-fill"
+              coordinates={rangeRing.coordinates}
+              strokeColor="transparent"
+              strokeWidth={0}
+              fillColor={RANGE_RING.fill}
+              tappable={false}
+            />
+          )}
+          {rangeRing && (
             <Polyline
-              key={source + '-master-' + index}
-              coordinates={segment}
+              // One ring at a time: a stable key moves it instead of replacing
+              // the native overlay on every source switch.
+              key="range-ring"
+              testID="range-ring"
+              coordinates={[...rangeRing.coordinates, rangeRing.coordinates[0]]}
               geodesic={false}
-              strokeColor={colors.master}
-              strokeWidth={3}
+              strokeColor={RANGE_RING.stroke}
+              strokeWidth={RANGE_RING.width}
+              lineDashPattern={dash()}
+              lineCap="butt"
+              zIndex={Z.ring}
+              tappable={false}
+            />
+          )}
+          {rangeLines.map(line => (
+            <Polyline
+              key={source + '-out-of-range-' + line.slaveId}
+              coordinates={line.coordinates}
+              geodesic={false}
+              strokeColor={tokens.critLine}
+              strokeWidth={OUT_OF_RANGE_WIDTH}
+              lineDashPattern={dash()}
+              lineCap="butt"
+              zIndex={Z.rangeLine}
+              tappable={false}
             />
           ))}
-          {master && (
-            <Circle
-              key={source + '-range'}
-              center={master.coordinate}
-              radius={masterRangeMeters}
-              strokeColor="#397E9B88"
-              fillColor="#397E9B10"
-              strokeWidth={1}
-            />
-          )}
-          {master && (
-            <DeviceMarker
-              key={source + '-master'}
-              source={source}
-              role="master"
-              position={master}
-              onPress={onMasterPress}
-            />
-          )}
           {slave && (
             <DeviceMarker
               key={source + '-slave'}
@@ -383,7 +419,7 @@ function GoogleTrackingMapRenderer({
             <React.Fragment key={source + '-dogpath-' + track.slaveId}>
               {track.segments.map((segment, index) => (
                 <Polyline key={index} coordinates={segment} geodesic={false}
-                  strokeColor={track.color} strokeWidth={3} />
+                  strokeColor={track.color} strokeWidth={3} zIndex={Z.route} />
               ))}
             </React.Fragment>
           ))}

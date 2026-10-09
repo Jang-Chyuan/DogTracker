@@ -104,7 +104,6 @@ test('positions older than 24 hours leave the home map entirely', () => {
     old, routeOf([old]), [], preferences(), NOW,
   );
   expect(presentation.slave).toBeNull();
-  expect(presentation.master).toBeNull();
   expect(presentation.positions).toEqual({ master: null, slave: null });
 });
 
