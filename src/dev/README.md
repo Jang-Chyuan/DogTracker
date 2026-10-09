@@ -36,6 +36,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 啟動 | `launch`：冷啟動時 `Launch.launchScreen` 讀的輸入（資料庫打開了沒／錯誤、設定讀完沒、引導走到哪一步、恢復登入結束或超過 10 秒、登入了沒、恢復時登入已失效）；`restoring`：恢復登入還在等 Supabase | `launchScreen` → App 開在地圖、D1（第一次／登入失效）或 D0 啟動失敗；S3「暫時連不上，會自動重試」 |
 | 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
 | 初次使用 D2–D4 | `permissionsGuide`（D2 每列的允許狀態 `grants`、問過了沒 `asked`）、`pairing`（D3 的畫面：`view`、`camera`、`dialog`、`target`、`nearby`、`input`）；開在引導的那一頁（有進度條）。情境不問任何權限、不掃描、不連線，掃描框裡不開相機 | `permissionsPage` → D2；`usePairing` → D3；D4 用 `pairedPage` 讀同一批本機列 |
+| 地址 | `geocoder`：沒給＝每個地方都查不到；`{ names: [...] }` 照畫面問的順序給假答案（`{ line, awayM }`、`{ district }` 或 `null`）；`{ offline: true }` 沒網路；`'real'` 用這支手機的 Geocoder。情境用自己的 lookup，不寫進手機的地址快取 | `AddressLookup`（`describePlace` 的 50 m／300 m／區規則）→ 卡片「位置」第二行、歷史清單的節點 |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新有效電量）→ `DogCardModel` |
 
 第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的個人頁（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
@@ -74,7 +75,9 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-ok` | 豆豆的卡片：在範圍內、62%、休息中 已 18 分鐘（沒有「位置」列） |
 | `card-near-edge` | A3：豆豆 880 m，「接收範圍」琥珀「快離開接收範圍」 |
 | `card-problems` | A3b：豆豆 09:05 之後沒有新位置、15%、不在接收範圍，活動量「—」 |
-| `card-indoor` | A7b：小黑停在原處（室內）、充電中 62%、休息中 已 40 分鐘，沒有「接收範圍」列 |
+| `card-indoor` | A7b：小黑停在原處（室內）、充電中 62%、休息中 已 40 分鐘，沒有「接收範圍」列；「位置」第二行「桃園區中正路 1 號附近」 |
+| `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」只寫「室內」、沒有第二行（列高照樣 64dp），不轉圈 |
+| `card-indoor-geocoder` | 同 `card-indoor`，地址用這支手機自己的 Geocoder 查（要網路＋Play services） |
 | `card-cloud-dog` | 小黑只從雲端來：沒有「接收範圍」列；劇烈活動 |
 | `card-phone-no-fix` | 手機最後定位 15 分鐘前：方向距離改寫「手機沒有定位」 |
 | `card-readings-old` | 豆豆位置是新的，但電量、活動量 09:11 之後沒有讀數：「62%（09:11）」「休息中 已 12 分鐘（09:11）」 |
@@ -114,7 +117,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `pair-mismatch` | QR 寫 7、收到 3：「這不是要連的接收器」「要連 7，收到的是 3，已中斷連線」「稍後再說」「重新掃描」 |
 | `pair-done-sources` | D4：已連上接收器 7、收到訊號源 4、7、9（9 還沒定位也列出） |
 | `pair-done-empty` | D4b：已連上接收器 7、還沒收到訊號源 |
-| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；`&page=map` 看右下「今天 x km」＝摘要的距離 |
+| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（座標＋「查不到地址」）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
 | `history-no-departure` | 我的路線：06:30 起一直在家附近 →「還沒出發」，範圍＝今天全部記錄，沒有停留 |
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
 | `history-gap` | 豆豆：中斷 12 分（「沒有資料」）和 40 分（「沒有資料」＋「恢復記錄」） |

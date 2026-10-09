@@ -104,8 +104,9 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
     rows.push({ key: 'position', label: '位置', value: staleText(freshness, now), tone: 'crit',
       detail: indoor ? address : null, twoLine: indoor });
   } else if (indoor) {
-    // Two lines (64dp) held indoors: 「室內」 and the address under it (A7b;
-    // the address comes with PR 059, the line is kept for it meanwhile).
+    // Two lines (64dp) held indoors: 「室內」 and the address under it (A7b).
+    // No address yet, none found or offline: no second line and no spinner
+    // (edges「沒網路時查地址」), the row keeps its 64dp so nothing jumps.
     rows.push({ key: 'position', label: '位置', value: '室內', tone: null, detail: address, twoLine: true });
   }
   rows.push(batteryRow(dog, battery, positionAt, now));

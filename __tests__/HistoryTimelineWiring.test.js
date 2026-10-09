@@ -7,8 +7,10 @@ import { createHistoryDatabase, HISTORY_DAY_CONTEXT_MS } from '../src/mapHistory
 import { dogHistoryRow, phoneHistoryRow } from '../src/history/HistoryRows';
 import { historyTimeline } from '../src/history';
 import {
-  clock, emptyText, km, listDuration, nodePill, sectionText, summaryDuration, summaryText,
+  clock, emptyText, km, listDuration, nodePill, placeLines, sectionText, summaryDuration, summaryText,
 } from '../src/history/HistoryText';
+import { AddressLookupContext, createAddressLookup } from '../src/placement/AddressLookup';
+import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
 import { applyScreenFixture, buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { endOfDay, formatTodayDistance, startOfToday } from '../src/tracking/TodayDistance';
 import { timelineSubject, useHistoryTimeline } from '../src/mapHistory/useHistoryTimeline';
@@ -177,6 +179,84 @@ describe('fixtures', () => {
     const house = model.nodes.find(n => n.type === 'indoor');
     expect(house.number).toBeUndefined();
     expect(nodePill(house).text).toMatch(/^室內・2\d 分$/);
+  });
+});
+
+// The fixture's own lookup, asked in the list's order (053a).
+async function placeNames(lookup, places) {
+  let values = places.map(node => lookup.lookup(node));
+  for (let tries = 0; values.includes(undefined) && tries < 80; tries += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    values = places.map(node => lookup.lookup(node));
+  }
+  return values;
+}
+const placesOf = model => model.nodes.filter(node => !['movement', 'gap'].includes(node.type));
+
+describe('addresses (053a)', () => {
+  const stop = { type: 'stop', latitude: 24.93111, longitude: 121.28794, durationMs: 17 * MINUTE };
+  const house = { type: 'indoor', latitude: 24.9378, longitude: 121.2954, start: 0, end: 28 * MINUTE };
+  test('a place\'s two lines: found, asking, not found; a hold not found says 停留（室內）', () => {
+    expect(placeLines(stop, { state: 'found', text: '八德區和平路 552 號附近' }))
+      .toEqual({ title: '八德區和平路 552 號附近', titleMuted: false, coordinates: '24.9311, 121.2879', missing: '' });
+    expect(placeLines(stop, { state: 'found', text: '大園區航站南路 9 號附近（約 140 m）' }).title)
+      .toBe('大園區航站南路 9 號附近（約\u00A0140\u00A0m）');
+    expect(placeLines(stop, { state: 'pending' }))
+      .toEqual({ title: '查地址中…', titleMuted: true, coordinates: '24.9311, 121.2879', missing: '' });
+    expect(placeLines(stop, { state: 'none' }))
+      .toEqual({ title: '24.9311, 121.2879', titleMuted: false, coordinates: '', missing: '查不到地址' });
+    expect(placeLines(house, { state: 'none' }))
+      .toEqual({ title: '停留（室內）', titleMuted: false, coordinates: '24.9378, 121.2954', missing: '' });
+    expect(placeLines(house, { state: 'found', text: '八德區介壽路一段 728 號附近' }).title).toBe('八德區介壽路一段 728 號附近');
+  });
+
+  test('history-today: 出發, stays 1 and 2 and 現在 named; one 120 m off; stay 2 without an answer', async () => {
+    const { fixture, model } = await fixtureList('history-today');
+    const names = await placeNames(fixture.addressLookup, placesOf(model));
+    expect(names).toEqual(['桃園區大興西路二段 105 號附近', '桃園區同德六街 76 號附近（約 120 m）', null,
+      '桃園區中山路 552 號附近']);
+  });
+
+  test('history-indoor: no answers, the house node says 停留（室內） over its coordinates', async () => {
+    const { fixture, model } = await fixtureList('history-indoor');
+    const places = placesOf(model);
+    const names = await placeNames(fixture.addressLookup, places);
+    expect(names.every(name => name === null)).toBe(true);
+    const held = places.find(node => node.type === 'indoor');
+    expect(placeLines(held, { state: 'none' }).title).toBe('停留（室內）');
+  });
+
+  test('the list: 查地址中… while asking, the address when it comes, coordinates after 5 s without one', async () => {
+    jest.useFakeTimers();
+    try {
+      const { model } = await fixtureList('history-today');
+      const answers = [];
+      const native = { reverseGeocode: jest.fn(() => new Promise(resolve => answers.push(resolve))) };
+      const lookup = createAddressLookup({ native });
+      let renderer;
+      await act(async () => {
+        renderer = Renderer.create(<AddressLookupContext.Provider value={lookup}>
+          <HistoryTimelineList model={model} subject="phone" today color="#2F6FDE" />
+        </AddressLookupContext.Provider>);
+      });
+      const titles = () => renderer.root.findAll(node => typeof node.type === 'string'
+        && node.props.testID === 'place-title').map(node => [node.props.children].flat().join(''));
+      const text = () => JSON.stringify(renderer.toJSON());
+      expect(titles()).toEqual(['查地址中…', '查地址中…', '查地址中…', '查地址中…']);
+      // The first place answers: its address; the others still asking.
+      const first = placesOf(model)[0];
+      await act(async () => answers[0](JSON.stringify([{ line: '330台灣桃園市桃園區大興西路二段105號',
+        latitude: first.latitude, longitude: first.longitude }])));
+      expect(titles()[0]).toBe('桃園區大興西路二段 105 號附近');
+      expect(titles().slice(1)).toEqual(['查地址中…', '查地址中…', '查地址中…']);
+      // Five seconds on, the rest count as not found: coordinates, 查不到地址.
+      await act(async () => { jest.advanceTimersByTime(5000); });
+      expect(titles()[1]).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
+      expect(text()).toContain('查不到地址');
+      await act(async () => renderer.unmount());
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

@@ -91,3 +91,14 @@ REPORT=1 npm test -- --runInBand __tests__/IndoorHoldSimulation.test.js
 - 在航廈、貨倉、停車塔裡慢慢走動時，只有弱定位，分不出走動和飄移，會停在入口直到弱定位大多離開 150 m；照 10/3 校正的模擬裡誤差 141–184 m，main 64–79 m。
 - 狗舍裡相隔幾公尺的狗籠分不出來，會畫在同一處（門口附近）。
 - 從金屬機棚走出來時，要離開停住處 80 m 才放開，這段誤差約 70–110 m（main 約 10–50 m）。
+
+## 地址（AddressLookup，053a）
+
+停住點、歷史節點用 Android 內建 Geocoder（`PlaceLookupModule.kt`，不用 key、不用付費服務）查地址；地址只用來描述，不移動狗。
+
+- 寫法（`ADDRESS_CONFIG`）：最近的地址點 50 m 內「桃園區中正路 1 號附近」；50–300 m「…附近（約 120 m）」（取整到 10 m）；更遠只寫區「大園區（附近沒有地址）」；連區都沒有就是 `null`。去掉郵遞區號、臺灣、縣市、里／村，簡體轉繁體，數字前後加空格。
+- 一次查一筆（排隊），每筆最多 15 秒；沒網路不問 Geocoder；查不到、逾時、出錯一分鐘後才重查（卡片重新打開時馬上重查）。微調 50 m 內沿用同一個地址。
+- 快取：記憶體＋`dogtracker.sqlite` 的 `address_cache`（最多 500 筆，借 Android 原生 SQLite owner），即時卡片和歷史清單共用 `AddressLookupContext` 預設的同一個 lookup；畫面情境用自己的 lookup（`src/dev/fixtureGeocoder.js`），不寫進這支手機的快取。
+- `useAddress(point)`：A7b 卡片第二行，字串或 `null`（還在查、查不到、沒網路都不寫，不轉圈）。
+- `usePlaceNames(points)`：歷史清單每個節點 `{ state: 'pending' | 'found' | 'none', text }`；超過 5 秒還沒答案算查不到（寫座標＋「查不到地址」，室內節點寫「停留（室內）」），之後查到照樣補上。
+- `lookupAddresses(points, { timeoutMs })`：匯出用，最多等 5 秒，順序和輸入相同。

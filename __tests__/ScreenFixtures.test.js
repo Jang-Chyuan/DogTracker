@@ -27,7 +27,7 @@ import { coldStartCoordinates, frameAllCoordinates, framePadding, phoneFix } fro
 import { edgeHints } from '../src/map/EdgeHints';
 import { CARD_ACTIVITY_LOOKBACK_MS, dogCardReadings } from '../src/activity/DogCardReadings';
 import { dogCard, phoneReading } from '../src/map/DogCardModel';
-import { cloudClock, dogFreshness } from '../src/tracking/DogFreshness';
+import { cloudClock, dogFreshness, isIndoorHold } from '../src/tracking/DogFreshness';
 
 // Where each dog lands on a 392×830 dp screen (Pixel 4a) once `coordinates`
 // are fitted into the part left by the top controls (100 dp) and the card
@@ -633,6 +633,16 @@ test('the real map draws the range ring and the red line only where the rules sa
 // ---- the dog's card (046) ---------------------------------------------------
 
 // The card MapScreen opens for a card-* fixture: the same calls it makes.
+// The fixture's own address lookup (053a), asked like the card asks it.
+async function addressOf(lookup, point) {
+  let value = lookup.lookup(point);
+  for (let tries = 0; value === undefined && tries < 50; tries += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    value = lookup.lookup(point);
+  }
+  return value;
+}
+
 async function card(name) {
   const state = await screen(name);
   const { fixture } = state;
@@ -643,7 +653,8 @@ async function card(name) {
   const model = dogCard(dog, { freshness, range: fixture.cloudDogs.ranges[dog.slaveId] ?? null,
     battery: readings.battery, activity: readings.activity, phone: phoneReading(fixture.livePhone, now), now,
     reference: freshness.source === 'cloud' ? cloudClock(fixture.cloudSync, now) : now,
-    name: state.label(dog) });
+    name: state.label(dog),
+    address: isIndoorHold(dog) ? await addressOf(fixture.addressLookup, dog.coordinate) : null });
   const rows = Object.fromEntries(model.rows.map(row => [row.key, row]));
   return { model, rows, keys: model.rows.map(row => row.key), state };
 }
@@ -681,14 +692,26 @@ test('card-problems (A3b): every problem row red, 活動量 「—」, the dista
     .toBe('位置，沒有新位置，最後 09:05；電量 15%，偏低；接收範圍，不在接收範圍；活動量，沒有資料');
 });
 
-test('card-indoor (A7b): 位置 「室內」, charging 62%, resting 40 minutes, no 接收範圍 row', async () => {
+test('card-indoor (A7b): 位置 「室內」 over its address, charging 62%, resting 40 minutes, no 接收範圍 row', async () => {
   const { model, rows, keys, state } = await card('card-indoor');
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(keys).toEqual(['position', 'battery', 'activity']);
-  expect(rows.position).toMatchObject({ value: '室內', tone: null, detail: null });
+  expect(rows.position).toMatchObject({ value: '室內', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: '位置，室內，桃園區中正路 1 號附近' });
   expect(rows.battery).toMatchObject({ value: '充電中 62%', tone: null });
   expect(rows.activity).toMatchObject({ value: '休息中', detail: '已 40 分鐘' });
   expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・室內' });
+});
+
+test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內」 alone, no second line', async () => {
+  const { rows, state } = await card('dog-indoor-no-address');
+  expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
+  expect(rows.position).toMatchObject({ value: '室內', detail: null, twoLine: true });
+});
+
+test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: no address)', async () => {
+  const { rows } = await card('card-indoor-geocoder');
+  expect(rows.position).toMatchObject({ value: '室內', detail: null });
 });
 
 test('card-cloud-dog: a cloud dog has no 接收範圍 row; running hard (劇烈活動)', async () => {
