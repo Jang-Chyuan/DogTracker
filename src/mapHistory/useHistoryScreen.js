@@ -150,7 +150,7 @@ export function useHistoryDayRows({
       } catch (error) {
         if (!alive) return;
         setResult(current => ({
-          ...current,
+          ...(current.key === key ? current : { rows: [], version: 0, replayHolds: null }),
           key,
           error: error?.message || '讀取失敗',
         }));
