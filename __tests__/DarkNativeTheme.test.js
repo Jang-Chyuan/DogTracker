@@ -35,9 +35,9 @@ test('night colours match the design, including elevated native dialogs and spla
   expect(styles).toContain('android:windowLightStatusBar">false');
   expect(styles).toContain('android:windowLightNavigationBar">false');
   expect(styles).toContain('android:forceDarkAllowed">false');
-  expect(read('res/values-night-v31/styles.xml')).toContain(
-    'windowSplashScreenIconBackgroundColor',
-  );
+  // D0 dark: the whole white dog straight on bg, no disc while waiting.
+  for (const file of ['res/values-night-v31/styles.xml', 'res/values-night/styles.xml'])
+    expect(read(file)).not.toContain('windowSplashScreenIconBackgroundColor');
 });
 test('native system bars update on a live configuration change', () => {
   const activity = read('java/com/dogtracker/MainActivity.kt');

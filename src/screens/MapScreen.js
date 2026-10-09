@@ -6,7 +6,9 @@ import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
+import { splashChrome } from '../app/hideSplash';
 import {
+  Animated,
   ScrollView,
   StyleSheet,
   Text,
@@ -925,22 +927,32 @@ export default function MapScreen({
         onToday={openMyRoute}
       />
 
-      {!historical && (
-        // Fixed under the status bar; it does not move with the card.
-        <SettingsGear
-          top={gearTop}
-          alert={reasons.length > 0}
-          alertLabel={gearLabel(reasons)}
-          onPress={onOpenSettings}
+      {/* The launch screen's handover fades these in (splashChrome). */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          StyleSheet.absoluteFill,
+          styles.chrome,
+          { opacity: splashChrome },
+        ]}
+      >
+        {!historical && (
+          // Fixed under the status bar; it does not move with the card.
+          <SettingsGear
+            top={gearTop}
+            alert={reasons.length > 0}
+            alertLabel={gearLabel(reasons)}
+            onPress={onOpenSettings}
+          />
+        )}
+        <TopAlertCards
+          cards={cards}
+          top={cardsTop}
+          onAction={pressCardAction}
+          onClose={closeCard}
+          onHeight={setTopHeight}
         />
-      )}
-      <TopAlertCards
-        cards={cards}
-        top={cardsTop}
-        onAction={pressCardAction}
-        onClose={closeCard}
-        onHeight={setTopHeight}
-      />
+      </Animated.View>
       {!historical && !tracking.preferences.ready && (
         <View style={[styles.source, { top }]}>
           <View style={styles.statusDot} />
@@ -982,8 +994,15 @@ export default function MapScreen({
           onLevel={(level, height) => setPanel({ level, height })}
           exportNative={exportNative}
           initialExport={fixture?.historyView?.export ?? null}
-          closedAt={target.subject === 'phone' && screen.today && livePhone && !livePhone.running
-            ? screen.model?.points.at(-1)?.time ?? null : null} />
+          closedAt={
+            target.subject === 'phone' &&
+            screen.today &&
+            livePhone &&
+            !livePhone.running
+              ? screen.model?.points.at(-1)?.time ?? null
+              : null
+          }
+        />
       )}
       {cardModel && (
         <DogCard
@@ -1035,6 +1054,8 @@ const getStyles = makeStyles(theme => {
     literalColors: themeLiteral,
   } = theme;
   return StyleSheet.create({
+    // The gear and the top cards, above the map and the card (as before).
+    chrome: { zIndex: 70, elevation: 32 },
     // MapScreen lives in App's persistent absolute map layer. A flex-only child
     // can measure to zero under Fabric, sending bottom-anchored overlays above
     // the viewport, so make this screen an explicit inset box as well.

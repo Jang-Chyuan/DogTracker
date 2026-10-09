@@ -15,6 +15,7 @@
     "warnBg": "#FFF1D6",
     "crit": "#7A1D18",
     "critAction": "#B3261E",
+    "splashLine": "#FFFFFF",
     "critBg": "#FFF3F1",
     "critLine": "#D64545",
     "receiver": "#3E5A6B",

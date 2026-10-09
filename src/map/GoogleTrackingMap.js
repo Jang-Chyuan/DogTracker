@@ -1,8 +1,4 @@
-import {
-  useTheme,
-  useStyles,
-  makeStyles,
-} from '../theme/ThemeProvider';
+import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import React, {
   useCallback,
   useEffect,
@@ -12,6 +8,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   PixelRatio,
   StyleSheet,
   Text,
@@ -45,7 +42,11 @@ import {
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { nameTags } from './DogMarkers';
-import { reportMapFramed } from '../app/hideSplash';
+import {
+  reportMapFramed,
+  splashChrome,
+  useSplashMarkersHidden,
+} from '../app/hideSplash';
 import {
   framedCoordinates,
   framePadding,
@@ -135,7 +136,9 @@ export const StyledMarker = React.forwardRef(function StyledMarker(
 ) {
   if (__DEV__ && React.Children.count(children) === 0) {
     console.error(
-      `[Marker] ${props.identifier || 'a marker'} has no view of its own: it would be drawn as Google's default pin`,
+      `[Marker] ${
+        props.identifier || 'a marker'
+      } has no view of its own: it would be drawn as Google's default pin`,
     );
   }
   return (
@@ -191,6 +194,9 @@ function usePhotoMarker(avatar, ref) {
 // one redraw. A tap opens the dog.
 function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
   const { isDark } = useTheme();
+  // The launch screen's handover draws a copy of each dog over the map while
+  // it flies and pops them in; the real marker shows once they are in place.
+  const handover = useSplashMarkersHidden();
   const ref = useRef(null);
   const photo = usePhotoMarker(avatar, ref);
   const settled = useSettledMarker(ref);
@@ -220,6 +226,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label }) {
       coordinate={marker.coordinate}
       anchor={frame.anchor}
       tracksViewChanges={photo.tracking || settled.tracking}
+      opacity={handover ? 0 : 1}
       zIndex={zIndex}
       // No title or description: those draw the SDK's own bubble, and a tap
       // already opens the dog. The label below is what TalkBack reads.
@@ -455,6 +462,50 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   );
 }
 
+/**
+ * The dogs the launch screen hands over to: on screen (inside the map, clear
+ * of the status bar and the bottom), the one nearest the middle first, then
+ * the others nearest to it (they pop in in that order).
+ */
+export function splashTargets(inputs, points, fontScale = 1) {
+  const { dogMarkers, avatars, width, height, top = 0, bottom = 0 } = inputs;
+  if (!width || !height) return [];
+  const tags = nameTags(dogMarkers, points, fontScale);
+  const shown = dogMarkers
+    .map(marker => ({ marker, point: points[marker.slaveId] }))
+    .filter(
+      ({ point }) =>
+        point &&
+        point.x >= 0 &&
+        point.x <= width &&
+        point.y >= top &&
+        point.y <= height - bottom,
+    );
+  if (!shown.length) return [];
+  const distance = (a, x, y) => Math.hypot(a.point.x - x, a.point.y - y);
+  const first = shown.reduce((best, item) =>
+    distance(item, width / 2, height / 2) <
+    distance(best, width / 2, height / 2)
+      ? item
+      : best,
+  );
+  const rest = shown
+    .filter(item => item !== first)
+    .sort(
+      (a, b) =>
+        distance(a, first.point.x, first.point.y) -
+        distance(b, first.point.x, first.point.y),
+    );
+  return [first, ...rest].map(({ marker, point }) => ({
+    slaveId: marker.slaveId,
+    x: point.x,
+    y: point.y,
+    marker,
+    tag: tags[marker.slaveId] ?? null,
+    avatar: avatars[marker.slaveId] ?? null,
+  }));
+}
+
 function GoogleTrackingMapRenderer({
   source,
   presentation,
@@ -584,10 +635,57 @@ function GoogleTrackingMapRenderer({
   const afterFit = useRef(null);
   useEffect(() => () => clearTimeout(afterFit.current), []);
   const splashReleased = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // What the launch screen's handover needs (「D0 → 地圖銜接（C）」): the dogs
+  // on screen where they are drawn, the nearest to the middle first.
+  const splashInputs = useRef({});
+  splashInputs.current = {
+    dogMarkers,
+    avatars: presentation.dogAvatars || {},
+    width: cursorLayout.width,
+    height: cursorLayout.height,
+    top: topInset,
+    bottom: bottomInset,
+  };
   const releaseSplash = useCallback(() => {
     if (splashReleased.current) return;
     splashReleased.current = true;
-    reportMapFramed();
+    const map = mapRef.current;
+    const inputs = splashInputs.current;
+    if (!inputs.dogMarkers.length || !map?.pointForCoordinate) {
+      reportMapFramed([]);
+      return;
+    }
+    Promise.all(
+      inputs.dogMarkers.map(marker =>
+        map
+          .pointForCoordinate(marker.coordinate)
+          .then(point => [marker.slaveId, point])
+          .catch(() => null),
+      ),
+    )
+      .then(entries => {
+        // The map was replaced or closed meanwhile (a new source, a fixture
+        // switch): its next framing reports instead.
+        if (!mounted.current || mapRef.current !== map) {
+          splashReleased.current = false;
+          return;
+        }
+        reportMapFramed(
+          splashTargets(
+            inputs,
+            Object.fromEntries(entries.filter(Boolean)),
+            PixelRatio.getFontScale?.() || 1,
+          ),
+        );
+      })
+      .catch(() => reportMapFramed([]));
   }, []);
   const fontScale = PixelRatio.getFontScale?.() || 1;
   // Framing keeps clear of the bottom right buttons too (16dp + 48dp), and on
@@ -1437,33 +1535,39 @@ function GoogleTrackingMapRenderer({
           />
         </View>
       )}
-      {live &&
-        usable &&
-        foreground &&
-        !movingState &&
-        hints.map(value => (
-          <EdgeHintView
-            key={value.side}
-            value={value}
-            avatars={presentation.dogAvatars || {}}
-            onPress={() => frame(value.coordinates)}
+      {/* The launch screen's handover fades these in (splashChrome). */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, { opacity: splashChrome }]}
+      >
+        {live &&
+          usable &&
+          foreground &&
+          !movingState &&
+          hints.map(value => (
+            <EdgeHintView
+              key={value.side}
+              value={value}
+              avatars={presentation.dogAvatars || {}}
+              onPress={() => frame(value.coordinates)}
+            />
+          ))}
+        {live && !component && foreground && (loaded || timedOut) && (
+          // 框住全部, 我的位置 and 「今天 x km」 (A1), 12dp above the card; above the tip
+          // while it shows.
+          <MapButtons
+            bottom={
+              overlayBottom +
+              (tip ? sizes.floatingButton + layout.floatingGap : 0)
+            }
+            phoneAvailable={phoneAvailable}
+            onFrameAll={pressFrameAll}
+            onMyLocation={pressMyLocation}
+            today={today}
+            onToday={onToday}
           />
-        ))}
-      {live && !component && foreground && (loaded || timedOut) && (
-        // 框住全部, 我的位置 and 「今天 x km」 (A1), 12dp above the card; above the tip
-        // while it shows.
-        <MapButtons
-          bottom={
-            overlayBottom +
-            (tip ? sizes.floatingButton + layout.floatingGap : 0)
-          }
-          phoneAvailable={phoneAvailable}
-          onFrameAll={pressFrameAll}
-          onMyLocation={pressMyLocation}
-          today={today}
-          onToday={onToday}
-        />
-      )}
+        )}
+      </Animated.View>
       {live && (
         <MapTip message={tip} bottom={overlayBottom} onDone={clearTip} />
       )}

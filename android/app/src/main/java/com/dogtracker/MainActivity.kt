@@ -20,18 +20,40 @@ class MainActivity : ReactActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     // Must run before super.onCreate: it swaps Theme.App.Starting for AppTheme.
-    // The drawing always finishes, and the screen stays until the app has its
-    // first screen ready (AppSplash.hide from JavaScript) or the timeout.
-    SplashState.animationDone = false
-    SplashState.appReady = false
-    SplashState.held = false
-    installSplashScreen().setKeepOnScreenCondition { SplashState.keepOnScreen() }
+    // Warm start (already handed over in this process): no launch screen to
+    // wait for.
+    SplashState.animationDone = SplashState.handedOver
+    SplashState.fromNotification =
+      intent?.getBooleanExtra(SplashState.EXTRA_FROM_NOTIFICATION, false) == true
+    // The system launch screen only waits for its drawing (800 ms): the window
+    // under it shows the same picture (launch_background) and JavaScript's
+    // copy (SplashOverlay) takes over from there, so nothing waits on a held
+    // first draw. (Holding the first draw longer left the window black when
+    // the system removed its launch screen early — in debug builds Metro's
+    // loading banner draws first and the system took that as the app ready.)
+    // Debug builds: Metro's "Loading…" banner is a window of its own that
+    // draws first, and the system takes it as the app being ready and removes
+    // its launch screen while the held first draw keeps our window black. So
+    // in debug the window draws at once (the same picture); release builds
+    // keep the system screen for its 800 ms drawing.
+    installSplashScreen().apply {
+      setKeepOnScreenCondition { !BuildConfig.DEBUG && SplashState.keepOnScreen() }
+      // No exit animation: the window under it shows the same picture, so it
+      // is removed at once (the system's default exit faded the whole app
+      // window in from black for ~250 ms).
+      setOnExitAnimationListener { it.remove() }
+    }
     val handler = Handler(Looper.getMainLooper())
     handler.postDelayed({ SplashState.animationDone = true }, SplashState.ANIMATION_MS)
-    handler.postDelayed({ if (!SplashState.held) SplashState.appReady = true }, SplashState.TIMEOUT_MS)
-    handler.postDelayed({ SplashState.appReady = true }, SplashState.HOLD_TIMEOUT_MS)
     super.onCreate(savedInstanceState)
     updateSystemBars(resources.configuration)
+  }
+
+  // singleTask: a notification tapped while the app is still opening arrives
+  // here; its handover is the plain fade too.
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    if (intent.getBooleanExtra(SplashState.EXTRA_FROM_NOTIFICATION, false)) SplashState.fromNotification = true
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {
@@ -41,10 +63,13 @@ class MainActivity : ReactActivity() {
   }
 
   @Suppress("DEPRECATION")
-  private fun updateSystemBars(config: Configuration) {
+  fun updateSystemBars(config: Configuration) {
     val dark = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-    window.navigationBarColor = ContextCompat.getColor(this, R.color.app_background)
-    window.setBackgroundDrawableResource(R.color.app_background)
+    // While the app opens the window is the launch screen's picture.
+    val opening = !SplashState.handedOver
+    window.navigationBarColor = ContextCompat.getColor(this, if (opening) R.color.splash_background else R.color.app_background)
+    if (opening) window.setBackgroundDrawableResource(R.drawable.launch_background)
+    else window.setBackgroundDrawableResource(R.color.app_background)
     WindowInsetsControllerCompat(window, window.decorView).apply {
       isAppearanceLightStatusBars = !dark
       isAppearanceLightNavigationBars = !dark

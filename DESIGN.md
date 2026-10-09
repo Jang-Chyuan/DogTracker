@@ -74,6 +74,7 @@
 | `pillPlain` | `#F1EEEC` | `#3D3432` | 時間軸清單（畫面和匯出 PNG）的一般膠囊底：出發、結束、恢復記錄、接續前一天（匯出 PNG 一律用淺色值） |
 | `pillIndoor` | `#E6EEF3` | `#2A3A44` | 時間軸清單「室內・N 分」膠囊底（字用 `receiver`；匯出 PNG 一律用淺色值） |
 | `critAction` | `#B3261E` | `#FFB4AB` | 會刪資料、失敗後要處理的動作字：中斷連線、刪除全部狗資料、Wi-Fi 刪除／重試、資料頁的錯誤字（淺色同 `problemBadge`；深色同 `crit` 淡紅字，9.44:1） |
+| `splashLine` | `#FFFFFF` | `#FFFFFF` | 啟動畫面 D0 的白線狗（和它飛到地圖上的銜接動畫）；淺色在 accent 上、深色直接在 bg 上 |
 
 ### 設定首頁 icon（底色／線色）
 
