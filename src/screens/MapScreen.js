@@ -21,31 +21,13 @@ import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import { useReceiverState } from '../map/useReceiverState';
-import { isOtherReceiver, receiverLink } from '../map/ReceiverState';
+import { isOtherReceiver, receiverLink, receiverNumber } from '../map/ReceiverState';
 import { dogMarkers } from '../map/DogMarkers';
+import { coldStartCoordinates, framedCoordinates, phoneFix } from '../map/MapFraming';
 
-// The first fit frames what this handler is working with: the connected pair
-// and the path inside the chosen window. Framing every cloud dog as well zoomed
-// the map out to the whole county, where the path is a dot. With no BLE pair
-// there is nothing local to frame, so the cloud dogs are what the map is for.
-function homeCameraPositions(base, dogs, dogsVisible, dogPaths = []) {
-  const drawn = [
-    ...base.cameraPositions,
-    ...base.slaveSegments.flat(),
-    ...dogPaths.flatMap(track => track.segments.flat()),
-  ];
-  if (drawn.length) return drawn;
-  return dogsVisible ? dogs.map(dog => dog.coordinate) : [];
-}
-
-// Roughly 150 m around a point, as a two-corner box for the camera fit.
-const FRAME_DEGREES = 0.0015;
-function framedCoordinates({ latitude, longitude }) {
-  return [
-    { latitude: latitude - FRAME_DEGREES, longitude: longitude - FRAME_DEGREES },
-    { latitude: latitude + FRAME_DEGREES, longitude: longitude + FRAME_DEGREES },
-  ];
-}
+// How long the first framing waits for the phone's first position report
+// before framing without it (the launch screen is still up meanwhile).
+export const PHONE_WAIT_MS = 1500;
 
 export default function MapScreen({
   tracking,
@@ -164,7 +146,7 @@ export default function MapScreen({
   const livePresentation = useMemo(() => {
     // The connected pair's single dog marker is not drawn: every dog is one
     // of `dogMarkers`.
-    if (!dogs.length) return { ...basePresentation, slave: null, slaveSegments: [], dogMarkers: [] };
+    if (!dogs.length) return { ...basePresentation, slave: null, slaveSegments: [], dogMarkers: [], dogs: [] };
     // Following a dog means the camera reads that dog; the others stay drawn.
     // A followed dog that is not reporting is ignored rather than forgotten, so
     // the camera returns to it when its next row arrives. Hiding the markers
@@ -193,20 +175,41 @@ export default function MapScreen({
         ? dogPaths.filter(track => !hiddenSlaveIds.includes(track.slaveId))
         : [],
       follow: focused && { slaveId: focused.slaveId, coordinate: focused.coordinate },
-      // A single coordinate makes a degenerate box, which Android fits at
-      // maximum zoom; frame a small square around the dog instead.
-      cameraPositions: focused
-        ? framedCoordinates(focused.coordinate)
-        : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
+      // The dog chosen to follow, even while it is not reporting.
+      followId: focusSlaveId ?? null,
+      focused: focused ? focused.coordinate : null,
     };
   }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, cloudDogs?.ranges,
     now, cloudClockInput, pauses, dogAliases, selectedDogId]);
+  // What the first view (cold start, or a data source switch) frames: the
+  // dogs from this phone's own receiver and the phone; a far cloud dog only
+  // with 框住全部 (MapFraming). Following a dog frames that dog.
+  const phoneSpot = phoneFix(livePhone);
+  const receiverId = receiverState ? receiverNumber(receiverState) : null;
+  const phoneKey = phoneSpot ? `${phoneSpot.latitude},${phoneSpot.longitude}` : '';
+  const framedPresentation = useMemo(() => ({
+    ...livePresentation,
+    cameraPositions: livePresentation.focused
+      ? framedCoordinates([livePresentation.focused])
+      : coldStartCoordinates(livePresentation.dogMarkers, phoneSpot, receiverId),
+    // phoneKey stands for phoneSpot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [livePresentation, phoneKey, receiverId]);
+  // The first framing waits (briefly) for the phone's first report.
+  const [phoneWaitOver, setPhoneWaitOver] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setPhoneWaitOver(true), PHONE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  // Settled once the phone has a fix, or says it is not recording, or the
+  // wait is over; a report without a position yet keeps waiting.
+  const phoneSettled = !!fixture || !!phoneSpot || (livePhone != null && !livePhone.running) || phoneWaitOver;
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is decided by the card's own
     // eyes and time window, never by the history tab's parameters.
-    if (!historical) return { ...livePresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
+    if (!historical) return { ...framedPresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
     const data = history.data;
     // Playback draws the same tracks up to the cursor, so the map never shows a
     // position the replayed moment did not have yet.
@@ -235,7 +238,7 @@ export default function MapScreen({
       cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
     }
     return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], cameraPositions, historyTracks: tracks };
-  }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, livePresentation,
+  }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, framedPresentation,
     playbackAt, avatars]);
   const { master } = presentation.positions;
   // A panel closes itself when its subject leaves the map: a dog that stopped
@@ -308,7 +311,9 @@ export default function MapScreen({
         appForeground={tracking.foreground}
         // A fixture switch (or a return to live data) reads the receiver
         // again: frame only once its link is known, so the ring is framed.
-        framingReady={historical || (receiverActive && receiverState !== undefined)}
+        // The first view also waits for the phone's first report (or a
+        // moment), so it frames the phone with the local dogs.
+        framingReady={historical || (receiverActive && receiverState !== undefined && phoneSettled)}
         dataReady={
           tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&

@@ -190,3 +190,21 @@ test('per-dog eyes are stored sorted, without repeats, and reject junk', () => {
       .toThrow('隱藏的狗');
   }
 });
+
+test('changes made while a write is in flight are written after it; the last choice wins', async () => {
+  const { database, controller, state } = setup();
+  await controller.load();
+  let finish;
+  database.save.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const first = controller.save({ showTrails: true });
+  await Promise.resolve();
+  // Two quick taps while the first write is still on disk.
+  const second = controller.save({ showMasterMarker: false });
+  const third = controller.save({ showTrails: false });
+  finish();
+  expect(await first).toBe(true);
+  expect(await second).toBe(true);
+  expect(await third).toBe(true);
+  expect(state().value).toMatchObject({ showMasterMarker: false, showTrails: false });
+  expect(database.save).toHaveBeenCalledTimes(2);
+});

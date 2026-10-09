@@ -47,6 +47,21 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Path d="M17 8l4 4-4 4" {...stroke} />
         </>
       )}
+      {name === 'frame' && (
+        // 框住全部: four corners around a centre dot.
+        <>
+          <Path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" {...stroke} />
+          <Circle cx={12} cy={12} r={1.6} fill={color} />
+        </>
+      )}
+      {name === 'locate' && (
+        // 我的位置: the platform's crosshair.
+        <>
+          <Circle cx={12} cy={12} r={7} {...stroke} />
+          <Circle cx={12} cy={12} r={2.4} fill={color} />
+          <Path d="M12 2v3M12 19v3M2 12h3M19 12h3" {...stroke} />
+        </>
+      )}
       {name === 'clock' && (
         <>
           <Circle cx={12} cy={12} r={9} {...stroke} />
