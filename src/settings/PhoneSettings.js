@@ -41,9 +41,9 @@ export default function PhoneSettings({
         <FocusedPhoneRow id="recording" target={target}>
         <ListRow
           title="位置記錄"
-          detail={recording.detail}
+          detail={['離開 App、鎖螢幕時也會繼續在背景記錄', recording.detail].filter(Boolean).join('；')}
           detailTone={recording.problem ? 'crit' : undefined}
-          label={['位置記錄', recording.detail].filter(Boolean).join('，')}
+          label={['位置記錄', '離開 App、鎖螢幕時也會繼續在背景記錄', recording.detail].filter(Boolean).join('，')}
           toggle={{
             testID: 'phone-recording',
             value: recording.on,

@@ -45,7 +45,7 @@ test('D2a → D2b → D2c / D2d: rows and the button', () => {
   // D2a: what each one is for; 全部允許 and 稍後再說.
   const a = permissionsPage({ needed, grants: nothing });
   expect(a.rows.map(row => [row.number, row.title, row.detail, row.state])).toEqual([
-    [1, '附近的裝置', '連接接收器', 'todo'], [2, '精確位置', '算出狗離你多遠、記錄你的路線', 'todo'],
+    [1, '附近的裝置', '連接接收器', 'todo'], [2, '精確位置', '算出狗離你多遠、記錄你的路線；離開 App、鎖螢幕時也會繼續記錄，右下角或設定 → 手機可以隨時停止', 'todo'],
     [3, '通知', '狗出問題時提醒你', 'todo']]);
   expect(a.primary).toEqual({ id: 'allowAll', label: '全部允許', disabled: false });
   expect(a.later).toBe(true);

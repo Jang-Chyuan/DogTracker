@@ -397,7 +397,7 @@ test('S4 draws the rows and opens the system pages', async () => {
       {...actions} />);
   });
   const out = text(renderer);
-  for (const words of ['位置記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
+  for (const words of ['位置記錄', '離開 App、鎖螢幕時也會繼續在背景記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
     '忽略電池最佳化', '讓 App 在背景也能一直收資料', '已允許']) expect(out).toContain(words);
   const press = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress());
