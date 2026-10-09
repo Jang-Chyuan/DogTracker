@@ -76,7 +76,11 @@ test('opens on 今天: the title, tabs, period, summary and explanation; › is 
 
 test('‹ › move by the tab\'s period and stop at the first reading; tabs keep the day', async () => {
   const { read, readEarliest } = reader();
-  await mount({ read, readEarliest });
+  let blockYear = false, releaseYear;
+  const controlledRead = (...args) => blockYear ? new Promise(resolve => {
+    releaseYear = () => { blockYear = false; resolve(read(...args)); };
+  }) : read(...args);
+  await mount({ read: controlledRead, readEarliest });
   await press('activity-previous');
   expect(text('activity-period')).toBe('10/6（二）');
   await press('activity-next');
@@ -91,10 +95,12 @@ test('‹ › move by the tab\'s period and stop at the first reading; tabs keep
   const previous = () => renderer.root.findAll(node => node.props.testID === 'activity-previous'
     && node.props.accessibilityState)[0].props.accessibilityState.disabled;
   expect(previous()).toBe(true);
+  blockYear = true;
   await press('activity-tab-year');
   expect(text('activity-period')).toBe('2026 年');
-  // 年 is read a month at a time with a pause between (still 載入中 here).
+  // Hold the first year read so loading does not depend on act/timer speed.
   expect(flatten(renderer.toJSON())).toContain('載入中…');
+  await act(async () => releaseYear());
   for (let i = 0; i < 20 && !flatten(renderer.toJSON()).includes('這一年'); i += 1) {
     await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
   }
