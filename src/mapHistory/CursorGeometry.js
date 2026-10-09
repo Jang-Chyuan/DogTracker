@@ -1,3 +1,4 @@
+import { size as sizes } from '../theme/tokens';
 export function snapToRoute(segments, point) {
   let best = null, distance = Infinity;
   for (const segment of segments) for (let i = 0; i < segment.length; i += 1) {
@@ -25,7 +26,7 @@ export function intersectsBox(a, b, box) {
 export function cursorLabelBox(segments, cursor, width, height, top, bottom) {
   const boxes = [];
   for (let y = top + 8; y + 58 < height - bottom; y += 32)
-    for (let x = 8; x + 146 < width; x += 32) boxes.push({ x, y, width: 146, height: 58 });
+    for (let x = 8; x + 146 < width; x += 32) boxes.push({ x, y, width: sizes.cursor.collisionBoxWidth, height: sizes.cursor.collisionBoxHeight });
   boxes.sort((a, b) => (a.x + 73 - cursor.x) ** 2 + (a.y + 29 - cursor.y) ** 2 -
     ((b.x + 73 - cursor.x) ** 2 + (b.y + 29 - cursor.y) ** 2));
   return boxes.find(box => !segments.some(segment => segment.some((p, i) =>

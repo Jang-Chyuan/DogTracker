@@ -1075,3 +1075,19 @@ test('notification dog body opens its card; 打開地圖 closes it; an unknown l
   expect(title()).toBe('返回，Supabase 帳號');
   Linking.getInitialURL.mockResolvedValue(null);
 });
+
+
+test('the settings header stays above the page-colour map cover', async () => {
+  const { StyleSheet } = require('react-native');
+  await mount();
+  await advance(100);
+  await act(async () => {
+    renderer.root.findAll(node => typeof node.props.onOpenSettings === 'function')[0].props.onOpenSettings();
+  });
+  await advance(100);
+  const back = renderer.root.findAllByProps({ testID: 'page-back' })[0];
+  let header = back.parent;
+  while (header && !(header.props.style && StyleSheet.flatten(header.props.style).minHeight)) header = header.parent;
+  const cover = StyleSheet.flatten(renderer.root.findAllByProps({ testID: 'map-cover' })[0].props.style);
+  expect(StyleSheet.flatten(header.props.style).zIndex).toBeGreaterThan(cover.zIndex ?? 0);
+});

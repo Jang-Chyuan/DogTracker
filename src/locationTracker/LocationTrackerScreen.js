@@ -1,7 +1,7 @@
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { space, touch, type } from '../theme/tokens';
+import { space, touch, type, border } from '../theme/tokens';
 import {
   formatClockSeconds,
   formatCount,
@@ -175,9 +175,9 @@ const getStyles = makeStyles(theme => {
   return StyleSheet.create({
     row: {
       minHeight: touch.row,
-      paddingVertical: space.s + 2,
+      paddingVertical: space.s,
       paddingHorizontal: space.xs,
-      borderTopWidth: 1,
+      borderTopWidth: border.hairline,
       borderTopColor: colors.line,
     },
     pressed: { backgroundColor: colors.pressedOverlay },
@@ -188,15 +188,15 @@ const getStyles = makeStyles(theme => {
     },
     time: { ...type.status, color: colors.text },
     id: { ...type.small, color: colors.textMuted },
-    value: { ...type.body, color: colors.text, marginTop: 2 },
-    detail: { ...type.small, color: colors.textMuted, marginTop: 2 },
+    value: { ...type.body, color: colors.text, marginTop: space.xs },
+    detail: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     more: { marginTop: space.xs },
     break: {
       ...type.captionBold,
       color: colors.warn,
       textAlign: 'center',
       paddingVertical: space.s,
-      borderTopWidth: 1,
+      borderTopWidth: border.hairline,
       borderTopColor: colors.line,
     },
   });

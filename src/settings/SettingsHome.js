@@ -2,7 +2,7 @@ import { useRef, useState, useCallback } from 'react';
 import { MapTip } from '../map/MapControls';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { radius, space, type } from '../theme/tokens';
+import { radius, space, touch, type, border } from '../theme/tokens';
 import {
   GroupCard,
   GroupTitle,
@@ -10,6 +10,7 @@ import {
   ProblemBang,
   getSettingsStyles,
 } from './SettingsUI';
+import { linesFor } from '../utils/textScale';
 
 /**
  * 「位置存不進手機」 above the groups (design 「位置存不進手機收起之後」): phone
@@ -35,7 +36,7 @@ export function StorageWarning({
       <View style={styles.body}>
         <Text style={styles.title}>{title}</Text>
         {reason ? (
-          <Text style={styles.reason} numberOfLines={onPress ? 2 : undefined}>
+          <Text style={styles.reason} numberOfLines={onPress ? linesFor(2) : undefined}>
             {reason}
           </Text>
         ) : null}
@@ -83,6 +84,7 @@ export default function SettingsHome({
   onEnableDiagnostics,
 }) {
   const settingsStyles = useStyles(getSettingsStyles);
+  const styles = useStyles(getStyles);
   const taps = useRef({ count: 0, at: null, saving: false });
   const [message, setMessage] = useState(null);
   const clearMessage = useCallback(() => setMessage(null), []);
@@ -137,6 +139,7 @@ export default function SettingsHome({
             accessibilityRole="button"
             accessibilityLabel={`DogTracker ${version}，版本`}
             onPress={versionTap}
+            style={({ pressed }) => [styles.version, pressed && styles.pressed]}
           >
             <Text style={settingsStyles.footer}>{`DogTracker ${version}`}</Text>
           </Pressable>
@@ -151,17 +154,20 @@ const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
     warning: {
+      minHeight: touch.min,
       flexDirection: 'row',
       alignItems: 'center',
       gap: space.m,
-      padding: 14,
+      padding: space.m,
       marginTop: space.s,
       borderRadius: radius.alertCard,
       backgroundColor: colors.critBg,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       borderColor: colors.alertBorder,
     },
     pressed: { opacity: 0.8 },
+    // 版本號: 48dp high to the finger (設計稿 S1).
+    version: { minHeight: touch.min, justifyContent: 'center' },
     body: { flex: 1 },
     title: { ...type.cardTitle, color: colors.crit },
     reason: { ...type.small, color: colors.textMuted },

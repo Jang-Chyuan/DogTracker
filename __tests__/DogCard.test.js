@@ -73,11 +73,10 @@ test('A3b on screen: name, 訊號源, headline, rows in order, red and amber 「
   const value = words => renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === words);
   expect(value('沒有新位置・最後 09:05').props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
   expect(value('快離開接收範圍').props.style).toEqual(expect.arrayContaining([{ color: colors.warn }]));
-  const marks = renderer.root.findAll(node => Array.isArray(node.props.style)
-    && node.props.style.some(style => style?.backgroundColor === colors.problemBadge), { deep: false });
-  expect(marks.length).toBeGreaterThanOrEqual(2);
-  expect(renderer.root.findAll(node => Array.isArray(node.props.style)
-    && node.props.style.some(style => style?.backgroundColor === colors.warnIcon))).not.toHaveLength(0);
+  // The 「!」 circles are vectors (060): red for problems, amber for 快離開.
+  const all = renderer.root.findAll(node => /^dog-card-mark-/.test(node.props.testID ?? '') && node.props.background);
+  expect(all.filter(node => node.props.background === colors.problemBadge).length).toBeGreaterThanOrEqual(2);
+  expect(all.filter(node => node.props.background === colors.warnIcon)).not.toHaveLength(0);
   // Rows have no fill (the design's correction): only the 「!」 is coloured.
   for (const id of ['position', 'battery', 'range', 'activity']) {
     const row = byTestId(`dog-card-row-${id}`)[0];

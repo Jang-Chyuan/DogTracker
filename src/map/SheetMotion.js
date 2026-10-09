@@ -1,4 +1,5 @@
-export const SHEET_COLLAPSED_HEIGHT = 76;
+import { size as sizes } from '../theme/tokens';
+export const SHEET_COLLAPSED_HEIGHT = sizes.sheet.collapsedCard;
 export function clampHeight(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
@@ -6,15 +7,15 @@ export function sheetStops(windowHeight, bottomInset, topInset, fontScale = 1) {
   // Keep the handle, title and update time visible at larger system font sizes.
   const collapsed = Math.max(
     SHEET_COLLAPSED_HEIGHT,
-    28 + Math.ceil(36 * fontScale),
+    sizes.sheet.headerReserve + Math.ceil(sizes.sheet.titleReserve * fontScale),
   );
   const expanded = Math.max(
     collapsed,
-    windowHeight - bottomInset - topInset - 110,
+    windowHeight - bottomInset - topInset - sizes.sheet.expandedClearance,
   );
   return {
     collapsed,
-    compact: Math.min(expanded, Math.max(collapsed, 160, windowHeight * 0.43)),
+    compact: Math.min(expanded, Math.max(collapsed, sizes.sheet.compactFloor, windowHeight * sizes.sheet.compactRatio)),
     expanded,
   };
 }

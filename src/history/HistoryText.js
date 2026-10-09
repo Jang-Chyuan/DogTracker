@@ -134,3 +134,56 @@ export function emptyText({ subject, today, name }) {
   if (subject === 'phone') return today ? '今天還沒有路線' : '這天沒有路線';
   return `這天沒有${name}的紀錄`;
 }
+
+// ---- TalkBack (設計稿「無障礙」時間軸清單) ------------------------------------
+
+// Spoken words for the list's short forms: 「27 分」→「27 分鐘」, 「1.7 km」→
+// 「1.7 公里」, 「・」→「，」.
+export const spoken = text =>
+  text
+    .replace(/(\d+) 分(?!鐘)/gu, '$1 分鐘')
+    .replace(/(\d) km/gu, '$1 公里')
+    .replace(/(\d) m(?![a-z])/gu, '$1 公尺')
+    .replace(/–/gu, ' 到 ')
+    .replace(/・/gu, '，')
+    .replace(/\s*，\s*/gu, '，')
+    .trim();
+
+/**
+ * One item per movement or gap: 「開車 12 分鐘，6.3 公里，不算距離」,
+ * 「走路 27 分鐘，1.7 公里」, 「沒有資料 10:29 到 10:41」.
+ */
+export function sectionSpeech(section) {
+  const text = sectionText(section);
+  return spoken(`${text.lead}${text.time ? ` ${text.time}` : ''}${text.rest}`);
+}
+
+/**
+ * One item per node: 「停留 2，大湳森林公園東側入口，09:41 到 10:09，28 分鐘」;
+ * the others say what they are, where and when (「出發，…，07:02」「室內，…，
+ * 09:10 到 09:50，40 分鐘」「現在，…，09:29」). `title` is the row's first line
+ * (the address, or the coordinates when none was found).
+ */
+export function placeSpeech(node, title) {
+  const [start, end] = nodeTimes(node);
+  const pill = nodePill(node);
+  const lead =
+    node.type === 'stop'
+      ? `停留 ${node.number}`
+      : node.type === 'switch'
+      ? `換交通方式 ${node.number}`
+      : node.type === 'indoor'
+      ? '室內'
+      : pill?.text ?? '';
+  // A stay's own length, interruptions left out (as its pill 「停 25 分」).
+  const length =
+    node.type === 'stop' && Number.isFinite(node.durationMs)
+      ? node.durationMs
+      : node.end - node.start;
+  const minutes = end ? `${Math.round(length / 60000)} 分鐘` : '';
+  return spoken(
+    [lead, title, end ? `${start} 到 ${end}` : start, minutes, interruptionText(node)]
+      .filter(Boolean)
+      .join('，'),
+  );
+}

@@ -10,27 +10,39 @@ import {
   Animated,
   Easing,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import Glyph from './Glyph';
+import { isReduceMotion } from '../utils/reduceMotion';
+import { isLargeFont, linesFor } from '../utils/textScale';
 import { DOG_ARTS } from '../dogs/DogArt';
-import { layout, motion, radius, size as sizes, type } from '../theme/tokens';
+import {
+  layout,
+  motion,
+  radius,
+  size as sizes,
+  touch,
+  type,
+  space,
+  border,
+} from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
 const card = sizes.alertCard;
 // The ✕ is a 48dp target around an 18dp glyph.
-const CLOSE_SLOP = (48 - 24) / 2;
-const PILL_SLOP = (48 - card.buttonHeight) / 2;
+const CLOSE_SLOP = (touch.min - sizes.alertCard.closeIcon) / 2;
+const PILL_SLOP = (touch.min - card.buttonHeight) / 2;
 // The quiet second button of A6 (「登入 Supabase」), as in the mockup.
 const getQUIET_BG = makeStyles(theme => {
   const { literalColors: themeLiteral } = theme;
   return themeLiteral.quietAlertBackground;
 });
 
-function DogMark({ color, size = 20 }) {
+function DogMark({ color, size = sizes.icon.row }) {
   const art = DOG_ARTS.classic;
   const line = {
     stroke: color,
@@ -49,6 +61,31 @@ function DogMark({ color, size = 20 }) {
       ))}
       <Ellipse {...art.nose} fill={color} />
     </Svg>
+  );
+}
+
+// The body: the title (`head`), then the words and buttons; A6's scroll
+// past its 180dp under a fixed title (設計稿「A6 卡片的高度」).
+function Wrap({ info, head, children }) {
+  const styles = useStyles(getStyles);
+  if (!info)
+    return (
+      <View style={styles.body}>
+        {head}
+        {children}
+      </View>
+    );
+  return (
+    <View style={[styles.body, styles.infoBody]}>
+      {head}
+      <ScrollView
+        nestedScrollEnabled
+        testID="top-card-scroll"
+        style={styles.infoScroll}
+      >
+        {children}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -72,7 +109,7 @@ function Pill({ action, onPress }) {
     >
       <Text
         style={[styles.pillText, action.quiet && styles.pillQuietText]}
-        numberOfLines={1}
+        numberOfLines={linesFor(1)}
       >
         {action.label}
       </Text>
@@ -108,9 +145,12 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
   }, [leaving, shown, onGone, value.id]);
   const close = () => onClose?.(value);
   const info = value.kind === 'info';
+  // With a large system font an alert card's button goes under its words
+  // (like A6's), so the title is not squeezed into a narrow column.
+  const stacked = info || isLargeFont();
   const translateY = shown.interpolate({
     inputRange: [0, 1],
-    outputRange: [-12, 0],
+    outputRange: [isReduceMotion() ? 0 : -12, 0],
   });
   const closeButton = value.closable && (
     <Pressable
@@ -121,7 +161,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
       onPress={close}
       style={({ pressed }) => [styles.close, pressed && styles.pressed]}
     >
-      <Glyph name="close" color={colors.iconMuted} size={18} />
+      <Glyph name="close" color={colors.iconMuted} size={sizes.icon.smallAction} />
     </Pressable>
   );
 
@@ -133,6 +173,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
       style={[
         styles.card,
         info ? styles.info : styles.alert,
+        stacked && styles.stackedCard,
         { opacity: shown, transform: [{ translateY }] },
       ]}
     >
@@ -140,36 +181,43 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
         {info ? (
           <DogMark color={colors.tonalText} />
         ) : (
-          <Glyph name={value.icon} color={colors.problemBadge} size={18} />
+          <Glyph name={value.icon} color={colors.problemBadge} size={sizes.icon.smallAction} />
         )}
       </View>
-      <View
-        style={styles.body}
-        accessible
-        accessibilityRole={info ? undefined : 'alert'}
-        accessibilityLabel={`${value.title}，${value.detail}`}
+      {/* A6 grows with its words; past 180dp (a large system font, a narrow
+          screen) its words and buttons scroll inside while the icon and ✕
+          stay (設計稿「A6 卡片的高度」). */}
+      <Wrap
+        info={info}
+        head={
+          // The title stays put; the words under it (and A6's buttons) scroll.
+          <Text
+            style={[styles.title, !info && styles.alertTitle]}
+            numberOfLines={info ? undefined : linesFor(2)}
+            accessible
+            accessibilityRole={info ? undefined : 'alert'}
+            accessibilityLabel={`${value.title}，${value.detail}`}
+          >
+            {value.title}
+          </Text>
+        }
       >
         <Text
-          style={[styles.title, !info && styles.alertTitle]}
-          numberOfLines={2}
-        >
-          {value.title}
-        </Text>
-        <Text
           style={[styles.detail, !info && styles.alertDetail]}
-          numberOfLines={info ? 3 : 2}
+          numberOfLines={info ? undefined : linesFor(2)}
+          importantForAccessibility="no"
         >
           {value.detail}
         </Text>
-        {info && (
+        {stacked && (
           <View style={styles.buttons}>
             {value.actions.map(action => (
               <Pill key={action.id} action={action} onPress={onAction} />
             ))}
           </View>
         )}
-      </View>
-      {!info &&
+      </Wrap>
+      {!stacked &&
         value.actions.map(action => (
           <Pill key={action.id} action={action} onPress={onAction} />
         ))}
@@ -268,7 +316,7 @@ export function N3Card({ value, leaving = false, top, onPress, onGone, onHeight 
   }, [leaving, shown, onGone, value.id]);
   const translateY = shown.interpolate({
     inputRange: [0, 1],
-    outputRange: [-16, 0],
+    outputRange: [isReduceMotion() ? 0 : -16, 0],
   });
   return (
     <View
@@ -290,13 +338,13 @@ export function N3Card({ value, leaving = false, top, onPress, onGone, onHeight 
           style={({ pressed }) => [styles.card, styles.alert, pressed && styles.pressed]}
         >
           <View style={[styles.icon, styles.iconAlert]}>
-            <Glyph name={value.icon} color={colors.problemBadge} size={18} />
+            <Glyph name={value.icon} color={colors.problemBadge} size={sizes.icon.smallAction} />
           </View>
           <View style={styles.body}>
-            <Text style={[styles.title, styles.alertTitle]} numberOfLines={2}>
+            <Text style={[styles.title, styles.alertTitle]} numberOfLines={linesFor(2)}>
               {value.title}
             </Text>
-            <Text style={[styles.detail, styles.alertDetail]} numberOfLines={1}>
+            <Text style={[styles.detail, styles.alertDetail]} numberOfLines={linesFor(1)}>
               {value.detail}
             </Text>
           </View>
@@ -308,7 +356,7 @@ export function N3Card({ value, leaving = false, top, onPress, onGone, onHeight 
 
 // 「⚠ N」 (判定表「歷史、設定的紅色「⚠ N」」): 36dp high (48dp target), 10dp
 // sides, round, critBg with a 1dp alertBorder edge, crit 14sp bold.
-const BADGE_SLOP = (48 - 36) / 2;
+const BADGE_SLOP = (touch.min - sizes.chip.height) / 2;
 export function AlertBadge({ badge, onPress, style }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -322,7 +370,7 @@ export function AlertBadge({ badge, onPress, style }) {
       onPress={() => onPress?.(badge)}
       style={({ pressed }) => [styles.badge, pressed && styles.pressed, style]}
     >
-      <Glyph name="warning" color={colors.crit} size={16} />
+      <Glyph name="warning" color={colors.crit} size={sizes.icon.inline} />
       <Text style={styles.badgeText}>{badge.count}</Text>
     </Pressable>
   );
@@ -340,20 +388,22 @@ const getStyles = makeStyles(theme => {
       zIndex: 25,
     },
     card: {
+      // 48dp at least: the whole card is pressed (N3).
+      minHeight: touch.min,
       flexDirection: 'row',
       alignItems: 'center',
       gap: card.gap,
       backgroundColor: colors.surface,
       borderRadius: radius.alertCard,
-      borderWidth: card.border,
-      borderLeftWidth: card.edge,
-      paddingVertical: 10,
-      paddingLeft: 10,
-      paddingRight: 8,
+      borderWidth: border.hairline,
+      borderLeftWidth: border.emphasis,
+      paddingVertical: space.s,
+      paddingLeft: space.s,
+      paddingRight: space.s,
       shadowColor: themeLiteral.alertShadow,
       shadowOpacity: theme.isDark ? 0.4 : 0.14,
       shadowRadius: 10,
-      shadowOffset: { width: 0, height: 3 },
+      shadowOffset: { width: 0, height: sizes.alertCard.shadowDrop },
       elevation: 4,
     },
     alert: {
@@ -376,20 +426,33 @@ const getStyles = makeStyles(theme => {
     iconAlert: { backgroundColor: colors.alertIconBg },
     iconInfo: { backgroundColor: colors.tonal, alignSelf: 'center' },
     body: { flex: 1, minWidth: 0 },
+    infoScroll: { flexShrink: 1 },
+    // A card whose button went under its words: icon and ✕ at the top.
+    stackedCard: { alignItems: 'flex-start' },
+    // 180dp for the whole card, less its padding.
+    infoBody: { maxHeight: card.a6MaxHeight - 2 * space.s },
     title: { ...type.cardTitle, color: colors.text },
     alertTitle: { color: colors.crit },
     detail: { ...type.small, color: colors.textMuted },
     alertDetail: { color: colors.alertDetail },
+    // 設計稿「A6 卡片的高度」: wrapped buttons keep 48dp targets 8dp apart
+    // (28dp pills, PILL_SLOP above and below each), and the last row's slop
+    // stays inside the scrolling body.
     buttons: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: card.gap,
-      marginTop: card.gap,
+      columnGap: card.gap,
+      rowGap: card.gap + 2 * PILL_SLOP,
+      // The row's own box takes in the first and last pills' slop: Android
+      // only finds a touch inside its parent's box.
+      marginTop: card.gap - PILL_SLOP,
+      paddingVertical: PILL_SLOP,
     },
     pill: {
-      height: card.buttonHeight,
+      // 28dp, taller with a large system font (不裁字).
+      minHeight: card.buttonHeight,
       borderRadius: radius.full,
-      paddingHorizontal: 12,
+      paddingHorizontal: space.m,
       justifyContent: 'center',
       backgroundColor: theme.isDark ? colors.alertIconBg : colors.tonal,
     },
@@ -401,20 +464,20 @@ const getStyles = makeStyles(theme => {
     pillQuietText: { color: colors.text },
     busy: { opacity: 0.6 },
     close: {
-      width: 24,
-      height: 24,
+      width: sizes.alertCard.closeIcon,
+      height: sizes.alertCard.closeIcon,
       alignItems: 'center',
       justifyContent: 'center',
     },
     pressed: { opacity: 0.7 },
     badge: {
-      height: 36,
+      minHeight: sizes.chip.height,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 10,
+      gap: space.xs,
+      paddingHorizontal: space.s,
       borderRadius: radius.full,
-      borderWidth: card.border,
+      borderWidth: border.hairline,
       borderColor: colors.alertBorder,
       backgroundColor: colors.critBg,
     },

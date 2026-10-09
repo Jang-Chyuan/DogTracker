@@ -1,3 +1,4 @@
+import { size as sizes, border } from '../theme/tokens';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -210,16 +211,16 @@ const getStyles = makeStyles(theme => {
   const { literalColors: themeLiteral } = theme;
   return StyleSheet.create({
     container: {
-      width: 30,
-      height: 30,
+      width: sizes.phoneDot.canvas,
+      height: sizes.phoneDot.canvas,
       alignItems: 'center',
       justifyContent: 'center',
     },
     dot: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      borderWidth: 3,
+      width: sizes.phoneDot.liveDisc,
+      height: sizes.phoneDot.liveDisc,
+      borderRadius: sizes.phoneDot.liveDisc / 2,
+      borderWidth: border.heavy,
       borderColor: themeLiteral.avatarFrameMap,
       backgroundColor: themeLiteral.phoneDot,
     },

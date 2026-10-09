@@ -1,6 +1,6 @@
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { radius, space, type } from '../theme/tokens';
+import { radius, space, type, touch } from '../theme/tokens';
 
 // c273 with its suggestion: say which data cannot be opened.
 export const START_FAILED_TITLE = '手機裡的資料打不開';
@@ -67,7 +67,7 @@ const getStyles = makeStyles(theme => {
       paddingBottom: space.l,
     },
     primary: {
-      minHeight: 56,
+      minHeight: touch.primary,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
       alignItems: 'center',
@@ -75,7 +75,7 @@ const getStyles = makeStyles(theme => {
     },
     primaryText: { ...type.status, color: colors.tonalText },
     secondary: {
-      minHeight: 48,
+      minHeight: touch.min,
       alignItems: 'center',
       justifyContent: 'center',
       marginTop: space.xs,

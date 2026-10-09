@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { radius, space, type } from '../theme/tokens';
+import { radius, space, type, size as sizes, touch, border } from '../theme/tokens';
 
 // The pieces every page of the first-use guide shares (design D1–D4): the
 // four-step progress bar, the headline and its line, the buttons pinned to
@@ -184,6 +184,7 @@ export function GuideDialog({
       transparent
       animationType="fade"
       statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
       <Pressable
@@ -260,8 +261,8 @@ const getStyles = makeStyles(theme => {
     progress: { flexDirection: 'row', gap: space.xs, marginBottom: space.xl },
     segment: {
       flex: 1,
-      height: 4,
-      borderRadius: 2,
+      height: sizes.progress.height,
+      borderRadius: sizes.progress.height / 2,
       backgroundColor: colors.line,
     },
     segmentOn: { backgroundColor: colors.accent },
@@ -275,7 +276,7 @@ const getStyles = makeStyles(theme => {
       gap: space.xs,
     },
     primary: {
-      minHeight: 56,
+      minHeight: touch.primary,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
       alignItems: 'center',
@@ -283,16 +284,16 @@ const getStyles = makeStyles(theme => {
       paddingHorizontal: space.l,
     },
     outline: {
-      minHeight: 56,
+      minHeight: touch.row,
       borderRadius: radius.button,
       backgroundColor: colors.elevated,
-      borderWidth: 1.5,
+      borderWidth: border.regular,
       borderColor: colors.line,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: space.l,
     },
-    text: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+    text: { minHeight: touch.min, alignItems: 'center', justifyContent: 'center' },
     primaryLabel: { ...type.status, color: colors.tonalText },
     outlineLabel: { ...type.status, color: colors.text },
     textLabel: { ...type.status, color: colors.tonalText },
@@ -310,7 +311,7 @@ const getStyles = makeStyles(theme => {
     },
     dialog: {
       width: '100%',
-      maxWidth: 400,
+      maxWidth: sizes.dialog.contentLimit,
       backgroundColor: colors.elevated,
       borderRadius: radius.dialog,
       ...theme.floatingBorder,
@@ -319,7 +320,7 @@ const getStyles = makeStyles(theme => {
       shadowColor: themeLiteral.dialogShadow,
       shadowOpacity: theme.isDark ? 0.4 : 0.18,
       shadowRadius: 16,
-      shadowOffset: { width: 0, height: 6 },
+      shadowOffset: { width: 0, height: sizes.dialog.shadowDrop },
     },
     dialogTitle: { ...type.title, color: colors.text },
     dialogBody: { ...type.body, color: colors.textMuted, marginTop: space.m },
@@ -331,8 +332,8 @@ const getStyles = makeStyles(theme => {
       gap: space.s,
     },
     dialogButton: {
-      minHeight: 48,
-      minWidth: 64,
+      minHeight: touch.min,
+      minWidth: sizes.dialog.actionMinimum,
       paddingHorizontal: space.m,
       alignItems: 'center',
       justifyContent: 'center',

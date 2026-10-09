@@ -214,3 +214,14 @@ adb shell am start -a android.intent.action.VIEW -d 'dogtracker://dev/fixture?na
 | `history-dogs-sheet-no-record` | 加入區的狗 5 這天沒有紀錄，40%，仍可加入 |
 
 小視窗「看哪幾隻狗」選了立即生效且不關閉；主角不可移除，先切換主角。點空白或返回鍵關閉。歷史資料永遠合併本機及雲端，沒有資料來源選擇器。
+
+## 全域版面檢查（060）
+
+`scripts/layout-audit.sh [輸出資料夾] [情境…]` 把每個情境在字體 1.0、1.3、2.0，淺色和深色各截一張圖並 `uiautomator dump`（`SCALES`、`THEMES` 可以縮小範圍），再用 `scripts/layout-audit.js` 檢查：
+
+- a：文字超出它的父元件（不含捲動區），例如圓圈裡的「!」、膠囊裡的字長大跑出去。
+- b：全螢幕頁面（有「‹ 標題」或畫面裡沒有地圖）上方 150 px、下方 120 px 要是頁面底色，不能露出地圖。
+- c：小的填色元件（28–64dp 高、比高寬）四個角是自己的顏色＝方角膠囊。
+- d：Google 預設紅色圖釘；深色截圖的大片白色。
+
+每組在 `<輸出>/<字體>-<light|dark>/report.txt`（`report.json`）。結束時字體回 1.0、主題回淺色。需要 debug 版＋Metro，和 `fixture-screenshots.sh` 一樣。命中的每一項都要人看：c 會把被小視窗蓋住的膠囊、TalkBack 焦點框也算進去。

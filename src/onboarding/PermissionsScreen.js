@@ -2,7 +2,7 @@ import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GuideButton, GuidePage } from './GuideUI';
-import { space, type } from '../theme/tokens';
+import { space, type, border, touch, size as sizes } from '../theme/tokens';
 
 /**
  * D2 「App 需要這些權限」 (D2a–D2d): one row per permission this phone needs
@@ -89,6 +89,8 @@ function PermissionRow({ row, onSystemSettings }) {
             row.state === 'ok' && styles.okMark,
             row.state === 'problem' && styles.problemMark,
           ]}
+          // A glyph in a fixed 24dp circle: it does not grow with the font.
+          allowFontScaling={false}
         >
           {mark}
         </Text>
@@ -106,7 +108,7 @@ function PermissionRow({ row, onSystemSettings }) {
           accessibilityLabel={`${row.title}，${
             row.detail
           }，${row.action.replace(' ›', '')}`}
-          hitSlop={8}
+          hitSlop={space.s}
           onPress={onSystemSettings}
           style={({ pressed }) => [styles.action, pressed && styles.pressed]}
         >
@@ -121,26 +123,26 @@ const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
     list: {
-      borderTopWidth: 1,
+      borderTopWidth: border.hairline,
       borderTopColor: colors.line,
       marginTop: space.s,
     },
     // The row being asked is tinted a little past the text on both sides; the
     // lines between rows keep to the text.
     row: {
-      minHeight: 64,
+      minHeight: touch.cardRowTwoLine,
       flexDirection: 'row',
       alignItems: 'center',
       paddingVertical: space.s,
       marginHorizontal: -space.s,
       paddingHorizontal: space.s,
     },
-    rule: { height: 1, backgroundColor: colors.line },
+    rule: { height: border.hairline, backgroundColor: colors.line },
     asking: { backgroundColor: colors.brandSoft },
     circle: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
+      width: sizes.permission.statusDisc,
+      height: sizes.permission.statusDisc,
+      borderRadius: sizes.permission.statusDisc / 2,
       backgroundColor: colors.line,
       alignItems: 'center',
       justifyContent: 'center',
@@ -148,13 +150,19 @@ const getStyles = makeStyles(theme => {
     },
     okCircle: { backgroundColor: colors.okBg },
     problemCircle: { backgroundColor: colors.critBg },
-    mark: { ...type.captionBold, color: colors.textMuted },
+    mark: {
+      ...type.captionBold,
+      color: colors.textMuted,
+      includeFontPadding: false,
+      textAlign: 'center',
+      textAlignVertical: 'center',
+    },
     okMark: { color: colors.ok },
     problemMark: { color: colors.crit },
     words: { flex: 1 },
     title: { ...type.status, color: colors.text },
     detail: { ...type.caption, color: colors.textMuted },
-    action: { minHeight: 48, justifyContent: 'center', paddingLeft: space.s },
+    action: { minHeight: touch.min, justifyContent: 'center', paddingLeft: space.s },
     actionText: { ...type.captionBold, color: colors.tonalText },
     pressed: { opacity: 0.6 },
   });

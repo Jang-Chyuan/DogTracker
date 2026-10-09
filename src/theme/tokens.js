@@ -146,6 +146,8 @@ export const tabularNumbers = { fontVariant: ['tabular-nums'] };
 export const space = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 };
 
 export const layout = {
+  // 窄螢幕 (設計稿「320dp 寬」): the history top row goes compact.
+  narrowWidth: 320,
   screenEdge: 16,
   floatingGap: 12,
   cardPadding: 16,
@@ -185,6 +187,20 @@ export const touch = {
   calendarCell: 44,
 };
 
+// Border weights: line frames, outlined controls, selection and graphic rings (§4 / §15).
+export const border = {
+  hairline: 1,
+  regular: 1.5,
+  strong: 2,
+  graphicFine: 1.6,
+  graphicBold: 2.4,
+  extraStrong: 2.5,
+  heavy: 3,
+  emphasis: 4,
+};
+// Existing weight overrides retain their original rendering without inventing a type size.
+export const weights = { medium: '600' };
+
 export const size = {
   icon: {
     canvas: 24,
@@ -194,19 +210,57 @@ export const size = {
     walk: 20,
     pencil: 20,
     adjust: 18,
+
+    // Icon roles used by compact actions and navigation (§5 / §15).
+    inline: 16,
+    navigation: 22,
+    smallAction: 18,
+    visibility: 26,
+    stat: 15,
   },
   marker: {
     normal: 40,
     attention: 48,
     selectedGrowth: 8,
-    border: 2.5,
+    border: border.extraStrong,
     labelGap: 2,
+
+    // Dog marker bitmap canvas, shadow placement and stale-ring clearance (§15).
+    canvas: 168,
+    headroom: 8,
+    staleRingOutset: 3,
+    selectedShadowDrop: 3,
+    shadowDrop: 1,
+    labelSafety: 8,
   },
-  badge: { size: 16, border: 1.5, glyph: 9, problemAngle: Math.PI / 4, houseDrop: 0.25 },
-  mapLabel: { paddingV: 2, paddingH: 6, border: 1, halo: 3, maxLines: 2 },
-  phoneDot: { size: 14, border: 3, staleAfterMs: 3000 },
+  badge: {
+    size: 16,
+    border: border.regular,
+    glyph: 9,
+    problemAngle: Math.PI / 4,
+    houseDrop: 0.25,
+    // Graphic exclamation text metrics (map/card/settings badges, §15).
+    problemLine: 10,
+    problemWeight: '900',
+    cardWeight: '800',
+  },
+  mapLabel: {
+    paddingV: 2,
+    paddingH: 6,
+    border: border.hairline,
+    halo: 3,
+    maxLines: 2,
+  },
+  phoneDot: {
+    size: 14,
+    border: border.heavy,
+    staleAfterMs: 3000,
+    // Phone marker bitmap canvas and live GPS disc.
+    canvas: 30,
+    liveDisc: 20,
+  },
   floatingButton: 48,
-  chip: { height: 36, paddingH: 12, avatar: 20, leadBorder: 2 },
+  chip: { height: 36, paddingH: 12, avatar: 20, leadBorder: border.strong },
   todayPill: { height: 48, paddingH: 16, iconGap: 6 },
   groupTag: { height: 32, paddingH: 10, problemDot: 8 },
   edgeHint: {
@@ -214,22 +268,86 @@ export const size = {
     avatar: 24,
     overlap: 6,
     maxAvatars: 3,
-    problemBorder: 2,
+    problemBorder: border.strong,
+
+    // Width of the outward-pointing edge-hint arrow (§15).
+    arrow: 10,
   },
   overlapMenu: { width: 240, row: 56, avatar: 32, maxRows: 5 },
-  card: { avatar: 40, labelWidth: 72, warnIcon: 18, maxRatio: 0.75 },
-  activity: { segmented: 36, chart: 200, totalRow: 56 },
-  alertCard: { edge: 4, border: 1, icon: 32, buttonHeight: 28, gap: 8 },
+  card: {
+    avatar: 40,
+    labelWidth: 72,
+    warnIcon: 18,
+    // A3 direction arrow accompanying the headline distance.
+    directionIcon: 26,
+    maxRatio: 0.75,
+  },
+  activity: {
+    segmented: 36,
+    chart: 200,
+    totalRow: 56,
+    // A4 chart labels, legend swatches and high-zone label placement (§15).
+    barLabel: 40,
+    legendSwatch: 10,
+    zoneLabelInset: 2,
+
+    // activity axis label in its illustration/layout specification.
+    axisLabel: 44,
+    // activity band min in its illustration/layout specification.
+    bandMin: 1,
+  },
+  alertCard: {
+    edge: border.emphasis,
+    border: border.hairline,
+    icon: 32,
+    buttonHeight: 28,
+    gap: 8,
+    // Alert dismissal icon and original floating-card shadow (§15).
+    closeIcon: 24,
+    shadowDrop: 3,
+    // A6 grows with its words up to this, then scrolls inside (設計稿「A6 卡片的高度」).
+    a6MaxHeight: 180,
+  },
   smallChip: { height: 28 },
   listRow: { avatar: 32 },
   // 判定表「載入中、產生中」: the small spinner (export, downloads).
   spinner: 20,
-  edit: { avatar: 96, camera: 36, pencil: 16, choice: 48, colorDot: 32 },
+  edit: {
+    avatar: 96,
+    camera: 36,
+    pencil: 16,
+    choice: 48,
+    colorDot: 32,
+    // A5 camera overlap and minimum editable dog-name field.
+    cameraOverhang: 2,
+    nameMinimum: 64,
+
+    // edit preview in its illustration/layout specification.
+    preview: 80,
+    // edit choice ring clearance in its illustration/layout specification.
+    choiceRingClearance: 8,
+    // edit color ring clearance in its illustration/layout specification.
+    colorRingClearance: 8,
+  },
   switch: { width: 52, height: 32 },
-  input: { height: 56, border: 1.5, focusBorder: 2 },
+  input: { height: 56, border: border.regular, focusBorder: border.strong },
   progress: { segments: 4, height: 4, gap: 4 },
-  scanFrame: { inset: 96, corner: 4 },
-  splash: { canvas: 240, visible: 160 },
+  scanFrame: {
+    inset: 96,
+    corner: 4,
+    // QR scanning beam thickness and end shape.
+    beam: 2,
+    beamRadius: 1,
+
+    // scanFrame minimum in its illustration/layout specification.
+    minimum: 160,
+  },
+  splash: {
+    canvas: 240,
+    visible: 160,
+    // splash handover canvas in its illustration/layout specification.
+    handoverCanvas: 288,
+  },
   rangeRing: { radiusM: 1000 },
   route: {
     walk: 4,
@@ -240,17 +358,44 @@ export const size = {
     fadedDash: [4, 4],
     breakAfterMs: 180000,
   },
-  stopMarker: { size: 22, border: 2 },
-  timeMarker: { size: 7, border: 1.6, endSize: 9, endBorder: 2.4 },
+  stopMarker: { size: 22, border: border.strong },
+  timeMarker: {
+    size: 7,
+    border: border.graphicFine,
+    endSize: 9,
+    endBorder: border.graphicBold,
+    // Inset of the time-marker halo text graphic (§15).
+    labelInset: 3,
+  },
   cursor: {
     dot: 16,
-    border: 3,
+    border: border.heavy,
     halo: 32,
     labelGap: 12,
     labelPaddingV: 4,
     labelPaddingH: 8,
+
+    // History cursor label collision footprint and graphic text metrics.
+    collisionBoxWidth: 146,
+    collisionBoxHeight: 58,
+    labelTextMax: 160,
+    timeGlyphLine: 20,
+    detailGlyphLine: 17,
+
+    // cursor label halo expansion in its illustration/layout specification.
+    labelHaloExpansion: 16,
   },
-  rangeBar: { track: 6, handle: 24, handleBorder: 3, frameBorder: 1.5 },
+  rangeBar: {
+    track: 6,
+    handle: 24,
+    handleBorder: border.heavy,
+    frameBorder: border.regular,
+    // Range labels and track-to-summary alignment (§15).
+    labelHeight: 18,
+    labelBaselineLift: 6,
+    summaryOverlap: 14,
+    labelEdgeGap: 2,
+  },
   timeline: {
     timeColumn: 54,
     timeColumnMax: 72,
@@ -269,11 +414,335 @@ export const size = {
       resume: 12,
       hold: 24,
       holdGlyph: 14,
-      border: 3,
+      border: border.heavy,
+
+      // Node baselines inside the timeline track (§13).
+      departureDrop: 2,
+      stayLift: 3,
+      endDrop: 1,
+    },
+
+    // History timeline section-row footprint (§13).
+    sectionHeight: 40,
+
+    // §13 timeline status pills.
+    pill: {
+      height: 18,
     },
   },
-  sheet: { collapsed: 140, maxRatio: 0.75, emptyRatio: 0.4 },
+  sheet: {
+    collapsed: 140,
+    maxRatio: 0.75,
+    emptyRatio: 0.4,
+    // Bottom-sheet grab handle and collapsed dog-card footprint (§15).
+    handleLength: 32,
+    cardHandleLength: 36,
+    handleThickness: 4,
+    handleTarget: 20,
+    collapsedCard: 76,
+    // Dog-card sheet stops: header reservation, enlarged title and screen clearance.
+    headerReserve: 28,
+    titleReserve: 36,
+    expandedClearance: 110,
+    compactFloor: 160,
+    compactRatio: 0.43,
+  },
   calendarDot: 5,
+
+  // Fixed-pixel PNG layout specification (判定表「匯出」), independent of screen dp/sp.
+  export: {
+    // H10 PNG header floor and legend text reservation.
+    headerMin: 120,
+    legendReserve: 160,
+    width: 1080,
+    maxHeight: 2400,
+    mapHeight: 1080,
+    footerHeight: 60,
+    side: 48,
+    timeColumn: 150,
+    trackColumn: 80,
+    titleFont: 40,
+    titleWeight: 'bold',
+    subtitleFont: 28,
+    fontFamily: 'app',
+    addressWeight: 'bold',
+    addressFont: 40,
+    addressLine: 52,
+    timeFont: 36,
+    endTimeFont: 28,
+    detailFont: 30,
+    detailLine: 42,
+    pillHeight: 52,
+    pillPadding: 20,
+    secondLine: 64,
+    nodeSize: 64,
+    movementIcon: 72,
+    legendFont: 28,
+    legendWeight: 'bold',
+    legendHeight: 56,
+    sectionFont: 36,
+    sectionDetailFont: 28,
+    sectionWeight: 'bold',
+    sectionHeight: 72,
+    footerFont: 24,
+    placeMin: 140,
+    movementMin: 96,
+    rowGap: 36,
+    dottedLine: { diameter: 9, gap: 21 },
+    driveLine: 9,
+    gapLine: { width: 6, dash: [18, 12] },
+    sectionInset: 24,
+    glyphInset: 20,
+    rowInset: 8,
+    legendSwatchWidth: 32,
+    legendTextInset: 44,
+    legendGap: 12,
+    glyphSize: 40,
+    sectionRadius: 4,
+    timeInset: 16,
+    sectionTextInset: 28,
+    departureRadius: 22,
+    nodeBorder: 6,
+    endRadius: 27,
+    titleLine: 52,
+    subtitleLine: 38,
+    sectionLine: 48,
+    routeScale: 3,
+
+    // export movement inset in its illustration/layout specification.
+    movementInset: 54,
+    // export map inset in its illustration/layout specification.
+    mapInset: 128,
+    // export header top in its illustration/layout specification.
+    headerTop: 32,
+    // export title gap in its illustration/layout specification.
+    titleGap: 8,
+    // export header bottom in its illustration/layout specification.
+    headerBottom: 24,
+    // export legend bottom in its illustration/layout specification.
+    legendBottom: 16,
+    // export legend trailing in its illustration/layout specification.
+    legendTrailing: 40,
+    // export legend swatch height in its illustration/layout specification.
+    legendSwatchHeight: 12,
+    // export legend swatch radius in its illustration/layout specification.
+    legendSwatchRadius: 6,
+    // export departure border in its illustration/layout specification.
+    departureBorder: 8,
+    // export resume radius in its illustration/layout specification.
+    resumeRadius: 16,
+    // export end border in its illustration/layout specification.
+    endBorder: 12,
+    // export node digit in its illustration/layout specification.
+    nodeDigit: 32,
+    // export node digit line in its illustration/layout specification.
+    nodeDigitLine: 40,
+    // export end time line in its illustration/layout specification.
+    endTimeLine: 40,
+    // export section edge in its illustration/layout specification.
+    sectionEdge: 8,
+    // export section padding in its illustration/layout specification.
+    sectionPadding: 12,
+    // export item gap in its illustration/layout specification.
+    itemGap: 20,
+  },
+
+  // 24-unit SVG glyph grid: battery, receiver and phone silhouettes.
+  glyph: {
+    batteryBodyWidth: 17,
+    batteryBodyHeight: 10,
+    batteryFillHeight: 6,
+    batteryFillMin: 1.5,
+    batteryFillSpan: 13,
+    receiverBodyWidth: 12,
+    receiverBodyHeight: 10,
+    phoneBodyWidth: 12,
+    phoneBodyHeight: 19,
+
+    // glyph settings phone width in its illustration/layout specification.
+    settingsPhoneWidth: 10,
+  },
+
+  // Diagnostics raw-data column minimums by field.
+  diagnostics: {
+    columnWidth: {
+      time: 84,
+      receiverId: 64,
+      sourceId: 64,
+      latitude: 96,
+      longitude: 104,
+      distance: 76,
+      speed: 92,
+      satellites: 52,
+      precision: 64,
+      activity: 72,
+      dogBattery: 92,
+      receiverBattery: 104,
+      signalStrength: 64,
+      signalNoise: 56,
+      sequence: 60,
+    },
+  },
+
+  // Empty-state sitting-dog illustration canvas.
+  sittingDog: {
+    canvas: 80,
+  },
+
+  // Receiver silhouette and attached number-tag dimensions.
+  receiver: {
+    tagPaddingH: 3,
+
+    // receiver tag minimum in its illustration/layout specification.
+    tagMinimum: 18,
+    // receiver tag overhang in its illustration/layout specification.
+    tagOverhang: 6,
+    // receiver body width in its illustration/layout specification.
+    bodyWidth: 12,
+    // receiver body height in its illustration/layout specification.
+    bodyHeight: 9,
+  },
+
+  // Settings home icon tile (§15).
+  settings: {
+    icon: 36,
+  },
+
+  // Map data-source capsule and connection notice stack.
+  mapSource: {
+    height: 36,
+    statusDot: 7,
+    noticeLimit: 108,
+
+    // mapSource notice top reserve in its illustration/layout specification.
+    noticeTopReserve: 44,
+  },
+
+  // Password input interior and compact retry row.
+  login: {
+    passwordHeight: 52,
+    retryHeight: 32,
+  },
+
+  // Permission result icon disc in onboarding.
+  permission: {
+    statusDisc: 24,
+  },
+
+  // Confirmation dialog readable content limit and action width (§5).
+  dialog: {
+    contentLimit: 400,
+    actionMinimum: 64,
+    shadowDrop: 6,
+  },
+
+  // History loading placeholder line.
+  skeleton: {
+    line: 14,
+  },
+
+  // History dog-picker avatar and selected radio indicator.
+  historyPicker: {
+    avatar: 28,
+    radio: 20,
+    radioFillRing: 6,
+    // Plus sign inside the history dog-picker button.
+    addGlyph: 18,
+  },
+
+  // History top capsules: avatar sizes, overlap and text reservation (§15).
+  historyTop: {
+    capsuleTextMax: 80,
+    avatar: 26,
+    companionAvatar: 18,
+    avatarOverlap: 6,
+    slotLimit: 240,
+    exportDisc: 36,
+    caretGlyph: 10,
+  },
+
+  // History face name tag and stale-ring clearance (§15 map labels).
+  historyFace: {
+    labelHeight: 22,
+    // H7 secondary dog cursor face.
+    companion: 32,
+    staleOutset: 4,
+  },
+
+  // Calendar today capsule and cell gutter around the selection frame.
+  calendar: {
+    todayPill: 32,
+
+    // calendar cell gutter in its illustration/layout specification.
+    cellGutter: 4,
+  },
+
+  // History date selector capsule (§15).
+  datePill: {
+    height: 40,
+  },
+
+  // H3 month selector capsule (§15 bottom calendar sheet).
+  monthPill: {
+    height: 40,
+  },
+
+  // Circular loading indicator over the map.
+  mapLoading: {
+    spinnerDisc: 36,
+  },
+
+  // Settings gear problem dot and its corner inset (§15).
+  gear: {
+    problemDot: 10,
+    problemDotInset: 2,
+  },
+
+  // Illustrated avatar viewBox grid; independent of displayed avatar diameter.
+  avatar: {
+    artGrid: 100,
+
+    // avatar photo source in its illustration/layout specification.
+    photoSource: 256,
+  },
+
+  signalBars: {
+    // signalBars canvas width in its illustration/layout specification.
+    canvasWidth: 16,
+    // signalBars canvas height in its illustration/layout specification.
+    canvasHeight: 12,
+    // signalBars bar width in its illustration/layout specification.
+    barWidth: 3,
+  },
+
+  historyPanel: {
+    // historyPanel corner in its illustration/layout specification.
+    corner: 24,
+  },
+
+  mapFrame: {
+    // mapFrame history controls in its illustration/layout specification.
+    historyControls: 56,
+    // mapFrame history panel in its illustration/layout specification.
+    historyPanel: 48,
+    // mapFrame label half in its illustration/layout specification.
+    labelHalf: 72,
+  },
+};
+
+// 大字體 (DESIGN.md §3.4): the system font scales where layouts change.
+export const fontScale = {
+  // 130%: lines that would be cut wrap; the history top row goes compact.
+  large: 1.3,
+  // 200% (Android's 1.8 and 2.0 steps): the calendar becomes a list of days,
+  // and the history dog capsule keeps only the face.
+  calendarList: 1.8,
+  faceOnly: 1.8,
+  // Words placed inside a graphic grow only this far (A4 chart labels, the
+  // times under the range bar's handles).
+  graphicTextMax: 1.15,
+  // The timeline's times grow until 「07:02」 fills the 72dp column.
+  timeColumnTextMax: 1.5,
 };
 
 export const shadow = {
@@ -295,6 +764,8 @@ export const motion = {
   rangeCollapse: { duration: 180 },
   cursorJump: { duration: 220 },
   camera: { duration: 300 },
+  // 減少動態效果: a slide becomes this fade (the launch's own reduced fade too).
+  reducedFade: { duration: 200 },
   splashMax: 800,
   sheetSpring: { damping: 26, stiffness: 260, mass: 1 },
   alertCardVisibleMs: 5000,

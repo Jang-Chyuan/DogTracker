@@ -1,5 +1,5 @@
-import { useTheme, useStyles } from '../theme/ThemeProvider';
-import { ScrollView, Switch } from 'react-native';
+import { useStyles } from '../theme/ThemeProvider';
+import { ScrollView } from 'react-native';
 
 import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
 
@@ -16,7 +16,6 @@ export default function PhoneSettings({
   onLocationServices,
   onBattery,
 }) {
-  const { colors } = useTheme();
   const settingsStyles = useStyles(getSettingsStyles);
   const { recording, permission, services, battery } = page;
   return (
@@ -31,17 +30,13 @@ export default function PhoneSettings({
           detail={recording.detail}
           detailTone={recording.problem ? 'crit' : undefined}
           label={['位置記錄', recording.detail].filter(Boolean).join('，')}
-        >
-          <Switch
-            testID="phone-recording"
-            accessibilityLabel="位置記錄"
-            value={recording.on}
-            disabled={recording.busy}
-            onValueChange={onRecording}
-            trackColor={{ false: colors.switchOff, true: colors.accent }}
-            thumbColor={colors.avatarFrameMap}
-          />
-        </ListRow>
+          toggle={{
+            testID: 'phone-recording',
+            value: recording.on,
+            disabled: recording.busy,
+            onChange: onRecording,
+          }}
+        />
         <ListRow
           testID="phone-permissions"
           title="權限"

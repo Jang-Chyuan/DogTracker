@@ -91,7 +91,7 @@ import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { useTodayRoute } from './src/locationTracker/useTodayRoute';
-import { layout, touch, type } from './src/theme/tokens';
+import { layout, touch, type, space, size as sizes } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
 import { holdSplash, launchInto } from './src/app/hideSplash';
@@ -851,7 +851,7 @@ function TrackerApp({ resume = null, onRestart }) {
   const [n3Height, setN3Height] = useState(0);
   // History: 8dp under the top capsule row; a settings page: 8dp under its
   // title row (N3 提醒卡的位置).
-  const n3Top = insets.top + layout.belowStatusBar + 48 + 8;
+  const n3Top = insets.top + layout.belowStatusBar + sizes.floatingButton + space.s;
   const pressN3 = card => {
     setN3Shown(null);
     openAlert(card.target);
@@ -1273,7 +1273,7 @@ function TrackerApp({ resume = null, onRestart }) {
               accessibilityRole="button"
               accessibilityLabel={`返回，${pageTitle(route)}`}
               onPress={goBack}
-              hitSlop={8}
+              hitSlop={space.s}
               style={({ pressed }) => [styles.back, pressed && styles.pressed]}
             >
               <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
@@ -1378,7 +1378,7 @@ function TrackerApp({ resume = null, onRestart }) {
               <N3Card
                 value={n3Shown}
                 leaving={n3Leaving}
-                top={8}
+                top={layout.belowStatusBar}
                 onPress={pressN3}
                 onGone={n3Gone}
               />
@@ -1471,28 +1471,31 @@ const getStyles = makeStyles(theme => {
     },
     mapLayer: { backgroundColor: theme.isDark ? colors.bg : colors.surface },
     hiddenMapLayer: { opacity: 0, zIndex: -1 },
+    // Above the (hidden) map, below the page: the page colour edge to edge,
+    // status bar and navigation bar insets included.
     mapCover: {
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
-      zIndex: -1,
     },
     // The settings pages: a 56dp header 「‹ 標題」 over the page colour.
     header: {
+      // Above the page-colour map cover (drawn after it in the tree).
+      zIndex: 1,
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
       minHeight: touch.subpageHeader,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 8,
-      paddingVertical: 4,
+      paddingHorizontal: space.s,
+      paddingVertical: space.xs,
     },
     back: {
-      minHeight: 48,
+      minHeight: touch.min,
       justifyContent: 'center',
-      paddingHorizontal: 8,
+      paddingHorizontal: space.s,
       alignSelf: 'flex-start',
     },
     pressed: { opacity: 0.7 },
-    headerBadge: { marginRight: 8 },
+    headerBadge: { marginRight: space.s },
     brand: { ...type.title, color: colors.text },
     page: {
       flex: 1,

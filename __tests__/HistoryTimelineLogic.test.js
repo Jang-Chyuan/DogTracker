@@ -118,3 +118,31 @@ test('ordinary stays at range endpoints retain departure and end rows', () => {
   expect(model.nodes[0].type).toBe('departure'); expect(model.locations[1].type).toBe('stop');
   expect(model.nodes[model.nodes.length - 1].type).toBe('end');
 });
+
+describe('TalkBack sentences of the timeline (060, 設計稿「無障礙」時間軸清單)', () => {
+  const { placeSpeech, sectionSpeech } = require('../src/history/HistoryText');
+  const at = (h, m) => new Date(2026, 9, 7, h, m).getTime();
+  test('a stay: number, place, start to end, minutes', () => {
+    expect(placeSpeech({ type: 'stop', number: 2, start: at(9, 41), end: at(10, 9), durationMs: 28 * 60000 },
+      '大湳森林公園東側入口')).toBe('停留 2，大湳森林公園東側入口，09:41 到 10:09，28 分鐘');
+  });
+  test('a departure and the end say what they are', () => {
+    expect(placeSpeech({ type: 'departure', start: at(7, 2), end: at(7, 2) }, '桃園區中正路 50 號附近'))
+      .toBe('出發，桃園區中正路 50 號附近，07:02');
+    expect(placeSpeech({ type: 'end', label: '現在', start: at(9, 29), end: at(9, 29) }, '24.9742, 121.3073'))
+      .toBe('現在，24.9742, 121.3073，09:29');
+  });
+  test('a drive and a walk', () => {
+    expect(sectionSpeech({ type: 'movement', mode: 'driving', durationMs: 12 * 60000, distanceM: 6300 }))
+      .toBe('開車 12 分鐘，6.3 公里，不算距離');
+    expect(sectionSpeech({ type: 'movement', mode: 'walking', durationMs: 27 * 60000, countedDistanceM: 1700 }))
+      .toBe('走路 27 分鐘，1.7 公里');
+  });
+});
+
+test('an interrupted stay reads its own length, then the interruption (060 review)', () => {
+  const { placeSpeech } = require('../src/history/HistoryText');
+  const at = (h, m) => new Date(2026, 9, 7, h, m).getTime();
+  expect(placeSpeech({ type: 'stop', number: 1, start: at(9, 0), end: at(9, 30), durationMs: 25 * 60000,
+    interruptionMs: 5 * 60000 }, '桃園車站')).toBe('停留 1，桃園車站，09:00 到 09:30，25 分鐘，不含中斷 5 分鐘');
+});

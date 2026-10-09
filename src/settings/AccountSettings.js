@@ -157,7 +157,7 @@ export default function AccountSettings({
             accessibilityRole="button"
             accessibilityLabel="登出"
             onPress={() => setDialog({ kind: 'signout' })}
-            hitSlop={4}
+            hitSlop={space.xs}
             style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
           >
             <Text style={styles.signOutText}>登出</Text>

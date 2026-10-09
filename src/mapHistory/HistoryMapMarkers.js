@@ -8,9 +8,9 @@ import { StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
 import DogAvatar from '../dogs/DogAvatar';
 import { withAlpha } from '../history/screen/HistoryMapModel';
-import { size as sizes } from '../theme/tokens';
+import { size as sizes, border as borders, type, space, radius } from '../theme/tokens';
 
-const LABEL_LINE = 16;
+const LABEL_LINE = type.mapLabel.lineHeight;
 
 /** A numbered stay or switch point: white, a 2dp ring and number in the route colour. */
 export function StopMarkerView({ number, color }) {
@@ -30,7 +30,7 @@ export function IndoorMarkerView() {
   const styles = useStyles(getStyles);
   return (
     <View style={[styles.stop, styles.indoor]}>
-      <Glyph name="house" color={colors.onRoute} size={14} />
+      <Glyph name="house" color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
     </View>
   );
 }
@@ -110,7 +110,7 @@ export function CursorMarkerView({
             width: dot,
             height: dot,
             borderRadius: dot / 2,
-            borderWidth: sizes.cursor.border,
+            borderWidth: borders.heavy,
             borderColor: colors.surface,
             backgroundColor: stale ? colors.staleRing : color,
           }}
@@ -137,11 +137,11 @@ export function cursorAnchor(labelHeight, face = false) {
 
 // 多隻狗時的游標點 (the protagonist): a 40dp face in a glow of its route
 // colour, its name right under it, the label 12dp above the face.
-export const FACE = 40;
-const FACE_HALO = FACE + 16;
+export const FACE = sizes.marker.normal;
+const FACE_HALO = FACE + sizes.cursor.labelHaloExpansion;
 const FACE_GAP = sizes.cursor.labelGap - (FACE_HALO - FACE) / 2;
-const FACE_TAG_GAP = 2 - (FACE_HALO - FACE) / 2;
-const FACE_TAG = 22;
+const FACE_TAG_GAP = sizes.marker.labelGap - (FACE_HALO - FACE) / 2;
+const FACE_TAG = sizes.historyFace.labelHeight;
 
 /**
  * The protagonist's cursor among several dogs: the two-line label, the face
@@ -182,7 +182,7 @@ export function CursorFaceView({
         <DogAvatar
           avatar={face?.avatar}
           size={FACE}
-          border={2.5}
+          border={borders.extraStrong}
           snapshot
           tint={face?.avatar ? null : { bg: color, line: colors.onRoute }}
         />
@@ -205,35 +205,35 @@ const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
     stop: {
-      width: sizes.stopMarker.size + 4,
-      height: sizes.stopMarker.size + 4,
-      borderRadius: 13,
-      borderWidth: sizes.stopMarker.border,
+      width: sizes.stopMarker.size + borders.strong * 2,
+      height: sizes.stopMarker.size + borders.strong * 2,
+      borderRadius: (sizes.stopMarker.size + borders.strong * 2) / 2,
+      borderWidth: borders.strong,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    stopNumber: { fontSize: 12, lineHeight: 14, fontWeight: '700' },
+    stopNumber: { ...type.stopNumber,   },
     indoor: { backgroundColor: colors.receiver, borderColor: colors.surface },
     time: { alignItems: 'center' },
-    timeSpacer: { height: LABEL_LINE + 2 },
+    timeSpacer: { height: LABEL_LINE + sizes.marker.labelGap },
     timeLabel: {
-      marginTop: 2,
+      marginTop: sizes.marker.labelGap,
       height: LABEL_LINE,
       lineHeight: LABEL_LINE,
-      fontSize: 13,
-      fontWeight: '700',
+      fontSize: type.caption.fontSize,
+      fontWeight: type.captionBold.fontWeight,
       color: colors.text,
       textShadowColor: colors.mapLabelHalo,
       textShadowRadius: 3,
-      paddingHorizontal: 3,
+      paddingHorizontal: sizes.timeMarker.labelInset,
       textShadowOffset: { width: 0, height: 0 },
     },
-    cursor: { alignItems: 'center', paddingHorizontal: 4, paddingBottom: 0 },
+    cursor: { alignItems: 'center', paddingHorizontal: space.xs, paddingBottom: 0 },
     cursorLabel: {
       backgroundColor: colors.surface,
-      borderRadius: 10,
-      borderWidth: 1,
+      borderRadius: radius.cursorLabel,
+      borderWidth: borders.hairline,
       // Floats on the map: floatingOutline (= line in light).
       borderColor: colors.floatingOutline,
       paddingVertical: sizes.cursor.labelPaddingV,
@@ -243,12 +243,12 @@ const getStyles = makeStyles(theme => {
     },
     cursorTime: {
       color: colors.text,
-      fontSize: 16,
-      lineHeight: 20,
-      fontWeight: '700',
+      fontSize: type.body.fontSize,
+      lineHeight: sizes.cursor.timeGlyphLine,
+      fontWeight: type.status.fontWeight,
       fontVariant: ['tabular-nums'],
     },
-    cursorDetail: { color: colors.textMuted, fontSize: 13, lineHeight: 17 },
+    cursorDetail: { color: colors.textMuted, fontSize: type.caption.fontSize, lineHeight: sizes.cursor.detailGlyphLine },
     halo: {
       width: sizes.cursor.halo,
       height: sizes.cursor.halo,
@@ -257,7 +257,7 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     staleHalo: {
-      borderWidth: 2,
+      borderWidth: borders.strong,
       borderStyle: 'dashed',
       borderColor: colors.staleRing,
     },
@@ -269,27 +269,26 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     faceStale: {
-      width: FACE + 8,
-      height: FACE + 8,
-      margin: (FACE_HALO - FACE - 8) / 2,
-      borderWidth: 2,
+      width: FACE + sizes.historyFace.staleOutset * 2,
+      height: FACE + sizes.historyFace.staleOutset * 2,
+      margin: (FACE_HALO - FACE - sizes.historyFace.staleOutset * 2) / 2,
+      borderWidth: borders.strong,
       borderStyle: 'dashed',
       borderColor: colors.staleRing,
     },
     faceTag: {
       height: FACE_TAG,
-      paddingHorizontal: 6,
-      borderRadius: 6,
-      borderWidth: 1,
+      paddingHorizontal: sizes.mapLabel.paddingH,
+      borderRadius: radius.mapLabel,
+      borderWidth: borders.hairline,
       borderColor: colors.floatingOutline,
       backgroundColor: colors.surface,
       justifyContent: 'center',
-      maxWidth: 160,
+      maxWidth: sizes.cursor.labelTextMax,
     },
     faceName: {
-      fontSize: 13,
-      lineHeight: 16,
-      fontWeight: '700',
+      ...type.mapLabel,
+
       color: colors.text,
     },
   });

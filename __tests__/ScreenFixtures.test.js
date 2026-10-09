@@ -597,6 +597,7 @@ async function renderFixture(name, { edits = null, inspect = null } = {}) {
   return result;
 }
 
+// The first map fixture lazily loads the RN screen; startup latency is measured separately.
 test('the real map draws a fixture: receiver 3 neither drawn nor its battery shown as ours', async () => {
   const good = await renderFixture('all-good');
   expect(good.markers).toEqual(expect.arrayContaining(['real:fixture:all-good-dog-4', 'real:fixture:all-good-dog-6', 'real:fixture:all-good-dog-8']));
@@ -615,7 +616,7 @@ test('the real map draws a fixture: receiver 3 neither drawn nor its battery sho
   expect(indoor.text).toContain('小黑');
   expect(indoor.text).toContain('室內');
   expect(good.saved).not.toHaveBeenCalled();
-});
+}, 15000);
 
 test('the real map draws the range ring and the red line only where the rules say', async () => {
   const counts = async name => {

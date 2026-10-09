@@ -19,6 +19,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DogAvatar from './DogAvatar';
+import { isReduceMotion, REDUCED_FADE_MS } from '../utils/reduceMotion';
+import { useInitialFocus } from '../utils/a11yFocus';
 import {
   DEFAULT_AVATAR,
   DOG_ARTS,
@@ -35,6 +37,7 @@ import {
   space,
   touch,
   type,
+  border,
 } from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
@@ -53,7 +56,7 @@ const getCOLOR_RING = makeStyles(theme => {
   const { literalColors: themeLiteral } = theme;
   return themeLiteral.avatarSelectedRing;
 });
-const PREVIEW = 80;
+const PREVIEW = sizes.edit.preview;
 
 const sameAvatar = (left, right) =>
   JSON.stringify(normalizeAvatar(left) || DEFAULT_AVATAR) ===
@@ -107,6 +110,12 @@ export default function AvatarEditor({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const progress = useRef(new Animated.Value(0)).current;
+  // 減少動態效果: no slide, the sheet fades with its scrim (DESIGN.md §8).
+  const reduced = useRef(isReduceMotion()).current;
+  // TalkBack starts on the sheet's title (設計稿「無障礙」).
+  const titleRef = useRef(null);
+  useInitialFocus(titleRef);
+  const sheetOpacity = reduced ? progress : 1;
   const [sheetHeight, setSheetHeight] = useState(0);
   const closing = useRef(false);
   const alive = useRef(true);
@@ -121,11 +130,11 @@ export default function AvatarEditor({
     closing.current = true;
     Animated.timing(progress, {
       toValue: 0,
-      duration: CLOSE_MS,
+      duration: reduced ? REDUCED_FADE_MS : CLOSE_MS,
       easing: ease,
       useNativeDriver: true,
     }).start(() => onClose?.());
-  }, [onClose, progress]);
+  }, [onClose, progress, reduced]);
   // Back = 取消 (design 返回鍵: A5c 打開時等於「取消」).
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -143,7 +152,7 @@ export default function AvatarEditor({
     setSheetHeight(value);
     Animated.timing(progress, {
       toValue: 1,
-      duration: motion.cardRise.duration,
+      duration: reduced ? REDUCED_FADE_MS : motion.cardRise.duration,
       easing: ease,
       useNativeDriver: true,
     }).start();
@@ -186,7 +195,7 @@ export default function AvatarEditor({
   const illustration = draft.kind === 'art';
   const translateY = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [sheetHeight || windowHeight, 0],
+    outputRange: [reduced ? 0 : sheetHeight || windowHeight, 0],
   });
   return (
     <View style={StyleSheet.absoluteFill} testID="avatar-editor">
@@ -211,6 +220,7 @@ export default function AvatarEditor({
             paddingBottom: space.l + insets.bottom,
             maxHeight: windowHeight - insets.top,
             transform: [{ translateY }],
+            opacity: sheetOpacity,
           },
           !sheetHeight && styles.unmeasured,
         ]}
@@ -230,7 +240,7 @@ export default function AvatarEditor({
           >
             <Text style={styles.cancel}>取消</Text>
           </Pressable>
-          <Text style={styles.title} accessibilityRole="header">
+          <Text ref={titleRef} style={styles.title} accessibilityRole="header">
             頭像
           </Text>
           <Pressable
@@ -300,7 +310,7 @@ export default function AvatarEditor({
                       onPress={() =>
                         choose({ kind: 'art', art: key, color: draft.color })
                       }
-                      style={[styles.artChoice, selected && styles.artSelected]}
+                      style={({ pressed }) => [styles.artChoice, selected && styles.artSelected, pressed && styles.pressed]}
                     >
                       {/* The drawing says which; the name is for TalkBack. */}
                       <DogAvatar
@@ -329,7 +339,7 @@ export default function AvatarEditor({
                           onPress={() =>
                             choose({ kind: 'art', art: draft.art, color: key })
                           }
-                          style={styles.colorTarget}
+                          style={({ pressed }) => [styles.colorTarget, pressed && styles.pressed]}
                         >
                           <View
                             style={[
@@ -388,7 +398,7 @@ const getStyles = makeStyles(theme => {
       minHeight: touch.min,
       justifyContent: 'center',
       borderRadius: radius.button,
-      paddingHorizontal: 4,
+      paddingHorizontal: space.xs,
     },
     headerEnd: { alignItems: 'flex-end' },
     cancel: { ...type.status, color: colors.textMuted },
@@ -399,9 +409,10 @@ const getStyles = makeStyles(theme => {
     sources: { flexDirection: 'row', gap: space.s },
     source: {
       flex: 1,
-      height: touch.min,
+      minHeight: touch.min,
+      paddingVertical: space.xs,
       borderRadius: radius.input,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       borderColor: colors.line,
       alignItems: 'center',
       justifyContent: 'center',
@@ -427,12 +438,12 @@ const getStyles = makeStyles(theme => {
     arts: { flexDirection: 'row', justifyContent: 'space-between' },
     // 48dp drawn; the chosen one gets a 2dp white gap and a 2dp accent ring.
     artChoice: {
-      width: sizes.edit.choice + 8,
-      height: sizes.edit.choice + 8,
-      borderRadius: (sizes.edit.choice + 8) / 2,
-      borderWidth: 2,
+      width: sizes.edit.choice + sizes.edit.choiceRingClearance,
+      height: sizes.edit.choice + sizes.edit.choiceRingClearance,
+      borderRadius: (sizes.edit.choice + sizes.edit.choiceRingClearance) / 2,
+      borderWidth: border.strong,
       borderColor: 'transparent',
-      padding: 2,
+      padding: space.xs,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -446,10 +457,10 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     colorRing: {
-      width: DOT + 8,
-      height: DOT + 8,
-      borderRadius: (DOT + 8) / 2,
-      borderWidth: 2,
+      width: DOT + sizes.edit.colorRingClearance,
+      height: DOT + sizes.edit.colorRingClearance,
+      borderRadius: (DOT + sizes.edit.colorRingClearance) / 2,
+      borderWidth: border.strong,
       borderColor: 'transparent',
       alignItems: 'center',
       justifyContent: 'center',

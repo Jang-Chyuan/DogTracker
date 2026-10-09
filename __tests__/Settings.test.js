@@ -1,3 +1,4 @@
+import BangGlyph from '../src/components/BangGlyph';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Alert } from 'react-native';
@@ -135,8 +136,10 @@ test('S1 draws the rows: status text on the right, only 「!」 for a problem, a
   // The phone row has no status words, only the 「!」.
   const words = node => node.findAll(child => child.type === 'Text' && typeof child.props.children === 'string')
     .map(child => child.props.children);
-  expect(words(row('phone'))).toEqual(['手機', '位置記錄、權限', '!', '›']);
-  expect(words(row('receiver'))).toEqual(['接收器', '接收器 7', '已連線', '電量 64%', '›']);
+  expect(words(row('phone'))).toEqual(['手機', '位置記錄、權限']);
+  // The 「!」 and › are drawn (vectors, 060), never text that grows with the font.
+  expect(row('phone').findAllByType(BangGlyph)).toHaveLength(1);
+  expect(words(row('receiver'))).toEqual(['接收器', '接收器 7', '已連線', '電量 64%']);
   await act(async () => row('receiver').props.onPress());
   expect(onOpen).toHaveBeenCalledWith('receiver');
   await act(async () => renderer.unmount());

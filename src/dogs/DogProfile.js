@@ -23,7 +23,9 @@ import AvatarEditor from './AvatarEditor';
 import DogAvatar from './DogAvatar';
 import { NAME_MAX, clampName, nameLength, nameToSave } from './DogName';
 import Glyph from '../map/Glyph';
-import { radius, size as sizes, space, touch, type } from '../theme/tokens';
+import { PressScale } from '../map/MapControls';
+import { radius, size as sizes, space, touch, type, border } from '../theme/tokens';
+import { linesFor } from '../utils/textScale';
 
 const AVATAR = sizes.edit.avatar;
 const CAMERA = sizes.edit.camera;
@@ -157,12 +159,12 @@ export default function DogProfile({
             testID="dog-profile-back"
             style={({ pressed }) => [styles.back, pressed && styles.pressed]}
           >
-            <Glyph name="back" color={colors.text} size={22} />
+            <Glyph name="back" color={colors.text} size={sizes.icon.navigation} />
           </Pressable>
         </View>
         <View style={styles.profile} pointerEvents="box-none">
           <View style={styles.avatarWrap}>
-            <Pressable
+            <PressScale
               accessibilityRole="button"
               accessibilityLabel={`改${name}的頭像`}
               testID="dog-profile-avatar"
@@ -170,9 +172,10 @@ export default function DogProfile({
                 tapOutside();
                 setAvatarOpen(true);
               }}
+              style={styles.avatarPress}
             >
               <DogAvatar avatar={avatar} size={AVATAR} border={0} />
-            </Pressable>
+            </PressScale>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`改${name}的頭像`}
@@ -187,7 +190,7 @@ export default function DogProfile({
                 pressed && styles.cameraPressed,
               ]}
             >
-              <Glyph name="camera" color={colors.text} size={18} />
+              <Glyph name="camera" color={colors.text} size={sizes.icon.smallAction} />
             </Pressable>
           </View>
           {editing ? (
@@ -224,9 +227,9 @@ export default function DogProfile({
               accessibilityLabel={`${name}，改名字`}
               onPress={startEditing}
               testID="dog-profile-name"
-              style={styles.nameRow}
+              style={({ pressed }) => [styles.nameRow, pressed && styles.pressed]}
             >
-              <Text style={styles.name} numberOfLines={1}>
+              <Text style={styles.name} numberOfLines={linesFor(1)}>
                 {name}
               </Text>
               <Glyph
@@ -269,7 +272,7 @@ const getStyles = makeStyles(theme => {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: touch.subpageHeader,
-      paddingHorizontal: 4,
+      paddingHorizontal: space.xs,
     },
     back: {
       width: touch.min,
@@ -286,13 +289,13 @@ const getStyles = makeStyles(theme => {
     avatarWrap: { width: AVATAR, height: AVATAR },
     camera: {
       position: 'absolute',
-      right: -2,
+      right: -sizes.edit.cameraOverhang,
       bottom: 0,
       width: CAMERA,
       height: CAMERA,
       borderRadius: CAMERA / 2,
       backgroundColor: colors.surface,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       // floatingOutline is line in light, the visible dark outline in dark.
       borderColor: colors.floatingOutline,
       alignItems: 'center',
@@ -304,7 +307,7 @@ const getStyles = makeStyles(theme => {
     nameRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
+      gap: space.xs,
       minHeight: touch.min,
       marginTop: space.s,
       paddingHorizontal: space.s,
@@ -322,17 +325,19 @@ const getStyles = makeStyles(theme => {
     input: {
       ...type.nameEdit,
       color: colors.text,
-      minWidth: 64,
+      minWidth: sizes.edit.nameMinimum,
       flexShrink: 1,
-      paddingVertical: 2,
-      paddingHorizontal: 4,
+      paddingVertical: space.xs,
+      paddingHorizontal: space.xs,
       textAlign: 'center',
-      borderBottomWidth: 2,
+      borderBottomWidth: border.strong,
       borderBottomColor: colors.accent,
     },
     count: { ...type.caption, color: colors.textMuted, marginLeft: space.s },
     source: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
     error: { ...type.caption, color: colors.crit, marginTop: space.s },
     pressed: { backgroundColor: colors.pressedOverlay },
+    // The round avatar: its pressed overlay is round too.
+    avatarPress: { borderRadius: radius.full, minHeight: touch.min },
   });
 });

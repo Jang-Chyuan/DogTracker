@@ -22,7 +22,9 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { motion, radius, size as sizes } from '../theme/tokens';
+import { motion, size as sizes, space } from '../theme/tokens';
+import { isReduceMotion } from '../utils/reduceMotion';
+import { behindSheet } from '../utils/a11yFocus';
 
 const getHANDLE = makeStyles(theme => {
   const { literalColors: themeLiteral } = theme;
@@ -88,6 +90,8 @@ const HistoryPanel = forwardRef(function HistoryPanel(
     locked = false,
     initialLevel = 'half',
     above = null,
+    // A sheet is open over the screen: hidden from TalkBack.
+    hidden = false,
   },
   ref,
 ) {
@@ -122,7 +126,7 @@ const HistoryPanel = forwardRef(function HistoryPanel(
   useEffect(() => {
     const { y, content, frame } = scrolled.current;
     const end = Math.max(0, content - frame);
-    if (frame > 0 && y > end + 1) scroller.current?.scrollTo({ y: end, animated: true });
+    if (frame > 0 && y > end + 1) scroller.current?.scrollTo({ y: end, animated: !isReduceMotion() });
   }, [level, scroller]);
   const height = useRef(new Animated.Value(levels[initialLevel])).current;
   const current = useRef(levels[initialLevel]);
@@ -135,11 +139,14 @@ const HistoryPanel = forwardRef(function HistoryPanel(
   const settle = useCallback(
     next => {
       setLevelState(next);
-      Animated.spring(height, {
-        toValue: levels[next],
-        ...motion.sheetSpring,
-        useNativeDriver: true,
-      }).start();
+      // 減少動態效果: straight to the new height (no spring).
+      if (isReduceMotion()) height.setValue(levels[next]);
+      else
+        Animated.spring(height, {
+          toValue: levels[next],
+          ...motion.sheetSpring,
+          useNativeDriver: true,
+        }).start();
       onLevel?.(next, levels[next]);
     },
     [height, levels, onLevel],
@@ -221,6 +228,7 @@ const HistoryPanel = forwardRef(function HistoryPanel(
   return (
     <Animated.View
       testID="history-panel"
+      importantForAccessibility={behindSheet(hidden)}
       pointerEvents="box-none"
       style={[
         styles.panel,
@@ -243,10 +251,10 @@ const HistoryPanel = forwardRef(function HistoryPanel(
         >
           <Pressable
             onPress={pressHandle}
-            style={styles.handleArea}
+            style={({ pressed }) => [styles.handleArea, pressed && styles.pressed]}
             accessibilityRole="adjustable"
             accessibilityLabel="面板高度"
-            hitSlop={8}
+            hitSlop={space.s}
           >
             <View style={styles.handle} />
           </Pressable>
@@ -271,7 +279,7 @@ const HistoryPanel = forwardRef(function HistoryPanel(
             }}
             contentContainerStyle={{
               paddingBottom:
-                levels.full - levels[level] + bottomInset + 16,
+                levels.full - levels[level] + bottomInset + space.l,
             }}
           >
             {children}
@@ -289,6 +297,8 @@ const getStyles = makeStyles(theme => {
   const { colors, shadow } = theme;
   const HANDLE = getHANDLE(theme);
   return StyleSheet.create({
+    // 設計稿「元件狀態」: the pressed state.
+    pressed: { backgroundColor: colors.pressedOverlay },
     panel: {
       position: 'absolute',
       left: 0,
@@ -300,8 +310,8 @@ const getStyles = makeStyles(theme => {
     sheet: {
       flex: 1,
       backgroundColor: colors.elevated,
-      borderTopLeftRadius: radius.sheet + 8,
-      borderTopRightRadius: radius.sheet + 8,
+      borderTopLeftRadius: sizes.historyPanel.corner,
+      borderTopRightRadius: sizes.historyPanel.corner,
       ...shadow.floating,
       ...theme.floatingBorder,
       elevation: 12,
@@ -309,11 +319,11 @@ const getStyles = makeStyles(theme => {
     },
     above: {
       position: 'absolute',
-      right: 16,
-      top: -(sizes.floatingButton + 12),
+      right: space.l,
+      top: -(sizes.floatingButton + space.m),
     },
-    handleArea: { height: 20, alignItems: 'center', justifyContent: 'center' },
-    handle: { width: 32, height: 4, borderRadius: 2, backgroundColor: HANDLE },
+    handleArea: { height: sizes.sheet.handleTarget, alignItems: 'center', justifyContent: 'center' },
+    handle: { width: sizes.sheet.handleLength, height: sizes.sheet.handleThickness, borderRadius: sizes.sheet.handleThickness / 2, backgroundColor: HANDLE },
     list: { flex: 1 },
   });
 });

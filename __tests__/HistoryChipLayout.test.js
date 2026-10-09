@@ -27,7 +27,7 @@ test('fixed row has one pill, 26dp hero with 2dp ring and two 18dp faces; dark o
   // 「⚠ N」: the triangle and the count, critBg with the alertBorder edge.
   expect(renderer.root.findByProps({ testID: 'alert-badge' }).props.accessibilityLabel).toBe('2 件事要注意');
   expect(text).toContain('"2"');
-  expect(styles).toContainEqual(expect.objectContaining({ height: 36, backgroundColor: darkTheme.colors.critBg,
+  expect(styles).toContainEqual(expect.objectContaining({ minHeight: 36, backgroundColor: darkTheme.colors.critBg,
     borderColor: darkTheme.colors.alertBorder }));
   await act(async () => renderer.unmount());
 });

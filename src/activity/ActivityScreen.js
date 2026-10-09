@@ -24,11 +24,14 @@ import {
   tabularNumbers,
   touch,
   type,
+  border,
+  fontScale,
 } from '../theme/tokens';
 import Glyph from '../map/Glyph';
 import { TextButton } from '../settings/DataTable';
 import { ACTIVITY_VIEW_COPY, activityPeriod } from './views';
 import { useActivityView } from './useActivityView';
+import { linesFor } from '../utils/textScale';
 
 export const ACTIVITY_MODES = Object.freeze([
   { mode: 'day', label: '日' },
@@ -44,7 +47,7 @@ const STATE_COLOR = {
 };
 const BAR_GAP = { week: 8, month: 2, year: 6 };
 const HOURS = ['00:00', '06:00', '12:00', '18:00', '24:00'];
-const AXIS_LABEL = 44;
+const AXIS_LABEL = size.activity.axisLabel;
 
 function useBack(onBack) {
   useEffect(() => {
@@ -119,12 +122,12 @@ export default function ActivityScreen({
           onPress={onBack}
           style={({ pressed }) => [styles.back, pressed && styles.pressed]}
         >
-          <Glyph name="back" color={colors.text} size={22} />
+          <Glyph name="back" color={colors.text} size={size.icon.navigation} />
         </Pressable>
         <Text
           style={styles.title}
           accessibilityRole="header"
-          numberOfLines={1}
+          numberOfLines={linesFor(1)}
         >{`${name}・活動量`}</Text>
       </View>
       <ScrollView
@@ -158,6 +161,13 @@ export function periodLabel(mode, date, now, earliest = null) {
   return period.label + (today ? '今天' : '');
 }
 
+const TAB_SLOP = (touch.min - size.activity.segmented) / 2;
+
+// Words inside the chart (axis times, bar labels, the zone labels) sit at
+// fixed places in its 200dp: they grow with the system font only a little,
+// so 200% neither wraps 「00:00」 nor runs the months into each other.
+const CHART_TEXT_MAX_SCALE = fontScale.graphicTextMax;
+
 function Tabs({ mode, onChoose }) {
   const styles = useStyles(getStyles);
   return (
@@ -171,7 +181,13 @@ function Tabs({ mode, onChoose }) {
             accessibilityState={{ selected: on }}
             testID={`activity-tab-${item.mode}`}
             onPress={() => onChoose(item.mode)}
-            style={[styles.tab, on && styles.tabOn]}
+            // 36dp segments, 48dp to the finger.
+            hitSlop={{ top: TAB_SLOP, bottom: TAB_SLOP }}
+            style={({ pressed }) => [
+              styles.tab,
+              on && styles.tabOn,
+              pressed && !on && styles.pressed,
+            ]}
           >
             <Text style={[styles.tabText, on && styles.tabTextOn]}>
               {item.label}
@@ -200,7 +216,7 @@ function PeriodRow({ label, navigation, onPrevious, onNext }) {
         pressed && styles.pressed,
       ]}
     >
-      <Glyph name={glyph} color={colors.text} size={18} />
+      <Glyph name={glyph} color={colors.text} size={size.icon.smallAction} />
     </Pressable>
   );
   return (
@@ -214,7 +230,7 @@ function PeriodRow({ label, navigation, onPrevious, onNext }) {
       )}
       <Text
         style={styles.periodLabel}
-        numberOfLines={1}
+        numberOfLines={linesFor(1)}
         testID="activity-period"
       >
         {label}
@@ -316,8 +332,8 @@ function DayChart({ view }) {
   const points = view.points;
   const x = time => ((time - view.start) / (view.end - view.start)) * width;
   const highTop = 0;
-  const highBottom = (1 - view.thresholds.vigorousMin) * CHART;
-  const lowTop = (1 - view.thresholds.restMax) * CHART;
+  const highBottom = CHART * (1 - view.thresholds.vigorousMin);
+  const lowTop = CHART * (1 - view.thresholds.restMax);
   const runs = useMemo(
     () =>
       width
@@ -348,7 +364,7 @@ function DayChart({ view }) {
                 key={`r${band.start}`}
                 x={x(band.start)}
                 y={0}
-                width={Math.max(1, x(band.end) - x(band.start))}
+                width={Math.max(size.activity.bandMin, x(band.end) - x(band.start))}
                 height={CHART}
                 fill={colors.activityLowBand}
               />
@@ -358,7 +374,7 @@ function DayChart({ view }) {
                 key={`v${band.start}`}
                 x={x(band.start)}
                 y={0}
-                width={Math.max(1, x(band.end) - x(band.start))}
+                width={Math.max(size.activity.bandMin, x(band.end) - x(band.start))}
                 height={CHART}
                 fill={colors.activityHighBand}
               />
@@ -399,15 +415,19 @@ function DayChart({ view }) {
             ))}
           </Svg>
         )}
-        <Text style={[styles.zoneLabel, styles.highLabel]}>
+        <Text
+          style={[styles.zoneLabel, styles.highLabel]}
+          maxFontSizeMultiplier={CHART_TEXT_MAX_SCALE}
+        >
           {ACTIVITY_VIEW_COPY.high}
         </Text>
         <Text
           style={[
             styles.zoneLabel,
             styles.lowLabel,
-            { top: lowTop - type.small.lineHeight - 2 },
+            { top: lowTop - type.small.lineHeight - size.activity.zoneLabelInset },
           ]}
+          maxFontSizeMultiplier={CHART_TEXT_MAX_SCALE}
         >
           {ACTIVITY_VIEW_COPY.low}
         </Text>
@@ -433,6 +453,8 @@ function DayChart({ view }) {
               <Text
                 key={hour}
                 style={[styles.axisText, { left, textAlign: align }]}
+                maxFontSizeMultiplier={CHART_TEXT_MAX_SCALE}
+                numberOfLines={1}
               >
                 {hour}
               </Text>
@@ -476,7 +498,13 @@ function Bars({ view }) {
           // A month's 31 bars are narrower than 「30」: the label may run
           // over its neighbours, which are blank (every fifth day only).
           <View key={bar.start} style={styles.barLabelCell}>
-            <Text style={styles.barLabel} numberOfLines={1}>
+            <Text
+              style={styles.barLabel}
+              numberOfLines={1}
+              // 年's twelve months fill the width already at 100%: any larger
+              // and 「10月11月12月」 run together.
+              maxFontSizeMultiplier={view.mode === 'year' ? 1 : CHART_TEXT_MAX_SCALE}
+            >
               {bar.axisLabel}
             </Text>
           </View>
@@ -560,7 +588,7 @@ const getStyles = makeStyles(theme => {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: touch.subpageHeader,
-      paddingHorizontal: 4,
+      paddingHorizontal: space.xs,
     },
     back: {
       width: touch.min,
@@ -573,8 +601,9 @@ const getStyles = makeStyles(theme => {
     body: { paddingHorizontal: layout.screenEdge },
     tabs: {
       flexDirection: 'row',
-      height: size.activity.segmented + 6,
-      padding: 3,
+      // Taller with a large system font (the words never clip).
+      minHeight: size.activity.segmented + space.xs,
+      padding: space.xs,
       borderRadius: radius.chip,
       backgroundColor: isDark ? colors.surface : colors.bg,
       marginTop: space.xs,
@@ -588,7 +617,7 @@ const getStyles = makeStyles(theme => {
     tabOn: isDark
       ? { backgroundColor: colors.tonal }
       : { backgroundColor: colors.surface, ...theme.shadow.floating },
-    tabText: { ...type.captionBold, fontSize: 14, color: colors.textMuted },
+    tabText: { ...type.captionBold, fontSize: type.value.fontSize, color: colors.textMuted },
     tabTextOn: { color: isDark ? colors.tonalText : colors.text },
     period: {
       flexDirection: 'row',
@@ -633,9 +662,10 @@ const getStyles = makeStyles(theme => {
       position: 'absolute',
       left: space.xs,
     },
-    highLabel: { top: 2, color: colors.warn },
+    highLabel: { top: size.activity.zoneLabelInset, color: colors.warn },
     lowLabel: { color: colors.textMuted },
-    axis: { height: type.small.lineHeight, marginTop: space.xs },
+    // The axis times may grow to 1.15× (CHART_TEXT_MAX_SCALE): room for that.
+    axis: { height: Math.ceil(type.small.lineHeight * fontScale.graphicTextMax), marginTop: space.xs },
     axisText: {
       ...type.small,
       ...tabularNumbers,
@@ -648,13 +678,13 @@ const getStyles = makeStyles(theme => {
       alignItems: 'flex-end',
       height: CHART,
       marginTop: space.s,
-      borderBottomWidth: 1,
+      borderBottomWidth: border.hairline,
       borderBottomColor: colors.line,
     },
     bar: { flex: 1, flexDirection: 'column-reverse' },
     // Adjacent segments are 1dp apart.
     segment: {
-      borderTopWidth: 1,
+      borderTopWidth: border.hairline,
       borderTopColor: isDark ? colors.bg : colors.surface,
     },
     barLabels: { flexDirection: 'row', marginTop: space.xs },
@@ -662,7 +692,7 @@ const getStyles = makeStyles(theme => {
     barLabel: {
       ...type.small,
       color: colors.textMuted,
-      width: 40,
+      width: size.activity.barLabel,
       textAlign: 'center',
     },
     legend: {
@@ -671,7 +701,7 @@ const getStyles = makeStyles(theme => {
       marginTop: space.s,
     },
     legendItem: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-    swatch: { width: 10, height: 10 },
+    swatch: { width: size.activity.legendSwatch, height: size.activity.legendSwatch },
     legendText: { ...type.caption, color: colors.textMuted },
     section: {
       ...type.captionBold,
@@ -685,13 +715,13 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'space-between',
       minHeight: size.activity.totalRow,
       paddingVertical: space.s,
-      borderTopWidth: 1,
+      borderTopWidth: border.hairline,
       borderTopColor: colors.line,
     },
     rowTall: { alignItems: 'flex-start', paddingTop: space.m },
-    rowLabel: { ...type.value, fontSize: 16, lineHeight: 24, color: colors.text },
+    rowLabel: { ...type.value, fontSize: type.body.fontSize, lineHeight: type.body.lineHeight, color: colors.text },
     rowValues: { alignItems: 'flex-end', flexShrink: 1 },
-    rowValue: { ...type.body, ...tabularNumbers, fontSize: 14, color: colors.textMuted },
+    rowValue: { ...type.body, ...tabularNumbers, fontSize: type.value.fontSize, color: colors.textMuted },
     rowTotal: { ...type.small, ...tabularNumbers, color: colors.textMuted },
     empty: {
       ...type.body,

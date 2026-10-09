@@ -16,6 +16,7 @@ import {
   BackHandler,
   Easing,
   PanResponder,
+  PixelRatio,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,13 +28,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DogAvatar from '../dogs/DogAvatar';
 import Glyph from './Glyph';
 import { PressScale } from './MapControls';
+import BangGlyph from '../components/BangGlyph';
+import { slideOrFade } from '../utils/reduceMotion';
+import { linesFor } from '../utils/textScale';
 import {
   layout,
   motion,
   radius,
   size as sizes,
+  space,
   touch,
   type,
+  border,
 } from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
@@ -49,7 +55,7 @@ const CLOSE_MS = 180;
 const CLOSE_SHARE = 0.25;
 const CLOSE_VELOCITY = 0.5;
 // The card floats a little off the screen edges, as in the A3 mockups.
-const CARD_INSET = 8;
+const CARD_INSET = space.s;
 
 const getTONE = makeStyles(theme => {
   const { colors } = theme;
@@ -72,21 +78,18 @@ function Mark({ tone }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const TONE = useStyles(getTONE);
+  // Level with the value's first line as the font grows (設計稿「卡片狀態列
+  // 的長字」: 「!」靠第一行對齊); the mark itself is a vector, always centred.
+  const grow =
+    (type.value.lineHeight * ((PixelRatio.getFontScale?.() || 1) - 1)) / 2;
   return (
-    <View
-      style={[styles.mark, { backgroundColor: TONE[tone].badge }]}
-      accessible={false}
-    >
-      <Text
-        style={[
-          styles.markText,
-          {
-            color: tone === 'warn' ? colors.onWarnIcon : colors.avatarFrameMap,
-          },
-        ]}
-      >
-        !
-      </Text>
+    <View style={[styles.mark, { marginTop: styles.mark.marginTop + grow }]}>
+      <BangGlyph
+        size={sizes.card.warnIcon}
+        background={TONE[tone].badge}
+        color={tone === 'warn' ? colors.onWarnIcon : colors.avatarFrameMap}
+        testID={`dog-card-mark-${tone}`}
+      />
     </View>
   );
 }
@@ -158,7 +161,7 @@ function StatusRow({ row, first, onPress }) {
       accessibilityRole="button"
       accessibilityLabel={row.speech}
       onPress={onPress}
-      style={({ pressed }) => pressed && styles.pressed}
+      style={({ pressed }) => [styles.rowTarget, pressed && styles.pressed]}
     >
       {content}
     </Pressable>
@@ -199,7 +202,7 @@ function Headline({ headline, speech, heading }) {
       accessibilityLabel={speech}
     >
       <View style={{ transform: [{ rotate: turn }] }} testID="dog-card-arrow">
-        <Glyph name="arrow" color={colors.text} size={26} />
+        <Glyph name="arrow" color={colors.text} size={sizes.card.directionIcon} />
       </View>
       <Text style={styles.distance}>{headline.distance}</Text>
       <Text style={styles.suffix}>{headline.suffix}</Text>
@@ -236,29 +239,43 @@ const DogCard = forwardRef(function DogCard(
   const [height, setHeight] = useState(0);
   // Off screen until measured, then it rises (220 ms, motion.cardRise).
   const offset = useRef(new Animated.Value(windowHeight)).current;
+  // 減少動態效果: the card fades in place instead of rising (slideOrFade).
+  const fade = useRef(new Animated.Value(1)).current;
   const measured = useRef(0);
   const closing = useRef(false);
   const scrollTop = useRef(0);
   const callbacks = useRef({});
   callbacks.current = { onClosed, onHeight };
+  // The close that is running (a slide, or the reduced-motion fade).
+  const closingRun = useRef(null);
+  const mounted = useRef(true);
   const close = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
     // The map buttons go down with the card, not after it.
     callbacks.current.onHeight?.(0);
-    Animated.timing(offset, {
-      toValue: measured.current || windowHeight,
+    closingRun.current = slideOrFade(offset, measured.current || windowHeight, {
+      fade,
+      show: false,
       duration: CLOSE_MS,
       easing: ease,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) callbacks.current.onClosed?.();
     });
-  }, [offset, windowHeight]);
+    closingRun.current.start(({ finished }) => {
+      if (finished && mounted.current) callbacks.current.onClosed?.();
+    });
+  }, [offset, fade, windowHeight]);
   useImperativeHandle(ref, () => ({ close }), [close]);
   // A card replaced while it slides away (another dog tapped) stops here and
   // does not report a close of the new one.
-  useEffect(() => () => offset.stopAnimation(), [offset]);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      closingRun.current?.stop();
+      offset.stopAnimation();
+      fade.stopAnimation();
+    },
+    [offset, fade],
+  );
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
@@ -280,11 +297,11 @@ const DogCard = forwardRef(function DogCard(
     callbacks.current.onHeight?.(value);
     if (first) {
       offset.setValue(value);
-      Animated.timing(offset, {
-        toValue: 0,
+      slideOrFade(offset, 0, {
+        fade,
+        show: true,
         duration: motion.cardRise.duration,
         easing: ease,
-        useNativeDriver: true,
       }).start();
     }
   };
@@ -337,6 +354,7 @@ const DogCard = forwardRef(function DogCard(
           maxHeight,
           bottom: CARD_INSET + insets.bottom,
           transform: [{ translateY: offset }],
+          opacity: fade,
         },
         !height && styles.unmeasured,
       ]}
@@ -349,7 +367,7 @@ const DogCard = forwardRef(function DogCard(
           stale={card.stale}
           border={0}
         />
-        <Text style={styles.name} numberOfLines={1}>
+        <Text style={styles.name} numberOfLines={linesFor(1)}>
           {card.name}
         </Text>
         <Text style={styles.source}>{card.sourceLabel}</Text>
@@ -359,7 +377,7 @@ const DogCard = forwardRef(function DogCard(
           accessibilityRole="button"
           accessibilityLabel={`編輯${card.name}的名字和頭像`}
           onPress={onEdit}
-          hitSlop={4}
+          hitSlop={space.xs}
           style={({ pressed }) => [styles.pencil, pressed && styles.pressed]}
         >
           <Glyph
@@ -430,18 +448,18 @@ const getStyles = makeStyles(theme => {
     unmeasured: { opacity: 0 },
     handle: {
       alignSelf: 'center',
-      width: 36,
-      height: 4,
-      borderRadius: 2,
+      width: sizes.sheet.cardHandleLength,
+      height: sizes.sheet.handleThickness,
+      borderRadius: sizes.sheet.handleThickness / 2,
       backgroundColor: HANDLE,
-      marginTop: 8,
-      marginBottom: 4,
+      marginTop: space.s,
+      marginBottom: space.xs,
     },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: touch.min,
-      gap: 12,
+      gap: space.m,
     },
     name: { ...type.title, color: colors.text, flexShrink: 1 },
     source: { ...type.caption, color: colors.textMuted },
@@ -451,7 +469,7 @@ const getStyles = makeStyles(theme => {
       height: touch.min,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: -12,
+      marginRight: -space.m,
       borderRadius: radius.full,
     },
     scroll: { flexGrow: 0, flexShrink: 1 },
@@ -459,59 +477,59 @@ const getStyles = makeStyles(theme => {
       flexDirection: 'row',
       alignItems: 'center',
       flexWrap: 'wrap',
-      minHeight: 48,
-      columnGap: 6,
-      paddingVertical: 4,
+      minHeight: touch.min,
+      columnGap: space.xs,
+      paddingVertical: space.xs,
     },
     distance: { ...type.headline, color: colors.text },
-    suffix: { ...type.caption, color: colors.textMuted, marginTop: 6 },
+    suffix: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
     noPhone: { ...type.title, color: colors.textMuted },
-    rows: { borderTopWidth: 1, borderTopColor: colors.line, marginTop: 4 },
+    rows: { borderTopWidth: border.hairline, borderTopColor: colors.line, marginTop: space.xs },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: touch.cardRow,
-      paddingVertical: 8,
+      paddingVertical: space.s,
     },
     rowTwoLine: { minHeight: touch.cardRowTwoLine },
-    rowLine: { borderTopWidth: 1, borderTopColor: colors.line },
+    rowTarget: { minHeight: touch.cardRow },
+    rowLine: { borderTopWidth: border.hairline, borderTopColor: colors.line },
     rowLabel: {
       ...type.caption,
       color: colors.textMuted,
-      width: sizes.card.labelWidth,
-      paddingLeft: 8,
+      // 72dp, wider when the system font makes the word longer (設計稿
+      // 「卡片狀態列在大字體」): the label never wraps, the value does.
+      minWidth: sizes.card.labelWidth,
+      paddingLeft: space.s,
+      paddingRight: space.s,
+      flexShrink: 0,
     },
     rowValue: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'flex-start',
-      gap: 8,
+      gap: space.s,
     },
     rowTexts: { flex: 1 },
     value: { ...type.value },
-    detailInline: { ...type.small, color: colors.textMuted, fontWeight: '400' },
-    detailLine: { ...type.small, color: colors.textMuted, marginTop: 2 },
+    detailInline: { ...type.small, color: colors.textMuted, fontWeight: type.body.fontWeight },
+    detailLine: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     mark: {
       width: sizes.card.warnIcon,
       height: sizes.card.warnIcon,
       borderRadius: sizes.card.warnIcon / 2,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 1,
-    },
-    markText: {
-      color: colors.avatarFrameMap,
-      fontSize: 12,
-      lineHeight: 14,
-      fontWeight: '800',
+      marginTop: space.xs,
     },
     track: {
-      height: touch.primary,
+      minHeight: touch.primary,
+      paddingVertical: space.s,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 12,
+      marginTop: space.m,
     },
     trackText: { ...type.status, color: colors.tonalText },
     pressed: { backgroundColor: colors.pressedOverlay },

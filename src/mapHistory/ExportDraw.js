@@ -1,3 +1,4 @@
+import { size as tokenSize } from '../theme/tokens';
 // The PNG pages as drawing operations for the native renderer
 // (HistoryExportPackage.kt): text lines, circles, rectangles, lines, the list
 // icons and the map block. Pure: everything is placed here so the Kotlin side
@@ -40,18 +41,18 @@ function nodeOps(row, color, cy) {
   const cx = TRACK_X;
   switch (row.type) {
     case 'departure':
-      return [{ t: 'circle', cx, cy, r: 22, fill: colors.surface, stroke: color, strokeWidth: 8 }];
+      return [{ t: 'circle', cx, cy, r: tokenSize.export.departureRadius, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.departureBorder }];
     case 'stop':
     case 'switch':
-      return [{ t: 'circle', cx, cy, r: S.nodeSize / 2, fill: color, stroke: colors.surface, strokeWidth: 6 },
-        text(String(row.number ?? ''), cx, cy - 20, 40, 32, colors.onRoute, { bold: true, align: 'center' })];
+      return [{ t: 'circle', cx, cy, r: S.nodeSize / 2, fill: color, stroke: colors.surface, strokeWidth: tokenSize.export.nodeBorder },
+        text(String(row.number ?? ''), cx, cy - tokenSize.export.glyphInset, tokenSize.export.nodeDigitLine, tokenSize.export.nodeDigit, colors.onRoute, { bold: true, align: 'center' })];
     case 'indoor':
-      return [{ t: 'circle', cx, cy, r: S.nodeSize / 2, fill: colors.receiver, stroke: colors.surface, strokeWidth: 6 },
-        { t: 'icon', name: 'house', icon: EXPORT_ICONS.house, x: cx - 20, y: cy - 20, size: 40, color: colors.onRoute }];
+      return [{ t: 'circle', cx, cy, r: S.nodeSize / 2, fill: colors.receiver, stroke: colors.surface, strokeWidth: tokenSize.export.nodeBorder },
+        { t: 'icon', name: 'house', icon: EXPORT_ICONS.house, x: cx - tokenSize.export.glyphInset, y: cy - tokenSize.export.glyphInset, size: tokenSize.export.glyphSize, color: colors.onRoute }];
     case 'resume':
-      return [{ t: 'circle', cx, cy, r: 16, fill: colors.surface, stroke: color, strokeWidth: 6 }];
+      return [{ t: 'circle', cx, cy, r: tokenSize.export.resumeRadius, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.nodeBorder }];
     default:
-      return [{ t: 'circle', cx, cy, r: 27, fill: color, stroke: withAlpha(color, 0.33), strokeWidth: 12 }];
+      return [{ t: 'circle', cx, cy, r: tokenSize.export.endRadius, fill: color, stroke: withAlpha(color, 0.33), strokeWidth: tokenSize.export.endBorder }];
   }
 }
 
@@ -69,22 +70,22 @@ function rowOps(block) {
     ops.push(...trackOps(row.line, color, y, y + block.height));
     const muted = row.type === 'gap';
     const textTop = y + (block.height - block.lines.length * S.detailLine) / 2;
-    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: PLACE_X, y: textTop + (S.detailLine - 40) / 2, size: 40,
+    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: PLACE_X, y: textTop + (S.detailLine - tokenSize.export.glyphSize) / 2, size: tokenSize.export.glyphSize,
       color: muted ? colors.iconMuted : color });
     // 「移動 28 分・1.4 km」: the duration bold and dark, the rest muted.
-    block.lines.forEach((line, index) => ops.push({ t: 'runs', x: PLACE_X + S.movementIcon - 16, y: textTop + index * S.detailLine,
+    block.lines.forEach((line, index) => ops.push({ t: 'runs', x: PLACE_X + S.movementIcon - tokenSize.export.timeInset, y: textTop + index * S.detailLine,
       h: S.detailLine, size: S.detailFont, runs: splitRuns(line, row.time) }));
     return ops;
   }
-  const nodeY = y + 8 + S.addressLine / 2;
+  const nodeY = y + tokenSize.export.rowInset + S.addressLine / 2;
   ops.push(...trackOps(row.line, color, nodeY, y + block.height));
   ops.push(...nodeOps(row, color, nodeY));
   // Times: the start bold, a stay's end under it, muted.
-  ops.push(text(row.times[0], S.timeColumn - 16, y + 8, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
-  if (row.times[1]) ops.push(text(row.times[1], S.timeColumn - 16, y + 8 + S.addressLine, 40, S.endTimeFont, colors.textMuted, { align: 'right' }));
-  block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X, y + 8 + index * S.addressLine, S.addressLine,
+  ops.push(text(row.times[0], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
+  if (row.times[1]) ops.push(text(row.times[1], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset + S.addressLine, tokenSize.export.endTimeLine, S.endTimeFont, colors.textMuted, { align: 'right' }));
+  block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X, y + tokenSize.export.rowInset + index * S.addressLine, S.addressLine,
     S.addressFont, colors.text, { bold: true })));
-  const secondTop = y + 8 + block.titleLines.length * S.addressLine + 8;
+  const secondTop = y + tokenSize.export.rowInset + block.titleLines.length * S.addressLine + tokenSize.export.rowInset;
   const tones = PILL_TONES(color);
   for (const item of block.items) {
     const top = secondTop + item.line * S.secondLine;
@@ -110,31 +111,31 @@ function splitRuns(line, bold) {
 
 function headOps(page) {
   const ops = [{ t: 'rect', x: 0, y: 0, w: page.width, h: page.height, fill: colors.surface }];
-  let y = 32;
-  page.titleLines.forEach(line => { ops.push(text(line, S.side, y, 52, S.titleFont, colors.text, { bold: true })); y += 52; });
-  y += 8;
-  page.subtitleLines.forEach(line => { ops.push(text(line, S.side, y, 38, S.subtitleFont, colors.textMuted)); y += 38; });
+  let y = tokenSize.export.headerTop;
+  page.titleLines.forEach(line => { ops.push(text(line, S.side, y, tokenSize.export.titleLine, S.titleFont, colors.text, { bold: true })); y += tokenSize.export.titleLine; });
+  y += tokenSize.export.titleGap;
+  page.subtitleLines.forEach(line => { ops.push(text(line, S.side, y, tokenSize.export.subtitleLine, S.subtitleFont, colors.textMuted)); y += tokenSize.export.subtitleLine; });
   for (const item of page.legend) {
     const top = page.titleHeight + item.y;
-    ops.push({ t: 'rect', x: item.x, y: top + S.legendHeight / 2 - 6, w: 32, h: 12, r: 6, fill: item.color });
-    ops.push(text(item.name, item.x + 44, top, S.legendHeight, S.legendFont, colors.text, { bold: true }));
-    ops.push(text(item.distance, item.x + 44 + item.nameWidth + 12, top, S.legendHeight, S.legendFont, colors.textMuted));
+    ops.push({ t: 'rect', x: item.x, y: top + S.legendHeight / 2 - tokenSize.export.legendSwatchHeight / 2, w: tokenSize.export.legendSwatchWidth, h: tokenSize.export.legendSwatchHeight, r: tokenSize.export.legendSwatchRadius, fill: item.color });
+    ops.push(text(item.name, item.x + tokenSize.export.legendTextInset, top, S.legendHeight, S.legendFont, colors.text, { bold: true }));
+    ops.push(text(item.distance, item.x + tokenSize.export.legendTextInset + item.nameWidth + tokenSize.export.legendGap, top, S.legendHeight, S.legendFont, colors.textMuted));
   }
   return ops;
 }
 
 function sectionOps(block) {
-  const top = block.y + 12, height = block.height - 24;
-  const ops = [{ t: 'rect', x: S.side, y: top, w: 8, h: height, r: 4, fill: block.color }];
+  const top = block.y + tokenSize.export.sectionPadding, height = block.height - tokenSize.export.sectionInset;
+  const ops = [{ t: 'rect', x: S.side, y: top, w: tokenSize.export.sectionEdge, h: height, r: tokenSize.export.sectionRadius, fill: block.color }];
   if (block.oneLine) {
-    ops.push({ t: 'runs', x: S.side + 28, y: top, h: height, size: S.sectionFont, runs: [
+    ops.push({ t: 'runs', x: S.side + tokenSize.export.sectionTextInset, y: top, h: height, size: S.sectionFont, runs: [
       { text: block.title, color: colors.text, bold: true },
       { text: `  ${block.detail}`, color: colors.textMuted, bold: false, size: S.sectionDetailFont }] });
     return ops;
   }
-  block.titleLines.forEach((line, index) => ops.push(text(line, S.side + 28, top + index * 48, 48, S.sectionFont,
+  block.titleLines.forEach((line, index) => ops.push(text(line, S.side + tokenSize.export.sectionTextInset, top + index * tokenSize.export.sectionLine, tokenSize.export.sectionLine, S.sectionFont,
     colors.text, { bold: true })));
-  ops.push(text(block.detail, S.side + 28, top + block.titleLines.length * 48, 48, S.sectionDetailFont, colors.textMuted));
+  ops.push(text(block.detail, S.side + tokenSize.export.sectionTextInset, top + block.titleLines.length * tokenSize.export.sectionLine, tokenSize.export.sectionLine, S.sectionDetailFont, colors.textMuted));
   return ops;
 }
 
@@ -148,7 +149,7 @@ export function mapOp(block) {
     // Route widths three times the screen's (4dp walk, 2dp car or ride).
     subjects: block.subjects.map(subject => ({
       color: subject.color,
-      lines: (subject.lines || []).map(line => ({ coordinates: line.coordinates, width: line.width * 3 })),
+      lines: (subject.lines || []).map(line => ({ coordinates: line.coordinates, width: line.width * tokenSize.export.routeScale })),
       places: subject.places || [],
       times: subject.times || [],
       points: subject.points || [],

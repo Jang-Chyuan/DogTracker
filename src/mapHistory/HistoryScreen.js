@@ -16,6 +16,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
 import Glyph from '../map/Glyph';
@@ -30,6 +31,8 @@ import {
   space,
   touch,
   type,
+  border,
+  fontScale as fontScales,
 } from '../theme/tokens';
 import HistoryPanel from './HistoryPanel';
 import HistoryRangeSummary from './HistoryRangeSummary';
@@ -40,6 +43,9 @@ import HistoryCalendarSheet from './HistoryCalendarSheet';
 import { DogsSheet } from './HistoryPickers';
 import { historyDogsPill, routeTint } from '../history/screen/HistoryDogsPill';
 import { AlertBadge } from '../map/TopAlertCards';
+import { isReduceMotion } from '../utils/reduceMotion';
+import { behindSheet } from '../utils/a11yFocus';
+import { fontScaleAtLeast } from '../utils/textScale';
 
 const OPEN_MOTION = LayoutAnimation.create(
   motion.rangeExpand.duration,
@@ -69,37 +75,59 @@ function Capsule({ children, onPress, testID, label, style, disabled, onLayout }
       accessibilityLabel={label}
       onPress={onPress}
       disabled={disabled}
-      hitSlop={6}
+      hitSlop={(touch.min - sizes.chip.height) / 2}
     >
       {body}
     </PressScale>
   );
 }
 
+// The 40dp date pill, 48dp to the finger.
+const DATE_PILL_SLOP = (touch.min - sizes.datePill.height) / 2;
+const NARROW_WIDTH = layout.narrowWidth;
+const COMPACT_FONT_SCALE = fontScales.large;
+const FACE_ONLY_FONT_SCALE = fontScales.faceOnly;
+
 /** One fixed capsule, followed by a flexible spacer and the export control. */
 export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
-  onAdd, alertBadge = null, onAlertBadge, exportEnabled, exportLabel = '匯出', exportBusy = false }) {
+  onAdd, alertBadge = null, onAlertBadge, exportEnabled, exportLabel = '匯出', exportBusy = false,
+  hidden = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const pill = historyDogsPill(dogs.map(dog => ({ ...dog, name: nameOf(dog) })), candidates, subject);
+  // 窄螢幕、大字體的上方膠囊列 (320dp wide, or the system font at 130% and up):
+  // 「‹ 回到現在」 keeps only its ‹; the dog's name is cut with an ellipsis, and
+  // from 180% it goes (the face stays, the name is in TalkBack). The row never scrolls.
+  const { width, fontScale } = useWindowDimensions();
+  const compact = width <= NARROW_WIDTH || fontScaleAtLeast(fontScale, COMPACT_FONT_SCALE);
+  // No room for even a cut name beside 「⚠ N」 and 匯出 in the compact row:
+  // the face alone (C16 in the E2E check: the name had shrunk to 「…」).
+  const faceOnly =
+    fontScaleAtLeast(fontScale, FACE_ONLY_FONT_SCALE) || (compact && !!alertBadge);
   return (
-    <View style={[styles.topRow, { top }]} pointerEvents="box-none">
-      <Capsule testID="history-back-now" label="回到現在" onPress={onBack}>
-        <Text style={styles.backText}>‹ 回到現在</Text>
+    <View style={[styles.topRow, { top }]} pointerEvents="box-none"
+      importantForAccessibility={behindSheet(hidden)}>
+      <Capsule testID="history-back-now" label="回到現在" onPress={onBack}
+        style={compact && styles.backRound}>
+        {compact ? <Glyph name="back" color={colors.text} size={sizes.icon.row} />
+          : <Text style={styles.backText}>‹ 回到現在</Text>}
       </Capsule>
       <View style={styles.pillSlot}>
         <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
           {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
-            <DogAvatar avatar={pill.lead.avatar} size={26} border={0} tint={routeTint(pill.lead, colors)} />
+            <DogAvatar avatar={pill.lead.avatar} size={sizes.historyTop.avatar} border={0} tint={routeTint(pill.lead, colors)} />
           </View>}
-          <Text style={styles.capsuleText} numberOfLines={1}>{pill.name}</Text>
+          {/* A dog's name is cut (or, at 180%, left to TalkBack); 「我的路線」 is
+              never cut: it has no face to stand for it. */}
+          {!(faceOnly && pill.lead) && <Text style={[styles.capsuleText, !pill.lead && styles.capsuleTextWhole]}
+            numberOfLines={pill.lead ? 1 : undefined}>{pill.name}</Text>}
           {!!pill.faces.length && <View style={styles.others}>
             {pill.faces.map((dog, index) => <View key={dog.id} style={index > 0 && styles.overlap}>
-              <DogAvatar avatar={dog.avatar} size={18} border={1.5} tint={routeTint(dog, colors)} />
+              <DogAvatar avatar={dog.avatar} size={sizes.historyTop.companionAvatar} border={border.regular} tint={routeTint(dog, colors)} />
             </View>)}
-            {pill.more > 0 && <Text style={styles.more}>{`+${pill.more}`}</Text>}
+            {pill.more > 0 && <Text style={styles.more} maxFontSizeMultiplier={fontScales.graphicTextMax}>{`+${pill.more}`}</Text>}
           </View>}
-          {pill.plus && <Text style={styles.plus}>＋</Text>}
+          {pill.plus && <Text style={styles.plus} maxFontSizeMultiplier={fontScales.graphicTextMax}>＋</Text>}
           {pill.caret && <Text style={styles.caret}>▾</Text>}
         </Capsule>
       </View>
@@ -109,7 +137,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
       <PressScale testID="history-export" accessibilityRole="button"
         accessibilityLabel={exportBusy ? '匯出，產生中' : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
-        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={6}
+        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.chip.height) / 2}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
           : <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
@@ -133,12 +161,12 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
       accessibilityState={{ disabled: !enabled }}
       disabled={!enabled}
       onPress={onPress}
-      style={styles.dayArrow}
+      style={({ pressed }) => [styles.dayArrow, pressed && styles.pressed]}
     >
       <Glyph
         name={side === 'previous' ? 'back' : 'chevron'}
         color={enabled ? colors.text : colors.line}
-        size={20}
+        size={sizes.icon.row}
       />
     </Pressable>
   );
@@ -153,6 +181,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
         accessibilityHint="打開月曆選日期"
         onPress={onOpen}
         style={styles.datePill}
+        hitSlop={DATE_PILL_SLOP}
       >
         <Text style={styles.dateText}>{label}</Text>
         <Text style={styles.dateCaret}> ▾</Text>
@@ -180,8 +209,8 @@ function DownloadSummary({ panel, onCancel }) {
         accessibilityRole="button"
         accessibilityLabel="取消下載"
         onPress={onCancel}
-        style={styles.textButton}
-        hitSlop={8}
+        style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
+        hitSlop={space.s}
       >
         <Text style={styles.textButtonText}>{panel.action}</Text>
       </Pressable>
@@ -212,8 +241,8 @@ function IncompleteRow({ panel, onRetry }) {
         accessibilityRole="button"
         accessibilityLabel="重試下載"
         onPress={onRetry}
-        style={styles.textButton}
-        hitSlop={8}
+        style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
+        hitSlop={space.s}
       >
         <Text style={styles.textButtonText}>{panel.action}</Text>
       </Pressable>
@@ -247,7 +276,7 @@ function FrameButton({ onPress }) {
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, levels, bottomInset,
   onBack, onFrame, onLevel, closedAt = null, initialRangeOpen = false, initialCalendar = null,
   candidates = [], initialSheet = null, exportNative = null, initialExport = null, alertBadge = null,
-  onAlertBadge },
+  onAlertBadge, onSheetOpen },
 ref) {
   const styles = getStyles(useTheme());
   const panel = useRef(null);
@@ -270,6 +299,11 @@ ref) {
   const hideTip = useCallback(() => setTip(null), []);
   // A fixture may open the dog chooser.
   const [sheet, setSheet] = useState(initialSheet);
+  // A sheet over the screen: TalkBack stays inside it (設計稿「無障礙」).
+  const sheetOpen = exporting || calendarOpen || sheet === 'dogs';
+  useEffect(() => {
+    onSheetOpen?.(sheetOpen);
+  }, [sheetOpen, onSheetOpen]);
   const sheetRef = useRef(null);
   const { model, subject, cursor, download } = screen;
   // The entry dog's name as the caller knows it (a fixture's tests), else the hook's.
@@ -283,7 +317,9 @@ ref) {
   const empty = !!model && !model.dayRecords;
   const hasRoute = !!model?.points.length && !downloading;
   const openRange = useCallback(next => {
-    LayoutAnimation.configureNext(next ? OPEN_MOTION : CLOSE_MOTION);
+    // 減少動態效果: the range bar opens and closes at once.
+    if (!isReduceMotion())
+      LayoutAnimation.configureNext(next ? OPEN_MOTION : CLOSE_MOTION);
     setRangeOpen(next);
     if (next && panel.current?.level === 'summary') {
       // 判定表「只留摘要時點摘要」: up to half first, then the bar.
@@ -348,7 +384,7 @@ ref) {
     if (!focusKey || screen.focus.action !== 'stop') return;
     const y = rows.current[screen.pressed];
     if (y != null)
-      list.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+      list.current?.scrollTo({ y: Math.max(0, y - 8), animated: !isReduceMotion() });
     // Once per tap.
   }, [focusKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // 換主角時清單捲到哪: to the stay the cursor is in, or the place before the
@@ -370,7 +406,7 @@ ref) {
       const before = places.filter(n => n.start <= time).pop() ?? places[0];
       list.current?.scrollTo({
         y: Math.max(0, rows.current[before.start] - 8),
-        animated: true,
+        animated: !isReduceMotion(),
       });
     }, 80);
     return () => clearTimeout(timer);
@@ -498,8 +534,10 @@ ref) {
         exportEnabled={hasRoute} exportBusy={exporter.generating}
         onExport={() => { closeRange(); exporter.open(); }}
         exportLabel={hasRoute ? '匯出' : downloading ? '匯出，無法使用，正在下載'
-          : empty ? '匯出，無法使用，這天沒有紀錄' : model ? '匯出，無法使用，這段時間沒有紀錄' : '匯出，無法使用'} />
+          : empty ? '匯出，無法使用，這天沒有紀錄' : model ? '匯出，無法使用，這段時間沒有紀錄' : '匯出，無法使用'}
+        hidden={sheetOpen} />
       <HistoryPanel ref={panel} levels={levels} header={header} onLevel={panelLevel} onDragStart={dragStart}
+        hidden={sheetOpen}
         bottomInset={bottomInset} scrollRef={list} locked={empty || !model || downloading}
         above={hasRoute ? <FrameButton onPress={onFrame} /> : null}
       >
@@ -550,48 +588,58 @@ export default HistoryScreen;
 const getStyles = makeStyles(theme => {
   const { colors, shadow, opacity } = theme;
   return StyleSheet.create({
+    // 設計稿「元件狀態」: the pressed state.
+    pressed: { backgroundColor: colors.pressedOverlay },
     topRow: {
       position: 'absolute',
-      left: 8,
-      right: 8,
+      left: space.s,
+      right: space.s,
       zIndex: 30,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
+      gap: space.xs,
     },
-    pillSlot: { flexShrink: 1, minWidth: 0, maxWidth: 240 },
+    pillSlot: { flexShrink: 1, minWidth: 0, maxWidth: sizes.historyTop.slotLimit },
     spacer: { flex: 1 },
-    hero: { borderWidth: 2, borderRadius: 15 },
-    others: { flexDirection: 'row', alignItems: 'center', borderLeftWidth: 1,
-      borderLeftColor: colors.line, paddingLeft: 4, marginLeft: 2 },
-    overlap: { marginLeft: -6 },
-    more: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginLeft: 4 },
-    caret: { fontSize: 10, color: colors.textMuted },
-    plus: { fontSize: 16, fontWeight: '700', color: colors.tonalText },
-    alertBadge: { marginRight: 2 },
+    hero: { borderWidth: border.strong, borderRadius: sizes.historyTop.avatar / 2 + border.strong },
+    others: { flexDirection: 'row', alignItems: 'center', borderLeftWidth: border.hairline,
+      borderLeftColor: colors.line, paddingLeft: space.xs, marginLeft: space.xs },
+    overlap: { marginLeft: -sizes.historyTop.avatarOverlap },
+    more: { fontSize: type.micro.fontSize, fontWeight: type.micro.fontWeight, color: colors.textMuted, marginLeft: space.xs },
+    caret: { fontSize: sizes.historyTop.caretGlyph, color: colors.textMuted },
+    plus: { fontSize: type.body.fontSize, fontWeight: type.status.fontWeight, color: colors.tonalText },
+    alertBadge: { marginRight: space.xs },
     capsule: {
-      height: sizes.chip.height,
-      borderRadius: sizes.chip.height / 2,
+      // 36dp, taller with a large system font (膠囊可以變高、不裁字).
+      minHeight: sizes.chip.height,
+      borderRadius: radius.full,
       paddingHorizontal: sizes.chip.paddingH,
       backgroundColor: colors.surface,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
+      gap: space.xs,
       ...shadow.floating,
       ...theme.floatingBorder,
     },
-    backText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+    // The compact 「‹」: a 36dp circle (48dp to the finger).
+    backRound: {
+      width: sizes.chip.height,
+      paddingHorizontal: 0,
+      justifyContent: 'center',
+    },
+    backText: { color: colors.text, fontSize: type.caption.fontSize, fontWeight: type.captionBold.fontWeight },
     capsuleText: {
       color: colors.text,
-      fontSize: 13,
-      fontWeight: '700',
-      maxWidth: 80,
+      fontSize: type.caption.fontSize,
+      fontWeight: type.captionBold.fontWeight,
+      maxWidth: sizes.historyTop.capsuleTextMax,
       flexShrink: 1,
     },
+    capsuleTextWhole: { maxWidth: '100%', flexShrink: 0 },
     exportButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: sizes.historyTop.exportDisc,
+      height: sizes.historyTop.exportDisc,
+      borderRadius: sizes.historyTop.exportDisc / 2,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',
@@ -603,26 +651,27 @@ const getStyles = makeStyles(theme => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingBottom: 4,
+      paddingBottom: space.xs,
     },
     dayArrow: {
-      width: 48,
-      height: 48,
+      width: touch.min,
+      height: touch.min,
       alignItems: 'center',
       justifyContent: 'center',
     },
     datePill: {
       flexDirection: 'row',
       alignItems: 'center',
-      height: 40,
-      paddingHorizontal: 18,
-      borderRadius: 20,
-      borderWidth: 1.5,
+      minHeight: sizes.datePill.height,
+      flexShrink: 1,
+      paddingHorizontal: space.l,
+      borderRadius: radius.full,
+      borderWidth: border.regular,
       borderColor: colors.line,
-      marginHorizontal: 12,
+      marginHorizontal: space.m,
     },
-    dateText: { color: colors.text, fontSize: 17, fontWeight: '700' },
-    dateCaret: { color: colors.text, fontSize: 13 },
+    dateText: { color: colors.text, fontSize: type.body.fontSize, fontWeight: type.status.fontWeight, flexShrink: 1 },
+    dateCaret: { color: colors.text, fontSize: type.caption.fontSize },
     frameButton: {
       width: sizes.floatingButton,
       height: sizes.floatingButton,
@@ -633,7 +682,7 @@ const getStyles = makeStyles(theme => {
       ...shadow.floating,
       ...theme.floatingBorder,
     },
-    list: { paddingTop: 8, paddingRight: 16 },
+    list: { paddingTop: space.s, paddingRight: space.l },
     download: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -646,9 +695,9 @@ const getStyles = makeStyles(theme => {
     downloadTitle: { ...type.title, color: colors.text },
     downloadDetail: {
       ...type.value,
-      fontWeight: '400',
+      fontWeight: type.body.fontWeight,
       color: colors.textMuted,
-      marginTop: 2,
+      marginTop: space.xs,
     },
     textButton: {
       minHeight: touch.min,
@@ -659,8 +708,8 @@ const getStyles = makeStyles(theme => {
     textButtonText: { ...type.status, color: colors.tonalText },
     skeleton: { paddingHorizontal: space.l, paddingTop: space.l },
     skeletonLine: {
-      height: 14,
-      borderRadius: 7,
+      height: sizes.skeleton.line,
+      borderRadius: sizes.skeleton.line / 2,
       backgroundColor: colors.line,
       marginBottom: space.m,
     },
@@ -680,12 +729,12 @@ const getStyles = makeStyles(theme => {
     },
     unfinishedText: {
       color: colors.textMuted,
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: type.body.fontSize,
+      fontWeight: type.status.fontWeight,
       textAlign: 'center',
     },
     retryButton: {
-      height: touch.min,
+      minHeight: touch.min,
       paddingHorizontal: space.xl,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
@@ -696,11 +745,11 @@ const getStyles = makeStyles(theme => {
     // 判定表「空狀態文字」: the middle of the panel, 32dp above and below.
     empty: {
       color: colors.textMuted,
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: type.body.fontSize,
+      fontWeight: type.status.fontWeight,
       textAlign: 'center',
       paddingVertical: layout.emptyStatePadding,
-      paddingHorizontal: 16,
+      paddingHorizontal: space.l,
     },
   });
 });

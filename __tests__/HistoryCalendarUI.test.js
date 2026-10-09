@@ -9,6 +9,15 @@ import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryS
 
 const LEVELS = { summary: 140, half: 420, full: 620 };
 
+// The system font scale (React Native's test window says 2): the grid at 100%,
+// the 200% list where a test asks for it.
+let mockFontScale = 1;
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => ({ width: 393, height: 851, scale: 2.75, fontScale: mockFontScale }),
+}));
+afterEach(() => { mockFontScale = 1; });
+
 function Harness({ fixture, onScreen, screenRef, online, active = true }) {
   const target = historyTargetOf(fixture.history.preferences);
   const cloud = fixture.historyCloud;
@@ -240,4 +249,20 @@ test('a day left incomplete says so after another day, and is downloaded again w
   expect(result.type).toBe('download');
   expect(s.text()).toContain('下載 9/28 的紀錄…');
   await act(async () => s.renderer.unmount());
+});
+
+test('200% font: the month is a list of the days with records and today; a row chooses its day (060)', async () => {
+  mockFontScale = 2;
+  const s = await mount('history-calendar');
+  expect(s.has('calendar-list')).toBe(true);
+  expect(s.cell('2026-10-01')).toBeUndefined();
+  const rows = s.renderer.root.findAll(n => /^calendar-row-/.test(n.props.testID ?? '') && n.props.accessibilityLabel)
+    .map(n => n.props.testID.slice('calendar-row-'.length));
+  expect(rows[0]).toBe('2026-10-07');
+  expect(rows).toEqual(expect.arrayContaining(['2026-10-03', '2026-10-02']));
+  expect(rows).not.toContain('2026-10-01');
+  await s.press('calendar-row-2026-10-02');
+  await settle(400);
+  expect(s.has('history-calendar')).toBe(false);
+  expect(s.text()).toContain('10/02（五）');
 });

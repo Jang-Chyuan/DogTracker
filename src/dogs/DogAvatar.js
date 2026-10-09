@@ -1,3 +1,4 @@
+import { size as sizes, border as borders } from '../theme/tokens';
 import { lightTheme } from '../theme/ThemeProvider';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { Image, StyleSheet, View } from 'react-native';
@@ -36,9 +37,9 @@ export const getSTALE_LINE = makeStyles(theme => {
  */
 export default function DogAvatar({
   avatar,
-  size = 40,
+  size = sizes.marker.normal,
   stale = false,
-  border = 2,
+  border = borders.strong,
   onLoad,
   tint = null,
   snapshot = false,
@@ -80,8 +81,8 @@ export default function DogAvatar({
             href={{ uri: value.uri }}
             x={0}
             y={0}
-            width={100}
-            height={100}
+            width={sizes.avatar.artGrid}
+            height={sizes.avatar.artGrid}
             preserveAspectRatio="xMidYMid slice"
             clipPath="url(#photo)"
             onLoad={onLoad}

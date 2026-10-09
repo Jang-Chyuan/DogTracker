@@ -4,6 +4,7 @@
 // key (HistoryScreen asks `back()`) or a choice closes it.
 import { useTheme, makeStyles } from '../theme/ThemeProvider';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
+import { isReduceMotion, REDUCED_FADE_MS } from '../utils/reduceMotion';
 import {
   Animated,
   Easing,
@@ -21,7 +22,9 @@ import {
   space,
   touch,
   type,
+  border,
 } from '../theme/tokens';
+import { useInitialFocus } from '../utils/a11yFocus';
 
 const ease = Easing.bezier(...motion.easeOut);
 
@@ -50,13 +53,19 @@ const HistoryBottomSheet = forwardRef(function HistoryBottomSheet(
   const progress = useRef(new Animated.Value(0)).current;
   // Made once (a native-driven style changed under a running animation left
   // the sheet undrawn, as in the calendar).
+  // 減少動態效果: no slide, the sheet fades with its scrim (DESIGN.md §8).
+  const reduced = useRef(isReduceMotion()).current;
+  const sheetOpacity = reduced ? progress : 1;
   const translateY = useRef(
     progress.interpolate({
       inputRange: [0, 1],
-      outputRange: [windowHeight, 0],
+      outputRange: [reduced ? 0 : windowHeight, 0],
     }),
   ).current;
   const opened = useRef(false);
+  // TalkBack starts on the sheet's title.
+  const titleRef = useRef(null);
+  useInitialFocus(titleRef);
   const closing = useRef(false);
   const close = useCallback(
     then => {
@@ -64,7 +73,7 @@ const HistoryBottomSheet = forwardRef(function HistoryBottomSheet(
       closing.current = true;
       Animated.timing(progress, {
         toValue: 0,
-        duration: motion.rangeCollapse.duration,
+        duration: reduced ? REDUCED_FADE_MS : motion.rangeCollapse.duration,
         easing: ease,
         useNativeDriver: true,
       }).start(() => {
@@ -72,7 +81,7 @@ const HistoryBottomSheet = forwardRef(function HistoryBottomSheet(
         onClosed?.();
       });
     },
-    [onClosed, progress],
+    [onClosed, progress, reduced],
   );
   useImperativeHandle(ref, () => ({ close }), [close]);
   const onLayout = event => {
@@ -80,7 +89,7 @@ const HistoryBottomSheet = forwardRef(function HistoryBottomSheet(
     opened.current = true;
     Animated.timing(progress, {
       toValue: 1,
-      duration: motion.cardRise.duration,
+      duration: reduced ? REDUCED_FADE_MS : motion.cardRise.duration,
       easing: ease,
       useNativeDriver: true,
     }).start();
@@ -113,11 +122,13 @@ const HistoryBottomSheet = forwardRef(function HistoryBottomSheet(
             paddingBottom: space.l + bottomInset,
             maxHeight: Math.round(windowHeight * sizes.sheet.maxRatio),
             transform: [{ translateY }],
+            opacity: sheetOpacity,
           },
         ]}
       >
         <View style={styles.handle} />
         <Text
+          ref={titleRef}
           style={[styles.title, divided && styles.divided]}
           accessibilityRole="header"
         >
@@ -152,15 +163,15 @@ const getStyles = makeStyles(theme => {
     },
     handle: {
       alignSelf: 'center',
-      width: 32,
-      height: 4,
-      borderRadius: 2,
+      width: sizes.sheet.handleLength,
+      height: sizes.sheet.handleThickness,
+      borderRadius: sizes.sheet.handleThickness / 2,
       backgroundColor: colors.sheetHandle,
       marginBottom: space.s,
     },
     // H9: a line under the title (the export window).
     divided: {
-      borderBottomWidth: 1,
+      borderBottomWidth: border.hairline,
       borderBottomColor: colors.line,
       paddingBottom: space.m,
     },
@@ -169,7 +180,7 @@ const getStyles = makeStyles(theme => {
       color: colors.text,
       minHeight: touch.min,
       textAlignVertical: 'center',
-      paddingTop: 12,
+      paddingTop: space.m,
     },
   });
 });
