@@ -9,6 +9,8 @@ import { createTrackingMapPresentation } from '../src/map/TrackingMapPresentatio
 import { createLiveRouteWindow } from '../src/tracking/LiveRouteWindow';
 import { mergeDogMarkers, MAX_AGE_MS } from '../src/map/DogMerge';
 import { useMapClock } from '../src/map/useMapClock';
+import * as presentations from '../src/map/TrackingMapPresentation';
+import { updateAlertEvents } from '../src/alerts/AlertEvents';
 import {
   DEFAULT_TRACKING_PREFERENCES,
   WINDOW_PRESETS,
@@ -61,6 +63,47 @@ const routeOf = rows => {
   return route.snapshot();
 };
 const preferences = extra => ({ ...DEFAULT_TRACKING_PREFERENCES, showTrails: true, ...extra });
+
+test('history stops live aging work and returning live expires the old window immediately', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(NOW);
+  const spy = jest.spyOn(presentations, 'createTrackingMapPresentation');
+  const rows = [row(1, 20), row(2, 0)];
+  const tracking = { mode: 'real', point: rows[1], route: routeOf(rows),
+    positionSamples: [], ready: { real: true }, errors: {}, initialSnapshotReady: true,
+    foreground: true, preferences: { ready: true, busy: false,
+      value: preferences({ windowMinutes: 10 }) }, saveTrackingPreferences: jest.fn() };
+  const snapshots = [];
+  const onAlertInput = input => snapshots.push(input);
+  const screen = (historical, input = tracking) => <MapScreen historical={historical} tracking={input}
+    onAlertInput={onAlertInput} phone={{ enabled: true }} bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(screen(true)); });
+    await act(async () => jest.advanceTimersByTimeAsync(5000));
+    spy.mockClear();
+    await act(async () => jest.advanceTimersByTimeAsync(20000));
+    expect(spy).not.toHaveBeenCalled();
+    jest.setSystemTime(NOW + 11 * MINUTE);
+    // The alert engine owns its 5 s clock and ages an unchanged snapshot;
+    // stopping this map timer must not stop silent-dog alerts off the live map.
+    const events = updateAlertEvents({}, { dogs: snapshots.at(-1).dogs, now: Date.now() });
+    expect(events.active['dog-stale:7']).toBeDefined();
+    await act(async () => renderer.update(screen(false)));
+    expect(spy).toHaveBeenCalled();
+    expect(spy.mock.calls.every(call => call[4] >= NOW + 11 * MINUTE)).toBe(true);
+    expect(spy.mock.results.at(-1).value.slaveSegments).toEqual([]);
+    const fresh = row(3, 0, { receivedAt: Date.now() });
+    await act(async () => renderer.update(screen(true, { ...tracking, point: fresh })));
+    expect(snapshots.at(-1).dogs[0].packetAt).toBe(Date.now());
+    expect(updateAlertEvents({}, { dogs: snapshots.at(-1).dogs,
+      now: Date.now() }).active['dog-stale:7']).toBeUndefined();
+  } finally {
+    await act(async () => renderer?.unmount());
+    spy.mockRestore();
+    jest.useRealTimers();
+  }
+});
 
 test('the drawn line keeps only the selected window, without rereading SQLite', () => {
   const rows = [row(1, 45), row(2, 25), row(3, 5), row(4, 1)];

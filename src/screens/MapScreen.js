@@ -217,7 +217,7 @@ export default function MapScreen({
   const { point, route, positionSamples, mode } = tracking;
   // Ageing is measured against this clock, not against the newest row: a silent
   // collar changes nothing else on this screen.
-  const liveNow = useMapClock(active && tracking.foreground && !fixture);
+  const liveNow = useMapClock(active && tracking.foreground && !historical && !fixture);
   // A screen fixture stops the clock, so its screenshot is the same every time.
   const now = fixture ? fixture.now : liveNow;
   // The history list's clock: a fixture's fixed one, else the real one.
@@ -366,9 +366,12 @@ export default function MapScreen({
   const livePhone = fixture ? fixture.livePhone : realPhone;
   const rideDetector = useRef(null);
   if (!rideDetector.current) rideDetector.current = createRideDetector();
+  // History stops display aging, but fresh phone/packet data must still use
+  // real observation time for ride detection and the alert snapshot.
+  const observationNow = fixture ? fixture.now : Date.now();
   if (realPhone?.running && realPhone.position)
-    rideDetector.current.add(realPhone.position, now);
-  const currentRide = fixture ? fixture.ride : rideDetector.current.ride(now);
+    rideDetector.current.add(realPhone.position, observationNow);
+  const currentRide = fixture ? fixture.ride : rideDetector.current.ride(observationNow);
   const rideKey = currentRide
     ? `${currentRide.coordinate.latitude},${currentRide.coordinate.longitude}`
     : '';
@@ -384,7 +387,7 @@ export default function MapScreen({
         holds: cloudDogs?.holds,
         statuses: cloudDogs?.statuses,
         ride,
-        now,
+        now: historical && !fixture ? Date.now() : now,
         windowMs: LIVE_PACKET_WINDOW_MS,
       }),
     [
@@ -396,6 +399,8 @@ export default function MapScreen({
       cloudDogs?.statuses,
       ride,
       now,
+      historical,
+      fixture,
     ],
   );
   const dogSnapshot = atomicDogs.current.select({
