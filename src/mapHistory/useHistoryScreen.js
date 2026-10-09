@@ -54,6 +54,12 @@ export const MAX_DOGS = 4;
 // only changes with a download.
 export const HISTORY_POLL_MS = 15000;
 const PAST_POLL_MS = 60000;
+// Today's rows are read again every 15 s, and each read with new fixes
+// builds the whole day's model again. On a long day (tens of thousands of
+// fixes) that build takes long enough to keep the JavaScript thread busy
+// (068): the next read waits at least this many times the last build, so it
+// never takes more than about 5% of the thread.
+const BUILD_COST_FACTOR = 20;
 // The clock moves on once a minute (「現在」, the range bar's right end).
 const CLOCK_MS = 60000;
 
@@ -71,6 +77,8 @@ export function useHistoryDayRows({
   clock,
   scope = '',
   revision = 0,
+  // { current: ms } the last build of the day's model took (see above).
+  cost = null,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -147,7 +155,9 @@ export function useHistoryDayRows({
               : current,
           );
         }
-        timer = setTimeout(poll, today ? HISTORY_POLL_MS : PAST_POLL_MS);
+        timer = setTimeout(poll, today
+          ? Math.max(HISTORY_POLL_MS, (cost?.current ?? 0) * BUILD_COST_FACTOR)
+          : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
         setResult(current => ({
@@ -331,7 +341,9 @@ export function useHistoryScreen({
   // Each colour slot reads its own dog's day (hooks cannot be in a loop of
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
+  const buildCost = useRef(0);
   const reader = index => ({
+    cost: buildCost,
     read,
     subject,
     day,
@@ -508,7 +520,8 @@ export function useHistoryScreen({
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
       : subjects[0].id;
-    return multiDayModel(subjects, {
+    const started = Date.now();
+    const built = multiDayModel(subjects, {
       dayStart: day,
       dayEnd,
       today,
@@ -520,6 +533,8 @@ export function useHistoryScreen({
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
     });
+    buildCost.current = Date.now() - started;
+    return built;
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

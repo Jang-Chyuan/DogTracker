@@ -1272,6 +1272,13 @@ const FIXTURES = {
     // The whole day in range, so the night at home shows.
     historyView: { manual: { start: now - 533 * MINUTE, end: null, following: true } },
     geocoder: { names: HISTORY_NAMES } }),
+  // A long day of my route (067): out since 00:30, a fix every 2 s — about
+  // 16,000 points of walks and stays around the station. Tapping the line and
+  // dragging the cursor must stay quick.
+  'history-long-day': now => ({ ...FIXTURES['all-good'](now),
+    phone: routePhone(legsPath(now, 9 * 60 * MINUTE, at(-10, -100), Array.from({ length: 18 }, (_, i) => (
+      i % 2 ? { stay: 12 } : { walk: 18, bearing: (i * 47) % 360, speed: 0.9 })), 2 * SECOND), now),
+    openRoute: 'history', history: historyPage(now), geocoder: { names: HISTORY_NAMES } }),
   // H1 狗的歷史 (看軌跡 on 小黑's card): stays, a ride (坐車), moving now.
   'history-dog': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: dogMorning(now) }), geocoder: { names: HISTORY_NAMES } }),

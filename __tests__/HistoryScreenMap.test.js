@@ -207,3 +207,32 @@ describe('framing the history route', () => {
     expect(HISTORY_FRAME_PADDING.bottom).toBeGreaterThanOrEqual(24 + 48);
   });
 });
+
+describe('nearestRouteSpot on a long day (068)', () => {
+  // A deterministic walk that crosses itself, with breaks.
+  const day = (n, seed) => {
+    let x = seed, lat = 24.989, lon = 121.313, heading = 0, time = 0;
+    const r = () => { x = (x * 1664525 + 1013904223) % 2 ** 32; return x / 2 ** 32; };
+    return Array.from({ length: n }, () => {
+      heading += (r() - 0.5) * 0.8;
+      lat += (Math.cos(heading) * 2) / 110540;
+      lon += (Math.sin(heading) * 2) / 111320;
+      time += r() < 0.003 ? 5 * 60000 : 2000;
+      return { time, latitude: lat, longitude: lon };
+    });
+  };
+  test('the grid finds what going through every segment finds', () => {
+    for (const seed of [1, 2, 3]) {
+      const points = day(6000, seed);
+      const lats = points.map(p => p.latitude), lons = points.map(p => p.longitude);
+      const [south, north] = [Math.min(...lats), Math.max(...lats)];
+      const [west, east] = [Math.min(...lons), Math.max(...lons)];
+      for (let k = 0; k < 120; k += 1) {
+        const touch = { latitude: south + ((k * 37) % 120) / 120 * (north - south) * 1.2 - 0.0005,
+          longitude: west + ((k * 53) % 120) / 120 * (east - west) * 1.2 - 0.0005 };
+        const cursor = k % 3 ? points[(k * 97) % points.length].time : null;
+        expect(nearestRouteSpot(points, touch, cursor)).toEqual(nearestRouteSpot(points, touch, cursor, { grid: false }));
+      }
+    }
+  });
+});

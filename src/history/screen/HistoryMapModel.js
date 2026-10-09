@@ -41,14 +41,22 @@ function runsOf(points, breakMs) {
  * after the cursor); nothing across a break. Consecutive edges of the same
  * look join into one line.
  */
+// A long day is drawn in pieces of at most this many edges, cut at the same
+// edges wherever the cursor is: a cursor move changes the piece it is in
+// (and the look of the pieces it passed), never the coordinates of the rest,
+// so the map does not send thousands of points to the native line again
+// (067: a tap on a long route froze the app).
+export const ROUTE_CHUNK_EDGES = 200;
+
 export function routeLines(
   edges,
-  { color, cursorTime = Infinity, theme = getTheme() },
+  { color, cursorTime = Infinity, theme = getTheme(), chunkEdges = ROUTE_CHUNK_EDGES },
 ) {
   const { opacity } = theme;
   const lines = [];
   let current = null;
-  for (const edge of edges) {
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index];
     if (edge.gap || edge.mode === 'gap') {
       current = null;
       continue;
@@ -66,7 +74,7 @@ export function routeLines(
       ? withAlpha(color, opacity.routeBeforeCursor)
       : color;
     const key = `${width}:${stroke}`;
-    if (current && current.key === key && current.end === edge.start) {
+    if (current && current.key === key && current.end === edge.start && index % chunkEdges !== 0) {
       current.coordinates.push(coordinateOf(edge.to));
       current.end = edge.end;
       continue;
@@ -83,8 +91,13 @@ export function routeLines(
     };
     lines.push(current);
   }
-  return lines.map(({ key, end, ...line }) => line);
+  return lines.map(({ key, ...line }) => ({ ...line, id: lineId(line) }));
 }
+
+// What a drawn line is: the same id, the same coordinates and look (the map
+// leaves a line with an unchanged id alone).
+const lineId = line =>
+  `${line.start}-${line.end}-${line.coordinates.length}-${line.width}-${line.color}-${line.dashed ? 1 : 0}`;
 
 /** The day outside the range: 2dp dashed routeFaded, broken where the data is. */
 export function outsideLines(
@@ -95,14 +108,18 @@ export function outsideLines(
   if (!range || range.start == null) return [];
   const before = dayPoints.filter(p => p.time <= range.start);
   const after = dayPoints.filter(p => p.time >= range.end);
-  return [...runsOf(before, breakMs), ...runsOf(after, breakMs)].map(run => ({
-    width: sizes.route.faded,
-    color,
-    dashed: true,
-    vehicle: false,
-    start: run[0].time,
-    coordinates: run.map(coordinateOf),
-  }));
+  return [...runsOf(before, breakMs), ...runsOf(after, breakMs)].map(run => {
+    const line = {
+      width: sizes.route.faded,
+      color,
+      dashed: true,
+      vehicle: false,
+      start: run[0].time,
+      end: run[run.length - 1].time,
+      coordinates: run.map(coordinateOf),
+    };
+    return { ...line, id: lineId(line) };
+  });
 }
 
 /**
@@ -292,9 +309,78 @@ export function nearestRouteSpot(
   points,
   coordinate,
   currentTime = null,
-  { overlapM = 15, breakMs = sizes.route.breakAfterMs } = {},
+  { overlapM = 15, breakMs = sizes.route.breakAfterMs, grid = true } = {},
 ) {
   if (!points?.length || !coordinate) return null;
+  // A long day (thousands of fixes) looks only at the segments in the grid
+  // cells around the touch (routeSpotGrid); the answer is the same as going
+  // through every segment (068: a drag or a tap on a long route was slow).
+  const near = grid && points.length > GRID_MIN_POINTS
+    ? gridCandidates(routeSpotGrid(points, breakMs), coordinate, overlapM)
+    : null;
+  return nearestOf(points, coordinate, currentTime, { overlapM, breakMs, near });
+}
+
+// Below this many fixes going through all of them is quick enough.
+const GRID_MIN_POINTS = 400;
+const GRID_CELL_M = 60;
+const grids = new WeakMap();
+
+/**
+ * The segments of `points` by grid cell (about 60 m square), built once per
+ * route (the points array of one presentation).
+ */
+export function routeSpotGrid(points, breakMs = sizes.route.breakAfterMs) {
+  const cached = grids.get(points);
+  if (cached && cached.breakMs === breakMs) return cached;
+  const lat0 = points[0].latitude;
+  const cellLat = GRID_CELL_M / 110540;
+  const cellLon = GRID_CELL_M / (111320 * Math.cos((lat0 * Math.PI) / 180));
+  const cells = new Map();
+  const cellOf = (lat, lon) => [Math.floor(lat / cellLat), Math.floor(lon / cellLon)];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p = points[i], q = points[i + 1];
+    if (q.time - p.time > breakMs) continue;
+    const [r0, c0] = cellOf(Math.min(p.latitude, q.latitude), Math.min(p.longitude, q.longitude));
+    const [r1, c1] = cellOf(Math.max(p.latitude, q.latitude), Math.max(p.longitude, q.longitude));
+    for (let r = r0; r <= r1; r += 1) {
+      for (let c = c0; c <= c1; c += 1) {
+        const key = `${r}:${c}`;
+        const list = cells.get(key);
+        if (list) list.push(i); else cells.set(key, [i]);
+      }
+    }
+  }
+  const grid = { breakMs, cells, cellOf, segments: points.length - 1 };
+  grids.set(points, grid);
+  return grid;
+}
+
+// Segment indices in rings of cells around the touch, out to where no
+// segment can be within `overlapM` of the nearest one found (null: look at
+// all of them, the grid found nothing nearby).
+function gridCandidates(grid, coordinate, overlapM) {
+  const [row, col] = grid.cellOf(coordinate.latitude, coordinate.longitude);
+  const found = new Set();
+  let nearestM = Infinity;
+  for (let ring = 0; ring < 200; ring += 1) {
+    // Every cell of this ring is at least (ring - 1) cells from the touch.
+    if (Number.isFinite(nearestM) && (ring - 1) * GRID_CELL_M > nearestM + overlapM + GRID_CELL_M) break;
+    for (let r = row - ring; r <= row + ring; r += 1) {
+      for (let c = col - ring; c <= col + ring; c += 1) {
+        if (Math.max(Math.abs(r - row), Math.abs(c - col)) !== ring) continue;
+        const list = grid.cells.get(`${r}:${c}`);
+        if (!list) continue;
+        for (const index of list) found.add(index);
+        // A segment in this ring is no farther than the ring's far corner.
+        nearestM = Math.min(nearestM, (ring + 1) * GRID_CELL_M * Math.SQRT2);
+      }
+    }
+  }
+  return found.size ? [...found].sort((a, b) => a - b) : null;
+}
+
+function nearestOf(points, coordinate, currentTime, { overlapM, breakMs, near }) {
   const lat0 = (coordinate.latitude * Math.PI) / 180;
   const xy = p => ({
     x: (p.longitude - coordinate.longitude) * Math.cos(lat0) * 111320,
@@ -313,10 +399,10 @@ export function nearestRouteSpot(
       index: 0,
     });
   }
-  for (let i = 0; i < points.length - 1; i += 1) {
+  const segment = i => {
     const p = points[i],
       q = points[i + 1];
-    if (q.time - p.time > breakMs) continue;
+    if (q.time - p.time > breakMs) return;
     const a = xy(p),
       b = xy(q);
     const dx = b.x - a.x,
@@ -334,9 +420,12 @@ export function nearestRouteSpot(
         longitude: p.longitude + (q.longitude - p.longitude) * f,
       },
     });
-  }
+  };
+  if (near) near.forEach(segment);
+  else for (let i = 0; i < points.length - 1; i += 1) segment(i);
   if (!spots.length) return null;
-  const best = Math.min(...spots.map(spot => spot.distanceM));
+  let best = Infinity;
+  for (const spot of spots) if (spot.distanceM < best) best = spot.distanceM;
   // Passes: runs of consecutive segments near the touch; the nearest of each.
   const passes = [];
   let last = -2;

@@ -156,6 +156,18 @@ const tinySpan = points => {
 };
 // A tap this close to the route (dp) is a tap on it.
 const ROUTE_TAP_DP = 24;
+// A touch that let go within this time and this far from where it began is a
+// tap (the map's own double-tap wait is about 300 ms).
+const QUICK_TAP_MS = 250;
+const QUICK_TAP_SLOP = 10;
+// The map reports the same tap at most this long after the touch ended.
+const QUICK_TAP_HANDLED_MS = 1000;
+// Metres between two coordinates (equirectangular: a few km at most).
+const metresApartOf = (a, b) =>
+  Math.hypot(
+    (b.longitude - a.longitude) * Math.cos((a.latitude * Math.PI) / 180) * 111320,
+    (b.latitude - a.latitude) * 110540,
+  );
 
 // Every marker on our maps (「地圖標記一律用自己的樣式」) goes through here and
 // draws a view of its own: react-native-maps draws Google's red default pin
@@ -411,6 +423,43 @@ function CursorMarker({ cursor, color }) {
 // times at the zoom shown — one 「08:00」 label wide.
 const TIME_APART_DP = 48;
 
+// One drawn piece of the history route. Re-rendered only when the piece
+// itself changed (its id: times, length, width, colour, dash), so a cursor
+// move leaves every other piece's thousands of points alone (067).
+const HistoryLine = React.memo(
+  function HistoryLine({ line, casing, dashed }) {
+    return (
+      <>
+        {casing && (
+          <Polyline
+            coordinates={line.coordinates}
+            strokeColor={casing}
+            strokeWidth={line.width + 2}
+            zIndex={Z.route - 0.6}
+            lineDashPattern={line.dashed ? dashed : undefined}
+            tappable={false}
+          />
+        )}
+        <Polyline
+          coordinates={line.coordinates}
+          geodesic={false}
+          strokeColor={line.color}
+          strokeWidth={line.width}
+          zIndex={line.dashed ? Z.route - 0.5 : Z.route}
+          lineDashPattern={line.dashed ? dashed : undefined}
+          lineCap={line.dashed ? 'butt' : 'round'}
+          lineJoin="round"
+          tappable={false}
+        />
+      </>
+    );
+  },
+  (before, after) =>
+    before.line.id === after.line.id &&
+    before.casing === after.casing &&
+    before.dashed === after.dashed,
+);
+
 function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
@@ -433,35 +482,15 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   );
   return (
     <>
-      {route.lines.map((line, index) => (
+      {route.lines.map(line => (
         // A dashed line and a solid one are never the same native line: the
         // SDK keeps an old dash pattern when it is taken away.
-        <React.Fragment key={`route-${index}-${line.start}`}>
-          {isDark && (
-            <Polyline
-              coordinates={line.coordinates}
-              strokeColor={colors.routeCasing}
-              strokeWidth={line.width + 2}
-              zIndex={Z.route - 0.6}
-              lineDashPattern={line.dashed ? dashed : undefined}
-              tappable={false}
-            />
-          )}
-          <Polyline
-            key={`route-${line.dashed ? 'dashed' : 'solid'}-${index}-${
-              line.start
-            }`}
-            coordinates={line.coordinates}
-            geodesic={false}
-            strokeColor={line.color}
-            strokeWidth={line.width}
-            zIndex={line.dashed ? Z.route - 0.5 : Z.route}
-            lineDashPattern={line.dashed ? dashed : undefined}
-            lineCap={line.dashed ? 'butt' : 'round'}
-            lineJoin="round"
-            tappable={false}
-          />
-        </React.Fragment>
+        <HistoryLine
+          key={`route-${line.dashed ? 'dashed' : 'solid'}-${line.start}`}
+          line={line}
+          casing={isDark ? colors.routeCasing : null}
+          dashed={dashed}
+        />
       ))}
       {times.map(marker => (
         <RouteMarker
@@ -1176,7 +1205,49 @@ function GoogleTrackingMapRenderer({
   // ---- the history screen -------------------------------------------------
   // A tap on the map: on the route (within 24dp of a fix) moves the cursor
   // there; anywhere else is a tap on empty map.
+  // Google reports a tap only once it is sure it is not a double tap (about
+  // 300 ms). A quick tap on the route is answered from the touch itself
+  // (068: tap → cursor under 100 ms); the map's own report of the same tap
+  // then does nothing. A tap on a stop number is left to its marker.
+  const quickTap = useRef({ start: null, handledAt: 0 });
+  const STOP_TAP_DP = 20;
+  const touchStart = event => {
+    const finger = event.nativeEvent;
+    quickTap.current.start =
+      historyRoute && !(finger.touches?.length > 1)
+        ? { x: finger.pageX, y: finger.pageY, at: Date.now() }
+        : null;
+  };
+  const touchMove = event => {
+    const start = quickTap.current.start;
+    const finger = event.nativeEvent;
+    if (start && Math.hypot(finger.pageX - start.x, finger.pageY - start.y) > QUICK_TAP_SLOP)
+      quickTap.current.start = null;
+  };
+  const touchEnd = async event => {
+    const start = quickTap.current.start;
+    quickTap.current.start = null;
+    const map = mapRef.current;
+    const points = historyRoute?.points;
+    if (!start || Date.now() - start.at > QUICK_TAP_MS || !points?.length) return;
+    if (!map?.coordinateForPoint || !map?.pointForCoordinate) return;
+    const at = { x: start.x - (cursorLayout.x ?? 0), y: start.y - (cursorLayout.y ?? 0) };
+    try {
+      const coordinate = await map.coordinateForPoint(at);
+      if (metresPerDp > 0 && (historyRoute.places || []).some(place =>
+        metresApartOf(place.coordinate, coordinate) / metresPerDp <= STOP_TAP_DP)) return;
+      const found = nearestRouteSpot(points, coordinate, historyRoute?.cursor?.time ?? null);
+      if (!found) return;
+      const point = await map.pointForCoordinate(found.coordinate);
+      if (Math.hypot(point.x - at.x, point.y - at.y) > ROUTE_TAP_DP) return;
+      quickTap.current.handledAt = Date.now();
+      onCursorMove?.(found.point.time, 'route');
+    } catch {
+      /* The map's own report of the tap decides. */
+    }
+  };
   const pressHistoryMap = async event => {
+    if (Date.now() - quickTap.current.handledAt < QUICK_TAP_HANDLED_MS) return;
     const found = nearestRouteSpot(
       historyRoute?.points,
       event?.coordinate,
@@ -1381,6 +1452,9 @@ function GoogleTrackingMapRenderer({
         style={StyleSheet.absoluteFill}
         pointerEvents="box-none"
         importantForAccessibility={behindSheet(a11yHidden)}
+        onTouchStart={historyRoute ? touchStart : undefined}
+        onTouchMove={historyRoute ? touchMove : undefined}
+        onTouchEnd={historyRoute ? touchEnd : undefined}
       >
       {!component && mountedMap ? (
         <MapView

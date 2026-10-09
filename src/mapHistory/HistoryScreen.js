@@ -453,18 +453,24 @@ ref) {
             cursorTime <= n.end,
         );
   const selected = screen.pressed ?? stay?.start ?? null;
-  const pressNode = useCallback(
-    node => {
-      closeRange();
-      const action = ['movement', 'gap'].includes(node.type) ? 'route' : 'node';
-      screen.moveCursor(
-        node.start,
-        action,
-        action === 'node' || node.type === 'gap' ? node : null,
-      );
-    },
-    [closeRange, screen],
-  );
+  // The list's callbacks keep their identity across renders (the screen and
+  // closeRange are new on most of them), so a cursor move or a feed refresh
+  // does not re-render every row of a long day (068).
+  const latest = useRef({ screen, closeRange });
+  latest.current = { screen, closeRange };
+  const pressNode = useCallback(node => {
+    const { screen: current, closeRange: close } = latest.current;
+    close();
+    const action = ['movement', 'gap'].includes(node.type) ? 'route' : 'node';
+    current.moveCursor(
+      node.start,
+      action,
+      action === 'node' || node.type === 'gap' ? node : null,
+    );
+  }, []);
+  const rowLayout = useCallback((start, y) => {
+    rows.current[start] = y;
+  }, []);
   const dragStart = useCallback(() => {
     raised.current = false;
     closeRange();
@@ -547,9 +553,7 @@ ref) {
           color={screen.color}
           selected={selected}
           onPressNode={pressNode}
-          onRowLayout={(start, y) => {
-            rows.current[start] = y;
-          }}
+          onRowLayout={rowLayout}
         />
       </View>
     );
