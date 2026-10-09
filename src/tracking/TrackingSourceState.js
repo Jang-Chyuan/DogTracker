@@ -30,8 +30,12 @@ export function trackingSourceReducer(state, action) {
     switch (action.type) {
       case 'ready':
         return previous.ready ? previous : { ...previous, ready: true };
+      // `caughtUp` says the feed has caught up once. The feed refreshes every
+      // second; flipping it back for each refresh changed the state twice a
+      // second and re-rendered the whole app, the history list and map
+      // included, while nothing reads the in-between value (068).
       case 'refreshing':
-        return previous.caughtUp ? { ...previous, caughtUp: false } : previous;
+        return previous;
       case 'caught-up':
         return previous.caughtUp ? previous : { ...previous, caughtUp: true };
       case 'latest':
