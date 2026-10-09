@@ -150,9 +150,9 @@ test('A5a: tapping the name edits it in place; 完成 stores the trimmed name', 
   expect(input().props.autoFocus).toBe(true);
   expect(input().props.placeholder).toBe('狗的名字');
   expect(input().props.returnKeyType).toBe('done');
-  expect(flatten(renderer.toJSON())).toContain('2/20');
+  expect(flatten(renderer.toJSON())).not.toContain('2/20');
   await act(async () => input().props.onChangeText(' 豆豆二號 '));
-  expect(flatten(renderer.toJSON())).toContain('6/20');
+  expect(flatten(renderer.toJSON())).not.toContain('6/20');
   await act(async () => input().props.onSubmitEditing());
   // 完成 also blurs: stored once.
   await act(async () => input()?.props.onBlur());
@@ -175,7 +175,7 @@ test('A5a: emptied or only spaces — no error, the dog keeps its name', async (
   await press('dog-profile-name');
   await act(async () => input().props.onChangeText(''));
   expect(input().props.placeholder).toBe('狗的名字');
-  expect(flatten(renderer.toJSON())).toContain('0/20');
+  expect(flatten(renderer.toJSON())).not.toContain('0/20');
   await act(async () => input().props.onSubmitEditing());
   expect(onSaveName).not.toHaveBeenCalled();
   expect(flatten(renderer.toJSON())).toBe('豆豆訊號源 4');
@@ -377,4 +377,13 @@ test('stored names keep 20 characters as the user sees them', () => {
   const { normalizeDogAliases } = require('../src/mapHistory/DogAliases');
   expect(normalizeDogAliases({ 4: '🐶'.repeat(20) })[4]).toBe('🐶'.repeat(20));
   expect(normalizeDogAliases({ 4: ` ${'一'.repeat(25)} ` })[4]).toBe('一'.repeat(20));
+});
+
+test('E25: name count appears only near the limit', async () => {
+  await mount();
+  await press('dog-profile-name');
+  for (const [length, visible] of [[15, false], [16, true], [20, true], [5, false]]) {
+    await act(async () => input().props.onChangeText('一'.repeat(length)));
+    expect(hostCount('dog-name-count') > 0).toBe(visible);
+  }
 });
