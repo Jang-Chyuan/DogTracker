@@ -67,7 +67,7 @@ import {
   PHONE_FIX_MAX_AGE_S,
   regionForFrame,
 } from './MapFraming';
-import { edgeHints } from './EdgeHints';
+import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 import OverlapPicker, { overlapMenuPlace } from './OverlapPicker';
 
@@ -964,6 +964,7 @@ function GoogleTrackingMapRenderer({
             top: overlayTop,
             bottom: overlayBottom,
             bottomRow,
+            fontScale,
           })
         : [],
     [
@@ -975,6 +976,7 @@ function GoogleTrackingMapRenderer({
       overlayTop,
       overlayBottom,
       bottomRow,
+      fontScale,
     ],
   );
   // When the map's own blue dot last reported (kept coarse: one update a
@@ -1067,8 +1069,13 @@ function GoogleTrackingMapRenderer({
             2 * sizes.mapLabel.paddingV) *
           fontScale;
         const buttons = historyMode ? 0 : sizes.floatingButton + layout.floatingGap;
+        const selected = dogMarkers.find(marker => marker.slaveId === focusDog.slaveId)
+          || dogMarkers.find(marker => marker.selected);
+        const box = point && markerBox(selected || { name: '', size: sizes.marker.attention }, point, fontScale);
+        const occluded = box && [...mapControlBoxes({ width, height, bottom: overlayBottom, bottomRow }), ...hints.map(hintBox)]
+          .some(other => boxesOverlap(box, other));
         const hidden =
-          !point ||
+          !point || occluded ||
           point.x < margin ||
           point.x > width - margin ||
           point.y < overlayTop + margin ||

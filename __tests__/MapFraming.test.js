@@ -149,3 +149,16 @@ describe('overlap menu placement', () => {
     expect(place.top).toBeGreaterThan(150);
   });
 });
+
+test('E08 edge hints avoid the selected dog face and name tag', () => {
+  const { markerBox, boxesOverlap, hintBox, mapButtonsBox, mapControlBoxes } = require('../src/map/EdgeHints');
+  const selected = { ...marker(2, 0, 0), name: '小黑', tag: '小黑・室內', size: 52, selected: true };
+  const points = { 1: { x: -200, y: 330 }, 2: { x: 35, y: 305 } };
+  const view = { width: 392, height: 830, top: 100, bottom: 260 };
+  const [hint] = edgeHints([marker(1, 0, 0), selected], points, view);
+  expect(hint.slaveIds).toEqual([1]);
+  expect(boxesOverlap(hintBox(hint), markerBox(selected, points[2]))).toBe(false);
+  expect(boxesOverlap(markerBox(selected, { x: 345, y: 510 }), mapButtonsBox(view))).toBe(true);
+  expect(mapControlBoxes({ ...view, bottomRow: 48 }).some(box =>
+    boxesOverlap(markerBox(selected, { x: 160, y: 520 }), box))).toBe(true);
+});
