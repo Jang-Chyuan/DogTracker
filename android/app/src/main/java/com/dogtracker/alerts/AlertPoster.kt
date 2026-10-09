@@ -85,7 +85,7 @@ object AlertPoster {
     val channel = channel(context)
     if (!AlertAttention.vibration(alertsEnabled(context), audio?.ringerMode == AudioManager.RINGER_MODE_SILENT,
         channelAlerts(channel), systemAlerts && channel?.shouldVibrate() == true)) {
-      com.dogtracker.AppLog.i(TAG, "vibration skipped (silent mode or the 提醒 channel is blocked)")
+      com.dogtracker.AppLog.i(TAG, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1141))
       return false
     }
     val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return false
@@ -165,8 +165,8 @@ object AlertPoster {
       .setContentIntent(NotificationChannels.launch(context, target.screen, target.dogId, 1))
       .setDeleteIntent(PendingIntent.getBroadcast(context, ID + 1, Intent(context, AlertPauseReceiver::class.java)
         .setAction(ACTION_DISMISSED), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-      .addAction(0, "打開地圖", NotificationChannels.launch(context, "open-map", null, 2))
-      .addAction(0, "暫停提醒 ${Content.PAUSE_MINUTES} 分", pause)
+      .addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c171), NotificationChannels.launch(context, "open-map", null, 2))
+      .addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c462, Content.PAUSE_MINUTES), pause)
       .build()
     // A new alert on a notification already showing pops up again only as a
     // new post (the channel is silent, so an update never peeks).

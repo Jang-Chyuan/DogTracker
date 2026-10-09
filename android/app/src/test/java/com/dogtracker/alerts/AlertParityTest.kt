@@ -1,5 +1,7 @@
 package com.dogtracker.alerts
 
+import com.dogtracker.NativeCopy
+import com.dogtracker.R
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
@@ -16,6 +18,23 @@ class AlertParityTest {
   private fun scenarios(): JSONArray {
     val text = javaClass.classLoader!!.getResourceAsStream("alert-parity.json")!!.bufferedReader().readText()
     return JSONArray(text)
+  }
+
+  @Test fun notificationResourcesAgreeWithZhTw() {
+    val loader = javaClass.classLoader!!
+    val js = JSONObject(loader.getResourceAsStream("zh-TW.json")!!.bufferedReader().use { it.readText() })
+    val pairs = JSONArray(loader.getResourceAsStream("native-parity.json")!!.bufferedReader().use { it.readText() })
+    val placeholder = Regex("\\{\\{([^{}]+)\\}\\}")
+    for (index in 0 until pairs.length()) {
+      val pair = pairs.getJSONObject(index)
+      val nativeName = pair.getString("native")
+      val template = js.getString(pair.getString("js"))
+      val params = placeholder.findAll(template).mapIndexed { i, _ -> "copy-${i + 1}" }.toList()
+      var at = 0
+      val expected = placeholder.replace(template) { params[at++] }
+      val id = R.string::class.java.getField(nativeName).getInt(null)
+      assertEquals(nativeName, expected, NativeCopy.text(id, *params.toTypedArray()))
+    }
   }
 
   // JSON as plain values (numbers as Double), for a comparison that ignores key order.

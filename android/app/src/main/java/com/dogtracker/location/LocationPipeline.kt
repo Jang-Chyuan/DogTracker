@@ -17,7 +17,7 @@ internal class LocationPipeline {
   var received = 0; private set
   var accepted = 0; private set
   var rejected = 0; private set
-  var reason = "等待新定位"; private set
+  var reason = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117); private set
   private var lastSavedSample = 0L
   private var lastWrite = 0L
   private var newest = 0L
@@ -36,19 +36,19 @@ internal class LocationPipeline {
     received++
     fun reject(message: String): Boolean { rejected++; reason = message; return false }
     if (sample.elapsedNanos <= 0 || sample.elapsedNanos > now || now - sample.elapsedNanos > 3_000_000_000L)
-      return reject("定位過期，等待新樣本")
-    if (sample.elapsedNanos <= newest) return reject("略過重複或倒序定位")
+      return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1118))
+    if (sample.elapsedNanos <= newest) return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1119))
     if (!sample.latitude.isFinite() || !sample.longitude.isFinite() || abs(sample.latitude) > 90 || abs(sample.longitude) > 180)
-      return reject("定位座標無效")
+      return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1120))
     if (!acceptsLocationAccuracy(true, sample.accuracy, sample.rawSpeed))
-      return reject(if (isFastLocation(sample.rawSpeed)) "等待合格定位（需 < 50 公尺）" else "等待合格定位（需 ≤ 30 公尺）")
+      return reject(if (isFastLocation(sample.rawSpeed)) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1121) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1122))
     val previous = latest
     val dt = if (previous == null) 0.0 else (sample.elapsedNanos - previous.elapsedNanos) / 1e9
     val reset = previous == null || dt > 30
     if (!reset) {
       val distance = distanceMeters(previous!!.rawLatitude, previous.rawLongitude, sample.latitude, sample.longitude)
       if (distance > 70 * dt + previous.accuracy + sample.accuracy)
-        return reject("略過不合理位置跳動")
+        return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1123))
     }
     // Three valid raw samples; a signal gap starts a new smoothing window.
     if (reset || dt > 3) {
@@ -74,7 +74,7 @@ internal class LocationPipeline {
       longitude = stationaryCoordinate?.second ?: longitude,
       speed = if (state == "stationary") 0f else sample.speed, motionState = state)
     newest = sample.elapsedNanos
-    accepted++; reason = "接收與平滑中"
+    accepted++; reason = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1124)
     return true
   }
   fun candidate(now: Long): LocationSample? {

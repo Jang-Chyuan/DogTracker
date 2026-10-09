@@ -86,16 +86,16 @@ class SearchRelayService : Service() {
       val delay = SearchRelayTiming.waitMs(next, now, nextPassElapsed - SystemClock.elapsedRealtime())
       if (delay == null) { stopSelf(); return }
       if (delay > 0) {
-        show("等待下次同步，待傳資料已保留")
+        show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1147))
         handler.postDelayed(this, delay)
         return
       }
       val online = network.getNetworkCapabilities(network.activeNetwork)
         ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-      if (!online) { show("等待網路，待傳資料已保留"); return }
+      if (!online) { show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1148)); return }
       val context = (application as ReactApplication).reactHost?.currentReactContext
       if (context == null) {
-        show("等待同步程式，待傳資料已保留")
+        show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1149))
         handler.postDelayed(this, SearchRelayTiming.reactWaitMs(reactWaitAttempt))
         reactWaitAttempt = minOf(reactWaitAttempt + 1, 4)
         return
@@ -103,7 +103,7 @@ class SearchRelayService : Service() {
       reactWaitAttempt = 0
       val id = UUID.randomUUID().toString()
       runId = id
-      show("正在同步狗的位置")
+      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1150))
       lock?.acquire(SearchRelayTiming.ACTIVE_TIMEOUT_MS)
       try {
         val data = Arguments.createMap().apply { putString("owner", owner); putString("runId", id) }
@@ -123,13 +123,13 @@ class SearchRelayService : Service() {
   }
   private fun show(text: String) {
     startForeground(3106, NotificationCompat.Builder(this, com.dogtracker.NotificationChannels.TRACKING)
-      .setSmallIcon(com.dogtracker.R.drawable.ic_stat_dog).setContentTitle("DogTracker・資料同步")
+      .setSmallIcon(com.dogtracker.R.drawable.ic_stat_dog).setContentTitle(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1151))
       .setContentText(text).setColor(com.dogtracker.NotificationChannels.accent(this))
       .setContentIntent(com.dogtracker.NotificationChannels.launch(this, "cloud-settings"))
       .setOnlyAlertOnce(true).setOngoing(true).build())
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    show("準備同步待傳資料")
+    show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1152))
     val next = intent?.getStringExtra("owner").orEmpty()
     if (next.isEmpty() || timedOut) { stopSelf(); return START_NOT_STICKY }
     if (next != owner) {

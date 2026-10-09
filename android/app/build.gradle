@@ -162,3 +162,44 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// JVM alert tests use the same XML defaults as Android. No second copy deck.
+def nativeCopyOutput = layout.buildDirectory.dir('generated/source/nativeCopy')
+def generateNativeCopy = tasks.register('generateNativeCopy') {
+    def copyXml = file('src/main/res/values/strings.xml')
+    inputs.file(copyXml)
+    outputs.dir(nativeCopyOutput)
+    doLast {
+        def entries = new groovy.xml.XmlParser().parse(copyXml).string.collect { row ->
+            def value = row.text()
+            if (value.startsWith('"') && value.endsWith('"')) value = value.substring(1, value.length() - 1)
+            value = value.replace('\\n', '\n').replace("\\'", "'").replace('\\"', '"')
+            def literal = groovy.json.JsonOutput.toJson(value)
+            "        R.string.${row.attribute('name')} to ${literal}"
+        }.join(',\n')
+        def output = nativeCopyOutput.get().file('com/dogtracker/NativeCopy.kt').asFile
+        output.parentFile.mkdirs()
+        output.text = """package com.dogtracker
+
+// Generated from values/strings.xml; Android reads resources, JVM tests use defaults.
+object NativeCopy {
+    @Volatile private var resources: android.content.res.Resources? = null
+    fun install(value: android.content.res.Resources) { resources = value }
+    private val defaults = mapOf(
+${entries}
+    )
+    fun text(id: Int, vararg params: Any?): String {
+        val template = resources?.getString(id) ?: defaults.getValue(id)
+        var at = 0
+        return Regex("\\\\{\\\\{[^{}]+\\\\}\\\\}").replace(template) {
+            params[at++].toString()
+        }
+    }
+}
+"""
+    }
+}
+android.sourceSets.main.java.srcDir(nativeCopyOutput.get().asFile)
+tasks.named('preBuild').configure { dependsOn(generateNativeCopy) }
+
+android.sourceSets.test.resources.srcDir(rootProject.file("../src/i18n"))

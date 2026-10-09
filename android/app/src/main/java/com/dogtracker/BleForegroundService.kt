@@ -70,10 +70,10 @@ class BleForegroundService : Service() {
   private var wifiResult: ((String?, String?) -> Unit)? = null
   private var wifiRead = false
   private val reconnectRunnable = Runnable { connectGatt() }
-  private val connectTimeout = Runnable { fail("BLE 連線或訂閱逾時") }
+  private val connectTimeout = Runnable { fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1072)) }
   private val wifiTimeout = Runnable {
-    finishWifi(null, "Wi-Fi 指令逾時")
-    fail("BLE 指令逾時，重新連線")
+    finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1073))
+    fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1074))
   }
   // The alerts while the app is off screen (BackgroundAlerts skips its turn
   // while the app is on screen and runs them itself).
@@ -117,9 +117,9 @@ class BleForegroundService : Service() {
         val age = SystemClock.elapsedRealtime() - if (lastReceivedElapsed > 0) lastReceivedElapsed else subscribedElapsed
         if (age >= 30_000 && !stale) {
           stale = true
-          publishStatus("BLE 已連線，但超過 30 秒未收到資料")
+          publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1075))
         }
-        if (age >= 90_000) fail("BLE 超過 90 秒無資料，重新連線")
+        if (age >= 90_000) fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1076))
       }
       handler.postDelayed(this, 5_000)
     }
@@ -149,14 +149,14 @@ class BleForegroundService : Service() {
           ReceiverPauses.paused(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis())).commit()
       }
       handler.post {
-        stopSession("已中斷連線")
+        stopSession(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c289))
         // A disconnection alert already showing goes (the user's own
         // disconnect is not one); the other problems stay as they are.
         runCatching { BackgroundAlerts.evaluate(this, alertInput(), System.currentTimeMillis()) }
       }
       return START_NOT_STICKY
     }
-    startForeground(NOTIFICATION_ID, notification("正在準備 BLE 連線"))
+    startForeground(NOTIFICATION_ID, notification(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1077)))
     isRunning = true
     prefs.edit().remove("resumeError").apply()
     handler.post {
@@ -214,31 +214,31 @@ class BleForegroundService : Service() {
     handler.removeCallbacks(reconnectRunnable)
     if (manualStop || connecting || isConnected) return
     if (!hasPermission()) {
-      scheduleReconnect(30_000, "缺少藍牙連線權限，等待重新授權")
+      scheduleReconnect(30_000, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1078))
       return
     }
     try {
       val adapter = getSystemService(BluetoothManager::class.java)?.adapter
       if (adapter == null || !adapter.isEnabled) {
-        scheduleReconnect(30_000, "藍牙未開啟")
+        scheduleReconnect(30_000, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1079))
         return
       }
       closeGatt()
       connecting = true
       // An attempt is running: not the widened wait any more.
       retryDelayMs = 0L
-      publishStatus("正在連線 $deviceName")
+      publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1080, deviceName))
       gatt = adapter.getRemoteDevice(deviceId).connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE)
-      if (gatt == null) return fail("無法建立 BLE 連線")
+      if (gatt == null) return fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1081))
       handler.postDelayed(connectTimeout, 30_000)
-    } catch (error: Exception) { fail("BLE 連線失敗：${error.message}") }
+    } catch (error: Exception) { fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1082, error.message)) }
   }
 
   // Serialize callbacks, persistence and commands; ignore callbacks from closed GATTs.
   private fun dispatch(client: BluetoothGatt, action: () -> Unit) {
     handler.post {
       if (manualStop || client !== gatt) return@post
-      try { action() } catch (error: Exception) { fail("BLE 操作失敗：${error.message}") }
+      try { action() } catch (error: Exception) { fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1083, error.message)) }
     }
   }
 
@@ -246,17 +246,17 @@ class BleForegroundService : Service() {
     override fun onConnectionStateChange(client: BluetoothGatt, status: Int, state: Int) {
       dispatch(client) {
         if (status != BluetoothGatt.GATT_SUCCESS || state == BluetoothProfile.STATE_DISCONNECTED) {
-          fail("BLE 已斷線（$status），等待自動重連")
+          fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1084, status))
         } else if (state == BluetoothProfile.STATE_CONNECTED) {
-          publishStatus("BLE 已連線，正在探索服務")
-          if (!client.discoverServices()) fail("無法探索 BLE 服務")
+          publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1085))
+          if (!client.discoverServices()) fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1086))
         }
       }
     }
 
     override fun onServicesDiscovered(client: BluetoothGatt, status: Int) {
       dispatch(client) {
-        if (status != BluetoothGatt.GATT_SUCCESS) fail("BLE 服務探索失敗：$status")
+        if (status != BluetoothGatt.GATT_SUCCESS) fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1087, status))
         else if (!client.requestMtu(320)) subscribe(client)
       }
     }
@@ -268,7 +268,7 @@ class BleForegroundService : Service() {
     override fun onDescriptorWrite(client: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
       dispatch(client) {
         if (descriptor.characteristic.uuid != UUID.fromString(dataUuid)) return@dispatch
-        if (status != BluetoothGatt.GATT_SUCCESS) return@dispatch fail("BLE 通知訂閱失敗：$status")
+        if (status != BluetoothGatt.GATT_SUCCESS) return@dispatch fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1088, status))
         handler.removeCallbacks(connectTimeout)
         connecting = false
         isConnected = true
@@ -281,7 +281,7 @@ class BleForegroundService : Service() {
         subscribedElapsed = SystemClock.elapsedRealtime()
         lastReceivedElapsed = 0
         stale = false
-        publishStatus("BLE 已訂閱，等待資料")
+        publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1089))
       }
     }
 
@@ -299,9 +299,9 @@ class BleForegroundService : Service() {
     override fun onCharacteristicWrite(client: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
       dispatch(client) {
         if (characteristic.uuid != UUID.fromString(WIFI_UUID) || wifiResult == null) return@dispatch
-        if (status != BluetoothGatt.GATT_SUCCESS) finishWifi(null, "Wi-Fi 寫入失敗：$status")
+        if (status != BluetoothGatt.GATT_SUCCESS) finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1090, status))
         else if (!wifiRead) finishWifi("{}", null)
-        else if (!client.readCharacteristic(characteristic)) finishWifi(null, "Wi-Fi 讀取啟動失敗")
+        else if (!client.readCharacteristic(characteristic)) finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1091))
       }
     }
 
@@ -319,10 +319,10 @@ class BleForegroundService : Service() {
 
   private fun subscribe(client: BluetoothGatt) {
     val characteristic = client.getService(UUID.fromString(serviceUuid))?.getCharacteristic(UUID.fromString(dataUuid))
-      ?: return fail("找不到 BLE 資料 Characteristic")
-    if (!client.setCharacteristicNotification(characteristic, true)) return fail("無法啟用 BLE 通知")
+      ?: return fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1092))
+    if (!client.setCharacteristicNotification(characteristic, true)) return fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1093))
     val descriptor = characteristic.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-      ?: return fail("BLE 資料不支援通知")
+      ?: return fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1094))
     val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       client.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothGatt.GATT_SUCCESS
     } else {
@@ -331,23 +331,23 @@ class BleForegroundService : Service() {
       @Suppress("DEPRECATION")
       client.writeDescriptor(descriptor)
     }
-    if (!started) fail("無法寫入 BLE 通知設定")
+    if (!started) fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1095))
   }
 
   // Assemble UTF-8 bytes before decoding, including fragmented or coalesced JSON.
   private fun receive(bytes: ByteArray) {
     val payloads = try { framer.accept(bytes) } catch (error: IllegalArgumentException) {
-      publishStatus(error.message ?: "BLE 資料封包錯誤")
+      publishStatus(error.message ?: com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1096))
       return
     }
     for (payload in payloads) {
         val data = try { JSONObject(payload) } catch (_: Exception) {
-          publishStatus("BLE 資料格式錯誤")
+          publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1097))
           continue
         }
         val masterId = if (!data.isNull("master_id")) data.optInt("master_id") else data.optInt("mid")
         if (expectedMasterId > 0 && masterId != expectedMasterId) {
-          stopSession("Master ID 不符合：QR=$expectedMasterId，BLE=$masterId")
+          stopSession(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1098, expectedMasterId, masterId))
           return
         }
         val now = System.currentTimeMillis()
@@ -355,7 +355,7 @@ class BleForegroundService : Service() {
           DogStatusStore.get(this).save(data, payload, now)
           prefs.edit().remove("storageError").apply()
         } catch (error: Exception) {
-          prefs.edit().putString("storageError", "資料存檔失敗：${error.message}").apply()
+          prefs.edit().putString("storageError", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1099, error.message)).apply()
         }
         runCatching { BackgroundAlerts.onPacket(this, data, now) }
         lastReceivedElapsed = SystemClock.elapsedRealtime()
@@ -363,7 +363,7 @@ class BleForegroundService : Service() {
         stale = false
         val value = Base64.encodeToString(payload.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         prefs.edit().putString("lastPayload", value).putLong("lastReceivedAt", now).apply()
-        publishStatus("BLE 接收中；最後資料 ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))}")
+        publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1100, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))))
         emit(EVENT_DATA, JSONObject().put("value", value).put("receivedAt", now)
           .put("sessionId", prefs.getString("sessionId", "")).toString())
     }
@@ -371,12 +371,12 @@ class BleForegroundService : Service() {
 
   fun wifiCommand(json: String, read: Boolean, result: (String?, String?) -> Unit) {
     handler.post {
-      if (!isConnected || manualStop || !hasPermission()) return@post result(null, "BLE 尚未連線")
-      if (wifiResult != null) return@post result(null, "另一個 Wi-Fi 指令仍在執行")
+      if (!isConnected || manualStop || !hasPermission()) return@post result(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1067))
+      if (wifiResult != null) return@post result(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1101))
       try {
-        val client = gatt ?: return@post result(null, "BLE 尚未連線")
+        val client = gatt ?: return@post result(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1067))
         val characteristic = client.getService(UUID.fromString(serviceUuid))?.getCharacteristic(UUID.fromString(WIFI_UUID))
-          ?: return@post result(null, "裝置不支援 Wi-Fi 設定")
+          ?: return@post result(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1102))
         wifiResult = result
         wifiRead = read
         val bytes = json.toByteArray(Charsets.UTF_8)
@@ -390,10 +390,10 @@ class BleForegroundService : Service() {
           client.writeCharacteristic(characteristic)
         }
         if (started) handler.postDelayed(wifiTimeout, 10_000)
-        else finishWifi(null, "Wi-Fi 指令啟動失敗")
+        else finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1103))
       } catch (error: Exception) {
-        if (wifiResult != null) finishWifi(null, error.message ?: "Wi-Fi 指令失敗")
-        else result(null, error.message ?: "Wi-Fi 指令失敗")
+        if (wifiResult != null) finishWifi(null, error.message ?: com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1104))
+        else result(null, error.message ?: com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1104))
       }
     }
   }
@@ -401,7 +401,7 @@ class BleForegroundService : Service() {
   private fun readWifi(characteristic: BluetoothGattCharacteristic, bytes: ByteArray, status: Int) {
     if (characteristic.uuid != UUID.fromString(WIFI_UUID) || wifiResult == null) return
     if (status == BluetoothGatt.GATT_SUCCESS) finishWifi(bytes.toString(Charsets.UTF_8), null)
-    else finishWifi(null, "Wi-Fi 讀取失敗：$status")
+    else finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1105, status))
   }
 
   private fun finishWifi(value: String?, error: String?) {
@@ -423,11 +423,11 @@ class BleForegroundService : Service() {
     scheduleReconnect(reason = message)
   }
 
-  private fun scheduleReconnect(delayOverride: Long? = null, reason: String = "等待自動重連") {
+  private fun scheduleReconnect(delayOverride: Long? = null, reason: String = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1106)) {
     if (manualStop) return
     val delay = reconnectBackoff.next(SystemClock.elapsedRealtime(), delayOverride)
     retryDelayMs = delay
-    publishStatus("$reason；${delay / 1000} 秒後重試")
+    publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1107, reason, delay / 1000))
     handler.removeCallbacks(reconnectRunnable)
     handler.postDelayed(reconnectRunnable, delay)
   }
@@ -451,11 +451,11 @@ class BleForegroundService : Service() {
     val previous = gatt
     gatt = null
     runCatching { previous?.close() }
-    finishWifi(null, "BLE 連線已關閉")
+    finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1108))
     framer.reset()
   }
 
-  private fun stopSession(status: String = "背景接收已停止") {
+  private fun stopSession(status: String = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1109)) {
     manualStop = true
     isRunning = false
     com.dogtracker.cloud.SearchRelayService.receiverStopped(this)
@@ -476,14 +476,14 @@ class BleForegroundService : Service() {
       ReceiverNotificationText.of(isConnected, disconnectedAt > 0, retryDelayMs),
     ).setColor(NotificationChannels.accent(this)).setSmallIcon(R.drawable.ic_stat_dog)
     .setContentIntent(NotificationChannels.launch(this, "receiver-settings"))
-    .addAction(0, "中斷連線", PendingIntent.getService(this, NOTIFICATION_ID,
+    .addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c204), PendingIntent.getService(this, NOTIFICATION_ID,
       Intent(this, BleForegroundService::class.java).setAction(ACTION_USER_STOP),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     .setOngoing(true).setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()
 
   private fun receiverTitle(): String {
     val number = alertInput().number
-    return if (number != null) "DogTracker・接收器 $number" else "DogTracker・接收器"
+    return if (number != null) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1110, number) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1111)
   }
 
   override fun onBind(intent: Intent?): IBinder? = null

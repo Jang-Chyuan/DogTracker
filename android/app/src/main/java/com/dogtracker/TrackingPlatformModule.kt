@@ -39,13 +39,13 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
           promise.resolve(false)
         } else {
           if (!preferences.edit().putBoolean("prompt_requested", true).commit()) {
-            throw IllegalStateException("無法保存定位詢問紀錄")
+            throw IllegalStateException(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1068))
           }
           promise.resolve(true)
         }
       }
     } catch (error: Exception) {
-      promise.reject("location_prompt_state", "無法保存定位詢問紀錄", error)
+      promise.reject("location_prompt_state", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1068), error)
     }
   }
 
@@ -56,7 +56,7 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
         else location.isProviderEnabled(LocationManager.GPS_PROVIDER) || location.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
       promise.resolve(enabled)
     } catch (error: Exception) {
-      promise.reject("location_status", "無法讀取系統定位狀態", error)
+      promise.reject("location_status", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1069), error)
     }
   }
 
@@ -85,7 +85,7 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
       val power = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
       promise.resolve(power.isIgnoringBatteryOptimizations(reactApplicationContext.packageName))
     } catch (error: Exception) {
-      promise.reject("battery_optimization", "無法讀取電池最佳化狀態", error)
+      promise.reject("battery_optimization", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1070), error)
     }
   }
 

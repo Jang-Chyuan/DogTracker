@@ -91,7 +91,7 @@ class MainActivity : ReactActivity() {
     if (deviceId.isBlank()) return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
       checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-      prefs.edit().putString("resumeError", "背景恢復失敗：請重新授予藍牙權限後連線").apply()
+      prefs.edit().putString("resumeError", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1051)).apply()
       return
     }
     try {
@@ -105,7 +105,7 @@ class MainActivity : ReactActivity() {
       else startService(intent)
     } catch (error: Exception) {
       com.dogtracker.AppLog.e("DogTracker", "Unable to resume saved BLE session", error)
-      prefs.edit().putString("resumeError", "背景恢復失敗：${error.message}").apply()
+      prefs.edit().putString("resumeError", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1052, error.message)).apply()
     }
   }
 

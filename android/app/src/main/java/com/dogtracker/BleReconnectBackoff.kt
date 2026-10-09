@@ -24,11 +24,11 @@ internal class BleReconnectBackoff {
  */
 internal object ReceiverNotificationText {
   fun of(connected: Boolean, disconnected: Boolean, retryDelayMs: Long): String = when {
-    connected -> "正在接收狗的位置"
-    disconnected && retryDelayMs >= 60_000L -> "斷線了，${retryDelayMs / 60_000L} 分鐘後再試著連線"
-    disconnected -> "斷線了，正在自動重連"
+    connected -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1112)
+    disconnected && retryDelayMs >= 60_000L -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1113, retryDelayMs / 60_000L)
+    disconnected -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1114)
     // Never connected this time, and the wait has widened after long failures.
-    retryDelayMs >= 60_000L -> "連不上接收器，${retryDelayMs / 60_000L} 分鐘後再試著連線"
-    else -> "正在連線接收器"
+    retryDelayMs >= 60_000L -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1115, retryDelayMs / 60_000L)
+    else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1116)
   }
 }

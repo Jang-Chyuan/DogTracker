@@ -287,7 +287,7 @@ object Events {
   const val BATTERY_CLEAR_PERCENT = 30
   const val BATTERY_AGAIN_PERCENT = 10
   const val DISCONNECT_GRACE_MS = 30 * 1000L
-  private val FULL = Regex("SQLITE_FULL|disk is full|no space left|ENOSPC|空間不足", RegexOption.IGNORE_CASE)
+  private val FULL = Regex(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1142), RegexOption.IGNORE_CASE)
 
   fun key(kind: String, subject: String) = "$kind:$subject"
   /** "dog-stale:4" -> ("dog-stale", "4"). */
@@ -342,7 +342,7 @@ object Events {
       if (!freshness.drawn) continue
       val local = !dog.range.cloudOnly
       if (local) localDogs += 1
-      val name = dog.name?.takeIf { it.isNotBlank() } ?: "狗 ${dog.slaveId}"
+      val name = dog.name?.takeIf { it.isNotBlank() } ?: com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c783, dog.slaveId)
       if (freshness.stale) add("dog-stale", subject, null) {
         it.copy(name = name, basis = freshness.basis, ageMs = freshness.ageMs, receiverAffected = local, source = if (local) "ble" else "cloud")
       }
@@ -426,22 +426,22 @@ object Content {
   fun duration(ms: Long?): String {
     val minutes = max(10L, floor((ms ?: 0L) / 60000.0).toLong())
     return when {
-      minutes < 60 -> "$minutes 分鐘"
-      minutes < 24 * 60 -> "${minutes / 60} 小時"
-      else -> "${minutes / (24 * 60)} 天"
+      minutes < 60 -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c435, minutes)
+      minutes < 24 * 60 -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c437, minutes / 60)
+      else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c459, minutes / (24 * 60))
     }
   }
 
-  private fun receiverName(number: Int?) = if (number != null) "接收器 $number" else "接收器"
+  private fun receiverName(number: Int?) = if (number != null) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c177, number) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c075)
 
   fun line(event: AlertEvent): String = when (event.kind) {
-    "dog-out-of-range" -> "${event.name} 不在接收範圍"
-    "dog-stale" -> "${event.name} ${duration(event.ageMs)}沒有新${if (event.basis == "packet") "資料" else "位置"}"
-    "dog-battery" -> "${event.name} 電量低 ${event.percentage}%"
-    "receiver-battery" -> "${receiverName(event.number)} 電量低 ${event.percentage}%"
-    "storage" -> if (event.storageFull) "手機空間不足，位置存不進手機" else "位置存不進手機"
+    "dog-out-of-range" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c168, event.name)
+    "dog-stale" -> com.dogtracker.NativeCopy.text(if (event.basis == "packet") com.dogtracker.R.string.c463 else com.dogtracker.R.string.c170, event.name, duration(event.ageMs))
+    "dog-battery" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c464, event.name, event.percentage)
+    "receiver-battery" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c464, receiverName(event.number), event.percentage)
+    "storage" -> if (event.storageFull) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c282) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c466)
     "receiver-disconnected" ->
-      "${receiverName(event.number)} 斷線了${if (event.dogCount > 0) "（${event.dogCount} 隻狗收不到）" else ""}"
+      if (event.dogCount > 0) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c467, receiverName(event.number), event.dogCount) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c468, receiverName(event.number))
     else -> ""
   }
 
@@ -453,9 +453,9 @@ object Content {
     val dogs = shown.filter { it.kind.startsWith("dog-") }.map { it.subject }.toSet()
     val devices = shown.filter { !it.kind.startsWith("dog-") }
     val title = when {
-      devices.isEmpty() -> "DogTracker・${dogs.size} 隻狗要注意"
-      dogs.isEmpty() -> "DogTracker・接收器與手機要注意"
-      else -> "DogTracker・${shown.size} 件事要注意"
+      devices.isEmpty() -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c169, dogs.size)
+      dogs.isEmpty() -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c173)
+      else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c471, shown.size)
     }
     return NotificationContent(title, shown.map(::line), target(shown[0]))
   }

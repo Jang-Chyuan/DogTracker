@@ -53,7 +53,7 @@ internal object BleUploadQueue {
     if (duplicate) return null
     val full = db.rawQuery("SELECT COUNT(*) FROM ble_upload_queue WHERE status<>'sent'", null).use { it.moveToFirst(); it.getLong(0) >= 20000 }
     if (full) {
-      db.execSQL("INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('queue_error','待傳佇列已滿（20,000 筆），新轉送資料未入列；請恢復上傳。')")
+      db.execSQL("INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('queue_error',?)", arrayOf(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1071)))
       return null
     }
     db.insertOrThrow("ble_upload_queue", null, ContentValues().apply {
