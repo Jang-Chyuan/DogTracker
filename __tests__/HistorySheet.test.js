@@ -49,15 +49,18 @@ afterEach(async () => {
   renderer = null;
 });
 
-test('dog alias can be edited in the card and saved with Apply', async () => {
-  const value = history();
+test('names are not edited here; the saved names label the dogs and are kept on Apply', async () => {
+  // Names are edited on the dog's own page (A5, the card's pencil).
+  const value = history({ preferences: { ...history().preferences, dogAliases: { 4: '小黑' } } });
   await mount(value);
   await act(async () => control('狗與 Master').props.onPress());
-  await act(async () => control('狗 4 的別名').props.onChangeText('小黑'));
+  expect(control('狗 4 的別名')).toBeUndefined();
   expect(control('小黑 狗 4')).toBeDefined();
-  expect(value.save).not.toHaveBeenCalled();
+  // Only the names changing (saved on A5 meanwhile) is not an unapplied change.
+  expect(control('重新查詢')).toBeDefined();
+  await act(async () => control('狗 6').props.onPress());
   await act(async () => control('套用（有未套用的變更）').props.onPress());
-  expect(value.save).toHaveBeenCalledWith(expect.objectContaining({ dogAliases: { 4: '小黑' } }));
+  expect(value.save).toHaveBeenCalledWith(expect.objectContaining({ dogAliases: { 4: '小黑' }, slaves: [4, 6] }));
 });
 
 test('the card header says which window is drawn and how many rows it holds', () => {

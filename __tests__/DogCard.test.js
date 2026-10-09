@@ -2,7 +2,7 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, Text } from 'react-native';
 import DogCard from '../src/map/DogCard';
-import { ActivityPage, RenameDialog } from '../src/map/DogCardPages';
+import { ActivityPage } from '../src/map/DogCardPages';
 import { dogCard, phoneReading } from '../src/map/DogCardModel';
 import { dogCardReadings, readDogCardRows } from '../src/activity/DogCardReadings';
 import { RANGE_STATUS } from '../src/tracking/ReceiverRange';
@@ -141,27 +141,6 @@ test('a held dog\'s 位置 row is two lines high (A7b); the address line shows o
   expect(style.some(item => item.minHeight === 64)).toBe(true);
   await act(async () => renderer.update(<DogCard card={model(held, { ...fresh, address: '桃園區中正路 1 號附近' })} />));
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內桃園區中正路 1 號附近');
-});
-
-test('the rename dialog: at most 20 characters, empty restores the number, back cancels', async () => {
-  const onSave = jest.fn(async () => true);
-  const onCancel = jest.fn();
-  await act(async () => {
-    renderer = Renderer.create(<RenameDialog name="豆豆" initial="豆豆" defaultName="狗 4" onSave={onSave}
-      onCancel={onCancel} />);
-  });
-  const input = renderer.root.findAll(node => node.props.accessibilityLabel === '狗的名字'
-    && typeof node.props.onChangeText === 'function')[0];
-  expect(input.props.maxLength).toBe(20);
-  expect(input.props.placeholder).toBe('狗 4');
-  await act(async () => input.props.onChangeText('  '));
-  expect(flatten(renderer.toJSON())).toContain('2/20');
-  const done = renderer.root.findAll(node => typeof node.props.onPress === 'function'
-    && flatten(node.props.children?.props?.children ?? node.props.children) === '完成')[0];
-  await act(async () => done.props.onPress());
-  expect(onSave).toHaveBeenCalledWith('');
-  expect(onBack()).toBe(true);
-  expect(onCancel).toHaveBeenCalledTimes(1);
 });
 
 test('the activity page shows that dog\'s chart and returns to the card on back', async () => {

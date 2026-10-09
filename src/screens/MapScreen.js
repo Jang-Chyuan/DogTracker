@@ -24,7 +24,9 @@ import { isOtherReceiver, receiverLink, receiverNumber } from '../map/ReceiverSt
 import { dogMarkers, dogName } from '../map/DogMarkers';
 import { coldStartCoordinates, phoneFix } from '../map/MapFraming';
 import DogCard from '../map/DogCard';
-import { ActivityPage, RenameDialog } from '../map/DogCardPages';
+import { ActivityPage } from '../map/DogCardPages';
+import DogProfile from '../dogs/DogProfile';
+import { displayName } from '../dogs/DogName';
 import { dogCard, phoneReading } from '../map/DogCardModel';
 import { useDogCardReadings } from '../map/useDogCardReadings';
 import { cloudClock, dogFreshness } from '../tracking/DogFreshness';
@@ -122,10 +124,16 @@ export default function MapScreen({
   // A screen fixture can open one dog's card (card-* states).
   const fixtureDog = fixture?.openDog ?? null;
   const fixtureName = fixture?.name ?? null;
+  const fixturePage = fixture?.openPage ?? null;
+  const pendingPage = useRef(null);
   useEffect(() => {
-    if (fixtureDog != null) openDog(fixtureDog);
-    else setSelected(null);
-  }, [fixtureName, fixtureDog, openDog]);
+    if (fixtureDog != null) {
+      openDog(fixtureDog);
+      // dog-edit opens the dog's page (A5) over its card, once the card is.
+      pendingPage.current = fixturePage;
+      if (fixturePage) setCardPage(fixturePage);
+    } else setSelected(null);
+  }, [fixtureName, fixtureDog, fixturePage, openDog]);
   useEffect(() => {
     if (openDogRequest?.slaveId != null) openDog(openDogRequest.slaveId);
     // A new request has a new key.
@@ -277,6 +285,9 @@ export default function MapScreen({
     if (!cardOpen) {
       setCardHeight(0);
       setCardPage(null);
+    } else if (pendingPage.current) {
+      setCardPage(pendingPage.current);
+      pendingPage.current = null;
     }
     onCardChange?.(cardOpen);
   }, [cardOpen, onCardChange]);
@@ -327,14 +338,16 @@ export default function MapScreen({
     setSelected(null);
     onOpenHistory?.(dog.slaveId);
   };
-  const rename = async name => {
+  // A5: the name is stored with the history preferences' names (dogAliases),
+  // the face in dog_avatars; both by collar number, on this phone only.
+  const saveName = async name => {
     if (!cardDog || !history?.save) return false;
-    const aliases = { ...(history.preferences.dogAliases || {}) };
-    // Empty restores 「狗 4」 (HistoryDatabase drops empty names).
-    aliases[cardDog.slaveId] = name;
-    const saved = await history.save({ ...history.preferences, dogAliases: aliases });
-    if (saved) setCardPage(null);
-    return saved;
+    const aliases = { ...(history.preferences.dogAliases || {}), [cardDog.slaveId]: name };
+    return !!(await history.save({ ...history.preferences, dogAliases: aliases }));
+  };
+  const saveAvatar = async avatar => {
+    if (!cardDog || !dogAvatars?.save) return false;
+    return !!(await dogAvatars.save(cardDog.slaveId, avatar));
   };
   const closePage = useCallback(() => setCardPage(null), []);
   const focusDog = useMemo(() => (cardDog && cardHeight && focusRequest?.slaveId === cardDog.slaveId
@@ -460,7 +473,7 @@ export default function MapScreen({
           heading={heading}
           onHeight={cardHeightChanged}
           onClosed={closedCard}
-          onEdit={() => setCardPage('rename')}
+          onEdit={() => setCardPage('edit')}
           onActivity={() => setCardPage('activity')}
           onTrack={openTrackHistory}
           trackBusy={trackBusy}
@@ -471,9 +484,11 @@ export default function MapScreen({
           active={active && tracking.foreground && !!tracking.ready?.real} dogAliases={dogAliases}
           onBack={closePage} />
       )}
-      {cardModel && cardPage === 'rename' && (
-        <RenameDialog name={cardModel.name} initial={dogAliases?.[cardModel.slaveId] || ''}
-          defaultName={`狗 ${cardModel.slaveId}`} onSave={rename} onCancel={closePage} />
+      {cardModel && cardPage === 'edit' && (
+        <DogProfile key={cardModel.slaveId} slaveId={cardModel.slaveId}
+          name={displayName(cardModel.slaveId, dogAliases)} alias={dogAliases?.[cardModel.slaveId] || ''}
+          avatar={avatars[cardModel.slaveId] || null} onSaveName={saveName} onSaveAvatar={saveAvatar}
+          onBack={closePage} />
       )}
       {trackSubject && (
         <DeviceDetails

@@ -20,7 +20,7 @@ import HardwareScreen from './src/screens/HardwareScreen';
 import { handleRootBack } from './src/app/handleRootBack';
 import { ui } from './src/components/ScreenUI';
 import MapScreen from './src/screens/MapScreen';
-import { useScreenFixture } from './src/dev/useScreenFixture';
+import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CloudScreen from './src/cloud/CloudScreen';
@@ -116,8 +116,9 @@ function TrackerApp() {
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
     tracking.ready.real,
     undefined, null, { active: tracking.foreground && showsMap && !fixture, revision: cloudSync.revision });
+  const fixtureEdits = useFixtureEdits(fixture);
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
-    { tracking, phone, cloudDogs, cloudSync, history });
+    { tracking, phone, cloudDogs, cloudSync, history, dogAvatars }, fixtureEdits);
 
   useEffect(() => {
     // HardwareScreen owns its nested scan/connect/menu back stack.
@@ -201,7 +202,7 @@ function TrackerApp() {
           cloudDogs={mapInputs.cloudDogs}
           cloudOwner={mapInputs.cloudSync.ownerId}
           cloudSync={mapInputs.cloudSync}
-          dogAvatars={dogAvatars}
+          dogAvatars={mapInputs.dogAvatars}
           historical={isHistory}
           active={showsMap}
           bottomInset={insets.bottom + NAV_HEIGHT + 20}
