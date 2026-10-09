@@ -13,7 +13,7 @@
 - 新定位必須具有有效、有限、非負的水平估計精度；原始速度 > 20 km/h 時要求 < 50 公尺，其餘情況要求 ≤ 30 公尺；未知或超過門檻時顯示等待提示，不寫入且不推進記錄時間限制。既有資料不刪除。
 - 最近 3 個有效樣本平均；速度 > 10 km/h 時，最新點權重為 90%。超過 3 秒的樣本間隔重設平滑視窗。平滑不代表實際精度提高；估計精度仍保留定位來源回報值。
 - 即時地圖由 `useLiveLocation` 每秒讀取原生記憶體快照；診斷記錄清單由 `useLocationTracker` 呼叫 `readPage` 讀取 SQLite，每次讀取完成後 10 秒再讀。歷史由 `HistoryDatabase.historyDayRows` 讀取 SQLite 的日期資料，不使用即時記憶體快照。
-- `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 2 分鐘間隔時分段。
+- `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 3 分鐘間隔時分段。
 - `LocationTrackerScreen` 是設定 → 診斷 → 記錄清單的分頁清單；日期／時間範圍與匯出在 `src/mapHistory/HistoryScreen.js`。第三版手機 CSV／GPX 以 recorded route 為主座標，CSV 另保留 raw 欄位；裁切與時間用途見 `../mapHistory/ExportBuilders.md`。每秒樣本僅用於定位管線，不全部存入資料庫。
 - `recorded_at` 和 `location_at` 是 Unix 毫秒；緯經度為十進位度；速度由 m/s 轉為 km/h。無精度／海拔／速度／方向時為 NULL。
 - 每次寫入與修剪在同一交易，依 recorded_at、id 保留最新 80,000 筆。初始化也修剪舊資料。

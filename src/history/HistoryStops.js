@@ -134,7 +134,7 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
     state: { identity, ready, fallback: !!fallback, marked: [...marked] } };
 }
 /** Indoor holds are unconditional, unnumbered nodes, split at actual packet gaps.
- * Feed packet observations replayed with applyHistoryHolds / continueHistoryHolds.
+ * Feed packet observations replayed with applyHistoryHolds / createHistoryHolds.
  * Coordinates are the existing hold anchor; do not infer an address. */
 export function historyIndoorNodes(points, { start = -Infinity, end = Infinity, dayStart = start, dayEnd = end,
   config = configFor('dog') } = {}) {

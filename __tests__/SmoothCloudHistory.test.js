@@ -69,3 +69,22 @@ test('late downloads invalidate stored smoothing but duplicates do not', async (
     expect(connection.sqlite.prepare("SELECT display_version FROM supabase_dog_status WHERE event_id='c'").get().display_version).toBe(1);
   } finally { connection.close(); }
 });
+
+test('page boundaries, accounts and dogs have independent raw smoothing context', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    await createCloudDatabase(connection).initialize();
+    const insert = connection.sqlite.prepare('INSERT INTO supabase_dog_status(received_at,owner_user_id,master_id,slave_id,slave_lat,slave_lon,speed_kmh) VALUES(?, ?, 7, ?, ?, 121, 0)');
+    for (let i = 0; i < 1002; i += 1) insert.run(i * 1000, 'alice', 4, 25 + i * 0.00001);
+    insert.run(1000500, 'bob', 4, 40);
+    insert.run(1000500, 'alice', 5, 30);
+    const page = cloudPage(connection);
+    // Two pages: the second one's context comes from the stored rows before it.
+    await persistCloudDisplayCoordinates(connection, page.slice(0, 1000), 'alice');
+    const second = await persistCloudDisplayCoordinates(connection, page.slice(1000), 'alice');
+    const dog4 = second.filter(row => row.slave_id === 4);
+    expect(dog4.at(-1).latitude).toBeCloseTo(25.01, 8); // not pulled towards bob's 40
+    expect(second.find(row => row.slave_id === 5).latitude).toBe(30);
+  } finally { connection.close(); }
+});
