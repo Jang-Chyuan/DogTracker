@@ -270,14 +270,18 @@ describe('the screen over time', () => {
 
 
 test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
-  'history-export-multi', 'history-export-day'])('%s: export formats stay PNG / GPX / CSV without a last-used marker', async name => {
+  'history-export-multi', 'history-export-day'])('%s: export descriptions match D16 on screen and TalkBack in PNG / GPX / CSV order', async name => {
   const s = await mountFixture(name);
   const rows = s.renderer.root.findAll(node => typeof node.type === 'string'
     && ['history-export-png', 'history-export-gpx', 'history-export-csv'].includes(node.props.testID));
   expect(rows.map(node => node.props.testID)).toEqual(['history-export-png', 'history-export-gpx', 'history-export-csv']);
   expect(rows.map(node => node.props.accessibilityLabel)).toEqual([
-    'PNG 長圖，地圖＋時間軸清單，傳 LINE 最方便', 'GPX，給地圖 App 用', 'CSV，每一筆位置',
+    'PNG 長圖，地圖＋時間軸清單', 'GPX，軌跡檔，可匯入地圖 App', 'CSV，每一筆位置',
   ]);
+  expect(rows.map(node => node.findAllByType('Text').map(text => text.props.children))).toEqual([
+    ['PNG 長圖', '地圖＋時間軸清單'], ['GPX', '軌跡檔，可匯入地圖 App'], ['CSV', '每一筆位置'],
+  ]);
+  expect(s.text()).not.toContain('傳 LINE 最方便');
   expect(s.text()).not.toContain('上次用');
   await unmount(s);
 });

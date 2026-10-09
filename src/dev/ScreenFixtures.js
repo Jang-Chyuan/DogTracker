@@ -1311,7 +1311,8 @@ const FIXTURES = {
   'history-dogs-sheet-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4, sheet: 'dogs' }),
   'history-dogs-sheet-no-record': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, fiveToday: false, sheet: 'dogs' }),
   // ---- history (056): the export (H9/H10) ---------------------------------
-  // H9: my route like the mockup, the export window open (PNG / GPX / CSV in fixed order).
+  // H9 / D16: export window in fixed PNG / GPX / CSV order; shared sheet copy:
+  // 地圖＋時間軸清單 / 軌跡檔，可匯入地圖 App / 每一筆位置 (also TalkBack).
   'history-export': now => ({ ...FIXTURES['history-my-route'](now), historyView: { export: { phase: 'choose' } } }),
   // 產生中 that never ends (the export icon a spinner; 取消 or the back key stops it).
   'history-export-generating': now => ({ ...FIXTURES['history-my-route'](now), historyExport: 'hang',

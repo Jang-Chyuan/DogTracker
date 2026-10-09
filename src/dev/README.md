@@ -168,7 +168,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-cloud-downloading` | H3c：開在 9/28 下載中（不會結束；取消或返回鍵 →「這天的紀錄還沒下載完　重試」） |
 | `history-cloud-failed` | 9/28 下載失敗、手機裡沒有：「這天的紀錄還沒下載完」＋「重試」（不是 H8） |
 | `history-cloud-incomplete` | 9/28 下載到一半失敗：那一半的路線＋「資料不完整　重試」 |
-| `history-export` | H9：我的路線，匯出小視窗打開（PNG／GPX／CSV 固定順序） |
+| `history-export` | H9／D16：我的路線，匯出小視窗打開（PNG／GPX／CSV 固定順序；說明依序為「地圖＋時間軸清單」「軌跡檔，可匯入地圖 App」「每一筆位置」，TalkBack 同步） |
 | `history-export-generating` | 產生中（右上 icon 轉圈；情境的匯出永遠不結束） |
 | `history-export-hang` | 匯出小視窗打開、選了格式就一直產生中（看產生中、取消、返回鍵） |
 | `history-export-failed` | 匯出失敗　重試（重試是真的匯出） |

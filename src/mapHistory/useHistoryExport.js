@@ -16,8 +16,8 @@ import { activeSubjects } from './ExportData';
 import { buildExportSnapshot, exportPlaces, placeKey } from './ExportSnapshot';
 
 export const EXPORT_FORMATS = [
-  { id: 'png', title: 'PNG 長圖', detail: '地圖＋時間軸清單，傳 LINE 最方便' },
-  { id: 'gpx', title: 'GPX', detail: '給地圖 App 用' },
+  { id: 'png', title: 'PNG 長圖', detail: '地圖＋時間軸清單' },
+  { id: 'gpx', title: 'GPX', detail: '軌跡檔，可匯入地圖 App' },
   { id: 'csv', title: 'CSV', detail: '每一筆位置' },
 ];
 export const EXPORT_MIME = { png: 'image/png', gpx: 'application/gpx+xml', csv: 'text/csv' };
