@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { size as sizes, border, type } from '../theme/tokens';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
@@ -147,12 +148,12 @@ export default function PhoneLocationOverlay({
       sizes.mapLabel.maxLines +
     2 * (sizes.mapLabel.paddingV + sizes.mapLabel.border);
   const title = historical
-    ? '手機 · 歷史最後位置'
+    ? t("c767")
     : stale
-    ? '手機 · 最後合格位置（已過期）'
+    ? t("c768")
     : position.motionState === 'stationary'
-    ? '手機 · 靜止鎖定位置'
-    : '手機 · 目前位置';
+    ? t("c769")
+    : t("c770");
   return (
     <>
       {!historical &&
@@ -195,14 +196,10 @@ export default function PhoneLocationOverlay({
           onPress
             ? undefined
             : historical
-            ? `${new Date(position.timestamp).toLocaleString()} · ${
-                position.rawSpeedKmh == null
-                  ? '速度未知'
-                  : position.rawSpeedKmh.toFixed(1) + ' km/h'
-              }`
-            : `估計精度 ${position.accuracy.toFixed(1)} m · ${new Date(
+            ? ((position.rawSpeedKmh == null) ? t("c723", { value: new Date(position.timestamp).toLocaleString() }) : t("c724", { value: new Date(position.timestamp).toLocaleString(), value2: position.rawSpeedKmh.toFixed(1) + ' km/h' }))
+            : t("c766", { value: position.accuracy.toFixed(1), value2: new Date(
                 position.timestamp,
-              ).toLocaleTimeString()}`
+              ).toLocaleTimeString() })
         }
       >
         <View
@@ -214,7 +211,7 @@ export default function PhoneLocationOverlay({
             <View style={[styles.dot, stale && styles.stale]} />
           </View>
           <MapNameTag
-            text="手機"
+            text={t('c055')}
             testID="phone-name-tag"
             color={colors.phone}
             maxWidth={MARKER_WIDTH - sizes.marker.labelSafety}

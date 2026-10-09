@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What the activity page (A4) reads for one dog and one period, from this
 // phone's dog_status and (signed in) the downloaded supabase_dog_status.
 //
@@ -20,7 +21,7 @@ const VALID = 'activity_valid=1 AND activity IS NOT NULL AND CAST(activity AS RE
 
 const check = (slaveId, start, end) => {
   if (!Number.isInteger(slaveId) || slaveId < 1 || slaveId > 255 || !Number.isFinite(start)
-    || !Number.isFinite(end) || end <= start) throw new Error('活動量查詢條件無效');
+    || !Number.isFinite(end) || end <= start) throw new Error(t("c433"));
 };
 
 /**

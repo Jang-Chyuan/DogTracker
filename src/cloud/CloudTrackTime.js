@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Cloud reception remains the download cursor; this time is only for geometry.
 export function cloudTrackTime(row) {
   const phone = typeof row.phone_received_at === 'string' ? Date.parse(row.phone_received_at) : NaN;
@@ -18,7 +19,7 @@ export async function repairCloudTrackTimes({ client, database, owner, signal, c
     .select('event_id,received_at,upload_source,phone_received_at')
     .in('event_id', pending.map(row => row.event_id)).abortSignal(signal);
   check();
-  if (error || !Array.isArray(data)) throw new Error('歷史時間補查失敗，稍後重試');
+  if (error || !Array.isArray(data)) throw new Error(t("c594"));
   await database.repairTrackTimes(owner, data, pending.map(row => row.event_id));
   check();
   onChange();

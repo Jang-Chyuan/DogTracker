@@ -32,7 +32,7 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
   }
   @ReactMethod fun start(promise: Promise) {
     try {
-      check(context.lifecycleState == LifecycleState.RESUMED) { "請在 App 前景開始記錄" }
+      check(context.lifecycleState == LifecycleState.RESUMED) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1137) }
       context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", true).remove("stoppedAt").apply()
       val intent = Intent(context, LocationTrackerService::class.java)
       if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
@@ -58,14 +58,14 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
       if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
       promise.resolve(true)
     } catch (e: Exception) {
-      LocationTrackerService.status = "自動開始失敗，請至手機位置記錄頁重試"
+      LocationTrackerService.status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1138)
       promise.reject("LOCATION_AUTO_START", e.message, e)
     }
   }
   @ReactMethod fun deleteAll(promise: Promise) {
     executor.execute {
       try { store.deleteAll(); promise.resolve(null) }
-      catch (e: Exception) { promise.reject("LOCATION_DELETE", "無法刪除手機路線", e) }
+      catch (e: Exception) { promise.reject("LOCATION_DELETE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1139), e) }
     }
   }
   @ReactMethod fun page(before: Double, promise: Promise) {
@@ -74,7 +74,7 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
         val result = store.page(before.toLong())
           .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status)
         promise.resolve(result.toString())
-      } catch (e: Exception) { promise.reject("LOCATION_READ", "無法讀取手機定位記錄", e) }
+      } catch (e: Exception) { promise.reject("LOCATION_READ", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1140), e) }
     }
   }
   override fun invalidate() { executor.shutdown(); super.invalidate() }

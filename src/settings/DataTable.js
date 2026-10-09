@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import {
   ActivityIndicator,
@@ -120,12 +121,12 @@ export function ColumnPicker({ columns, selected, onToggle, onReset }) {
       })}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="恢復預設欄位"
+        accessibilityLabel={t("c947")}
         onPress={onReset}
         style={({ pressed }) => [styles.reset, pressed && styles.pressed]}
         hitSlop={CHIP_SLOP}
       >
-        <Text style={styles.link}>恢復預設欄位</Text>
+        <Text style={styles.link}>{t("c947")}</Text>
       </Pressable>
     </View>
   );
@@ -149,7 +150,7 @@ export function LoadState({
           {error}
         </Text>
         {onRetry ? (
-          <TextButton title="重試" onPress={onRetry} tone="crit" />
+          <TextButton title={t('c049')} onPress={onRetry} tone="crit" />
         ) : null}
       </View>
     );
@@ -159,7 +160,7 @@ export function LoadState({
       <View style={styles.state} testID={testID && `${testID}-loading`}>
         <ActivityIndicator
           color={colors.tonalText}
-          accessibilityLabel="讀取中"
+          accessibilityLabel={t("c835")}
         />
       </View>
     );

@@ -1,8 +1,9 @@
+import { t as i18nT } from '../src/i18n';
 import { wifiCommand, utf8Bytes, MAX_WIFI_COMMAND_BYTES } from '../src/settings/WifiValidation';
 import { parseMasterQr, MASTER_SERVICE_UUID } from '../src/qr/MasterQrParser';
 test('Wi-Fi UTF-8 boundaries and supported password modes preserve wire format', () => {
-  expect(utf8Bytes('狗')).toBe(3);
-  expect(wifiCommand('upsert', '狗'.repeat(10) + 'ab', '')).toBe(JSON.stringify({ action: 'upsert', ssid: '狗'.repeat(10) + 'ab', password: '' }));
+  expect(utf8Bytes(i18nT('c233'))).toBe(3);
+  expect(wifiCommand('upsert', i18nT('c233').repeat(10) + 'ab', '')).toBe(JSON.stringify({ action: 'upsert', ssid: i18nT('c233').repeat(10) + 'ab', password: '' }));
   expect(() => wifiCommand('upsert', '狗'.repeat(11), '')).toThrow('32');
   for (const password of ['12345678', 'a'.repeat(63), 'F'.repeat(64), '']) expect(() => wifiCommand('upsert', 'net', password)).not.toThrow();
   for (const password of ['short', 'z'.repeat(64), 'a'.repeat(65), '中文密碼中文密碼']) expect(() => wifiCommand('upsert', 'net', password)).toThrow('密碼');

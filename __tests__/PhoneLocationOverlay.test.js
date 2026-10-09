@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { StyleSheet, Text } from 'react-native';
@@ -150,7 +151,7 @@ test('history dot animates refreshes without stale styling or interpolating long
   });
   await render(first, 3600, true, true);
   expect(renderer.root.findByType(Marker).props.title).toBe(
-    '手機 · 歷史最後位置',
+    i18nT("c767"),
   );
   expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
   const next = Object.freeze({ ...first, latitude: 25.001, timestamp: 20000 });
@@ -229,7 +230,7 @@ test('phone name is a capsule and the expanded bitmap stays anchored on the dot'
   await render(position);
   const tag = renderer.root.findAllByProps({ testID: 'phone-name-tag' }).find(node => typeof node.type === 'string');
   expect(StyleSheet.flatten(tag.props.style)).toMatchObject({ borderRadius: 999, paddingHorizontal: 8 });
-  expect(tag.findByType(Text).props.children).toBe('手機');
+  expect(tag.findByType(Text).props.children).toBe(i18nT('c055'));
   const marker = renderer.root.findByType(Marker);
   const container = renderer.root.findAll(node => typeof node.type === 'string' && node.props.collapsable === false)[0];
   const frame = StyleSheet.flatten(container.props.style);

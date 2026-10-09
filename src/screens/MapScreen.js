@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -916,21 +917,17 @@ export default function MapScreen({
   // The base map, cloud sync and storage speak through the top cards and the
   // gear's red dot (A2); reading this phone's own copies can still fail.
   if (!historical && cloudDogs?.error)
-    messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
+    messages.push(t("c902", { error: cloudDogs.error }));
   if (phone?.error)
-    messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
+    messages.push(t("c903", { error: phone.error }));
   if (tracking.errors[mode])
     messages.push(
-      `讀取失敗：${tracking.errors[mode]}。${
-        tracking.ready[mode]
-          ? '保留最後讀取資料，前景自動重試。'
-          : '資料庫尚未就緒，請重新啟動 App 重試。'
-      }`,
+      ((tracking.ready[mode]) ? t("c904", { value: tracking.errors[mode] }) : t("c905", { value: tracking.errors[mode] })),
     );
-  else if (!tracking.ready[mode]) messages.push('正在準備 SQLite…');
+  else if (!tracking.ready[mode]) messages.push(t("c906"));
   if (tracking.preferences.error)
     messages.push(
-      `地圖設定讀取失敗：${tracking.preferences.error}。重新開啟 App 重試。`,
+      t("c907", { error: tracking.preferences.error }),
     );
   const top = insets.top + layout.floatingGap;
   // The top cards hang 8dp under the gear (8dp under the status bar, 48dp).
@@ -1096,7 +1093,7 @@ export default function MapScreen({
       {!historical && !tracking.preferences.ready && (
         <View style={[styles.source, { top }]}>
           <View style={styles.statusDot} />
-          <Text style={styles.sourceText}>讀取設定中…</Text>
+          <Text style={styles.sourceText}>{t('c424')}</Text>
         </View>
       )}
       {!!messages.length && (

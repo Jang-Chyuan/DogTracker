@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { cursorLabel, screenCursor, routeCursorTime, refreshCursor, selectCursorNode } from '../src/history/screen';
 const minute = 60000;
 const model = {
@@ -12,11 +13,11 @@ const model = {
 test('two-line labels for moving, stop, vehicle, indoor and phone', () => {
   expect(cursorLabel(model, 5 * minute)[1]).toBe('已移動 0.5 km');
   expect(cursorLabel(model, 15 * minute)[1]).toBe('停留 10 分');
-  expect(cursorLabel(model, 25 * minute)[1]).toBe('坐車中・不算距離');
+  expect(cursorLabel(model, 25 * minute)[1]).toBe(i18nT('c342'));
   expect(cursorLabel(model, 45 * minute)[1]).toBe('室內・10 分');
   expect(cursorLabel(model, 60 * minute, 'phone')[1]).toBe('已走 2.0 km');
   const driving = { ...model, sections: [{ start: 0, end: 10 * minute, mode: 'driving' }] };
-  expect(cursorLabel(driving, 0, 'phone')[1]).toBe('開車中・不算距離');
+  expect(cursorLabel(driving, 0, 'phone')[1]).toBe(i18nT('c343'));
 });
 test('drag gaps skips nearest edge; gap row selects preceding fix and stale label', () => {
   expect(screenCursor(model, 34 * minute).time).toBe(30 * minute);

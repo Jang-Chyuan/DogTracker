@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The overlap menu (design v3 判定表「頭像疊在一起」「名稱牌疊在一起」, DESIGN.md
 // §9.5 and §15「重疊選狗小選單」): tapping a merged 「3 隻」 tag pops up a small
 // menu above the tap — one row per dog with its face, name and problem — and
@@ -95,7 +96,7 @@ export default function OverlapPicker({
       <Pressable
         testID="overlap-picker-outside"
         accessibilityRole="button"
-        accessibilityLabel="關閉"
+        accessibilityLabel={t("c765")}
         style={StyleSheet.absoluteFill}
         onPress={onClose}
       />

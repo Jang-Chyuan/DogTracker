@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { logger } from '../logger';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import React, {
@@ -275,7 +276,7 @@ function groupSpeech(tag, markers) {
   const names = tag.members
     .map(id => markers.find(marker => marker.slaveId === id)?.name)
     .filter(Boolean);
-  return `${tag.text}：${names.join('、')}，點兩下選一隻`;
+  return t("c754", { text: tag.text, value: names.join('、') });
 }
 
 // ---- the history route (055a) -------------------------------------------
@@ -465,7 +466,7 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
           coordinate={place.coordinate}
           look={`${place.kind}:${place.number}`}
           zIndex={place.kind === 'indoor' ? 26 : 25}
-          label={place.kind === 'indoor' ? '室內' : `停留 ${place.number}`}
+          label={place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.number })}
           onPress={onStopPress ? () => onStopPress(place) : undefined}
         >
           {place.kind === 'indoor' ? (
@@ -1260,7 +1261,7 @@ function GoogleTrackingMapRenderer({
   const pressMyLocation = () => {
     const position = currentPhone();
     if (!position) {
-      showTip('手機沒有定位');
+      showTip(t("c726"));
       return;
     }
     if (!usable) return;
@@ -1602,7 +1603,7 @@ function GoogleTrackingMapRenderer({
         <View testID="map-unavailable" style={styles.fallback} />
       ) : (
         <View style={styles.unavailable}>
-          <Text style={styles.unavailableText}>正在讀取本機位置…</Text>
+          <Text style={styles.unavailableText}>{t("c752")}</Text>
         </View>
       )}
       {usable && cursorLayout.width > 0 && historyRoute?.cursor && (
@@ -1629,7 +1630,7 @@ function GoogleTrackingMapRenderer({
           <ActivityIndicator
             size="small"
             color={colors.master}
-            accessibilityLabel="底圖載入中"
+            accessibilityLabel={t('c425')}
           />
         </View>
       )}

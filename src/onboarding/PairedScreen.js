@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { StyleSheet, Text, View } from 'react-native';
 import SittingDogArt from '../dogs/SittingDogArt';
@@ -26,7 +27,7 @@ export default function PairedScreen({ page, step = null, onStart, onLayout }) {
       title={page.title}
       body={page.body}
       bottom={
-        <GuideButton testID="paired-start" label="開始使用" onPress={onStart} />
+        <GuideButton testID="paired-start" label={t('c053')} onPress={onStart} />
       }
     >
       {page.sources.map(source => (

@@ -36,7 +36,7 @@ class BleJsonFramer {
       }
       if (frame.size() > 65536) {
         reset()
-        throw IllegalArgumentException("BLE 資料封包過大")
+        throw IllegalArgumentException(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1050))
       }
       if (depth == 0) {
         complete.add(frame.toString("UTF-8"))

@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // 058a: the alert events, their scheduling and the merged notification
 // (design v3 N, 「提醒的規則」「每一項都可以關」「S6 的開關管什麼」「暫停」,
 // edges「提醒」「電量」, 判定表「提醒通知只有一則」). Each test names its rule.
@@ -80,7 +81,7 @@ test.each([
   expect(events(now, [], { receiver }).events.length > 0).toBe(expected);
 });
 
-// 「接收器 7 斷線了（3 隻狗收不到）」: the dogs this phone's receiver hears.
+// 「接收器 7 已斷線（3 隻狗收不到）」: the dogs this phone's receiver hears.
 test('a disconnection counts the local dogs; a new one is a new episode', () => {
   const receiver = { enabled: true, running: true, disconnectedAt: 1000, expectedMasterId: 7 };
   const dogs = [dog, { ...dog, slaveId: 5, name: '狗 5' }, { ...dog, slaveId: 6, fixSource: 'cloud' }];
@@ -206,8 +207,8 @@ test('switching a kind off removes it from the notification at once', () => {
   const { out } = run([[0, [a, b], { foreground: false }], [M, [a, b], { foreground: false,
     preferences: { dogOutOfRange: false } }], [2 * M, [a, b], { foreground: false,
     preferences: { dogOutOfRange: false, dogStale: false } }]]);
-  expect(out[0].content.lines).toEqual(['豆豆 不在接收範圍', '狗 5 12 分鐘沒有新位置']);
-  expect(out[1]).toMatchObject({ notification: 'update', content: { lines: ['狗 5 12 分鐘沒有新位置'] } });
+  expect(out[0].content.lines).toEqual(['豆豆 不在接收範圍', '狗 5：12 分鐘沒有新位置']);
+  expect(out[1]).toMatchObject({ notification: 'update', content: { lines: ['狗 5：12 分鐘沒有新位置'] } });
   expect(out[2]).toMatchObject({ notification: 'cancel', content: null });
 });
 
@@ -216,12 +217,12 @@ test('a disconnection speaks for its quiet dogs unless its switch is off', () =>
   const outage = event('receiver-disconnected', 'receiver', { startedAt: 0, outage: { number: 7, dogCount: 3 } });
   const quiet = event('dog-stale', 4, { receiverAffected: true, ageMs: 10 * M });
   const merged = tick(10 * M, [outage, quiet], {}, { foreground: false });
-  expect(merged.effects.content).toMatchObject({ title: 'DogTracker・接收器與手機要注意',
-    lines: ['接收器 7 斷線了（3 隻狗收不到）'] });
+  expect(merged.effects.content).toMatchObject({ title: i18nT('c173'),
+    lines: ['接收器 7 已斷線（3 隻狗收不到）'] });
   expect(merged.effects.delivered).toEqual(['receiver-disconnected:receiver']);
   const off = tick(10 * M, [outage, quiet], {}, { foreground: false,
     preferences: { receiverDisconnectedStorage: false } });
-  expect(off.effects.content).toMatchObject({ title: 'DogTracker・1 隻狗要注意', lines: ['豆豆 10 分鐘沒有新位置'] });
+  expect(off.effects.content).toMatchObject({ title: 'DogTracker・1 隻狗要注意', lines: ['豆豆：10 分鐘沒有新位置'] });
   expect(off.effects.delivered).toEqual(['dog-stale:4']);
 });
 
@@ -231,7 +232,7 @@ test('a pause silences the known problems only', () => {
   const first = tick(0, [a]);
   const paused = JSON.parse(JSON.stringify(pauseAlerts(first.state, map([a]), M)));
   expect(pausePresentation(paused.pause, M)).toMatchObject({ short: expect.stringMatching(/^暫停到 \d\d:\d\d$/),
-    title: expect.stringMatching(/^已暫停提醒到 \d\d:\d\d$/), action: '恢復' });
+    title: expect.stringMatching(/^已暫停提醒到 \d\d:\d\d$/), action: i18nT('dev.alertPreview.AlertPreview.label') });
   // Known: nothing, and no notification (「暫停提醒 30 分」 closes it).
   expect(tick(3 * M, [a], paused, { foreground: false }).effects).toMatchObject({ vibration: null,
     notification: 'cancel' });
@@ -291,7 +292,7 @@ test('a cleared problem cancels; coming back is a new alert', () => {
 
 // notif「Android 細節：提醒和常駐服務分開兩個通知頻道」。
 test('two channels', () => {
-  expect(ALERT_CHANNELS.map(channel => channel.name)).toEqual(['提醒', '常駐']);
+  expect(ALERT_CHANNELS.map(channel => channel.name)).toEqual([i18nT('c191'), i18nT("c477")]);
   expect(ALERT_CHANNELS[1]).toMatchObject({ sound: false, vibrate: false });
 });
 
@@ -302,13 +303,13 @@ test('one notification: N1, N2 and mixed titles, severity order, actions and tar
   const out = event('dog-out-of-range');
   const quiet = event('dog-stale', 8, { name: '狗 8', ageMs: 10 * M + 30000 });
   expect(notificationContent([quiet, out])).toMatchObject({ title: 'DogTracker・2 隻狗要注意',
-    lines: ['豆豆 不在接收範圍', '狗 8 10 分鐘沒有新位置'], target: { screen: 'map', dogId: 4 } });
+    lines: ['豆豆 不在接收範圍', '狗 8：10 分鐘沒有新位置'], target: { screen: 'map', dogId: 4 } });
   const storage = event('storage', 'phone', { storage: { full: true } });
-  expect(notificationContent([storage])).toMatchObject({ title: 'DogTracker・接收器與手機要注意',
-    lines: ['手機空間不足，位置存不進手機'], target: { screen: 'system-storage' } });
+  expect(notificationContent([storage])).toMatchObject({ title: i18nT('c173'),
+    lines: [i18nT('c282')], target: { screen: 'system-storage' } });
   expect(notificationContent([quiet, out, storage])).toMatchObject({ title: 'DogTracker・3 件事要注意',
-    lines: ['豆豆 不在接收範圍', '手機空間不足，位置存不進手機', '狗 8 10 分鐘沒有新位置'] });
-  expect(notificationContent([out]).actions.map(action => action.label)).toEqual(['打開地圖', '暫停提醒 30 分']);
+    lines: ['豆豆 不在接收範圍', i18nT('c282'), '狗 8：10 分鐘沒有新位置'] });
+  expect(notificationContent([out]).actions.map(action => action.label)).toEqual([i18nT('c171'), i18nT('dev.alertPreview.AlertPreview.label2')]);
   expect(notificationContent([out]).actions[0].target).toEqual({ screen: 'map', frameAll: true });
   expect(notificationContent([])).toBeNull();
 });
@@ -316,12 +317,12 @@ test('one notification: N1, N2 and mixed titles, severity order, actions and tar
 test('each line', () => {
   expect(alertLine(event('dog-battery', 4, { percentage: 15 }))).toBe('豆豆 電量低 15%');
   expect(alertLine(event('receiver-battery', 'receiver', { percentage: 15, number: 7 }))).toBe('接收器 7 電量低 15%');
-  expect(alertLine(event('dog-stale', 4, { ageMs: 75 * M }))).toBe('豆豆 1 小時沒有新位置');
+  expect(alertLine(event('dog-stale', 4, { ageMs: 75 * M }))).toBe('豆豆：75 分鐘沒有新位置');
   // Held indoors: judged by its packets, as the card says.
-  expect(alertLine(event('dog-stale', 4, { ageMs: 12 * M, basis: 'packet' }))).toBe('豆豆 12 分鐘沒有新資料');
+  expect(alertLine(event('dog-stale', 4, { ageMs: 12 * M, basis: 'packet' }))).toBe('豆豆：12 分鐘沒有新資料');
   expect(alertLine(event('receiver-disconnected', 'receiver', { outage: { number: 7, dogCount: 0 } })))
     .toBe('接收器 7 斷線了');
-  expect(alertLine(event('storage', 'phone', { storage: { full: false } }))).toBe('位置存不進手機');
+  expect(alertLine(event('storage', 'phone', { storage: { full: false } }))).toBe(i18nT("c466"));
 });
 
 // notif「空間不足→系統的儲存空間設定；其他原因→診斷（S8）」；接收器→S2。
@@ -365,7 +366,7 @@ test('alerts-two-dogs: one critical alert, 「DogTracker・2 隻狗要注意」,
   const input = { dogs, receiver: fixture.receiverState, cloud: fixture.cloudSync, now: FIXTURE_NOW };
   const first = stepAlerts({}, input);
   expect(first.effects).toMatchObject({ critical: true, content: { title: 'DogTracker・2 隻狗要注意',
-    lines: ['豆豆 不在接收範圍', '狗 5 10 分鐘沒有新位置'] } });
+    lines: ['豆豆 不在接收範圍', '狗 5：10 分鐘沒有新位置'] } });
   expect(stepAlerts(first.state, { ...input, now: FIXTURE_NOW + 5000 }).effects.vibration).toBeNull();
 });
 
@@ -400,4 +401,9 @@ test('K06: cloud takeover preserves an established range episode until local cle
   expect(returned.events).toEqual([]);
   expect(events(3 * M, [dog], {}, returned).events[0].type).toBe('clear');
   expect(events(0, [cloud]).active['dog-out-of-range:4']).toBeUndefined();
+});
+
+test.each([10, 75, 1501])('numbered dog stale alert separates the name and keeps %i elapsed minutes', minutes => {
+  expect(alertLine(event('dog-stale', 5, { name: '狗 5', ageMs: minutes * M })))
+    .toBe(`狗 5：${minutes} 分鐘沒有新位置`);
 });

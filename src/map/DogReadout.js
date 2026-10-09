@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Which way and how far a dog is from the phone, as plain values. Pure: no
 // React, no clock of its own. (From PR #40's dog rows; the card A3 uses it.)
 
@@ -33,7 +34,7 @@ export function formatDistance(metres) {
 }
 
 // Eight compass words for TalkBack, which cannot see the arrow.
-const COMPASS = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'];
+const COMPASS = [t("c738"), t("c739"), t("c740"), t("c741"), t("c742"), t("c743"), t("c744"), t("c745")];
 export function compassWord(bearing) {
   return COMPASS[Math.round((((bearing % 360) + 360) % 360) / 45) % 8];
 }

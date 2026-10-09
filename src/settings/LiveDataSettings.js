@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { size as sizes } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,27 +19,27 @@ import { getSettingsStyles } from './SettingsUI';
 export const LIVE_COLUMNS = Object.freeze([
   {
     key: 'received_at',
-    label: '接收時間',
+    label: t("c968"),
     width: sizes.diagnostics.columnWidth.time,
     format: formatClockSeconds,
   },
-  { key: 'master_id', label: '接收器', width: sizes.diagnostics.columnWidth.receiverId },
-  { key: 'slave_id', label: '訊號源', width: sizes.diagnostics.columnWidth.sourceId },
-  { key: 'slave_lat', label: '狗的緯度', width: sizes.diagnostics.columnWidth.latitude },
-  { key: 'slave_lon', label: '狗的經度', width: sizes.diagnostics.columnWidth.longitude },
-  { key: 'master_lat', label: '接收器緯度', width: sizes.diagnostics.columnWidth.latitude },
-  { key: 'master_lon', label: '接收器經度', width: sizes.diagnostics.columnWidth.longitude },
-  { key: 'distance_meters', label: '距離 (m)', width: sizes.diagnostics.columnWidth.distance },
-  { key: 'speed_kmh', label: '速度 (km/h)', width: sizes.diagnostics.columnWidth.speed },
-  { key: 'satellites', label: '衛星', width: sizes.diagnostics.columnWidth.satellites },
-  { key: 'hdop', label: 'HDOP', width: sizes.diagnostics.columnWidth.precision },
-  { key: 'activity', label: '活動量', width: sizes.diagnostics.columnWidth.activity },
-  { key: 'battery_percentage', label: '狗的電量 %', width: sizes.diagnostics.columnWidth.dogBattery },
-  { key: 'master_battery_percentage', label: '接收器電量 %', width: sizes.diagnostics.columnWidth.receiverBattery },
-  { key: 'rssi', label: 'RSSI', width: sizes.diagnostics.columnWidth.signalStrength },
-  { key: 'snr', label: 'SNR', width: sizes.diagnostics.columnWidth.signalNoise },
-  { key: 'gps_time', label: 'GPS 時間', width: sizes.diagnostics.columnWidth.time },
-  { key: 'sequence', label: '序號', width: sizes.diagnostics.columnWidth.sequence },
+  { key: 'master_id', label: t('c075'), width: sizes.diagnostics.columnWidth.receiverId },
+  { key: 'slave_id', label: t("c532"), width: sizes.diagnostics.columnWidth.sourceId },
+  { key: 'slave_lat', label: t("c972"), width: sizes.diagnostics.columnWidth.latitude },
+  { key: 'slave_lon', label: t("c973"), width: sizes.diagnostics.columnWidth.longitude },
+  { key: 'master_lat', label: t("c974"), width: sizes.diagnostics.columnWidth.latitude },
+  { key: 'master_lon', label: t("c975"), width: sizes.diagnostics.columnWidth.longitude },
+  { key: 'distance_meters', label: t("c976"), width: sizes.diagnostics.columnWidth.distance },
+  { key: 'speed_kmh', label: t("c977"), width: sizes.diagnostics.columnWidth.speed },
+  { key: 'satellites', label: t("c537"), width: sizes.diagnostics.columnWidth.satellites },
+  { key: 'hdop', label: t("c967"), width: sizes.diagnostics.columnWidth.precision },
+  { key: 'activity', label: t('c068'), width: sizes.diagnostics.columnWidth.activity },
+  { key: 'battery_percentage', label: t("c969"), width: sizes.diagnostics.columnWidth.dogBattery },
+  { key: 'master_battery_percentage', label: t("c970"), width: sizes.diagnostics.columnWidth.receiverBattery },
+  { key: 'rssi', label: t("c978"), width: sizes.diagnostics.columnWidth.signalStrength },
+  { key: 'snr', label: t("c979"), width: sizes.diagnostics.columnWidth.signalNoise },
+  { key: 'gps_time', label: t("c971"), width: sizes.diagnostics.columnWidth.time },
+  { key: 'sequence', label: t("c539"), width: sizes.diagnostics.columnWidth.sequence },
 ]);
 
 /**
@@ -76,7 +77,7 @@ export default function LiveDataSettings({
       }
     } catch (failure) {
       if (mounted.current)
-        setError(`讀取失敗：${failure?.message || '手機裡的資料讀不到'}`);
+        setError(t("c565", { value: failure?.message || t("c966") }));
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -105,11 +106,11 @@ export default function LiveDataSettings({
     >
       <Text
         style={dataStyles.hint}
-      >{`接收器收到的最近 ${limit} 筆，每秒更新。`}</Text>
+      >{t("c964", { limit: limit })}</Text>
       <View style={dataStyles.buttons}>
         <PillButton
           testID="live-data-columns"
-          title={picking ? '收起欄位' : `選擇欄位（${selected.length}）`}
+          title={picking ? t("c556") : t("c557", { length: selected.length })}
           onPress={() => setPicking(value => !value)}
         />
       </View>
@@ -126,7 +127,7 @@ export default function LiveDataSettings({
         loading={loading}
         error={error}
         empty={rows.length === 0}
-        emptyText="還沒有資料：接收器連上、收到狗的訊號後會出現在這裡。"
+        emptyText={t("c965")}
         onRetry={load}
       />
       {!error && rows.length > 0 ? (

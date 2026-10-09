@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { AppState } from 'react-native';
@@ -255,7 +256,7 @@ describe('tracking session and connection lifetime', () => {
     const db = databases();
     db.real.getLatestStatusRow.mockRejectedValue(null);
     await mount(db);
-    expect(session.errors.real).toBe('發生未知錯誤，請重試。');
+    expect(session.errors.real).toBe(i18nT("c1049"));
     const logged = console.error.mock.calls.length;
     await tick();
     expect(console.error).toHaveBeenCalledTimes(logged);

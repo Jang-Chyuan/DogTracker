@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { downloadCloudHistory } from './CloudDownload';
 
 export const BUCKET = 60 * 60 * 1000;
@@ -25,7 +26,7 @@ export function closedBuckets(now, hours = WINDOW_HOURS) {
 export async function reconcileCloudWindow({ client, database, owner, masterId,
   now = Date.now(), signal, isCurrent = () => true, hours = WINDOW_HOURS }) {
   const check = () => {
-    if (signal?.aborted || !isCurrent()) throw new Error('核對已取消');
+    if (signal?.aborted || !isCurrent()) throw new Error(t("c583"));
   };
   const buckets = closedBuckets(now, hours);
   if (!buckets.length) return 0;
@@ -54,7 +55,7 @@ export async function reconcileCloudWindow({ client, database, owner, masterId,
       .abortSignal(signal);
     check();
     if (error || !Number.isInteger(count)) {
-      throw new Error('無法核對雲端筆數，將於下次核對重試');
+      throw new Error(t("c582"));
     }
     if (saved.get(start) === count) continue;
     const walked = !saved.has(start) && Number.isFinite(covered) && covered >= end;

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The export snapshot (H9/H10, 判定表「匯出快照和停在原處」): what the
 // history screen shows at the moment a format is chosen — the range, every
 // dog shown that has data in it (or my route), local and cloud merged — as
@@ -66,7 +67,7 @@ export function exportTimelineRows(nodes, addressOf) {
     const lines = placeLines(node, found ? { state: 'found', text: found } : { state: 'none' });
     let pill = nodePill(node);
     // 匯出的檔案一律寫實際時刻: the end is 「結束」 (its time is in the left column).
-    if (node.type === 'end' && (node.label === '現在' || node.label === '最後')) pill = { text: '結束', tone: 'plain' };
+    if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = { text: t('c330'), tone: 'plain' };
     const next = nodes[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: nodeTimes(node),
       title: lines.title, coordinates: lines.coordinates, missing: lines.missing, pill,
@@ -114,7 +115,7 @@ export function exportMapLayer(model, color, { multi = false } = {}) {
  * this very copy (判定表「匯出快照和停在原處」).
  */
 export function buildExportSnapshot({ day, range, subject, look = {}, addresses = {}, timeZone = null }) {
-  if (!day || !range) throw new Error('請等待歷史資料載入');
+  if (!day || !range) throw new Error(t("c797"));
   const entries = day.subjects.filter(entry => entry.model);
   const until = lastPacket(entries.map(entry => entry.model), range);
   const since = range.start;
@@ -133,7 +134,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       kind: phone ? 'phone' : 'dog',
       id: entry.id,
       slaveId: phone ? null : Number(entry.id),
-      name: phone ? '我的路線' : look[entry.id]?.name || `狗 ${entry.id}`,
+      name: phone ? t('c132') : look[entry.id]?.name || t("c798", { id: entry.id }),
       routeColor: color,
       // The rows of the day in the source, deduplicated (historySourceStream's packets).
       rows: model.packets || [],
@@ -145,7 +146,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       gaps: nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
       distanceKm: km(model.distanceM),
       distanceExclusion: vehicleExclusion(model, subject),
-      distanceWord: phone ? '走了' : '移動',
+      distanceWord: phone ? t("c671") : t('c125'),
       start: first?.time ?? null,
       end: last?.time ?? null,
       timeline: exportTimelineRows(nodes, addressOf),

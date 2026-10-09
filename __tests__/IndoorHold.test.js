@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { createHoldTracker, applyHistoryHolds, fixQuality, distanceMeters, HOLD_CONFIG }
   from '../src/placement/IndoorHold';
 import { createHoldStore } from '../src/placement/HoldStore';
@@ -41,7 +42,7 @@ test('losing the fix holds the dog where its good fixes were, then lets go when 
   for (let second = 0; second <= 60; second += 5) rows.push(good(second * 1000, offset(HOME, second / 10, 0)));
   for (let second = 65; second <= 300; second += 5) rows.push(none(second * 1000));
   const { tracker, events } = run(rows);
-  expect(events[0]).toMatchObject({ type: 'start', reason: 'GPS 沒有定位', since: 60000 });
+  expect(events[0]).toMatchObject({ type: 'start', reason: i18nT("c882"), since: 60000 });
   expect(distanceMeters(tracker.current().coordinate, offset(HOME, 6, 0))).toBeLessThan(5);
   // Walking away: fixes that agree with each other, most rows good.
   const away = [];
@@ -77,7 +78,7 @@ test('weak fixes alone hold only when they stay in one place, so a walk under tr
     still.push(weak(second * 1000, offset(HOME, 30 * Math.sin(second / 20), 30 * Math.cos(second / 33))));
     walk.push(weak(second * 1000, offset(HOME, second * 1.2, 0)));
   }
-  expect(run(still).events[0]).toMatchObject({ type: 'start', reason: 'GPS 訊號弱' });
+  expect(run(still).events[0]).toMatchObject({ type: 'start', reason: i18nT("c883") });
   expect(run(walk).events).toEqual([]);
 });
 
@@ -91,7 +92,7 @@ test('the environment model starts an indoor hold sooner and names it', () => {
   const started = [...rows, none(125000), none(130000), none(150000)]
     .map(row => tracker.push(row)).find(Boolean);
   expect(started).toMatchObject({ type: 'start' });
-  expect(tracker.current().reason).toBe('室內');
+  expect(tracker.current().reason).toBe(i18nT('c114'));
 });
 
 test('history moves the drift between the last good fix and the hold onto the anchor', () => {
@@ -121,7 +122,7 @@ test('the store merges a dog heard over BLE and from the cloud, and counts a pac
   const rows = [good(0), good(5000)];
   for (let second = 10; second <= 120; second += 5) rows.push(none(second * 1000));
   store.ingest({ rows: [...rows, ...rows.map(row => ({ ...row }))] });
-  expect(store.holds(120000)[4]).toMatchObject({ reason: 'GPS 沒有定位' });
+  expect(store.holds(120000)[4]).toMatchObject({ reason: i18nT("c882") });
   expect(store.holds(120000)[5]).toBeUndefined();
 });
 
@@ -134,7 +135,7 @@ describe('the map draws a held dog', () => {
 
   test('at its anchor while packets arrive, with the reason and no speed', () => {
     const dog = mergeDogMarkers({ packetRows: [packet], holds: { 4: hold }, now: NOW, windowMs: 180000 })[0];
-    expect(dog).toMatchObject({ coordinate: hold.coordinate, heldReason: '室內', heldSince: NOW - 600000,
+    expect(dog).toMatchObject({ coordinate: hold.coordinate, heldReason: i18nT('c114'), heldSince: NOW - 600000,
       lastPositionAt: NOW - 600000, stale: false, speedKmh: null, retained: false });
   });
 
@@ -239,7 +240,7 @@ test('rows arriving late are replayed in order instead of dropped', () => {
   store.ingest({ rows: silence });
   expect(store.holds(120000)[4]).toBeUndefined();
   store.ingest({ rows: early });
-  expect(store.holds(120000)[4]).toMatchObject({ reason: 'GPS 沒有定位' });
+  expect(store.holds(120000)[4]).toMatchObject({ reason: i18nT("c882") });
 });
 
 test('the same measurement relayed by two Masters counts once', () => {

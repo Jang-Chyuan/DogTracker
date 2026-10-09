@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -19,16 +20,16 @@ import { GuideProgress } from '../onboarding/GuideUI';
 export function signInErrorText(failure) {
   const message = String(failure?.message || '');
   if (/network|fetch|timed? ?out|connection/i.test(message))
-    return '連不上網路';
+    return t('c275');
   if (
     failure?.status === 400 ||
     /invalid (login )?credentials|invalid_grant|email not confirmed/i.test(
       message,
     )
   ) {
-    return '電子郵件或密碼不對';
+    return t('c274');
   }
-  return message || '登入失敗，請稍後重試';
+  return message || t("c901");
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -107,7 +108,7 @@ export default function LoginScreen({
     if (locked.current || !auth.available) return;
     // Checked when 登入 is pressed (design D1), before anything is sent.
     if (email.trim() && password && !EMAIL.test(email.trim())) {
-      setError({ text: '電子郵件格式不對', offline: false });
+      setError({ text: t("c900"), offline: false });
       return;
     }
     locked.current = true;
@@ -123,7 +124,7 @@ export default function LoginScreen({
     } catch (failure) {
       if (mounted.current && !failure?.cancelled) {
         const text = signInErrorText(failure);
-        setError({ text, offline: text === '連不上網路' });
+        setError({ text, offline: text === t('c275') });
       }
     } finally {
       locked.current = false;
@@ -160,23 +161,17 @@ export default function LoginScreen({
         keyboardDismissMode="on-drag"
       >
         <GuideProgress step={step} />
-        <Text accessibilityRole="header" style={styles.title}>
-          登入 Supabase 帳號
-        </Text>
+        <Text accessibilityRole="header" style={styles.title}>{t('c001')}</Text>
         {expired ? (
-          <Text accessibilityRole="alert" style={styles.expired}>
-            需要重新登入
-          </Text>
+          <Text accessibilityRole="alert" style={styles.expired}>{t('c276')}</Text>
         ) : null}
-        <Text style={styles.body}>
-          登入後會把收到的位置上傳，也能看到隊友的狗。不登入也可以用，只顯示這支手機連到的接收器。
-        </Text>
+        <Text style={styles.body}>{t('c002')}</Text>
         <TextInput
           cursorColor={colors.accent}
           selectionColor={`${colors.accent}66`}
           selectionHandleColor={colors.accent}
-          accessibilityLabel="電子郵件"
-          placeholder="電子郵件"
+          accessibilityLabel={t('c003')}
+          placeholder={t('c003')}
           placeholderTextColor={colors.textMuted}
           style={[...field('email'), styles.input]}
           value={email}
@@ -196,8 +191,8 @@ export default function LoginScreen({
             cursorColor={colors.accent}
             selectionColor={`${colors.accent}66`}
             selectionHandleColor={colors.accent}
-            accessibilityLabel="密碼"
-            placeholder="密碼"
+            accessibilityLabel={t('c004')}
+            placeholder={t('c004')}
             placeholderTextColor={colors.textMuted}
             style={[styles.input, styles.passwordInput]}
             value={password}
@@ -215,12 +210,12 @@ export default function LoginScreen({
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={shown ? '隱藏密碼' : '顯示密碼'}
+            accessibilityLabel={shown ? t("c897") : t("c898")}
             onPress={() => setShown(value => !value)}
             style={({ pressed }) => [styles.show, pressed && styles.pressed]}
             hitSlop={space.xs}
           >
-            <Text style={styles.showText}>{shown ? '隱藏' : '顯示'}</Text>
+            <Text style={styles.showText}>{shown ? t("c896") : t('c005')}</Text>
           </Pressable>
         </View>
         {message ? (
@@ -235,7 +230,7 @@ export default function LoginScreen({
             {error?.offline ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="重試"
+                accessibilityLabel={t('c049')}
                 onPress={login}
                 disabled={busy}
                 hitSlop={space.m}
@@ -244,7 +239,7 @@ export default function LoginScreen({
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={styles.retryText}>重試</Text>
+                <Text style={styles.retryText}>{t('c049')}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -254,7 +249,7 @@ export default function LoginScreen({
         {/* D1: the fields are checked when 登入 is pressed, not by greying it out. */}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="登入"
+          accessibilityLabel={t('c006')}
           accessibilityState={{ disabled, busy }}
           disabled={disabled}
           onPress={login}
@@ -268,22 +263,22 @@ export default function LoginScreen({
             <View style={styles.busy}>
               <ActivityIndicator
                 color={colors.tonalText}
-                accessibilityLabel="登入中"
+                accessibilityLabel={t("c899")}
               />
-              <Text style={[styles.primaryText, styles.busyText]}>登入</Text>
+              <Text style={[styles.primaryText, styles.busyText]}>{t('c006')}</Text>
             </View>
           ) : (
-            <Text style={styles.primaryText}>登入</Text>
+            <Text style={styles.primaryText}>{t('c006')}</Text>
           )}
         </Pressable>
         {onLater ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="稍後再說"
+            accessibilityLabel={t('c007')}
             onPress={later}
             style={({ pressed }) => [styles.later, pressed && styles.pressed]}
           >
-            <Text style={styles.laterText}>稍後再說</Text>
+            <Text style={styles.laterText}>{t('c007')}</Text>
           </Pressable>
         ) : null}
       </View>

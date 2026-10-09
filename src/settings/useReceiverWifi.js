@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // The receiver's saved Wi-Fi networks (設定 → 進階 → 接收器 Wi-Fi, design S7):
@@ -32,7 +33,7 @@ export function useReceiverWifi(service, { active = false, connected = false } =
         setState({ ssids: result?.ssids || [], activeSsid: result?.activeSsid || '', loading: false, error: '' });
       }
     } catch (error) {
-      if (latest()) setState(current => ({ ...current, loading: false, error: error?.message || '讀取失敗' }));
+      if (latest()) setState(current => ({ ...current, loading: false, error: error?.message || t("c440") }));
     }
   }, [service]);
   useEffect(() => {
@@ -62,8 +63,8 @@ export function useReceiverWifi(service, { active = false, connected = false } =
 /** S7's second line under 接收器 Wi-Fi. */
 export function wifiSummary(wifi) {
   if (wifi?.ssids?.length) return wifi.ssids.join('、');
-  if (wifi?.ssids) return '還沒有存 Wi-Fi';
-  if (wifi?.loading) return '讀取中…';
-  if (wifi?.error) return '讀取失敗';
-  return wifi?.connected ? '讀取中…' : '接收器連上後才能設定';
+  if (wifi?.ssids) return t("c1028");
+  if (wifi?.loading) return t('c424');
+  if (wifi?.error) return t("c440");
+  return wifi?.connected ? t('c424') : t("c1016");
 }

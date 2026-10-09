@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What the live map says above itself, and what lights the settings gear's
 // red dot (design v3 A2/A2b/A2c/A6, 「每一類問題放在哪裡」「每一種提醒」,
 // 判定表「接收器斷線什麼時候算」「上方訊息的排列」「齒輪紅點」). Pure: MapScreen
@@ -93,44 +94,44 @@ export function topCards({ outage = null, storage = null, map = null, retrying =
   if (outage && dismissed.receiver !== outage.key) {
     cards.push({
       id: 'receiver', kind: 'alert', icon: 'receiver-off',
-      title: outage.number != null ? `接收器 ${outage.number} 斷線了` : '接收器斷線了',
-      detail: `${formatClock(outage.since)} 斷線・正在自動重連`,
-      actions: [{ id: 'receiver-settings', label: '接收器設定' }],
+      title: outage.number != null ? t('c058', { number: outage.number }) : t("c773"),
+      detail: t('c059', { time: formatClock(outage.since) }),
+      actions: [{ id: 'receiver-settings', label: t('c060') }],
       closable: true,
     });
   }
   if (storage && !dismissed.storage) {
     cards.push({
       id: 'storage', kind: 'alert', icon: 'storage',
-      title: '位置存不進手機',
-      detail: storage.full ? '手機空間不足' : storage.reason,
-      actions: [storage.full ? { id: 'storage-settings', label: '檢查空間' } : { id: 'storage-reason', label: '看原因' }],
+      title: t("c466"),
+      detail: storage.full ? t("c622") : storage.reason,
+      actions: [storage.full ? { id: 'storage-settings', label: t('c280') } : { id: 'storage-reason', label: t('c281') }],
       closable: true,
     });
   }
   if (map === 'load-failed' || map === 'unavailable') {
     cards.push({
       id: 'map', kind: 'alert', icon: 'map-off',
-      title: map === 'unavailable' ? '地圖打不開' : '地圖載入失敗',
-      detail: map === 'unavailable' ? '狗的位置還是會照常收、照常提醒' : '沒有網路或地圖服務連不上',
-      actions: [{ id: 'map-retry', label: retrying ? '載入中…' : '重試', busy: retrying }],
+      title: map === 'unavailable' ? t('c359') : t('c061'),
+      detail: map === 'unavailable' ? t('c360') : t('c062'),
+      actions: [{ id: 'map-retry', label: retrying ? t('c283') : t('c049'), busy: retrying }],
       closable: false,
     });
   }
   if (waitingSources > 0) {
     cards.push({ id: 'waiting-sources', kind: 'info', icon: 'locate',
-      title: `${waitingSources} 個訊號源等待定位`,
-      detail: '定位後狗會出現在地圖上；點這裡看訊號源',
-      label: `${waitingSources} 個訊號源等待定位，定位後狗會出現在地圖上，點兩下看訊號源`,
-      tapAction: 'waiting-source-settings', closeLabel: '關閉等待定位提示', actions: [], closable: true });
+      title: t('c427', { count: waitingSources }),
+      detail: t('c428'),
+      label: t('c429', { count: waitingSources }),
+      tapAction: 'waiting-source-settings', closeLabel: t('c430'), actions: [], closable: true });
   } else if (noDogs) {
     cards.push({
       id: 'no-dogs', kind: 'info', icon: 'dog',
-      title: '還沒有狗的資料',
-      detail: '連上接收器或登入 Supabase，狗就會出現在地圖上；只用「我的路線」也可以',
+      title: t('c109'),
+      detail: t('c110'),
       actions: [
-        { id: 'connect-receiver', label: '連接接收器' },
-        ...(signedIn ? [] : [{ id: 'sign-in', label: '登入 Supabase', quiet: true }]),
+        { id: 'connect-receiver', label: t('c011') },
+        ...(signedIn ? [] : [{ id: 'sign-in', label: t('c111'), quiet: true }]),
       ],
       closable: true,
     });
@@ -165,5 +166,5 @@ export function gearReasons({ outage = null, storage = null, dismissed = {}, rec
 
 /** The gear's TalkBack label. */
 export function gearLabel(reasons) {
-  return reasons.length ? `設定，有 ${reasons.length} 件事要處理` : '設定';
+  return reasons.length ? t('c305', { count: reasons.length }) : t("c482");
 }

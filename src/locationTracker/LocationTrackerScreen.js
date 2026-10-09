@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LoadingContent } from '../components/Skeleton';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useState } from 'react';
@@ -16,11 +17,11 @@ import { useLocationTracker } from './useLocationTracker';
 
 const motionLabel = state =>
   ({
-    moving: '移動',
-    suspected_stationary: '疑似靜止',
-    stationary: '靜止',
-    unknown: '未知',
-  }[state] || '未判定');
+    moving: t('c125'),
+    suspected_stationary: t("c713"),
+    stationary: t("c625"),
+    unknown: t("c714"),
+  }[state] || t("c715"));
 const time = formatClockSeconds;
 const date = formatDate;
 const fixed = (value, digits, unit = '') =>
@@ -49,19 +50,19 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
       contentContainerStyle={settingsStyles.content}
     >
       <Text style={dataStyles.hint}>
-        {`已存 ${formatCount(tracker.total)}／${formatCount(
+        {t("c700", { value: formatCount(tracker.total), value2: formatCount(
           LOCATION_RECORD_LIMIT,
-        )} 筆・第 ${tracker.page} 頁`}
+        ), page: tracker.page })}
       </Text>
       <View style={dataStyles.buttons}>
-        <PillButton title="回到最新" onPress={tracker.refresh} />
+        <PillButton title={t("c703")} onPress={tracker.refresh} />
         <PillButton
-          title="上一頁"
+          title={t("c559")}
           onPress={tracker.previous}
           disabled={tracker.page === 1 || tracker.loading}
         />
         <PillButton
-          title="下一頁"
+          title={t("c551")}
           onPress={tracker.next}
           disabled={!tracker.hasMore || tracker.loading}
         />
@@ -70,9 +71,9 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
       <LoadState
         testID="location-records"
         loading={false}
-        error={tracker.error ? `讀取失敗：${tracker.error}` : ''}
+        error={tracker.error ? t("c702", { error: tracker.error }) : ''}
         empty={!rows.length}
-        emptyText="還沒有位置記錄"
+        emptyText={t("c701")}
         onRetry={tracker.refresh}
       />
       {rows.map((row, index) => {
@@ -92,7 +93,7 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
                 {date(row.location_at)}
               </Text>
             ) : null}
-            {broke ? <Text style={styles.break}>記錄中斷</Text> : null}
+            {broke ? <Text style={styles.break}>{t("c706")}</Text> : null}
             <Pressable
               testID={`record-${row.id}`}
               accessibilityRole="button"
@@ -115,51 +116,49 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
                 6,
               )}`}</Text>
               <Text style={styles.detail}>
-                {`精度 ${fixed(row.accuracy_meters, 1, ' m')}・速度 ${fixed(
+                {t("c707", { value: fixed(row.accuracy_meters, 1, ' m'), value2: fixed(
                   row.speed_kmh,
                   1,
                   ' km/h',
-                )}・${motionLabel(row.motion_state)}`}
+                ), value3: motionLabel(row.motion_state) })}
               </Text>
               {expanded ? (
                 <View style={styles.more}>
-                  <Text style={styles.detail}>{`海拔 ${
-                    row.altitude_meters ?? '—'
-                  } m・方向 ${row.heading_degrees ?? '—'}°`}</Text>
-                  <Text style={styles.detail}>{`寫入時間 ${formatDateTime(
+                  <Text style={styles.detail}>{t("c708", { value: row.altitude_meters ?? '—', value2: row.heading_degrees ?? '—' })}</Text>
+                  <Text style={styles.detail}>{t("c709", { value: formatDateTime(
                     row.recorded_at,
-                  )}`}</Text>
+                  ) })}</Text>
                   {row.display_latitude != null ? (
                     <Text style={styles.detail}>
-                      {`歷史顯示位置 ${fixed(row.display_latitude, 6)}, ${fixed(
+                      {((row.display_source === 'animated') ? t("c710", { value: fixed(row.display_latitude, 6), value2: fixed(
                         row.display_longitude,
                         6,
-                      )}・${
-                        row.display_source === 'animated'
-                          ? '藍點動畫'
-                          : '定位管線'
-                      }`}
+                      ) }) : t("c711", { value: fixed(row.display_latitude, 6), value2: fixed(
+                        row.display_longitude,
+                        6,
+                      ) }))}
                     </Text>
                   ) : null}
                   <Text style={styles.detail}>
-                    {`原始速度 ${fixed(
+                    {t("c712", { value: fixed(
                       row.raw_speed_kmh,
                       1,
                       ' km/h',
-                    )}・速度估計精度 ${fixed(
+                    ), value2: fixed(
                       row.speed_accuracy_mps,
                       2,
                       ' m/s',
-                    )}`}
+                    ) })}
                   </Text>
                   {row.raw_latitude != null ? (
                     <Text style={styles.detail}>
-                      {`原始位置 ${fixed(row.raw_latitude, 6)}, ${fixed(
+                      {((row.motion_state === 'stationary') ? t("c705", { value: fixed(row.raw_latitude, 6), value2: fixed(
                         row.raw_longitude,
                         6,
-                      )}；上面是${
-                        row.motion_state === 'stationary' ? '靜止鎖定' : '平滑'
-                      }後的位置`}
+                      ) }) : t("c704", { value: fixed(row.raw_latitude, 6), value2: fixed(
+                        row.raw_longitude,
+                        6,
+                      ) }))}
                     </Text>
                   ) : null}
                 </View>

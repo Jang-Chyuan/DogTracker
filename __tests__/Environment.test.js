@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { predictEnvironment, environmentLabel, environmentEvidence } from '../src/ml/Environment';
 import { mergeDogMarkers } from '../src/map/DogMerge';
 
@@ -28,9 +29,9 @@ test('low confidence shows a tentative class with probabilities without disguisi
     probabilities: { indoor: 0.2, window: 0.55, outdoor: 0.25 } };
   expect(environmentLabel(result, time)).toBe('疑似窗邊（信心 55%，低於 60%）');
   expect(environmentEvidence(result)).toBe('模型機率：室內 20% · 窗邊 55% · 室外 25%');
-  expect(environmentLabel({ ...result, hasSignal: false }, time)).toBe('無法判斷');
+  expect(environmentLabel({ ...result, hasSignal: false }, time)).toBe(i18nT("c852"));
   expect(environmentLabel(result, time + 120001)).toContain('資料已超過 2 分鐘');
-  expect(environmentLabel(null, time)).toBe('等待已結束的兩分鐘資料');
+  expect(environmentLabel(null, time)).toBe(i18nT("c846"));
 });
 
 test('each slave uses its own newest packet including no-fix dogs', () => {

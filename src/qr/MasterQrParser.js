@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 export const MASTER_QR_VERSION = 1;
 export const MASTER_SERVICE_UUID = '7f510001-6d9e-4e2f-a671-8f3f2d49a001';
 
@@ -5,52 +6,52 @@ const normalizeUuid = value => value.trim().toLowerCase();
 
 export function parseMasterQr(rawValue) {
   if (typeof rawValue !== 'string' || rawValue.trim() === '') {
-    throw new Error('QR Code 內容為空');
+    throw new Error(t("c884"));
   }
 
-  if (rawValue.length > 1024) throw new Error('QR Code 內容太長，請重新產生');
+  if (rawValue.length > 1024) throw new Error(t("c888"));
 
   let config;
   try {
     config = JSON.parse(rawValue);
   } catch {
-    throw new Error('不是有效的 Master QR Code');
+    throw new Error(t("c889"));
   }
 
   if (!config || Array.isArray(config) || typeof config !== 'object') {
-    throw new Error('Master QR Code 格式錯誤');
+    throw new Error(t("c890"));
   }
 
   if (config.v !== MASTER_QR_VERSION) {
-    throw new Error(`不支援 QR Code 版本：${config.v ?? '未指定'}`);
+    throw new Error(t("c891", { value: config.v ?? t("c892") }));
   }
 
   if (!Number.isInteger(config.masterId) || config.masterId < 1 || config.masterId > 255) {
-    throw new Error('Master ID 必須是 1 到 255 的整數');
+    throw new Error(t("c893"));
   }
 
   if (
     typeof config.bleName !== 'string' ||
     !/^DogGPS-Master[0-9]+$/.test(config.bleName)
   ) {
-    throw new Error('BLE 裝置名稱格式錯誤');
+    throw new Error(t("c894"));
   }
 
   if (config.bleName !== `DogGPS-Master${config.masterId}`) {
-    throw new Error('接收器編號與名稱不一致，請重新掃描');
+    throw new Error(t("c895"));
   }
 
   if (typeof config.serviceUuid !== 'string') {
-    throw new Error('缺少 BLE Service UUID');
+    throw new Error(t("c885"));
   }
 
   const serviceUuid = normalizeUuid(config.serviceUuid);
   if (serviceUuid !== MASTER_SERVICE_UUID) {
-    throw new Error('BLE Service UUID 不符合 DogTracker');
+    throw new Error(t("c886"));
   }
 
   if (config.profile !== undefined && (typeof config.profile !== 'string' || config.profile.length > 16 || !['default'].includes(config.profile))) {
-    throw new Error('不支援這個接收器設定，請重新產生 QR Code');
+    throw new Error(t("c887"));
   }
 
   return {

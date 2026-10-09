@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Linking, NativeModules, PermissionsAndroid, Platform, ToastAndroid } from 'react-native';
 import { sharedBleService } from '../ble/sharedBle';
@@ -348,7 +349,7 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
       setNearby(current => ({ ...current, searching: false, done: true }));
       if (wanted) {
         setNameSearch(null);
-        setInputError(`附近找不到 ${wanted.name}`);
+        setInputError(t("c880", { name: wanted.name }));
       }
     }, { timeoutMs: SEARCH_MS }).catch(() => {
       if (mine === attempt.current) setNearby(current => ({ ...current, searching: false, done: true }));
@@ -367,7 +368,7 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
 
   const searchName = () => {
     const wanted = parseReceiverName(input);
-    if (!wanted) { setInputError('名稱是 DogGPS-Master 加數字'); return; }
+    if (!wanted) { setInputError(t('c262')); return; }
     setInputError(null);
     const seen = nearby.list.find(item => normalized(item.name) === normalized(wanted.name));
     if (seen) connect({ ...wanted, method: 'manual', device: seen.device });

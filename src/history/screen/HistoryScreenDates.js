@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 // Day keys are local YYYY-MM-DD; compare keys, never parse them as UTC dates.
 const pad = n => String(n).padStart(2, '0');
 export function dayKey(date) {
@@ -14,10 +15,10 @@ export function dateNavigation(day, today, days) {
   return { previous: days.filter(d => d < day && d <= today).pop() ?? null,
     next: day >= today ? null : days.find(d => d > day && d <= today) ?? today };
 }
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const WEEKDAYS = [t("c444"), t("c687"), t("c688"), t("c689"), t("c690"), t("c691"), t("c692")];
 /** The date row (H3a): 「10/03（六）今天」, another day 「9/28（一）」. */
 export function dateRowLabel(dayStart, todayStart) {
   const at = new Date(dayStart);
   const text = `${at.getMonth() + 1}/${pad(at.getDate())}（${WEEKDAYS[at.getDay()]}）`;
-  return dayStart === todayStart ? `${text}今天` : text;
+  return dayStart === todayStart ? t('c084', { date: text }) : text;
 }

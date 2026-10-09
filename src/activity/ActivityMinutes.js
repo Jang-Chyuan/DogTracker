@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // A dog's activity as one value per minute, and what those minutes say: 休息
 // (resting), 劇烈 (vigorous) or 一般. Shared by the dog's card (活動量 row,
 // PR 046) and the activity detail page (A4, PR 057). Pure: no React, no SQLite.
@@ -163,10 +164,10 @@ export function activityState(minutes = [], { end, config = ACTIVITY } = {}) {
 export function durationText(minutes) {
   if (!Number.isFinite(minutes)) return '';
   const whole = Math.max(0, Math.round(minutes));
-  if (whole < 60) return `${whole} 分鐘`;
+  if (whole < 60) return t("c435", { whole: whole });
   const hours = Math.floor(whole / 60);
   const rest = whole % 60;
-  return rest ? `${hours} 小時 ${rest} 分` : `${hours} 小時`;
+  return rest ? t("c436", { hours: hours, rest: rest }) : t("c437", { hours: hours });
 }
 
 /**
@@ -177,11 +178,11 @@ export function durationText(minutes) {
 export function activityWords(result) {
   switch (result?.state) {
     case ACTIVITY_STATE.REST:
-      return { word: '休息中', detail: `已 ${durationText(result.durationMinutes)}`, tone: 'rest' };
+      return { word: t('c069'), detail: t('c070', { duration: durationText(result.durationMinutes) }), tone: 'rest' };
     case ACTIVITY_STATE.VIGOROUS:
-      return { word: '劇烈活動', detail: `已 ${durationText(result.durationMinutes)}`, tone: 'vigorous' };
+      return { word: t('c350'), detail: t('c070', { duration: durationText(result.durationMinutes) }), tone: 'vigorous' };
     case ACTIVITY_STATE.NORMAL:
-      return { word: '一般', detail: null, tone: 'normal' };
+      return { word: t("c434"), detail: null, tone: 'normal' };
     default:
       return { word: '—', detail: null, tone: null };
   }

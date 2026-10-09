@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import {
   formatTodayDistance, startOfToday, todayPill, todayRouteDistance,
 } from '../src/tracking/TodayDistance';
@@ -108,7 +109,7 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
     expect(todayPill({ route, livePhone: off, phone: precise }))
       .toMatchObject({ text: '今天 2.7 km', icon: 'walk-muted', muted: true });
     expect(todayPill({ route: { count: 0, metres: 0 }, livePhone: off, phone: precise }))
-      .toMatchObject({ text: '未記錄', icon: 'walk-muted', muted: true });
+      .toMatchObject({ text: i18nT('c309'), icon: 'walk-muted', muted: true });
   });
 
   test.each([
@@ -121,7 +122,7 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
     expect(todayPill({ route, livePhone: off, phone: { ...state, busy: false } }))
       .toMatchObject({ text: '今天 2.7 km', icon: 'walk-off', muted: true, label: `今天 2.7 公里，${reason}` });
     expect(todayPill({ route: { count: 0, metres: 0 }, livePhone: off, phone: { ...state, busy: false } }))
-      .toMatchObject({ text: '未記錄', icon: 'walk-off' });
+      .toMatchObject({ text: i18nT('c309'), icon: 'walk-off' });
   });
 
   test('no GPS for over 10 minutes while recording: slash; under 10 minutes the icon stays', () => {

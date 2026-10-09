@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { formatClock } from '../map/MapFormat';
 
 // What the user chose on 設定 → 提醒 (design v3 S6; 「每一種提醒」「提醒的規則」
@@ -70,17 +71,17 @@ export function alertDelivery(preferences) {
 
 // The groups of S6 that hold more than one switch.
 export const DOG_ALERTS = Object.freeze([
-  { key: 'dogStale', title: '沒有新位置' },
-  { key: 'dogOutOfRange', title: '不在接收範圍' },
-  { key: 'dogBattery', title: '電量低' },
+  { key: 'dogStale', title: t("c475") },
+  { key: 'dogOutOfRange', title: t('c078') },
+  { key: 'dogBattery', title: t("c476") },
 ]);
 
 /** 「全部開／部分開／全部關」 for a group of switches (c300). */
 export function groupStatus(preferences, keys) {
   const values = keys.map(key => normalizeAlertPreferences(preferences)[key]);
-  if (values.every(Boolean)) return '全部開';
-  if (values.some(Boolean)) return '部分開';
-  return '全部關';
+  if (values.every(Boolean)) return t("c472");
+  if (values.some(Boolean)) return t("c473");
+  return t("c474");
 }
 
 /**
@@ -98,12 +99,12 @@ export function alertsHomeStatus(preferences, now = Date.now(), pause = null) {
 export function alertsHomeRight(preferences, now = Date.now(), pause = null) {
   const value = normalizeAlertPreferences(preferences);
   const categories = [...new Set(Object.values(ALERT_SETTING))];
-  if (categories.every(key => !value[key])) return { lines: ['全部關閉'], tone: 'muted' };
+  if (categories.every(key => !value[key])) return { lines: [t('c413')], tone: 'muted' };
   if (Number.isFinite(pause?.until) && pause.until > now) {
-    return { lines: [`暫停到 ${formatClock(pause.until)}`], tone: 'warn' };
+    return { lines: [t('c297', { time: formatClock(pause.until) })], tone: 'warn' };
   }
   return {
-    lines: [[value.vibrate && '震動', value.sound && '聲音'].filter(Boolean).join('、') || '只有通知'],
+    lines: [[value.vibrate && t('c241'), value.sound && t('c242')].filter(Boolean).join('、') || t('c414')],
     tone: null,
   };
 }
@@ -121,15 +122,15 @@ export function alertsPage(preferences, permissions = {}, pause = null, now = Da
   const denied = !!permissions.notificationsDenied;
   const paused = Number.isFinite(pause?.until) && pause.until > now;
   return {
-    pause: paused ? { title: `已暫停提醒到 ${formatClock(pause.until)}`, action: '恢復' } : null,
+    pause: paused ? { title: t('c298', { time: formatClock(pause.until) }), action: t('c299') } : null,
     dogs: {
-      status: groupStatus(value, DOG_ALERTS.map(alert => alert.key)),
+      status: paused ? t('c1160') : groupStatus(value, DOG_ALERTS.map(alert => alert.key)),
       items: DOG_ALERTS.map(alert => ({ ...alert, on: value[alert.key] })),
     },
     receiverBattery: value.receiverBattery,
     receiverDisconnectedStorage: value.receiverDisconnectedStorage,
     vibrate: value.vibrate,
     sound: value.sound,
-    notifications: denied ? { denied: true, detail: '未允許', action: '開系統設定 ›' } : null,
+    notifications: denied ? { denied: true, detail: t('c028'), action: t('c225') } : null,
   };
 }

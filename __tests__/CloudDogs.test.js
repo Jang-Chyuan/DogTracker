@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import MapView, { Marker } from 'react-native-maps';
@@ -86,7 +87,7 @@ test('status reads retain local fixes and new no-fix packets, and use corrected 
     const dogs = mergeDogMarkers({ point: null, packetRows: packets, now: NOW, windowMs: 120000 });
     expect(dogs.find(d => d.slaveId === 4)).toMatchObject({
       stale: false, lastPositionAt: NOW - 121000, lastPacketAt: NOW,
-      communicationStatus: '有通訊／GPS 未定位',
+      communicationStatus: i18nT("c736"),
     });
     expect(dogs.find(d => d.slaveId === 6).stale).toBe(false);
     expect(dogs.find(d => d.slaveId === 8)).toMatchObject({ stale: true, lastPacketAt: NOW - 3600000 });

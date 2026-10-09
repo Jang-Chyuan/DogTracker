@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { configFor } from './HistoryConfig';
 import { historySourceStream, filterHistoryPoints, replayHistoryHolds } from './HistorySources';
 import { historyMovement } from './HistoryMovement';
@@ -55,7 +56,7 @@ export function historyTimeline(rows = [], options = {}) {
     start: last.time, end: last.time, latitude: last.latitude, longitude: last.longitude,
     // 判定表「「現在」和「最後 12:05」」; a recording that was switched off
     // ends with 「記錄已關閉 10:20」 (closedAt, when the caller knows it).
-    label: following ? now - last.time <= 120000 ? '現在' : '最後' : closedAt != null ? '記錄已關閉' : '結束',
+    label: following ? now - last.time <= 120000 ? t('c130') : t("c660") : closedAt != null ? t("c656") : t('c330'),
     closedAt: following ? null : closedAt,
     continuesNextDay: context.some(p => p.time >= dayEnd && p.time - last.time <= config.gapMs) });
   const sections = [];

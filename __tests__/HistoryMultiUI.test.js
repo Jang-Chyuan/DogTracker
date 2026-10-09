@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // 055b: several dogs (H7) and 資料來源 on the history screen, drawn from the
 // fixtures' rows through useHistoryScreen as MapScreen does.
 import React from 'react';
@@ -67,8 +68,8 @@ test('history-multi-dog (H7): one capsule, 豆豆 leads, 「豆豆・移動 x km
 
 test('「＋ 加入」: the list, a dog without records faded, added with the smallest free colour; full at four', async () => {
   const s = await mount('history-multi-add');
-  expect(s.text()).toContain('看哪幾隻狗');
-  expect(s.text()).toContain('這天沒有紀錄');
+  expect(s.text()).toContain(i18nT('c403'));
+  expect(s.text()).toContain(i18nT('c327'));
   expect(s.text()).not.toContain('訊號源 6');
   await act(async () => s.screen.addDog({ id: 8, hasData: true }));
   expect(s.screen.dogs.map(dog => [dog.id, dog.color])).toEqual([[6, colors.route1], [8, colors.route2]]);
@@ -76,8 +77,8 @@ test('「＋ 加入」: the list, a dog without records faded, added with the sm
   const four = await mount('history-multi-four');
   expect(four.screen.full).toBe(true);
   await act(async () => four.press('history-dogs-pill'));
-  expect(four.text()).toContain('最多同時 4 隻');
-  expect(four.text()).toContain('看哪幾隻狗');
+  expect(four.text()).toContain(i18nT('c326', { count: 4 }));
+  expect(four.text()).toContain(i18nT('c403'));
   await unmount(four);
 });
 
@@ -131,13 +132,13 @@ test('再次進入: leaving and opening the same dog again starts over (the entr
 
 test('chooser stays open after immediate add, switch and remove; Back closes it first', async () => {
   const s = await mount('history-dogs-sheet-three');
-  expect(s.text()).toContain('看哪幾隻狗');
+  expect(s.text()).toContain(i18nT('c403'));
   const range = s.screen.range;
   const time = s.screen.cursor.time;
   await act(async () => s.press('history-add-5'));
   expect(s.screen.dogs).toHaveLength(4);
-  expect(s.text()).toContain('看哪幾隻狗');
-  expect(s.text()).toContain('最多同時 4 隻');
+  expect(s.text()).toContain(i18nT('c403'));
+  expect(s.text()).toContain(i18nT('c326', { count: 4 }));
   await act(async () => s.press('history-dog-4'));
   expect(s.screen.protagonist).toBe(4);
   expect(s.renderer.root.findAllByProps({ testID: 'history-remove-4' })).toHaveLength(0);
@@ -150,22 +151,22 @@ test('chooser stays open after immediate add, switch and remove; Back closes it 
   const animation = jest.spyOn(Animated, 'timing').mockReturnValue({ start: done => done?.({ finished: true }) });
   await act(async () => expect(s.ref.current.back()).toBe(true));
   animation.mockRestore();
-  expect(s.text()).not.toContain('看哪幾隻狗');
+  expect(s.text()).not.toContain(i18nT('c403'));
   await unmount(s);
 });
 
 test('no-record dog can be added immediately; outside tap closes the chooser', async () => {
   const s = await mount('history-dogs-sheet-no-record');
-  expect(s.text()).toContain('這天沒有紀錄');
+  expect(s.text()).toContain(i18nT('c327'));
   await act(async () => s.press('history-add-5'));
   expect(s.screen.dogs.find(dog => dog.id === 5).hasData).toBe(false);
-  expect(s.text()).toContain('看哪幾隻狗');
+  expect(s.text()).toContain(i18nT('c403'));
   const scrim = s.renderer.root.findAll(node => node.props.accessibilityLabel === '關閉看哪幾隻狗'
     && typeof node.props.onPress === 'function')[0];
   const animation = jest.spyOn(Animated, 'timing').mockReturnValue({ start: done => done?.({ finished: true }) });
   await act(async () => scrim.props.onPress());
   animation.mockRestore();
-  expect(s.text()).not.toContain('看哪幾隻狗');
+  expect(s.text()).not.toContain(i18nT('c403'));
   await unmount(s);
 });
 
@@ -175,7 +176,7 @@ test('map face selection still switches protagonist without opening the chooser'
   await act(async () => s.screen.selectDog(8));
   expect(s.screen.protagonist).toBe(8);
   expect(s.screen.range).toEqual(range);
-  expect(s.text()).not.toContain('看哪幾隻狗');
+  expect(s.text()).not.toContain(i18nT('c403'));
   await unmount(s);
 });
 

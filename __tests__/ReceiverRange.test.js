@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import {
   advanceRange, circleCoordinates, distanceMeters, emptyRange, judgeRange, RANGE, RANGE_STATUS,
   rangeLabel, rangeView, ringEdgePoint,
@@ -295,7 +296,7 @@ describe('ring and red dashed line on the map', () => {
     expect(outOfRangeLines(ring, [dog(4, 1300)], { 4: { status: 'in' } })).toEqual([]);
     expect(outOfRangeLines(ring, [dog(4, 1300)], {})).toEqual([]);
     expect(outOfRangeLines(ring, [dog(4, 950)], { 4: out })).toEqual([]);
-    expect(outOfRangeLines(ring, [dog(4, 1300, { heldReason: '室內' })], { 4: out })).toEqual([]);
+    expect(outOfRangeLines(ring, [dog(4, 1300, { heldReason: i18nT('c114') })], { 4: out })).toEqual([]);
     expect(outOfRangeLines(ring, [dog(4, 1300, { coordinate: null })], { 4: out })).toEqual([]);
   });
 });

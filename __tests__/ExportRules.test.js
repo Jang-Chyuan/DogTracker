@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { buildGPX } from '../src/mapHistory/ExportGPX';
 import { buildCSV, CSV_COLUMNS } from '../src/mapHistory/ExportCSV';
 import { buildPNGLayout } from '../src/mapHistory/ExportPNG';
@@ -120,7 +121,7 @@ test('CSV exact design header and all supplied fields survive serialization', ()
   expect(CSV_COLUMNS.join(',')).toBe('source,id,recorded_at,location_at,latitude,longitude,accuracy_meters,altitude_meters,speed_kmh,heading_degrees,raw_latitude,raw_longitude,session_id,raw_speed_kmh,speed_accuracy_mps,motion_state,display_source,display_location_at,master_id,slave_id,satellites,hdop,rssi,snr');
   const row = point(0, { id: '位置', recorded_at: 0, accuracy_meters: 10, altitude_meters: 20, speed_kmh: 30, heading_degrees: 40, raw_latitude: 24, raw_longitude: 120, session_id: 'session', raw_speed_kmh: 50, speed_accuracy_mps: 2, motion_state: 'moving', display_source: 'collar', display_location_at: 0, master_id: 7, slave_id: 4, satellites: 8, hdop: 1, rssi: -60, snr: 9 });
   const cells = buildCSV(snap(dog({ rows: [row] }))).split('\r\n')[1].slice(1, -1).split('","');
-  expect(cells).toEqual(['dog-4', '位置', '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z', '24', '120', '10', '20', '30', '40', '24', '120', 'session', '50', '2', 'moving', 'collar', '1970-01-01T00:00:00.000Z', '7', '4', '8', '1', '-60', '9']);
+  expect(cells).toEqual(['dog-4', i18nT('c073'), '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z', '24', '120', '10', '20', '30', '40', '24', '120', 'session', '50', '2', 'moving', 'collar', '1970-01-01T00:00:00.000Z', '7', '4', '8', '1', '-60', '9']);
 });
 
 // Design edges.txt:49:「GPX trkpt、CSV 寫原始座標（包括室內飄移的點，GPX 另開 trkseg）」；spec.txt:391:「GPS 點照它自己的定位時間歸到那個時間的區間」。

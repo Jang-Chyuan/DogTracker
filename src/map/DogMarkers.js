@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What each dog's map marker shows (design v3「狗的標記：所有情況」, DESIGN.md
 // §15 角標與放大), and which name tags merge into a 「3 隻」 group tag. Pure and
 // provider-neutral: the renderer only draws what these return.
@@ -9,7 +10,7 @@ import { dogProblems } from '../tracking/DogProblems';
 
 // The one word the map uses for a dog held where it was last seen clearly,
 // whatever held it (indoors, by a window, charging, weak GPS).
-export const INDOOR_WORD = '室內';
+export const INDOOR_WORD = t('c114');
 
 /** The dog's name on the map: its given name, or 「狗 6」. */
 export const dogName = (slaveId, aliases) => dogMapLabel(dogHistoryLabel(slaveId, aliases));
@@ -75,12 +76,12 @@ export function dogMarker(dog, { freshness, problems, name, now, range = null, s
  */
 export function problemNote(dog, { freshness, problems, range, indoor, now }) {
   const crit = [];
-  if (problems.outOfRange) crit.push('不在接收範圍');
+  if (problems.outOfRange) crit.push(t('c078'));
   const stale = staleText(freshness, now);
   if (stale) crit.push(stale);
-  if (problems.lowBattery) crit.push(`電量 ${dog.batteryPercentage}%・偏低`);
+  if (problems.lowBattery) crit.push(t("c734", { batteryPercentage: dog.batteryPercentage }));
   if (crit.length) return { text: crit.join('，'), level: 'crit' };
-  if (range?.status === RANGE_STATUS.NEAR && !indoor) return { text: '快離開接收範圍', level: 'warn' };
+  if (range?.status === RANGE_STATUS.NEAR && !indoor) return { text: t('c067'), level: 'warn' };
   if (indoor) return { text: INDOOR_WORD, level: 'muted' };
   return null;
 }
@@ -94,9 +95,9 @@ export function problemNote(dog, { freshness, problems, range, indoor, now }) {
 export function markerSpeech(dog, { name, indoor, freshness, problems, now }) {
   const parts = [indoor ? `${name}・${INDOOR_WORD}` : name];
   const battery = Number.isFinite(dog.batteryPercentage) ? `${dog.batteryPercentage}%` : null;
-  if (dog.charging) parts.push(battery ? `充電中 ${battery}` : '充電中');
-  else if (problems.lowBattery) parts.push(`電量 ${battery}，偏低`);
-  if (problems.outOfRange) parts.push('不在接收範圍');
+  if (dog.charging) parts.push(battery ? t('c115', { percentage: battery }) : t("c731"));
+  else if (problems.lowBattery) parts.push(t("c732", { battery: battery }));
+  if (problems.outOfRange) parts.push(t('c078'));
   const stale = staleSpeech(freshness, now);
   if (stale) parts.push(stale);
   return parts.join('，');
@@ -166,7 +167,7 @@ export function nameTags(markers, points = {}, fontScale = 1) {
     const indoor = members.every(item => item.marker.indoor);
     for (const item of members) result[item.marker.slaveId] = null;
     result[lead.marker.slaveId] = {
-      text: `${members.length} 隻${indoor ? `・${INDOOR_WORD}` : ''}`,
+      text: t("c733", { length: members.length, value: indoor ? `・${INDOOR_WORD}` : '' }),
       group: members.length,
       problem: members.some(item => item.marker.problem),
       members: [...members].sort((left, right) => left.y - right.y

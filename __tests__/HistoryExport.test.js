@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // 056: the export of the history screen (H9/H10) — the snapshot of the day
 // shown, the PNG pages and their drawing operations, the files and the
 // export window's states (產生中, 取消, 匯出失敗, 重試 with the same data).
@@ -81,8 +82,8 @@ describe('the snapshot of the day shown', () => {
     expect(places[0]).toMatchObject({ title: '桃園區中正路 50 號附近', missing: '' });
     expect(places[1].title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
     expect(places[1]).toMatchObject({ missing: '', coordinates: '' });
-    expect(places[places.length - 1].pill.text).toBe('結束');
-    expect(JSON.stringify(subject.timeline)).not.toContain('現在');
+    expect(places[places.length - 1].pill.text).toBe(i18nT('c330'));
+    expect(JSON.stringify(subject.timeline)).not.toContain(i18nT('c130'));
   });
 
   test('the map layer: the whole route at full strength, its numbers and every time marker', () => {

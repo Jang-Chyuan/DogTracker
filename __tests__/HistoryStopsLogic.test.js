@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { historyVisits, historyStops, historyIndoorNodes } from '../src/history';
 import { point, visitsFixture } from '../__fixtures__/HistoryLogicFixtures';
 
@@ -102,7 +103,7 @@ test('indoor nodes use packet times, split gaps, and carry address placeholder',
   const held = { heldReason: 'indoor', heldSince: -60000 };
   const nodes = historyIndoorNodes([point(0, 0, held), point(180, 0, held), point(400, 0, held), point(460, 0, held)], { dayStart: 0 });
   expect(nodes).toHaveLength(2);
-  expect(nodes[0]).toMatchObject({ type: 'indoor', label: '室內', start: 0, end: 180000, durationMs: 180000, continuesPreviousDay: true });
+  expect(nodes[0]).toMatchObject({ type: 'indoor', label: i18nT('c114'), start: 0, end: 180000, durationMs: 180000, continuesPreviousDay: true });
   expect(nodes[0].number).toBeUndefined();
 });
 // edges.txt「停住跨過午夜…前一天最後一個節點接續隔天」。

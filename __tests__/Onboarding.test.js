@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AppState, Linking, PermissionsAndroid, Platform, Text } from 'react-native';
@@ -45,39 +46,39 @@ test('D2a → D2b → D2c / D2d: rows and the button', () => {
   // D2a: what each one is for; 全部允許 and 稍後再說.
   const a = permissionsPage({ needed, grants: nothing });
   expect(a.rows.map(row => [row.number, row.title, row.detail, row.state])).toEqual([
-    [1, '附近的裝置', '連接接收器', 'todo'], [2, '精確位置', '算出狗離你多遠、記錄你的路線；離開 App、鎖螢幕時也會繼續記錄，右下角或設定 → 手機可以隨時停止', 'todo'],
-    [3, '通知', '狗出問題時提醒你', 'todo']]);
-  expect(a.primary).toEqual({ id: 'allowAll', label: '全部允許', disabled: false });
+    [1, i18nT('c010'), i18nT('c011'), 'todo'], [2, i18nT('c012'), i18nT("c879"), 'todo'],
+    [3, i18nT('c014'), i18nT('c015'), 'todo']]);
+  expect(a.primary).toEqual({ id: 'allowAll', label: i18nT('c016'), disabled: false });
   expect(a.later).toBe(true);
   // Not checked yet: the button waits.
   expect(permissionsPage({ needed }).primary.disabled).toBe(true);
   // D2b: 附近的裝置 answered, 精確位置 being asked, 通知 waiting.
   const b = permissionsPage({ needed, grants: { ...nothing, nearby: 'granted' }, asked: ['nearby', 'location'],
     asking: 'location' });
-  expect(b.rows.map(row => [row.detail, row.state])).toEqual([['已允許', 'ok'], ['詢問中…', 'asking'],
-    ['等一下', 'waiting']]);
-  expect(b.primary).toEqual({ id: 'asking', label: '詢問中…', disabled: true });
+  expect(b.rows.map(row => [row.detail, row.state])).toEqual([[i18nT('c017'), 'ok'], [i18nT('c018'), 'asking'],
+    [i18nT('c019'), 'waiting']]);
+  expect(b.primary).toEqual({ id: 'asking', label: i18nT('c018'), disabled: true });
   expect(b.later).toBe(true);
   // D2c: only 大概, and refused → red 「!」 with 「開系統設定 ›」 (c027's
   // suggestion); 下一步 only.
   const c = permissionsPage({ needed, grants: { nearby: 'granted', location: 'approximate', notifications: 'denied' },
     asked: needed });
-  expect(c.rows.map(row => [row.detail, row.state, row.action])).toEqual([['已允許', 'ok', null],
-    ['只給了大概位置，算不出距離', 'problem', '開系統設定 ›'], ['未允許', 'problem', '開系統設定 ›']]);
-  expect(c.primary).toEqual({ id: 'next', label: '下一步', disabled: false });
+  expect(c.rows.map(row => [row.detail, row.state, row.action])).toEqual([[i18nT('c017'), 'ok', null],
+    [i18nT('c026'), 'problem', i18nT('c225')], [i18nT('c028'), 'problem', i18nT('c225')]]);
+  expect(c.primary).toEqual({ id: 'next', label: i18nT('c029'), disabled: false });
   expect(c.later).toBe(false);
   // D2d, also on a later visit with everything allowed already.
   const all = { nearby: 'granted', location: 'granted', notifications: 'granted' };
   const d = permissionsPage({ needed, grants: all });
-  expect(d.rows.every(row => row.state === 'ok' && row.detail === '已允許')).toBe(true);
-  expect(d.primary.label).toBe('下一步');
+  expect(d.rows.every(row => row.state === 'ok' && row.detail === i18nT('c017'))).toBe(true);
+  expect(d.primary.label).toBe(i18nT('c029'));
   // 大概 location is a problem even before the questions (an earlier answer).
   expect(permissionsPage({ needed, grants: { ...nothing, location: 'approximate' } }).rows[1].state).toBe('problem');
   // Only 附近的裝置 was asked (in D3, D2 skipped): the other two are still
   // asked by 全部允許, never 附近的裝置 again.
   const partly = permissionsPage({ needed, grants: nothing, asked: ['nearby'] });
   expect(partly.rows.map(row => row.state)).toEqual(['problem', 'todo', 'todo']);
-  expect(partly.primary.label).toBe('全部允許');
+  expect(partly.primary.label).toBe(i18nT('c016'));
   expect(askableIds({ needed, grants: nothing, asked: ['nearby'] })).toEqual(['location', 'notifications']);
 });
 
@@ -111,11 +112,11 @@ test('usePermissionsGuide: one question at a time, each row as it comes back; th
   const onAsked = jest.fn();
   const hook = renderHook(usePermissionsGuide, { permissions, version: 34, android: true, onAsked });
   await act(async () => {});
-  expect(hook.get().primary.label).toBe('全部允許');
+  expect(hook.get().primary.label).toBe(i18nT('c016'));
   jest.useFakeTimers();
   await act(async () => { hook.get().allowAll(); });
   // The row being asked shows first, then its question comes.
-  expect(hook.get().rows.map(row => row.detail)).toEqual(['詢問中…', '等一下', '等一下']);
+  expect(hook.get().rows.map(row => row.detail)).toEqual([i18nT('c018'), i18nT('c019'), i18nT('c019')]);
   expect(order).toEqual([]);
   await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
   jest.useRealTimers();
@@ -125,7 +126,7 @@ test('usePermissionsGuide: one question at a time, each row as it comes back; th
   expect(order).toEqual([[P.BLUETOOTH_SCAN, P.BLUETOOTH_CONNECT], [P.ACCESS_FINE_LOCATION, P.ACCESS_COARSE_LOCATION],
     [P.POST_NOTIFICATIONS]]);
   expect(hook.get().rows.map(row => row.state)).toEqual(['ok', 'problem', 'problem']);
-  expect(hook.get().primary.label).toBe('下一步');
+  expect(hook.get().primary.label).toBe(i18nT('c029'));
   // Precise location given in the system settings: checked on the way back.
   granted.add(P.ACCESS_FINE_LOCATION);
   await act(async () => { onActive('active'); });
@@ -145,7 +146,7 @@ test('D2 page: rows, 開系統設定 › and the buttons', () => {
   const text = words(renderer);
   for (const expected of ['App 需要這些權限', '按一次就會依序跳出系統的詢問；每一個都可以之後再開。', '已允許',
     '只給了大概位置，算不出距離', '未允許', '開系統設定 ›', '下一步']) expect(text).toContain(expected);
-  expect(text).not.toContain('稍後再說');
+  expect(text).not.toContain(i18nT('c007'));
   act(() => renderer.root.findByProps({ testID: 'permission-notifications-settings' }).props.onPress());
   expect(onSystemSettings).toHaveBeenCalled();
   act(() => renderer.root.findByProps({ testID: 'permissions-primary' }).props.onPress());
@@ -161,8 +162,8 @@ test('typed names: case and spaces ignored (c262), signal words, the nearby list
   expect(parseReceiverName('DogGPS-Master')).toBeNull();
   expect(parseReceiverName('Master7')).toBeNull();
   expect(parseReceiverName('DogGPS-Master0')).toBeNull();
-  expect(signalBarsLabel(signalBars(-58))).toBe('訊號強');
-  expect(signalBarsLabel(signalBars(-86))).toBe('訊號弱');
+  expect(signalBarsLabel(signalBars(-58))).toBe(i18nT("c867"));
+  expect(signalBarsLabel(signalBars(-86))).toBe(i18nT("c869"));
   expect(signalBarsLabel(signalBars(null))).toBe('');
   let list = [];
   list = addNearby(list, { id: 'a', name: 'DogGPS-Master3', rssi: -86 });
@@ -173,31 +174,31 @@ test('typed names: case and spaces ignored (c262), signal words, the nearby list
 });
 
 test('D3 dialogs say what the copy deck says', () => {
-  expect(pairingDialog('wrongQr')).toMatchObject({ title: '這不是接收器的 QR Code',
-    body: '請掃接收器機身上的 QR Code（DogGPS-Master 開頭）。' });
-  expect(pairingDialog('wrongQr').buttons.map(button => button.label)).toEqual(['手動輸入', '再掃一次']);
+  expect(pairingDialog('wrongQr')).toMatchObject({ title: i18nT('c032'),
+    body: i18nT('c033') });
+  expect(pairingDialog('wrongQr').buttons.map(button => button.label)).toEqual([i18nT('c034'), i18nT('c035')]);
   const failed = pairingDialog('failed', { number: 7 });
-  expect(failed).toMatchObject({ title: '連不上接收器 7', body: '已經試了 30 秒。請確認接收器有開機、在 10 公尺內。' });
-  expect(failed.buttons.map(button => button.label)).toEqual(['手動輸入', '重試']);
+  expect(failed).toMatchObject({ title: '連不上接收器 7', body: i18nT('c048') });
+  expect(failed.buttons.map(button => button.label)).toEqual([i18nT('c034'), i18nT('c049')]);
   // 判定表「D3c 連不上」.
   expect(pairingDialog('failed', { number: 7, method: 'manual' }).buttons.map(button => button.label))
-    .toEqual(['回到搜尋', '重試']);
+    .toEqual([i18nT('c272'), i18nT('c049')]);
   const mismatch = pairingDialog('mismatch', { expected: 7, got: 3 });
-  expect(mismatch).toMatchObject({ title: '這不是要連的接收器', body: '要連 7，收到的是 3，已中斷連線' });
-  expect(mismatch.buttons.map(button => button.label)).toEqual(['稍後再說', '重新掃描']);
-  expect(pairingDialog('mismatch', { expected: 7, got: 3, method: 'manual' }).buttons[1].label).toBe('重新搜尋');
+  expect(mismatch).toMatchObject({ title: i18nT("c865"), body: '接收器編號不符：要連的是 7，收到的是 3。已中斷連線' });
+  expect(mismatch.buttons.map(button => button.label)).toEqual([i18nT('c007'), i18nT('c268')]);
+  expect(pairingDialog('mismatch', { expected: 7, got: 3, method: 'manual' }).buttons[1].label).toBe(i18nT('c264'));
   expect(pairingDialog('mismatch', { expected: 8, got: 3, mode: 'change', previous: { number: 7 } }).body)
-    .toBe('要連 8，收到的是 3，已中斷連線。沒有更換，還是接收器 7');
+    .toBe('接收器編號不符：要連的是 8，收到的是 3。已中斷連線。沒有更換，還是接收器 7');
   expect(pairingDialog('noData', { number: 8, mode: 'change', previous: { number: 7 } }))
     .toMatchObject({ title: '接收器 8 還沒有送資料' });
   expect(pairingDialog('noData', { number: 8, mode: 'change', previous: { number: 7 } }).buttons
-    .map(button => button.label)).toEqual(['恢復接收器 7', '先換過去']);
+    .map(button => button.label)).toEqual(['恢復接收器 7', i18nT("c858")]);
   expect(pairingDialog('noData', { number: 8, mode: 'change', previous: { number: 7, enabled: false } }).buttons[0].label).toBe('恢復接收器 7');
-  expect(pairingDialog('bluetoothOff').title).toBe('請打開藍牙');
-  expect(pairingDialog('locationOff').title).toBe('請打開定位');
-  expect(pairingDialog('nearbyDenied').title).toBe('需要『附近的裝置』才能連接接收器');
-  expect(pairingDialog('locationDenied').title).toBe('需要位置權限才能找接收器');
-  expect(pairingDialog('nearbyDenied').buttons[1].label).toBe('開系統設定 ›');
+  expect(pairingDialog('bluetoothOff').title).toBe(i18nT('c260'));
+  expect(pairingDialog('locationOff').title).toBe(i18nT('c265'));
+  expect(pairingDialog('nearbyDenied').title).toBe(i18nT('c261'));
+  expect(pairingDialog('locationDenied').title).toBe(i18nT('c266'));
+  expect(pairingDialog('nearbyDenied').buttons[1].label).toBe(i18nT('c225'));
   expect(pairingFlow('receiver', 'change')).toMatchObject({ waitForData: true, restoreConnected: true, guide: false });
   expect(pairingFlow('receiver', 'change')).toMatchObject({ waitForData: true, restoreConnected: true });
   expect(pairingFlow('onboarding')).toMatchObject({ guide: true, waitForData: false });
@@ -302,7 +303,7 @@ test('D3c: the receivers nearby for 30 s, the typed name checked, searched, not 
   // Not a receiver's name.
   act(() => hook.get().typeName('Master7'));
   act(() => hook.get().searchName());
-  expect(hook.get().inputError).toBe('名稱是 DogGPS-Master 加數字');
+  expect(hook.get().inputError).toBe(i18nT('c262'));
   // A name nobody nearby has: searched for 30 s, then the red line.
   act(() => hook.get().typeName('dogGPS-master 9'));
   await act(async () => { hook.get().searchName(); });
@@ -321,7 +322,7 @@ test('D3: Bluetooth off, 附近的裝置 refused (asked once), location off on A
   let hook = pairing({ flow: pairingFlow('onboarding'), ble: off });
   await act(async () => {});
   await act(async () => { hook.get().onQr(QR7); });
-  expect(hook.get().dialog).toMatchObject({ title: '請打開藍牙' });
+  expect(hook.get().dialog).toMatchObject({ title: i18nT('c260') });
   const send = jest.spyOn(Linking, 'sendIntent').mockResolvedValue();
   act(() => hook.get().press('open'));
   expect(send).toHaveBeenCalledWith('android.bluetooth.adapter.action.REQUEST_ENABLE');
@@ -334,7 +335,7 @@ test('D3: Bluetooth off, 附近的裝置 refused (asked once), location off on A
   await act(async () => { hook.get().onQr(QR7); });
   expect(permissions.requestMultiple).toHaveBeenCalledWith([P.BLUETOOTH_SCAN, P.BLUETOOTH_CONNECT]);
   expect(onAsked).toHaveBeenCalledWith(['nearby']);
-  expect(hook.get().dialog).toMatchObject({ title: '需要『附近的裝置』才能連接接收器' });
+  expect(hook.get().dialog).toMatchObject({ title: i18nT('c261') });
   hook.unmount();
   // Asked before: no second question.
   const again = allowAll({ check: jest.fn(async name => name === P.CAMERA) });
@@ -349,12 +350,12 @@ test('D3: Bluetooth off, 附近的裝置 refused (asked once), location off on A
     asked: ['location'] });
   await act(async () => {});
   await act(async () => { hook.get().onQr(QR7); });
-  expect(hook.get().dialog).toMatchObject({ title: '需要位置權限才能找接收器' });
+  expect(hook.get().dialog).toMatchObject({ title: i18nT('c266') });
   hook.unmount();
   hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), version: 30, locationServices: false });
   await act(async () => {});
   await act(async () => { hook.get().onQr(QR7); });
-  expect(hook.get().dialog).toMatchObject({ title: '請打開定位' });
+  expect(hook.get().dialog).toMatchObject({ title: i18nT('c265') });
   hook.unmount();
 });
 
@@ -404,7 +405,7 @@ test('換接收器: the old link pauses, the first packet decides; 60 s quiet as
     // Receiver 8 connected but quiet for 60 s.
     hook.update({ receiverState: { ...receiver7, sessionId: 'new', expectedMasterId: 8, lastReceivedAt: 0 } });
     await act(async () => { jest.advanceTimersByTime(FIRST_PACKET_MS); });
-    expect(hook.get().dialog.buttons.map(button => button.label)).toEqual(['恢復接收器 7', '先換過去']);
+    expect(hook.get().dialog.buttons.map(button => button.label)).toEqual(['恢復接收器 7', i18nT("c858")]);
     // 先換過去: in use; its first packet is still watched (by App).
     act(() => hook.get().press('keep'));
     expect(onConnected).toHaveBeenCalledWith(expect.objectContaining({ number: 8, kept: true,
@@ -441,8 +442,8 @@ test('換接收器: the first packet from 8 takes it; leaving without one puts 7
     await act(async () => { hook.get().onQr(QR8); });
     hook.update({ receiverState: { ...receiver7, sessionId: 'new', enabled: false, expectedMasterId: 8,
       lastStatus: 'Master ID 不符合：QR=8，BLE=3' } });
-    expect(hook.get().dialog).toMatchObject({ title: '這不是要連的接收器',
-      body: '要連 8，收到的是 3，已中斷連線。沒有更換，還是接收器 7' });
+    expect(hook.get().dialog).toMatchObject({ title: i18nT("c865"),
+      body: '接收器編號不符：要連的是 8，收到的是 3。已中斷連線。沒有更換，還是接收器 7' });
     await act(async () => { hook.get().press('later'); });
     expect(onLeave).toHaveBeenCalledWith('later');
     expect(restore).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'AA:07', number: 7 }));
@@ -517,7 +518,7 @@ test('back on D3 from D4: 已連上 接收器 7 with 下一步 / 換一台; noth
   let renderer;
   act(() => { renderer = Renderer.create(<PairingScreen pairing={hook.get()} step={3} camera={false} />); });
   expect(words(renderer)).toContain('已連上 接收器 7');
-  expect(words(renderer)).toContain('換一台');
+  expect(words(renderer)).toContain(i18nT('c270'));
   act(() => hook.get().next());
   expect(onConnected).toHaveBeenCalledWith(expect.objectContaining({ number: 7, again: true }));
   act(() => hook.get().changeReceiver());
@@ -535,9 +536,9 @@ test('D4 lists the sources heard as 訊號源 N; D4b when none (c050–c054)', (
     { source: 'cloud', master_id: 7, slave_id: 6, slave_lat: 24.99, slave_lon: 121.31, received_at: 50 },
   ];
   expect(pairedPage(7, packets)).toEqual({ title: '已連上接收器 7',
-    body: '收到 2 個訊號源。狗定位後會出現在地圖上，點狗就能改名字和頭像。',
+    body: '已經收到 2 個訊號源。狗第一次定位、出現在地圖上之後，點狗、按鉛筆就能改名字和頭像。',
     sources: [{ slaveId: 4, label: '訊號源 4' }, { slaveId: 9, label: '訊號源 9' }] });
-  expect(pairedPage(7, [])).toEqual({ title: '已連上接收器 7', body: '還沒收到訊號源。項圈開機後，訊號源會出現在這裡。',
+  expect(pairedPage(7, [])).toEqual({ title: '已連上接收器 7', body: i18nT('c054'),
     sources: [] });
   let renderer;
   const onStart = jest.fn();
@@ -561,7 +562,7 @@ test('onboard-permissions-partial / -done draw D2c and D2d', () => {
     expect(fixture.openRoute).toBe('permissions');
     const page = permissionsPage({ needed: neededPermissions(34), ...fixture.permissionsGuide });
     expect(page.rows.map(row => row.state)).toEqual(states);
-    expect(page.primary.label).toBe('下一步');
+    expect(page.primary.label).toBe(i18nT('c029'));
   }
 });
 
@@ -600,7 +601,7 @@ test('pair-* fixtures draw the D3 state their names say', async () => {
     hook.unmount();
   }
   const manual = fixtureScreen('pair-manual-nearby').pairing;
-  expect(manual.nearby.map(item => signalBarsLabel(signalBars(item.rssi)))).toEqual(['訊號強', '訊號弱']);
+  expect(manual.nearby.map(item => signalBarsLabel(signalBars(item.rssi)))).toEqual([i18nT("c867"), i18nT("c869")]);
 });
 
 test('pair-done-sources / pair-done-empty draw D4 and D4b', () => {
@@ -642,5 +643,5 @@ test('signal bars include RSSI boundaries and unknown readings', () => {
   expect([-59, -60, -61, -70, -71, -80, -81, null, undefined, NaN, Infinity]
     .map(signalBars)).toEqual([4, 4, 3, 3, 2, 2, 1, 0, 0, 0, 0]);
   expect([0, 1, 2, 3, 4].map(signalBarsLabel))
-    .toEqual(['', '訊號弱', '訊號中', '訊號強', '訊號強']);
+    .toEqual(['', i18nT("c869"), i18nT("c868"), i18nT("c867"), i18nT("c867")]);
 });

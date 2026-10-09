@@ -1,10 +1,11 @@
+import { t as i18nT } from '../src/i18n';
 import { dogTransition, dogPresentation, rangeOwner, protagonist, entryDefaults, backAction, BACK_KEY_TABLE, emptyState } from '../src/history/screen';
 const initial = { dogs: [], protagonist: null, range: { start: 1, end: 2 }, cursorTime: 2 };
 const add = (state, id, hasData = true) => dogTransition(state, { type: 'add', dog: { id, hasData } });
 test('2–4 dogs retain shared range, cursor and stable colours, recycling smallest slot', () => {
   let state = add(add(add(add(initial, 'a'), 'b'), 'c'), 'd');
   expect(state.dogs.map(d => d.colourToken)).toEqual(['route1', 'route2', 'route3', 'route4']);
-  expect(add(state, 'e').message).toBe('最多同時 4 隻');
+  expect(add(state, 'e').message).toBe(i18nT('c326', { count: 4 }));
   state = dogTransition(state, { type: 'remove', id: 'b' });
   state = add(state, 'e');
   expect(state.dogs.map(d => d.colourToken)).toEqual(['route1', 'route3', 'route4', 'route2']);
@@ -33,7 +34,7 @@ test('remove protagonist selects eligible dog; last dog cannot be removed or rec
 });
 test('failed download pill reports retry and can only switch if eligible', () => {
   const state = { ...add(add(initial, 'a'), 'b', false), dogs: [{ id: 'a', hasData: true }, { id: 'b', hasData: false, downloadFailed: true }] };
-  expect(dogTransition(state, { type: 'select', id: 'b' })).toMatchObject({ protagonist: 'a', message: '下載失敗　重試' });
+  expect(dogTransition(state, { type: 'select', id: 'b' })).toMatchObject({ protagonist: 'a', message: i18nT('c322') });
   expect(dogPresentation(state.dogs)[1]).toMatchObject({ opacity: 0.4, visible: false });
 });
 test('date range owner prioritizes retained entry memory then new protagonist', () => {
@@ -64,7 +65,7 @@ test.each([
     cursorEnabled: false, showSummary: false, showRange: false });
 });
 test('empty selected range keeps summary; one fix may export; held-only records count', () => {
-  expect(emptyState({ dayRecords: true, rangeRecords: false, hasPoints: true })).toMatchObject({ text: '這段時間沒有紀錄', showSummary: true, showRange: true, exportEnabled: false });
+  expect(emptyState({ dayRecords: true, rangeRecords: false, hasPoints: true })).toMatchObject({ text: i18nT('c318'), showSummary: true, showRange: true, exportEnabled: false });
   expect(emptyState({ dayRecords: true, rangeRecords: true, hasPoints: true }).exportEnabled).toBe(true);
   expect(emptyState({ dayRecords: true, rangeRecords: true, hasPoints: false })).toMatchObject({ text: null, exportEnabled: true, cursorEnabled: false });
 });

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useStyles, makeStyles, useTheme } from '../theme/ThemeProvider';
 import { radius, space, type } from '../theme/tokens';
@@ -21,8 +22,8 @@ export default function AlertPreview({ alerts, now, fake, background, onAdvance,
   // In front nothing is posted: the content is shown as it would be.
   const posted = notification !== 'cancel';
   const heading = background
-    ? `通知欄（App 在背景）：${posted ? (notification === 'notify' ? '發出並提醒' : '安靜更新') : '收起'}`
-    : '通知欄（App 在背景時會這樣寫）';
+    ? t('dev.alertPreview.AlertPreview.heading', { value1: posted ? (notification === 'notify' ? t('dev.alertPreview.AlertPreview.heading2') : t('dev.alertPreview.AlertPreview.heading3')) : t('dev.alertPreview.AlertPreview.heading4') })
+    : t('dev.alertPreview.AlertPreview.heading5');
   return (
     <ScrollView
       testID="alert-preview"
@@ -54,10 +55,10 @@ export default function AlertPreview({ alerts, now, fake, background, onAdvance,
           </View>
         </View>
       ) : (
-        <Text style={styles.none}>沒有通知</Text>
+        <Text style={styles.none}>{t('dev.alertPreview.AlertPreview')}</Text>
       )}
 
-      <GroupTitle>{fake ? `假時鐘 ${formatClock(now)}` : `現在 ${formatClock(now)}`}</GroupTitle>
+      <GroupTitle>{fake ? t('dev.alertPreview.AlertPreview2', { value1: formatClock(now) }) : t('dev.alertPreview.AlertPreview3', { value1: formatClock(now) })}</GroupTitle>
       <GroupCard flat>
         {fake && (
           <View style={styles.steps}>
@@ -69,13 +70,13 @@ export default function AlertPreview({ alerts, now, fake, background, onAdvance,
                 onPress={() => onAdvance(step * MINUTE)}
                 style={styles.step}
               >
-                <Text style={styles.stepText}>{`+${step} 分`}</Text>
+                <Text style={styles.stepText}>{t('dev.alertPreview.AlertPreview4', { value1: step })}</Text>
               </Pressable>
             ))}
           </View>
         )}
         {fake && (
-          <ListRow title="App 在背景" accessible={false}>
+          <ListRow title={t('dev.alertPreview.AlertPreview.title')} accessible={false}>
             <Switch
               testID="alert-preview-background"
               value={background}
@@ -86,40 +87,40 @@ export default function AlertPreview({ alerts, now, fake, background, onAdvance,
           </ListRow>
         )}
         <ListRow
-          title={pause ? `暫停到 ${formatClock(pause.until)}` : '沒有暫停'}
-          action={pause ? '恢復' : '暫停提醒 30 分'}
+          title={pause ? t('dev.alertPreview.AlertPreview.title2', { value1: formatClock(pause.until) }) : t('dev.alertPreview.AlertPreview.title3')}
+          action={pause ? t('dev.alertPreview.AlertPreview.action') : t('dev.alertPreview.AlertPreview.action2')}
           actionTone="tonal"
           onPress={() => (pause ? alerts.resume() : alerts.pauseNow())}
-          label={pause ? '恢復' : '暫停提醒 30 分'}
+          label={pause ? t('dev.alertPreview.AlertPreview.label') : t('dev.alertPreview.AlertPreview.label2')}
         />
       </GroupCard>
 
-      <GroupTitle>{`現在的問題（⚠ ${badgeCount}）`}</GroupTitle>
+      <GroupTitle>{t('dev.alertPreview.AlertPreview5', { value1: badgeCount })}</GroupTitle>
       <GroupCard flat>
         {problems.length ? (
           problems.map(problem => <ListRow key={problem.key} title={problem.line} detail={problem.kind} />)
         ) : (
-          <ListRow title="沒有" />
+          <ListRow title={t('dev.alertPreview.AlertPreview.title4')} />
         )}
       </GroupCard>
 
-      <GroupTitle>提醒過的（新的在上）</GroupTitle>
+      <GroupTitle>{t('dev.alertPreview.AlertPreview6')}</GroupTitle>
       <GroupCard flat>
         {log.length ? (
           log.map(entry => (
             <ListRow
               key={`${entry.at}-${entry.lines.join()}`}
-              title={`${formatClock(entry.at)}・${entry.vibration ? (entry.critical ? '危急震動' : '一般震動') : '不震'}`}
+              title={`${formatClock(entry.at)}・${entry.vibration ? (entry.critical ? t('dev.alertPreview.AlertPreview.title5') : t('dev.alertPreview.AlertPreview.title6')) : t('dev.alertPreview.AlertPreview.title7')}`}
               detail={[
                 entry.lines.join('、'),
-                entry.sound ? '聲音' : null,
+                entry.sound ? t('dev.alertPreview.AlertPreview.detail') : null,
                 entry.card ? `N3：${entry.card}` : null,
-                `通知 ${entry.notification}`,
+                t('dev.alertPreview.AlertPreview.detail2', { value1: entry.notification }),
               ].filter(Boolean).join('・')}
             />
           ))
         ) : (
-          <ListRow title="還沒有" />
+          <ListRow title={t('dev.alertPreview.AlertPreview.title8')} />
         )}
       </GroupCard>
     </ScrollView>

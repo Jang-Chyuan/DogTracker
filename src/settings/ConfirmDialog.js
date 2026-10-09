@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import {
   ActivityIndicator,
@@ -71,14 +72,14 @@ export default function ConfirmDialog({
           <View style={styles.buttons}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="取消"
+              accessibilityLabel={t('c046')}
               onPress={onCancel}
               style={({ pressed }) => [
                 styles.button,
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.cancel}>取消</Text>
+              <Text style={styles.cancel}>{t('c046')}</Text>
             </Pressable>
             {secondary ? (
               <Pressable
@@ -99,7 +100,7 @@ export default function ConfirmDialog({
                 {secondary.busy ? (
                   <ActivityIndicator
                     color={colors.tonalText}
-                    accessibilityLabel={`${secondary.label}中`}
+                    accessibilityLabel={t("c945", { label: secondary.label })}
                   />
                 ) : (
                   <Text style={[styles.action, working && styles.disabled]}>
@@ -123,7 +124,7 @@ export default function ConfirmDialog({
               {busy ? (
                 <ActivityIndicator
                   color={colors.tonalText}
-                  accessibilityLabel={`${confirm}中`}
+                  accessibilityLabel={t("c946", { confirm: confirm })}
                 />
               ) : (
                 <Text

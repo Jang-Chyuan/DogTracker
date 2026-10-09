@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AuthProvider, useAuth } from '../src/auth/AuthProvider';
@@ -134,7 +135,7 @@ test('「稍後再說」 during a sign-in cancels it: the late session is not ta
   const button = label => renderer.root.findAll(node => node.props.accessibilityLabel === label
     && node.props.accessibilityRole === 'button' && typeof node.props.onPress === 'function')[0];
   await act(async () => { button('登入').props.onPress(); });
-  expect(JSON.stringify(renderer.toJSON())).toContain('登入中');
+  expect(JSON.stringify(renderer.toJSON())).toContain(i18nT("c899"));
   // 「稍後再說」 can always be pressed.
   await act(async () => button('稍後再說').props.onPress());
   expect(later).toHaveBeenCalledTimes(1);
@@ -211,7 +212,7 @@ test('登入 checks the e-mail format before anything is sent', async () => {
   await act(async () => { inputs[0].props.onChangeText('abc'); inputs[1].props.onChangeText('x'); });
   await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
     && typeof node.props.onPress === 'function')[0].props.onPress());
-  expect(JSON.stringify(renderer.toJSON())).toContain('電子郵件格式不對');
+  expect(JSON.stringify(renderer.toJSON())).toContain(i18nT("c900"));
   expect(f.auth.signInWithPassword).not.toHaveBeenCalled();
   await act(async () => renderer.unmount());
 });

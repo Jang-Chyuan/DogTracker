@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What the settings pages say (design v3 S1 設定首頁, S2 接收器, S4 手機;
 // 判定表「設定首頁的分組」「設定裡的紅色「!」」「S4 的權限格」「忽略電池最佳化（S4）」
 // 「中斷連線時的顯示」「A6 什麼時候出現」「沒取名字的訊號源」). Pure: App hands in
@@ -113,23 +114,23 @@ function receiverBattery(state, point) {
 }
 
 const batteryText = battery => (battery?.valid && Number.isFinite(battery.percentage)
-  ? `電量 ${Math.round(battery.percentage)}%` : null);
+  ? t('c179', { percentage: String(Math.round(battery.percentage)) + "%" }) : null);
 
 // What each reason is called when TalkBack reads a row with 「!」.
 function reasonText(reason, input) {
   const number = receiverNumber(input.receiverState);
   const phone = input.phone || {};
   switch (reason) {
-    case 'receiver-missing': return number != null ? `找不到接收器 ${number}` : '找不到接收器';
-    case 'receiver-disconnected': return number != null ? `接收器 ${number} 斷線了` : '接收器斷線了';
-    case 'receiver-battery': return '接收器電量低';
-    case 'cloud': return input.signInExpired ? '需要重新登入' : '連不上';
+    case 'receiver-missing': return number != null ? t('c290', { number: number }) : t('c271');
+    case 'receiver-disconnected': return number != null ? t('c058', { number: number }) : t("c773");
+    case 'receiver-battery': return t('c236');
+    case 'cloud': return input.signInExpired ? t('c276') : t("c1005");
     case 'phone-location':
-      if (!['precise', 'approximate'].includes(phone.permission)) return '沒有定位權限';
-      if (phone.permission === 'approximate') return '只給了大概位置';
-      return '定位服務關著';
-    case 'nearby-devices': return '附近的裝置未允許';
-    case 'notifications': return '通知未允許';
+      if (!['precise', 'approximate'].includes(phone.permission)) return t('c311');
+      if (phone.permission === 'approximate') return t('c313');
+      return t("c1006");
+    case 'nearby-devices': return t("c1007");
+    case 'notifications': return t("c1008");
     default: return '';
   }
 }
@@ -159,8 +160,8 @@ export function settingsHome(input) {
   const phase = receiverPhase(state, reasons, now);
   const battery = batteryText(receiverBattery(state, input.point));
   const receiverStatus = {
-    none: [], off: ['已中斷連線'], connecting: ['連線中'], missing: ['連線中'], disconnected: ['斷線了'],
-    waiting: ['已連線'], silent: ['已連線'], connected: ['已連線'],
+    none: [], off: [t('c289')], connecting: [t("c1010")], missing: [t("c1010")], disconnected: [t("c1011")],
+    waiting: [t('c178')], silent: [t('c178')], connected: [t('c178')],
   }[phase];
   if (['waiting', 'silent', 'connected'].includes(phase) && battery) receiverStatus.push(battery);
   const recording = input.recording || {};
@@ -171,30 +172,30 @@ export function settingsHome(input) {
     const why = own.map(reason => reasonText(reason, input)).filter(Boolean)
       .filter((text, index, all) => all.indexOf(text) === index).join('、');
     return { id, title, subtitle, status: problem ? [] : status, statusTone: problem ? null : statusTone, problem,
-      label: problem ? `${title}，有問題：${why}` : [title, subtitle, ...status].filter(Boolean).join('，') };
+      label: problem ? t("c1012", { title: title, why: why }) : [title, subtitle, ...status].filter(Boolean).join('，') };
   };
   return {
     storage: input.storage || null,
     groups: [
-      { title: '裝置', rows: [
-        row('receiver', '接收器', number != null ? `接收器 ${number}` : receiverSetUp(state) ? '接收器' : '還沒設定接收器',
+      { title: t('c176'), rows: [
+        row('receiver', t('c075'), number != null ? t('c177', { number: number }) : receiverSetUp(state) ? t('c075') : t('c287'),
           receiverStatus),
-        row('phone', '手機', '位置記錄、權限', [recording.enabled === false ? '未記錄' : recording.running ? '記錄中' : '']
+        row('phone', t('c055'), t('c180'), [recording.enabled === false ? t('c309') : recording.running ? t("c1000") : '']
           .filter(Boolean)),
       ] },
-      { title: '帳號與資料', rows: [
-        row('account', 'Supabase 帳號', account.signedIn ? account.email || '已登入' : '未登入',
-          account.signedIn && account.email ? ['已登入'] : []),
+      { title: t('c182'), rows: [
+        row('account', t('c183'), account.signedIn ? account.email || t('c208') : t('c302'),
+          account.signedIn && account.email ? [t('c208')] : []),
       ] },
       // v3 has no 地圖 row (map display options were removed): 提醒 alone.
       // 提醒: permission problems take priority over the delivery status.
-      { title: '提醒', rows: [(() => {
+      { title: t('c191'), rows: [(() => {
         const right = alertsHomeRight(input.alerts, now, input.alertPause);
-        return row('alerts', '提醒', '震動、聲音、各項開關', right.lines, right.tone);
+        return row('alerts', t('c191'), t('c192'), right.lines, right.tone);
       })()] },
       // 進階 (S7): the receiver's Wi-Fi and 刪除全部狗資料 (c196).
-      { title: '其他', rows: [row('advanced', '進階', '接收器 Wi-Fi、刪除資料', []),
-        ...(input.diagnosticsEnabled ? [row('diagnostics', '診斷', '即時資料、本機／雲端資料、記錄清單', [])] : [])] },
+      { title: t('c194'), rows: [row('advanced', t('c195'), t('c196'), []),
+        ...(input.diagnosticsEnabled ? [row('diagnostics', t('c186'), t('c187'), [])] : [])] },
     ],
     reasons,
   };
@@ -230,9 +231,9 @@ export function receivedSources(packets, number, aliases) {
     .map(source => {
       const alias = aliases?.[source.slaveId]?.trim();
       return source.fixed
-        ? { slaveId: source.slaveId, name: alias || `狗 ${source.slaveId}`, detail: `訊號源 ${source.slaveId}`,
+        ? { slaveId: source.slaveId, name: alias || t("c1009", { slaveId: source.slaveId }), detail: t('c052', { number: source.slaveId }),
           right: source.time ? formatClock(source.time) : '', fixed: true }
-        : { slaveId: source.slaveId, name: `訊號源 ${source.slaveId}`, detail: null, right: '還沒定位', fixed: false };
+        : { slaveId: source.slaveId, name: t('c052', { number: source.slaveId }), detail: null, right: t('c203'), fixed: false };
     });
 }
 
@@ -248,12 +249,12 @@ export function receiverPage(input) {
   const phase = receiverPhase(state, reasons, now);
   const point = input.point;
   const own = point && point.id != null && !isOtherReceiver(point, state);
-  const name = state?.deviceName || (number != null ? `DogGPS-Master${number}` : '接收器');
+  const name = state?.deviceName || (number != null ? `DogGPS-Master${number}` : t('c075'));
   const silentFor = Math.floor((now - Number(state?.lastReceivedAt)) / MINUTE);
   const status = {
-    off: '已中斷連線', connecting: '連線中', missing: number != null ? `找不到接收器 ${number}` : '找不到接收器',
-    disconnected: Number(state?.disconnectedAt) > 0 ? `${formatClock(Number(state.disconnectedAt))} 斷線・正在自動重連` : '斷線了',
-    waiting: '已連線・還沒收到訊號源', silent: `已連線・${silentFor} 分鐘沒有新資料`, connected: '已連線',
+    off: t('c289'), connecting: t("c1010"), missing: number != null ? t('c290', { number: number }) : t('c271'),
+    disconnected: Number(state?.disconnectedAt) > 0 ? t('c059', { time: formatClock(Number(state.disconnectedAt)) }) : t("c1011"),
+    waiting: t('c291'), silent: t('c292', { count: silentFor }), connected: t('c178'),
   }[phase];
   const battery = ['off', 'none'].includes(phase) ? null : batteryText(receiverBattery(state, point));
   const last = Number(state?.lastReceivedAt) > 0 ? Number(state.lastReceivedAt) : null;
@@ -261,13 +262,13 @@ export function receiverPage(input) {
     setUp: phase !== 'none',
     phase,
     number,
-    title: number != null ? `接收器 ${number}` : '接收器',
+    title: number != null ? t('c177', { number: number }) : t('c075'),
     subtitle: status ? `${name}・${status}` : name,
     subtitleProblem: phase === 'missing' || phase === 'disconnected',
     battery,
     batteryProblem: reasons.includes('receiver-battery'),
-    lastHeard: last ? `最後收訊 ${formatClock(last)}` : null,
-    position: (own && coordinate(point.masterLat, point.masterLon)) || '還沒定位',
+    lastHeard: last ? t('c201', { time: formatClock(last) }) : null,
+    position: (own && coordinate(point.masterLat, point.masterLon)) || t('c203'),
     connectAction: phase === 'off' ? 'reconnect' : 'disconnect',
     sources: phase === 'none' ? [] : receivedSources(input.packets, number, input.aliases),
   };
@@ -281,11 +282,11 @@ export function missingPermissions(phone, permissions = {}) {
   const parts = [];
   const missing = [];
   const location = phone?.permission;
-  if (location === 'approximate') parts.push('精確位置只給了大概');
-  else if (location === 'denied' || location === 'blocked') parts.push('位置未允許');
-  if (permissions.nearbyDenied) missing.push('附近的裝置');
-  if (permissions.notificationsDenied) missing.push('通知');
-  if (missing.length) parts.push(`${missing.join('、')}未允許`);
+  if (location === 'approximate') parts.push(t("c1002"));
+  else if (location === 'denied' || location === 'blocked') parts.push(t('c431'));
+  if (permissions.nearbyDenied) missing.push(t('c010'));
+  if (permissions.notificationsDenied) missing.push(t('c014'));
+  if (missing.length) parts.push(t("c1003", { value: missing.join('、') }));
   return parts.join('、');
 }
 
@@ -304,18 +305,18 @@ export function phonePage(input) {
       on: recording.enabled !== false,
       busy: !!recording.busy,
       // Turning it on failed (permission refused…): why, in place of the count.
-      detail: recording.error || (Number.isFinite(todayCount) ? `今天 ${formatCount(todayCount)} 筆` : null),
+      detail: recording.error || (Number.isFinite(todayCount) ? t('c222', { count: formatCount(todayCount) }) : null),
       problem: !!recording.error,
     },
     permission: missing
-      ? { problem: true, detail: missing, status: null, action: '開系統設定 ›' }
-      : { problem: false, detail: null, status: '已允許', action: null },
+      ? { problem: true, detail: missing, status: null, action: t('c225') }
+      : { problem: false, detail: null, status: t('c017'), action: null },
     services: servicesOff
-      ? { problem: true, detail: '定位服務關著', status: null, action: '打開 ›' }
-      : { problem: false, detail: null, status: '已開啟', action: null },
+      ? { problem: true, detail: t("c1006"), status: null, action: t('c228') }
+      : { problem: false, detail: null, status: t("c1013"), action: null },
     battery: permissions.batteryIgnored === true
-      ? { status: '已允許', action: null }
-      : { status: null, action: '開系統設定 ›' },
+      ? { status: t('c017'), action: null }
+      : { status: null, action: t('c225') },
   };
 }
 

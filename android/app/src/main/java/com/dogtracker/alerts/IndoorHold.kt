@@ -69,9 +69,9 @@ class IndoorHold(saved: String? = null) {
   private fun start(t: Long, reason: String): Boolean {
     val group = anchorGroup(); val lastGood = num(s, "lastGoodAt")
     val pool = points("weak").filter { lastGood == null || time(it) > lastGood }
-    val lately = if (reason == "GPS 沒有定位") pool.takeLast(5) else pool.filter { t - time(it) <= 60000 }
+    val lately = if (reason == com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c882)) pool.takeLast(5) else pool.filter { t - time(it) <= 60000 }
     if (group.isNotEmpty() && lately.size >= 3 && distance(medianPoint(lately), medianPoint(group)) > 100) return false
-    if (reason == "GPS 沒有定位" && group.isNotEmpty() && pool.isNotEmpty() && time(pool.last()) - time(group.last()) > max(60000.0, typicalGap() * 3)) return false
+    if (reason == com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c882) && group.isNotEmpty() && pool.isNotEmpty() && time(pool.last()) - time(group.last()) > max(60000.0, typicalGap() * 3)) return false
     var anchor = if (group.isNotEmpty()) medianPoint(group) else if (pool.size >= 3) medianPoint(pool) else return false
     var source = if (group.isNotEmpty()) "good" else "weak"
     var refine = group
@@ -191,8 +191,8 @@ class IndoorHold(saved: String? = null) {
     val cautious = why == null || why == "window" || oldHold != null && t - time(oldHold) <= 120000
     val recentGood = points("goods").filter { t - time(it) <= 120000 }
     val parked = why != null && quality == "weak" && recentGood.size >= 4 && time(recentGood.last()) - time(recentGood.first()) >= 60000 && near(medianPoint(recentGood), recentGood, 15.0).size == recentGood.size
-    if (parked || (why != null || weakSince) && quiet >= wait && settled(t, cautious)) start(t, when (why) { "charging" -> "充電中"; "indoor" -> "室內"; "window" -> "窗邊"; else -> "GPS 訊號弱" })
-    else if (!weakSince && quiet >= 60000 && travel(t)?.second != true) start(t, "GPS 沒有定位")
+    if (parked || (why != null || weakSince) && quiet >= wait && settled(t, cautious)) start(t, when (why) { "charging" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c731); "indoor" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c114); "window" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c853); else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c883) })
+    else if (!weakSince && quiet >= 60000 && travel(t)?.second != true) start(t, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c882))
   }
   fun coordinate() = held?.getJSONObject("anchor")?.let(::coord)
   fun write() = s.toString()
@@ -204,7 +204,7 @@ class IndoorHold(saved: String? = null) {
       val anchor = dog.coordinate?.let { JSONObject().put("latitude", it.latitude).put("longitude", it.longitude).put("time", dog.fixAt ?: dog.packetAt ?: 0) }
       if (anchor != null) {
         tracker.set("goods", listOf(anchor)); tracker.s.put("lastGoodAt", dog.fixAt ?: dog.packetAt ?: 0)
-        if (dog.held) tracker.start(dog.packetAt ?: dog.fixAt ?: 0, "室內")
+        if (dog.held) tracker.start(dog.packetAt ?: dog.fixAt ?: 0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c114))
       }
       return tracker
     }

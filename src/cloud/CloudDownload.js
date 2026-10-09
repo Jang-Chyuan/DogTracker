@@ -1,12 +1,13 @@
+import { t } from '../i18n';
 import { mapCloudTelemetry } from './CloudTelemetry';
 import { cloudError } from './CloudErrors';
 
 export async function downloadCloudHistory({ client, database, owner, startAt, endBefore,
   masterId = null, slaveId = null, signal, isCurrent = () => true, onProgress = () => {},
   checkpoint = false, initialCursor = null, maxPages = Infinity, checkCurrent = () => {} }) {
-  if (checkpoint && !Number.isInteger(masterId)) throw new Error('自動同步需要 Master ID');
+  if (checkpoint && !Number.isInteger(masterId)) throw new Error(t("c575"));
   const check = async () => {
-    if (signal?.aborted || !isCurrent()) throw new Error('下載已取消');
+    if (signal?.aborted || !isCurrent()) throw new Error(t("c576"));
     await checkCurrent();
   };
   let cursor = initialCursor;
@@ -29,8 +30,8 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
     }
     const { data, error, status } = await query.abortSignal(signal);
     await check();
-    if (error) throw cloudError(`下載失敗${error.code ? ` (${error.code})` : ''}，請確認連線、登入及讀取權限`, error, status);
-    if (!Array.isArray(data)) throw new Error('雲端回傳格式不正確');
+    if (error) throw cloudError(t("c577", { value: error.code ? ` (${error.code})` : '' }), error, status);
+    if (!Array.isArray(data)) throw new Error(t("c578"));
     // Query to empty, not to page-size: the server may impose a smaller limit.
     if (!data.length) {
       if (checkpoint) {
@@ -42,7 +43,7 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
     const records = data.map(mapCloudTelemetry);
     const last = records[records.length - 1];
     if (cursor?.time === last.remote_received_at && cursor?.id === last.event_id) {
-      throw new Error('雲端分頁未前進，已停止下載');
+      throw new Error(t("c579"));
     }
     await check();
     if (checkpoint) {

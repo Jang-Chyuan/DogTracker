@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useState } from 'react';
 import {
@@ -28,7 +29,7 @@ export function GuideProgress({ step }) {
       testID="guide-progress"
       style={styles.progress}
       accessible
-      accessibilityLabel={`第 ${step} 步，共 ${GUIDE_STEPS} 步`}
+      accessibilityLabel={t("c855", { step: step, GUIDE_STEPS: GUIDE_STEPS })}
     >
       {Array.from({ length: GUIDE_STEPS }, (_, index) => (
         <View
@@ -190,7 +191,7 @@ export function GuideDialog({
       <Pressable
         style={styles.scrim}
         onPress={onClose}
-        accessibilityLabel="關閉對話框"
+        accessibilityLabel={t("c854")}
       >
         {dialog ? (
           <Pressable

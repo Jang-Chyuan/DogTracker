@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useEffect, useState } from 'react';
 import { locationTrackerNative } from './LocationTrackerService';
 
@@ -12,7 +13,7 @@ export function useLiveLocation(active) {
         const value = JSON.parse(await locationTrackerNative.live());
         if (alive) setState(value);
       } catch {
-        if (alive) setState({ running: false, status: '無法讀取即時定位狀態' });
+        if (alive) setState({ running: false, status: t("c718") });
       } finally { if (alive) timer = setTimeout(poll, 1000); }
     }
     poll();

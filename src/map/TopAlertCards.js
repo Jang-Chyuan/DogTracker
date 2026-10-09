@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The live map's top cards (design v3 A2/A2c/A6, 「提醒卡（A2、A2c、N3 共用）」
 // 「A6 上方卡片」「提醒卡的堆疊」): 8dp under the gear, 16dp from the sides,
 // stacked 8dp apart in TopAlerts.topCards' order. A problem card is white with
@@ -9,11 +10,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  PixelRatio,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import Glyph from './Glyph';
@@ -70,6 +73,7 @@ function DogMark({ color, size = sizes.icon.row }) {
 // past its 180dp under a fixed title (設計稿「A6 卡片的高度」).
 function Wrap({ info, head, children }) {
   const styles = useStyles(getStyles);
+  const { height: windowHeight } = useWindowDimensions();
   if (!info)
     return (
       <View style={styles.body}>
@@ -77,8 +81,16 @@ function Wrap({ info, head, children }) {
         {children}
       </View>
     );
+  // A6 grows with the system font (its 180dp is for 1.0), up to half the
+  // screen; only past that do its words and buttons scroll (at 2.0 the
+  // second button was cut at the card's edge).
+  const scale = Math.max(1, PixelRatio.getFontScale?.() || 1);
+  const maxHeight = Math.min(
+    (card.a6MaxHeight - 2 * space.s) * scale,
+    windowHeight * card.a6MaxScreenShare,
+  );
   return (
-    <View style={[styles.body, styles.infoBody]}>
+    <View style={[styles.body, { maxHeight }]}>
       {head}
       <ScrollView
         nestedScrollEnabled
@@ -160,7 +172,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
     <Pressable
       testID={`top-card-close-${value.id}`}
       accessibilityRole="button"
-      accessibilityLabel={value.closeLabel || '關閉'}
+      accessibilityLabel={value.closeLabel || t("c765")}
       hitSlop={CLOSE_SLOP}
       onPress={close}
       style={({ pressed }) => [styles.close, pressed && styles.pressed]}
@@ -343,7 +355,7 @@ export function N3Card({ value, leaving = false, top, onPress, onGone, onHeight 
           accessibilityRole="button"
           accessibilityLiveRegion="polite"
           accessibilityLabel={`${value.title}，${value.detail}`}
-          accessibilityHint="打開這件事"
+          accessibilityHint={t("c771")}
           onPress={() => onPress?.(value)}
           style={({ pressed }) => [styles.card, styles.alert, pressed && styles.pressed]}
         >
@@ -440,8 +452,6 @@ const getStyles = makeStyles(theme => {
     infoScroll: { flexShrink: 1 },
     // A card whose button went under its words: icon and ✕ at the top.
     stackedCard: { alignItems: 'flex-start' },
-    // 180dp for the whole card, less its padding.
-    infoBody: { maxHeight: card.a6MaxHeight - 2 * space.s },
     title: { ...type.cardTitle, color: colors.text },
     alertTitle: { color: colors.crit },
     detail: { ...type.small, color: colors.textMuted },

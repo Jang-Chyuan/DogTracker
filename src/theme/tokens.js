@@ -324,6 +324,8 @@ export const size = {
     shadowDrop: 3,
     // A6 grows with its words up to this, then scrolls inside (設計稿「A6 卡片的高度」).
     a6MaxHeight: 180,
+    // With a large font A6 grows past 180dp, to at most this share of the screen.
+    a6MaxScreenShare: 0.5,
   },
   smallChip: { height: 28 },
   listRow: { avatar: 32 },

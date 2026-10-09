@@ -78,7 +78,7 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   fun reconnect(promise: Promise) {
     try {
       val prefs = context.getSharedPreferences("ble_session", android.content.Context.MODE_PRIVATE)
-      require(!prefs.getString("deviceId", "").isNullOrBlank()) { "還沒設定接收器" }
+      require(!prefs.getString("deviceId", "").isNullOrBlank()) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c287) }
       prefs.edit().putBoolean("enabled", true).commit()
       val intent = Intent(context, BleForegroundService::class.java).apply {
         action = BleForegroundService.ACTION_RESUME
@@ -162,7 +162,7 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   @ReactMethod
   fun wifiCommand(json: String, read: Boolean, promise: Promise) {
     val service = BleForegroundService.instance
-    if (service == null) promise.reject("BLE_NOT_CONNECTED", "BLE 尚未連線")
+    if (service == null) promise.reject("BLE_NOT_CONNECTED", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1067))
     else service.wifiCommand(json, read) { value, error ->
       if (error != null) promise.reject("BLE_WIFI_FAILED", error) else promise.resolve(value)
     }

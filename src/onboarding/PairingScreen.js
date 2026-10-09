@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -95,8 +96,8 @@ function ScanPage({ pairing, step, camera, onLayout }) {
     <GuidePage
       testID="pair-scan"
       step={step}
-      title="連接接收器"
-      body="打開接收器電源，掃描機身上的 QR Code。"
+      title={t('c011')}
+      body={t('c030')}
       scroll={false}
       onLayout={onLayout}
       bottom={
@@ -104,13 +105,13 @@ function ScanPage({ pairing, step, camera, onLayout }) {
           <GuideButton
             kind="outline"
             testID="pair-manual"
-            label="找不到 QR Code？手動輸入"
+            label={t('c031')}
             onPress={pairing.openManual}
           />
           <GuideButton
             kind="text"
             testID="pair-later"
-            label="稍後再說"
+            label={t('c007')}
             onPress={pairing.later}
           />
         </>
@@ -122,11 +123,11 @@ function ScanPage({ pairing, step, camera, onLayout }) {
             testID="pair-camera-denied"
             style={[styles.deniedFrame, { width: size, height: size }]}
           >
-            <Text style={styles.deniedText}>需要相機才能掃描</Text>
+            <Text style={styles.deniedText}>{t('c259')}</Text>
             <Pressable
               testID="pair-camera-settings"
               accessibilityRole="button"
-              accessibilityLabel="開系統設定"
+              accessibilityLabel={t('c225')}
               onPress={() => Linking.openSettings()}
               hitSlop={space.s}
               style={({ pressed }) => [
@@ -134,7 +135,7 @@ function ScanPage({ pairing, step, camera, onLayout }) {
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={guideStyles.link}>開系統設定 ›</Text>
+              <Text style={guideStyles.link}>{t('c225')}</Text>
             </Pressable>
           </View>
         ) : (
@@ -146,7 +147,7 @@ function ScanPage({ pairing, step, camera, onLayout }) {
             testID="pair-frame"
             style={[styles.frame, { width: size, height: size }]}
             accessible
-            accessibilityLabel="QR Code 掃描框"
+            accessibilityLabel={t("c877")}
           >
             {live ? (
               <QrCamera
@@ -279,21 +280,21 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
         <Pressable
           testID="pair-back-to-scan"
           accessibilityRole="button"
-          accessibilityLabel="返回，掃描 QR Code"
+          accessibilityLabel={t("c878")}
           onPress={pairing.back}
           hitSlop={space.s}
           style={({ pressed }) => [styles.topLink, pressed && styles.pressed]}
         >
-          <Text style={guideStyles.link}>‹ 掃描 QR Code</Text>
+          <Text style={guideStyles.link}>{t("c875")}</Text>
         </Pressable>
       }
-      title="手動輸入接收器"
-      body="輸入接收器機身上的名稱。"
+      title={t('c036')}
+      body={t('c037')}
       bottom={
         <GuideButton
           kind="text"
           testID="pair-later"
-          label="稍後再說"
+          label={t('c007')}
           onPress={pairing.later}
         />
       }
@@ -310,7 +311,7 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           selectionColor={`${colors.accent}66`}
           selectionHandleColor={colors.accent}
           testID="pair-name"
-          accessibilityLabel="接收器名稱"
+          accessibilityLabel={t("c873")}
           style={styles.input}
           value={pairing.input}
           onChangeText={pairing.typeName}
@@ -322,7 +323,7 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           onSubmitEditing={pairing.searchName}
         />
       </View>
-      <Text testID="pair-name-example" style={styles.example}>例：DogGPS-Master7</Text>
+      <Text testID="pair-name-example" style={styles.example}>{t('c039', { number: 7 })}</Text>
       {pairing.inputError ? (
         <Text
           testID="pair-name-error"
@@ -335,19 +336,19 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
       <View style={styles.searchButton}>
         <GuideButton
           testID="pair-search"
-          label="搜尋並連線"
+          label={t('c040')}
           busy={searchingName}
           onPress={pairing.searchName}
         />
       </View>
       <View style={styles.sectionRow}>
-        <Text style={styles.sectionText}>附近找到的接收器</Text>
+        <Text style={styles.sectionText}>{t('c041')}</Text>
         {nearby.searching ? (
           <ActivityIndicator
             testID="pair-nearby-searching"
             size="small"
             color={colors.textMuted}
-            accessibilityLabel="搜尋中"
+            accessibilityLabel={t("c874")}
           />
         ) : null}
       </View>
@@ -371,20 +372,18 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
         </Pressable>
       ))}
       {nearby.done && !nearby.list.length ? (
-        <Text testID="pair-nearby-none" style={styles.none}>
-          附近找不到接收器
-        </Text>
+        <Text testID="pair-nearby-none" style={styles.none}>{t('c271')}</Text>
       ) : null}
       {nearby.done ? (
         <Pressable
           testID="pair-search-again"
           accessibilityRole="button"
-          accessibilityLabel="重新搜尋"
+          accessibilityLabel={t('c264')}
           onPress={pairing.search}
           hitSlop={space.s}
           style={({ pressed }) => [styles.again, pressed && styles.pressed]}
         >
-          <Text style={guideStyles.link}>重新搜尋</Text>
+          <Text style={guideStyles.link}>{t('c264')}</Text>
         </Pressable>
       ) : null}
     </GuidePage>
@@ -401,15 +400,15 @@ function ConnectingPage({ pairing, step, onLayout }) {
     <GuidePage
       testID="pair-connecting"
       step={step}
-      title="連接接收器"
-      body={`正在連 ${name}…`}
+      title={t('c011')}
+      body={t("c871", { name: name })}
       scroll={false}
       onLayout={onLayout}
       bottom={
         <GuideButton
           kind="outline"
           testID="pair-cancel"
-          label="取消"
+          label={t('c046')}
           onPress={pairing.cancel}
         />
       }
@@ -419,7 +418,7 @@ function ConnectingPage({ pairing, step, onLayout }) {
           <ActivityIndicator
             size="large"
             color={colors.textMuted}
-            accessibilityLabel={`正在連 ${name}`}
+            accessibilityLabel={t("c870", { name: name })}
           />
         ) : null}
       </View>
@@ -432,26 +431,26 @@ function ConnectedPage({ pairing, step, onLayout }) {
   const styles = useStyles(getStyles);
   const text =
     pairing.connectedNumber != null
-      ? `已連上 接收器 ${pairing.connectedNumber}`
-      : '已連上接收器';
+      ? t('c269', { number: pairing.connectedNumber })
+      : t("c861");
   return (
     <GuidePage
       testID="pair-connected"
       step={step}
-      title="連接接收器"
+      title={t('c011')}
       scroll={false}
       onLayout={onLayout}
       bottom={
         <>
           <GuideButton
             testID="pair-next"
-            label="下一步"
+            label={t('c029')}
             onPress={pairing.next}
           />
           <GuideButton
             kind="text"
             testID="pair-change"
-            label="換一台"
+            label={t('c270')}
             onPress={pairing.changeReceiver}
           />
         </>

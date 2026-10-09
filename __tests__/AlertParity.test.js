@@ -1,3 +1,5 @@
+import resources from '../src/i18n/zh-TW.json';
+import nativeParity from '../src/i18n/native-parity.json';
 // 058b: the background alert check (android .../alerts/AlertRules.kt) is a port
 // of the JavaScript the app runs in front. This runs scenarios through the
 // JavaScript (AlertEvents → AlertScheduler → AlertContent, AlertEngine's saved
@@ -32,6 +34,10 @@ const jsDog = value => ({
 });
 
 const SCENARIOS = [
+  ...[75, 1501].map(minutes => ({
+    name: `numbered dog stale: ${minutes} actual minutes`, preferences: {},
+    steps: [{ at: T + minutes * M, dogs: [dog(5, '狗 5')] }],
+  })),
   {
     name: 'K07: out-of-range status survives 25 hours and a restart until local clearing', preferences: { dogStale: false },
     steps: [
@@ -185,7 +191,7 @@ test('the background check agrees with the app (fixture for AlertParityTest.kt)'
 test('the scenarios cover each kind of alert and each notification command', () => {
   const all = SCENARIOS.map(runScenario).flatMap(scenario => scenario.steps.map(step => step.expect));
   const lines = all.flatMap(step => step.lines).join('\n');
-  for (const words of ['不在接收範圍', '沒有新位置', '電量低', '斷線了', '空間不足', '接收器 7 電量低']) {
+  for (const words of ['不在接收範圍', '沒有新位置', '電量低', '已斷線', '空間不足', '接收器 7 電量低']) {
     expect(lines).toContain(words);
   }
   expect(new Set(all.map(step => step.notification))).toEqual(new Set(['notify', 'update', 'cancel']));
@@ -251,4 +257,18 @@ test('K03: native indoor entry and every release path agree with the foreground 
   expect(results[0].rows[0].expect.held).toBe(true);
   const released = results.flatMap(value => value.rows.map(row => row.expect.why)).filter(Boolean);
   expect(new Set(released)).toEqual(new Set(['good-fixes-away', 'good-fixes-nearby', 'weak-fixes-away', 'travelling']));
+});
+
+// Native JVM defaults and production Android resources share this generated copy.
+test('native notification resources exactly preserve the canonical zh-TW templates', () => {
+  const xml = fs.readFileSync(path.join(__dirname, '../android/app/src/main/res/values/strings.xml'), 'utf8');
+  const native = Object.fromEntries([...xml.matchAll(/<string name="([^"]+)"[^>]*>([\s\S]*?)<\/string>/g)]
+    .map(([, key, value]) => [key, value.slice(1, -1).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+      .replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\')]));
+  for (const pair of nativeParity) {
+    expect(pair.native).toBe(pair.js);
+    expect(typeof resources[pair.js]).toBe('string');
+    expect(native[pair.native]).toBe(resources[pair.js]);
+  }
+  expect(Object.keys(native).sort()).toEqual(nativeParity.map(pair => pair.native).sort());
 });

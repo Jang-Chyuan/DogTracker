@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Platform, StyleSheet, Switch } from 'react-native';
@@ -486,7 +487,7 @@ test('the live map has no sheet: a tapped dog opens its card, and the receiver h
   await act(async () => map().props.onDogPress(7));
   expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
   expect(onCardChange).toHaveBeenLastCalledWith(true);
-  expect(JSON.stringify(renderer.toJSON())).toContain('看軌跡');
+  expect(JSON.stringify(renderer.toJSON())).toContain(i18nT('c071'));
   // Its marker is the selected one; a tap on the map itself is now listened to.
   expect(map().props.presentation.dogMarkers[0].selected).toBe(true);
   expect(typeof map().props.onMapPress).toBe('function');

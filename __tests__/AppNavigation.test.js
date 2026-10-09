@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import MapScreen from '../src/screens/MapScreen';
 import { layout } from '../src/theme/tokens';
 import React from 'react';
@@ -187,11 +188,11 @@ test('hidden diagnostics: consecutive taps, timeout, persistence across restart,
   await tap('settings-version');
   expect(text()).toContain('再點 1 下開啟診斷');
   await tap('settings-version');
-  expect(text()).toContain('已開啟診斷');
+  expect(text()).toContain(i18nT('c409'));
   expect(preferences().diagnosticsEnabled).toBe(true);
   expect(row('settings-row-diagnostics')).toBeDefined();
   await tap('settings-version');
-  expect(text()).toContain('診斷已經開啟');
+  expect(text()).toContain(i18nT('c410'));
   await act(async () => renderer.unmount());
   await mount();
   await press('設定');
@@ -225,7 +226,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   // D3 (no guide progress, no old dark page); back returns to S2, then to S1.
   await tap('settings-row-receiver');
   expect(title()).toBe('返回，接收器');
-  expect(text()).toContain('還沒設定接收器');
+  expect(text()).toContain(i18nT('c287'));
   await tap('receiver-connect');
   expect(renderer.root.findAllByProps({ testID: 'pair-scan' }).length).toBeGreaterThan(0);
   expect(progressBar()).toBe(false);
@@ -239,16 +240,16 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   // S4 手機.
   await tap('settings-row-phone');
   expect(title()).toBe('返回，手機');
-  expect(text()).toContain('位置記錄');
-  expect(text()).toContain('忽略電池最佳化');
+  expect(text()).toContain(i18nT('c221'));
+  expect(text()).toContain(i18nT('c229'));
   await act(async () => expect(onBack()).toBe(true));
   // Supabase 帳號 → S3 (signed in: the account, 下載, 上傳).
   await tap('settings-row-account');
   expect(title()).toBe('返回，Supabase 帳號');
   expect(renderer.root.findAllByProps({ testID: 'account-settings' }).length).toBeGreaterThan(0);
-  expect(text()).toContain('已登入');
+  expect(text()).toContain(i18nT('c208'));
   // No phone upload route is loaded in this live navigation setup.
-  expect(text()).not.toContain('最後上傳成功');
+  expect(row('account-upload-last')).toBeUndefined();
   expect(text()).not.toContain('轉送 Supabase');
   await press('返回，Supabase 帳號');
   expect(row('settings-row-diagnostics')).toBeUndefined();
@@ -264,11 +265,11 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   await advance(100);
   // The stored packet in a table, columns to pick.
   expect(text()).toContain('選擇欄位（5）');
-  expect(text()).toContain('接收時間');
+  expect(text()).toContain(i18nT("c968"));
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，診斷');
   await tap('diagnostics-cloudData');
-  expect(title()).toBe('返回，本機／雲端資料');
+  expect(title()).toBe('返回，本機雲端資料');
   expect(renderer.root.findAllByProps({ testID: 'cloud-data' }).length).toBeGreaterThan(0);
   await act(async () => expect(onBack()).toBe(true));
   await tap('diagnostics-locationRecords');
@@ -279,9 +280,9 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   // 進階 (S7): 接收器 Wi-Fi (its own light page) and 刪除全部狗資料.
   await tap('settings-row-advanced');
   expect(title()).toBe('返回，進階');
-  expect(text()).toContain('刪除全部狗資料');
+  expect(text()).toContain(i18nT('c249'));
   // No receiver connected: the Wi-Fi row says so; nothing is read.
-  expect(text()).toContain('接收器連上後才能設定');
+  expect(text()).toContain(i18nT("c1016"));
   await tap('advanced-wifi');
   expect(title()).toBe('返回，接收器 Wi-Fi');
   expect(renderer.root.findAllByProps({ testID: 'wifi-settings' }).length).toBeGreaterThan(0);
@@ -307,7 +308,7 @@ test('S1 提醒 opens S6 (not the system settings); a switch is saved at once an
   await tap('settings-row-alerts');
   expect(title()).toBe('返回，提醒');
   expect(Linking.sendIntent?.mock?.calls?.length ?? 0).toBe(0);
-  expect(text()).toContain('接收器斷線、位置存不進手機');
+  expect(text()).toContain(i18nT('c238'));
   const sound = renderer.root.findAll(node => node.props.testID === 'alerts-sound'
     && typeof node.props.onValueChange === 'function')[0];
   expect(sound.props.value).toBe(false);
@@ -370,22 +371,22 @@ test('S3 fixtures: the account page with its states, the switch confirmation, ba
   // The fixture's switch writes nothing; the dialog closes.
   await press('切換');
   expect(text()).not.toContain('會先上傳');
-  expect(text()).toContain('由接收器的 Wi-Fi 上傳');
+  expect(text()).toContain(i18nT('c416'));
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=cloud-failing&page=cloud' }));
   await advance(100);
-  expect(text()).toContain('下載失敗');
+  expect(text()).toContain(i18nT('c211'));
   expect(text()).toContain('連不上 Supabase・09:24 起');
   expect(text()).toContain('12 筆');
   mockAuth = { loading: false, user: null, available: true };
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=cloud-expired' }));
   await advance(100);
-  expect(text()).toContain('需要重新登入');
-  expect(text()).not.toContain('登入 Supabase 帳號');
+  expect(text()).toContain(i18nT('c276'));
+  expect(text()).not.toContain(i18nT('c001'));
   // 「登入」 opens D1 (no guide progress), 「稍後再說」 comes back to S3.
   await press('需要重新登入，登入');
   expect(renderer.root.findAllByProps({ testID: 'sign-in-page' }).length).toBeGreaterThan(0);
-  expect(text()).toContain('登入 Supabase 帳號');
-  expect(text()).toContain('需要重新登入');
+  expect(text()).toContain(i18nT('c001'));
+  expect(text()).toContain(i18nT('c276'));
   expect(renderer.root.findAllByProps({ testID: 'guide-progress' })).toHaveLength(0);
   await press('稍後再說');
   expect(title()).toBe('返回，Supabase 帳號');
@@ -415,7 +416,7 @@ test('刪除全部狗資料 (S7) on SQLite: asks, deletes only the dog rows, kee
   expect(row('settings-row-advanced')).toBeUndefined();
   await tap('advanced-delete');
   await advance(10);
-  expect(text()).toContain('刪除全部狗資料？');
+  expect(text()).toContain(i18nT("c951"));
   expect(text()).toContain('雲端、手機路線、狗的名字和頭像都不會動');
   // 取消 deletes nothing.
   await press('取消');
@@ -423,7 +424,7 @@ test('刪除全部狗資料 (S7) on SQLite: asks, deletes only the dog rows, kee
   await tap('advanced-delete');
   await advance(10);
   // Nothing waits to be uploaded: one 「刪除」.
-  expect(button('先上傳')).toBeUndefined();
+  expect(button(i18nT("c950"))).toBeUndefined();
   await press('刪除');
   await advance(100);
   expect(rows('dog_status')).toHaveLength(0);
@@ -452,7 +453,7 @@ test('S7/S8 fixtures: diagnostics states, the delete question with rows to uploa
   await advance(100);
   expect(title()).toBe('返回，診斷');
   for (const id of [4, 6, 8]) expect(renderer.root.findAllByProps({ testID: `diagnostics-dog-${id}` }).length).toBeGreaterThan(0);
-  expect(text()).toContain('移動中');
+  expect(text()).toContain(i18nT("c624"));
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=diagnostics-error' }));
   await advance(100);
   expect(text()).toContain('attempt to write a readonly database');
@@ -466,7 +467,7 @@ test('S7/S8 fixtures: diagnostics states, the delete question with rows to uploa
   expect(title()).toBe('返回，進階');
   expect(text()).toContain('還有 120 筆沒上傳：先上傳／一起刪除');
   await press('先上傳');
-  expect(text()).toContain('沒有網路，現在不能上傳。連上網路後再試，或選「一起刪除」');
+  expect(text()).toContain(i18nT("c952"));
   await press('一起刪除');
   expect(text()).not.toContain('還有 120 筆沒上傳');
   expect(text()).toContain('已刪除・09:30');
@@ -476,7 +477,7 @@ test('S7/S8 fixtures: diagnostics states, the delete question with rows to uploa
   await tap('advanced-wifi');
   expect(title()).toBe('返回，接收器 Wi-Fi');
   expect(text()).toContain('接收器 7 存的 Wi-Fi');
-  expect(text()).toContain('使用中');
+  expect(text()).toContain(i18nT("c1027"));
   await tap('wifi-delete-辦公室');
   expect(text()).toContain('接收器 7 不會再連「辦公室」。');
   await press('刪除');
@@ -509,8 +510,8 @@ test('「今天 x km」 opens my route on the same map, with its own card, and b
   expect(has('history-date')).toBe(true);
   expect(has('history-export')).toBe(true);
   expect(has('history-dogs-sheet')).toBe(false);
-  expect(text()).toContain('我的路線');
-  expect(text()).toContain('今天');
+  expect(text()).toContain(i18nT('c132'));
+  expect(text()).toContain(i18nT('c085'));
   expect(button('重新查詢')).toBeUndefined();
   expect(button('套用（有未套用的變更）')).toBeUndefined();
   expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
@@ -668,7 +669,7 @@ test('first map asks permission once; denial does not affect hardware locations'
   expect(request).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
   // No location permission: the gear carries the red dot and says so (049).
-  expect(button('設定')).toBeUndefined();
+  expect(button(i18nT("c482"))).toBeUndefined();
   const gear = renderer.root.findAll(node => node.props.testID === 'map-settings'
     && typeof node.props.onPress === 'function')[0];
   expect(gear.props.accessibilityLabel).toMatch(/^設定，有 \d 件事要處理$/);
@@ -787,7 +788,7 @@ test('first launch, signed out: D1 with the guide progress; 稍後再說 opens t
   expect(progressBar()).toBe(true);
   for (const words of ['登入 Supabase 帳號', '登入後會把收到的位置上傳，也能看到隊友的狗。不登入也可以用，只顯示這支手機連到的接收器。',
     '電子郵件', '密碼', '顯示', '登入', '稍後再說']) expect(text()).toContain(words);
-  expect(text()).not.toContain('需要重新登入');
+  expect(text()).not.toContain(i18nT('c276'));
   // No 「‹ 標題」 header on D1.
   expect(renderer.root.findAllByProps({ testID: 'page-back' })).toHaveLength(0);
   // No location question under D0 or over D1: it waits for the map.
@@ -802,7 +803,7 @@ test('first launch, signed out: D1 with the guide progress; 稍後再說 opens t
   await advance(100);
   expect(page('pair-scan')).toBe(true);
   expect(preferences().onboarding).toBe('receiver');
-  expect(text()).toContain('打開接收器電源，掃描機身上的 QR Code。');
+  expect(text()).toContain(i18nT('c030'));
   await press('稍後再說');
   await advance(100);
   expect(page('pair-scan')).toBe(false);
@@ -856,10 +857,10 @@ test('D2 asks one permission after another, then 下一步; leaving midway resum
       [PERMISSIONS.BLUETOOTH_SCAN, PERMISSIONS.BLUETOOTH_CONNECT],
       [PERMISSIONS.ACCESS_FINE_LOCATION, PERMISSIONS.ACCESS_COARSE_LOCATION],
       [PERMISSIONS.POST_NOTIFICATIONS]]);
-    expect(text()).toContain('只給了大概位置，算不出距離');
-    expect(text()).toContain('未允許');
-    expect(text()).toContain('開系統設定 ›');
-    expect(text()).not.toContain('全部允許');
+    expect(text()).toContain(i18nT('c026'));
+    expect(text()).toContain(i18nT('c028'));
+    expect(text()).toContain(i18nT('c225'));
+    expect(text()).not.toContain(i18nT('c016'));
     expect(preferences().askedPermissions).toEqual(['nearby', 'location', 'notifications']);
     // 開系統設定 › opens this app's settings; back in the app every row is
     // checked again.
@@ -868,7 +869,7 @@ test('D2 asks one permission after another, then 下一步; leaving midway resum
     granted.add(PERMISSIONS.ACCESS_FINE_LOCATION);
     await act(async () => onAppState('active'));
     await advance(100);
-    expect(text()).not.toContain('只給了大概位置');
+    expect(text()).not.toContain(i18nT('c313'));
     // Back on D2 goes to D1 (the guide's step before), and a restart is D1.
     await act(async () => expect(onBack()).toBe(true));
     expect(signInPage()).toBe(true);
@@ -899,7 +900,7 @@ test('D3 in the guide: a QR code finds and connects its receiver, D4 lists the s
     expect(camera).toBeDefined();
     // Not a receiver's QR code: D3b.
     await act(async () => camera.props.onScan({ nativeEvent: { value: 'https://example.com' } }));
-    expect(text()).toContain('這不是接收器的 QR Code');
+    expect(text()).toContain(i18nT('c032'));
     await tap('guide-dialog-rescan');
     // Receiver 7's code: found by its name, connected as Master 7.
     const device = { id: 'AA:BB:CC:00:00:07', name: 'DogGPS-Master7', rssi: -60 };
@@ -911,7 +912,7 @@ test('D3 in the guide: a QR code finds and connects its receiver, D4 lists the s
     expect(ble.connect).toHaveBeenCalledWith(device, expect.any(Function), expect.any(Function),
       expect.objectContaining({ bleName: 'DogGPS-Master7', masterId: 7 }));
     expect(page('paired-page')).toBe(true);
-    expect(text()).toContain('開始使用');
+    expect(text()).toContain(i18nT('c053'));
     await press('開始使用');
     await advance(100);
     expect(page('paired-page')).toBe(false);
@@ -964,7 +965,7 @@ test('登入失效 found by the restore: D1 with 需要重新登入; 稍後再�
   await advance(100);
   expect(signInPage()).toBe(true);
   expect(progressBar()).toBe(false);
-  expect(text()).toContain('需要重新登入');
+  expect(text()).toContain(i18nT('c276'));
   await press('稍後再說');
   expect(signInPage()).toBe(false);
   // The map (not settings) and the gear's red dot for the expired sign-in.
@@ -982,13 +983,13 @@ test('the database cannot be opened: 手機裡的資料打不開; 診斷 says wh
   await mount();
   await advance(100);
   expect(renderer.root.findAllByProps({ testID: 'start-failed' }).length).toBeGreaterThan(0);
-  expect(text()).toContain('手機裡的資料打不開');
+  expect(text()).toContain(i18nT("c909"));
   await press('診斷');
   expect(title()).toBe('返回，診斷');
   expect(text()).toContain('SQLITE_CANTOPEN');
   expect(preferences().diagnosticsEnabled).not.toBe(true);
   await act(async () => expect(onBack()).toBe(true));
-  expect(text()).toContain('手機裡的資料打不開');
+  expect(text()).toContain(i18nT("c909"));
   // Nothing under it: back leaves the app.
   await act(async () => expect(onBack()).toBe(true));
   expect(exit).toHaveBeenCalledTimes(1);
@@ -1013,7 +1014,7 @@ test('A6 「登入 Supabase」 opens D1; back and 稍後再說 return to the map
   await press('登入 Supabase');
   await press('稍後再說');
   expect(signInPage()).toBe(false);
-  expect(text()).toContain('還沒有狗的資料');
+  expect(text()).toContain(i18nT('c109'));
 });
 
 test('start fixtures: first launch, restore past 10 s, expired at start, database failure', async () => {
@@ -1036,10 +1037,10 @@ test('start fixtures: first launch, restore past 10 s, expired at start, databas
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-expired' }));
   await advance(100);
   expect(signInPage()).toBe(true);
-  expect(text()).toContain('需要重新登入');
+  expect(text()).toContain(i18nT('c276'));
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=db-open-failed' }));
   await advance(100);
-  expect(text()).toContain('手機裡的資料打不開');
+  expect(text()).toContain(i18nT("c909"));
   await press('診斷');
   expect(text()).toContain('SQLITE_CANTOPEN');
   expect(preferences().diagnosticsEnabled).not.toBe(true);
@@ -1048,7 +1049,7 @@ test('start fixtures: first launch, restore past 10 s, expired at start, databas
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-restore-slow&page=cloud' }));
   await advance(100);
   expect(title()).toBe('返回，Supabase 帳號');
-  expect(text()).toContain('暫時連不上，會自動重試');
+  expect(text()).toContain(i18nT('c257'));
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-expired' }));
   await advance(100);
   expect(signInPage()).toBe(true);

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LoadingContent } from '../components/Skeleton';
 // History over the map: one dog capsule (or 我的路線), immediate dog chooser,
 // shared range and cursor, calendar, timeline and export.
@@ -92,7 +93,7 @@ const FACE_ONLY_FONT_SCALE = fontScales.faceOnly;
 
 /** One fixed capsule, followed by a flexible spacer and the export control. */
 export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
-  onAdd, alertBadge = null, onAlertBadge, exportEnabled, exportLabel = '匯出', exportBusy = false,
+  onAdd, alertBadge = null, onAlertBadge, exportEnabled, exportLabel = t("c821"), exportBusy = false,
   hidden = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -109,10 +110,10 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
   return (
     <View style={[styles.topRow, { top }]} pointerEvents="box-none"
       importantForAccessibility={behindSheet(hidden)}>
-      <Capsule testID="history-back-now" label="回到現在" onPress={onBack}
+      <Capsule testID="history-back-now" label={t("c838")} onPress={onBack}
         style={compact && styles.backRound}>
         {compact ? <Glyph name="back" color={colors.text} size={sizes.icon.row} />
-          : <Text style={styles.backText}>‹ 回到現在</Text>}
+          : <Text style={styles.backText}>{t('c117')}</Text>}
       </Capsule>
       <View style={styles.pillSlot}>
         <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
@@ -139,7 +140,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
       {/* 「⚠ N」: 8dp left of the export icon (the row's gap is 6). */}
       <AlertBadge badge={alertBadge} onPress={onAlertBadge} style={styles.alertBadge} />
       <PressScale testID="history-export" accessibilityRole="button"
-        accessibilityLabel={exportBusy ? '匯出，產生中' : exportLabel}
+        accessibilityLabel={exportBusy ? t("c837") : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
         disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.chip.height) / 2}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
@@ -160,7 +161,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
       testID={`history-day-${side}`}
       accessibilityRole="button"
       accessibilityLabel={
-        side === 'previous' ? '前一個有紀錄的日子' : '後一個有紀錄的日子'
+        side === 'previous' ? t("c839") : t("c840")
       }
       accessibilityState={{ disabled: !enabled }}
       disabled={!enabled}
@@ -182,7 +183,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
         testID="history-date"
         accessibilityRole="button"
         accessibilityLabel={label}
-        accessibilityHint="打開月曆選日期"
+        accessibilityHint={t("c829")}
         onPress={onOpen}
         style={styles.datePill}
         hitSlop={DATE_PILL_SLOP}
@@ -211,7 +212,7 @@ function DownloadSummary({ panel, onCancel }) {
       <Pressable
         testID="history-download-cancel"
         accessibilityRole="button"
-        accessibilityLabel="取消下載"
+        accessibilityLabel={t("c830")}
         onPress={onCancel}
         style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
         hitSlop={space.s}
@@ -231,7 +232,7 @@ function IncompleteRow({ panel, onRetry }) {
       <Pressable
         testID="history-download-retry"
         accessibilityRole="button"
-        accessibilityLabel="重試下載"
+        accessibilityLabel={t("c836")}
         onPress={onRetry}
         style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
         hitSlop={space.s}
@@ -250,8 +251,8 @@ function FrameButton({ onPress }) {
     <PressScale
       testID="history-frame-all"
       accessibilityRole="button"
-      accessibilityLabel="框住全部"
-      accessibilityHint="把範圍裡的路線放進畫面"
+      accessibilityLabel={t("c758")}
+      accessibilityHint={t("c831")}
       onPress={onPress}
       style={styles.frameButton}
     >
@@ -485,7 +486,7 @@ ref) {
         <PressScale
           testID="history-download-retry"
           accessibilityRole="button"
-          accessibilityLabel="重試下載"
+          accessibilityLabel={t("c836")}
           onPress={retry}
           style={styles.retryButton}
         >
@@ -502,7 +503,7 @@ ref) {
         {emptyText({ subject, today: screen.today, name: leadName })}
       </Text>
     );
-  else if (!hasRoute) body = <Text style={styles.empty}>這段時間沒有紀錄</Text>;
+  else if (!hasRoute) body = <Text style={styles.empty}>{t('c318')}</Text>;
   else {
     body = (
       <View style={styles.list}>
@@ -525,8 +526,8 @@ ref) {
         onAdd={pressAdd}
         exportEnabled={hasRoute} exportBusy={exporter.generating}
         onExport={() => { closeRange(); exporter.open(); }}
-        exportLabel={hasRoute ? '匯出' : downloading ? '匯出，無法使用，正在下載'
-          : empty ? '匯出，無法使用，這天沒有紀錄' : model ? '匯出，無法使用，這段時間沒有紀錄' : '匯出，無法使用'}
+        exportLabel={hasRoute ? t("c821") : downloading ? t("c832")
+          : empty ? t('c379') : model ? t("c833") : t("c834")}
         hidden={sheetOpen} />
       <HistoryPanel ref={panel} levels={levels} header={header} onLevel={panelLevel} onDragStart={dragStart}
         hidden={sheetOpen}
@@ -538,9 +539,9 @@ ref) {
           disabled={!rangeOpen}
           accessible={false}
         >
-          {!model && !downloading && !screen.error && <Text style={styles.empty}>讀取中…</Text>}
+          {!model && !downloading && !screen.error && <Text style={styles.empty}>{t('c424')}</Text>}
           <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
-            shape="timeline" label={downloading ? download.title.replace('…', '') : '讀取中'} skeletonTestID="history-skeleton">
+            shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
             {body}
           </LoadingContent>
         </Pressable>

@@ -16,7 +16,7 @@ import java.util.UUID
 class LocationTrackerService : Service(), LocationListener {
   companion object {
     @Volatile var running = false
-    @Volatile var status = "尚未開始記錄"
+    @Volatile var status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1125)
     @Volatile var liveJson = "{}"
     @Volatile internal var displayLocation: DisplayLocation? = null
     const val CHANNEL = com.dogtracker.NotificationChannels.TRACKING
@@ -42,11 +42,11 @@ class LocationTrackerService : Service(), LocationListener {
           val display = displayLocation?.takeIf { it.usable(sessionId, sample, now) }
           database.save(sample, sessionId, display)
           pipeline.written(sample, now); saved++
-        } catch (_: Exception) { writeErrors++; writeFailed = true; status = "Timeline 寫入失敗，下一秒重試" }
+        } catch (_: Exception) { writeErrors++; writeFailed = true; status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1126) }
       }
       val latest = pipeline.latest
       val age = latest?.let { (now - it.elapsedNanos) / 1e9 }
-      if (!writeFailed) status = if (age != null && age > 3) "等待合格新定位；最後位置已過期" else pipeline.reason
+      if (!writeFailed) status = if (age != null && age > 3) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1127) else pipeline.reason
       liveJson = JSONObject().put("running", running).put("status", status)
         .put("received", pipeline.received).put("accepted", pipeline.accepted).put("rejected", pipeline.rejected)
         .put("saved", saved).put("writeErrors", writeErrors).put("ageSeconds", age ?: JSONObject.NULL)
@@ -85,18 +85,18 @@ class LocationTrackerService : Service(), LocationListener {
       val launch = com.dogtracker.NotificationChannels.launch(this, "my-route")
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_dog)
-        .setContentTitle("DogTracker・手機位置記錄").setContentText("正在記錄我的路線")
-        .setColor(com.dogtracker.NotificationChannels.accent(this)).setOnlyAlertOnce(true).setContentIntent(launch).setOngoing(true).addAction(0, "停止記錄", stop).build())
+        .setContentTitle(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1128)).setContentText(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1129))
+        .setColor(com.dogtracker.NotificationChannels.accent(this)).setOnlyAlertOnce(true).setContentIntent(launch).setOngoing(true).addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1130), stop).build())
       val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-      check(precise) { "請允許精確位置" }
+      check(precise) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1131) }
       val providers = listOf(LocationManager.GPS_PROVIDER).filter { manager.isProviderEnabled(it) }
-      check(providers.isNotEmpty()) { "請開啟手機定位服務" }
+      check(providers.isNotEmpty()) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1132) }
       for (provider in providers) manager.requestLocationUpdates(provider, 1000L, 0f, this, worker.looper)
       running = true
-      status = "等待合格定位：≤ 30 m；> 20 km/h 時 < 50 m"
+      status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
       handler.post(tick)
     } catch (_: Exception) {
-      status = "無法開始記錄，請允許精確位置並開啟 GPS"
+      status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1134)
       stopSelf()
     }
     return if (running) START_STICKY else START_NOT_STICKY
@@ -113,8 +113,8 @@ class LocationTrackerService : Service(), LocationListener {
         location.speedAccuracyMetersPerSecond.isFinite() && location.speedAccuracyMetersPerSecond >= 0)
         location.speedAccuracyMetersPerSecond else null), now)
   }
-  override fun onProviderDisabled(provider: String) { status = "定位來源已關閉，等待恢復" }
-  override fun onProviderEnabled(provider: String) { status = "等待新定位" }
+  override fun onProviderDisabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1135) }
+  override fun onProviderEnabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117) }
   @Deprecated("Legacy Android callback")
   override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
   override fun onDestroy() {
@@ -124,7 +124,7 @@ class LocationTrackerService : Service(), LocationListener {
     displayLocation = null
     manager.removeUpdates(this)
     worker.quitSafely()
-    if (running) status = "已停止記錄"
+    if (running) status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1136)
     running = false
     stopForeground(STOP_FOREGROUND_REMOVE)
     super.onDestroy()

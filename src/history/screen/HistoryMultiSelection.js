@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { getTheme } from '../../theme/ThemeProvider';
 import { dogTransition } from './HistoryScreenDogs';
 
@@ -14,7 +15,7 @@ export function multiSelection(subjects = [], { subject = 'dog' } = {}) {
       dogs: [
         {
           id: 'phone',
-          name: '我的路線',
+          name: t('c132'),
           subject: 'phone',
           hasData: !!subjects[0]?.hasData,
           colour: colors.phone,

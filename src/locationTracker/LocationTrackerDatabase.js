@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { NativeModules } from 'react-native';
 import { forgetRanges } from '../history/screen/RangeMemory';
 import { locationTrackerNative } from './LocationTrackerService';
@@ -7,7 +8,7 @@ export const LOCATION_RECORD_LIMIT = 80000;
 
 // Android shares DogStatusStore's SQLite owner with BLE and cloud data.
 export async function readLocationPage(before = 0) {
-  if (!locationTrackerNative) throw new Error('此版本不支援手機位置記錄');
+  if (!locationTrackerNative) throw new Error(t("c699"));
   const result = JSON.parse(await locationTrackerNative.page(before));
   return {
     ...result,
@@ -17,7 +18,7 @@ export async function readLocationPage(before = 0) {
 }
 
 export async function deletePhoneRoutes() {
-  if (!locationTrackerNative) throw new Error('此版本不支援手機位置記錄');
+  if (!locationTrackerNative) throw new Error(t("c699"));
   await locationTrackerNative.deleteAll();
   forgetRanges();
   await NativeModules.HistoryExport?.clearExports?.();

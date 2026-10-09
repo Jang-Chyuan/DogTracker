@@ -1,5 +1,165 @@
 [
  {
+  "name": "numbered dog stale: 75 actual minutes",
+  "preferences": {},
+  "steps": [
+   {
+    "at": 1760004500000,
+    "dogs": [
+     {
+      "slaveId": 5,
+      "name": "狗 5",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・1 隻狗要注意",
+     "lines": [
+      "狗 5：75 分鐘沒有新位置"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [
+      "dog-stale:5"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:5": {
+        "key": "dog-stale:5",
+        "startedAt": 1760004500000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "dog-stale:5": {
+        "token": "1760004500000:1",
+        "at": 1760004500000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760004500000,
+      "pause": null
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "numbered dog stale: 1501 actual minutes",
+  "preferences": {},
+  "steps": [
+   {
+    "at": 1760090060000,
+    "dogs": [
+     {
+      "slaveId": 5,
+      "name": "狗 5",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・1 隻狗要注意",
+     "lines": [
+      "狗 5：1501 分鐘沒有新位置"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 5
+     },
+     "delivered": [
+      "dog-stale:5"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:5": {
+        "key": "dog-stale:5",
+        "startedAt": 1760090060000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "dog-stale:5": {
+        "token": "1760090060000:1",
+        "at": 1760090060000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760090060000,
+      "pause": null
+     }
+    }
+   }
+  ]
+ },
+ {
   "name": "K07: out-of-range status survives 25 hours and a restart until local clearing",
   "preferences": {
    "dogStale": false
@@ -253,7 +413,7 @@
      "notification": "notify",
      "title": "DogTracker・接收器與手機要注意",
      "lines": [
-      "接收器 7 斷線了（1 隻狗收不到）"
+      "接收器 7 已斷線（1 隻狗收不到）"
      ],
      "target": {
       "screen": "receiver-settings"
@@ -331,7 +491,7 @@
      "notification": "update",
      "title": "DogTracker・接收器與手機要注意",
      "lines": [
-      "接收器 7 斷線了（1 隻狗收不到）"
+      "接收器 7 已斷線（1 隻狗收不到）"
      ],
      "target": {
       "screen": "receiver-settings"
@@ -399,7 +559,7 @@
      "notification": "update",
      "title": "DogTracker・接收器與手機要注意",
      "lines": [
-      "接收器 7 斷線了（1 隻狗收不到）"
+      "接收器 7 已斷線（1 隻狗收不到）"
      ],
      "target": {
       "screen": "receiver-settings"
@@ -880,7 +1040,7 @@
      "notification": "notify",
      "title": "DogTracker・1 隻狗要注意",
      "lines": [
-      "豆豆 11 分鐘沒有新位置"
+      "豆豆：11 分鐘沒有新位置"
      ],
      "target": {
       "screen": "map",
@@ -977,7 +1137,7 @@
      "title": "DogTracker・2 隻狗要注意",
      "lines": [
       "小黑 不在接收範圍",
-      "豆豆 11 分鐘沒有新位置"
+      "豆豆：11 分鐘沒有新位置"
      ],
      "target": {
       "screen": "map",
@@ -1088,7 +1248,7 @@
      "title": "DogTracker・2 隻狗要注意",
      "lines": [
       "小黑 不在接收範圍",
-      "豆豆 12 分鐘沒有新位置",
+      "豆豆：12 分鐘沒有新位置",
       "豆豆 電量低 18%"
      ],
      "target": {
@@ -1216,7 +1376,7 @@
      "title": "DogTracker・2 隻狗要注意",
      "lines": [
       "小黑 不在接收範圍",
-      "豆豆 14 分鐘沒有新位置",
+      "豆豆：14 分鐘沒有新位置",
       "豆豆 電量低 18%"
      ],
      "target": {
@@ -1355,7 +1515,7 @@
      "title": "DogTracker・2 隻狗要注意",
      "lines": [
       "小黑 不在接收範圍",
-      "豆豆 15 分鐘沒有新位置",
+      "豆豆：15 分鐘沒有新位置",
       "豆豆 電量低 18%"
      ],
      "target": {
@@ -1491,7 +1651,7 @@
      "lines": [
       "小黑 不在接收範圍",
       "手機空間不足，位置存不進手機",
-      "豆豆 16 分鐘沒有新位置",
+      "豆豆：16 分鐘沒有新位置",
       "豆豆 電量低 18%",
       "小黑 電量低 9%"
      ],
@@ -1666,7 +1826,7 @@
      "lines": [
       "小黑 不在接收範圍",
       "手機空間不足，位置存不進手機",
-      "豆豆 45 分鐘沒有新位置",
+      "豆豆：45 分鐘沒有新位置",
       "豆豆 電量低 18%",
       "小黑 電量低 9%"
      ],
@@ -1829,7 +1989,7 @@
      "notification": "update",
      "title": "DogTracker・2 隻狗要注意",
      "lines": [
-      "豆豆 46 分鐘沒有新位置",
+      "豆豆：46 分鐘沒有新位置",
       "小黑 電量低 9%"
      ],
      "target": {
@@ -2092,7 +2252,7 @@
      "notification": "notify",
      "title": "DogTracker・接收器與手機要注意",
      "lines": [
-      "接收器 7 斷線了（2 隻狗收不到）"
+      "接收器 7 已斷線（2 隻狗收不到）"
      ],
      "target": {
       "screen": "receiver-settings"
@@ -2189,7 +2349,7 @@
      "notification": "update",
      "title": "DogTracker・接收器與手機要注意",
      "lines": [
-      "接收器 7 斷線了（2 隻狗收不到）"
+      "接收器 7 已斷線（2 隻狗收不到）"
      ],
      "target": {
       "screen": "receiver-settings"
@@ -2297,8 +2457,8 @@
      "notification": "update",
      "title": "DogTracker・2 隻狗要注意",
      "lines": [
-      "豆豆 12 分鐘沒有新位置",
-      "小黑 12 分鐘沒有新位置"
+      "豆豆：12 分鐘沒有新位置",
+      "小黑：12 分鐘沒有新位置"
      ],
      "target": {
       "screen": "map",
@@ -2397,7 +2557,7 @@
      "notification": "notify",
      "title": "DogTracker・2 件事要注意",
      "lines": [
-      "豆豆 13 分鐘沒有新位置",
+      "豆豆：13 分鐘沒有新位置",
       "接收器 7 電量低 15%"
      ],
      "target": {
@@ -2514,7 +2674,7 @@
      "notification": "update",
      "title": "DogTracker・2 件事要注意",
      "lines": [
-      "豆豆 42 分鐘沒有新位置",
+      "豆豆：42 分鐘沒有新位置",
       "接收器 7 電量低 15%"
      ],
      "target": {
@@ -2626,7 +2786,7 @@
      "notification": "update",
      "title": "DogTracker・2 件事要注意",
      "lines": [
-      "豆豆 44 分鐘沒有新位置",
+      "豆豆：44 分鐘沒有新位置",
       "接收器 7 電量低 15%"
      ],
      "target": {

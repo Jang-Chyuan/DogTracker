@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { mergeDogMarkers, MAX_AGE_MS } from '../src/map/DogMerge';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
@@ -15,11 +16,11 @@ test('fresh no-fix packets keep the last position visible without changing its t
   const options = { point: null, cloudRows: [old], packetRows: [packet], now: NOW, windowMs: 120000 };
   expect(mergeDogMarkers(options)[0]).toMatchObject({
     lastPacketAt: NOW, lastPositionAt: NOW - 121000, stale: false,
-    batteryPercentage: 55, distanceMeters: null, communicationStatus: '有通訊／GPS 未定位',
+    batteryPercentage: 55, distanceMeters: null, communicationStatus: i18nT("c736"),
   });
-  expect(mergeDogMarkers({ ...options, now: NOW + 121000 })[0].communicationStatus).toBe('未收到新資料');
+  expect(mergeDogMarkers({ ...options, now: NOW + 121000 })[0].communicationStatus).toBe(i18nT("c735"));
   expect(mergeDogMarkers({ ...options, packetRows: [{ ...packet, slave_lat: 25, slave_lon: 121, distance_meters: 10 }] })[0])
-    .toMatchObject({ stale: false, lastPositionAt: NOW, distanceMeters: 10, communicationStatus: '有通訊／定位正常' });
+    .toMatchObject({ stale: false, lastPositionAt: NOW, distanceMeters: 10, communicationStatus: i18nT("c737") });
 });
 
 test('default live marker expires only after three minutes without packets', () => {
@@ -149,6 +150,6 @@ test('a dog heard without a fix draws no marker, while the others still do', () 
   expect(merge({
     point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 }, cloudRows: [],
   })).toEqual([expect.objectContaining({ slaveId: 7, coordinate: null, stale: true,
-    communicationStatus: '有通訊／GPS 未定位' })]);
+    communicationStatus: i18nT("c736") })]);
 });
 

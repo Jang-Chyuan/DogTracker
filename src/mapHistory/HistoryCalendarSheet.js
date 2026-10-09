@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // 選日期 (H3b) and 選月份 (H3e): the sheet the date row's 「10/03（六）今天 ▾」
 // opens (DESIGN.md「底部小視窗」「月曆」). It rises from the bottom over a 45%
 // scrim; a day with records has a 5dp dot (this phone's and the cloud's
@@ -110,26 +111,22 @@ function QueryStatus({ status, onRetry }) {
           style={styles.status}
           numberOfLines={linesFor(1)}
           testID="calendar-querying"
-        >
-          查詢中…
-        </Text>
+        >{t('c324')}</Text>
       </View>
     );
   }
   if (status !== 'failed') return <View style={styles.statusRow} />;
   return (
     <View style={styles.statusRow} testID="calendar-query-failed">
-      <Text style={styles.status} numberOfLines={linesFor(1)}>
-        雲端的紀錄查不到
-      </Text>
+      <Text style={styles.status} numberOfLines={linesFor(1)}>{t("c809")}</Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="重試查詢雲端的紀錄"
+        accessibilityLabel={t("c810")}
         onPress={onRetry}
         style={({ pressed }) => [styles.statusRetry, pressed && styles.pressed]}
         hitSlop={space.s}
       >
-        <Text style={styles.retryText}>重試</Text>
+        <Text style={styles.retryText}>{t('c049')}</Text>
       </Pressable>
     </View>
   );
@@ -185,9 +182,7 @@ function MonthCell({ entry, onPress }) {
     <Pressable
       testID={`calendar-month-${entry.month}`}
       accessibilityRole="button"
-      accessibilityLabel={`${entry.label}${
-        entry.state === 'records' ? '，有紀錄' : entry.muted ? '，沒有紀錄' : ''
-      }`}
+      accessibilityLabel={((entry.state === 'records') ? t("c777", { label: entry.label }) : (!(entry.state === 'records') && (entry.muted) ? t("c778", { label: entry.label }) : entry.label))}
       accessibilityState={{
         disabled: !entry.tappable,
         selected: entry.selected,
@@ -253,7 +248,7 @@ function DayRow({ row, onPress }) {
         ]}
       >
         {row.title}
-        {row.today ? '　今天' : ''}
+        {row.today ? t("c799") : ''}
       </Text>
       <View style={[styles.rowDot, row.dot ? styles.shown : styles.hidden]} />
     </Pressable>
@@ -386,12 +381,12 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             ref={titleRef}
             testID="calendar-months-back"
             accessibilityRole="button"
-            accessibilityLabel="返回選日期"
+            accessibilityLabel={t("c801")}
             onPress={() => setPicker(null)}
             style={({ pressed }) => [styles.backTitle, pressed && styles.pressed]}
             hitSlop={space.s}
           >
-            <Text style={styles.title}>‹ 選日期</Text>
+            <Text style={styles.title}>{t("c800")}</Text>
           </Pressable>
           <QueryStatus status={months.status} onRetry={screen.retryQuery} />
         </View>
@@ -400,7 +395,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             side="previous"
             enabled={months.previousEnabled}
             onPress={() => setPicker(picker - 1)}
-            label="前一年"
+            label={t("c804")}
             testID="calendar-year-previous"
           />
           <Text style={styles.yearText} accessibilityRole="header">
@@ -410,7 +405,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             side="next"
             enabled={months.nextEnabled}
             onPress={() => setPicker(picker + 1)}
-            label="後一年"
+            label={t("c805")}
             testID="calendar-year-next"
           />
         </View>
@@ -432,9 +427,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
     body = (
       <>
         <View style={styles.titleRow}>
-          <Text ref={titleRef} style={styles.title} accessibilityRole="header">
-            選日期
-          </Text>
+          <Text ref={titleRef} style={styles.title} accessibilityRole="header">{t('c144')}</Text>
           {asList ? (
             <View style={styles.spacer} />
           ) : (
@@ -443,7 +436,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
           <PressScale
             testID="calendar-today"
             accessibilityRole="button"
-            accessibilityLabel="回到今天"
+            accessibilityLabel={t('c145')}
             accessibilityState={{ disabled: !month.returnTodayEnabled }}
             disabled={!month.returnTodayEnabled}
             onPress={() => choose(todayKey)}
@@ -453,7 +446,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
               !month.returnTodayEnabled && styles.disabled,
             ]}
           >
-            <Text style={styles.todayText}>回到今天</Text>
+            <Text style={styles.todayText}>{t('c145')}</Text>
           </PressScale>
         </View>
         {/* 200%: 「查詢中…」「雲端的紀錄查不到　重試」 get their own line. */}
@@ -467,13 +460,13 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             side="previous"
             enabled={month.previousEnabled}
             onPress={() => setShown(shiftMonth(shown, -1))}
-            label="上個月"
+            label={t("c806")}
             testID="calendar-month-previous"
           />
           <Pressable
             testID="calendar-month-title"
             accessibilityRole="button"
-            accessibilityLabel={`${month.title}，選月份`}
+            accessibilityLabel={t("c802", { title: month.title })}
             onPress={() => setPicker(shown.year)}
             style={({ pressed }) => [styles.monthPill, pressed && styles.pressed]}
             hitSlop={PILL_SLOP}
@@ -485,7 +478,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             side="next"
             enabled={month.nextEnabled}
             onPress={() => setShown(shiftMonth(shown, 1))}
-            label="下個月"
+            label={t("c807")}
             testID="calendar-month-next"
           />
         </View>
@@ -500,7 +493,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
                 <DayRow key={`${row.day}-${scheme}`} row={row} onPress={choose} />
               ))
             ) : (
-              <Text style={styles.listEmpty}>這個月沒有紀錄</Text>
+              <Text style={styles.listEmpty}>{t("c808")}</Text>
             )}
           </ScrollView>
         ) : (
@@ -541,7 +534,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
         <Pressable
           style={StyleSheet.absoluteFill}
           accessibilityRole="button"
-          accessibilityLabel="關閉選日期"
+          accessibilityLabel={t("c803")}
           onPress={close}
         />
       </Animated.View>

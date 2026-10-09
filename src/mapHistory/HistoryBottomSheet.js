@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // A small window rising from the bottom of the history screen (DESIGN.md
 // 「底部小視窗」: top corners 16, 16dp inside, a 45% dark scrim behind; title
 // 16sp bold): the dog chooser and export. A tap on the scrim, the back
@@ -42,7 +43,7 @@ const HistoryBottomSheet = forwardRef(function HistoryBottomSheet(
     onClosed,
     bottomInset = 0,
     testID,
-    closeLabel = '關閉',
+    closeLabel = t("c765"),
     locked = false,
     divided = false,
   },

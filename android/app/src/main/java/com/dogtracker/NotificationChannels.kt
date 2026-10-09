@@ -27,8 +27,8 @@ object NotificationChannels {
   fun create(context: Context) {
     if (Build.VERSION.SDK_INT < 26) return
     val manager = context.getSystemService(NotificationManager::class.java)
-    manager.createNotificationChannel(NotificationChannel(ALERTS, "提醒", NotificationManager.IMPORTANCE_HIGH).apply {
-      description = "狗不在接收範圍、沒有新位置、電量低，接收器斷線等"
+    manager.createNotificationChannel(NotificationChannel(ALERTS, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c191), NotificationManager.IMPORTANCE_HIGH).apply {
+      description = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1053)
       // High so a new alert pops up on screen (N1/N2). Its sound and
       // vibration are the alert's own (S6 震動／聲音, critical or normal
       // pattern), so the channel starts silent; what the user then sets on
@@ -36,8 +36,8 @@ object NotificationChannels {
       setSound(null, null)
       enableVibration(false)
     })
-    manager.createNotificationChannel(NotificationChannel(TRACKING, "常駐", NotificationManager.IMPORTANCE_LOW).apply {
-      description = "接收器、位置記錄、資料同步在背景工作時"
+    manager.createNotificationChannel(NotificationChannel(TRACKING, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c477), NotificationManager.IMPORTANCE_LOW).apply {
+      description = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1054)
       setSound(null, null)
       enableVibration(false)
       setShowBadge(false)

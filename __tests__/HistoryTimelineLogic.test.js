@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { historyTimeline } from '../src/history';
 import { point, route, visitsFixture } from '../__fixtures__/HistoryLogicFixtures';
 
@@ -51,9 +52,9 @@ test('empty range and empty day return empty models', () => {
 // stops.txt「跟著現在…最後一筆在2分鐘內才寫現在…否則最後」。
 test('following end distinguishes fresh and stale, fixed end is end', () => {
   const points = route(Array(48).fill(1));
-  expect(historyTimeline(points, { today: true, now: 600000 }).locations.pop().label).toBe('現在');
-  expect(historyTimeline(points, { today: true, now: 600001 }).locations.pop().label).toBe('最後');
-  expect(historyTimeline(points, { today: true, now: 600000, following: false }).locations.pop().label).toBe('結束');
+  expect(historyTimeline(points, { today: true, now: 600000 }).locations.pop().label).toBe(i18nT('c130'));
+  expect(historyTimeline(points, { today: true, now: 600001 }).locations.pop().label).toBe(i18nT("c660"));
+  expect(historyTimeline(points, { today: true, now: 600000, following: false }).locations.pop().label).toBe(i18nT('c330'));
 });
 // spec.txt「整天都停在原處…沒有出發、終點節點，也不畫軌道」。
 test('all-indoor day contains only house node', () => {
@@ -129,7 +130,7 @@ describe('TalkBack sentences of the timeline (060, 設計稿「無障礙」時�
   test('a departure and the end say what they are', () => {
     expect(placeSpeech({ type: 'departure', start: at(7, 2), end: at(7, 2) }, '桃園區中正路 50 號附近'))
       .toBe('出發，桃園區中正路 50 號附近，07:02');
-    expect(placeSpeech({ type: 'end', label: '現在', start: at(9, 29), end: at(9, 29) }, '24.9742, 121.3073'))
+    expect(placeSpeech({ type: 'end', label: i18nT('c130'), start: at(9, 29), end: at(9, 29) }, '24.9742, 121.3073'))
       .toBe('現在，24.9742, 121.3073，09:29');
   });
   test('a drive and a walk', () => {

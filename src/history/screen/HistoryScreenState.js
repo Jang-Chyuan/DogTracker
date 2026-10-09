@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { emptyText } from '../HistoryText';
 
 export function entryDefaults({ entry = 'dog-card', dogId = null, today, latest = null, fromAlert = false }) {
@@ -22,7 +23,7 @@ export function backAction(state, { returnToNow = false } = {}) {
 }
 export function emptyState({ subject = 'dog', today = false, name, dayRecords, rangeRecords, hasPoints = false }) {
   const empty = !dayRecords || !rangeRecords;
-  return { text: !dayRecords ? emptyText({ subject, today, name }) : !rangeRecords ? '這段時間沒有紀錄' : null,
+  return { text: !dayRecords ? emptyText({ subject, today, name }) : !rangeRecords ? t('c318') : null,
     exportEnabled: !empty, cursorEnabled: !empty && hasPoints,
     showSummary: !!dayRecords, showRange: !!dayRecords && hasPoints };
 }

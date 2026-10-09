@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // TalkBack on the map's dogs (設計稿「無障礙」狗標記). Google draws the dog
 // markers as bitmaps, so the label on the marker's view never reaches
 // TalkBack (only the SDK's own blue dot does). This layer puts one invisible
@@ -79,17 +80,17 @@ export function stopSpeech(place) {
   // A switch of transport is a moment, not a stay (the list's 「換交通方式」).
   if (place.type === 'switch') {
     const at = Number.isFinite(place.start) ? `，${clock(place.start)}` : '';
-    return `換交通方式 ${place.number}${at}，點兩下跳到這裡`;
+    return t("c762", { number: place.number, at: at });
   }
-  const lead = place.kind === 'indoor' ? '室內' : `停留 ${place.number}`;
+  const lead = place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.number });
   const length = Number.isFinite(place.durationMs)
     ? place.durationMs
     : place.end - place.start;
   const span =
     Number.isFinite(place.start) && Number.isFinite(place.end)
-      ? `，${clock(place.start)} 到 ${clock(place.end)}，${Math.round(
+      ? t("c763", { value: clock(place.start), value2: clock(place.end), value3: Math.round(
           length / 60000,
-        )} 分鐘`
+        ) })
       : '';
-  return `${lead}${span}，點兩下跳到開始`;
+  return t("c764", { lead: lead, span: span });
 }

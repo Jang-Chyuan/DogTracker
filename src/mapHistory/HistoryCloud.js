@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What the history's calendar asks the cloud (054b): which days hold the
 // rows of the dog (or dogs, 055b) (H3b's dots), the earliest one (how far back ‹ goes), and the
 // download of a day only the cloud holds (H3c). The download is the cloud
@@ -32,13 +33,13 @@ async function oneTime(query, signal, ms) {
   const limit = limited(signal, ms);
   try {
     const { data, error } = await query.abortSignal(limit.signal);
-    if (error) throw new Error(error.message || '雲端的紀錄查不到');
-    if (!Array.isArray(data)) throw new Error('雲端回傳格式不正確');
+    if (error) throw new Error(error.message || t("c809"));
+    if (!Array.isArray(data)) throw new Error(t("c578"));
     if (!data.length) return null;
     const time = Date.parse(data[0].received_at);
     return Number.isFinite(time) ? time : null;
   } catch (error) {
-    if (limit.signal.aborted && !signal?.aborted) throw new Error('雲端的紀錄查不到（逾時）');
+    if (limit.signal.aborted && !signal?.aborted) throw new Error(t("c811"));
     throw error;
   } finally {
     limit.done();
@@ -75,7 +76,7 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
       const before = previous;
       const run = (async () => {
         await before.catch(() => {});
-        if (signal?.aborted) throw new Error('下載已取消');
+        if (signal?.aborted) throw new Error(t("c576"));
         await database.initialize();
         const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
         const day = dayKey(new Date(dayStart));
@@ -88,12 +89,12 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
         const work = async leaseCurrent => {
           let count = 0, failure = null;
           for (const id of ids) {
-            if (abort.signal.aborted || !leaseCurrent()) throw new Error('下載已取消');
+            if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
             try {
               count += await downloadCloudHistory({ client, database, owner,
                 startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId: id,
                 signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
-              if (abort.signal.aborted || !leaseCurrent()) throw new Error('下載已取消');
+              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               await database.setHistoryDownloadState?.(owner, id, day, true);
               onDogEnd?.(id, 'done');
             } catch (error) {

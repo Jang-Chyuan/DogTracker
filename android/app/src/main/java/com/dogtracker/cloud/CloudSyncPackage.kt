@@ -16,10 +16,10 @@ class CloudSyncModule(private val context: ReactApplicationContext) : ReactConte
   @ReactMethod fun configureSearch(owner: String?, enabled: Boolean, promise: Promise) {
     try {
       if (enabled && !owner.isNullOrEmpty() && SearchRelayService.timedOut)
-        throw IllegalStateException("搜尋轉送已達 Android 執行時限")
+        throw IllegalStateException(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1143))
       SearchRelayService.configure(context, owner, enabled)
       promise.resolve(null)
-    } catch (error: Exception) { promise.reject("SEARCH_RELAY", "無法啟動搜尋轉送", error) }
+    } catch (error: Exception) { promise.reject("SEARCH_RELAY", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1144), error) }
   }
   @ReactMethod fun isSearchCurrent(id: String, owner: String, promise: Promise) {
     promise.resolve(SearchRelayService.instance?.isCurrent(id, owner) == true)
@@ -31,7 +31,7 @@ class CloudSyncModule(private val context: ReactApplicationContext) : ReactConte
   @ReactMethod fun setOwner(owner: String?, promise: Promise) {
     if (owner.isNullOrEmpty()) SearchRelayService.configure(context, null, false)
     try { CloudSyncSchedule.setOwner(context, owner); promise.resolve(null) }
-    catch (error: Exception) { promise.reject("CLOUD_SCHEDULE", "無法設定背景雲端同步", error) }
+    catch (error: Exception) { promise.reject("CLOUD_SCHEDULE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1145), error) }
   }
 
   @ReactMethod fun isCurrent(runId: String, promise: Promise) {
@@ -45,7 +45,7 @@ class CloudSyncModule(private val context: ReactApplicationContext) : ReactConte
 
   @ReactMethod fun cancelAccount(runId: String, promise: Promise) {
     try { CloudHistoryWorker.cancelAccount(context, runId); promise.resolve(null) }
-    catch (error: Exception) { promise.reject("CLOUD_CANCEL", "無法取消背景同步", error) }
+    catch (error: Exception) { promise.reject("CLOUD_CANCEL", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1146), error) }
   }
 
   companion object { const val NAME = "CloudBackgroundSync" }

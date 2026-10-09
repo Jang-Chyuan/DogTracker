@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LoadingContent } from '../components/Skeleton';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
@@ -75,23 +76,23 @@ export default function AccountSettings({
       row = (
         <ListRow
           testID="account-restoring"
-          title="暫時連不上，會自動重試"
-          label="暫時連不上，會自動重試"
+          title={t('c257')}
+          label={t('c257')}
         />
       );
     } else {
-      const title = page.expired ? '需要重新登入' : '未登入';
+      const title = page.expired ? t('c276') : t('c302');
       row = (
         <ListRow
           testID="account-signed-out"
           title={title}
           titleTone={page.expired ? 'crit' : undefined}
           problem={page.expired}
-          action="登入"
+          action={t('c006')}
           actionTone="tonal"
           chevron
           onPress={onSignIn}
-          label={`${title}，登入`}
+          label={t("c933", { title: title })}
         />
       );
     }
@@ -105,9 +106,7 @@ export default function AccountSettings({
         ]}
       >
         <GroupCard flat>{row}</GroupCard>
-        <Text style={styles.explain}>
-          登入後會把收到的位置上傳，也能看到隊友的狗。不登入也可以用，只顯示這支手機連到的接收器。
-        </Text>
+        <Text style={styles.explain}>{t('c002')}</Text>
       </ScrollView>
     );
   }
@@ -129,7 +128,7 @@ export default function AccountSettings({
       await work(controller.signal);
       if (current()) setDialog(null);
     } catch (failure) {
-      if (current()) setError(failure?.message || '沒有完成，請重試');
+      if (current()) setError(failure?.message || t("c937"));
     } finally {
       if (current()) { operation.current = null; setBusy(false); }
     }
@@ -156,23 +155,23 @@ export default function AccountSettings({
         <ListRow
           testID="account-signed-in"
           title={page.email}
-          detail="已登入"
-          label={`${page.email}，已登入`}
+          detail={t('c208')}
+          label={t("c934", { email: page.email })}
         >
           <Pressable
             testID="account-sign-out"
             accessibilityRole="button"
-            accessibilityLabel="登出"
+            accessibilityLabel={t('c209')}
             onPress={() => setDialog({ kind: 'signout' })}
             hitSlop={space.xs}
             style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
           >
-            <Text style={styles.signOutText}>登出</Text>
+            <Text style={styles.signOutText}>{t('c209')}</Text>
           </Pressable>
         </ListRow>
       </GroupCard>
 
-      <GroupTitle>下載</GroupTitle>
+      <GroupTitle>{t('c210')}</GroupTitle>
       <GroupCard flat>
         <StatusRow
           testID="account-download"
@@ -181,7 +180,7 @@ export default function AccountSettings({
         />
       </GroupCard>
 
-      <GroupTitle>上傳</GroupTitle>
+      <GroupTitle>{t('c214')}</GroupTitle>
       <GroupCard flat>
         {upload.visible && upload.problem && (
           <StatusRow
@@ -194,17 +193,17 @@ export default function AccountSettings({
           <>
             <ListRow
               testID="account-upload-pending"
-              title={upload.pending > 0 ? '手機還沒上傳' : '都已上傳'}
+              title={upload.pending > 0 ? t('c215') : t('c417')}
               right={upload.pending > 0 ? upload.pendingText : null}
               rightTone={['mutedBold']}
-              label={upload.pending > 0 ? `手機還沒上傳 ${upload.pendingText}` : '都已上傳'}
+              label={upload.pending > 0 ? t("c935", { pendingText: upload.pendingText }) : t('c417')}
             />
             <ListRow
               testID="account-upload-last"
-              title="最後上傳成功"
+              title={t('c217')}
               right={upload.lastText}
               rightTone={['mutedBold']}
-              label={`最後上傳成功 ${upload.lastText}`}
+              label={[t('c217'), upload.lastText].join(' ')}
             />
           </>
         )}
@@ -236,7 +235,7 @@ export default function AccountSettings({
         title={switching?.title}
         body={switching?.body}
         problem={switching?.blockedBy}
-        confirm={switching?.confirm ?? '切換'}
+        confirm={switching?.confirm ?? t("c928")}
         busy={busy}
         onCancel={close}
         onConfirm={() => run(signal => onSwitch(route.master, route.to, signal))}
@@ -247,7 +246,7 @@ export default function AccountSettings({
         title={signingOut?.title}
         body={signingOut?.body}
         problem={dialog?.kind === 'signout' ? error : null}
-        confirm={signingOut?.confirm ?? '登出'}
+        confirm={signingOut?.confirm ?? t('c209')}
         busy={busy}
         onCancel={close}
         onConfirm={() => run(onSignOut)}
@@ -266,7 +265,7 @@ function StatusRow({ row, onRetry, testID }) {
       problem={row.problem}
       right={row.right}
       rightTone={row.problem ? undefined : ['mutedBold']}
-      action={row.retry ? '重試 ›' : null}
+      action={row.retry ? t('c213') : null}
       actionTone="critAction"
       onPress={row.retry ? onRetry : undefined}
       label={row.label}

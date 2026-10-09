@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // 「今天 x km」 (design v3 A1/A2, 判定表「右下『今天 x km』」): how far this
 // phone's own recorded route went today, and what the bottom-right pill says.
 //
@@ -45,7 +46,7 @@ export function todayRouteDistance(rows, { now, dayStart = startOfToday(now), re
 /** 「今天 2.7 km」: tenths of a kilometre, rounded (判定表「距離的四捨五入」). */
 export function formatTodayDistance(metres) {
   const tenths = Math.round(Math.max(0, metres || 0) / 100);
-  return `今天 ${(tenths / 10).toFixed(1)} km`;
+  return t("c1041", { value: (tenths / 10).toFixed(1) });
 }
 
 /** Local midnight of `now`. */
@@ -86,12 +87,12 @@ export function todayPill({ route, livePhone, phone, now = null, waitingSince = 
   const icon = permissionProblem || noFix ? 'walk-off' : livePhone && !recording ? 'walk-muted' : 'walk';
   // Recording off (or not allowed) and nothing recorded today: 「未記錄」.
   const unrecorded = !recorded && (permissionProblem || (!!livePhone && !recording));
-  const text = unrecorded ? '未記錄' : formatTodayDistance(route?.metres || 0);
+  const text = unrecorded ? t('c309') : formatTodayDistance(route?.metres || 0);
   const reason = permissionProblem
-    ? (permission === 'approximate' ? '只給了大概位置' : !phone.services && permission === 'precise'
-      ? '定位服務關著' : '沒有定位權限')
-    : noFix ? '手機沒有定位' : livePhone && !recording ? '位置記錄關閉' : '';
-  const spoken = unrecorded ? '今天未記錄' : text.replace(' km', ' 公里');
+    ? (permission === 'approximate' ? t('c313') : !phone.services && permission === 'precise'
+      ? t("c1006") : t('c311'))
+    : noFix ? t("c726") : livePhone && !recording ? t("c1043") : '';
+  const spoken = unrecorded ? t("c1044") : text.replace(' km', t("c729"));
   return {
     text,
     icon,
@@ -99,6 +100,6 @@ export function todayPill({ route, livePhone, phone, now = null, waitingSince = 
     recorded,
     unrecorded,
     destination: unrecorded ? 'phone-settings' : 'history',
-    label: [spoken, reason, unrecorded ? '點兩下到手機設定' : null].filter(Boolean).join('，'),
+    label: [spoken, reason, unrecorded ? t("c1042") : null].filter(Boolean).join('，'),
   };
 }

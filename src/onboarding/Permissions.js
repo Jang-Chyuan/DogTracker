@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // D2 「App 需要這些權限」 (design D2a–D2d; 判定表「權限和 Android 版本」「D2 底部
 // 按鈕」「引導 D2 權限列」). Pure: which permissions this phone needs, what each
 // row says, and the button under them. usePermissionsGuide asks Android.
@@ -9,14 +10,14 @@
 // QR code is scanned.
 
 export const PERMISSION_ROWS = Object.freeze({
-  nearby: { title: '附近的裝置', purpose: '連接接收器' },
-  location: { title: '精確位置', purpose: '算出狗離你多遠、記錄你的路線；離開 App、鎖螢幕時也會繼續記錄，右下角或設定 → 手機可以隨時停止' },
-  notifications: { title: '通知', purpose: '狗出問題時提醒你' },
+  nearby: { title: t('c010'), purpose: t('c011') },
+  location: { title: t('c012'), purpose: t("c879") },
+  notifications: { title: t('c014'), purpose: t('c015') },
 });
 
 // The settings action on a row that is not allowed (c027's suggestion, the
 // same words as S4 and S6).
-export const SYSTEM_SETTINGS = '開系統設定 ›';
+export const SYSTEM_SETTINGS = t('c225');
 
 /** The rows this Android version (API level) asks for, in the design's order. */
 export function neededPermissions(version) {
@@ -72,25 +73,25 @@ export function permissionsPage({ needed, grants = {}, asked = [], asking = null
     const { title, purpose } = PERMISSION_ROWS[id];
     const base = { id, number: index + 1, title, action: null };
     const grant = grants[id];
-    if (askingAt >= 0 && index === askingAt) return { ...base, state: 'asking', detail: '詢問中…' };
-    if (askingAt >= 0 && index > askingAt && grant !== 'granted') return { ...base, state: 'waiting', detail: '等一下' };
-    if (grant === 'granted') return { ...base, state: 'ok', detail: '已允許' };
+    if (askingAt >= 0 && index === askingAt) return { ...base, state: 'asking', detail: t('c018') };
+    if (askingAt >= 0 && index > askingAt && grant !== 'granted') return { ...base, state: 'waiting', detail: t('c019') };
+    if (grant === 'granted') return { ...base, state: 'ok', detail: t('c017') };
     if (grant === 'approximate') {
-      return { ...base, state: 'problem', detail: '只給了大概位置，算不出距離', action: SYSTEM_SETTINGS };
+      return { ...base, state: 'problem', detail: t('c026'), action: SYSTEM_SETTINGS };
     }
-    if (grant === 'denied' && wasAsked(id)) return { ...base, state: 'problem', detail: '未允許', action: SYSTEM_SETTINGS };
+    if (grant === 'denied' && wasAsked(id)) return { ...base, state: 'problem', detail: t('c028'), action: SYSTEM_SETTINGS };
     return { ...base, state: 'todo', detail: purpose };
   });
   const allGranted = needed.length > 0 && needed.every(id => grants[id] === 'granted');
   const known = needed.every(id => grants[id] != null);
   let primary;
-  if (askingAt >= 0) primary = { id: 'asking', label: '詢問中…', disabled: true };
+  if (askingAt >= 0) primary = { id: 'asking', label: t('c018'), disabled: true };
   // Nothing left to ask (each one allowed, or asked already): 下一步.
   else if (known && askableIds({ needed, grants, asked }).length === 0) {
-    primary = { id: 'next', label: '下一步', disabled: false };
+    primary = { id: 'next', label: t('c029'), disabled: false };
   }
   // Until every row was checked the button waits (a moment at most).
-  else primary = { id: 'allowAll', label: '全部允許', disabled: !known };
+  else primary = { id: 'allowAll', label: t('c016'), disabled: !known };
   return { rows, primary, later: primary.id !== 'next', allGranted };
 }
 

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
@@ -74,7 +75,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
   let trackRepairs = 0;
   const rows = result => result.results || result.rows?._array || [];
   const requireOwner = owner => {
-    if (!owner) throw new Error('請先登入');
+    if (!owner) throw new Error(t("c572"));
   };
   return {
     async historyDownloadStates(owner, ids) {
@@ -238,7 +239,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         }]));
         if (checkpoint) {
           if (!Number.isInteger(checkpoint.masterId) || !Number.isFinite(Date.parse(checkpoint.throughAt))) {
-            throw new Error('同步進度格式不正確');
+            throw new Error(t("c574"));
           }
           commands.push({
             query: `INSERT OR REPLACE INTO cloud_sync_state
@@ -266,7 +267,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     async saveBucket(owner, masterId, bucketStart, cloudCount) {
       requireOwner(owner);
       if (![masterId, bucketStart, cloudCount].every(Number.isInteger)) {
-        throw new Error('核對紀錄格式不正確');
+        throw new Error(t("c573"));
       }
       // Keep two days so a phone that was away for a day still has the previous
       // verification to compare against; older hours are outside the window.

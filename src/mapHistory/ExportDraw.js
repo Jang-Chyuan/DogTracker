@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { size as tokenSize } from '../theme/tokens';
 import { PAW_STROKE } from '../map/PawGeometry';
 // The PNG pages as drawing operations for the native renderer
@@ -184,7 +185,7 @@ export function measuredCharacters(snapshot) {
     for (const row of subject.timeline || []) [row.title, row.coordinates, row.missing, row.note, row.pill?.text,
       row.lead, row.time, row.rest].forEach(add);
   }
-  add('DogTracker・狗的歷史（續）隻0123456789/:–（一二三四五六日）移動走了 km…');
+  add(t("c786"));
   return [...all].join('');
 }
 

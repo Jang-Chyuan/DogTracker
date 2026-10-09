@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // Second review of the 054a history logic against the v3 design (判定表
 // rows quoted above each test).
 import { historyMovement, historyTimeline, historyVisits, historyDeparture, historyStops } from '../src/history';
@@ -74,7 +75,7 @@ test('H2 order: stays and the car-to-foot switch share one numbering', () => {
 // 判定表「記錄被迫中止的終點膠囊」: a closed recording ends 「記錄已關閉 10:20」.
 test('a closed recording labels its end with the closing time', () => {
   const model = historyTimeline(morning(), { subject: 'phone', today: true, now: 4800000, following: false, closedAt: 4750000 });
-  expect(model.nodes[model.nodes.length - 1]).toMatchObject({ type: 'end', label: '記錄已關閉', closedAt: 4750000 });
+  expect(model.nodes[model.nodes.length - 1]).toMatchObject({ type: 'end', label: i18nT("c656"), closedAt: 4750000 });
 });
 
 // The pill re-runs departure detection on a whole day of fixes every poll.

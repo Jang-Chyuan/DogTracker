@@ -81,23 +81,23 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   fun clearExports(promise: Promise) {
     worker.execute {
       try { HistoryExportCleanup.clear(context); promise.resolve(null) }
-      catch (e: Exception) { promise.reject("EXPORT_CLEANUP", "無法清除匯出暫存檔", e) }
+      catch (e: Exception) { promise.reject("EXPORT_CLEANUP", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1055), e) }
     }
   }
 
   override fun getName() = "HistoryExport"
 
   private fun folder(directory: String): File {
-    require(Regex("^history_exports/[A-Za-z0-9_-]+$").matches(directory)) { "匯出資料夾無效" }
+    require(Regex("^history_exports/[A-Za-z0-9_-]+$").matches(directory)) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1056) }
     val dir = File(context.cacheDir, directory).canonicalFile
-    require(dir.parentFile == root.canonicalFile) { "匯出資料夾無效" }
+    require(dir.parentFile == root.canonicalFile) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1056) }
     dir.mkdirs()
     return dir
   }
 
   private fun fileIn(dir: File, filename: String): File {
     val file = File(dir, filename).canonicalFile
-    require(file.parentFile == dir && filename.isNotBlank()) { "匯出檔名無效" }
+    require(file.parentFile == dir && filename.isNotBlank()) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1057) }
     return file
   }
 
@@ -120,7 +120,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           result.putMap(key, table)
         }
         promise.resolve(result)
-      } catch (e: Exception) { promise.reject("EXPORT_FONT", "無法量字寬", e) }
+      } catch (e: Exception) { promise.reject("EXPORT_FONT", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1058), e) }
     }
   }
 
@@ -131,7 +131,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         val file = fileIn(folder(directory), filename)
         file.writeText(text, Charsets.UTF_8)
         promise.resolve(file.absolutePath)
-      } catch (e: Exception) { promise.reject("EXPORT_WRITE", "無法建立匯出檔案", e) }
+      } catch (e: Exception) { promise.reject("EXPORT_WRITE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1059), e) }
     }
   }
 
@@ -166,7 +166,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
       } catch (e: Exception) {
         com.dogtracker.AppLog.w("HistoryExport", "PNG export failed", e)
         written.forEach { it.delete() }
-        promise.reject("EXPORT_PNG", if (e is InterruptedException) "已取消" else "無法產生圖片", e)
+        promise.reject("EXPORT_PNG", if (e is InterruptedException) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1060) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1061), e)
       } finally { cancelled.remove(exportId) }
     }
   }
@@ -175,24 +175,24 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   fun share(paths: ReadableArray, mime: String, promise: Promise) {
     UiThreadUtil.runOnUiThread {
       try {
-        val activity = context.currentActivity ?: error("請回到 App 再分享")
+        val activity = context.currentActivity ?: error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1062))
         val uris = ArrayList<Uri>()
         for (i in 0 until paths.size()) {
           val file = File(paths.getString(i) ?: "").canonicalFile
-          require(file.path.startsWith(root.canonicalPath + File.separator) && file.isFile) { "匯出檔案無效" }
+          require(file.path.startsWith(root.canonicalPath + File.separator) && file.isFile) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1063) }
           uris.add(FileProvider.getUriForFile(context, context.packageName + ".historyexports", file))
         }
-        require(uris.isNotEmpty()) { "沒有匯出檔案" }
+        require(uris.isNotEmpty()) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1064) }
         val intent = if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
           else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
         intent.setType(mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         intent.clipData = ClipData.newRawUri("DogTracker", uris[0]).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
-        check(sharePromise == null) { "分享進行中" }
+        check(sharePromise == null) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1065) }
         sharePromise = promise
         val chosen = PendingIntent.getBroadcast(context, 7401,
           Intent(shareAction).setPackage(context.packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         activity.startActivityForResult(Intent.createChooser(intent, null, chosen.intentSender), 7401)
-      } catch (e: Exception) { sharePromise = null; com.dogtracker.AppLog.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", "無法開啟分享選單", e) }
+      } catch (e: Exception) { sharePromise = null; com.dogtracker.AppLog.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1066), e) }
     }
   }
 

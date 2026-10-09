@@ -1,9 +1,10 @@
+import { t } from '../i18n';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { radius, space, type, touch } from '../theme/tokens';
 
 // c273 with its suggestion: say which data cannot be opened.
-export const START_FAILED_TITLE = '手機裡的資料打不開';
+export const START_FAILED_TITLE = t("c909");
 
 /**
  * D0 啟動失敗: the database on this phone could not be opened, so there is
@@ -27,23 +28,23 @@ export default function StartFailedScreen({
         <Pressable
           testID="start-failed-retry"
           accessibilityRole="button"
-          accessibilityLabel="重試"
+          accessibilityLabel={t('c049')}
           onPress={onRetry}
           style={({ pressed }) => [
             styles.primary,
             pressed && styles.pressedButton,
           ]}
         >
-          <Text style={styles.primaryText}>重試</Text>
+          <Text style={styles.primaryText}>{t('c049')}</Text>
         </Pressable>
         <Pressable
           testID="start-failed-diagnostics"
           accessibilityRole="button"
-          accessibilityLabel="診斷"
+          accessibilityLabel={t('c186')}
           onPress={onDiagnostics}
           style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
         >
-          <Text style={styles.secondaryText}>診斷</Text>
+          <Text style={styles.secondaryText}>{t('c186')}</Text>
         </Pressable>
       </View>
     </View>

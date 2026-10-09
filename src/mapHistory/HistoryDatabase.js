@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { logger } from '../logger';
 import { simplifyRoute } from '../tracking/SimplifyRoute';
 import { normalizeAvatar } from '../dogs/DogArt';
@@ -34,7 +35,7 @@ const idList = value => (Array.isArray(value) ? value : [value])
 export function validateHistory(value) {
   const p = { ...HISTORY_DEFAULTS, ...value };
   if (p.dogAliases !== undefined) p.dogAliases = normalizeDogAliases(p.dogAliases);
-  if (!['recent', 'fixed'].includes(p.timeMode)) throw new Error('時間模式無效');
+  if (!['recent', 'fixed'].includes(p.timeMode)) throw new Error(t("c815"));
   // The tab decides whether history is shown, so a stored `enabled` from an
   // older version is dropped rather than obeyed. Single ids from an older
   // version become one-element lists.
@@ -68,7 +69,7 @@ export function validateHistory(value) {
   if (!['phone', 'client'].every(key => typeof p[key] === 'boolean') ||
       !['ble', 'cloud'].includes(p.source) || !Number.isFinite(p.hours) || p.hours <= 0 || p.hours > 240 ||
       !p.masters.length || !p.slaves.length)
-    throw new Error('請輸入有效設定：時數 0～240（不含 0），並至少選一隻狗與一台 Master');
+    throw new Error(t("c816"));
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
@@ -134,9 +135,9 @@ export function createHistoryDatabase(db) {
     },
     // null removes the dog's own face, back to the default illustration.
     async saveDogAvatar(slaveId, avatar) {
-      if (!Number.isInteger(slaveId) || slaveId < 1) throw new Error('狗的編號格式錯誤');
+      if (!Number.isInteger(slaveId) || slaveId < 1) throw new Error(t("c812"));
       const value = normalizeAvatar(avatar);
-      if (avatar != null && !value) throw new Error('頭像格式錯誤');
+      if (avatar != null && !value) throw new Error(t("c813"));
       await db.executeAsync(AVATAR_TABLE);
       if (value) await db.executeAsync('INSERT OR REPLACE INTO dog_avatars(slave_id,value) VALUES(?,?)', [slaveId, JSON.stringify(value)]);
       else await db.executeAsync('DELETE FROM dog_avatars WHERE slave_id=?', [slaveId]);
@@ -397,7 +398,7 @@ export function createHistoryDatabase(db) {
             ...(raw ? { rows: entry.rows } : historyGeometry(entry.rows)),
           })),
           since, until, coverage,
-          message: p.client && p.source === 'cloud' && !owner ? '請先登入雲端帳號，才能查看該帳號下載的定位。' : '' };
+          message: p.client && p.source === 'cloud' && !owner ? t("c814") : '' };
         const output = raw ? result : budgetHistory(result);
         logger.info(`[History timing] totalMs=${Date.now() - startedAt} raw=${raw}`);
         return output;

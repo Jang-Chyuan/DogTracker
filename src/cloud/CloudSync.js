@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { downloadMasterIncremental, listCloudMasters } from './CloudIncremental';
 import { withCloudSyncSlot, cancelBackgroundSync } from './CloudSyncSlot';
 import { reconcileCloudWindow } from './CloudReconcile';
@@ -50,7 +51,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     controller = abort;
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, 120000);
-    const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error('同步已取消'); };
+    const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t("c586")); };
     // Each pass reports a refusal of the sign-in on its own (authFailed).
     publish({ busy: true, mode: 'auto', error: '', authFailed: false });
     running = withCloudSyncSlot(async () => {
@@ -93,7 +94,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         publish({ lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
       } catch (error) {
         if (valid(version) && (!abort.signal.aborted || timedOut)) {
-          publish({ error: timedOut ? '同步逾時，已儲存批次保留，稍後重試' : error.message,
+          publish({ error: timedOut ? t("c587") : error.message,
             failingSince: state.failingSince ?? now(), authFailed: !timedOut && isAuthFailure(error),
             offline: timedOut || isNetworkFailure(error) });
         }
@@ -140,13 +141,13 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     // S3 「重試」: a pass now instead of at the next 30-second tick.
     retry() { wake(); },
     async runManual(work, abort = new AbortController()) {
-      if (manualPending || state.mode === 'manual') throw new Error('已有下載進行中');
+      if (manualPending || state.mode === 'manual') throw new Error(t("c585"));
       const version = generation;
       manualPending = true;
       controller?.abort();
       try {
         await running;
-        if (!valid(version) || abort.signal.aborted) throw new Error('下載已取消');
+        if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
         controller = abort;
         publish({ busy: true, mode: 'manual' });
         running = withCloudSyncSlot(() => {
