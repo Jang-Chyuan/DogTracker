@@ -147,6 +147,7 @@ test.each([
   ['alerts-in-history', 'history', '豆豆 不在接收範圍', 1],
   ['alerts-in-dog-history', 'history', '豆豆 不在接收範圍', 2],
   ['alerts-in-history-off', 'history', null, 2],
+  ['alerts-history-receiver-down', 'history', '接收器 7 已斷線（3 隻狗收不到）', 1],
   ['alerts-in-settings', 'settings', '接收器 7 已斷線（3 隻狗收不到）', null],
 ])('%s: its N3 card and history-only badge', (name, screen, title, count) => {
   const { fixture, card, after } = firstStep(name, screen);
