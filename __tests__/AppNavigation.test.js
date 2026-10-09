@@ -112,16 +112,12 @@ beforeEach(async () => {
     onAppState = callback;
     return { remove: jest.fn() };
   });
-  jest
-    .spyOn(BackHandler, 'addEventListener')
-    .mockImplementation((_, callback) => {
-      onBack = callback;
-      return {
-        remove: jest.fn(() => {
-          if (onBack === callback) onBack = null;
-        }),
-      };
-    });
+  const backHandlers = [];
+  onBack = () => [...backHandlers].reverse().some(handler => handler());
+  jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_, callback) => {
+    backHandlers.push(callback);
+    return { remove: jest.fn(() => { const index = backHandlers.indexOf(callback); if (index >= 0) backHandlers.splice(index, 1); }) };
+  });
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -1110,4 +1106,13 @@ test('K02: foreground settings keep polling the alert dog snapshot', async () =>
   const after = renderer.root.findByType(MapScreen).props.cloudDogs;
   expect(after).not.toBe(before);
   expect(after.packets.some(row => row.slave_id === 19)).toBe(true);
+});
+
+test('K08: rerenders do not register a newer root back handler', async () => {
+  await mount();
+  await advance(100);
+  const handlers = BackHandler.addEventListener.mock.calls.length;
+  await act(async () => renderer.update(<App />));
+  await advance(10000);
+  expect(BackHandler.addEventListener.mock.calls.length).toBe(handlers);
 });

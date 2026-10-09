@@ -947,10 +947,8 @@ function TrackerApp({ resume = null, onRestart }) {
       row => row.status === 'pending' && Number(row.count) > 0,
     );
 
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener(
-      'hardwareBackPress',
-      () => {
+  const rootBack = useRef(null);
+  rootBack.current = () => {
         // The live map an alert opened over a kept page: its card's own back
         // steps first (A4, A5, closing the card returns via cardChanged);
         // without a card, back to that page.
@@ -971,12 +969,11 @@ function TrackerApp({ resume = null, onRestart }) {
         else if (route.name === 'startFailed') BackHandler.exitApp();
         else goBack();
         return true;
-      },
-    );
+  };
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => rootBack.current());
     return () => subscription.remove();
-    // goBack reads route and cardHistory, both listed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route, cardHistory, uploading, stack.length]);
+  }, []);
 
   let page = null;
   switch (route.name) {
