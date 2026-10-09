@@ -27,7 +27,7 @@
       android:dataExtractionRules="@xml/data_extraction_rules"
       android:fullBackupContent="@xml/backup_rules"
       android:theme="@style/AppTheme"
-      android:usesCleartextTraffic="${usesCleartextTraffic}"
+      android:usesCleartextTraffic="false"
       android:supportsRtl="true">
       <meta-data android:name="com.google.android.geo.API_KEY" android:value="${googleMapsApiKey}" />
       <provider android:name="androidx.core.content.FileProvider"
