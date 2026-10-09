@@ -13,6 +13,9 @@ import HistoryBottomSheet from './HistoryBottomSheet';
 import Glyph from '../map/Glyph';
 import { EXPORT_FORMATS } from './useHistoryExport';
 
+// Export's paired actions need a larger glyph than inline card symbols.
+const ACTION_ICON = 32;
+
 /** 「匯出 08:03–12:11」 (always one day; the end is the last fix's time). */
 export const exportTitle = range => (range ? t('c160', { time: clock(range.start), time2: clock(range.end) }) : t("c821"));
 
@@ -65,12 +68,12 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
             accessibilityLabel={t('c1171', { format: format.title })}
             onPress={() => exporter.start(format.id)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-            <Glyph name="share" color={colors.tonalText} />
+            <Glyph name="share" color={colors.tonalText} size={ACTION_ICON} />
           </Pressable>
           {exporter.canSave && <Pressable testID={`history-export-save-${format.id}`} accessibilityRole="button"
             accessibilityLabel={t('c1166', { format: format.title })} onPress={() => exporter.save(format.id)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-            <Glyph name="download" color={colors.tonalText} />
+            <Glyph name="download" color={colors.tonalText} size={ACTION_ICON} />
           </Pressable>}
         </View>
       );
@@ -95,8 +98,9 @@ const getStyles = makeStyles(({ colors }) => StyleSheet.create({
   divided: { borderTopWidth: border.hairline, borderTopColor: colors.line },
   // Format words stay separate from the two independent actions.
   formatRow: { flexDirection: 'row', alignItems: 'center', gap: space.s },
-  iconButton: { minHeight: touch.min, minWidth: touch.min, alignItems: 'center',
-    justifyContent: 'center', borderRadius: radius.full, flexShrink: 0 },
+  iconButton: { minHeight: touch.primary, minWidth: touch.primary, alignItems: 'center',
+    justifyContent: 'center', borderRadius: radius.full, flexShrink: 0,
+    backgroundColor: colors.brandSoft },
   pressed: { backgroundColor: colors.pressedOverlay },
   texts: { flex: 1, minWidth: 0 },
   format: { ...type.status, color: colors.text },

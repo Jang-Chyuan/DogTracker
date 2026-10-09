@@ -194,11 +194,13 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
       )}
       {name === 'close' && <Path d="M6 6l12 12M18 6 6 18" {...stroke} />}
       {name === 'share' && (
-        // 匯出 (history top right): an arrow up out of a tray.
-        <Path
-          d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"
-          {...stroke}
-        />
+        // Android sharing: three connected nodes, also used by history export.
+        <>
+          <Path d="M6 12 18 5M6 12l12 7" {...stroke} />
+          <Circle cx={6} cy={12} r={3} fill={color} />
+          <Circle cx={18} cy={5} r={3} fill={color} />
+          <Circle cx={18} cy={19} r={3} fill={color} />
+        </>
       )}
       {name === 'download' && (
         <Path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 16v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" {...stroke} />
