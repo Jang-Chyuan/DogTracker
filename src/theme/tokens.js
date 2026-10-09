@@ -300,6 +300,11 @@ export const size = {
     barLabel: 40,
     legendSwatch: 10,
     zoneLabelInset: 2,
+    // D20 day view: 96 quarter-hour bars, 1dp apart, 1.5dp top corners; an
+    // empty quarter is a 3dp no-data line.
+    dayBarGap: 1,
+    dayBarRadius: 1.5,
+    dayGapHeight: 3,
 
     // activity axis label in its illustration/layout specification.
     axisLabel: 44,

@@ -1,7 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler } from 'react-native';
-import ActivityScreen, { curveRuns, periodLabel } from '../src/activity/ActivityScreen';
+import ActivityScreen, { periodLabel } from '../src/activity/ActivityScreen';
 
 const M = 60000;
 const NOW = new Date(2026, 9, 7, 9, 30, 40).getTime();
@@ -142,13 +142,14 @@ test('沒有活動量資料 for a dog without readings; both arrows off', async 
   expect(states).toEqual([true, true]);
 });
 
-test('the curve breaks at minutes without data; a lone minute is a short dash', () => {
-  const points = [0.1, 0.2, null, 0.5, null, 0.3, 0.4].map(value => ({ value }));
-  const runs = curveRuns(points, 70, 100);
-  expect(runs).toHaveLength(3);
-  expect(runs[1].split(' ')).toHaveLength(2);
+test('day chart exposes one duration summary and the shared four-state legend', async () => {
+  const { read, readEarliest } = reader();
+  await mount({ read, readEarliest });
+  const chart = renderer.root.findAll(node => node.props.testID === 'activity-day-summary')[0];
+  expect(chart.props.accessible).toBe(true);
+  expect(chart.props.accessibilityLabel).toBe('休息 6 小時，一般 3 小時 30 分');
+  expect(flatten(renderer.toJSON())).toContain('休息一般劇烈沒有資料');
   expect(periodLabel('day', NOW, NOW)).toBe('10/7（三）今天');
-  expect(periodLabel('day', NOW - 1440 * M, NOW)).toBe('10/6（二）');
 });
 
 test('a tab switch that lands before the first reading shows the first period with data', async () => {
@@ -180,4 +181,23 @@ test('another reader (account) never shows the old answer; the first reading is 
     readEarliest={readEarliest} onBack={jest.fn()} />));
   expect(flatten(renderer.toJSON())).not.toContain('載入中…');
   expect(renderer.root.findByType(require('../src/components/Skeleton').LoadingContent).props.loading).toBe(true);
+});
+
+test.each(['light', 'dark'])('day bars use %s tokens, 1dp gaps and rounded tops; missing rows survive empty data', async mode => {
+  const { ThemeScope, lightTheme, darkTheme } = require('../src/theme/ThemeProvider');
+  const { StyleSheet } = require('react-native');
+  const theme = mode === 'light' ? lightTheme : darkTheme;
+  const read = async () => ({ minutes: [{ minute: NOW - M - 40000, value: 0.3, count: 1 }] });
+  await act(async () => {
+    renderer = Renderer.create(<ThemeScope theme={theme}><ActivityScreen name="小黑" slaveId={6}
+      now={NOW} read={read} readEarliest={async () => FIRST} onBack={jest.fn()} /></ThemeScope>);
+  });
+  const chart = renderer.root.findAll(node => node.props.testID === 'activity-day-chart')[0];
+  expect(StyleSheet.flatten(chart.props.style).gap).toBe(1);
+  const bar = renderer.root.findAll(node => node.props.testID === 'activity-day-bar-37')[0];
+  expect(StyleSheet.flatten(bar.props.style)).toMatchObject({ height: 60,
+    backgroundColor: theme.colors.activityNormal, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 });
+  const gap = renderer.root.findAll(node => node.props.testID === 'activity-day-gap-0')[0];
+  expect(StyleSheet.flatten(gap.props.style).backgroundColor).toBe(theme.colors.noDataLine);
+  expect(text('activity-row-missing')).toContain('合計');
 });
