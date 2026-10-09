@@ -9,10 +9,12 @@
 //   adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml shot.xml
 //   node scripts/touch-audit.js [--density 2.75] shot.xml [more.xml …]
 //
-// Only the app's own nodes (package com.dogtracker) count; the Google map's
+// Only the app's own nodes (PACKAGE, or com.antgo.dogtracker / com.dogtracker) count; the Google map's
 // own markers and tiles are left out (the map SDK draws them).
 const fs = require('fs');
 const path = require('path');
+
+const APP_PACKAGES = new Set(process.env.PACKAGE ? [process.env.PACKAGE] : ['com.antgo.dogtracker', 'com.dogtracker']);
 
 const args = process.argv.slice(2);
 let density = 2.75; // Pixel 4a: 440 dpi
@@ -34,7 +36,7 @@ for (const file of files) {
   const nodes = xml.match(/<node [^>]*>/g) || [];
   const lines = [];
   for (const node of nodes) {
-    if (attr(node, 'package') !== 'com.dogtracker') continue;
+    if (!APP_PACKAGES.has(attr(node, 'package'))) continue;
     const clickable = attr(node, 'clickable') === 'true';
     const focusable = attr(node, 'focusable') === 'true';
     if (!clickable && !focusable) continue;

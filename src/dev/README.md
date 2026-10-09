@@ -33,7 +33,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
 | 提醒（058a） | 情境自己的提醒引擎（`useAlertEngine`，不存進手機）跑在情境的假時鐘上；`alertPause: { since, until }` 開的時候已經暫停；`&page=alertPreview` 的「+N 分」把假時鐘往前移、「App 在背景」模擬背景，看合併通知的內容、`notify`／`update`／收起、震動節奏和 N3 卡片；「App 在背景」時情境的假問題會發出真的系統通知（058b），可以拉下通知欄看、按按鈕 | `AlertEvents` → `AlertScheduler` → `AlertContent`、`AlertEffects` → `AlertNotifications`（原生） |
-| 背景提醒（058b） | 沒有接收器時用 `DebugAlertFeed`（debug 版才有的廣播）餵假封包給原生的背景提醒判斷：`PACKAGE=${PACKAGE:-com.antgo.dogtracker}; adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_PACKET --ei sid 4 --ef lat … --ef lon … --ef mlat … --ef mlon … [--ei bp 15] [--el at <ms>]`，再 `-a com.dogtracker.debug.ALERT_STEP [--ez connected false --el disconnectedAt <ms>] [--el at <ms>]` 跑一步（App 在畫面上時不跑，輪到 App 自己判斷）；`ALERT_RESET` 全部清掉。座標只用桃園站附近的假位置 | `BackgroundAlerts.evaluate`（和 App 同一份規則的 Kotlin 版，`AlertParityTest`）→ `AlertPoster` |
+| 背景提醒（058b） | 沒有接收器時用 `DebugAlertFeed`（debug 版才有的廣播）餵假封包給原生的背景提醒判斷：`. scripts/app-package.sh; adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_PACKET --ei sid 4 --ef lat … --ef lon … --ef mlat … --ef mlon … [--ei bp 15] [--el at <ms>]`，再 `-a com.dogtracker.debug.ALERT_STEP [--ez connected false --el disconnectedAt <ms>] [--el at <ms>]` 跑一步（App 在畫面上時不跑，輪到 App 自己判斷）；`ALERT_RESET` 全部清掉。座標只用桃園站附近的假位置 | `BackgroundAlerts.evaluate`（和 App 同一份規則的 Kotlin 版，`AlertParityTest`）→ `AlertPoster` |
 | 提醒設定 | `alerts`（AlertPreferences，沒給就是預設）、`alertsOpen`（S6「狗」展開）；S6 的開關只改記憶體（`useFixtureEdits`），不寫進這支手機的設定 | `alertsPage`、`alertsHomeStatus` → S6、S1「提醒」 |
 | 診斷的資料頁 | `diagnostics`：同一批列照即時資料（`dog_status` 新的在前）、本機／雲端資料（登入的帳號、含原始 JSON）、記錄清單（`phone.today` 當 `myLocationTracker` 的列）的讀法交出；`readFailure` 讓三頁都讀取失敗 | `LiveDataSettings`、`CloudDataScreen`、`LocationTrackerScreen`；S8 的速度緩衝讀同一批 `dog_status` 列 |
 | 接收器 Wi-Fi | `wifi`（接收器存的網路，預設「家裡、辦公室」、使用中「家裡」）；新增、刪除只改記憶體 | `useReceiverWifi` → S7 第二行、Wi-Fi 頁 |
@@ -186,7 +186,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 
 ## 截圖
 
-以下 adb 範例先設定 `export PACKAGE=${PACKAGE:-com.antgo.dogtracker}`；截圖腳本也使用相同預設值。目前 debug 沒有 `applicationIdSuffix`；若之後加上 `.debug`，請設為 `com.antgo.dogtracker.debug`。此分支尚未套用 main 的 applicationId 更名時，請以實際安裝的 applicationId 覆寫 `PACKAGE`。
+以下 adb 範例先執行 `. scripts/app-package.sh`：它把 `PACKAGE` 設成裝置上實際安裝的 applicationId（先找 `com.antgo.dogtracker`，再找 `com.dogtracker`；都沒裝就停下來）。`PACKAGE` 已經有值時照用，例如之後 debug 加上 `applicationIdSuffix` 時設 `PACKAGE=com.antgo.dogtracker.debug`。`scripts/fixture-screenshots.sh`、`scripts/layout-audit.sh` 用同一個檔案；`scripts/layout-audit.js`、`scripts/touch-audit.js` 只看 `PACKAGE`（沒設時兩個 id 都算）的節點。
 
 ```bash
 npm start                                  # Metro（另一個終端機或背景）

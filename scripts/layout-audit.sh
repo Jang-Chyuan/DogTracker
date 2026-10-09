@@ -6,8 +6,12 @@
 # the theme back to light at the end.
 #
 #   ANDROID_SERIAL=emulator-5554 scripts/layout-audit.sh [out-dir] [fixture ...]
+#
+# The app is the installed applicationId (scripts/app-package.sh); PACKAGE
+# overrides it.
 set -e
 cd "$(dirname "$0")/.."
+. scripts/app-package.sh
 OUT=${1:-layout-audit}
 shift 2>/dev/null || true
 NAMES=${*:-$(sed -n "s/^  '\([a-z0-9-]*\)': now =>.*/\1/p" src/dev/ScreenFixtures.js)}
@@ -20,7 +24,7 @@ open_link() {
     *@*) query="name=${1%@*}\\&page=${1#*@}" ;;
     *) query="name=$1" ;;
   esac
-  adb shell am start -W -a android.intent.action.VIEW -d "dogtracker://dev/fixture?$query" com.dogtracker >/dev/null
+  adb shell am start -W -a android.intent.action.VIEW -d "dogtracker://dev/fixture?$query" "$PACKAGE" >/dev/null
 }
 wait_for() {
   tries=0
@@ -47,8 +51,8 @@ for theme in $THEMES; do
     mkdir -p "$set_dir"
     adb shell settings put system font_scale "$scale"
     adb shell cmd uimode night "$theme" >/dev/null
-    adb shell am force-stop com.dogtracker
-    adb shell monkey -p com.dogtracker -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    adb shell am force-stop "$PACKAGE"
+    adb shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     sleep 40
     for name in $NAMES; do
       # Back to the map between fixtures, so a settings page does not stay open.
