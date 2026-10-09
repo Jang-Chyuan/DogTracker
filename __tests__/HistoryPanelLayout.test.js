@@ -5,31 +5,34 @@ import HistoryPanel from '../src/mapHistory/HistoryPanel';
 import MyRouteHeader from '../src/history/screen/MyRouteHeader';
 import Glyph from '../src/map/Glyph';
 import { historyPanelMaxHeight } from '../src/map/MapPanelHeight';
+import { withAlpha } from '../src/history/screen/HistoryMapModel';
 import { overlayFramePadding } from '../src/map/MapFraming';
 import { ThemeScope, lightTheme, darkTheme } from '../src/theme/ThemeProvider';
-import { size, space, border, fontWeight } from '../src/theme/tokens';
+import { space, border, fontWeight, radius } from '../src/theme/tokens';
 
 jest.mock('react-native-safe-area-context', () => ({
   ...jest.requireActual('react-native-safe-area-context'),
   useSafeAreaInsets: jest.fn(() => ({ top: 24, bottom: 20, left: 0, right: 0 })),
 }));
 
-test.each([lightTheme, darkTheme])('my route is a header with a person glyph and themed halo ($isDark)', async theme => {
+test.each([lightTheme, darkTheme])('my route is a header with a person glyph and themed translucent backing ($isDark)', async theme => {
   let renderer;
   await act(async () => { renderer = Renderer.create(<ThemeScope theme={theme}><MyRouteHeader /></ThemeScope>); });
   const header = renderer.root.findByProps({ testID: 'history-my-route-header' });
   expect(header.props.accessibilityRole).toBe('header');
   expect(header.props.onPress).toBeUndefined();
   const rowStyle = StyleSheet.flatten(header.props.style);
-  expect(rowStyle.backgroundColor).toBeUndefined();
-  expect(rowStyle.borderRadius).toBeUndefined();
+  expect(rowStyle.backgroundColor).toBe(withAlpha(theme.colors.surface, theme.opacity.mapHeaderBacking));
+  expect(rowStyle.borderRadius).toBe(radius.full);
+  expect(rowStyle.shadowColor).toBeUndefined();
+  expect(rowStyle.elevation).toBeUndefined();
+  expect(rowStyle.borderWidth).toBeUndefined();
   expect(renderer.root.findByType(Glyph).props.name).toBe('person');
   expect(StyleSheet.flatten(renderer.root.findByProps({ testID: 'history-my-route-avatar' }).props.style))
     .toMatchObject({ width: 32, height: 32, borderWidth: border.strong,
       borderColor: theme.colors.phone, backgroundColor: theme.settingIcon.phone.bg });
   expect(StyleSheet.flatten(renderer.root.findByType(Text).props.style)).toMatchObject({
-    fontWeight: fontWeight.medium, color: theme.colors.text, textShadowColor: theme.colors.mapLabelHalo,
-    textShadowRadius: size.mapLabel.halo,
+    fontWeight: fontWeight.medium, color: theme.colors.text,
   });
   await act(async () => renderer.unmount());
 });

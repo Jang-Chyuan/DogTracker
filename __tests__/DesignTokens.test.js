@@ -294,9 +294,20 @@ test('the original light palette is unchanged', () => {
       'utf8',
     ),
   );
+  // 070-j adds a dedicated map-header alpha. Keep exact equality for every
+  // pre-existing token; allow only this explicit addition, verified below.
+  const originalOpacity = { ...tokens.opacity };
+  delete originalOpacity.mapHeaderBacking;
   Object.entries(baseline).forEach(([group, value]) =>
-    expect(tokens[group]).toEqual(value),
+    expect(group === 'opacity' ? originalOpacity : tokens[group]).toEqual(value),
   );
+});
+
+test('the new map-header backing alpha is explicitly 85% in both themes', () => {
+  expect(tokens.opacity.mapHeaderBacking).toBe(0.85);
+  expect(lightTheme.opacity.mapHeaderBacking).toBe(0.85);
+  expect(darkSpec.opacity.mapHeaderBacking).toBe(0.85);
+  expect(darkTheme.opacity.mapHeaderBacking).toBe(0.85);
 });
 
 describe('dark text and graphic contrast', () => {

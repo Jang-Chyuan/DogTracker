@@ -11,7 +11,7 @@ import { size as sizes } from '../../theme/tokens';
 import { protagonist as pickProtagonist } from './HistoryScreenDogs';
 import { screenCursor } from './HistoryScreenCursor';
 import { nearestRecord } from './HistoryScreenRange';
-import { historyMapPresentation, withAlpha } from './HistoryMapModel';
+import { historyMapPresentation, stayAwareModelEdges, withAlpha } from './HistoryMapModel';
 
 /** A held packet counts as a day record, across both sources. */
 export function dayHasRecords(rows = [], { dayStart = -Infinity, dayEnd = Infinity } = {}) {
@@ -112,6 +112,7 @@ export function multiDayModel(subjects, options) {
   });
   const entries = subjects.map((s, i) => ({
     id: s.id,
+    subject: s.subject || 'dog',
     model: models[i],
     dayRecords: !!models[i]?.dayRecords,
     hasData: !!models[i]?.points.length,
@@ -229,13 +230,14 @@ export function multiMapPresentation(day, cursors, look, theme = getTheme()) {
     color: look[main.id]?.color ?? colors.route1,
     cursor,
     theme,
+    subject: main.subject,
   });
   if (day.subjects.length === 1) return base;
   const cursorTime = cursor?.time ?? cursor?.point?.time ?? Infinity;
   const others = day.subjects.filter(s => s.id !== main.id && s.hasData);
   const lines = others.flatMap(s =>
     otherLines(
-      s.model.edges || [],
+      stayAwareModelEdges(s.model),
       look[s.id]?.color ?? colors.route2,
       cursorTime,
       theme,

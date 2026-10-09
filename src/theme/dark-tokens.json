@@ -85,6 +85,7 @@
     }
   },
   "opacity": {
+    "mapHeaderBacking": 0.85,
     "rangeRingStroke": 0.75,
     "rangeRingFill": 0.1,
     "phoneAccuracy": 0.2,
