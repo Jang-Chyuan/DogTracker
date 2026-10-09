@@ -15,12 +15,9 @@ class CloudSyncModule(private val context: ReactApplicationContext) : ReactConte
 
   @ReactMethod fun configureSearch(owner: String?, enabled: Boolean, promise: Promise) {
     try {
-      val intent = android.content.Intent(context, SearchRelayService::class.java)
-      if (!enabled || owner.isNullOrEmpty()) context.stopService(intent)
-      else if (SearchRelayService.instance?.belongsTo(owner) == false) context.stopService(intent)
-      else if (SearchRelayService.timedOut) throw IllegalStateException("搜尋轉送已達 Android 執行時限")
-      else if (com.dogtracker.BleForegroundService.isRunning && SearchRelayService.instance == null)
-        context.startForegroundService(intent.putExtra("owner", owner))
+      if (enabled && !owner.isNullOrEmpty() && SearchRelayService.timedOut)
+        throw IllegalStateException("搜尋轉送已達 Android 執行時限")
+      SearchRelayService.configure(context, owner, enabled)
       promise.resolve(null)
     } catch (error: Exception) { promise.reject("SEARCH_RELAY", "無法啟動搜尋轉送", error) }
   }
@@ -32,7 +29,7 @@ class CloudSyncModule(private val context: ReactApplicationContext) : ReactConte
   }
 
   @ReactMethod fun setOwner(owner: String?, promise: Promise) {
-    if (owner.isNullOrEmpty()) context.stopService(android.content.Intent(context, SearchRelayService::class.java))
+    if (owner.isNullOrEmpty()) SearchRelayService.configure(context, null, false)
     try { CloudSyncSchedule.setOwner(context, owner); promise.resolve(null) }
     catch (error: Exception) { promise.reject("CLOUD_SCHEDULE", "無法設定背景雲端同步", error) }
   }

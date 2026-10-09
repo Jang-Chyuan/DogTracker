@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.io.File
 
 /** One native owner for both background writes and the history screen. */
-class DogStatusStore private constructor(context: Context) {
+class DogStatusStore private constructor(private val context: Context) {
   companion object {
     @Volatile private var instance: DogStatusStore? = null
     fun get(context: Context): DogStatusStore = instance ?: synchronized(this) {
@@ -73,9 +73,16 @@ class DogStatusStore private constructor(context: Context) {
     BleUploadQueue.initialize(db)
   }
 
+  @Synchronized fun nextSearchRetry(owner: String): Long? =
+    db.rawQuery("SELECT MIN(next_retry_at) FROM ble_upload_queue WHERE owner_user_id=? AND status='pending'", arrayOf(owner)).use {
+      if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
+    }
+
   @Synchronized fun save(data: JSONObject, payload: String, receivedAt: Long) {
     // Upload retention and identity are independent of the one-second map feed throttle.
-    BleUploadQueue.enqueue(db, data, payload, receivedAt)
+    BleUploadQueue.enqueue(db, data, payload, receivedAt)?.let { owner ->
+      com.dogtracker.cloud.SearchRelayService.queued(context, owner)
+    }
     val slave = (value(data, listOf("slave_id", "sid")) as? Number)?.toDouble() ?: return
     if (slave <= 0 || slave > Int.MAX_VALUE || slave % 1.0 != 0.0) return
     val slaveId = slave.toInt()
