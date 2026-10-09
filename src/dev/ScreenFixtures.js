@@ -416,10 +416,10 @@ const dog5Walk = (now, today = true) => dogDay(today ? now : now - 24 * 60 * MIN
   [{ walk: 25, bearing: 200, speed: 0.6 }, { stay: 10 }, { walk: 20, bearing: 320, speed: 0.6 }]);
 
 // 小黑's history (看軌跡) with `dogs` added; 狗 5 is a live dog on the map (so
-// it can be added). `view`: the protagonist, the source, an open sheet, the
+// it can be added). `view`: the protagonist, an open sheet, the
 // cursor `cursorAgo` before now.
-function multiFixture(now, { dogs = [], protagonist = null, source = null, sheet = null, fiveToday = true,
-  cursorAgo = null, exportView = null }) {
+function multiFixture(now, { dogs = [], protagonist = null, sheet = null, fiveToday = true,
+  cursorAgo = null, exportView = null } = {}) {
   const base = FIXTURES['all-good'](now);
   const cloud = afuMorning(now);
   return {
@@ -428,7 +428,7 @@ function multiFixture(now, { dogs = [], protagonist = null, source = null, sheet
     ble: [...base.ble, ...series(bleRow, now, { slave: 5, from: 4 * MINUTE, to: 60 * SECOND, start: [-12, 30] })],
     history: historyPage(now, { slave: 6, ble: [...dogMorning(now), ...doudouMorning(now), ...dog5Walk(now, fiveToday)],
       cloudRows: cloud }),
-    historyView: { dogs, protagonist, source, sheet, cursorAgo, export: exportView },
+    historyView: { dogs, protagonist, sheet, cursorAgo, export: exportView },
     geocoder: { names: HISTORY_NAMES },
   };
 }
@@ -921,7 +921,10 @@ const FIXTURES = {
   'cloud-signed-out': now => ({ ...FIXTURES['signed-out-map'](now), openRoute: 'cloud' }),
   // Signed in, all well: last download 5 s ago, nothing waiting, receiver 7
   // uploads through this phone.
-  'cloud-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud' }),
+  'cloud-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud', upload: uploading(now) }),
+  // Every receiver uses its own Wi-Fi: only upload route rows are shown.
+  'cloud-wifi-only': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
+    upload: uploading(now, { phone: [], wifi: [7, 8] }) }),
   // Uploads waiting: 12 rows not sent yet, 3 the cloud refused (需處理 +
   // 重試), the last success 16 minutes ago. Downloads are fine.
   'cloud-upload-pending': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
@@ -969,6 +972,8 @@ const FIXTURES = {
   // ---- settings (050): S1, S2, S4 open on their page ---------------------
   // S1 with nothing to handle: receiver 7 connected (its battery 64%), phone
   // recording, signed in, notifications allowed.
+  'settings-diagnostics-on': now => ({ ...FIXTURES['all-good'](now), openRoute: 'settings', diagnosticsEnabled: true }),
+
   'settings-all-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'settings' }),
   // ---- 初次使用 D2–D4 (053): the guide's pages ------------------------------
   // D2c: 「全部允許」 ran; 附近的裝置 allowed, 精確位置 only 大概, 通知 refused
@@ -986,7 +991,7 @@ const FIXTURES = {
   'pair-camera-denied': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
     pairing: { view: 'scan', camera: 'denied' } }),
   // D3c: 「DogGPS-Master 7」 typed; still searching, two receivers found so
-  // far (7 strong, 3 weak).
+  // far (receiver 7: four bars, receiver 3: one bar).
   'pair-manual-nearby': now => ({ ...FIXTURES['no-data'](now), openRoute: 'pair',
     pairing: { view: 'manual', input: 'DogGPS-Master 7', searching: true,
       nearby: [{ id: 'AA:BB:CC:00:00:07', name: 'DogGPS-Master7', rssi: -58 },
@@ -1063,11 +1068,14 @@ const FIXTURES = {
   // Everything as it comes: every alert on, 震動 on, 聲音 off, notifications
   // allowed.
   'alerts-default': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts' }),
-  // Some switched off: 不在接收範圍 and 接收器電量低 off, 聲音 on; the 狗
+  // Some switched off: 不在接收範圍, 接收器電量低 and disconnect/storage off, 聲音 on; the 狗
   // group open on its three switches (「部分開」). S1 says 「震動、聲音」 and
   // 「部分開」.
   'alerts-some-off': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts', alertsOpen: true,
-    alerts: { dogOutOfRange: false, receiverBattery: false, sound: true } }),
+    alerts: { dogOutOfRange: false, receiverBattery: false, receiverDisconnectedStorage: false, sound: true } }),
+  'alerts-all-off': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts', alertsOpen: true,
+    alerts: { dogStale: false, dogOutOfRange: false, dogBattery: false, receiverBattery: false,
+      receiverDisconnectedStorage: false, vibrate: false, sound: false } }),
   // Notifications not allowed: S6 「通知權限 未允許 開系統設定 ›」; S1's 提醒
   // (and 手機) row only the red 「!」; the gear's red dot on the map.
   'notifications-denied': now => ({ ...FIXTURES['all-good'](now), openRoute: 'alerts',
@@ -1111,7 +1119,7 @@ const FIXTURES = {
     const phone = routePhone(morningRoute(now), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now),
       // 出發, stays 1 and 2, 現在 (H2): an address next to the place, one
-      // 120 m away, one with no answer (coordinates, 「查不到地址」).
+      // 120 m away, one with no answer (coordinates above the pill).
       geocoder: { names: [{ line: '330台灣桃園市桃園區大興西路二段105號' },
         { line: '330台灣桃園市桃園區同德六街76號', awayM: 120 }, null,
         { line: '330台灣桃園市桃園區中山路552號' }] } };
@@ -1140,7 +1148,7 @@ const FIXTURES = {
   'history-dog': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: dogMorning(now) }), geocoder: { names: HISTORY_NAMES } }),
   // H2b: my route with the range bar open; the start dragged to the walk after
-  // the first stay (出發（手動）), the end following now.
+  // the first stay (出發), the end following now.
   'history-range-open': now => ({ ...FIXTURES['history-my-route'](now),
     historyView: { rangeOpen: true, manual: { start: now - 100 * MINUTE, end: null, following: true } } }),
   // 豆豆 has one fix today: one point, no distance, no range bar (只有一筆).
@@ -1212,30 +1220,22 @@ const FIXTURES = {
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }),
       geocoder: { names: HISTORY_NAMES } };
   },
-  // ---- history (055b): several dogs (H7) and 資料來源 ------------------
-  // H7: 看軌跡 on 小黑's card, then 豆豆 and 阿福 added; 豆豆 leads (its
-  // list, numbers and 「豆豆・移動 x km」), the others thin, faces at the cursor.
+  // ---- history (055b): several dogs (H7) ---------------------------------
+  // H7 capsule and immediate chooser states.
   'history-multi-dog': now => multiFixture(now, { dogs: [4, 8], protagonist: 4 }),
-  // Four dogs: 「＋ 加入」 faded (最多同時 4 隻), the chips scroll sideways.
   'history-multi-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4 }),
-  // 小黑 and 狗 5, which has no record today: its chip at 40%, nothing drawn
-  // for it, never the protagonist.
   'history-multi-no-data': now => multiFixture(now, { dogs: [5], fiveToday: false }),
-  // The cursor at 08:40, inside 阿福's break: 阿福 waits at its last fix
-  // before it (grey dashed ring), the others are where they were then.
   'history-multi-cursor': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, cursorAgo: 50 * MINUTE }),
-  // 「＋ 加入」's list open over 小黑's day (狗 5 has no record today).
-  'history-multi-add': now => multiFixture(now, { dogs: [], fiveToday: false, sheet: 'add' }),
-  // 資料來源's choices open (全部 chosen).
-  'history-source-picker': now => multiFixture(now, { dogs: [4], protagonist: 4, sheet: 'source' }),
-  // 資料來源：雲端 while 小黑 and 豆豆 only have this phone's rows: 「這天沒有
-  // 小黑的紀錄」 with the row still at the foot.
-  'history-source-empty': now => multiFixture(now, { dogs: [4], source: 'cloud' }),
-  // 資料來源：這支手機收到的: 阿福's rows are the cloud's only, so it fades and
-  // 豆豆 (this phone's) stays.
-  'history-source-local': now => multiFixture(now, { dogs: [4, 8], protagonist: 8, source: 'local' }),
+  'history-multi-add': now => multiFixture(now, { dogs: [], fiveToday: false, sheet: 'dogs' }),
+  'history-dogs-one-addable': now => multiFixture(now),
+  'history-dogs-one-alone': now => ({ ...multiFixture(now), ble: [], cloudRows: dog6Cloud(now) }),
+  'history-dogs-three': now => multiFixture(now, { dogs: [4, 8], protagonist: 6 }),
+  'history-dogs-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4 }),
+  'history-dogs-sheet-three': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, sheet: 'dogs' }),
+  'history-dogs-sheet-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4, sheet: 'dogs' }),
+  'history-dogs-sheet-no-record': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, fiveToday: false, sheet: 'dogs' }),
   // ---- history (056): the export (H9/H10) ---------------------------------
-  // H9: my route like the mockup, the export window open (PNG used last).
+  // H9: my route like the mockup, the export window open (PNG / GPX / CSV in fixed order).
   'history-export': now => ({ ...FIXTURES['history-my-route'](now), historyView: { export: { phase: 'choose' } } }),
   // 產生中 that never ends (the export icon a spinner; 取消 or the back key stops it).
   'history-export-generating': now => ({ ...FIXTURES['history-my-route'](now), historyExport: 'hang',
@@ -1398,7 +1398,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
-    alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
+    alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
     historyExport = null, activityView = null, activity = null, activityClock = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
@@ -1477,6 +1477,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // whether the 狗 group shows its three switches.
     alerts: normalizeAlertPreferences(alerts),
     alertsOpen,
+    diagnosticsEnabled,
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
     todayRoute: (() => {
@@ -1541,7 +1542,7 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     accuracy_meters: point.accuracy ?? 6, altitude_meters: 112, speed_kmh: 3.6, heading_degrees: 40,
     raw_latitude: point.latitude, raw_longitude: point.longitude, session_id: 'fixture-walk', raw_speed_kmh: 3.8,
     speed_accuracy_mps: 0.4, motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
-  const readDay = async ({ subject, slaveId, start, end, source = 'all', owner = null, after = {} }) => {
+  const readDay = async ({ subject, slaveId, start, end, owner = null, after = {} }) => {
     if (after.fixture) return { rows: [], seed: [], after };
     // As HistoryDatabase.historyDayRows: half an hour before, and 3 minutes
     // past midnight (do the last stay, hold or walk go on next day?).
@@ -1551,9 +1552,9 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     if (subject === 'phone') {
       return { rows: phoneRows.filter(row => within(row.time)).map(phoneHistoryRow), seed: [], after: { fixture: true } };
     }
-    const local = source === 'cloud' ? [] : ble.filter(row => row.slave_id === slaveId && within(row.received_at))
+    const local = ble.filter(row => row.slave_id === slaveId && within(row.received_at))
       .map(row => dogHistoryRow(row, 'local'));
-    const cloud = source === 'local' || !owner ? [] : cloudRows
+    const cloud = !owner ? [] : cloudRows
       .filter(row => row.slave_id === slaveId && within(timeOf(row))).map(row => dogHistoryRow(row, 'cloud'));
     return { rows: [...local, ...cloud], seed: [], after: { fixture: true } };
   };
@@ -1562,10 +1563,10 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     const date = new Date(time);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
-  const readDays = async ({ subject, slaveId, source = 'all', owner = null }) => {
+  const readDays = async ({ subject, slaveId, owner = null }) => {
     const times = subject === 'phone' ? phoneRows.map(row => row.time) : [
-      ...(source === 'cloud' ? [] : ble.filter(row => row.slave_id === slaveId).map(row => row.received_at)),
-      ...(source === 'local' || !owner ? [] : cloudRows.filter(row => row.slave_id === slaveId).map(timeOf)),
+      ...(ble.filter(row => row.slave_id === slaveId).map(row => row.received_at)),
+      ...(!owner ? [] : cloudRows.filter(row => row.slave_id === slaveId).map(timeOf)),
     ];
     return [...new Set(times.map(keyOf))].sort();
   };
@@ -1676,11 +1677,13 @@ export function applyScreenFixture(fixture, live, edits = null) {
       realWriteError: fixture.storageError,
       preferences: { ...tracking.preferences, ready: true, busy: false, error: null,
         value: { ...tracking.preferences.value, ...FIXTURE_PREFERENCES,
-          alerts: edits?.alerts ?? fixture.alerts } },
+          alerts: edits?.alerts ?? fixture.alerts,
+          diagnosticsEnabled: edits?.diagnosticsEnabled ?? fixture.diagnosticsEnabled } },
       // A tap on a fixture's eye or follow button must not save the fixture's
       // dog ids into this phone's real preferences; a switch on S6 changes
       // the fixture's alerts in memory only (useFixtureEdits).
       saveTrackingPreferences: patch => {
+        if (typeof patch?.diagnosticsEnabled === 'boolean') edits?.setDiagnosticsEnabled?.(patch.diagnosticsEnabled);
         if (patch?.alerts) edits?.setAlerts?.(patch.alerts);
         return Promise.resolve(true);
       },

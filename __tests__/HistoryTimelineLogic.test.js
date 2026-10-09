@@ -76,14 +76,14 @@ test('merged stay still exposes gap row and deduction', () => {
   expect(model.locations.find(n => n.type === 'stop')).toMatchObject({ type: 'stop', interruptionMs: 300000, durationMs: 360000 });
   expect(model.sections.some(s => s.type === 'gap')).toBe(true);
 });
-// spec.txt「資料來源整個歷史…清單、地圖、月曆、匯出都照這個來源」。
-test('returned common stream and list obey the same source selection', () => {
+// Calendar, list, map and exports use the merged stream.
+test('returned common stream and list always use the merged sources', () => {
   const rows = [point(0, 0, { source: 'ble' }), point(10, 10, { source: 'ble' }), point(20, 20, { source: 'cloud' })];
-  const model = historyTimeline(rows, { source: 'cloud' });
-  expect(model.packets).toHaveLength(1); expect(model.points).toHaveLength(1);
-  expect(model.locations[0].start).toBe(20000);
+  const model = historyTimeline(rows);
+  expect(model.packets).toHaveLength(3); expect(model.points).toHaveLength(3);
+  expect(model.locations[0].start).toBe(0);
 });
-// spec.txt「手動改過開始…出發（手動）」「只改開始結束照樣跟著現在」。
+// spec.txt「手動改過開始…出發」「只改開始結束照樣跟著現在」。
 test('manual extending range is honored by list and counted distance', () => {
   const model = historyTimeline(route(Array(48).fill(1)), { subject: 'phone', today: true, now: 480000, manualRange: { start: 100000 } });
   expect(model.range).toEqual({ start: 100000, end: 480000 });

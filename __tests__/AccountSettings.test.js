@@ -36,7 +36,7 @@ const pressable = (renderer, label) => renderer.root.findAll(node => node.props.
 
 test('every S3 fixture opens on the account page; any fixture can (&page=cloud)', () => {
   expect(FIXTURE_PAGES).toContain('cloud');
-  for (const name of ['cloud-signed-out', 'cloud-ok', 'cloud-upload-pending', 'cloud-unreachable-retrying',
+  for (const name of ['cloud-signed-out', 'cloud-ok', 'cloud-wifi-only', 'cloud-upload-pending', 'cloud-unreachable-retrying',
     'cloud-expired', 'upload-switch-confirm', 'upload-switch-offline']) {
     expect(buildFixture(name).openRoute).toBe('cloud');
   }
@@ -71,7 +71,7 @@ test('cloud-failing on S3 (as the mockup): 下載失敗 since when + 重試, 12 
   expect(accountRow(data)).toMatchObject({ problem: true, label: 'Supabase 帳號，有問題：連不上' });
 });
 
-test('cloud-upload-pending: 需處理 with 「!」 + 重試, 還沒上傳 12 筆; the gear and S1 count it', () => {
+test('cloud-upload-pending: 需處理 with 「!」 + 重試, 手機還沒上傳 12 筆; the gear and S1 count it', () => {
   const { data, inputs } = input('cloud-upload-pending');
   const page = accountPage(data);
   expect(page.download.problem).toBe(false);
@@ -164,7 +164,7 @@ test('S3 rows in the mockup order; 重試 and 登出 (confirmed) reach their han
     .filter((id, index, all) => all.indexOf(id) === index);
   expect(ids).toEqual(['account-signed-in', 'account-sign-out', 'account-download', 'account-upload-pending',
     'account-upload-last', 'account-route-7']);
-  for (const words of ['tim@example.com', '已登入', '下載', '下載失敗', '重試 ›', '上傳', '還沒上傳', '12 筆',
+  for (const words of ['tim@example.com', '已登入', '下載', '下載失敗', '重試 ›', '上傳', '手機還沒上傳', '12 筆',
     '最後上傳成功', '接收器 7 的上傳方式', '由這支手機上傳']) expect(text(renderer)).toContain(words);
   await act(async () => pressable(renderer, accountPage(data).download.label).props.onPress());
   expect(retryDownload).toHaveBeenCalledTimes(1);
@@ -316,4 +316,43 @@ test('a dialog opened for one account closes when the account changes', async ()
     onSwitch={jest.fn()} />));
   expect(text(renderer)).not.toContain('改由這支手機上傳？');
   await act(async () => renderer.unmount());
+});
+
+test.each([
+  ['cloud-ok', true], ['cloud-upload-pending', true], ['cloud-wifi-only', false],
+ ])('S3 %s shows phone upload rows only for a phone route', async (name, visible) => {
+  const { data } = input(name);
+  const page = accountPage(data);
+  expect(page.upload.visible).toBe(visible);
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<AccountSettings page={page} />); });
+  for (const id of ['account-upload-pending', 'account-upload-last']) {
+    expect(renderer.root.findAllByProps({ testID: id }).length > 0).toBe(visible);
+  }
+  if (visible) expect(text(renderer)).toContain(`手機還沒上傳 ${page.upload.pendingText}`);
+  else {
+    expect(text(renderer)).not.toContain('最後上傳成功');
+    expect(text(renderer)).not.toContain('手機還沒上傳');
+    for (const route of page.routes) expect(text(renderer)).toContain(route.label);
+  }
+  await act(async () => renderer.unmount());
+});
+
+test.each([0, 3])('Wi-Fi-only hides stale upload failures and blocked rows (%s blocked)', async blocked => {
+  const { data } = input('cloud-wifi-only');
+  data.upload = { ...data.upload, error: 'Network request failed', counts: [{ status: 'blocked', count: blocked }] };
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<AccountSettings page={accountPage(data)} />); });
+  expect(renderer.root.findAllByProps({ testID: 'account-upload-problem' })).toHaveLength(0);
+  await act(async () => renderer.unmount());
+});
+
+test('mixed phone and Wi-Fi routes still show phone upload status', () => {
+  const { data } = input('cloud-wifi-only');
+  data.upload.settings[1].mode = 'phone';
+  expect(accountPage(data).upload.visible).toBe(true);
+  data.upload.settingsReady = false;
+  expect(accountPage(data).upload.visible).toBe(false);
+  data.upload.supported = false;
+  expect(accountPage(data).upload.visible).toBe(false);
 });

@@ -1,6 +1,6 @@
 // The export snapshot (H9/H10, 判定表「匯出快照和停在原處」): what the
 // history screen shows at the moment a format is chosen — the range, every
-// dog shown that has data in it (or my route), in the 資料來源 chosen — as
+// dog shown that has data in it (or my route), local and cloud merged — as
 // the plain data the GPX, CSV and PNG builders read (ExportBuilders.md). Pure:
 // the hook hands in the day's model (HistoryMultiModel.multiDayModel), the
 // dogs' looks and the addresses already looked up.
@@ -53,7 +53,7 @@ function lastPacket(models, range) {
 /**
  * The PNG list rows of one model (判定表「時間軸清單（匯出 PNG）」): the same
  * words as the screen's list (HistoryText), the end written as 「結束」, an
- * address that was not found as coordinates + 「查不到地址」.
+ * address that was not found as coordinates above the pill.
  */
 export function exportTimelineRows(nodes, addressOf) {
   return nodes.map((node, index) => {
@@ -70,7 +70,7 @@ export function exportTimelineRows(nodes, addressOf) {
     const next = nodes[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: nodeTimes(node),
       title: lines.title, coordinates: lines.coordinates, missing: lines.missing, pill,
-      note: interruptionText(node), line: isSection(next) ? lineOf(next) : null,
+      note: lines.coordinates ? interruptionText(node) : '', line: isSection(next) ? lineOf(next) : null,
       start: node.start, end: node.end, latitude: node.latitude, longitude: node.longitude };
   });
 }

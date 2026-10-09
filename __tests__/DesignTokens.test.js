@@ -49,7 +49,7 @@ describe('text contrast', () => {
     ['muted text on bg', colors.textMuted, colors.bg, 4.5],
     ['primary button text', colors.tonalText, colors.tonal, 4.5],
     [
-      'text button (稍後再說, ✓ 上次用) on surface',
+      'text button (稍後再說) on surface',
       colors.tonalText,
       colors.surface,
       4.5,

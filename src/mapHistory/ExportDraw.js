@@ -58,7 +58,6 @@ function nodeOps(row, color, cy) {
 const PILL_TONES = color => ({
   stay: [withAlpha(color, 0.12), color],
   plain: [colors.pillPlain, colors.textMuted],
-  manual: [colors.tonal, colors.tonalText],
   closed: [colors.warnBg, colors.warn],
   indoor: [colors.pillIndoor, colors.receiver],
 });

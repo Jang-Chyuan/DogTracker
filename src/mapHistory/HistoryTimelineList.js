@@ -123,7 +123,6 @@ function Pill({ pill, color }) {
   const tone = {
     stay: [{ backgroundColor: `${color}1F` }, { color }],
     plain: [{ backgroundColor: colors.pillPlain }, { color: colors.textMuted }],
-    manual: [{ backgroundColor: colors.tonal }, { color: colors.tonalText }],
     closed: [{ backgroundColor: colors.warnBg }, { color: colors.warn }],
     indoor: [{ backgroundColor: colors.pillIndoor }, { color: colors.receiver }],
   }[pill.tone];
@@ -138,8 +137,9 @@ function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
   const styles = useStyles(getStyles);
   const tap = useTap(onPress, node);
   const [start, end] = nodeTimes(node);
-  const note = interruptionText(node);
   const lines = placeLines(node, place);
+  const note = lines.coordinates ? interruptionText(node) : '';
+  const pill = nodePill(node);
   return (
     <Pressable
       style={styles.row}
@@ -171,16 +171,13 @@ function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
           >
             {lines.title}
           </Text>
-          <View style={styles.second}>
-            <Pill pill={nodePill(node)} color={color} />
+          {(pill || lines.coordinates || note) && <View style={styles.second}>
+            <Pill pill={pill} color={color} />
             {lines.coordinates ? (
               <Text style={styles.note}>{lines.coordinates}</Text>
             ) : null}
-            {lines.missing ? (
-              <Text style={styles.note}>{lines.missing}</Text>
-            ) : null}
             {note ? <Text style={styles.note}>{note}</Text> : null}
-          </View>
+          </View>}
         </View>
       </View>
     </Pressable>

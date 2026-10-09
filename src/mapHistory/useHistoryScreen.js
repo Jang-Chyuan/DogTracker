@@ -1,6 +1,6 @@
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
 // route; H1/H2/H2b/H3a/H7/H8): the day shown, the rows of each dog shown, the
-// protagonist, the 資料來源, the range (automatic or the one the user dragged,
+// protagonist (local and cloud rows always merged), the range (automatic or the one the user dragged,
 // remembered per day), the shared cursor and what the map draws.
 // The rules are the pure modules of src/history and src/history/screen.
 import { useTheme, getTheme, resolveStyles } from '../theme/ThemeProvider';
@@ -25,7 +25,6 @@ import {
   getROUTE_COLOURS,
 } from '../history/screen/HistoryScreenDogs';
 import { multiSelection } from '../history/screen/HistoryMultiSelection';
-import { HISTORY_SOURCE_OPTIONS } from '../history/screen/HistoryMultiSources';
 import {
   dayHasRecords,
   multiCursors,
@@ -62,7 +61,6 @@ export function useHistoryDayRows({
   subject,
   slaveId,
   day,
-  source = 'all',
   owner = null,
   active = true,
   clock,
@@ -82,7 +80,7 @@ export function useHistoryDayRows({
   // `revision`: read the day again from the start (a download ended).
   const key =
     subject && day != null
-      ? JSON.stringify([subject, slaveId, day, source, owner, scope, revision])
+      ? JSON.stringify([subject, slaveId, day, owner, scope, revision])
       : null;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
@@ -116,7 +114,6 @@ export function useHistoryDayRows({
           slaveId,
           start: day,
           end: dayEnd,
-          source,
           owner,
           after: cache.after,
         });
@@ -161,7 +158,7 @@ export function useHistoryDayRows({
       alive = false;
       clearTimeout(timer);
     };
-    // key stands for subject, slaveId, day, source and owner.
+    // key stands for subject, slaveId, day and owner.
   }, [active, read, key]); // eslint-disable-line react-hooks/exhaustive-deps
   const current =
     result.key === key
@@ -240,8 +237,7 @@ export function useHistoryScreen({
   }, [active, clock]);
   const todayStart = startOfToday(now);
   // 進入時的預設: today, the range of the day, the cursor on the newest fix,
-  // the entry dog alone, 資料來源 全部. Each opening (and each fixture)
-  // starts there again (flow.txt「再次進入」, 判定表「再次進入歷史的資料來源」).
+  // Each opening starts with the entry dog alone and merged records.
   const baseKey = target ? `${subjectKey(entryId)}|${memoryScope}` : null;
   // Each opening is a new session (再次進入: today, the entry dog alone, 全部),
   // also the same dog opened again or a fixture with another preset.
@@ -274,10 +270,10 @@ export function useHistoryScreen({
   const dayEnd = endOfDay(day);
   const today = day === todayStart;
   // ---- who is shown (H7) --------------------------------------------------
-  // { key, dogs: [{ id, slot, colour, hasData }], protagonist, source }:
+  // { key, dogs: [{ id, slot, colour, hasData }], protagonist }:
   // the dogs in the order added, each keeping its colour slot (判定表「多隻狗
   // 的路線色」); a screen fixture can open with more (preset.dogs), another
-  // protagonist (preset.protagonist) or another source (preset.source).
+  // protagonist (preset.protagonist).
   const [selection, setSelection] = useState({ key: null });
   const fresh = () => {
     if (subject === 'phone') {
@@ -286,7 +282,6 @@ export function useHistoryScreen({
         subject,
         protagonist: 'phone',
         message: null,
-        source: 'all',
         dogs: [{ id: 'phone', slot: 0, colour: colors.phone, hasData: true }],
       };
     }
@@ -303,7 +298,6 @@ export function useHistoryScreen({
       : chosen.protagonist;
     return {
       key: sessionKey,
-      source: preset?.source ?? 'all',
       ...chosen,
       protagonist: lead,
       rangeOwner: lead,
@@ -311,11 +305,10 @@ export function useHistoryScreen({
   };
   if (sessionKey && selection.key !== sessionKey) setSelection(fresh());
   const current = !sessionKey
-    ? { dogs: [], source: 'all', protagonist: null }
+    ? { dogs: [], protagonist: null }
     : selection.key === sessionKey
     ? selection
     : fresh();
-  const source = current.source ?? 'all';
   const slotOf = index => current.dogs.find(d => d.slot === index) ?? null;
   // Each colour slot reads its own dog's day (hooks cannot be in a loop of
   // varying length: four readers, one per slot).
@@ -343,7 +336,7 @@ export function useHistoryScreen({
   const dogIds = current.dogs.map(d => d.id);
   const idsKey = dogIds.join(',');
   // The days with rows of any dog shown (‹ › step between them; 判定表「多隻
-  // 狗的月曆」: a day of any of them has a dot), in the source chosen.
+  // 狗的月曆」: a day of any of them has a dot), across both sources.
   const [days, setDays] = useState([]);
   const anyLoaded = slots.some(slot => slot.version > 0);
   useEffect(() => {
@@ -351,11 +344,11 @@ export function useHistoryScreen({
     let alive = true;
     const asks =
       subject === 'phone'
-        ? [readDays({ subject, slaveId: null, source: 'all', owner })]
+        ? [readDays({ subject, slaveId: null, owner })]
         : idsKey
             .split(',')
             .map(id =>
-              readDays({ subject, slaveId: Number(id), source, owner }),
+              readDays({ subject, slaveId: Number(id), owner }),
             );
     Promise.all(asks.map(ask => Promise.resolve(ask).catch(() => [])))
       .then(lists => {
@@ -381,7 +374,6 @@ export function useHistoryScreen({
     readDays,
     subject,
     idsKey,
-    source,
     owner,
     anyLoaded,
     readRevision,
@@ -400,7 +392,7 @@ export function useHistoryScreen({
     .map(d => `${d.id}:${rowsOf(d.id).version}`)
     .join('|');
   const hasRowsShown = subjects.some(s =>
-    dayHasRecords(s.rows, { source, dayStart: day, dayEnd }),
+    dayHasRecords(s.rows, { dayStart: day, dayEnd }),
   );
   const localDays = useMemo(
     () => [...new Set([...days, ...(hasRowsShown ? [shownKey] : [])])].sort(),
@@ -409,7 +401,7 @@ export function useHistoryScreen({
   // The cloud's days of the dogs shown (054b): the calendar's dots, ‹ › and
   // downloads (a day only the cloud holds is downloaded for all of them).
   // Not asked for 這支手機收到的.
-  const cloudDogs = subject === 'dog' && source !== 'local' ? dogIds : [];
+  const cloudDogs = subject === 'dog' ? dogIds : [];
   const cloudDays = useHistoryCloud({
     cloud: cloudDogs.length ? cloud : null,
     slaveId: cloudDogs.length > 1 ? cloudDogs : cloudDogs[0] ?? null,
@@ -479,9 +471,9 @@ export function useHistoryScreen({
     current.dogs.length > 0 && current.dogs.every(d => rowsOf(d.id).loaded);
   const shownOnce = useRef(null);
   if (allLoaded && sessionKey)
-    shownOnce.current = `${sessionKey}|${day}|${source}`;
+    shownOnce.current = `${sessionKey}|${day}`;
   const waiting =
-    shownOnce.current !== `${sessionKey}|${day}|${source}` && !allLoaded;
+    shownOnce.current !== `${sessionKey}|${day}` && !allLoaded;
   const dayModel = useMemo(() => {
     if (!subject || !subjects.length || waiting) return null;
     const main = subjects.find(s => s.id === current.protagonist)
@@ -492,7 +484,6 @@ export function useHistoryScreen({
       dayEnd,
       today,
       now: modelNow,
-      source,
       manual,
       following,
       closedAt,
@@ -509,7 +500,6 @@ export function useHistoryScreen({
     dayEnd,
     today,
     modelNow,
-    source,
     manual,
     following,
     closedAt,
@@ -734,7 +724,7 @@ export function useHistoryScreen({
     setDraft(null);
     // Once per opening.
   }, [sessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  // ---- several dogs (H7) and the source -----------------------------------
+  // ---- several dogs (H7) and merged records -----------------------------------
   const lookOf = useCallback(
     id => {
       const dog = current.dogs.find(d => d.id === id);
@@ -772,7 +762,7 @@ export function useHistoryScreen({
       protagonist: d.id === protagonistId,
       // 判定表「全部加入的狗都沒資料」: then a faded one can lead too.
       selectable: hasData || !anyData,
-      removable: current.dogs.length > 1,
+      removable: d.id !== protagonistId,
     };
   });
   const [message, setMessage] = useState(null);
@@ -811,7 +801,7 @@ export function useHistoryScreen({
   const removeDog = useCallback(
     id => {
       setSelection(state => {
-        if (state.dogs.length < 2) return state;
+        if (state.dogs.length < 2 || id === protagonistId) return state;
         const next = dogTransition(state, { type: 'remove', id });
         // The dog that gave the range goes: the range stays as it is (移除不改範圍).
         const gave =
@@ -826,7 +816,7 @@ export function useHistoryScreen({
       if (cursorTime == null && time != null) setCursorTime(time);
       haptic('tick');
     },
-    [shownRange, entryId, remembered, cursorTime, time],
+    [shownRange, entryId, remembered, cursorTime, time, protagonistId],
   );
   /** A row of 「＋ 加入」: added with the smallest free colour; full at four. */
   const addDog = useCallback(
@@ -847,22 +837,7 @@ export function useHistoryScreen({
     },
     [current.dogs.length, say],
   );
-  /** 資料來源 (全部／這支手機收到的／雲端): the whole screen, the cursor stays. */
-  const setSource = useCallback(
-    value => {
-      if (!HISTORY_SOURCE_OPTIONS.some(option => option.id === value)) return;
-      cancel();
-      setSelection(state =>
-        state.source === value ? state : { ...state, source: value },
-      );
-      // 換資料來源後主角沒資料…游標不動.
-      if (cursorTime == null && time != null) setCursorTime(time);
-      setDraft(null);
-      setPressed(null);
-    },
-    [cancel, cursorTime, time],
-  );
-  /** Whether a dog not shown has records on the day shown in the source (加入 list). */
+  /** Whether a dog not shown has records on the day shown across both sources (加入 list). */
   const checkDay = useCallback(
     async id => {
       if (!readDays) return true;
@@ -870,7 +845,6 @@ export function useHistoryScreen({
         const list = await readDays({
           subject: 'dog',
           slaveId: id,
-          source,
           owner,
         });
         return Array.isArray(list) && list.includes(shownKey);
@@ -878,7 +852,7 @@ export function useHistoryScreen({
         return true;
       }
     },
-    [readDays, source, owner, shownKey],
+    [readDays, owner, shownKey],
   );
   const loading = !!subject && !dayModel && !slots.some(slot => slot.error);
   return {
@@ -888,7 +862,7 @@ export function useHistoryScreen({
     following, cursor, cursors, pressed, focus, map, color, loading,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],
-    // Several dogs (H7) and the source.
+    // Several dogs (H7) and merged records.
     dogs,
     protagonist: protagonistId,
     multi: current.dogs.length > 1,
@@ -898,8 +872,6 @@ export function useHistoryScreen({
     checkDay,
     message,
     say,
-    source,
-    setSource,
     full: current.dogs.length >= MAX_DOGS,
     // The calendar (054b).
     dayKey: shownKey,

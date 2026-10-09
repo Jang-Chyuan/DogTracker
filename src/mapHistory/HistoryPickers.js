@@ -1,210 +1,89 @@
-import { useTheme } from '../theme/ThemeProvider';
-// The two small windows of the dog history (H7, 「展開後的歷史面板」):
-// 「＋ 加入」's list of dogs and 資料來源's three choices. Both rise from the
-// bottom (HistoryBottomSheet) and close on a choice — 選了就生效, no 套用.
-import { makeStyles } from '../theme/ThemeProvider';
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from 'react';
+import { useTheme, makeStyles } from '../theme/ThemeProvider';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
-import { HISTORY_SOURCE_OPTIONS } from '../history/screen/HistoryMultiSources';
-import { layout, size as sizes, space, touch, type } from '../theme/tokens';
+import { historyDogsSheet, routeTint } from '../history/screen/HistoryDogsPill';
 import HistoryBottomSheet from './HistoryBottomSheet';
 
-/**
- * 「＋ 加入」小視窗: the dogs not shown yet that have ever had a position, by
- * collar number (`candidates`: [{ id, name, avatar }]); one without records
- * on the day shown says 「沒有紀錄」 and is faded, and can still be added
- * (`checkDay(id)` → whether it has some). `onAdd(dog)` after the sheet has gone.
- */
-export const AddDogSheet = forwardRef(function AddDogSheet(
-  { candidates, checkDay, onAdd, onClosed, bottomInset },
-  ref,
+/** Dog choices take effect while the window remains open. */
+export const DogsSheet = forwardRef(function DogsSheet(
+  { dogs, candidates, checkDay, onAdd, onSelect, onRemove, onClosed, bottomInset }, ref,
 ) {
-  const styles = getStyles(useTheme());
+  const theme = useTheme();
+  const styles = getStyles(theme);
   const sheet = useRef(null);
   const [days, setDays] = useState({});
-  useImperativeHandle(
-    ref,
-    () => ({
-      back: () => {
-        sheet.current?.close();
-        return true;
-      },
-    }),
-    [],
-  );
+  useImperativeHandle(ref, () => ({ back: () => { sheet.current?.close(); return true; } }), []);
   const idsKey = candidates.map(dog => dog.id).join(',');
   useEffect(() => {
     let alive = true;
-    Promise.all(
-      candidates.map(dog =>
-        Promise.resolve(checkDay?.(dog.id) ?? true)
-          .then(value => [dog.id, value !== false])
-          .catch(() => [dog.id, true]),
-      ),
-    ).then(entries => {
-      if (alive) setDays(Object.fromEntries(entries));
-    });
-    return () => {
-      alive = false;
-    };
-    // idsKey stands for the candidates.
+    Promise.all(candidates.map(dog => Promise.resolve(checkDay?.(dog.id) ?? true)
+      .then(value => [dog.id, value !== false]).catch(() => [dog.id, true])))
+      .then(entries => { if (alive) setDays(Object.fromEntries(entries)); });
+    return () => { alive = false; };
+    // idsKey represents the catalogue IDs.
   }, [idsKey, checkDay]); // eslint-disable-line react-hooks/exhaustive-deps
-  const rows = [...candidates].sort((a, b) => Number(a.id) - Number(b.id));
+  const model = historyDogsSheet(dogs, candidates, days);
   return (
-    <HistoryBottomSheet
-      ref={sheet}
-      title="加入狗"
-      onClosed={onClosed}
-      bottomInset={bottomInset}
-      testID="history-add-sheet"
-      closeLabel="關閉加入狗"
-    >
-      {rows.length ? (
-        rows.map(dog => {
-          const none = days[dog.id] === false;
-          return (
-            <Pressable
-              key={dog.id}
-              testID={`history-add-${dog.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`${dog.name}，訊號源 ${dog.id}${
-                none ? '，沒有紀錄' : ''
-              }`}
-              onPress={() =>
-                sheet.current?.close(() => onAdd({ ...dog, hasData: !none }))
-              }
-              style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            >
-              <View style={[styles.rowInner, none && styles.faded]}>
-                <DogAvatar
-                  avatar={dog.avatar}
-                  size={sizes.listRow.avatar}
-                  border={0}
-                />
-                <View style={styles.texts}>
-                  <Text style={styles.name} numberOfLines={1}>
-                    {dog.name}
-                    <Text style={styles.number}>{`　訊號源 ${dog.id}`}</Text>
-                  </Text>
-                  {none && <Text style={styles.detail}>沒有紀錄</Text>}
-                </View>
-              </View>
-            </Pressable>
-          );
-        })
-      ) : (
-        <Text style={styles.empty} testID="history-add-empty">
-          沒有其他狗
-        </Text>
-      )}
+    <HistoryBottomSheet ref={sheet} title="看哪幾隻狗" onClosed={onClosed}
+      bottomInset={bottomInset} testID="history-dogs-sheet" closeLabel="關閉看哪幾隻狗">
+      <Text style={styles.section}>一起看的狗（點一下換主角）</Text>
+      {model.shown.map(dog => <View key={dog.id} style={styles.row}>
+        <Pressable testID={`history-dog-${dog.id}`} accessibilityRole="radio"
+          accessibilityState={{ checked: dog.protagonist }}
+          accessibilityLabel={`${dog.name}${dog.protagonist ? '，主角' : '，換成主角'}`}
+          onPress={() => onSelect(dog.id)} style={({ pressed }) => [styles.choice, pressed && styles.pressed]}>
+          <DogAvatar avatar={dog.avatar} size={28} border={0} tint={routeTint(dog, theme.colors)} />
+          <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
+          {dog.protagonist && <View style={styles.tag}><Text style={styles.tagText}>主角</Text></View>}
+          <View style={styles.spacer} />
+          <View style={[styles.radio, dog.protagonist && styles.radioOn]} />
+        </Pressable>
+        {dog.removable && <Pressable testID={`history-remove-${dog.id}`} accessibilityRole="button"
+          accessibilityLabel={`移除${dog.name}`} onPress={() => onRemove(dog.id)} style={styles.remove}>
+          <Text style={styles.detail}>✕</Text>
+        </Pressable>}
+      </View>)}
+      {(model.full || model.addable.length > 0) && <View testID="history-dogs-add-section">
+        <View style={styles.sectionRow}>
+          <Text style={[styles.section, model.full && styles.faded]}>加入</Text>
+          {model.note && <Text style={[styles.section, styles.sectionNote]}>{model.note}</Text>}
+        </View>
+        {model.addable.map(dog => <Pressable key={dog.id} testID={`history-add-${dog.id}`}
+          accessibilityRole="button" accessibilityState={{ disabled: dog.disabled }}
+          accessibilityLabel={`${dog.name}，訊號源 ${dog.id}${dog.hasData ? '' : '，這天沒有紀錄'}`}
+          disabled={dog.disabled} onPress={() => onAdd(dog)}
+          style={({ pressed }) => [styles.row, dog.opacity < 1 && styles.faded, pressed && styles.pressed]}>
+          <DogAvatar avatar={dog.avatar} size={28} border={0} />
+          <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
+          <Text style={styles.detail} numberOfLines={1}>{dog.detail}</Text>
+          <View style={styles.spacer} />
+          <Text style={styles.plus}>＋</Text>
+        </Pressable>)}
+      </View>}
     </HistoryBottomSheet>
   );
 });
 
-/** 資料來源: 全部／這支手機收到的／雲端, one radio each; `onChoose(id)` after it closed. */
-export const SourceSheet = forwardRef(function SourceSheet(
-  { selected, onChoose, onClosed, bottomInset },
-  ref,
-) {
-  const styles = getStyles(useTheme());
-  const sheet = useRef(null);
-  useImperativeHandle(
-    ref,
-    () => ({
-      back: () => {
-        sheet.current?.close();
-        return true;
-      },
-    }),
-    [],
-  );
-  return (
-    <HistoryBottomSheet
-      ref={sheet}
-      title="資料來源"
-      onClosed={onClosed}
-      bottomInset={bottomInset}
-      testID="history-source-sheet"
-      closeLabel="關閉資料來源"
-    >
-      <View accessibilityRole="radiogroup">
-        {HISTORY_SOURCE_OPTIONS.map(option => {
-          const on = option.id === selected;
-          return (
-            <Pressable
-              key={option.id}
-              testID={`history-source-${option.id}`}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: on }}
-              accessibilityLabel={option.label}
-              onPress={() => sheet.current?.close(() => onChoose(option.id))}
-              style={({ pressed }) => [
-                styles.row,
-                styles.rowInner,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={[styles.radio, on && styles.radioOn]}>
-                {on && <View style={styles.radioDot} />}
-              </View>
-              <Text style={styles.option}>{option.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </HistoryBottomSheet>
-  );
-});
-
-const RADIO = 20;
 const getStyles = makeStyles(theme => {
-  const { colors, opacity } = theme;
+  const { colors } = theme;
   return StyleSheet.create({
-    row: { minHeight: touch.row, borderRadius: 12 },
-    rowInner: {
-      flex: 1,
-      minHeight: touch.row,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.m,
-    },
+    section: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginTop: 10, marginBottom: 2 },
+    row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10,
+      borderTopWidth: 1, borderTopColor: colors.line },
+    choice: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
+    name: { flexShrink: 1, fontSize: 14, fontWeight: '700', color: colors.text },
+    spacer: { flex: 1 },
+    sectionRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+    sectionNote: { marginLeft: 8 },
+    plus: { width: 48, textAlign: 'center', fontSize: 18, color: colors.tonalText },
+    detail: { fontSize: 12, color: colors.textMuted },
+    tag: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1, backgroundColor: colors.tonal },
+    tagText: { fontSize: 11, color: colors.tonalText },
+    radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.textMuted },
+    radioOn: { borderWidth: 6, borderColor: colors.accent },
+    remove: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+    faded: { opacity: 0.4 },
     pressed: { backgroundColor: colors.pressedOverlay },
-    faded: { opacity: opacity.disabled },
-    texts: { flex: 1, minWidth: 0 },
-    name: { ...type.body, color: colors.text },
-    number: { ...type.caption, color: colors.textMuted },
-    detail: { ...type.caption, color: colors.textMuted },
-    // 清單的空狀態: 16sp textMuted, centred, 32dp above and below.
-    empty: {
-      ...type.body,
-      color: colors.textMuted,
-      textAlign: 'center',
-      paddingVertical: layout.emptyStatePadding,
-    },
-    radio: {
-      width: RADIO,
-      height: RADIO,
-      borderRadius: RADIO / 2,
-      borderWidth: 2,
-      borderColor: colors.textMuted,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginLeft: 2,
-    },
-    radioOn: { borderColor: colors.accent },
-    radioDot: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-      backgroundColor: colors.accent,
-    },
-    option: { ...type.body, color: colors.text },
   });
 });

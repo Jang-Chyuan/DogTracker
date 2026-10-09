@@ -47,7 +47,7 @@ describe('rows', () => {
     expect(phoneHistoryRow({ recorded_at: 20, latitude: 1, longitude: 2, accuracy_meters: null }).accuracy).toBeNull();
   });
 
-  test('historyDayRows reads one dog\'s day from both tables, with the source filter and a cursor', async () => {
+  test('historyDayRows reads one dog\'s day from both tables, merged with a cursor and receiver distance', async () => {
     const connection = createMemoryConnection();
     const database = createHistoryDatabase(connection);
     connection.sqlite.exec(`CREATE TABLE dog_status(id INTEGER PRIMARY KEY, received_at INTEGER, master_id INTEGER,
@@ -56,7 +56,7 @@ describe('rows', () => {
     connection.sqlite.exec(`CREATE TABLE supabase_dog_status(id INTEGER PRIMARY KEY, owner_user_id TEXT,
       received_at INTEGER, track_at INTEGER, master_id INTEGER, slave_id INTEGER, slave_lat REAL, slave_lon REAL,
       satellites INTEGER, hdop REAL, usb_present INTEGER, rssi INTEGER, snr REAL, gps_time TEXT)`);
-    const local = connection.sqlite.prepare('INSERT INTO dog_status VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
+    const local = connection.sqlite.prepare('INSERT INTO dog_status(id, received_at, master_id, slave_id, slave_lat, slave_lon, satellites, hdop, usb_present, rssi, snr, gps_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
     const cloud = connection.sqlite.prepare('INSERT INTO supabase_dog_status VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     // Before the context (seed only), in the context, the day, just past midnight.
     local.run(1, DAY - 2 * HISTORY_DAY_CONTEXT_MS, 7, 4, 24.98, 121.31, 9, 0.9, 0, -70, 5, '1');
@@ -66,16 +66,17 @@ describe('rows', () => {
     local.run(5, endOfDay(DAY) + MINUTE, 7, 4, 24.982, 121.31, 9, 0.9, 0, -70, 5, '9');
     cloud.run(1, 'me', DAY + 9 * MINUTE, DAY + 2 * MINUTE, 9, 4, 24.982, 121.31, 9, 1, 0, -80, 5, '4');
     cloud.run(2, 'someone', DAY + 3 * MINUTE, DAY + 3 * MINUTE, 9, 4, 24.983, 121.31, 9, 1, 0, -80, 5, '5');
+    connection.sqlite.exec('ALTER TABLE dog_status ADD COLUMN distance_meters REAL');
+    connection.sqlite.exec('UPDATE dog_status SET distance_meters = 42 WHERE id = 3');
     const day = { subject: 'dog', slaveId: 4, start: DAY, end: endOfDay(DAY) };
     const all = await database.historyDayRows({ ...day, owner: 'me' });
     expect(all.rows.map(row => [row.source, row.id, row.time])).toEqual([
       ['local', 2, DAY - 10 * MINUTE], ['local', 3, DAY + MINUTE], ['local', 5, endOfDay(DAY) + MINUTE],
       ['cloud', 1, DAY + 2 * MINUTE]]);
+    expect(all.rows.find(row => row.source === 'local' && row.id === 3).distance_meters).toBe(42);
     expect(all.seed.map(row => row.time)).toEqual([DAY - 2 * HISTORY_DAY_CONTEXT_MS]);
-    expect((await database.historyDayRows({ ...day, source: 'local', owner: 'me' })).rows).toHaveLength(3);
-    expect((await database.historyDayRows({ ...day, source: 'cloud', owner: 'me' })).rows).toHaveLength(1);
     // Signed out: no cloud rows at all.
-    expect((await database.historyDayRows({ ...day, source: 'cloud' })).rows).toHaveLength(0);
+    expect((await database.historyDayRows({ ...day })).rows).toHaveLength(3);
     // Only rows added since, even older ones (a download, 判定表「補下載完成」).
     local.run(6, DAY + 5 * MINUTE, 7, 4, 24.984, 121.31, 9, 0.9, 0, -70, 5, '6');
     cloud.run(3, 'me', DAY + 30 * MINUTE, DAY - 5 * MINUTE, 9, 4, 24.98, 121.31, 9, 1, 0, -80, 5, '0');
@@ -120,8 +121,8 @@ describe('words (copy deck)', () => {
   });
   test('pills', () => {
     expect(nodePill({ type: 'departure' })).toEqual({ text: '出發', tone: 'plain' });
-    expect(nodePill({ type: 'departure', manual: true })).toEqual({ text: '出發（手動）', tone: 'manual' });
-    expect(nodePill({ type: 'departure', continuesPreviousDay: true }).text).toBe('接續前一天');
+    expect(nodePill({ type: 'departure', manual: true })).toEqual({ text: '出發', tone: 'plain' });
+    expect(nodePill({ type: 'departure', continuesPreviousDay: true }).text).toBe('出發');
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE })).toEqual({ text: '停 17 分', tone: 'stay' });
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('接續前一天・停 17 分');
     expect(nodePill({ type: 'indoor', start: 0, end: 40 * MINUTE })).toEqual({ text: '室內・40 分', tone: 'indoor' });
@@ -196,7 +197,7 @@ const placesOf = model => model.nodes.filter(node => !['movement', 'gap'].includ
 describe('addresses (053a)', () => {
   const stop = { type: 'stop', latitude: 24.93111, longitude: 121.28794, durationMs: 17 * MINUTE };
   const house = { type: 'indoor', latitude: 24.9378, longitude: 121.2954, start: 0, end: 28 * MINUTE };
-  test('a place\'s two lines: found, asking, not found; a hold not found says 停留（室內）', () => {
+  test('a place\'s two lines: found, asking, not found; a hold uses the same coordinate fallback', () => {
     expect(placeLines(stop, { state: 'found', text: '八德區和平路 552 號附近' }))
       .toEqual({ title: '八德區和平路 552 號附近', titleMuted: false, coordinates: '24.9311, 121.2879', missing: '' });
     expect(placeLines(stop, { state: 'found', text: '大園區航站南路 9 號附近（約 140 m）' }).title)
@@ -204,9 +205,9 @@ describe('addresses (053a)', () => {
     expect(placeLines(stop, { state: 'pending' }))
       .toEqual({ title: '查地址中…', titleMuted: true, coordinates: '24.9311, 121.2879', missing: '' });
     expect(placeLines(stop, { state: 'none' }))
-      .toEqual({ title: '24.9311, 121.2879', titleMuted: false, coordinates: '', missing: '查不到地址' });
+      .toEqual({ title: '24.9311, 121.2879', titleMuted: false, coordinates: '', missing: '' });
     expect(placeLines(house, { state: 'none' }))
-      .toEqual({ title: '停留（室內）', titleMuted: false, coordinates: '24.9378, 121.2954', missing: '' });
+      .toEqual({ title: '24.9378, 121.2954', titleMuted: false, coordinates: '', missing: '' });
     expect(placeLines(house, { state: 'found', text: '八德區介壽路一段 728 號附近' }).title).toBe('八德區介壽路一段 728 號附近');
   });
 
@@ -217,13 +218,13 @@ describe('addresses (053a)', () => {
       '桃園區中山路 552 號附近']);
   });
 
-  test('history-indoor: no answers, the house node says 停留（室內） over its coordinates', async () => {
+  test('history-indoor: no answers, the house node uses coordinates as its title', async () => {
     const { fixture, model } = await fixtureList('history-indoor');
     const places = placesOf(model);
     const names = await placeNames(fixture.addressLookup, places);
     expect(names.every(name => name === null)).toBe(true);
     const held = places.find(node => node.type === 'indoor');
-    expect(placeLines(held, { state: 'none' }).title).toBe('停留（室內）');
+    expect(placeLines(held, { state: 'none' }).title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
   });
 
   test('the list: 查地址中… while asking, the address when it comes, coordinates after 5 s without one', async () => {
@@ -252,7 +253,7 @@ describe('addresses (053a)', () => {
       // Five seconds on, the rest count as not found: coordinates, 查不到地址.
       await act(async () => { jest.advanceTimersByTime(5000); });
       expect(titles()[1]).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
-      expect(text()).toContain('查不到地址');
+      expect(text()).not.toContain('查不到地址');
       await act(async () => renderer.unmount());
     } finally {
       jest.useRealTimers();

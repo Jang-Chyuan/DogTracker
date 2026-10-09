@@ -15,7 +15,7 @@ function Harness({ fixture, onScreen, screenRef }) {
     preset: fixture.historyView ?? null });
   onScreen?.(screen);
   return <HistoryScreen ref={screenRef} screen={screen} top={24} levels={LEVELS} bottomInset={0}
-    name={target.subject === 'dog' ? '豆豆' : ''} history={null} initialRangeOpen={!!fixture.historyView?.rangeOpen} />;
+    name={target.subject === 'dog' ? '豆豆' : ''} history={null} initialRangeOpen={!!fixture.historyView?.rangeOpen} initialExport={fixture.historyView?.export} />;
 }
 
 export async function mountFixture(name) {
@@ -62,7 +62,7 @@ test('history-my-route (H1 我的路線): 我的路線, no ＋ 加入, the list,
 test('history-dog (H1 狗的歷史): the dog capsule, ＋ 加入, 移動 and 坐車', async () => {
   const s = await mountFixture('history-dog');
   expect(s.text()).toContain('豆豆');
-  expect(s.ids('history-add')).toEqual(['history-add']);
+  expect(s.ids('history-dogs-pill')).toEqual(['history-dogs-pill']);
   expect(s.ids('timeline-movement-ride')).toHaveLength(1);
   expect(s.screen.cursor.label[1]).toMatch(/^已移動 /);
   expect(s.screen.map.color).toBe('#D9604F');
@@ -74,7 +74,7 @@ test('history-range-open (H2b): the bar open in its frame, 完成, the dragged s
   expect(s.ids('history-range-bar')).toEqual(['history-range-bar']);
   expect(s.text()).toContain('拖兩端的圓點改開始、結束');
   expect(s.text()).toContain('完成');
-  expect(s.text()).toContain('出發（手動）');
+  expect(s.text()).toContain('出發');
   expect(s.text()).not.toContain('已手動調整');
   expect(s.text()).toContain('07:50 – 現在');
   // The right handle says this minute, not 「現在」.
@@ -105,7 +105,7 @@ test('a dragged range is kept for the day; the list and summary follow it', asyn
   expect(s.screen.model.points[0].time).toBe(start.time);
   await act(async () => s.screen.commitRange({ start: start.time, end: null, following: true }));
   expect(s.screen.manual).toBe(true);
-  expect(s.text()).toContain('出發（手動）');
+  expect(s.text()).toContain('出發');
   await unmount(s);
   // Opened again (same fixture scope): the range is still the dragged one.
   const again = await mountFixture('history-my-route');
@@ -161,6 +161,9 @@ test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a
   const exportButton = s.renderer.root.findAll(node => node.props.testID === 'history-export'
     && node.props.accessibilityState)[0];
   expect(exportButton.props.accessibilityState.disabled).toBe(true);
+  // The 36dp button keeps a 48dp touch target.
+  expect(s.renderer.root.findAll(node => node.props.testID === 'history-export' && node.props.hitSlop === 6).length)
+    .toBeGreaterThan(0);
   expect(s.screen.navigation.previous).toBe('2026-10-06');
   expect(s.screen.navigation.next).toBeNull();
   await act(async () => pressable(s, 'history-day-previous').props.onPress());
@@ -248,4 +251,58 @@ describe('the screen over time', () => {
       jest.useRealTimers();
     }
   });
+});
+
+
+test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
+  'history-export-multi', 'history-export-day'])('%s: export formats stay PNG / GPX / CSV without a last-used marker', async name => {
+  const s = await mountFixture(name);
+  const rows = s.renderer.root.findAll(node => typeof node.type === 'string'
+    && ['history-export-png', 'history-export-gpx', 'history-export-csv'].includes(node.props.testID));
+  expect(rows.map(node => node.props.testID)).toEqual(['history-export-png', 'history-export-gpx', 'history-export-csv']);
+  expect(rows.map(node => node.props.accessibilityLabel)).toEqual([
+    'PNG 長圖，地圖＋時間軸清單，傳 LINE 最方便', 'GPX，給地圖 App 用', 'CSV，每一筆位置',
+  ]);
+  expect(s.text()).not.toContain('上次用');
+  await unmount(s);
+});
+
+test('range bar: a quick flick lands where the finger let go, even when its last moves never reached JS', async () => {
+  const { PanResponder } = require('react-native');
+  const s = await mountFixture('history-manual-end');
+  const created = [];
+  const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { created.push(value); return { panHandlers: {} }; });
+  try {
+    await act(async () => pressable(s, 'history-adjust').props.onPress());
+    const bar = s.renderer.root.findAll(node => node.props.testID === 'history-range-bar')[0];
+    const area = bar.findAll(node => typeof node.props.onLayout === 'function')[0];
+    await act(async () => area.props.onLayout({ nativeEvent: { layout: { width: 348 } } }));
+    const handlers = created.find(value => String(value.onPanResponderGrant).includes("middle"));
+    const before = s.screen.range;
+    expect(before.following).toBe(false);
+    // Touch right of the middle (the end handle), then let go 20 dp further
+    // left with no move delivered in between.
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
+    await act(async () => handlers.onPanResponderRelease(null, { dx: -20, dy: 0 }));
+    const flicked = s.screen.range;
+    expect(flicked.start).toBe(before.start);
+    expect(flicked.end).toBeLessThan(before.end);
+    // Back where it was, then the same drag with only its first move
+    // delivered: it still ends on the fix under the finger.
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
+    await act(async () => handlers.onPanResponderRelease(null, { dx: 20, dy: 0 }));
+    expect(s.screen.range.end).toBe(before.end);
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
+    await act(async () => handlers.onPanResponderMove(null, { dx: -5, dy: 0 }));
+    await act(async () => handlers.onPanResponderRelease(null, { dx: -20, dy: 0 }));
+    expect(s.screen.range.end).toBe(flicked.end);
+    // Android's release carries the finger's own position past the last move.
+    await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348, pageX: 900 } }));
+    await act(async () => handlers.onPanResponderMove({ nativeEvent: { pageX: 895 } }, { dx: -5, dy: 0 }));
+    await act(async () => handlers.onPanResponderRelease({ nativeEvent: { pageX: 920 } }, { dx: -5, dy: 0 }));
+    expect(s.screen.range.end).toBe(before.end);
+  } finally {
+    spy.mockRestore();
+    await unmount(s);
+  }
 });

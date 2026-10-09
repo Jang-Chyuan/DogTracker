@@ -65,74 +65,89 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
     rejected: false,
     edge: false,
   });
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
-        onShouldBlockNativeResponder: () => true,
-        onPanResponderGrant: event => {
-          const { startX: s, endX: e } = state.current;
-          const x = event.nativeEvent.locationX - TOUCH / 2;
-          // 判定表「範圍條把手太近」: the side of the middle between them (left
-          // = start); right on the middle, the first direction moved decides.
-          const middle = (s + e) / 2;
-          const handle = x < middle ? 'start' : x > middle ? 'end' : null;
-          drag.current = {
-            handle,
-            from: x === middle ? s : handle === 'start' ? s : e,
-            last: state.current.range,
-            rejected: false,
-            edge: false,
-          };
-        },
-        onPanResponderMove: (_, gesture) => {
-          const d = drag.current;
-          const {
-            track: t,
-            dayPoints: points,
-            today: isToday,
-            width: w,
-          } = state.current;
-          // Both handles on one spot: the first direction picks (left = start).
-          if (!d.handle) {
-            if (Math.abs(gesture.dx) < 2) return;
-            d.handle = gesture.dx < 0 ? 'start' : 'end';
-            d.from =
-              d.handle === 'start' ? state.current.startX : state.current.endX;
-          }
-          const x = Math.max(0, Math.min(w, d.from + gesture.dx));
-          const result = dragRangeHandle(state.current.range, d.handle, x, w, {
-            track: t,
-            dayPoints: points,
-            today: isToday,
-          });
-          if (result.atEdge && !d.edge) haptic('heavy');
-          d.edge = result.atEdge;
-          d.rejected = !result.valid;
-          if (!result.valid) return;
-          const changed =
-            result.range.start !== d.last.start ||
-            result.range.end !== d.last.end ||
-            result.range.following !== d.last.following;
-          d.last = result.range;
-          if (changed) state.current.onDrag(result.range);
-        },
-        onPanResponderRelease: () => {
-          const d = drag.current;
-          // Refused (start not before the end): the handle springs back.
-          haptic(d.rejected ? 'double' : 'tick');
-          state.current.onCommit(d.last);
-          drag.current = { handle: null };
-        },
-        onPanResponderTerminate: () => {
-          state.current.onCommit(drag.current.last);
-          drag.current = { handle: null };
-        },
-      }),
-    [],
-  );
+  const responder = useMemo(() => {
+    // One step of a drag `dx` from where it began (a move, or the release
+    // itself: a quick flick can end before its last moves reach JS, and the
+    // handle must still land where the finger let go).
+    const follow = dx => {
+      const d = drag.current;
+      if (!d.last) return;
+      const {
+        track: t,
+        dayPoints: points,
+        today: isToday,
+        width: w,
+      } = state.current;
+      // Both handles on one spot: the first direction picks (left = start).
+      if (!d.handle) {
+        if (Math.abs(dx) < 2) return;
+        d.handle = dx < 0 ? 'start' : 'end';
+        d.from =
+          d.handle === 'start' ? state.current.startX : state.current.endX;
+      }
+      const x = Math.max(0, Math.min(w, d.from + dx));
+      const result = dragRangeHandle(state.current.range, d.handle, x, w, {
+        track: t,
+        dayPoints: points,
+        today: isToday,
+      });
+      if (result.atEdge && !d.edge) haptic('heavy');
+      d.edge = result.atEdge;
+      d.rejected = !result.valid;
+      if (!result.valid) return;
+      const changed =
+        result.range.start !== d.last.start ||
+        result.range.end !== d.last.end ||
+        result.range.following !== d.last.following;
+      d.last = result.range;
+      if (changed) state.current.onDrag(result.range);
+    };
+    // Where the finger is now, from the event itself when it says (the
+    // release's own position: the gesture's dx stops at the last move).
+    const dxOf = (event, gesture) => {
+      const pageX = event?.nativeEvent?.pageX;
+      const from = drag.current.pageX;
+      return typeof pageX === 'number' && typeof from === 'number'
+        ? pageX - from
+        : gesture?.dx ?? 0;
+    };
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: event => {
+        const { startX: s, endX: e } = state.current;
+        const x = event.nativeEvent.locationX - TOUCH / 2;
+        // 判定表「範圍條把手太近」: the side of the middle between them (left
+        // = start); right on the middle, the first direction moved decides.
+        const middle = (s + e) / 2;
+        const handle = x < middle ? 'start' : x > middle ? 'end' : null;
+        drag.current = {
+          handle,
+          from: x === middle ? s : handle === 'start' ? s : e,
+          last: state.current.range,
+          rejected: false,
+          edge: false,
+          pageX: event.nativeEvent.pageX,
+        };
+      },
+      onPanResponderMove: (event, gesture) => follow(dxOf(event, gesture)),
+      onPanResponderRelease: (event, gesture) => {
+        follow(dxOf(event, gesture));
+        const d = drag.current;
+        // Refused (start not before the end): the handle springs back.
+        haptic(d.rejected ? 'double' : 'tick');
+        state.current.onCommit(d.last);
+        drag.current = { handle: null };
+      },
+      onPanResponderTerminate: (event, gesture) => {
+        follow(dxOf(event, gesture));
+        state.current.onCommit(drag.current.last);
+        drag.current = { handle: null };
+      },
+    });
+  }, []);
   const step = (handle, event) => {
     const result = stepRangeHandle(
       range,

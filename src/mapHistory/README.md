@@ -4,7 +4,7 @@
 
 狗卡片「看軌跡」或右下「今天 x km」打開（`App` 的 `history` 頁，`route.target`）。畫面在同一張地圖上：
 
-- 上方膠囊列（`HistoryScreen`）：「‹ 回到現在」（＝返回鍵離開歷史；從卡片來的回到卡片）、狗（頭像＋名字＋✕，主角 2dp 路線色外框）或不能點的「我的路線」、狗的歷史有「＋ 加入」（放不下時狗和「＋ 加入」左右捲動）、右上匯出 icon（打開 H9 匯出小視窗，見下方「匯出（056）」；沒有紀錄時變淡，產生中換成 20dp 轉圈）。
+- 上方固定列（`HistoryScreen`）：「‹ 回到現在」、單一狗膠囊（主角 26dp 頭像＋2dp 路線色圈＋名字；其他狗最多兩個 18dp 頭像、重疊 6dp，多出以 +N 表示）、spacer、可選警告數及匯出 icon。列不捲動。「我的路線」膠囊不可點。
 - 下方面板（`HistoryPanel`）三段高度：只留日期列和摘要（約 140dp）、一半（預設 55%）、75%；只有把手、日期列、摘要能拖（彈簧、translateY），清單在裡面捲。整天沒有紀錄固定 40%。
 - 日期列「‹ 10/03（六）今天 ▾ ›」：‹ › 跳到前一個／後一個有紀錄的日子（`HistoryDatabase.historyDays`，本機＋帳號下載過的雲端列；只在雲端的日子、月曆與 ▾ 是 054b）。
 - 摘要「08:03 – 現在 ▾」＋距離時間；「調整範圍」打開範圍條（`HistoryRangeSummary`），拖兩端的圓點改開始、結束，對到那天的實測點，不到 1 分鐘彈回；改過的範圍這一天記住（`RangeMemory`，App 開著時）。
@@ -13,15 +13,15 @@
 - 返回鍵：範圍條 → 面板 75% 回一半 → 離開歷史。
 - 震動（`src/utils/haptics.js`，Android 的 haptic feedback）：每 10 分 tick、整點 click、進停留／點節點 double、拖到頭 heavy、放開範圍 tick、換日期 tick。
 
-## 多隻狗（055b，H7）與資料來源
+## 多隻狗（H7）
 
-- 「＋ 加入」（`HistoryPickers.AddDogSheet`）：地圖上出現過的狗、照訊號源編號排，那天沒紀錄的寫「沒有紀錄」並 40% 透明（照樣可以加）；滿 4 隻時膠囊 40%、點了「最多同時 4 隻」。色槽 route1–route4 跟著狗（`HistoryScreenDogs.dogTransition`），移除後再加入用最小的空色槽。
-- 主角（`HistoryMultiModel.multiDayModel`）：面板、清單、停留編號、時間標記、相機跟著牠；那天（這個來源）沒紀錄的狗不當主角；點膠囊或地圖上的頭像換主角，範圍與游標時刻不變，地圖移到新主角的游標點、清單捲到游標附近的節點。
+- 點狗膠囊打開「看哪幾隻狗」（`HistoryPickers.DogsSheet`）：一起看的狗可換主角及移除（主角無 ✕）；加入區按訊號源編號排，這天沒有紀錄的狗 40% 並可加入；滿 4 隻加入區變淡且寫「最多同時 4 隻」。選了立即生效、小視窗維持開啟，點空白處或返回鍵關閉。只有一狗且可加其他狗時尾端 ＋；沒有其他狗時不可點；多狗尾端 ▾。色槽跟著狗、移除後再加入用最小空色槽。
+- 主角（`HistoryMultiModel.multiDayModel`）：面板、清單、停留編號、時間標記、相機跟著牠；那天沒紀錄的狗不當主角；點小視窗的狗或地圖上的頭像換主角，範圍與游標時刻不變，地圖移到新主角的游標點、清單捲到游標附近的節點。
 - 共同範圍：打開或換日期時主角的自動範圍（之後換主角、加入、移除都不改）；拖範圍對到所有狗合起來的實測點；範圍記在入口那隻（還在畫面上時）。
 - 共用游標：主角是頭像 40dp＋路線色光暈＋名稱牌，標籤在上方；其他狗 32dp 頭像（路線色底）＋名稱牌，沒資料時停在缺口前最後一筆、灰色虛線外圈；其他狗的路線 3dp、游標前 50%、後 20%。
-- 資料來源（`HistoryPickers.SourceSheet`）：狗的歷史面板最底下固定「資料來源：全部 ›」，全部／這支手機收到的／雲端，選了就關；清單、地圖、月曆的點、雲端下載都照它；再次進入回到全部。匯出跟著畫面上的範圍、狗和來源（056）。
+- 歷史永遠合併本機與雲端，沒有來源選擇器；同一 slave_id＋定位時間只算一次，本機優先保留接收器距離。封包來源標記仍保留供診斷及去重。月曆、下載、H7 及匯出均使用合併資料。
 
-舊的「歷史軌跡」查詢卡片（`HistorySheet`）、回放（`HistoryPlayback*`）、多天範圍與舊的三角游標都拿掉了；`useMapHistory` 只剩偏好（狗名、上次用的匯出格式）、聽過每隻狗的接收器和日子讀取（舊匯出的每 10 秒查詢在 056 拿掉）；舊卡片的日期清單與雲端日子掃描（`CloudDays`）、草稿預覽、`HistoryCoverage`（「本機最早只到…」）、`listDays`、`hasPhoneTrack` 在 055b 拿掉（日期列、月曆、雲端下載與「資料不完整」取代）。
+舊的「歷史軌跡」查詢卡片（`HistorySheet`）、回放（`HistoryPlayback*`）、多天範圍與舊的三角游標都拿掉了；`useMapHistory` 只剩偏好（狗名）、聽過每隻狗的接收器和日子讀取（舊匯出的每 10 秒查詢在 056 拿掉）；舊卡片的日期清單與雲端日子掃描（`CloudDays`）、草稿預覽、`HistoryCoverage`（「本機最早只到…」）、`listDays`、`hasPhoneTrack` 在 055b 拿掉（日期列、月曆、雲端下載與「資料不完整」取代）。
 
 ## 共用的資料
 
@@ -31,8 +31,8 @@
 
 ## 匯出（056，H9／H10）
 
-- 右上匯出 icon → `HistoryExportSheet`（底部小視窗）：標題「匯出 08:03–12:11」（範圍開始到最後一筆的實際時刻）、PNG 長圖／GPX／CSV，上次用的格式右側「✓ 上次用」（存在歷史偏好 `exportFormat`）。點一個格式，小視窗原地變成「⟳ 產生中…　取消」；失敗寫「匯出失敗　重試」；打開 Android 分享後才關。產生中點遮罩不關，返回鍵＝取消。
-- `useHistoryExport`：按下那一刻把畫面的 `dayModel`（範圍、畫面上的狗、資料來源都已算進去）、顏色和名字拍成快照；地址用 `AddressLookup.lookupAddresses` 最多等 5 秒（沒網路直接寫座標＋「查不到地址」）；快照凍結，「重試」用同一份。暫存檔在 cache/history_exports/〈匯出 id〉/，每次匯出先清掉今天以前的。
+- 右上匯出 icon → `HistoryExportSheet`（底部小視窗）：標題「匯出 08:03–12:11」（範圍開始到最後一筆的實際時刻）、PNG 長圖／GPX／CSV 固定順序，不標示上次使用格式。舊歷史偏好中的 `exportFormat` 不再讀取，不需遷移或清除。點一個格式，小視窗原地變成「⟳ 產生中…　取消」；失敗寫「匯出失敗　重試」；打開 Android 分享後才關。產生中點遮罩不關，返回鍵＝取消。
+- `useHistoryExport`：按下那一刻把畫面的 `dayModel`（範圍、畫面上的狗都已算進去，本機和雲端資料一律合併）、顏色和名字拍成快照；地址用 `AddressLookup.lookupAddresses` 最多等 5 秒（沒網路直接寫第一行座標、第二行膠囊）；快照凍結，「重試」用同一份。暫存檔在 cache/history_exports/〈匯出 id〉/，每次匯出先清掉今天以前的。
 - 純函式：`ExportSnapshot`（畫面模型 → 快照）、`ExportGPX`、`ExportCSV`、`ExportPNG`（版面、分張）、`ExportDraw`（畫圖指令，顏色只用 tokens）、`ExportFiles`（檔名、暫存、隔天清）；規則見 `ExportBuilders.md`。
 - 原生 `HistoryExportPackage.kt`：量字寬、寫 GPX／CSV、照指令畫 PNG（地圖區是 Google lite 模式底圖＋自己投影畫的路線、停留編號、時間標記、比例尺、指北；底圖載不出來時空白底＋比例尺）、Android 分享（多張一次分享）。
 - 拿掉的舊匯出：`HistoryExportDialog`（PNG 截目前地圖畫面＋三行字、GPX、CSV，可「儲存檔案」或分享）→ H9；`HistoryExport.serializeHistory` → `ExportGPX`／`ExportCSV`；`useMapHistory.exportRows` 與每 10 秒的查詢 → 畫面自己的 `historyDayRows`；地圖截圖 `onSnapshotReady` → 原生畫 PNG；原生 `prepare`／`save`（系統「建立文件」）→ `writeText`／`renderPng`＋分享（存檔改從分享選單選「雲端硬碟」等）。

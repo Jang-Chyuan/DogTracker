@@ -19,7 +19,7 @@ export const PNG_STYLE = {
   legendFont: 28, legendWeight: 'bold', legendHeight: 56, sectionFont: 36, sectionDetailFont: 28,
   sectionWeight: 'bold', sectionHeight: 72, footerFont: 24, placeMin: 140, movementMin: 96, rowGap: 36,
   text: colors.text, textMuted: colors.textMuted, background: colors.surface,
-  holdText: colors.receiver, manualText: colors.tonalText, warningText: colors.warn,
+  holdText: colors.receiver, warningText: colors.warn,
   dottedLine: { diameter: 9, gap: 21 }, driveLine: 9, gapLine: { width: 6, dash: [18, 12] },
 };
 const S = PNG_STYLE;
@@ -79,11 +79,11 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
   }
   // 「PNG 一列比一頁還高」: the address is cut after 2 lines (in the PNG only).
   const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH, measure, { bold: true, maxLines: truncate ? 2 : Infinity });
-  // The second line: the pill, then the coordinates / 查不到地址 / 不含中斷, flowing.
+  // The second line: the pill, then the coordinates / 不含中斷, flowing.
   const items = [
     row.pill ? { kind: 'pill', text: row.pill.text, tone: row.pill.tone,
       width: measure(row.pill.text, S.detailFont, true) + S.pillPadding * 2 } : null,
-    ...[row.coordinates, row.missing, row.note].filter(Boolean).map(text => ({ kind: 'note', text,
+    ...[row.coordinates, row.note].filter(Boolean).map(text => ({ kind: 'note', text,
       width: Math.min(PLACE_WIDTH, measure(text, S.detailFont, false)) })),
   ].filter(Boolean);
   const placed = [];
@@ -134,7 +134,9 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     page = { width: S.width, title: head.title, subtitle: head.subtitle, titleLines, subtitleLines, titleHeight,
       legend, legendHeight, blocks: [], height: top };
     if (first) {
-      page.blocks.push({ type: 'map', y: top, height: S.mapHeight, width: S.width, padding: 72,
+      // 128 px keeps every route point clear of the 指北 disc (centre 72 px in
+      // from the top-right corner, radius 40) and endpoint labels inside the frame.
+      page.blocks.push({ type: 'map', y: top, height: S.mapHeight, width: S.width, padding: 128,
         subjects: subjects.map((subject, index) => ({ ...subject.map, color: subject.routeColor || routeColors[index % 4] })),
         holds: subjects.flatMap(subject => subject.holds || []),
         timeMarkers: multi ? 'endpoints' : 'all', cursor: null, fadeByCursor: false,

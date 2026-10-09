@@ -77,6 +77,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showTrails: true,
     windowMinutes: 2,
     noDataCardDismissed: false,
+    diagnosticsEnabled: false,
     alerts: DEFAULT_ALERT_PREFERENCES,
     // Saved before the first-launch guide existed: it counts as passed.
     onboarding: 'done',
@@ -133,6 +134,7 @@ test('every setting survives a new controller and shares no tracking-row writes'
       showTrails: true,
       windowMinutes: 30,
       noDataCardDismissed: false,
+      diagnosticsEnabled: true,
       // S6: 不在接收範圍 and 接收器電量低 off, 聲音 on.
       alerts: { ...DEFAULT_ALERT_PREFERENCES, dogOutOfRange: false, receiverBattery: false, sound: true },
       // D1 passed (「稍後再說」), D2 asked, the camera not yet.

@@ -26,9 +26,9 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 手機記錄、權限 | `phone.recording: false` 讓記錄服務沒在跑；`phone.permission`／`phone.services` 是 `usePhoneLocation` 的回答（預設精確位置、定位服務開著） | `todayPill`（右下「今天 x km」的 icon）、`phone.enabled`（地圖藍點） |
 | 今天的路線 | `phone.today`：今天 `myLocationTracker` 的列（每 10 秒一筆） | 和 `useTodayRoute` 同一套 `todayRouteDistance`（出發偵測、開車不算，src/history）算出「今天 x km」 |
 | 歷史畫面（054a/055a） | `history`：舊歷史頁的查詢（看哪隻狗或我的路線）、狗那一天的 `dog_status`／`supabase_dog_status` 列；我的路線用 `phone.today` | 時間軸清單照 `historyDayRows` 的讀法交出（`HistoryRows` → `historyTimeline`）；情境開著時歷史頁不讀這支手機的資料 |
-| 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）、`calendar`（`'month'` 月曆／`'months'` 選月份打開）、`goTo`（開在別天，只在雲端的日子會開始下載）、`dogs`（再加哪幾隻狗，055b）、`protagonist`、`source`、`sheet`（`'add'`／`'source'` 小視窗開著）、`cursorAgo`（游標在多久以前）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
+| 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）、`calendar`（`'month'` 月曆／`'months'` 選月份打開）、`goTo`（開在別天，只在雲端的日子會開始下載）、`dogs`（再加哪幾隻狗，055b）、`protagonist`、`sheet`（`'dogs'` 選狗小視窗開著）、`cursorAgo`（游標在多久以前）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
 | 雲端的日子、下載（054b） | `historyCloud`：`fixtureHistoryCloud` 照 `HistoryCloud` 的介面回答（`newestBefore`、`earliest`、`download`），資料是情境自己的「雲端」列；下載把那天的列放進情境的 `supabase_dog_status`；`online: false` 沒網路；`seed` 是開頭就知道的雲端日子 | `useHistoryCloud` → 月曆的點、‹ ›、H3c／H3d；情境從不連 Supabase |
-| 匯出（056） | `historyExport`：`'hang'`（產生中一直不結束）、`'fail'`、`'fail-once'`（第一次失敗、重試成功）；沒給就是真的原生匯出（檔案寫進這支手機的 cache、打開 Android 分享）。`historyView.export`：`{ phase: 'choose' \| 'generating' \| 'failed', format }` 開著匯出小視窗；`historyView.lastExport` 上次用的格式（情境只記在記憶體） | `useHistoryExport` → `HistoryExportSheet`、`HistoryExportPackage.kt` |
+| 匯出（056） | `historyExport`：`'hang'`（產生中一直不結束）、`'fail'`、`'fail-once'`（第一次失敗、重試成功）；沒給就是真的原生匯出（檔案寫進這支手機的 cache、打開 Android 分享）。`historyView.export`：`{ phase: 'choose' \| 'generating' \| 'failed', format }` 開著匯出小視窗 | `useHistoryExport` → `HistoryExportSheet`、`HistoryExportPackage.kt` |
 | 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
 | 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
@@ -103,20 +103,23 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `phone-no-permission` | 定位權限被拿掉（之前走了 2.7 km）→ 灰色走路小人加斜線、灰字「今天 2.7 km」（A2）；沒有藍點 |
 | `phone-no-route` | 記錄關著、今天沒有任何路線（只有昨天的）→ 灰色「未記錄」 |
 | `cloud-signed-out` | S3 沒登入：「未登入」＋「登入 ›」→ D1；D1 的完成、「稍後再說」、返回鍵都回 S3 |
-| `cloud-ok` | S3 已登入、最後下載成功、還沒上傳 0 筆、接收器 7 由這支手機上傳 |
-| `cloud-failing&page=cloud` | S3 照設計稿：「下載失敗」「連不上 Supabase・09:24 起」「重試 ›」、還沒上傳 12 筆、最後上傳成功 |
-| `cloud-upload-pending` | S3：需處理 3 筆（紅色「!」＋「重試 ›」）、還沒上傳 12 筆 |
+| `cloud-ok` | S3 已登入、最後下載成功、手機還沒上傳 0 筆、接收器 7 由這支手機上傳 |
+| `cloud-failing&page=cloud` | S3 照設計稿：「下載失敗」「連不上 Supabase・09:24 起」「重試 ›」、手機還沒上傳 12 筆、最後上傳成功 |
+| `cloud-wifi-only` | S3：接收器 7、8 均由自己的 Wi-Fi 上傳，只顯示各接收器的上傳方式 |
+| `cloud-upload-pending` | S3：需處理 3 筆（紅色「!」＋「重試 ›」）、手機還沒上傳 12 筆 |
 | `cloud-unreachable-retrying` | S3：開 App 後還沒連上過 Supabase →「暫時連不上，會自動重試」 |
 | `cloud-expired` | S3 使用中登入失效：紅色「!」「需要重新登入」＋「登入 ›」→ D1（也寫「需要重新登入」）；齒輪紅點、S1「!」 |
 | `upload-switch-confirm` | S3：接收器 7 由 Wi-Fi 上傳、手機裡還有 120 筆，切換確認框打開（c255） |
 | `upload-switch-offline` | 同上但沒網路：確認框寫「要先上傳完 120 筆，請連上網路」、不能切（c256） |
 | `alerts-default` | S6 提醒：全部開、震動開、聲音關、通知已允許；S1「提醒」寫「震動」 |
-| `alerts-some-off` | S6：不在接收範圍、接收器電量低關掉，聲音開；「狗」展開三個開關（部分開）；S1 寫「震動、聲音」「部分開」 |
+| `alerts-some-off` | S6：不在接收範圍、接收器電量低、接收器斷線／位置存不進手機關掉，聲音開；「狗」展開三個開關（部分開）；S1 寫「震動、聲音」 |
+| `settings-diagnostics-on` | S1：已開啟隱藏診斷，其他群組的進階下方顯示診斷 |
 | `diagnostics-ok` | S8：豆豆（接收器 7，速度緩衝「移動中」）、小黑、阿福（雲端）各自的環境模型結果；三個資料頁有資料 |
 | `diagnostics-empty` | S8：沒接收器、沒登入、沒有狗、沒有手機記錄 → 「還沒有狗的資料」，三個資料頁都是空的樣子 |
 | `diagnostics-error` | S8：位置存不進手機（其他原因）→ 最上面寫原因（「看原因」的去處） |
 | `diagnostics-read-failed` | 手機裡的資料讀不到 → 三個資料頁「讀取失敗」＋「重試」 |
 | `advanced-delete-confirm` | S7：按了「刪除全部狗資料」、還有 120 筆沒上傳 →「還有 120 筆沒上傳：先上傳／一起刪除」（c296）；「先上傳」→ 沒網路的說明 |
+| `alerts-all-off` | S6：所有提醒及震動／聲音開關關閉；S1 寫「全部關閉」；不影響 app 內警示 |
 | `notifications-denied` | S6「通知權限 未允許 開系統設定 ›」；S1「提醒」「手機」只放紅色「!」；地圖齒輪紅點 |
 | `onboarding-first-launch` | 第一次開 App、沒登入 → D1「登入 Supabase 帳號」，上方引導進度條第 1 步（共 4 步）、下方「登入」「稍後再說」；情境裡的「稍後再說」不寫進這支手機的設定 |
 | `auth-restore-slow` | 恢復登入超過 10 秒還連不上 Supabase → 先用手機裡的資料進地圖（只有接收器 7 的豆豆、狗 5）；`&page=cloud` 的 S3 寫「暫時連不上，會自動重試」 |
@@ -125,7 +128,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `onboard-permissions-done` | D2d：三列都「已允許」、按鈕「下一步」 |
 | `pair-wrong-qr` | D3b：掃到不是接收器的 QR →「這不是接收器的 QR Code」「手動輸入」「再掃一次」 |
 | `pair-camera-denied` | D3a 相機被拒：掃描框換成「需要相機才能掃描」「開系統設定 ›」，下面照樣有「手動輸入」 |
-| `pair-manual-nearby` | D3c：輸入「DogGPS-Master 7」，搜尋中，附近找到 DogGPS-Master7（訊號強）、DogGPS-Master3（訊號弱） |
+| `pair-manual-nearby` | D3c：輸入「DogGPS-Master 7」，搜尋中，附近找到 DogGPS-Master7（4 格訊號）、DogGPS-Master3（1 格訊號）；不寫訊號強弱，TalkBack 保留 |
 | `pair-connecting` | D3d：「正在連 DogGPS-Master7…」＋「取消」 |
 | `pair-failed` | D3d 30 秒連不上：「連不上接收器 7」「手動輸入」「重試」 |
 | `pair-mismatch` | QR 寫 7、收到 3：「這不是要連的接收器」「要連 7，收到的是 3，已中斷連線」「稍後再說」「重新掃描」 |
@@ -133,10 +136,10 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `pair-done-empty` | D4b：已連上接收器 7、還沒收到訊號源 |
 | `history-my-route` | 歷史畫面（055a）、我的路線（H1）：約 07:02 出發、兩個停留、開車 6 分（切換點 3）、停留、走到現在；地址是捏造的（一個查不到） |
 | `history-dog` | 歷史畫面、小黑（看軌跡，H1 狗的歷史）：兩個停留、坐車 3 分、停留、移動到現在 |
-| `history-range-open` | H2b：同 `history-my-route`，範圍條打開、開始已拖到 07:50（「出發（手動）」），結束跟著現在（`historyView`） |
+| `history-range-open` | H2b：同 `history-my-route`，範圍條打開、開始已拖到 07:50（「出發」），結束跟著現在（`historyView`） |
 | `history-single-point` | 只有一筆：豆豆今天只有 09:10 一筆 → 一個點、距離 0、沒有「調整範圍」 |
 | `history-empty-day` | H8：我的路線今天沒有紀錄（昨天有）→「今天還沒有路線」、右上匯出變淡、‹ 跳到昨天 |
-| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（座標＋「查不到地址」）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
+| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（第一行座標、第二行膠囊）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
 | `history-no-departure` | 我的路線：06:30 起一直在家附近 →「還沒出發」，範圍＝今天全部記錄，沒有停留 |
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
 | `history-gap` | 豆豆：中斷 12 分（「沒有資料」）和 40 分（「沒有資料」＋「恢復記錄」） |
@@ -146,19 +149,16 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-multi-no-data` | 小黑＋狗 5（今天沒紀錄）：狗 5 膠囊 40%、不能當主角、地圖不畫 |
 | `history-multi-cursor` | 游標在 08:40（阿福中斷的時段）：阿福停在缺口前最後一筆、灰色虛線外圈 |
 | `history-multi-add` | 「＋ 加入」小視窗開著：豆豆、狗 5（沒有紀錄、40%）、阿福 |
-| `history-source-picker` | 資料來源小視窗開著（全部） |
-| `history-source-empty` | 資料來源：雲端，小黑和豆豆都只有手機收到的 →「這天沒有小黑的紀錄」，資料來源列照樣在最底下 |
-| `history-source-local` | 資料來源：這支手機收到的，阿福（只在雲端）變淡、不當主角 |
-| `history-calendar` | H3b：小黑的月曆（10 月）。手機裡有 9/29、9/30、10/2、今天；雲端另有 8/12（最早）、8/20、9/5、9/28、10/3。點 9/28 或 10/3（只在雲端）→ H3c 下載 3.5 秒後出現那天 |
+| `history-calendar` | H3b：小黑的月曆（10 月），不放圖例；有紀錄保留點，沒紀錄灰字不能點。手機裡有 9/29、9/30、10/2、今天；雲端另有 8/12（最早）、8/20、9/5、9/28、10/3。點 9/28 或 10/3（只在雲端）→ H3c 下載 3.5 秒後出現那天 |
 | `history-calendar-querying` | 月曆上方「查詢中…」：雲端一直沒回答；還沒查明的日子照一般字色、不能點 |
 | `history-calendar-failed` | 「雲端的紀錄查不到　重試」：還沒查明的日子照一般字色、可以點（點了下載） |
-| `history-month-picker` | H3e：選月份（8、9、10 月有紀錄，1–7 月灰、11–12 月還沒到） |
+| `history-month-picker` | H3e：選月份，不放圖例（8、9、10 月有紀錄，1–7 月灰、11–12 月還沒到） |
 | `history-cloud-offline` | H3d：沒有網路；點 9/28 → 月曆不收、日期不變，下方「沒有網路，9/28 的紀錄還沒下載，連上網路再試」 |
 | `history-calendar-signed-out` | 沒登入：只有手機裡的日子有點，不查雲端 |
 | `history-cloud-downloading` | H3c：開在 9/28 下載中（不會結束；取消或返回鍵 →「這天的紀錄還沒下載完　重試」） |
 | `history-cloud-failed` | 9/28 下載失敗、手機裡沒有：「這天的紀錄還沒下載完」＋「重試」（不是 H8） |
 | `history-cloud-incomplete` | 9/28 下載到一半失敗：那一半的路線＋「資料不完整　重試」 |
-| `history-export` | H9：我的路線，匯出小視窗打開（PNG 上次用） |
+| `history-export` | H9：我的路線，匯出小視窗打開（PNG／GPX／CSV 固定順序） |
 | `history-export-generating` | 產生中（右上 icon 轉圈；情境的匯出永遠不結束） |
 | `history-export-hang` | 匯出小視窗打開、選了格式就一直產生中（看產生中、取消、返回鍵） |
 | `history-export-failed` | 匯出失敗　重試（重試是真的匯出） |
@@ -189,3 +189,19 @@ scripts/fixture-screenshots.sh <輸出資料夾> [名稱 …]   # 不給名稱�
 ```bash
 adb shell am start -a android.intent.action.VIEW -d 'dogtracker://dev/fixture?name=dog-indoor' com.dogtracker
 ```
+
+### 2026-10-09 歷史選狗膠囊
+
+上方只有一顆膠囊：主角 26dp 頭像＋2dp 路線色圈＋名字；其他狗最多兩張 18dp 頭像，重疊 6dp，超出以 +N 表示。多狗顯示 ▾；只有一狗但可加其他狗顯示 ＋；只有一狗且沒有其他狗及「我的路線」不可點。列不捲動。
+
+| Fixture | 狀態 |
+| --- | --- |
+| `history-dogs-one-addable` | 一狗，其他狗可加入 |
+| `history-dogs-one-alone` | 一狗，帳號沒有其他狗，膠囊不可點 |
+| `history-dogs-three` | 三狗 |
+| `history-dogs-four` | 四狗，兩張小頭像＋+1 |
+| `history-dogs-sheet-three` | 三狗，選狗小視窗開著 |
+| `history-dogs-sheet-four` | 四狗，加入區變淡，最多同時 4 隻 |
+| `history-dogs-sheet-no-record` | 加入區的狗 5 這天沒有紀錄，40%，仍可加入 |
+
+小視窗「看哪幾隻狗」選了立即生效且不關閉；主角不可移除，先切換主角。點空白或返回鍵關閉。歷史資料永遠合併本機及雲端，沒有資料來源選擇器。

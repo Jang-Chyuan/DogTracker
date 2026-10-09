@@ -1,9 +1,5 @@
-// The v3 history screen over the map (055a/055b: one dog, 2–4 dogs or my
-// route; H1/H2/H2b/H3a/H7/H8): the top capsule row (‹ 回到現在, the dogs or
-// 「我的路線」, ＋ 加入, the export icon), and the bottom panel with the date
-// row, the range summary (and its range bar), the time-line list of the
-// protagonist and, for dogs, 資料來源 at its foot. The map itself draws
-// useHistoryScreen's presentation (GoogleTrackingMap).
+// History over the map: one dog capsule (or 我的路線), immediate dog chooser,
+// shared range and cursor, calendar, timeline and export.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import {
   forwardRef,
@@ -17,7 +13,6 @@ import {
   ActivityIndicator,
   LayoutAnimation,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -42,8 +37,8 @@ import HistoryTimelineList from './HistoryTimelineList';
 import HistoryExportSheet from './HistoryExportSheet';
 import { useHistoryExport } from './useHistoryExport';
 import HistoryCalendarSheet from './HistoryCalendarSheet';
-import { AddDogSheet, SourceSheet } from './HistoryPickers';
-import { sourceLabel } from '../history/screen/HistoryMultiSources';
+import { DogsSheet } from './HistoryPickers';
+import { historyDogsPill, routeTint } from '../history/screen/HistoryDogsPill';
 
 const OPEN_MOTION = LayoutAnimation.create(
   motion.rangeExpand.duration,
@@ -56,18 +51,19 @@ const CLOSE_MOTION = LayoutAnimation.create(
   LayoutAnimation.Properties.opacity,
 );
 
-function Capsule({ children, onPress, testID, label, style, disabled }) {
+function Capsule({ children, onPress, testID, label, style, disabled, onLayout }) {
   const styles = useStyles(getStyles);
   const body = <View style={[styles.capsule, style]}>{children}</View>;
   if (!onPress)
     return (
-      <View testID={testID} accessible accessibilityLabel={label}>
+      <View testID={testID} accessible accessibilityLabel={label} onLayout={onLayout}>
         {body}
       </View>
     );
   return (
     <PressScale
       testID={testID}
+      onLayout={onLayout}
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
@@ -79,158 +75,46 @@ function Capsule({ children, onPress, testID, label, style, disabled }) {
   );
 }
 
-/** A dog's chip: its face, name and ✕; the protagonist outlined in its route colour. */
-function DogChip({ dog, name, onPress, onRemove, onLayout }) {
+/** One fixed capsule, followed by a flexible spacer and the export control. */
+export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
+  onAdd, warningCount = 0, exportEnabled, exportLabel = '匯出', exportBusy = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
-  const faded = !dog.hasData;
-  return (
-    <PressScale
-      onLayout={onLayout}
-      testID={`history-dog-${dog.id}`}
-      accessibilityRole="button"
-      accessibilityLabel={`${name}${dog.protagonist ? '，目前看的狗' : ''}${
-        faded ? '，這段時間沒有紀錄' : ''
-      }`}
-      accessibilityState={{ selected: dog.protagonist }}
-      onPress={onPress}
-      hitSlop={6}
-    >
-      <View
-        style={[
-          styles.capsule,
-          styles.dogCapsule,
-          { borderColor: dog.protagonist ? dog.color : colors.surface },
-          faded && styles.faded,
-        ]}
-      >
-        <DogAvatar avatar={dog.avatar} size={sizes.chip.avatar} border={0} />
-        <Text style={styles.capsuleText} numberOfLines={1}>
-          {name}
-        </Text>
-        {dog.removable && (
-          <Pressable
-            testID={`history-remove-${dog.id}`}
-            accessibilityRole="button"
-            accessibilityLabel={`移除${name}`}
-            onPress={onRemove}
-            hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
-            style={styles.remove}
-          >
-            <Text style={styles.removeText}>✕</Text>
-          </Pressable>
-        )}
-      </View>
-    </PressScale>
-  );
-}
-
-/**
- * The top row: ‹ 回到現在 (fixed left), the dogs and ＋ 加入 (scrolling
- * sideways when they do not fit) or 「我的路線」; the export icon fixed right.
- */
-function TopRow({
-  top,
-  subject,
-  dogs,
-  nameOf,
-  full,
-  onBack,
-  onExport,
-  onSelect,
-  onRemove,
-  onAdd,
-  exportEnabled,
-  exportLabel = '匯出',
-  exportBusy = false,
-}) {
-  const { colors } = useTheme();
-  const styles = useStyles(getStyles);
-  // The protagonist's chip is scrolled into view when it changes (a face
-  // tapped on the map can lead to a chip out of sight).
-  const scroller = useRef(null);
-  const places = useRef({});
-  const lead = dogs.find(dog => dog.protagonist)?.id;
-  useEffect(() => {
-    const place = places.current[lead];
-    if (place)
-      scroller.current?.scrollTo({
-        x: Math.max(0, place.x - 8),
-        animated: true,
-      });
-  }, [lead]);
+  const pill = historyDogsPill(dogs.map(dog => ({ ...dog, name: nameOf(dog) })), candidates, subject);
   return (
     <View style={[styles.topRow, { top }]} pointerEvents="box-none">
       <Capsule testID="history-back-now" label="回到現在" onPress={onBack}>
         <Text style={styles.backText}>‹ 回到現在</Text>
       </Capsule>
-      {subject === 'phone' ? (
-        <View style={[styles.middle, styles.chips]} pointerEvents="box-none">
-          <Capsule testID="history-target" label="我的路線">
-            <Text style={styles.capsuleText}>我的路線</Text>
-          </Capsule>
-        </View>
-      ) : (
-        <ScrollView
-          ref={scroller}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.middle}
-          contentContainerStyle={styles.chips}
-          keyboardShouldPersistTaps="handled"
-          testID="history-chips"
-        >
-          {dogs.map(dog => (
-            <DogChip
-              key={dog.id}
-              dog={dog}
-              name={nameOf(dog)}
-              onPress={() => onSelect(dog.id)}
-              onRemove={() => onRemove(dog.id)}
-              onLayout={event => {
-                places.current[dog.id] = event.nativeEvent.layout;
-              }}
-            />
-          ))}
-          {/* 滿 4 隻: 40% but still tappable (it says 最多同時 4 隻). */}
-          <Capsule
-            testID="history-add"
-            label={full ? '加入，最多同時 4 隻' : '加入'}
-            onPress={onAdd}
-            style={full && styles.faded}
-          >
-            <Text style={styles.capsuleText}>＋ 加入</Text>
-          </Capsule>
-        </ScrollView>
-      )}
-      {/* 產生中: a 20dp spinner instead, not pressable (判定表「載入中、產生中」). */}
+      <View style={styles.pillSlot}>
+        <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
+          {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
+            <DogAvatar avatar={pill.lead.avatar} size={26} border={0} tint={routeTint(pill.lead, colors)} />
+          </View>}
+          <Text style={styles.capsuleText} numberOfLines={1}>{pill.name}</Text>
+          {!!pill.faces.length && <View style={styles.others}>
+            {pill.faces.map((dog, index) => <View key={dog.id} style={index > 0 && styles.overlap}>
+              <DogAvatar avatar={dog.avatar} size={18} border={1.5} tint={routeTint(dog, colors)} />
+            </View>)}
+            {pill.more > 0 && <Text style={styles.more}>{`+${pill.more}`}</Text>}
+          </View>}
+          {pill.plus && <Text style={styles.plus}>＋</Text>}
+          {pill.caret && <Text style={styles.caret}>▾</Text>}
+        </Capsule>
+      </View>
+      <View style={styles.spacer} />
+      {warningCount > 0 && <Capsule testID="history-warning" label={`警告 ${warningCount}`}>
+        <Text style={styles.warning}>{`⚠ ${warningCount}`}</Text>
+      </Capsule>}
       <PressScale testID="history-export" accessibilityRole="button"
         accessibilityLabel={exportBusy ? '匯出，產生中' : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
-        disabled={!exportEnabled || exportBusy} onPress={onExport}
+        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={6}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
           : <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
       </PressScale>
     </View>
-  );
-}
-
-/** 資料來源：全部 › — fixed at the foot of a dog's panel (not my route's). */
-function SourceRow({ source, onPress }) {
-  const styles = useStyles(getStyles);
-  const label = sourceLabel(source);
-  return (
-    <Pressable
-      testID="history-source"
-      accessibilityRole="button"
-      accessibilityLabel={label.replace(' ›', '')}
-      accessibilityHint="選資料來源"
-      onPress={onPress}
-      style={({ pressed }) => [styles.sourceRow, pressed && styles.pressed]}
-    >
-      <Text style={styles.sourceText}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -362,7 +246,7 @@ function FrameButton({ onPress }) {
  */
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, levels, bottomInset,
   onBack, onFrame, onLevel, closedAt = null, initialRangeOpen = false, initialCalendar = null,
-  candidates = [], initialSheet = null, exportNative = null, lastExport = 'png', onRememberExport, initialExport = null },
+  candidates = [], initialSheet = null, exportNative = null, initialExport = null },
 ref) {
   const styles = getStyles(useTheme());
   const panel = useRef(null);
@@ -371,8 +255,7 @@ ref) {
   const [rangeOpen, setRangeOpen] = useState(initialRangeOpen);
   const raised = useRef(false);
   // H9/H10: the export window and the export running from it.
-  const exporter = useHistoryExport({ screen, exporter: exportNative, lastFormat: lastExport,
-    onRemember: onRememberExport, initial: initialExport });
+  const exporter = useHistoryExport({ screen, exporter: exportNative, initial: initialExport });
   const exportSheet = useRef(null);
   const exporting = exporter.phase !== 'closed';
   // initialCalendar ('month' | 'months'): a screen fixture opens on H3b / H3e.
@@ -384,7 +267,7 @@ ref) {
     if (text) setTip({ text, key: Date.now() });
   }, []);
   const hideTip = useCallback(() => setTip(null), []);
-  // 「＋ 加入」 or 資料來源 open ('add' | 'source'); a fixture can open on one.
+  // A fixture may open the dog chooser.
   const [sheet, setSheet] = useState(initialSheet);
   const sheetRef = useRef(null);
   const { model, subject, cursor, download } = screen;
@@ -442,15 +325,10 @@ ref) {
     setTip(null);
     setCalendarOpen(true);
   }, [closeRange]);
-  // 滿 4 隻: 「最多同時 4 隻」 instead of the list.
   const pressAdd = useCallback(() => {
     closeRange();
-    if (screen.full) {
-      showTip(`最多同時 ${screen.dogs.length} 隻`);
-      return;
-    }
-    setSheet('add');
-  }, [closeRange, screen.full, screen.dogs, showTip]);
+    setSheet('dogs');
+  }, [closeRange]);
   const pressDog = useCallback(
     id => {
       closeRange();
@@ -613,8 +491,8 @@ ref) {
   }
   return (
     <>
-      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} full={screen.full} onBack={onBack}
-        onSelect={pressDog} onRemove={id => { closeRange(); screen.removeDog(id); }} onAdd={pressAdd}
+      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates} warningCount={screen.warningCount ?? 0} onBack={onBack}
+        onAdd={pressAdd}
         exportEnabled={hasRoute} exportBusy={exporter.generating}
         onExport={() => { closeRange(); exporter.open(); }}
         exportLabel={hasRoute ? '匯出' : downloading ? '匯出，無法使用，正在下載'
@@ -622,17 +500,6 @@ ref) {
       <HistoryPanel ref={panel} levels={levels} header={header} onLevel={panelLevel} onDragStart={dragStart}
         bottomInset={bottomInset} scrollRef={list} locked={empty || !model || downloading}
         above={hasRoute ? <FrameButton onPress={onFrame} /> : null}
-        footer={
-          subject === 'dog' ? (
-            <SourceRow
-              source={screen.source}
-              onPress={() => {
-                closeRange();
-                setSheet('source');
-              }}
-            />
-          ) : null
-        }
       >
         <Pressable
           onPress={closeRange}
@@ -653,24 +520,16 @@ ref) {
           onClosed={() => setCalendarOpen(false)}
         />
       )}
-      {sheet === 'add' && (
-        <AddDogSheet
+      {sheet === 'dogs' && (
+        <DogsSheet
           ref={sheetRef}
           bottomInset={bottomInset}
           checkDay={screen.checkDay}
-          candidates={candidates.filter(
-            dog => !(screen.dogs ?? []).some(shown => shown.id === dog.id),
-          )}
+          candidates={candidates}
+          dogs={(screen.dogs ?? []).map(dog => ({ ...dog, name: nameOf(dog) }))}
+          onSelect={pressDog}
+          onRemove={screen.removeDog}
           onAdd={dog => screen.addDog(dog)}
-          onClosed={() => setSheet(null)}
-        />
-      )}
-      {sheet === 'source' && (
-        <SourceSheet
-          ref={sheetRef}
-          bottomInset={bottomInset}
-          selected={screen.source}
-          onChoose={value => screen.setSource(value)}
           onClosed={() => setSheet(null)}
         />
       )}
@@ -691,22 +550,23 @@ const getStyles = makeStyles(theme => {
   return StyleSheet.create({
     topRow: {
       position: 'absolute',
-      left: layout.screenEdge,
-      right: layout.screenEdge,
+      left: 8,
+      right: 8,
       zIndex: 30,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 6,
     },
-    // Room above and below for the capsules' shadows and the 48dp touch.
-    middle: { flex: 1, marginVertical: -8 },
-    chips: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingVertical: 8,
-      paddingRight: 4,
-    },
+    pillSlot: { flexShrink: 1, minWidth: 0, maxWidth: 240 },
+    spacer: { flex: 1 },
+    hero: { borderWidth: 2, borderRadius: 15 },
+    others: { flexDirection: 'row', alignItems: 'center', borderLeftWidth: 1,
+      borderLeftColor: colors.line, paddingLeft: 4, marginLeft: 2 },
+    overlap: { marginLeft: -6 },
+    more: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginLeft: 4 },
+    caret: { fontSize: 10, color: colors.textMuted },
+    plus: { fontSize: 16, fontWeight: '700', color: colors.tonalText },
+    warning: { fontSize: 13, color: colors.warn },
     capsule: {
       height: sizes.chip.height,
       borderRadius: sizes.chip.height / 2,
@@ -718,40 +578,18 @@ const getStyles = makeStyles(theme => {
       ...shadow.floating,
       ...theme.floatingBorder,
     },
-    dogCapsule: {
-      borderWidth: sizes.chip.leadBorder,
-      paddingHorizontal: sizes.chip.paddingH - sizes.chip.leadBorder,
-    },
-    faded: { opacity: opacity.disabled },
-    remove: {
-      marginLeft: -2,
-      marginRight: -4,
-      paddingHorizontal: 4,
-      height: sizes.chip.height,
-      justifyContent: 'center',
-    },
-    removeText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
-    sourceRow: {
-      height: sizes.sheet.dataSourceRow,
-      justifyContent: 'center',
-      paddingHorizontal: space.l,
-      borderTopWidth: 1,
-      borderTopColor: colors.line,
-      backgroundColor: colors.elevated,
-    },
-    sourceText: { ...type.value, fontWeight: '400', color: colors.text },
-    pressed: { backgroundColor: colors.pressedOverlay },
     backText: { color: colors.text, fontSize: 13, fontWeight: '700' },
     capsuleText: {
       color: colors.text,
-      fontSize: 16,
+      fontSize: 13,
       fontWeight: '700',
-      maxWidth: 120,
+      maxWidth: 80,
+      flexShrink: 1,
     },
     exportButton: {
-      width: sizes.floatingButton,
-      height: sizes.floatingButton,
-      borderRadius: sizes.floatingButton / 2,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',

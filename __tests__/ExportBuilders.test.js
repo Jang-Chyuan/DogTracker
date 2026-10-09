@@ -124,7 +124,7 @@ test('multi-dog pagination keeps section header with first node and resumes only
     expect(page.height).toBeLessThanOrEqual(2400);
     page.blocks.forEach((block, i) => { if (block.type === 'section') expect(page.blocks[i + 1].type).toBe('row'); });
   });
-  expect(layout.pages[0].blocks[0]).toMatchObject({ padding: 72, timeMarkers: 'endpoints', cursor: null });
+  expect(layout.pages[0].blocks[0]).toMatchObject({ padding: 128, timeMarkers: 'endpoints', cursor: null });
 });
 
 // Design spec.txt:487: | 多隻狗 PNG | 選定匯出範圍內沒資料的狗（停住期間的封包也算有資料）不算進隻數、不畫、沒有清單段；標題「DogTracker・狗的歷史（3 隻）・起訖」；每隻狗一段，段頭寫狗名、路線色、起訖時間、距離；換張時，被切開的那隻在下一張開頭寫「〔狗名〕（續）」

@@ -200,7 +200,7 @@ export const size = {
     border: 2.5,
     labelGap: 2,
   },
-  badge: { size: 16, border: 1.5, glyph: 9, offset: 4, offsetLarge: 6 },
+  badge: { size: 16, border: 1.5, glyph: 9, problemAngle: Math.PI / 4, houseDrop: 0.25 },
   mapLabel: { paddingV: 2, paddingH: 6, border: 1, halo: 3, maxLines: 2 },
   phoneDot: { size: 14, border: 3, staleAfterMs: 3000 },
   floatingButton: 48,
@@ -270,7 +270,7 @@ export const size = {
       border: 3,
     },
   },
-  sheet: { collapsed: 140, maxRatio: 0.75, emptyRatio: 0.4, dataSourceRow: 48 },
+  sheet: { collapsed: 140, maxRatio: 0.75, emptyRatio: 0.4 },
   calendarDot: 5,
 };
 

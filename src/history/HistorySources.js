@@ -26,15 +26,15 @@ function dedupe(rows, field) {
   }
   return [...unique.values(), ...unstamped].sort((a, b) => a.time - b.time);
 }
+export const mergeHistoryFixes = rows => dedupe(rows, 'locationTime');
+
 /** Call hold replay on packets, then GPS dedupe: status changes must survive. */
-export function historySourceStream(rows = [], { source = 'all', replayHolds = p => p } = {}) {
-  const filtered = normalizeHistoryRows(rows).filter(p => source === 'all'
-    || (source === 'local' || source === 'ble' ? local(p) : p.source === 'cloud'));
-  const packets = source === 'all' ? dedupe(filtered, 'packetTime') : filtered;
+export function historySourceStream(rows = [], { replayHolds = p => p } = {}) {
+  const packets = dedupe(normalizeHistoryRows(rows), 'packetTime');
   const replayed = replayHolds(packets.map(p => ({ ...p })));
   // Held packets are timeline observations even without a new GPS fix.
   const gps = replayed.filter(p => !p.heldReason && coordinateValid(p) && p.locationTime != null);
-  const points = [...(source === 'all' ? dedupe(gps, 'locationTime') : gps),
+  const points = [...mergeHistoryFixes(gps),
     ...replayed.filter(p => p.heldReason && coordinateValid(p))].sort((a, b) => a.time - b.time);
   return { packets, points };
 }

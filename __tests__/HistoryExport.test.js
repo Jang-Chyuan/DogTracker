@@ -76,11 +76,11 @@ describe('the snapshot of the day shown', () => {
       .toEqual(model.nodes.map(n => (n.type === 'movement' || n.type === 'gap' ? expect.any(String) : n.type)));
   });
 
-  test('list rows: an address found is the title; otherwise the coordinates and 查不到地址; the end says 結束', () => {
+  test('list rows: an address found is the title; otherwise coordinates above the pill; the end says 結束', () => {
     const places = subject.timeline.filter(row => row.kind === 'place');
     expect(places[0]).toMatchObject({ title: '桃園區中正路 50 號附近', missing: '' });
     expect(places[1].title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
-    expect(places[1].missing).toBe('查不到地址');
+    expect(places[1]).toMatchObject({ missing: '', coordinates: '' });
     expect(places[places.length - 1].pill.text).toBe('結束');
     expect(JSON.stringify(subject.timeline)).not.toContain('現在');
   });
@@ -260,8 +260,8 @@ describe('the export window (useHistoryExport)', () => {
   const day = dayOf([[6, dogRows(6, legs(DOG_DAY))]]);
   const screen = { dayModel: day, range: day.range, subject: 'dog', look };
   let state;
-  function Probe({ exporter, lookup, onRemember }) {
-    state = useHistoryExport({ screen, exporter, onRemember, now: () => DAY + 5000 });
+  function Probe({ exporter, lookup }) {
+    state = useHistoryExport({ screen, exporter, now: () => DAY + 5000 });
     return null;
   }
   const lookupOf = () => ({ lookupAddresses: jest.fn(async points => points.map(() => null)) });
@@ -273,9 +273,9 @@ describe('the export window (useHistoryExport)', () => {
     return renderer;
   };
 
-  test('a format chosen: 產生中, the files, then the share sheet; 上次用 remembered; the window closes', async () => {
-    const exporter = fakeExporter(), lookup = lookupOf(), onRemember = jest.fn();
-    const renderer = await mount({ exporter, lookup, onRemember });
+  test('a format chosen: 產生中, the files, then the share sheet; the window closes', async () => {
+    const exporter = fakeExporter(), lookup = lookupOf();
+    const renderer = await mount({ exporter, lookup });
     act(() => state.open());
     expect(state.phase).toBe('choose');
     let running;
@@ -284,7 +284,6 @@ describe('the export window (useHistoryExport)', () => {
     await act(async () => running);
     expect(lookup.lookupAddresses).toHaveBeenCalledWith(expect.any(Array), { timeoutMs: 5000 });
     expect(exporter.calls.share[0]).toMatchObject({ mime: 'application/gpx+xml' });
-    expect(onRemember).toHaveBeenCalledWith('gpx');
     expect(state.phase).toBe('closed');
     act(() => renderer.unmount());
   });
@@ -396,4 +395,16 @@ describe('the PNG is light whatever the phone theme (深色模式「匯出的 PN
     expect(exportRouteColor(colors.route3)).toBe(colors.route3);
     expect(exportRouteColor('#123456')).toBe('#123456');
   });
+});
+
+
+test('GPX merges fixes across packet times, prefers local coordinates and keeps different dogs', () => {
+  const cloud = { source: 'cloud', slave_id: 4, time: at(0), locationTime: 'gps:777', latitude: 25, longitude: 121 };
+  const local = { ...cloud, source: 'local', time: at(1), latitude: 25.1, distance_meters: 42 };
+  const snapshot = { since: at(0), until: at(2), subjects: [{ kind: 'dog', slaveId: 4, name: '豆豆',
+    rows: [cloud, local] }, { kind: 'dog', slaveId: 6, name: '小黑', rows: [{ ...cloud, slave_id: 6 }] }] };
+  const gpx = buildGPX(snapshot);
+  expect((gpx.match(/<trkpt /g) || []).length).toBe(2);
+  expect(gpx).toContain('lat="25.1"');
+  expect(gpx).toContain('小黑-6');
 });

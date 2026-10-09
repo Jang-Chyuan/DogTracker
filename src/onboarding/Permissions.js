@@ -11,7 +11,7 @@
 export const PERMISSION_ROWS = Object.freeze({
   nearby: { title: '附近的裝置', purpose: '連接接收器' },
   location: { title: '精確位置', purpose: '算出狗離你多遠、記錄你的路線' },
-  notifications: { title: '通知', purpose: '狗出問題時提醒你（可以不開）' },
+  notifications: { title: '通知', purpose: '狗出問題時提醒你' },
 });
 
 // The settings action on a row that is not allowed (c027's suggestion, the

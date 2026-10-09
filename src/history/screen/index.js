@@ -6,5 +6,5 @@ export * from './HistoryScreenDogs';
 export * from './HistoryScreenState';
 export * from './HistoryScreenModel';
 export * from './HistoryMultiSelection';
-export * from './HistoryMultiSources';
 export * from './HistoryMultiModel';
+export * from './HistoryDogsPill';

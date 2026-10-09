@@ -1,6 +1,6 @@
 // A small window rising from the bottom of the history screen (DESIGN.md
 // 「底部小視窗」: top corners 16, 16dp inside, a 45% dark scrim behind; title
-// 16sp bold): 「＋ 加入」's dogs and 資料來源. A tap on the scrim, the back
+// 16sp bold): the dog chooser and export. A tap on the scrim, the back
 // key (HistoryScreen asks `back()`) or a choice closes it.
 import { useTheme, makeStyles } from '../theme/ThemeProvider';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';

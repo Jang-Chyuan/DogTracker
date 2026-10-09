@@ -9,6 +9,5 @@ test('local keys and bounds use calendar days, navigation skips blank days and p
   expect(dateNavigation('2026-10-05', today, days).next).toBe(today);
   expect(dateNavigation(today, today, days).next).toBe(null);
   expect(dateNavigation('2026-09-28', today, days).previous).toBe(null);
-  expect(availableDays(local, cloud, 'local')).toEqual(local);
-  expect(availableDays(local, cloud, 'cloud')).toEqual(cloud);
+  expect(availableDays([...local, ...cloud], cloud)).toEqual(days);
 });

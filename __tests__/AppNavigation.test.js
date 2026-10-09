@@ -166,6 +166,49 @@ async function tap(id) {
 }
 const title = () => renderer.root.findByProps({ testID: 'page-back' }).props.accessibilityLabel;
 
+test('hidden diagnostics: consecutive taps, timeout, persistence across restart, and hide', async () => {
+  await mount();
+  await press('設定');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  const version = row('settings-version');
+  expect(version.props.accessibilityLabel).toBe('DogTracker 3.0.0，版本');
+  expect(version.props.accessibilityHint).toBeUndefined();
+  for (let i = 0; i < 3; i++) await tap('settings-version');
+  expect(text()).not.toContain('再點');
+  await tap('settings-version');
+  expect(text()).toContain('再點 3 下開啟診斷');
+  await advance(2001);
+  await tap('settings-version');
+  // The previous snackbar can remain, but this tap starts a new sequence.
+  for (let i = 0; i < 2; i++) await tap('settings-version');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  await tap('settings-version');
+  expect(text()).toContain('再點 3 下開啟診斷');
+  await tap('settings-version');
+  expect(text()).toContain('再點 2 下開啟診斷');
+  await tap('settings-version');
+  expect(text()).toContain('再點 1 下開啟診斷');
+  await tap('settings-version');
+  expect(text()).toContain('已開啟診斷');
+  expect(preferences().diagnosticsEnabled).toBe(true);
+  expect(row('settings-row-diagnostics')).toBeDefined();
+  await tap('settings-version');
+  expect(text()).toContain('診斷已經開啟');
+  await act(async () => renderer.unmount());
+  await mount();
+  await press('設定');
+  expect(row('settings-row-diagnostics')).toBeDefined();
+  await tap('settings-row-diagnostics');
+  await tap('diagnostics-hide');
+  expect(title()).toBe('返回，設定');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  expect(preferences().diagnosticsEnabled).toBe(false);
+  await act(async () => renderer.unmount());
+  await mount();
+  await press('設定');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+});
+
 test('no bottom tabs: the gear opens the grouped settings home; each row opens its page and back returns', async () => {
   await mount();
   expect(renderer.root.findAllByProps({ testID: 'bottom-navigation' })).toHaveLength(0);
@@ -174,7 +217,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(text()).toContain('‹ 設定');
   // S1: four groups, no 地圖 row; the old dark settings cards are gone.
   for (const group of ['裝置', '帳號與資料', '提醒', '其他']) expect(text()).toContain(group);
-  for (const id of ['receiver', 'phone', 'account', 'diagnostics', 'alerts', 'advanced']) {
+  for (const id of ['receiver', 'phone', 'account', 'alerts', 'advanced']) {
     expect(row(`settings-row-${id}`)).toBeDefined();
   }
   expect(text()).not.toContain('BLE／QR 與 Master 設定');
@@ -206,9 +249,12 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(title()).toBe('返回，Supabase 帳號');
   expect(renderer.root.findAllByProps({ testID: 'account-settings' }).length).toBeGreaterThan(0);
   expect(text()).toContain('已登入');
-  expect(text()).toContain('最後上傳成功');
+  // No phone upload route is loaded in this live navigation setup.
+  expect(text()).not.toContain('最後上傳成功');
   expect(text()).not.toContain('轉送 Supabase');
   await press('返回，Supabase 帳號');
+  expect(row('settings-row-diagnostics')).toBeUndefined();
+  for (let i = 0; i < 7; i++) await tap('settings-version');
   // 診斷 (S8): its three data pages, all light v3 pages, back returns.
   await tap('settings-row-diagnostics');
   expect(title()).toBe('返回，診斷');
@@ -263,7 +309,7 @@ test('S1 提醒 opens S6 (not the system settings); a switch is saved at once an
   await tap('settings-row-alerts');
   expect(title()).toBe('返回，提醒');
   expect(Linking.sendIntent?.mock?.calls?.length ?? 0).toBe(0);
-  expect(text()).toContain('一定提醒');
+  expect(text()).toContain('接收器斷線、位置存不進手機');
   const sound = renderer.root.findAll(node => node.props.testID === 'alerts-sound'
     && typeof node.props.onValueChange === 'function')[0];
   expect(sound.props.value).toBe(false);
@@ -272,6 +318,12 @@ test('S1 提醒 opens S6 (not the system settings); a switch is saved at once an
   expect(preferences().alerts).toMatchObject({ sound: true, vibrate: true, dogStale: true });
   expect(renderer.root.findAll(node => node.props.testID === 'alerts-sound'
     && typeof node.props.onValueChange === 'function')[0].props.value).toBe(true);
+  const disconnectStorage = renderer.root.findAll(node => node.props.testID === 'alerts-receiverDisconnectedStorage'
+    && typeof node.props.onValueChange === 'function')[0];
+  expect(disconnectStorage.props.value).toBe(true);
+  await act(async () => disconnectStorage.props.onValueChange(false));
+  await advance(100);
+  expect(preferences().alerts.receiverDisconnectedStorage).toBe(false);
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，設定');
   expect(row('settings-row-alerts').props.accessibilityLabel).toBe('提醒，震動、聲音、各項開關，震動、聲音');
@@ -458,7 +510,7 @@ test('「今天 x km」 opens my route on the same map, with its own card, and b
   expect(has('history-back-now')).toBe(true);
   expect(has('history-date')).toBe(true);
   expect(has('history-export')).toBe(true);
-  expect(has('history-add')).toBe(false);
+  expect(has('history-dogs-sheet')).toBe(false);
   expect(text()).toContain('我的路線');
   expect(text()).toContain('今天');
   expect(button('重新查詢')).toBeUndefined();
@@ -498,7 +550,7 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
   // The history screen is this dog's: its capsule, ＋ 加入 (055b) and its target.
   expect(screen.props.historyTarget).toEqual({ subject: 'dog', slaveId: 7 });
-  expect(renderer.root.findAllByProps({ testID: 'history-add' }).length).toBeGreaterThan(0);
+  expect(renderer.root.findAllByProps({ testID: 'history-dogs-pill' }).length).toBeGreaterThan(0);
   // Back from that history returns to the live map with the dog's card open
   // (‹ 回到現在 does the same: onLeaveHistory is the same step back).
   expect(screen.props.onLeaveHistory).toBeInstanceOf(Function);
@@ -771,7 +823,7 @@ test('D2 asks one permission after another, then 下一步; leaving midway resum
     await advance(100);
     expect(page('permissions-page')).toBe(true);
     for (const words of ['App 需要這些權限', '附近的裝置', '連接接收器', '精確位置', '算出狗離你多遠、記錄你的路線', '通知',
-      '狗出問題時提醒你（可以不開）', '全部允許', '稍後再說']) expect(text()).toContain(words);
+      '狗出問題時提醒你', '全部允許', '稍後再說']) expect(text()).toContain(words);
     // Quit on D2: the next start continues on D2.
     await act(async () => renderer.unmount());
     await mount();
@@ -912,6 +964,7 @@ test('the database cannot be opened: 手機裡的資料打不開; 診斷 says wh
   await press('診斷');
   expect(title()).toBe('返回，診斷');
   expect(text()).toContain('SQLITE_CANTOPEN');
+  expect(preferences().diagnosticsEnabled).not.toBe(true);
   await act(async () => expect(onBack()).toBe(true));
   expect(text()).toContain('手機裡的資料打不開');
   // Nothing under it: back leaves the app.
@@ -967,6 +1020,9 @@ test('start fixtures: first launch, restore past 10 s, expired at start, databas
   expect(text()).toContain('手機裡的資料打不開');
   await press('診斷');
   expect(text()).toContain('SQLITE_CANTOPEN');
+  expect(preferences().diagnosticsEnabled).not.toBe(true);
+  // Diagnostics not switched on: no 隱藏診斷 from D0's 診斷.
+  expect(renderer.root.findAllByProps({ testID: 'diagnostics-hide' })).toHaveLength(0);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=auth-restore-slow&page=cloud' }));
   await advance(100);
   expect(title()).toBe('返回，Supabase 帳號');

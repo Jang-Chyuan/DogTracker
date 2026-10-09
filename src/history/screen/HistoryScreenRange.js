@@ -48,8 +48,8 @@ export function rangeBar(range, action) {
 }
 
 /** Persistence key belongs to the entry subject, never the changing protagonist. */
-export function rangeMemoryKey(entryId, day, source, timezone) {
-  return JSON.stringify([entryId, day, source, timezone]);
+export function rangeMemoryKey(entryId, day, timezone) {
+  return JSON.stringify([entryId, day, timezone]);
 }
 
 export function rememberRange(memory, key, range) {

@@ -853,7 +853,9 @@ function TrackerApp({ resume = null, onRestart }) {
       const home = settingsHome(settingsData);
       page = (
         <SettingsHome
+          key={fixtureName ?? 'live'}
           home={home}
+          onEnableDiagnostics={() => mapInputs.tracking.saveTrackingPreferences({ diagnosticsEnabled: true })}
           version={appVersion}
           onOpen={id => open(SETTINGS_ROUTES[id])}
           onStorage={() =>
@@ -906,6 +908,15 @@ function TrackerApp({ resume = null, onRestart }) {
     case 'diagnostics':
       page = (
         <DiagnosticsSettings
+          // Opened from D0's failure screen without the flag: no 隱藏診斷
+          // (design 判定表「診斷的入口」); with it, hiding returns to D0.
+          canHide={settingsData.diagnosticsEnabled}
+          onHide={async () => {
+            const saved = await mapInputs.tracking.saveTrackingPreferences({ diagnosticsEnabled: false });
+            // Back to the screen S8 was opened from (S1 without its row,
+            // the map from a storage card, or D0).
+            if (saved || launch.screen === 'failed') goBack();
+          }}
           page={diagnosticsPage({
             packets: mapInputs.cloudDogs?.packets,
             rows: sources ? fixture.raw.ble : recentRows,

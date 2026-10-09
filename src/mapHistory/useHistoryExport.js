@@ -1,6 +1,6 @@
 // The export of the history screen (H9/H10; 判定表「匯出產生中」, flow.txt
 // 「匯出」): the small window's state, one export at a time from the moment a
-// format is chosen — the day shown (range, dogs, 資料來源) captured then, the
+// format is chosen — the day shown (range, dogs) captured then, the
 // places' addresses asked for at most 5 s (none offline), the file(s) made
 // by the native exporter, then Android's share sheet. 取消 (and the back
 // key) drops a running export; 重試 makes the files again from the same
@@ -56,12 +56,11 @@ export async function cleanExports(exporter, now) {
 
 /**
  * `screen`: useHistoryScreen's (dayModel, range, subject, look). `exporter`:
- * ExportNative's (or a fixture's). `lastFormat` / `onRemember(format)`: the
- * 「✓ 上次用」 format. `initial`: a screen fixture opens on a state.
+ * ExportNative's (or a fixture's). `initial`: a screen fixture opens on a state.
  * Returns { open, phase: 'closed' | 'choose' | 'generating' | 'failed',
  *   format, title, start(format), cancel(), retry(), close(), back() }.
  */
-export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemember, now = Date.now,
+export function useHistoryExport({ screen, exporter, now = Date.now,
   initial = null }) {
   const lookup = useContext(AddressLookupContext);
   const [state, setState] = useState(() => initial ? { phase: initial.phase, format: initial.format ?? 'png' }
@@ -118,7 +117,6 @@ export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemem
       const paths = await makeExportFiles(snapshot, format, exporter, { exportId, createdAt, alive });
       if (!alive()) return;
       if (exporting.current === exportId) exporting.current = null;
-      onRemember?.(format);
       // 打開 Android 分享時才關掉小視窗.
       await exporter.share(paths, EXPORT_MIME[format]);
       if (!alive()) return;
@@ -129,7 +127,7 @@ export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemem
       console.warn('[History export]', error?.message || error);
       setState({ phase: 'failed', format });
     }
-  }, [exporter, screen, lookup, now, onRemember]);
+  }, [exporter, screen, lookup, now]);
   const start = useCallback(format => generate(format, null), [generate]);
   /** 重試: the same snapshot (判定表「匯出快照和停在原處」). */
   const retry = useCallback(() => {
@@ -143,6 +141,6 @@ export function useHistoryExport({ screen, exporter, lastFormat = 'png', onRemem
     return true;
   }, [state.phase, close]);
   const range = screen.range;
-  return { ...state, open, start, stop, cancel: close, retry, close, back, lastFormat,
+  return { ...state, open, start, stop, cancel: close, retry, close, back,
     generating: state.phase === 'generating' && !state.stopped, range };
 }

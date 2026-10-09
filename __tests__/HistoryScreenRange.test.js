@@ -33,14 +33,14 @@ test('short record sets disable handles, empty range is safe, equal snap picks e
   expect(screenRange([], { now: 0 }).start).toBe(null);
   expect(nearestRecord(points, 90000).time).toBe(60000);
 });
-test('bar only closes on explicit actions and entry/source/timezone keys differ', () => {
+test('bar only closes on explicit actions and entry/day/timezone keys differ', () => {
   let range = rangeBar(screenRange(points, options), 'summary');
   expect(range.expanded).toBe(true);
   expect(rangeBar(range, 'route')).toBe(range);
   for (const action of ['done', 'map-blank', 'list', 'panel-drag', 'back']) expect(rangeBar(range, action).expanded).toBe(false);
   range = rangeBar(range, 'summary');
   expect(range.expanded).toBe(false);
-  expect(rangeMemoryKey('dog', '2026-10-03', 'all', 'Asia/Taipei')).not.toBe(rangeMemoryKey('dog', '2026-10-03', 'cloud', 'Asia/Taipei'));
+  expect(rangeMemoryKey('dog', '2026-10-03', 'Asia/Taipei')).not.toBe(rangeMemoryKey('dog', '2026-10-04', 'Asia/Taipei'));
 });
 test('manual following expires on past days or closed recording at last observation', () => {
   const manual = { start: 60000, end: 240000, following: true };

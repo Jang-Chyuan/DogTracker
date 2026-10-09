@@ -1,4 +1,5 @@
 import { activeSubjects, clippedIntervals, exportRows, gpsTime, inInterval, rawCoordinate, subjectName } from './ExportData';
+import { mergeHistoryFixes } from '../history/HistorySources';
 import { coordinate } from '../tracking/RouteSamples';
 const xml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 const iso = time => new Date(time).toISOString();
@@ -25,16 +26,12 @@ export function buildGPX(snapshot) {
     const holds = subject.holds || [], rides = subject.rides || [], gaps = subject.gaps || [];
     for (const hold of holds) for (const piece of clippedIntervals(hold, snapshot, gaps)) wpts.push(waypoint(subject, hold, piece, true, gaps));
     for (const stay of subject.stays || []) for (const piece of clippedIntervals(stay, snapshot)) wpts.push(waypoint(subject, stay, piece, false, gaps));
-    const groups = new Map(), seen = new Set();
+    const groups = new Map();
     // The same collar fix repeated in later packets (or the same packet from
     // this phone and the cloud) is one trkpt (判定表「同一隻狗本機和雲端同時有」).
-    const rows = exportRows(subject, snapshot).filter(row => {
-      const key = typeof row.locationTime === 'string' ? row.locationTime : null;
-      if (!key) return true;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    // Deduplicated, then in GPS order again (a delayed packet's fix belongs
+    // where it was taken, not where it arrived).
+    const rows = mergeHistoryFixes(exportRows(subject, snapshot)).sort((a, b) => gpsTime(a) - gpsTime(b));
     let previous = null, previousKey = null, segment = null;
     for (const row of rows) {
       const time = gpsTime(row), p = rawCoordinate(row, subject);
