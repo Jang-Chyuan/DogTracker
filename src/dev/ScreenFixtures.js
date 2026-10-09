@@ -55,7 +55,7 @@ let nextId = 1;
 const valueAt = (value, time) => (typeof value === 'function' ? value(time) : value);
 
 function bleRow({ slave, master = 7, time, fix, receiver = at(-6, -4), satellites = 9, hdop = 0.9,
-  battery = 82, usb = 0, speed = 3, rssi = -72, snr = 8, activity = 0.3, batteryValid = 1 }) {
+  battery = 82, usb = 0, speed = 3, rssi = -72, snr = 8, activity = 0.3, batteryValid = 1, masterBattery = 64 }) {
   return {
     id: nextId++, received_at: time, master_id: master, slave_id: slave,
     slave_lat: fix ? fix.latitude : 0, slave_lon: fix ? fix.longitude : 0,
@@ -63,7 +63,7 @@ function bleRow({ slave, master = 7, time, fix, receiver = at(-6, -4), satellite
     distance_meters: fix ? 40 : null, speed_kmh: fix ? speed : 0,
     satellites: fix ? satellites : 0, hdop: fix ? hdop : 655.35,
     battery_percentage: battery, battery_valid: valueAt(batteryValid, time), usb_present: usb,
-    master_battery_percentage: 64, master_battery_valid: 1,
+    master_battery_percentage: masterBattery, master_battery_valid: 1,
     activity: valueAt(activity, time), activity_valid: valueAt(activity, time) == null ? 0 : 1,
     rssi, snr, packet_type: 'status',
   };
@@ -222,13 +222,15 @@ const FIXTURES = {
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: dog4Ble(now), cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
   }),
-  // A first start: no receiver set up and nothing downloaded (signed in, empty
-  // account). The phone itself still has a position.
+  // A first start (A6): no receiver set up, not signed in, so no dog from
+  // anywhere. The phone itself still has a position.
   'no-data': now => ({
     receiver: { enabled: false, running: false, connected: false, receiving: false,
       deviceName: 'DogGPS Master', expectedMasterId: 0, lastReceivedAt: 0 },
-    cloud: synced(now), phone: walkingPhone(now), ble: [], cloudRows: [],
+    cloud: SIGNED_OUT, phone: walkingPhone(now), ble: [], cloudRows: [],
   }),
+  // The same, signed in to an empty account: A6 without 「登入 Supabase」.
+  'no-data-signed-in': now => ({ ...FIXTURES['no-data'](now), cloud: synced(now) }),
   // Receiver 7 was chosen a minute ago and has not sent anything yet. The
   // newest stored packet is from receiver 3, used until then: dog 4's position
   // in it is real, but receiver 3's position must not be drawn as receiver 7's.
@@ -241,11 +243,36 @@ const FIXTURES = {
   }),
   // Receiver 7 delivered until five minutes ago, then the link dropped; the
   // service keeps reconnecting. Its dog 4 has had no packet since.
+  // The link was established in this service run and lost (disconnectedAt):
+  // 「接收器 7 斷線了」「09:25 斷線・正在自動重連」 (A2).
   'receiver-disconnected': now => ({
-    receiver: { ...receiving(now), connected: false, receiving: false, lastReceivedAt: now - 5 * MINUTE },
+    receiver: { ...receiving(now), connected: false, receiving: false, lastReceivedAt: now - 5 * MINUTE,
+      disconnectedAt: now - 5 * MINUTE },
     cloud: synced(now), phone: walkingPhone(now),
     ble: dog4Ble(now, 5 * MINUTE), cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
   }),
+  // A2b: the same disconnection, its card closed with ✕: only the gear's red dot.
+  'receiver-disconnected-dismissed': now => ({ ...FIXTURES['receiver-disconnected'](now),
+    dismissed: { receiver: now - 5 * MINUTE } }),
+  // ---- top cards and the gear's red dot (049) ----------------------------
+  // Dog positions cannot be written: the phone is full (「檢查空間」).
+  'storage-failed': now => ({ ...FIXTURES['all-good'](now),
+    storageError: '資料存檔失敗：database or disk is full (code 13 SQLITE_FULL)' }),
+  // Writing fails for another reason (「看原因」, the reason in the card).
+  'storage-failed-other': now => ({ ...FIXTURES['all-good'](now),
+    storageError: '資料存檔失敗：attempt to write a readonly database' }),
+  // A2c: no base map (no network): dogs, phone and ring on grey, 「重試」.
+  'map-load-failed': now => ({ ...FIXTURES['all-good'](now), mapFailure: 'tiles' }),
+  // The map itself cannot open: grey only, 「地圖打不開」.
+  'map-unavailable': now => ({ ...FIXTURES['all-good'](now), mapFailure: 'component' }),
+  // Downloads have failed for six minutes: the gear's red dot only, no card.
+  'cloud-failing': now => ({ ...FIXTURES['all-good'](now),
+    cloud: { ...synced(now), lastSuccess: now - 6 * MINUTE - 5 * SECOND, lastDownloadAt: now - 6 * MINUTE - 5 * SECOND,
+      failingSince: now - 6 * MINUTE, error: 'Network request failed' } }),
+  // Receiver 7's own battery at 15%: the gear's red dot only.
+  'receiver-battery-low': now => ({ ...FIXTURES['all-good'](now),
+    ble: series(bleRow, now, { slave: 4, from: 10 * MINUTE, to: 5 * SECOND, start: [14, 9], step: [0.05, 0.08],
+      masterBattery: 15 }) }),
   // 小黑 (dog 6, heard by receiver 7) went inside twelve minutes ago: clear
   // fixes in one spot, then packets without a fix. The real indoor-hold rules
   // (HoldStore + the bundled environment model) hold it there as 室內.
@@ -666,7 +693,8 @@ export function buildFixture(name, now = FIXTURE_NOW) {
   const make = FIXTURES[name];
   if (!make) return null;
   nextId = 1;
-  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {} } = make(now);
+  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
+    dismissed = {}, storageError = null, mapFailure = null } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -707,7 +735,14 @@ export function buildFixture(name, now = FIXTURE_NOW) {
       statuses: holds.statuses(),
       ranges: holds.ranges(),
       error: '',
+      loaded: true,
     },
+    // Top cards closed with ✕ before the screenshot (A2b).
+    dismissed,
+    // A failed write of dog positions (useTrackingSession's realWriteError).
+    storageError,
+    // 'tiles' (no base map) or 'component' (the map cannot open).
+    mapFailure,
     livePhone: phone?.position && phone.recording !== false ? {
       running: true, status: '記錄中',
       position: phone.position,
@@ -754,7 +789,8 @@ function cardRows(ble, cloud, slaveId, since) {
 
 // The map's own preferences are the user's; a fixture shows every dog, none
 // followed, so its screenshot does not depend on what this phone saved.
-const FIXTURE_PREFERENCES = Object.freeze({ showMasterMarker: true, showSlaveMarker: true });
+const FIXTURE_PREFERENCES = Object.freeze({ showMasterMarker: true, showSlaveMarker: true,
+  noDataCardDismissed: false });
 
 const ignoreWrite = () => Promise.resolve();
 
@@ -780,7 +816,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       initialSnapshotReady: true,
       ready: { ...tracking.ready, real: true },
       errors: { ...tracking.errors, real: null },
-      realWriteError: null,
+      realWriteError: fixture.storageError,
       preferences: { ...tracking.preferences, ready: true, busy: false, error: null,
         value: { ...tracking.preferences.value, ...FIXTURE_PREFERENCES } },
       // A tap on a fixture's eye or follow button must not save the fixture's
@@ -795,6 +831,11 @@ export function applyScreenFixture(fixture, live, edits = null) {
         && fixture.phonePermission.services },
     todayRoute: fixture.todayRoute,
     cloudDogs: fixture.cloudDogs,
+    // The upload and the notification permission are this phone's: a
+    // fixture shows them working.
+    cloudProblem: false,
+    signInExpired: false,
+    notificationsDenied: false,
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
     history: history && {
       ...history, preferences: { ...history.preferences, dogAliases: aliases },

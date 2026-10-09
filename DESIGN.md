@@ -65,6 +65,7 @@
 | `mapLabelHalo` | `#FFFFFF` | 地圖上的文字外框（3dp），讓字在任何底圖上都看得清楚 |
 | `alertBorder` | `#F4CFC9` | 提醒卡和「⚠ N」的 1dp 框 |
 | `alertIconBg` | `#FDE7E4` | 提醒卡左側圖示的圓底 |
+| `alertDetail` | `#8A5A55` | 提醒卡的說明（第二行） |
 | `mapFallback` | `#ECEEEC` | 底圖載不出來時的灰底（狗、手機、接收範圍圈照畫，不加比例尺） |
 
 ### 設定首頁 icon（底色／線色）

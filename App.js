@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -38,6 +39,8 @@ import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { useTodayRoute } from './src/locationTracker/useTodayRoute';
 import { layout } from './src/theme/tokens';
+import { useNotificationPermission } from './src/app/useNotificationPermission';
+import { storageProblem } from './src/map/TopAlerts';
 
 
 
@@ -140,8 +143,23 @@ function TrackerApp() {
     tracking.ready.real,
     undefined, null, { active: tracking.foreground && showsMap && !fixture, revision: cloudSync.revision });
   const fixtureEdits = useFixtureEdits(fixture);
+  const notificationsDenied = useNotificationPermission(tracking.foreground);
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
-    { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute }, fixtureEdits);
+    { tracking, phone, cloudDogs, cloudSync, history, dogAvatars, todayRoute: liveTodayRoute,
+      // The gear's red dot: the upload failing or the sign-in expired.
+      cloudProblem: !!cloudSync.ownerId && !!upload.error,
+      signInExpired: !!auth.expired,
+      notificationsDenied }, fixtureEdits);
+  // A top card's button (A2/A6): where it takes the user. Back returns to the map.
+  const alertAction = id => {
+    if (id === 'receiver-settings' || id === 'connect-receiver' || id === 'storage-reason') {
+      navigate('hardware', route.name === 'settings' ? 'settings' : 'map');
+    }
+    else if (id === 'sign-in') navigate('cloud', 'map');
+    else if (id === 'storage-settings') {
+      Linking.sendIntent('android.settings.INTERNAL_STORAGE_SETTINGS').catch(() => Linking.openSettings());
+    }
+  };
   // Background work that keeps going when the map is left (返回鍵 on the
   // map): this phone uploads for a receiver and still has rows waiting.
   const uploading = (upload.settings || []).some(setting => setting.mode === 'phone')
@@ -180,6 +198,9 @@ function TrackerApp() {
           onCloud={() => navigate('cloud', 'settings')}
           onLocationTracker={() => navigate('locationTracker', 'settings')}
           account={{ signedIn: !!auth.user, email: auth.user?.email || '', expired: auth.expired }}
+          storage={storageProblem(tracking.realWriteError)}
+          onStorage={() => alertAction(storageProblem(tracking.realWriteError)?.full ? 'storage-settings'
+            : 'storage-reason')}
         />
       );
       break;
@@ -246,6 +267,11 @@ function TrackerApp() {
           fixture={isHistory ? null : fixture}
           todayRoute={mapInputs.todayRoute}
           onOpenSettings={() => navigate('settings')}
+          signedIn={!!mapInputs.cloudSync.ownerId}
+          cloudProblem={mapInputs.cloudProblem}
+          signInExpired={mapInputs.signInExpired}
+          notificationsDenied={mapInputs.notificationsDenied}
+          onAlertAction={alertAction}
           openDogRequest={openDogRequest}
           onOpenHistory={slaveId => {
             setCardHistory(slaveId);
@@ -261,7 +287,7 @@ function TrackerApp() {
           dogDatabase={tracking.hardwareDatabase}
           onStorageError={tracking.reportNativeWriteError}
           active={route.name === 'hardware'}
-          onBack={() => navigate('settings')}
+          onBack={() => navigate(route.parent || 'settings')}
           backRequest={hardwareBack}
         />
       )}
@@ -276,16 +302,6 @@ function TrackerApp() {
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
           >
-            {tracking.realWriteError ? (
-              <View style={ui.card}>
-                <Text accessibilityRole="alert" style={ui.error}>
-                  正式資料儲存失敗：{tracking.realWriteError}
-                </Text>
-                <Text style={ui.hint}>
-                  部分硬體資料未能儲存。讀取正常不代表寫入正常；此提示會在下一筆成功寫入後清除，失敗資料不會自動重送。
-                </Text>
-              </View>
-            ) : null}
             {content}
           </ScrollView>
         </KeyboardAvoidingView>

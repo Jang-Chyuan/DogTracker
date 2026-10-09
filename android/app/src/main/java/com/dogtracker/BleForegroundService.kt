@@ -32,6 +32,12 @@ class BleForegroundService : Service() {
     @Volatile var isRunning = false
     @Volatile var isConnected = false
     @Volatile var lastDataElapsed = 0L
+    // When an established link (subscribed, this service run) was lost and
+    // has not come back since (wall clock ms; 0 = connected, or never
+    // connected yet). The map's 「接收器 7 斷線了」 card counts from it; a
+    // receiver that has not connected since the service started is
+    // "connecting", not disconnected.
+    @Volatile var disconnectedAt = 0L
     @Volatile var instance: BleForegroundService? = null
     @Volatile var eventSink: ((String, String) -> Unit)? = null
   }
@@ -100,6 +106,8 @@ class BleForegroundService : Service() {
     handler.post {
       if (intent?.action == ACTION_CONNECT) {
         closeGatt()
+        // A newly chosen receiver starts as "connecting".
+        disconnectedAt = 0
         handler.removeCallbacks(reconnectRunnable)
         deviceId = intent.getStringExtra(EXTRA_DEVICE_ID).orEmpty()
         deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME)?.ifBlank { "DogGPS Master" } ?: "DogGPS Master"
@@ -196,6 +204,7 @@ class BleForegroundService : Service() {
         handler.removeCallbacks(connectTimeout)
         connecting = false
         isConnected = true
+        disconnectedAt = 0
         reconnectAttempt = 0
         // Receiving again after the user switched it off: closes that pause.
         prefs.edit().putString(ReceiverPauses.KEY,
@@ -333,6 +342,9 @@ class BleForegroundService : Service() {
   }
 
   private fun fail(message: String) {
+    // Only the loss of an established link starts a disconnection; failed
+    // reconnect attempts keep its first moment.
+    if (isConnected) disconnectedAt = System.currentTimeMillis()
     closeGatt()
     publishStatus(message)
     scheduleReconnect()
@@ -372,6 +384,7 @@ class BleForegroundService : Service() {
   private fun stopSession(status: String = "背景接收已停止") {
     manualStop = true
     isRunning = false
+    disconnectedAt = 0
     handler.removeCallbacksAndMessages(null)
     closeGatt()
     prefs.edit().putBoolean("enabled", false).commit()
@@ -392,6 +405,7 @@ class BleForegroundService : Service() {
     instance = null
     isRunning = false
     isConnected = false
+    disconnectedAt = 0
     handler.post {
       manualStop = true
       handler.removeCallbacksAndMessages(null)

@@ -92,6 +92,24 @@ export function SettingsGear({ top, alert = false, alertLabel = null, onPress })
   );
 }
 
+/**
+ * The compass (指南針): only while the map is turned; 48dp round, 16dp from
+ * the right, at `top` (12dp under the gear, or under the top cards). The
+ * needle points to north; a tap turns the map back to north.
+ */
+export function CompassButton({ top, heading, onPress }) {
+  return (
+    <View style={[styles.gear, { top }]} pointerEvents="box-none">
+      <PressScale testID="map-compass" accessibilityRole="button" accessibilityLabel="指南針，轉回正北"
+        onPress={onPress} style={styles.round}>
+        <View style={{ transform: [{ rotate: `${-heading}deg` }] }}>
+          <Glyph name="compass" color={colors.iconMuted} size={sizes.icon.map} />
+        </View>
+      </PressScale>
+    </View>
+  );
+}
+
 const hint = sizes.edgeHint;
 const ARROW = { left: '‹', right: '›', top: '‹', bottom: '‹' };
 const ARROW_TURN = { left: '0deg', right: '0deg', top: '90deg', bottom: '-90deg' };
