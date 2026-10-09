@@ -58,6 +58,7 @@ class AlertParityTest {
         val events = Events.update(state, dogs, receiver, at)
         val (next, effects) = Scheduler.schedule(events, at, preferences, value.optBoolean("allowed", true))
         state = if (value.optString("action") == "pause") Scheduler.pause(next, at) else next
+        if (value.optString("action") == "restart") state = AlertCodec.readState(AlertCodec.writeState(state))
         val expect = value.getJSONObject("expect")
         val label = "$name, step $step"
         assertEquals(label, expect.getString("notification"), effects.notification)

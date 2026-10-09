@@ -6,7 +6,7 @@
 // After a rule change: UPDATE_ALERT_PARITY=1 npm test -- AlertParity
 import fs from 'fs';
 import path from 'path';
-import { stepAlerts, pauseAlertState, persistedAlertState } from '../src/alerts/AlertEngine';
+import { stepAlerts, pauseAlertState, persistedAlertState, restoreAlertState } from '../src/alerts/AlertEngine';
 
 const FIXTURE = path.join(__dirname, '../android/app/src/test/resources/alert-parity.json');
 const M = 60000;
@@ -32,6 +32,16 @@ const jsDog = value => ({
 });
 
 const SCENARIOS = [
+  {
+    name: 'K05: established receiver outage survives a process restart', preferences: {},
+    steps: [
+      { at: T, dogs: [dog(4, '豆豆')], receiver: receiver({ connected: false, disconnectedAt: T - M }) },
+      { at: T + M, dogs: [dog(4, '豆豆')], receiver: receiver({ connected: false, disconnectedAt: T - M }), action: 'restart' },
+      { at: T + 2 * M, dogs: [dog(4, '豆豆')], receiver: receiver({ connected: false, disconnectedAt: T - M }) },
+      { at: T + 3 * M, dogs: [dog(4, '豆豆')], receiver: receiver() },
+    ],
+  },
+
   {
     name: 'K06: a local range episode survives cloud takeover and does not restart on local return',
     preferences: {},
@@ -136,6 +146,7 @@ function runScenario(scenario) {
     const result = stepAlerts(state, input);
     state = result.state;
     const { effects } = result;
+    if (step.action === 'restart') state = restoreAlertState(persistedAlertState(state));
     if (step.action === 'pause') state = pauseAlertState(state, step.at);
     steps.push({
       ...step,

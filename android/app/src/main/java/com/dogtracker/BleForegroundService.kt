@@ -162,6 +162,7 @@ class BleForegroundService : Service() {
         closeGatt()
         // A newly chosen receiver starts as "connecting".
         disconnectedAt = 0
+        prefs.edit().remove("receiverLink").commit()
         handler.removeCallbacks(reconnectRunnable)
         deviceId = intent.getStringExtra(EXTRA_DEVICE_ID).orEmpty()
         deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME)?.ifBlank { "DogGPS Master" } ?: "DogGPS Master"
@@ -176,6 +177,9 @@ class BleForegroundService : Service() {
         reconnectAttempt = 0
         BackgroundAlerts.forgetReceiver(this)
       } else {
+        val restored = com.dogtracker.alerts.ReceiverLinkState.restore(prefs.getString("receiverLink", null), System.currentTimeMillis())
+        disconnectedAt = restored.disconnectedAt
+        prefs.edit().putString("receiverLink", restored.write()).commit()
         deviceId = prefs.getString("deviceId", "").orEmpty()
         deviceName = prefs.getString("deviceName", "DogGPS Master").orEmpty()
         serviceUuid = prefs.getString("serviceUuid", "").orEmpty()
@@ -262,6 +266,7 @@ class BleForegroundService : Service() {
         connecting = false
         isConnected = true
         disconnectedAt = 0
+        prefs.edit().putString("receiverLink", com.dogtracker.alerts.ReceiverLinkState(true).write()).commit()
         reconnectAttempt = 0
         // Receiving again after the user switched it off: closes that pause.
         prefs.edit().putString(ReceiverPauses.KEY,
@@ -404,6 +409,7 @@ class BleForegroundService : Service() {
     // reconnect attempts keep its first moment.
     if (isConnected) {
       disconnectedAt = System.currentTimeMillis()
+      prefs.edit().putString("receiverLink", com.dogtracker.alerts.ReceiverLinkState(false, disconnectedAt).write()).commit()
       runCatching { wakeLock.acquire(Events.DISCONNECT_GRACE_MS + 2 * ALERT_CHECK_MS) }
     }
     closeGatt()
@@ -448,7 +454,7 @@ class BleForegroundService : Service() {
     disconnectedAt = 0
     handler.removeCallbacksAndMessages(null)
     closeGatt()
-    prefs.edit().putBoolean("enabled", false).commit()
+    prefs.edit().putBoolean("enabled", false).remove("receiverLink").commit()
     publishStatus(status)
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
@@ -477,6 +483,9 @@ class BleForegroundService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
+    if (isConnected) {
+      prefs.edit().putString("receiverLink", com.dogtracker.alerts.ReceiverLinkState(false, System.currentTimeMillis()).write()).commit()
+    }
     instance = null
     isRunning = false
     isConnected = false

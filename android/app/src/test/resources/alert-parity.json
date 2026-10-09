@@ -1,5 +1,277 @@
 [
  {
+  "name": "K05: established receiver outage survives a process restart",
+  "preferences": {},
+  "steps": [
+   {
+    "at": 1760000000000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": false,
+     "disconnectedAt": 1759999940000,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・接收器與手機要注意",
+     "lines": [
+      "接收器 7 斷線了（1 隻狗收不到）"
+     ],
+     "target": {
+      "screen": "receiver-settings"
+     },
+     "delivered": [
+      "receiver-disconnected:receiver"
+     ],
+     "vibration": [
+      0,
+      500,
+      150,
+      200,
+      150,
+      500
+     ],
+     "critical": true,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "receiver-disconnected:receiver": {
+        "key": "receiver-disconnected:receiver",
+        "startedAt": 1759999940000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "receiver-disconnected:receiver": {
+        "token": "1759999940000:1",
+        "at": 1760000000000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000000000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000060000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": false,
+     "disconnectedAt": 1759999940000,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "action": "restart",
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・接收器與手機要注意",
+     "lines": [
+      "接收器 7 斷線了（1 隻狗收不到）"
+     ],
+     "target": {
+      "screen": "receiver-settings"
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "receiver-disconnected:receiver": {
+        "key": "receiver-disconnected:receiver",
+        "startedAt": 1759999940000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "receiver-disconnected:receiver": {
+        "token": "1759999940000:1",
+        "at": 1760000000000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000000000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000120000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": false,
+     "disconnectedAt": 1759999940000,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "update",
+     "title": "DogTracker・接收器與手機要注意",
+     "lines": [
+      "接收器 7 斷線了（1 隻狗收不到）"
+     ],
+     "target": {
+      "screen": "receiver-settings"
+     },
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "receiver-disconnected:receiver": {
+        "key": "receiver-disconnected:receiver",
+        "startedAt": 1759999940000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "receiver-disconnected:receiver": {
+        "token": "1759999940000:1",
+        "at": 1760000000000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000000000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000180000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000000000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {},
+      "batteries": {},
+      "seen": {},
+      "pending": {},
+      "lastAttentionAt": 1760000000000,
+      "pause": null
+     }
+    }
+   }
+  ]
+ },
+ {
   "name": "K06: a local range episode survives cloud takeover and does not restart on local return",
   "preferences": {},
   "steps": [
