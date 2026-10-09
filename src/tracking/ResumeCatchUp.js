@@ -17,8 +17,9 @@
 // - A failure is 「更新失敗」 with 重試; 重試 starts the catch-up over (the
 //   caller restarts the feed, which drops the callbacks of the read that
 //   failed, so a late answer from it cannot end the new attempt).
-// - A failed attempt stays failed until explicit retry; late reads cannot
-//   clear the failure.
+// - A failure clears itself when a later read gets through (a one-off read
+//   error while the feed keeps polling is not worth a stuck 更新失敗; 070
+//   device check). Retry stays for a read that keeps failing.
 // Pure: no React, no SQLite, no AppState of its own.
 
 /** 正在更新狗的位置 for longer than this is 更新失敗 (with 重試). */
@@ -80,7 +81,6 @@ export function createResumeCatchUp({
     /** The feed is through (it reports this on every poll). */
     caughtUp() {
       caughtUpOnce = true;
-      if (state.phase === 'failed') return;
       clear();
       set(CATCH_UP_IDLE);
     },

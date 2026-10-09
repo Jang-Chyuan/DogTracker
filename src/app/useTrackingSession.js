@@ -229,7 +229,12 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           if (!wasActive) resumeCatchUp.back();
           resumeFeed();
         } else {
-          if (wasActive) resumeCatchUp.away();
+          if (wasActive) {
+            // A poll that finished before the app went away must not end the
+            // next catch-up: only a read after the return counts.
+            liveReadCaughtUp = false;
+            resumeCatchUp.away();
+          }
           if (!disposed) {
             dispatchTracking({ type: 'refreshing', source: 'real' });
           }

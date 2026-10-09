@@ -77,7 +77,7 @@ describe('tracking session and connection lifetime', () => {
     jest.useRealTimers();
   });
 
-  test('resume catch-up finishes, failures retry, and timeout ignores a late read', async () => {
+  test('resume catch-up finishes, failures retry, and a late read ends a timeout', async () => {
     const db = databases();
     db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
     await mount(db);
@@ -110,8 +110,9 @@ describe('tracking session and connection lifetime', () => {
     expect(session.catchUp.phase).toBe('catching-up');
     await act(async () => jest.advanceTimersByTimeAsync(1));
     expect(session.catchUp.phase).toBe('failed');
+    // A read that gets through after the timeout ends the failure.
     await act(async () => slow.resolve([]));
-    expect(session.catchUp.phase).toBe('failed');
+    expect(session.catchUp.phase).toBe('idle');
     await act(async () => session.retryCatchUp());
     expect(session.catchUp.phase).toBe('idle');
     await act(async () => change('background'));
