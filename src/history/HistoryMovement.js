@@ -1,4 +1,4 @@
-import { configFor, distanceMeters, atLeast, accuracyOf } from './HistoryConfig';
+import { configFor, distanceMeters, atLeast, accuracyOf, measuredSpeedMps } from './HistoryConfig';
 
 const travelMode = subject => (subject === 'phone' ? 'driving' : 'ride');
 const footMode = subject => (subject === 'phone' ? 'walking' : 'moving');
@@ -56,15 +56,26 @@ function detectVehicles(edges, config) {
  */
 export function countDistances(edges, config = configFor('dog')) {
   let anchor = null;
+  // How far the phone's own measured speeds say it went since the anchor
+  // (config.speedBudget, phone only; Infinity once a fix has no speed).
+  let budget = 0;
   for (const edge of edges) {
     if (edge.mode !== 'walking' && edge.mode !== 'moving') {
       edge.countedDistanceM = 0; anchor = null; continue;
     }
-    if (!anchor) anchor = edge.from;
+    if (!anchor) { anchor = edge.from; budget = 0; }
+    const speed = config.speedBudget ? measuredSpeedMps(edge.to) : null;
+    // Speeds under stillMps are a phone standing still (measurement noise).
+    budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
     const moved = distanceMeters(anchor, edge.to);
     const threshold = Math.max(config.minMoveM, accuracyOf(anchor, config), accuracyOf(edge.to, config));
-    if (moved > threshold) { edge.countedDistanceM = moved; anchor = edge.to; }
-    else edge.countedDistanceM = 0;
+    // 067: indoors all day the position drifts 50–110 m for minutes while the
+    // phone measures 0–1 km/h. A move the measured speeds cannot cover (half
+    // again what they add up to, plus minMoveM) is drift: it neither counts
+    // nor becomes the anchor.
+    if (moved > threshold && moved <= budget * 1.5 + config.minMoveM) {
+      edge.countedDistanceM = moved; anchor = edge.to; budget = 0;
+    } else edge.countedDistanceM = 0;
   }
   return edges;
 }

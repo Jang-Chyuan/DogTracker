@@ -162,7 +162,8 @@ describe('reading today\'s route from myLocationTracker', () => {
       insert.run(index + 2, day + index * 5 * SECOND, day + index * 5 * SECOND, 24.99 + index * 0.0001, 121.31, 4, 3);
     const first = await database.phoneRouteSince(day, null, 3);
     expect(first.map(row => row.id)).toEqual([2, 3, 4]);
-    expect(first[0]).toEqual({ id: 2, time: day, latitude: 24.99, longitude: 121.31, accuracy: 4 });
+    expect(first[0]).toEqual({ id: 2, time: day, latitude: 24.99, longitude: 121.31, accuracy: 4,
+      raw_speed_kmh: null, speed_accuracy_mps: null });
     const last = first[first.length - 1];
     const rest = await database.phoneRouteSince(day, { time: last.time, id: last.id }, 3);
     expect(rest.map(row => row.id)).toEqual([5, 6]);

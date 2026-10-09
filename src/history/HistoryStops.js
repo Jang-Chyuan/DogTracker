@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { configFor, distanceMeters, median, above } from './HistoryConfig';
+import { configFor, distanceMeters, median, above, stillFix } from './HistoryConfig';
 import { isVehiclePoint } from './HistoryMovement';
 
 // 判定表「停留的代表位置」: the mean of the visit's judged fixes (accuracy
@@ -55,6 +55,9 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
       current.durationMs += p.time - last.time - interrupted;
       current.interruptionMs += interrupted;
       current.end = p.time; current.points.push(p); outside = []; insideIndex = i;
+    } else if (stillFix(p, config)) {
+      // Measured standing still (the phone's own speed): the position drifted
+      // out of the circle, the phone did not leave (067). Neither in nor out.
     } else {
       outside.push({ point: p, index: i });
       if (outside.length >= 2 && p.time - outside[0].point.time > config.leaveMs) {

@@ -64,6 +64,8 @@ export function validateHistory(value) {
 }
 const rows = result => result.results || result.rows?._array || [];
 export function createHistoryDatabase(db) {
+  // myLocationTracker's speed columns, read once per open database.
+  let phoneSpeedColumns = null;
   return {
     async load() {
       await db.executeAsync('CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
@@ -110,12 +112,21 @@ export function createHistoryDatabase(db) {
       if (!exists.length) return [];
       const time = Math.max(Number(since) || 0, Number(cursor?.time) || 0);
       const id = Number(cursor?.time) >= Number(since) ? Number(cursor?.id) || 0 : 0;
+      // The phone's own measured speed (067: drift it did not walk is not
+      // counted), when this install's table has the columns.
+      if (!phoneSpeedColumns) {
+        const names = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
+        phoneSpeedColumns = ['raw_speed_kmh', 'speed_accuracy_mps'].filter(name => names.has(name));
+      }
+      const optional = value => (value == null ? null : Number(value));
       return rows(await db.executeAsync(
-        `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy FROM myLocationTracker
+        `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy${
+          phoneSpeedColumns.map(name => `, ${name}`).join('')} FROM myLocationTracker
          WHERE recorded_at >= ? AND (recorded_at > ? OR (recorded_at = ? AND id > ?))
          ORDER BY recorded_at, id LIMIT ?`, [Number(since) || 0, time, time, id, limit]))
         .map(row => ({ id: Number(row.id), time: Number(row.time), latitude: Number(row.latitude),
-          longitude: Number(row.longitude), accuracy: row.accuracy == null ? null : Number(row.accuracy) }));
+          longitude: Number(row.longitude), accuracy: optional(row.accuracy),
+          raw_speed_kmh: optional(row.raw_speed_kmh), speed_accuracy_mps: optional(row.speed_accuracy_mps) }));
     },
     /**
      * One dog's (or this phone's) rows of one day for the history list
