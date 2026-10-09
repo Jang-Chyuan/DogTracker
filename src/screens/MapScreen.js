@@ -31,6 +31,8 @@ import { dogCard, phoneReading } from '../map/DogCardModel';
 import { useDogCardReadings } from '../map/useDogCardReadings';
 import { cloudClock, dogFreshness } from '../tracking/DogFreshness';
 import { layout } from '../theme/tokens';
+import { SettingsGear } from '../map/MapControls';
+import { startOfToday, todayPill } from '../tracking/TodayDistance';
 
 // How long the first framing waits for the phone's first position report
 // before framing without it (the launch screen is still up meanwhile).
@@ -55,12 +57,17 @@ export default function MapScreen({
   // Debug builds only (src/dev/ScreenFixtures.js): the clock, the phone's live
   // position and the receiver reader of a named screen state.
   fixture = null,
-  // A dog's card opens or closes (App hides the bottom tabs under it).
+  // A dog's card opens or closes.
   onCardChange,
   // 看軌跡: the history query is saved; open the history page for slaveId.
   onOpenHistory,
   // { slaveId, key }: open this dog's card (back from its history).
   openDogRequest = null,
+  // 「今天 x km」: today's recorded route of this phone ({ count, metres },
+  // useTodayRoute), null until read.
+  todayRoute = null,
+  // The gear (A1 top right) opens settings.
+  onOpenSettings,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
@@ -338,6 +345,39 @@ export default function MapScreen({
     setSelected(null);
     onOpenHistory?.(dog.slaveId);
   };
+  // 「今天 x km」 (A1/A2): today's distance and whether the phone records
+  // and has a location.
+  // Recording that has not had a first fix yet waits 10 minutes before the
+  // slash, like a lost one (判定表「暫時沒有 GPS 訊號」).
+  const waitingSince = useRef(null);
+  const waiting = !!livePhone?.running && !livePhone?.position;
+  if (!waiting) waitingSince.current = null;
+  else if (waitingSince.current == null) waitingSince.current = now;
+  const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone, now,
+    waitingSince: waitingSince.current }));
+  const today = useMemo(() => JSON.parse(pillKey), [pillKey]);
+  const [routeBusy, setRouteBusy] = useState(false);
+  // Only while the live map is still in front does a finished save navigate.
+  const liveInFront = useRef(false);
+  liveInFront.current = active && !historical;
+  // Tapping it opens my route: today's recorded route of this phone in the
+  // history page (the whole day, so it grows while recording and ends at the
+  // last fix when recording stops), no dogs. The query is stored first, like
+  // 看軌跡.
+  const openMyRoute = useCallback(async () => {
+    if (!history?.save || routeBusy) return;
+    const start = startOfToday(now);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    setRouteBusy(true);
+    const saved = await history.save({
+      ...history.preferences,
+      timeMode: 'fixed', startAt: start, endAt: end.getTime(),
+      phone: true, client: false,
+    });
+    setRouteBusy(false);
+    if (saved && liveInFront.current) onOpenHistory?.(null);
+  }, [history, routeBusy, now, onOpenHistory]);
   // A5: the name is stored with the history preferences' names (dogAliases),
   // the face in dog_avatars; both by collar number, on this phone only.
   const saveName = async name => {
@@ -426,7 +466,13 @@ export default function MapScreen({
         onHeading={setHeading}
         focusDog={focusDog}
         coverBottom={coverBottom}
+        today={historical ? null : today}
+        onToday={openMyRoute}
       />
+      {!historical && (
+        // Fixed under the status bar; it does not move with the card.
+        <SettingsGear top={insets.top + layout.belowStatusBar} onPress={onOpenSettings} />
+      )}
       {(historical || !tracking.preferences.ready) && <View style={[styles.source, { top }]}>
         <View style={styles.statusDot} />
         <Text style={styles.sourceText}>

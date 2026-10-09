@@ -45,12 +45,14 @@ const clamp = (value, low, high) => (high < low ? low : Math.min(high, Math.max(
 /**
  * @param markers DogMarkers.dogMarkers output
  * @param points screen positions by dog, in dp: { [slaveId]: { x, y } }
- * @param view { width, height, top, bottom }: the screen, and how much of its
- *   top and bottom the controls and the card cover
+ * @param view { width, height, top, bottom, bottomRow }: the screen, and how
+ *   much of its top and bottom the controls and the card cover; bottomRow: the
+ *   height of the bottom row (「今天 x km」 beside 我的位置) a bottom hint sits
+ *   above
  * @returns [{ side, x, y, width, height, faces: marker[], extra, slaveIds,
  *   coordinates, label }]  x/y: the hint's top-left corner
  */
-export function edgeHints(markers = [], points = {}, { width, height, top = 0, bottom = 0 } = {}) {
+export function edgeHints(markers = [], points = {}, { width, height, top = 0, bottom = 0, bottomRow = 0 } = {}) {
   if (!(width > 0 && height > 0)) return [];
   const visibleTop = top;
   const visibleBottom = height - bottom;
@@ -98,7 +100,8 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
       const rightmost = side === 'bottom' ? buttonsLeft - layout.floatingGap - hintWidth
         : width - EDGE_HINT_MARGIN - hintWidth;
       x = clamp(along - hintWidth / 2, EDGE_HINT_MARGIN, rightmost);
-      y = side === 'top' ? visibleTop + EDGE_HINT_MARGIN : visibleBottom - EDGE_HINT_MARGIN - hint.height;
+      y = side === 'top' ? visibleTop + EDGE_HINT_MARGIN
+        : visibleBottom - (bottomRow ? bottomRow + layout.floatingGap : EDGE_HINT_MARGIN) - hint.height;
     }
     const all = ordered.map(item => item.marker);
     result.push({

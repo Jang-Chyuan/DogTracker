@@ -21,6 +21,7 @@ import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { createRideDetector } from '../placement/RideAlong';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
+import { addRoutePoints, emptyRouteDistance, startOfToday } from '../tracking/TodayDistance';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
 export const FIXTURE_NOW = Date.parse('2026-10-07T01:30:00Z');
@@ -146,7 +147,24 @@ const receiving = now => ({
 const synced = now => ({ ownerId: FIXTURE_OWNER, lastSuccess: now - 5 * SECOND,
   lastDownloadAt: now - 5 * SECOND, failingSince: null, error: null });
 
-// The handler walking slowly north-east, phone location recording on.
+// Today's recorded route before `end` (a myLocationTracker row each 10 s):
+// `metres` walked in 10 m steps up to `end` at `endTime`, zig-zagging west
+// and south of it in 200 m legs so it stays in the station's blocks.
+function morningWalk(end, endTime, metres = 2750) {
+  const steps = Math.round(metres / 10);
+  const points = [];
+  let here = { latitude: end.latitude, longitude: end.longitude };
+  for (let index = 0; index <= steps; index += 1) {
+    points.unshift({ ...here, time: endTime - index * 10 * SECOND, accuracy: 6 });
+    const leg = Math.floor(index / 20) % 4;
+    // Walking backwards from the end: west, south, west, north legs.
+    here = offset(here, leg === 1 ? -10 : leg === 3 ? 10 : 0, leg === 0 || leg === 2 ? -10 : 0);
+  }
+  return points;
+}
+
+// The handler walking slowly north-east, phone location recording on; the
+// morning's walk before it makes 「今天 2.7 km」 (as in the A1 mockup).
 function walkingPhone(now) {
   const route = [];
   // One fix every 10 s for ten minutes, the newest a second old.
@@ -155,13 +173,18 @@ function walkingPhone(now) {
     route.push({ ...at(-12 + index * 0.1, -10 + index * 0.08), timestamp: now - ago,
       accuracy: 6, speedKmh: 3, rawSpeedKmh: 3, motionState: 'moving' });
   }
-  return { route, position: route[route.length - 1] };
+  const today = [
+    ...morningWalk(route[0], route[0].timestamp - 10 * SECOND, 2700),
+    ...route.map(point => ({ latitude: point.latitude, longitude: point.longitude, time: point.timestamp,
+      accuracy: point.accuracy })),
+  ];
+  return { route, position: route[route.length - 1], today };
 }
 
 // The same walk, but the newest fix is `age` old (the phone lost GPS).
 function stalePhone(now, age) {
-  const { route } = walkingPhone(now - age);
-  return { route, position: route[route.length - 1] };
+  const { route, today } = walkingPhone(now - age);
+  return { route, position: route[route.length - 1], today };
 }
 
 // An activity reading that is calm (0.02, under the 0.05 rest line) for the
@@ -489,6 +512,33 @@ const FIXTURES = {
   // 豆豆's position is current but its collar stopped sending battery and
   // activity readings at 09:11: both rows say what they last said, with the
   // time — 「62%（09:11）」, 「休息中 已 12 分鐘（09:11）」.
+  // 「今天 x km」 (A1): recording, today's route so far 2.7 km; the walker in
+  // the phone colour.
+  'phone-recording': now => ({ ...FIXTURES['all-good'](now) }),
+  // Recording switched off at 09:05 after a 2.7 km walk: grey walker, the
+  // same distance in grey.
+  'phone-recording-off': now => {
+    const stopped = now - 25 * MINUTE;
+    const { route, position } = stalePhone(now, 25 * MINUTE);
+    return { ...FIXTURES['all-good'](now),
+      phone: { route, position, recording: false, today: morningWalk(position, stopped) } };
+  },
+  // Location permission taken away after a 2.7 km walk (A2): the grey walker
+  // with a slash, the distance kept; recording cannot run.
+  'phone-no-permission': now => {
+    const stopped = now - 20 * MINUTE;
+    const { route, position } = stalePhone(now, 20 * MINUTE);
+    return { ...FIXTURES['all-good'](now),
+      phone: { route, position, recording: false, permission: 'denied', services: true,
+        today: morningWalk(position, stopped) } };
+  },
+  // Recording off and nothing recorded today (yesterday's walk only):
+  // 「未記錄」 in grey.
+  'phone-no-route': now => {
+    const { route, position } = stalePhone(now, 14 * 60 * MINUTE);
+    return { ...FIXTURES['all-good'](now),
+      phone: { route, position, recording: false, today: morningWalk(position, now - 14 * 60 * MINUTE) } };
+  },
   'card-readings-old': now => {
     const until = now - 18 * MINUTE - 30 * SECOND;
     return {
@@ -642,12 +692,21 @@ export function buildFixture(name, now = FIXTURE_NOW) {
       ranges: holds.ranges(),
       error: '',
     },
-    livePhone: phone?.position ? {
+    livePhone: phone?.position && phone.recording !== false ? {
       running: true, status: '記錄中',
       position: phone.position,
       ageSeconds: Math.max(0, Math.round((now - phone.position.timestamp) / SECOND)),
     } : { running: false, status: '未記錄' },
-    phoneRoute: phone?.route || [],
+    phoneRoute: phone?.recording === false ? [] : phone?.route || [],
+    // usePhoneLocation's answer: precise and on unless the state says not.
+    phonePermission: { permission: phone?.permission ?? 'precise', services: phone?.services ?? true },
+    // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
+    // by the same code as the live one (useTodayRoute).
+    todayRoute: (() => {
+      const sum = addRoutePoints(emptyRouteDistance(startOfToday(now)),
+        (phone?.today || []).filter(row => row.time >= startOfToday(now) && row.time <= now));
+      return { count: sum.count, metres: sum.metres };
+    })(),
     ride: rides.ride(now),
     dogAliases: ALIASES,
     // card-* states open this dog's card; dog-edit its page (A5) too.
@@ -715,8 +774,10 @@ export function applyScreenFixture(fixture, live, edits = null) {
       resetTrackingPreferences: ignoreWrite,
       saveRealStatus: ignoreWrite,
     },
-    phone: { ...phone, permission: 'precise', services: true, busy: false, error: null,
-      enabled: !!fixture.livePhone.running },
+    phone: { ...phone, ...fixture.phonePermission, busy: false, error: null,
+      enabled: !!fixture.livePhone.running && fixture.phonePermission.permission === 'precise'
+        && fixture.phonePermission.services },
+    todayRoute: fixture.todayRoute,
     cloudDogs: fixture.cloudDogs,
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
     history: history && {

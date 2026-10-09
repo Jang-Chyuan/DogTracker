@@ -150,10 +150,12 @@ test('first use shows the stored dog, no receiver marker, no ring without a conn
   expect(rows('dog_status')).toHaveLength(1);
   expect(ble.connect).not.toHaveBeenCalled();
 });
-test('map/history/settings tabs and hardware preserve correct back destinations', async () => {
+test('no bottom tabs: the gear opens settings, and hardware preserves correct back destinations', async () => {
   await mount();
-  expect(button('歷史軌跡', 'tab')).toBeDefined();
-  await press('設定', 'tab');
+  expect(renderer.root.findAllByProps({ testID: 'bottom-navigation' })).toHaveLength(0);
+  expect(button('歷史軌跡', 'tab')).toBeUndefined();
+  await press('設定');
+  expect(text()).toContain('‹ 設定');
   expect(button('登入')).toBeUndefined();
   expect(text()).not.toContain('允許手機定位');
   await press('BLE／QR 與 Master 設定');
@@ -162,13 +164,43 @@ test('map/history/settings tabs and hardware preserve correct back destinations'
   await act(async () => expect(onBack()).toBe(true));
   expect(text()).toContain('硬體連線');
   expect(ble.disconnect).not.toHaveBeenCalled();
+  // The hardware page's 「‹ 硬體連線」 goes back like the back key.
+  await press('BLE／QR 與 Master 設定');
+  expect(text()).toContain('‹ 硬體連線');
+  await press('返回，硬體連線');
+  expect(text()).toContain('‹ 設定');
+  expect(text()).not.toContain('手動 BLE 掃描');
+  // Every page the tabs reached is still reached: cloud and location
+  // recording from settings, each with its 「‹ 標題」 back to settings.
+  await press('雲端資料');
+  expect(text()).toContain('‹ 雲端資料');
+  await press('返回，雲端資料');
+  await press('手機位置記錄');
+  expect(text()).toContain('‹ 手機位置記錄');
+  await act(async () => expect(onBack()).toBe(true));
+  expect(text()).toContain('硬體連線');
+  // Settings' own 「‹ 設定」 (and the back key) return to the map.
+  await press('返回，設定');
+  expect(renderer.root.findByType(MapScreen).props.active).toBe(true);
+  expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
 });
 
-test('the history tab keeps the same map, carries its own card, and back returns home', async () => {
+test('「今天 x km」 opens my route on the same map, with its own card, and back returns home', async () => {
   await mount();
+  await advance();
   expect(renderer.root.findAllByProps({ testID: 'history-sheet' })).toHaveLength(0);
   const map = renderer.root.findByType(MapView);
-  await press('歷史軌跡', 'tab');
+  await act(async () => map.props.onMapLoaded());
+  const pill = renderer.root.findAll(node => node.props.testID === 'map-today'
+    && typeof node.props.onPress === 'function')[0];
+  expect(pill).toBeDefined();
+  await act(async () => pill.props.onPress());
+  await advance();
+  // My route: today so far, the phone's own track, no dogs.
+  const routeQuery = renderer.root.findByType(MapScreen).props.history.preferences;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  expect(routeQuery).toMatchObject({ timeMode: 'fixed', startAt: start.getTime(), phone: true, client: false });
   // The same native map is reused; only the card and its parameters change.
   expect(renderer.root.findByType(MapView) === map).toBe(true);
   expect(renderer.root.findAllByProps({ testID: 'history-sheet' }).length)
@@ -183,26 +215,27 @@ test('the history tab keeps the same map, carries its own card, and back returns
   expect(button('雲端下載的（Supabase）')).toBeDefined();
   expect(button('重新查詢')).toBeDefined();
   expect(button('匯出')).toBeDefined();
-  // The settings page only points at the tab now.
-  await press('設定', 'tab');
-  expect(button('顯示歷史地圖', 'switch')).toBeUndefined();
-  expect(button('套用地圖設定')).toBeUndefined();
-  expect(text()).toContain('移到下方的「歷史」分頁');
-  await press('歷史軌跡', 'tab');
+  // History has no gear (its top right is its own); back returns to the map.
+  expect(renderer.root.findAllByProps({ testID: 'map-settings' })).toHaveLength(0);
   await act(async () => expect(onBack()).toBe(true));
   expect(renderer.root.findAllByProps({ testID: 'history-sheet' })).toHaveLength(0);
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
-  // Back from the tab, not from a card's 看軌跡: no card opens.
+  // Back from my route, not from a card's 看軌跡: no card opens.
   expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
+  // The settings page says where history went.
+  await press('設定');
+  expect(button('顯示歷史地圖', 'switch')).toBeUndefined();
+  expect(button('套用地圖設定')).toBeUndefined();
+  expect(text()).toContain('右下「今天 x km」');
 });
 
-test('a tapped dog opens its card over the tabs; 看軌跡 saves its query, and back reopens the card', async () => {
+test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens the card', async () => {
   await mount();
   await advance();
   await tapDog(7);
   expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
-  // The card covers the bottom of the map, tabs included.
-  expect(renderer.root.findAllByProps({ testID: 'bottom-navigation' })).toHaveLength(0);
+  // The gear stays put over an open card (A3).
+  expect(renderer.root.findAllByProps({ testID: 'map-settings' }).length).toBeGreaterThan(0);
   await act(async () => renderer.root.findAll(node => node.props.testID === 'dog-card-track'
     && typeof node.props.onPress === 'function')[0].props.onPress());
   await advance();
@@ -229,10 +262,10 @@ test('page changes keep the same native map, source and saved switches', async (
   await advance();
   expect(renderer.root.findByType(MapView) === map).toBe(true);
   expect(renderer.root.findByType(MapView).props.initialRegion).toEqual(initialRegion);
-  await press('設定', 'tab');
+  await press('設定');
   expect(renderer.root.findByType(MapView) === map).toBe(true);
-  expect(text()).toContain('正式 · SQLite');
-  await press('即時位置', 'tab');
+  expect(text()).toContain('‹ 設定');
+  await press('返回，設定');
   expect(renderer.root.findByType(MapView) === map).toBe(true);
   expect(preferences()).toEqual(saved);
   expect(renderer.root.findByType(MapScreen).props.tracking.mode).toBe('real');
@@ -314,8 +347,8 @@ test('first map asks permission once; denial does not affect hardware locations'
   await mount();
   expect(request).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
-  await press('設定', 'tab');
-  await press('即時位置', 'tab');
+  await press('設定');
+  await press('返回，設定');
   expect(request).toHaveBeenCalledTimes(1);
 });
 
@@ -334,7 +367,7 @@ test('map preference save failures keep the markers and say so', async () => {
 
 test('hardware callback writes real rows, and failed hardware writes remain visible', async () => {
   await mount();
-  await press('設定', 'tab');
+  await press('設定');
   const onData = ble.restoreBackground.mock.calls.at(-1)[1];
   await act(async () =>
     onData({ ...trackingPoint, slaveLon: 120 }, 'hardware'),
@@ -345,8 +378,8 @@ test('hardware callback writes real rows, and failed hardware writes remain visi
   );
   await advance();
   await act(async () => onData(trackingPoint, 'failed'));
-  for (const label of ['即時位置', '設定']) {
-    await press(label, 'tab');
+  for (const label of ['返回，設定', '設定']) {
+    await press(label);
     expect(text()).toContain('hardware disk full');
   }
   connection.sqlite.exec('DROP TRIGGER fail_real');
@@ -360,7 +393,7 @@ test('native disk failures remain visible on map/settings and clear on recovery'
   ble.getBackgroundState.mockResolvedValue({ storageError: 'native disk full' });
   await advance(2000);
   expect(text()).toContain('native disk full');
-  await press('設定', 'tab');
+  await press('設定');
   expect(text()).toContain('native disk full');
   ble.getBackgroundState.mockResolvedValue({ storageError: '' });
   await advance(2000);

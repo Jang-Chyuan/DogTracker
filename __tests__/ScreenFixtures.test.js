@@ -521,7 +521,8 @@ async function renderFixture(name, { edits = null, inspect = null } = {}) {
   await act(async () => {
     renderer = Renderer.create(<MapScreen tracking={inputs.tracking} phone={inputs.phone} history={inputs.history}
       cloudDogs={inputs.cloudDogs} cloudOwner={inputs.cloudSync.ownerId} bottomInset={80}
-      dogAvatars={inputs.dogAvatars} mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture} />);
+      dogAvatars={inputs.dogAvatars} mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture}
+      todayRoute={inputs.todayRoute} />);
   });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
@@ -781,4 +782,48 @@ test('a photo face is drawn into the map marker: tracked while it loads, fixed o
     await act(async () => { await new Promise(resolve => setTimeout(resolve, PHOTO_SETTLE_MS + 100)); });
     expect(marker(6).props.tracksViewChanges).toBe(false);
   } });
+});
+
+// 「今天 x km」 (A1/A2, 判定表「右下『今天 x km』」): each phone state through
+// the same pill the live map draws.
+test.each([
+  ['phone-recording', '今天 2.7 km', 'walk', false],
+  ['phone-recording-off', '今天 2.7 km', 'walk-muted', true],
+  ['phone-no-permission', '今天 2.7 km', 'walk-off', true],
+  ['phone-no-route', '未記錄', 'walk-muted', true],
+])('%s: the pill says %s with the %s icon', async (name, words, icon, muted) => {
+  const { todayPill } = require('../src/tracking/TodayDistance');
+  const fixture = buildFixture(name);
+  const inputs = applyScreenFixture(fixture, {
+    tracking: { ready: {}, errors: {}, preferences: { value: {} } }, phone: {}, cloudSync: {},
+  });
+  const pill = todayPill({ route: inputs.todayRoute, livePhone: fixture.livePhone, phone: inputs.phone });
+  expect(pill).toMatchObject({ text: words, icon, muted });
+  await renderFixture(name, { inspect: async ({ renderer }) => {
+    const shown = renderer.root.findAll(node => node.props.testID === 'map-today' && typeof node.type === 'string');
+    expect(shown).toHaveLength(1);
+    expect(JSON.stringify(shown[0].findAll(node => typeof node.props.children === 'string')
+      .map(node => node.props.children))).toContain(words);
+    expect(renderer.root.findAll(node => node.props.testID === `map-today-icon-${icon}`
+      && typeof node.type === 'string')).toHaveLength(1);
+    // The gear sits top right; its red dot waits for 049.
+    expect(renderer.root.findAll(node => node.props.testID === 'map-settings' && typeof node.type === 'string'))
+      .toHaveLength(1);
+    expect(renderer.root.findAll(node => node.props.testID === 'map-settings-dot')).toHaveLength(0);
+  } });
+});
+
+test('phone-no-permission: no permission means no recording and no blue dot', () => {
+  const fixture = buildFixture('phone-no-permission');
+  const inputs = applyScreenFixture(fixture, {
+    tracking: { ready: {}, errors: {}, preferences: { value: {} } }, phone: {}, cloudSync: {},
+  });
+  expect(inputs.phone).toMatchObject({ permission: 'denied', enabled: false });
+  expect(fixture.livePhone.running).toBe(false);
+  expect(phoneFix(fixture.livePhone)).toBeNull();
+});
+
+test('phone-no-route: yesterday\'s walk is not today\'s route', () => {
+  expect(buildFixture('phone-no-route').todayRoute).toEqual({ count: 0, metres: 0 });
+  expect(buildFixture('phone-recording').todayRoute.count).toBeGreaterThan(300);
 });
