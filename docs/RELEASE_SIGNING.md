@@ -67,7 +67,7 @@ Windows PowerShell：先 `cd android`，再 `./gradlew.bat assembleRelease bundl
 keytool -list -v -keystore dogtracker-upload.jks -alias dogtracker
 ```
 
-取出憑證的 **SHA-1**，在 Google Cloud Console → APIs & Services → Credentials → 對應 Google Maps API key → Application restrictions → Android apps，新增已決定的 applicationId（目前 **`com.dogtracker`**）與 **upload-key SHA-1**；加入 Play App Signing 後，再從 Play Console 取得 **app-signing SHA-1** 並新增第二筆相同 package 的限制，儲存設定。需要繼續本機測試時保留原 debug SHA-1 的獨立項目。
+取出憑證的 **SHA-1**，在 Google Cloud Console → APIs & Services → Credentials → 對應 Google Maps API key → Application restrictions → Android apps，新增 applicationId **`com.antgo.dogtracker`**與 **upload-key SHA-1**；加入 Play App Signing 後，再從 Play Console 取得 **app-signing SHA-1** 並新增第二筆相同 package 的限制，儲存設定。需要繼續本機測試時保留原 debug SHA-1 的獨立項目。
 
 **舊的 debug 簽章 APK 無法直接升級成新的 release 簽章 APK。** 手機須先匯出／上傳重要資料，再解除安裝舊 App 一次，最後安裝新版；解除安裝會清除 App 資料。往後只要維持同一 upload key（側載 APK），即可正常更新。
 

@@ -4,7 +4,7 @@
 
 ## 先決定套件識別碼
 
-目前 `android/app/build.gradle` 的 `applicationId` 是 **`com.dogtracker`**，必須在 Google Play 全球唯一，可能已被別人使用。**第一次上傳前**先決定團隊擁有網域的反向識別碼，例如 `tw.exampleteam.dogtracker`（範例不可直接當作已擁有的網域）。Play 建立套件後不能直接更換識別碼；日後變更會被視為新 App，安裝、資料、商店頁與更新管道都需重新安排。
+`android/app/build.gradle` 的 `applicationId` 是 **`com.antgo.dogtracker`**（2026-10-09 決定；當天 Play 商店查不到同名 App，但未公開的 App 也會佔用名稱，第一次上傳時 Play Console 才會最後確認）。Play 建立套件後不能更換識別碼；日後變更會被視為新 App。舊的 `com.dogtracker` 版本會被當成另一個 App，可以並存，本機資料不會自動搬過來。
 
 保留 `namespace "com.dogtracker"` 時，本專案必要的產品程式變更只有 `android/app/build.gradle` → `defaultConfig.applicationId`。`AndroidManifest.xml` 的 FileProvider authority 使用 `${applicationId}.historyexports`，`HistoryExportPackage.kt` 使用 `context.packageName + ".historyexports"`，兩者會自動一致。manifest 的相對類別名稱由 namespace 解析，Kotlin package／目錄、imports、R／BuildConfig、ProGuard 的 `com.dogtracker` keep rules、`package.json` 的 codegen `javaPackageName` 均可保留，無須搬動或改名。
 

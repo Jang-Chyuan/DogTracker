@@ -132,7 +132,7 @@ android {
 
     namespace "com.dogtracker"
     defaultConfig {
-        applicationId "com.dogtracker"
+        applicationId "com.antgo.dogtracker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersionCode.isEmpty() ? versionCodeOf(appVersionName) : appVersionCode as int
