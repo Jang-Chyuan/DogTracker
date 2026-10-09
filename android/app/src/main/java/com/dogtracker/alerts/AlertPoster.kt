@@ -74,11 +74,17 @@ object AlertPoster {
   private fun channelAlerts(channel: android.app.NotificationChannel?): Boolean =
     Build.VERSION.SDK_INT < 26 || channel == null || channel.importance >= NotificationManager.IMPORTANCE_DEFAULT
 
-  fun vibrate(context: Context, pattern: LongArray, critical: Boolean): Boolean {
+  /**
+   * `systemAlerts`: this alert also posts a notification that Android itself
+   * makes noise for (a new alert in the background). In front the app posts
+   * none, so the app gives the attention even when the user gave the channel
+   * a sound or vibration of its own.
+   */
+  fun vibrate(context: Context, pattern: LongArray, critical: Boolean, systemAlerts: Boolean = false): Boolean {
     val audio = context.getSystemService(AudioManager::class.java)
     val channel = channel(context)
     if (!AlertAttention.vibration(alertsEnabled(context), audio?.ringerMode == AudioManager.RINGER_MODE_SILENT,
-        channelAlerts(channel), channel?.shouldVibrate() == true)) {
+        channelAlerts(channel), systemAlerts && channel?.shouldVibrate() == true)) {
       Log.i(TAG, "vibration skipped (silent mode or the 提醒 channel is blocked)")
       return false
     }
@@ -97,12 +103,14 @@ object AlertPoster {
     return true
   }
 
-  fun sound(context: Context): Boolean {
+  fun sound(context: Context, systemAlerts: Boolean = false): Boolean {
     val audio = context.getSystemService(AudioManager::class.java)
     val channel = channel(context)
+    val channelSound = if (Build.VERSION.SDK_INT >= 26) channel?.sound else null
     if (!AlertAttention.sound(alertsEnabled(context), audio?.ringerMode == AudioManager.RINGER_MODE_NORMAL,
-        channelAlerts(channel), channel?.sound != null)) return false
-    val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        channelAlerts(channel), systemAlerts && channelSound != null)) return false
+    // The user's own channel sound when there is one, else the default.
+    val uri = channelSound ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
     val ringtone = RingtoneManager.getRingtone(context, uri)
       ?: return false
     ringtone.audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION)
@@ -171,8 +179,9 @@ object AlertPoster {
 
   /** Vibration, sound, then the notification (an alert's attention first). */
   fun carryOut(context: Context, effects: Effects) {
-    if (effects.vibration != null) runCatching { vibrate(context, effects.vibration, effects.critical) }
-    if (effects.sound) runCatching { sound(context) }
+    val systemAlerts = effects.notification == "notify" && alertsEnabled(context)
+    if (effects.vibration != null) runCatching { vibrate(context, effects.vibration, effects.critical, systemAlerts) }
+    if (effects.sound) runCatching { sound(context, systemAlerts) }
     post(context, effects.notification, effects.content)
   }
 }
