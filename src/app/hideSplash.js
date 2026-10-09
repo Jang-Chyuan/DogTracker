@@ -14,7 +14,10 @@ import { Animated, NativeModules } from 'react-native';
 // the copy covers the screen until the next one is drawn under it.
 // `notification`: where the notification that opened the app leads
 // (AlertNotifications.notificationDestination), once JavaScript has read it.
-const gate = { mapFramed: false, launch: null, targets: [], notification: null };
+// `linkRead`: the launch link has been read (App: initialLinkRead); the map's
+// handover waits for it, so it knows whether a notification opened the app.
+const gate = { mapFramed: false, launch: null, targets: [], notification: null, linkRead: true };
+let linkTimer = null;
 // 'waiting' (the copy covers the screen) → 'handover' (mode 'fly' | 'fade')
 // → 'done'. The map's controls fade in through `chrome`; the real dog
 // markers stay hidden while the copy draws them (markersHidden).
@@ -103,7 +106,30 @@ function begin(mode, targets = []) {
 
 function release() {
   if (gate.launch === 'page') begin('fade');
-  else if (gate.launch === 'map' && gate.mapFramed) begin('fly', gate.targets);
+  else if (gate.launch === 'map' && gate.mapFramed && gate.linkRead) begin('fly', gate.targets);
+}
+
+// The longest the map's handover waits for the launch link.
+export const LINK_WAIT_MS = 2000;
+
+/**
+ * App, as it starts reading the launch link (Linking.getInitialURL): the
+ * map's handover waits until initialLinkRead, at most LINK_WAIT_MS.
+ */
+export function awaitInitialLink() {
+  if (state.phase !== 'waiting') return;
+  gate.linkRead = false;
+  clearTimeout(linkTimer);
+  linkTimer = setTimeout(initialLinkRead, LINK_WAIT_MS);
+}
+
+/** App: the launch link is read (a notification's, another, none or failed). */
+export function initialLinkRead() {
+  clearTimeout(linkTimer);
+  linkTimer = null;
+  if (gate.linkRead) return;
+  gate.linkRead = true;
+  release();
 }
 
 /**
@@ -182,6 +208,9 @@ export function resetSplashGate() {
   gate.launch = null;
   gate.targets = [];
   gate.notification = null;
+  gate.linkRead = true;
+  clearTimeout(linkTimer);
+  linkTimer = null;
   splashChrome.setValue(1);
   reducedMotion = false;
   state = { phase: 'waiting', mode: null, targets: [], markersHidden: false };

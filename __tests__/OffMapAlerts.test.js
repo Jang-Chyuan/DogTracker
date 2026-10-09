@@ -28,10 +28,16 @@ test('「⚠ N」 counts each dog once and each device problem once', () => {
 test('「⚠ N」: dogs gone quiet with the disconnected receiver are part of it', () => {
   const at = new Date(2026, 9, 3, 10, 18).getTime();
   const outage = event('receiver-disconnected', 'receiver', { startedAt: at, outage: { number: 7 } });
-  const quietAfter = (id, extra = {}) => event('dog-stale', id, { startedAt: at + 60000, receiverAffected: true, ...extra });
+  const quietAfter = (id, extra = {}) => event('dog-stale', id, { startedAt: at + 11 * 60000, lastAt: at - 60000,
+    receiverAffected: true, ...extra });
   expect(alertBadge([outage, quietAfter(4), quietAfter(5), quietAfter(6)])).toMatchObject({ count: 1, text: '⚠ 1' });
   // Quiet before the disconnection, a cloud dog, or another problem of the dog: still counted.
-  expect(alertBadge([outage, quietAfter(4, { startedAt: at - 60000 })]).count).toBe(2);
+  expect(alertBadge([outage, quietAfter(4, { lastAt: at - 11 * 60000 })]).count).toBe(2);
+  // Seen only after the outage (a cold start) but already quiet before it: its own problem.
+  expect(alertBadge([outage, quietAfter(4, { startedAt: at + 20 * 60000, lastAt: at - 30 * 60000 })]).count).toBe(2);
+  // Without lastAt: when the episode started.
+  expect(alertBadge([outage, quietAfter(4, { lastAt: undefined, startedAt: at - 60000 })]).count).toBe(2);
+  expect(alertBadge([outage, quietAfter(4, { lastAt: undefined })]).count).toBe(1);
   expect(alertBadge([outage, quietAfter(4, { receiverAffected: false })]).count).toBe(2);
   expect(alertBadge([outage, quietAfter(4), event('dog-battery', 4, { percentage: 15 })]).count).toBe(2);
   // Without the disconnection every quiet dog counts.
@@ -45,7 +51,7 @@ test('「⚠ N」 from AlertEvents: a disconnection that silenced two dogs is �
   const outageEvent = { key: 'receiver-disconnected:receiver', kind: 'receiver-disconnected', subject: 'receiver',
     severity: 6, present: true, startedAt: since };
   const stale = id => ({ key: `dog-stale:${id}`, kind: 'dog-stale', subject: id, severity: 3, present: true,
-    startedAt: since + 10 * 60000, receiverAffected: true });
+    startedAt: since + 10 * 60000, lastAt: since - 30000, receiverAffected: true });
   expect(alertProblemCount([outageEvent, stale(4), stale(5)])).toBe(1);
   expect(scheduleAlerts({}, { active: map([outageEvent, stale(4), stale(5)]), now: since + 11 * 60000,
     foreground: true, screen: 'history' }).effects.badgeCount).toBe(1);

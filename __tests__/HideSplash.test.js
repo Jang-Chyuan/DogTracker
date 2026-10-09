@@ -3,6 +3,9 @@ import {
   finishSplash,
   getSplashState,
   hideSplash,
+  awaitInitialLink,
+  initialLinkRead,
+  LINK_WAIT_MS,
   launchFromNotification,
   launchInto,
   reportMapFramed,
@@ -97,6 +100,32 @@ test('from a notification: flies to the alerted dog when on screen, else to the 
   finishSplash();
   launchFromNotification({ screen: 'receiver-settings', dogId: null });
   expect(getSplashState().phase).toBe('done');
+});
+
+// Codex review: the map's framing can come before the launch link is read.
+test('the map handover waits for the launch link, at most LINK_WAIT_MS', () => {
+  jest.useFakeTimers();
+  try {
+    const framed = [dog(4, 200, 400), dog(9, 300, 600)];
+    awaitInitialLink();
+    launchInto('map');
+    reportMapFramed(framed);
+    expect(getSplashState().phase).toBe('waiting');
+    launchFromNotification({ screen: 'receiver-settings', dogId: null });
+    initialLinkRead();
+    expect(getSplashState()).toMatchObject({ phase: 'handover', mode: 'fade' });
+
+    resetSplashGate();
+    awaitInitialLink();
+    launchInto('map');
+    reportMapFramed(framed);
+    jest.advanceTimersByTime(LINK_WAIT_MS - 1);
+    expect(getSplashState().phase).toBe('waiting');
+    jest.advanceTimersByTime(1);
+    expect(getSplashState()).toMatchObject({ phase: 'handover', mode: 'fly' });
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test('the handover starts once: a later report changes nothing', () => {
