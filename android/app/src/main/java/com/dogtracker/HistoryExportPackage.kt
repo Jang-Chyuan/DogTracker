@@ -63,6 +63,9 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   // The share sheet's sessions: each Promise settled once (chosen, closed,
   // failed, or the module gone), and only by its own chooser's callbacks.
   private val shares = ShareSessions<Promise>()
+  // Opening a session and launching its chooser happen together with respect
+  // to invalidate(): a chooser is never launched for a disposed session.
+  private val shareLock = Any()
   private val shareAction = "${context.packageName}.HISTORY_EXPORT_CHOSEN"
   private val shareChosen = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -97,7 +100,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
 
   @ReactMethod
   fun clearExports(promise: Promise) {
-    onWorker(promise, "EXPORT_CLEANUP", "無法清除匯出暫存檔") {
+    onWorker(promise, "EXPORT_CLEANUP", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1055)) {
       try { HistoryExportCleanup.clear(context); promise.resolve(null) }
       catch (e: Exception) { promise.reject("EXPORT_CLEANUP", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1055), e) }
     }
@@ -124,7 +127,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   /** Widths at 100px of every character, regular and bold (the app's font). */
   @ReactMethod
   fun charWidths(chars: String, promise: Promise) {
-    onWorker(promise, "EXPORT_FONT", "無法量字寬") {
+    onWorker(promise, "EXPORT_FONT", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1058)) {
       try {
         val result = Arguments.createMap()
         for ((key, face) in listOf("regular" to Typeface.DEFAULT, "bold" to Typeface.DEFAULT_BOLD)) {
@@ -146,7 +149,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
 
   @ReactMethod
   fun writeText(directory: String, filename: String, text: String, promise: Promise) {
-    onWorker(promise, "EXPORT_WRITE", "無法建立匯出檔案") {
+    onWorker(promise, "EXPORT_WRITE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1059)) {
       try {
         val file = fileIn(folder(directory), filename)
         file.writeText(text, Charsets.UTF_8)
@@ -215,13 +218,15 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
         intent.setType(mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         intent.clipData = ClipData.newRawUri("DogTracker", uris[0]).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
-        // Null while another share is open, or once the module is invalidated.
-        val session = shares.open(promise) ?: error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1065))
-        code = session
-        val chosen = PendingIntent.getBroadcast(context, session,
-          Intent(shareAction).setPackage(context.packageName).putExtra(SHARE_CODE, session),
-          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        activity.startActivityForResult(Intent.createChooser(intent, null, chosen.intentSender), session)
+        synchronized(shareLock) {
+          // Null while another share is open, or once the module is invalidated.
+          val session = shares.open(promise) ?: error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1065))
+          code = session
+          val chosen = PendingIntent.getBroadcast(context, session,
+            Intent(shareAction).setPackage(context.packageName).putExtra(SHARE_CODE, session),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+          activity.startActivityForResult(Intent.createChooser(intent, null, chosen.intentSender), session)
+        }
       } catch (e: Exception) {
         com.dogtracker.AppLog.w("HistoryExport", "share failed", e)
         // This call's own session only (a share still open keeps its own);
@@ -642,7 +647,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     // queued calls are dropped with their Promises rejected; shutdownNow
     // alone would leave the running page drawing on.
     jobs.dispose()
-    shares.dispose()?.reject("EXPORT_SHARE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1066))
+    synchronized(shareLock) { shares.dispose() }?.reject("EXPORT_SHARE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1066))
     worker.shutdownNow().forEach { (it as? WorkerTask)?.drop() }
     super.invalidate()
   }
