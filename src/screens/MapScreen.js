@@ -98,6 +98,15 @@ export default function MapScreen({
   historyTarget = null,
   onLeaveHistory,
   historyBack = null,
+  // Alerts off the live map (058c): the history page's state kept under a
+  // card or page an alert opened (`historyRestore`, its route's snapshot;
+  // `historySnapshot.current()` takes one), 「⚠ N」 on the history's top row
+  // ({ badge, onPress }) and the bottom of an N3 card over it (the compass
+  // moves under it).
+  historyRestore = null,
+  historySnapshot = null,
+  alertBadge = null,
+  n3Bottom = 0,
   // Back from D3 opened by A6: frame that receiver's located dogs (once per key).
   frameRequest = null,
   // A notification tapped (058b, AlertNotifications.notificationDestination
@@ -544,11 +553,13 @@ export default function MapScreen({
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '',
     preset: fixture?.historyView ?? null,
+    restore: historical ? historyRestore : null,
     cloud: historyCloud?.cloud ?? null,
     online: historyCloud?.online !== false,
     cloudSeed: historyCloud?.seed ?? null,
   });
   selectHistoryDog.current = screen.selectDog;
+  if (historySnapshot) historySnapshot.current = historical ? screen.snapshot : null;
   const window = useWindowDimensions();
   // A day downloading (H3c) or not finished keeps the half height.
   const historyEmpty =
@@ -899,7 +910,7 @@ export default function MapScreen({
     : top + 44 + (messages.length ? noticeHeight + 8 : 0);
   // The compass: 12dp under the gear, or under the whole stack of cards.
   const compassTop = historical
-    ? controlsTop + 12
+    ? Math.max(controlsTop, n3Bottom) + 12
     : (cardsBottom || gearTop + 48) + 12;
   // The live map's padding stays put (an open card covers the map, it does
   // not move it); its buttons sit 12dp above the open card, else above the tabs.
@@ -1065,6 +1076,8 @@ export default function MapScreen({
           onLevel={(level, height) => setPanel({ level, height })}
           exportNative={exportNative}
           initialExport={fixture?.historyView?.export ?? null}
+          alertBadge={alertBadge?.badge ?? null}
+          onAlertBadge={alertBadge?.onPress}
           closedAt={
             target.subject === 'phone' &&
             screen.today &&

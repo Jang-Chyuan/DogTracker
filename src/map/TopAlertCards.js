@@ -240,6 +240,94 @@ export default function TopAlertCards({
   );
 }
 
+// N3 (design v3 「提醒卡（A2、A2c、N3 共用）」「N3 提醒卡的位置」): the same
+// card off the live map, without a button or ✕ — the whole card is pressed.
+// Slides down (220 ms) when it arrives; when its 5 s are over (`leaving`) it
+// slides up into 「⚠ N」 (160 ms) before `onGone`.
+export function N3Card({ value, leaving = false, top, onPress, onGone, onHeight }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  const shown = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    shown.setValue(0);
+    Animated.timing(shown, {
+      toValue: 1,
+      duration: motion.cardRise.duration,
+      easing: ease,
+      useNativeDriver: true,
+    }).start();
+  }, [shown, value.id]);
+  useEffect(() => {
+    if (!leaving) return;
+    Animated.timing(shown, {
+      toValue: 0,
+      duration: 160,
+      easing: ease,
+      useNativeDriver: true,
+    }).start(({ finished }) => finished && onGone?.(value.id));
+  }, [leaving, shown, onGone, value.id]);
+  const translateY = shown.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-16, 0],
+  });
+  return (
+    <View
+      style={[styles.stack, { top }]}
+      pointerEvents="box-none"
+      onLayout={event => onHeight?.(event.nativeEvent.layout.height)}
+    >
+      <Animated.View
+        pointerEvents={leaving ? 'none' : 'auto'}
+        style={{ opacity: shown, transform: [{ translateY }] }}
+      >
+        <Pressable
+          testID={leaving ? undefined : 'n3-card'}
+          accessibilityRole="button"
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={`${value.title}，${value.detail}`}
+          accessibilityHint="打開這件事"
+          onPress={() => onPress?.(value)}
+          style={({ pressed }) => [styles.card, styles.alert, pressed && styles.pressed]}
+        >
+          <View style={[styles.icon, styles.iconAlert]}>
+            <Glyph name={value.icon} color={colors.problemBadge} size={18} />
+          </View>
+          <View style={styles.body}>
+            <Text style={[styles.title, styles.alertTitle]} numberOfLines={2}>
+              {value.title}
+            </Text>
+            <Text style={[styles.detail, styles.alertDetail]} numberOfLines={1}>
+              {value.detail}
+            </Text>
+          </View>
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
+
+// 「⚠ N」 (判定表「歷史、設定的紅色「⚠ N」」): 36dp high (48dp target), 10dp
+// sides, round, critBg with a 1dp alertBorder edge, crit 14sp bold.
+const BADGE_SLOP = (48 - 36) / 2;
+export function AlertBadge({ badge, onPress, style }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  if (!badge) return null;
+  return (
+    <Pressable
+      testID="alert-badge"
+      accessibilityRole="button"
+      accessibilityLabel={badge.label}
+      hitSlop={BADGE_SLOP}
+      onPress={() => onPress?.(badge)}
+      style={({ pressed }) => [styles.badge, pressed && styles.pressed, style]}
+    >
+      <Glyph name="warning" color={colors.crit} size={16} />
+      <Text style={styles.badgeText}>{badge.count}</Text>
+    </Pressable>
+  );
+}
+
 const getStyles = makeStyles(theme => {
   const { colors, literalColors: themeLiteral } = theme;
   const QUIET_BG = getQUIET_BG(theme);
@@ -319,5 +407,17 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     pressed: { opacity: 0.7 },
+    badge: {
+      height: 36,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      borderRadius: radius.full,
+      borderWidth: card.border,
+      borderColor: colors.alertBorder,
+      backgroundColor: colors.critBg,
+    },
+    badgeText: { ...type.value, color: colors.crit },
   });
 });

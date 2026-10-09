@@ -14,7 +14,7 @@ test('fixed row has one pill, 26dp hero with 2dp ring and two 18dp faces; dark o
   let renderer;
   await act(async () => { renderer = Renderer.create(<ThemeProvider><TopRow top={0} subject="dog"
     dogs={dogs} nameOf={dog => dog.name} onAdd={() => {}} onBack={() => {}} onExport={() => {}}
-    warningCount={2} exportEnabled /></ThemeProvider>); });
+    alertBadge={{ count: 2, text: '⚠ 2', label: '2 件事要注意' }} exportEnabled /></ThemeProvider>); });
   expect(renderer.root.findAllByType(ScrollView)).toHaveLength(0);
   expect(renderer.root.findAllByType(DogAvatar).map(node => node.props.size)).toEqual([26, 18, 18]);
   const styles = renderer.root.findAll(node => typeof node.type === 'string').map(node => StyleSheet.flatten(node.props.style));
@@ -24,6 +24,10 @@ test('fixed row has one pill, 26dp hero with 2dp ring and two 18dp faces; dark o
     borderColor: darkTheme.colors.floatingOutline }));
   const text = JSON.stringify(renderer.toJSON());
   expect(text).toContain('+1');
-  expect(text).toContain('⚠ 2');
+  // 「⚠ N」: the triangle and the count, critBg with the alertBorder edge.
+  expect(renderer.root.findByProps({ testID: 'alert-badge' }).props.accessibilityLabel).toBe('2 件事要注意');
+  expect(text).toContain('"2"');
+  expect(styles).toContainEqual(expect.objectContaining({ height: 36, backgroundColor: darkTheme.colors.critBg,
+    borderColor: darkTheme.colors.alertBorder }));
   await act(async () => renderer.unmount());
 });

@@ -178,6 +178,13 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Path d="M10 10l4 4M14 10l-4 4M11 18.5h2" {...stroke} />
         </>
       )}
+      {name === 'warning' && (
+        // 「⚠ N」 and the N3 card of a dog's problem: the mockup's triangle.
+        <Path
+          d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"
+          {...stroke}
+        />
+      )}
       {name === 'close' && <Path d="M6 6l12 12M18 6 6 18" {...stroke} />}
       {name === 'share' && (
         // 匯出 (history top right): an arrow up out of a tray.

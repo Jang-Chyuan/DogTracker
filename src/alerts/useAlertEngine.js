@@ -3,6 +3,7 @@ import { pauseAlertState, persistedAlertState, restoreAlertState, resumeAlertSta
 import { carryOutAlertEffects } from './AlertEffects';
 import { alertLine } from './AlertContent';
 import { bySeverity } from './AlertEvents';
+import { n3Card } from './OffMapAlerts';
 
 export const ALERT_TICK_MS = 5000;
 // Debug preview only: how many deliveries it lists.
@@ -26,9 +27,12 @@ const LOG_LENGTH = 12;
  * - `clock()` is the time (a fixture's fake clock in the debug preview).
  * - `save(alertState)` keeps persistedAlertState (null: kept in memory only).
  *
- * Returns { badgeCount, pause, problems, content, log, tick, pauseNow, resume }:
- * `problems` are the current ones, most severe first ({ key, kind, line,
- * enabled }); `log` (newest first) is what alerted, for the debug preview.
+ * Returns { badgeCount, pause, problems, active, card, content, log, tick,
+ * pauseNow, resume }: `problems` are the current ones, most severe first
+ * ({ key, kind, line }), `active` the same as AlertEvents' events (「⚠ N」,
+ * OffMapAlerts); `card` the last N3 card delivered (OffMapAlerts.n3Card,
+ * timed on the real clock, also in a fixture), null after a new source; `log`
+ * (newest first) is what alerted, for the debug preview.
  */
 export function useAlertEngine({
   running, source, initial = null, clock, readInput, preferences, notificationsAllowed = true,
@@ -38,8 +42,9 @@ export function useAlertEngine({
   const owner = useRef(null);
   const savedKey = useRef(null);
   const log = useRef([]);
-  const [output, setOutput] = useState({ key: '', badgeCount: 0, pause: null, problems: [], content: null,
-    notification: 'cancel', log: [] });
+  const lastCard = useRef(null);
+  const [output, setOutput] = useState({ key: '', badgeCount: 0, pause: null, problems: [], active: [],
+    card: null, content: null, notification: 'cancel', log: [] });
   const latest = useRef({});
   latest.current = { clock, readInput, preferences, notificationsAllowed, screen, foreground, save, setup };
 
@@ -51,6 +56,8 @@ export function useAlertEngine({
       badgeCount: result?.effects.badgeCount ?? active.length,
       pause: scheduler.pause && scheduler.pause.until > latest.current.clock() ? scheduler.pause : null,
       problems: active.map(event => ({ key: event.key, kind: event.kind, line: alertLine(event) })),
+      active,
+      card: lastCard.current,
       content: result?.effects.content ?? null,
       // The notification command (notify / update / cancel).
       notification: result?.effects.notification ?? 'cancel',
@@ -98,6 +105,8 @@ export function useAlertEngine({
       }
     }
     carryOutAlertEffects(result.effects, at);
+    // N3: shown for its 5 s from now (the real clock, also on a fixture's).
+    if (result.effects.card) lastCard.current = n3Card(result.effects.card.event, Date.now());
     if (result.effects.delivered.length) {
       const delivered = result.effects.delivered.map(key => state.current.events.active[key]).filter(Boolean);
       log.current = [{ at, critical: result.effects.critical, vibration: result.effects.vibration,
@@ -116,6 +125,7 @@ export function useAlertEngine({
     savedKey.current = JSON.stringify(persistedAlertState(state.current));
     writing.current = null;
     log.current = [];
+    lastCard.current = null;
   }
 
   // What was restored (a pause in force) shows at once, before the first

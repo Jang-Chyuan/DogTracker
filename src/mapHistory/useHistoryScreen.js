@@ -40,6 +40,10 @@ import {
   rememberRangeFor,
 } from '../history/screen/RangeMemory';
 import { displayName } from '../dogs/DogName';
+import {
+  historySnapshot,
+  usableSnapshot,
+} from '../history/screen/HistoryScreenState';
 
 import { haptic } from '../utils/haptics';
 
@@ -221,6 +225,9 @@ export function useHistoryScreen({
   cloudSeed = null,
   aliases = null,
   avatars = null,
+  // Back from a card or page an alert opened (N3, a notification, 「⚠ N」):
+  // the history as it was (historySnapshot), instead of 再次進入's defaults.
+  restore = null,
 }) {
   const theme = useTheme();
   const { colors } = theme;
@@ -242,14 +249,19 @@ export function useHistoryScreen({
   // Each opening is a new session (再次進入: today, the entry dog alone, 全部),
   // also the same dog opened again or a fixture with another preset.
   const presetJson = preset ? JSON.stringify(preset) : '';
-  const opening = useRef({ base: null, preset: '', count: 0 });
+  const restored = usableSnapshot(restore, { subject, entryId });
+  const restoreKey = restored?.key ?? '';
+  const opening = useRef({ base: null, preset: '', restore: '', count: 0 });
   if (
     baseKey &&
-    (opening.current.base !== baseKey || opening.current.preset !== presetJson)
+    (opening.current.base !== baseKey ||
+      opening.current.preset !== presetJson ||
+      opening.current.restore !== restoreKey)
   ) {
     opening.current = {
       base: baseKey,
       preset: presetJson,
+      restore: restoreKey,
       count: opening.current.count + 1,
     };
   } else if (!baseKey) opening.current = { ...opening.current, base: null };
@@ -258,7 +270,10 @@ export function useHistoryScreen({
   // Today is taken once per opening: over midnight the screen keeps its day
   // (判定表「開著時過了午夜」), 「今天」 turning into the date.
   if (sessionKey && dayState.key !== sessionKey)
-    setDayState({ key: sessionKey, day: startOfToday(clock()) });
+    setDayState({
+      key: sessionKey,
+      day: restored ? restored.day : startOfToday(clock()),
+    });
   const day =
     dayState.key === sessionKey && dayState.day != null
       ? dayState.day
@@ -276,6 +291,7 @@ export function useHistoryScreen({
   // protagonist (preset.protagonist).
   const [selection, setSelection] = useState({ key: null });
   const fresh = () => {
+    if (restored) return { ...restored.selection, key: sessionKey };
     if (subject === 'phone') {
       return {
         key: sessionKey,
@@ -432,7 +448,9 @@ export function useHistoryScreen({
     ? `${writeKey}:${JSON.stringify(preset.manual)}`
     : '';
   const presetDone = useRef('');
-  if (presetKey && presetDone.current !== presetKey) {
+  // Only for a fresh fixture opening (not while no history shows, not when
+  // coming back to a snapshot, whose range is the user's).
+  if (presetKey && sessionKey && !restored && presetDone.current !== presetKey) {
     presetDone.current = presetKey;
     rememberRangeFor(memoryKeyOf(entryId), preset.manual);
   }
@@ -698,10 +716,11 @@ export function useHistoryScreen({
   goToNow.current = goTo;
   const wentTo = useRef('');
   useEffect(() => {
-    const wanted = preset?.goTo && sessionKey ? `${sessionKey}|${preset.goTo}` : '';
+    // (Not when coming back to a snapshot: it has its own day.)
+    const wanted = preset?.goTo && sessionKey && !restored ? `${sessionKey}|${preset.goTo}` : '';
     if (!wanted || wentTo.current === wanted) return;
     if (goToNow.current(preset.goTo)?.type !== 'none') wentTo.current = wanted;
-  }, [preset?.goTo, sessionKey, knowledge]);
+  }, [preset?.goTo, sessionKey, knowledge, restored]);
   // ---- dragging the range -------------------------------------------------
   const dragRange = useCallback(value => setDraft(value), []);
   const commitRange = useCallback(
@@ -718,8 +737,11 @@ export function useHistoryScreen({
   // screen fixture can open with the cursor earlier (preset.cursorAgo).
   const presetCursor = preset?.cursorAgo ?? null;
   useEffect(() => {
-    setCursorTime(presetCursor != null ? clock() - presetCursor : null);
-    setInGap(false);
+    if (restored) {
+      setCursorTime(restored.cursorTime);
+      setInGap(restored.inGap);
+    } else setCursorTime(presetCursor != null ? clock() - presetCursor : null);
+    if (!restored) setInGap(false);
     setPressed(null);
     setDraft(null);
     // Once per opening.
@@ -855,7 +877,15 @@ export function useHistoryScreen({
     [readDays, owner, shownKey],
   );
   const loading = !!subject && !dayModel && !slots.some(slot => slot.error);
+  // What an alert's card or page keeps under it (the snapshot).
+  const latestState = useRef(null);
+  latestState.current = { day, selection: current, cursorTime, inGap };
+  const snapshot = useCallback(
+    () => historySnapshot(latestState.current, Date.now()),
+    [],
+  );
   return {
+    snapshot,
     // The export (H9) captures the whole day's model and the dogs' looks.
     dayModel, look,
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,

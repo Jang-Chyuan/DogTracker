@@ -39,6 +39,7 @@ import { useHistoryExport } from './useHistoryExport';
 import HistoryCalendarSheet from './HistoryCalendarSheet';
 import { DogsSheet } from './HistoryPickers';
 import { historyDogsPill, routeTint } from '../history/screen/HistoryDogsPill';
+import { AlertBadge } from '../map/TopAlertCards';
 
 const OPEN_MOTION = LayoutAnimation.create(
   motion.rangeExpand.duration,
@@ -77,7 +78,7 @@ function Capsule({ children, onPress, testID, label, style, disabled, onLayout }
 
 /** One fixed capsule, followed by a flexible spacer and the export control. */
 export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
-  onAdd, warningCount = 0, exportEnabled, exportLabel = '匯出', exportBusy = false }) {
+  onAdd, alertBadge = null, onAlertBadge, exportEnabled, exportLabel = '匯出', exportBusy = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const pill = historyDogsPill(dogs.map(dog => ({ ...dog, name: nameOf(dog) })), candidates, subject);
@@ -103,9 +104,8 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
         </Capsule>
       </View>
       <View style={styles.spacer} />
-      {warningCount > 0 && <Capsule testID="history-warning" label={`警告 ${warningCount}`}>
-        <Text style={styles.warning}>{`⚠ ${warningCount}`}</Text>
-      </Capsule>}
+      {/* 「⚠ N」: 8dp left of the export icon (the row's gap is 6). */}
+      <AlertBadge badge={alertBadge} onPress={onAlertBadge} style={styles.alertBadge} />
       <PressScale testID="history-export" accessibilityRole="button"
         accessibilityLabel={exportBusy ? '匯出，產生中' : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
@@ -246,7 +246,8 @@ function FrameButton({ onPress }) {
  */
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, levels, bottomInset,
   onBack, onFrame, onLevel, closedAt = null, initialRangeOpen = false, initialCalendar = null,
-  candidates = [], initialSheet = null, exportNative = null, initialExport = null },
+  candidates = [], initialSheet = null, exportNative = null, initialExport = null, alertBadge = null,
+  onAlertBadge },
 ref) {
   const styles = getStyles(useTheme());
   const panel = useRef(null);
@@ -491,7 +492,8 @@ ref) {
   }
   return (
     <>
-      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates} warningCount={screen.warningCount ?? 0} onBack={onBack}
+      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates} alertBadge={alertBadge}
+        onAlertBadge={onAlertBadge} onBack={onBack}
         onAdd={pressAdd}
         exportEnabled={hasRoute} exportBusy={exporter.generating}
         onExport={() => { closeRange(); exporter.open(); }}
@@ -566,7 +568,7 @@ const getStyles = makeStyles(theme => {
     more: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginLeft: 4 },
     caret: { fontSize: 10, color: colors.textMuted },
     plus: { fontSize: 16, fontWeight: '700', color: colors.tonalText },
-    warning: { fontSize: 13, color: colors.warn },
+    alertBadge: { marginRight: 2 },
     capsule: {
       height: sizes.chip.height,
       borderRadius: sizes.chip.height / 2,
