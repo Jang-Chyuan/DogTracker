@@ -2,6 +2,7 @@
 // 設定頁）」「歷史和設定的紅色「⚠ N」」「N3 同時有好幾件事」「S6 的開關管什麼」,
 // cases「看歷史時有狗出事」). Each test names its rule.
 import { alertBadge, n3Card, offMapAlerts, N3_CARD_MS } from '../src/alerts/OffMapAlerts';
+import { openAlertTarget } from '../src/alerts/ReturnSnapshot';
 import { scheduleAlerts } from '../src/alerts/AlertScheduler';
 import { updateAlertEvents } from '../src/alerts/AlertEvents';
 
@@ -118,10 +119,37 @@ test.each([
   ['alerts-in-history', 'history', '豆豆 不在接收範圍', 1],
   ['alerts-in-dog-history', 'history', '豆豆 不在接收範圍', 2],
   ['alerts-in-history-off', 'history', null, 2],
-  ['alerts-in-settings', 'settings', '接收器 7 斷線了（3 隻狗收不到）', 1],
-])('%s: its N3 card and 「⚠ N」', (name, screen, title, count) => {
+  ['alerts-in-settings', 'settings', '接收器 7 斷線了（3 隻狗收不到）', null],
+])('%s: its N3 card and history-only badge', (name, screen, title, count) => {
   const { fixture, card, after } = firstStep(name, screen);
   expect(fixture.openRoute).toBe(screen === 'history' ? 'history' : 'alerts');
   expect(card?.title ?? null).toBe(title);
-  expect(after.badge.count).toBe(count);
+  expect(after.badge?.count ?? null).toBe(count);
+});
+
+// D17: settings keeps the tappable N3 for exactly 5 s, never a badge.
+test('settings: new deliveries slide down for 5 s and leave no badge', () => {
+  const list = [event('dog-out-of-range'), event('receiver-battery', 7)];
+  const card = n3Card(list[0], 1000);
+  const at = now => offMapAlerts({ active: list, card, now, screen: 'settings' });
+  expect(at(999)).toEqual({ card: null, badge: null });
+  expect(at(1000)).toEqual({ card, badge: null });
+  expect(at(1000 + N3_CARD_MS - 1)).toEqual({ card, badge: null });
+  expect(at(1000 + N3_CARD_MS)).toEqual({ card: null, badge: null });
+  expect(offMapAlerts({ active: list, now: 1000, screen: 'settings' }))
+    .toEqual({ card: null, badge: null });
+  expect(offMapAlerts({ active: [list[1]], card, now: 1000, screen: 'settings' }))
+    .toEqual({ card: null, badge: null });
+  const next = n3Card(list[0], 1000 + N3_CARD_MS);
+  expect(offMapAlerts({ active: list, card: next, now: next.deliveredAt, screen: 'settings' }))
+    .toEqual({ card: next, badge: null });
+});
+
+test('alerts-in-settings: tapping N3 preserves the settings return stack', () => {
+  const { card } = firstStep('alerts-in-settings', 'settings');
+  const stack = [{ name: 'map' }, { name: 'settings' }, { name: 'alerts' }];
+  const opened = openAlertTarget(stack, card.target, { settingsPages: new Set(['settings', 'alerts', 'receiver']),
+    key: 17 });
+  expect(opened.stack).toEqual([...stack, { name: 'receiver', alertReturn: true, key: 17 }]);
+  expect(opened.stack.slice(0, -1)).toEqual(stack);
 });

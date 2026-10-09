@@ -301,7 +301,7 @@ export default function TopAlertCards({
 // N3 (design v3 「提醒卡（A2、A2c、N3 共用）」「N3 提醒卡的位置」): the same
 // card off the live map, without a button or ✕ — the whole card is pressed.
 // Slides down (220 ms) when it arrives; when its 5 s are over (`leaving`) it
-// slides up into 「⚠ N」 (160 ms) before `onGone`.
+// slides up (160 ms) before `onGone`; only history keeps 「⚠ N」.
 export function N3Card({ value, leaving = false, top, onPress, onGone, onHeight }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);

@@ -67,7 +67,7 @@ import {
   openAlertTarget,
   openTrackFrom,
 } from './src/alerts/ReturnSnapshot';
-import { AlertBadge, N3Card } from './src/map/TopAlertCards';
+import { N3Card } from './src/map/TopAlertCards';
 import AlertPreview from './src/dev/AlertPreview';
 import {
   phonePage,
@@ -1280,12 +1280,6 @@ function TrackerApp({ resume = null, onRestart }) {
             >
               <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
             </Pressable>
-            {/* 「⚠ N」 on the right of the title row (歷史、設定的紅色「⚠ N」). */}
-            <AlertBadge
-              badge={offMap.badge}
-              onPress={pressAlertBadge}
-              style={styles.headerBadge}
-            />
           </View>
         )}
         <View
@@ -1519,7 +1513,6 @@ const getStyles = makeStyles(theme => {
       alignSelf: 'flex-start',
     },
     pressed: { opacity: 0.7 },
-    headerBadge: { marginRight: space.s },
     brand: { ...type.title, color: colors.text },
     page: {
       flex: 1,

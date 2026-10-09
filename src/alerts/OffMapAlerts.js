@@ -4,7 +4,8 @@
 //
 // - N3: the one card AlertScheduler hands over (the most severe problem that
 //   just alerted; S6 switched it on) slides down for 5 s over the history
-//   screen or a settings page, then collapses into 「⚠ N」. No button, no ✕:
+//   screen or a settings page, then disappears. History keeps 「⚠ N」;
+//   settings pages have no badge (D17, 2026-10-09). No button, no ✕:
 //   the whole card opens its problem.
 // - 「⚠ N」: the problems there are now, whatever S6 says (it is state, not an
 //   alert): each dog counts once, 接收器斷線, 接收器電量低 and 位置存不進手機
@@ -17,7 +18,7 @@ import { formatClock } from '../map/MapFormat';
 
 export { N3_CARD_MS };
 
-// Where N3 slides down and 「⚠ N」 shows (the live map has its own top cards
+// Where N3 slides down (only history keeps 「⚠ N」; the live map has top cards
 // and the dogs' red 「!」).
 export const OFF_MAP_SCREENS = Object.freeze(['history', 'settings']);
 
@@ -72,13 +73,13 @@ export function n3Card(event, deliveredAt) {
 
 /**
  * What shows now: { card, badge }. The card while its 5 s run (and its
- * problem is still there); the badge once it collapsed — while the card is
- * down it stands for 「⚠ N」 (the mockup has no badge under it).
+ * problem is still there). History shows the badge once it collapses;
+ * settings never shows a badge, including with S6 switched off.
  */
 export function offMapAlerts({ active, card = null, now, screen }) {
   if (!OFF_MAP_SCREENS.includes(screen)) return { card: null, badge: null };
   const list = present(active);
   const shown = card && now >= card.deliveredAt && now < card.expiresAt
     && list.some(event => event.key === card.key) ? card : null;
-  return { card: shown, badge: shown ? null : alertBadge(list) };
+  return { card: shown, badge: screen === 'history' && !shown ? alertBadge(list) : null };
 }

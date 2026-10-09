@@ -1148,8 +1148,8 @@ const FIXTURES = {
   'alerts-in-history-off': now => ({ ...FIXTURES['alerts-in-dog-history'](now),
     alerts: { dogOutOfRange: false, dogStale: false } }),
   // S6 open while receiver 7 drops (alerts-receiver-down): N3 「接收器 7 斷線了
-  // （3 隻狗收不到）」 under the title row, then 「⚠ 1」 on its right; either
-  // opens S2 接收器, back returns to S6.
+  // （3 隻狗收不到）」 under the title row for 5 s, then no badge (D17).
+  // Tap the card to open S2 接收器; back returns to the same S6 snapshot.
   'alerts-in-settings': now => ({ ...FIXTURES['alerts-receiver-down'](now), openRoute: 'alerts' }),
   // ---- S7 進階, S8 診斷 (051c) ---------------------------------------------
   // S8 with everything readable: 豆豆 (4) from receiver 7 walking (速度緩衝
