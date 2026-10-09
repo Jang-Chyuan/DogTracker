@@ -193,10 +193,10 @@ export default function AccountSettings({
           <>
             <ListRow
               testID="account-upload-pending"
-              title="手機還沒上傳"
-              right={upload.pendingText}
+              title={upload.pending > 0 ? '手機還沒上傳' : '都已上傳'}
+              right={upload.pending > 0 ? upload.pendingText : null}
               rightTone={['mutedBold']}
-              label={`手機還沒上傳 ${upload.pendingText}`}
+              label={upload.pending > 0 ? `手機還沒上傳 ${upload.pendingText}` : '都已上傳'}
             />
             <ListRow
               testID="account-upload-last"
