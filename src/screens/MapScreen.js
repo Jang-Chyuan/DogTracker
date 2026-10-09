@@ -564,8 +564,6 @@ export default function MapScreen({
     (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
-  const saveHistory = history?.save;
-  const historyPreferences = history?.preferences;
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
   const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
@@ -623,36 +621,6 @@ export default function MapScreen({
     avatars,
     screen.map,
   ]);
-  // The old export (until 056) reads the history query: it follows the dogs
-  // shown and 資料來源 (這支手機收到的 → BLE, 雲端 → cloud; 全部 keeps the
-  // entry dog's own).
-  const exportDogs =
-    historical && target?.subject === 'dog'
-      ? screen.dogs.map(dog => dog.id).join(',')
-      : '';
-  const exportSource = screen.source;
-  useEffect(() => {
-    if (!exportDogs || !saveHistory || !historyPreferences) return;
-    const slaves = exportDogs.split(',').map(Number);
-    const source =
-      exportSource === 'cloud'
-        ? 'cloud'
-        : exportSource === 'local'
-        ? 'ble'
-        : historyPreferences.source;
-    const heard = (history?.devices || [])
-      .filter(pair => slaves.includes(pair.slave))
-      .map(pair => pair.master);
-    const masters = [...new Set([...historyPreferences.masters, ...heard])];
-    if (
-      String(historyPreferences.slaves) === String(slaves) &&
-      historyPreferences.source === source &&
-      String(historyPreferences.masters) === String(masters)
-    )
-      return;
-    saveHistory({ ...historyPreferences, slaves, source, masters });
-    // When the dogs or the source change.
-  }, [exportDogs, exportSource]); // eslint-disable-line react-hooks/exhaustive-deps
   // The dogs that can be added (「＋ 加入」): every dog that has ever had a
   // position, by collar number (never-fixed sources are not dogs yet).
   const historyCandidates = useMemo(

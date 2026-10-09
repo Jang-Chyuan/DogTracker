@@ -1,4 +1,4 @@
-import { describeDogSource, mergeDogMarkers, MAX_AGE_MS } from '../src/map/DogMerge';
+import { mergeDogMarkers, MAX_AGE_MS } from '../src/map/DogMerge';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
 const NOW = trackingPoint.receivedAt + 60000;
@@ -45,7 +45,6 @@ test('a newer cloud row moves the same dog and records which Master reported it'
   expect(dogs).toHaveLength(1);
   expect(dogs[0]).toMatchObject({ slaveId: 7, source: 'cloud', masterId: 5 });
   expect(dogs[0].coordinate).toEqual({ latitude: 25.1, longitude: 121.6 });
-  expect(describeDogSource(dogs[0])).toBe('經 Master 5・雲端');
 });
 
 test('rows of the same second keep the BLE position, which this phone timed itself', () => {
@@ -100,7 +99,6 @@ test('a retained BLE position says so, so a stale marker is not read as current'
       receivedAt: trackingPoint.receivedAt - 3000 }],
   });
   expect(dogs[0]).toMatchObject({ source: 'ble', retained: true });
-  expect(describeDogSource(dogs[0])).toBe('BLE・最後有效位置，非最新定位');
 });
 
 // Seen on hardware 2026-09-18: the collar reported 0,0 with battery and speed

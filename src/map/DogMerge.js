@@ -184,24 +184,3 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
     .slice(0, MAX_DOGS);
 }
 
-export function describeDogSource(dog) {
-  if (dog.heldReason) return `${heldLabel(dog)}・${dog.source === 'ble' ? 'BLE' : `經 Master ${dog.masterId ?? '?'}・雲端`}`;
-  if (dog.source === 'ble') {
-    return dog.retained ? 'BLE・最後有效位置，非最新定位' : 'BLE';
-  }
-  return `經 Master ${dog.masterId ?? '?'}・雲端`;
-}
-
-// What a held marker says under the name: where the dog is (室內、窗邊、充電中…).
-export function heldLabel(dog) {
-  return dog?.heldReason || null;
-}
-
-// The sentence for the panels: a hold from weak fixes is an estimate, not the
-// last clear fix, and must not read like one.
-export function heldSentence(dog, formatTime) {
-  if (!dog?.heldReason) return null;
-  // "Since" reads as a state that is still going on, not as stale data.
-  const since = `${dog.heldReason}・${formatTime(dog.heldSince)} 起`;
-  return dog.heldSource === 'weak' ? `${since}（位置是依訊號弱的定位估計的）` : since;
-}
