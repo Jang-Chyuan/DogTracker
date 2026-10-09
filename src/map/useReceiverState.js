@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NativeModules, Platform } from 'react-native';
 
 const POLL_MS = 2000;
@@ -15,6 +15,10 @@ const POLL_MS = 2000;
 export function useReceiverState(active, reader) {
   const native = reader ?? (Platform.OS === 'android' ? NativeModules.BleBackground : null);
   const [state, setState] = useState(undefined);
+  // Native creates a fresh bridge object on every poll, including its nested
+  // receiverPauses. Compare the complete payload so new fields/errors still
+  // publish, but an unchanged receiver does not wake every App child at 2 s.
+  const publishedKey = useRef(undefined);
   useEffect(() => {
     if (!active || !native?.getState) return undefined;
     let disposed = false;
@@ -24,7 +28,14 @@ export function useReceiverState(active, reader) {
       reading = true;
       try {
         const next = await native.getState();
-        if (!disposed) setState(next ?? null);
+        if (!disposed) {
+          const value = next ?? null;
+          const key = JSON.stringify(value);
+          if (key !== publishedKey.current) {
+            publishedKey.current = key;
+            setState(value);
+          }
+        }
       } catch {
         // A failed read keeps the last known state; the next poll retries.
         if (!disposed) setState(current => (current === undefined ? null : current));
@@ -42,6 +53,7 @@ export function useReceiverState(active, reader) {
   // A switched reader (fixture on/off) must not show the previous one's state.
   const [owner, setOwner] = useState(native);
   if (owner !== native) {
+    publishedKey.current = undefined;
     setOwner(native);
     setState(undefined);
   }

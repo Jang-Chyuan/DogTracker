@@ -79,3 +79,38 @@ test('the hook says "pending" until the first read answers, and null when it fai
   expect(value).toBeNull();
   tree.unmount();
 });
+
+test('equal native polls retain identity without commits, while packets and nested pause changes publish', async () => {
+  jest.useFakeTimers();
+  let payload = { ...up, receiverPauses: [{ pausedAt: 100, resumedAt: null }] };
+  const reader = { getState: jest.fn(async () => JSON.parse(JSON.stringify(payload))) };
+  const commit = jest.fn();
+  let value;
+  function Probe() { value = useReceiverState(true, reader); return null; }
+  let tree;
+  try {
+    await act(async () => { tree = Renderer.create(<React.Profiler id="receiver" onRender={commit}><Probe /></React.Profiler>); });
+    const initial = value;
+    commit.mockClear();
+    for (let i = 0; i < 5; i += 1)
+      await act(async () => jest.advanceTimersByTimeAsync(2000));
+    expect(reader.getState).toHaveBeenCalledTimes(6);
+    expect(commit).not.toHaveBeenCalled();
+    expect(value).toBe(initial);
+    payload = { ...payload, lastReceivedAt: NOW };
+    await act(async () => jest.advanceTimersByTimeAsync(2000));
+    expect(value.lastReceivedAt).toBe(NOW);
+    expect(commit).toHaveBeenCalledTimes(1);
+    payload = { ...payload, receiverPauses: [{ pausedAt: 100, resumedAt: 200 }] };
+    await act(async () => jest.advanceTimersByTimeAsync(2000));
+    expect(value.receiverPauses[0].resumedAt).toBe(200);
+    expect(commit).toHaveBeenCalledTimes(2);
+    payload = { ...payload, newNativeError: 'fixture error', battery: 42 };
+    await act(async () => jest.advanceTimersByTimeAsync(2000));
+    expect(value).toMatchObject({ newNativeError: 'fixture error', battery: 42 });
+    expect(commit).toHaveBeenCalledTimes(3);
+  } finally {
+    await act(async () => tree?.unmount());
+    jest.useRealTimers();
+  }
+});

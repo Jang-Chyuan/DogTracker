@@ -499,6 +499,12 @@ export function useHistoryScreen({
     ...subjects.map(s => s.rows[s.rows.length - 1]?.time ?? 0),
   );
   const modelNow = Math.max(now, lastRow);
+  // Keep the minute clock for date navigation, midnight and the range bar.
+  // A past day or fixed manual range has no clock-driven timeline changes:
+  // new row versions and range/subject changes still rebuild using modelNow.
+  // An automatic today range keeps departure's timed confirmation, including
+  // a phone whose recording stopped before that confirmation completed.
+  const modelClock = today && (!manual || manual.following) ? modelNow : null;
   // My route today with recording off ends on 「記錄已關閉 10:20」: the last
   // fix it recorded (判定表「記錄被迫中止的終點膠囊」; the summary's 「記錄已在
   // 10:20 關閉」 uses the same time). A fixed end the user dragged is 「結束」.
@@ -543,7 +549,7 @@ export function useHistoryScreen({
     day,
     dayEnd,
     today,
-    modelNow,
+    modelClock,
     manual,
     following,
     closedAt,
