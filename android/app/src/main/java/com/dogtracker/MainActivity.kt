@@ -2,14 +2,31 @@ package com.dogtracker
 
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    // Must run before super.onCreate: it swaps Theme.App.Starting for AppTheme.
+    // The drawing always finishes, and the screen stays until the app has its
+    // first screen ready (AppSplash.hide from JavaScript) or the timeout.
+    SplashState.animationDone = false
+    SplashState.appReady = false
+    installSplashScreen().setKeepOnScreenCondition { SplashState.keepOnScreen() }
+    val handler = Handler(Looper.getMainLooper())
+    handler.postDelayed({ SplashState.animationDone = true }, SplashState.ANIMATION_MS)
+    handler.postDelayed({ SplashState.appReady = true }, SplashState.TIMEOUT_MS)
+    super.onCreate(savedInstanceState)
+  }
 
   override fun onResume() {
     super.onResume()
