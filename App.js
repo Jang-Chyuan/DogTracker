@@ -1478,6 +1478,8 @@ const getStyles = makeStyles(theme => {
     },
     // The settings pages: a 56dp header 「‹ 標題」 over the page colour.
     header: {
+      // Above the page-colour map cover (drawn after it in the tree).
+      zIndex: 1,
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
       minHeight: touch.subpageHeader,
       flexDirection: 'row',
