@@ -1,3 +1,4 @@
+import { combinedResumeCatchUp } from '../tracking/ResumeCatchUp';
 import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
@@ -293,6 +294,8 @@ export default function MapScreen({
       : [],
   );
   const pauses = useMemo(() => JSON.parse(pausesKey), [pausesKey]);
+  const catchUp = useMemo(() => combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
+    [tracking.catchUp, cloudSync?.catchUp]);
   const lastDownloadAt = cloudSync?.lastDownloadAt ?? null;
   const failingSince = cloudSync?.failingSince ?? null;
   const cloudClockInput = useMemo(
@@ -535,8 +538,7 @@ export default function MapScreen({
         aliases: dogAliases,
         selectedId: selectedDogId,
         previousStale: previousMarkerStale.current,
-        catchUpSince: tracking.catchUp?.phase === 'catching-up'
-          ? tracking.catchUp.since : null,
+        catchUpSince: catchUp.phase === 'catching-up' ? catchUp.since : null,
       }),
       dogPaths: [],
     };
@@ -549,14 +551,14 @@ export default function MapScreen({
     pauses,
     dogAliases,
     selectedDogId,
-    tracking.catchUp,
+    catchUp,
   ]);
   useEffect(() => {
-    if (tracking.catchUp?.phase !== 'catching-up')
+    if (catchUp.phase !== 'catching-up')
       previousMarkerStale.current = Object.fromEntries(
         livePresentation.dogMarkers.map(marker => [marker.slaveId, marker.stale]),
       );
-  }, [livePresentation, tracking.catchUp]);
+  }, [livePresentation, catchUp]);
   // What the first view (cold start, or a data source switch) frames: the
   // dogs from this phone's own receiver and the phone; a far cloud dog only
   // with 框住全部 (MapFraming).
@@ -1088,8 +1090,11 @@ export default function MapScreen({
           />
         )}
         {!historical && active && tracking.foreground && (
-          <CatchUpPill phase={tracking.catchUp?.phase} top={gearTop}
-            onRetry={tracking.retryCatchUp} />
+          <CatchUpPill phase={catchUp.phase} top={gearTop}
+            onRetry={() => {
+              if (tracking.catchUp?.phase === 'failed') tracking.retryCatchUp?.();
+              if (cloudSync?.catchUp?.phase === 'failed') cloudSync.retry?.();
+            }} />
         )}
         <TopAlertCards
           cards={cards}

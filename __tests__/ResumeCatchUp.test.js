@@ -106,3 +106,20 @@ test('pill announces updating/failure, retry is a minimum-size button, and reduc
   await act(async () => renderer.update(render('idle')));
   expect(renderer.root.findAllByProps({ testID: 'map-catch-up' })).toHaveLength(0);
 });
+
+describe('combined local and cloud return state', () => {
+  const { combinedResumeCatchUp } = require('../src/tracking/ResumeCatchUp');
+  test('local completion cannot hide an ongoing cloud download and preserves the earlier freeze clock', () => {
+    expect(combinedResumeCatchUp({ phase: 'catching-up', since: 10 }, { phase: 'catching-up', since: 20 }))
+      .toEqual({ phase: 'catching-up', since: 10 });
+    expect(combinedResumeCatchUp({ phase: 'idle', since: null }, { phase: 'catching-up', since: 20 }))
+      .toEqual({ phase: 'catching-up', since: 20 });
+    expect(combinedResumeCatchUp()).toEqual({ phase: 'idle', since: null });
+  });
+  test('either failure takes priority while the other source is still reading', () => {
+    expect(combinedResumeCatchUp({ phase: 'catching-up', since: 10 }, { phase: 'failed', since: 20 }))
+      .toEqual({ phase: 'failed', since: 10 });
+    expect(combinedResumeCatchUp({ phase: 'failed', since: 10 }, { phase: 'idle', since: null }))
+      .toEqual({ phase: 'failed', since: 10 });
+  });
+});

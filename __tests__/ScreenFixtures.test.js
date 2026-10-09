@@ -537,7 +537,7 @@ const findAncestor = (node, test) => {
 };
 
 // The real MapScreen, given what App hands it for a fixture.
-async function renderFixture(name, { edits = null, inspect = null } = {}) {
+async function renderFixture(name, { edits = null, inspect = null, resume = null } = {}) {
   const MapView = require('react-native-maps').default;
   const { Marker } = require('react-native-maps');
   const { Platform } = require('react-native');
@@ -559,10 +559,14 @@ async function renderFixture(name, { edits = null, inspect = null } = {}) {
     dogAvatars: { avatars: {}, save: jest.fn() },
   };
   const inputs = applyScreenFixture(fixture, live, edits);
+  if (resume) {
+    inputs.tracking = { ...inputs.tracking, catchUp: resume.local, retryCatchUp: resume.localRetry };
+    inputs.cloudSync = { ...inputs.cloudSync, catchUp: resume.cloud, retry: resume.cloudRetry };
+  }
   let renderer;
   await act(async () => {
     renderer = Renderer.create(<MapScreen tracking={inputs.tracking} phone={inputs.phone} history={inputs.history}
-      cloudDogs={inputs.cloudDogs} cloudOwner={inputs.cloudSync.ownerId} bottomInset={80}
+      cloudDogs={inputs.cloudDogs} cloudOwner={inputs.cloudSync.ownerId} cloudSync={inputs.cloudSync} bottomInset={80}
       dogAvatars={inputs.dogAvatars} mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture}
       todayRoute={inputs.todayRoute} />);
   });
@@ -972,4 +976,30 @@ test('E10 activity-specific fixtures also read other dogs from their card rows',
   const readings = await fixture.readActivity(4, { start, end, detail: 'raw' });
   expect(readings.local).toEqual((await fixture.readCardRows(4, start)).local);
   expect(readings.local.length).toBeGreaterThan(0);
+});
+
+
+test('real map keeps the return pill for cloud work after the local feed is caught up', async () => {
+  const result = await renderFixture('all-good', { resume: {
+    local: { phase: 'idle', since: null },
+    cloud: { phase: 'catching-up', since: FIXTURE_NOW - 15 * 60000 },
+  }, inspect: ({ renderer }) => {
+    const { CatchUpPill } = require('../src/map/MapControls');
+    expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('catching-up');
+    expect(renderer.root.findAllByProps({ testID: 'map-catch-up' }).length).toBeGreaterThan(0);
+  } });
+  expect(result.text).toContain(i18nT('c1200'));
+});
+
+test('real map cloud failure retry goes to cloud sync without restarting an already caught-up feed', async () => {
+  const localRetry = jest.fn(), cloudRetry = jest.fn();
+  await renderFixture('all-good', { resume: {
+    local: { phase: 'idle', since: null }, localRetry,
+    cloud: { phase: 'failed', since: FIXTURE_NOW - 15 * 60000 }, cloudRetry,
+  }, inspect: async ({ renderer }) => {
+    const button = renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).find(node => node.props.onPress);
+    await act(async () => button.props.onPress());
+  } });
+  expect(cloudRetry).toHaveBeenCalledTimes(1);
+  expect(localRetry).not.toHaveBeenCalled();
 });

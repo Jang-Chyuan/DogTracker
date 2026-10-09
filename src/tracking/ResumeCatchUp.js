@@ -67,6 +67,8 @@ export function createResumeCatchUp({
   };
   return {
     state: () => state,
+    /** A cloud pass began: an interrupted initial download also counts as a return. */
+    started() { caughtUpOnce = true; },
     /** The app went to the background: freeze the dogs' colours here. */
     away() {
       awayAt = now();
@@ -99,5 +101,17 @@ export function createResumeCatchUp({
     close() {
       clear();
     },
+  };
+}
+
+/** Keep the map waiting until both its local read and resumed cloud pass finish. */
+export function combinedResumeCatchUp(local = CATCH_UP_IDLE, cloud = CATCH_UP_IDLE) {
+  const sources = [local || CATCH_UP_IDLE, cloud || CATCH_UP_IDLE];
+  const pending = sources.filter(source => source.phase !== 'idle');
+  if (!pending.length) return CATCH_UP_IDLE;
+  const clocks = pending.map(source => source.since).filter(Number.isFinite);
+  return {
+    phase: pending.some(source => source.phase === 'failed') ? 'failed' : 'catching-up',
+    since: clocks.length ? Math.min(...clocks) : null,
   };
 }

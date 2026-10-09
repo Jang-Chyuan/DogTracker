@@ -4,6 +4,7 @@ import { withCloudSyncSlot, cancelBackgroundSync } from './CloudSyncSlot';
 import { reconcileCloudWindow } from './CloudReconcile';
 import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
+import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
 // that are found by the count check instead. Sweeping every cycle would spend
@@ -32,7 +33,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   // 判定表「使用中登入失效」); offline: it never reached Supabase (S3 can
   // say a switch needs the network).
   let state = { busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
-    failingSince: null, authFailed: false, offline: false, revision: 0 };
+    failingSince: null, authFailed: false, offline: false, revision: 0, catchUp: CATCH_UP_IDLE };
   const publish = patch => {
     state = { ...state, ...patch };
     if (!disposed) onChange({ ...state, owner, foreground });
@@ -42,6 +43,23 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     clearTimeout(immediate);
     if (!disposed && foreground && owner) immediate = setTimeout(() => { tick(); }, 0);
   };
+
+  // The map's return indicator follows the actual cloud pass as well as the
+  // local feed. Ordinary polling and the initial download do not show it.
+  let resumeCatchUp;
+  const resetResume = () => {
+    resumeCatchUp?.close();
+    resumeCatchUp = createResumeCatchUp({ now,
+      onChange: catchUp => publish({ catchUp }),
+      onRetry: () => {
+        // A timed-out pass must drain before a replacement takes the slot.
+        generation += 1;
+        controller?.abort();
+        wake();
+      },
+    });
+  };
+  resetResume();
 
   async function tick() {
     if (disposed || !foreground || !owner || running || manualPending) return;
@@ -53,6 +71,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, 120000);
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t("c586")); };
     // Each pass reports a refusal of the sign-in on its own (authFailed).
+    resumeCatchUp.started();
     publish({ busy: true, mode: 'auto', error: '', authFailed: false });
     running = withCloudSyncSlot(async () => {
       try {
@@ -92,11 +111,16 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         }
         check();
         publish({ lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
+        resumeCatchUp.caughtUp();
       } catch (error) {
         if (valid(version) && (!abort.signal.aborted || timedOut)) {
           publish({ error: timedOut ? t("c587") : error.message,
             failingSince: state.failingSince ?? now(), authFailed: !timedOut && isAuthFailure(error),
             offline: timedOut || isNetworkFailure(error) });
+          // A completed initial attempt (even a failure) makes the next
+          // foreground return eligible; a cold-start failure has its S3 row.
+          if (resumeCatchUp.state().phase === 'idle') resumeCatchUp.caughtUp();
+          else resumeCatchUp.failed();
         }
       } finally {
         clearTimeout(timeout);
@@ -117,10 +141,11 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       cancelBackgroundSync();
       owner = next;
       sweptAt = 0;
+      resetResume();
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
-        offline: false, revision: state.revision + 1 });
+        offline: false, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
       wake();
     },
     setForeground(active) {
@@ -130,16 +155,21 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       clearInterval(interval);
       if (active) {
         cancelBackgroundSync();
+        resumeCatchUp.back();
         interval = setInterval(() => { tick(); }, 30000);
         wake();
       } else {
+        resumeCatchUp.away();
         clearTimeout(immediate);
         controller?.abort();
       }
       publish({});
     },
     // S3 「重試」: a pass now instead of at the next 30-second tick.
-    retry() { wake(); },
+    retry() {
+      if (resumeCatchUp.state().phase === 'failed') resumeCatchUp.retry();
+      else wake();
+    },
     async runManual(work, abort = new AbortController()) {
       if (manualPending || state.mode === 'manual') throw new Error(t("c585"));
       const version = generation;
@@ -165,6 +195,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     },
     dispose() {
       disposed = true;
+      resumeCatchUp.close();
       generation += 1;
       clearInterval(interval);
       clearTimeout(immediate);

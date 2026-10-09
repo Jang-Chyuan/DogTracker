@@ -231,3 +231,98 @@ test('cloud dogs\' clock: when the last download started, and since when downloa
   expect(changed.mock.calls.find(([state]) => state.owner === 'b')[0])
     .toMatchObject({ lastDownloadAt: null, failingSince: null });
 });
+
+test('resumed cloud download stays visible after local work finishes, then clears on actual success', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setForeground(false);
+  let finish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  finish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  // Normal 30s polling does not become a resume indicator.
+  changed.mockClear(); await jest.advanceTimersByTimeAsync(30000);
+  expect(changed.mock.calls.every(([value]) => value.catchUp.phase === 'idle')).toBe(true);
+});
+
+test('cloud resume timeout retries a fresh generation and late old response cannot end it', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  let oldFinish, newFinish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { oldFinish = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { newFinish = resolve; }));
+  engine.setForeground(true); await flush();
+  await jest.advanceTimersByTimeAsync(20000);
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('failed');
+  engine.retry(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  oldFinish(); await flush();
+  expect(newFinish).toBeDefined();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  newFinish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('cloud failure exposes resume retry and leaving or changing account removes stale failure', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  database.initialize.mockRejectedValueOnce(new Error('Network request failed'));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('failed');
+  engine.setForeground(false);
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setSession(account('b'));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('a failed initial download still reports catch-up on the next foreground return', async () => {
+  const { database, changed } = fixture();
+  database.initialize.mockRejectedValueOnce(new Error('Network request failed'));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setForeground(false);
+  let finish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  finish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('backgrounding an unfinished initial download still shows the next return attempt', async () => {
+  const { database, changed } = fixture();
+  let oldFinish, currentFinish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { oldFinish = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { currentFinish = resolve; }));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setForeground(false); engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  oldFinish(); await flush();
+  expect(currentFinish).toBeDefined();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  currentFinish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('manual history work during resume cannot claim that the live cloud download is caught up', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  let oldFinish, liveFinish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { oldFinish = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { liveFinish = resolve; }));
+  engine.setForeground(true); await flush();
+  const manual = engine.runManual(async () => 'history window only');
+  oldFinish(); await flush(); await manual; await flush();
+  expect(liveFinish).toBeDefined();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  liveFinish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
