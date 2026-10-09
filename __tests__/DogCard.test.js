@@ -200,3 +200,13 @@ test('the card readings never show another reader\'s rows (logout, account or fi
   await act(async () => resolveSecond(rows(70)));
   expect(seen.at(-1).battery.percentage).toBe(70);
 });
+
+test('E06: status labels reserve scaled width instead of wrapping at 1.3x', async () => {
+  const rn = require('react-native');
+  jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 390, height: 800, scale: 1, fontScale: 1.3 });
+  await mount();
+  const label = renderer.root.findAllByType(Text).find(node => node.props.children === '接收範圍');
+  const { size: sizes } = require('../src/theme/tokens');
+  expect(rn.StyleSheet.flatten(label.props.style).width).toBe(sizes.card.labelWidth * 1.3);
+  jest.restoreAllMocks();
+});
