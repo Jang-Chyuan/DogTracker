@@ -193,7 +193,12 @@ class BleForegroundService : Service() {
         handler.removeCallbacks(freshnessCheck)
         handler.post(freshnessCheck)
         handler.removeCallbacks(alertCheck)
-        handler.postDelayed(alertCheck, ALERT_CHECK_MS)
+        val remaining = com.dogtracker.alerts.ReceiverLinkState(false, disconnectedAt)
+          .remainingGrace(System.currentTimeMillis(), Events.DISCONNECT_GRACE_MS)
+        if (remaining != null) {
+          runCatching { wakeLock.acquire(remaining + 2 * ALERT_CHECK_MS) }
+          handler.postDelayed(alertCheck, remaining)
+        } else handler.postDelayed(alertCheck, ALERT_CHECK_MS)
         connectGatt()
       }
     }
