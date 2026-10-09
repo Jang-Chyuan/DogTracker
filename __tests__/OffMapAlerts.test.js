@@ -23,6 +23,34 @@ test('「⚠ N」 counts each dog once and each device problem once', () => {
   expect(alertBadge([])).toBeNull();
 });
 
+// User 2026-10-09: a disconnected receiver is one problem, not one more per
+// dog that went quiet because of it.
+test('「⚠ N」: dogs gone quiet with the disconnected receiver are part of it', () => {
+  const at = new Date(2026, 9, 3, 10, 18).getTime();
+  const outage = event('receiver-disconnected', 'receiver', { startedAt: at, outage: { number: 7 } });
+  const quietAfter = (id, extra = {}) => event('dog-stale', id, { startedAt: at + 60000, receiverAffected: true, ...extra });
+  expect(alertBadge([outage, quietAfter(4), quietAfter(5), quietAfter(6)])).toMatchObject({ count: 1, text: '⚠ 1' });
+  // Quiet before the disconnection, a cloud dog, or another problem of the dog: still counted.
+  expect(alertBadge([outage, quietAfter(4, { startedAt: at - 60000 })]).count).toBe(2);
+  expect(alertBadge([outage, quietAfter(4, { receiverAffected: false })]).count).toBe(2);
+  expect(alertBadge([outage, quietAfter(4), event('dog-battery', 4, { percentage: 15 })]).count).toBe(2);
+  // Without the disconnection every quiet dog counts.
+  expect(alertBadge([quietAfter(4), quietAfter(5)]).count).toBe(2);
+});
+
+// The engine's own events: the disconnection, then the dogs it heard go quiet.
+test('「⚠ N」 from AlertEvents: a disconnection that silenced two dogs is ⚠ 1', () => {
+  const { alertProblemCount } = require('../src/alerts/AlertEvents');
+  const since = 1000000;
+  const outageEvent = { key: 'receiver-disconnected:receiver', kind: 'receiver-disconnected', subject: 'receiver',
+    severity: 6, present: true, startedAt: since };
+  const stale = id => ({ key: `dog-stale:${id}`, kind: 'dog-stale', subject: id, severity: 3, present: true,
+    startedAt: since + 10 * 60000, receiverAffected: true });
+  expect(alertProblemCount([outageEvent, stale(4), stale(5)])).toBe(1);
+  expect(scheduleAlerts({}, { active: map([outageEvent, stale(4), stale(5)]), now: since + 11 * 60000,
+    foreground: true, screen: 'history' }).effects.badgeCount).toBe(1);
+});
+
 // 「件數照目前畫面上的狀態算（電量 21% 以上就不算）」: a latched battery hidden at 21–30% is not counted.
 test('a battery hidden at 21–30% does not count', () => {
   expect(alertBadge([event('dog-battery', 4, { present: false, percentage: 25 })])).toBeNull();

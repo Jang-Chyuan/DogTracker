@@ -41,6 +41,26 @@ export const alertKey = (kind, subject) => `${kind}:${subject}`;
 export const bySeverity = (left, right) => (right.severity - left.severity) || left.key.localeCompare(right.key);
 
 /**
+ * How many problems 「⚠ N」 counts in `present` (the events showing now):
+ * each dog once, 接收器斷線, 接收器電量低 and 位置存不進手機 once each. A
+ * disconnected receiver is one problem: a dog it heard that went quiet since
+ * (未更新 started at or after the disconnection) is part of it, not one more
+ * (user 2026-10-09). A dog quiet before, or with another problem, counts.
+ */
+export function alertProblemCount(present = []) {
+  const outage = present.find(event => event.kind === 'receiver-disconnected');
+  const causedByOutage = event => !!outage && event.kind === 'dog-stale' && event.receiverAffected === true
+    && Number.isFinite(event.startedAt) && Number.isFinite(outage.startedAt) && event.startedAt >= outage.startedAt;
+  const dogs = new Set();
+  let others = 0;
+  for (const event of present) {
+    if (!event.kind.startsWith('dog-')) others += 1;
+    else if (!causedByOutage(event)) dogs.add(event.subject);
+  }
+  return dogs.size + others;
+}
+
+/**
  * @param previous the state this returned last time ({} at first)
  * @param input.dogs merged dogs (DogMerge) with `name` and `range` (the
  *   dog's ReceiverRange judgement, or null)
