@@ -989,3 +989,159 @@ test('resume pill and dog dimming are wired through the live map and clear on fi
   expect(map().props.presentation.dogMarkers[0]).toMatchObject({ stale: true, dimmed: false });
   expect(nativeDog().props.opacity).toBe(1);
 });
+
+// Window coordinates include ancestor offsets; native press positions are pixels.
+async function tapHarness() {
+  const points = [{ time: 1, latitude: 25, longitude: 121 }, { time: 2, latitude: 25, longitude: 121.001 }];
+  const route = { color: '#1A73E8', lines: [], places: [], times: [], cursor: null, camera: [], points };
+  const move = jest.fn(), empty = jest.fn();
+  const props = { ...defaults, presentation: { ...defaults.presentation, historyRoute: route },
+    onCursorMove: move, onMapPress: empty };
+  mockCamera.coordinateForPoint = jest.fn(async () => points[0]);
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 40, y: 50 }));
+  await act(async () => {
+    renderer = Renderer.create(<TrackingMap {...props} />, {
+      createNodeMock: () => ({ measure: callback => callback(0, 0, 400, 800, 100, 200) }),
+    });
+  });
+  const surface = () => renderer.root.findAll(node => typeof node.type === 'string' && node.props.onTouchStart)[0].props;
+  const refNode = renderer.root.findAll(node => node.props.onTouchStart && node.props.ref?.current)[0];
+  refNode.props.ref.current.measure = callback => callback(0, 0, 400, 800, 100, 200);
+  const start = (x = 140, y = 250) => surface().onTouchStart({ nativeEvent: { pageX: x, pageY: y, touches: [{}] } });
+  const end = () => surface().onTouchEnd({ nativeEvent: {} });
+  const press = (x = 40, y = 50) => renderer.root.findByType(MapView).props.onPress({ nativeEvent: {
+    coordinate: points[0], position: { x: x * (Platform.OS === 'android' ? require('react-native').PixelRatio.get() : 1), y: y * (Platform.OS === 'android' ? require('react-native').PixelRatio.get() : 1) },
+  } });
+  return { props, points, move, empty, start, end, press };
+}
+
+test('quick tap uses window origin and suppresses only its matching native press', async () => {
+  const h = await tapHarness();
+  await act(async () => { h.start(); await h.end(); });
+  expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 40, y: 50 });
+  expect(h.move).toHaveBeenCalledTimes(1);
+  await act(async () => h.press());
+  expect(h.move).toHaveBeenCalledTimes(1);
+  await act(async () => h.press(200, 200));
+  expect(h.empty).toHaveBeenCalledTimes(1);
+  await act(async () => { h.start(300, 400); await h.end(); await h.press(200, 200); });
+  expect(h.empty).toHaveBeenCalledTimes(2);
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('native press claims a pending quick tap and stale projections cannot move the cursor', async () => {
+  const h = await tapHarness();
+  let resolve;
+  mockCamera.coordinateForPoint.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  let pending;
+  await act(async () => { h.start(); pending = h.end(); });
+  await act(async () => h.press());
+  expect(h.move).toHaveBeenCalledTimes(1);
+  await act(async () => { resolve(h.points[0]); await pending; });
+  expect(h.move).toHaveBeenCalledTimes(1);
+  mockCamera.coordinateForPoint.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  await act(async () => { h.start(); pending = h.end(); });
+  await act(async () => h.start(300, 400));
+  await act(async () => { resolve(h.points[0]); await pending; });
+  expect(h.move).toHaveBeenCalledTimes(1);
+  mockCamera.coordinateForPoint.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  await act(async () => { h.start(); pending = h.end(); });
+  await act(async () => renderer.update(<TrackingMap {...h.props} presentation={{ ...h.props.presentation,
+    historyRoute: { ...h.props.presentation.historyRoute, points: h.points.map(p => ({ ...p, latitude: p.latitude + 0.01 })) } }} />));
+  await act(async () => { resolve(h.points[0]); await pending; });
+  expect(h.move).toHaveBeenCalledTimes(1);
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('a native projection from an older gesture cannot dismiss or move a newer selection', async () => {
+  const h = await tapHarness();
+  let resolve;
+  mockCamera.pointForCoordinate.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  let pending;
+  await act(async () => { h.start(); pending = h.press(); });
+  await act(async () => h.start(300, 400));
+  await act(async () => { resolve({ x: 40, y: 50 }); await pending; });
+  expect(h.move).not.toHaveBeenCalled();
+  expect(h.empty).not.toHaveBeenCalled();
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('a delayed matching native report cannot handle an owned gesture twice', async () => {
+  const h = await tapHarness();
+  await act(async () => { h.start(); await h.end(); });
+  await act(async () => jest.advanceTimersByTime(900));
+  await act(async () => h.press());
+  expect(h.move).toHaveBeenCalledTimes(1);
+  expect(h.empty).not.toHaveBeenCalled();
+  // A fresh gesture at the same location is a separate tap.
+  await act(async () => { h.start(); await h.end(); await h.press(); });
+  expect(h.move).toHaveBeenCalledTimes(2);
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('equal geometry rebuilt during a pending tap keeps the gesture valid', async () => {
+  const h = await tapHarness();
+  let resolve;
+  mockCamera.coordinateForPoint.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  let pending;
+  await act(async () => { h.start(); pending = h.end(); });
+  await act(async () => renderer.update(<TrackingMap {...h.props} presentation={{ ...h.props.presentation,
+    historyRoute: { ...h.props.presentation.historyRoute, points: h.points.map(p => ({ ...p })) } }} />));
+  await act(async () => { resolve(h.points[0]); await pending; });
+  expect(h.move).toHaveBeenCalledTimes(1);
+  await act(async () => h.press());
+  expect(h.move).toHaveBeenCalledTimes(1);
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('invalid touch or projection coordinates never select a route', async () => {
+  const h = await tapHarness();
+  await act(async () => { h.start(undefined, NaN); await h.end(); });
+  expect(mockCamera.coordinateForPoint).not.toHaveBeenCalled();
+  mockCamera.pointForCoordinate.mockResolvedValueOnce({ x: NaN, y: 50 });
+  await act(async () => { h.start(); await h.end(); });
+  expect(h.move).not.toHaveBeenCalled();
+  await act(async () => h.press());
+  expect(h.move).toHaveBeenCalledTimes(1);
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('iOS native press positions are points rather than Android pixels', async () => {
+  const h = await tapHarness();
+  Platform.OS = 'ios';
+  const ratio = jest.spyOn(require('react-native').PixelRatio, 'get').mockReturnValue(3);
+  await act(async () => { h.start(); await h.end(); await h.press(); });
+  expect(h.move).toHaveBeenCalledTimes(1);
+  expect(h.empty).not.toHaveBeenCalled();
+  ratio.mockRestore();
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('native press uses the route current at start but discards a later route change', async () => {
+  const h = await tapHarness();
+  const change = async offset => renderer.update(<TrackingMap {...h.props} presentation={{ ...h.props.presentation,
+    historyRoute: { ...h.props.presentation.historyRoute,
+      points: h.points.map(p => ({ ...p, longitude: p.longitude + offset })) } }} />);
+  await act(async () => h.start());
+  await act(async () => change(0.00001));
+  await act(async () => h.press());
+  expect(h.move).toHaveBeenCalledTimes(1);
+  await act(async () => h.start());
+  let resolve;
+  mockCamera.pointForCoordinate.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  let pending;
+  await act(async () => { pending = h.press(); });
+  await act(async () => change(0.00002));
+  await act(async () => { resolve({ x: 40, y: 50 }); await pending; });
+  expect(h.move).toHaveBeenCalledTimes(1);
+  expect(h.empty).not.toHaveBeenCalled();
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});

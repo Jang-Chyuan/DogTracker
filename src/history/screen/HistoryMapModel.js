@@ -12,7 +12,42 @@ const isVehicle = mode => mode === 'driving' || mode === 'ride';
 const STEPS = [10, 15, 30, 60, 120, 180, 240].map(minutes => minutes * MINUTE);
 const MAX_MIDDLE_MARKERS = 5;
 
-const coordinateOf = p => ({ latitude: p.latitude, longitude: p.longitude });
+const coordinates = new WeakMap();
+const coordinateOf = p => {
+  let coordinate = coordinates.get(p);
+  if (!coordinate || coordinate.latitude !== p.latitude || coordinate.longitude !== p.longitude) {
+    coordinate = { latitude: p.latitude, longitude: p.longitude };
+    coordinates.set(p, coordinate);
+  }
+  return coordinate;
+};
+const pointHashes = new WeakMap();
+const projectedRoutes = new WeakMap();
+const routeIdentities = new WeakMap();
+
+// Hold replay can mutate source points. Reuse only a matching value snapshot.
+function projectedRoute(points) {
+  let route = projectedRoutes.get(points);
+  if (!route || route.length !== points.length || points.some((p, i) =>
+    p.time !== route[i].time || p.latitude !== route[i].latitude || p.longitude !== route[i].longitude)) {
+    route = points.map(p => ({ time: p.time, ...coordinateOf(p) }));
+    projectedRoutes.set(points, route);
+  }
+  return route;
+}
+
+export function routeGeometryIdentity(points) {
+  if (!points?.length) return 'empty';
+  points = projectedRoute(points);
+  let identity = routeIdentities.get(points);
+  if (!identity) {
+    let hash = geometryId(points);
+    for (const point of points) hash = (hash * 31 + point.time) % 2 ** 32;
+    identity = `${points.length}:${points[0].time}:${points[points.length - 1].time}:${hash}`;
+    routeIdentities.set(points, identity);
+  }
+  return identity;
+}
 
 /** 「#RRGGBB」 at `alpha` (0–1) as rgba(), for the faded parts of a route. */
 export function withAlpha(hex, alpha) {
@@ -97,7 +132,24 @@ export function routeLines(
 // What a drawn line is: the same id, the same coordinates and look (the map
 // leaves a line with an unchanged id alone).
 const lineId = line =>
-  `${line.start}-${line.end}-${line.coordinates.length}-${line.width}-${line.color}-${line.dashed ? 1 : 0}`;
+  `${line.start}-${line.end}-${geometryId(line.coordinates)}-${line.width}-${line.color}-${line.dashed ? 1 : 0}`;
+
+// Hash exact coordinate text so reconciliation invalidates only changed pieces.
+function geometryId(points) {
+  let hash = 2166136261;
+  for (const point of points) {
+    const coordinate = coordinateOf(point);
+    let pointHash = pointHashes.get(coordinate);
+    if (pointHash == null) {
+      pointHash = 2166136261;
+      const text = `${point.latitude},${point.longitude};`;
+      for (let i = 0; i < text.length; i += 1) pointHash = (pointHash * 31 + text.charCodeAt(i)) % 2 ** 32;
+      pointHashes.set(coordinate, pointHash);
+    }
+    hash = (hash * 31 + pointHash) % 2 ** 32;
+  }
+  return hash;
+}
 
 /** The day outside the range: 2dp dashed routeFaded, broken where the data is. */
 export function outsideLines(
@@ -289,11 +341,7 @@ export function historyMapPresentation(
         }
       : null,
     camera: (points.length ? points : dayPoints).map(coordinateOf),
-    points: points.map(p => ({
-      time: p.time,
-      latitude: p.latitude,
-      longitude: p.longitude,
-    })),
+    points: projectedRoute(points),
   };
 }
 
@@ -316,7 +364,7 @@ export function nearestRouteSpot(
   // cells around the touch (routeSpotGrid); the answer is the same as going
   // through every segment (068: a drag or a tap on a long route was slow).
   const near = grid && points.length > GRID_MIN_POINTS
-    ? gridCandidates(routeSpotGrid(points, breakMs), coordinate, overlapM)
+    ? gridCandidates(routeSpotGrid(points, breakMs), points, coordinate, overlapM)
     : null;
   return nearestOf(points, coordinate, currentTime, { overlapM, breakMs, near });
 }
@@ -351,7 +399,7 @@ export function routeSpotGrid(points, breakMs = sizes.route.breakAfterMs) {
       }
     }
   }
-  const grid = { breakMs, cells, cellOf, segments: points.length - 1 };
+  const grid = { breakMs, cells, cellOf, cellLat, cellLon, segments: points.length - 1 };
   grids.set(points, grid);
   return grid;
 }
@@ -359,25 +407,51 @@ export function routeSpotGrid(points, breakMs = sizes.route.breakAfterMs) {
 // Segment indices in rings of cells around the touch, out to where no
 // segment can be within `overlapM` of the nearest one found (null: look at
 // all of them, the grid found nothing nearby).
-function gridCandidates(grid, coordinate, overlapM) {
+function gridCandidates(grid, points, coordinate, overlapM) {
   const [row, col] = grid.cellOf(coordinate.latitude, coordinate.longitude);
   const found = new Set();
-  let nearestM = Infinity;
-  for (let ring = 0; ring < 200; ring += 1) {
-    // Every cell of this ring is at least (ring - 1) cells from the touch.
-    if (Number.isFinite(nearestM) && (ring - 1) * GRID_CELL_M > nearestM + overlapM + GRID_CELL_M) break;
-    for (let r = row - ring; r <= row + ring; r += 1) {
-      for (let c = col - ring; c <= col + ring; c += 1) {
-        if (Math.max(Math.abs(r - row), Math.abs(c - col)) !== ring) continue;
-        const list = grid.cells.get(`${r}:${c}`);
-        if (!list) continue;
-        for (const index of list) found.add(index);
-        // A segment in this ring is no farther than the ring's far corner.
-        nearestM = Math.min(nearestM, (ring + 1) * GRID_CELL_M * Math.SQRT2);
-      }
+  const lonM = Math.abs(Math.cos(coordinate.latitude * Math.PI / 180) * 111320);
+  let best = Infinity;
+  const visit = (r, c) => {
+    for (const index of grid.cells.get(`${r}:${c}`) || []) {
+      if (found.has(index)) continue;
+      found.add(index);
+      best = Math.min(best, projectedSegment(points[index], points[index + 1], coordinate).distanceM);
     }
+  };
+  for (let ring = 0; ring < 200; ring += 1) {
+    for (let c = col - ring; c <= col + ring; c += 1) {
+      visit(row - ring, c);
+      if (ring) visit(row + ring, c);
+    }
+    for (let r = row - ring + 1; r < row + ring; r += 1) {
+      visit(r, col - ring);
+      visit(r, col + ring);
+    }
+    // Any undiscovered segment lies outside this rectangle: its bounding
+    // box occupied every visited cell it intersected. Distance to the four
+    // sides is a lower bound for ALL remaining rings, at the touch latitude.
+    const bound = Math.min(
+      (coordinate.latitude - (row - ring) * grid.cellLat) * 110540,
+      ((row + ring + 1) * grid.cellLat - coordinate.latitude) * 110540,
+      (coordinate.longitude - (col - ring) * grid.cellLon) * lonM,
+      ((col + ring + 1) * grid.cellLon - coordinate.longitude) * lonM,
+    );
+    if (bound > best + overlapM + 1e-6) return [...found].sort((a, b) => a - b);
   }
-  return found.size ? [...found].sort((a, b) => a - b) : null;
+  // A bounded search is only an optimization, never an incomplete answer.
+  return null;
+}
+
+function projectedSegment(p, q, coordinate) {
+  const scale = Math.cos(coordinate.latitude * Math.PI / 180) * 111320;
+  const ax = (p.longitude - coordinate.longitude) * scale;
+  const ay = (p.latitude - coordinate.latitude) * 110540;
+  const dx = (q.longitude - p.longitude) * scale;
+  const dy = (q.latitude - p.latitude) * 110540;
+  const length = dx * dx + dy * dy;
+  const f = length ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / length)) : 0;
+  return { f, distanceM: Math.hypot(ax + dx * f, ay + dy * f) };
 }
 
 function nearestOf(points, coordinate, currentTime, { overlapM, breakMs, near }) {
@@ -403,17 +477,10 @@ function nearestOf(points, coordinate, currentTime, { overlapM, breakMs, near })
     const p = points[i],
       q = points[i + 1];
     if (q.time - p.time > breakMs) return;
-    const a = xy(p),
-      b = xy(q);
-    const dx = b.x - a.x,
-      dy = b.y - a.y,
-      length = dx * dx + dy * dy;
-    const f = length
-      ? Math.max(0, Math.min(1, -(a.x * dx + a.y * dy) / length))
-      : 0;
+    const { f, distanceM } = projectedSegment(p, q, coordinate);
     spots.push({
       point: f < 0.5 ? p : q,
-      distanceM: Math.hypot(a.x + dx * f, a.y + dy * f),
+      distanceM,
       index: i,
       coordinate: {
         latitude: p.latitude + (q.latitude - p.latitude) * f,

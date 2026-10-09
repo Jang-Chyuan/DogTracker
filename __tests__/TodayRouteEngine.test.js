@@ -1,6 +1,8 @@
 import { performance } from 'perf_hooks';
 import { createTodayRouteEngine } from '../src/tracking/TodayRouteEngine';
-import { todayRouteDistance, startOfToday } from '../src/tracking/TodayDistance';
+import { todayRouteDistance, startOfToday, endOfDay } from '../src/tracking/TodayDistance';
+import { historyTimeline } from '../src/history/HistoryTimeline';
+import { phoneHistoryRow } from '../src/history/HistoryRows';
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -20,8 +22,10 @@ function random(seed) {
  * (position drift inside the accuracy), drives (fast enough to be a car),
  * breaks in the recording, and the odd bad row (no fix, a far jump, a poor
  * accuracy, the same time twice). Rows as phoneRouteSince reads them.
+ * `foot`: walking and standing still only, recorded without a break — a day
+ * with no edge that ends a run of walking (068 finding 5).
  */
-function simulatedDay(seed, { legs = 30, step = 1, start = 7 * 60 } = {}) {
+function simulatedDay(seed, { legs = 30, step = 1, start = 7 * 60, foot = false } = {}) {
   const r = random(seed);
   const rows = [];
   let time = DAY_START + start * MINUTE;
@@ -32,10 +36,11 @@ function simulatedDay(seed, { legs = 30, step = 1, start = 7 * 60 } = {}) {
   const push = (latitude, longitude, accuracy) => rows.push({ id: ++id, time, latitude, longitude, accuracy,
     raw_speed_kmh: r() < 0.05 ? null : measured * 3.6 * (0.8 + r() * 0.4), speed_accuracy_mps: 0.5 });
   for (let leg = 0; leg < legs; leg += 1) {
-    const kind = r();
+    // foot: only the two slow kinds, so no leg is fast enough for a car.
+    const kind = r() * (foot ? 0.75 : 1);
     const seconds = Math.round((kind < 0.15 ? 1 + r() * 2 : 3 + r() * 20) * 60);
     const speed = kind < 0.4 ? 0 : kind < 0.75 ? 0.8 + r() * 1.2 : kind < 0.9 ? 6 + r() * 12 : 4 + r() * 1.5;
-    if (r() < 0.08) time += Math.round((3 + r() * 40) * MINUTE); // a break in the recording
+    if (r() < (foot ? 0 : 0.08)) time += Math.round((3 + r() * 40) * MINUTE); // a break in the recording
     measured = speed;
     for (let s = 0; s < seconds; s += step) {
       heading += (r() - 0.5) * 0.3;
@@ -55,8 +60,25 @@ function simulatedDay(seed, { legs = 30, step = 1, start = 7 * 60 } = {}) {
   return rows;
 }
 
-// Feed the rows in batches of random size and compare every answer.
-function compare(rows, seed, { pauses = false } = {}) {
+// What todayRouteDistance says about `rows` at `now`, as sum() returns it.
+function reference(rows, now) {
+  const { count, metres, status } = todayRouteDistance(rows, { now, dayStart: DAY_START });
+  return { count, metres, status };
+}
+
+// The engine's answer is the whole-day sum's (metres to the nearest micrometre:
+// the two add the same edges up in different groups).
+function expectSame(got, expected) {
+  expect(got.count).toBe(expected.count);
+  expect(got.status).toBe(expected.status);
+  expect(got.metres).toBeCloseTo(expected.metres, 6);
+}
+
+// Feed the rows in batches of random size and compare every answer. `clock`:
+// `now` can land inside the batch, so rows are ahead of the clock and the
+// clock can go backwards between calls (todayRouteDistance leaves rows later
+// than `now` out altogether).
+function compare(rows, seed, { pauses = false, clock = false } = {}) {
   const r = random(seed + 7);
   const engine = createTodayRouteEngine({ dayStart: DAY_START });
   let at = 0;
@@ -66,7 +88,9 @@ function compare(rows, seed, { pauses = false } = {}) {
     const batch = rows.slice(at, at + size);
     at += batch.length;
     expect(engine.add(batch)).toBe(true);
-    const now = batch[batch.length - 1].time + Math.floor(r() * 20 * SECOND);
+    const now = clock && batch.length > 1 && r() < 0.5
+      ? batch[Math.floor(r() * batch.length)].time
+      : batch[batch.length - 1].time + Math.floor(r() * 20 * SECOND);
     const seen = rows.slice(0, at);
     const expected = todayRouteDistance(seen, { now, dayStart: DAY_START });
     const got = engine.sum(now);
@@ -112,6 +136,65 @@ describe('today\'s distance, carried on row by row (068)', () => {
     expect(createTodayRouteEngine({ dayStart: DAY_START }).sum(DAY_START)).toEqual({ count: 0, metres: 0, status: 'not-departed' });
   });
 
+  test('a row ahead of the clock waits for it', () => {
+    // The whole-day sum takes the rows of today up to `now`: a row recorded
+    // a second ahead of the clock is not part of the answer yet.
+    const rows = [
+      { id: 1, time: DAY_START + SECOND, latitude: 24.9893, longitude: 121.3135, accuracy: 5 },
+      { id: 2, time: DAY_START + 2 * SECOND, latitude: 24.9894, longitude: 121.3135, accuracy: 5 },
+    ];
+    const engine = createTodayRouteEngine({ dayStart: DAY_START });
+    expect(engine.add(rows)).toBe(true);
+    const early = engine.sum(DAY_START + SECOND);
+    expectSame(early, reference(rows, DAY_START + SECOND));
+    expect(early).toEqual({ count: 1, metres: 0, status: 'not-departed' });
+    // The clock reaches the second row: 11 m walked (no measured speed, so
+    // the speed budget cannot call it drift).
+    const later = engine.sum(DAY_START + 2 * SECOND);
+    expectSame(later, reference(rows, DAY_START + 2 * SECOND));
+    expect(later.count).toBe(2);
+    expect(later.metres).toBeCloseTo(11.12, 1);
+  });
+
+  test.each([2, 5])('the same answer when the clock runs behind the rows, simulated day %i', seed => {
+    const rows = simulatedDay(seed, { legs: 14 });
+    expect(compare(rows, seed + 200, { clock: true, pauses: true })).toBeGreaterThan(5);
+  });
+
+  test('the clock going backwards: the rows after it leave the answer, and come back', () => {
+    const rows = simulatedDay(3, { legs: 12 });
+    const engine = createTodayRouteEngine({ dayStart: DAY_START });
+    expect(engine.add(rows)).toBe(true);
+    const end = rows[rows.length - 1].time;
+    const middle = rows[Math.floor(rows.length / 2)].time;
+    const at = [end, middle, DAY_START + MINUTE, middle, end, end];
+    for (const now of at) expectSame(engine.sum(now), reference(rows, now));
+    // The day was long enough for the departure to be found again.
+    expect(engine.sum(end).status).toBe('confirmed');
+  });
+
+  test('midnight: from the day\'s first millisecond, and the next day is not today', () => {
+    const r = random(5);
+    const walk = (from, n, first) => Array.from({ length: n }, (_, i) => ({ id: first + i,
+      time: from + i * 10 * SECOND, latitude: 24.9893 + i * 0.0002 + (r() - 0.5) * 0.00004,
+      longitude: 121.3135 + (r() - 0.5) * 0.00004, accuracy: 6 }));
+    const today = walk(DAY_START, 120, 1);
+    // The first row of the next day is at the day's end exactly.
+    const tomorrow = walk(endOfDay(DAY_START), 10, 1000);
+    const engine = createTodayRouteEngine({ dayStart: DAY_START });
+    expect(engine.add([...today, ...tomorrow])).toBe(true);
+    const statuses = [];
+    for (const now of [DAY_START, DAY_START + 4 * MINUTE, DAY_START + 10 * MINUTE,
+      endOfDay(DAY_START) - 1, endOfDay(DAY_START) + MINUTE]) {
+      const got = engine.sum(now);
+      expectSame(got, reference(today, now));
+      statuses.push(got.status);
+    }
+    // Only today's rows, whatever the clock says.
+    expect(statuses).toEqual(['not-departed', 'confirming', 'confirmed', 'confirmed', 'confirmed']);
+    expect(engine.sum(endOfDay(DAY_START) + MINUTE).count).toBe(today.length);
+  });
+
   test('a long day: each new batch costs a small part of the whole-day sum', () => {
     const rows = simulatedDay(42, { legs: 70 });
     const engine = createTodayRouteEngine({ dayStart: DAY_START });
@@ -130,4 +213,55 @@ describe('today\'s distance, carried on row by row (068)', () => {
     expect(rows.length).toBeGreaterThan(20000);
     expect(incremental).toBeLessThan(full / 4);
   });
+
+  test('a day on foot: a poll costs no more late in the day than early', () => {
+    const rows = simulatedDay(11, { legs: 40, foot: true });
+    const now = rows[rows.length - 1].time;
+    // Walking and standing still, recorded without a break: no car and no
+    // gap, so nothing ends the run of walking the distance is counted along.
+    // The checkpoint can only move if it carries the run's anchor and speed
+    // budget (otherwise a poll adds the whole retained route up again).
+    const model = historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone', source: 'all',
+      dayStart: DAY_START, dayEnd: endOfDay(DAY_START), today: true, now });
+    expect(model.edges.length).toBeGreaterThan(20000);
+    expect(model.edges.every(e => e.mode === 'walking')).toBe(true);
+    // A day fed in batches of 150 rows, as the live map polls: what the
+    // batches cost altogether, per row.
+    const perRow = fed => {
+      const engine = createTodayRouteEngine({ dayStart: DAY_START });
+      let cost = 0;
+      for (let at = 0; at < fed.length; at += 150) {
+        const batch = fed.slice(at, at + 150);
+        const t0 = performance.now();
+        engine.add(batch);
+        engine.sum(batch[batch.length - 1].time);
+        cost += performance.now() - t0;
+      }
+      return { cost: cost / fed.length, answer: engine.sum(fed[fed.length - 1].time) };
+    };
+    const first = perRow(rows.slice(0, 3000));
+    const whole = perRow(rows);
+    expectSame(first.answer, reference(rows.slice(0, 3000), rows[2999].time));
+    expectSame(whole.answer, reference(rows, now));
+    expect(whole.answer.metres).toBeGreaterThan(1000);
+    // 0.4 when the checkpoint moves, 7.5 when it cannot (068 finding 5).
+    expect(whole.cost).toBeLessThan(first.cost * 2);
+  });
+});
+
+
+test('a sparse walk ending on a still fix keeps its distance in incremental and whole-day sums', () => {
+  const rows = [
+    { id: 1, time: DAY_START + SECOND, latitude: 24.9893, longitude: 121.3135,
+      accuracy: 5, raw_speed_kmh: 5, speed_accuracy_mps: 0.4 },
+    { id: 2, time: DAY_START + 41 * SECOND, latitude: 24.9898, longitude: 121.3135,
+      accuracy: 5, raw_speed_kmh: 0, speed_accuracy_mps: 0.4 },
+  ];
+  const engine = createTodayRouteEngine({ dayStart: DAY_START });
+  engine.add(rows.slice(0, 1));
+  engine.sum(rows[0].time);
+  engine.add(rows.slice(1));
+  const result = engine.sum(rows[1].time);
+  expectSame(result, reference(rows, rows[1].time));
+  expect(result.metres).toBeGreaterThan(50);
 });
