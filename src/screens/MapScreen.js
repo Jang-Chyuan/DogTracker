@@ -17,6 +17,8 @@ import { useMapClock } from '../map/useMapClock';
 import DeviceDetails from '../map/DeviceDetails';
 import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
+import { useReceiverState } from '../map/useReceiverState';
+import { isOtherReceiver } from '../map/ReceiverState';
 
 // The first fit frames what this handler is working with: the connected pair
 // and the path inside the chosen window. Framing every cloud dog as well zoomed
@@ -53,6 +55,9 @@ export default function MapScreen({
   cloudDogs,
   cloudOwner,
   historyDownload,
+  // Debug builds only (src/dev/ScreenFixtures.js): the clock, the phone's live
+  // position and the receiver reader of a named screen state.
+  fixture = null,
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
@@ -70,31 +75,51 @@ export default function MapScreen({
   const { point, route, positionSamples, mode } = tracking;
   // Ageing is measured against this clock, not against the newest row: a silent
   // collar changes nothing else on this screen.
-  const now = useMapClock(active && tracking.foreground);
+  const liveNow = useMapClock(active && tracking.foreground && !fixture);
+  // A screen fixture stops the clock, so its screenshot is the same every time.
+  const now = fixture ? fixture.now : liveNow;
+  // The receiver this phone is set up for, read from the native service while
+  // the live map is in front (a fixture supplies its own reader).
+  const receiverState = useReceiverState(active && tracking.foreground && !historical,
+    fixture?.readReceiverState);
+  // The newest stored packet can be from a receiver used before this one.
+  const otherReceiver = isOtherReceiver(point, receiverState);
+  // Its receiver readings (position, battery) are then not this receiver's
+  // either; the dog's own readings in it stay.
+  const sheetTracking = useMemo(() => (otherReceiver ? { ...tracking, point: { ...point,
+    masterLat: null, masterLon: null, masterBatteryValid: false, masterBatteryPercentage: null,
+    masterBatteryMillivolts: null } } : tracking), [otherReceiver, tracking, point]);
   useEffect(() => {
     setSelected(null);
   }, [mode, point.masterId, tracking.preferences.value.showMasterMarker]);
   const basePresentation = useMemo(
-    () =>
-      createTrackingMapPresentation(
+    () => {
+      const base = createTrackingMapPresentation(
         point,
         route,
         positionSamples,
         { ...tracking.preferences.value, windowMinutes: 2, showTrails: false },
         now,
-      ),
-    [point, positionSamples, route, tracking.preferences.value, now],
+      );
+      // Another receiver's last position is not drawn as this one's, nor
+      // framed: the camera would aim at a place where nothing is drawn.
+      return otherReceiver
+        ? { ...base, master: null, positions: { ...base.positions, master: null }, cameraPositions: [] }
+        : base;
+    },
+    [point, positionSamples, route, tracking.preferences.value, now, otherReceiver],
   );
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows.
   // The eye hides the markers, not the list: the card must still say which dogs
   // reported and when.
   // The handler's phone driving tells the map which dogs ride along.
-  const livePhone = useLiveLocation(active && tracking.foreground);
+  const realPhone = useLiveLocation(active && tracking.foreground && !fixture);
+  const livePhone = fixture ? fixture.livePhone : realPhone;
   const rideDetector = useRef(null);
   if (!rideDetector.current) rideDetector.current = createRideDetector();
-  if (livePhone?.running && livePhone.position) rideDetector.current.add(livePhone.position, now);
-  const currentRide = rideDetector.current.ride(now);
+  if (realPhone?.running && realPhone.position) rideDetector.current.add(realPhone.position, now);
+  const currentRide = fixture ? fixture.ride : rideDetector.current.ride(now);
   const rideKey = currentRide
     ? `${currentRide.coordinate.latitude},${currentRide.coordinate.longitude}` : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,7 +269,8 @@ export default function MapScreen({
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
         provider={mapProvider}
-        source={historical ? 'history:' + history.key : mode}
+        // A screen fixture counts as a new source, so the map frames its dogs.
+        source={historical ? 'history:' + history.key : fixture ? `${mode}:fixture:${fixture.name}` : mode}
         presentation={presentation}
         topInset={controlsTop}
         bottomInset={bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12}
@@ -255,7 +281,10 @@ export default function MapScreen({
         appForeground={tracking.foreground}
         dataReady={
           tracking.preferences.ready &&
-          (tracking.initialSnapshotReady === true || !!tracking.errors[mode])
+          (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&
+          // The first fit waits for the receiver's identity (one native read),
+          // so another receiver's stored position is never framed as ours.
+          receiverState !== undefined
         }
         phoneEnabled={!!phone?.enabled}
         onMasterPress={openMaster}
@@ -302,7 +331,7 @@ export default function MapScreen({
         <TrackingSheet
           onDogDetails={openDog}
           showRouteControls={false}
-          tracking={tracking}
+          tracking={sheetTracking}
           master={master}
           dogs={dogs}
           dogAliases={history?.preferences.dogAliases}
