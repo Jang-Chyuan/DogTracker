@@ -13,6 +13,11 @@ import { HISTORY_DEFAULTS } from './HistoryDatabase';
 export function useMapHistory(database, ready, active, owner) {
   const db = useRef(null);
   const saving = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [preferences, setPreferences] = useState(HISTORY_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -57,12 +62,19 @@ export function useMapHistory(database, ready, active, owner) {
     readDays: readDays.current,
     // Resolves true only when the value was stored, so a caller that moves on
     // afterwards (the card's 看軌跡) never lands on the old query.
+    // A save that ends after the history was closed or its database was
+    // replaced (another owner) is stored but no longer shown here.
     async save(value) {
-      if (!db.current || saving.current) return false;
+      const target = db.current;
+      if (!target || saving.current) return false;
+      const current = () => mounted.current && db.current === target;
       saving.current = true; setBusy(true);
-      try { setPreferences(await db.current.save(value)); setError(''); setLoaded(true); return true; }
-      catch (e) { setError(e.message); return false; }
-      finally { saving.current = false; setBusy(false); }
+      try {
+        const stored = await target.save(value);
+        if (current()) { setPreferences(stored); setError(''); setLoaded(true); }
+        return true;
+      } catch (e) { if (current()) setError(e.message); return false; }
+      finally { saving.current = false; if (mounted.current) setBusy(false); }
     },
   };
 }

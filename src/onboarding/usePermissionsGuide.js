@@ -26,7 +26,13 @@ export function usePermissionsGuide({ asked = NO_IDS, onAsked, fixture = null,
   // at once).
   const [askedNow, setAskedNow] = useState([]);
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // The pause before a system question; leaving clears its timer and ends
+  // the wait at once (allowAll then stops on alive).
+  const pause = useRef(null);
+  useEffect(() => () => {
+    alive.current = false;
+    if (pause.current) { clearTimeout(pause.current.timer); pause.current.resolve(); pause.current = null; }
+  }, []);
   const names = permissions?.PERMISSIONS ?? NO_NAMES;
 
   const check = useCallback(async () => {
@@ -68,7 +74,10 @@ export function usePermissionsGuide({ asked = NO_IDS, onAsked, fixture = null,
         setAsking(id);
         // The row says 「詢問中…」 on screen before the system question
         // covers the app (a paused app draws nothing new).
-        await new Promise(resolve => setTimeout(resolve, SHOW_ROW_MS));
+        await new Promise(resolve => {
+          const timer = setTimeout(() => { pause.current = null; resolve(); }, SHOW_ROW_MS);
+          pause.current = { timer, resolve };
+        });
         if (!alive.current) return;
         // A question closed with the back key counts as not allowed; the
         // next one is asked all the same.

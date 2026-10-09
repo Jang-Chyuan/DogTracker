@@ -68,24 +68,47 @@ export default function LiveDataSettings({
       mounted.current = false;
     };
   }, []);
-  const load = useCallback(async () => {
-    try {
-      const next = await dogDatabase.listHistory(limit);
-      if (mounted.current) {
-        setRows(next || []);
-        setError('');
+  // One read at a time: 重試 while the timer's read runs joins that read.
+  // A read of an earlier database never sets the table.
+  const reading = useRef(null);
+  const load = useCallback(() => {
+    const running = reading.current;
+    if (running && running.db === dogDatabase && running.limit === limit)
+      return running.promise;
+    const entry = { db: dogDatabase, limit };
+    reading.current = entry;
+    const latest = () => mounted.current && reading.current === entry;
+    entry.promise = (async () => {
+      try {
+        const next = await dogDatabase.listHistory(limit);
+        if (latest()) {
+          setRows(next || []);
+          setError('');
+        }
+      } catch (failure) {
+        if (latest())
+          setError(t("c565", { value: failure?.message || t("c966") }));
+      } finally {
+        if (latest()) setLoading(false);
+        if (reading.current === entry) reading.current = null;
       }
-    } catch (failure) {
-      if (mounted.current)
-        setError(t("c565", { value: failure?.message || t("c966") }));
-    } finally {
-      if (mounted.current) setLoading(false);
-    }
+    })();
+    return entry.promise;
   }, [dogDatabase, limit]);
+  // The next read is planned when this one is done, so a slow read never
+  // overlaps the next one (an older answer cannot replace a newer one).
   useEffect(() => {
-    load();
-    const timer = setInterval(load, refreshMs);
-    return () => clearInterval(timer);
+    let stopped = false;
+    let timer = null;
+    const tick = async () => {
+      await load();
+      if (!stopped) timer = setTimeout(tick, refreshMs);
+    };
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [load, refreshMs]);
   const toggle = key =>
     setSelected(current => {
