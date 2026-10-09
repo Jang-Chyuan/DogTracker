@@ -50,7 +50,7 @@ import {
   isIndoorHold,
 } from '../tracking/DogFreshness';
 import { layout, space, radius, size as sizes, type } from '../theme/tokens';
-import { SettingsGear } from '../map/MapControls';
+import { CatchUpPill, SettingsGear } from '../map/MapControls';
 import TopAlertCards from '../map/TopAlertCards';
 import {
   gearLabel,
@@ -500,6 +500,7 @@ export default function MapScreen({
   const selectedDogId =
     selected?.kind === 'dog' && !historical ? selected.slaveId : null;
   const dogAliases = history?.preferences.dogAliases;
+  const previousMarkerStale = useRef({});
   const livePresentation = useMemo(() => {
     // The connected pair's single dog marker is not drawn: every dog is one
     // of `dogMarkers`.
@@ -533,6 +534,9 @@ export default function MapScreen({
         ranges: cloudDogs?.ranges,
         aliases: dogAliases,
         selectedId: selectedDogId,
+        previousStale: previousMarkerStale.current,
+        catchUpSince: tracking.catchUp?.phase === 'catching-up'
+          ? tracking.catchUp.since : null,
       }),
       dogPaths: [],
     };
@@ -545,7 +549,14 @@ export default function MapScreen({
     pauses,
     dogAliases,
     selectedDogId,
+    tracking.catchUp,
   ]);
+  useEffect(() => {
+    if (tracking.catchUp?.phase !== 'catching-up')
+      previousMarkerStale.current = Object.fromEntries(
+        livePresentation.dogMarkers.map(marker => [marker.slaveId, marker.stale]),
+      );
+  }, [livePresentation, tracking.catchUp]);
   // What the first view (cold start, or a data source switch) frames: the
   // dogs from this phone's own receiver and the phone; a far cloud dog only
   // with 框住全部 (MapFraming).
@@ -1075,6 +1086,10 @@ export default function MapScreen({
             alertLabel={gearLabel(reasons)}
             onPress={onOpenSettings}
           />
+        )}
+        {!historical && active && tracking.foreground && (
+          <CatchUpPill phase={tracking.catchUp?.phase} top={gearTop}
+            onRetry={tracking.retryCatchUp} />
         )}
         <TopAlertCards
           cards={cards}

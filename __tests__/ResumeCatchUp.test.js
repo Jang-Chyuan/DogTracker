@@ -1,0 +1,107 @@
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { Animated, StyleSheet, Text } from 'react-native';
+import { createResumeCatchUp, CATCH_UP_TIMEOUT_MS } from '../src/tracking/ResumeCatchUp';
+import { CatchUpPill } from '../src/map/MapControls';
+import { setReduceMotion } from '../src/utils/reduceMotion';
+import { dogMarkers } from '../src/map/DogMarkers';
+import { lightTheme, darkTheme, ThemeProvider } from '../src/theme/ThemeProvider';
+import { touch } from '../src/theme/tokens';
+
+let renderer;
+beforeEach(() => jest.useFakeTimers());
+afterEach(async () => {
+  if (renderer) await act(async () => renderer.unmount());
+  renderer = null;
+  act(() => setReduceMotion(false));
+  jest.restoreAllMocks();
+  jest.useRealTimers();
+});
+
+test('only a resume catches up; finish hides the pill and background cancels the cap', () => {
+  const sync = createResumeCatchUp();
+  sync.back();
+  expect(sync.state().phase).toBe('idle');
+  sync.caughtUp();
+  sync.back(); // repeated active is not a resume
+  expect(sync.state().phase).toBe('idle');
+  sync.away();
+  sync.back();
+  expect(sync.state().phase).toBe('catching-up');
+  sync.caughtUp();
+  expect(sync.state().phase).toBe('idle');
+  sync.away(); sync.back(); sync.away();
+  jest.advanceTimersByTime(CATCH_UP_TIMEOUT_MS);
+  expect(sync.state().phase).toBe('idle');
+  sync.close();
+});
+
+test('failure and the exact 20 second timeout persist through late results until retry', () => {
+  const onRetry = jest.fn();
+  const sync = createResumeCatchUp({ onRetry });
+  sync.caughtUp(); sync.away(); sync.back();
+  expect(CATCH_UP_TIMEOUT_MS).toBe(20000);
+  jest.advanceTimersByTime(19999);
+  expect(sync.state().phase).toBe('catching-up');
+  jest.advanceTimersByTime(1);
+  expect(sync.state().phase).toBe('failed');
+  sync.caughtUp();
+  expect(sync.state().phase).toBe('failed');
+  sync.retry();
+  expect(onRetry).toHaveBeenCalledTimes(1);
+  expect(sync.state().phase).toBe('catching-up');
+  sync.failed();
+  expect(sync.state().phase).toBe('failed');
+  sync.retry(); sync.caughtUp();
+  expect(sync.state().phase).toBe('idle');
+  sync.close();
+});
+
+test('catch-up dims last colours; finish applies the normal ten minute stale rule', () => {
+  const minute = 60000;
+  const away = 20 * minute;
+  const dog = { slaveId: 1, coordinate: { latitude: 25, longitude: 121 }, fixAt: 18 * minute,
+    fixSource: 'ble', packetAt: 18 * minute, packetSource: 'ble' };
+  const old = { ...dog, slaveId: 2, fixAt: 0 };
+  const pending = dogMarkers([dog, old], { now: 40 * minute, catchUpSince: away });
+  expect(pending[0]).toMatchObject({ stale: false, dimmed: true });
+  expect(pending[1]).toMatchObject({ stale: true, dimmed: true });
+  expect(dogMarkers([dog], { now: 40 * minute })[0]).toMatchObject({ stale: true, dimmed: false });
+  // A cloud refresh changing its reference clock during catch-up must not
+  // replace the colour the user left behind.
+  expect(dogMarkers([{ ...dog, fixSource: 'cloud' }], { now: 40 * minute,
+    catchUpSince: away, cloud: { lastDownloadAt: 40 * minute }, previousStale: { 1: false } })[0])
+    .toMatchObject({ stale: false, dimmed: true });
+  expect(lightTheme.opacity.catchingUp).toBe(0.5);
+  expect(darkTheme.opacity.catchingUp).toBe(0.6);
+});
+
+test('pill announces updating/failure, retry is a minimum-size button, and reduced motion is static', async () => {
+  const start = jest.fn(), stop = jest.fn();
+  const loop = jest.spyOn(Animated, 'loop').mockReturnValue({ start, stop });
+  const timing = jest.spyOn(Animated, 'timing');
+  const retry = jest.fn();
+  const render = phase => <ThemeProvider><CatchUpPill phase={phase} top={8} onRetry={retry} /></ThemeProvider>;
+  await act(async () => { renderer = Renderer.create(render('catching-up')); });
+  const pill = () => renderer.root.findByProps({ testID: 'map-catch-up' });
+  await act(async () => pill().props.onLayout({ nativeEvent: { layout: { width: 220 } } }));
+  expect(renderer.root.findAllByType(Text).some(node => node.props.children === '正在更新狗的位置')).toBe(true);
+  expect(pill().props.accessibilityLiveRegion).toBe('polite');
+  expect(loop).toHaveBeenCalled();
+  expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ useNativeDriver: true }));
+  act(() => setReduceMotion(true));
+  expect(stop).toHaveBeenCalled();
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up-shimmer' })).toHaveLength(0);
+  await act(async () => renderer.update(render('failed')));
+  expect(renderer.root.findAllByType(Text).some(node => node.props.children === '更新失敗')).toBe(true);
+  expect(renderer.root.findAllByType(Text).some(node => node.props.children === '重試')).toBe(true);
+  const button = renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).find(node => node.props.onPress);
+  expect(button.props.accessibilityRole).toBe('button');
+  const style = StyleSheet.flatten(button.props.style);
+  expect(style.minWidth).toBeGreaterThanOrEqual(touch.min);
+  expect(style.minHeight).toBeGreaterThanOrEqual(touch.min);
+  act(() => button.props.onPress());
+  expect(retry).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.update(render('idle')));
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up' })).toHaveLength(0);
+});

@@ -77,6 +77,58 @@ describe('tracking session and connection lifetime', () => {
     jest.useRealTimers();
   });
 
+  test('resume catch-up finishes, failures retry, and timeout ignores a late read', async () => {
+    const db = databases();
+    db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
+    await mount(db);
+    expect(session.catchUp.phase).toBe('idle');
+    const change = AppState.addEventListener.mock.calls[0][1];
+    await act(async () => change('background'));
+    const read = deferred();
+    db.real.listStatusRowsAfterId.mockReturnValueOnce(read.promise);
+    await act(async () => change('active'));
+    expect(session.catchUp.phase).toBe('catching-up');
+    await act(async () => read.resolve([]));
+    expect(session.catchUp.phase).toBe('idle');
+    await act(async () => change('active'));
+    expect(session.catchUp.phase).toBe('idle');
+    await act(async () => change('background'));
+    db.real.listStatusRowsAfterId.mockRejectedValueOnce(new Error('resume failed'));
+    await act(async () => change('active'));
+    expect(session.catchUp.phase).toBe('failed');
+    const retry = deferred();
+    db.real.listStatusRowsAfterId.mockReturnValueOnce(retry.promise);
+    await act(async () => session.retryCatchUp());
+    expect(session.catchUp.phase).toBe('catching-up');
+    await act(async () => retry.resolve([]));
+    expect(session.catchUp.phase).toBe('idle');
+    await act(async () => change('background'));
+    const slow = deferred();
+    db.real.listStatusRowsAfterId.mockReturnValueOnce(slow.promise);
+    await act(async () => change('active'));
+    await act(async () => jest.advanceTimersByTimeAsync(19999));
+    expect(session.catchUp.phase).toBe('catching-up');
+    await act(async () => jest.advanceTimersByTimeAsync(1));
+    expect(session.catchUp.phase).toBe('failed');
+    await act(async () => slow.resolve([]));
+    expect(session.catchUp.phase).toBe('failed');
+    await act(async () => session.retryCatchUp());
+    expect(session.catchUp.phase).toBe('idle');
+    await act(async () => change('background'));
+    const obsolete = deferred();
+    db.real.listStatusRowsAfterId.mockReturnValueOnce(obsolete.promise);
+    await act(async () => change('active'));
+    await act(async () => jest.advanceTimersByTimeAsync(20000));
+    const fresh = deferred();
+    db.real.listStatusRowsAfterId.mockReturnValueOnce(fresh.promise);
+    await act(async () => session.retryCatchUp());
+    expect(session.catchUp.phase).toBe('catching-up');
+    await act(async () => obsolete.resolve([]));
+    expect(session.catchUp.phase).toBe('catching-up');
+    await act(async () => fresh.resolve([]));
+    expect(session.catchUp.phase).toBe('idle');
+  });
+
   test('foreground polling never generates hardware rows', async () => {
     const db = databases();
     await mount(db);
