@@ -32,6 +32,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 診斷的資料頁 | `diagnostics`：同一批列照即時資料（`dog_status` 新的在前）、本機／雲端資料（登入的帳號、含原始 JSON）、記錄清單（`phone.today` 當 `myLocationTracker` 的列）的讀法交出；`readFailure` 讓三頁都讀取失敗 | `LiveDataSettings`、`CloudDataScreen`、`LocationTrackerScreen`；S8 的速度緩衝讀同一批 `dog_status` 列 |
 | 接收器 Wi-Fi | `wifi`（接收器存的網路，預設「家裡、辦公室」、使用中「家裡」）；新增、刪除只改記憶體 | `useReceiverWifi` → S7 第二行、Wi-Fi 頁 |
 | 刪除全部狗資料 | `deletion: { unsent, open }`：還沒上傳的筆數、確認框一打開就出現；情境裡「先上傳」一律沒網路、「一起刪除」不刪任何東西 | `useDeleteDogData` → S7 確認框 |
+| 啟動 | `launch`：冷啟動時 `Launch.launchScreen` 讀的輸入（資料庫打開了沒／錯誤、設定讀完沒、引導走到哪一步、恢復登入結束或超過 10 秒、登入了沒、恢復時登入已失效）；`restoring`：恢復登入還在等 Supabase | `launchScreen` → App 開在地圖、D1（第一次／登入失效）或 D0 啟動失敗；S3「暫時連不上，會自動重試」 |
 | 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新有效電量）→ `DogCardModel` |
 
@@ -82,12 +83,12 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `phone-recording-off` | 09:05 關掉記錄、之前走了 2.7 km → 灰色走路小人、灰字「今天 2.7 km」 |
 | `phone-no-permission` | 定位權限被拿掉（之前走了 2.7 km）→ 灰色走路小人加斜線、灰字「今天 2.7 km」（A2）；沒有藍點 |
 | `phone-no-route` | 記錄關著、今天沒有任何路線（只有昨天的）→ 灰色「未記錄」 |
-| `cloud-signed-out` | S3 沒登入：這頁就是登入表單（D1），「稍後再說」回設定 |
+| `cloud-signed-out` | S3 沒登入：「未登入」＋「登入 ›」→ D1；D1 的完成、「稍後再說」、返回鍵都回 S3 |
 | `cloud-ok` | S3 已登入、最後下載成功、還沒上傳 0 筆、接收器 7 由這支手機上傳 |
 | `cloud-failing&page=cloud` | S3 照設計稿：「下載失敗」「連不上 Supabase・09:24 起」「重試 ›」、還沒上傳 12 筆、最後上傳成功 |
 | `cloud-upload-pending` | S3：需處理 3 筆（紅色「!」＋「重試 ›」）、還沒上傳 12 筆 |
 | `cloud-unreachable-retrying` | S3：開 App 後還沒連上過 Supabase →「暫時連不上，會自動重試」 |
-| `cloud-expired` | S3 使用中登入失效：「需要重新登入」＋登入表單；齒輪紅點、S1「!」 |
+| `cloud-expired` | S3 使用中登入失效：紅色「!」「需要重新登入」＋「登入 ›」→ D1（也寫「需要重新登入」）；齒輪紅點、S1「!」 |
 | `upload-switch-confirm` | S3：接收器 7 由 Wi-Fi 上傳、手機裡還有 120 筆，切換確認框打開（c255） |
 | `upload-switch-offline` | 同上但沒網路：確認框寫「要先上傳完 120 筆，請連上網路」、不能切（c256） |
 | `alerts-default` | S6 提醒：全部開、震動開、聲音關、通知已允許；S1「提醒」寫「震動」 |
@@ -98,6 +99,10 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `diagnostics-read-failed` | 手機裡的資料讀不到 → 三個資料頁「讀取失敗」＋「重試」 |
 | `advanced-delete-confirm` | S7：按了「刪除全部狗資料」、還有 120 筆沒上傳 →「還有 120 筆沒上傳：先上傳／一起刪除」（c296）；「先上傳」→ 沒網路的說明 |
 | `notifications-denied` | S6「通知權限 未允許 開系統設定 ›」；S1「提醒」「手機」只放紅色「!」；地圖齒輪紅點 |
+| `onboarding-first-launch` | 第一次開 App、沒登入 → D1「登入 Supabase 帳號」，上方引導進度條第 1 步（共 4 步）、下方「登入」「稍後再說」；情境裡的「稍後再說」不寫進這支手機的設定 |
+| `auth-restore-slow` | 恢復登入超過 10 秒還連不上 Supabase → 先用手機裡的資料進地圖（只有接收器 7 的豆豆、狗 5）；`&page=cloud` 的 S3 寫「暫時連不上，會自動重試」 |
+| `auth-expired` | 冷啟動時恢復登入發現登入已失效 → D1 上方紅字「需要重新登入」（沒有進度條）；完成、「稍後再說」、返回鍵都回地圖 |
+| `db-open-failed` | 手機裡的資料庫打不開 → D0 啟動失敗「手機裡的資料打不開」＋「重試」「診斷」；「診斷」最上面寫原因 |
 
 ## 新增情境（之後每個 PR）
 

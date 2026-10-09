@@ -23,6 +23,7 @@ import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { createRideDetector } from '../placement/RideAlong';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { addRoutePoints, emptyRouteDistance, startOfToday } from '../tracking/TodayDistance';
+import { ONBOARDING_DONE, ONBOARDING_SIGN_IN } from '../app/Launch';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
 export const FIXTURE_NOW = Date.parse('2026-10-07T01:30:00Z');
@@ -235,6 +236,15 @@ const indoorBle = (now, slave, spot, { inside = 12 * MINUTE, until = 8 * SECOND,
       slave_lon: row.slave_lon - (index % 5) * 0.00001 })),
   ...series(bleRow, now, { slave, from: inside, to: until, rssi: -96, snr: -4, ...rest }),
 ];
+
+
+// A cold start as Launch.launchScreen reads it: the database open, the
+// preferences read, the restore over, signed out and past the guide, unless
+// `changes` say otherwise.
+const startedWith = (changes = {}) => ({
+  databaseReady: true, databaseError: null, preferencesSettled: true, onboarding: ONBOARDING_DONE,
+  authSettled: true, signedIn: false, expiredAtStart: false, restoreTimedOut: false, ...changes,
+});
 
 const FIXTURES = {
   // Receiver connected, cloud synced, three fresh dogs, phone recording.
@@ -605,7 +615,7 @@ const FIXTURES = {
       phone: { route, position, recording: false, today: morningWalk(position, now - 14 * 60 * MINUTE) } };
   },
   // ---- S3 Supabase 帳號 (051a): open on the account page ------------------
-  // Signed out (「稍後再說」): the sign-in form on S3.
+  // Signed out (「稍後再說」): S3 「未登入」 with 「登入」 (→ D1).
   'cloud-signed-out': now => ({ ...FIXTURES['signed-out-map'](now), openRoute: 'cloud' }),
   // Signed in, all well: last download 5 s ago, nothing waiting, receiver 7
   // uploads through this phone.
@@ -622,7 +632,7 @@ const FIXTURES = {
       error: 'Network request failed', offline: true },
     upload: uploading(now, { pending: { 7: 4 }, last: now - 40 * MINUTE }) }),
   // 登入失效 while in use (a download was refused): signed out, S3 says
-  // 「需要重新登入」 over the sign-in form; the gear has its red dot.
+  // 「需要重新登入」 with 「登入」 (→ D1); the gear has its red dot.
   'cloud-expired': now => ({ ...FIXTURES['signed-out-map'](now), openRoute: 'cloud', expired: true }),
   // Receiver 7 uploads by its own Wi-Fi; 120 rows from before still wait in
   // this phone. 「接收器 7 的上傳方式」 pressed: the confirmation (c255).
@@ -633,6 +643,27 @@ const FIXTURES = {
   'upload-switch-offline': now => ({ ...FIXTURES['upload-switch-confirm'](now),
     cloud: { ...synced(now), lastSuccess: now - 4 * MINUTE, lastDownloadAt: now - 4 * MINUTE,
       failingSince: now - 3 * MINUTE, error: 'Network request failed', offline: true } }),
+  // ---- the start (052, design D0/D1; 判定表「啟動與恢復登入」) ---------------
+  // `launch` is what Launch.launchScreen reads at a cold start (the database,
+  // the saved guide step, the sign-in restore); the app opens on its answer.
+  // First launch: nothing saved yet, not signed in → D1 with the guide's
+  // progress bar (step 1 of 4) and 「稍後再說」.
+  'onboarding-first-launch': now => ({ ...FIXTURES['no-data'](now),
+    launch: startedWith({ onboarding: ONBOARDING_SIGN_IN }) }),
+  // The sign-in restore ran past 10 s without reaching Supabase: the map
+  // opens with this phone's own receiver (signed out for now); S3 says
+  // 「暫時連不上，會自動重試」 (&page=cloud).
+  'auth-restore-slow': now => ({ ...FIXTURES['signed-out-map'](now),
+    launch: startedWith({ restoreTimedOut: true }), restoring: true }),
+  // The restore found the sign-in refused (登入失效 at a cold start): D1 with
+  // 「需要重新登入」; done, 「稍後再說」 and back all go to the map.
+  'auth-expired': now => ({ ...FIXTURES['signed-out-map'](now),
+    launch: startedWith({ expiredAtStart: true }), expired: true }),
+  // The database on this phone cannot be opened: D0's failure screen
+  // 「手機裡的資料打不開」 with 「重試」 and 「診斷」 (the reason on S8).
+  'db-open-failed': now => ({ ...FIXTURES['no-data'](now),
+    launch: { ...startedWith(), databaseReady: false,
+      databaseError: 'SQLITE_CANTOPEN: unable to open database file (dogtracker.db)' } }),
   // ---- settings (050): S1, S2, S4 open on their page ---------------------
   // S1 with nothing to handle: receiver 7 connected (its battery 64%), phone
   // recording, signed in, notifications allowed.
@@ -840,7 +871,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
-    alertsOpen = false, readFailure = null, deletion = null,
+    alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -939,6 +970,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     wifiService: fakeWifi(wifi),
     // 刪除全部狗資料 (S7): rows still to upload, the dialog open at once.
     deletion: { unsent: deletion?.unsent ?? 0, open: !!deletion?.open },
+    // The cold start it shows (Launch.launchScreen's input), if any, and
+    // whether the sign-in restore still waits for Supabase.
+    launch,
+    restoring,
   };
 }
 
@@ -1068,6 +1103,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       switchMode: async () => {}, retry: async () => {} },
     cloudProblem: !!fixture.cloudSync?.ownerId && !!fixture.upload?.error,
     signInExpired: !!fixture.expired,
+    restoring: !!fixture.restoring,
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,

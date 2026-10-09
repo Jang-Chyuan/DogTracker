@@ -23,8 +23,9 @@ export const ROUTE_PHONE = '由這支手機上傳';
 export const ROUTE_WIFI = '由接收器的 Wi-Fi 上傳';
 
 /**
- * S3. Signed out (by choice, or 登入失效): { signedIn: false, expired } — the
- * page is the sign-in form (D1). Signed in:
+ * S3. Signed out (by choice, or 登入失效): { signedIn: false, expired,
+ * restoring } — 「未登入」 or 「需要重新登入」 with 「登入」 (→ D1), or while the
+ * restore waits for Supabase 「暫時連不上，會自動重試」. Signed in:
  * { signedIn, email, download: row, upload: { problem: row|null, pending,
  *   lastText }, routes: [{ master, title, detail, mode, to, pending,
  *   canSwitch }], routesLoading, offline, pendingTotal }.
@@ -32,7 +33,12 @@ export const ROUTE_WIFI = '由接收器的 Wi-Fi 上傳';
  */
 export function accountPage(input) {
   const account = input.account || {};
-  if (!account.signedIn) return { signedIn: false, expired: !!input.signInExpired };
+  if (!account.signedIn) {
+    // The sign-in restore could not reach Supabase (or ran past 10 s): the
+    // saved sign-in comes back by itself (判定表「啟動與恢復登入」).
+    if (input.restoring && !input.signInExpired) return { signedIn: false, expired: false, restoring: true };
+    return { signedIn: false, expired: !!input.signInExpired, restoring: false };
+  }
   const sync = input.sync || {};
   const upload = input.upload || {};
 

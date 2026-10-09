@@ -341,6 +341,10 @@ test('the buttons sit 16dp from the right, 12dp above the card, and only on the 
 test('the launch screen goes only after the first framing is drawn, or after a wait with nothing to frame', async () => {
   const { NativeModules } = require('react-native');
   NativeModules.AppSplash = { hide: jest.fn() };
+  const splash = require('../src/app/hideSplash');
+  // The start decided on the map (App): its framing releases the launch screen.
+  splash.resetSplashGate();
+  splash.launchInto('map');
   try {
     await render({ framingReady: false });
     await readyMap();
@@ -357,11 +361,25 @@ test('the launch screen goes only after the first framing is drawn, or after a w
     await act(async () => renderer.unmount());
     renderer = null;
     NativeModules.AppSplash.hide.mockClear();
+    splash.resetSplashGate();
+    splash.launchInto('map');
     // Nothing to frame: released after FIRST_FRAME_WAIT_MS.
     await render({ presentation: { ...defaults.presentation, cameraPositions: [], dogMarkers: [] } });
     await readyMap();
     expect(NativeModules.AppSplash.hide).not.toHaveBeenCalled();
     await act(async () => jest.advanceTimersByTime(3000));
+    expect(NativeModules.AppSplash.hide).toHaveBeenCalledTimes(1);
+    // Before the start is decided (D1 may come first), the framing alone
+    // never releases it.
+    await act(async () => renderer.unmount());
+    renderer = null;
+    NativeModules.AppSplash.hide.mockClear();
+    splash.resetSplashGate();
+    await render({ presentation: { ...defaults.presentation, cameraPositions: [], dogMarkers: [] } });
+    await readyMap();
+    await act(async () => jest.advanceTimersByTime(3000));
+    expect(NativeModules.AppSplash.hide).not.toHaveBeenCalled();
+    splash.launchInto('map');
     expect(NativeModules.AppSplash.hide).toHaveBeenCalledTimes(1);
   } finally {
     delete NativeModules.AppSplash;

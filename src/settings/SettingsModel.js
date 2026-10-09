@@ -45,6 +45,8 @@ export function settingsInput(inputs, { now, receiverState, receiverWait = null,
     upload: inputs.upload || {},
     cloudFailing: !!sync.ownerId && (sync.failingSince != null || !!inputs.cloudProblem),
     signInExpired: !!inputs.signInExpired,
+    // The sign-in restore still waits for Supabase (S3 「暫時連不上，會自動重試」).
+    restoring: !!inputs.restoring,
     storage: storageProblem(inputs.tracking?.realWriteError),
     // 設定 → 提醒 (S6): the saved AlertPreferences.
     alerts: inputs.tracking?.preferences?.value?.alerts,

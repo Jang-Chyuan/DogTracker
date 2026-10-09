@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
-import LoginScreen from '../screens/LoginScreen';
 import { colors, space, touch, type } from '../theme/tokens';
 import ConfirmDialog from './ConfirmDialog';
 import { signOutDialog, switchDialog } from './AccountModel';
 import { GroupCard, GroupTitle, ListRow, settingsStyles } from './SettingsUI';
 
 /**
- * S3 Supabase 帳號. Signed out (a choice, or 登入失效) it is the sign-in
- * form (D1) on this page: 「稍後再說」 and back return to settings. Signed in:
+ * S3 Supabase 帳號. Signed out (a choice, or 登入失效): 「未登入」 or 「需要
+ * 重新登入」 and 「登入」 (`onSignIn` opens D1; done, 「稍後再說」 and back
+ * return here); while the restore waits for Supabase 「暫時連不上，會自動
+ * 重試」. Signed in:
  * the account with 登出 (confirmed, saying what stops), 下載 (last success,
  * or failing since when + 重試 ›), 上傳 (what still waits in this phone,
  * what needs handling + 重試 ›, the last success) and each receiver's upload
@@ -19,7 +20,7 @@ import { GroupCard, GroupTitle, ListRow, settingsStyles } from './SettingsUI';
  * dialog from the start ({ kind: 'switch', master } | { kind: 'signout' }):
  * a screen fixture's open dialog.
  */
-export default function AccountSettings({ page, onLater, onSignOut, onRetryDownload, onRetryUpload, onSwitch,
+export default function AccountSettings({ page, onSignIn, onSignOut, onRetryDownload, onRetryUpload, onSwitch,
   dialog: initialDialog = null }) {
   const [dialog, setDialog] = useState(initialDialog);
   const [busy, setBusy] = useState(false);
@@ -39,11 +40,21 @@ export default function AccountSettings({ page, onLater, onSignOut, onRetryDownl
   }, [account]);
 
   if (!page.signedIn) {
+    // Signed out: 「登入」 opens D1 (its 「稍後再說」 and back come back here).
+    let row;
+    if (page.restoring) {
+      row = <ListRow testID="account-restoring" title="暫時連不上，會自動重試" label="暫時連不上，會自動重試" />;
+    } else {
+      const title = page.expired ? '需要重新登入' : '未登入';
+      row = <ListRow testID="account-signed-out" title={title} titleTone={page.expired ? 'crit' : undefined}
+        problem={page.expired} action="登入" actionTone="tonal" chevron onPress={onSignIn}
+        label={`${title}，登入`} />;
+    }
     return (
       <ScrollView testID="account-settings" style={settingsStyles.page}
-        contentContainerStyle={[settingsStyles.content, settingsStyles.firstCard]}
-        keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-        <LoginScreen onLater={onLater} expired={page.expired} />
+        contentContainerStyle={[settingsStyles.content, settingsStyles.firstCard]}>
+        <GroupCard flat>{row}</GroupCard>
+        <Text style={styles.explain}>登入後會把收到的位置上傳，也能看到隊友的狗。不登入也可以用，只顯示這支手機連到的接收器。</Text>
       </ScrollView>
     );
   }
@@ -126,5 +137,6 @@ const styles = StyleSheet.create({
   signOut: { minWidth: touch.min, minHeight: touch.min, alignItems: 'flex-end', justifyContent: 'center',
     marginLeft: space.s },
   signOutText: { ...type.captionBold, color: colors.textMuted },
+  explain: { ...type.caption, color: colors.textMuted, marginTop: space.m, marginHorizontal: space.xs },
   pressed: { opacity: 0.6 },
 });

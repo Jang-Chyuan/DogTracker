@@ -45,7 +45,8 @@ test('failed writes preserve every prior value and a successful retry applies th
   expect(
     await controller.save({ showSlaveMarker: false, showTrails: true }),
   ).toBe(false);
-  expect(state().value).toEqual(DEFAULT_TRACKING_PREFERENCES);
+  // Nothing saved before: the first-launch guide starts at D1.
+  expect(state().value).toEqual({ ...DEFAULT_TRACKING_PREFERENCES, onboarding: 'signIn' });
   expect(state().error).toBe('locked');
   expect(
     await controller.save({ showSlaveMarker: false, showTrails: true }),
@@ -77,6 +78,8 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     windowMinutes: 2,
     noDataCardDismissed: false,
     alerts: DEFAULT_ALERT_PREFERENCES,
+    // Saved before the first-launch guide existed: it counts as passed.
+    onboarding: 'done',
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -131,6 +134,8 @@ test('every setting survives a new controller and shares no tracking-row writes'
       noDataCardDismissed: false,
       // S6: 不在接收範圍 and 接收器電量低 off, 聲音 on.
       alerts: { ...DEFAULT_ALERT_PREFERENCES, dogOutOfRange: false, receiverBattery: false, sound: true },
+      // D1 passed (「稍後再說」).
+      onboarding: 'done',
     };
     await first.save(value);
     await first.close();
@@ -219,4 +224,29 @@ test('alert settings (S6): missing before v3 → the defaults; damaged → the d
   expect(damaged.windowMinutes).toBe(10);
   expect(damaged.alerts).toEqual({ ...DEFAULT_ALERT_PREFERENCES, dogStale: false });
   expect(validateTrackingPreferences({ ...old, alerts: [true] }).alerts).toEqual(DEFAULT_ALERT_PREFERENCES);
+});
+
+test('the first-launch guide: nothing saved starts at D1; it is kept until passed, then stays passed', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const database = createSettingsDatabase(connection), changed = jest.fn();
+    const first = createTrackingPreferences(database, changed);
+    await first.load();
+    expect(changed.mock.calls.at(-1)[0].value.onboarding).toBe('signIn');
+    // Another setting saved before D1 is passed keeps the step.
+    await first.save({ windowMinutes: 10 });
+    await first.close();
+    const second = createTrackingPreferences(database, changed);
+    await second.load();
+    expect(changed.mock.calls.at(-1)[0].value.onboarding).toBe('signIn');
+    await second.save({ onboarding: 'done' });
+    await second.close();
+    const third = createTrackingPreferences(database, changed);
+    await third.load();
+    expect(changed.mock.calls.at(-1)[0].value).toMatchObject({ onboarding: 'done', windowMinutes: 10 });
+    // A damaged value never sends anyone back to D1.
+    expect(validateTrackingPreferences({ onboarding: 'D7' }).onboarding).toBe('done');
+  } finally {
+    connection.close();
+  }
 });
