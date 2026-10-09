@@ -63,7 +63,7 @@ export async function cleanExports(exporter, now) {
  *   format, title, start(format), cancel(), retry(), close(), back() }.
  */
 export function useHistoryExport({ screen, exporter, now = Date.now,
-  initial = null }) {
+  initial = null, onSaved = null }) {
   const lookup = useContext(AddressLookupContext);
   const [state, setState] = useState(() => initial ? { phase: initial.phase, format: initial.format ?? 'png' }
     : { phase: 'closed', format: null });
@@ -91,10 +91,12 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     prepared.current = null;
     setState({ phase: 'choose', format: null });
   }, []);
-  const generate = useCallback(async (format, snapshotReady) => {
+  // `destination`: 'share' (Android's share sheet) or 'download' (「存到下載」,
+  // 067: Download/DogTracker/, then onSaved({ files, mime }) for the tip).
+  const generate = useCallback(async (format, snapshotReady, destination = 'share') => {
     const id = ++run.current;
     const alive = () => run.current === id;
-    setState({ phase: 'generating', format });
+    setState({ phase: 'generating', format, destination });
     let directory;
     let shared = false;
     try {
@@ -122,6 +124,16 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       const paths = await makeExportFiles(snapshot, format, exporter, { exportId, createdAt, alive });
       if (!alive()) return;
       if (exporting.current === exportId) exporting.current = null;
+      if (destination === 'download') {
+        // The copies in Download/DogTracker/ are the phone's; the temporary
+        // files go (finally) as after a share that was not made.
+        const saved = await exporter.saveToDownloads(paths, EXPORT_MIME[format]);
+        if (!alive()) return;
+        prepared.current = null;
+        setState({ phase: 'closed', format: null });
+        if (saved?.files?.length) onSaved?.({ files: saved.files, mime: EXPORT_MIME[format] });
+        return;
+      }
       // 打開 Android 分享時才關掉小視窗.
       const result = await exporter.share(paths, EXPORT_MIME[format]);
       shared = result !== 'cancelled';
@@ -131,19 +143,22 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     } catch (error) {
       if (!alive()) return;
       logger.warn('[History export]', error?.message || error);
-      setState({ phase: 'failed', format });
+      setState({ phase: 'failed', format, destination });
     } finally {
       if (directory && !shared) {
         try { await exporter.removeExports([directory]); } catch { /* startup and daily cleanup retry */ }
       }
     }
-  }, [exporter, screen, lookup, now]);
+  }, [exporter, screen, lookup, now, onSaved]);
   const start = useCallback(format => generate(format, null), [generate]);
-  /** 重試: the same snapshot (判定表「匯出快照和停在原處」). */
+  /** 「存到下載」: the same files, saved to Download/DogTracker/ (067). */
+  const save = useCallback(format => generate(format, null, 'download'), [generate]);
+  /** 重試: the same snapshot (判定表「匯出快照和停在原處」) and destination. */
   const retry = useCallback(() => {
     if (!state.format) return;
-    generate(state.format, prepared.current?.format === state.format ? prepared.current.snapshot : null);
-  }, [generate, state.format]);
+    generate(state.format, prepared.current?.format === state.format ? prepared.current.snapshot : null,
+      state.destination ?? 'share');
+  }, [generate, state.format, state.destination]);
   /** 返回鍵: 產生中＝取消; the window closes. False when nothing was open. */
   const back = useCallback(() => {
     if (state.phase === 'closed') return false;
@@ -151,6 +166,7 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     return true;
   }, [state.phase, close]);
   const range = screen.range;
-  return { ...state, open, start, stop, cancel: close, retry, close, back,
+  return { ...state, open, start, save, stop, cancel: close, retry, close, back,
+    canSave: !!exporter?.saveToDownloads,
     generating: state.phase === 'generating' && !state.stopped, range };
 }

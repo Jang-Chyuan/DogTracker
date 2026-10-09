@@ -300,7 +300,16 @@ ref) {
   const [rangeOpen, setRangeOpen] = useState(initialRangeOpen);
   const raised = useRef(false);
   // H9/H10: the export window and the export running from it.
-  const exporter = useHistoryExport({ screen, exporter: exportNative, initial: initialExport });
+  // 「存到下載」 done (067): 「已存到 下載／DogTracker／<檔名>」 with 「開啟」.
+  const tipRef = useRef(null);
+  const onSaved = useCallback(({ files, mime }) => {
+    const first = files[0];
+    const text = files.length > 1 ? t('c1168', { name: first.name, count: files.length }) : t('c1164', { name: first.name });
+    tipRef.current?.({ text, key: Date.now(), action: exportNative?.openDownload ? { label: t('c1165'),
+      onPress: () => Promise.resolve(exportNative.openDownload(first.uri, mime))
+        .catch(() => tipRef.current?.({ text: t('c1167'), key: Date.now() })) } : null });
+  }, [exportNative]);
+  const exporter = useHistoryExport({ screen, exporter: exportNative, initial: initialExport, onSaved });
   const exportSheet = useRef(null);
   const exporting = exporter.phase !== 'closed';
   // initialCalendar ('month' | 'months'): a screen fixture opens on H3b / H3e.
@@ -308,6 +317,7 @@ ref) {
   const calendar = useRef(null);
   // H3d's 「沒有網路，9/28 的紀錄還沒下載，連上網路再試」 (over the sheet or the panel).
   const [tip, setTip] = useState(null);
+  tipRef.current = setTip;
   const showTip = useCallback(text => {
     if (text) setTip({ text, key: Date.now() });
   }, []);

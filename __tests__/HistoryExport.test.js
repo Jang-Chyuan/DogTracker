@@ -261,8 +261,8 @@ describe('the export window (useHistoryExport)', () => {
   const day = dayOf([[6, dogRows(6, legs(DOG_DAY))]]);
   const screen = { dayModel: day, range: day.range, subject: 'dog', look };
   let state;
-  function Probe({ exporter, lookup }) {
-    state = useHistoryExport({ screen, exporter, now: () => DAY + 5000 });
+  function Probe({ exporter, lookup, onSaved }) {
+    state = useHistoryExport({ screen, exporter, now: () => DAY + 5000, onSaved });
     return null;
   }
   const lookupOf = () => ({ lookupAddresses: jest.fn(async points => points.map(() => null)) });
@@ -287,6 +287,59 @@ describe('the export window (useHistoryExport)', () => {
     expect(exporter.calls.share[0]).toMatchObject({ mime: 'application/gpx+xml' });
     expect(exporter.calls.removeExports).not.toContainEqual([`history_exports/${DAY + 5000}-1`]);
     expect(state.phase).toBe('closed');
+    act(() => renderer.unmount());
+  });
+
+  // 067: 「存到下載」 — the same files to Download/DogTracker/, no share sheet;
+  // the temporary copy goes; the window closes and the tip gets the names.
+  test('存到下載: saved, no share sheet, the window closes, onSaved has the final names', async () => {
+    const saves = [];
+    const exporter = fakeExporter({ saveToDownloads: async (paths, mime) => {
+      saves.push({ paths, mime });
+      return { files: [{ name: 'DogTracker_x (1).csv', uri: 'content://downloads/1' }], cancelled: false };
+    } });
+    const onSaved = jest.fn();
+    const renderer = await mount({ exporter, lookup: lookupOf(), onSaved });
+    act(() => state.open());
+    expect(state.canSave).toBe(true);
+    await act(async () => state.save('csv'));
+    expect(saves).toHaveLength(1);
+    expect(saves[0].mime).toBe('text/csv');
+    expect(saves[0].paths[0]).toMatch(/\.csv$/);
+    expect(exporter.calls.share).toHaveLength(0);
+    expect(exporter.calls.removeExports).toContainEqual([`history_exports/${DAY + 5000}-1`]);
+    expect(state.phase).toBe('closed');
+    expect(onSaved).toHaveBeenCalledWith({ files: [{ name: 'DogTracker_x (1).csv', uri: 'content://downloads/1' }],
+      mime: 'text/csv' });
+    act(() => renderer.unmount());
+  });
+
+  test('存到下載 backed out of (nothing saved): no tip; failed: 匯出失敗 and 重試 saves again', async () => {
+    let attempt = 0;
+    const exporter = fakeExporter({ saveToDownloads: async () => {
+      attempt += 1;
+      if (attempt === 1) return { files: [], cancelled: true };
+      if (attempt === 2) throw new Error('disk full');
+      return { files: [{ name: 'a.gpx', uri: 'content://downloads/2' }], cancelled: false };
+    } });
+    const onSaved = jest.fn();
+    const renderer = await mount({ exporter, lookup: lookupOf(), onSaved });
+    act(() => state.open());
+    await act(async () => state.save('gpx'));
+    expect(onSaved).not.toHaveBeenCalled();
+    act(() => state.open());
+    await act(async () => state.save('gpx'));
+    expect(state.phase).toBe('failed');
+    await act(async () => state.retry());
+    expect(attempt).toBe(3);
+    expect(exporter.calls.share).toHaveLength(0);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    act(() => renderer.unmount());
+  });
+
+  test('without the native save (an older build) there is no 存到下載', async () => {
+    const renderer = await mount({ exporter: fakeExporter(), lookup: lookupOf() });
+    expect(state.canSave).toBe(false);
     act(() => renderer.unmount());
   });
 

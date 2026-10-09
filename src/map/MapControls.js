@@ -318,7 +318,9 @@ export function EdgeHintView({ value, avatars = {}, onPress }) {
 
 /**
  * The bottom tip (下方提示): 48dp high, 16dp from the sides, white with a 1dp
- * line, for 5 seconds. `message` { text, key }: a new key shows it again.
+ * line, for 5 seconds. `message` { text, key, action? { label, onPress } }:
+ * a new key shows it again; with an action (067 「開啟」) the tip takes taps
+ * on its text button only.
  */
 export function MapTip({ message, bottom, onDone, strong = false }) {
   const styles = useStyles(getStyles);
@@ -336,19 +338,32 @@ export function MapTip({ message, bottom, onDone, strong = false }) {
     return () => clearTimeout(timer);
   }, [message, opacity, onDone]);
   if (!message) return null;
+  const action = message.action;
   return (
     <Animated.View
       testID="map-tip"
       accessibilityLiveRegion="polite"
-      pointerEvents="none"
-      style={[styles.tip, { bottom, opacity }]}
+      pointerEvents={action ? 'box-none' : 'none'}
+      style={[styles.tip, action && styles.tipWithAction, { bottom, opacity }]}
     >
       <Text
-        style={[styles.tipText, strong && styles.tipStrong]}
-        numberOfLines={linesFor(strong ? 2 : 1)}
+        style={[styles.tipText, strong && styles.tipStrong, action && styles.tipTextWithAction]}
+        numberOfLines={linesFor(strong || action ? 2 : 1)}
       >
         {message.text}
       </Text>
+      {action && (
+        <Pressable
+          testID="map-tip-action"
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          onPress={action.onPress}
+          hitSlop={space.s}
+          style={({ pressed }) => [styles.tipAction, pressed && styles.pressed]}
+        >
+          <Text style={styles.tipActionText}>{action.label}</Text>
+        </Pressable>
+      )}
     </Animated.View>
   );
 }
@@ -454,5 +469,11 @@ const getStyles = makeStyles(theme => {
     tipText: { ...type.body, color: colors.text },
     // The history's H3d sentence: one line on a 360dp phone.
     tipStrong: { ...type.value, paddingVertical: space.m },
+    // With an action: the words, then the text button on the right.
+    tipWithAction: { flexDirection: 'row', alignItems: 'center', gap: space.s, paddingRight: space.s },
+    tipTextWithAction: { flex: 1, paddingVertical: space.s },
+    tipAction: { minHeight: touch.min, minWidth: touch.min, paddingHorizontal: space.s, alignItems: 'center',
+      justifyContent: 'center', borderRadius: radius.full },
+    tipActionText: { ...type.status, color: colors.tonalText },
   });
 });
