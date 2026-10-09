@@ -67,6 +67,10 @@ describe('text contrast', () => {
     ['phone name label', colors.phone, colors.surface, 4.5],
     ['receiver number on its tag', WHITE, colors.receiverRing, 4.5],
     ['snackbar text', colors.text, colors.snackbar, 7],
+    // The 070 success tick is information, not decoration: it has to be
+    // readable on the card and on the flat settings page behind it.
+    ['success tick on a card', colors.successIcon, colors.surface, 4.5],
+    ['success tick on the page', colors.successIcon, colors.bg, 4.5],
   ])('%s', (_, fg, bg, minimum) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(minimum);
   });
@@ -311,6 +315,9 @@ describe('dark text and graphic contrast', () => {
     ['indoor list pill', c.receiver, c.pillIndoor, 4.5],
     ['red action text', c.critAction, c.surface, 4.5],
     ['red action text in a dialog', c.critAction, c.elevated, 4.5],
+    ['success tick', c.successIcon, c.surface, 4.5],
+    ['success tick on the page', c.successIcon, c.bg, 4.5],
+    ['success tick in a dialog', c.successIcon, c.elevated, 4.5],
     ...darkTheme.routeColors.flatMap((color, i) => [
       [
         `route${i + 1} upcoming over land`,

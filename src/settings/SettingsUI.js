@@ -30,6 +30,29 @@ export function ProblemBang({ style }) {
   );
 }
 
+/**
+ * The 16dp green ring-and-tick of a cloud success (070), in the same place and
+ * the same size as the red 「!」 above it, so a row that turns from failing to
+ * succeeding does not move.
+ */
+export function SuccessCheck({ style }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  return (
+    <View
+      style={[styles.check, style]}
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Glyph
+        name="check-circle"
+        color={colors.successIcon}
+        size={size.badge.size}
+      />
+    </View>
+  );
+}
+
 /** A group name over its card. */
 export function GroupTitle({ children }) {
   const styles = useStyles(getStyles);
@@ -190,10 +213,11 @@ export function HomeRow({ row, onPress }) {
 }
 
 /**
- * A subpage row (S2, S4): an optional red 「!」 before the name, the name
- * over an optional second line, and on the right a value (`right`, one or
- * two lines) or an action (`action`, crit-red when it fixes a problem).
- * `leading` replaces the 「!」 (S2's receiver icon). Pressable when `onPress`.
+ * A subpage row (S2, S4): an optional red 「!」 (or, with `success`, the green
+ * tick) before the name, the name over an optional second line, and on the
+ * right a value (`right`, one or two lines) or an action (`action`, crit-red
+ * when it fixes a problem). `leading` replaces the mark (S2's receiver icon).
+ * Pressable when `onPress`.
  */
 export function ListRow({
   title,
@@ -204,6 +228,7 @@ export function ListRow({
   action,
   actionTone = 'crit',
   problem = false,
+  success = false,
   leading = null,
   titleTone,
   onPress,
@@ -244,7 +269,13 @@ export function ListRow({
   );
   const body = (
     <>
-      {problem ? <ProblemBang style={styles.leadBang} /> : leading}
+      {problem ? (
+        <ProblemBang style={styles.leadBang} />
+      ) : success ? (
+        <SuccessCheck style={styles.leadBang} />
+      ) : (
+        leading
+      )}
       <View style={styles.middle}>
         <Text
           style={[styles.rowTitle, titleTone && TONES[titleTone]]}
@@ -371,6 +402,12 @@ const getStyles = makeStyles(theme => {
       height: size.badge.size,
       borderRadius: size.badge.size / 2,
       backgroundColor: colors.problemBadge,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    check: {
+      width: size.badge.size,
+      height: size.badge.size,
       alignItems: 'center',
       justifyContent: 'center',
     },

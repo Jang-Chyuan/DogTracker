@@ -59,7 +59,7 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 const initialization = new WeakMap();
@@ -176,6 +176,28 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         'SELECT * FROM cloud_sync_state WHERE owner_user_id = ? AND master_id = ?',
         [owner, masterId],
       ))[0] || null;
+    },
+    /**
+     * 最後上傳成功…（經 Wi-Fi） per receiver (S2/S3, 070): the newest row each
+     * Master sent to Supabase through its own Wi-Fi, as the stored copy shows
+     * it → { [masterId]: receivedAt }.
+     *
+     * Read over the whole stored table rather than over each dog's newest row:
+     * once this phone has uploaded something newer for every dog of a Master,
+     * all those newest rows are 'phone' and the receiver's own Wi-Fi history
+     * would look as if it had never uploaded at all.
+     *
+     * `upload_source` is not indexed, so this walks the account's rows. The
+     * caller refreshes after successful downloads, route changes and return
+     * to the foreground — never on the upload pass.
+     */
+    async wifiUploads(owner) {
+      requireOwner(owner);
+      return Object.fromEntries(rows(await connection.executeAsync(
+        `SELECT master_id, MAX(received_at) time FROM supabase_dog_status
+          WHERE owner_user_id=? AND upload_source='wifi' GROUP BY master_id`, [owner]))
+        .map(row => [Number(row.master_id), Number(row.time)])
+        .filter(([master, time]) => Number.isInteger(master) && Number.isFinite(time) && time > 0));
     },
     async pendingTrackTimes(owner) {
       requireOwner(owner);

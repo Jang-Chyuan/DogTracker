@@ -21,7 +21,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 停在原處、接收範圍 | **給列，不直接給 hold 或判定**：本機＋雲端列照 `holdRows` 冷啟動的方式交給真的 `HoldStore`／`IndoorHold`＋內建環境模型算出 `holds`、`statuses`；同一批列也算出每隻狗的接收範圍判定 `ranges`（`ReceiverRange.js`） | `mergeDogMarkers`、`outOfRangeLines` |
 | 上方卡片 | `dismissed`（按過 ✕ 的卡片）、`storageError`（`realWriteError`）、`mapFailure`（`'tiles'` 沒有底圖／`'component'` 地圖打不開，交給 `GoogleTrackingMap` 的 `failure`） | `TopAlerts.js`（`topCards`、`gearReasons`）→ `TopAlertCards`、齒輪紅點 |
 | 雲端同步狀態 | `useCloudSync` 的 `ownerId`、`lastSuccess`、`lastDownloadAt`、`failingSince`、`error`、`offline` | 地圖收到的 `cloudSync`；雲端狗的「沒有新位置」照 `DogFreshness` 用 `lastDownloadAt` 判斷；S3 的下載列 |
-| 上傳狀態 | `useCloudUpload` 的回答（`upload`：每台接收器的上傳方式、可上傳的接收器、每台還沒上傳的筆數、需處理、最後上傳成功、錯誤；動作不寫入）、`expired`（登入失效）、`dialog`（S3 打開的確認框） | `AccountModel.accountPage` → S3；上傳錯誤 → 齒輪紅點、S1「!」 |
+| 上傳狀態 | `useCloudUpload` 的回答（`upload`：每台接收器的上傳方式、可上傳的接收器、每台還沒上傳的筆數、需處理、這支手機整體的最後上傳成功、每台接收器的最後上傳成功（`lastByMaster` 經手機、`wifiByMaster` 經 Wi-Fi）、錯誤；動作不寫入）、`expired`（登入失效）、`dialog`（S3 打開的確認框） | `AccountModel.accountPage` → S3、`SettingsModel.receiverPage` → S2 的最後上傳成功（同一個 `UploadSuccess.receiverUploadSuccess`）；上傳錯誤 → 齒輪紅點、S1「!」 |
 | 手機位置／路線 | 現在位置（`useLiveLocation` 的樣子）和最近 10 分鐘的路線 | 地圖上的手機點；路線交給真的 `RideAlong` 判斷坐車 |
 | 手機記錄、權限 | `phone.recording: false` 讓記錄服務沒在跑；`phone.permission`／`phone.services` 是 `usePhoneLocation` 的回答（預設精確位置、定位服務開著） | `todayPill`（右下「今天 x km」的 icon）、`phone.enabled`（地圖藍點） |
 | 今天的路線 | `phone.today`：今天 `myLocationTracker` 的列（每 10 秒一筆） | 和 `useTodayRoute` 同一套 `todayRouteDistance`（出發偵測、開車不算，src/history）算出「今天 x km」 |

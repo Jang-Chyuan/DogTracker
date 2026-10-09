@@ -184,6 +184,14 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
           {...stroke}
         />
       )}
+      {name === 'check-circle' && (
+        // 雲端成功 (S3 下載／都已上傳／最後上傳成功, S2 最後上傳成功): a ring
+        // with a tick, drawn in successIcon where a problem draws its red 「!」.
+        <>
+          <Circle cx={12} cy={12} r={9} {...stroke} />
+          <Path d="M8 12.3l2.9 2.9L16.3 9.7" {...stroke} />
+        </>
+      )}
       {name === 'close' && <Path d="M6 6l12 12M18 6 6 18" {...stroke} />}
       {name === 'share' && (
         // 匯出 (history top right): an arrow up out of a tray.
