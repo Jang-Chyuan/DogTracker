@@ -170,8 +170,15 @@ for (const name of names) {
     const outside = px(png, x1 - 4, midY);
     const centre = px(png, Math.round((x1 + x2) / 2), midY);
     if (dist(fill, outside) < 20 || dist(centre, outside) < 20) return; // not a filled shape
-    const corners = [px(png, x1 + 1, y1 + 1), px(png, x2 - 2, y1 + 1), px(png, x1 + 1, y2 - 2), px(png, x2 - 2, y2 - 2)];
-    if (corners.filter(c => dist(c, fill) < 12).length >= 3) {
+    // A corner 1 px inside the box that has the fill's colour while the
+    // pixel just outside that corner does not: a square corner.
+    const corners = [
+      [px(png, x1 + 1, y1 + 1), px(png, x1 - 3, y1 - 3)],
+      [px(png, x2 - 2, y1 + 1), px(png, x2 + 2, y1 - 3)],
+      [px(png, x1 + 1, y2 - 2), px(png, x1 - 3, y2 + 2)],
+      [px(png, x2 - 2, y2 - 2), px(png, x2 + 2, y2 + 2)],
+    ];
+    if (corners.filter(([c, out]) => dist(c, fill) < 12 && dist(c, out) > 20).length >= 3) {
       hits.push({ check: 'c', text: a.text || a['content-desc'] || a['resource-id'] || a.class, box: a.bounds, heightDp: Math.round(h) });
     }
   });
