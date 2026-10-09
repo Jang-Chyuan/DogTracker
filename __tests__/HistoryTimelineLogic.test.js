@@ -134,7 +134,7 @@ describe('TalkBack sentences of the timeline (060, 設計稿「無障礙」時�
   });
   test('a drive and a walk', () => {
     expect(sectionSpeech({ type: 'movement', mode: 'driving', durationMs: 12 * 60000, distanceM: 6300 }))
-      .toBe('開車 12 分鐘，6.3 公里，不算距離');
+      .toBe('開車 12 分鐘，6.3 公里');
     expect(sectionSpeech({ type: 'movement', mode: 'walking', durationMs: 27 * 60000, countedDistanceM: 1700 }))
       .toBe('走路 27 分鐘，1.7 公里');
   });

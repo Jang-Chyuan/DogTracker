@@ -196,7 +196,9 @@ test('H3e: 選月份, the months with records, back to the month; 返回鍵 orde
   expect(s.text()).not.toContain('灰字＝沒有紀錄或還沒到，不能點');
   const month = n => s.renderer.root.findAll(node => node.props.testID === `calendar-month-${n}`
     && node.props.accessibilityLabel)[0];
-  expect(StyleSheet.flatten(month(8).props.style)).toMatchObject({ borderRadius: radius.full, height: 56 });
+  const monthStyle = month(8).props.style;
+  expect(StyleSheet.flatten(typeof monthStyle === 'function' ? monthStyle({ pressed: false }) : monthStyle))
+    .toMatchObject({ borderRadius: radius.full, minHeight: 56 });
   expect(month(8).props.accessibilityLabel).toBe('8 月，有紀錄');
   expect(month(7).props.accessibilityLabel).toBe('7 月，沒有紀錄');
   expect(month(11).props.onPress).toBeUndefined();

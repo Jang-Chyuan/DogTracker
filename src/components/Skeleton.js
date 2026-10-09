@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
-import { radius } from '../theme/tokens';
+import { radius, size } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeProvider';
 
 export const SKELETON_TIMING = Object.freeze({ delay: 300, sweep: 1200, pulse: 1600, fade: 150 });
@@ -92,12 +92,12 @@ export function LoadingContent({ loading, children, shape, label = '載入中', 
 }
 
 const styles = StyleSheet.create({
-  shape: { padding: 16 },
+  shape: { padding: size.skeleton.padding },
   block: { overflow: 'hidden', borderRadius: radius.full },
   square: { borderRadius: 0 },
   light: { position: 'absolute', top: 0, bottom: 0 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 24 },
-  timeline: { minHeight: 64, justifyContent: 'flex-start' },
-  labels: { width: '60%', gap: 10 },
-  chart: { height: 180, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: size.skeleton.rowGap, marginBottom: size.skeleton.rowSpacing },
+  timeline: { minHeight: size.skeleton.timelineRow, justifyContent: 'flex-start' },
+  labels: { width: '60%', gap: size.skeleton.labelGap },
+  chart: { height: size.skeleton.chart, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: size.skeleton.rowSpacing },
 });

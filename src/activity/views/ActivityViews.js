@@ -1,3 +1,4 @@
+import { size } from '../../theme/tokens';
 import { ACTIVITY, activityMinutes, durationText, minuteOf } from '../ActivityMinutes';
 
 const MINUTE = 60000;
@@ -299,7 +300,7 @@ export function bucketDayMinutes(points, now, start) {
     const value = bucket.count ? sum / bucket.count : null;
     const state = value == null ? 'missing' : bucket.totals.vigorous >= 2 ? 'vigorous'
       : bucket.totals.rest > bucket.totals.normal ? 'rest' : 'normal';
-    return { ...bucket, value, state, height: value == null ? 0 : Math.max(3, value * 200) };
+    return { ...bucket, value, state, height: value == null ? 0 : Math.max(size.activity.dayBarMin, value * size.activity.chart) };
   });
 }
 

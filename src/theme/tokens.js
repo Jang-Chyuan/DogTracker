@@ -272,7 +272,7 @@ export const size = {
   floatingButton: 48,
   chip: { height: 36, paddingH: 12, avatar: 20, leadBorder: border.strong },
   todayPill: { height: 48, paddingH: 16, iconGap: 6 },
-  groupTag: { height: 32, paddingH: 8, problemDot: 8 },
+  groupTag: { height: 32, paddingH: 8, problemDot: 8, dotGap: 6, safety: 8 },
   edgeHint: {
     height: 36,
     avatar: 24,
@@ -305,6 +305,8 @@ export const size = {
     dayBarGap: 1,
     dayBarRadius: 1.5,
     dayGapHeight: 3,
+    // A quarter with readings is at least this tall (visible at 0).
+    dayBarMin: 3,
 
     // activity axis label in its illustration/layout specification.
     axisLabel: 44,
@@ -654,6 +656,13 @@ export const size = {
   // History loading placeholder line.
   skeleton: {
     line: 14,
+    // D8 shaped skeletons (H3c list, A4, S3, S8).
+    padding: 16,
+    rowGap: 12,
+    rowSpacing: 24,
+    timelineRow: 64,
+    labelGap: 10,
+    chart: 180,
   },
 
   // History dog-picker avatar and selected radio indicator.

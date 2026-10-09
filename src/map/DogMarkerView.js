@@ -38,7 +38,7 @@ export function markerFrame(faceSize) {
   return {
     // Long indoor group text plus its optional problem dot must fit at 200%.
     width: Math.max(MARKER_WIDTH, Math.ceil(8 * type.value.fontSize * fontScale() +
-      2 * (mapLabel.paddingH + mapLabel.border) + groupTag.problemDot + 6 + 8)),
+      2 * (mapLabel.paddingH + mapLabel.border) + groupTag.problemDot + groupTag.dotGap + groupTag.safety)),
     height,
     anchor: { x: 0.5, y: (TOP + faceSize / 2) / height },
   };
