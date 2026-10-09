@@ -47,6 +47,8 @@ export default function PhoneSettings({
     }
   };
   const { recording, location, battery } = page;
+  // Keep recording/count data intact; this row only shows actionable errors.
+  const recordingError = recording.problem ? recording.detail : null;
   return (
     <ScrollView
       ref={scroll}
@@ -58,9 +60,9 @@ export default function PhoneSettings({
         <FocusedPhoneRow id="recording" target={target}>
         <ListRow
           title={t('c221')}
-          detail={[t("c981"), recording.detail].filter(Boolean).join('；')}
+          detail={[t("c981"), recordingError].filter(Boolean).join('；')}
           detailTone={recording.problem ? 'crit' : undefined}
-          label={[t('c221'), t("c981"), recording.detail].filter(Boolean).join('，')}
+          label={[t('c221'), t("c981"), recordingError].filter(Boolean).join('，')}
           toggle={{
             testID: 'phone-recording',
             value: recording.on,
