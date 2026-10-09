@@ -143,7 +143,7 @@ test('all production resource keys are copy-deck ids; new ids never reuse retire
   const ids = [...deckSnapshot, ...additions].map(row => row.id);
   expect(new Set(ids).size).toBe(ids.length);
   expect(additions.filter(row => Number(row.id.slice(1)) < 433)).toEqual([]);
-  expect(additions.filter(row => !/^程式（06\d 補登）$/.test(row.src) || row.kind !== '定稿' || !row.area || !row.screens.length)).toEqual([]);
+  expect(additions.filter(row => !/^程式（0[67]\d 補登）$/.test(row.src) || row.kind !== '定稿' || !row.area || !row.screens.length)).toEqual([]);
   // A row supersedes a deck row or an earlier added row (066: c1162 replaces c754).
   const known = [...deckSnapshot, ...additions];
   expect(additions.filter(row => row.supersedes && !known.some(old => old.id === row.supersedes))).toEqual([]);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Platform } from 'react-native';
+import { Linking, PermissionsAndroid, Platform } from 'react-native';
 import NativeTrackingPlatform from '../../specs/NativeTrackingPlatform';
 import { getErrorMessage } from '../utils/errors';
 import {
@@ -67,6 +67,8 @@ export function usePhoneLocation(
           }
         }
         const services = await platform.locationServicesEnabled();
+        const backgroundGranted = permission === 'precise' && (Platform.Version < 29 ||
+          await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION));
         if (alive())
           setState(value => ({
             permission:
@@ -76,6 +78,7 @@ export function usePhoneLocation(
                 ? 'blocked'
                 : permission,
             services,
+            backgroundGranted,
             busy: false,
             error: null,
           }));

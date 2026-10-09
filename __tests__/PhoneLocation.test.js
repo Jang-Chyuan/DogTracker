@@ -237,3 +237,17 @@ test('unsupported platform never requests Android permissions', async () => {
   expect(state.enabled).toBe(false);
   expect(PermissionsAndroid.check).not.toHaveBeenCalled();
 });
+
+test.each([false, true])('reads background location grant without requesting it: %s', async granted => {
+  const version = Object.getOwnPropertyDescriptor(Platform, 'Version');
+  Object.defineProperty(Platform, 'Version', { configurable: true, get: () => 34 });
+  try {
+    PermissionsAndroid.check.mockImplementation(async key => key === fine ||
+      (key === PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION && granted));
+    await mount();
+    expect(state.backgroundGranted).toBe(granted);
+    expect(PermissionsAndroid.requestMultiple).not.toHaveBeenCalled();
+  } finally {
+    if (version) Object.defineProperty(Platform, 'Version', version);
+  }
+});

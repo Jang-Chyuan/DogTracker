@@ -7,12 +7,7 @@ import { ScrollView } from 'react-native';
 import ConfirmDialog from './ConfirmDialog';
 import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
 
-/**
- * S4 手機: 位置記錄 (switch, today's count), 權限 (one cell: what is missing,
- * 「開系統設定 ›」 opens the app's system permission page), 定位服務
- * (「打開 ›」), 忽略電池最佳化 (a recommendation: never a 「!」). `page` is
- * SettingsModel.phonePage.
- */
+/** Phone recording, one location row, battery recommendation and route deletion. */
 export default function PhoneSettings({
   page,
   fromUnrecorded = false,
@@ -51,7 +46,7 @@ export default function PhoneSettings({
       scroll.current?.scrollTo({ y, animated: false });
     }
   };
-  const { recording, permission, services, battery } = page;
+  const { recording, location, battery } = page;
   return (
     <ScrollView
       ref={scroll}
@@ -59,7 +54,7 @@ export default function PhoneSettings({
       style={settingsStyles.page}
       contentContainerStyle={[settingsStyles.content, settingsStyles.firstCard]}
     >
-      <GroupCard flat onRowLayout={(index, y) => onPosition(['recording', 'permission', 'services'][index], y)}>
+      <GroupCard flat onRowLayout={(index, y) => onPosition(['recording', 'location'][index], y)}>
         <FocusedPhoneRow id="recording" target={target}>
         <ListRow
           title={t('c221')}
@@ -74,36 +69,15 @@ export default function PhoneSettings({
           }}
         />
         </FocusedPhoneRow>
-        <FocusedPhoneRow id="permission" target={target}>
+        <FocusedPhoneRow id="location" target={target}>
         <ListRow
-          testID="phone-permissions"
-          title={t('c223')}
-          problem={permission.problem}
-          detail={permission.detail}
-          right={permission.status}
-          action={permission.action}
-          onPress={permission.problem ? onPermissions : undefined}
-          label={
-            permission.problem
-              ? t("c983", { detail: permission.detail })
-              : t("c984")
-          }
-        />
-        </FocusedPhoneRow>
-        <FocusedPhoneRow id="services" target={target}>
-        <ListRow
-          testID="phone-location-services"
-          title={t('c226')}
-          problem={services.problem}
-          detail={services.detail}
-          right={services.status}
-          action={services.action}
-          onPress={services.problem ? onLocationServices : undefined}
-          label={
-            services.problem
-              ? t("c985")
-              : t("c986")
-          }
+          testID="phone-location"
+          title={t('c073')}
+          problem={location.problem}
+          detail={location.detail}
+          action={location.action}
+          onPress={location.problem ? (location.destination === 'services' ? onLocationServices : onPermissions) : undefined}
+          label={[t('c073'), location.detail, location.action].filter(Boolean).join('，')}
         />
         </FocusedPhoneRow>
         <ListRow
