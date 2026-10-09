@@ -103,6 +103,15 @@ export function showMarkers() {
   if (state.markersHidden) setState({ markersHidden: false });
 }
 
+/**
+ * SplashOverlay: the handover animation has started and lasts `durationMs`.
+ * The native side switches the navigation bar to the app's colour when it
+ * ends, without waiting for JavaScript (finishSplash can run late under load).
+ */
+export function handoverStarted(durationMs) {
+  NativeModules.AppSplash?.handover?.(Math.max(0, Math.round(durationMs)));
+}
+
 /** SplashOverlay: the handover has finished; the copy is gone. */
 export function finishSplash() {
   splashChrome.setValue(1);

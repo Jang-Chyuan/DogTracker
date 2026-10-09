@@ -78,6 +78,9 @@ class MainActivity : ReactActivity() {
 
   override fun onResume() {
     super.onResume()
+    // The bars follow the screen shown: a handover that finished while this
+    // activity was not the current one (AppSplash.done found none) applies now.
+    if (SplashState.handedOver) updateSystemBars(resources.configuration)
     // The app on screen runs the alerts itself (useAlertEngine).
     com.dogtracker.alerts.BackgroundAlerts.setAppVisible(true, this)
     // Only resume when the user brings the app to the foreground. A manual

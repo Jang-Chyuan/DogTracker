@@ -37,6 +37,7 @@ import DogMarkerView, { markerFrame } from '../map/DogMarkerView';
 import {
   finishSplash,
   giveUpWaiting,
+  handoverStarted,
   hideSplash,
   launchInfo,
   setReducedMotion,
@@ -75,6 +76,20 @@ export const TIMING = {
   fade: 300,
   reduced: REDUCED_FADE_MS,
 };
+/** How long the handover animation runs (ms), until the copy is gone. */
+export function handoverDuration(mode, reduced = false) {
+  if (mode !== 'fly' || reduced) return reduced ? TIMING.reduced : TIMING.fade;
+  return (
+    Math.max(
+      TIMING.flight,
+      TIMING.background,
+      TIMING.body,
+      TIMING.disc,
+      TIMING.popStart[TIMING.popStart.length - 1] + TIMING.pop,
+      TIMING.chromeStart + TIMING.chrome,
+    ) + 120
+  );
+}
 const easeOut = Easing.bezier(0.2, 0, 0, 1);
 const flightEase = Easing.bezier(0.3, 0, 0.1, 1);
 
@@ -231,6 +246,9 @@ export default function SplashOverlay() {
       finish();
       return;
     }
+    // React Native's timing animations run their given duration whatever the
+    // system animator scale (only 0 is special, above).
+    handoverStarted(handoverDuration(mode, reduceMotion.current));
     if (mode !== 'fly' || reduceMotion.current) {
       timing(
         values.whole,

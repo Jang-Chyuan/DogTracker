@@ -4,6 +4,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { AccessibilityInfo, Animated, NativeModules } from 'react-native';
 import SplashOverlay, {
   flightGeometry,
+  handoverDuration,
   HEAD,
   SPLASH_ICON,
   TIMING,
@@ -84,6 +85,30 @@ test('a report made before the copy mounts is not missed (the state is read from
   });
   expect(NativeModules.AppSplash.done).toHaveBeenCalledTimes(1);
   expect(renderer.toJSON()).toBeNull();
+  await act(async () => renderer.unmount());
+});
+
+// O2 (lane C, 061c/061d): under load the map showed under a coral navigation
+// bar — done() waits for JavaScript's animation callback. The handover tells
+// the native side how long it runs, so the bar changes on the UI thread.
+test.each([0.5, 1, 2])('the handover tells the native side how long it runs (animator scale %s)', async scale => {
+  NativeModules.AppSplash = {
+    hide: jest.fn(),
+    done: jest.fn(),
+    handover: jest.fn(),
+    launchInfo: () => ({ animatorScale: scale }),
+  };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<SplashOverlay />);
+  });
+  await act(async () => {
+    launchInto('page');
+  });
+  expect(NativeModules.AppSplash.handover).toHaveBeenCalledTimes(1);
+  expect(NativeModules.AppSplash.handover).toHaveBeenCalledWith(handoverDuration('fade'));
+  expect(handoverDuration('fly')).toBeGreaterThanOrEqual(TIMING.flight);
+  expect(handoverDuration('fly', true)).toBe(TIMING.reduced);
   await act(async () => renderer.unmount());
 });
 

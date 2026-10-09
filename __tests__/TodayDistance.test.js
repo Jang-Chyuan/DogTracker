@@ -212,6 +212,44 @@ describe('useTodayRoute', () => {
     await act(async () => renderer.unmount());
     jest.useRealTimers();
   });
+
+  // O4 (lane C, 061c/061d): S4 said 「今天 0 筆」 after 刪除我的路線 while the
+  // recorder had already written new fixes — the count waited for the map's
+  // 15 s poll. On S4 the count reads every 2 s, and switching to S4 reads now.
+  test('S4 reads new fixes within its short poll, and a poll change reads at once', async () => {
+    jest.useFakeTimers();
+    const { TODAY_COUNT_POLL_MS } = require('../src/locationTracker/useTodayRoute');
+    expect(TODAY_COUNT_POLL_MS).toBeLessThanOrEqual(2000);
+    const clock = new Date(2026, 9, 7, 9, 30).getTime();
+    const day = new Date(2026, 9, 7).getTime();
+    let rows = [];
+    const database = {
+      phoneRouteSince: jest.fn(async (since, cursor) => rows.filter(row => row.time >= since
+        && (!cursor || row.time > cursor.time || (row.time === cursor.time && row.id > cursor.id)))),
+    };
+    let route;
+    let setPoll;
+    function Probe() {
+      const [pollMs, set] = React.useState(TODAY_ROUTE_POLL_MS);
+      setPoll = set;
+      route = useTodayRoute(database, true, true, () => clock, pollMs);
+      return null;
+    }
+    let renderer;
+    await act(async () => { renderer = Renderer.create(React.createElement(Probe)); });
+    expect(route.count).toBe(0);
+    rows = [{ id: 1, ...north(0, 0), time: day + 1000 }];
+    // Switching to S4: read at once, not after the map's 15 s.
+    const before = database.phoneRouteSince.mock.calls.length;
+    await act(async () => setPoll(TODAY_COUNT_POLL_MS));
+    expect(database.phoneRouteSince.mock.calls.length).toBeGreaterThan(before);
+    expect(route.count).toBe(1);
+    rows = [...rows, { id: 2, ...north(10, 0), time: day + 11000 }];
+    await act(async () => jest.advanceTimersByTimeAsync(TODAY_COUNT_POLL_MS));
+    expect(route.count).toBe(2);
+    await act(async () => renderer.unmount());
+    jest.useRealTimers();
+  });
 });
 
 test('a bottom hint sits above the bottom row (「今天 x km」 beside 我的位置)', () => {
