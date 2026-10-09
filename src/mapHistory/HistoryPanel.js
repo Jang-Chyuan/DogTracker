@@ -1,4 +1,4 @@
-// Content-sized, non-draggable panel. The header also scrolls at large fonts.
+// Content-sized, non-draggable panel with a fixed date/range header.
 import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,12 +11,10 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   bottomInset = 0, scrollRef, above = null, hidden = false, measureKey = '', onHeightChange }, ref) {
   const styles = useStyles(getStyles);
   const scroller = useRef(null);
-  const headerHeight = useRef(0);
-  // Timeline rows report positions relative to the list, after the header.
+  const headerHeight = useRef(null);
+  // Timeline rows report positions relative to the independently scrolling list.
   useImperativeHandle(scrollRef, () => ({
-    scrollTo: options => scroller.current?.scrollTo({
-      ...options, y: options.y + headerHeight.current,
-    }),
+    scrollTo: options => scroller.current?.scrollTo(options),
   }), []);
   const { height: windowHeight, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -32,11 +30,11 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   }
   useEffect(() => () => clearTimeout(measurement.current.timer), []);
   const contentSize = useRef(null);
-  const measure = event => {
-    contentSize.current = event.nativeEvent.layout.height;
+  const settleHeight = () => {
     const pending = measurement.current;
-    if (pending.epoch !== epoch || pending.settled) return;
-    const contentHeight = event.nativeEvent.layout.height + bottomInset + space.l;
+    if (pending.epoch !== epoch || pending.settled ||
+      headerHeight.current == null || contentSize.current == null) return;
+    const contentHeight = headerHeight.current + contentSize.current + bottomInset + space.l;
     clearTimeout(pending.timer);
     // Wait for the header and scaled text to finish layout; scrolling never
     // measures or changes the height. No height animation re-frames the map.
@@ -48,11 +46,23 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
       onHeightChange?.(next);
     }, motion.rangeCollapse.duration);
   };
+  const measure = event => {
+    contentSize.current = event.nativeEvent.layout.height;
+    settleHeight();
+  };
+  const measureHeader = event => {
+    const next = event.nativeEvent.layout.height;
+    if (headerHeight.current !== next) {
+      headerHeight.current = next;
+      // Expanding the range controls changes the fixed header even on the same day.
+      measurement.current.settled = false;
+    }
+    settleHeight();
+  };
   useEffect(() => {
     // A different day can have identical dimensions and emit no layout event.
-    if (contentSize.current != null)
-      measure({ nativeEvent: { layout: { height: contentSize.current } } });
-    // Only a new measurement epoch reopens the frozen measurement.
+    settleHeight();
+    // Header layout also reopens measurement; list refreshes keep it stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [epoch]);
   useImperativeHandle(ref, () => ({ back: () => false }), []);
@@ -61,11 +71,10 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
       pointerEvents="box-none" style={[styles.panel, { height }]}>
       {above && <View pointerEvents="box-none" style={styles.above}>{above}</View>}
       <View style={styles.sheet}>
+        <View testID="history-panel-header" style={styles.header} onLayout={measureHeader}>{header}</View>
         <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
           contentContainerStyle={{ paddingBottom: bottomInset + space.l }}>
           <View testID="history-panel-content" onLayout={measure}>
-            <View testID="history-panel-header"
-              onLayout={event => { headerHeight.current = event.nativeEvent.layout.height; }}>{header}</View>
             {children}
           </View>
         </ScrollView>
@@ -80,5 +89,6 @@ const getStyles = makeStyles(theme => ({
     borderTopLeftRadius: size.historyPanel.corner, borderTopRightRadius: size.historyPanel.corner,
     ...theme.shadow.floating, ...theme.floatingBorder, elevation: 12, overflow: 'hidden' },
   above: { position: 'absolute', right: space.l, top: -(size.floatingButton + space.m) },
-  list: { flex: 1 },
+  header: { flexShrink: 0 },
+  list: { flex: 1, minHeight: 0 },
 }));
