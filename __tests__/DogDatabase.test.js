@@ -119,9 +119,9 @@ describe('DogDatabase tracking reads', () => {
     ).resolves.toEqual([dogStatusRow]);
 
     const [sql, params] = mockDatabase.executeAsync.mock.calls[0];
-    expect(sql).toContain('(received_at > ? OR (received_at = ? AND id > ?))');
+    expect(sql).toContain('UNION ALL');
     expect(sql).not.toContain('OFFSET');
-    expect(params).toEqual([2000, 1500, 1500, 42, 1000]);
+    expect(params).toEqual([1500, 42, 2000, 1000, 1500, 2000, 1000, 1000]);
   });
 
   test('pages newest rows backwards without OFFSET', async () => {
@@ -133,10 +133,10 @@ describe('DogDatabase tracking reads', () => {
     ).resolves.toEqual([dogStatusRow]);
 
     const [sql, params] = mockDatabase.executeAsync.mock.calls[0];
-    expect(sql).toContain('(received_at < ? OR (received_at = ? AND id < ?))');
+    expect(sql).toContain('UNION ALL');
     expect(sql).toContain('ORDER BY received_at DESC, id DESC');
     expect(sql).not.toContain('OFFSET');
-    expect(params).toEqual([1000, 1500, 1500, 42, 1000]);
+    expect(params).toEqual([1500, 42, 1000, 1000, 1000, 1500, 1000, 1000]);
   });
 
   test('loads bounded marker fallback rows for the active device IDs', async () => {
