@@ -173,3 +173,41 @@ test('the receivers an account still has rows waiting for (先上傳, S7)', asyn
   expect(await database.pendingMasters('alice')).toEqual([7]);
   expect(await database.pendingMasters('bob')).toEqual([9]);
 });
+
+test('最後上傳成功（經手機）is kept per receiver and outlives the sent rows it came from', async () => {
+  const { connection, database } = setup();
+  try {
+    await database.setMode('alice', 7, 'phone');
+    insert(connection, 'a', 'alice', 7);
+    insert(connection, 'b', 'alice', 5);
+    insert(connection, 'c', 'bob', 7);
+    for (const [event, owner, master] of [['a', 'alice', 7], ['b', 'alice', 5], ['c', 'bob', 7]]) {
+      await database.sent({ event_id: event, owner_user_id: owner, master_id: master });
+    }
+    insert(connection, 'blocked', 'alice', 7);
+    connection.sqlite.exec("UPDATE ble_upload_queue SET status='blocked' WHERE event_id='blocked'");
+    expect((await database.summary('alice')).blockedByMaster).toEqual({ 7: 1 });
+    const mine = (await database.summary('alice')).lastByMaster;
+    expect(Object.keys(mine).sort()).toEqual(['5', '7']);
+    expect(mine[7]).toBeGreaterThan(0);
+    // Another account's uploads are never this one's.
+    const theirs = (await database.summary('bob')).lastByMaster;
+    expect(Object.keys(theirs)).toEqual(['7']);
+    // The sent rows are gone (the 1,000-row trim, or 刪除全部狗資料 in S7):
+    // the per-Master time written in ble_upload_meta still answers.
+    connection.sqlite.exec('DELETE FROM ble_upload_queue');
+    expect((await database.summary('alice')).lastByMaster).toEqual(mine);
+    expect((await database.summary('alice')).last).toBe(Math.max(...Object.values(mine)));
+    await database.setMode('alice', 7, 'wifi');
+    expect((await database.summary('alice')).lastByMaster).toEqual(mine);
+    await database.setMode('alice', 7, 'phone');
+    expect((await database.summary('alice')).lastByMaster).toEqual(mine);
+    expect((await database.summary('bob')).lastByMaster).toEqual(theirs);
+    // A row sent later for one receiver only moves that receiver's time.
+    insert(connection, 'd', 'alice', 7);
+    await database.sent({ event_id: 'd', owner_user_id: 'alice', master_id: 7, });
+    const after = (await database.summary('alice')).lastByMaster;
+    expect(after[7]).toBeGreaterThanOrEqual(mine[7]);
+    expect(after[5]).toBe(mine[5]);
+  } finally { connection.close(); }
+});

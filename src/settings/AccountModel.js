@@ -6,19 +6,14 @@ import { t } from '../i18n';
 //
 // The row that has a problem carries the red 「!」, the same thing S1 and the
 // gear's red dot count (SettingsModel.settingsInput.cloudFailing): downloads
-// failing (failingSince) or the upload reporting an error.
+// failing (failingSince) or the upload reporting an error. A row that
+// succeeded carries the green tick in that same place (070: `success`).
 
 import { formatClock } from '../map/MapFormat';
 import { isNetworkFailure } from '../cloud/CloudErrors';
+import { phoneUploadProblem, receiverUploadSuccess } from '../cloudUpload/UploadSuccess';
 
 const count = (counts, status) => Number((counts || []).find(row => row.status === status)?.count || 0);
-
-// An upload error in field words: the network ones are 「連不上 Supabase」.
-function uploadReason(error) {
-  if (!error) return '';
-  if (isNetworkFailure({ message: error })) return t("c932");
-  return error;
-}
 
 export const ROUTE_PHONE = t('c219');
 export const ROUTE_WIFI = t('c416');
@@ -28,9 +23,11 @@ export const ROUTE_WIFI = t('c416');
  * restoring } — 「未登入」 or 「需要重新登入」 with 「登入」 (→ D1), or while the
  * restore waits for Supabase 「暫時連不上，會自動重試」. Signed in:
  * { signedIn, email, download: row, upload: { problem: row|null, pending,
- *   lastText }, routes: [{ master, title, detail, mode, to, pending,
- *   canSwitch }], routesLoading, offline, pendingTotal }.
- * A row: { title, detail, right, problem, retry, label }.
+ *   pendingText, summary: row }, routes: [{ master, title, detail, mode, to,
+ *   pending, canSwitch, last }], routesLoading, offline, pendingTotal }.
+ * A row: { title, detail, right, problem, success, retry, label }. `last` is
+ * the receiver's 最後上傳成功 line (UploadSuccess.receiverUploadSuccess), the
+ * same one S2 draws for the receiver in front.
  */
 export function accountPage(input) {
   const account = input.account || {};
@@ -51,30 +48,30 @@ export function accountPage(input) {
     // without a network): it keeps trying by itself (判定表「啟動與恢復登入」).
     const restoring = sync.lastSuccess == null;
     const title = restoring ? t('c257') : t('c211');
-    download = { title, detail: since, right: null, problem: true, retry: true,
+    download = { title, detail: since, right: null, problem: true, success: false, retry: true,
       label: t("c912", { title: title, since: since }) };
   } else if (sync.lastSuccess != null) {
     const time = formatClock(sync.lastSuccess);
-    download = { title: t('c217'), detail: null, right: time, problem: false, retry: false,
+    download = { title: t('c217'), detail: null, right: time, problem: false, success: true, retry: false,
       label: [t('c217'), time].join(' ') };
   } else {
-    download = { title: t('c217'), detail: null, right: t('c319'), problem: false, retry: false,
+    download = { title: t('c217'), detail: null, right: t('c319'), problem: false, success: false, retry: false,
       label: t("c914") };
   }
 
   // ---- 上傳 ----------------------------------------------------------------
   const pending = count(upload.counts, 'pending');
-  const blocked = count(upload.counts, 'blocked');
-  let problem = null;
-  if (blocked > 0) {
-    problem = { title: t("c919"), detail: t("c911"), right: t('c216', { count: blocked }), problem: true, retry: true,
-      label: t("c915", { blocked: blocked }) };
-  } else if (upload.error) {
-    const reason = uploadReason(upload.error);
-    problem = { title: t("c920"), detail: reason, right: null, problem: true, retry: true,
-      label: t("c916", { reason: reason }) };
-  }
-  const lastText = upload.last ? formatClock(upload.last) : t("c917");
+  const problem = phoneUploadProblem(upload);
+  // The one row under 上傳. A phone that has never had anything to upload says
+  // exactly that — never 「都已上傳」 over 「最後成功 還沒有」, which read as a
+  // contradiction (070). 最後上傳成功 itself belongs to each receiver below.
+  const pendingText = t('c216', { count: pending });
+  const summary = pending > 0
+    ? { title: t('c215'), right: pendingText, problem: false, success: false, retry: false,
+      label: t("c935", { pendingText: pendingText }) }
+    : problem ? null : upload.last
+      ? { title: t('c417'), right: null, problem: false, success: true, retry: false, label: t('c417') }
+      : { title: t("c1233"), right: null, problem: false, success: false, retry: false, label: t("c1233") };
 
   // ---- 接收器 N 的上傳方式 -------------------------------------------------
   const settings = upload.settings || [];
@@ -89,7 +86,7 @@ export function accountPage(input) {
     // going back to its Wi-Fi is always allowed.
     const canSwitch = mode === 'phone' || masters.includes(master);
     return { master, title: t('c218', { number: master }), detail, mode, to: mode === 'phone' ? 'wifi' : 'phone',
-      pending: Number(byMaster[master] || 0), canSwitch,
+      pending: Number(byMaster[master] || 0), canSwitch, last: receiverUploadSuccess(upload, master),
       label: ((canSwitch) ? t("c921", { master: master, detail: detail }) : t("c922", { master: master, detail: detail })) };
   });
 
@@ -97,7 +94,8 @@ export function accountPage(input) {
     signedIn: true,
     email: account.email || '',
     download,
-    upload: { visible: routes.some(route => route.mode === 'phone') || pending > 0 || !!problem, problem, pending, pendingText: t('c216', { count: pending }), lastText },
+    upload: { visible: routes.some(route => route.mode === 'phone') || pending > 0 || !!problem,
+      problem, pending, pendingText, summary },
     routes,
     routesLoading: upload.supported !== false && !upload.settingsReady,
     // The phone looks offline: a switch that must send rows first says so

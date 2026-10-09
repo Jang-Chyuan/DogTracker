@@ -143,3 +143,44 @@ test('a failed network page preserves completed pages and reports failure', asyn
   await expect(downloadCloudHistory({ ...options(), client, database })).rejects.toThrow('42501');
   expect(database.savePage).toHaveBeenCalledTimes(1);
 });
+
+test('最後上傳成功（經 Wi-Fi）: each receiver\'s newest Wi-Fi row, whatever this phone uploaded since', async () => {
+  const connection = createMemoryConnection();
+  const real = createDogDatabase(connection);
+  const cloud = createCloudDatabase(connection);
+  // `time` is minutes before 2026-09-16T02:00Z; a 'phone' row also carries the
+  // time the phone received it, the way the download reports one.
+  const row = (suffix, minutes, source, master, slave) => {
+    const at = new Date(Date.parse('2026-09-16T02:00:00.000Z') - minutes * 60000).toISOString();
+    return mapCloudTelemetry({ ...event(suffix, at), master_id: master, slave_id: slave,
+      upload_source: source, phone_received_at: source === 'phone' ? at : undefined,
+      payload: { ...event().payload, slaveId: slave } });
+  };
+  try {
+    await real.initialize();
+    await cloud.initialize();
+    await cloud.savePage('account-a', [
+      // Receiver 7 uploaded by its own Wi-Fi, then this phone took over and
+      // uploaded newer rows for every dog of it. Reading the newest row of
+      // each dog would find only 'phone' rows and lose the Wi-Fi history.
+      row('101', 90, 'wifi', 7, 4),
+      row('102', 60, 'wifi', 7, 5),
+      row('103', 30, 'phone', 7, 4),
+      row('104', 20, 'phone', 7, 5),
+      // Receiver 9 is still on its own Wi-Fi.
+      row('105', 10, 'wifi', 9, 6),
+      // Rows downloaded before the phone-upload columns existed say nothing.
+      { ...row('106', 5, 'wifi', 11, 7), upload_source: null },
+    ]);
+    // Another account's receiver, at a time that would win if it leaked.
+    await cloud.savePage('account-b', [row('107', 1, 'wifi', 7, 4)]);
+    const minutesAgo = at => (Date.parse('2026-09-16T02:00:00.000Z') - at) / 60000;
+    const mine = await cloud.wifiUploads('account-a');
+    expect(Object.keys(mine).map(Number).sort((a, b) => a - b)).toEqual([7, 9]);
+    expect(minutesAgo(mine[7])).toBe(60);
+    expect(minutesAgo(mine[9])).toBe(10);
+    expect(minutesAgo((await cloud.wifiUploads('account-b'))[7])).toBe(1);
+    expect(await cloud.wifiUploads('account-c')).toEqual({});
+    await expect(cloud.wifiUploads(null)).rejects.toThrow();
+  } finally { connection.close(); }
+});

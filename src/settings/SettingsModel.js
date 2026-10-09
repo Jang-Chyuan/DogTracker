@@ -18,6 +18,7 @@ import { gearReasons, receiverOutage, storageProblem } from '../map/TopAlerts';
 import { isOtherReceiver, receiverNumber } from '../map/ReceiverState';
 import { formatClock } from '../map/MapFormat';
 import { alertsHomeRight } from '../alerts/AlertPreferences';
+import { phoneUploadProblem, receiverUploadSuccess, uploadRouteMode } from '../cloudUpload/UploadSuccess';
 
 const MINUTE = 60 * 1000;
 
@@ -239,8 +240,9 @@ export function receivedSources(packets, number, aliases) {
 
 /**
  * S2. { setUp, number, title, subtitle, subtitleProblem, battery,
- * batteryProblem, lastHeard, position, connectAction: 'disconnect' |
- * 'reconnect', sources }.
+ * batteryProblem, lastHeard, position, uploadLast, connectAction:
+ * 'disconnect' | 'reconnect', sources }. `uploadLast` is this receiver's
+ * 最後上傳成功 line, the same one S3 draws next to its upload route (070).
  */
 export function receiverPage(input) {
   const reasons = settingsReasons(input);
@@ -269,6 +271,11 @@ export function receiverPage(input) {
     batteryProblem: reasons.includes('receiver-battery'),
     lastHeard: last ? t('c201', { time: formatClock(last) }) : null,
     position: (own && coordinate(point.masterLat, point.masterLon)) || t('c203'),
+    uploadLast: receiverUploadSuccess(input.upload, number),
+    uploadProblem: uploadRouteMode(input.upload, number) === 'phone'
+      || Number(input.upload?.pendingByMaster?.[number]) > 0
+      || Number(input.upload?.blockedByMaster?.[number]) > 0
+      ? phoneUploadProblem(input.upload, number) : null,
     connectAction: phase === 'off' ? 'reconnect' : 'disconnect',
     sources: phase === 'none' ? [] : receivedSources(input.packets, number, input.aliases),
   };

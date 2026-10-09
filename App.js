@@ -324,6 +324,9 @@ function TrackerApp({ resume = null, onRestart }) {
     cloudSync.ownerId,
     tracking.foreground,
     auth.reportAuthFailure,
+    // Read-only, for each receiver's 最後上傳成功…（經 Wi-Fi） (S2/S3).
+    tracking.cloudDatabase,
+    cloudSync.lastSuccess,
   );
   const insets = useSafeAreaInsets();
   // The pages opened from the map, newest last; back (the key or 「‹ 標題」)

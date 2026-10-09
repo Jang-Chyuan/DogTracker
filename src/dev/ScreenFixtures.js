@@ -160,10 +160,11 @@ const synced = now => ({ ownerId: FIXTURE_OWNER, lastSuccess: now - 5 * SECOND,
 
 // useCloudUpload's answer (S3): receivers this account may upload for
 // (`masters`), each one's route (`phone` / `wifi` lists), rows still waiting
-// per receiver, rows the cloud refused (`blocked`), the last success. Its
-// actions write nothing.
+// per receiver, rows the cloud refused (`blocked`), the last success — this
+// phone's per receiver (`lastByMaster`) and the receiver's own Wi-Fi as the
+// downloaded copy shows it (`wifiByMaster`). Its actions write nothing.
 function uploading(now, { phone = [7], wifi = [], pending = {}, blocked = 0, last = now - 8 * SECOND,
-  error = '' } = {}) {
+  error = '', lastByMaster = null, wifiByMaster = {} } = {}) {
   const waiting = Object.values(pending).reduce((sum, value) => sum + value, 0);
   return {
     owner: FIXTURE_OWNER, supported: true, settingsReady: true, phoneId: 'fixture-phone',
@@ -172,6 +173,9 @@ function uploading(now, { phone = [7], wifi = [], pending = {}, blocked = 0, las
       ...wifi.map(master => ({ master_id: master, mode: 'wifi' }))],
     counts: [{ status: 'pending', count: waiting }, ...(blocked ? [{ status: 'blocked', count: blocked }] : [])],
     pendingByMaster: pending, last, error,
+    lastByMaster: lastByMaster
+      ?? (last == null ? {} : Object.fromEntries(phone.map(master => [master, last]))),
+    wifiByMaster,
     setMode: async () => {}, switchMode: async () => {}, retry: async () => {},
   };
 }
@@ -948,8 +952,10 @@ const FIXTURES = {
   // uploads through this phone.
   'cloud-ok': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud', upload: uploading(now) }),
   // Every receiver uses its own Wi-Fi: only upload route rows are shown.
+  // Receiver 7 has a downloaded row of its own (最後上傳成功…（經 Wi-Fi）);
+  // nothing has been downloaded from 8 yet, so it says it uploads on its own.
   'cloud-wifi-only': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
-    upload: uploading(now, { phone: [], wifi: [7, 8] }) }),
+    upload: uploading(now, { phone: [], wifi: [7, 8], wifiByMaster: { 7: now - 2 * MINUTE } }) }),
   // Uploads waiting: 12 rows not sent yet, 3 the cloud refused (需處理 +
   // 重試), the last success 16 minutes ago. Downloads are fine.
   'cloud-upload-pending': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
@@ -966,8 +972,10 @@ const FIXTURES = {
   'cloud-expired': now => ({ ...FIXTURES['signed-out-map'](now), openRoute: 'cloud', expired: true }),
   // Receiver 7 uploads by its own Wi-Fi; 120 rows from before still wait in
   // this phone. 「接收器 7 的上傳方式」 pressed: the confirmation (c255).
+  // 最後上傳成功 is from the phone period and stays visible on its Wi-Fi (070).
   'upload-switch-confirm': now => ({ ...FIXTURES['all-good'](now), openRoute: 'cloud',
-    upload: uploading(now, { phone: [], wifi: [7], pending: { 7: 120 }, last: now - 50 * MINUTE }),
+    upload: uploading(now, { phone: [], wifi: [7], pending: { 7: 120 }, last: now - 50 * MINUTE,
+      lastByMaster: { 7: now - 50 * MINUTE } }),
     dialog: { kind: 'switch', master: 7 } }),
   // The same without a network: it cannot switch yet (c256).
   'upload-switch-offline': now => ({ ...FIXTURES['upload-switch-confirm'](now),

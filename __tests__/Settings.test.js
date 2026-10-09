@@ -218,6 +218,27 @@ test('S2 phases: nothing set up, disconnected for 30 s, not found', () => {
   expect(waiting.subtitle).toBe('DogGPS-Master7・已連線・還沒收到訊號源');
 });
 
+test('S2 says when this receiver last uploaded, under its position; nothing when there is none', async () => {
+  const { data } = input('all-good');
+  // The fixture has receiver 7 uploading through this phone.
+  expect(receiverPage(data).uploadLast).toMatchObject({ success: true, via: 'phone' });
+  // Nothing known about uploads (signed out, or the routes not read yet).
+  expect(receiverPage({ ...data, upload: {} }).uploadLast).toBeNull();
+  const upload = { supported: true, settingsReady: true, masters: [7],
+    settings: [{ master_id: 7, mode: 'wifi' }], wifiByMaster: { 7: FIXTURE_NOW - 4 * MINUTE } };
+  const page = receiverPage({ ...data, upload });
+  expect(page.uploadLast).toMatchObject({ success: true, via: 'wifi' });
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<ReceiverSettings page={page} />); });
+  const out = text(renderer);
+  expect(out).toContain('（經 Wi-Fi）');
+  // Under 位置, over the connection actions.
+  const order = [i18nT('c073'), page.uploadLast.text, i18nT('c204')].map(words => out.indexOf(`"${words}"`));
+  expect(order.every(index => index > -1)).toBe(true);
+  expect(order).toEqual([...order].sort((left, right) => left - right));
+  await act(async () => renderer.unmount());
+});
+
 test('the sources are this receiver\'s only, located first', () => {
   const packets = [
     { source: 'ble', master_id: 7, slave_id: 2, track_at: 1000, slave_lat: 0, slave_lon: 0 },
