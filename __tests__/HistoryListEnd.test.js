@@ -11,6 +11,7 @@ function Harness({ fixture, onScreen }) {
   const target = historyTargetOf(fixture.history.preferences);
   const screen = useHistoryScreen({ target, read: fixture.history.readDay, readDays: fixture.history.readDays,
     owner: fixture.cloudSync.ownerId, clock: () => fixture.now, memoryScope: `end:${fixture.name}:`,
+    recordingStoppedAt: fixture.livePhone?.stoppedAt ?? null,
     recording: fixture.livePhone ? !!fixture.livePhone.running : null,
     preset: fixture.historyView ?? null });
   onScreen(screen);
@@ -55,11 +56,11 @@ test('only the end dragged back to 08:50: 「結束」 at that time, the start s
   expect(clock(last.end)).toBe('08:50');
 });
 
-test('recording switched off at 09:05: 「記錄已關閉 09:05」, not 「結束」', async () => {
+test('K15: last fix 09:05, switched off at 09:30: 「記錄已關閉 09:30」, not 「結束」', async () => {
   const { last } = await open('history-recording-off');
   expect(last).toMatchObject({ type: 'end', label: '記錄已關閉' });
-  expect(clock(last.closedAt)).toBe('09:05');
-  expect(nodePill(last)).toEqual({ text: '記錄已關閉 09:05', tone: 'closed' });
+  expect(clock(last.closedAt)).toBe('09:30');
+  expect(nodePill(last)).toEqual({ text: '記錄已關閉 09:30', tone: 'closed' });
 });
 
 test('a past day this phone holds opens (preset goTo) and ends on 「結束」', async () => {

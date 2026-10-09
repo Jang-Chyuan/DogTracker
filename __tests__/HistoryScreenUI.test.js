@@ -306,3 +306,23 @@ test('range bar: a quick flick lands where the finger let go, even when its last
     await unmount(s);
   }
 });
+
+test('K10: a failed read for a different dog or account cannot reuse the old rows', async () => {
+  const { useHistoryDayRows } = require('../src/mapHistory/useHistoryScreen');
+  const { startOfToday } = require('../src/tracking/TodayDistance');
+  const read = jest.fn(async ({ slaveId }) => {
+    if (slaveId !== 4) throw new Error('database is locked');
+    return { rows: [{ id: 1, slave_id: 4, time: buildFixture('history-my-route').now }], seed: [], after: { done: true } };
+  });
+  let result;
+  function Probe({ slaveId, owner = 'a' }) {
+    result = useHistoryDayRows({ read, subject: 'dog', slaveId, owner, day: startOfToday(buildFixture('history-my-route').now), clock: () => buildFixture('history-my-route').now });
+    return null;
+  }
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<Probe slaveId={4} />); });
+  expect(result.rows).toHaveLength(1);
+  await act(async () => renderer.update(<Probe slaveId={6} owner="b" />));
+  expect(result).toMatchObject({ rows: [], version: 0, replayHolds: null, loaded: false, error: 'database is locked' });
+  await act(async () => renderer.unmount());
+});

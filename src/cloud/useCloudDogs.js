@@ -62,19 +62,21 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           ? await database.trackBySlave(owner, now() - trackSinceMs) : [];
         let holds = {}, statuses = {}, ranges = {};
         if (database.holdRows) {
-          // A long pause (background) replays from scratch instead of catching
-          // up on every row since.
+          // A long pause rebuilds the hold trackers and replays range changes
+          // since their checkpoints, including fixes outside the hold window.
           const replaced = holdState.current;
           if (replaced?.owner !== owner || replaced?.database !== database
             || now() - replaced.polledAt > HOLD_LOOKBACK_MS) {
             const store = createHoldStore();
+            store.seedRanges(await database.loadRangeState?.(owner) ?? {});
             // Same account and database: the receiver-range judgements stay.
             if (replaced?.owner === owner && replaced?.database === database) store.seedRanges(replaced.store.ranges());
-            holdState.current = { owner, database, store, cursors: null, polledAt: now() };
+            holdState.current = { owner, database, store, cursors: null, polledAt: now(), replaySince: Math.min(now() - HOLD_LOOKBACK_MS,
+              ...Object.values(store.ranges()).map(range => range.lastLocalAt ?? range.lastTime ?? now())) };
           }
           const state = holdState.current;
           try {
-            const batch = await database.holdRows(owner, now() - HOLD_LOOKBACK_MS, state.cursors);
+            const batch = await database.holdRows(owner, state.replaySince ?? now() - HOLD_LOOKBACK_MS, state.cursors);
             if (!alive || holdState.current !== state) return;
             // Stored rows moved in time (cloud time repair): replay them all.
             if (batch.reset) {
@@ -93,6 +95,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           statuses = state.store.statuses();
           // Each dog's receiver-range judgement, fed by the same rows.
           ranges = state.store.ranges();
+          await database.saveRangeState?.(owner, ranges);
         }
         if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, ranges, error: '', loaded: true } });
       } catch (error) {

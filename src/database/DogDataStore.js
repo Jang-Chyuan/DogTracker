@@ -17,7 +17,7 @@
 //   (how far the download got: without them the next sync would download
 //   the last 24 hours again at once, refilling what was just deleted).
 
-export const DOG_DATA_TABLES = Object.freeze(['dog_status', 'supabase_dog_status']);
+export const DOG_DATA_TABLES = Object.freeze(['dog_status', 'supabase_dog_status', 'receiver_range_state', 'history_download_state']);
 export const UPLOAD_QUEUE = 'ble_upload_queue';
 // Rows not in the cloud yet: waiting, or refused and waiting for 重試.
 export const UNSENT = "status IN ('pending','blocked')";

@@ -1,3 +1,6 @@
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { useHistoryCloud } from '../src/mapHistory/useHistoryCloud';
 // 054b: what the history's calendar asks Supabase, and its downloads through
 // the sync's slot.
 import { createHistoryCloud, DOWNLOAD_AFTER_MS, DOWNLOAD_BEFORE_MS } from '../src/mapHistory/HistoryCloud';
@@ -75,4 +78,54 @@ test('downloads one at a time through the slot; the day reaches past midnight by
   expect(windows[0]).toEqual(expect.arrayContaining([['eq', 'slave_id', 6],
     ['gte', 'received_at', new Date(dayEnd - DOWNLOAD_BEFORE_MS).toISOString()],
     ['lt', 'received_at', new Date(dayEnd + 86400000 + DOWNLOAD_AFTER_MS).toISOString()]]));
+});
+
+test('K11: incomplete download is durable before network writes and complete only after success', async () => {
+  const order = [];
+  const database = { initialize: async () => {}, savePage: async () => {},
+    setHistoryDownloadState: jest.fn(async (owner, id, day, complete) => order.push(complete)),
+    historyDownloadStates: async () => [{ slave_id: 6, day: '2026-10-03', complete: 0 }] };
+  const c = client(() => { expect(order.at(-1)).toBe(false); return Promise.resolve({ data: [], error: null }); });
+  const cloud = createHistoryCloud({ client: c, database, owner: 'a' });
+  const dayStart = new Date(2026, 9, 3).getTime();
+  await cloud.download({ slaveId: 6, dayStart, dayEnd: dayStart + 86400000 });
+  expect(order).toEqual([false, true]);
+  expect(await cloud.downloadStates({ slaveId: 6 })).toEqual([{ slave_id: 6, day: '2026-10-03', complete: 0 }]);
+  order.length = 0;
+  const failed = createHistoryCloud({ client: client(() => Promise.resolve({ data: null, error: { message: 'failed' } })), database, owner: 'a' });
+  await expect(failed.download({ slaveId: 6, dayStart, dayEnd: dayStart + 86400000 })).rejects.toThrow('下載失敗');
+  expect(order).toEqual([false]);
+});
+
+test('K12: multi-dog downloads complete each dog independently and report exactly which failed', async () => {
+  const statuses = [];
+  const complete = [];
+  const c = client(log => {
+    const id = log.find(([key, name]) => key === 'eq' && name === 'slave_id')[2];
+    return Promise.resolve(id === 6 ? { data: null, error: { message: 'offline' } } : { data: [], error: null });
+  });
+  const database = { initialize: async () => {}, setHistoryDownloadState: async (owner, id, day, done) => complete.push([id, done]) };
+  const cloud = createHistoryCloud({ client: c, database, owner: 'a' });
+  await expect(cloud.download({ slaveId: [4, 6], dayStart: 0, dayEnd: 86400000, onDogEnd: (id, status) => statuses.push([id, status]) })).rejects.toThrow('下載失敗');
+  expect(statuses).toEqual([[4, 'done'], [6, 'failed']]);
+  expect(complete).toEqual([[4, false], [6, false], [4, true]]);
+});
+
+
+test('K11: failed completeness reads keep local days incomplete per dog and can retry', async () => {
+  const day = '2026-10-03';
+  const cloud = { downloadStates: jest.fn().mockRejectedValueOnce(new Error('locked'))
+    .mockResolvedValue([{ slave_id: 4, day, complete: 1 }, { slave_id: 6, day, complete: 1 }]) };
+  let state, renderer;
+  function Probe() {
+    state = useHistoryCloud({ cloud, slaveId: [4, 6], scope: 'K11-failure', todayKey: day,
+      local: [day], localByDog: { 4: [day], 6: [day] } });
+    return null;
+  }
+  await act(async () => { renderer = Renderer.create(<Probe />); });
+  expect(state.knowledge.incomplete).toContain(day);
+  await act(async () => state.retryCompleteness());
+  expect(cloud.downloadStates).toHaveBeenCalledTimes(2);
+  expect(state.knowledge.incomplete).toEqual([]);
+  await act(async () => renderer.unmount());
 });

@@ -1,4 +1,5 @@
 import MapScreen from '../src/screens/MapScreen';
+import { layout } from '../src/theme/tokens';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import {
@@ -9,6 +10,7 @@ import {
   NativeModules,
   PermissionsAndroid,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import MapView, { Circle, Marker, Polygon, Polyline } from 'react-native-maps';
 import { mockDatabase, open } from 'react-native-nitro-sqlite';
@@ -112,16 +114,12 @@ beforeEach(async () => {
     onAppState = callback;
     return { remove: jest.fn() };
   });
-  jest
-    .spyOn(BackHandler, 'addEventListener')
-    .mockImplementation((_, callback) => {
-      onBack = callback;
-      return {
-        remove: jest.fn(() => {
-          if (onBack === callback) onBack = null;
-        }),
-      };
-    });
+  const backHandlers = [];
+  onBack = () => [...backHandlers].reverse().some(handler => handler());
+  jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_, callback) => {
+    backHandlers.push(callback);
+    return { remove: jest.fn(() => { const index = backHandlers.indexOf(callback); if (index >= 0) backHandlers.splice(index, 1); }) };
+  });
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -559,6 +557,22 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
   expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
 });
+test('a history map never carries the receiver range ring', async () => {
+  await mount();
+  await advance();
+  await tapDog(7);
+  await act(async () => renderer.root.findAll(node => node.props.testID === 'dog-card-track'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  await advance();
+  expect(renderer.root.findByType(MapScreen).props.historical).toBe(true);
+  const maps = renderer.root.findAll(node => node.props.presentation && typeof node.props.onNativePhone === 'function');
+  expect(maps.length).toBeGreaterThan(0);
+  for (const map of maps) {
+    expect(map.props.presentation.historyMode).toBe(true);
+    expect(map.props.presentation.rangeRing).toBeNull();
+    expect(map.props.presentation.rangeLines).toEqual([]);
+  }
+});
 test('page changes keep the same native map, source and saved switches', async () => {
   await mount();
   await setTrails(true);
@@ -794,6 +808,10 @@ test('first launch, signed out: D1 with the guide progress; 稍後再說 opens t
   expect(page('pair-scan')).toBe(false);
   expect(NativeTrackingPlatform.claimLocationPermissionPrompt).toHaveBeenCalled();
   expect(preferences().onboarding).toBe('done');
+  const handlers = Linking.addEventListener.mock.calls.filter(call => call[0] === 'url').map(call => call[1]);
+  await act(async () => handlers.forEach(handler => handler({ url: 'dogtracker://notification/receiver-settings' })));
+  expect(page('receiver-settings')).toBe(true);
+
   await act(async () => renderer.unmount());
   await mount();
   await advance(100);
@@ -951,6 +969,10 @@ test('登入失效 found by the restore: D1 with 需要重新登入; 稍後再�
   expect(signInPage()).toBe(false);
   // The map (not settings) and the gear's red dot for the expired sign-in.
   expect(renderer.root.findAllByProps({ testID: 'map-settings-dot' }).length).toBeGreaterThan(0);
+  const handlers = Linking.addEventListener.mock.calls.filter(call => call[0] === 'url').map(call => call[1]);
+  await act(async () => handlers.forEach(handler => handler({ url: 'dogtracker://notification/receiver-settings' })));
+  expect(page('receiver-settings')).toBe(true);
+
 });
 
 test('the database cannot be opened: 手機裡的資料打不開; 診斷 says why; 重試 opens it again', async () => {
@@ -1091,3 +1113,102 @@ test('the settings header stays above the page-colour map cover', async () => {
   const cover = StyleSheet.flatten(renderer.root.findAllByProps({ testID: 'map-cover' })[0].props.style);
   expect(StyleSheet.flatten(header.props.style).zIndex).toBeGreaterThan(cover.zIndex ?? 0);
 });
+
+test('K02: foreground settings keep polling the alert dog snapshot', async () => {
+  await mount();
+  await advance(100);
+  await press('設定');
+  const before = renderer.root.findByType(MapScreen).props.cloudDogs;
+  await act(async () => { await renderer.root.findByType(MapScreen).props.tracking.hardwareDatabase.saveStatus({ ...trackingPoint, slaveId: 19, receivedAt: Date.now(), timestamp: Math.floor(Date.now() / 1000) }, 'settings-packet'); });
+  await advance(10000);
+  const after = renderer.root.findByType(MapScreen).props.cloudDogs;
+  expect(after).not.toBe(before);
+  expect(after.packets.some(row => row.slave_id === 19)).toBe(true);
+});
+
+test('K08: rerenders do not register a newer root back handler', async () => {
+  await mount();
+  await advance(100);
+  const handlers = BackHandler.addEventListener.mock.calls.length;
+  await act(async () => renderer.update(<App />));
+  await advance(10000);
+  expect(BackHandler.addEventListener.mock.calls.length).toBe(handlers);
+});
+
+test('E01/E16: A4 and A5 isolate background controls and accessibility', async () => {
+  await mount();
+  await advance(100);
+  await tapDog(7);
+  const DogCard = require('../src/map/DogCard').default;
+  const card = renderer.root.findByType(DogCard);
+  for (const action of ['onActivity', 'onEdit']) {
+    await act(async () => card.props[action]());
+    const layer = renderer.root.findAllByProps({ testID: 'map-background-layer' })[0];
+    expect(layer.props).toMatchObject({ pointerEvents: 'none', accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' });
+    // The map stays mounted under A4/A5 (display:none would detach the
+    // native MapView, which leaks a GoogleMap per opening).
+    expect(layer.props.collapsable).toBe(false);
+    expect(StyleSheet.flatten(layer.props.style).display).toBeUndefined();
+    // Off screen, so its surface cannot show in the status-bar inset.
+    expect(StyleSheet.flatten(layer.props.style).transform).toEqual([{ translateX: layout.offscreen }]);
+  }
+});
+
+test('leak: hiding the map layer never re-parents the native map', async () => {
+  await mount();
+  await advance(100);
+  const layerStyle = () => {
+    const layer = renderer.root.findAllByProps({ testID: 'persistent-map-layer' })[0];
+    expect(layer.props.collapsable).toBe(false);
+    return StyleSheet.flatten(layer.props.style);
+  };
+  const onMap = layerStyle();
+  await act(async () => {
+    renderer.root.findAll(node => typeof node.props.onOpenSettings === 'function')[0].props.onOpenSettings();
+  });
+  await advance(100);
+  const onSettings = layerStyle();
+  // Hidden by opacity only; the order (zIndex) and display never change.
+  expect(onSettings.opacity).toBe(0);
+  expect(onSettings.transform).toEqual([{ translateX: layout.offscreen }]);
+  expect(onMap.transform).toBeUndefined();
+  expect(onSettings.zIndex).toBe(onMap.zIndex);
+  expect(onSettings.display).toBeUndefined();
+});
+
+test('E15: settings content reserves measured N3 height and restores spacing when hidden', () => {
+  const source = require('fs').readFileSync(require.resolve('../App'), 'utf8');
+  expect(source).toContain('paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0');
+  expect(source).toMatch(/top=\{layout.belowStatusBar\}\s*onHeight=\{setN3Height\}/);
+});
+
+test('E03: native phone fix participates in the first frame without recording', async () => {
+  await mount();
+  await advance(100);
+  const map = renderer.root.findAll(node => typeof node.props.onNativePhone === 'function', { deep: false })[0];
+  const coordinate = { latitude: 24.99, longitude: 121.31 };
+  await act(async () => map.props.onNativePhone(coordinate));
+  const updated = renderer.root.findAll(node => typeof node.props.onNativePhone === 'function', { deep: false })[0];
+  expect(updated.props.presentation.cameraPositions).toEqual(expect.arrayContaining([coordinate]));
+});
+
+test.each(['com.antgo.dogtracker', 'com.antgo.dogtracker.debug'])(
+  'notification settings targets the runtime package %s',
+  async packageName => {
+    const sendIntent = jest.spyOn(Linking, 'sendIntent').mockResolvedValue();
+    NativeTrackingPlatform.packageName.mockReturnValueOnce(packageName);
+    Linking.getInitialURL.mockResolvedValueOnce(
+      'dogtracker://dev/fixture?name=settings-problems&page=alerts',
+    );
+    await mount();
+    await advance(100);
+    await press('通知權限，有問題：未允許，開系統設定');
+    expect(NativeTrackingPlatform.packageName).toHaveBeenCalled();
+    expect(sendIntent).toHaveBeenCalledWith(
+      'android.settings.APP_NOTIFICATION_SETTINGS',
+      [{ key: 'android.provider.extra.APP_PACKAGE', value: packageName }],
+    );
+    sendIntent.mockRestore();
+  },
+);
+

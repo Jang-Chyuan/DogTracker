@@ -1,5 +1,5 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -25,13 +25,14 @@ import {
  * asks first. `wifi` is useReceiverWifi's answer; `receiver` is 「接收器 7」.
  * The receiver never sends a password back.
  */
-export default function WifiSettings({ wifi, receiver = '接收器' }) {
+export default function WifiSettings({ wifi, receiver = '接收器', draft = null }) {
   const { colors } = useTheme();
   const settingsStyles = useStyles(getSettingsStyles);
   const styles = useStyles(getStyles);
-  const [ssid, setSsid] = useState('');
-  const [password, setPassword] = useState('');
-  const [shown, setShown] = useState(false);
+  const [ssid, setSsid] = useState(draft?.current?.ssid ?? '');
+  const [password, setPassword] = useState(draft?.current?.password ?? '');
+  const [shown, setShown] = useState(draft?.current?.shown ?? false);
+  useEffect(() => { if (draft) draft.current = { ...draft.current, ssid, password, shown }; }, [draft, ssid, password, shown]);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
   const [removing, setRemoving] = useState(null);
@@ -85,6 +86,9 @@ export default function WifiSettings({ wifi, receiver = '接收器' }) {
   return (
     <ScrollView
       testID="wifi-settings"
+      contentOffset={{ x: 0, y: draft?.current?.scrollY ?? 0 }}
+      onScroll={event => { if (draft) draft.current = { ...draft.current, scrollY: event.nativeEvent.contentOffset.y }; }}
+      scrollEventThrottle={16}
       style={settingsStyles.page}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={settingsStyles.content}

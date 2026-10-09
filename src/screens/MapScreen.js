@@ -35,12 +35,12 @@ import {
   receiverNumber,
 } from '../map/ReceiverState';
 import { dogMarkers, dogName } from '../map/DogMarkers';
-import { coldStartCoordinates, phoneFix } from '../map/MapFraming';
+import { coldStartCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
 import DogCard from '../map/DogCard';
 import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
-import { dogCard, phoneReading } from '../map/DogCardModel';
+import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
 import { useDogCardReadings } from '../map/useDogCardReadings';
 import {
   cloudClock,
@@ -247,7 +247,12 @@ export default function MapScreen({
       // dog-edit opens the dog's page (A5) over its card, once the card is.
       pendingPage.current = fixturePage;
       if (fixturePage) setCardPage(fixturePage);
-    } else setSelected(null);
+    } else {
+      // A fixture without a card: no page of the previous one stays asked for.
+      pendingPage.current = null;
+      setCardPage(null);
+      setSelected(null);
+    }
   }, [fixtureName, fixtureDog, fixturePage, openDog]);
   useEffect(() => {
     if (openDogRequest?.slaveId != null) openDog(openDogRequest.slaveId);
@@ -396,6 +401,7 @@ export default function MapScreen({
         ...dog,
         name: dogName(dog.slaveId, alertDogAliases),
         range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
+        indoorState: cloudDogs?.statuses?.[dog.slaveId]?.indoorState ?? null,
       })),
       receiverBattery:
         alertBatteryValid == null
@@ -409,6 +415,7 @@ export default function MapScreen({
     dogs,
     alertDogAliases,
     cloudDogs?.ranges,
+    cloudDogs?.statuses,
     alertBatteryValid,
     alertBatteryPercentage,
   ]);
@@ -513,7 +520,14 @@ export default function MapScreen({
   // What the first view (cold start, or a data source switch) frames: the
   // dogs from this phone's own receiver and the phone; a far cloud dog only
   // with 框住全部 (MapFraming).
-  const phoneSpotValue = phoneFix(livePhone);
+  const [nativePhone, setNativePhone] = useState(null);
+  const acceptNativePhone = useCallback(value => {
+    if (!Number.isFinite(value?.latitude) || !Number.isFinite(value?.longitude)
+      || Math.abs(value.latitude) > 90 || Math.abs(value.longitude) > 180) return;
+    setNativePhone({ ...value, receivedAt: Date.now() });
+  }, []);
+  const phoneSpotValue = phoneFix(livePhone) ?? (!fixture && nativePhone
+    && now - nativePhone.receivedAt <= PHONE_FIX_MAX_AGE_S * 1000 ? nativePhone : null);
   const receiverId = receiverState ? receiverNumber(receiverState) : null;
   const phoneKey = phoneSpotValue
     ? `${phoneSpotValue.latitude},${phoneSpotValue.longitude}`
@@ -564,12 +578,11 @@ export default function MapScreen({
     (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
-  const saveHistory = history?.save;
-  const historyPreferences = history?.preferences;
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
   const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
     recording: livePhone ? !!livePhone.running : null,
+    recordingStoppedAt: livePhone?.stoppedAt ?? null,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '',
     preset: fixture?.historyView ?? null,
@@ -623,36 +636,6 @@ export default function MapScreen({
     avatars,
     screen.map,
   ]);
-  // The old export (until 056) reads the history query: it follows the dogs
-  // shown and 資料來源 (這支手機收到的 → BLE, 雲端 → cloud; 全部 keeps the
-  // entry dog's own).
-  const exportDogs =
-    historical && target?.subject === 'dog'
-      ? screen.dogs.map(dog => dog.id).join(',')
-      : '';
-  const exportSource = screen.source;
-  useEffect(() => {
-    if (!exportDogs || !saveHistory || !historyPreferences) return;
-    const slaves = exportDogs.split(',').map(Number);
-    const source =
-      exportSource === 'cloud'
-        ? 'cloud'
-        : exportSource === 'local'
-        ? 'ble'
-        : historyPreferences.source;
-    const heard = (history?.devices || [])
-      .filter(pair => slaves.includes(pair.slave))
-      .map(pair => pair.master);
-    const masters = [...new Set([...historyPreferences.masters, ...heard])];
-    if (
-      String(historyPreferences.slaves) === String(slaves) &&
-      historyPreferences.source === source &&
-      String(historyPreferences.masters) === String(masters)
-    )
-      return;
-    saveHistory({ ...historyPreferences, slaves, source, masters });
-    // When the dogs or the source change.
-  }, [exportDogs, exportSource]); // eslint-disable-line react-hooks/exhaustive-deps
   // The dogs that can be added (「＋ 加入」): every dog that has ever had a
   // position, by collar number (never-fixed sources are not dogs yet).
   const historyCandidates = useMemo(
@@ -742,7 +725,8 @@ export default function MapScreen({
       range: cloudDogs?.ranges?.[cardDog.slaveId] ?? null,
       battery: readings.battery,
       activity: readings.activity,
-      phone: phoneReading(livePhone, now),
+      // The recording service's fix, else the map's blue dot (E03).
+      phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
       now,
       reference:
         freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
@@ -757,6 +741,8 @@ export default function MapScreen({
     cloudDogs?.ranges,
     readings,
     livePhone,
+    nativePhone,
+    fixture,
     dogAliases,
     address,
   ]);
@@ -954,8 +940,27 @@ export default function MapScreen({
           fixture?.name ?? ''
         }`
       : null;
+  // A4/A5 only cover the map while they are drawn: a page asked for before
+  // its card exists (a fixture's openPage, or a card that went) must not hide
+  // the map with nothing over it (a blank screen).
+  const coveringPage = cardModel ? cardPage : null;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
+      {/* Under A4/A5 the map and its card stay mounted, only out of reach of
+          touch and TalkBack. Never display:none or a style that changes
+          whether this view is flattened: either one detaches the native
+          MapView, and react-native-maps re-creates its GoogleMap on every
+          re-attach without destroying the old one (a leak per opening).
+          collapsable={false} keeps this one native view for good. Under a
+          page the layer is moved off screen (a transform, which keeps it
+          attached): the native map draws into its own surface under the
+          window, and an opaque page alone left it showing in the status-bar
+          inset. */}
+      <View testID="map-background-layer" style={[StyleSheet.absoluteFill, coveringPage && styles.coveredMap]}
+        collapsable={false}
+        pointerEvents={coveringPage ? 'none' : 'auto'}
+        accessibilityElementsHidden={!!coveringPage}
+        importantForAccessibility={coveringPage ? 'no-hide-descendants' : 'auto'}>
       <TrackingMap
         a11yHidden={historical && historySheet}
         provider={mapProvider}
@@ -972,6 +977,7 @@ export default function MapScreen({
         coverTop={cardsBottom}
         compassTop={compassTop}
         livePhone={livePhone}
+        onNativePhone={acceptNativePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
         // A fixture switch (or a return to live data) reads the receiver
@@ -1037,6 +1043,8 @@ export default function MapScreen({
         style={[
           StyleSheet.absoluteFill,
           styles.chrome,
+          // The gear and top cards go under A4/A5 (not an ancestor of the map).
+          coveringPage && styles.hiddenChrome,
           { opacity: splashChrome },
         ]}
       >
@@ -1106,7 +1114,7 @@ export default function MapScreen({
             screen.today &&
             livePhone &&
             !livePhone.running
-              ? screen.model?.points.at(-1)?.time ?? null
+              ? livePhone.stoppedAt ?? null
               : null
           }
         />
@@ -1126,6 +1134,7 @@ export default function MapScreen({
           trackBusy={trackBusy}
         />
       )}
+      </View>
       {cardModel && cardPage === 'activity' && (
         <ActivityScreen
           key={`${fixture?.name ?? 'live'}:${cardModel.slaveId}`}
@@ -1163,6 +1172,9 @@ const getStyles = makeStyles(theme => {
   return StyleSheet.create({
     // The gear and the top cards, above the map and the card (as before).
     chrome: { zIndex: 70, elevation: 32 },
+    hiddenChrome: { display: 'none' },
+    // Far enough that no part of the covered map is on screen.
+    coveredMap: { transform: [{ translateX: layout.offscreen }] },
     // MapScreen lives in App's persistent absolute map layer. A flex-only child
     // can measure to zero under Fabric, sending bottom-anchored overlays above
     // the viewport, so make this screen an explicit inset box as well.

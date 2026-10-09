@@ -58,6 +58,7 @@ class AlertParityTest {
         val events = Events.update(state, dogs, receiver, at)
         val (next, effects) = Scheduler.schedule(events, at, preferences, value.optBoolean("allowed", true))
         state = if (value.optString("action") == "pause") Scheduler.pause(next, at) else next
+        if (value.optString("action") == "restart") state = AlertCodec.readState(AlertCodec.writeState(state))
         val expect = value.getJSONObject("expect")
         val label = "$name, step $step"
         assertEquals(label, expect.getString("notification"), effects.notification)
@@ -86,4 +87,28 @@ class AlertParityTest {
     }
     assertTrue(steps >= 20)
   }
+  @Test fun indoorPacketsAgreeWithForegroundTracker() {
+    IndoorEnvironment.model = JSONObject(java.io.File("src/main/res/raw/indoor_model.json").readText())
+    val scenarios = JSONArray(javaClass.classLoader!!.getResourceAsStream("indoor-parity.json")!!.bufferedReader().readText())
+    for (i in 0 until scenarios.length()) {
+      val scenario = scenarios.getJSONObject(i)
+      var dog = AlertCodec.readDog(scenario.getJSONObject("initial"))!!
+      val rows = scenario.getJSONArray("rows")
+      for (j in 0 until rows.length()) {
+        val step = rows.getJSONObject(j); val row = step.getJSONObject("row")
+        val packetJson = JSONObject(row.toString()).put("slave_lat", row.getDouble("latitude")).put("slave_lon", row.getDouble("longitude"))
+          .put("master_lat", row.getDouble("master_latitude")).put("master_lon", row.getDouble("master_longitude"))
+        dog = Dogs.apply(dog, AlertCodec.readPacket(packetJson, row.getLong("time"))!!)
+        // Process death between packets must preserve the exact same tracker.
+        dog = AlertCodec.readDog(AlertCodec.writeDog(dog))!!
+        val expected = step.getJSONObject("expect"); val label = scenario.getString("name") + ", step " + j
+        assertEquals(label, expected.getBoolean("held"), dog.held)
+        assertEquals(label, expected.getJSONObject("coordinate").getDouble("latitude"), dog.coordinate!!.latitude, 1e-9)
+        assertEquals(label, expected.getJSONObject("coordinate").getDouble("longitude"), dog.coordinate!!.longitude, 1e-9)
+        val why = JSONObject(dog.indoorState!!).optJSONObject("previousHold")?.optString("why")
+        assertEquals(label, if (expected.isNull("why")) null else expected.getString("why"), why)
+      }
+    }
+  }
+
 }

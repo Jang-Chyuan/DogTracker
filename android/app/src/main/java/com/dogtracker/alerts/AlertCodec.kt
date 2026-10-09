@@ -165,6 +165,7 @@ object AlertCodec {
       fixAt = json.long("fixAt"),
       packetAt = json.long("packetAt"),
       held = json.optBoolean("held", false),
+      indoorState = json.optJSONObject("indoorState")?.toString(),
       farFixes = json.int("farFixes") ?: 0,
       batteryPercentage = json.int("batteryPercentage"),
       charging = json.optBoolean("charging", false),
@@ -176,6 +177,7 @@ object AlertCodec {
     val json = JSONObject().put("slaveId", dog.slaveId).put("coordinate", writeLatLng(dog.coordinate))
       .put("held", dog.held).put("farFixes", dog.farFixes).put("charging", dog.charging)
       .put("range", writeRange(dog.range))
+    put(json, "indoorState", dog.indoorState?.let(::JSONObject))
     put(json, "name", dog.name)
     put(json, "fixAt", dog.fixAt)
     put(json, "packetAt", dog.packetAt)
@@ -219,6 +221,9 @@ object AlertCodec {
       batteryPercentage = if (battery != null && batteryValid != 0.0) Math.round(battery).toInt() else null,
       usb = usb?.let { it == 1.0 },
       good = Dogs.good(satellites, hdop),
+      masterId = number("master_id", "mid")?.toInt(),
+      satellites = satellites, hdop = hdop,
+      rssi = number("rssi"), snr = number("snr"),
     )
   }
 

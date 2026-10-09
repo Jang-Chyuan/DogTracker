@@ -345,3 +345,11 @@ describe('fed by the live hold store', () => {
     expect(store.ranges()[4].status).toBe('out');
   });
 });
+
+test('K07: a range episode remains out after 25 hours without clearing evidence', () => {
+  const store = createHoldStore();
+  const point = ble(0, 1200);
+  store.ingest({ rows: [{ ...point, slave_id: 4, master_id: 7, master_latitude: RECEIVER.latitude, master_longitude: RECEIVER.longitude }] });
+  store.holds(T0 + 25 * 60 * MINUTE);
+  expect(store.ranges()[4].status).toBe('out');
+});

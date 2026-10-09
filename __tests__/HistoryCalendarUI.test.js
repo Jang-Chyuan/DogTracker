@@ -186,7 +186,7 @@ test('signed out: only this phone\'s days, the cloud is never asked', async () =
 
 test('H3e: 選月份, the months with records, back to the month; 返回鍵 order 選月份 → 選日期 → closed', async () => {
   const s = await mount('history-month-picker');
-  expect(s.text()).toContain('‹ 選月份');
+  expect(s.text()).toContain('‹ 選日期');
   expect(s.text()).toContain('2026 年');
   expect(s.text()).not.toContain('這個月有紀錄')
   expect(s.text()).not.toContain('灰字＝沒有紀錄或還沒到，不能點');
@@ -199,7 +199,7 @@ test('H3e: 選月份, the months with records, back to the month; 返回鍵 orde
   await settle(0);
   expect(s.text()).toContain('2026 年 9 月');
   await s.press('calendar-month-title');
-  expect(s.text()).toContain('‹ 選月份');
+  expect(s.text()).toContain('‹ 選日期');
   await act(async () => { s.ref.current.back(); });
   expect(s.text()).toContain('選日期');
   await act(async () => { s.ref.current.back(); });

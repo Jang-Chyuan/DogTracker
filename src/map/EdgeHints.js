@@ -12,6 +12,7 @@
 //   a dog under the card counts as off screen. Hints keep clear of the bottom
 //   right buttons.
 import { layout, size as sizes, space } from '../theme/tokens';
+import { tagSize } from './DogMarkers';
 
 const hint = sizes.edgeHint;
 export const EDGE_HINT_MARGIN = space.s;
@@ -42,6 +43,33 @@ export function edgeHintSpeech(side, markers) {
 
 const clamp = (value, low, high) => (high < low ? low : Math.min(high, Math.max(low, value)));
 
+export const boxesOverlap = (a, b) => a.left < b.right && b.left < a.right
+  && a.top < b.bottom && b.top < a.bottom;
+
+export function markerBox(marker, point, fontScale = 1) {
+  const tag = tagSize(marker.tag || marker.name, fontScale);
+  const radius = (marker.size || sizes.marker.normal) / 2;
+  const halfWidth = Math.max(radius, tag.width / 2);
+  return { left: point.x - halfWidth, right: point.x + halfWidth,
+    top: point.y - radius, bottom: point.y + radius + sizes.marker.labelGap + tag.height };
+}
+
+export function mapButtonsBox({ width, height, bottom = 0 }) {
+  return { left: width - layout.screenEdge - sizes.floatingButton - layout.floatingGap,
+    right: width, top: height - bottom - 2 * sizes.floatingButton - layout.floatingGap,
+    bottom: height - bottom };
+}
+
+export function mapControlBoxes(view) {
+  const boxes = [mapButtonsBox(view)];
+  if (view.bottomRow) boxes.push({ left: layout.screenEdge, right: view.width - layout.screenEdge,
+    top: view.height - (view.bottom || 0) - view.bottomRow, bottom: view.height - (view.bottom || 0) });
+  return boxes;
+}
+
+export const hintBox = item => ({ left: item.x, right: item.x + item.width,
+  top: item.y, bottom: item.y + item.height });
+
 /**
  * @param markers DogMarkers.dogMarkers output
  * @param points screen positions by dog, in dp: { [slaveId]: { x, y } }
@@ -52,7 +80,7 @@ const clamp = (value, low, high) => (high < low ? low : Math.min(high, Math.max(
  * @returns [{ side, x, y, width, height, faces: marker[], extra, slaveIds,
  *   coordinates, label }]  x/y: the hint's top-left corner
  */
-export function edgeHints(markers = [], points = {}, { width, height, top = 0, bottom = 0, bottomRow = 0 } = {}) {
+export function edgeHints(markers = [], points = {}, { width, height, top = 0, bottom = 0, bottomRow = 0, fontScale = 1 } = {}) {
   if (!(width > 0 && height > 0)) return [];
   const visibleTop = top;
   const visibleBottom = height - bottom;
@@ -76,6 +104,12 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
     sides.get(side).push({ marker, exit, distance: Math.hypot(dx, dy) });
   }
   const result = [];
+  const occupied = markers.flatMap(marker => {
+    const point = points[marker.slaveId];
+    return point && point.x >= 0 && point.x <= width && point.y >= visibleTop && point.y <= visibleBottom
+      ? [markerBox(marker, point, fontScale)] : [];
+  });
+  occupied.push(...mapControlBoxes({ width, height, bottom, bottomRow }));
   // The bottom right buttons (框住全部 above 我的位置) and the gaps around them.
   const buttonsTop = visibleBottom - 2 * sizes.floatingButton - layout.floatingGap;
   const buttonsLeft = width - layout.screenEdge - sizes.floatingButton;
@@ -103,6 +137,31 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
       y = side === 'top' ? visibleTop + EDGE_HINT_MARGIN
         : visibleBottom - (bottomRow ? bottomRow + layout.floatingGap : EDGE_HINT_MARGIN) - hint.height;
     }
+    // Search along this edge; preserve the hint while avoiding visible faces,
+    // name tags and previously placed hints. In a crowded edge use the least
+    // covered position rather than losing the off-screen dogs entirely.
+    const vertical = side === 'left' || side === 'right';
+    const low = vertical ? visibleTop + EDGE_HINT_MARGIN : EDGE_HINT_MARGIN;
+    const high = vertical
+      ? (side === 'right' ? buttonsTop - layout.floatingGap : visibleBottom - EDGE_HINT_MARGIN) - hint.height
+      : (side === 'bottom' ? buttonsLeft - layout.floatingGap : width - EDGE_HINT_MARGIN) - hintWidth;
+    const original = vertical ? y : x;
+    const candidates = [original, low, high];
+    for (const box of occupied) candidates.push(vertical
+      ? box.top - hint.height - layout.floatingGap : box.left - hintWidth - layout.floatingGap,
+    vertical ? box.bottom + layout.floatingGap : box.right + layout.floatingGap);
+    const score = value => {
+      const box = hintBox({ x: vertical ? x : value, y: vertical ? value : y,
+        width: hintWidth, height: hint.height });
+      return occupied.reduce((sum, other) => sum + (boxesOverlap(box, other)
+        ? (Math.min(box.right, other.right) - Math.max(box.left, other.left))
+          * (Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top)) : 0), 0);
+    };
+    const best = candidates.map(value => clamp(value, low, high))
+      .sort((a, b) => score(a) - score(b) || Math.abs(a - original) - Math.abs(b - original))[0];
+    if (vertical) y = best;
+    else x = best;
+    occupied.push(hintBox({ x, y, width: hintWidth, height: hint.height }));
     const all = ordered.map(item => item.marker);
     result.push({
       side, x, y, width: hintWidth, height: hint.height, faces, extra,

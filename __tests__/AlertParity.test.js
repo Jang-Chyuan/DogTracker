@@ -6,7 +6,7 @@
 // After a rule change: UPDATE_ALERT_PARITY=1 npm test -- AlertParity
 import fs from 'fs';
 import path from 'path';
-import { stepAlerts, pauseAlertState, persistedAlertState } from '../src/alerts/AlertEngine';
+import { stepAlerts, pauseAlertState, persistedAlertState, restoreAlertState } from '../src/alerts/AlertEngine';
 
 const FIXTURE = path.join(__dirname, '../android/app/src/test/resources/alert-parity.json');
 const M = 60000;
@@ -26,12 +26,42 @@ const receiver = (extra = {}) => ({
 // The JavaScript's view of the same dog (DogMerge's fields).
 const jsDog = value => ({
   slaveId: value.slaveId, name: value.name, coordinate: value.coordinate,
-  fixAt: value.fixAt, fixSource: 'ble', packetAt: value.packetAt, packetSource: 'ble',
+  fixAt: value.fixAt, fixSource: value.range?.cloudOnly ? 'cloud' : 'ble', packetAt: value.packetAt, packetSource: value.range?.cloudOnly ? 'cloud' : 'ble',
   ...(value.held ? { heldReason: '室內', heldSource: 'indoor' } : {}),
   batteryPercentage: value.batteryPercentage, charging: value.charging, range: value.range,
 });
 
 const SCENARIOS = [
+  {
+    name: 'K07: out-of-range status survives 25 hours and a restart until local clearing', preferences: { dogStale: false },
+    steps: [
+      { at: T, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })] },
+      { at: T + 25 * 60 * M, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })], action: 'restart' },
+      { at: T + 25 * 60 * M + M, dogs: [dog(4, '豆豆', { fixAt: T + 25 * 60 * M + M, packetAt: T + 25 * 60 * M + M })] },
+    ],
+  },
+
+  {
+    name: 'K05: established receiver outage survives a process restart', preferences: {},
+    steps: [
+      { at: T, dogs: [dog(4, '豆豆')], receiver: receiver({ connected: false, disconnectedAt: T - M }) },
+      { at: T + M, dogs: [dog(4, '豆豆')], receiver: receiver({ connected: false, disconnectedAt: T - M }), action: 'restart' },
+      { at: T + 2 * M, dogs: [dog(4, '豆豆')], receiver: receiver({ connected: false, disconnectedAt: T - M }) },
+      { at: T + 3 * M, dogs: [dog(4, '豆豆')], receiver: receiver() },
+    ],
+  },
+
+  {
+    name: 'K06: a local range episode survives cloud takeover and does not restart on local return',
+    preferences: {},
+    steps: [
+      { at: T, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })] },
+      { at: T + M, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: true } })] },
+      { at: T + 2 * M, dogs: [dog(4, '豆豆', { range: { status: 'out', cloudOnly: false } })] },
+      { at: T + 3 * M, dogs: [dog(4, '豆豆')] },
+    ],
+  },
+
   {
     name: 'two dogs, the gap, a pause, a new problem during it, the end of the pause',
     preferences: {},
@@ -125,6 +155,7 @@ function runScenario(scenario) {
     const result = stepAlerts(state, input);
     state = result.state;
     const { effects } = result;
+    if (step.action === 'restart') state = restoreAlertState(persistedAlertState(state));
     if (step.action === 'pause') state = pauseAlertState(state, step.at);
     steps.push({
       ...step,
@@ -161,4 +192,63 @@ test('the scenarios cover each kind of alert and each notification command', () 
   expect(all.some(step => step.critical)).toBe(true);
   expect(all.some(step => step.sound)).toBe(true);
   expect(all.some(step => step.state.pause)).toBe(true);
+});
+
+// K03: packet-level parity covers entering indoors after handover and every
+// release path, using the same environment model and foreground checkpoint.
+const INDOOR_FIXTURE = path.join(__dirname, '../android/app/src/test/resources/indoor-parity.json');
+const north = metres => ({ latitude: near.latitude + metres / 111320, longitude: near.longitude });
+const holdRow = (time, metres, extra = {}) => ({ time, master_id: 7, slave_id: 4, source: 'ble',
+  ...(metres == null ? { latitude: 0, longitude: 0 } : north(metres)), satellites: 9, hdop: 1, rssi: -55, snr: 8,
+  master_latitude: near.latitude, master_longitude: near.longitude, usb_present: 0, ...extra });
+const startRows = Array.from({ length: 10 }, (_, i) => holdRow(T + i * 5000, 0));
+const indoorRows = [...startRows, holdRow(T + M + 5000, null, { usb_present: 1 })];
+const packetCases = [
+  { name: 'enter after lock screen: no fix', initial: startRows, rows: [holdRow(T + 2 * M, null)] },
+  { name: 'enter while charging with weak fixes', initial: startRows,
+    rows: [holdRow(T + M + 10000, 10, { usb_present: 1, satellites: 2, hdop: 5 })] },
+  { name: 'release: two far good fixes', initial: indoorRows,
+    rows: [holdRow(T + 2 * M, 130), holdRow(T + 2 * M + 10000, 135)] },
+  { name: 'release: agreeing good fixes outside', initial: indoorRows,
+    rows: [holdRow(T + 2 * M, 90), holdRow(T + 2 * M + 10000, 92), holdRow(T + 2 * M + 20000, 95)] },
+  { name: 'release: agreeing good fixes while charging', initial: indoorRows,
+    rows: Array.from({ length: 4 }, (_, i) => holdRow(T + 2 * M + i * 10000, 90 + i, { usb_present: 1 })) },
+  { name: 'release: six nearby good fixes', initial: indoorRows,
+    rows: Array.from({ length: 8 }, (_, i) => holdRow(T + 2 * M + i * 15000, 70, { usb_present: 1 })) },
+  { name: 'release: weak fixes far away', initial: indoorRows,
+    rows: Array.from({ length: 14 }, (_, i) => holdRow(T + 2 * M + i * 10000, 220 + (i % 2) * 10, { satellites: 2, hdop: 5 })) },
+  { name: 'release: travelling weak fixes', initial: indoorRows,
+    rows: Array.from({ length: 36 }, (_, i) => holdRow(T + 2 * M + i * 5000, i * 6, { satellites: 2, hdop: 5 })) },
+  { name: 'charger keeps weak drift held; later good fixes release', initial: indoorRows,
+    rows: [...Array.from({ length: 15 }, (_, i) => holdRow(T + 2 * M + i * 10000, 220, { usb_present: 1, satellites: 2, hdop: 5 })),
+      holdRow(T + 5 * M, 140), holdRow(T + 5 * M + 10000, 140)] },
+];
+
+function runIndoorCase(scenario) {
+  const { createHoldTracker } = require('../src/placement/IndoorHold');
+  const tracker = createHoldTracker();
+  for (const row of scenario.initial) tracker.push(row);
+  const latest = scenario.initial.at(-1);
+  const held = tracker.current(latest.time);
+  const lastFix = scenario.initial.filter(row => row.latitude !== 0).at(-1);
+  const initial = dog(4, '豆豆', { coordinate: held?.coordinate ?? { latitude: lastFix.latitude, longitude: lastFix.longitude },
+    held: !!held, fixAt: lastFix.time, packetAt: latest.time, indoorState: tracker.snapshot() });
+  const rows = scenario.rows.map(row => {
+    tracker.push(row);
+    const current = tracker.current(row.time);
+    return { row, expect: { held: !!current, coordinate: current?.coordinate ?? (row.latitude !== 0
+      ? { latitude: row.latitude, longitude: row.longitude } : initial.coordinate),
+      why: tracker.snapshot().previousHold?.why ?? null } };
+  });
+  return { name: scenario.name, initial, rows };
+}
+
+test('K03: native indoor entry and every release path agree with the foreground tracker', () => {
+  const results = packetCases.map(runIndoorCase);
+  const result = JSON.stringify(results, null, 1) + '\n';
+  if (process.env.UPDATE_ALERT_PARITY) fs.writeFileSync(INDOOR_FIXTURE, result);
+  expect(fs.readFileSync(INDOOR_FIXTURE, 'utf8')).toBe(result);
+  expect(results[0].rows[0].expect.held).toBe(true);
+  const released = results.flatMap(value => value.rows.map(row => row.expect.why)).filter(Boolean);
+  expect(new Set(released)).toEqual(new Set(['good-fixes-away', 'good-fixes-nearby', 'weak-fixes-away', 'travelling']));
 });

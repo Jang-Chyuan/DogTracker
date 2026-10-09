@@ -101,7 +101,7 @@ npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudScreen.test.j
 
 核對驗收：登入後等待首次核對完成（約 10 分鐘內），在雲端資料頁確認筆數不因核對而重複增加；讓 Master 離線後再連線補傳較早的資料，等待下一次核對，確認補傳的資料出現在本機；連續觀察數輪，確認沒有補傳時不會重複下載。
 
-同步驗收：登入後前景每 30 秒；以 `adb shell dumpsys jobscheduler` 檢查 `com.dogtracker/androidx.work.impl.background.systemjob.SystemJobService` 的週期與網路條件。切到桌面／鎖屏後觀察工作結束（Logcat tag `CloudHistoryWorker`），本機資料增加且工作之間不持續持有喚醒鎖。斷網工作等待，恢復後續傳；回到前景即讀本機歷史並補下載；登出後排程取消。另驗收程序被系統回收後的冷啟動、帳號切換及長時間 Doze。Android 原生變更需要重新建置安裝 APK。
+同步驗收：登入後前景每 30 秒；以 `adb shell dumpsys jobscheduler` 檢查 `$PACKAGE/androidx.work.impl.background.systemjob.SystemJobService`（先設 `PACKAGE=${PACKAGE:-com.antgo.dogtracker}`，若 debug 設有 applicationIdSuffix 也須包含） 的週期與網路條件。切到桌面／鎖屏後觀察工作結束（Logcat tag `CloudHistoryWorker`），本機資料增加且工作之間不持續持有喚醒鎖。斷網工作等待，恢復後續傳；回到前景即讀本機歷史並補下載；登出後排程取消。另驗收程序被系統回收後的冷啟動、帳號切換及長時間 Doze。Android 原生變更需要重新建置安裝 APK。
 
 目前兩個已知帳號皆有 Master 5／7 授權，需另外使用無授權帳號驗證拒絕讀取。不能以 postgres 或 Secret Key 測試使用者 RLS。
 

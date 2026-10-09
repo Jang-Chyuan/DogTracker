@@ -21,6 +21,7 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { useTrackingSession } from './src/app/useTrackingSession';
+import { StableInsets } from './src/app/StableInsets';
 import { handleRootBack } from './src/app/handleRootBack';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
@@ -123,13 +124,15 @@ export default function App() {
   return (
     <ThemeProvider>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <AuthProvider>
-          <AuthGate>
-            <TrackerRoot />
-          </AuthGate>
-        </AuthProvider>
-        {/* D0's copy over everything until the first screen is ready. */}
-        <SplashOverlay />
+        <StableInsets>
+          <AuthProvider>
+            <AuthGate>
+              <TrackerRoot />
+            </AuthGate>
+          </AuthProvider>
+          {/* D0's copy over everything until the first screen is ready. */}
+          <SplashOverlay />
+        </StableInsets>
       </SafeAreaProvider>
     </ThemeProvider>
   );
@@ -247,7 +250,10 @@ const SETTINGS_ROUTES = {
 // Android's own settings pages.
 const openNotificationSettings = () =>
   Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
-    { key: 'android.provider.extra.APP_PACKAGE', value: 'com.dogtracker' },
+    {
+      key: 'android.provider.extra.APP_PACKAGE',
+      value: NativeTrackingPlatform.packageName(),
+    },
   ]).catch(() => Linking.openSettings());
 const openLocationServices = () =>
   Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() =>
@@ -397,22 +403,15 @@ function TrackerApp({ resume = null, onRestart }) {
     undefined,
     null,
     {
-      active:
-        tracking.foreground &&
-        (showsMap ||
-          route.name === 'receiver' ||
-          route.name === 'diagnostics' ||
-          route.name === 'paired') &&
-        !fixture,
+      active: tracking.foreground && !fixture,
       revision: cloudSync.revision,
     },
   );
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   // The history page shows live data unless a history fixture (054a) is on.
-  const historyFixture = !!fixture?.history;
   const mapInputs = applyScreenFixture(
-    isHistory && !historyFixture ? null : fixture,
+    fixture,
     {
       tracking,
       phone,
@@ -651,12 +650,14 @@ function TrackerApp({ resume = null, onRestart }) {
       else open('permissions', { entry: 'onboarding' });
       return;
     }
+    if (route.entry === 'expired') setLaunch(current => ({ ...current, screen: 'map' }));
     goBack();
   };
   // The guide ends on the map (D3 「稍後再說」, D4 「開始使用」); A6 shows when
   // there is no dog data.
   const finishGuide = () => {
     saveGuideStep(ONBOARDING_DONE);
+    setLaunch(current => ({ ...current, screen: 'map' }));
     setStack([{ name: 'map' }]);
   };
   // Back in the guide: the step before (saved, so a restart continues there),
@@ -896,6 +897,8 @@ function TrackerApp({ resume = null, onRestart }) {
   const sources = fixture?.diagnostics ?? null;
   const listRecent =
     sources?.listHistory ?? tracking.hardwareDatabase.listHistory;
+  const wifiDraft = useRef(null);
+  useEffect(() => { if (!stack.some(item => item.name === 'wifi')) wifiDraft.current = null; }, [stack]);
   const wifi = useReceiverWifi(fixture?.wifiService ?? sharedBleService, {
     active:
       tracking.foreground &&
@@ -951,10 +954,8 @@ function TrackerApp({ resume = null, onRestart }) {
       row => row.status === 'pending' && Number(row.count) > 0,
     );
 
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener(
-      'hardwareBackPress',
-      () => {
+  const rootBack = useRef(null);
+  rootBack.current = () => {
         // The live map an alert opened over a kept page: its card's own back
         // steps first (A4, A5, closing the card returns via cardChanged);
         // without a card, back to that page.
@@ -975,12 +976,11 @@ function TrackerApp({ resume = null, onRestart }) {
         else if (route.name === 'startFailed') BackHandler.exitApp();
         else goBack();
         return true;
-      },
-    );
+  };
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => rootBack.current());
     return () => subscription.remove();
-    // goBack reads route and cardHistory, both listed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route, cardHistory, uploading, stack.length]);
+  }, []);
 
   let page = null;
   switch (route.name) {
@@ -1085,7 +1085,7 @@ function TrackerApp({ resume = null, onRestart }) {
           }
           onRetryDownload={fixture ? () => {} : () => cloudSync.retry?.()}
           onRetryUpload={() => mapInputs.upload?.retry?.()?.catch?.(() => {})}
-          onSwitch={(master, mode) => mapInputs.upload.switchMode(master, mode)}
+          onSwitch={(master, mode, signal) => mapInputs.upload.switchMode(master, mode, signal)}
         />
       );
       break;
@@ -1124,6 +1124,7 @@ function TrackerApp({ resume = null, onRestart }) {
         <WifiSettings
           key={fixtureName ?? 'live'}
           wifi={wifi}
+          draft={wifiDraft}
           receiver={receiverName}
         />
       );
@@ -1288,6 +1289,13 @@ function TrackerApp({ resume = null, onRestart }) {
         )}
         <View
           testID="persistent-map-layer"
+          // The map layer is one native view for the app's whole life: hiding
+          // it (opacity, pointerEvents) must not change whether Fabric
+          // flattens it or how it orders it, or every child is re-parented
+          // and the native MapView detached; react-native-maps then builds a
+          // new GoogleMap on re-attach and never frees the old one (~10 MB
+          // native heap and ~50 Views per settings page opened).
+          collapsable={false}
           pointerEvents={showsMap ? 'auto' : 'none'}
           accessibilityElementsHidden={!showsMap}
           importantForAccessibility={showsMap ? 'auto' : 'no-hide-descendants'}
@@ -1312,7 +1320,7 @@ function TrackerApp({ resume = null, onRestart }) {
             // screen's bottom edge.
             bottomInset={insets.bottom + layout.screenEdge}
             mapProvider={GOOGLE_MAP_PROVIDER}
-            fixture={isHistory && !historyFixture ? null : fixture}
+            fixture={fixture}
             todayRoute={mapInputs.todayRoute}
             onOpenSettings={() => open('settings')}
             // Restoring a saved sign-in counts: A6 offers no 「登入 Supabase」.
@@ -1373,12 +1381,15 @@ function TrackerApp({ resume = null, onRestart }) {
         )}
         {(light || full) && (
           <View style={styles.page}>
-            {page}
+            <View testID="settings-page-content" style={[styles.page, { paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0 }]}>
+              {page}
+            </View>
             {light && n3Shown && (
               <N3Card
                 value={n3Shown}
                 leaving={n3Leaving}
                 top={layout.belowStatusBar}
+                onHeight={setN3Height}
                 onPress={pressN3}
                 onGone={n3Gone}
               />
@@ -1469,8 +1480,18 @@ const getStyles = makeStyles(theme => {
       flex: 1,
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
     },
-    mapLayer: { backgroundColor: theme.isDark ? colors.bg : colors.surface },
-    hiddenMapLayer: { opacity: 0, zIndex: -1 },
+    // Always under the pages, zIndex fixed: changing it re-orders the layer,
+    // which detaches the native map.
+    mapLayer: {
+      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+      zIndex: -1,
+    },
+    // Off the map the layer is moved off screen as well as made transparent:
+    // the native map draws into its own surface under the window, which a
+    // transparent view does not hide (it showed in the status-bar inset).
+    // A transform changes neither the layer's flattening nor its order, so
+    // the native map stays attached (see persistent-map-layer).
+    hiddenMapLayer: { opacity: 0, transform: [{ translateX: layout.offscreen }] },
     // Above the (hidden) map, below the page: the page colour edge to edge,
     // status bar and navigation bar insets included.
     mapCover: {

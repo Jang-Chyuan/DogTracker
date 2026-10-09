@@ -217,9 +217,9 @@ export default function DogProfile({
                 onBlur={() => finish()}
                 style={styles.input}
               />
-              <Text style={styles.count}>{`${nameLength(
-                text,
-              )}/${NAME_MAX}`}</Text>
+              {nameLength(text) >= NAME_MAX - 4 && (
+                <Text testID="dog-name-count" style={styles.count}>{`${nameLength(text)}/${NAME_MAX}`}</Text>
+              )}
             </View>
           ) : (
             <Pressable

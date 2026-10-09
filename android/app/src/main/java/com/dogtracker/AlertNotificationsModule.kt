@@ -34,11 +34,13 @@ class AlertNotificationsModule(context: ReactApplicationContext) : NativeAlertNo
   override fun deliver(effects: String, promise: Promise) = run(promise) {
     val data = JSONObject(effects)
     val context = reactApplicationContext
+    // Only a posted new alert makes Android's own noise (in front: none).
+    val systemAlerts = data.optString("command") == "notify" && AlertPoster.alertsEnabled(context)
     data.optJSONArray("vibration")?.let { array ->
       val pattern = LongArray(array.length()) { array.optLong(it) }
-      if (pattern.isNotEmpty()) AlertPoster.vibrate(context, pattern, data.optBoolean("critical"))
+      if (pattern.isNotEmpty()) AlertPoster.vibrate(context, pattern, data.optBoolean("critical"), systemAlerts)
     }
-    if (data.optBoolean("sound")) AlertPoster.sound(context)
+    if (data.optBoolean("sound")) AlertPoster.sound(context, systemAlerts)
     val content = data.optJSONObject("content")?.let { value ->
       val lines = value.optJSONArray("lines") ?: return@let null
       val target = value.optJSONObject("target") ?: JSONObject()

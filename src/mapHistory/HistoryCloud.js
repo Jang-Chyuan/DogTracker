@@ -4,6 +4,7 @@
 // page's writer (downloadCloudHistory → CloudDatabase.savePage) through the
 // sync's exclusive slot (runManual), so it never races the 30-second sync.
 // Signed out there is no adapter at all: nothing is asked.
+import { dayKey } from '../history/screen/HistoryScreenDates';
 import { useMemo, useRef } from 'react';
 import { downloadCloudHistory } from '../cloud/CloudDownload';
 import { getCloudClient } from '../cloud/CloudClient';
@@ -59,6 +60,7 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
   let previous = Promise.resolve();
   return {
     owner,
+    downloadStates: ({ slaveId }) => database.historyDownloadStates?.(owner, slaveId) ?? Promise.resolve([]),
     /** The time of the dog's newest row in [since, cutoff), or null. */
     newestBefore({ slaveId, cutoff, since, signal }) {
       return oneTime(rows(slaveId).gte('received_at', iso(since)).lt('received_at', iso(cutoff))
@@ -69,20 +71,40 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
       return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
     },
     /** Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone. */
-    download({ slaveId, dayStart, dayEnd, signal }) {
+    download({ slaveId, dayStart, dayEnd, signal, onDogEnd }) {
       const before = previous;
       const run = (async () => {
         await before.catch(() => {});
         if (signal?.aborted) throw new Error('下載已取消');
         await database.initialize();
+        const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
+        const day = dayKey(new Date(dayStart));
+        for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
         const abort = new AbortController();
         if (signal?.aborted) abort.abort();
         signal?.addEventListener?.('abort', () => abort.abort());
         // By upload time (received_at): rows shown on this day by their fix
         // time can arrive a little before it and up to a while after it.
-        const work = leaseCurrent => downloadCloudHistory({ client, database, owner,
-          startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId,
-          signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+        const work = async leaseCurrent => {
+          let count = 0, failure = null;
+          for (const id of ids) {
+            if (abort.signal.aborted || !leaseCurrent()) throw new Error('下載已取消');
+            try {
+              count += await downloadCloudHistory({ client, database, owner,
+                startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId: id,
+                signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+              if (abort.signal.aborted || !leaseCurrent()) throw new Error('下載已取消');
+              await database.setHistoryDownloadState?.(owner, id, day, true);
+              onDogEnd?.(id, 'done');
+            } catch (error) {
+              onDogEnd?.(id, abort.signal.aborted ? 'cancelled' : 'failed');
+              if (abort.signal.aborted || !leaseCurrent()) throw error;
+              failure = error;
+            }
+          }
+          if (failure) throw failure;
+          return count;
+        };
         return runManual ? runManual(work, abort) : work(() => true);
       })();
       previous = run;

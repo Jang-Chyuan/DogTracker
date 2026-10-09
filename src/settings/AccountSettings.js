@@ -40,10 +40,12 @@ export default function AccountSettings({
   const [dialog, setDialog] = useState(initialDialog);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const operation = useRef(null);
   const mounted = useRef(true);
   useEffect(
     () => () => {
       mounted.current = false;
+      operation.current?.abort();
     },
     [],
   );
@@ -110,21 +112,25 @@ export default function AccountSettings({
   }
 
   const close = () => {
-    if (!busy) {
-      setDialog(null);
-      setError(null);
-    }
+    operation.current?.abort();
+    operation.current = null;
+    setBusy(false);
+    setDialog(null);
+    setError(null);
   };
   async function run(work) {
+    const controller = new AbortController();
+    operation.current = controller;
+    const current = () => mounted.current && operation.current === controller && !controller.signal.aborted;
     setBusy(true);
     setError(null);
     try {
-      await work();
-      if (mounted.current) setDialog(null);
+      await work(controller.signal);
+      if (current()) setDialog(null);
     } catch (failure) {
-      if (mounted.current) setError(failure?.message || '沒有完成，請重試');
+      if (current()) setError(failure?.message || '沒有完成，請重試');
     } finally {
-      if (mounted.current) setBusy(false);
+      if (current()) { operation.current = null; setBusy(false); }
     }
   }
 
@@ -233,7 +239,7 @@ export default function AccountSettings({
         confirm={switching?.confirm ?? '切換'}
         busy={busy}
         onCancel={close}
-        onConfirm={() => run(() => onSwitch(route.master, route.to))}
+        onConfirm={() => run(signal => onSwitch(route.master, route.to, signal))}
       />
       <ConfirmDialog
         testID="sign-out-dialog"

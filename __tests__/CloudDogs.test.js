@@ -275,3 +275,52 @@ test('the home map draws one marker per dog, at its newest position', async () =
   Platform.OS = originalOS;
   jest.useRealTimers();
 });
+
+test('K07: resume replays clearing fixes older than the hold window before recent no-fix rows', async () => {
+  let time = NOW, state, renderer;
+  const now = () => time;
+  const checkpoint = { status: 'out', lastTime: NOW, lastLocalAt: NOW, outSince: NOW, clearing: [], nearBack: 0 };
+  const fixes = [NOW + 60000, NOW + 181000].map(t => ({ slave_id: 4, time: t, source: 'ble',
+    latitude: 25, longitude: 121, master_latitude: 25, master_longitude: 121, satellites: 8, hdop: 1 }));
+  const database = { latestBySlave: async () => [], loadRangeState: async () => ({ 4: checkpoint }),
+    saveRangeState: jest.fn(), holdRows: jest.fn(async (_owner, since) => ({
+      rows: time === NOW ? [] : [...fixes, { slave_id: 4, time, source: 'ble', latitude: 0, longitude: 0 }]
+        .filter(point => point.time >= since), cursors: {} })) };
+  function RangeProbe({ active }) {
+    state = useCloudDogs(database, 'a', true, now, null, { active });
+    return null;
+  }
+  await act(async () => { renderer = Renderer.create(<RangeProbe active />); });
+  expect(state.ranges[4].status).toBe('out');
+  await act(async () => renderer.update(<RangeProbe active={false} />));
+  time += 2 * 60 * 60000;
+  await act(async () => renderer.update(<RangeProbe active />));
+  expect(database.holdRows.mock.calls.at(-1)[1]).toBe(NOW);
+  expect(state.ranges[4].status).toBe('in');
+  await act(async () => renderer.unmount());
+});
+
+test('K07: receiver range state survives database recreation and isolates accounts', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const first = createCloudDatabase(connection);
+    const range = { 4: { status: 'out', outSince: NOW, lastLocalAt: NOW, clearing: [] } };
+    await first.saveRangeState('a', range);
+    const reopened = createCloudDatabase(connection);
+    expect(await reopened.loadRangeState('a')).toEqual(range);
+    expect(await reopened.loadRangeState('b')).toEqual({});
+  } finally { connection.close(); }
+});
+
+test('K11: partial download markers survive a new database adapter and are isolated per dog/account', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const first = createCloudDatabase(connection);
+    await first.setHistoryDownloadState('a', 4, '2026-10-03', false);
+    const next = createCloudDatabase(connection);
+    expect(await next.historyDownloadStates('a', [4, 6])).toEqual([{ slave_id: 4, day: '2026-10-03', complete: 0 }]);
+    expect(await next.historyDownloadStates('b', 4)).toEqual([]);
+    await next.setHistoryDownloadState('a', 4, '2026-10-03', true);
+    expect((await first.historyDownloadStates('a', 4))[0].complete).toBe(1);
+  } finally { connection.close(); }
+});

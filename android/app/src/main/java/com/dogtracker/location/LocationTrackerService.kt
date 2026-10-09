@@ -75,12 +75,12 @@ class LocationTrackerService : Service(), LocationListener {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val preferences = getSharedPreferences("phone_location_recording", 0)
     if (intent?.action == "STOP") {
-      preferences.edit().putBoolean("enabled", false).apply()
+      preferences.edit().putBoolean("enabled", false).putLong("stoppedAt", System.currentTimeMillis()).commit()
       stopSelf(); return START_NOT_STICKY
     }
     // A queued automatic start must not undo a later explicit stop.
     if (!preferences.getBoolean("enabled", true)) { stopSelf(); return START_NOT_STICKY }
-    if (running) return START_NOT_STICKY
+    if (running) return START_STICKY
     try {
       val launch = com.dogtracker.NotificationChannels.launch(this, "my-route")
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -99,7 +99,7 @@ class LocationTrackerService : Service(), LocationListener {
       status = "無法開始記錄，請允許精確位置並開啟 GPS"
       stopSelf()
     }
-    return START_NOT_STICKY
+    return if (running) START_STICKY else START_NOT_STICKY
   }
   override fun onLocationChanged(location: Location) {
     if (stopped) return

@@ -97,6 +97,7 @@ export function alertSnapshot(dogs = [], preferences = null) {
       fixAt: time(dog.fixAt, dog.fixSource),
       packetAt: time(dog.packetAt, dog.packetSource),
       held: isIndoorHold(dog),
+      indoorState: dog.indoorState ?? null,
       batteryPercentage: Number.isFinite(dog.batteryPercentage) ? dog.batteryPercentage : null,
       charging: !!dog.charging,
       range: dog.range ?? null,

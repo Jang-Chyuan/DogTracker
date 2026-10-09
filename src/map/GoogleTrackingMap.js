@@ -67,7 +67,7 @@ import {
   PHONE_FIX_MAX_AGE_S,
   regionForFrame,
 } from './MapFraming';
-import { edgeHints } from './EdgeHints';
+import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 import OverlapPicker, { overlapMenuPlace } from './OverlapPicker';
 
@@ -144,6 +144,10 @@ const ROUTE_TAP_DP = 24;
 // draws a view of its own: react-native-maps draws Google's red default pin
 // for a marker with no view. Debug builds report a marker given nothing to
 // draw (MarkerArchitecture.test.js checks every marker element in src).
+// The SDK also has moments with no view at all: a new marker before its view
+// arrives, and (Fabric) a marker whose view is removed before the marker
+// itself. patches/react-native-maps+*.patch keeps the marker hidden then
+// (ReactNativeMapsPatch.test.js).
 export const StyledMarker = React.forwardRef(function StyledMarker(
   { children, ...props },
   ref,
@@ -545,6 +549,7 @@ function GoogleTrackingMapRenderer({
   foreground,
   dataReady = true,
   framingReady = true,
+  onNativePhone,
   phoneEnabled,
   livePhone,
   onDogPress,
@@ -963,6 +968,7 @@ function GoogleTrackingMapRenderer({
             top: overlayTop,
             bottom: overlayBottom,
             bottomRow,
+            fontScale,
           })
         : [],
     [
@@ -974,6 +980,7 @@ function GoogleTrackingMapRenderer({
       overlayTop,
       overlayBottom,
       bottomRow,
+      fontScale,
     ],
   );
   // When the map's own blue dot last reported (kept coarse: one update a
@@ -1066,8 +1073,13 @@ function GoogleTrackingMapRenderer({
             2 * sizes.mapLabel.paddingV) *
           fontScale;
         const buttons = historyMode ? 0 : sizes.floatingButton + layout.floatingGap;
+        const selected = dogMarkers.find(marker => marker.slaveId === focusDog.slaveId)
+          || dogMarkers.find(marker => marker.selected);
+        const box = point && markerBox(selected || { name: '', size: sizes.marker.attention }, point, fontScale);
+        const occluded = box && [...mapControlBoxes({ width, height, bottom: overlayBottom, bottomRow }), ...hints.map(hintBox)]
+          .some(other => boxesOverlap(box, other));
         const hidden =
-          !point ||
+          !point || occluded ||
           point.x < margin ||
           point.x > width - margin ||
           point.y < overlayTop + margin ||
@@ -1367,6 +1379,7 @@ function GoogleTrackingMapRenderer({
             if (!value) return;
             const receivedAt = Date.now();
             nativePhone.current = { ...value, receivedAt };
+            onNativePhone?.(value);
             if (nativeFixAt == null || receivedAt - nativeFixAt > 60000)
               setNativeFixAt(receivedAt);
           }}

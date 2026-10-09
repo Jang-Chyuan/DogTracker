@@ -95,6 +95,9 @@ function Mark({ tone }) {
 }
 
 function StatusRow({ row, first, onPress }) {
+  const { fontScale, width } = useWindowDimensions();
+  const labelWidth = sizes.card.labelWidth * Math.max(1, fontScale);
+  const stacked = labelWidth > width * 0.4;
   const { colors } = useTheme();
   const TONE = useStyles(getTONE);
   const ACTIVITY_TONE = useStyles(getACTIVITY_TONE);
@@ -109,12 +112,13 @@ function StatusRow({ row, first, onPress }) {
     <View
       style={[
         styles.row,
+        stacked && { flexDirection: 'column', alignItems: 'stretch', gap: space.xs },
         !first && styles.rowLine,
         row.twoLine && styles.rowTwoLine,
       ]}
       testID={`dog-card-row-${row.key}`}
     >
-      <Text style={styles.rowLabel} accessible={false}>
+      <Text style={[styles.rowLabel, { width: stacked ? undefined : labelWidth }]} accessible={false}>
         {row.label}
       </Text>
       <View style={styles.rowValue}>

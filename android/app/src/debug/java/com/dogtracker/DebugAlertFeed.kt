@@ -13,12 +13,13 @@ import org.json.JSONObject
  * so the emulator can show the real notification path (src/dev/README.md,
  * 「背景提醒」). Fake positions only.
  *
- *   adb shell am broadcast -n com.dogtracker/.DebugAlertFeed -a com.dogtracker.debug.ALERT_PACKET \
+ *   PACKAGE=${PACKAGE:-com.antgo.dogtracker} (include any debug applicationIdSuffix)
+ *   adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_PACKET \
  *     --ei sid 4 --ef lat 24.989 --ef lon 121.314 --ef mlat 24.989 --ef mlon 121.313 --ei bp 60 [--el at <ms>]
- *   adb shell am broadcast -n com.dogtracker/.DebugAlertFeed -a com.dogtracker.debug.ALERT_STEP \
+ *   adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_STEP \
  *     [--ez connected false --el disconnectedAt <ms> --ei number 7 --ei battery 62 --es storageError ... --el at <ms>]
- *   adb shell am broadcast -n com.dogtracker/.DebugAlertFeed -a com.dogtracker.debug.ALERT_RESET
- *   adb shell am broadcast -n com.dogtracker/.DebugAlertFeed -a com.dogtracker.debug.ALERT_RECEIVER
+ *   adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_RESET
+ *   adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_RECEIVER
  *     (starts the receiver's service with a made-up DogGPS-Master7 that never answers: its 「常駐」
  *     notification and the service's own background check every 10 s; 中斷連線 on it stops it)
  */

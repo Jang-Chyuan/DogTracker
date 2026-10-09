@@ -4,8 +4,6 @@ import { advanceRange, emptyRange } from '../tracking/ReceiverRange';
 // How far back a cold start replays rows; older history only contributes its
 // last good fixes (the seeds), which is all a hold needs to know where it is.
 export const HOLD_LOOKBACK_MS = 30 * 60000;
-// A dog not heard from for this long is forgotten; DogMerge drops it anyway.
-const FORGET_MS = 24 * 60 * 60000;
 // While a dog is held, the replay keeps the whole hold (up to this long), so a
 // late row does not reset where it stands or the time it went inside.
 const HELD_LOOKBACK_MS = 6 * 60 * 60000;
@@ -102,10 +100,6 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
     holds(now) {
       const result = {};
       for (const [slaveId, state] of dogs) {
-        if (now - (state.touched || now) > FORGET_MS) {
-          dogs.delete(slaveId);
-          continue;
-        }
         const current = state.tracker.current(now);
         if (current) result[slaveId] = current;
       }
@@ -132,7 +126,7 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
     },
     statuses() {
       const result = {};
-      for (const [slaveId, state] of dogs) result[slaveId] = state.tracker.status();
+      for (const [slaveId, state] of dogs) result[slaveId] = { ...state.tracker.status(), indoorState: state.tracker.snapshot() };
       return result;
     },
   };

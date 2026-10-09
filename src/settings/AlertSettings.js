@@ -99,11 +99,10 @@ export default function AlertSettings({
             testID="alerts-notifications"
             title="通知權限"
             detail={notifications.detail}
-            detailTone="warn"
+            problem
             action={notifications.action}
-            actionTone="plain"
             onPress={onNotificationSettings}
-            label="通知權限，未允許，開系統設定"
+            label="通知權限，有問題：未允許，開系統設定"
           />
         )}
       </GroupCard>

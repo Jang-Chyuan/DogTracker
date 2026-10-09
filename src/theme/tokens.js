@@ -154,6 +154,9 @@ export const layout = {
   belowStatusBar: 8,
   framePadding: 24,
   emptyStatePadding: 32,
+  // How far a covered native map is moved off screen (its surface is not
+  // hidden by opacity or by an opaque page over it).
+  offscreen: 100000,
 };
 
 export const radius = {

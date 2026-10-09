@@ -941,3 +941,34 @@ test('activity-* (A4): 小黑\'s page with the reads its name says', async () =>
   const hang = buildFixture('activity-loading').readActivity(6, { start: 0, end: 1, detail: 'raw' });
   expect(await Promise.race([hang, new Promise(resolve => setTimeout(() => resolve('waiting'), 20))])).toBe('waiting');
 });
+
+test('E09/E10 every fixture keeps history and activity reads inside its own dataset', async () => {
+  const fixture = buildFixture('card-ok');
+  const start = FIXTURE_NOW - 24 * 60 * 60000;
+  const end = FIXTURE_NOW + 60000;
+  const history = await fixture.history.readDay({ subject: 'dog', slaveId: 6, start, end });
+  expect(history.rows.length).toBeGreaterThan(0);
+  const card = await fixture.readCardRows(6, start);
+  const activity = await fixture.readActivity(6, { start, end, detail: 'raw' });
+  expect(activity.local).toEqual(card.local);
+  expect(activity.cloud).toEqual(card.cloud);
+  expect(await fixture.readActivityEarliest(6)).toBe(Math.min(...card.local.map(row => row.time)));
+  const other = await fixture.readActivity(4, { start, end, detail: 'raw' });
+  const otherCard = await fixture.readCardRows(4, start);
+  expect(other.local).toEqual(otherCard.local);
+  const live = { tracking: { preferences: {}, ready: {}, errors: {} }, phone: {}, cloudSync: {},
+    history: { preferences: {}, readDay: jest.fn() }, dogAvatars: {} };
+  const applied = applyScreenFixture(fixture, live, { aliases: { 6: '新名字' } });
+  expect(applied.history.preferences.dogAliases[6]).toBe('新名字');
+  expect(applied.history.readDay).toBe(fixture.history.readDay);
+  expect(applied.historyCloud).toBeNull();
+});
+
+
+test('E10 activity-specific fixtures also read other dogs from their card rows', async () => {
+  const fixture = buildFixture('activity-today');
+  const start = FIXTURE_NOW - 24 * 60 * 60000, end = FIXTURE_NOW + 60000;
+  const readings = await fixture.readActivity(4, { start, end, detail: 'raw' });
+  expect(readings.local).toEqual((await fixture.readCardRows(4, start)).local);
+  expect(readings.local.length).toBeGreaterThan(0);
+});

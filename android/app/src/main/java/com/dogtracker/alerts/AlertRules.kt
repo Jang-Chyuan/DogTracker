@@ -135,6 +135,7 @@ data class AlertDog(
   val batteryPercentage: Int? = null,
   val charging: Boolean = false,
   val range: RangeState = RangeState(),
+  val indoorState: String? = null,
 )
 
 data class Packet(
@@ -147,11 +148,15 @@ data class Packet(
   // IndoorHold.fixQuality: enough satellites and a sharp enough HDOP (or a
   // packet without those fields). Weak indoor drift never lets a hold go.
   val good: Boolean = true,
+  val masterId: Int? = null,
+  val satellites: Double? = null,
+  val hdop: Double? = null,
+  val rssi: Double? = null,
+  val snr: Double? = null,
 )
 
 object Dogs {
-  // A hold the app handed over lets go after two good positions this far
-  // from where the dog is held (IndoorHold's releaseFarM, the plain case).
+  // Quality thresholds shared with IndoorHold.fixQuality.
   const val RELEASE_FAR_M = 100.0
   const val RELEASE_FIXES = 2
   const val GOOD_MIN_SATELLITES = 5
@@ -169,18 +174,16 @@ object Dogs {
   fun apply(previous: AlertDog?, packet: Packet): AlertDog {
     val dog = previous ?: AlertDog(packet.slaveId)
     if (dog.packetAt != null && packet.time <= dog.packetAt) return dog
-    var held = dog.held
-    var far = dog.farFixes
-    if (held && packet.dog != null && packet.good && dog.coordinate != null) {
-      if (Geo.distance(packet.dog, dog.coordinate) > RELEASE_FAR_M) far += 1 else far = 0
-      if (far >= RELEASE_FIXES) { held = false; far = 0 }
-    }
+    val tracker = IndoorHold.fromDog(dog)
+    tracker.push(packet)
+    val anchor = tracker.coordinate()
+    val held = anchor != null
     val range = Range.advance(dog.range, RangeRow(packet.time, packet.dog, packet.receiver, held))
     return dog.copy(
       packetAt = packet.time,
       fixAt = if (packet.dog != null) packet.time else dog.fixAt,
-      coordinate = if (packet.dog != null && !held) packet.dog else dog.coordinate,
-      held = held, farFixes = far,
+      coordinate = anchor ?: packet.dog ?: dog.coordinate,
+      held = held, farFixes = 0, indoorState = tracker.write(),
       // As DogMerge: the newest packet's reading, none when it is not valid.
       batteryPercentage = packet.batteryPercentage,
       charging = packet.usb ?: dog.charging,
@@ -231,6 +234,7 @@ data class AlertEvent(
   val dogCount: Int = 0,
   val storageFull: Boolean = false,
   val receiverAffected: Boolean = false,
+  val source: String = "ble",
 ) {
   val severity get() = Events.SEVERITY[kind] ?: 0
   val token get() = "$startedAt:$level"
@@ -336,13 +340,14 @@ object Events {
       heard.add(subject)
       val freshness = FreshnessRule.of(dog, now, receiver.pauses)
       if (!freshness.drawn) continue
-      localDogs += 1
+      val local = !dog.range.cloudOnly
+      if (local) localDogs += 1
       val name = dog.name?.takeIf { it.isNotBlank() } ?: "狗 ${dog.slaveId}"
       if (freshness.stale) add("dog-stale", subject, null) {
-        it.copy(name = name, basis = freshness.basis, ageMs = freshness.ageMs, receiverAffected = true)
+        it.copy(name = name, basis = freshness.basis, ageMs = freshness.ageMs, receiverAffected = local, source = if (local) "ble" else "cloud")
       }
-      if (dog.range.status == Range.OUT) add("dog-out-of-range", subject, null) {
-        it.copy(name = name, receiverAffected = true)
+      if (dog.range.status == Range.OUT && (local || previous.active.containsKey(key("dog-out-of-range", subject)))) add("dog-out-of-range", subject, null) {
+        it.copy(name = name, receiverAffected = local, source = if (local) "ble" else "cloud")
       }
       battery("dog-battery", subject, dog.batteryPercentage, dog.charging, name, null)
     }
@@ -494,6 +499,7 @@ object Scheduler {
     val pending = previous.pending.toMutableMap()
     var pause = previous.pause
     val present = active.values.filter { it.present }.sortedWith(Events.bySeverity)
+    val deferred = { event: AlertEvent -> !foreground && event.source == "cloud" }
     val enabled = { event: AlertEvent -> preferences.enabled(event.kind) }
     val outageAlerts = present.any { it.kind == "receiver-disconnected" && enabled(it) }
     val covered = { event: AlertEvent -> outageAlerts && event.kind == "dog-stale" && event.receiverAffected }
@@ -504,6 +510,7 @@ object Scheduler {
     val paused = on(pause, now)
     val ended = pause != null && !paused
     for (event in present) {
+      if (deferred(event)) continue
       val token = event.token
       val before = seen[event.key]
       if (!enabled(event) || covered(event)) {
@@ -522,7 +529,7 @@ object Scheduler {
     }
     if (ended) pause = null
 
-    val queued = present.filter { pending.containsKey(it.key) }
+    val queued = present.filter { pending.containsKey(it.key) && !deferred(it) }
     val critical = queued.any { it.kind in CRITICAL_KINDS && !pending[it.key]!!.repeat }
     val deliver = queued.isNotEmpty() && (critical || previous.lastAttentionAt == null ||
       now - previous.lastAttentionAt >= ATTENTION_GAP_MS)
@@ -539,7 +546,7 @@ object Scheduler {
       lastAttentionAt = now
     }
 
-    val listed = present.filter(enabled)
+    val listed = present.filter { enabled(it) && !deferred(it) }
     val content = Content.of(listed)
     val silenced = on(pause, now) && listed.all { pause!!.known[it.key] == it.token }
     val effects = Effects(

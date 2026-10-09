@@ -29,9 +29,10 @@ object NotificationChannels {
     val manager = context.getSystemService(NotificationManager::class.java)
     manager.createNotificationChannel(NotificationChannel(ALERTS, "提醒", NotificationManager.IMPORTANCE_HIGH).apply {
       description = "狗不在接收範圍、沒有新位置、電量低，接收器斷線等"
-      // High so a new alert pops up on screen (N1/N2); its sound and
+      // High so a new alert pops up on screen (N1/N2). Its sound and
       // vibration are the alert's own (S6 震動／聲音, critical or normal
-      // pattern), so the channel itself is silent.
+      // pattern), so the channel starts silent; what the user then sets on
+      // it in system settings wins (AlertAttention).
       setSound(null, null)
       enableVibration(false)
     })

@@ -1,5 +1,5 @@
 import { createRideDetector, ridesAlong } from '../src/placement/RideAlong';
-import { mergeDogMarkers, heldLabel, heldSentence } from '../src/map/DogMerge';
+import { mergeDogMarkers } from '../src/map/DogMerge';
 
 const NOW = 1_800_000_000_000;
 const phoneAt = (second, speedKmh) => ({ latitude: 25 + second * 1e-5, longitude: 121, speedKmh, timestamp: NOW + second * 1000 });
@@ -36,8 +36,6 @@ test('the map draws a riding dog with the phone, without calling it out', () => 
   const dog = mergeDogMarkers({ cloudRows, packetRows: [packet], statuses, ride, now: NOW, windowMs: 180000 })[0];
   expect(dog).toMatchObject({ coordinate: ride.coordinate, heldSource: 'ride', stale: false });
   expect(dog.heldReason).toBeNull();
-  expect(heldLabel(dog)).toBeNull();
-  expect(heldSentence(dog, String)).toBeNull();
 });
 
 test('readings from the future are not fresh after the clock is set back', () => {

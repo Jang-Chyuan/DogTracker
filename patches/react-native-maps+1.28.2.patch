@@ -1,0 +1,191 @@
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
+index 555ab38..5c86c9a 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MapViewManager.java
+@@ -322,14 +322,9 @@ public class MapViewManager extends ViewGroupManager<MapView> implements RNMapsM
+             MapMarker markerView = (MapMarker) child;
+             // Marker is already added as invisible, restore visibility when image loads
+             markerView.setImageLoadedListener((uri, drawable, b) -> {
+-                com.google.android.gms.maps.model.Marker googleMarker =
+-                    (com.google.android.gms.maps.model.Marker) markerView.getFeature();
+-                if (googleMarker != null) {
+-                    // Restore original visibility (marker was hidden temporarily during image load)
+-                    if (View.VISIBLE == markerView.getVisibility()) {
+-                        googleMarker.setVisible(true);
+-                    }
+-                }
++                // DOGTRACKER_NO_DEFAULT_PIN: the marker is not shown here; the image
++                // may not have produced an icon, and update(true) shows the
++                // marker only once it has one (MapMarker.updateMarkerIcon).
+                 markerView.update(true);
+             });
+         }
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java
+index 3e0250f..95cc196 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java
+@@ -350,10 +350,25 @@ public class MapMarker extends MapFeature {
+         return true;
+     }
+ 
++    // DOGTRACKER_NO_DEFAULT_PIN (DogTracker patch, patches/react-native-maps+*.patch):
++    // the Google SDK must never draw its default red pin. A marker only has an
++    // icon of its own once it has a custom view or an image; until then (a new
++    // marker whose view has not been added yet) and after its view is removed
++    // (Fabric removes the child before the marker itself) it stays hidden and
++    // keeps its last icon, instead of falling back to defaultMarker().
++    private boolean hasOwnIcon() {
++        return hasCustomMarkerView || iconBitmapDescriptor != null;
++    }
++
+     public void updateMarkerIcon() {
+         if (marker == null) return;
+ 
++        if (!hasOwnIcon()) {
++            if (marker.isVisible()) marker.setVisible(false);
++            return;
++        }
+         marker.setIcon(getIcon());
++        if (!marker.isVisible()) marker.setVisible(true);
+     }
+ 
+     public LatLng interpolate(float fraction, LatLng a, LatLng b) {
+@@ -612,6 +627,9 @@ public class MapMarker extends MapFeature {
+         options.draggable(draggable);
+         options.zIndex(zIndex);
+         options.alpha(opacity);
++        // DOGTRACKER_NO_DEFAULT_PIN: a marker added before its view is hidden
++        // until the view arrives (updateMarkerIcon shows it).
++        options.visible(hasOwnIcon());
+         options.icon(getIcon());
+         return options;
+     }
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
+index def61f5..0b2206d 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
+@@ -203,8 +203,21 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+     }
+ 
+ 
++    // DOGTRACKER_KEEP_MAP (DogTracker patch): one GoogleMap per MapView. Upstream
++    // re-runs onCreate on every re-attach (the lifecycle observer is added
++    // again and replays ON_CREATE; onAttachedToWindow also re-created it from
++    // a saved state) without destroying the map before, and moved every
++    // feature into savedFeatures meanwhile: a new map and its GL buffers per
++    // re-attach (a leak), and features that never came back, or came back
++    // after they had been removed (a receiver ring left on a history map).
++    // A detached map is now only stopped, keeps its features and its
++    // attacher group, and is started again by the observer on re-attach.
++    private boolean mapCreated = false;
++
+     @Override
+     public void onCreate(LifecycleOwner owner) {
++        if (mapCreated) return;
++        mapCreated = true;
+         super.onCreate(null);
+     }
+ 
+@@ -330,48 +343,15 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+             paused = false;
+         }
+ 
++        // DOGTRACKER_KEEP_MAP: no re-creation here; the observer starts it again.
+         attachLifecycleObserver();
+-        if (savedMapState != null) {
+-            super.onCreate(savedMapState);
+-            super.onStart();
+-            super.onResume();
+-            prepareAttacherView();
+-            getMapAsync((map)->{
+-                onMapReady(map);
+-                if (savedFeatures != null && !savedFeatures.isEmpty()) {
+-                    features.clear();
+-                    ArrayList<MapFeature> toRestore = savedFeatures;
+-                    savedFeatures = null;
+-                    for (int i = 0; i < toRestore.size(); i++) {
+-                        MapFeature savedFeature = toRestore.get(i);
+-                        if (savedFeature != null) {
+-                            addFeature(savedFeature, i);
+-                        }
+-                    }
+-                } else {
+-                    savedFeatures = null;
+-                }
+-            });
+-        }
+     }
+ 
+     // Override onDetachedFromWindow to detach lifecycle observer
+     @Override
+     protected void onDetachedFromWindow() {
+         synchronized (this) {
+-            // Save instance state if not already saved and map is ready
+-            if (map != null && isMapReady) {
+-                try {
+-                    if (savedMapState == null) {
+-                        savedMapState = new Bundle();
+-                    }
+-                    super.onSaveInstanceState(savedMapState);
+-                } catch (Exception e) {
+-                    Log.e("MapView", "Error saving state in onDetachedFromWindow: " + e.getMessage());
+-                    // Continue with cleanup even if state saving fails
+-                }
+-            }
+-
++            // DOGTRACKER_KEEP_MAP: no saved state; the same map comes back.
+             // Pause safely if not already paused
+             if (!paused) {
+                 pauseSafely();
+@@ -385,11 +365,9 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+             Log.e("MapView", "Error during stop in onDetachedFromWindow: " + e.getMessage());
+         }
+ 
+-        savedFeatures = new ArrayList<>(features);
+-        features.clear();
++        // DOGTRACKER_KEEP_MAP: the features stay on the map and in `features`,
++        // the marker views in the attacher group.
+         shouldRestorePadding = true;
+-        removeView(attacherGroup);
+-        attacherGroup = null;
+         super.onDetachedFromWindow();
+         detachLifecycleObserver();
+     }
+@@ -1326,18 +1304,36 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+         if (feature instanceof MapMarker) {
+             markerMap.remove(feature.getFeature());
+             feature.removeFromMap(markerCollection);
+-            safeRemoveFeatureFromAttacherGroup(feature);
++            // DOGTRACKER_MARKER_PARENT (DogTracker patch): the marker's view can
++            // still sit in the attacher group of an earlier attach
++            // (onDetachedFromWindow drops that group without emptying it, e.g.
++            // while a settings page covers the map). Detach it from whatever
++            // parent it has; otherwise Fabric's next insert of this view finds
++            // a parent, marks the tag "erroneously re-added" and skips every
++            // later remove, and the marker's Google Marker stays on the map.
++            safeRemoveFromParent(feature);
+         } else if (feature instanceof MapHeatmap) {
+             heatmapMap.remove(feature.getFeature());
+             feature.removeFromMap(map);
+         } else if (feature instanceof MapCircle) {
+             feature.removeFromMap(circleCollection);
+         } else if (feature instanceof MapOverlay) {
++            // DOGTRACKER_FEATURE_MAPS (DogTracker patch): every lookup map that
++            // addFeature filled is emptied again; upstream only empties
++            // markerMap and heatmapMap, so each removed line, area and overlay
++            // (and the Google object and GL buffers behind it) stayed in memory
++            // for the map's whole life: ~3 lines per history opening.
++            overlayMap.remove(feature.getFeature());
+             feature.removeFromMap(groundOverlayCollection);
+         } else if (feature instanceof MapPolygon) {
++            polygonMap.remove(feature.getFeature());
+             feature.removeFromMap(polygonCollection);
+         } else if (feature instanceof MapPolyline) {
++            polylineMap.remove(feature.getFeature());
+             feature.removeFromMap(polylineCollection);
++        } else if (feature instanceof MapGradientPolyline) {
++            gradientPolylineMap.remove(feature.getFeature());
++            feature.removeFromMap(map);
+         } else if (feature != null) {
+             feature.removeFromMap(map);
+         }

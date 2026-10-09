@@ -186,7 +186,7 @@ test('a switch that cannot send first keeps the dialog open with the reason; 取
   await act(async () => { renderer = Renderer.create(<AccountSettings page={page} onSwitch={onSwitch} />); });
   await act(async () => pressable(renderer, page.routes[0].label).props.onPress());
   await act(async () => pressable(renderer, '切換').props.onPress());
-  expect(onSwitch).toHaveBeenCalledWith(7, 'phone');
+  expect(onSwitch).toHaveBeenCalledWith(7, 'phone', expect.objectContaining({ aborted: false }));
   expect(text(renderer)).toContain('要先上傳完 120 筆，請連上網路');
   // The reason disables the action until the dialog is opened again.
   expect(pressable(renderer, '切換').props.disabled).toBe(true);
@@ -338,12 +338,12 @@ test.each([
   await act(async () => renderer.unmount());
 });
 
-test.each([0, 3])('Wi-Fi-only hides stale upload failures and blocked rows (%s blocked)', async blocked => {
+test.each([0, 3])('Wi-Fi-only exposes upload failures and blocked rows (%s blocked)', async blocked => {
   const { data } = input('cloud-wifi-only');
   data.upload = { ...data.upload, error: 'Network request failed', counts: [{ status: 'blocked', count: blocked }] };
   let renderer;
   await act(async () => { renderer = Renderer.create(<AccountSettings page={accountPage(data)} />); });
-  expect(renderer.root.findAllByProps({ testID: 'account-upload-problem' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'account-upload-problem' }).length).toBeGreaterThan(0);
   await act(async () => renderer.unmount());
 });
 
@@ -355,4 +355,27 @@ test('mixed phone and Wi-Fi routes still show phone upload status', () => {
   expect(accountPage(data).upload.visible).toBe(false);
   data.upload.supported = false;
   expect(accountPage(data).upload.visible).toBe(false);
+});
+
+test('K13: Wi-Fi routes still expose queued and refused uploads', () => {
+  const { data } = input('upload-switch-confirm');
+  expect(accountPage(data).upload).toMatchObject({ visible: true, pendingText: '120 筆' });
+  const refused = input('cloud-upload-pending').data;
+  refused.upload.settings = refused.upload.settings.map(row => ({ ...row, mode: 'wifi' }));
+  expect(accountPage(refused).upload).toMatchObject({ visible: true, problem: expect.objectContaining({ retry: true }) });
+});
+
+test('K14: cancel during a slow switch aborts work and late failures do not reopen the dialog', async () => {
+  const { data } = input('upload-switch-confirm');
+  let reject, signal;
+  const onSwitch = jest.fn((master, mode, token) => { signal = token; return new Promise((resolve, fail) => { reject = fail; }); });
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<AccountSettings page={accountPage(data)} onSwitch={onSwitch} dialog={{ kind: 'switch', master: 7 }} />); });
+  await act(async () => { pressable(renderer, '切換').props.onPress(); });
+  await act(async () => pressable(renderer, '取消').props.onPress());
+  expect(signal.aborted).toBe(true);
+  await act(async () => reject(new Error('late failure')));
+  expect(text(renderer)).not.toContain('late failure');
+  expect(pressable(renderer, '取消')).toBeUndefined();
+  await act(async () => renderer.unmount());
 });
