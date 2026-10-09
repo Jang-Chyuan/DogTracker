@@ -247,7 +247,12 @@ export default function MapScreen({
       // dog-edit opens the dog's page (A5) over its card, once the card is.
       pendingPage.current = fixturePage;
       if (fixturePage) setCardPage(fixturePage);
-    } else setSelected(null);
+    } else {
+      // A fixture without a card: no page of the previous one stays asked for.
+      pendingPage.current = null;
+      setCardPage(null);
+      setSelected(null);
+    }
   }, [fixtureName, fixtureDog, fixturePage, openDog]);
   useEffect(() => {
     if (openDogRequest?.slaveId != null) openDog(openDogRequest.slaveId);
@@ -935,6 +940,10 @@ export default function MapScreen({
           fixture?.name ?? ''
         }`
       : null;
+  // A4/A5 only cover the map while they are drawn: a page asked for before
+  // its card exists (a fixture's openPage, or a card that went) must not hide
+  // the map with nothing over it (a blank screen).
+  const coveringPage = cardModel ? cardPage : null;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
       {/* Under A4/A5 the map and its card stay mounted, only out of reach of
@@ -947,11 +956,11 @@ export default function MapScreen({
           attached): the native map draws into its own surface under the
           window, and an opaque page alone left it showing in the status-bar
           inset. */}
-      <View testID="map-background-layer" style={[StyleSheet.absoluteFill, cardPage && styles.coveredMap]}
+      <View testID="map-background-layer" style={[StyleSheet.absoluteFill, coveringPage && styles.coveredMap]}
         collapsable={false}
-        pointerEvents={cardPage ? 'none' : 'auto'}
-        accessibilityElementsHidden={!!cardPage}
-        importantForAccessibility={cardPage ? 'no-hide-descendants' : 'auto'}>
+        pointerEvents={coveringPage ? 'none' : 'auto'}
+        accessibilityElementsHidden={!!coveringPage}
+        importantForAccessibility={coveringPage ? 'no-hide-descendants' : 'auto'}>
       <TrackingMap
         a11yHidden={historical && historySheet}
         provider={mapProvider}
@@ -1035,7 +1044,7 @@ export default function MapScreen({
           StyleSheet.absoluteFill,
           styles.chrome,
           // The gear and top cards go under A4/A5 (not an ancestor of the map).
-          cardPage && styles.hiddenChrome,
+          coveringPage && styles.hiddenChrome,
           { opacity: splashChrome },
         ]}
       >

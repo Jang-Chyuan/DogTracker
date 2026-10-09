@@ -1211,3 +1211,4 @@ test.each(['com.antgo.dogtracker', 'com.antgo.dogtracker.debug'])(
     sendIntent.mockRestore();
   },
 );
+
