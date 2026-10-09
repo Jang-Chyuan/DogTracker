@@ -1,12 +1,24 @@
 // The range bar of H2b (判定表「範圍條的軌道」「範圍條的右端和「現在」」
 // 「範圍」): where its handles sit and what a drag of one makes of the range.
 // Pure: HistoryRangeBar.js (the component) draws and drags it.
-import { nearestRecord } from './HistoryScreenRange';
-
 const MINUTE = 60000;
 // The right end counts as reached this close to it (in track widths), so the
 // end handle can be put back on 「跟著現在」 without pixel precision.
 const RIGHT_EDGE_SHARE = 0.015;
+
+// dayPoints are sorted by time, including the shared multi-dog stream.
+// Only a timestamp is needed: equal-distance ties snap to the earlier fix.
+function nearestTime(points, time) {
+  let lo = 0, hi = points.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (points[mid].time < time) lo = mid + 1; else hi = mid;
+  }
+  if (!lo) return points[0].time;
+  if (lo === points.length) return points[lo - 1].time;
+  const before = points[lo - 1].time, after = points[lo].time;
+  return time - before <= after - time ? before : after;
+}
 
 /** The track: today 00:00 to this minute; another day 00:00 to 24:00. */
 export function rangeTrack({ dayStart, dayEnd, today, now }) {
@@ -50,7 +62,7 @@ export function dragRangeHandle(current, handle, x, width, { track, dayPoints, t
     const range = { ...current, end: lastFix, following: true };
     return { range, valid: lastFix - range.start >= MINUTE, atEdge };
   }
-  const snapped = nearestRecord(dayPoints, Math.round(time / MINUTE) * MINUTE).time;
+  const snapped = nearestTime(dayPoints, Math.round(time / MINUTE) * MINUTE);
   const range = handle === 'start' ? { ...current, start: snapped }
     : { ...current, end: snapped, following: false };
   const end = range.following ? lastFix : range.end;

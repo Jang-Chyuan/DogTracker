@@ -480,6 +480,9 @@ ref) {
           onToggle={() => openRange(!rangeOpen)}
           onDrag={screen.dragRange}
           onCommit={screen.commitRange}
+          previewDelay={screen.rangePreviewDelay}
+          previewScope={screen.rangePreviewScope}
+          active={screen.rangeActive}
           closedAt={closedAt}
           dayPoints={screen.dayPoints}
           who={screen.multi ? leadName : null}

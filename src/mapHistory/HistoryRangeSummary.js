@@ -4,7 +4,7 @@ import { t } from '../i18n';
 // and 「調整範圍」 on the right; a tap opens the bar in the same framed box,
 // whose two round handles move the start and the end.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
 import {
@@ -38,6 +38,7 @@ import { useInitialFocus } from '../utils/a11yFocus';
 const HANDLE = sizes.rangeBar.handle;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
 const TOUCH = touch.min;
+export const RANGE_PREVIEW_MIN_MS = 120;
 
 /** The summary's two lines while the bar is closed, or open (the range itself). */
 export function rangeSummaryLines(model, { subject, open, range, who = null }) {
@@ -53,10 +54,15 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
     : t('c432', { time: clock(range.start), time2: clock(range.end) }), detail: moved };
 }
 
-function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
+function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
+  previewDelay = RANGE_PREVIEW_MIN_MS, previewScope = track.start, active = true }) {
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
-  const handles = rangeHandles(range, track);
+  // Finger/time feedback stays local; the day model/list/map preview is a
+  // coalesced latest range, so every move does not replay the full day.
+  const [visualRange, setVisualRange] = useState(null);
+  const shownRange = visualRange ?? range;
+  const handles = rangeHandles(shownRange, track);
   const startX = xOfTime(handles.start, width, track);
   const endX = xOfTime(handles.end, width, track);
   const state = useRef({});
@@ -70,7 +76,16 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
     endX,
     onDrag,
     onCommit,
+    previewDelay,
+    active,
   };
+  const pending = useRef(null);
+  const timer = useRef(null);
+  const clearPreview = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = null;
+    pending.current = null;
+  }, []);
   const drag = useRef({
     handle: null,
     from: 0,
@@ -78,13 +93,23 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
     rejected: false,
     edge: false,
   });
+  useEffect(() => {
+    clearPreview();
+    drag.current = { handle: null };
+    setVisualRange(null);
+    return () => {
+      clearPreview();
+      if (drag.current.last) state.current.onDrag(null);
+      drag.current = { handle: null };
+    };
+  }, [previewScope, active, clearPreview]);
   const responder = useMemo(() => {
     // One step of a drag `dx` from where it began (a move, or the release
     // itself: a quick flick can end before its last moves reach JS, and the
     // handle must still land where the finger let go).
-    const follow = dx => {
+    const follow = (dx, publish = true) => {
       const d = drag.current;
-      if (!d.last) return;
+      if (!d.last || !state.current.active) return;
       const {
         track: tick,
         dayPoints: points,
@@ -99,7 +124,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
           d.handle === 'start' ? state.current.startX : state.current.endX;
       }
       const x = Math.max(0, Math.min(w, d.from + dx));
-      const result = dragRangeHandle(state.current.range, d.handle, x, w, {
+      const result = dragRangeHandle(d.last, d.handle, x, w, {
         track: tick,
         dayPoints: points,
         today: isToday,
@@ -113,7 +138,19 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
         result.range.end !== d.last.end ||
         result.range.following !== d.last.following;
       d.last = result.range;
-      if (changed) state.current.onDrag(result.range);
+      if (changed) {
+        setVisualRange(result.range);
+        if (publish) {
+          pending.current = result.range;
+          if (timer.current == null) timer.current = setTimeout(() => {
+            timer.current = null;
+            const latest = pending.current;
+            pending.current = null;
+            if (latest && drag.current.last && state.current.active)
+              state.current.onDrag(latest);
+          }, Math.max(RANGE_PREVIEW_MIN_MS, state.current.previewDelay));
+        }
+      }
     };
     // Where the finger is now, from the event itself when it says (the
     // release's own position: the gesture's dx stops at the last move).
@@ -130,6 +167,8 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: event => {
+        if (!state.current.active) return;
+        clearPreview();
         const { startX: s, endX: e } = state.current;
         const x = event.nativeEvent.locationX - TOUCH / 2;
         // 判定表「範圍條把手太近」: the side of the middle between them (left
@@ -147,23 +186,29 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
       },
       onPanResponderMove: (event, gesture) => follow(dxOf(event, gesture)),
       onPanResponderRelease: (event, gesture) => {
-        follow(dxOf(event, gesture));
+        // Final position bypasses preview: one final commit, never a queued
+        // old preview after release or a preview + commit replay pair.
+        follow(dxOf(event, gesture), false);
         const d = drag.current;
         // Refused (start not before the end): the handle springs back.
         haptic(d.rejected ? 'double' : 'tick');
-        state.current.onCommit(d.last);
+        clearPreview();
+        setVisualRange(null);
+        if (d.last) state.current.onCommit(d.last);
         drag.current = { handle: null };
       },
       onPanResponderTerminate: (event, gesture) => {
-        follow(dxOf(event, gesture));
-        state.current.onCommit(drag.current.last);
+        follow(dxOf(event, gesture), false);
+        clearPreview();
+        setVisualRange(null);
+        if (drag.current.last) state.current.onCommit(drag.current.last);
         drag.current = { handle: null };
       },
     });
-  }, []);
+  }, [clearPreview]);
   const step = (handle, event) => {
     const result = stepRangeHandle(
-      range,
+      shownRange,
       handle,
       event.nativeEvent.actionName === 'increment' ? 1 : -1,
       { dayPoints, today },
@@ -172,6 +217,9 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
       haptic('double');
       return;
     }
+    clearPreview();
+    drag.current = { handle: null };
+    setVisualRange(null);
     onCommit(result.range);
   };
   // 判定表「範圍條把手太近」: closer than 48dp, the start's time sits left of
@@ -217,7 +265,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
           style={[styles.handle, { left: endX + (TOUCH - HANDLE) / 2 }]}
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel={((range.following) ? t('c373', { time: endLabel }) : t("c827", { endLabel: endLabel }))}
+          accessibilityLabel={((shownRange.following) ? t('c373', { time: endLabel }) : t("c827", { endLabel: endLabel }))}
           accessibilityActions={STEPS}
           onAccessibilityAction={event => step('end', event)}
         />
@@ -275,6 +323,9 @@ export default function HistoryRangeSummary({
   closedAt = null,
   dayPoints: shared = null,
   who = null,
+  previewDelay,
+  previewScope,
+  active,
 }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -350,6 +401,9 @@ export default function HistoryRangeSummary({
             today={today}
             onDrag={onDrag}
             onCommit={onCommit}
+            previewDelay={previewDelay}
+            previewScope={previewScope}
+            active={active}
           />
         </>
       )}

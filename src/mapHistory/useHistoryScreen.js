@@ -951,6 +951,9 @@ export function useHistoryScreen({
     dayModel, look,
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
     following, cursor, cursors, pressed, focus, map, color, loading,
+    rangePreviewDelay: Math.max(120, buildCost.current * 4),
+    rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
+    rangeActive: active,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],
     // Several dogs (H7) and merged records.
