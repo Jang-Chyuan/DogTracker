@@ -4,11 +4,13 @@ import * as light from './tokens';
 import { appColors, floatingShadow } from './AppTheme';
 import { legacyLight, legacyDark } from './legacyColors';
 import darkSpec from './dark-tokens.json';
+import lightMapStyle from './light-map-style.json';
 
 export const lightTheme = {
   ...light,
   colors: { ...light.colors, ...light.extras },
   isDark: false,
+  mapStyle: { google: lightMapStyle },
 };
 export const darkTheme = {
   ...lightTheme,

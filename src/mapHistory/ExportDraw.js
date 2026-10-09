@@ -5,6 +5,7 @@ import { size as tokenSize } from '../theme/tokens';
 // only paints, and a test can read what each page holds. Colours come from
 // the theme tokens only.
 import { exportColors as colors } from '../theme/exportPalette';
+import lightMapStyle from '../theme/light-map-style.json';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { PLACE_X, PNG_STYLE as S } from './ExportPNG';
 
@@ -142,6 +143,7 @@ function sectionOps(block) {
 /** The map block for the renderer: geography it projects itself (it knows the base map's camera). */
 export function mapOp(block) {
   return {
+    mapStyle: lightMapStyle,
     t: 'map', x: 0, y: block.y, w: block.width, h: block.height, padding: block.padding,
     background: colors.mapFallback, halo: colors.mapLabelHalo, text: colors.text, surface: colors.surface,
     indoor: colors.receiver, onRoute: colors.onRoute, attribution: block.attribution, attributionColor: colors.textMuted,
