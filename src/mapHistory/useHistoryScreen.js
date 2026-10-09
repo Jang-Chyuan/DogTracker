@@ -217,6 +217,7 @@ export function useHistoryScreen({
   clock = Date.now,
   active = true,
   recording = null,
+  recordingStoppedAt = null,
   onDayChange,
   memoryScope = '',
   preset = null,
@@ -480,8 +481,8 @@ export function useHistoryScreen({
   // fix it recorded (判定表「記錄被迫中止的終點膠囊」; the summary's 「記錄已在
   // 10:20 關閉」 uses the same time). A fixed end the user dragged is 「結束」.
   const closedAt =
-    subject === 'phone' && today && recording === false && (!manual || manual.following) && lastRow
-      ? lastRow
+    subject === 'phone' && today && recording === false && (!manual || manual.following) && recordingStoppedAt
+      ? recordingStoppedAt
       : null;
   // The first view waits for every dog shown (the map frames the
   // protagonist once); a dog added later is left out while it is read.

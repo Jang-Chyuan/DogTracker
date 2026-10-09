@@ -75,7 +75,7 @@ class LocationTrackerService : Service(), LocationListener {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val preferences = getSharedPreferences("phone_location_recording", 0)
     if (intent?.action == "STOP") {
-      preferences.edit().putBoolean("enabled", false).apply()
+      preferences.edit().putBoolean("enabled", false).putLong("stoppedAt", System.currentTimeMillis()).commit()
       stopSelf(); return START_NOT_STICKY
     }
     // A queued automatic start must not undo a later explicit stop.

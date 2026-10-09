@@ -568,6 +568,7 @@ export default function MapScreen({
   const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
     recording: livePhone ? !!livePhone.running : null,
+    recordingStoppedAt: livePhone?.stoppedAt ?? null,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '',
     preset: fixture?.historyView ?? null,
@@ -1074,7 +1075,7 @@ export default function MapScreen({
             screen.today &&
             livePhone &&
             !livePhone.running
-              ? screen.model?.points.at(-1)?.time ?? null
+              ? livePhone.stoppedAt ?? null
               : null
           }
         />

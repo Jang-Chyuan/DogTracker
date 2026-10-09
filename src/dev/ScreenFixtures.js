@@ -1243,12 +1243,12 @@ const FIXTURES = {
   // 08:50」; the start stays the automatic departure (07:02:20), 「出發」.
   'history-manual-end': now => ({ ...FIXTURES['history-my-route'](now),
     historyView: { manual: { start: now - 8860 * SECOND, end: now - 40 * MINUTE, following: false } } }),
-  // My route with recording switched off at 09:05: 「記錄已關閉 09:05」.
+  // My route with last fix at 09:05 and recording stopped at 09:30: 「記錄已關閉 09:05」.
   'history-recording-off': now => {
     const path = myRouteMorning(now).filter(row => row.time <= now - 25 * MINUTE);
     const phone = routePhone(path, now);
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
-      phone: { ...phone, recording: false }, geocoder: { names: HISTORY_NAMES } };
+      phone: { ...phone, recording: false, stoppedAt: now }, geocoder: { names: HISTORY_NAMES } };
   },
   // 小黑 walking from 10/5 23:10 into 10/6 00:50, opened on 10/5: the last
   // node 「接續隔天」.
@@ -1511,7 +1511,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       running: true, status: '記錄中',
       position: phone.position,
       ageSeconds: Math.max(0, Math.round((now - phone.position.timestamp) / SECOND)),
-    } : { running: false, status: '未記錄' },
+    } : { running: false, stoppedAt: phone?.stoppedAt ?? null, status: '未記錄' },
     phoneRoute: phone?.recording === false ? [] : phone?.route || [],
     // usePhoneLocation's answer: precise and on unless the state says not.
     phonePermission: { permission: phone?.permission ?? 'precise', services: phone?.services ?? true },
