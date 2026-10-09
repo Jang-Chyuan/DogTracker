@@ -338,12 +338,12 @@ test.each([
   await act(async () => renderer.unmount());
 });
 
-test.each([0, 3])('Wi-Fi-only hides stale upload failures and blocked rows (%s blocked)', async blocked => {
+test.each([0, 3])('Wi-Fi-only exposes upload failures and blocked rows (%s blocked)', async blocked => {
   const { data } = input('cloud-wifi-only');
   data.upload = { ...data.upload, error: 'Network request failed', counts: [{ status: 'blocked', count: blocked }] };
   let renderer;
   await act(async () => { renderer = Renderer.create(<AccountSettings page={accountPage(data)} />); });
-  expect(renderer.root.findAllByProps({ testID: 'account-upload-problem' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'account-upload-problem' }).length).toBeGreaterThan(0);
   await act(async () => renderer.unmount());
 });
 
@@ -355,4 +355,12 @@ test('mixed phone and Wi-Fi routes still show phone upload status', () => {
   expect(accountPage(data).upload.visible).toBe(false);
   data.upload.supported = false;
   expect(accountPage(data).upload.visible).toBe(false);
+});
+
+test('K13: Wi-Fi routes still expose queued and refused uploads', () => {
+  const { data } = input('upload-switch-confirm');
+  expect(accountPage(data).upload).toMatchObject({ visible: true, pendingText: '120 筆' });
+  const refused = input('cloud-upload-pending').data;
+  refused.upload.settings = refused.upload.settings.map(row => ({ ...row, mode: 'wifi' }));
+  expect(accountPage(refused).upload).toMatchObject({ visible: true, problem: expect.objectContaining({ retry: true }) });
 });
