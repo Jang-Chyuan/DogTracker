@@ -1,5 +1,5 @@
 import { Animated } from 'react-native';
-import { startTailWag } from '../src/app/splashTailWag';
+import { startTailWag, WAG_MAX_ANGLE, WAG_TIMING } from '../src/app/splashTailWag';
 
 beforeEach(() => jest.useFakeTimers());
 afterEach(() => {
@@ -50,4 +50,9 @@ test('handover before drawing completes cancels the pending wag', () => {
   stop();
   jest.advanceTimersByTime(5000);
   expect(loop.start).not.toHaveBeenCalled();
+});
+
+test('the exported maximum angle defines both wag endpoints', () => {
+  expect(WAG_MAX_ANGLE).toBe(12);
+  expect(WAG_TIMING.angle).toBe(WAG_MAX_ANGLE);
 });

@@ -18,12 +18,20 @@ export const SITTING_DOG_PATHS = [
   'M56.158,64.5a3.8419999999999996,2.8219999999999996 0 1,0 7.683999999999999,0a3.8419999999999996,2.8219999999999996 0 1,0 -7.683999999999999,0',
 ];
 
-// Separate groups let the splash move only the tail without changing the art.
+// Keep native/static artwork unchanged; split the haunch from the moving tail.
 export const SITTING_DOG_HEAD_LINES = SITTING_DOG_PATHS.slice(0, 5);
-export const SITTING_DOG_BODY_LINES = SITTING_DOG_PATHS.slice(5, 7);
-export const SITTING_DOG_TAIL_LINES = SITTING_DOG_PATHS.slice(7, 9);
+export const SITTING_DOG_BODY_LINES = [
+  ...SITTING_DOG_PATHS.slice(5, 7),
+  'M88 82c10 12 13 30 8 42',
+];
+// The roughly three-unit extension lies under the stationary haunch. Rounded caps at
+// the shared pivot overlap even at either maximum wag angle. Draw tail first.
+export const SITTING_DOG_TAIL_LINES = [
+  'M97 121L96 124c-2 5-6 7-12 7',
+  SITTING_DOG_PATHS[8],
+];
 export const SITTING_DOG_FACE = SITTING_DOG_PATHS.slice(9);
-export const SITTING_DOG_TAIL_ROOT = { x: 88, y: 84 };
+export const SITTING_DOG_TAIL_ROOT = { x: 96, y: 124 };
 
 // Includes rounded stroke caps on the tail marks, with breathing room.
 export const SITTING_DOG_VIEW_BOX = '12 24 106 112';

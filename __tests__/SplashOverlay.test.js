@@ -2,6 +2,9 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AccessibilityInfo, Animated, NativeModules } from 'react-native';
+import { Path } from 'react-native-svg';
+import { SITTING_DOG_BODY_LINES, SITTING_DOG_TAIL_LINES, SITTING_DOG_TAIL_ROOT } from '../src/dogs/SittingDogArt';
+import { WAG_MAX_ANGLE } from '../src/app/splashTailWag';
 import SplashOverlay, {
   flightGeometry,
   handoverDuration,
@@ -134,12 +137,43 @@ describe('waiting tail lifecycle', () => {
     return { renderer, loop };
   }
 
+  test('only the separate tail rotates about its base, behind the stationary body', async () => {
+    const { renderer } = await mountWaiting();
+    const tail = renderer.root.findByProps({ testID: 'splash-tail' });
+    const body = renderer.root.findByProps({ testID: 'splash-body' });
+    expect(tail.findAllByType(Path).map(node => node.props.d)).toEqual(SITTING_DOG_TAIL_LINES);
+    expect(body.findAllByType(Path).map(node => node.props.d)).toEqual(SITTING_DOG_BODY_LINES);
+    expect(SITTING_DOG_TAIL_ROOT).toEqual({ x: 96, y: 124 });
+    const x = (20.258 + 0.4962 * 96) * SPLASH_ICON / 108 - SPLASH_ICON / 2;
+    const y = (13.064 + 0.4962 * 124) * SPLASH_ICON / 108 - SPLASH_ICON / 2;
+    const transform = tail.props.transform;
+    expect(transform).toEqual([
+      { translateX: x }, { translateY: y }, { rotate: expect.any(Object) },
+      { translateX: -x }, { translateY: -y },
+    ]);
+    expect(transform[2].rotate.__getValue()).toBe('0deg');
+    expect(transform[2].rotate._config.outputRange).toEqual([
+      `-${WAG_MAX_ANGLE}deg`, `${WAG_MAX_ANGLE}deg`,
+    ]);
+    expect((body.props.transform || [])).toEqual([]);
+    const layers = tail.parent.children;
+    expect(layers.indexOf(tail)).toBeLessThan(layers.indexOf(body));
+    // The moving base extends back under the haunch, with a shared round cap
+    // at (96,124); the original right contour now belongs to the body.
+    expect(SITTING_DOG_TAIL_LINES[0]).toBe('M97 121L96 124c-2 5-6 7-12 7');
+    expect(SITTING_DOG_BODY_LINES).toContain('M88 82c10 12 13 30 8 42');
+    await act(async () => renderer.unmount());
+  });
+
   test.each(['fly', 'fade'])(
     'stops the wag when %s handover begins',
     async mode => {
       const { renderer, loop } = await mountWaiting();
       await act(async () => jest.advanceTimersByTime(800));
       expect(loop.start).toHaveBeenCalledTimes(1);
+      const angle = renderer.root.findByProps({ testID: 'splash-tail' }).props.transform[2].rotate;
+      act(() => angle._parent.setValue(WAG_MAX_ANGLE));
+      expect(angle.__getValue()).toBe(`${WAG_MAX_ANGLE}deg`);
       await act(async () => {
         if (mode === 'fly') {
           launchInto('map');
@@ -149,6 +183,7 @@ describe('waiting tail lifecycle', () => {
         } else launchInto('page');
       });
       expect(loop.stop).toHaveBeenCalledTimes(1);
+      expect(angle.__getValue()).toBe('0deg');
       await act(async () => renderer.unmount());
     },
   );
@@ -160,6 +195,7 @@ describe('waiting tail lifecycle', () => {
       await act(async () => jest.advanceTimersByTime(3000));
       expect(Animated.loop).not.toHaveBeenCalled();
       expect(loop.start).not.toHaveBeenCalled();
+      expect(renderer.root.findByProps({ testID: 'splash-tail' }).props.transform[2].rotate.__getValue()).toBe('0deg');
       await act(async () => renderer.unmount());
     },
   );
