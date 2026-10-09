@@ -348,7 +348,7 @@ export function MapTip({ message, bottom, onDone, strong = false }) {
     >
       <Text
         style={[styles.tipText, strong && styles.tipStrong, action && styles.tipTextWithAction]}
-        numberOfLines={linesFor(strong || action ? 2 : 1)}
+        numberOfLines={linesFor(action ? 3 : strong ? 2 : 1)}
       >
         {message.text}
       </Text>
