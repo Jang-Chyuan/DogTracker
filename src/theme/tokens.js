@@ -172,10 +172,10 @@ export const radius = {
   alertCard: 14,
   rangeFrame: 14,
   input: 12,
-  snackbar: 12,
+  snackbar: 999,
   stayRow: 12,
-  settingIcon: 10,
-  cursorLabel: 10,
+  settingIcon: 999,
+  cursorLabel: 16,
   mapLabel: 999,
   dialog: 24,
 };
@@ -383,7 +383,7 @@ export const size = {
     halo: 32,
     labelGap: 12,
     labelPaddingV: 4,
-    labelPaddingH: 8,
+    labelPaddingH: 10,
 
     // History cursor label collision footprint and graphic text metrics.
     collisionBoxWidth: 146,

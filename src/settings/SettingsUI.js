@@ -66,7 +66,7 @@ export function GroupCard({ children, testID, flat = false, onRowLayout }) {
 }
 
 // The 2dp line icons of the settings home (design 「設定首頁」 icons), drawn
-// on their tinted squares (tokens.settingIcon).
+// on their tinted circles (tokens.settingIcon).
 const ICONS = {
   receiver: (
     <>

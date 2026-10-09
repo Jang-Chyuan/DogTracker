@@ -338,3 +338,10 @@ test('spacing is exactly the design scale and border weights are documented widt
   expect(Object.values(tokens.border).length).toBeGreaterThan(0);
   Object.values(tokens.border).forEach(width => expect(documented).toContain(width));
 });
+
+test('D18 small shape tokens preserve container radii and cursor padding', () => {
+  expect(tokens.radius).toMatchObject({ full: 999, settingIcon: 999, snackbar: 999,
+    cursorLabel: 16, card: 16, sheet: 16, dialog: 24, alertCard: 14,
+    input: 12, stayRow: 12, scanFrame: 16 });
+  expect(tokens.size.cursor).toMatchObject({ labelPaddingV: 4, labelPaddingH: 10 });
+});
