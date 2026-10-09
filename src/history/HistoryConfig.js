@@ -8,7 +8,15 @@ const common = { radiusM: 25, leaveMs: 20000, stayMs: 180000, stayRatio: 3,
   minMoveM: 5, missingAccuracyM: 10,
   // 判定表「恢復記錄節點」: after a break longer than this the list adds a
   // 恢復記錄 node at the first fix after it.
-  resumeAfterMs: 1800000 };
+  resumeAfterMs: 1800000,
+  // 067 (user 2026-10-09): a break whose two ends are at the same place
+  // (within radiusM) is one continuous stay, up to this long — no 「沒有資料」
+  // row, no 恢復記錄 node (battery saving stops a phone overnight; the user's
+  // breaks at home were 72–130 min, many in a row).
+  samePlaceGapMaxMs: 16 * 3600000,
+  // 067: a visit this long is a stay even before five visits give a baseline
+  // (a phone at home all day has only a few, very long visits).
+  alwaysStayMs: 30 * 60000 };
 export const HISTORY_CONFIG = Object.freeze({
   // stillMps (phone only): a fix whose own measured speed is under this, with
   // a speed accuracy within stillSpeedAccuracyMps, was taken standing still
@@ -16,7 +24,9 @@ export const HISTORY_CONFIG = Object.freeze({
   // speed says 0–0.9 km/h; walking measures 1 m/s and more).
   phone: Object.freeze({ ...common, maxSpeed: 50, vehicleSpeed: 5,
     enterMs: 30000, exitMs: 30000, departureMaxSpeed: 3, backtrackSpeed: 4,
-    stillMps: 0.3, stillSpeedAccuracyMps: 1.5, speedBudget: true }),
+    stillMps: 0.3, stillSpeedAccuracyMps: 1.5, speedBudget: true,
+    // samePlaceGap between two still fixes (IndoorHold's anchorCheckM).
+    stillPlaceM: 100 }),
   dog: Object.freeze({ ...common, maxSpeed: 15, vehicleSpeed: 9,
     enterMs: 60000, exitMs: 60000, departureMaxSpeed: 15, backtrackSpeed: null }),
 });
@@ -51,6 +61,22 @@ export function stillFix(p, config) {
   const spread = number(p.speed_accuracy_mps);
   if (kmh == null || kmh < 0 || spread == null || spread < 0) return false;
   return kmh / 3.6 < config.stillMps && spread <= config.stillSpeedAccuracyMps;
+}
+
+/**
+ * A break longer than gapMs (and at most samePlaceGapMaxMs) whose two ends are
+ * at the same place (within radiusM): one continuous stay, not 「沒有資料」.
+ */
+export function samePlaceGap(a, b, config) {
+  if (!a || !b || !config?.samePlaceGapMaxMs) return false;
+  const dt = b.time - a.time;
+  if (!(dt > config.gapMs && dt <= config.samePlaceGapMaxMs)) return false;
+  const apart = distanceMeters(a, b);
+  if (!(apart > config.radiusM + 1e-8)) return true;
+  // Both ends measured standing still (the phone's own speed): indoors the
+  // position drifts tens of metres while the phone stays put; within
+  // stillPlaceM it is the same place.
+  return !!config.stillPlaceM && stillFix(a, config) && stillFix(b, config) && apart <= config.stillPlaceM;
 }
 
 /**

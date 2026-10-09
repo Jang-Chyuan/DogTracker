@@ -33,25 +33,30 @@ const dayStart = new Date(2026, 0, 5).getTime();
 const dayEnd = dayStart + 86400000;
 const timeline = (rows, config) => historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone', dayStart, dayEnd,
   now: dayEnd, config, range: { start: dayStart, end: dayEnd - 1 } });
-// The rule as it was: no measured-speed check.
-const BEFORE = { ...HISTORY_CONFIG.phone, speedBudget: false, stillMps: 0 };
+// The rules as they were: no measured-speed check, no same-place breaks, no
+// long-visit stays.
+const BEFORE = { ...HISTORY_CONFIG.phone, speedBudget: false, stillMps: 0, stillPlaceM: 0,
+  samePlaceGapMaxMs: 0, alwaysStayMs: 0 };
 
-test('the indoor drift of a whole day is not walked distance', () => {
+test('a whole day indoors: little distance, a few long stays, the overnight breaks inside them', () => {
   const rows = stationaryDay();
   expect(rows).toHaveLength(4005);
   const before = timeline(rows, BEFORE);
   const after = timeline(rows);
-  // 808 m before; what is left is a few moves the phone measured itself.
+  const count = (model, type) => model.nodes.filter(n => n.type === type).length;
+  // Before: 808 m walked, 8 stays, 11 「沒有資料」 rows, 6 恢復記錄.
   expect(before.distanceM).toBeGreaterThan(700);
-  expect(after.distanceM).toBeLessThan(200);
-  const counted = section => section.type === 'movement' && section.countedDistanceM > 0;
-  expect(after.nodes.filter(counted).length).toBeLessThan(before.nodes.filter(counted).length / 2);
-  // Fewer stays broken up by the drift.
-  const stops = model => model.nodes.filter(n => n.type === 'stop').length;
-  expect(stops(after)).toBeLessThan(stops(before));
+  expect(count(before, 'stop')).toBe(8);
+  // After: about 221 m (moves the phone measured itself), 3 long stays, one
+  // break left (the first, before the day settles).
+  expect(after.distanceM).toBeLessThan(250);
+  expect(count(after, 'stop')).toBe(3);
+  expect(after.nodes.filter(n => n.type === 'stop').every(n => n.durationMs >= 3 * 3600000)).toBe(true);
+  expect(count(after, 'gap')).toBeLessThanOrEqual(1);
+  expect(count(after, 'resume')).toBeLessThanOrEqual(1);
   // 「今天 x km」 is the same history logic.
   const today = todayRouteDistance(rows, { now: dayEnd - 1, dayStart, recording: false });
-  expect(today.metres).toBeLessThan(200);
+  expect(today.metres).toBeLessThan(250);
 });
 
 // A walk the phone measured (1.3 m/s) counts as before; so does one without

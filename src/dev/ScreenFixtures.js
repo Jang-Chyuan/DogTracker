@@ -260,7 +260,20 @@ function legsPath(now, fromAgo, from, legs, every = 10 * SECOND) {
   for (const leg of legs) {
     const minutes = leg.walk ?? leg.stay ?? leg.drive ?? leg.gap ?? leg.inside;
     const until = time + minutes * MINUTE;
-    if (leg.gap != null) { time = until; continue; }
+    // A break in the data while on the move (the dog walks on unseen, at the
+    // leg's speed and bearing, at most 300 m): it resumes elsewhere, a real 「沒有資料」 —
+    // a break that ends where it began is a stay (067). { gap, still: true }
+    // keeps the place.
+    if (leg.gap != null) {
+      if (!leg.still) {
+        // At most 300 m: far enough to be another place, near the station.
+        const gone = Math.min(300, (leg.speed ?? 1.1) * leg.gap * 60);
+        const turn = ((leg.bearing ?? 45) * Math.PI) / 180;
+        here = offset(here, Math.cos(turn) * gone, Math.sin(turn) * gone);
+      }
+      time = until;
+      continue;
+    }
     const speed = leg.walk != null || leg.drive != null ? leg.speed ?? (leg.drive != null ? 12 : 1.1) : 0;
     const angle = ((leg.bearing ?? 45) * Math.PI) / 180;
     for (; time < until && time <= now - 5 * SECOND; time += every, index += 1) {

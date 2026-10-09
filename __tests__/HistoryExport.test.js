@@ -29,7 +29,9 @@ function legs(list, { from = 0, north = 0, east = 0 } = {}) {
   for (const leg of list) {
     const minutes = leg.walk ?? leg.stay ?? leg.drive ?? leg.gap;
     const until = t + minutes * MINUTE;
-    if (leg.gap != null) { t = until; continue; }
+    // The dog walks on unseen during a break (067: a break that ends where it
+    // began would be a stay).
+    if (leg.gap != null) { y += minutes * 60 * 0.8; x += minutes * 60 * 0.6; t = until; continue; }
     const speed = leg.walk != null ? leg.speed ?? 1 : leg.drive != null ? leg.speed ?? 12 : 0;
     for (; t < until; t += 10 * SECOND, index += 1) {
       y += speed * 10 * 0.8; x += speed * 10 * 0.6;

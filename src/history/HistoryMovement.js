@@ -1,4 +1,4 @@
-import { configFor, distanceMeters, atLeast, accuracyOf, measuredSpeedMps } from './HistoryConfig';
+import { configFor, distanceMeters, atLeast, accuracyOf, measuredSpeedMps, samePlaceGap } from './HistoryConfig';
 
 const travelMode = subject => (subject === 'phone' ? 'driving' : 'ride');
 const footMode = subject => (subject === 'phone' ? 'walking' : 'moving');
@@ -64,6 +64,8 @@ export function countDistances(edges, config = configFor('dog')) {
       edge.countedDistanceM = 0; anchor = null; continue;
     }
     if (!anchor) { anchor = edge.from; budget = 0; }
+    // A break at one place (samePlaceGap) is no walk.
+    if (edge.bridged) { edge.countedDistanceM = 0; continue; }
     const speed = config.speedBudget ? measuredSpeedMps(edge.to) : null;
     // Speeds under stillMps are a phone standing still (measurement noise).
     budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
@@ -89,8 +91,10 @@ export function historyMovement(points, { subject = 'dog', config = configFor(su
   const edges = points.slice(1).map((to, i) => {
     const from = points[i], durationMs = to.time - from.time;
     const distanceM = distanceMeters(from, to);
-    return { from, to, start: from.time, end: to.time, durationMs, distanceM,
-      speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs,
+    // 067: a break at one place is part of the stay there, not a gap.
+    const bridged = samePlaceGap(from, to, config);
+    return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
+      speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs && !bridged,
       // Into or within a hold: not movement (判定表「停在原處前後的距離」:
       // the drift drawn onto the hold spot does not count); the release edge
       // out of it is ordinary movement from the spot.

@@ -20,7 +20,7 @@ test('switch locations carry coordinates and time without boarding text or stay 
 });
 // spec.txt「中間隔著沒有資料時不另外加點」。
 test('gap splits different transport modes without switch point', () => {
-  const model = historyTimeline([...route([6, 6, 6]), point(330, 200), point(340, 210)], { subject: 'phone' });
+  const model = historyTimeline([...route([6, 6, 6]), point(330, 400), point(340, 410)], { subject: 'phone' });
   expect(model.sections.map(s => s.mode)).toEqual(['driving', 'gap', 'walking']);
   expect(model.locations.filter(n => n.type === 'switch')).toHaveLength(0);
   expect(model.hasGaps).toBe(true); expect(model.sections[1]).toMatchObject({ start: 30000, end: 330000, distanceM: 0, countedDistanceM: 0, line: 'long-dashed' });
@@ -65,17 +65,25 @@ test('all-indoor day contains only house node', () => {
 // spec.txt「有缺口…拆成好幾個停在原處節點，中間插沒有資料」。
 test('indoor packet gaps split houses with a no-data row', () => {
   const held = { heldReason: 'indoor', heldSince: -1, locationTime: null };
-  const model = historyTimeline([point(0, 0, held), point(60, 0, held), point(300, 0, held), point(360, 0, held)]);
+  // 067: at the same spot the break is part of the house; a house at another
+  // spot after it keeps the no-data row.
+  const same = historyTimeline([point(0, 0, held), point(60, 0, held), point(300, 0, held), point(360, 0, held)]);
+  expect(same.nodes.map(n => n.type)).toEqual(['indoor']);
+  expect(same.nodes[0].durationMs).toBe(360000);
+  const model = historyTimeline([point(0, 0, held), point(60, 0, held), { ...point(300, 60, held), heldSince: 290000 },
+    { ...point(360, 60, held), heldSince: 290000 }]);
   expect(model.nodes.map(n => n.type)).toEqual(['indoor', 'gap', 'indoor']);
   expect(model.nodes.filter(n => n.type === 'indoor').map(n => n.durationMs)).toEqual([60000, 60000]);
 });
 // edges.txt「停留可以合併…不含中斷5分…地圖上不連線」。
-test('merged stay still exposes gap row and deduction', () => {
+// 067 (user 2026-10-09): a break at the same place is part of the stay — no
+// no-data row, nothing deducted.
+test('a stay across a break at the same place is one stay without a no-data row', () => {
   const points = [...[0, 180, 480, 660].map(t => point(t)),
     ...visitsFixture().slice(5).map(p => ({ ...p, time: p.time + 500000 }))];
   const model = historyTimeline(points, { range: { start: 0, end: 1130000 } });
-  expect(model.locations.find(n => n.type === 'stop')).toMatchObject({ type: 'stop', interruptionMs: 300000, durationMs: 360000 });
-  expect(model.sections.some(s => s.type === 'gap')).toBe(true);
+  expect(model.locations.find(n => n.type === 'stop')).toMatchObject({ type: 'stop', interruptionMs: 0, durationMs: 660000 });
+  expect(model.sections.some(s => s.type === 'gap' && s.start === 180000)).toBe(false);
 });
 // Calendar, list, map and exports use the merged stream.
 test('returned common stream and list always use the merged sources', () => {
