@@ -256,7 +256,9 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   // The "save as" in progress (Android 7–9): its queue, files and Promise.
+  // Touched on the UI thread only; after invalidate() none starts.
   private var createDocument: Triple<CreateDocumentQueue<File>, String, Promise>? = null
+  @Volatile private var downloadsDisposed = false
 
   /**
    * Copies the export's files to Download/DogTracker/: resolves
@@ -271,17 +273,22 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     // ExportDownloads.mode: MediaStore from Android 10 (API 29).
     if (Build.VERSION.SDK_INT >= 29) {
       onWorker(promise, "EXPORT_DOWNLOAD", "export worker stopped") {
+        val saved = ArrayList<ExportDownloads.Saved>()
         try {
-          val saved = files.map { saveToMediaStore(it, mime) }
+          for (file in files) saved.add(saveToMediaStore(file, mime))
           promise.resolve(Arguments.createMap().apply { putArray("files", savedArray(saved)); putBoolean("cancelled", false) })
         } catch (e: Exception) {
           com.dogtracker.AppLog.w("HistoryExport", "save to Downloads failed", e)
+          // All pages or none: the pages this save already published go, so
+          // 重試 does not leave a second copy of them (Codex review).
+          saved.forEach { runCatching { context.contentResolver.delete(Uri.parse(it.uri), null, null) } }
           promise.reject("EXPORT_DOWNLOAD", e.message, e)
         }
       }
       return
     }
     UiThreadUtil.runOnUiThread {
+      if (downloadsDisposed) { promise.reject("EXPORT_DOWNLOAD", "module invalidated"); return@runOnUiThread }
       if (createDocument != null) { promise.reject("EXPORT_DOWNLOAD", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1065)); return@runOnUiThread }
       val queue = CreateDocumentQueue(files)
       createDocument = Triple(queue, mime, promise)
@@ -314,6 +321,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   private fun askCreateDocument() {
+    if (downloadsDisposed) return
     val (queue, mime, promise) = createDocument ?: return
     val file = queue.current() ?: return finishCreateDocument(false)
     try {
@@ -337,11 +345,14 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           if (it.moveToFirst()) it.getString(0) else null
         } ?: file.name
         UiThreadUtil.runOnUiThread {
+          // Only this save's own session, and not after invalidate().
+          if (downloadsDisposed || createDocument?.first !== queue) return@runOnUiThread
           if (queue.done(ExportDownloads.Saved(name, uri.toString())) == null) finishCreateDocument(false) else askCreateDocument()
         }
       } catch (e: Exception) {
-        UiThreadUtil.runOnUiThread { createDocument = null }
-        promise.reject("EXPORT_DOWNLOAD", e.message, e)
+        UiThreadUtil.runOnUiThread {
+          if (createDocument?.first === queue) { createDocument = null; promise.reject("EXPORT_DOWNLOAD", e.message, e) }
+        }
       }
     }
   }
@@ -770,8 +781,11 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   override fun invalidate() {
-    createDocument?.third?.reject("EXPORT_DOWNLOAD", "module invalidated")
-    createDocument = null
+    downloadsDisposed = true
+    UiThreadUtil.runOnUiThread {
+      createDocument?.third?.reject("EXPORT_DOWNLOAD", "module invalidated")
+      createDocument = null
+    }
     try { context.unregisterReceiver(shareChosen) } catch (_: IllegalArgumentException) { }
     context.removeActivityEventListener(this)
     // Every running/queued export stops at its next check (the base map's

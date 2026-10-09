@@ -47,10 +47,11 @@ test('a whole day indoors: little distance, a few long stays, the overnight brea
   // Before: 808 m walked, 8 stays, 11 「沒有資料」 rows, 6 恢復記錄.
   expect(before.distanceM).toBeGreaterThan(700);
   expect(count(before, 'stop')).toBe(8);
-  // After: about 221 m (moves the phone measured itself), 3 long stays, one
-  // break left (the first, before the day settles).
+  // After: about 220 m (moves the phone measured itself), two or three long
+  // stays, one break left (the first, before the day settles).
   expect(after.distanceM).toBeLessThan(250);
-  expect(count(after, 'stop')).toBe(3);
+  expect(count(after, 'stop')).toBeGreaterThanOrEqual(1);
+  expect(count(after, 'stop')).toBeLessThanOrEqual(3);
   expect(after.nodes.filter(n => n.type === 'stop').every(n => n.durationMs >= 3 * 3600000)).toBe(true);
   expect(count(after, 'gap')).toBeLessThanOrEqual(1);
   expect(count(after, 'resume')).toBeLessThanOrEqual(1);
@@ -83,7 +84,14 @@ test('stillFix and measuredSpeedMps read the phone row', () => {
   expect(stillFix({ raw_speed_kmh: null }, config)).toBe(false);
   // Dogs keep their own rules (IndoorHold).
   expect(stillFix({ raw_speed_kmh: 0, speed_accuracy_mps: 0.3 }, HISTORY_CONFIG.dog)).toBe(false);
-  const edges = [{ mode: 'walking', from: { latitude: 0, longitude: 0, accuracy: 5 },
-    to: { latitude: 0.0005, longitude: 0, accuracy: 5, raw_speed_kmh: 0 }, durationMs: 5000 }];
-  expect(countDistances(edges, config)[0].countedDistanceM).toBe(0);
+  const still = { raw_speed_kmh: 0, speed_accuracy_mps: 0.3 };
+  const step = (from, to) => [{ mode: 'walking', from: { latitude: 0, longitude: 0, accuracy: 5, ...from },
+    to: { latitude: 0.0005, longitude: 0, accuracy: 5, ...to }, durationMs: 40000 }];
+  // 55 m in 40 s with both fixes measured standing still: drift.
+  expect(countDistances(step(still, still), config)[0].countedDistanceM).toBe(0);
+  // A walk that ends on a still fix: the faster end counts (Codex review).
+  expect(countDistances(step({ raw_speed_kmh: 5, speed_accuracy_mps: 0.4 }, still), config)[0].countedDistanceM)
+    .toBeGreaterThan(50);
+  // No measured speed at either end: the old rule.
+  expect(countDistances(step({}, {}), config)[0].countedDistanceM).toBeGreaterThan(50);
 });

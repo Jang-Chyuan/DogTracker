@@ -305,9 +305,12 @@ ref) {
   const onSaved = useCallback(({ files, mime }) => {
     const first = files[0];
     const text = files.length > 1 ? t('c1168', { name: first.name, count: files.length }) : t('c1164', { name: first.name });
-    tipRef.current?.({ text, key: Date.now(), action: exportNative?.openDownload ? { label: t('c1165'),
+    const key = Date.now();
+    tipRef.current?.({ text, key, action: exportNative?.openDownload ? { label: t('c1165'),
+      // A failed 開啟 replaces only its own tip (or none), never a newer one.
       onPress: () => Promise.resolve(exportNative.openDownload(first.uri, mime))
-        .catch(() => tipRef.current?.({ text: t('c1167'), key: Date.now() })) } : null });
+        .catch(() => tipRef.current?.(current => (!current || current.key === key
+          ? { text: t('c1167'), key: Date.now() } : current))) } : null });
   }, [exportNative]);
   const exporter = useHistoryExport({ screen, exporter: exportNative, initial: initialExport, onSaved });
   const exportSheet = useRef(null);

@@ -83,15 +83,19 @@ export function historyTimeline(rows = [], options = {}) {
     }
     if (e.mode === 'indoor') continue;
     const prior = sections[sections.length - 1];
-    if (prior && prior.mode === e.mode && prior.end === e.start && !locations.some(n => n.start === e.start || n.end === e.start)) {
+    // A dog's break keeps its own reason (收不到 GPS / 沒收到訊號): breaks
+    // with different reasons are different rows.
+    const reason = e.gap && subject === 'dog'
+      ? (stream.packets.some(p => p.time > e.start && p.time < e.end) ? 'no-gps' : 'no-signal') : undefined;
+    if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
+      && !locations.some(n => n.start === e.start || n.end === e.start)) {
       prior.end = e.end; prior.durationMs += e.durationMs;
       prior.distanceM += e.gap ? 0 : e.distanceM; prior.countedDistanceM += e.countedDistanceM;
     } else sections.push({ type: e.gap ? 'gap' : 'movement', mode: e.mode,
       // 067: a dog's break says why — packets came without a fix
       // (「收不到 GPS」) or nothing came (「沒收到訊號」). A phone's stays
       // 「沒有資料」.
-      ...(e.gap && subject === 'dog' ? { reason: stream.packets.some(p => p.time > e.start && p.time < e.end)
-        ? 'no-gps' : 'no-signal' } : {}),
+      ...(reason ? { reason } : {}),
       start: e.start, end: e.end, durationMs: e.durationMs,
       latitude: e.from.latitude, longitude: e.from.longitude,
       endLatitude: e.to.latitude, endLongitude: e.to.longitude,

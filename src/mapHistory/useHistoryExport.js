@@ -128,10 +128,13 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
         // The copies in Download/DogTracker/ are the phone's; the temporary
         // files go (finally) as after a share that was not made.
         const saved = await exporter.saveToDownloads(paths, EXPORT_MIME[format]);
+        // Once the copy has begun it finishes (the system picker or MediaStore
+        // cannot be called back): the tip says where it went even if the
+        // window was closed meanwhile (Codex review, 067).
+        if (saved?.files?.length) onSaved?.({ files: saved.files, mime: EXPORT_MIME[format] });
         if (!alive()) return;
         prepared.current = null;
         setState({ phase: 'closed', format: null });
-        if (saved?.files?.length) onSaved?.({ files: saved.files, mime: EXPORT_MIME[format] });
         return;
       }
       // 打開 Android 分享時才關掉小視窗.

@@ -54,6 +54,17 @@ function detectVehicles(edges, config) {
  * larger accuracy of the two (at least 5 m, 10 m without an accuracy). The
  * distance lands on the edge that crossed the threshold.
  */
+// The step's speed for the budget: the speed measured at the fix it
+// reaches; a long step (over 10 s, sparse fixes) also takes the speed it
+// left with, so a walk that ends on a fix taken standing still still counts
+// (Codex review, 067). null when neither fix has one.
+function stepSpeed(edge) {
+  const to = measuredSpeedMps(edge.to);
+  const from = edge.durationMs > 10000 ? measuredSpeedMps(edge.from) : null;
+  if (to == null && (edge.durationMs <= 10000 || from == null)) return to == null && from == null ? null : to ?? from;
+  return Math.max(to ?? 0, from ?? 0);
+}
+
 export function countDistances(edges, config = configFor('dog')) {
   let anchor = null;
   // How far the phone's own measured speeds say it went since the anchor
@@ -66,7 +77,8 @@ export function countDistances(edges, config = configFor('dog')) {
     if (!anchor) { anchor = edge.from; budget = 0; }
     // A break at one place (samePlaceGap) is no walk.
     if (edge.bridged) { edge.countedDistanceM = 0; continue; }
-    const speed = config.speedBudget ? measuredSpeedMps(edge.to) : null;
+    // With neither fix's speed measured, the old rule (Infinity).
+    const speed = config.speedBudget ? stepSpeed(edge) : null;
     // Speeds under stillMps are a phone standing still (measurement noise).
     budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
     const moved = distanceMeters(anchor, edge.to);

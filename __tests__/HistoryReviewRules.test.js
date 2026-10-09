@@ -170,3 +170,12 @@ test('an overnight break at the same place is one stay; one that ends elsewhere 
     { subject: 'phone', range: { start: 0, end: 70000000 } });
   expect(days.nodes.map(n => n.type)).toContain('gap');
 });
+
+// Codex review: back after a break 20 m from the last fix (inside the 25 m
+// rule) but 40 m from where the stay began is still the same stay, which
+// goes on around where it resumed.
+test('a stay resumed after a break near its last fix is the same visit', () => {
+  const visits = historyVisits(path([[0, 0], [60, 10], [120, 20], [2000, 40], [2060, 42], [2120, 45]]));
+  expect(visits).toHaveLength(1);
+  expect(visits[0].end).toBe(2120000);
+});

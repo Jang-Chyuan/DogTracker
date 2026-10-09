@@ -34,6 +34,7 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
       if (dt > config.gapMs && !samePlaceGap(judged, p, config)
         && (dt >= config.mergeGapMs || above(distanceMeters(judged, p), config.radiusM))) finish();
     }
+    const judgedBefore = judged;
     judged = p;
     if (!current) {
       insideIndex = i;
@@ -47,7 +48,10 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
     // (067) — it counts as inside.
     const still = config.stillMps && measuredSpeedMps(p) != null && measuredSpeedMps(p) < config.stillMps
       && !(distanceMeters(current.center, p) > (config.stillPlaceM || config.radiusM));
-    if (still || !above(distanceMeters(current.center, p), config.radiusM)) {
+    // Back after a break at the same place as the last judged fix: still the
+    // same stay, wherever the circle's centre is (Codex review, 067).
+    const resumed = !!judgedBefore && samePlaceGap(judgedBefore, p, config);
+    if (still || resumed || !above(distanceMeters(current.center, p), config.radiusM)) {
       const last = current.points[current.points.length - 1];
       // All signal gaps are deducted, including gaps inside an unconfirmed exit.
       const gaps = points.slice(insideIndex + 1, i + 1).filter(q => !(q.accuracy > config.stayAccuracyM));
@@ -62,6 +66,10 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
       current.durationMs += p.time - last.time - interrupted;
       current.interruptionMs += interrupted;
       current.end = p.time; current.points.push(p); outside = []; insideIndex = i;
+      // The stay goes on around where it resumed (the circle follows).
+      if (resumed && above(distanceMeters(current.center, p), config.radiusM)) {
+        current.center = { latitude: p.latitude, longitude: p.longitude };
+      }
     } else {
       outside.push({ point: p, index: i });
       if (outside.length >= 2 && p.time - outside[0].point.time > config.leaveMs) {

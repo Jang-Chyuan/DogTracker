@@ -59,3 +59,13 @@ test('a phone\'s break that ends elsewhere still says 沒有資料', () => {
   expect(gap.reason).toBeUndefined();
   expect(sectionText(gap).lead).toBe('沒有資料');
 });
+
+// Codex review: two breaks back to back with different reasons stay two rows.
+test('back-to-back dog breaks keep their own reasons', () => {
+  const fix = (seconds, metres) => point(seconds, metres, { accuracy: 5, satellites: 9, hdop: 0.9 });
+  const noFix = seconds => ({ ...point(seconds, 0), latitude: 0, longitude: 0, slave_lat: 0, slave_lon: 0,
+    satellites: 0, hdop: 655.35 });
+  const model = historyTimeline([fix(0, 0), fix(10, 5), noFix(200), noFix(400), fix(600, 500), fix(1200, 1000),
+    fix(1210, 1005)], { subject: 'dog', replayHolds: packets => packets });
+  expect(model.nodes.filter(n => n.type === 'gap').map(n => n.reason)).toEqual(['no-gps', 'no-signal']);
+});

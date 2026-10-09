@@ -339,6 +339,22 @@ describe('the export window (useHistoryExport)', () => {
     act(() => renderer.unmount());
   });
 
+  test('存到下載 closed while copying: the copy finishes and the tip still says where it went', async () => {
+    let finish;
+    const exporter = fakeExporter({ saveToDownloads: () => new Promise(resolve => { finish = resolve; }) });
+    const onSaved = jest.fn();
+    const renderer = await mount({ exporter, lookup: lookupOf(), onSaved });
+    act(() => state.open());
+    let running;
+    await act(async () => { running = state.save('csv'); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    act(() => state.close());
+    await act(async () => { finish({ files: [{ name: 'a.csv', uri: 'content://downloads/3' }], cancelled: false }); await running; });
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(state.phase).toBe('closed');
+    act(() => renderer.unmount());
+  });
+
   test('without the native save (an older build) there is no 存到下載', async () => {
     const renderer = await mount({ exporter: fakeExporter(), lookup: lookupOf() });
     expect(state.canSave).toBe(false);
