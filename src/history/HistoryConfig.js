@@ -16,7 +16,11 @@ const common = { radiusM: 25, leaveMs: 20000, stayMs: 180000, stayRatio: 3,
   samePlaceGapMaxMs: 16 * 3600000,
   // 067: a visit this long is a stay even before five visits give a baseline
   // (a phone at home all day has only a few, very long visits).
-  alwaysStayMs: 30 * 60000 };
+  alwaysStayMs: 30 * 60000,
+  // 067: a hold the dog walked on out of — its next real fix this far from
+  // the hold spot (IndoorHold releases at travelReleaseM 80 m) — was
+  // 「收不到 GPS」 while moving, not a stay.
+  movedOnM: 150 };
 export const HISTORY_CONFIG = Object.freeze({
   // stillMps (phone only): a fix whose own measured speed is under this, with
   // a speed accuracy within stillSpeedAccuracyMps, was taken standing still

@@ -47,7 +47,10 @@ const MODE_WORD = { walking: t('c134'), driving: t('c135'), moving: t('c125'), r
  */
 export function sectionText(section) {
   if (section.type === 'gap') {
-    return { icon: 'dots', lead: t('c089'), time: '', rest: ` ${clock(section.start)}–${clock(section.end)}` };
+    // 067: a dog's break — 「收不到 GPS」 (packets without a fix) or
+    // 「沒收到訊號」 (no packet); otherwise 「沒有資料」.
+    const lead = section.reason === 'no-gps' ? t('c1169') : section.reason === 'no-signal' ? t('c1170') : t('c089');
+    return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${clock(section.end)}` };
   }
   const vehicle = section.mode === 'driving' || section.mode === 'ride';
   return {
