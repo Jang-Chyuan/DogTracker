@@ -180,7 +180,7 @@ test('background retains cache, resume reads immediately, and download revisions
   }
 });
 
-test('account changes, logout and demo clear cache and ignore old pending results', async () => {
+test('account changes, logout and disabled reads clear cache and ignore old pending results', async () => {
   const rows = [row('cached', 4, NOW, 5)];
   const database = { latestBySlave: jest.fn(async () => rows) };
   let renderer, resolveRead;
@@ -222,7 +222,7 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
     expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, error: 'locked' });
-    // Demo mode and logout stop the reads and clear the rows.
+    // An unavailable database stops reads and clears cached rows.
     await act(async () => { renderer.update(view({ enabled: false })); });
     expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], holds: {}, statuses: {}, error: '' });
     const calls = database.latestBySlave.mock.calls.length;

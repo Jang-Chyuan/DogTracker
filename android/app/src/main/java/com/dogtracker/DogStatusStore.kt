@@ -137,7 +137,7 @@ class DogStatusStore private constructor(context: Context) {
     lastSaved.clear()
   }
 
-  /** One engine/monitor for the App's readers, Demo transactions and BLE writer. */
+  /** One engine/monitor for the App's readers, transactions and BLE writer. */
   @Synchronized fun executeSql(sql: String, params: JSONArray): JSONObject {
     val query = sql.trimStart()
     val verb = query.takeWhile { !it.isWhitespace() }.uppercase(java.util.Locale.ROOT)

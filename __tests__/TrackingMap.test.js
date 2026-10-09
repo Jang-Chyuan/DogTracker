@@ -140,7 +140,7 @@ test('provider draws the prepared visible segments; empty presentation removes e
     renderer.update(
       <TrackingMap
         {...defaults}
-        source="demo"
+        source="history:range"
         presentation={{
           master: null,
           slave: null,
@@ -167,7 +167,7 @@ test('switching data source reuses the native map and reframes the new source', 
     renderer.update(
       <TrackingMap
         {...defaults}
-        source="demo"
+        source="history:range"
         provider={GOOGLE_MAP_PROVIDER}
       />,
     ),
@@ -273,7 +273,6 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
         tracking={tracking}
         alerts={{ status: 'fresh' }}
         phone={{ enabled: true, permission: 'precise' }}
-        onDemo={jest.fn()}
         bottomInset={80}
         mapProvider={GOOGLE_MAP_PROVIDER}
       />,
@@ -393,7 +392,7 @@ test('tile completion and changed padding never refit an already framed map', as
   );
 });
 
-test('waits for initial DB positions; a later Demo reset does not remount native map with stale readiness', async () => {
+test('waits for initial DB positions; a later readiness change does not remount native map with stale readiness', async () => {
   await render({ dataReady: false });
   expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
   await act(async () =>

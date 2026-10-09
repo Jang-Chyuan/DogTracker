@@ -110,7 +110,6 @@ test('summary distinguishes pending preferences, empty sources and read errors w
   ).toBe('正在讀取追蹤資料…');
   const empty = { ...tracking, point: { ...trackingPoint, id: null } };
   expect(sheetSummary(empty)).toBe('等待硬體資料');
-  expect(sheetSummary({ ...empty, mode: 'demo' })).toBe('尚無 Demo 資料');
   expect(sheetSummary({ ...tracking, errors: { real: 'locked' } })).toBe(
     '資料讀取失敗 · 上滑查看',
   );
