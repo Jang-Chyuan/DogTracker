@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The live map's top cards (design v3 A2/A2c/A6, 「提醒卡（A2、A2c、N3 共用）」
 // 「A6 上方卡片」「提醒卡的堆疊」): 8dp under the gear, 16dp from the sides,
 // stacked 8dp apart in TopAlerts.topCards' order. A problem card is white with
@@ -160,7 +161,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
     <Pressable
       testID={`top-card-close-${value.id}`}
       accessibilityRole="button"
-      accessibilityLabel={value.closeLabel || '關閉'}
+      accessibilityLabel={value.closeLabel || t("c765")}
       hitSlop={CLOSE_SLOP}
       onPress={close}
       style={({ pressed }) => [styles.close, pressed && styles.pressed]}
@@ -343,7 +344,7 @@ export function N3Card({ value, leaving = false, top, onPress, onGone, onHeight 
           accessibilityRole="button"
           accessibilityLiveRegion="polite"
           accessibilityLabel={`${value.title}，${value.detail}`}
-          accessibilityHint="打開這件事"
+          accessibilityHint={t("c771")}
           onPress={() => onPress?.(value)}
           style={({ pressed }) => [styles.card, styles.alert, pressed && styles.pressed]}
         >

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 
 // Indoors a collar either loses its fix or keeps one that wanders tens to
@@ -150,11 +151,11 @@ export function fixQuality(row, config = HOLD_CONFIG) {
 const charging = value => value === 1 || value === true || value === '1';
 
 const REASONS = Object.freeze({
-  charging: '充電中',
-  indoor: '室內',
-  window: '窗邊',
-  noFix: 'GPS 沒有定位',
-  weak: 'GPS 訊號弱',
+  charging: t("c731"),
+  indoor: t('c114'),
+  window: t("c853"),
+  noFix: t("c882"),
+  weak: t("c883"),
 });
 
 /**

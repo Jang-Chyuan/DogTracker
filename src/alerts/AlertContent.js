@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What the one merged alert notification says (design v3 N1/N2, 判定表「提醒通知
 // 只有一則」「通知本體和「打開地圖」按鈕」, copy c168–c174, c304) and where a tap
 // on it (or on an N3 card) leads (cases「通知被點開」). Pure.
@@ -18,30 +19,30 @@ export function alertTarget(event) {
 // 「10 分鐘」, 「1 小時」, 「2 天」 (c170 {時長}).
 function duration(ms) {
   const minutes = Math.max(10, Math.floor((Number(ms) || 0) / 60000));
-  if (minutes < 60) return `${minutes} 分鐘`;
-  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} 小時`;
-  return `${Math.floor(minutes / (24 * 60))} 天`;
+  if (minutes < 60) return t("c469", { minutes: minutes });
+  if (minutes < 24 * 60) return t("c670", { value: Math.floor(minutes / 60) });
+  return t("c470", { value: Math.floor(minutes / (24 * 60)) });
 }
 
-const receiverName = number => (number != null ? `接收器 ${number}` : '接收器');
+const receiverName = number => (number != null ? t('c177', { number: number }) : t('c075'));
 
 /** One problem as one line: 「豆豆 不在接收範圍」. */
 export function alertLine(event) {
   switch (event.kind) {
     case 'dog-out-of-range':
-      return `${event.name} 不在接收範圍`;
+      return t('c168', { dogName: event.name });
     case 'dog-stale':
       // The card's words: a dog held indoors is judged by its packets.
-      return `${event.name} ${duration(event.ageMs)}沒有新${event.basis === 'packet' ? '資料' : '位置'}`;
+      return ((event.basis === 'packet') ? t("c463", { name: event.name, value: duration(event.ageMs) }) : t('c170', { dogName: event.name, duration: duration(event.ageMs) }));
     case 'dog-battery':
-      return `${event.name} 電量低 ${event.percentage}%`;
+      return t("c464", { name: event.name, percentage: event.percentage });
     case 'receiver-battery':
-      return `${receiverName(event.number)} 電量低 ${event.percentage}%`;
+      return t("c465", { value: receiverName(event.number), percentage: event.percentage });
     case 'storage':
-      return event.storage?.full ? '手機空間不足，位置存不進手機' : '位置存不進手機';
+      return event.storage?.full ? t('c282') : t("c466");
     case 'receiver-disconnected': {
       const count = event.outage?.dogCount || 0;
-      return `${receiverName(event.outage?.number)} 斷線了${count ? `（${count} 隻狗收不到）` : ''}`;
+      return ((count) ? t("c467", { value: receiverName(event.outage?.number), count: count }) : t("c468", { value: receiverName(event.outage?.number) }));
     }
     default:
       return '';
@@ -66,9 +67,9 @@ export function notificationContent(problems) {
   const dogs = new Set(shown.filter(isDog).map(event => event.subject));
   const devices = shown.filter(event => !isDog(event));
   let title;
-  if (!devices.length) title = `DogTracker・${dogs.size} 隻狗要注意`;
-  else if (!dogs.size) title = 'DogTracker・接收器與手機要注意';
-  else title = `DogTracker・${shown.length} 件事要注意`;
+  if (!devices.length) title = t('c169', { count: dogs.size });
+  else if (!dogs.size) title = t('c173');
+  else title = t("c471", { length: shown.length });
   const lines = shown.map(alertLine);
   return {
     id: ALERT_NOTIFICATION_ID,
@@ -78,8 +79,8 @@ export function notificationContent(problems) {
     body: lines.join('\n'),
     target: alertTarget(shown[0]),
     actions: [
-      { id: 'open-map', label: '打開地圖', target: { screen: 'map', frameAll: true } },
-      { id: 'pause', label: `暫停提醒 ${PAUSE_MINUTES} 分` },
+      { id: 'open-map', label: t('c171'), target: { screen: 'map', frameAll: true } },
+      { id: 'pause', label: t("c462", { PAUSE_MINUTES: PAUSE_MINUTES }) },
     ],
   };
 }

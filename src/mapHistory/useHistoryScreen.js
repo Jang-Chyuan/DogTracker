@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
 // route; H1/H2/H2b/H3a/H7/H8): the day shown, the rows of each dog shown, the
 // protagonist (local and cloud rows always merged), the range (automatic or the one the user dragged,
@@ -152,7 +153,7 @@ export function useHistoryDayRows({
         setResult(current => ({
           ...(current.key === key ? current : { rows: [], version: 0, replayHolds: null }),
           key,
-          error: error?.message || '讀取失敗',
+          error: error?.message || t("c440"),
         }));
         timer = setTimeout(poll, HISTORY_POLL_MS);
       }
@@ -766,7 +767,7 @@ export function useHistoryScreen({
             ? colors.phone
             : colors[`route${(dog?.slot ?? 0) + 1}`],
         avatar: avatars?.[id] ?? null,
-        name: id === 'phone' ? '我的路線' : displayName(id, aliases),
+        name: id === 'phone' ? t('c132') : displayName(id, aliases),
       };
     },
     [current.dogs, subject, avatars, aliases, colors],
@@ -857,7 +858,7 @@ export function useHistoryScreen({
   const addDog = useCallback(
     dog => {
       if (current.dogs.length >= MAX_DOGS) {
-        say(`最多同時 ${MAX_DOGS} 隻`);
+        say(t('c326', { count: MAX_DOGS }));
         return false;
       }
       addedDownloads.current.add(dog.id);

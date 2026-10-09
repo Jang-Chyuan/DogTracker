@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { wifiCommand } from './WifiValidation';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useState } from 'react';
@@ -26,7 +27,7 @@ import {
  * asks first. `wifi` is useReceiverWifi's answer; `receiver` is 「接收器 7」.
  * The receiver never sends a password back.
  */
-export default function WifiSettings({ wifi, receiver = '接收器', draft = null }) {
+export default function WifiSettings({ wifi, receiver = t('c075'), draft = null }) {
   const { colors } = useTheme();
   const settingsStyles = useStyles(getSettingsStyles);
   const styles = useStyles(getStyles);
@@ -57,11 +58,11 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
     try {
       await wifi.save(name, password);
       setPassword('');
-      setResult({ ok: true, text: `已傳送到${receiver}` });
+      setResult({ ok: true, text: t("c1033", { receiver: receiver }) });
     } catch (error) {
       setResult({
         ok: false,
-        text: `傳送失敗：${error?.message || '請再試一次'}`,
+        text: t("c1034", { value: error?.message || t("c545") }),
         retry: true,
       });
     } finally {
@@ -79,7 +80,7 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
       }
       setRemoving(null);
     } catch (error) {
-      setRemoveError(`刪除失敗：${error?.message || '請再試一次'}`);
+      setRemoveError(t("c989", { value: error?.message || t("c545") }));
     } finally {
       setRemoveBusy(false);
     }
@@ -102,37 +103,37 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
           style={[styles.note, styles.firstNote]}
           accessibilityLiveRegion="polite"
         >
-          {of('沒有連線，連上後才能讀取和設定 Wi-Fi。')}
+          {of(t("c1017"))}
         </Text>
       )}
-      <GroupTitle>{of('存的 Wi-Fi')}</GroupTitle>
+      <GroupTitle>{of(t("c1030"))}</GroupTitle>
       <GroupCard flat>
         {wifi.error ? (
           <ListRow
             testID="wifi-load-error"
             problem
-            title="讀取失敗"
+            title={t("c440")}
             detail={wifi.error}
             detailTone="crit"
-            action="重試"
+            action={t('c049')}
             onPress={wifi.reload}
-            label={`讀取失敗，${wifi.error}，重試`}
+            label={t("c1024", { error: wifi.error })}
           />
         ) : null}
         {!wifi.error && wifi.loading && !wifi.ssids ? (
           <View style={styles.loading}>
             <ActivityIndicator
               color={colors.tonalText}
-              accessibilityLabel="讀取中"
+              accessibilityLabel={t("c835")}
             />
           </View>
         ) : null}
         {!wifi.error && wifi.ssids && ssids.length === 0 ? (
           <ListRow
             testID="wifi-empty"
-            title="還沒有存 Wi-Fi"
+            title={t("c1028")}
             titleTone="muted"
-            label="還沒有存 Wi-Fi"
+            label={t("c1028")}
           />
         ) : null}
         {ssids.map(network => (
@@ -140,17 +141,15 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
             key={network}
             testID={`wifi-${network}`}
             title={network}
-            right={network === wifi.activeSsid ? '使用中' : undefined}
+            right={network === wifi.activeSsid ? t("c1027") : undefined}
             rightTone={['mutedBold']}
             onPress={() => setSsid(network)}
-            label={`${network}${
-              network === wifi.activeSsid ? '，使用中' : ''
-            }，填入名稱`}
+            label={((network === wifi.activeSsid) ? t("c1025", { network: network }) : t("c1026", { network: network }))}
           >
             <Pressable
               testID={`wifi-delete-${network}`}
               accessibilityRole="button"
-              accessibilityLabel={`刪除 ${network}`}
+              accessibilityLabel={t("c1018", { network: network })}
               disabled={!connected}
               onPress={() => {
                 setRemoveError('');
@@ -163,20 +162,20 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.deleteText}>刪除</Text>
+              <Text style={styles.deleteText}>{t("c949")}</Text>
             </Pressable>
           </ListRow>
         ))}
       </GroupCard>
 
-      <GroupTitle>新增或更新 Wi-Fi</GroupTitle>
+      <GroupTitle>{t("c1031")}</GroupTitle>
       <TextInput
         cursorColor={colors.accent}
         selectionColor={`${colors.accent}66`}
         selectionHandleColor={colors.accent}
         testID="wifi-ssid"
-        accessibilityLabel="Wi-Fi 名稱"
-        placeholder="Wi-Fi 名稱"
+        accessibilityLabel={t("c1019")}
+        placeholder={t("c1019")}
         placeholderTextColor={colors.textMuted}
         style={[styles.field, !connected && styles.disabled]}
         value={ssid}
@@ -197,8 +196,8 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
           selectionColor={`${colors.accent}66`}
           selectionHandleColor={colors.accent}
           testID="wifi-password"
-          accessibilityLabel="Wi-Fi 密碼"
-          placeholder="密碼"
+          accessibilityLabel={t("c1020")}
+          placeholder={t('c004')}
           placeholderTextColor={colors.textMuted}
           style={styles.passwordInput}
           value={password}
@@ -210,12 +209,12 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={shown ? '隱藏密碼' : '顯示密碼'}
+          accessibilityLabel={shown ? t("c897") : t("c898")}
           onPress={() => setShown(value => !value)}
           style={({ pressed }) => [styles.show, pressed && styles.pressed]}
           hitSlop={space.xs}
         >
-          <Text style={styles.showText}>{shown ? '隱藏' : '顯示'}</Text>
+          <Text style={styles.showText}>{shown ? t("c896") : t('c005')}</Text>
         </Pressable>
       </View>
       {result ? (
@@ -230,12 +229,12 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
           {result.retry ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="重試"
+              accessibilityLabel={t('c049')}
               onPress={send}
               hitSlop={space.s}
               style={({ pressed }) => [styles.retry, pressed && styles.pressed]}
             >
-              <Text style={styles.retryText}>重試</Text>
+              <Text style={styles.retryText}>{t('c049')}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -243,7 +242,7 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
       <Pressable
         testID="wifi-send"
         accessibilityRole="button"
-        accessibilityLabel="傳送到接收器"
+        accessibilityLabel={t("c1021")}
         accessibilityState={{ disabled: !connected || sending, busy: sending }}
         disabled={!connected || sending}
         onPress={send}
@@ -256,23 +255,23 @@ export default function WifiSettings({ wifi, receiver = '接收器', draft = nul
         {sending ? (
           <ActivityIndicator
             color={colors.tonalText}
-            accessibilityLabel="傳送中"
+            accessibilityLabel={t("c1022")}
           />
         ) : (
-          <Text style={styles.primaryText}>傳送到接收器</Text>
+          <Text style={styles.primaryText}>{t("c1021")}</Text>
         )}
       </Pressable>
       <Text style={styles.note}>
-        {of('只回傳 Wi-Fi 名稱，不會回傳存著的密碼。')}
+        {of(t("c1032"))}
       </Text>
 
       <ConfirmDialog
         testID="wifi-delete-dialog"
         visible={removing != null}
-        title="刪除 Wi-Fi？"
-        body={of(`不會再連「${removing ?? ''}」。`)}
+        title={t("c1029")}
+        body={of(t("c1023", { value: removing ?? '' }))}
         problem={removeError || null}
-        confirm="刪除"
+        confirm={t("c949")}
         destructive
         busy={removeBusy}
         onConfirm={remove}

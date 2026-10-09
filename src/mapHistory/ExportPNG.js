@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { size as tokenSize } from '../theme/tokens';
 // The PNG layout (H10a/H10b; 判定表「PNG 尺寸」「PNG 內容」「PNG 分頁」
 // 「時間軸清單（匯出 PNG）」): pages 1080px wide of title, legend (several
@@ -27,7 +28,7 @@ const S = PNG_STYLE;
 // The place column: from after the track column to the right margin.
 export const PLACE_X = S.timeColumn + S.trackColumn + tokenSize.export.sectionInset;
 export const PLACE_WIDTH = S.width - PLACE_X - S.side;
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const WEEKDAYS = [t("c444"), t("c687"), t("c688"), t("c689"), t("c690"), t("c691"), t("c692")];
 
 // Deterministic conservative measurement for tests; the app passes font widths.
 export const defaultMeasure = (text, size) => Array.from(String(text)).reduce((width, char) =>
@@ -65,9 +66,9 @@ export function pngTitle(snapshot, subjects) {
   const start = localDateParts(snapshot.since, snapshot.timeZone), end = localDateParts(snapshot.until, snapshot.timeZone);
   const weekday = start.weekday ?? new Date(Date.UTC(+start.year, +start.month - 1, +start.day)).getUTCDay();
   const date = `${+start.year}/${+start.month}/${+start.day}（${WEEKDAYS[weekday]}）${clock(start)}–${clock(end)}`;
-  if (subjects.length > 1) return { title: `DogTracker・狗的歷史（${subjects.length} 隻）`, subtitle: date };
+  if (subjects.length > 1) return { title: t("c796", { length: subjects.length }), subtitle: date };
   const one = subjects[0];
-  return { title: `DogTracker・${displayName(one)}`, subtitle: `${date}・${one.distanceWord || '移動'} ${one.distanceKm}${one.distanceExclusion || ''}` };
+  return { title: `DogTracker・${displayName(one)}`, subtitle: `${date}・${one.distanceWord || t('c125')} ${one.distanceKm}${one.distanceExclusion || ''}` };
 }
 
 /** One list row laid out: its height and lines (判定表「時間軸清單（匯出 PNG）」). */
@@ -125,7 +126,7 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
   });
   const legendHeight = multi ? (legendRow * S.legendHeight + S.legendHeight) + tokenSize.export.legendBottom : 0;
   const top = titleHeight + legendHeight;
-  if (top + S.mapHeight + S.footerHeight > S.maxHeight) throw new Error('標題或圖例超過可用高度');
+  if (top + S.mapHeight + S.footerHeight > S.maxHeight) throw new Error(t("c794"));
   const room = S.maxHeight - S.footerHeight;
   const pages = [];
   let page = null;
@@ -152,7 +153,7 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     const rows = (subject.timeline || []).map(row => {
       let laid = layoutRow(row, measure);
       if (laid.height > room - top - (multi ? S.sectionHeight : 0)) laid = layoutRow(row, measure, { truncate: true });
-      if (laid.height > room - top - (multi ? S.sectionHeight : 0)) throw new Error('清單列超過可用高度');
+      if (laid.height > room - top - (multi ? S.sectionHeight : 0)) throw new Error(t("c795"));
       return { type: 'row', subjectIndex, color, row, ...laid };
     });
     if (!rows.length) return;
@@ -160,7 +161,7 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     // 段頭: the name (36px bold) and 「08:03–12:11・7.3 km」 (28px) on one line,
     // the times under the name when a long name leaves no room.
     const section = continued => {
-      const title = `${subject.name}${continued ? '（續）' : ''}`, detail = `${span}・${subject.distanceKm}${subject.distanceExclusion || ''}`;
+      const title = ((continued) ? t("c776", { name: subject.name }) : t('c056', { dogName: subject.name })), detail = `${span}・${subject.distanceKm}${subject.distanceExclusion || ''}`;
       const width = S.width - 2 * S.side - tokenSize.export.sectionTextInset;
       const nameLines = wrap(title, S.sectionFont, width, measure, { bold: true });
       const oneLine = nameLines.length === 1 && measure(`${title}  ${detail}`, S.sectionFont, true) <= width;

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { logger } from '../logger';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { AppState } from 'react-native';
@@ -28,12 +29,12 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
   const [historyDatabase] = useState(() => Object.fromEntries(
     HISTORY_DATABASE_METHODS.map(method => [method, (...args) =>
-      controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error('資料庫尚未就緒'))]),
+      controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error(t("c487")))]),
   ));
   const [cloudDatabase] = useState(() => Object.fromEntries(
     CLOUD_DATABASE_METHODS.map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
-        Promise.reject(new Error('資料庫尚未就緒')),
+        Promise.reject(new Error(t("c487"))),
     ]),
   ));
   // Stable diagnostics adapter; it borrows this owner's real DB and cannot
@@ -214,7 +215,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       controlsRef.current = {
         historyCommand(method, args) {
           const task = initialization.real.then(async () => {
-            if (disposed || !databases.history) throw new Error('歷史資料庫尚未就緒');
+            if (disposed || !databases.history) throw new Error(t("c485"));
             if (method === 'read' && args[0].source === 'cloud' && args[1]) {
               if (!cloudInitialization) cloudInitialization = databases.cloud.initialize().catch(error => { cloudInitialization = null; throw error; });
               await cloudInitialization;
@@ -225,13 +226,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           return task.finally(() => commands.delete(task));
         },
         cloudCommand(method, args) {
-          if (!databases.cloud) return Promise.reject(new Error('雲端資料庫不可用'));
+          if (!databases.cloud) return Promise.reject(new Error(t("c486")));
           if (!cloudInitialization) {
             cloudInitialization = initialization.real.then(() => databases.cloud.initialize());
             cloudInitialization.catch(() => { cloudInitialization = null; });
           }
           const task = cloudInitialization.then(() => {
-            if (disposed) throw new Error('資料庫已關閉');
+            if (disposed) throw new Error(t("c483"));
             return method === 'initialize' ? undefined : databases.cloud[method](...args);
           });
           commands.add(task);
@@ -252,8 +253,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         },
         deleteDogData(options) {
           const task = initialization.real.then(() => {
-            if (disposed) throw new Error('資料庫已關閉');
-            if (!databases.dogData) throw new Error('這個版本不能刪除狗資料');
+            if (disposed) throw new Error(t("c483"));
+            if (!databases.dogData) throw new Error(t("c484"));
             return databases.dogData.deleteAll(options);
           });
           commands.add(task);
@@ -295,13 +296,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     lifecycle.ready.catch(error => {
       const message = getErrorMessage(error);
       if (!disposed) setErrors({ real: message });
-      logger.error('SQLite 開啟失敗:', error);
+      logger.error(t("c488"), error);
     });
     return () => {
       disposed = true;
       controlsRef.current = null;
       lifecycle.close().catch(error => {
-        logger.error('SQLite 關閉失敗:', error);
+        logger.error(t("c489"), error);
       });
     };
   }, [createDatabases]);
@@ -319,9 +320,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     initialSnapshotReady: trackingSources[mode].initialSnapshotReady,
     preferences,
     countUnsentUploads: () => controlsRef.current?.countUnsentUploads()
-      ?? Promise.reject(new Error('資料庫尚未就緒')),
+      ?? Promise.reject(new Error(t("c487"))),
     deleteDogData: options => controlsRef.current?.deleteDogData(options)
-      ?? Promise.reject(new Error('資料庫尚未就緒')),
+      ?? Promise.reject(new Error(t("c487"))),
     saveTrackingPreferences: patch =>
       controlsRef.current?.saveTrackingPreferences(patch),
     retryTrackingPreferences: () =>

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { readLocationPage } from './LocationTrackerDatabase';
 import { startLocationTracker, stopLocationTracker } from './LocationTrackerService';
@@ -6,7 +7,7 @@ import { startLocationTracker, stopLocationTracker } from './LocationTrackerServ
 export function useLocationTracker(foreground, readPage = readLocationPage) {
   const [cursors, setCursors] = useState([0]);
   const [revision, setRevision] = useState(0);
-  const [data, setData] = useState({ rows: [], total: 0, running: false, status: '讀取中…' });
+  const [data, setData] = useState({ rows: [], total: 0, running: false, status: t('c424') });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);

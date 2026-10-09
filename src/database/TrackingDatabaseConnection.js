@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { NativeModules, Platform } from 'react-native';
 import { open } from 'react-native-nitro-sqlite';
 
@@ -14,7 +15,7 @@ export function openTrackingDatabase() {
   }
   const native = NativeModules.BleBackground;
   if (!native.executeDatabase || !native.executeDatabaseBatch) {
-    throw new Error('Android SQLite bridge 不完整，請重新安裝完整建置的 App。');
+    throw new Error(t("c615"));
   }
   let closed = false;
   function requireOpen() {

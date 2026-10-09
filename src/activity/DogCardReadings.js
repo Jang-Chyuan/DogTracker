@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The readings a dog's open card needs beyond the map's own rows: the dog's
 // activity readings of the last hours (both tables, for the 活動量 row) and
 // its newest valid battery reading (the 電量 row says how old it is when it is
@@ -18,7 +19,7 @@ const rowsOf = result => result.results || result.rows?._array || [];
  *   newest row with a valid battery percentage.
  */
 export async function readDogCardRows(db, owner, slaveId, since) {
-  if (!Number.isInteger(slaveId) || slaveId < 1 || !Number.isFinite(since)) throw new Error('卡片查詢條件無效');
+  if (!Number.isInteger(slaveId) || slaveId < 1 || !Number.isFinite(since)) throw new Error(t("c445"));
   const columns = 'activity, activity_valid, activity_time, master_id, slave_id';
   const local = rowsOf(await db.executeAsync(`SELECT received_at AS time, ${columns}
     FROM dog_status WHERE slave_id=? AND received_at>=? AND activity_valid=1

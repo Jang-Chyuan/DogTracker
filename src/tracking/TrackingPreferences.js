@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { normalizeWaitingSources } from '../map/WaitingSources';
 import { getErrorMessage } from '../utils/errors';
 import { DEFAULT_ALERT_PREFERENCES, normalizeAlertPreferences } from '../alerts/AlertPreferences';
@@ -39,16 +40,16 @@ export const DROPPED_PREFERENCES = Object.freeze(['focusSlaveId', 'hiddenSlaveId
 
 export function validateTrackingPreferences(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error('追蹤設定格式錯誤');
+    throw new Error(t("c1045"));
   const settings = { ...DEFAULT_TRACKING_PREFERENCES, ...value };
   if (!['demo', 'real'].includes(settings.mode))
-    throw new Error('資料模式設定格式錯誤');
+    throw new Error(t("c1046"));
   for (const key of ['showMasterMarker', 'showSlaveMarker', 'showTrails', 'noDataCardDismissed']) {
     if (typeof settings[key] !== 'boolean')
-      throw new Error('地圖顯示設定格式錯誤');
+      throw new Error(t("c1047"));
   }
   if (!WINDOW_PRESETS.includes(settings.windowMinutes))
-    throw new Error('時間視窗設定格式錯誤');
+    throw new Error(t("c1048"));
   // Old per-role trail settings have different semantics; only missing new
   // fields receive defaults. Malformed saved JSON still fails explicitly.
   return {

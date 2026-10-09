@@ -1,3 +1,4 @@
+import { t } from './src/i18n';
 import { deletePhoneRoutes } from './src/locationTracker/LocationTrackerDatabase';
 import {
   ThemeProvider,
@@ -170,19 +171,19 @@ function useAccountGeneration(userId) {
 
 // The pages off the map, by route: the header's 「‹ 標題」.
 const PAGE_TITLES = {
-  settings: '設定',
-  receiver: '接收器',
-  phone: '手機',
-  cloud: 'Supabase 帳號',
-  alerts: '提醒',
-  diagnostics: '診斷',
-  advanced: '進階',
-  liveData: '即時資料',
-  cloudData: '本機／雲端資料',
-  locationRecords: '記錄清單',
-  wifi: '接收器 Wi-Fi',
+  settings: t("c482"),
+  receiver: t('c075'),
+  phone: t('c055'),
+  cloud: t('c183'),
+  alerts: t('c191'),
+  diagnostics: t('c186'),
+  advanced: t('c195'),
+  liveData: t('c251'),
+  cloudData: t("c481"),
+  locationRecords: t('c253'),
+  wifi: t('c247'),
   // Debug builds only: the alert engine's preview (src/dev/AlertPreview).
-  alertPreview: '提醒預覽',
+  alertPreview: t("dev.app.alertPreview"),
 };
 // Pages of their own, without the 「‹ 標題」 header: the first-use pages
 // (D1 登入, D2 權限, D3 連接接收器, D4 完成) and D0's failure screen.
@@ -193,7 +194,7 @@ const FULL_PAGES = new Set([
   'paired',
   'startFailed',
 ]);
-const pageTitle = route => PAGE_TITLES[route.name] || '設定';
+const pageTitle = route => PAGE_TITLES[route.name] || t("c482");
 // The v3 settings pages (light).
 const LIGHT_PAGES = new Set([
   'settings',
@@ -918,8 +919,8 @@ function TrackerApp({ resume = null, onRestart }) {
   });
   const receiverName =
     receiverNumber(receiverState) != null
-      ? `接收器 ${receiverNumber(receiverState)}`
-      : '接收器';
+      ? t('c177', { number: receiverNumber(receiverState) })
+      : t('c075');
   // When the last deletion went through (「已刪除・10:21」 on S7).
   const [deletedAt, setDeletedAt] = useState(resume?.deletedAt ?? null);
   useEffect(() => {
@@ -1256,7 +1257,7 @@ function TrackerApp({ resume = null, onRestart }) {
           wifi={wifi}
           deletion={deletion}
           onWifi={() => open('wifi')}
-          deletedText={deletedAt ? `已刪除・${formatClock(deletedAt)}` : null}
+          deletedText={deletedAt ? t("c480", { value: formatClock(deletedAt) }) : null}
         />
       );
       break;
@@ -1287,7 +1288,7 @@ function TrackerApp({ resume = null, onRestart }) {
             <Pressable
               testID="page-back"
               accessibilityRole="button"
-              accessibilityLabel={`返回，${pageTitle(route)}`}
+              accessibilityLabel={t("c479", { value: pageTitle(route) })}
               onPress={goBack}
               hitSlop={space.s}
               style={({ pressed }) => [styles.back, pressed && styles.pressed]}

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // A dog's name as edited on its page (design v3 A5a, 判定表「A5a 名字輸入」
 // 「A5a 名字清空時」): at most 20 characters; a name that is empty or only
 // spaces is never saved — the dog keeps the name it had (「狗 4」 if it never
@@ -17,7 +18,7 @@ export function clampName(text) {
 /** 「小黑」, or 「狗 4」 for a dog nobody has named. */
 export function displayName(slaveId, aliases) {
   const alias = aliases?.[slaveId]?.trim();
-  return alias || `狗 ${slaveId}`;
+  return alias || t("c1009", { slaveId: slaveId });
 }
 
 /**

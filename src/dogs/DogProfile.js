@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // A5: a dog's own page, opened by the pencil on its card (design v3 A5/A5a/
 // A5c; DESIGN.md §12). The face with a camera button (A5c), the name with a
 // pencil, 「訊號源 4」 under it. The title bar has only ‹.
@@ -154,7 +155,7 @@ export default function DogProfile({
         <View style={styles.header} pointerEvents="box-none">
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="返回"
+            accessibilityLabel={t("c438")}
             onPress={back}
             testID="dog-profile-back"
             style={({ pressed }) => [styles.back, pressed && styles.pressed]}
@@ -166,7 +167,7 @@ export default function DogProfile({
           <View style={styles.avatarWrap}>
             <PressScale
               accessibilityRole="button"
-              accessibilityLabel={`改${name}的頭像`}
+              accessibilityLabel={t("c645", { name: name })}
               testID="dog-profile-avatar"
               onPress={() => {
                 tapOutside();
@@ -178,7 +179,7 @@ export default function DogProfile({
             </PressScale>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`改${name}的頭像`}
+              accessibilityLabel={t("c645", { name: name })}
               testID="dog-profile-camera"
               hitSlop={(touch.min - CAMERA) / 2}
               onPress={() => {
@@ -202,14 +203,14 @@ export default function DogProfile({
                 ref={input}
                 value={text}
                 autoFocus
-                accessibilityLabel="狗的名字"
+                accessibilityLabel={t('c347')}
                 onChangeText={value => {
                   setFailed(false);
                   setText(clampName(value));
                 }}
                 editable={!saving}
                 maxLength={NAME_MAX * 2}
-                placeholder="狗的名字"
+                placeholder={t('c347')}
                 placeholderTextColor={colors.textMuted}
                 returnKeyType="done"
                 submitBehavior="blurAndSubmit"
@@ -224,7 +225,7 @@ export default function DogProfile({
           ) : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`${name}，改名字`}
+              accessibilityLabel={t("c646", { name: name })}
               onPress={startEditing}
               testID="dog-profile-name"
               style={({ pressed }) => [styles.nameRow, pressed && styles.pressed]}
@@ -239,11 +240,9 @@ export default function DogProfile({
               />
             </Pressable>
           )}
-          <Text style={styles.source}>{`訊號源 ${slaveId}`}</Text>
+          <Text style={styles.source}>{t('c052', { number: slaveId })}</Text>
           {failed && (
-            <Text style={styles.error} accessibilityRole="alert">
-              沒有存成功，再試一次
-            </Text>
+            <Text style={styles.error} accessibilityRole="alert">{t("c627")}</Text>
           )}
         </View>
       </View>

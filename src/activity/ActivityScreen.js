@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LoadingContent } from '../components/Skeleton';
 // A4 活動量: one dog's activity by 日 (15-minute mean bars) and 週／月／年
 // (one segmented bar per day, or per month for 年: 休息、一般、劇烈 from the
@@ -33,10 +34,10 @@ import { useActivityView } from './useActivityView';
 import { linesFor } from '../utils/textScale';
 
 export const ACTIVITY_MODES = Object.freeze([
-  { mode: 'day', label: '日' },
-  { mode: 'week', label: '週' },
-  { mode: 'month', label: '月' },
-  { mode: 'year', label: '年' },
+  { mode: 'day', label: t("c444") },
+  { mode: 'week', label: t('c081') },
+  { mode: 'month', label: t('c082') },
+  { mode: 'year', label: t('c083') },
 ]);
 const CHART = size.activity.chart;
 const STATE_COLOR = {
@@ -118,7 +119,7 @@ export default function ActivityScreen({
       <View style={styles.header}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="返回"
+          accessibilityLabel={t("c438")}
           onPress={onBack}
           style={({ pressed }) => [styles.back, pressed && styles.pressed]}
         >
@@ -128,7 +129,7 @@ export default function ActivityScreen({
           style={styles.title}
           accessibilityRole="header"
           numberOfLines={linesFor(1)}
-        >{`${name}・活動量`}</Text>
+        >{t("c439", { name: name })}</Text>
       </View>
       <ScrollView
         contentContainerStyle={[
@@ -159,7 +160,7 @@ export function periodLabel(mode, date, now, earliest = null) {
   const low = earliest != null && earliest < now ? earliest : -Infinity;
   const period = activityPeriod(mode, Math.min(Math.max(date, low), now));
   const today = mode === 'day' && activityPeriod('day', now).start === period.start;
-  return period.label + (today ? '今天' : '');
+  return ((today) ? t('c084', { date: period.label }) : period.label);
 }
 
 const TAB_SLOP = (touch.min - size.activity.segmented) / 2;
@@ -226,7 +227,7 @@ function PeriodRow({ label, navigation, onPrevious, onNext }) {
         'back',
         !!navigation?.canPrevious,
         onPrevious,
-        '上一段',
+        t("c441"),
         'activity-previous',
       )}
       <Text
@@ -240,7 +241,7 @@ function PeriodRow({ label, navigation, onPrevious, onNext }) {
         'chevron',
         !!navigation?.canNext,
         onNext,
-        '下一段',
+        t("c442"),
         'activity-next',
       )}
     </View>
@@ -251,10 +252,8 @@ function Failure({ onRetry }) {
   const styles = useStyles(getStyles);
   return (
     <View style={styles.stateBox} testID="activity-error">
-      <Text accessibilityRole="alert" style={styles.error}>
-        讀取失敗
-      </Text>
-      <TextButton title="重試" onPress={onRetry} tone="crit" />
+      <Text accessibilityRole="alert" style={styles.error}>{t("c440")}</Text>
+      <TextButton title={t('c049')} onPress={onRetry} tone="crit" />
     </View>
   );
 }
@@ -395,7 +394,7 @@ function Summary({ view }) {
             : [row.durationText];
         // The total under the gaps (判定表「A4 日的柱子」: 合計 h 小時 m 分).
         const total =
-          row.state === 'missing' ? `合計 ${row.durationText}` : null;
+          row.state === 'missing' ? t("c443", { durationText: row.durationText }) : null;
         return (
           <View
             key={row.state}

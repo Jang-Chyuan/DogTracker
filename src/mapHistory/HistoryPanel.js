@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The history screen's bottom panel (DESIGN.md「面板高度」「面板和清單的手勢」):
 // three heights — only the date row and summary (about 140dp), half (the
 // default) and 75% of the screen. Only the handle, the date row and the
@@ -253,7 +254,7 @@ const HistoryPanel = forwardRef(function HistoryPanel(
             onPress={pressHandle}
             style={({ pressed }) => [styles.handleArea, pressed && styles.pressed]}
             accessibilityRole="adjustable"
-            accessibilityLabel="面板高度"
+            accessibilityLabel={t("c822")}
             hitSlop={space.s}
           >
             <View style={styles.handle} />

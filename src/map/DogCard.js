@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // A dog's summary card (design v3 A3/A3b/A7b; DESIGN.md「摘要卡片」「卡片的
 // 狀態列」): it rises from the bottom when a dog is tapped and replaces the old
 // dog list, follow button and dog panel. No ✕: it closes by swiping it down,
@@ -379,7 +380,7 @@ const DogCard = forwardRef(function DogCard(
         <Pressable
           testID="dog-card-edit"
           accessibilityRole="button"
-          accessibilityLabel={`編輯${card.name}的名字和頭像`}
+          accessibilityLabel={t('c378', { dogName: card.name })}
           onPress={onEdit}
           hitSlop={space.xs}
           style={({ pressed }) => [styles.pencil, pressed && styles.pressed]}
@@ -418,13 +419,13 @@ const DogCard = forwardRef(function DogCard(
       <PressScale
         testID="dog-card-track"
         accessibilityRole="button"
-        accessibilityLabel="看軌跡"
+        accessibilityLabel={t('c071')}
         accessibilityState={{ disabled: trackBusy }}
         disabled={trackBusy}
         onPress={onTrack}
         style={styles.track}
       >
-        <Text style={styles.trackText}>看軌跡</Text>
+        <Text style={styles.trackText}>{t('c071')}</Text>
       </PressScale>
     </Animated.View>
   );

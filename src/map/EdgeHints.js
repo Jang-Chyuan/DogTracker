@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Dogs outside the visible map (design v3 A1「畫面外的狗用小頭像提示」, 判定表
 // 「畫面邊緣的提示」「畫面外提示：左右兩邊都有狗在畫面外」, DESIGN.md §9.6 and
 // §15「畫面外提示」). Pure: given where each dog is on screen, which hints to
@@ -23,7 +24,7 @@ const GAP = space.xs;
 // 「+N」 at 14sp bold: about 9dp per character.
 const plusWidth = extra => (extra > 0 ? GAP + 9 * String(`+${extra}`).length : 0);
 
-const SIDE_WORD = { left: '左邊', right: '右邊', top: '上面', bottom: '下面' };
+const SIDE_WORD = { left: t("c749"), right: t("c750"), top: t("c751"), bottom: t("c746") };
 
 /** The hint's width for `count` faces and `extra` more dogs. */
 export function edgeHintWidth(count, extra = 0) {
@@ -37,8 +38,8 @@ export function edgeHintWidth(count, extra = 0) {
 export function edgeHintSpeech(side, markers) {
   const names = markers.map(marker => marker.name).join('、');
   const problems = markers.filter(marker => marker.problem).map(marker => marker.name);
-  const problemPart = problems.length ? `，其中${problems.join('、')}有問題` : '';
-  return `${SIDE_WORD[side]}畫面外有 ${markers.length} 隻狗：${names}${problemPart}，點兩下移過去`;
+  const problemPart = problems.length ? t("c748", { value: problems.join('、') }) : '';
+  return t("c747", { value: SIDE_WORD[side], length: markers.length, names: names, problemPart: problemPart });
 }
 
 const clamp = (value, low, high) => (high < low ? low : Math.min(high, Math.max(low, value)));

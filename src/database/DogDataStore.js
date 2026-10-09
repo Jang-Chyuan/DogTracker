@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { NativeModules } from 'react-native';
 // 設定 → 進階 → 刪除全部狗資料 (design S7; 判定表「刪除全部狗資料」): only this
 // phone's dog position records and its downloaded copy. It does not touch
@@ -28,7 +29,7 @@ const rows = result => result?.results || result?.rows?._array || [];
 /** Raised when rows not uploaded yet would be deleted without 「一起刪除」. */
 export class UnsentRowsError extends Error {
   constructor(count) {
-    super(`還有 ${count} 筆沒上傳`);
+    super(t("c614", { count: count }));
     this.count = count;
   }
 }

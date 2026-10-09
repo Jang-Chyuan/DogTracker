@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Is a dog within reach of the receiver that hears it? One judgement shared by
 // the live map (range ring, red dashed line), the dog's card (接收範圍 row) and
 // the alerts. Pure: no React, no SQLite, no map SDK.
@@ -224,12 +225,12 @@ export function rangeView(state, { held = false } = {}) {
 /** The row's words (copy deck c348, c067, c078, c353). */
 export function rangeLabel(view, formatClock) {
   if (!view) return null;
-  if (view.status === RANGE_STATUS.IN) return '在範圍內';
-  if (view.status === RANGE_STATUS.NEAR) return '快離開接收範圍';
+  if (view.status === RANGE_STATUS.IN) return t('c348');
+  if (view.status === RANGE_STATUS.NEAR) return t('c067');
   if (view.showConfirmedAt && Number.isFinite(view.confirmedAt) && formatClock) {
-    return `不在接收範圍・最後確認 ${formatClock(view.confirmedAt)}`;
+    return t('c353', { time: formatClock(view.confirmedAt) });
   }
-  return '不在接收範圍';
+  return t('c078');
 }
 
 /**

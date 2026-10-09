@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { size } from '../../theme/tokens';
 import { ACTIVITY, activityMinutes, durationText, minuteOf } from '../ActivityMinutes';
 
@@ -5,20 +6,20 @@ const MINUTE = 60000;
 // A local binding: a global lookup per minute is slow over a year of minutes.
 const isNaN = Number.isNaN;
 const STATES = ['rest', 'normal', 'vigorous'];
-const WORDS = { rest: '休息', normal: '一般', vigorous: '劇烈', missing: '沒有資料' };
-const DAYS = '日一二三四五六';
+const WORDS = { rest: t('c086'), normal: t("c434"), vigorous: t('c088'), missing: t('c089') };
+const DAYS = t("c446");
 
 export const ACTIVITY_VIEW_COPY = Object.freeze({
-  tabs: Object.freeze(['日', '週', '月', '年']),
+  tabs: Object.freeze([t("c444"), t('c081'), t('c082'), t('c083')]),
   previous: '‹',
   next: '›',
   legend: Object.freeze([...STATES, 'missing'].map(state => Object.freeze({ state, label: WORDS[state] }))),
-  low: '休息',
-  high: '劇烈',
-  provisional: '門檻暫定',
-  empty: '沒有活動量資料',
-  missing: '沒有資料',
-  current: Object.freeze({ day: '今天', week: '這一週', month: '這個月', year: '這一年' }),
+  low: t('c086'),
+  high: t('c088'),
+  provisional: t("c456"),
+  empty: t('c352'),
+  missing: t('c089'),
+  current: Object.freeze({ day: t('c085'), week: t('c095'), month: t("c454"), year: t("c455") }),
 });
 
 const dateLabel = time => {
@@ -37,9 +38,9 @@ export function totalText(minutes) {
     const hours = Math.round(minutes / 60);
     const days = Math.floor(hours / 24);
     const rest = hours % 24;
-    return rest ? `${days} 天 ${rest} 小時` : `${days} 天`;
+    return rest ? t("c458", { days: days, rest: rest }) : t("c459", { days: days });
   }
-  return durationText(minutes).replace('分鐘', '分');
+  return durationText(minutes).replace(t("c460"), t("c461"));
 }
 const dayStart = time => {
   const date = new Date(time);
@@ -54,8 +55,8 @@ const addDays = (time, count) => {
 /** Device-local calendar boundaries, exclusive end. Week starts on Sunday.
  * Calendar arithmetic preserves leap years and 23/25-hour DST days. */
 export function activityPeriod(mode, date) {
-  if (!['day', 'week', 'month', 'year'].includes(mode)) throw new Error('活動量期間無效');
-  if (!Number.isFinite(date)) throw new Error('活動量日期無效');
+  if (!['day', 'week', 'month', 'year'].includes(mode)) throw new Error(t("c448"));
+  if (!Number.isFinite(date)) throw new Error(t("c451"));
   const value = new Date(date);
   let start = dayStart(date);
   if (mode === 'week') start = addDays(start, -value.getDay());
@@ -67,7 +68,7 @@ export function activityPeriod(mode, date) {
       mode === 'year' ? 0 : first.getMonth() + 1, 1).getTime();
   const label = mode === 'day' ? dateLabel(start) : mode === 'week'
     ? `${dateLabel(start)}– ${dateLabel(addDays(end, -1))}`
-    : mode === 'month' ? `${first.getFullYear()} 年 ${first.getMonth() + 1} 月` : `${first.getFullYear()} 年`;
+    : mode === 'month' ? t("c449", { value: first.getFullYear(), value2: first.getMonth() + 1 }) : t("c450", { value: first.getFullYear() });
   return { mode, start, end, label };
 }
 
@@ -76,7 +77,7 @@ export function activityNavigation(mode, date, { now, earliest }) {
   const period = activityPeriod(mode, date);
   const min = activityPeriod(mode, earliest ?? date).start;
   const max = activityPeriod(mode, now).start;
-  if (min > max || period.start < min || period.start > max) throw new Error('活動量日期超出範圍');
+  if (min > max || period.start < min || period.start > max) throw new Error(t("c447"));
   const previous = activityPeriod(mode, period.start - 1).start;
   const next = period.end;
   return { canPrevious: previous >= min, canNext: next <= max,
@@ -87,7 +88,7 @@ function rangeLabel(span, period) {
   const endClock = span.end === dayStart(span.end) ? '24:00' : clock(span.end);
   if (period.mode === 'day') return `${clock(span.start)}–${endClock}`;
   const fullDay = span.start === dayStart(span.start) && span.end === addDays(span.start, 1);
-  if (fullDay) return `${dateLabel(span.start)}整天`;
+  if (fullDay) return t('c096', { date: dateLabel(span.start) });
   // Week, month and year spans never cross midnight (split per day).
   return `${dateLabel(span.start)} ${clock(span.start)}–${endClock}`;
 }
@@ -110,7 +111,7 @@ function splitByDay(list) {
 function axisLabel(mode, start) {
   const d = new Date(start);
   if (mode === 'week') return DAYS[d.getDay()];
-  if (mode === 'year') return `${d.getMonth() + 1}月`;
+  if (mode === 'year') return t("c452", { value: d.getMonth() + 1 });
   const day = d.getDate();
   return day === 1 || day % 5 === 0 ? String(day) : '';
 }
@@ -148,17 +149,17 @@ export function classify(values, config = ACTIVITY) {
   const restDiff = new Int32Array(n + 1);
   const vigorousDiff = new Int32Array(n + 1);
   let high = 0;
-  for (let t = 0; t < n; t += 1) {
-    const v = values[t];
+  for (let tick = 0; tick < n; t += 1) {
+    const v = values[tick];
     high = v >= vigorousMin ? high + 1 : 0;
-    const from = t - size + 1 > 0 ? t - size + 1 : 0;
+    const from = tick - size + 1 > 0 ? tick - size + 1 : 0;
     if (high >= pair) {
-      const since = t - high + 1 > from ? t - high + 1 : from;
+      const since = tick - high + 1 > from ? tick - high + 1 : from;
       vigorousDiff[since] += 1;
-      vigorousDiff[t + 1] -= 1;
-    } else if (data[t + 1] - data[from] >= needs && bad[t + 1] === bad[from]) {
+      vigorousDiff[tick + 1] -= 1;
+    } else if (data[tick + 1] - data[from] >= needs && bad[tick + 1] === bad[from]) {
       restDiff[nextData[from]] += 1;
-      restDiff[t + 1] -= 1;
+      restDiff[tick + 1] -= 1;
     }
   }
   const rest = new Uint8Array(n);
@@ -185,7 +186,7 @@ export function classify(values, config = ACTIVITY) {
  */
 export function buildActivityView({ mode = 'day', date, now, earliest, since = null, readings = [],
   minutes: given = null }) {
-  if (!Number.isFinite(now)) throw new Error('活動量時間無效');
+  if (!Number.isFinite(now)) throw new Error(t("c453"));
   const period = activityPeriod(mode, date ?? now);
   const navigation = activityNavigation(mode, date ?? now, { now, earliest });
   const end = Math.min(period.end, minuteOf(now));
@@ -313,7 +314,7 @@ export function activityChartSummary(totals) {
 function barOf(mode, start, stop, tally) {
   const d = new Date(start);
   const capacityMinutes = (stop - start) / MINUTE;
-  return { start, end: stop, label: mode === 'year' ? `${d.getMonth() + 1}月` : dateLabel(start),
+  return { start, end: stop, label: mode === 'year' ? t("c452", { value: d.getMonth() + 1 }) : dateLabel(start),
     axisLabel: axisLabel(mode, start),
     capacityMinutes, totals: tally, missingShare: tally.missing / capacityMinutes,
     pendingMinutes: capacityMinutes - Object.values(tally).reduce((x, y) => x + y, 0),
@@ -327,10 +328,10 @@ function finish({ mode, period, navigation, now, end, totals, ranges, bars, poin
     return { state, label: WORDS[state], durationMinutes: totals[state], durationText: totalText(totals[state]),
       ranges: list, rangeLabels: list.slice(0, 3).map(span => rangeLabel(span, period)),
       additionalRanges: Math.max(0, list.length - 3),
-      additionalText: list.length > 3 ? `另外 ${list.length - 3} 段` : null };
+      additionalText: list.length > 3 ? t("c457", { value: list.length - 3 }) : null };
   });
   const isCurrent = activityPeriod(mode, now).start === period.start;
-  return { ...period, label: period.label + (mode === 'day' && isCurrent ? '今天' : ''),
+  return { ...period, label: ((mode === 'day' && isCurrent) ? t('c084', { date: period.label }) : period.label),
     evaluatedEnd: end, currentLabel: isCurrent ? ACTIVITY_VIEW_COPY.current[mode] : null,
     // Above the summary rows: 今天／這一週… for the running period, else its dates.
     summaryLabel: isCurrent ? ACTIVITY_VIEW_COPY.current[mode] : period.label,

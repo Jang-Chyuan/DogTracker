@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // At most 20 characters as the user sees them (an emoji is one; DogName).
 export function normalizeDogAliases(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -10,7 +11,7 @@ export function normalizeDogAliases(value) {
 // Keep the device number visible and unique even when aliases are identical.
 export function dogHistoryLabel(id, aliases) {
   const alias = aliases?.[id]?.trim();
-  return alias ? `${alias} 狗 ${id}` : `狗 ${id}`;
+  return alias ? t("c781", { alias: alias, id: id }) : t("c798", { id: id });
 }
 
 // Map labels omit the appended device number; track identity remains unique.

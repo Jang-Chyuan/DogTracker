@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useStyles } from '../theme/ThemeProvider';
 import { ScrollView } from 'react-native';
 import ConfirmDialog from './ConfirmDialog';
@@ -28,19 +29,19 @@ export default function AdvancedSettings({
       <GroupCard flat>
         <ListRow
           testID="advanced-wifi"
-          title="接收器 Wi-Fi"
+          title={t('c247')}
           detail={summary}
           chevron
           onPress={onWifi}
-          label={`接收器 Wi-Fi，${summary}`}
+          label={t("c939", { summary: summary })}
         />
         <ListRow
           testID="advanced-delete"
-          title="刪除全部狗資料"
+          title={t('c249')}
           titleTone="danger"
           detail={deletedText}
           onPress={deletion.start}
-          label={['刪除全部狗資料', deletedText].filter(Boolean).join('，')}
+          label={[t('c249'), deletedText].filter(Boolean).join('，')}
         />
       </GroupCard>
       <ConfirmDialog

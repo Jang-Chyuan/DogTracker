@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { logger } from '../logger';
 import { bleUploadPayload } from './BleUploadPayload';
 // Foreground and Headless JS use separate service objects in the same runtime.
@@ -33,7 +34,7 @@ export function createUploadService({ database, client }) {
       if (!alive() || signal?.aborted) return 'cancelled';
       if (result.error) {
         const status = result.error.context?.status;
-        await database.failed(row, `上傳失敗${status ? ` (${status})` : ''}：${result.error.message}`,
+        await database.failed(row, t("c607", { value: status ? ` (${status})` : '', message: result.error.message }),
           [400, 403, 409, 413, 422].includes(status), Date.now());
         // 401: the sign-in was refused (判定表「使用中登入失效」).
         if (status === 401) return 'unauthorized';
@@ -45,11 +46,11 @@ export function createUploadService({ database, client }) {
         if (signal) logger.info(`[BLE relay background] Master ${row.master_id}: upload acknowledged`);
         return 'sent';
       }
-      await database.failed(row, '雲端回覆未確認事件，稍後重試', false, Date.now());
+      await database.failed(row, t("c608"), false, Date.now());
       return 'retry';
     } catch (error) {
       if (!alive() || signal?.aborted) return 'cancelled';
-      await database.failed(row, error.message || '網路連線失敗', false, Date.now());
+      await database.failed(row, error.message || t("c609"), false, Date.now());
       return 'retry';
     }
   }
@@ -59,7 +60,7 @@ export function createUploadService({ database, client }) {
       uploading = true;
       try {
         const phone = await database.identity();
-        if (!phone) throw new Error('手機識別尚未建立');
+        if (!phone) throw new Error(t("c606"));
         const pending = await database.pending(owner, Date.now());
         for (const row of pending) {
           if (!alive() || signal?.aborted) return 'cancelled';
@@ -86,7 +87,7 @@ export function createUploadService({ database, client }) {
       uploading = true;
       try {
         const phone = await database.identity();
-        if (!phone) throw new Error('手機識別尚未建立');
+        if (!phone) throw new Error(t("c606"));
         const tried = new Set();
         for (;;) {
           if (!alive()) return { result: 'cancelled', remaining: await database.pendingCount(owner, master) };

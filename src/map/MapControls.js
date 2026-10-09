@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The live map's floating controls (design v3 A1, DESIGN.md §15「浮動按鈕與上方
 // 卡片」): the two 48dp round buttons bottom right (框住全部 above 我的位置),
 // the off-screen dog hints (EdgeHints) and the bottom tip that says why a grey
@@ -117,8 +118,8 @@ export function MapButtons({
       <PressScale
         testID="map-frame-all"
         accessibilityRole="button"
-        accessibilityLabel="框住全部"
-        accessibilityHint="把所有狗和手機放進畫面"
+        accessibilityLabel={t("c758")}
+        accessibilityHint={t("c756")}
         onPress={onFrameAll}
         style={styles.round}
       >
@@ -129,9 +130,9 @@ export function MapButtons({
         <PressScale
           testID="map-my-location"
           accessibilityRole="button"
-          accessibilityLabel="我的位置"
+          accessibilityLabel={t("c759")}
           accessibilityHint={
-            phoneAvailable ? '把地圖移到手機的位置' : '手機沒有定位'
+            phoneAvailable ? t("c757") : t("c726")
           }
           onPress={onMyLocation}
           style={styles.round}
@@ -162,7 +163,7 @@ export function TodayPill({ value, onPress }) {
       testID="map-today"
       accessibilityRole="button"
       accessibilityLabel={value.label}
-      accessibilityHint="看我今天的路線"
+      accessibilityHint={t("c760")}
       onPress={onPress}
       style={styles.pill}
     >
@@ -201,7 +202,7 @@ export function SettingsGear({
       <PressScale
         testID="map-settings"
         accessibilityRole="button"
-        accessibilityLabel={alert && alertLabel ? alertLabel : '設定'}
+        accessibilityLabel={alert && alertLabel ? alertLabel : t("c482")}
         onPress={onPress}
         style={styles.round}
       >
@@ -225,7 +226,7 @@ export function CompassButton({ top, heading, onPress }) {
       <PressScale
         testID="map-compass"
         accessibilityRole="button"
-        accessibilityLabel="指南針，轉回正北"
+        accessibilityLabel={t("c755")}
         onPress={onPress}
         style={styles.round}
       >

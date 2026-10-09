@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The range summary and the range bar (H1/H2b; DESIGN.md「範圍摘要」「範圍條」
 // 「調整範圍時的框」): 「08:03 – 現在 ▾」 with the distance and time under it
 // and 「調整範圍」 on the right; a tap opens the bar in the same framed box,
@@ -43,11 +44,13 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
   if (!model?.points.length) return null;
   // Several dogs: the second line names the protagonist (c158: 「豆豆・移動 7.4 km」).
   const moved = who
-    ? `${who}・移動 ${km(model.distanceM)}${vehicleExclusion(model, subject)}`
-    : `${subject === 'phone' ? '走了' : '移動'} ${km(
+    ? t("c828", { who: who, value: km(model.distanceM), value2: vehicleExclusion(model, subject) })
+    : ((subject === 'phone') ? t("c651", { value: km(
         model.distanceM,
-      )}${vehicleExclusion(model, subject)}・${summaryDuration(model.durationMs)}`;
-  const until = range?.following ? '現在' : clock(range?.end);
+      ), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }) : t("c652", { value: km(
+        model.distanceM,
+      ), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }));
+  const until = range?.following ? t('c130') : clock(range?.end);
   if (!open && !who) return summaryText(model, { subject });
   // Several dogs share one range: the title is that range, whoever leads.
   return { title: `${clock(range.start)} – ${until}`, detail: moved };
@@ -86,7 +89,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
       const d = drag.current;
       if (!d.last) return;
       const {
-        track: t,
+        track: tick,
         dayPoints: points,
         today: isToday,
         width: w,
@@ -100,7 +103,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
       }
       const x = Math.max(0, Math.min(w, d.from + dx));
       const result = dragRangeHandle(state.current.range, d.handle, x, w, {
-        track: t,
+        track: tick,
         dayPoints: points,
         today: isToday,
       });
@@ -208,7 +211,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
           style={[styles.handle, { left: startX + (TOUCH - HANDLE) / 2 }]}
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel={`開始 ${startLabel}`}
+          accessibilityLabel={t('c372', { time: startLabel })}
           accessibilityActions={STEPS}
           onAccessibilityAction={event => step('start', event)}
         />
@@ -217,9 +220,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
           style={[styles.handle, { left: endX + (TOUCH - HANDLE) / 2 }]}
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel={`結束 ${endLabel}${
-            range.following ? '，跟著現在' : ''
-          }`}
+          accessibilityLabel={((range.following) ? t('c373', { time: endLabel }) : t("c827", { endLabel: endLabel }))}
           accessibilityActions={STEPS}
           onAccessibilityAction={event => step('end', event)}
         />
@@ -288,9 +289,7 @@ export default function HistoryRangeSummary({
     dayPoints?.length > 1 &&
     dayPoints[dayPoints.length - 1].time - dayPoints[0].time >= 60000;
   // 「08:03 到現在，走了 5.2 公里，點兩下調整範圍」 (設計稿「無障礙」範圍條).
-  const speech = `${lines.title.replace(' – ', ' 到')}，${spoken(lines.detail.replace(/（([^）]+)）/g, '，$1'))}${
-    enabled ? '，點兩下調整範圍' : ''
-  }`;
+  const speech = ((enabled) ? t("c779", { value: lines.title.replace(' – ', t("c826")), value2: spoken(lines.detail.replace(/（([^）]+)）/g, '，$1')) }) : t("c780", { value: lines.title.replace(' – ', t("c826")), value2: spoken(lines.detail.replace(/（([^）]+)）/g, '，$1')) }));
   // 大字體: 「調整範圍」 goes under the times, which keep the full width.
   const stacked = isLargeFont();
   return (
@@ -327,7 +326,7 @@ export default function HistoryRangeSummary({
             onPress={onToggle}
             testID="history-adjust"
             accessibilityRole="button"
-            accessibilityLabel={open ? '完成' : '調整範圍'}
+            accessibilityLabel={open ? t('c101') : t('c122')}
             hitSlop={space.s}
             style={({ pressed }) => [styles.adjust, open && styles.adjustOpen, pressed && styles.pressed]}
           >
@@ -337,13 +336,13 @@ export default function HistoryRangeSummary({
               size={sizes.icon.adjust}
             />
             <Text style={[styles.adjustText, open && styles.adjustTextOpen]}>
-              {open ? '完成' : '調整範圍'}
+              {open ? t('c101') : t('c122')}
             </Text>
           </Pressable>
         )}
       </Pressable>
       {!open && closedAt != null && (
-        <Text style={styles.closed}>{`記錄已在 ${clock(closedAt)} 關閉`}</Text>
+        <Text style={styles.closed}>{t('c310', { time: clock(closedAt) })}</Text>
       )}
       {open && (
         <>

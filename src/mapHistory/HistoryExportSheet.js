@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // H9: the export window (判定表「匯出小視窗的標題」「匯出產生中」, copy
 // c160–c167, c258): 「匯出 08:03–12:11」 and the three formats (PNG 長圖 /
 // GPX / CSV, in fixed order); a format chosen turns the
@@ -12,7 +13,7 @@ import HistoryBottomSheet from './HistoryBottomSheet';
 import { EXPORT_FORMATS } from './useHistoryExport';
 
 /** 「匯出 08:03–12:11」 (always one day; the end is the last fix's time). */
-export const exportTitle = range => (range ? `匯出 ${clock(range.start)}–${clock(range.end)}` : '匯出');
+export const exportTitle = range => (range ? t('c160', { time: clock(range.start), time2: clock(range.end) }) : t("c821"));
 
 const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bottomInset }, ref) {
   const theme = useTheme();
@@ -34,20 +35,20 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
     body = (
       <View style={keep}><View style={styles.status} testID="history-export-generating" accessibilityLiveRegion="polite">
         <ActivityIndicator size={sizes.spinner} color={colors.tonalText} />
-        <Text style={styles.statusText}>產生中…</Text>
-        <Pressable testID="history-export-cancel" accessibilityRole="button" accessibilityLabel="取消匯出"
+        <Text style={styles.statusText}>{t("c817")}</Text>
+        <Pressable testID="history-export-cancel" accessibilityRole="button" accessibilityLabel={t("c818")}
           onPress={cancel} style={({ pressed }) => [styles.textButton, pressed && styles.pressedRow]} hitSlop={space.s}>
-          <Text style={styles.textButtonText}>取消</Text>
+          <Text style={styles.textButtonText}>{t('c046')}</Text>
         </Pressable>
       </View></View>
     );
   } else if (phase === 'failed') {
     body = (
       <View style={keep}><View style={styles.status} testID="history-export-failed" accessibilityLiveRegion="polite">
-        <Text style={[styles.statusText, styles.failed]}>匯出失敗</Text>
-        <Pressable testID="history-export-retry" accessibilityRole="button" accessibilityLabel="重試匯出"
+        <Text style={[styles.statusText, styles.failed]}>{t('c258')}</Text>
+        <Pressable testID="history-export-retry" accessibilityRole="button" accessibilityLabel={t("c819")}
           onPress={exporter.retry} style={({ pressed }) => [styles.textButton, pressed && styles.pressedRow]} hitSlop={space.s}>
-          <Text style={styles.textButtonText}>重試</Text>
+          <Text style={styles.textButtonText}>{t('c049')}</Text>
         </Pressable>
       </View></View>
     );
@@ -68,7 +69,7 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
   }
   return (
     <HistoryBottomSheet ref={sheet} title={exportTitle(range)} onClosed={() => exporter.close()}
-      bottomInset={bottomInset} testID="history-export-sheet" closeLabel="關閉匯出" locked={busy} divided>
+      bottomInset={bottomInset} testID="history-export-sheet" closeLabel={t("c820")} locked={busy} divided>
       {body}
     </HistoryBottomSheet>
   );

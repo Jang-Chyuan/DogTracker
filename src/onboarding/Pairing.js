@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // D3 連接接收器 and D4 完成 (design D3a–D3d, D4/D4b; D3 的情況表; 判定表「D3c
 // 手動搜尋」「D3c 的返回」「D3c 連不上」「D3 初次連線的等待」「換接收器」「中斷並
 // 重新掃描」「連上而且已經收到訊號源」「沒取名字的訊號源」). Pure: names, words and
@@ -40,7 +41,7 @@ export function signalBars(rssi) {
 }
 
 export function signalBarsLabel(bars) {
-  return bars >= 3 ? '訊號強' : bars === 2 ? '訊號中' : bars === 1 ? '訊號弱' : '';
+  return bars >= 3 ? t("c867") : bars === 2 ? t("c868") : bars === 1 ? t("c869") : '';
 }
 
 /**
@@ -73,39 +74,39 @@ export function addNearby(list, device) {
  */
 export function pairingDialog(kind, { number = null, expected = null, got = null, method = 'qr',
   previous = null, mode = 'first' } = {}) {
-  const cancel = { id: 'cancel', label: '取消' };
+  const cancel = { id: 'cancel', label: t('c046') };
   switch (kind) {
     case 'wrongQr':
-      return { kind, title: '這不是接收器的 QR Code', body: '請掃接收器機身上的 QR Code（DogGPS-Master 開頭）。',
-        buttons: [{ id: 'manual', label: '手動輸入' }, { id: 'rescan', label: '再掃一次' }] };
+      return { kind, title: t('c032'), body: t('c033'),
+        buttons: [{ id: 'manual', label: t('c034') }, { id: 'rescan', label: t('c035') }] };
     case 'failed':
-      return { kind, title: number != null ? `連不上接收器 ${number}` : '連不上接收器',
-        body: '已經試了 30 秒。請確認接收器有開機、在 10 公尺內。',
-        buttons: [method === 'manual' ? { id: 'search', label: '回到搜尋' } : { id: 'manual', label: '手動輸入' },
-          { id: 'retry', label: '重試' }] };
+      return { kind, title: number != null ? t('c047', { number: number }) : t("c864"),
+        body: t('c048'),
+        buttons: [method === 'manual' ? { id: 'search', label: t('c272') } : { id: 'manual', label: t('c034') },
+          { id: 'retry', label: t('c049') }] };
     case 'mismatch': {
-      const kept = mode === 'change' && previous?.number != null ? `。沒有更換，還是接收器 ${previous.number}` : '';
-      return { kind, title: '這不是要連的接收器', body: `要連 ${expected}，收到的是 ${got}，已中斷連線${kept}`,
-        buttons: [{ id: 'later', label: '稍後再說' },
-          method === 'manual' ? { id: 'search', label: '重新搜尋' } : { id: 'rescan', label: '重新掃描' }] };
+      const kept = mode === 'change' && previous?.number != null ? t("c863", { number: previous.number }) : '';
+      return { kind, title: t("c865"), body: t("c862", { expected: expected, got: got, kept: kept }),
+        buttons: [{ id: 'later', label: t('c007') },
+          method === 'manual' ? { id: 'search', label: t('c264') } : { id: 'rescan', label: t('c268') }] };
     }
     case 'noData': {
       const back = mode === 'change' && previous?.number != null
-        ? { id: 'restore', label: `恢復接收器 ${previous.number}` } : { id: 'restore', label: '不換' };
-      return { kind, title: `接收器 ${number} 還沒有送資料`, body: null,
-        buttons: [back, { id: 'keep', label: '先換過去' }] };
+        ? { id: 'restore', label: t("c856", { number: previous.number }) } : { id: 'restore', label: t("c857") };
+      return { kind, title: t("c866", { number: number }), body: null,
+        buttons: [back, { id: 'keep', label: t("c858") }] };
     }
     case 'bluetoothOff':
-      return { kind, title: '請打開藍牙', body: null, buttons: [cancel, { id: 'open', label: '打開' }] };
+      return { kind, title: t('c260'), body: null, buttons: [cancel, { id: 'open', label: t("c859") }] };
     case 'locationOff':
-      return { kind, title: '請打開定位', body: null,
-        buttons: [cancel, { id: 'open', label: '打開' }] };
+      return { kind, title: t('c265'), body: null,
+        buttons: [cancel, { id: 'open', label: t("c859") }] };
     case 'nearbyDenied':
-      return { kind, title: '需要『附近的裝置』才能連接接收器', body: null,
-        buttons: [cancel, { id: 'settings', label: '開系統設定 ›' }] };
+      return { kind, title: t('c261'), body: null,
+        buttons: [cancel, { id: 'settings', label: t('c225') }] };
     case 'locationDenied':
-      return { kind, title: '需要位置權限才能找接收器', body: null,
-        buttons: [cancel, { id: 'settings', label: '開系統設定 ›' }] };
+      return { kind, title: t('c266'), body: null,
+        buttons: [cancel, { id: 'settings', label: t('c225') }] };
     default:
       return null;
   }
@@ -142,12 +143,12 @@ export function pairingFlow(entry = 'onboarding', mode = 'first') {
  */
 export function pairedPage(number, packets) {
   const sources = receivedSources(packets, number, null).map(source => ({ slaveId: source.slaveId,
-    label: `訊號源 ${source.slaveId}` }));
+    label: t('c052', { number: source.slaveId }) }));
   return {
-    title: number != null ? `已連上接收器 ${number}` : '已連上接收器',
+    title: number != null ? t('c050', { number: number }) : t("c861"),
     body: sources.length
-      ? `收到 ${sources.length} 個訊號源。狗定位後會出現在地圖上，點狗就能改名字和頭像。`
-      : '還沒收到訊號源。項圈開機後，訊號源會出現在這裡。',
+      ? t("c860", { length: sources.length })
+      : t('c054'),
     sources,
   };
 }

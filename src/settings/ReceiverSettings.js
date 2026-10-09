@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useRef } from 'react';
 import { useStyles } from '../theme/ThemeProvider';
 import { ScrollView, View } from 'react-native';
@@ -36,16 +37,16 @@ export default function ReceiverSettings({
         style={settingsStyles.page}
         contentContainerStyle={settingsStyles.content}
       >
-        <GroupTitle>目前的接收器</GroupTitle>
+        <GroupTitle>{t('c199')}</GroupTitle>
         <GroupCard flat>
-          <ListRow title="還沒設定接收器" />
+          <ListRow title={t('c287')} />
           <ListRow
             testID="receiver-connect"
-            title="連接接收器"
+            title={t('c011')}
             titleTone="tonal"
             chevron
             onPress={onConnect}
-            label="連接接收器"
+            label={t('c011')}
           />
         </GroupCard>
       </ScrollView>
@@ -59,7 +60,7 @@ export default function ReceiverSettings({
       style={settingsStyles.page}
       contentContainerStyle={settingsStyles.content}
     >
-      <GroupTitle>目前的接收器</GroupTitle>
+      <GroupTitle>{t('c199')}</GroupTitle>
       <GroupCard flat>
         <ListRow
           testID="receiver-current"
@@ -78,40 +79,40 @@ export default function ReceiverSettings({
             page.title,
             page.subtitle,
             page.battery &&
-              (page.batteryProblem ? `${page.battery}，電量低` : page.battery),
+              (page.batteryProblem ? t("c992", { battery: page.battery }) : page.battery),
             page.lastHeard,
           ]
             .filter(Boolean)
             .join('，')}
         />
         <ListRow
-          title="位置"
+          title={t('c073')}
           right={page.position}
-          label={`位置，${page.position}`}
+          label={t("c993", { position: page.position })}
         />
         {off ? (
           <ListRow
             testID="receiver-reconnect"
-            title="重新連線"
+            title={t('c288')}
             titleTone="tonal"
             onPress={onReconnect}
-            label="重新連線"
+            label={t('c288')}
           />
         ) : (
           <ListRow
             testID="receiver-disconnect"
-            title="中斷連線"
+            title={t('c204')}
             titleTone="danger"
             onPress={onDisconnect}
-            label="中斷連線"
+            label={t('c204')}
           />
         )}
         <ListRow
           testID="receiver-change"
-          title="換接收器"
+          title={t('c206')}
           chevron
           onPress={onChange}
-          label="換接收器"
+          label={t('c206')}
         />
       </GroupCard>
       <View onLayout={event => {
@@ -119,7 +120,7 @@ export default function ReceiverSettings({
           scrolled.current = true;
           scroll.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: false });
         }
-      }} testID="receiver-sources-heading"><GroupTitle>收到的訊號源</GroupTitle></View>
+      }} testID="receiver-sources-heading"><GroupTitle>{t('c202')}</GroupTitle></View>
       <GroupCard flat testID="receiver-sources">
         {page.sources.length ? (
           page.sources.map(source => (
@@ -135,7 +136,7 @@ export default function ReceiverSettings({
             />
           ))
         ) : (
-          <ListRow title="還沒收到訊號源" titleTone="muted" />
+          <ListRow title={t("c994")} titleTone="muted" />
         )}
       </GroupCard>
     </ScrollView>

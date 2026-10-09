@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // #44's moving/still speed buffer (plan §4 item 11). v3 no longer shows
 // 移動中／靜止 on the live map or the card (design 「移動中／靜止」: 活動量看卡片
 // 那一列); the rule only stays here, on 設定 → 診斷 (S8), as a diagnostic line.
@@ -37,4 +38,4 @@ export function settleSeries(speeds) {
   return readings ? { state, lastSpeed, readings } : null;
 }
 
-export const MOVEMENT_WORDS = { moving: '移動中', still: '靜止' };
+export const MOVEMENT_WORDS = { moving: t("c624"), still: t("c625") };

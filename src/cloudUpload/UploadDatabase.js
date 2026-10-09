@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 const rows = result => result.results || result.rows?._array || [];
 export function createUploadDatabase(db) {
   return {
@@ -14,7 +15,7 @@ export function createUploadDatabase(db) {
       return rows(await db.executeAsync('SELECT * FROM ble_upload_settings WHERE owner_user_id=? ORDER BY master_id', [owner]));
     },
     async setMode(owner, master, mode) {
-      if (!owner || !Number.isInteger(master) || master < 1 || master > 65535 || !['wifi', 'phone'].includes(mode)) throw new Error('上傳設定無效');
+      if (!owner || !Number.isInteger(master) || master < 1 || master > 65535 || !['wifi', 'phone'].includes(mode)) throw new Error(t("c605"));
       // Nothing waiting is deleted (S3: 不刪任何資料); the page sends it
       // first (UploadService.flush).
       await db.executeAsync('INSERT OR REPLACE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,?,?)',

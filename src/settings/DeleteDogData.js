@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { UnsentRowsError } from '../database/DogDataStore';
 
@@ -5,19 +6,18 @@ import { UnsentRowsError } from '../database/DogDataStore';
 // 時選「先上傳」但沒網路」; 文案 c296). The confirmation says what goes and what
 // stays; with rows not uploaded yet it asks 「先上傳／一起刪除」 first.
 
-export const DELETE_TITLE = '刪除全部狗資料？';
-export const DELETE_BODY = '只刪這支手機裡的狗位置紀錄和下載紀錄。雲端、手機路線、狗的名字和頭像都不會動；'
-  + '雲端有的資料，之後看歷史時可以再下載。';
+export const DELETE_TITLE = t("c951");
+export const DELETE_BODY = t("c910");
 // c296
-export const unsentQuestion = count => `還有 ${count} 筆沒上傳：先上傳／一起刪除`;
-export const OFFLINE_PROBLEM = '沒有網路，現在不能上傳。連上網路後再試，或選「一起刪除」';
+export const unsentQuestion = count => t('c296', { count: count });
+export const OFFLINE_PROBLEM = t("c952");
 
 /** Why 「先上傳」 left rows behind (nothing was deleted). */
 export function uploadProblem(result, remaining) {
   if (result === 'offline') return OFFLINE_PROBLEM;
-  if (result === 'signed-out') return '沒有登入 Supabase，現在不能上傳。登入後再試，或選「一起刪除」';
-  if (result === 'unauthorized') return '需要重新登入才能上傳。登入後再試，或選「一起刪除」';
-  return `還有 ${remaining} 筆沒上傳完，請再試一次，或選「一起刪除」`;
+  if (result === 'signed-out') return t("c955");
+  if (result === 'unauthorized') return t("c956");
+  return t("c957", { remaining: remaining });
 }
 
 /**
@@ -34,8 +34,8 @@ export function deleteDialog(state) {
     body: DELETE_BODY,
     note: unsent > 0 ? unsentQuestion(unsent) : null,
     problem: state?.problem || null,
-    confirm: unsent > 0 ? '一起刪除' : '刪除',
-    secondary: unsent > 0 ? '先上傳' : null,
+    confirm: unsent > 0 ? t("c948") : t("c949"),
+    secondary: unsent > 0 ? t("c950") : null,
     busy: state?.phase === 'deleting' || state?.phase === 'counting',
     uploading: state?.phase === 'uploading',
   };
@@ -87,7 +87,7 @@ export function useDeleteDogData(actions, initial = null, initialKey = null) {
         set(previous => ({ ...previous, phase: 'ask', unsent: error.count, problem: null }));
       } else {
         set(previous => ({ ...previous, phase: 'ask',
-          problem: `刪除失敗：${error?.message || '請再試一次'}，請再試一次` }));
+          problem: t("c953", { value: error?.message || t("c545") }) }));
       }
     }
   }, [set]);
@@ -104,7 +104,7 @@ export function useDeleteDogData(actions, initial = null, initialKey = null) {
         if (id === run.current) set(previous => ({ ...previous, phase: 'ask', unsent: Number(unsent) || 0 }));
       } catch (error) {
         if (id === run.current) {
-          set(previous => ({ ...previous, phase: 'ask', problem: `讀不到還沒上傳的筆數：${error?.message || ''}` }));
+          set(previous => ({ ...previous, phase: 'ask', problem: t("c954", { value: error?.message || '' }) }));
         }
       }
     },

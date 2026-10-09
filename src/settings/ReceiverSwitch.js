@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // A receiver chosen in D3 that later turns out to be another Master (its
 // first packet has the wrong number), wherever the user is by then (判定表
 // 「初次設定之後才發現編號不符」, and 「換接收器時「先換過去」之後才發現編號不符」):
@@ -53,7 +54,7 @@ export function judgeSwitch(state, target, session = null) {
 
 /** What a change that did not connect says (c294). */
 export function notChangedMessage(previous) {
-  return previous?.number != null ? `沒有更換，還是接收器 ${previous.number}` : '沒有更換接收器';
+  return previous?.number != null ? t('c294', { number: previous.number }) : t("c998");
 }
 
 /**
@@ -65,15 +66,15 @@ export function mismatchDialog({ expected, got }, previous, method = 'qr') {
   const back = previous?.number ?? null;
   if (back != null) {
     return {
-      title: '這不是要連的接收器',
-      message: `要連 ${expected}，收到的是 ${got}，已中斷連線，改回接收器 ${back}（已中斷連線）`,
-      buttons: [{ id: 'reconnect', label: `連線接收器 ${back}` }, { id: 'rescan', label: '重新掃描' }],
+      title: t("c865"),
+      message: t("c996", { expected: expected, got: got, back: back }),
+      buttons: [{ id: 'reconnect', label: t("c995", { back: back }) }, { id: 'rescan', label: t('c268') }],
     };
   }
   return {
-    title: '這不是要連的接收器',
-    message: `要連 ${expected}，收到的是 ${got}，已中斷連線`,
-    buttons: [{ id: 'later', label: '稍後再說' },
-      method === 'manual' ? { id: 'rescan', label: '重新搜尋' } : { id: 'rescan', label: '重新掃描' }],
+    title: t("c865"),
+    message: t("c997", { expected: expected, got: got }),
+    buttons: [{ id: 'later', label: t('c007') },
+      method === 'manual' ? { id: 'rescan', label: t('c264') } : { id: 'rescan', label: t('c268') }],
   };
 }

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -23,8 +24,8 @@ export default function PermissionsScreen({
     <GuidePage
       testID="permissions-page"
       step={step}
-      title="App 需要這些權限"
-      body="按一次就會依序跳出系統的詢問；每一個都可以之後再開。"
+      title={t('c008')}
+      body={t('c009')}
       onLayout={onLayout}
       bottom={
         <>
@@ -38,7 +39,7 @@ export default function PermissionsScreen({
             <GuideButton
               kind="text"
               testID="permissions-later"
-              label="稍後再說"
+              label={t('c007')}
               onPress={onNext}
             />
           ) : null}

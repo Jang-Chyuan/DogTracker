@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What 設定 → 診斷 (S8) says besides its three data pages (design S8 「診斷」,
 // 「環境判斷」 「移動中／靜止」 「存不進手機的按鈕和去處」). Pure: App hands in what
 // the map already reads.
@@ -19,7 +20,7 @@ const hasFix = row => Number.isFinite(row?.slave_lat) && Number.isFinite(row?.sl
   && !(row.slave_lat === 0 && row.slave_lon === 0);
 const timeOf = row => Number(row.track_at ?? row.received_at);
 
-const SOURCE_WORDS = { ble: '接收器', cloud: '雲端' };
+const SOURCE_WORDS = { ble: t('c075'), cloud: t("c616") };
 
 /**
  * Each dog's environment, from useCloudDogs' packets (one per dog and source,
@@ -37,7 +38,7 @@ function environments(packets, now) {
   return new Map([...byDog].map(([slaveId, { result, source }]) => [slaveId, {
     label: environmentLabel(result, now),
     evidence: result ? environmentEvidence(result) : null,
-    window: result ? `${formatClock(result.windowStart)}–${formatClock(result.windowEnd)}・${result.samples} 筆` : null,
+    window: result ? t("c620", { value: formatClock(result.windowStart), value2: formatClock(result.windowEnd), samples: result.samples }) : null,
     source: SOURCE_WORDS[source] || '',
   }]));
 }
@@ -59,7 +60,7 @@ function movements(rows) {
     if (!settled) continue;
     result.set(slaveId, {
       label: MOVEMENT_WORDS[settled.state],
-      detail: `最近 ${settled.lastSpeed.toFixed(1)} km/h・${settled.readings} 筆`,
+      detail: t("c621", { value: settled.lastSpeed.toFixed(1), readings: settled.readings }),
     });
   }
   return result;
@@ -79,14 +80,14 @@ export function diagnosticsPage({ packets = [], rows = [], aliases = {}, storage
   const ids = [...new Set([...environment.keys(), ...movement.keys()])]
     .filter(id => Number.isInteger(Number(id)) && Number(id) > 0).sort((left, right) => left - right);
   return {
-    storage: storage ? { ...storage, title: storage.full ? '手機空間不足' : '寫入失敗' } : null,
+    storage: storage ? { ...storage, title: storage.full ? t("c622") : t("c623") } : null,
     dogs: ids.map(slaveId => {
       const name = displayName(slaveId, aliases);
       const env = environment.get(slaveId) ?? null;
       const move = movement.get(slaveId) ?? null;
       return {
         slaveId, name, environment: env, movement: move,
-        label: [`${name}，訊號源 ${slaveId}`, env && `環境 ${env.label}`, move && `速度緩衝 ${move.label}`]
+        label: [t("c617", { name: name, slaveId: slaveId }), env && t("c618", { label: env.label }), move && t("c619", { label: move.label })]
           .filter(Boolean).join('，'),
       };
     }),

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { logger } from '../logger';
 // The export of the history screen (H9/H10; 判定表「匯出產生中」, flow.txt
 // 「匯出」): the small window's state, one export at a time from the moment a
@@ -17,9 +18,9 @@ import { activeSubjects } from './ExportData';
 import { buildExportSnapshot, exportPlaces, placeKey } from './ExportSnapshot';
 
 export const EXPORT_FORMATS = [
-  { id: 'png', title: 'PNG 長圖', detail: '地圖＋時間軸清單' },
-  { id: 'gpx', title: 'GPX', detail: '軌跡檔，可匯入地圖 App' },
-  { id: 'csv', title: 'CSV', detail: '每一筆位置' },
+  { id: 'png', title: t('c161'), detail: t('c162') },
+  { id: 'gpx', title: t('c164'), detail: t('c165') },
+  { id: 'csv', title: t('c166'), detail: t('c167') },
 ];
 export const EXPORT_MIME = { png: 'image/png', gpx: 'application/gpx+xml', csv: 'text/csv' };
 
@@ -28,7 +29,7 @@ export const EXPORT_MIME = { png: 'image/png', gpx: 'application/gpx+xml', csv: 
  * module's adapter). `alive()` false stops between steps. Returns the paths.
  */
 export async function makeExportFiles(snapshot, format, exporter, { exportId, createdAt, alive = () => true }) {
-  if (!activeSubjects(snapshot).length) throw new Error('這段時間沒有紀錄');
+  if (!activeSubjects(snapshot).length) throw new Error(t('c318'));
   const where = page => buildTempFile(snapshot, format, { createdAt, exportId, page });
   if (format === 'csv' || format === 'gpx') {
     const text = format === 'csv' ? buildCSV(snapshot) : buildGPX(snapshot);
@@ -97,12 +98,12 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     let directory;
     let shared = false;
     try {
-      if (!exporter) throw new Error('請安裝支援匯出的 Android 版本');
+      if (!exporter) throw new Error(t("c844"));
       let snapshot = snapshotReady;
       if (!snapshot) {
         // 按下那一刻的資料: the day, range and dogs now; the addresses next.
         const day = screen.dayModel, range = screen.range, look = screen.look, subject = screen.subject;
-        if (!day || !range) throw new Error('請等待歷史資料載入');
+        if (!day || !range) throw new Error(t("c797"));
         const places = day.subjects.flatMap(entry => exportPlaces(entry.model));
         // 有網路時地址最多等 5 秒; offline none (lookupAddresses decides).
         const found = places.length ? await lookup.lookupAddresses(places, { timeoutMs: 5000 }) : [];

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { getSupabase } from '../services/supabase';
 import { NativeModules } from 'react-native';
@@ -20,7 +21,7 @@ export function refreshRefused(failure) {
 export function AuthProvider({ children, clientFactory = getSupabase, restoreTimeout = RESTORE_TIMEOUT_MS }) {
   const [connection] = useState(() => {
     try { return { client: clientFactory() }; }
-    catch (failure) { return { error: failure.message || '無法初始化登入服務' }; }
+    catch (failure) { return { error: failure.message || t("c491") }; }
   });
   const client = connection.client;
   const [session, setSession] = useState(null);
@@ -99,7 +100,7 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
         // Nothing saved, or restored: not waiting for anything.
         waitingOnline.current = false;
         setOffline(false);
-        if (failure) setError('無法恢復登入狀態，請重新登入');
+        if (failure) setError(t("c490"));
       }
       // An older restore result must not undo a newer login/logout event.
       if (!eventSeen && !failure) receive('INITIAL_SESSION', data.session);
@@ -108,7 +109,7 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
       setTimeout(finish, 0);
     }).catch(() => {
       if (!alive) return;
-      if (!eventSeen) setError('無法讀取登入狀態');
+      if (!eventSeen) setError(t("c493"));
       setTimeout(finish, 0);
     });
     // D0 waits for the restore this long, then the map opens without it.
@@ -119,7 +120,7 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
   }, [client, restoreTimeout]);
 
   const requireClient = () => {
-    if (!client) throw new Error(connection.error || '登入服務尚未就緒');
+    if (!client) throw new Error(connection.error || t("c492"));
     return client;
   };
   const value = {
@@ -130,7 +131,7 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
     expiredAtStart,
     async signIn(email, password) {
       const address = email.trim();
-      if (!address || !password) throw new Error('請輸入電子郵件和密碼');
+      if (!address || !password) throw new Error(t("c496"));
       const auth = requireClient().auth;
       // Registered before waiting, so 「稍後再說」 can cancel it meanwhile.
       const mine = { cancelled: false, task: null };
@@ -215,14 +216,14 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
 
 // What signIn rejects with after 「稍後再說」 cancelled it: nothing to show.
 function cancelledSignIn() {
-  const failure = new Error('登入已取消');
+  const failure = new Error(t("c494"));
   failure.cancelled = true;
   return failure;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth 必須在 AuthProvider 內使用');
+  if (!context) throw new Error(t("c495"));
   return context;
 }
 

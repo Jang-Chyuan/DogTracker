@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { makeStyles, resolveStyles } from '../../theme/ThemeProvider';
 export const getROUTE_COLOURS = makeStyles(theme => {
   const { literalColors: themeLiteral } = theme;
@@ -23,7 +24,7 @@ export function dogTransition(state, event) {
   if (event.type === 'add') {
     if (dogs.some(d => d.id === event.dog.id))
       return { ...state, message: null };
-    if (dogs.length === 4) return { ...state, message: '最多同時 4 隻' };
+    if (dogs.length === 4) return { ...state, message: t("c696") };
     const slot = [0, 1, 2, 3].find(s => !dogs.some(d => d.slot === s));
     dogs = [
       ...dogs,
@@ -49,7 +50,7 @@ export function dogTransition(state, event) {
     ...state,
     dogs,
     protagonist: protagonist(dogs, current),
-    message: clicked?.downloadFailed ? '下載失敗　重試' : null,
+    message: clicked?.downloadFailed ? t('c322') : null,
   };
 }
 export function rangeOwner(dogs, entryId, mainId, remembered) {

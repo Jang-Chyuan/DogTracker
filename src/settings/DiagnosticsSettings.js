@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { space, touch, type } from '../theme/tokens';
@@ -11,9 +12,9 @@ import { StorageWarning } from './SettingsHome';
 
 // The three data pages (design S8, 文案 c251–c253 with c252's suggestion).
 export const DIAGNOSTICS_PAGES = Object.freeze([
-  { id: 'liveData', title: '即時資料' },
-  { id: 'cloudData', title: '本機／雲端資料' },
-  { id: 'locationRecords', title: '記錄清單' },
+  { id: 'liveData', title: t('c251') },
+  { id: 'cloudData', title: t("c481") },
+  { id: 'locationRecords', title: t('c253') },
 ]);
 
 /**
@@ -46,11 +47,9 @@ export default function DiagnosticsSettings({ page, onOpen, onHide, canHide = tr
           ))}
         </GroupCard>
       </View>
-      <GroupTitle>每隻狗的判斷</GroupTitle>
+      <GroupTitle>{t("c958")}</GroupTitle>
       {page.dogs.length === 0 ? (
-        <Text testID="diagnostics-no-dogs" style={styles.empty}>
-          還沒有狗的資料
-        </Text>
+        <Text testID="diagnostics-no-dogs" style={styles.empty}>{t('c109')}</Text>
       ) : (
         <GroupCard flat>
           {page.dogs.map(dog => (
@@ -63,11 +62,11 @@ export default function DiagnosticsSettings({ page, onOpen, onHide, canHide = tr
             >
               <Text style={styles.name}>
                 {dog.name}
-                <Text style={styles.source}>{`　訊號源 ${dog.slaveId}`}</Text>
+                <Text style={styles.source}>{t("c962", { slaveId: dog.slaveId })}</Text>
               </Text>
               <Line
-                label="環境"
-                value={dog.environment?.label ?? '沒有資料'}
+                label={t("c959")}
+                value={dog.environment?.label ?? t('c089')}
                 extra={[
                   dog.environment?.evidence,
                   dog.environment?.window &&
@@ -79,23 +78,20 @@ export default function DiagnosticsSettings({ page, onOpen, onHide, canHide = tr
                 ]}
               />
               <Line
-                label="速度緩衝"
-                value={dog.movement?.label ?? '沒有這支手機收到的速度'}
+                label={t("c960")}
+                value={dog.movement?.label ?? t("c961")}
                 extra={[dog.movement?.detail]}
               />
             </View>
           ))}
         </GroupCard>
       )}
-      <Text style={styles.footnote}>
-        環境判斷只當停在原處的參考；速度緩衝 1.5 km/h 以上算移動、0.5 km/h
-        以下算靜止，中間照前一個狀態。兩者都不顯示在地圖上。
-      </Text>
+      <Text style={styles.footnote}>{t("c963")}</Text>
       {canHide && <GroupCard flat>
         <ListRow
           testID="diagnostics-hide"
-          title="隱藏診斷"
-          label="隱藏診斷"
+          title={t('c411')}
+          label={t('c411')}
           onPress={onHide}
         />
       </GroupCard>}

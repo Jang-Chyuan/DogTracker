@@ -1,19 +1,20 @@
+import { t } from '../../i18n';
 import { clock, km, listDuration } from '../HistoryText';
 import { snapToRoute } from '../../mapHistory/CursorGeometry';
 import { nearestRecord } from './HistoryScreenRange';
 
 export function cursorLabel(model, time, subject = 'dog', gap = null) {
-  if (gap) return [clock(time), `這段沒資料（最後 ${clock(time)}）`];
+  if (gap) return [clock(time), t('c325', { time: clock(time) })];
   const stay = model.locations.find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end);
-  if (stay) return [clock(time), stay.type === 'indoor' ? `室內・${listDuration(stay.end - stay.start)}`
-    : `停留 ${listDuration(stay.durationMs)}`];
+  if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: listDuration(stay.end - stay.start) })
+    : t('c136', { duration: listDuration(stay.durationMs) })];
   // At a switch boundary the outgoing segment owns the label.
   const section = model.sections.find(n => n.start <= time && n.end > time)
     || model.sections.find(n => n.end === time);
-  if (['ride', 'driving'].includes(section?.mode)) return [clock(time), `${section.mode === 'ride' ? '坐車' : '開車'}中・不算距離`];
+  if (['ride', 'driving'].includes(section?.mode)) return [clock(time), ((section.mode === 'ride') ? t('c342') : t('c343'))];
   const distance = (model.distanceEdges ?? model.sections).reduce((sum, n) => sum + (n.countedDistanceM || 0)
     * (time >= n.end ? 1 : time <= n.start ? 0 : (time - n.start) / (n.end - n.start)), 0);
-  return [clock(time), `${subject === 'phone' ? '已走' : '已移動'} ${km(distance)}`];
+  return [clock(time), ((subject === 'phone') ? t('c131', { distance: km(distance) }) : t('c116', { distance: km(distance) }))];
 }
 
 export function screenCursor(model, time, { subject = 'dog', action = 'drag', previous = null } = {}) {

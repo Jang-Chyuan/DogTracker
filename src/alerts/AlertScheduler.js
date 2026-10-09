@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // When a problem gets the user's attention, and how (design v3 「提醒的規則」
 // 「每一項都可以關」「S6 的開關管什麼」「暫停」「危急的不等間隔」, edges「提醒」).
 // Pure: takes AlertEvents' current problems each tick, returns the next state
@@ -36,8 +37,8 @@ export const VIBRATION_PATTERNS = Object.freeze({
 });
 // Alerts and the always-on service are two channels (Android 細節).
 export const ALERT_CHANNELS = Object.freeze([
-  Object.freeze({ id: 'alerts', name: '提醒', importance: 'high' }),
-  Object.freeze({ id: 'tracking', name: '常駐', importance: 'low', sound: false, vibrate: false }),
+  Object.freeze({ id: 'alerts', name: t('c191'), importance: 'high' }),
+  Object.freeze({ id: 'tracking', name: t("c477"), importance: 'low', sound: false, vibrate: false }),
 ]);
 
 // One episode at one severity level.
@@ -63,7 +64,7 @@ export function resumeAlerts(state = {}, now) {
 export function pausePresentation(pause, now) {
   if (!pauseOn(pause, now)) return null;
   const clock = formatClock(pause.until);
-  return { until: pause.until, short: `暫停到 ${clock}`, title: `已暫停提醒到 ${clock}`, action: '恢復' };
+  return { until: pause.until, short: t('c297', { time: clock }), title: t('c298', { time: clock }), action: t('c299') };
 }
 
 /**

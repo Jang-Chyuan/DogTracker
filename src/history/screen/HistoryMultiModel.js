@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 // One day of the history screen for one dog, my route, or 2–4 dogs together
 // (H1/H7; 判定表「主角」「多隻狗的共同範圍」「多隻狗共用游標」「換主角時的
 // 共用時刻」「多隻狗非主角的路線」). Pure: the hook hands in each subject's rows
@@ -340,11 +341,7 @@ export function faceMarkers(faces = []) {
     staleRing: !!face.stale,
     tint: face.color,
     label: face.stale
-      ? `${face.name}的游標，這段沒資料，最後 ${
-          face.lines?.[0] ?? ''
-        }，點兩下選擇這隻狗`
-      : `${face.name}的游標，${face.lines?.[0] ?? ''}，${
-          face.lines?.[1] ?? ''
-        }，點兩下選擇這隻狗`,
+      ? t("c697", { name: face.name, value: face.lines?.[0] ?? '' })
+      : t("c698", { name: face.name, value: face.lines?.[0] ?? '', value2: face.lines?.[1] ?? '' }),
   }));
 }

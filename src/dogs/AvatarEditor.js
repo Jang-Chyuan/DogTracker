@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { lightTheme } from '../theme/ThemeProvider';
 // A5c: a dog's face, edited in a sheet that rises from the bottom of its page
 // (design v3 A5c; DESIGN.md §12「狗的名稱與頭像」). 拍照／相簿 take a photo,
@@ -190,7 +191,7 @@ export default function AvatarEditor({
     if (!alive.current) return;
     setBusy(false);
     if (ok) close();
-    else setMessage('沒有存成功，再試一次');
+    else setMessage(t("c627"));
   };
   const illustration = draft.kind === 'art';
   const translateY = progress.interpolate({
@@ -205,7 +206,7 @@ export default function AvatarEditor({
         <Pressable
           style={StyleSheet.absoluteFill}
           accessibilityRole="button"
-          accessibilityLabel="取消"
+          accessibilityLabel={t('c046')}
           onPress={() => {
             if (!busy) close();
           }}
@@ -228,7 +229,7 @@ export default function AvatarEditor({
         <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="取消"
+            accessibilityLabel={t('c046')}
             disabled={busy}
             accessibilityState={{ disabled: busy }}
             onPress={close}
@@ -238,14 +239,12 @@ export default function AvatarEditor({
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.cancel}>取消</Text>
+            <Text style={styles.cancel}>{t('c046')}</Text>
           </Pressable>
-          <Text ref={titleRef} style={styles.title} accessibilityRole="header">
-            頭像
-          </Text>
+          <Text ref={titleRef} style={styles.title} accessibilityRole="header">{t('c100')}</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="完成"
+            accessibilityLabel={t('c101')}
             disabled={busy}
             accessibilityState={{ disabled: busy }}
             onPress={done}
@@ -256,30 +255,30 @@ export default function AvatarEditor({
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.done}>完成</Text>
+            <Text style={styles.done}>{t('c101')}</Text>
           </Pressable>
         </View>
         <ScrollView bounces={false} contentContainerStyle={styles.body}>
           <View
             style={styles.preview}
             accessible
-            accessibilityLabel={`${name}的頭像`}
+            accessibilityLabel={t("c626", { name: name })}
           >
             <DogAvatar avatar={draft} size={PREVIEW} border={0} />
           </View>
           <View style={styles.sources}>
             <SourceButton
-              label="拍照"
+              label={t('c102')}
               disabled={busy}
               onPress={() => photo('camera')}
             />
             <SourceButton
-              label="相簿"
+              label={t('c103')}
               disabled={busy}
               onPress={() => photo('library')}
             />
             <SourceButton
-              label="插圖"
+              label={t('c104')}
               disabled={busy}
               selected={illustration}
               onPress={() => choose(art)}
@@ -292,11 +291,11 @@ export default function AvatarEditor({
           )}
           {illustration && (
             <>
-              <Text style={styles.section}>樣子</Text>
+              <Text style={styles.section}>{t('c105')}</Text>
               <View
                 style={styles.arts}
                 accessibilityRole="radiogroup"
-                accessibilityLabel="樣子"
+                accessibilityLabel={t('c105')}
               >
                 {DOG_ART_KEYS.map(key => {
                   const selected = draft.art === key;
@@ -323,8 +322,8 @@ export default function AvatarEditor({
                   );
                 })}
               </View>
-              <Text style={styles.section}>底色</Text>
-              <View accessibilityRole="radiogroup" accessibilityLabel="底色">
+              <Text style={styles.section}>{t('c106')}</Text>
+              <View accessibilityRole="radiogroup" accessibilityLabel={t('c106')}>
                 {DOG_COLOR_ROWS.map(row => (
                   <View key={row[0]} style={styles.colors}>
                     {row.map(key => {

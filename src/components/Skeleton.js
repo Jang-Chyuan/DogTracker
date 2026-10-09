@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 import { radius, size } from '../theme/tokens';
@@ -61,7 +62,7 @@ export default function Skeleton({ shape = 'rows', reduced: override, testID = '
 }
 
 /** Keep this mounted around content to fade in when a slow load finishes. */
-export function LoadingContent({ loading, children, shape, label = '載入中', skeletonTestID, reduced }) {
+export function LoadingContent({ loading, children, shape, label = t('c425'), skeletonTestID, reduced }) {
   const [visible, setVisible] = useState(false);
   const wasVisible = useRef(false);
   const opacity = useRef(new Animated.Value(1)).current;

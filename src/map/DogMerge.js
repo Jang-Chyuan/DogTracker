@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { coordinate as toCoordinate } from '../tracking/RouteSamples';
 import { ridesAlong } from '../placement/RideAlong';
 
@@ -169,8 +170,8 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
         charging,
         environment,
         retained: held ? false : dog.retained || !!noFix,
-        communicationStatus: !communicating ? '未收到新資料'
-          : noFix ? '有通訊／GPS 未定位' : '有通訊／定位正常',
+        communicationStatus: !communicating ? t("c735")
+          : noFix ? t("c736") : t("c737"),
         batteryPercentage: packet
           ? (packet.row.battery_valid !== 0 && packet.row.battery_valid !== false
             && Number.isFinite(packet.row.battery_percentage) ? packet.row.battery_percentage : null)

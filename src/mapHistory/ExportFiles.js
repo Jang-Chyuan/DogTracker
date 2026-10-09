@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { activeSubjects, subjectName } from './ExportData';
 const pad = value => String(value).padStart(2, '0');
 // `timeZone` null: the phone's own zone (what the screen's clock() shows; the
@@ -12,17 +13,17 @@ export function localDateParts(time, timeZone = 'UTC') {
 }
 const dateKey = parts => `${parts.year}${parts.month}${parts.day}`;
 export function buildExportFilename(snapshot, format, page = null) {
-  if (!['gpx', 'csv', 'png'].includes(format)) throw new Error('不支援的匯出格式');
-  if (page != null && (format !== 'png' || !Number.isInteger(page) || page < 1)) throw new Error('頁碼無效');
+  if (!['gpx', 'csv', 'png'].includes(format)) throw new Error(t("c787"));
+  if (page != null && (format !== 'png' || !Number.isInteger(page) || page < 1)) throw new Error(t("c789"));
   const subjects = activeSubjects(snapshot);
-  const label = subjects.length === 1 ? subjectName(subjects[0]) : '狗的歷史';
+  const label = subjects.length === 1 ? subjectName(subjects[0]) : t("c788");
   const stamp = time => { const p = localDateParts(time, snapshot.timeZone); return `${dateKey(p)}-${p.hour}${p.minute}`; };
   return `DogTracker_${Array.from(label).map(char => char.charCodeAt(0) < 32 || /[<>:"/\\|?*]/.test(char) ? '_' : char).join('')}_${stamp(snapshot.since)}_${stamp(snapshot.until)}${page == null ? '' : `_${page}`}.${format}`;
 }
 // Cache directory is selected by the platform. No clock, random ID or I/O here.
 // A caller-supplied unique exportId isolates concurrent exports with the same name.
 export function buildTempFile(snapshot, format, { createdAt, exportId, page = null }) {
-  if (!Number.isFinite(createdAt) || !/^[a-zA-Z0-9_-]+$/.test(exportId || '')) throw new Error('暫存檔識別無效');
+  if (!Number.isFinite(createdAt) || !/^[a-zA-Z0-9_-]+$/.test(exportId || '')) throw new Error(t("c790"));
   return { directory: `history_exports/${exportId}`, filename: buildExportFilename(snapshot, format, page), createdAt };
 }
 export function shouldCleanupExport(file, now, timeZone = null) {

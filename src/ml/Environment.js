@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import model from './model.json';
 import { predictWindow } from './inference';
 
@@ -29,21 +30,21 @@ export function predictEnvironment(rows, windowMs = ENVIRONMENT_WINDOW_MS) {
 }
 
 export function environmentLabel(result, now = Date.now()) {
-  if (!result) return '等待已結束的兩分鐘資料';
-  if (now - result.observedAt > 120000) return '無法判斷（資料已超過 2 分鐘）';
-  const label = { indoor: '室內', outdoor: '室外', window: '窗邊', unknown: '無法判斷' }[result.environment];
-  if (result.source === 'usb_rule') return `${label}（USB 已連接）`;
+  if (!result) return t("c846");
+  if (now - result.observedAt > 120000) return t("c847");
+  const label = { indoor: t('c114'), outdoor: t("c851"), window: t("c853"), unknown: t("c852") }[result.environment];
+  if (result.source === 'usb_rule') return t("c848", { label: label });
   if (result.environment === 'unknown' && result.hasSignal && result.modelEnvironment) {
-    const candidate = { indoor: '室內', outdoor: '室外', window: '窗邊' }[result.modelEnvironment];
-    return `疑似${candidate}（信心 ${Math.round(result.modelConfidence * 100)}%，低於 60%）`;
+    const candidate = { indoor: t('c114'), outdoor: t("c851"), window: t("c853") }[result.modelEnvironment];
+    return t("c849", { candidate: candidate, value: Math.round(result.modelConfidence * 100) });
   }
   return result.environment === 'unknown' ? label
-    : `${label}（信心 ${Math.round(result.modelConfidence * 100)}%）`;
+    : t("c850", { label: label, value: Math.round(result.modelConfidence * 100) });
 }
 
 export function environmentEvidence(result) {
   if (!result) return null;
   const percent = key => Number.isFinite(result.probabilities?.[key])
     ? `${Math.round(result.probabilities[key] * 100)}%` : '—';
-  return `模型機率：室內 ${percent('indoor')} · 窗邊 ${percent('window')} · 室外 ${percent('outdoor')}`;
+  return t("c845", { value: percent('indoor'), value2: percent('window'), value3: percent('outdoor') });
 }

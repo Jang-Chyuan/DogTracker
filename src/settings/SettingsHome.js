@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useRef, useState, useCallback } from 'react';
 import { MapTip } from '../map/MapControls';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
@@ -27,7 +28,7 @@ export function StorageWarning({
   // `heading`: a problem of its own (D0 「手機裡的資料打不開」 opening 診斷).
   const title =
     storage.heading ??
-    (storage.full ? '手機空間不足，位置存不進手機' : '位置存不進手機');
+    (storage.full ? t('c282') : t("c466"));
   // On 診斷 (S8, no onPress) the whole reason, also when the phone is full.
   const reason = onPress ? !storage.full && storage.reason : storage.reason;
   const body = (
@@ -95,7 +96,7 @@ export default function SettingsHome({
         group.rows.some(row => row.id === 'diagnostics'),
       )
     ) {
-      show('診斷已經開啟');
+      show(t('c410'));
       return;
     }
     if (taps.current.saving) return;
@@ -108,8 +109,8 @@ export default function SettingsHome({
     if (count === 7) {
       const saved = await onEnableDiagnostics?.();
       taps.current = { count: 0, at: null, saving: false };
-      if (saved) show('已開啟診斷');
-    } else if (count >= 4) show(`再點 ${7 - count} 下開啟診斷`);
+      if (saved) show(t('c409'));
+    } else if (count >= 4) show(t('c408', { count: 7 - count }));
   };
   return (
     <View style={settingsStyles.page}>
@@ -137,7 +138,7 @@ export default function SettingsHome({
           <Pressable
             testID="settings-version"
             accessibilityRole="button"
-            accessibilityLabel={`DogTracker ${version}，版本`}
+            accessibilityLabel={t('c412', { version: version })}
             onPress={versionTap}
             style={({ pressed }) => [styles.version, pressed && styles.pressed]}
           >

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { configFor, distanceMeters, median, above } from './HistoryConfig';
 import { isVehiclePoint } from './HistoryMovement';
 
@@ -109,17 +110,17 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
   const steps = [...new Set(day.flatMap(v => [v.start, v.end]))].sort((x, y) => x - y);
   let ready = false, fallback = null, typicalMs = null;
   const judge = (list, typical) => { for (const v of list) if (!marked.has(v.id) && qualifies(v, typical)) marked.add(v.id); };
-  for (const t of steps) {
-    const ownStarted = selected.filter(v => v.start <= t).length;
+  for (const tick of steps) {
+    const ownStarted = selected.filter(v => v.start <= tick).length;
     const useFallback = (!following && fallback) || ownStarted < config.minVisits;
     const base = useFallback ? day : selected;
-    const started = base.filter(v => v.start <= t).length;
-    const typical = median(base.filter(v => v.completed && v.end <= t).map(v => v.durationMs));
+    const started = base.filter(v => v.start <= tick).length;
+    const typical = median(base.filter(v => v.completed && v.end <= tick).map(v => v.durationMs));
     if (started < config.minVisits || typical == null) continue;
     const switched = ready && fallback !== useFallback;
     typicalMs = typical;
-    if (!ready || switched) judge(selected.filter(v => v.end <= t && (v.completed || v.start <= t)), typical);
-    else judge(selected.filter(v => v.completed && v.end === t), typical);
+    if (!ready || switched) judge(selected.filter(v => v.end <= tick && (v.completed || v.start <= tick)), typical);
+    else judge(selected.filter(v => v.completed && v.end === tick), typical);
     ready = true; fallback = useFallback;
   }
   // The ongoing visit is judged again with every append (and at the end here).
@@ -145,7 +146,7 @@ export function historyIndoorNodes(points, { start = -Infinity, end = Infinity, 
     if (!node || node.heldSince !== p.heldSince || p.time - previous.time > config.gapMs) {
       node = { type: 'indoor', start: p.time, end: p.time, durationMs: 0,
         latitude: p.latitude, longitude: p.longitude, reason: p.heldReason,
-        heldSince: p.heldSince, label: '室內',
+        heldSince: p.heldSince, label: t('c114'),
         continuesPreviousDay: p.heldSince < dayStart, continuesNextDay: false };
       nodes.push(node);
     } else { node.end = p.time; node.durationMs = node.end - node.start; }

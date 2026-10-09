@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Which problems exist right now, each as one episode (design v3 N, 「每一種提醒」
 // 「條件、再提醒、解除」, edges「提醒」「電量」). Pure snapshot reducer: the caller
 // hands in a complete picture every tick (a dog left out has no problem) and
@@ -92,7 +93,7 @@ export function updateAlertEvents(previous = {}, {
     if (local) localDogs += 1;
     const problems = dogProblems(dog, freshness, dog.range);
     const detail = {
-      name: dog.name || `狗 ${dog.slaveId}`, source: freshness.source || 'ble',
+      name: dog.name || t("c1009", { slaveId: dog.slaveId }), source: freshness.source || 'ble',
       // A dog this phone's receiver hears goes quiet when the receiver drops.
       receiverAffected: local,
     };

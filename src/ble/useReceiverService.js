@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { logger } from '../logger';
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
@@ -35,16 +36,16 @@ export function useReceiverService({ dogDatabase, enabled = true, onStorageError
     lastSaved.current.set(slaveId, now);
     databaseReady.current
       ?.then(() => database.current.saveStatus(nextData, payload))
-      .catch(error => logger.error('儲存 BLE 資料失敗', error));
+      .catch(error => logger.error(t("c525"), error));
   }, []);
   const onStatus = useCallback(() => {}, []);
 
   useEffect(() => {
     if (!enabled || !dogDatabase) return;
     databaseReady.current = dogDatabase.initialize();
-    databaseReady.current.catch(error => logger.error('SQLite 初始化失敗', error));
+    databaseReady.current.catch(error => logger.error(t("c524"), error));
     ble.restoreBackground(onStatus, receiveData)
-      .catch(error => logger.error('恢復背景 BLE 狀態失敗', error));
+      .catch(error => logger.error(t("c527"), error));
   }, [ble, dogDatabase, enabled, onStatus, receiveData]);
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export function useReceiverService({ dogDatabase, enabled = true, onStorageError
         const state = await ble.getBackgroundState();
         if (!disposed && state) report.current?.(state.storageError || null);
       } catch (error) {
-        logger.error('讀取背景狀態失敗', error);
+        logger.error(t("c526"), error);
       } finally {
         reading = false;
       }

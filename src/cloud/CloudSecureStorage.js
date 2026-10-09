@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import * as Keychain from 'react-native-keychain';
 
 // Supabase stores serialized sessions, never the user's login password.
@@ -13,7 +14,7 @@ export function createCloudSecureStorage(vault = Keychain) {
       const saved = await vault.setGenericPassword('session', value, {
         ...options(key), accessible: vault.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
-      if (!saved) throw new Error('無法安全保存登入狀態');
+      if (!saved) throw new Error(t("c584"));
     },
     async removeItem(key) {
       await vault.resetGenericPassword(options(key));

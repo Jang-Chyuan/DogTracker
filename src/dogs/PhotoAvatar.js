@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { size as sizes } from '../theme/tokens';
 // A photo for a dog's face (design v3 A5c 拍照／相簿; DESIGN.md §12): taken
 // with the camera or picked with the Android photo picker, then cropped to a
@@ -14,8 +15,8 @@ export const PHOTO_SIZE = sizes.avatar.photoSource;
 export const CROP_OPTIONS = Object.freeze({
   width: PHOTO_SIZE, height: PHOTO_SIZE, cropperCircleOverlay: true, includeBase64: true,
   mediaType: 'photo', forceJpg: true,
-  cropperToolbarTitle: '移動、縮放，讓狗臉在圓圈裡',
-  cropperChooseText: '使用', cropperCancelText: '取消',
+  cropperToolbarTitle: t("c649"),
+  cropperChooseText: t("c648"), cropperCancelText: t('c046'),
 });
 
 const CANCELLED = 'E_PICKER_CANCELLED';
@@ -51,6 +52,6 @@ export async function pickPhoto(source, picker = ImageCropPicker) {
 }
 
 export const PHOTO_ERRORS = Object.freeze({
-  camera: '需要相機才能拍照',
-  failed: '沒有拿到照片，再試一次',
+  camera: t("c647"),
+  failed: t("c650"),
 });

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { NativeModules, Platform } from 'react-native';
 import { openTrackingDatabase } from '../database/TrackingDatabaseConnection';
@@ -8,8 +9,8 @@ import { createUploadService } from './UploadService';
 /** A route switch that could not send what was waiting first (S3). */
 export class UploadSwitchError extends Error {
   constructor(reason, remaining) {
-    super(reason === 'offline' ? `要先上傳完 ${remaining} 筆，請連上網路`
-      : reason === 'unauthorized' ? '需要重新登入' : '上傳方式沒有切換，請重試');
+    super(reason === 'offline' ? t('c256', { count: remaining })
+      : reason === 'unauthorized' ? t('c276') : t("c610"));
     this.reason = reason;
     this.remaining = remaining;
   }
@@ -59,7 +60,7 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
           try {
             await NativeModules.CloudBackgroundSync?.configureSearch?.(
               owner, savedSettings.some(s => s.mode === 'phone'));
-          } catch (error) { searchError = `搜尋背景轉送無法啟動：${error.message}；前景仍可上傳`; }
+          } catch (error) { searchError = t("c612", { message: error.message }); }
         }
         if (foreground) {
           const outcome = await service.current?.run(owner, () => alive);
@@ -84,7 +85,7 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
         if (error) throw error;
         const masters = [...new Set((data || []).map(m => /^master_(\d+)$/.exec(m.gateway_id)?.[1]).filter(Boolean).map(Number))];
         if (alive) setState(s => ({ ...s, masters }));
-      } catch (error) { if (alive) setState(s => ({ ...s, error: `無法取得 Master 授權：${error.message}` })); }
+      } catch (error) { if (alive) setState(s => ({ ...s, error: t("c611", { message: error.message }) })); }
     })();
     return () => { alive = false; };
   }, [ready, owner, foreground, supported]);

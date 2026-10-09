@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -22,7 +23,7 @@ import { CLOUD_BUDGET_BYTES } from './CloudDatabase';
 
 /** The stored record is the whole Supabase row, JSON encoded when it arrived. */
 export function formatRaw(value) {
-  if (!value) return '這筆沒有保留原始紀錄（可能是舊版下載的）。';
+  if (!value) return t("c571");
   try {
     return JSON.stringify(JSON.parse(value), null, 2);
   } catch {
@@ -33,20 +34,20 @@ export function formatRaw(value) {
 const PAGE = 50;
 // The downloaded columns (nothing is cut short: a cell wraps).
 const COLUMNS = [
-  ['received_at', '雲端接收時間', 150, formatDateTime],
-  ['master_id', '接收器', 64],
-  ['slave_id', '訊號源', 64],
-  ['slave_lat', '緯度', 96],
-  ['slave_lon', '經度', 104],
-  ['speed_kmh', '速度 km/h', 84],
-  ['battery_percentage', '電量 %', 64],
+  ['received_at', t("c531"), 150, formatDateTime],
+  ['master_id', t('c075'), 64],
+  ['slave_id', t("c532"), 64],
+  ['slave_lat', t("c533"), 96],
+  ['slave_lon', t("c534"), 104],
+  ['speed_kmh', t("c535"), 84],
+  ['battery_percentage', t("c536"), 64],
   ['usb_present', 'usb_present', 96],
-  ['satellites', '衛星', 52],
+  ['satellites', t("c537"), 52],
   ['hdop', 'HDOP', 64],
-  ['activity', '活動值', 72],
+  ['activity', t("c538"), 72],
   ['rssi', 'RSSI', 64],
   ['snr', 'SNR', 56],
-  ['sequence', '序號', 72],
+  ['sequence', t("c539"), 72],
 ].map(([key, label, width, format]) => ({ key, label, width, format }));
 // What the table shows until other columns are picked (「恢復預設欄位」).
 export const CLOUD_DEFAULT_COLUMNS = Object.freeze([
@@ -137,11 +138,11 @@ export default function CloudDataScreen({
       .getSession()
       .then(({ data, error: authError }) => {
         if (!mounted.current || authEventSeen) return;
-        if (authError) setError('無法讀取登入狀態，請重新登入');
+        if (authError) setError(t("c540"));
         else receive(data.session);
       })
       .catch(() => {
-        if (mounted.current) setError('無法讀取登入狀態');
+        if (mounted.current) setError(t("c493"));
       });
     return () => {
       mounted.current = false;
@@ -172,7 +173,7 @@ export default function CloudDataScreen({
       })
       .catch(failure => {
         if (!cancelled && current(version))
-          setError(`讀取失敗：${failure?.message || '手機裡的雲端資料讀不到'}`);
+          setError(t("c565", { value: failure?.message || t("c566") }));
       });
     return () => {
       cancelled = true;
@@ -207,7 +208,7 @@ export default function CloudDataScreen({
       await action(version);
     } catch (failure) {
       if (current(version))
-        setError(`讀取失敗：${failure?.message || '請再試一次'}`);
+        setError(t("c565", { value: failure?.message || t("c545") }));
     } finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -218,10 +219,10 @@ export default function CloudDataScreen({
   const syncText = !sync
     ? null
     : sync.mode === 'auto'
-    ? '自動同步中…'
+    ? t("c547")
     : sync.lastSuccess
-    ? `上次同步：${formatClockSeconds(sync.lastSuccess)}`
-    : '等待自動同步';
+    ? t("c548", { value: formatClockSeconds(sync.lastSuccess) })
+    : t("c549");
   return (
     <ScrollView
       testID="cloud-data"
@@ -237,70 +238,65 @@ export default function CloudDataScreen({
         </Text>
       ) : null}
       {!session ? (
-        <Text testID="cloud-data-signed-out" style={styles.empty}>
-          登入 Supabase 帳號後，這裡會列出下載到這支手機的雲端資料。
-        </Text>
+        <Text testID="cloud-data-signed-out" style={styles.empty}>{t("c567")}</Text>
       ) : (
         <>
-          <GroupTitle>帳號與同步</GroupTitle>
+          <GroupTitle>{t("c568")}</GroupTitle>
           <GroupCard flat>
             <ListRow
-              title="帳號"
+              title={t("c550")}
               right={session.user.email}
-              label={`帳號，${session.user.email}`}
+              label={t("c541", { email: session.user.email })}
             />
             {syncText ? (
               <ListRow
-                title="同步"
+                title={t("c552")}
                 right={syncText}
-                label={`同步，${syncText}`}
+                label={t("c542", { syncText: syncText })}
               />
             ) : null}
             {sync?.error ? (
               <ListRow
                 problem
-                title="同步失敗"
+                title={t("c553")}
                 detail={sync.error}
                 detailTone="crit"
-                label={`同步失敗，${sync.error}`}
+                label={t("c543", { error: sync.error })}
               />
             ) : null}
             {phoneId ? (
               <ListRow
-                title="這支手機的上傳 ID"
+                title={t("c554")}
                 detail={phoneId}
-                label={`這支手機的上傳 ID，${phoneId}`}
+                label={t("c544", { phoneId: phoneId })}
               />
             ) : null}
           </GroupCard>
           <Text style={dataStyles.hint}>
             {Platform.OS === 'android'
-              ? '開著 App 時每 30 秒同步；背景或鎖屏時約每 15 分鐘，實際時間看系統省電。第一次取最近 24 小時；沒網路時等網路恢復；登出就停止。'
-              : '開著 App 時每 30 秒同步；回到前景立刻補下載。'}
+              ? t("c569")
+              : t("c570")}
           </Text>
           <Text style={dataStyles.hint}>
-            {`下載的資料會留著，直到所有帳號合計超過 ${megabytes(
+            {((usage) ? t("c528", { value: megabytes(
               CLOUD_BUDGET_BYTES,
-            )} 才從最早的開始清除` +
-              `${
-                usage
-                  ? `（目前 ${usage.rows} 筆，約 ${megabytes(usage.bytes)}）`
-                  : ''
-              }；每筆的原始 JSON 只留一天。`}
+            ), rows: usage.rows, value2: megabytes(usage.bytes) }) : t("c529", { value: megabytes(
+              CLOUD_BUDGET_BYTES,
+            ) }))}
           </Text>
 
           <Text
             style={dataStyles.heading}
             accessibilityRole="header"
-          >{`這個帳號下載的資料（共 ${count} 筆）`}</Text>
+          >{t("c560", { count: count })}</Text>
           <View style={dataStyles.buttons}>
             <PillButton
-              title="重新讀取本機資料"
+              title={t("c555")}
               disabled={busy}
               onPress={() => perform(() => loadRows(0))}
             />
             <PillButton
-              title={picking ? '收起欄位' : `選擇欄位（${selected.length}）`}
+              title={picking ? t("c556") : t("c557", { length: selected.length })}
               onPress={() => setPicking(value => !value)}
             />
           </View>
@@ -339,46 +335,40 @@ export default function CloudDataScreen({
                 )}
                 rows={rows}
                 openId={rawId}
-                rowLabel={row => `第 ${row.id} 筆原始資料`}
+                rowLabel={row => t("c546", { id: row.id })}
                 onRowPress={row =>
                   setRawId(open => (open === row.id ? null : row.id))
                 }
               />
-              <Text style={dataStyles.hint}>
-                點一列看這筆的原始雲端 JSON；時間照手機的時區。
-              </Text>
+              <Text style={dataStyles.hint}>{t("c561")}</Text>
             </>
           ) : (
-            <Text style={styles.empty}>
-              這支手機還沒有這個帳號的雲端資料；開著 App 會自動同步。
-            </Text>
+            <Text style={styles.empty}>{t("c562")}</Text>
           )}
           {rawId != null && (
             <View testID="cloud-data-raw" style={styles.raw}>
               <Text
                 style={styles.rawTitle}
-              >{`原始雲端紀錄（第 ${rawId} 筆）`}</Text>
+              >{t("c563", { rawId: rawId })}</Text>
               <ScrollView horizontal>
                 <Text selectable style={styles.rawText}>
                   {formatRaw(rows.find(row => row.id === rawId)?.raw_payload)}
                 </Text>
               </ScrollView>
-              <TextButton title="關閉原始紀錄" onPress={() => setRawId(null)} />
+              <TextButton title={t("c558")} onPress={() => setRawId(null)} />
             </View>
           )}
-          <Text style={dataStyles.hint}>{`第 ${
-            Math.floor(offset / PAGE) + 1
-          } 頁／共 ${pages} 頁，每頁 ${PAGE} 筆`}</Text>
+          <Text style={dataStyles.hint}>{t("c564", { value: Math.floor(offset / PAGE) + 1, pages: pages, PAGE: PAGE })}</Text>
           <View style={dataStyles.buttons}>
             <PillButton
-              title="上一頁"
+              title={t("c559")}
               disabled={busy || offset === 0}
               onPress={() =>
                 perform(() => loadRows(Math.max(0, offset - PAGE)))
               }
             />
             <PillButton
-              title="下一頁"
+              title={t("c551")}
               disabled={busy || offset + PAGE >= count}
               onPress={() => perform(() => loadRows(offset + PAGE))}
             />

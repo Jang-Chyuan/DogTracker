@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { coordinate } from '../tracking/RouteSamples';
 import { localDateParts } from './ExportFiles';
 
@@ -18,12 +19,12 @@ export const rawCoordinate = (row, subject = null) => subject?.kind === 'phone'
   Object.prototype.hasOwnProperty.call(row, 'raw_longitude') ? row.raw_longitude : row.longitude,
 );
 export const inInterval = (time, interval) => time >= interval.start && time < interval.end;
-export const subjectName = subject => subject.kind === 'phone' ? '我的路線' : `${subject.name || `狗 ${subject.slaveId}`}-${subject.slaveId}`;
-export const displayName = subject => subject.kind === 'phone' ? '我的路線' : `${subject.name || `狗 ${subject.slaveId}`}（訊號源 ${subject.slaveId}）`;
+export const subjectName = subject => subject.kind === 'phone' ? t('c132') : `${subject.name || t("c1009", { slaveId: subject.slaveId })}-${subject.slaveId}`;
+export const displayName = subject => subject.kind === 'phone' ? t('c132') : t("c782", { value: subject.name || t("c783", { value1: subject.slaveId }), slaveId: subject.slaveId });
 export function validateSnapshot(snapshot) {
-  if (!Number.isFinite(snapshot.since) || !Number.isFinite(snapshot.until) || snapshot.since > snapshot.until) throw new Error('匯出範圍無效');
+  if (!Number.isFinite(snapshot.since) || !Number.isFinite(snapshot.until) || snapshot.since > snapshot.until) throw new Error(t("c784"));
   const day = time => { const p = localDateParts(time, snapshot.timeZone); return `${p.year}${p.month}${p.day}`; };
-  if (day(snapshot.since) !== day(snapshot.until)) throw new Error('匯出範圍必須在同一天');
+  if (day(snapshot.since) !== day(snapshot.until)) throw new Error(t("c785"));
 }
 export function activeSubjects(snapshot) {
   validateSnapshot(snapshot);

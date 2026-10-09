@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // The alerts off the live map (design v3 N3, 判定表「提醒入口（歷史畫面、設定
 // 頁）」「歷史和設定的紅色「⚠ N」」「N3 同時有好幾件事」「提醒卡（A2、A2c、N3
 // 共用）」). Pure.
@@ -41,7 +42,7 @@ export function alertBadge(active) {
   return {
     count,
     text: `⚠ ${count}`,
-    label: `${count} 件事要注意，打開${alertLine(list[0])}`,
+    label: t("c478", { count: count, value: alertLine(list[0]) }),
     target: alertTarget(list[0]),
   };
 }

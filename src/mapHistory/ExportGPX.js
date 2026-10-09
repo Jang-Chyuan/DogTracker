@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { activeSubjects, clippedIntervals, exportRows, gpsTime, inInterval, rawCoordinate, subjectName } from './ExportData';
 import { mergeHistoryFixes } from '../history/HistorySources';
 import { coordinate } from '../tracking/RouteSamples';
@@ -9,8 +10,8 @@ function waypoint(subject, item, piece, hold, gaps) {
   if (!position) return '';
   const excluded = hold ? 0 : Number.isFinite(item.excludedMs) ? item.excludedMs : gaps.reduce((sum, gap) => sum + Math.max(0, Math.min(piece.end, gap.end) - Math.max(piece.start, gap.start)), 0);
   const prefix = subject.kind === 'phone' ? '' : `${subjectName(subject)} `;
-  const name = `${prefix}${hold ? '室內' : `停留 ${item.number}`}・${minutes(piece.end - piece.start - excluded)} 分`;
-  const desc = [item.address, excluded ? `不含中斷 ${minutes(excluded)} 分` : null].filter(Boolean).join('・');
+  const name = ((hold) ? t("c792", { prefix: prefix, value: minutes(piece.end - piece.start - excluded) }) : t("c793", { prefix: prefix, number: item.number, value: minutes(piece.end - piece.start - excluded) }));
+  const desc = [item.address, excluded ? t("c791", { value: minutes(excluded) }) : null].filter(Boolean).join('・');
   return `<wpt lat="${position.latitude}" lon="${position.longitude}"><time>${iso(piece.start)}</time><name>${xml(name)}</name>${desc ? `<desc>${xml(desc)}</desc>` : ''}</wpt>`;
 }
 function track(subject, name, type, segments) {
@@ -57,7 +58,7 @@ export function buildGPX(snapshot) {
       const segments = groups.get(`ride-${index}`) || [];
       if (!segments.length) return;
       number += 1;
-      tracks.push(track(subject, `${subject.kind === 'phone' ? '' : `${subjectName(subject)} `}${subject.kind === 'phone' ? '開車' : '坐車'} ${number}`, 'drive', segments));
+      tracks.push(track(subject, ((subject.kind === 'phone') ? t("c774", { value: subject.kind === 'phone' ? '' : `${subjectName(subject)} `, number: number }) : t("c775", { value: subject.kind === 'phone' ? '' : `${subjectName(subject)} `, number: number })), 'drive', segments));
     });
   }
   return ['<?xml version="1.0" encoding="UTF-8"?>', '<gpx version="1.1" creator="DogTracker" xmlns="http://www.topografix.com/GPX/1/1">', ...wpts.filter(Boolean), ...tracks.filter(Boolean), '</gpx>'].join('\n');

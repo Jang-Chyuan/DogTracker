@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { logger } from '../logger';
 import { wifiCommand } from '../settings/WifiValidation';
 import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native';
@@ -20,7 +21,7 @@ function normalizeBleConfig(config = DEFAULT_BLE_CONFIG) {
   const bleName = config.bleName?.trim();
   const serviceUuid = config.serviceUuid?.trim().toLowerCase();
   if (!bleName || !serviceUuid) {
-    throw new Error('BLE 設定缺少 bleName 或 serviceUuid');
+    throw new Error(t("c523"));
   }
   return { bleName, serviceUuid };
 }
@@ -92,7 +93,7 @@ export function createBleService(manager = new BleManager()) {
       lastNativePayload = value;
       lastOnData(status, payload, { receivedAt, persistedNatively: true });
     } catch (error) {
-      lastOnStatus(`BLE 資料解析錯誤：${error.message}`);
+      lastOnStatus(t("c504", { message: error.message }));
     }
   };
 
@@ -129,7 +130,7 @@ export function createBleService(manager = new BleManager()) {
       onData(toDogStatus(JSON.parse(payload)), payload);
     } catch (error) {
       buffer = '';
-      onStatus(`BLE 資料解析錯誤：${error.message}`);
+      onStatus(t("c504", { message: error.message }));
     }
   };
 
@@ -143,7 +144,7 @@ export function createBleService(manager = new BleManager()) {
       if (manualDisconnect || (nativeSessionId && event.sessionId !== nativeSessionId)) return;
       handleNativeValue(event.value, event.receivedAt);
     } catch (error) {
-      lastOnStatus(`BLE 資料事件錯誤：${error.message}`);
+      lastOnStatus(t("c497", { message: error.message }));
     }
   });
 
@@ -153,13 +154,13 @@ export function createBleService(manager = new BleManager()) {
     if (manualDisconnect || reconnectTimer || !lastDevice) return;
     const delay = Math.min(2000 * (2 ** reconnectAttempt), 30000);
     reconnectAttempt += 1;
-    lastOnStatus(`BLE 已斷線，${Math.round(delay / 1000)} 秒後自動重連`);
-    startBackgroundService('BLE 已斷線，等待自動重連');
+    lastOnStatus(t("c511", { value: Math.round(delay / 1000) }));
+    startBackgroundService(t("c512"));
     reconnectTimer = setTimeout(async () => {
       reconnectTimer = null;
       if (manualDisconnect || reconnecting) return;
       reconnecting = true;
-      lastOnStatus(`自動重連中（第 ${reconnectAttempt} 次）...`);
+      lastOnStatus(t("c513", { reconnectAttempt: reconnectAttempt }));
       const ok = await connectInternal(lastDevice, lastOnStatus, lastOnData, true);
       reconnecting = false;
       if (!ok) scheduleReconnect();
@@ -168,7 +169,7 @@ export function createBleService(manager = new BleManager()) {
 
   connectInternal = async (foundDevice, onStatus, onData, isReconnect = false) => {
     try {
-      onStatus(isReconnect ? '自動重連中...' : '連線中...');
+      onStatus(isReconnect ? t("c514") : t("c515"));
       device = isReconnect
         ? await manager.connectToDevice(foundDevice.id)
         : await foundDevice.connect();
@@ -180,13 +181,13 @@ export function createBleService(manager = new BleManager()) {
         monitorSubscription?.remove();
         monitorSubscription = null;
         if (!manualDisconnect) {
-          lastOnStatus(error ? `BLE 已斷線：${error.message}` : 'BLE 已斷線');
+          lastOnStatus(error ? t("c516", { message: error.message }) : t("c517"));
           scheduleReconnect();
         }
       });
       buffer = '';
       reconnectAttempt = 0;
-      onStatus(`已連線並訂閱：${device.name || device.localName || device.id}`);
+      onStatus(t("c518", { value: device.name || device.localName || device.id }));
       if (nativeBle?.connect) {
         await nativeBle.connect(
           device.id,
@@ -195,7 +196,7 @@ export function createBleService(manager = new BleManager()) {
           BLE_DATA_UUID,
         );
       } else {
-        startBackgroundService('BLE 已連線，背景接收資料中');
+        startBackgroundService(t("c519"));
       }
       const initial = await device.readCharacteristicForService(
         activeConfig.serviceUuid,
@@ -208,7 +209,7 @@ export function createBleService(manager = new BleManager()) {
         BLE_DATA_UUID,
         (error, characteristic) => {
           if (error) {
-            onStatus(`訂閱錯誤：${error.message}`);
+            onStatus(t("c520", { message: error.message }));
             return;
           }
           handleValue(characteristic?.value, onData, onStatus);
@@ -217,7 +218,7 @@ export function createBleService(manager = new BleManager()) {
       return true;
     } catch (error) {
       device = null;
-      onStatus(`${isReconnect ? '自動重連' : '連線'}失敗：${error.message}`);
+      onStatus(((isReconnect) ? t("c521", { message: error.message }) : t("c522", { message: error.message })));
       return false;
     }
   };
@@ -245,7 +246,7 @@ export function createBleService(manager = new BleManager()) {
     // `options.timeoutMs`: how long the scan runs (D3c lists receivers for 30 s).
     async scan(config, onStatus, onDevice, onFinished, options = {}) {
       if (!(await requestPermissions())) {
-        onStatus('未取得 BLE 掃描權限');
+        onStatus(t("c506"));
         onFinished?.();
         return;
       }
@@ -253,14 +254,14 @@ export function createBleService(manager = new BleManager()) {
       activeConfig = normalizeBleConfig(config);
       const expectedName = normalizeDeviceName(activeConfig.bleName);
       cancelScan?.();
-      onStatus('掃描中...');
+      onStatus(t("c507"));
       cancelScan = scanForDevices(
         manager,
         activeConfig.serviceUuid,
         foundDevice => {
           const foundName = foundDevice.name || foundDevice.localName;
           const normalizedName = normalizeDeviceName(foundName);
-          logger.info('BLE 廣播', {
+          logger.info(t("c508"), {
             id: foundDevice.id,
             name: foundName || null,
             localName: foundDevice.localName || null,
@@ -274,10 +275,10 @@ export function createBleService(manager = new BleManager()) {
             onDevice(foundDevice);
           }
         },
-        error => onStatus(`掃描失敗：${error.message}`),
+        error => onStatus(t("c509", { message: error.message })),
         () => {
           cancelScan = null;
-          onStatus('掃描完成');
+          onStatus(t("c510"));
           onFinished?.();
         },
         options.timeoutMs,
@@ -306,7 +307,7 @@ export function createBleService(manager = new BleManager()) {
         lastNativeReceivedAt = 0;
         lastNativePayload = null;
         nativeSessionId = 'pending';
-        onStatus('正在啟動原生 BLE 連線...');
+        onStatus(t("c499"));
         try {
           const sessionId = await nativeBle.connect(
             foundDevice.id,
@@ -328,10 +329,10 @@ export function createBleService(manager = new BleManager()) {
             }
             await new Promise(resolve => setTimeout(resolve, 500));
           }
-          onStatus('BLE 尚未連線，原生背景服務會繼續重試');
+          onStatus(t("c500"));
         } catch (error) {
           nativeSessionId = null;
-          onStatus(`BLE 連線啟動失敗：${error.message}`);
+          onStatus(t("c501", { message: error.message }));
         }
         return false;
       }
@@ -346,7 +347,7 @@ export function createBleService(manager = new BleManager()) {
       }
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('請先連線 DogGPS Master 裝置');
+        throw new Error(t("c498"));
       }
       await device.writeCharacteristicWithResponseForService(
         activeConfig.serviceUuid,
@@ -363,7 +364,7 @@ export function createBleService(manager = new BleManager()) {
       }
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('BLE 已斷線，請等待自動重連');
+        throw new Error(t("c505"));
       }
       await device.writeCharacteristicWithResponseForService(
         activeConfig.serviceUuid,
@@ -379,12 +380,12 @@ export function createBleService(manager = new BleManager()) {
         let activeSsid = '';
         let offset = 0;
         do {
-          if (visited.has(offset) || visited.size >= 100) throw new Error('Wi-Fi 清單分頁錯誤');
+          if (visited.has(offset) || visited.size >= 100) throw new Error(t("c502"));
           visited.add(offset);
           const result = JSON.parse(await nativeBle.wifiCommand(
             JSON.stringify({ action: 'list', offset }), true,
           ));
-          if (!result.ok || !Array.isArray(result.ssids)) throw new Error(result.error || '無法讀取 Wi-Fi 清單');
+          if (!result.ok || !Array.isArray(result.ssids)) throw new Error(result.error || t("c503"));
           ssids.push(...result.ssids);
           if (typeof result.active === 'string') activeSsid = result.active;
           offset = Number.isInteger(result.next) ? result.next : null;
@@ -393,7 +394,7 @@ export function createBleService(manager = new BleManager()) {
       }
       if (!device || !(await device.isConnected())) {
         device = null;
-        throw new Error('BLE 已斷線，請等待自動重連');
+        throw new Error(t("c505"));
       }
       const ssids = [];
       let activeSsid = '';
@@ -410,7 +411,7 @@ export function createBleService(manager = new BleManager()) {
         );
         const result = JSON.parse(decodeUtf8Base64(response.value));
         if (!result.ok || !Array.isArray(result.ssids)) {
-          throw new Error(result.error || '無法讀取 Wi-Fi 清單');
+          throw new Error(result.error || t("c503"));
         }
         if (typeof result.active === 'string') activeSsid = result.active;
         ssids.push(...result.ssids);

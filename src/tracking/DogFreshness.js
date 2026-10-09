@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Has a dog had a new position lately? One judgement ("未更新" in the design,
 // written 「沒有新位置」 in the app) shared by the live map (grey face, red
 // "!"), the dog's card (位置 row) and the alerts. Pure: no React, no SQLite.
@@ -105,8 +106,8 @@ export function lastTimeText(at, now) {
 /** The card's words for a stale dog: 「沒有新位置・最後 10:12」, or null. */
 export function staleText(freshness, now) {
   if (!freshness?.stale || !Number.isFinite(freshness.lastAt)) return null;
-  const what = freshness.basis === 'packet' ? '沒有新資料' : '沒有新位置';
-  return `${what}・最後 ${lastTimeText(freshness.lastAt, now)}`;
+  const what = freshness.basis === 'packet' ? t("c1040") : t("c475");
+  return t("c1039", { what: what, value: lastTimeText(freshness.lastAt, now) });
 }
 
 /** The same for TalkBack: 「沒有新位置，最後 10:12」, or null. */

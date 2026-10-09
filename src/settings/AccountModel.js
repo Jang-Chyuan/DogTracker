@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What S3 Supabase 帳號 says (design v3 S3; 「頁面 內容與狀態」 Supabase 帳號;
 // 判定表「切換上傳方式」「使用中登入失效」「啟動與恢復登入」). Pure: App hands in
 // the account, the download state (useCloudSync), the upload state
@@ -15,12 +16,12 @@ const count = (counts, status) => Number((counts || []).find(row => row.status =
 // An upload error in field words: the network ones are 「連不上 Supabase」.
 function uploadReason(error) {
   if (!error) return '';
-  if (isNetworkFailure({ message: error })) return '連不上 Supabase';
+  if (isNetworkFailure({ message: error })) return t("c932");
   return error;
 }
 
-export const ROUTE_PHONE = '由這支手機上傳';
-export const ROUTE_WIFI = '由接收器的 Wi-Fi 上傳';
+export const ROUTE_PHONE = t('c219');
+export const ROUTE_WIFI = t('c416');
 
 /**
  * S3. Signed out (by choice, or 登入失效): { signedIn: false, expired,
@@ -45,20 +46,20 @@ export function accountPage(input) {
   // ---- 下載 ----------------------------------------------------------------
   let download;
   if (sync.failingSince != null) {
-    const since = `連不上 Supabase・${formatClock(sync.failingSince)} 起`;
+    const since = t('c212', { time: formatClock(sync.failingSince) });
     // Not reached Supabase once since the app started (restoring the sign-in
     // without a network): it keeps trying by itself (判定表「啟動與恢復登入」).
     const restoring = sync.lastSuccess == null;
-    const title = restoring ? '暫時連不上，會自動重試' : '下載失敗';
+    const title = restoring ? t('c257') : t('c211');
     download = { title, detail: since, right: null, problem: true, retry: true,
-      label: `${title}，${since}，重試` };
+      label: t("c912", { title: title, since: since }) };
   } else if (sync.lastSuccess != null) {
     const time = formatClock(sync.lastSuccess);
-    download = { title: '最後下載成功', detail: null, right: time, problem: false, retry: false,
-      label: `最後下載成功 ${time}` };
+    download = { title: t("c918"), detail: null, right: time, problem: false, retry: false,
+      label: t("c913", { time: time }) };
   } else {
-    download = { title: '最後下載成功', detail: null, right: '下載中…', problem: false, retry: false,
-      label: '下載中' };
+    download = { title: t("c918"), detail: null, right: t('c319'), problem: false, retry: false,
+      label: t("c914") };
   }
 
   // ---- 上傳 ----------------------------------------------------------------
@@ -66,14 +67,14 @@ export function accountPage(input) {
   const blocked = count(upload.counts, 'blocked');
   let problem = null;
   if (blocked > 0) {
-    problem = { title: '需處理', detail: '雲端拒收，修正授權後重試', right: `${blocked} 筆`, problem: true, retry: true,
-      label: `需處理 ${blocked} 筆，重試` };
+    problem = { title: t("c919"), detail: t("c911"), right: t('c216', { count: blocked }), problem: true, retry: true,
+      label: t("c915", { blocked: blocked }) };
   } else if (upload.error) {
     const reason = uploadReason(upload.error);
-    problem = { title: '上傳失敗', detail: reason, right: null, problem: true, retry: true,
-      label: `上傳失敗，${reason}，重試` };
+    problem = { title: t("c920"), detail: reason, right: null, problem: true, retry: true,
+      label: t("c916", { reason: reason }) };
   }
-  const lastText = upload.last ? formatClock(upload.last) : '還沒有';
+  const lastText = upload.last ? formatClock(upload.last) : t("c917");
 
   // ---- 接收器 N 的上傳方式 -------------------------------------------------
   const settings = upload.settings || [];
@@ -87,16 +88,16 @@ export function accountPage(input) {
     // Uploading for a receiver needs this account's authorization for it;
     // going back to its Wi-Fi is always allowed.
     const canSwitch = mode === 'phone' || masters.includes(master);
-    return { master, title: `接收器 ${master} 的上傳方式`, detail, mode, to: mode === 'phone' ? 'wifi' : 'phone',
+    return { master, title: t('c218', { number: master }), detail, mode, to: mode === 'phone' ? 'wifi' : 'phone',
       pending: Number(byMaster[master] || 0), canSwitch,
-      label: `接收器 ${master} 的上傳方式，${detail}${canSwitch ? '' : '，這個帳號沒有這台接收器的權限'}` };
+      label: ((canSwitch) ? t("c921", { master: master, detail: detail }) : t("c922", { master: master, detail: detail })) };
   });
 
   return {
     signedIn: true,
     email: account.email || '',
     download,
-    upload: { visible: routes.some(route => route.mode === 'phone') || pending > 0 || !!problem, problem, pending, pendingText: `${pending} 筆`, lastText },
+    upload: { visible: routes.some(route => route.mode === 'phone') || pending > 0 || !!problem, problem, pending, pendingText: t('c216', { count: pending }), lastText },
     routes,
     routesLoading: upload.supported !== false && !upload.settingsReady,
     // The phone looks offline: a switch that must send rows first says so
@@ -112,20 +113,20 @@ export function accountPage(input) {
  */
 export function switchDialog(route, { offline = false, error = null } = {}) {
   const toPhone = route.to === 'phone';
-  const title = toPhone ? '改由這支手機上傳？' : '改由接收器的 Wi-Fi 上傳？';
-  const change = toPhone ? '這台接收器改由這支手機上傳。' : '這台接收器改由它自己的 Wi-Fi 上傳，這支手機不再上傳它的資料。';
-  const first = route.pending > 0 ? `手機裡還有 ${route.pending} 筆沒上傳，會先上傳。` : '';
+  const title = toPhone ? t("c930") : t("c931");
+  const change = toPhone ? t("c926") : t("c927");
+  const first = route.pending > 0 ? t("c929", { pending: route.pending }) : '';
   const blockedBy = error
-    || (offline && route.pending > 0 ? `要先上傳完 ${route.pending} 筆，請連上網路` : null);
-  return { title, body: change + first, blockedBy, confirm: '切換' };
+    || (offline && route.pending > 0 ? t('c256', { count: route.pending }) : null);
+  return { title, body: change + first, blockedBy, confirm: t("c928") };
 }
 
 /** The sign-out confirmation: what stops, what stays. */
 export function signOutDialog(pendingTotal = 0) {
-  const waiting = pendingTotal > 0 ? `還有 ${pendingTotal} 筆沒上傳，再登入這個帳號時會繼續上傳。` : '';
+  const waiting = pendingTotal > 0 ? t("c925", { pendingTotal: pendingTotal }) : '';
   return {
-    title: '登出 Supabase 帳號？',
-    body: `登出後會停止背景同步，並解除這支手機的上傳綁定（不再替接收器上傳）。手機裡的資料不會刪除。${waiting}`,
-    confirm: '登出',
+    title: t("c924"),
+    body: t("c923", { waiting: waiting }),
+    confirm: t('c209'),
   };
 }

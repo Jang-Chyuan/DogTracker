@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // What a dog's summary card (design v3 A3/A3b/A7b, DESIGN.md「摘要卡片」「卡片
 // 的狀態列」) says, as plain values: the direction and distance from the phone,
 // then one row each for 位置 (only when the dog has no new position or is held
@@ -61,14 +62,14 @@ export function nativePhoneReading(nativePhone, now) {
  *   `bearing` is true north; the card turns the arrow by the map's heading.
  */
 export function cardHeadline({ dog, phone, indoor, stale }) {
-  if (!phone) return { kind: 'no-phone', text: '手機沒有定位' };
+  if (!phone) return { kind: 'no-phone', text: t("c726") };
   if (!dog?.coordinate) return { kind: 'no-dog' };
   const { metres, bearing } = bearingAndDistance(phone.coordinate, dog.coordinate);
-  const parts = ['離手機'];
-  if (indoor) parts.push('室內');
-  if (stale) parts.push(indoor ? '最後資料' : '最後位置');
+  const parts = [t('c064')];
+  if (indoor) parts.push(t('c114'));
+  if (stale) parts.push(indoor ? t("c725") : t("c727"));
   if (phone.ageMs > PHONE_OLD_AFTER_MS) {
-    parts.push(`手機位置 ${Math.max(1, Math.floor(phone.ageMs / MINUTE))} 分鐘前`);
+    parts.push(t("c728", { value: Math.max(1, Math.floor(phone.ageMs / MINUTE)) }));
   }
   return { kind: 'distance', distance: formatDistance(metres), bearing, compass: compassWord(bearing),
     suffix: parts.join('・') };
@@ -114,29 +115,29 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
   const rows = [];
   // 位置: only when there is something to say about where the dog is.
   if (stale) {
-    rows.push({ key: 'position', label: '位置', value: staleText(freshness, now), tone: 'crit',
+    rows.push({ key: 'position', label: t('c073'), value: staleText(freshness, now), tone: 'crit',
       detail: indoor ? address : null, twoLine: indoor });
   } else if (indoor) {
     // Two lines (64dp) held indoors: 「室內」 and the address under it (A7b).
     // No address yet, none found or offline: no second line and no spinner
     // (edges「沒網路時查地址」), the row keeps its 64dp so nothing jumps.
-    rows.push({ key: 'position', label: '位置', value: '室內', tone: null, detail: address, twoLine: true });
+    rows.push({ key: 'position', label: t('c073'), value: t('c114'), tone: null, detail: address, twoLine: true });
   }
   rows.push(batteryRow(dog, battery, positionAt, now));
   const view = rangeView(range, { held: indoor });
   if (view) {
-    rows.push({ key: 'range', label: '接收範圍', value: rangeLabel(view, clock),
+    rows.push({ key: 'range', label: t('c066'), value: rangeLabel(view, clock),
       tone: view.problem ? 'crit' : view.warning ? 'warn' : null });
   }
   const words = activityRow(activity, { reference, positionAt, stale });
-  rows.push({ key: 'activity', label: '活動量', value: words.word, detail: words.detail,
+  rows.push({ key: 'activity', label: t('c068'), value: words.word, detail: words.detail,
     at: words.at, tone: null, activityTone: words.tone, pressable: true });
   for (const row of rows) row.speech = rowSpeech(row);
   const headline = cardHeadline({ dog, phone, indoor, stale });
   return {
     slaveId: dog.slaveId,
     name,
-    sourceLabel: `訊號源 ${dog.slaveId}`,
+    sourceLabel: t('c052', { number: dog.slaveId }),
     stale,
     indoor,
     headline,
@@ -153,7 +154,7 @@ function batteryRow(dog, battery, positionAt, now) {
   const read = Number.isFinite(battery?.percentage) ? battery : null;
   const reading = !read ? packet : !packet ? read
     : (Number(read.at) > Number(packet.at) ? read : packet);
-  if (!reading) return { key: 'battery', label: '電量', value: '—', tone: null };
+  if (!reading) return { key: 'battery', label: t('c065'), value: '—', tone: null };
   // Charging is what the newest packet says now (USB, or the environment's
   // USB rule), not what an older reading said.
   const charging = !!dog.charging;
@@ -161,25 +162,23 @@ function batteryRow(dog, battery, positionAt, now) {
   const low = reading.percentage <= LOW_BATTERY_PERCENT && !charging;
   const old = Number.isFinite(reading.at) && Number.isFinite(positionAt)
     && positionAt - reading.at >= READING_OLD_AFTER_MS;
-  const value = (charging ? `充電中 ${percent}` : low ? `${percent}・偏低` : percent)
-    + (old ? `（${lastTimeText(reading.at, now)}）` : '');
-  return { key: 'battery', label: '電量', value, tone: low ? 'crit' : null };
+  const value = ((charging) ? t("c719", { percent: percent, value: old ? `（${lastTimeText(reading.at, now)}）` : '' }) : (!(charging) && (low) ? t("c720", { percent: percent, value: old ? `（${lastTimeText(reading.at, now)}）` : '' }) : t("c721", { percent: percent, value: old ? `（${lastTimeText(reading.at, now)}）` : '' })));
+  return { key: 'battery', label: t('c065'), value, tone: low ? 'crit' : null };
 }
 
 /** TalkBack for one row (copy deck c377, c393). */
 export function rowSpeech(row) {
-  const value = row.value === '—' ? '沒有資料' : row.value.replace(/・/g, '，');
+  const value = row.value === '—' ? t('c089') : row.value.replace(/・/g, '，');
   const at = row.at ? `，${clock(row.at)}` : '';
   const detail = row.detail ? `，${row.detail}` : '';
   // 「電量 15%，偏低」 reads without a pause after the label.
-  if (row.key === 'battery') return `電量 ${value}`;
+  if (row.key === 'battery') return t('c179', { percentage: value });
   return `${row.label}，${value}${detail}${at}`;
 }
 
 function headlineSpeech(name, headline) {
   if (headline.kind === 'no-phone') return `${name}，${headline.text}`;
   if (headline.kind !== 'distance') return name;
-  return `${name}，${headline.compass}方 ${headline.distance.replace(' km', ' 公里').replace(' m', ' 公尺')}，`
-    + headline.suffix.replace(/・/g, '，');
+  return t("c722", { name: name, compass: headline.compass, value: headline.distance.replace(' km', t("c729")).replace(' m', t("c730")), value2: headline.suffix.replace(/・/g, '，') });
 }
 

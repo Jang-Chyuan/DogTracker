@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { size as sizes, type, space, touch, border, radius } from '../theme/tokens';
 import { useTheme, makeStyles } from '../theme/ThemeProvider';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
@@ -28,13 +29,13 @@ export const DogsSheet = forwardRef(function DogsSheet(
   }, [idsKey, checkDay]); // eslint-disable-line react-hooks/exhaustive-deps
   const model = historyDogsSheet(dogs, candidates, days);
   return (
-    <HistoryBottomSheet ref={sheet} title="看哪幾隻狗" onClosed={onClosed}
-      bottomInset={bottomInset} testID="history-dogs-sheet" closeLabel="關閉看哪幾隻狗">
-      <Text style={styles.section}>一起看的狗</Text>
+    <HistoryBottomSheet ref={sheet} title={t('c403')} onClosed={onClosed}
+      bottomInset={bottomInset} testID="history-dogs-sheet" closeLabel={t("c825")}>
+      <Text style={styles.section}>{t('c404')}</Text>
       {model.shown.map(dog => <View key={dog.id} style={styles.row}>
         <Pressable testID={`history-dog-${dog.id}`} accessibilityRole="radio"
           accessibilityState={{ checked: dog.protagonist }}
-          accessibilityLabel={`${dog.name}${dog.protagonist ? '，目前選擇' : '，點兩下選擇這隻狗'}`}
+          accessibilityLabel={((dog.protagonist) ? t('c421', { dogName: dog.name }) : t('c422', { dogName: dog.name }))}
           onPress={() => onSelect(dog.id)} style={({ pressed }) => [styles.choice, pressed && styles.pressed]}>
           <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} tint={routeTint(dog, theme.colors)} />
           <Text style={styles.name} numberOfLines={linesFor(1)}>{dog.name}</Text>
@@ -43,18 +44,18 @@ export const DogsSheet = forwardRef(function DogsSheet(
           <View style={[styles.radio, dog.protagonist && styles.radioOn]} />
         </Pressable>
         {dog.removable && <Pressable testID={`history-remove-${dog.id}`} accessibilityRole="button"
-          accessibilityLabel={`移除${dog.name}`} onPress={() => onRemove(dog.id)} style={({ pressed }) => [styles.remove, pressed && styles.pressedRow]}>
+          accessibilityLabel={t('c423', { dogName: dog.name })} onPress={() => onRemove(dog.id)} style={({ pressed }) => [styles.remove, pressed && styles.pressedRow]}>
           <Text style={styles.detail} allowFontScaling={false}>✕</Text>
         </Pressable>}
       </View>)}
       {(model.full || model.addable.length > 0) && <View testID="history-dogs-add-section">
         <View style={styles.sectionRow}>
-          <Text style={[styles.section, model.full && styles.faded]}>加入</Text>
+          <Text style={[styles.section, model.full && styles.faded]}>{t('c405')}</Text>
           {model.note && <Text style={[styles.section, styles.sectionNote]}>{model.note}</Text>}
         </View>
         {model.addable.map(dog => <Pressable key={dog.id} testID={`history-add-${dog.id}`}
           accessibilityRole="button" accessibilityState={{ disabled: dog.disabled }}
-          accessibilityLabel={`${dog.name}，訊號源 ${dog.id}${dog.hasData ? '' : '，這天沒有紀錄'}`}
+          accessibilityLabel={((dog.hasData) ? t("c823", { name: dog.name, id: dog.id }) : t("c824", { name: dog.name, id: dog.id }))}
           disabled={dog.disabled} onPress={() => onAdd(dog)}
           style={({ pressed }) => [styles.row, dog.opacity < 1 && styles.faded, pressed && styles.pressed]}>
           <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} />

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createAddressCache } from './AddressCache';
 import { NativeModules, Platform } from 'react-native';
@@ -215,9 +216,9 @@ export function describePlace(anchor, results, config = ADDRESS_CONFIG) {
   const text = districtOnly(shortAddress(best.line))
     ? null
     : shortAddress(best.line);
-  if (text && best.away <= config.nearM) return `${text}附近`;
+  if (text && best.away <= config.nearM) return t('c382', { address: text });
   if (text && best.away <= config.tooFarM)
-    return `${text}附近（約 ${Math.round(best.away / 10) * 10} m）`;
+    return t("c881", { text: text, value: Math.round(best.away / 10) * 10 });
   const district =
     found
       .map(
@@ -226,7 +227,7 @@ export function describePlace(anchor, results, config = ADDRESS_CONFIG) {
           traditional(String(result.district || '')).trim(),
       )
       .find(Boolean) || null;
-  return district ? `${district}（附近沒有地址）` : null;
+  return district ? t('c384', { district: district }) : null;
 }
 
 /** One lookup at a time, cached by anchored place; never waits on the map. */

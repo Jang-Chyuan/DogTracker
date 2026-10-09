@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 // The history's calendar (054b; H3b 選日期, H3e 選月份) and the download of
 // a day only the cloud holds (H3c, H3d). Pure: day keys are local
 // 「YYYY-MM-DD」 strings (HistoryScreenDates.dayKey), compared as strings.
@@ -15,7 +16,7 @@ import { dayBounds, dayKey } from './HistoryScreenDates';
 import { fontScale } from '../../theme/tokens';
 
 const pad = n => String(n).padStart(2, '0');
-const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+const WEEKDAY_NAMES = [t("c444"), t("c687"), t("c688"), t("c689"), t("c690"), t("c691"), t("c692")];
 export const CALENDAR_WEEKDAYS = WEEKDAY_NAMES;
 
 const asSet = value => (value instanceof Set ? value : new Set(value || []));
@@ -76,18 +77,18 @@ export function dayCell(day, { today, selected, knowledge, inMonth = true }) {
   const tappable = records || isToday || (state === 'unknown' && k.query === 'failed');
   const muted = !tappable && state !== 'unknown';
   const [y, m, d] = day.split('-').map(Number);
-  const date = `${m} 月 ${d} 日`;
+  const date = t("c678", { m: m, d: d });
   let label = date;
   // 設計稿「月曆」TalkBack: 「今天，」 in front (「已選取」 comes from the state).
-  if (isToday) label = `今天，${date}，${records ? '有紀錄' : '沒有紀錄'}`;
-  else if (state === 'future') label = `${date}，還沒到`;
-  else if (state === 'empty') label = `${date}，沒有紀錄`;
-  else if (state === 'cloud') label = `${date}，有紀錄，只在雲端`;
-  else if (state === 'partial') label = `${date}，有紀錄，還沒下載完`;
-  else if (state === 'local') label = `${date}，有紀錄`;
+  if (isToday) label = ((records) ? t("c676", { date: date }) : t("c677", { date: date }));
+  else if (state === 'future') label = t("c680", { date: date });
+  else if (state === 'empty') label = t("c681", { date: date });
+  else if (state === 'cloud') label = t("c682", { date: date });
+  else if (state === 'partial') label = t("c683", { date: date });
+  else if (state === 'local') label = t("c684", { date: date });
   // Not asked yet: 查詢中 while the cloud is asked; after a failed question,
   // not known (it can still be chosen and downloaded).
-  else label = k.query === 'failed' ? `${date}，還不知道有沒有紀錄` : `${date}，查詢中`;
+  else label = k.query === 'failed' ? t("c685", { date: date }) : t("c679", { date: date });
   return { day, year: y, month: m, date: d, inMonth, state, dot: records, today: isToday,
     selected: day === selected, tappable, muted, label };
 }
@@ -116,7 +117,7 @@ export function calendarMonth({ year, month, today, selected, knowledge }) {
   const earliest = earliestKnownDay(k);
   const lowest = earliest ? monthKeyOf(earliest) : monthKeyOf(today);
   return {
-    year, month, key, title: `${year} 年 ${month} 月`, cells,
+    year, month, key, title: t("c675", { year: year, month: month }), cells,
     weeks: Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7)),
     previousEnabled: key > lowest, nextEnabled: key < monthKeyOf(today),
     returnTodayEnabled: selected !== today,
@@ -144,7 +145,7 @@ export function calendarDayList(month) {
       const weekday = WEEKDAY_NAMES[new Date(cell.year, cell.month - 1, cell.date).getDay()];
       return {
         day: cell.day,
-        title: `${cell.month} 月 ${cell.date} 日（${weekday}）`,
+        title: t("c674", { month: cell.month, date: cell.date, weekday: weekday }),
         today: cell.today,
         dot: cell.dot,
         selected: cell.selected,
@@ -192,10 +193,10 @@ export function monthPicker({ year, today, shown = null, knowledge }) {
     else if (pastDaysOf(year, i + 1, today).every(day => dayState(day, today, k) === 'empty')) state = 'empty';
     else state = 'unknown';
     const tappable = state === 'records' || state === 'unknown' || key === thisMonth;
-    return { month: i + 1, key, label: `${i + 1} 月`, state, dot: state === 'records', tappable,
+    return { month: i + 1, key, label: t("c694", { value: i + 1 }), state, dot: state === 'records', tappable,
       muted: !tappable, selected: key === shown };
   });
-  return { year, title: `${year} 年`, months, previousEnabled: year > lowestYear,
+  return { year, title: t("c693", { year: year }), months, previousEnabled: year > lowestYear,
     nextEnabled: year < Number(today.slice(0, 4)),
     status: k.cloudEnabled && k.query !== 'idle' ? k.query : null };
 }
@@ -222,7 +223,7 @@ export function chooseDay(day, { today, knowledge, online = true }) {
   return { type: 'download', day };
 }
 
-export const offlineMessage = day => `沒有網路，${shortDate(day)} 的紀錄還沒下載，連上網路再試`;
+export const offlineMessage = day => t('c157', { date: shortDate(day) });
 
 /**
  * The days the date row's ‹ › step between: this phone's and the cloud days
@@ -296,11 +297,11 @@ export function downloadPanel(download, { day, hasRows, incomplete = false }) {
   if ((!download || download.day !== day) && incomplete) download = { day, status: 'failed' };
   if (!download || download.day !== day || download.status === 'done') return null;
   if (download.status === 'downloading') {
-    return { kind: 'downloading', title: `下載 ${shortDate(day)} 的紀錄…`, detail: '只有雲端有，正在下載',
-      action: '取消' };
+    return { kind: 'downloading', title: t('c155', { date: shortDate(day) }), detail: t('c156'),
+      action: t('c046') };
   }
   // Cancelled or failed: what this phone holds, marked as incomplete; with
   // nothing at all, not H8 (it is not known to be empty).
-  return hasRows ? { kind: 'incomplete', text: '資料不完整', action: '重試' }
-    : { kind: 'unfinished', text: '這天的紀錄還沒下載完', action: '重試' };
+  return hasRows ? { kind: 'incomplete', text: t("c686"), action: t('c049') }
+    : { kind: 'unfinished', text: t('c321'), action: t('c049') };
 }
