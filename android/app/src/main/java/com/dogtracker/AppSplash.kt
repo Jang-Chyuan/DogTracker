@@ -1,5 +1,7 @@
 package com.dogtracker
 
+import android.os.Handler
+import android.os.Looper
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
@@ -25,6 +27,9 @@ object SplashState {
   const val EXTRA_FROM_NOTIFICATION = "dogtracker.from_notification"
   const val ANIMATION_MS = 800L
   fun keepOnScreen() = !animationDone
+  // At most 2 s: a handover never keeps the launch screen's colours longer.
+  fun handoverDelay(durationMs: Double): Long =
+    if (durationMs.isFinite()) durationMs.toLong().coerceIn(0L, 2000L) else 0L
 }
 
 class AppSplashModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
@@ -42,6 +47,21 @@ class AppSplashModule(context: ReactApplicationContext) : ReactContextBaseJavaMo
     SplashState.handedOver = true
     val activity = reactApplicationContext.currentActivity as? MainActivity ?: return
     activity.runOnUiThread { activity.updateSystemBars(activity.resources.configuration) }
+  }
+
+  // The handover has started and its animation runs on the UI thread for
+  // `durationMs`: the bars become the app's own when it ends, on the UI thread
+  // too. done() comes through JavaScript, which can run seconds late on a busy
+  // phone; meanwhile the map showed under a coral navigation bar.
+  @ReactMethod
+  fun handover(durationMs: Double) {
+    val delay = SplashState.handoverDelay(durationMs)
+    Handler(Looper.getMainLooper()).postDelayed({
+      SplashState.handedOver = true
+      (reactApplicationContext.currentActivity as? MainActivity)?.let {
+        it.updateSystemBars(it.resources.configuration)
+      }
+    }, delay)
   }
 
   // How this launch should hand over (D0 → 地圖銜接（C）): opened from a

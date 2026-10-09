@@ -102,6 +102,23 @@ test('the installed MapView.java never re-creates its map on re-attach', () => {
   expect(detach).not.toContain('removeView(attacherGroup)');
 });
 
+// O2 (lane C, 061c/061d): 「地圖載入失敗」 stayed over a drawn map because
+// Google's one-shot loaded callback waited for a map that kept changing. The
+// patch registers it again every 2 s until it has been called (Google calls a
+// callback registered on a fully rendered map at once), once only, never on a
+// destroyed map.
+test('the installed MapView.java registers the loaded callback again until it is called', () => {
+  const source = fs.readFileSync(path.join(javaRoot, 'maps/MapView.java'), 'utf8');
+  expect(source).toContain('DOGTRACKER_MAP_LOADED_REARM');
+  expect(source).toMatch(/private static final long LOADED_REARM_MS = 2000;/);
+  const rearm = source.slice(source.indexOf('private final Runnable rearmLoaded'), source.indexOf('private Boolean isMapReady'));
+  expect(rearm).toMatch(/if \(isMapLoaded \|\| destroyed \|\| map == null \|\| loadedCallback == null\) return;\s*map\.setOnMapLoadedCallback\(loadedCallback\);\s*loadedRearm\.postDelayed\(this, LOADED_REARM_MS\);/);
+  expect(source).toMatch(/loadedCallback = \(\) -> \{\s*if \(isMapLoaded\) return;\s*isMapLoaded = true;\s*loadedRearm\.removeCallbacks\(rearmLoaded\);\s*dispatchEvent\(new WritableNativeMap\(\), OnMapLoadedEvent::new\);/);
+  expect(source).toMatch(/map\.setOnMapLoadedCallback\(loadedCallback\);\s*loadedRearm\.removeCallbacks\(rearmLoaded\);\s*loadedRearm\.postDelayed\(rearmLoaded, LOADED_REARM_MS\);/);
+  const destroy = source.slice(source.indexOf('public synchronized void doDestroy()'));
+  expect(destroy.slice(0, 400)).toContain('loadedRearm.removeCallbacks(rearmLoaded);');
+});
+
 // S-media: the avatar picker asks for no storage permission (system photo
 // picker, camera output through the app's FileProvider); the change lives in
 // patches/react-native-image-crop-picker+<version>.patch, applied by the same

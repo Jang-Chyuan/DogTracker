@@ -92,7 +92,11 @@ import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
-import { useTodayRoute } from './src/locationTracker/useTodayRoute';
+import {
+  TODAY_COUNT_POLL_MS,
+  TODAY_ROUTE_POLL_MS,
+  useTodayRoute,
+} from './src/locationTracker/useTodayRoute';
 import { layout, touch, type, space, size as sizes } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
@@ -388,10 +392,13 @@ function TrackerApp({ resume = null, onRestart }) {
   useDefaultLocationRecording(tracking.foreground, phone);
   // 「今天 x km」: today's recorded route of this phone, while the live map
   // is in front.
+  // S4 counts today's fixes (「今天 N 筆」): read there every 2 s.
   const liveTodayRoute = useTodayRoute(
     tracking.historyDatabase,
     tracking.ready.real,
     tracking.foreground && (isMap || route.name === 'phone'),
+    undefined,
+    route.name === 'phone' ? TODAY_COUNT_POLL_MS : TODAY_ROUTE_POLL_MS,
   );
   // Cache eligibility is separate from polling visibility. Background/navigation
   // pauses reads; logout invalidates the account-bound cache.

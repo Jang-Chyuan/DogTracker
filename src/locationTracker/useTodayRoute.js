@@ -4,6 +4,11 @@ import { startOfToday, todayRouteDistance } from '../tracking/TodayDistance';
 // How often the live map adds newly recorded positions to today's distance.
 // The pill shows tenths of a kilometre, so a few seconds late is invisible.
 export const TODAY_ROUTE_POLL_MS = 15000;
+// S4 (位置記錄) shows the count of today's fixes (「今天 N 筆」, one every
+// 10 s): read often enough there that a new fix, or the empty table right
+// after 刪除我的路線, shows at once. Each read only asks for rows after the
+// cursor, and the sum is recomputed only when rows arrived.
+export const TODAY_COUNT_POLL_MS = 2000;
 const PAGE = 2000;
 
 /**
@@ -12,9 +17,10 @@ const PAGE = 2000;
  * the day starts over at local midnight). The distance is my route's range
  * for today — departure detection, driving not counted (todayRouteDistance),
  * the same number as the history summary. Returns { count, metres, status }
- * or null until the first read.
+ * or null until the first read. `pollMs`: how often to look for new rows; a
+ * change reads at once.
  */
-export function useTodayRoute(database, ready, active, clock = Date.now) {
+export function useTodayRoute(database, ready, active, clock = Date.now, pollMs = TODAY_ROUTE_POLL_MS) {
   const rows = useRef({ day: null, list: [], cursor: null, state: null, read: 0 });
   const [route, setRoute] = useState(null);
   const now = useRef(clock);
@@ -52,11 +58,11 @@ export function useTodayRoute(database, ready, active, clock = Date.now) {
       } catch {
         // A failed read keeps the last sum; the next poll tries again.
       } finally {
-        if (alive) timer = setTimeout(poll, TODAY_ROUTE_POLL_MS);
+        if (alive) timer = setTimeout(poll, pollMs);
       }
     }
     poll();
     return () => { alive = false; clearTimeout(timer); };
-  }, [database, ready, active]);
+  }, [database, ready, active, pollMs]);
   return route;
 }

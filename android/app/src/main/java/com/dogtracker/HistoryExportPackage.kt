@@ -39,9 +39,7 @@ import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.ceil
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.ln
-import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -486,30 +484,36 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         if (label.isNotEmpty()) labels.add(Triple(label, px to py, r))
       }
     }
-    // The time labels where they cover no number, house or other label:
-    // under the ring, else above, right or left (several dogs' ends crowd).
-    val placeRects = mutableListOf<RectF>()
+    // The time labels where they cover no number, house or other label, nor
+    // the scale bar, north arrow or attribution (ExportLabelLayout): under the
+    // ring, else above, right or left (several dogs' ends crowd).
+    val placeRects = mutableListOf<LabelBox>()
     for (s in 0 until subjects.length()) {
       val places = subjects.getJSONObject(s).getJSONArray("places")
       for (i in 0 until places.length()) {
         val place = places.getJSONObject(i)
         val (px, py) = projector.toPixel(place.getDouble("latitude"), place.getDouble("longitude"))
-        placeRects.add(RectF(px - 33f, py - 33f, px + 33f, py + 33f))
+        placeRects.add(LabelBox(px - 33f, py - 33f, px + 33f, py + 33f))
       }
     }
+    val scale = if (op.optBoolean("scale")) ExportLabelLayout.scale(projector.metresPerPixel) else null
+    val attribution = if (base != null) op.optString("attribution") else ""
+    val fixed = listOfNotNull(
+      scale?.let { ExportLabelLayout.scaleBox(h, it.lengthPx,
+        textPaint(ExportLabelLayout.SCALE_TEXT_SIZE, true, ink).measureText(it.label)) },
+      if (op.optBoolean("north")) ExportLabelLayout.northBox(w) else null,
+      if (attribution.isNotEmpty()) ExportLabelLayout.attributionBox(w, h,
+        textPaint(ExportLabelLayout.ATTRIBUTION_TEXT_SIZE, false, ink).measureText(attribution)) else null)
     val taken = placeRects.toMutableList()
     val measure = textPaint(39f, true, ink)
     for ((label, at, r) in labels) {
       val (px, py) = at
       val half = measure.measureText(label) / 2f + 4f
-      val options = listOf(RectF(px - half, py + r + 4f, px + half, py + r + 48f),
-        RectF(px - half, py - r - 48f, px + half, py - r - 4f),
-        RectF(px + r + 6f, py - 22f, px + r + 6f + 2 * half, py + 22f),
-        RectF(px - r - 6f - 2 * half, py - 22f, px - r - 6f, py + 22f))
-      // No free side: leave this label out rather than draw it over another.
-      val box = options.firstOrNull { option -> taken.none { RectF.intersects(it, option) } } ?: continue
+      // No free side: leave this label out rather than draw it over another
+      // label, a number or the scale, north arrow or attribution.
+      val box = ExportLabelLayout.place(ExportLabelLayout.timeLabelOptions(px, py, r, half), fixed, taken) ?: continue
       taken.add(box)
-      drawText(canvas, label, box.centerX(), box.top, box.height(), 39f, true, ink, "center", halo)
+      drawText(canvas, label, box.centerX, box.top, box.height, 39f, true, ink, "center", halo)
     }
     for (s in 0 until subjects.length()) {
       val subject = subjects.getJSONObject(s)
@@ -527,34 +531,30 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           true, color(op.getString("onRoute")), "center")
       }
     }
-    if (op.optBoolean("scale")) drawScale(canvas, projector, h, ink, halo)
+    scale?.let { drawScale(canvas, it, h, ink, halo) }
     if (op.optBoolean("north")) drawNorth(canvas, w, op, surface, ink)
-    if (base != null) drawText(canvas, op.optString("attribution"), w - 24f, h - 56f, 40f, 26f, false,
-      color(op.getString("attributionColor")), "right", halo)
+    if (base != null) drawText(canvas, attribution, w - ExportLabelLayout.ATTRIBUTION_RIGHT_INSET,
+      h - ExportLabelLayout.ATTRIBUTION_TOP_INSET, ExportLabelLayout.ATTRIBUTION_HEIGHT,
+      ExportLabelLayout.ATTRIBUTION_TEXT_SIZE, false, color(op.getString("attributionColor")), "right", halo)
     canvas.restore()
   }
 
-  // 比例尺: a bar of a round length (1, 2 or 5 × 10ⁿ m) up to 240px, bottom left.
-  private fun drawScale(canvas: Canvas, projector: Projector, h: Int, ink: Int, halo: Int) {
-    val maxMetres = projector.metresPerPixel * 240
-    if (!maxMetres.isFinite() || maxMetres <= 0) return
-    val power = 10.0.pow(floor(log10(maxMetres)))
-    val metres = listOf(5.0, 2.0, 1.0).map { it * power }.firstOrNull { it <= maxMetres * 1.0001 } ?: power
-    val length = (metres / projector.metresPerPixel).toFloat()
-    val left = 32f; val bottom = h - 120f
+  // 比例尺: a bar of a round length (ExportLabelLayout.scale), bottom left.
+  private fun drawScale(canvas: Canvas, scale: ExportLabelLayout.Scale, h: Int, ink: Int, halo: Int) {
+    val length = scale.lengthPx
+    val left = ExportLabelLayout.SCALE_LEFT; val bottom = ExportLabelLayout.scaleBottom(h)
     val stroke = { width: Float, colour: Int -> Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE
       strokeWidth = width; color = colour; strokeCap = Paint.Cap.SQUARE } }
     val bar = Path().apply { moveTo(left, bottom - 14f); lineTo(left, bottom); lineTo(left + length, bottom); lineTo(left + length, bottom - 14f) }
     canvas.drawPath(bar, stroke(10f, halo))
     canvas.drawPath(bar, stroke(4f, ink))
-    val label = if (metres >= 1000) "${(metres / 1000).let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() }} km" else "${metres.toInt()} m"
-    drawText(canvas, label, left, bottom - 56f, 40f, 30f, true, ink, "left", halo)
+    drawText(canvas, scale.label, left, bottom - 56f, 40f, ExportLabelLayout.SCALE_TEXT_SIZE, true, ink, "left", halo)
   }
 
   // 指北: the compass of the map buttons, top right (north half red).
   private fun drawNorth(canvas: Canvas, w: Int, op: JSONObject, surface: Int, ink: Int) {
-    val cx = w - 72f; val cy = 72f
-    canvas.drawCircle(cx, cy, 40f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
+    val cx = w - ExportLabelLayout.NORTH_INSET; val cy = ExportLabelLayout.NORTH_INSET
+    canvas.drawCircle(cx, cy, ExportLabelLayout.NORTH_RADIUS, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
     val north = Path().apply { moveTo(cx, cy - 28f); lineTo(cx + 10f, cy); lineTo(cx - 10f, cy); close() }
     val south = Path().apply { moveTo(cx, cy + 28f); lineTo(cx + 10f, cy); lineTo(cx - 10f, cy); close() }
     canvas.drawPath(north, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = color(op.getString("northColor")) })

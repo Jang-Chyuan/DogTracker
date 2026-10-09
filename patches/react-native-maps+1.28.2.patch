@@ -61,10 +61,29 @@ index 3e0250f..95cc196 100644
          return options;
      }
 diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
-index def61f5..0b2206d 100644
+index def61f5..16e6c52 100644
 --- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
 +++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
-@@ -203,8 +203,21 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -107,6 +107,18 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+     private RelativeLayout mapLoadingLayout;
+     private ImageView cacheImageView;
+     private Boolean isMapLoaded = false;
++    // DOGTRACKER_MAP_LOADED_REARM: see onMapReady.
++    private static final long LOADED_REARM_MS = 2000;
++    private final android.os.Handler loadedRearm = new android.os.Handler(android.os.Looper.getMainLooper());
++    private GoogleMap.OnMapLoadedCallback loadedCallback;
++    private final Runnable rearmLoaded = new Runnable() {
++        @Override
++        public void run() {
++            if (isMapLoaded || destroyed || map == null || loadedCallback == null) return;
++            map.setOnMapLoadedCallback(loadedCallback);
++            loadedRearm.postDelayed(this, LOADED_REARM_MS);
++        }
++    };
+ 
+     private Boolean isMapReady = false;
+ 
+@@ -203,8 +215,21 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
      }
  
  
@@ -86,7 +105,7 @@ index def61f5..0b2206d 100644
          super.onCreate(null);
      }
  
-@@ -330,48 +343,15 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -330,48 +355,15 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
              paused = false;
          }
  
@@ -137,7 +156,7 @@ index def61f5..0b2206d 100644
              // Pause safely if not already paused
              if (!paused) {
                  pauseSafely();
-@@ -385,11 +365,9 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -385,11 +377,9 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
              Log.e("MapView", "Error during stop in onDetachedFromWindow: " + e.getMessage());
          }
  
@@ -151,7 +170,42 @@ index def61f5..0b2206d 100644
          super.onDetachedFromWindow();
          detachLifecycleObserver();
      }
-@@ -1326,18 +1304,36 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -698,11 +688,23 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+             dispatchEvent(payload, OnRegionChangeCompleteEvent::new);
+         });
+ 
+-        map.setOnMapLoadedCallback(() -> {
++        // DOGTRACKER_MAP_LOADED_REARM (DogTracker patch): Google calls this once,
++        // when the map has finished rendering; a map that keeps changing (the
++        // phone's dot moves every second, markers redraw) can leave it pending
++        // long after every tile is drawn, and the app shows 「地圖載入失敗」 over
++        // a loaded map meanwhile. Registering it again is invoked at once when
++        // the map is fully rendered at that moment, so it is registered again
++        // every 2 s until it has been called.
++        loadedCallback = () -> {
++            if (isMapLoaded) return;
+             isMapLoaded = true;
++            loadedRearm.removeCallbacks(rearmLoaded);
+             dispatchEvent(new WritableNativeMap(), OnMapLoadedEvent::new);
+             MapView.this.cacheView();
+-        });
++        };
++        map.setOnMapLoadedCallback(loadedCallback);
++        loadedRearm.removeCallbacks(rearmLoaded);
++        loadedRearm.postDelayed(rearmLoaded, LOADED_REARM_MS);
+ 
+ 
+         map.setTrafficEnabled(showsTraffic);
+@@ -796,6 +798,8 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+             return;
+         }
+         destroyed = true;
++        // DOGTRACKER_MAP_LOADED_REARM: no re-registering on a destroyed map.
++        loadedRearm.removeCallbacks(rearmLoaded);
+         savedMapState = null;
+         savedFeatures = null;
+         try {
+@@ -1326,18 +1330,36 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
          if (feature instanceof MapMarker) {
              markerMap.remove(feature.getFeature());
              feature.removeFromMap(markerCollection);
