@@ -133,7 +133,17 @@ const intersects = (a, b) => a.left < b.right && b.left < a.right && a.top < b.b
  *   (the overlap menu lists them in that order).
  *   null = no tag under this face; dogs without a screen position keep their tag.
  */
-export function nameTags(markers, points = {}, fontScale = 1) {
+// Name tags merge into 「N 隻」 only when the map is zoomed out this far or
+// more (metres per dp; about zoom 16 here, a few streets on screen). Closer
+// in, every dog keeps its own tag even when the tags overlap (066: the user
+// zoomed in on a kennel and still saw 「5 隻・室內」).
+export const GROUP_MIN_METRES_PER_DP = 2;
+
+/** Whether tags may merge at this zoom (unknown zoom: they may). */
+export const groupsAtZoom = metresPerDp =>
+  !(metresPerDp > 0) || metresPerDp >= GROUP_MIN_METRES_PER_DP;
+
+export function nameTags(markers, points = {}, fontScale = 1, { group = true } = {}) {
   const result = {};
   const placed = [];
   for (const marker of markers) {
@@ -160,7 +170,7 @@ export function nameTags(markers, points = {}, fontScale = 1) {
     groups.get(root).push(item);
   });
   for (const members of groups.values()) {
-    if (members.length < 2) continue;
+    if (!group || members.length < 2) continue;
     // The tag sits under the lowest face, so it covers none of the others.
     const lead = members.reduce((low, item) => (item.y > low.y
       || (item.y === low.y && item.marker.slaveId < low.marker.slaveId) ? item : low));

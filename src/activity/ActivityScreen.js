@@ -117,19 +117,21 @@ export default function ActivityScreen({
       testID="activity-page"
     >
       <View style={styles.header}>
+        {/* 066: the back icon and the title are one 48dp target. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("c438")}
           onPress={onBack}
-          style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+          testID="activity-back"
+          style={({ pressed }) => [styles.backRow, pressed && styles.pressed]}
         >
           <Glyph name="back" color={colors.text} size={size.icon.navigation} />
+          <Text
+            style={styles.title}
+            accessibilityRole="header"
+            numberOfLines={linesFor(1)}
+          >{t("c439", { name: name })}</Text>
         </Pressable>
-        <Text
-          style={styles.title}
-          accessibilityRole="header"
-          numberOfLines={linesFor(1)}
-        >{t("c439", { name: name })}</Text>
       </View>
       <ScrollView
         contentContainerStyle={[
@@ -432,11 +434,14 @@ const getStyles = makeStyles(theme => {
       minHeight: touch.subpageHeader,
       paddingHorizontal: space.xs,
     },
-    back: {
-      width: touch.min,
-      height: touch.min,
+    backRow: {
+      minHeight: touch.min,
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
+      gap: space.s,
+      paddingLeft: space.s,
+      paddingRight: space.m,
+      flexShrink: 1,
       borderRadius: radius.full,
     },
     title: { ...type.title, color: colors.text, flexShrink: 1 },

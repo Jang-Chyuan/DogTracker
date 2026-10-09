@@ -99,6 +99,7 @@ import {
   useTodayRoute,
 } from './src/locationTracker/useTodayRoute';
 import { layout, touch, type, space, size as sizes } from './src/theme/tokens';
+import Glyph from './src/map/Glyph';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
 import {
@@ -1311,7 +1312,11 @@ function TrackerApp({ resume = null, onRestart }) {
               hitSlop={space.s}
               style={({ pressed }) => [styles.back, pressed && styles.pressed]}
             >
-              <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
+              {/* 066: a real back icon (the 「‹」 character was small and
+                  hard to hit) with room before the title; the whole row is
+                  the 48dp target. */}
+              <Glyph name="back" color={colors.text} size={sizes.icon.navigation} />
+              <Text style={styles.brand}>{pageTitle(route)}</Text>
             </Pressable>
           </View>
         )}
@@ -1541,8 +1546,11 @@ const getStyles = makeStyles(theme => {
     },
     back: {
       minHeight: touch.min,
-      justifyContent: 'center',
-      paddingHorizontal: space.s,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.s,
+      paddingLeft: space.xs,
+      paddingRight: space.m,
       alignSelf: 'flex-start',
     },
     pressed: { opacity: 0.7 },

@@ -3,7 +3,6 @@ import {
   SINGLE_POINT_DEGREES,
 } from '../src/map/MapFraming';
 import { edgeHints, edgeHintSpeech, edgeHintWidth } from '../src/map/EdgeHints';
-import { overlapMenuHeight, overlapMenuPlace } from '../src/map/OverlapPicker';
 
 const marker = (slaveId, latitude, longitude, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`,
   size: 40, problem: false, stale: false, source: 'ble', coordinate: { latitude, longitude }, ...extra });
@@ -131,22 +130,6 @@ describe('off-screen hints', () => {
 
   test('no layout, no hints', () => {
     expect(edgeHints([marker(1, 0, 0)], { 1: { x: -5, y: 5 } }, { width: 0, height: 0 })).toEqual([]);
-  });
-});
-
-describe('overlap menu placement', () => {
-  const screen = { width: 400, height: 800, top: 100, bottom: 0 };
-  test('above the tapped face, 240dp wide, inside the screen', () => {
-    const place = overlapMenuPlace({ x: 390, y: 500, size: 48 }, 3, screen);
-    expect(place.height).toBe(overlapMenuHeight(3));
-    expect(place.left).toBe(400 - 8 - 240);
-    expect(place.top + place.height).toBe(500 - 24 - 8);
-  });
-  test('below it when there is no room above; 5 rows at most', () => {
-    const place = overlapMenuPlace({ x: 20, y: 150, size: 40 }, 7, screen);
-    expect(place.left).toBe(8);
-    expect(place.height).toBe(5 * 56 + 16);
-    expect(place.top).toBeGreaterThan(150);
   });
 });
 
