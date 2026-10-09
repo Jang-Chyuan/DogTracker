@@ -22,8 +22,12 @@ import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { createRideDetector } from '../placement/RideAlong';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
-import { addRoutePoints, emptyRouteDistance, startOfToday } from '../tracking/TodayDistance';
+import { todayRouteDistance } from '../tracking/TodayDistance';
 import { ONBOARDING_DONE, ONBOARDING_SIGN_IN } from '../app/Launch';
+import { historyGeometry, HISTORY_DAY_CONTEXT_MS } from '../mapHistory/HistoryDatabase';
+import { budgetHistory } from '../mapHistory/HistoryGeometryBudget';
+import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
+import { startOfToday } from '../tracking/TodayDistance';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
 export const FIXTURE_NOW = Date.parse('2026-10-07T01:30:00Z');
@@ -175,7 +179,7 @@ const SIGNED_OUT = Object.freeze({ ownerId: null, lastSuccess: null, lastDownloa
 // Today's recorded route before `end` (a myLocationTracker row each 10 s):
 // `metres` walked in 10 m steps up to `end` at `endTime`, zig-zagging west
 // and south of it in 200 m legs so it stays in the station's blocks.
-function morningWalk(end, endTime, metres = 2750) {
+function morningWalk(end, endTime, metres = 2700) {
   const steps = Math.round(metres / 10);
   const points = [];
   let here = { latitude: end.latitude, longitude: end.longitude };
@@ -199,7 +203,7 @@ function walkingPhone(now) {
       accuracy: 6, speedKmh: 3, rawSpeedKmh: 3, motionState: 'moving' });
   }
   const today = [
-    ...morningWalk(route[0], route[0].timestamp - 10 * SECOND, 2700),
+    ...morningWalk(route[0], route[0].timestamp - 10 * SECOND, 2650),
     ...route.map(point => ({ latitude: point.latitude, longitude: point.longitude, time: point.timestamp,
       accuracy: point.accuracy })),
   ];
@@ -237,6 +241,60 @@ const indoorBle = (now, slave, spot, { inside = 12 * MINUTE, until = 8 * SECOND,
   ...series(bleRow, now, { slave, from: inside, to: until, rssi: -96, snr: -4, ...rest }),
 ];
 
+
+
+// ---- history (054a): one day of one dog or my route ------------------------
+
+// A day's path as legs from `fromAgo` ms before now, one fix every `every` ms:
+// { walk: minutes, speed (m/s), bearing (degrees from north) }, { stay:
+// minutes } (a few metres of jitter), { drive: minutes, speed, bearing },
+// { gap: minutes } (nothing recorded), { inside: minutes } (packets without a
+// fix). Returns [{ time, fix }] (fix null inside). Positions start at `from`.
+function legsPath(now, fromAgo, from, legs, every = 10 * SECOND) {
+  const out = [];
+  let time = now - fromAgo, here = from, index = 0;
+  for (const leg of legs) {
+    const minutes = leg.walk ?? leg.stay ?? leg.drive ?? leg.gap ?? leg.inside;
+    const until = time + minutes * MINUTE;
+    if (leg.gap != null) { time = until; continue; }
+    const speed = leg.walk != null || leg.drive != null ? leg.speed ?? (leg.drive != null ? 12 : 1.1) : 0;
+    const angle = ((leg.bearing ?? 45) * Math.PI) / 180;
+    for (; time < until && time <= now - 5 * SECOND; time += every, index += 1) {
+      if (leg.inside != null) { out.push({ time, fix: null }); continue; }
+      if (speed) here = offset(here, Math.cos(angle) * speed * (every / SECOND), Math.sin(angle) * speed * (every / SECOND));
+      const wobble = leg.stay != null ? ((index % 5) - 2) * 1.2 : 0;
+      out.push({ time, fix: offset(here, wobble, -wobble / 2) });
+    }
+    time = until;
+  }
+  return out;
+}
+
+// The phone's inputs for a route of myLocationTracker rows (a fix every 10 s):
+// recording, the newest fix `age` old; today = the whole path.
+function routePhone(path, now) {
+  const today = path.filter(row => row.fix).map(row => ({ ...row.fix, time: row.time, accuracy: 6 }));
+  const route = today.slice(-60).map(point => ({ latitude: point.latitude, longitude: point.longitude,
+    timestamp: point.time, accuracy: 6, speedKmh: 3, rawSpeedKmh: 3, motionState: 'moving' }));
+  return { route, position: route[route.length - 1] ?? null, today };
+}
+
+// The history page opened for a dog (看軌跡) or my route (「今天 x km」),
+// today: the query the old page keeps, plus the dog's rows.
+function historyPage(now, { slave = null, ble = [], cloudRows = [] } = {}) {
+  return {
+    preferences: slave == null
+      ? { phone: true, client: false, timeMode: 'recent', hours: 24, slaves: [4], masters: [7] }
+      : { phone: false, client: true, source: 'ble', timeMode: 'recent', hours: 24, slaves: [slave], masters: [7] },
+    ble, cloudRows,
+  };
+}
+// The handler's morning (H1 我的路線): at home from 06:50, out at about 07:05,
+// two stays, walking until now (09:30).
+const morningRoute = now => legsPath(now, 160 * MINUTE, at(-40, -150), [
+  { stay: 15 }, { walk: 25, bearing: 40 }, { stay: 14 }, { walk: 30, bearing: 100 },
+  { stay: 18 }, { walk: 20, bearing: 170 }, { walk: 38, bearing: 250 },
+]);
 
 // A cold start as Launch.launchScreen reads it: the database open, the
 // preferences read, the restore over, signed out and past the guide, unless
@@ -802,13 +860,54 @@ const FIXTURES = {
       cloudRows: dog8Cloud(now),
     };
   },
+  // ---- history (054a): the time-line list on the old history page --------
+  // My route today (H1/H2): out at about 07:05, stays 1 and 2, walking now;
+  // 「今天 x km」 on the map (&page=map) is the summary's distance.
+  'history-today': now => {
+    const phone = routePhone(morningRoute(now), now);
+    return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
+  },
+  // Still at home (a few metres of wander since 06:30): 還沒出發, the range is
+  // the whole day.
+  'history-no-departure': now => {
+    const phone = routePhone(legsPath(now, 180 * MINUTE, at(-40, -60), [{ stay: 120 }, { walk: 1, speed: 0.3 },
+      { stay: 60 }]), now);
+    return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
+  },
+  // My route: walk, drive 12 minutes, walk — a numbered switch point where
+  // each mode starts (H2 開車換走路的地方多一個點).
+  'history-mode-switch': now => {
+    const phone = routePhone(legsPath(now, 70 * MINUTE, at(-100, -150), [{ walk: 18, bearing: 20 },
+      { drive: 4, speed: 8, bearing: 90 }, { drive: 4, speed: 8, bearing: 20 }, { walk: 25, bearing: 200 },
+      { stay: 19 }]), now);
+    return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
+  },
+  // 豆豆's day with two breaks: 12 minutes (沒有資料) and 40 minutes (沒有資料
+  // then 恢復記錄).
+  'history-gap': now => {
+    const ble = legsPath(now, 120 * MINUTE, at(10, -30), [{ walk: 25, bearing: 30, speed: 1.1 }, { gap: 12 },
+      { walk: 18, bearing: 120, speed: 1.1 }, { gap: 40 }, { walk: 25, bearing: 220, speed: 1.1 }])
+      .map(row => bleRow({ slave: 4, time: row.time, fix: row.fix }));
+    return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
+  },
+  // 豆豆 goes inside for 25 minutes after a walk (clear fixes, then packets
+  // without a fix): the house node 「室內・N 分」, unnumbered, no distance.
+  'history-indoor': now => {
+    const path = legsPath(now, 80 * MINUTE, at(10, 8), [{ walk: 22, bearing: 60, speed: 1.3 }, { stay: 13 },
+      { inside: 25 }, { walk: 20, bearing: 200, speed: 1.3 }]);
+    const ble = path.map(row => bleRow({ slave: 4, time: row.time, fix: row.fix,
+      ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
+    return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
+  },
 };
 
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
 
 // A settings page a fixture can be opened on (&page=…), whatever its own.
 export const FIXTURE_PAGES = Object.freeze(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'advanced',
-  'diagnostics', 'wifi', 'liveData', 'cloudData', 'locationRecords', 'permissions', 'pair', 'paired']);
+  'diagnostics', 'wifi', 'liveData', 'cloudData', 'locationRecords', 'permissions', 'pair', 'paired',
+  // The live map (a history fixture's 「今天 x km」) or the history page.
+  'map', 'history']);
 const FIXTURE_URL = /^dogtracker:\/\/dev\/fixture\?name=([a-z0-9-]+)(?:&page=([a-zA-Z]+))?$/;
 
 // dogtracker://dev/fixture?name=dogs-aged → 'dogs-aged'; ?name=off → 'off'.
@@ -917,7 +1016,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
-    permissionsGuide = null, pairing = null,
+    permissionsGuide = null, pairing = null, history = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -945,7 +1044,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     receiverState: receiver,
     readReceiverState: { getState: async () => receiver },
     cloudSync: cloud,
-    raw: { ble, cloud: cloudRows },
+    raw: { ble, cloud: cloudRows, history: history ? [...(history.ble || []), ...(history.cloudRows || [])] : [],
+      today: phone?.today || [] },
     tracking: {
       point: point ?? emptyTrackingPoint,
       positionSamples: point ? mergePositionSamples([], points, point) : [],
@@ -996,9 +1096,9 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
     todayRoute: (() => {
-      const sum = addRoutePoints(emptyRouteDistance(startOfToday(now)),
-        (phone?.today || []).filter(row => row.time >= startOfToday(now) && row.time <= now));
-      return { count: sum.count, metres: sum.metres };
+      const { count, metres, status } = todayRouteDistance(phone?.today || [], { now,
+        recording: phone?.recording !== false });
+      return { count, metres, status };
     })(),
     ride: rides.ride(now),
     dogAliases: ALIASES,
@@ -1024,7 +1124,40 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // view, camera, dialog, target, nearby…): drawn, nothing asked or scanned.
     permissionsGuide,
     pairing,
+    // The history page (054a): its query, the map's tracks and the day reader
+    // of the time-line list, all from the fixture's rows.
+    history: history && historyFixture(history, phone?.today || [], now),
   };
+}
+
+// What the old history page reads for a history fixture: the query, the map's
+// tracks (HistoryDatabase.read's shape) and historyDayRows over the rows.
+function historyFixture({ preferences, ble = [], cloudRows = [] }, today, now) {
+  const phoneRows = today.map((point, index) => ({ id: index + 1, time: point.time, latitude: point.latitude,
+    longitude: point.longitude, accuracy: point.accuracy ?? 6 }));
+  const dayStart = startOfToday(now);
+  const readDay = async ({ subject, slaveId, start, end, source = 'all', owner = null, after = {} }) => {
+    if (after.fixture) return { rows: [], seed: [], after };
+    const since = start - HISTORY_DAY_CONTEXT_MS;
+    const within = time => time >= since && time < end;
+    if (subject === 'phone') {
+      return { rows: phoneRows.filter(row => within(row.time)).map(phoneHistoryRow), seed: [], after: { fixture: true } };
+    }
+    const local = source === 'cloud' ? [] : ble.filter(row => row.slave_id === slaveId && within(row.received_at))
+      .map(row => dogHistoryRow(row, 'local'));
+    const cloud = source === 'local' || !owner ? [] : cloudRows
+      .filter(row => row.slave_id === slaveId && within(timeOf(row))).map(row => dogHistoryRow(row, 'cloud'));
+    return { rows: [...local, ...cloud], seed: [], after: { fixture: true } };
+  };
+  const dogTrack = slaveId => ble.filter(row => row.slave_id === slaveId && row.received_at >= dayStart)
+    .map(row => ({ id: row.id, time: row.received_at, latitude: row.slave_lat, longitude: row.slave_lon,
+      master_id: row.master_id, slave_id: row.slave_id }));
+  const data = budgetHistory({
+    phone: historyGeometry(preferences.phone ? phoneRows.filter(row => row.time >= dayStart) : []),
+    clients: preferences.slaves.map(slaveId => ({ slaveId,
+      ...historyGeometry(preferences.client ? dogTrack(slaveId) : []) })),
+    since: dayStart, until: now, coverage: null, message: '' });
+  return { preferences, readDay, data };
 }
 
 const rejectRead = reason => async () => { throw new Error(reason); };
@@ -1159,7 +1292,10 @@ export function applyScreenFixture(fixture, live, edits = null) {
     account: fixture.account,
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
     history: history && {
-      ...history, preferences: { ...history.preferences, dogAliases: aliases },
+      ...history, preferences: { ...history.preferences, ...fixture.history?.preferences, dogAliases: aliases },
+      // A history fixture (054a) draws its own day, never this phone's.
+      ...(fixture.history ? { data: fixture.history.data, readDay: fixture.history.readDay, loaded: true,
+        busy: false, error: '', key: `fixture:${fixture.name}`, devices: [], days: [], phoneRecorded: true } : {}),
       // The card's 看軌跡 and the dog page's name must not store a fixture's
       // dog in this phone's real history query or names.
       save: async preferences => {

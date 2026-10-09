@@ -100,6 +100,36 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           {name === 'walk-off' && <Path d="M3 3l18 18" {...stroke} />}
         </>
       )}
+      {name === 'paw' && (
+        // History list: a dog's movement row (H1 狗的歷史).
+        <>
+          <Circle cx={6.5} cy={10} r={2} {...stroke} />
+          <Circle cx={10} cy={5.5} r={2} {...stroke} />
+          <Circle cx={14} cy={5.5} r={2} {...stroke} />
+          <Circle cx={17.5} cy={10} r={2} {...stroke} />
+          <Path d="M12 12c-3 0-5.5 3.2-5.5 5.4 0 1.6 1.3 2.6 2.8 2.6 1 0 1.7-.5 2.7-.5s1.7.5 2.7.5c1.5 0 2.8-1 2.8-2.6C17.5 15.2 15 12 12 12z" {...stroke} />
+        </>
+      )}
+      {name === 'car' && (
+        // History list: 開車 (my route) and 坐車 (a dog), seen from the side.
+        <>
+          <Path d="M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7" {...stroke} />
+          <Circle cx={6} cy={16.5} r={1.8} {...stroke} />
+          <Circle cx={16.5} cy={16.5} r={1.8} {...stroke} />
+        </>
+      )}
+      {name === 'dots' && (
+        // History list: 沒有資料.
+        <>
+          <Circle cx={5} cy={12} r={1.6} fill={color} stroke="none" />
+          <Circle cx={12} cy={12} r={1.6} fill={color} stroke="none" />
+          <Circle cx={19} cy={12} r={1.6} fill={color} stroke="none" />
+        </>
+      )}
+      {name === 'house' && (
+        // History list: a dog held indoors (停在原處), white on receiver blue.
+        <Path d="M4 11l8-7 8 7M6.5 9.5V20h11V9.5" {...stroke} />
+      )}
       {name === 'chevron' && <Path d="M9 5l7 7-7 7" {...stroke} />}
       {name === 'back' && <Path d="M15 5l-7 7 7 7" {...stroke} />}
       {name === 'clock' && (

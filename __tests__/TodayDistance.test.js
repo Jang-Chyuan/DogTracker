@@ -1,5 +1,5 @@
 import {
-  addRoutePoints, emptyRouteDistance, formatTodayDistance, ROUTE_GAP_MS, startOfToday, todayPill,
+  formatTodayDistance, startOfToday, todayPill, todayRouteDistance,
 } from '../src/tracking/TodayDistance';
 import { distanceMeters } from '../src/tracking/ReceiverRange';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
@@ -13,61 +13,72 @@ const north = (metres, seconds, accuracy = 5) => ({
   latitude: START.latitude + metres / 111195, longitude: START.longitude, time: seconds * SECOND, accuracy,
 });
 
+// The sum of today's rows, as the pill and the history summary count them
+// (todayRouteDistance runs the history logic, src/history).
+const sumOf = (rows, now = rows.reduce((last, row) => Math.max(last, row.time || 0), 0)) =>
+  todayRouteDistance(rows, { now, dayStart: 0 });
+const ROUTE_GAP_MS = 3 * MINUTE;
+
 describe('today\'s distance', () => {
   test('adds up a walk', () => {
     const walk = Array.from({ length: 11 }, (_, index) => north(index * 10, index * 10));
-    const sum = addRoutePoints(emptyRouteDistance(), walk);
+    const sum = sumOf(walk);
     expect(sum.count).toBe(11);
     expect(sum.metres).toBeCloseTo(100, 0);
   });
 
   test('standing still adds nothing: moves inside the fixes\' accuracy do not count', () => {
     const jitter = Array.from({ length: 60 }, (_, index) => north(index % 2 ? 4 : -4, index, 8));
-    expect(addRoutePoints(emptyRouteDistance(), jitter).metres).toBe(0);
+    expect(sumOf(jitter).metres).toBe(0);
   });
 
   test('slow steps add up once they leave the accuracy, not lost one by one', () => {
     // 2 m steps with 5 m accuracy: each step alone is under the accuracy.
     const slow = Array.from({ length: 51 }, (_, index) => north(index * 2, index * 2));
-    expect(addRoutePoints(emptyRouteDistance(), slow).metres).toBeGreaterThan(90);
+    expect(sumOf(slow).metres).toBeGreaterThan(90);
   });
 
   test('a break longer than 3 minutes is not counted (the map draws no line there)', () => {
-    const sum = addRoutePoints(emptyRouteDistance(), [north(0, 0), north(10, 10),
+    const sum = sumOf([north(0, 0), north(10, 10),
       north(500, 10 + ROUTE_GAP_MS / SECOND + 1), north(510, 10 + ROUTE_GAP_MS / SECOND + 11)]);
     expect(sum.metres).toBeCloseTo(20, 0);
   });
 
-  test('a ride (over 25 km/h) is not counted; the walk on both sides is', () => {
-    const walk = [north(0, 0), north(10, 10), north(20, 20)];
-    // 2 km in 2 minutes by car, then walking again.
-    const ride = [north(1020, 140), north(2020, 260)];
-    const after = [north(2030, 270), north(2040, 280)];
-    const sum = addRoutePoints(emptyRouteDistance(), [...walk, ...ride, ...after]);
-    expect(sum.metres).toBeCloseTo(40, 0);
+  test('a drive (5 m/s for 30 s) is not counted; the walk on both sides is', () => {
+    const walk = Array.from({ length: 4 }, (_, index) => north(index * 10, index * 10));
+    // 2 km by car at 12.5 m/s, then walking again.
+    const drive = Array.from({ length: 16 }, (_, index) => north(30 + (index + 1) * 125, 30 + (index + 1) * 10));
+    const after = Array.from({ length: 3 }, (_, index) => north(2030 + (index + 1) * 10, 190 + (index + 1) * 10));
+    expect(sumOf([...walk, ...drive, ...after]).metres).toBeCloseTo(60, 0);
   });
 
-  test('reading in pages gives the same sum as reading at once', () => {
-    const walk = Array.from({ length: 40 }, (_, index) => north(index * 7, index * 5));
-    const once = addRoutePoints(emptyRouteDistance(), walk);
-    const paged = [walk.slice(0, 13), walk.slice(13, 29), walk.slice(29)]
-      .reduce((sum, page) => addRoutePoints(sum, page), emptyRouteDistance());
-    expect(paged.metres).toBeCloseTo(once.metres, 6);
-    expect(paged.count).toBe(once.count);
+  test('before departure the whole day counts; after it, from the departure on', () => {
+    // An hour at home with 3 m jitter, then a 15-minute walk at 1.2 m/s.
+    const home = Array.from({ length: 360 }, (_, index) => north(index % 2 ? 3 : 0, index * 10));
+    const walk = Array.from({ length: 90 }, (_, index) => north(12 * (index + 1), 3600 + (index + 1) * 10));
+    const waiting = sumOf(home);
+    expect(waiting).toMatchObject({ status: 'not-departed', metres: 0 });
+    const out = sumOf([...home, ...walk]);
+    expect(out.status).toBe('confirmed');
+    // The first fix that is 40 m away 3 minutes later at walking pace: a
+    // little before the first step (stops.txt 出發偵測), never the morning.
+    expect(out.range.start).toBeGreaterThan(3400 * SECOND);
+    expect(out.range.start).toBeLessThanOrEqual(3600 * SECOND);
+    expect(out.metres).toBeCloseTo(1080, -1);
   });
 
-  test('rows without a fix and older rows are skipped', () => {
-    const sum = addRoutePoints(emptyRouteDistance(), [north(0, 0), { latitude: 0, longitude: 0, time: 5000 },
-      { latitude: NaN, longitude: 1, time: 6000 }, north(50, 10), north(30, 5)]);
+  test('rows without a fix and rows after now are skipped', () => {
+    const sum = todayRouteDistance([north(0, 0), { latitude: 0, longitude: 0, time: 5000 },
+      { latitude: NaN, longitude: 1, time: 6000 }, north(50, 10), north(80, 20)], { now: 10000, dayStart: 0 });
     expect(sum.count).toBe(2);
     expect(sum.metres).toBeCloseTo(50, 0);
   });
 
-  test('「今天 x km」 in tenths, rounded down (每 0.1 km 更新)', () => {
+  test('「今天 x km」 in tenths, rounded (判定表「距離的四捨五入」)', () => {
     expect(formatTodayDistance(0)).toBe('今天 0.0 km');
-    expect(formatTodayDistance(99)).toBe('今天 0.0 km');
+    expect(formatTodayDistance(49)).toBe('今天 0.0 km');
     expect(formatTodayDistance(2749.9)).toBe('今天 2.7 km');
-    expect(formatTodayDistance(2750)).toBe('今天 2.7 km');
+    expect(formatTodayDistance(2750)).toBe('今天 2.8 km');
     expect(formatTodayDistance(12345)).toBe('今天 12.3 km');
   });
 
@@ -154,7 +165,7 @@ describe('reading today\'s route from myLocationTracker', () => {
     const last = first[first.length - 1];
     const rest = await database.phoneRouteSince(day, { time: last.time, id: last.id }, 3);
     expect(rest.map(row => row.id)).toEqual([5, 6]);
-    const sum = [first, rest].reduce(addRoutePoints, emptyRouteDistance(day));
+    const sum = todayRouteDistance([...first, ...rest], { now: day + MINUTE, dayStart: day });
     expect(sum.metres).toBeCloseTo(distanceMeters(first[0], rest[1]), 0);
     connection.close();
   });
@@ -186,7 +197,7 @@ describe('useTodayRoute', () => {
     }
     let renderer;
     await act(async () => { renderer = Renderer.create(React.createElement(Probe)); });
-    expect(route).toEqual({ count: 2, metres: expect.any(Number) });
+    expect(route).toEqual({ count: 2, metres: expect.any(Number), status: 'not-departed' });
     expect(route.metres).toBeCloseTo(100, 0);
     rows = [...rows, { id: 3, ...north(200, 0), time: day + 121000 }];
     await act(async () => jest.advanceTimersByTimeAsync(TODAY_ROUTE_POLL_MS));
@@ -197,7 +208,7 @@ describe('useTodayRoute', () => {
     clock = new Date(2026, 9, 8, 0, 1).getTime();
     await act(async () => jest.advanceTimersByTimeAsync(TODAY_ROUTE_POLL_MS));
     expect(calls.at(-1)).toEqual({ since: new Date(2026, 9, 8).getTime(), cursor: null });
-    expect(route).toEqual({ count: 0, metres: 0 });
+    expect(route).toEqual({ count: 0, metres: 0, status: 'not-departed' });
     await act(async () => renderer.unmount());
     jest.useRealTimers();
   });

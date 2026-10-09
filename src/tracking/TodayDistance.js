@@ -1,63 +1,50 @@
 // 「今天 x km」 (design v3 A1/A2, 判定表「右下『今天 x km』」): how far this
 // phone's own recorded route went today, and what the bottom-right pill says.
 //
-// Until departure detection lands (054), the range is today's whole recorded
-// route. Pure functions: the hook (useTodayRoute) feeds them rows as they are
+// stops.txt: the pill is my route's range for today — from the departure
+// detection (or the whole day while 還沒出發), the same number as the history
+// summary; driving is not counted, nor moves inside the fixes' accuracy. The
+// rows go through the same history logic (src/history) as the list.
+// Pure functions: the hook (useTodayRoute) feeds them rows as they are
 // recorded, a screen fixture feeds them invented rows.
 
-import { distanceMeters } from './ReceiverRange';
+import { historyTimeline } from '../history/HistoryTimeline';
+import { phoneHistoryRow } from '../history/HistoryRows';
 import { PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
-import { size } from '../theme/tokens';
-
-// Where recording stopped for longer than this, the route is broken: the map
-// draws no line across it (size.route.breakAfterMs) and nothing is counted.
-export const ROUTE_GAP_MS = size.route.breakAfterMs;
-// Faster than this between two counted points is a ride, not walking: the
-// route keeps it but the distance does not (開車的段落不算距離). An interim
-// rule until the driving segments of 054 replace it.
-export const RIDE_SPEED_MPS = 25 / 3.6;
 
 const valid = point => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude)
   && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180
   && !(point.latitude === 0 && point.longitude === 0) && Number.isFinite(point?.time);
 
-/** Nothing recorded yet. `day` is the local midnight the sum belongs to. */
-export function emptyRouteDistance(day = null) {
-  return Object.freeze({ day, metres: 0, count: 0, anchor: null, last: null });
+/** Next local midnight after `dayStart`. */
+export function endOfDay(dayStart) {
+  const end = new Date(dayStart);
+  end.setDate(end.getDate() + 1);
+  return end.getTime();
 }
 
 /**
- * Adds recorded points (oldest first) to a running sum. A move counts once it
- * leaves the last counted point by more than the larger of the two fixes'
- * accuracy ("移動小於定位誤差的不算"), so standing still does not add up
- * jitter; a break longer than ROUTE_GAP_MS starts over from the next point.
+ * Today's route of this phone: `rows` are its myLocationTracker rows of
+ * today ({ time, latitude, longitude, accuracy }, any order). `recording`
+ * false fixes the end at the last fix (判定表「記錄已關閉…但今天有路線」);
+ * `state` is the previous answer's, so stays already marked stay.
+ * @returns {{ count, metres, status, range, state }} status is the departure
+ *   detection's: 'not-departed' | 'confirming' | 'confirmed'.
  */
-export function addRoutePoints(state, points) {
-  let { metres, count, anchor, last } = state;
-  for (const point of points || []) {
-    if (!valid(point)) continue;
-    if (last && point.time < last.time) continue;
-    count += 1;
-    const accuracy = Number.isFinite(point.accuracy) && point.accuracy > 0 ? point.accuracy : 0;
-    const here = { latitude: point.latitude, longitude: point.longitude, time: point.time, accuracy };
-    if (!anchor || point.time - last.time > ROUTE_GAP_MS) {
-      anchor = here;
-    } else {
-      const moved = distanceMeters(anchor, here);
-      if (moved > Math.max(anchor.accuracy, accuracy)) {
-        const seconds = (here.time - anchor.time) / 1000;
-        if (!(seconds > 0 && moved / seconds > RIDE_SPEED_MPS)) metres += moved;
-        anchor = here;
-      }
-    }
-    last = here;
-  }
-  return Object.freeze({ day: state.day, metres, count, anchor, last });
+export function todayRouteDistance(rows, { now, dayStart = startOfToday(now), recording = true, state = null } = {}) {
+  const today = (rows || []).filter(row => valid(row) && row.time >= dayStart && row.time <= now);
+  if (!today.length) return { count: 0, metres: 0, status: 'not-departed', range: null, state: null };
+  const model = historyTimeline(today.map(phoneHistoryRow), {
+    subject: 'phone', source: 'all', dayStart, dayEnd: endOfDay(dayStart), today: true, now,
+    following: recording, state,
+  });
+  return { count: today.length, metres: model.distanceM, status: model.departure.status,
+    range: model.range, state: model.state };
 }
 
-/** 「今天 2.7 km」: tenths of a kilometre, rounded down (每 0.1 km 更新). */
+/** 「今天 2.7 km」: tenths of a kilometre, rounded (判定表「距離的四捨五入」). */
 export function formatTodayDistance(metres) {
-  const tenths = Math.floor(Math.max(0, metres || 0) / 100);
+  const tenths = Math.round(Math.max(0, metres || 0) / 100);
   return `今天 ${(tenths / 10).toFixed(1)} km`;
 }
 
