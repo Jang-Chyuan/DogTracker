@@ -2,7 +2,6 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AuthProvider, useAuth } from '../src/auth/AuthProvider';
 import LoginScreen from '../src/screens/LoginScreen';
-import { ActionButton } from '../src/components/ScreenUI';
 import { TextInput } from 'react-native';
 
 function fixture() {
@@ -41,7 +40,8 @@ test('login submits trimmed email and unchanged password, clears password on suc
     inputs[0].props.onChangeText(' user@example.com ');
     inputs[1].props.onChangeText(' password ');
   });
-  await act(async () => renderer.root.findByType(ActionButton).props.onPress());
+  await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === '登入'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(f.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'user@example.com', password: ' password ' });
   expect(done).toHaveBeenCalledWith({ user: { id: 'a' } });
   expect(renderer.root.findAllByType(TextInput)[1].props.value).toBe('');

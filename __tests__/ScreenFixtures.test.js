@@ -148,6 +148,21 @@ test('no-data: no receiver set up and no dogs from anywhere', async () => {
   expect(state.ring).toBeNull();
 });
 
+test('signed-out-map: no account, only receiver 7\'s own dogs; nothing from the cloud', async () => {
+  const state = await screen('signed-out-map');
+  expect(state.fixture.cloudSync.ownerId).toBeNull();
+  // The phone still holds rows an earlier account downloaded; none is drawn.
+  expect(state.fixture.raw.cloud.length).toBeGreaterThan(0);
+  expect(state.fixture.cloudDogs.rows).toEqual([]);
+  expect(state.fixture.cloudDogs.packets.every(row => row.source === 'ble')).toBe(true);
+  expect(state.drawn).toEqual([4, 5]);
+  expect(state.dogs.every(dog => dog.source !== 'cloud')).toBe(true);
+  // Signed out is a choice, not a cloud failure: no problem badge on any dog.
+  expect(state.link).toBe('receiving');
+  expect(state.ring.radiusMeters).toBe(1000);
+  expect(state.markers.every(marker => !marker.problem)).toBe(true);
+});
+
 test('receiver-connecting: never received yet, and receiver 3\'s old packet does not pose as receiver 7', async () => {
   const state = await screen('receiver-connecting');
   expect(state.link).toBe('connecting');
@@ -472,7 +487,8 @@ test.each(FIXTURE_NAMES)('%s: the rows read the same as the real CloudDatabase r
     const pick = row => [row.slave_id, row.master_id, row.source, Number(row.track_at), row.slave_lat, row.slave_lon,
       row.battery_percentage, row.usb_present, row.environment?.environment ?? null];
     const order = (left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right));
-    expect((await cloud.latestBySlave(owner, since)).map(pick).sort(order))
+    // Signed out, useCloudDogs reads no cloud rows (latestBySlave needs an owner).
+    expect((owner ? await cloud.latestBySlave(owner, since) : []).map(pick).sort(order))
       .toEqual(fixture.cloudDogs.rows.map(pick).sort(order));
     expect((await cloud.latestStatusRows(owner, since, fixture.now)).map(pick).sort(order))
       .toEqual(fixture.cloudDogs.packets.map(pick).sort(order));

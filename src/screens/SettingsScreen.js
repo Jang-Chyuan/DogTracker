@@ -7,6 +7,7 @@ export default function SettingsScreen({
   onHardware,
   onCloud,
   onLocationTracker,
+  account = null,
 }) {
   return (
     <View>
@@ -24,6 +25,10 @@ export default function SettingsScreen({
       <View style={ui.card}>
         <Text style={ui.heading}>雲端資料</Text>
         <Text style={ui.hint}>登入後下載已授權 Master 的資料，儲存到手機查看。</Text>
+        {/* Not signed in is a choice, not an error; 登入失效 asks to sign in again. */}
+        {account ? <Text style={!account.signedIn && account.expired ? ui.error : ui.text}>
+          {account.signedIn ? account.email || '已登入' : account.expired ? '需要重新登入' : '未登入'}
+        </Text> : null}
         <ActionButton title="雲端資料" onPress={onCloud} disabled={!tracking.ready.real} />
       </View>
       <View style={ui.card}>

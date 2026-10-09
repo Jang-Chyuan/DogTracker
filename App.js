@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -36,8 +36,6 @@ import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
-import LoginScreen from './src/screens/LoginScreen';
-import { hideSplash } from './src/app/hideSplash';
 import { useTodayRoute } from './src/locationTracker/useTodayRoute';
 import { layout } from './src/theme/tokens';
 
@@ -55,18 +53,30 @@ export default function App() {
 
 export function AuthGate({ children }) {
   const { loading, user } = useAuth();
-  // The launch screen covers session restore and, when signed in, stays until
-  // the map has loaded (GoogleTrackingMap), so the app opens straight onto its
-  // first real screen instead of a blank or "restoring" page.
-  useEffect(() => { if (!loading && !user) hideSplash(); }, [loading, user]);
+  // Signing in is optional (v3 D1): signed out, the app opens on the map with
+  // this phone's own receiver data, and 設定 → 雲端資料 is where to sign in.
+  // The launch screen covers session restore and stays until the map has
+  // loaded (GoogleTrackingMap), signed in or not, so there is no blank or
+  // "restoring" page in between.
+  const account = useAccountGeneration(user?.id || null);
   if (loading) return <SafeAreaView style={[authStyles.container, authStyles.loading]}>
     <Text accessibilityLiveRegion="polite" style={ui.text}>正在恢復登入狀態…</Text>
   </SafeAreaView>;
-  if (!user) return <SafeAreaView style={authStyles.container}>
-    <LoginScreen />
-  </SafeAreaView>;
-  // Switching accounts also discards the previous account's navigation state.
-  return <React.Fragment key={user.id}>{children}</React.Fragment>;
+  // A direct switch to another account discards the previous account's
+  // navigation state; signing in or out keeps the page the user is on.
+  return <React.Fragment key={account}>{children}</React.Fragment>;
+}
+
+// Counts direct switches from one account to another. Signing in from the
+// signed-out app (also after signing out of another account) keeps the page
+// the user signed in on: every account-bound hook follows the owner itself.
+function useAccountGeneration(userId) {
+  const last = useRef(null), generation = useRef(0);
+  if (userId !== last.current) {
+    if (userId && last.current) generation.current += 1;
+    last.current = userId;
+  }
+  return generation.current;
 }
 
 // The pages off the map, by route: the header's 「‹ 標題」.
@@ -83,6 +93,7 @@ const authStyles = StyleSheet.create({
 });
 
 function TrackerApp() {
+  const auth = useAuth();
   const tracking = useTrackingSession();
   const cloudSync = useCloudSync(tracking.cloudDatabase, tracking.ready.real);
   const upload = useCloudUpload(tracking.ready.real, cloudSync.ownerId, tracking.foreground);
@@ -158,7 +169,8 @@ function TrackerApp() {
       content = <LocationTrackerScreen foreground={tracking.foreground} />;
       break;
     case 'cloud':
-      content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync} />;
+      content = <CloudScreen database={tracking.cloudDatabase} sync={cloudSync}
+        onLater={() => navigate(route.parent || 'map')} />;
       break;
     case 'settings':
       content = (
@@ -167,6 +179,7 @@ function TrackerApp() {
           onHardware={() => navigate('hardware', 'settings')}
           onCloud={() => navigate('cloud', 'settings')}
           onLocationTracker={() => navigate('locationTracker', 'settings')}
+          account={{ signedIn: !!auth.user, email: auth.user?.email || '', expired: auth.expired }}
         />
       );
       break;

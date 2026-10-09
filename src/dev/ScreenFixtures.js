@@ -147,6 +147,10 @@ const receiving = now => ({
 const synced = now => ({ ownerId: FIXTURE_OWNER, lastSuccess: now - 5 * SECOND,
   lastDownloadAt: now - 5 * SECOND, failingSince: null, error: null });
 
+// No account: useCloudSync has no owner and nothing was downloaded for one.
+const SIGNED_OUT = Object.freeze({ ownerId: null, lastSuccess: null, lastDownloadAt: null,
+  failingSince: null, error: null });
+
 // Today's recorded route before `end` (a myLocationTracker row each 10 s):
 // `metres` walked in 10 m steps up to `end` at `endTime`, zig-zagging west
 // and south of it in 200 m legs so it stays in the station's blocks.
@@ -428,6 +432,17 @@ const FIXTURES = {
     cloudRows: series(cloudRow, now, { slave: 8, from: 26 * 60 * MINUTE + 10 * MINUTE, to: 26 * 60 * MINUTE,
       every: 15 * SECOND, start: [-640, -720], step: [0.02, 0.03] }),
   }),
+  // Signed out (v3: signing in is optional, 「稍後再說」): receiver 7 and its
+  // two dogs only. Rows an earlier account downloaded (小黑, 阿福) are still in
+  // the phone but belong to that account, so nothing of the cloud is drawn.
+  'signed-out-map': now => ({
+    receiver: receiving(now), cloud: SIGNED_OUT, phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...series(bleRow, now, { slave: 5, from: 10 * MINUTE, to: 9 * SECOND, start: [-20, 20], step: [0.05, -0.03] }),
+    ]),
+    cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
+  }),
   // ---- a dog's card open (046, design A3/A3b/A7b) ------------------------
   // 豆豆 on receiver 7, in range, battery 62%, resting for the last 18
   // minutes: 位置 has no row, 接收範圍 「在範圍內」, 活動量 「休息中 已 18 分鐘」.
@@ -659,7 +674,8 @@ export function buildFixture(name, now = FIXTURE_NOW) {
   // useCloudDogs: the newest downloaded fix per dog, the newest packet of
   // each source with its environment, and the indoor holds.
   const holds = createHoldStore();
-  holds.ingest(holdBatch(ble, cloudRows, now));
+  // Signed out, useCloudDogs reads no cloud rows: holds come from BLE only.
+  holds.ingest(holdBatch(ble, cloud?.ownerId ? cloudRows : [], now));
   // useCloudDogs reads every dog's newest rows, however old (LATEST_SINCE).
   const recent = () => true;
   const recentFix = row => hasFix(row);

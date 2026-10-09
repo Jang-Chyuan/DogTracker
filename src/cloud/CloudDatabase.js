@@ -273,9 +273,11 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     activityHistory: (owner, slaveId, now) => readActivityHistory(connection, owner, slaveId, now),
     // The open dog card's activity and battery readings (DogCardReadings).
     dogCardRows: (owner, slaveId, since) => readDogCardRows(connection, owner, slaveId, since),
+    // Signed out (no owner) only this phone's own BLE rows: signing in is
+    // optional, and the receiver's dogs still need their latest packets.
     async latestStatusRows(owner, sinceMs, now = Date.now()) {
-      requireOwner(owner);
-      const cloud = rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner]));
+      const cloud = owner
+        ? rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner])) : [];
       // Read both the latest packet and last valid fix per local dog. No raw
       // history pages are retained in React, including after a restart.
       const local = rows(await connection.executeAsync(`SELECT slave_id, master_id,

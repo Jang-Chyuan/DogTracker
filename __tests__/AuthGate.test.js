@@ -19,7 +19,7 @@ function fixture() {
   };
 }
 
-test('startup waits for auth; only login mounts tracking; logout returns to login and cancels native sync', async () => {
+test('startup waits for auth; signed out still opens the app; logout keeps it and cancels native sync', async () => {
   const f = fixture(), mounted = jest.fn(), unmounted = jest.fn();
   const previousCloud = NativeModules.CloudBackgroundSync, previousBle = NativeModules.BleBackground;
   const cloud = { setOwner: jest.fn(async () => {}) };
@@ -36,16 +36,17 @@ test('startup waits for auth; only login mounts tracking; logout returns to logi
     </AuthProvider>); });
     expect(mounted).not.toHaveBeenCalled();
     expect(JSON.stringify(renderer.toJSON())).toContain('正在恢復登入狀態');
+    // Signing in is optional (v3 D1): no login wall in front of the map.
     await act(async () => f.restore(null));
-    expect(JSON.stringify(renderer.toJSON())).toContain('登入 DogTracker');
-    expect(mounted).not.toHaveBeenCalled();
+    expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('登入 Supabase 帳號');
+    expect(mounted).toHaveBeenCalledTimes(1);
     await act(async () => f.notify({ user: { id: 'a', email: 'a@example.com' } }));
     expect(mounted).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
     cloud.setOwner.mockClear(); ble.executeDatabase.mockClear();
     await act(async () => f.notify(null));
-    expect(unmounted).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(renderer.toJSON())).toContain('登入 DogTracker');
+    expect(unmounted).not.toHaveBeenCalled();
+    expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
     expect(cloud.setOwner).toHaveBeenCalledWith(null);
     expect(ble.executeDatabase).toHaveBeenCalledWith(expect.stringContaining("key='owner'"), '[]');
   } finally {
@@ -61,6 +62,6 @@ test('a restored session enters home without showing the login form', async () =
   </AuthProvider>); });
   await act(async () => f.restore({ user: { id: 'a' } }));
   expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('登入 DogTracker');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('登入 Supabase 帳號');
   await act(async () => renderer.unmount());
 });
