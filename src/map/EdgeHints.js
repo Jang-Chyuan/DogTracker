@@ -81,11 +81,20 @@ export const hintBox = item => ({ left: item.x, right: item.x + item.width,
  * @returns [{ side, x, y, width, height, faces: marker[], extra, slaveIds,
  *   coordinates, label }]  x/y: the hint's top-left corner
  */
-export function edgeHints(markers = [], points = {}, { width, height, top = 0, bottom = 0, bottomRow = 0, fontScale = 1 } = {}) {
+export function edgeHints(markers = [], points = {}, { width, height, top = 0, bottom = 0, bottomRow = 0, fontScale = 1,
+  shownTop = top } = {}) {
   if (!(width > 0 && height > 0)) return [];
   const visibleTop = top;
   const visibleBottom = height - bottom;
   if (!(visibleBottom > visibleTop)) return [];
+  // 066: a dog the user can see needs no hint. Seen = any part of its face on
+  // screen above the card and below what covers the top (`shownTop`: the top
+  // cards, not the map's own padding for the gear row).
+  const seen = (marker, point) => {
+    const radius = (marker.size || 0) / 2;
+    return point.x + radius >= 0 && point.x - radius <= width
+      && point.y + radius >= shownTop && point.y - radius <= visibleBottom;
+  };
   const center = { x: width / 2, y: (visibleTop + visibleBottom) / 2 };
   const halfWidth = width / 2;
   const halfHeight = (visibleBottom - visibleTop) / 2;
@@ -93,7 +102,7 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
   for (const marker of markers) {
     const point = points[marker.slaveId];
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
-    if (point.x >= 0 && point.x <= width && point.y >= visibleTop && point.y <= visibleBottom) continue;
+    if (seen(marker, point)) continue;
     const dx = point.x - center.x;
     const dy = point.y - center.y;
     const horizontal = Math.abs(dx) / halfWidth >= Math.abs(dy) / halfHeight;

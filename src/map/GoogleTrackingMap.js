@@ -1012,6 +1012,7 @@ function GoogleTrackingMapRenderer({
             bottom: overlayBottom,
             bottomRow,
             fontScale,
+            shownTop: coverTop || 0,
           })
         : [],
     [
@@ -1024,6 +1025,7 @@ function GoogleTrackingMapRenderer({
       overlayBottom,
       bottomRow,
       fontScale,
+      coverTop,
     ],
   );
   // When the map's own blue dot last reported (kept coarse: one update a

@@ -145,3 +145,15 @@ test('E08 edge hints avoid the selected dog face and name tag', () => {
   expect(mapControlBoxes({ ...view, bottomRow: 48 }).some(box =>
     boxesOverlap(markerBox(selected, { x: 160, y: 520 }), box))).toBe(true);
 });
+
+test('066: no hint for a dog the user can see (under the gear row, or half at an edge); a dog behind the card gets one', () => {
+  const view = { width: 400, height: 800, top: 100, bottom: 300, shownTop: 0 };
+  const dogs = [marker(1, 0, 0), marker(2, 0, 0), marker(3, 0, 0)];
+  const points = {
+    1: { x: 200, y: 60 }, // under the gear row (inside the map's top padding)
+    2: { x: -10, y: 300 }, // centre just off the left edge, face half on screen
+    3: { x: 200, y: 650 }, // behind the card
+  };
+  const hints = edgeHints(dogs, points, view);
+  expect(hints.flatMap(hint => hint.slaveIds)).toEqual([3]);
+});
