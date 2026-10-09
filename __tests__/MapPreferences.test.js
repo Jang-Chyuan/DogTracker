@@ -80,6 +80,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     alerts: DEFAULT_ALERT_PREFERENCES,
     // Saved before the first-launch guide existed: it counts as passed.
     onboarding: 'done',
+    askedPermissions: [],
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -134,8 +135,9 @@ test('every setting survives a new controller and shares no tracking-row writes'
       noDataCardDismissed: false,
       // S6: 不在接收範圍 and 接收器電量低 off, 聲音 on.
       alerts: { ...DEFAULT_ALERT_PREFERENCES, dogOutOfRange: false, receiverBattery: false, sound: true },
-      // D1 passed (「稍後再說」).
+      // D1 passed (「稍後再說」), D2 asked, the camera not yet.
       onboarding: 'done',
+      askedPermissions: ['nearby', 'location', 'camera'],
     };
     await first.save(value);
     await first.close();
@@ -246,6 +248,13 @@ test('the first-launch guide: nothing saved starts at D1; it is kept until passe
     expect(changed.mock.calls.at(-1)[0].value).toMatchObject({ onboarding: 'done', windowMinutes: 10 });
     // A damaged value never sends anyone back to D1.
     expect(validateTrackingPreferences({ onboarding: 'D7' }).onboarding).toBe('done');
+    // Every step of the guide is kept as saved (中途退出下次從那步繼續).
+    for (const step of ['signIn', 'permissions', 'receiver', 'paired', 'done']) {
+      expect(validateTrackingPreferences({ onboarding: step }).onboarding).toBe(step);
+    }
+    expect(validateTrackingPreferences({ askedPermissions: ['camera', 'gps', 'nearby'] }).askedPermissions)
+      .toEqual(['nearby', 'camera']);
+    expect(validateTrackingPreferences({ askedPermissions: 'yes' }).askedPermissions).toEqual([]);
   } finally {
     connection.close();
   }

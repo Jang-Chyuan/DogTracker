@@ -27,8 +27,12 @@ jest.mock('../src/auth/AuthProvider', () => ({
 }));
 
 jest.mock('../src/ble/BleService', () => ({
+  DEFAULT_BLE_CONFIG: { bleName: 'DogGPS-Master3', serviceUuid: '7f510001-6d9e-4e2f-a671-8f3f2d49a001' },
   createBleService: jest.fn(() => ({
     connect: jest.fn(async () => true),
+    scan: jest.fn(async () => {}),
+    stopScan: jest.fn(),
+    bluetoothState: jest.fn(async () => 'PoweredOn'),
     disconnect: jest.fn(),
     isConnected: jest.fn(() => false),
     restoreBackground: jest.fn(async () => null),
@@ -177,13 +181,15 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(text()).not.toContain('#111827');
   expect(text()).toContain('DogTracker 3.0.0');
   // S2 接收器: nothing set up yet → 「還沒設定接收器」, 「連接接收器」 opens
-  // the QR scan; back returns to S2, then to S1.
+  // D3 (no guide progress, no old dark page); back returns to S2, then to S1.
   await tap('settings-row-receiver');
   expect(title()).toBe('返回，接收器');
   expect(text()).toContain('還沒設定接收器');
   await tap('receiver-connect');
-  expect(title()).toBe('返回，連接接收器');
-  expect(text()).toContain('自動 BLE QR Code 掃描');
+  expect(renderer.root.findAllByProps({ testID: 'pair-scan' }).length).toBeGreaterThan(0);
+  expect(progressBar()).toBe(false);
+  expect(text()).not.toContain('自動 BLE QR Code 掃描');
+  expect(text()).not.toContain('#0f172a');
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，接收器');
   expect(ble.disconnect).not.toHaveBeenCalled();
@@ -690,6 +696,14 @@ function usedBefore() {
     .run(JSON.stringify({ mode: 'real', windowMinutes: 2 }));
 }
 
+const page = id => renderer.root.findAllByProps({ testID: id }).length > 0;
+// Android 14: 附近的裝置, 精確位置, 通知 (判定表「權限和 Android 版本」).
+function android14() {
+  const original = Platform.Version;
+  Object.defineProperty(Platform, 'Version', { configurable: true, value: 34 });
+  return () => Object.defineProperty(Platform, 'Version', { configurable: true, value: original });
+}
+
 test('first launch, signed out: D1 with the guide progress; 稍後再說 opens the map and is remembered', async () => {
   freshInstall();
   mockAuth = { loading: false, user: null, available: true };
@@ -710,12 +724,126 @@ test('first launch, signed out: D1 with the guide progress; 稍後再說 opens t
   await press('稍後再說');
   await advance(100);
   expect(signInPage()).toBe(false);
+  // D2 next (step 2), D3 after it (step 3); 稍後再說 on both ends on the map.
+  expect(page('permissions-page')).toBe(true);
+  expect(preferences().onboarding).toBe('permissions');
+  await press('稍後再說');
+  await advance(100);
+  expect(page('pair-scan')).toBe(true);
+  expect(preferences().onboarding).toBe('receiver');
+  expect(text()).toContain('打開接收器電源，掃描機身上的 QR Code。');
+  await press('稍後再說');
+  await advance(100);
+  expect(page('pair-scan')).toBe(false);
   expect(NativeTrackingPlatform.claimLocationPermissionPrompt).toHaveBeenCalled();
   expect(preferences().onboarding).toBe('done');
   await act(async () => renderer.unmount());
   await mount();
   await advance(100);
   expect(signInPage()).toBe(false);
+  expect(page('permissions-page')).toBe(false);
+});
+
+test('D2 asks one permission after another, then 下一步; leaving midway resumes at that step', async () => {
+  const restoreVersion = android14();
+  try {
+    freshInstall();
+    mockAuth = { loading: false, user: null, available: true };
+    const { PERMISSIONS } = PermissionsAndroid;
+    const granted = new Set();
+    jest.spyOn(PermissionsAndroid, 'check').mockImplementation(async name => granted.has(name));
+    // 附近的裝置 allowed, location only 大概, notifications refused.
+    const request = jest.spyOn(PermissionsAndroid, 'requestMultiple').mockImplementation(async names => {
+      for (const name of names) {
+        if (name === PERMISSIONS.BLUETOOTH_SCAN || name === PERMISSIONS.BLUETOOTH_CONNECT
+          || name === PERMISSIONS.ACCESS_COARSE_LOCATION) granted.add(name);
+      }
+      return {};
+    });
+    await mount();
+    await advance(100);
+    await press('稍後再說');
+    await advance(100);
+    expect(page('permissions-page')).toBe(true);
+    for (const words of ['App 需要這些權限', '附近的裝置', '連接接收器', '精確位置', '算出狗離你多遠、記錄你的路線', '通知',
+      '狗出問題時提醒你（可以不開）', '全部允許', '稍後再說']) expect(text()).toContain(words);
+    // Quit on D2: the next start continues on D2.
+    await act(async () => renderer.unmount());
+    await mount();
+    await advance(100);
+    expect(signInPage()).toBe(false);
+    expect(page('permissions-page')).toBe(true);
+    // Each row shows 「詢問中…」 a moment before its system question.
+    await act(async () => { button('全部允許').props.onPress(); });
+    await advance(1000);
+    // One system question per row, in order.
+    expect(request.mock.calls.map(call => call[0])).toEqual([
+      [PERMISSIONS.BLUETOOTH_SCAN, PERMISSIONS.BLUETOOTH_CONNECT],
+      [PERMISSIONS.ACCESS_FINE_LOCATION, PERMISSIONS.ACCESS_COARSE_LOCATION],
+      [PERMISSIONS.POST_NOTIFICATIONS]]);
+    expect(text()).toContain('只給了大概位置，算不出距離');
+    expect(text()).toContain('未允許');
+    expect(text()).toContain('開系統設定 ›');
+    expect(text()).not.toContain('全部允許');
+    expect(preferences().askedPermissions).toEqual(['nearby', 'location', 'notifications']);
+    // 開系統設定 › opens this app's settings; back in the app every row is
+    // checked again.
+    await tap('permission-location-settings');
+    expect(Linking.openSettings).toHaveBeenCalled();
+    granted.add(PERMISSIONS.ACCESS_FINE_LOCATION);
+    await act(async () => onAppState('active'));
+    await advance(100);
+    expect(text()).not.toContain('只給了大概位置');
+    // Back on D2 goes to D1 (the guide's step before), and a restart is D1.
+    await act(async () => expect(onBack()).toBe(true));
+    expect(signInPage()).toBe(true);
+    expect(preferences().onboarding).toBe('signIn');
+  } finally {
+    restoreVersion();
+  }
+});
+
+test('D3 in the guide: a QR code finds and connects its receiver, D4 lists the sources, 開始使用 ends on the map', async () => {
+  const restoreVersion = android14();
+  try {
+    freshInstall();
+    mockAuth = { loading: false, user: null, available: true };
+    jest.spyOn(PermissionsAndroid, 'check').mockResolvedValue(true);
+    await mount();
+    await advance(100);
+    await press('稍後再說');
+    await press('下一步');
+    await advance(100);
+    expect(page('pair-scan')).toBe(true);
+    // The camera is asked for once the page is on screen.
+    const scan = renderer.root.findAll(node => node.props.testID === 'pair-scan'
+      && typeof node.props.onLayout === 'function')[0];
+    await act(async () => scan.props.onLayout({ nativeEvent: { layout: {} } }));
+    const camera = renderer.root.findAll(node => node.props.testID === 'qr-camera'
+      && typeof node.props.onScan === 'function')[0];
+    expect(camera).toBeDefined();
+    // Not a receiver's QR code: D3b.
+    await act(async () => camera.props.onScan({ nativeEvent: { value: 'https://example.com' } }));
+    expect(text()).toContain('這不是接收器的 QR Code');
+    await tap('guide-dialog-rescan');
+    // Receiver 7's code: found by its name, connected as Master 7.
+    const device = { id: 'AA:BB:CC:00:00:07', name: 'DogGPS-Master7', rssi: -60 };
+    ble.scan.mockImplementation(async (config, onStatus, onDevice) => { onDevice(device); });
+    ble.connect.mockImplementation(async () => true);
+    await act(async () => camera.props.onScan({ nativeEvent: { value: JSON.stringify({ v: 1, masterId: 7,
+      bleName: 'DogGPS-Master7', serviceUuid: '7f510001-6d9e-4e2f-a671-8f3f2d49a001' }) } }));
+    await advance(100);
+    expect(ble.connect).toHaveBeenCalledWith(device, expect.any(Function), expect.any(Function),
+      expect.objectContaining({ bleName: 'DogGPS-Master7', masterId: 7 }));
+    expect(page('paired-page')).toBe(true);
+    expect(text()).toContain('開始使用');
+    await press('開始使用');
+    await advance(100);
+    expect(page('paired-page')).toBe(false);
+    expect(preferences().onboarding).toBe('done');
+  } finally {
+    restoreVersion();
+  }
 });
 
 test('first launch: the back key on D1 leaves the app, and the next start is D1 again', async () => {

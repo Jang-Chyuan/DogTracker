@@ -1,6 +1,6 @@
 import { getErrorMessage } from '../utils/errors';
 import { DEFAULT_ALERT_PREFERENCES, normalizeAlertPreferences } from '../alerts/AlertPreferences';
-import { ONBOARDING_DONE, ONBOARDING_SIGN_IN } from '../app/Launch';
+import { ONBOARDING_DONE, ONBOARDING_SIGN_IN, ONBOARDING_STEPS } from '../app/Launch';
 
 // Home map presets, confirmed 2026-09-16: minutes for working close to the
 // dog, hours for reviewing the outing. 24 hours is the upper bound of the home
@@ -20,7 +20,14 @@ export const DEFAULT_TRACKING_PREFERENCES = Object.freeze({
   // The first-launch guide (Launch.js): a phone that saved nothing yet starts
   // at D1 ('signIn'); a saved row from before the guide existed is 'done'.
   onboarding: ONBOARDING_DONE,
+  // The system questions the guide has asked (D2 「全部允許」, D3 when D2 was
+  // skipped): 'nearby', 'location', 'notifications', 'camera'. One refused
+  // after it was asked says 「未允許」 / 「需要相機才能掃描」 with 「開系統設定 ›」,
+  // never a second system question.
+  askedPermissions: [],
 });
+
+export const ASKABLE_PERMISSIONS = Object.freeze(['nearby', 'location', 'notifications', 'camera']);
 
 // Saved by versions before v3, which had a dog to follow and dogs hidden one by
 // one. v3 has neither (every dog is drawn, the map never follows): the fields
@@ -52,7 +59,10 @@ export function validateTrackingPreferences(value) {
     // Missing before v3 (051b); a damaged value falls back to the defaults
     // rather than failing every other preference.
     alerts: normalizeAlertPreferences(settings.alerts),
-    onboarding: settings.onboarding === ONBOARDING_SIGN_IN ? ONBOARDING_SIGN_IN : ONBOARDING_DONE,
+    onboarding: ONBOARDING_STEPS.includes(settings.onboarding) ? settings.onboarding : ONBOARDING_DONE,
+    // Missing before 053; anything not a known question is dropped.
+    askedPermissions: Array.isArray(settings.askedPermissions)
+      ? ASKABLE_PERMISSIONS.filter(id => settings.askedPermissions.includes(id)) : [],
   };
 }
 

@@ -15,7 +15,6 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { useTrackingSession } from './src/app/useTrackingSession';
-import HardwareScreen from './src/screens/HardwareScreen';
 import { handleRootBack } from './src/app/handleRootBack';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
@@ -62,7 +61,15 @@ import { colors, layout, touch, type } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
 import { holdSplash, launchInto } from './src/app/hideSplash';
-import { launchScreen, leaveSignIn, ONBOARDING_DONE, ONBOARDING_SIGN_IN, signInStack } from './src/app/Launch';
+import { GUIDE_STEP_OF, guideStack, launchScreen, leaveSignIn, ONBOARDING_DONE, ONBOARDING_PAIRED,
+  ONBOARDING_RECEIVER, ONBOARDING_SIGN_IN, signInStack } from './src/app/Launch';
+import { useReceiverService } from './src/ble/useReceiverService';
+import PermissionsScreen from './src/onboarding/PermissionsScreen';
+import { usePermissionsGuide } from './src/onboarding/usePermissionsGuide';
+import PairingScreen from './src/onboarding/PairingScreen';
+import PairedScreen from './src/onboarding/PairedScreen';
+import { usePairing } from './src/onboarding/usePairing';
+import { pairedPage, pairingFlow } from './src/onboarding/Pairing';
 import LoginScreen from './src/screens/LoginScreen';
 import StartFailedScreen, { START_FAILED_TITLE } from './src/screens/StartFailedScreen';
 
@@ -116,19 +123,25 @@ const PAGE_TITLES = {
   locationRecords: '記錄清單',
   wifi: '接收器 Wi-Fi',
 };
-// Pages of their own, without the 「‹ 標題」 header: D1 登入 and D0's
-// failure screen.
-const FULL_PAGES = new Set(['signIn', 'startFailed']);
-const pageTitle = route => (route.name === 'hardware' ? '連接接收器' : PAGE_TITLES[route.name] || '設定');
-// The v3 settings pages (light). The receiver scan (hardware) keeps its old
-// dark look until D3 (053) replaces it; it is the only old page left.
+// Pages of their own, without the 「‹ 標題」 header: the first-use pages
+// (D1 登入, D2 權限, D3 連接接收器, D4 完成) and D0's failure screen.
+const FULL_PAGES = new Set(['signIn', 'permissions', 'pair', 'paired', 'startFailed']);
+const pageTitle = route => PAGE_TITLES[route.name] || '設定';
+// The v3 settings pages (light).
 const LIGHT_PAGES = new Set(['settings', 'receiver', 'phone', 'cloud', 'alerts', 'diagnostics', 'advanced',
   'liveData', 'cloudData', 'locationRecords', 'wifi']);
 // The page under each settings page (a fixture opens the whole way there).
 const PARENT_PAGES = { liveData: 'diagnostics', cloudData: 'diagnostics', locationRecords: 'diagnostics',
   wifi: 'advanced' };
+// A fixture on a page of the guide opens it as the guide has it (D2 → D3 →
+// D4, with the progress bar).
+const GUIDE_FIXTURE_PAGES = ['permissions', 'pair', 'paired'];
 const stackTo = page => {
   if (page === 'settings') return [{ name: 'map' }, { name: 'settings' }];
+  if (GUIDE_FIXTURE_PAGES.includes(page)) {
+    return [{ name: 'map' }, ...GUIDE_FIXTURE_PAGES.slice(0, GUIDE_FIXTURE_PAGES.indexOf(page) + 1)
+      .map(name => ({ name, entry: 'onboarding' }))];
+  }
   const parent = PARENT_PAGES[page];
   return [{ name: 'map' }, { name: 'settings' }, ...(parent ? [{ name: parent }] : []), { name: page }];
 };
@@ -175,8 +188,11 @@ function TrackerApp({ resume = null, onRestart }) {
   // What the start opened on (Launch.launchScreen), once decided: { key:
   // 'live' or the fixture shown, screen }.
   const [launch, setLaunch] = useState({ key: null, screen: null });
-  // The hardware page keeps its own back stack: its header back is passed in.
-  const [hardwareBack, setHardwareBack] = useState(0);
+  // D3 keeps its own back steps (a dialog, D3c → D3a, 取消): App's back key
+  // asks it first.
+  const pairBack = useRef(null);
+  // Back on the map from D3 opened by A6: frame the new receiver's dogs.
+  const [frameRequest, setFrameRequest] = useState(null);
   // The dog whose history 看軌跡 opened: back on the live map, its card opens
   // again (design: history from a dog's card returns to that card).
   const [cardHistory, setCardHistory] = useState(null);
@@ -189,8 +205,10 @@ function TrackerApp({ resume = null, onRestart }) {
     setCardHistory(null);
     setStack(current => (current.length > 1 ? current.slice(0, -1) : current));
   };
-  // The receiver scan opened for `screen` ('scan', 'qr').
-  const openHardware = screen => open('hardware', { entry: { screen, key: Date.now() } });
+  // D3 連接接收器 from `entry` (Pairing.pairingFlow): S2 ('receiver', with
+  // its mode), A6 ('map'), a mismatch dialog ('alert'; `view` 'manual' when
+  // the receiver was typed in) or the guide ('onboarding').
+  const openPairing = (entry, mode = 'first', view = 'scan') => open('pair', { entry, mode, view, key: Date.now() });
   const isMap = route.name === 'map';
   const isHistory = route.name === 'history';
   // Both tabs draw on the same persistent map layer; only one of them is live.
@@ -220,7 +238,7 @@ function TrackerApp({ resume = null, onRestart }) {
   const cloudDogs = useCloudDogs(tracking.cloudDatabase, cloudSync.ownerId,
     tracking.ready.real,
     undefined, null, { active: tracking.foreground && (showsMap || route.name === 'receiver'
-      || route.name === 'diagnostics') && !fixture, revision: cloudSync.revision });
+      || route.name === 'diagnostics' || route.name === 'paired') && !fixture, revision: cloudSync.revision });
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   const mapInputs = applyScreenFixture(isHistory ? null : fixture,
@@ -233,18 +251,25 @@ function TrackerApp({ resume = null, onRestart }) {
       permissions, upload,
       account: { signedIn: !!auth.user, email: auth.user?.email || '' } }, fixtureEdits);
   // ---- the receiver, for the map and the settings pages ------------------
-  const settingsOpen = LIGHT_PAGES.has(route.name) || route.name === 'hardware';
+  const settingsOpen = LIGHT_PAGES.has(route.name);
   const settingsClock = useMapClock(tracking.foreground && settingsOpen && !fixture);
   const now = fixture ? fixture.now : settingsClock;
   const receiverState = useReceiverState(tracking.foreground && !isHistory, fixture?.readReceiverState);
   const receiverWait = useRef(null);
   receiverWait.current = trackReceiverWait(receiverWait.current, receiverState,
     fixture ? fixture.now : Date.now());
-  const receiverControl = useReceiverControl({ receiverState, onRescan: () => openHardware('qr') });
+  // A receiver set up in D3 that turns out to be another Master: 重新掃描 /
+  // 重新搜尋 opens D3 again over the page the user is on.
+  const receiverControl = useReceiverControl({ receiverState,
+    onRescan: method => openPairing('alert', 'first', method === 'manual' ? 'manual' : 'scan') });
+  // The receiver's background work (it was the old scan page's): restoring
+  // the service, the JS-side packets, the native storage error.
+  const receiverService = useReceiverService({ dogDatabase: tracking.hardwareDatabase, enabled: tracking.ready.real,
+    onStorageError: tracking.reportNativeWriteError });
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
     if (id === 'receiver-settings') open('receiver');
-    else if (id === 'connect-receiver') openHardware('scan');
+    else if (id === 'connect-receiver') openPairing('map');
     // 診斷 (S8) starts with the reason.
     else if (id === 'storage-reason') open('diagnostics');
     // A6 「登入 Supabase」: D1, back on the map afterwards.
@@ -283,7 +308,11 @@ function TrackerApp({ resume = null, onRestart }) {
     // (A fixture opening a settings page has set its own stack.)
     if (leaving && fixturePage) return;
     if (decided === 'failed') setStack([{ name: 'startFailed' }]);
-    else if (decided === 'onboarding' || decided === 'expired') setStack(signInStack(decided));
+    else if (decided === 'expired') setStack(signInStack(decided));
+    // The guide continues at its saved step (D1, D2 or D3).
+    else if (decided === 'onboarding') {
+      setStack(guideStack(launchInput.onboarding, { signedIn: !!launchInput.signedIn }));
+    }
     else if ((fixture?.launch || leaving) && !fixturePage) setStack([{ name: 'map' }]);
     if (leaving) return;
     if (launchKey !== 'live') {
@@ -304,13 +333,71 @@ function TrackerApp({ resume = null, onRestart }) {
     // liveLaunch and fixture are read at the moment of the decision only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decided, launchKey, launch.key]);
+  // The guide's step, saved as it moves forward (a fixture's in memory only).
+  const saveGuideStep = step => {
+    Promise.resolve(mapInputs.tracking.saveTrackingPreferences?.({ onboarding: step })).catch(() => {});
+  };
   // D1's ways out (判定表「D1 的四種入口」): 'done', 'later', 'back'.
   const leaveSignInPage = how => {
     const result = leaveSignIn(route.entry, how);
     if (result.exit) { BackHandler.exitApp(); return; }
-    if (result.finishOnboarding) {
-      Promise.resolve(mapInputs.tracking.saveTrackingPreferences?.({ onboarding: ONBOARDING_DONE }))
-        .catch(() => {});
+    if (result.next) {
+      saveGuideStep(result.next);
+      // Signed in, D1 has nothing left to show: back from D2 does not
+      // return to it (it leaves the app, as on D1).
+      if (how === 'done') setStack(current => [...current.slice(0, -1), { name: 'permissions', entry: 'onboarding' }]);
+      else open('permissions', { entry: 'onboarding' });
+      return;
+    }
+    goBack();
+  };
+  // The guide ends on the map (D3 「稍後再說」, D4 「開始使用」); A6 shows when
+  // there is no dog data.
+  const finishGuide = () => {
+    saveGuideStep(ONBOARDING_DONE);
+    setStack([{ name: 'map' }]);
+  };
+  // Back in the guide: the step before (saved, so a restart continues there),
+  // or out of the app from its first page.
+  const guideBack = () => {
+    if (stack.length <= 2) { BackHandler.exitApp(); return; }
+    const before = stack[stack.length - 2];
+    const step = GUIDE_STEP_OF[before.name];
+    if (step && !fixture) saveGuideStep(step);
+    goBack();
+  };
+  // D2 → D3 (下一步 and 稍後再說 alike). The map does not ask for location by
+  // itself afterwards: D2 asked, or the user chose to leave it (S4 has it).
+  const permissionsNext = () => {
+    if (route.entry === 'onboarding' && !fixture) {
+      saveGuideStep(ONBOARDING_RECEIVER);
+      Promise.resolve(NativeTrackingPlatform?.claimLocationPermissionPrompt?.()).catch(() => {});
+    }
+    openPairing(route.entry === 'onboarding' ? 'onboarding' : 'receiver');
+  };
+  // D3 set up a receiver (or 下一步 back on D3): D4 in the guide, otherwise
+  // back where D3 was opened. Its first packet is still watched for another
+  // Master (a first set up, or a change taken before its first packet).
+  const pairConnected = ({ number, method, previous, kept, again }) => {
+    const flow = pairingFlow(route.entry, route.mode);
+    if (!again && number != null && !fixture && (!flow.waitForData || kept)) {
+      receiverControl.watchSwitch(number, { previous: kept ? previous : null, session: null, method });
+    }
+    if (flow.guide) {
+      saveGuideStep(ONBOARDING_PAIRED);
+      open('paired', { entry: 'onboarding' });
+      return;
+    }
+    if (route.entry === 'map') setFrameRequest({ key: Date.now(), receiverId: number });
+    goBack();
+  };
+  // Out of D3 without a new receiver: 稍後再說 ends the guide; otherwise back
+  // where it was opened (the guide's back goes to D2).
+  const pairLeave = how => {
+    if (route.entry === 'onboarding') {
+      if (how === 'later') finishGuide();
+      else guideBack();
+      return;
     }
     goBack();
   };
@@ -364,13 +451,14 @@ function TrackerApp({ resume = null, onRestart }) {
     && (upload.counts || []).some(row => row.status === 'pending' && Number(row.count) > 0);
 
   useEffect(() => {
-    // HardwareScreen owns its nested scan/connect back stack.
-    if (route.name === 'hardware') return undefined;
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
         if (route.name === 'map') handleRootBack({ uploading });
         else if (route.name === 'signIn') leaveSignInPage('back');
+        // D3's own steps first (a dialog, D3c, a connection), then out.
+        else if (route.name === 'pair') pairBack.current?.();
+        else if (route.entry === 'onboarding') guideBack();
         // Nothing under the failure screen: back leaves the app.
         else if (route.name === 'startFailed') BackHandler.exitApp();
         else goBack();
@@ -380,7 +468,7 @@ function TrackerApp({ resume = null, onRestart }) {
     return () => subscription.remove();
     // goBack reads route and cardHistory, both listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route, cardHistory, uploading]);
+  }, [route, cardHistory, uploading, stack.length]);
 
   let page = null;
   switch (route.name) {
@@ -391,6 +479,24 @@ function TrackerApp({ resume = null, onRestart }) {
         expired={route.entry === 'expired' || (route.entry === 'cloud' && !!mapInputs.signInExpired)}
         onDone={() => leaveSignInPage('done')} onLater={() => leaveSignInPage('later')}
         onLayout={() => launchInto('page')} />;
+      break;
+    case 'permissions':
+      // D2, in the guide (step 2 of 4).
+      page = <PermissionsRoute key={fixtureName ?? 'live'} tracking={mapInputs.tracking} fixture={fixture}
+        step={route.entry === 'onboarding' ? 2 : null} onNext={permissionsNext}
+        onLayout={() => launchInto('page')} />;
+      break;
+    case 'pair':
+      // D3, from the guide, S2, A6 or a mismatch dialog (Pairing.pairingFlow).
+      page = <PairRoute key={`${route.key ?? 'guide'}-${fixtureName ?? 'live'}`} route={route}
+        tracking={mapInputs.tracking} receiverState={receiverState} service={receiverService}
+        restore={receiverControl.restore} locationServices={mapInputs.phone?.services} fixture={fixture}
+        backRef={pairBack} onConnected={pairConnected} onLeave={pairLeave} onLayout={() => launchInto('page')} />;
+      break;
+    case 'paired':
+      // D4 / D4b: what this receiver has sent so far.
+      page = <PairedScreen page={pairedPage(receiverNumber(receiverState), mapInputs.cloudDogs?.packets)}
+        step={route.entry === 'onboarding' ? 4 : null} onStart={finishGuide} onLayout={() => launchInto('page')} />;
       break;
     case 'startFailed':
       page = <StartFailedScreen onRetry={retryStart} onDiagnostics={() => open('diagnostics')}
@@ -437,8 +543,8 @@ function TrackerApp({ resume = null, onRestart }) {
     case 'receiver':
       page = <ReceiverSettings page={receiverPage(settingsData)}
         onDisconnect={receiverControl.disconnect} onReconnect={receiverControl.reconnect}
-        onRescan={() => { receiverControl.disconnect(); openHardware('qr'); }}
-        onChange={() => openHardware('qr')} onConnect={() => openHardware('qr')} />;
+        onRescan={() => { receiverControl.disconnect(); openPairing('receiver', 'rescan'); }}
+        onChange={() => openPairing('receiver', 'change')} onConnect={() => openPairing('receiver')} />;
       break;
     case 'alerts':
       // 「開系統設定 ›」 opens this app's notification settings.
@@ -475,21 +581,20 @@ function TrackerApp({ resume = null, onRestart }) {
       style={[styles.safeArea, (light || full) && styles.page]}
       edges={showsMap ? [] : ['top', 'bottom', 'left', 'right']}
     >
-      <StatusBar barStyle={showsMap || light || full ? 'dark-content' : 'light-content'}
-        backgroundColor={light || full ? colors.surface : undefined} />
-      {!showsMap && !full && (
-        // No bottom tabs (v3): every page off the map says where it is and
+      <StatusBar barStyle="dark-content" backgroundColor={light || full ? colors.surface : undefined} />
+      {light && (
+        // No bottom tabs (v3): every settings page says where it is and
         // goes back the way the back key does (「‹ 標題」).
-        <View style={[styles.header, light && styles.lightHeader]}>
+        <View style={styles.header}>
           <Pressable
             testID="page-back"
             accessibilityRole="button"
             accessibilityLabel={`返回，${pageTitle(route)}`}
-            onPress={() => (route.name === 'hardware' ? setHardwareBack(value => value + 1) : goBack())}
+            onPress={goBack}
             hitSlop={8}
             style={({ pressed }) => [styles.back, pressed && styles.pressed]}
           >
-            <Text style={[styles.brand, light && styles.lightBrand]}>{`‹ ${pageTitle(route)}`}</Text>
+            <Text style={styles.brand}>{`‹ ${pageTitle(route)}`}</Text>
           </Pressable>
         </View>
       )}
@@ -531,6 +636,7 @@ function TrackerApp({ resume = null, onRestart }) {
           receiver={{ state: isHistory ? null : receiverState, wait: receiverWait.current }}
           onAlertAction={alertAction}
           openDogRequest={openDogRequest}
+          frameRequest={frameRequest}
           onOpenHistory={slaveId => {
             setCardHistory(slaveId);
             open('history');
@@ -544,42 +650,45 @@ function TrackerApp({ resume = null, onRestart }) {
           keeps it out of the status bar and navigation bar insets. */}
       {!showsMap && <View testID="map-cover" pointerEvents="none"
         style={[StyleSheet.absoluteFill, styles.mapCover, (light || full) && styles.page]} />}
-      {tracking.ready.real && (
-        <HardwareScreen
-          dogDatabase={tracking.hardwareDatabase}
-          onStorageError={tracking.reportNativeWriteError}
-          active={route.name === 'hardware'}
-          entry={route.name === 'hardware' ? route.entry : null}
-          onBack={goBack}
-          onConnected={goBack}
-          onConnectFailed={receiverControl.switchFailed}
-          onQrTarget={receiverControl.watchSwitch}
-          onMismatch={receiverControl.reportMismatch}
-          backRequest={hardwareBack}
-        />
-      )}
       {(light || full) && <View style={styles.page}>{page}</View>}
     </SafeAreaView>
   );
 }
 
+// D2, asking for real (or drawing a fixture's rows).
+function PermissionsRoute({ tracking, fixture, step, onNext, onLayout }) {
+  const prefs = tracking.preferences?.value || {};
+  const guide = usePermissionsGuide({ asked: prefs.askedPermissions || [],
+    fixture: fixture?.permissionsGuide ?? null,
+    onAsked: list => tracking.saveTrackingPreferences?.({ askedPermissions: list }) });
+  return <PermissionsScreen page={guide} step={step} onNext={onNext} onSystemSettings={() => Linking.openSettings()}
+    onLayout={onLayout} />;
+}
+
+// D3 for one opening (route.key): usePairing with this app's receiver.
+function PairRoute({ route, tracking, receiverState, service, restore, locationServices, fixture, backRef,
+  onConnected, onLeave, onLayout }) {
+  const flow = pairingFlow(route.entry, route.mode);
+  const prefs = tracking.preferences?.value || {};
+  const pairing = usePairing({ flow, receiverState, service, restore,
+    asked: prefs.askedPermissions || [],
+    onAsked: list => tracking.saveTrackingPreferences?.({ askedPermissions: list }),
+    locationServices, fixture: fixture?.pairing ?? null, initialView: route.view || 'scan', onConnected, onLeave });
+  backRef.current = pairing.back;
+  return <PairingScreen pairing={pairing} step={flow.guide ? 3 : null} camera={!fixture} onLayout={onLayout} />;
+}
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0f172a' },
-  mapLayer: { backgroundColor: '#0f172a' },
+  // No dark slab anywhere (v3): the old dark pages' navy is gone.
+  safeArea: { flex: 1, backgroundColor: colors.surface },
+  mapLayer: { backgroundColor: colors.surface },
   hiddenMapLayer: { opacity: 0, zIndex: -1 },
-  mapCover: { backgroundColor: '#0f172a', zIndex: -1 },
-  header: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderBottomColor: '#334155',
-    borderBottomWidth: 1,
-  },
+  mapCover: { backgroundColor: colors.surface, zIndex: -1 },
+  // The settings pages: a 56dp header 「‹ 標題」 over the page colour.
+  header: { backgroundColor: colors.surface, minHeight: touch.subpageHeader, justifyContent: 'center',
+    paddingHorizontal: 8, paddingVertical: 4 },
   back: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 8, alignSelf: 'flex-start' },
   pressed: { opacity: 0.7 },
-  brand: { color: '#f8fafc', fontSize: 18, fontWeight: '700' },
-  // The v3 pages: a light 56dp header 「‹ 標題」 over the page colour.
-  lightHeader: { backgroundColor: colors.surface, borderBottomWidth: 0, minHeight: touch.subpageHeader,
-    justifyContent: 'center', paddingHorizontal: 8 },
-  lightBrand: { ...type.title, color: colors.text },
+  brand: { ...type.title, color: colors.text },
   page: { flex: 1, backgroundColor: colors.surface },
 });

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAuth } from '../auth/AuthProvider';
 import { colors, opacity, radius, space, type } from '../theme/tokens';
+import { GuideProgress } from '../onboarding/GuideUI';
 
 // What a failed sign-in says (D1): wrong account details under the fields
 // (c274), no network (c275) with 「重試」; anything else is its own message.
@@ -15,9 +16,6 @@ export function signInErrorText(failure) {
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// The first-launch guide's steps: D1 登入, D2 權限, D3 接收器, D4 完成.
-const GUIDE_STEPS = 4;
 
 /**
  * D1 登入 Supabase 帳號, a page of its own. Signing in is optional: 「稍後
@@ -107,14 +105,7 @@ export default function LoginScreen({ step = null, expired = false, onDone, onLa
       onLayout={onLayout}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-        {step ? (
-          <View testID="guide-progress" style={styles.progress} accessible
-            accessibilityLabel={`第 ${step} 步，共 ${GUIDE_STEPS} 步`}>
-            {Array.from({ length: GUIDE_STEPS }, (_, index) => (
-              <View key={index} style={[styles.segment, index < step && styles.segmentOn]} />
-            ))}
-          </View>
-        ) : <View style={styles.noProgress} />}
+        <GuideProgress step={step} />
         <Text accessibilityRole="header" style={styles.title}>登入 Supabase 帳號</Text>
         {expired ? <Text accessibilityRole="alert" style={styles.expired}>需要重新登入</Text> : null}
         <Text style={styles.body}>登入後會把收到的位置上傳，也能看到隊友的狗。不登入也可以用，只顯示這支手機連到的接收器。</Text>
@@ -173,11 +164,6 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
   scroll: { flex: 1 },
   content: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: space.l },
-  // The guide's progress: four 4dp bars, the steps done in accent.
-  progress: { flexDirection: 'row', gap: space.xs, marginBottom: space.xl },
-  segment: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.line },
-  segmentOn: { backgroundColor: colors.accent },
-  noProgress: { height: space.s },
   title: { ...type.headline, color: colors.text, marginBottom: space.s },
   expired: { ...type.status, color: colors.crit, marginBottom: space.s },
   body: { ...type.body, color: colors.textMuted, marginBottom: space.xl },

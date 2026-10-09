@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Alert, NativeModules, Platform } from 'react-native';
 import { sharedBleService } from '../ble/sharedBle';
-import { judgeSwitch, mismatchDialog, notChangedMessage, snapshotReceiver } from './ReceiverSwitch';
+import { judgeSwitch, mismatchDialog, snapshotReceiver } from './ReceiverSwitch';
 
 /**
- * Settings → 接收器 (S2): 中斷連線, 重新連線, and the watch over a change of
- * receiver (ReceiverSwitch). `receiverState` is the native state App polls;
- * `onRescan` opens the QR scan again.
+ * Settings → 接收器 (S2): 中斷連線, 重新連線, and the watch over a receiver
+ * D3 has just set up (ReceiverSwitch): until its first packet arrives, a
+ * packet from another Master disconnects it and says so wherever the user
+ * is. `receiverState` is the native state App polls; `onRescan(method)` opens
+ * D3 again ('qr' or 'manual', the way the receiver was chosen).
  */
 export function useReceiverControl({ receiverState, onRescan, ble = sharedBleService,
   native = Platform.OS === 'android' ? NativeModules.BleBackground : null }) {
-  // { target, previous, session } while a QR-chosen receiver has not sent its first packet.
+  // { target, previous, session, method } while a receiver chosen in D3 has
+  // not sent its first packet.
   const pending = useRef(null);
   const latest = useRef(receiverState);
   latest.current = receiverState;
@@ -35,38 +38,36 @@ export function useReceiverControl({ receiverState, onRescan, ble = sharedBleSer
   }, [ble, native]);
 
   const fail = useCallback(async mismatch => {
-    const { previous } = pending.current || {};
+    const { previous, method } = pending.current || {};
     pending.current = null;
     // Put the previous receiver back, switched off; on a first set up forget
     // the wrong one.
     await restore(previous);
-    const dialog = mismatchDialog(mismatch, previous);
+    const dialog = mismatchDialog(mismatch, previous, method);
     Alert.alert(dialog.title, dialog.message, dialog.buttons.map(button => ({
       text: button.label,
       style: button.id === 'later' ? 'cancel' : 'default',
       onPress: () => {
         if (button.id === 'reconnect') native?.reconnect?.().catch(() => {});
-        else if (button.id === 'rescan') rescan.current?.();
+        else if (button.id === 'rescan') rescan.current?.(method);
       },
     })), { cancelable: true });
   }, [native, restore]);
 
-  // The QR-chosen receiver did not connect: the change does not happen. The
-  // previous receiver comes back as it was (connected again if it was).
-  const switchFailed = useCallback(async () => {
-    if (!pending.current) return;
-    const { previous } = pending.current;
-    pending.current = null;
-    if (!previous) return;
-    await restore(previous);
-    if (previous.enabled) native?.reconnect?.().catch(() => {});
-    Alert.alert(notChangedMessage(previous));
-  }, [native, restore]);
-
-  // A QR code chose Master `target`: remember what to put back.
-  const watchSwitch = useCallback(target => {
-    pending.current = { target, previous: snapshotReceiver(latest.current),
-      session: latest.current?.sessionId ?? null };
+  /**
+   * D3 set up Master `target` ('qr' or 'manual' chose it): watch its first
+   * packet. `previous` is the receiver to put back if it is another Master
+   * (a snapshotReceiver, or null on a first set up: forgotten); `session` the
+   * native session before it, whose reports do not count. Without options
+   * the receiver in use now is remembered.
+   */
+  const watchSwitch = useCallback((target, options = {}) => {
+    pending.current = {
+      target,
+      previous: options.previous !== undefined ? options.previous : snapshotReceiver(latest.current),
+      session: options.session !== undefined ? options.session : latest.current?.sessionId ?? null,
+      method: options.method || 'qr',
+    };
   }, []);
   // The JS side saw another Master's packet (non-native fallback).
   const reportMismatch = useCallback(mismatch => {
@@ -80,5 +81,5 @@ export function useReceiverControl({ receiverState, onRescan, ble = sharedBleSer
     else if (verdict !== 'pending') fail(verdict);
   }, [receiverState, fail]);
 
-  return { disconnect, reconnect, watchSwitch, reportMismatch, switchFailed };
+  return { disconnect, reconnect, restore, watchSwitch, reportMismatch };
 }

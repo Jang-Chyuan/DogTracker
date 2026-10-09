@@ -1,4 +1,4 @@
-import { launchScreen, leaveSignIn, signInStack, RESTORE_TIMEOUT_MS } from '../src/app/Launch';
+import { guideStack, launchScreen, leaveSignIn, signInStack, RESTORE_TIMEOUT_MS } from '../src/app/Launch';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 
 const started = (changes = {}) => ({
@@ -27,15 +27,32 @@ test('first launch → D1; signed in (an update) → the map; 登入失效 at th
   expect(launchScreen(started({ expiredAtStart: true }))).toBe('expired');
 });
 
+test('the guide resumes where it was left (中途退出下次從中斷那步繼續), signed in or not', () => {
+  for (const step of ['permissions', 'receiver', 'paired']) {
+    expect(launchScreen(started({ onboarding: step }))).toBe('onboarding');
+    expect(launchScreen(started({ onboarding: step, signedIn: true }))).toBe('onboarding');
+  }
+  const names = stack => stack.map(page => `${page.name}:${page.entry ?? ''}`);
+  expect(names(guideStack('signIn'))).toEqual(['map:', 'signIn:onboarding']);
+  // Each page over the one before: back walks D3 → D2 → D1.
+  expect(names(guideStack('permissions'))).toEqual(['map:', 'signIn:onboarding', 'permissions:onboarding']);
+  expect(names(guideStack('receiver'))).toEqual(['map:', 'signIn:onboarding', 'permissions:onboarding',
+    'pair:onboarding']);
+  expect(names(guideStack('paired')).at(-1)).toBe('paired:onboarding');
+  // Signed in, D1 has nothing to show: not in the way back.
+  expect(names(guideStack('receiver', { signedIn: true }))).toEqual(['map:', 'permissions:onboarding',
+    'pair:onboarding']);
+});
+
 test('D1 four entries (判定表): where done, 稍後再說 and back lead', () => {
-  // First launch: next step (the map until 053), back leaves the app.
-  expect(leaveSignIn('onboarding', 'done')).toEqual({ exit: false, finishOnboarding: true });
-  expect(leaveSignIn('onboarding', 'later')).toEqual({ exit: false, finishOnboarding: true });
-  expect(leaveSignIn('onboarding', 'back')).toEqual({ exit: true, finishOnboarding: false });
+  // First launch: D2 next, back leaves the app.
+  expect(leaveSignIn('onboarding', 'done')).toEqual({ exit: false, next: 'permissions' });
+  expect(leaveSignIn('onboarding', 'later')).toEqual({ exit: false, next: 'permissions' });
+  expect(leaveSignIn('onboarding', 'back')).toEqual({ exit: true, next: null });
   // Expired at the start, S3, A6: all three close D1 onto what is under it.
   for (const entry of ['expired', 'cloud', 'map']) {
     for (const how of ['done', 'later', 'back']) {
-      expect(leaveSignIn(entry, how)).toEqual({ exit: false, finishOnboarding: false });
+      expect(leaveSignIn(entry, how)).toEqual({ exit: false, next: null });
     }
   }
   expect(signInStack('cloud').map(page => page.name)).toEqual(['map', 'settings', 'cloud', 'signIn']);
