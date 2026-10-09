@@ -126,6 +126,7 @@ describe('the marker view', () => {
     const marker = one(dog(6));
     const group = await render(<DogMarkerView marker={marker} tag={{ text: '3 隻', group: 3, problem: true }} />);
     expect(byId(group, 'dog-group-tag')).toHaveLength(1);
+    expect(Object.assign({}, ...[byId(group, 'dog-group-tag')[0].props.style].flat())).toMatchObject({ borderRadius: 999, paddingHorizontal: 8 });
     expect(byId(group, 'dog-group-problem')).toHaveLength(1);
     const none = await render(<DogMarkerView marker={marker} tag={null} />);
     expect(byId(none, 'dog-name-tag')).toHaveLength(0);

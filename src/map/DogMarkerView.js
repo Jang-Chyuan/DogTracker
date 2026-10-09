@@ -1,7 +1,8 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { PixelRatio, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { size as sizes, type, border, radius, space } from '../theme/tokens';
+import { size as sizes, type, border, space } from '../theme/tokens';
+import MapNameTag from './MapNameTag';
 import DogAvatar from '../dogs/DogAvatar';
 import { problemBadgePosition, houseBadgePosition } from './BadgeGeometry';
 
@@ -14,7 +15,8 @@ import { problemBadgePosition, houseBadgePosition } from './BadgeGeometry';
 // its own marker, anchored at `anchor` (the centre of the face is the dog's
 // position, there is no pointer).
 
-export const MARKER_WIDTH = sizes.marker.canvas;
+// D14: the widest name text plus the capsule's padding and border.
+export const MARKER_WIDTH = sizes.marker.textWidth + 2 * (sizes.mapLabel.paddingH + sizes.mapLabel.border);
 // Room above the face for the "!" badge reaching out of it.
 const TOP = sizes.marker.headroom;
 const { badge, marker: markerSize, mapLabel, groupTag } = sizes;
@@ -34,7 +36,9 @@ function tagArea() {
 export function markerFrame(faceSize) {
   const height = Math.ceil(TOP + faceSize + markerSize.labelGap + tagArea());
   return {
-    width: MARKER_WIDTH,
+    // Long indoor group text plus its optional problem dot must fit at 200%.
+    width: Math.max(MARKER_WIDTH, Math.ceil(8 * type.value.fontSize * fontScale() +
+      2 * (mapLabel.paddingH + mapLabel.border) + groupTag.problemDot + 6 + 8)),
     height,
     anchor: { x: 0.5, y: (TOP + faceSize / 2) / height },
   };
@@ -173,11 +177,7 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
               </Text>
             </View>
           ) : (
-            <View testID="dog-name-tag" style={styles.nameTag}>
-              <Text style={styles.nameText} numberOfLines={mapLabel.maxLines}>
-                {tag.text}
-              </Text>
-            </View>
+            <MapNameTag text={tag.text} maxWidth={MARKER_WIDTH - markerSize.labelSafety} />
           )}
         </View>
       )}
@@ -220,21 +220,11 @@ const getStyles = makeStyles(theme => {
     problem: { backgroundColor: colors.problemBadge },
     house: { backgroundColor: colors.receiver },
     tagRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-    nameTag: {
-      maxWidth: MARKER_WIDTH - sizes.marker.labelSafety,
-      paddingHorizontal: mapLabel.paddingH,
-      paddingVertical: mapLabel.paddingV,
-      borderRadius: radius.mapLabel,
-      borderWidth: border.hairline,
-      borderColor: colors.floatingOutline,
-      backgroundColor: colors.surface,
-    },
-    nameText: { ...type.mapLabel, color: colors.text, textAlign: 'center' },
     groupTag: {
       minHeight: groupTag.height,
-      paddingHorizontal: groupTag.paddingH,
-      borderRadius: radius.full,
-      borderWidth: border.hairline,
+      paddingHorizontal: mapLabel.paddingH,
+      borderRadius: mapLabel.radius,
+      borderWidth: mapLabel.border,
       borderColor: colors.floatingOutline,
       backgroundColor: colors.surface,
       flexDirection: 'row',

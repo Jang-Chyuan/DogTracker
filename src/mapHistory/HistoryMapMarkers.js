@@ -279,7 +279,7 @@ const getStyles = makeStyles(theme => {
     faceTag: {
       height: FACE_TAG,
       paddingHorizontal: sizes.mapLabel.paddingH,
-      borderRadius: radius.mapLabel,
+      borderRadius: sizes.mapLabel.radius,
       borderWidth: borders.hairline,
       borderColor: colors.floatingOutline,
       backgroundColor: colors.surface,

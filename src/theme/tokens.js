@@ -176,7 +176,7 @@ export const radius = {
   stayRow: 12,
   settingIcon: 10,
   cursorLabel: 10,
-  mapLabel: 6,
+  mapLabel: 999,
   dialog: 24,
 };
 
@@ -232,6 +232,8 @@ export const size = {
 
     // Dog marker bitmap canvas, shadow placement and stale-ring clearance (§15).
     canvas: 168,
+    // The widest name text in a tag (D14 MARKER_WIDTH adds the capsule).
+    textWidth: 156,
     headroom: 8,
     staleRingOutset: 3,
     selectedShadowDrop: 3,
@@ -249,9 +251,12 @@ export const size = {
     problemWeight: '900',
     cardWeight: '800',
   },
+  // D14: capsules (full radius), 12 when the name wraps to two lines.
   mapLabel: {
+    radius: radius.full,
+    radiusWrapped: 12,
     paddingV: 2,
-    paddingH: 6,
+    paddingH: 8,
     border: border.hairline,
     halo: 3,
     maxLines: 2,
@@ -267,7 +272,7 @@ export const size = {
   floatingButton: 48,
   chip: { height: 36, paddingH: 12, avatar: 20, leadBorder: border.strong },
   todayPill: { height: 48, paddingH: 16, iconGap: 6 },
-  groupTag: { height: 32, paddingH: 10, problemDot: 8 },
+  groupTag: { height: 32, paddingH: 8, problemDot: 8 },
   edgeHint: {
     height: 36,
     avatar: 24,
