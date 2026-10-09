@@ -60,6 +60,8 @@
 | `route2` | `#2F6FA8` | 狗的路線色槽 2 |
 | `route3` | `#4E8A2E` | 狗的路線色槽 3 |
 | `route4` | `#8A55B0` | 狗的路線色槽 4 |
+| `onRoute` | `#FFFFFF` | 多隻狗時歷史游標頭像畫在路線色上的線條（H7） |
+| `sheetHandle` | `#B9C3BD` | 底部小視窗、歷史面板上方的拖拉把手 |
 | `routeFaded` | `#7C8796` | 我的路線：範圍外的路線（淡虛線） |
 | `noDataLine` | `#C9CFCC` | 時間軸清單「沒資料」的長虛線 |
 | `mapLabelHalo` | `#FFFFFF` | 地圖上的文字外框（3dp），讓字在任何底圖上都看得清楚 |

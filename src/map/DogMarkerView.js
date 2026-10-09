@@ -72,7 +72,7 @@ function shadowFrame(size, selected, width) {
  * @param avatar the dog's chosen face (useDogAvatars), or undefined for the default
  */
 export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
-  const { size, problem, indoor, stale, selected } = marker;
+  const { size, problem, indoor, stale, selected, staleRing, tint } = marker;
   const frame = markerFrame(size);
   // Badges reach 4dp out of a 40dp face, 6dp out of 48dp, 8dp out of 56dp
   // (判定表「角標位移（選中時）」).
@@ -84,8 +84,11 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
       <View style={[styles.shadow, selected && styles.selectedShadow, shadowFrame(size, selected, frame.width)]} />
       <View style={[styles.face, { top: TOP, left: (frame.width - size) / 2, width: size, height: size,
         borderRadius: size / 2 }, selected && styles.selected]}>
+        {/* History (H7): another dog's face on its route colour; a grey dashed
+            ring while it has no data at the cursor's time. */}
         <DogAvatar avatar={avatar} size={size} stale={stale} border={markerSize.border} onLoad={onAvatarLoad}
-          snapshot />
+          snapshot tint={tint ? { bg: tint, line: colors.onRoute } : null} />
+        {staleRing && <View testID="dog-stale-ring" style={[styles.staleRing, { borderRadius: (size + 6) / 2 }]} />}
         {indoor && <HouseBadge offset={offset} size={size} />}
         {problem && <ProblemBadge offset={offset} />}
       </View>
@@ -111,6 +114,8 @@ const styles = StyleSheet.create({
   root: { overflow: 'visible' },
   face: { position: 'absolute', backgroundColor: '#FFFFFF' },
   selected: {},
+  staleRing: { position: 'absolute', top: -3, left: -3, right: -3, bottom: -3, borderWidth: 2, borderStyle: 'dashed',
+    borderColor: colors.staleRing },
   shadow: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.16)' },
   selectedShadow: { backgroundColor: 'rgba(0,0,0,0.22)' },
   badge: { position: 'absolute', width: badge.size, height: badge.size, borderRadius: badge.size / 2,

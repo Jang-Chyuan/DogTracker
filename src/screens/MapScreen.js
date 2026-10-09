@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HistoryScreen from '../mapHistory/HistoryScreen';
 import { panelLevels } from '../mapHistory/HistoryPanel';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
+import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -123,6 +124,8 @@ export default function MapScreen({
   // Bumped on every opening and closing, so a 看軌跡 save that finishes
   // after its card went away does not navigate.
   const cardGeneration = useRef(0);
+  // The history's protagonist switch (set below, once the screen exists).
+  const selectHistoryDog = useRef(null);
   const cardClosing = useRef(false);
   const [cardKey, setCardKey] = useState(0);
   const cardHeightChanged = useCallback(value => {
@@ -131,7 +134,8 @@ export default function MapScreen({
     setCardHeight(value);
   }, []);
   const openDog = useCallback(slaveId => {
-    if (historical) return;
+    // In history a face is another dog shown: it becomes the protagonist.
+    if (historical) { selectHistoryDog.current?.(slaveId); return; }
     cardGeneration.current += 1;
     if (cardClosing.current) {
       cardClosing.current = false;
@@ -333,11 +337,12 @@ export default function MapScreen({
     saveHistory({ ...historyPreferences, timeMode: 'fixed', startAt: dayStart, endAt: endOfDay(dayStart) });
   }, [saveHistory, historyPreferences]);
   const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
-    clock: fixtureClock, active: historical && active && tracking.foreground !== false,
+    clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
     recording: livePhone ? !!livePhone.running : null, onDayChange: followDay,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '', preset: fixture?.historyView ?? null,
     cloud: historyCloud?.cloud ?? null, online: historyCloud?.online !== false, cloudSeed: historyCloud?.seed ?? null });
+  selectHistoryDog.current = screen.selectDog;
   const window = useWindowDimensions();
   // A day downloading (H3c) or not finished keeps the half height.
   const historyEmpty = !!screen.model && !screen.model.dayRecords && !screen.download;
@@ -351,9 +356,34 @@ export default function MapScreen({
     // The live map is live only: what it draws is never decided by the
     // history's parameters.
     if (!historical) return { ...framedPresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
-    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], dogMarkers: [],
+    // Several dogs (H7): the others are faces at their cursor points, drawn
+    // like the live map's dogs (a tap makes one the protagonist; faces that
+    // run into each other share one 「2 隻」 tag and its menu).
+    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], historyMode: true,
+      dogMarkers: historyFaces(screen.map?.faces), dogAvatars: avatars,
       cameraPositions: screen.map?.camera ?? [], historyRoute: screen.map };
   }, [historical, history?.preferences.dogAliases, framedPresentation, avatars, screen.map]);
+  // The old export (until 056) reads the history query: it follows the dogs
+  // shown and 資料來源 (這支手機收到的 → BLE, 雲端 → cloud; 全部 keeps the
+  // entry dog's own).
+  const exportDogs = historical && target?.subject === 'dog' ? screen.dogs.map(dog => dog.id).join(',') : '';
+  const exportSource = screen.source;
+  useEffect(() => {
+    if (!exportDogs || !saveHistory || !historyPreferences) return;
+    const slaves = exportDogs.split(',').map(Number);
+    const source = exportSource === 'cloud' ? 'cloud' : exportSource === 'local' ? 'ble' : historyPreferences.source;
+    const heard = (history?.devices || []).filter(pair => slaves.includes(pair.slave)).map(pair => pair.master);
+    const masters = [...new Set([...historyPreferences.masters, ...heard])];
+    if (String(historyPreferences.slaves) === String(slaves) && historyPreferences.source === source
+      && String(historyPreferences.masters) === String(masters)) return;
+    saveHistory({ ...historyPreferences, slaves, source, masters });
+    // When the dogs or the source change.
+  }, [exportDogs, exportSource]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The dogs that can be added (「＋ 加入」): every dog that has ever had a
+  // position, by collar number (never-fixed sources are not dogs yet).
+  const historyCandidates = useMemo(() => (historical ? dogs.filter(dog => dog.coordinate)
+    .map(dog => ({ id: dog.slaveId, name: displayName(dog.slaveId, dogAliases), avatar: avatars[dog.slaveId] ?? null }))
+    : []), [historical, dogs, dogAliases, avatars]);
   // ---- the dog's card (A3) ------------------------------------------------
   // The card belongs to a dog drawn on the live map: it goes when the dog
   // does (a dog that never had a position has no card).
@@ -551,7 +581,9 @@ export default function MapScreen({
         onCursorMove={screen.moveCursor}
         onStopPress={place => screen.moveCursor(place.start, 'stop', { start: place.start })}
         historyFocus={historical && screen.focus && screen.cursor?.point ? { key: screen.focus.key,
-          centre: screen.focus.action === 'node' || screen.focus.action === 'stop',
+          // 換主角時的地圖: to the new protagonist's cursor, even after a drag.
+          centre: screen.focus.action === 'node' || screen.focus.action === 'stop'
+            || (screen.focus.action === 'protagonist' && screen.focus.id != null),
           coordinate: { latitude: screen.cursor.point.latitude, longitude: screen.cursor.point.longitude } } : null}
         historyFrame={historyFrame}
         historyPanel={historyPanel}
@@ -595,8 +627,7 @@ export default function MapScreen({
         <HistoryScreen key={fixture ? `fixture:${fixture.name}` : 'live'} ref={historyScreen} screen={screen}
           top={gearTop} initialRangeOpen={!!fixture?.historyView?.rangeOpen}
           initialCalendar={fixture?.historyView?.calendar ?? null}
-          name={target.subject === 'dog' ? displayName(target.slaveId, dogAliases) : ''}
-          avatar={target.subject === 'dog' ? avatars[target.slaveId] : null}
+          candidates={historyCandidates} initialSheet={fixture?.historyView?.sheet ?? null}
           levels={levels} bottomInset={insets.bottom} onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           onLevel={(level, height) => setPanel({ level, height })}

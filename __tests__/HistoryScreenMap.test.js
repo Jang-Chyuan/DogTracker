@@ -194,3 +194,16 @@ test('a time in the middle too close to a stop number or another time is left ou
     [{ coordinate: { latitude: 25, longitude: 121.009 } }]);
   expect(kept.map(m => m.time)).toEqual([1, 3, 5]);
 });
+
+describe('framing the history route', () => {
+  const { historyFramePadding, HISTORY_FRAME_PADDING } = require('../src/history/screen/HistoryMapModel');
+  const route = [0, 1, 2, 3, 4].map(i => ({ latitude: 25, longitude: 121 + i * 0.001 }));
+  test('the side where the cursor sits at the edge has room for half its label', () => {
+    expect(historyFramePadding(route, route[4])).toMatchObject({ right: 72, left: 24 });
+    expect(historyFramePadding(route, route[0])).toMatchObject({ right: 24, left: 72 });
+    expect(historyFramePadding(route, route[2])).toEqual(HISTORY_FRAME_PADDING);
+    expect(historyFramePadding(route, null)).toEqual(HISTORY_FRAME_PADDING);
+    // Clear of 框住全部 at the bottom.
+    expect(HISTORY_FRAME_PADDING.bottom).toBeGreaterThanOrEqual(24 + 48);
+  });
+});

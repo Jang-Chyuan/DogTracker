@@ -59,6 +59,10 @@ export const colors = {
   route2: '#2F6FA8',
   route3: '#4E8A2E',
   route4: '#8A55B0',
+  // Lines of a dog face drawn on its route colour (history cursor faces, H7).
+  onRoute: '#FFFFFF',
+  // The grab handle on top of a bottom sheet or the history panel.
+  sheetHandle: '#B9C3BD',
   alertBorder: '#F4CFC9',
   alertIconBg: '#FDE7E4',
   // The second line of a problem card (top card): muted red-brown.
@@ -93,6 +97,8 @@ export const opacity = {
   routeUpcoming: 0.3,
   routeBeforeCursor: 0.5,
   routeAfterCursor: 0.2,
+  // The protagonist's face glow among several dogs (H7), in its route colour.
+  faceGlow: 0.28,
 };
 
 // Text styles. Key text is at least 16sp and nothing is below 13sp, except the

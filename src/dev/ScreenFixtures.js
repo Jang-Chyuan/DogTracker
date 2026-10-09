@@ -320,7 +320,8 @@ function fixtureHistoryCloud({ server, local, query = 'ok', download = 'ok', onl
   const stopped = signal => new Promise((_, reject) => signal?.addEventListener?.('abort',
     () => reject(new Error('已取消'))));
   const wait = (ms, signal) => Promise.race([new Promise(resolve => setTimeout(resolve, ms)), stopped(signal)]);
-  const times = slaveId => server.filter(row => row.slave_id === slaveId).map(timeOfRow).sort((a, b) => a - b);
+  const isDog = slaveId => row => (Array.isArray(slaveId) ? slaveId.includes(row.slave_id) : row.slave_id === slaveId);
+  const times = slaveId => server.filter(isDog(slaveId)).map(timeOfRow).sort((a, b) => a - b);
   const ask = async (signal, answer) => {
     if (query === 'hang') await stopped(signal);
     await wait(250, signal);
@@ -335,7 +336,7 @@ function fixtureHistoryCloud({ server, local, query = 'ok', download = 'ok', onl
         () => [...times(slaveId)].reverse().find(time => time >= since && time < cutoff) ?? null),
       earliest: ({ slaveId, signal }) => ask(signal, () => times(slaveId)[0] ?? null),
       async download({ slaveId, dayStart, dayEnd, signal }) {
-        const rows = server.filter(row => row.slave_id === slaveId && timeOfRow(row) >= dayStart
+        const rows = server.filter(row => isDog(slaveId)(row) && timeOfRow(row) >= dayStart
           && timeOfRow(row) < dayEnd);
         if (download === 'hang') await stopped(signal);
         await wait(download === 'ok' ? 3500 : 1500, signal);
@@ -391,6 +392,39 @@ const morningRoute = now => legsPath(now, 160 * MINUTE, at(-40, -150), [
   { stay: 15 }, { walk: 25, bearing: 40 }, { stay: 14 }, { walk: 30, bearing: 100 },
   { stay: 18 }, { walk: 20, bearing: 170 }, { walk: 38, bearing: 250 },
 ]);
+
+// ---- history (055b): several dogs ----------------------------------------
+// One dog's morning near the station from `start` (fixture now 09:30), a fix
+// every 10 s: `legs` as legsPath's. `make` bleRow (this phone) or cloudRow.
+const dogDay = (now, slave, fromAgo, start, legs, make = bleRow) => legsPath(now, fromAgo, start, legs)
+  .map(row => make({ slave, time: row.time, fix: row.fix }));
+// 豆豆 like H7: out at about 07:10, two stays, moving now; 阿福 from 08:05
+// with a break; 狗 5 a short walk (or yesterday only). 阿福 is the cloud's.
+const doudouMorning = now => dogDay(now, 4, 140 * MINUTE, at(30, -40), [
+  { stay: 10 }, { walk: 30, bearing: 60, speed: 0.8 }, { stay: 22 }, { walk: 35, bearing: 150, speed: 0.8 },
+  { stay: 18 }, { walk: 25, bearing: 240, speed: 0.8 }]);
+const afuMorning = now => dogDay(now, 8, 85 * MINUTE, at(-40, 10), [
+  { walk: 30, bearing: 20, speed: 0.7 }, { gap: 15 }, { walk: 40, bearing: 300, speed: 0.7 }], cloudRow);
+const dog5Walk = (now, today = true) => dogDay(today ? now : now - 24 * 60 * MINUTE, 5, 60 * MINUTE, at(-10, 20),
+  [{ walk: 25, bearing: 200, speed: 0.6 }, { stay: 10 }, { walk: 20, bearing: 320, speed: 0.6 }]);
+
+// 小黑's history (看軌跡) with `dogs` added; 狗 5 is a live dog on the map (so
+// it can be added). `view`: the protagonist, the source, an open sheet, the
+// cursor `cursorAgo` before now.
+function multiFixture(now, { dogs = [], protagonist = null, source = null, sheet = null, fiveToday = true,
+  cursorAgo = null }) {
+  const base = FIXTURES['all-good'](now);
+  const cloud = afuMorning(now);
+  return {
+    ...base, openRoute: 'history',
+    // 狗 5 on the live map (heard a minute ago), so 「＋ 加入」 lists it.
+    ble: [...base.ble, ...series(bleRow, now, { slave: 5, from: 4 * MINUTE, to: 60 * SECOND, start: [-12, 30] })],
+    history: historyPage(now, { slave: 6, ble: [...dogMorning(now), ...doudouMorning(now), ...dog5Walk(now, fiveToday)],
+      cloudRows: cloud }),
+    historyView: { dogs, protagonist, source, sheet, cursorAgo },
+    geocoder: { names: HISTORY_NAMES },
+  };
+}
 
 // A cold start as Launch.launchScreen reads it: the database open, the
 // preferences read, the restore over, signed out and past the guide, unless
@@ -1028,6 +1062,28 @@ const FIXTURES = {
       ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
   },
+  // ---- history (055b): several dogs (H7) and 資料來源 ------------------
+  // H7: 看軌跡 on 小黑's card, then 豆豆 and 阿福 added; 豆豆 leads (its
+  // list, numbers and 「豆豆・移動 x km」), the others thin, faces at the cursor.
+  'history-multi-dog': now => multiFixture(now, { dogs: [4, 8], protagonist: 4 }),
+  // Four dogs: 「＋ 加入」 faded (最多同時 4 隻), the chips scroll sideways.
+  'history-multi-four': now => multiFixture(now, { dogs: [4, 8, 5], protagonist: 4 }),
+  // 小黑 and 狗 5, which has no record today: its chip at 40%, nothing drawn
+  // for it, never the protagonist.
+  'history-multi-no-data': now => multiFixture(now, { dogs: [5], fiveToday: false }),
+  // The cursor at 08:40, inside 阿福's break: 阿福 waits at its last fix
+  // before it (grey dashed ring), the others are where they were then.
+  'history-multi-cursor': now => multiFixture(now, { dogs: [4, 8], protagonist: 6, cursorAgo: 50 * MINUTE }),
+  // 「＋ 加入」's list open over 小黑's day (狗 5 has no record today).
+  'history-multi-add': now => multiFixture(now, { dogs: [], fiveToday: false, sheet: 'add' }),
+  // 資料來源's choices open (全部 chosen).
+  'history-source-picker': now => multiFixture(now, { dogs: [4], protagonist: 4, sheet: 'source' }),
+  // 資料來源：雲端 while 小黑 and 豆豆 only have this phone's rows: 「這天沒有
+  // 小黑的紀錄」 with the row still at the foot.
+  'history-source-empty': now => multiFixture(now, { dogs: [4], source: 'cloud' }),
+  // 資料來源：這支手機收到的: 阿福's rows are the cloud's only, so it fades and
+  // 豆豆 (this phone's) stays.
+  'history-source-local': now => multiFixture(now, { dogs: [4, 8], protagonist: 8, source: 'local' }),
   // ---- history (054b): the calendar and a day only the cloud holds -------
   // H3b: 小黑's calendar on October; dots on this phone's days and the cloud's
   // (9/28 and 10/3 only in the cloud); a day only the cloud holds downloads
@@ -1474,7 +1530,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       // A history fixture (054a) draws its own day, never this phone's.
       ...(fixture.history ? { data: fixture.history.data, readDay: fixture.history.readDay,
         readDays: fixture.history.readDays, loaded: true,
-        busy: false, error: '', key: `fixture:${fixture.name}`, devices: [], days: [], phoneRecorded: true } : {}),
+        busy: false, error: '', key: `fixture:${fixture.name}`, devices: [] } : {}),
       // The card's 看軌跡 and the dog page's name must not store a fixture's
       // dog in this phone's real history query or names.
       save: async preferences => {
