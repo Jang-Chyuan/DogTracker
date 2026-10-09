@@ -13,12 +13,14 @@ import { wifiSummary } from './useReceiverWifi';
  */
 export default function AdvancedSettings({
   wifi,
+  receiver,
+  paired = true,
   deletion,
   onWifi,
   deletedText = null,
 }) {
   const settingsStyles = useStyles(getSettingsStyles);
-  const summary = wifiSummary(wifi);
+  const summary = wifiSummary(wifi, receiver, paired);
   const dialog = deletion.dialog;
   return (
     <ScrollView

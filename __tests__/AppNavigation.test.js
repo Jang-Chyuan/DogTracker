@@ -282,12 +282,19 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(title()).toBe('返回，進階');
   expect(text()).toContain(i18nT('c249'));
   // No receiver connected: the Wi-Fi row says so; nothing is read.
-  expect(text()).toContain(i18nT("c1016"));
+  expect(text()).toContain(i18nT('c1245'));
   await tap('advanced-wifi');
-  expect(title()).toBe('返回，接收器 Wi-Fi');
+  expect(title()).toBe('返回，還沒有配對接收器');
   expect(renderer.root.findAllByProps({ testID: 'wifi-settings' }).length).toBeGreaterThan(0);
-  expect(text()).toContain('沒有連線，連上後才能讀取和設定 Wi-Fi');
-  await press('返回，接收器 Wi-Fi');
+  expect(text()).toContain('還沒有配對接收器');
+  await tap('wifi-pair');
+  expect(page('pair-scan')).toBe(true);
+  const firstPair = renderer.root.findAll(node => node.props.route?.entry === 'wifi'
+    && typeof node.props.onConnected === 'function')[0];
+  expect(firstPair.props.route.mode).toBe('first');
+  await act(async () => firstPair.props.onConnected({ number: 23, again: true }));
+  expect(page('wifi-settings')).toBe(true);
+  await press('返回，還沒有配對接收器');
   expect(title()).toBe('返回，進階');
   expect(row('settings-link-upload')).toBeUndefined();
   // No old dark page is left behind S7/S8.
@@ -473,15 +480,30 @@ test('S7/S8 fixtures: diagnostics states, the delete question with rows to uploa
   expect(text()).toContain('已刪除・09:30');
   expect(rows('dog_status')).toHaveLength(1);
   // Wi-Fi on the fixture's receiver 7: its two networks, deleting asks.
-  expect(text()).toContain('家裡、辦公室');
+  expect(text()).toContain('接收器 7・連線中');
   await tap('advanced-wifi');
-  expect(title()).toBe('返回，接收器 Wi-Fi');
+  expect(title()).toBe('返回，接收器 7・連線中');
   expect(text()).toContain('接收器 7 存的 Wi-Fi');
   expect(text()).toContain(i18nT("c1027"));
   await tap('wifi-delete-辦公室');
   expect(text()).toContain('接收器 7 不會再連「辦公室」。');
   await press('刪除');
   expect(row('wifi-辦公室')).toBeUndefined();
+  await tap('wifi-change');
+  expect(page('pair-scan')).toBe(true);
+  const switchPair = renderer.root.findAll(node => node.props.route?.entry === 'wifi'
+    && typeof node.props.onConnected === 'function')[0];
+  expect(switchPair.props.route.mode).toBe('change');
+  await act(async () => switchPair.props.onConnected({ number: 8, again: true }));
+  expect(page('wifi-settings')).toBe(true);
+  await tap('wifi-change');
+  await tap('pair-later');
+  expect(page('wifi-settings')).toBe(true);
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=receiver-disconnected-by-user&page=wifi' }));
+  await advance(100);
+  expect(title()).toBe('返回，接收器 7・沒有連線');
+  await tap('wifi-connect');
+  expect(page('wifi-settings')).toBe(true);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 
