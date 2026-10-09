@@ -51,6 +51,7 @@ const hash = value => createHash('sha256').update(JSON.stringify(value ?? null))
 const results = { sqlite: sql.prepare('SELECT sqlite_version() v').get().v, rows: {}, cases: [] };
 for (const table of ['dog_status','supabase_dog_status','myLocationTracker','ble_upload_queue']) results.rows[table] = sql.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n;
 async function measure(id, work, rollback = false) {
+  if (process.env.BENCH_CASES && !process.env.BENCH_CASES.split(',').includes(id)) return;
   const times = []; let outcome;
   for (let i = 0; i < 6; i++) {
     if (rollback) sql.exec('SAVEPOINT sample');

@@ -60,6 +60,8 @@ export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage'
   'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
+const initialization = new WeakMap();
+
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
   const cap = Number.isInteger(maxRows) && maxRows > 0 ? maxRows : CLOUD_MAX_ROWS;
   const trimHistory = `DELETE FROM supabase_dog_status WHERE id IN (
@@ -94,7 +96,10 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       await connection.executeAsync('INSERT OR REPLACE INTO receiver_range_state(scope,value) VALUES(?,?)', [owner ?? 'local', JSON.stringify(ranges)]);
     },
     initialize() {
-      return withCloudDisplayLock(connection, async () => {
+      // Share in-flight and completed migration work among wrappers of this
+      // open connection. Failed opens remain retryable; a new handle migrates again.
+      if (initialization.has(connection)) return initialization.get(connection);
+      const ready = withCloudDisplayLock(connection, async () => {
       const columns = new Set(rows(await connection.executeAsync(
         'PRAGMA table_info(supabase_dog_status)',
       )).map(column => column.name));
@@ -152,6 +157,9 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       await connection.executeAsync(trimHistory);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       });
+      initialization.set(connection, ready);
+      ready.catch(() => initialization.delete(connection));
+      return ready;
     },
     async loadSyncState(owner, masterId) {
       requireOwner(owner);
