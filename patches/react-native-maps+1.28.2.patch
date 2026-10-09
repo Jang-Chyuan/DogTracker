@@ -60,3 +60,23 @@ index 3e0250f..95cc196 100644
          options.icon(getIcon());
          return options;
      }
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
+index def61f5..11a71c6 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
+@@ -1326,7 +1326,14 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+         if (feature instanceof MapMarker) {
+             markerMap.remove(feature.getFeature());
+             feature.removeFromMap(markerCollection);
+-            safeRemoveFeatureFromAttacherGroup(feature);
++            // DOGTRACKER_MARKER_PARENT (DogTracker patch): the marker's view can
++            // still sit in the attacher group of an earlier attach
++            // (onDetachedFromWindow drops that group without emptying it, e.g.
++            // while a settings page covers the map). Detach it from whatever
++            // parent it has; otherwise Fabric's next insert of this view finds
++            // a parent, marks the tag "erroneously re-added" and skips every
++            // later remove, and the marker's Google Marker stays on the map.
++            safeRemoveFromParent(feature);
+         } else if (feature instanceof MapHeatmap) {
+             heatmapMap.remove(feature.getFeature());
+             feature.removeFromMap(map);
