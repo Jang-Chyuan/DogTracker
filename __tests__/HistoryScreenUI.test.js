@@ -72,7 +72,7 @@ test('history-dog (H1 狗的歷史): the dog capsule, ＋ 加入, 移動 and 坐
 test('history-range-open (H2b): the bar open in its frame, 完成, the dragged start; no 「已手動調整」', async () => {
   const s = await mountFixture('history-range-open');
   expect(s.ids('history-range-bar')).toEqual(['history-range-bar']);
-  expect(s.text()).toContain('拖兩端的圓點改開始、結束');
+  expect(s.text()).not.toContain('拖兩端的圓點改開始、結束');
   expect(s.text()).toContain('完成');
   expect(s.text()).toContain('出發');
   expect(s.text()).not.toContain('已手動調整');

@@ -347,7 +347,6 @@ export default function HistoryRangeSummary({
       )}
       {open && (
         <>
-          <Text style={styles.hint}>拖兩端的圓點改開始、結束</Text>
           <RangeBar
             range={range}
             track={track}
@@ -412,16 +411,8 @@ const getStyles = makeStyles(theme => {
     adjustText: { color: colors.text, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
     adjustTextOpen: { color: colors.tonalText },
     closed: { color: colors.textMuted, fontSize: type.caption.fontSize, marginTop: space.xs },
-    // 12sp textMuted, 4dp above and below, right on top of the bar.
-    hint: {
-      color: colors.textMuted,
-      fontSize: type.small.fontSize,
-      lineHeight: type.small.lineHeight,
-      marginTop: space.xs,
-      marginBottom: space.xs,
-    },
-    // The 48dp touch row overlaps the hint's 4dp: the track sits right under it.
-    bar: { paddingBottom: space.xs, marginTop: -sizes.rangeBar.summaryOverlap },
+    // No hint above the bar (D6): the track sits right under the summary.
+    bar: { paddingBottom: space.xs, marginTop: space.xs },
     trackArea: { height: TOUCH, justifyContent: 'center' },
     track: {
       marginHorizontal: TOUCH / 2,
