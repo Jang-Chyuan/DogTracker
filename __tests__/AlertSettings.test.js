@@ -150,6 +150,10 @@ test('S6: notifications not allowed → 未允許 and 「開系統設定 ›」 
   expect(text(renderer)).toContain('未允許');
   expect(text(renderer)).toContain('開系統設定 ›');
   expect(text(renderer)).not.toContain('已允許');
+  // E11: same problem-row contract as S4 permissions.
+  expect(byId(renderer, 'alerts-notifications').props.problem).toBe(true);
+  expect(byId(renderer, 'alerts-notifications').props.actionTone).toBeUndefined();
+  expect(byId(renderer, 'alerts-notifications').props.detailTone).toBeUndefined();
   await act(async () => byId(renderer, 'alerts-notifications').props.onPress());
   expect(onNotificationSettings).toHaveBeenCalledTimes(1);
 });
