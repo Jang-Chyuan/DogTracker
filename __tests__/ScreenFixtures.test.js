@@ -899,3 +899,44 @@ test('phone-no-route: yesterday\'s walk is not today\'s route', () => {
   expect(buildFixture('phone-no-route').todayRoute).toEqual({ count: 0, metres: 0, status: 'not-departed' });
   expect(buildFixture('phone-recording').todayRoute.count).toBeGreaterThan(300);
 });
+
+test('activity-* (A4): 小黑\'s page with the reads its name says', async () => {
+  const { buildActivityView, activityPeriod } = require('../src/activity/views');
+  const { activityViewInput } = require('../src/activity/ActivityData');
+  const open = async (name, detail = 'raw') => {
+    const fixture = buildFixture(name);
+    const now = fixture.activityNow ?? fixture.now;
+    const { mode, date } = fixture.activityView;
+    const period = activityPeriod(mode, date);
+    const first = await fixture.readActivityEarliest(6);
+    const answer = await fixture.readActivity(6, { start: period.start, end: period.end, detail });
+    return { fixture, view: buildActivityView({ mode, date, now, earliest: first ?? now, since: first,
+      ...activityViewInput(answer) }) };
+  };
+  const day = await open('activity-day');
+  expect(day.fixture).toMatchObject({ openDog: 6, openPage: 'activity' });
+  expect(day.view.label).toBe('10/6（二）');
+  expect(day.view.totals.missing).toBe(0);
+  expect(day.view.totals.rest).toBeGreaterThan(8 * 60);
+  expect(day.view.totals.vigorous).toBeGreaterThan(15);
+  const gap = await open('activity-day-gap');
+  expect(gap.view.rows[2]).toMatchObject({ rangeLabels: ['08:40–09:10', '11:05–11:20', '13:00–13:12'],
+    additionalText: '另外 1 段', durationText: '1 小時 12 分' });
+  const today = await open('activity-today');
+  expect(today.view.label).toBe('10/7（三）今天');
+  expect(today.view.points.at(-1).minute).toBe(FIXTURE_NOW - 60000);
+  expect(today.view.points.at(-1).value).toBeLessThan(0.8);
+  expect(today.view.rows[2].rangeLabels).toEqual(['08:40–09:10']);
+  const week = await open('activity-week-gap', 'minute');
+  expect(week.view.label).toBe('9/27（日）– 10/3（六）');
+  expect(week.view.rows[2].rangeLabels).toEqual(['10/1（四）整天']);
+  const month = await open('activity-month', 'minute');
+  expect(month.view.rows[2].rangeLabels).toEqual(['9/12（六）整天', '9/20（日） 10:00–16:00']);
+  const none = buildFixture('activity-none');
+  expect(await none.readActivityEarliest(6)).toBeNull();
+  expect(buildFixture('activity-card').openPage).toBeNull();
+  expect(buildFixture('activity-year').activityView.mode).toBe('year');
+  await expect(buildFixture('activity-error').readActivity(6, { start: 0, end: 1, detail: 'raw' })).rejects.toThrow();
+  const hang = buildFixture('activity-loading').readActivity(6, { start: 0, end: 1, detail: 'raw' });
+  expect(await Promise.race([hang, new Promise(resolve => setTimeout(() => resolve('waiting'), 20))])).toBe('waiting');
+});

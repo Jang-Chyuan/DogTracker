@@ -29,6 +29,8 @@
     "activityNormal": "#D3CCC4",
     "activityHigh": "#E07A2E",
     "activityHighText": "#B85A12",
+    "activityHighBand": "#FDE7D6",
+    "activityLowBand": "#E6ECF3",
     "problemBadge": "#B3261E",
     "warnIcon": "#9A5B00",
     "staleRing": "#6B7470",

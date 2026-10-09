@@ -35,7 +35,7 @@ import {
 import { dogMarkers, dogName } from '../map/DogMarkers';
 import { coldStartCoordinates, phoneFix } from '../map/MapFraming';
 import DogCard from '../map/DogCard';
-import { ActivityPage } from '../map/DogCardPages';
+import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
 import { dogCard, phoneReading } from '../map/DogCardModel';
@@ -637,6 +637,24 @@ export default function MapScreen({
         : null),
     [fixture?.readCardRows, database, cloudOwner],
   );
+  // The activity page (A4) reads the dog's period from the same tables.
+  const readActivity = useMemo(
+    () =>
+      fixture?.readActivity ??
+      (database?.activityPeriod
+        ? (slaveId, period) =>
+            database.activityPeriod(cloudOwner ?? null, slaveId, period)
+        : null),
+    [fixture?.readActivity, database, cloudOwner],
+  );
+  const readActivityEarliest = useMemo(
+    () =>
+      fixture?.readActivityEarliest ??
+      (database?.activityEarliest
+        ? slaveId => database.activityEarliest(cloudOwner ?? null, slaveId)
+        : null),
+    [fixture?.readActivityEarliest, database, cloudOwner],
+  );
   const readings = useDogCardReadings(
     cardOpen ? readCardRows : null,
     cardDog?.slaveId ?? null,
@@ -993,13 +1011,15 @@ export default function MapScreen({
         />
       )}
       {cardModel && cardPage === 'activity' && (
-        <ActivityPage
+        <ActivityScreen
+          key={`${fixture?.name ?? 'live'}:${cardModel.slaveId}`}
           name={cardModel.name}
           slaveId={cardModel.slaveId}
-          database={database}
-          owner={cloudOwner}
-          active={active && tracking.foreground && !!tracking.ready?.real}
-          dogAliases={dogAliases}
+          read={readActivity}
+          readEarliest={readActivityEarliest}
+          now={fixture?.activityNow ?? now}
+          active={active}
+          initialView={fixture?.activityView ?? null}
           onBack={closePage}
         />
       )}

@@ -441,6 +441,79 @@ const startedWith = (changes = {}) => ({
   authSettled: true, signedIn: false, expiredAtStart: false, restoreTimedOut: false, ...changes,
 });
 
+
+// ---- the activity page (057, design A4) ---------------------------------
+// 小黑's activity as a function of the local time of day: asleep at night,
+// a walk with a run in the morning, a nap after lunch, play in the afternoon.
+// Small daily differences so week, month and year bars are not identical.
+const localDate = (year, month, day, hour = 0, minute = 0) => new Date(year, month - 1, day, hour, minute).getTime();
+// Taiwan time without Date objects (a year is 400,000 minutes); no DST there.
+const TAIPEI_OFFSET = 8 * 60 * MINUTE;
+function dogActivity(time) {
+  const local = time + TAIPEI_OFFSET;
+  const day = Math.floor(local / DAY_MS);
+  const hour = (local - day * DAY_MS) / (60 * MINUTE);
+  const shift = ((day * 37) % 9) / 6 - 0.6;
+  const wobble = 0.04 * Math.sin(time / (7 * MINUTE)) + 0.03 * Math.sin(time / (3 * MINUTE));
+  if (hour < 6.5 + shift || hour >= 22.5 + shift / 2) return 0.02 + 0.004 * Math.sin(time / (25 * MINUTE));
+  if (hour < 7.2 + shift) return 0.35 + wobble;
+  if (hour < 7.45 + shift) return 0.9 + 0.05 * Math.sin(time / MINUTE);
+  if (hour < 8.3 + shift) return 0.4 + wobble;
+  if (hour < 12) return 0.18 + wobble;
+  if (hour < 14 + shift / 2) return 0.025 + 0.004 * Math.sin(time / (20 * MINUTE));
+  if (hour < 15.5) return 0.25 + wobble;
+  if (hour < 15.5 + (12 + (day % 5) * 3) / 60) return 0.88 + 0.04 * Math.sin(time / MINUTE);
+  if (hour < 18) return 0.3 + wobble;
+  return 0.15 + wobble;
+}
+// What CloudDatabase.activityPeriod answers for 小黑 (6) when its readings
+// run from `earliest` to the fixture's now, two a minute, without `gaps`
+// ([start, end) pairs). `answer: 'hang' | 'fail'` for 載入中 and 讀取失敗.
+// Whole 1/1024ths: sums are exact, so every reader's mean is the same number.
+const reading = time => Math.round(Math.max(0, Math.min(1, dogActivity(time))) * 1024) / 1024;
+function activityFixture({ earliest, gaps = [], now, answer = null }) {
+  const has = time => time >= earliest && !gaps.some(([start, end]) => time >= start && time < end);
+  const read = async (slaveId, { start, end, detail }) => {
+    if (answer === 'hang') return new Promise(() => {});
+    if (answer === 'fail') throw new Error('fixture: 讀取失敗');
+    const from = Math.max(Math.floor((start - 9 * MINUTE) / MINUTE) * MINUTE, earliest ?? Infinity);
+    const to = Math.min(end + 9 * MINUTE, now + MINUTE);
+    if (slaveId !== 6 || earliest == null) return detail === 'raw' ? { local: [], cloud: [] } : { minutes: [] };
+    if (detail === 'raw') {
+      const local = [];
+      for (let minute = from; minute < to; minute += MINUTE) {
+        if (!has(minute)) continue;
+        for (const second of [10, 40]) {
+          const time = minute + second * SECOND;
+          if (time >= now) continue;
+          // The minute still running reads high: A4 must leave it out.
+          const value = minute === Math.floor(now / MINUTE) * MINUTE ? 0.95 : reading(time);
+          local.push({ time, activity: value, activity_valid: 1, activity_time: null,
+            master_id: 7, slave_id: 6 });
+        }
+      }
+      return { local, cloud: [] };
+    }
+    const minutes = [];
+    for (let minute = from; minute < Math.min(to, Math.floor(now / MINUTE) * MINUTE); minute += MINUTE) {
+      // The mean of the same two readings the raw answer gives.
+      if (has(minute)) minutes.push({ minute, count: 2,
+        value: (reading(minute + 10 * SECOND) + reading(minute + 40 * SECOND)) / 2 });
+    }
+    return { minutes };
+  };
+  return { readActivity: read, readActivityEarliest: async slaveId => (slaveId === 6 ? earliest ?? null : null) };
+}
+// 小黑's card open on the map, its activity page (A4) over it.
+// 小黑's own rows (its card's 活動量 row) carry the same activity as A4 reads.
+const activityPage = (now, view, data) => {
+  const base = FIXTURES['card-ok'](now);
+  return { ...base, openDog: 6, openPage: 'activity', activityView: view,
+    ble: base.ble.map(row => (row.slave_id === 6 ? { ...row, activity: reading(row.received_at) } : row)),
+    activity: activityFixture({ earliest: localDate(2026, 3, 16, 8, 0), now, ...data }) };
+};
+const day = (month, date, hour, minute = 0) => localDate(2026, month, date, hour, minute);
+
 const FIXTURES = {
   // Receiver connected, cloud synced, three fresh dogs, phone recording.
   'all-good': now => ({
@@ -722,6 +795,33 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // ---- the activity page (057, design A4) ------------------------------
+  // 小黑's card only (A3): tap 活動量 to open A4 on 今天 with the same reads.
+  'activity-card': now => ({ ...activityPage(now, null, {}), openPage: null }),
+  // 日 of 10/6（二）, a whole day with data: night rest, a morning run, a nap.
+  'activity-day': now => activityPage(now, { mode: 'day', date: day(10, 6, 12) }, {}),
+  // The same day with four gaps: three listed, 「另外 1 段」, the total.
+  'activity-day-gap': now => activityPage(now, { mode: 'day', date: day(10, 6, 12) }, { gaps: [
+    [day(10, 6, 8, 40), day(10, 6, 9, 10)], [day(10, 6, 11, 5), day(10, 6, 11, 20)],
+    [day(10, 6, 13, 0), day(10, 6, 13, 12)], [day(10, 6, 16, 30), day(10, 6, 16, 45)]] }),
+  // 今天 at 09:30:40: no data 08:40–09:10 (A4 mockup); the minute still running
+  // (09:30, which reads 0.95) is not drawn or counted.
+  'activity-today': now => ({ ...activityPage(now, { mode: 'day', date: now }, {
+    now: now + 40 * SECOND, gaps: [[day(10, 7, 8, 40), day(10, 7, 9, 10)]] }), activityClock: now + 40 * SECOND }),
+  // 週 9/27（日）– 10/3（六） with no data all of 10/1（四） (A4 mockup).
+  'activity-week-gap': now => activityPage(now, { mode: 'week', date: day(9, 30, 12) }, {
+    gaps: [[day(10, 1, 0), day(10, 2, 0)]] }),
+  // 月 2026 年 9 月: 9/12 without data, 9/20 from 10:00 to 16:00 too.
+  'activity-month': now => activityPage(now, { mode: 'month', date: day(9, 15, 12) }, {
+    gaps: [[day(9, 12, 0), day(9, 13, 0)], [day(9, 20, 10), day(9, 20, 16)]] }),
+  // 年 2026 (這一年): readings from 3/16; 11–12 月 not yet.
+  'activity-year': now => activityPage(now, { mode: 'year', date: now }, {
+    gaps: [[day(6, 2, 0), day(6, 9, 0)], [day(8, 20, 0), day(8, 21, 0)]] }),
+  // A dog without any activity reading: 「沒有活動量資料」, ‹ › both off.
+  'activity-none': now => activityPage(now, { mode: 'day', date: now }, { earliest: null }),
+  // The page still reading (never answers) and a read that fails.
+  'activity-loading': now => activityPage(now, { mode: 'week', date: now }, { answer: 'hang' }),
+  'activity-error': now => activityPage(now, { mode: 'day', date: now }, { answer: 'fail' }),
   // ---- a dog's page (047, design A5/A5a/A5c) ------------------------------
   // card-ok with the pencil pressed: 豆豆's own page (A5) over its card.
   'dog-edit': now => ({ ...FIXTURES['card-ok'](now), openPage: 'edit' }),
@@ -1257,7 +1357,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
-    historyExport = null,
+    historyExport = null, activityView = null, activity = null, activityClock = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -1371,6 +1471,13 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // The history screen opened as it was left (H2b: the range bar open, a
     // range already dragged; 054b: the calendar open, another day chosen).
     historyView,
+    // The activity page (A4): the tab and day it opens on, and its reads
+    // (CloudDatabase.activityPeriod / activityEarliest over the fixture's 小黑).
+    activityView,
+    // activity-today's page runs 40 s into a minute (the running one is left out).
+    activityNow: activityClock,
+    readActivity: activity?.readActivity,
+    readActivityEarliest: activity?.readActivityEarliest,
     // The history's stand-in cloud (054b): { cloud, online, seed } or null.
     historyCloud,
     // The export (056): 'hang' (產生中 never ends), 'fail', 'fail-once'; else

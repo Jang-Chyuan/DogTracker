@@ -42,6 +42,11 @@ export const colors = {
   // Chart fill only; the card's 劇烈活動 text uses activityHighText.
   activityHigh: '#E07A2E',
   activityHighText: '#B85A12',
+  // A4 日: pale grounds behind the curve — the 高活動 0.8 以上 / 低活動 0.05 以下
+  // zones and the time of each 休息 / 劇烈 run. No text on them except the two
+  // zone labels (warn / textMuted).
+  activityHighBand: '#FDE7D6',
+  activityLowBand: '#E6ECF3',
   // The one red "!" for every dog problem, on the map and on card rows.
   problemBadge: '#B3261E',
   // Amber "!" circle in front of the card's 快離開接收範圍 value.
@@ -323,6 +328,10 @@ export const darkAdditions = {
   // Dark problemBadge is only 3.37:1 as text on surface; the dark rule
   // 「會刪資料的動作 crit（深色是淡紅字）」 gives crit's #FFB4AB (9.44:1).
   critAction: '#FFB4AB',
+  // A4 日 grounds, from the design's dark A4 mockup: warn 7.6:1 on the high
+  // ground, textMuted 6.8:1 on the low one; the curve (route1) above 3:1 on both.
+  activityHighBand: '#362A21',
+  activityLowBand: '#212B36',
 };
 
 export const extras = {

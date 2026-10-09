@@ -41,6 +41,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 初次使用 D2–D4 | `permissionsGuide`（D2 每列的允許狀態 `grants`、問過了沒 `asked`）、`pairing`（D3 的畫面：`view`、`camera`、`dialog`、`target`、`nearby`、`input`）；開在引導的那一頁（有進度條）。情境不問任何權限、不掃描、不連線，掃描框裡不開相機 | `permissionsPage` → D2；`usePairing` → D3；D4 用 `pairedPage` 讀同一批本機列 |
 | 地址 | `geocoder`：沒給＝每個地方都查不到；`{ names: [...] }` 照畫面問的順序給假答案（`{ line, awayM }`、`{ district }` 或 `null`）；`{ offline: true }` 沒網路；`'real'` 用這支手機的 Geocoder。情境用自己的 lookup，不寫進手機的地址快取 | `AddressLookup`（`describePlace` 的 50 m／300 m／區規則）→ 卡片「位置」第二行、歷史清單的節點 |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新有效電量）→ `DogCardModel` |
+| 活動量頁（A4） | `activityView`（開在哪個分頁、哪一天 `{ mode, date }`）、`readActivity`／`readActivityEarliest` 照 `CloudDatabase.activityPeriod`／`activityEarliest` 的介面回答小黑（6）的讀數（日：每分鐘兩筆原始讀數；週／月／年：每分鐘平均）；`activityNow`：只給 A4 的時鐘（`activity-today` 在 09:30:40，還沒結束的那一分鐘讀數 0.95） | `useActivityView` → `buildActivityView`／`combineYearView` → `ActivityScreen` |
 
 第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的個人頁（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
 
@@ -85,6 +86,16 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-phone-no-fix` | 手機最後定位 15 分鐘前：方向距離改寫「手機沒有定位」 |
 | `card-readings-old` | 豆豆位置是新的，但電量、活動量 09:11 之後沒有讀數：「62%（09:11）」「休息中 已 12 分鐘（09:11）」 |
 | `dog-edit` | `card-ok` 再按鉛筆：豆豆的個人頁（A5）蓋在卡片上 |
+| `activity-card` | 小黑的卡片（A3）；點「活動量」進 A4（今天），讀數和下面的情境同一套 |
+| `activity-day` | A4 日：10/6（二）整天有資料：夜裡休息、早上跑步（劇烈）、午睡、下午玩 |
+| `activity-day-gap` | 同一天四段沒有資料：列出三段＋「另外 1 段」＋「合計 1 小時 12 分」，曲線在缺口斷開 |
+| `activity-today` | A4 今天（設計稿）：08:40–09:10 沒有資料；09:30:40 還沒結束的那一分鐘不畫、不算 |
+| `activity-week-gap` | A4 週：9/27（日）– 10/3（六），10/1（四）整天沒有資料（設計稿） |
+| `activity-month` | A4 月：2026 年 9 月，9/12 整天、9/20 10:00–16:00 沒有資料 |
+| `activity-year` | A4 年：這一年，3/16 起才有讀數（之前不算沒有資料），6/2–6/8、8/20 沒有資料；11–12 月還沒到 |
+| `activity-none` | 小黑沒有任何活動量讀數：「沒有活動量資料」，‹ › 都不能按 |
+| `activity-loading` | A4 週：一直在讀（載入中…） |
+| `activity-error` | A4 日：讀取失敗＋重試 |
 | `dog-photo-avatar` | 小黑用照片當頭像（新位置、彩色），地圖和卡片都是照片 |
 | `dog-photo-stale` | `dogs-aged` 裡的阿福用照片當頭像：40 分鐘沒有新位置，地圖和卡片上的照片都轉灰階（白框、紅色「!」照原色） |
 | `phone-recording` | 和 `all-good` 一樣：記錄中、今天走了 2.7 km → 右下藍色走路小人「今天 2.7 km」（A1） |
