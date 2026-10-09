@@ -734,7 +734,7 @@ export const size = {
     artGrid: 100,
 
     // avatar photo source in its illustration/layout specification.
-    photoSource: 256,
+    photoSource: 512,
   },
 
   signalBars: {
