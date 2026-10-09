@@ -36,7 +36,7 @@ test('only a resume catches up; finish hides the pill and background cancels the
   sync.close();
 });
 
-test('failure and the exact 20 second timeout persist through late results until retry', () => {
+test('the exact 20 second timeout and a read error fail; retry restarts; a later read clears it', () => {
   const onRetry = jest.fn();
   const sync = createResumeCatchUp({ onRetry });
   sync.caughtUp(); sync.away(); sync.back();
@@ -45,15 +45,16 @@ test('failure and the exact 20 second timeout persist through late results until
   expect(sync.state().phase).toBe('catching-up');
   jest.advanceTimersByTime(1);
   expect(sync.state().phase).toBe('failed');
-  sync.caughtUp();
-  expect(sync.state().phase).toBe('failed');
   sync.retry();
   expect(onRetry).toHaveBeenCalledTimes(1);
   expect(sync.state().phase).toBe('catching-up');
   sync.failed();
   expect(sync.state().phase).toBe('failed');
-  sync.retry(); sync.caughtUp();
+  // The feed keeps polling: once a read gets through, the failure is over
+  // without 重試 (a one-off read error is not worth a stuck 更新失敗).
+  sync.caughtUp();
   expect(sync.state().phase).toBe('idle');
+  expect(onRetry).toHaveBeenCalledTimes(1);
   sync.close();
 });
 
