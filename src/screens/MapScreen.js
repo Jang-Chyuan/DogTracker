@@ -1033,7 +1033,7 @@ export default function MapScreen({
         frameRequest={historical ? null : mapFrameRequest}
         coverBottom={coverBottom}
         today={historical ? null : today}
-        onToday={openMyRoute}
+        onToday={today?.unrecorded ? () => onAlertAction?.('phone-unrecorded') : openMyRoute}
       />
 
       {/* The launch screen's handover fades these in (splashChrome). */}

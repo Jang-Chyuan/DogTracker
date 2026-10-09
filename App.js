@@ -474,6 +474,7 @@ function TrackerApp({ resume = null, onRestart }) {
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
     if (id === 'receiver-settings') open('receiver');
+    else if (id === 'phone-unrecorded') open('phone', { fromUnrecorded: true });
     else if (id === 'connect-receiver') openPairing('map');
     // 診斷 (S8) starts with the reason.
     else if (id === 'storage-reason') open('diagnostics');
@@ -1180,6 +1181,7 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <PhoneSettings
           page={phonePage(settingsData)}
+          fromUnrecorded={route.fromUnrecorded}
           onRecording={on => settingsData.recording.toggle?.(on)}
           onPermissions={() => Linking.openSettings()}
           onLocationServices={openLocationServices}

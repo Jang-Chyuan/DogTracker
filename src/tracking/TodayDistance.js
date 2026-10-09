@@ -97,6 +97,8 @@ export function todayPill({ route, livePhone, phone, now = null, waitingSince = 
     icon,
     muted: icon !== 'walk',
     recorded,
-    label: [spoken, reason].filter(Boolean).join('，'),
+    unrecorded,
+    destination: unrecorded ? 'phone-settings' : 'history',
+    label: [spoken, reason, unrecorded ? '點兩下到手機設定' : null].filter(Boolean).join('，'),
   };
 }

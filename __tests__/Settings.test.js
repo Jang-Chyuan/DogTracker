@@ -361,7 +361,7 @@ test('phone-permissions-missing: one 權限 cell naming what is missing, 定位�
   const page = phonePage(data);
   expect(page.recording).toMatchObject({ on: true, problem: false });
   expect(page.recording.detail).toMatch(/^今天 \d{3} 筆$/);
-  expect(page.permission).toEqual({ problem: true, detail: '精確位置、通知未允許', status: null, action: '開系統設定 ›' });
+  expect(page.permission).toEqual({ problem: true, detail: '位置未允許、通知未允許', status: null, action: '開系統設定 ›' });
   expect(page.services).toEqual({ problem: true, detail: '定位服務關著', status: null, action: '打開 ›' });
   expect(page.battery).toEqual({ status: '已允許', action: null });
   // The same problems put the 「!」 on S1's 手機 and 提醒 rows.
@@ -381,7 +381,7 @@ test('S4 when all is given, and what each permission is called', () => {
   expect(missingPermissions({ permission: 'approximate' }, {})).toBe('精確位置只給了大概');
   expect(missingPermissions({ permission: 'approximate' }, { nearbyDenied: true, notificationsDenied: true }))
     .toBe('精確位置只給了大概、附近的裝置、通知未允許');
-  expect(missingPermissions({ permission: 'blocked' }, {})).toBe('精確位置未允許');
+  expect(missingPermissions({ permission: 'blocked' }, {})).toBe('位置未允許');
   expect(missingPermissions({ permission: 'precise' }, {})).toBe('');
   // Turning recording on failed: why, in red, in place of the count.
   expect(phonePage({ phone: {}, recording: { enabled: false, error: '請允許定位權限後再開始記錄' }, todayCount: 5 })
@@ -397,7 +397,7 @@ test('S4 draws the rows and opens the system pages', async () => {
       {...actions} />);
   });
   const out = text(renderer);
-  for (const words of ['位置記錄', '權限', '精確位置、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
+  for (const words of ['位置記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
     '忽略電池最佳化', '讓 App 在背景也能一直收資料', '已允許']) expect(out).toContain(words);
   const press = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress());

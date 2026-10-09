@@ -282,7 +282,7 @@ export function missingPermissions(phone, permissions = {}) {
   const missing = [];
   const location = phone?.permission;
   if (location === 'approximate') parts.push('精確位置只給了大概');
-  else if (location === 'denied' || location === 'blocked') missing.push('精確位置');
+  else if (location === 'denied' || location === 'blocked') parts.push('位置未允許');
   if (permissions.nearbyDenied) missing.push('附近的裝置');
   if (permissions.notificationsDenied) missing.push('通知');
   if (missing.length) parts.push(`${missing.join('、')}未允許`);
@@ -299,6 +299,7 @@ export function phonePage(input) {
   const missing = missingPermissions(phone, permissions);
   const servicesOff = phone.permission !== 'checking' && phone.permission !== 'unsupported' && phone.services === false;
   return {
+    locationPermissionProblem: ['denied', 'blocked', 'approximate'].includes(phone.permission),
     recording: {
       on: recording.enabled !== false,
       busy: !!recording.busy,
