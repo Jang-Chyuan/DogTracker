@@ -213,12 +213,10 @@ test('S1 進階 says 「接收器 Wi-Fi、刪除資料」 (c196)', () => {
   expect(advanced).toMatchObject({ title: i18nT('c195'), subtitle: i18nT('c196'), problem: false });
 });
 
-test('S7 Wi-Fi line: the receiver\'s networks, or why there are none', () => {
-  expect(wifiSummary({ ssids: ['家裡', '辦公室'] })).toBe('家裡、辦公室');
-  expect(wifiSummary({ ssids: [] })).toBe(i18nT("c1028"));
-  expect(wifiSummary({ ssids: null, loading: true })).toBe(i18nT('c424'));
-  expect(wifiSummary({ ssids: null, error: i18nT("c517") })).toBe(i18nT("c440"));
-  expect(wifiSummary({ ssids: null, connected: false })).toBe(i18nT("c1016"));
+test('S7 Wi-Fi detail shows receiver identity and link status regardless of cached networks', () => {
+  expect(wifiSummary({ ssids: ['家裡'], connected: false }, '接收器 23')).toBe('接收器 23・沒有連線');
+  expect(wifiSummary({ connected: true }, '接收器 23')).toBe('接收器 23・連線中');
+  expect(wifiSummary({}, '接收器', false)).toBe('還沒有配對接收器');
 });
 
 test('接收器 Wi-Fi page: the list, delete asks first, a failed send says why and offers 重試', async () => {
@@ -254,7 +252,7 @@ test('接收器 Wi-Fi page: the list, delete asks first, a failed send says why 
   expect(text(renderer)).toContain('已傳送到接收器 7');
   // Not connected: nothing can be sent, and it says why.
   await act(async () => renderer.update(<WifiSettings wifi={{ ...wifi, connected: false }} receiver="接收器 7" />));
-  expect(text(renderer)).toContain('接收器 7 沒有連線');
+  expect(text(renderer)).toContain('接收器沒有連線，連上後才能設定 Wi-Fi');
   expect(find('wifi-send').props.disabled).toBe(true);
   await act(async () => renderer.unmount());
 });

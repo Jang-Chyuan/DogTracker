@@ -27,7 +27,7 @@ import {
  * asks first. `wifi` is useReceiverWifi's answer; `receiver` is 「接收器 7」.
  * The receiver never sends a password back.
  */
-export default function WifiSettings({ wifi, receiver = t('c075'), draft = null }) {
+export default function WifiSettings({ wifi, receiver = t('c075'), paired = true, onReconnect, onChange, onConnect, draft = null }) {
   const { colors } = useTheme();
   const settingsStyles = useStyles(getSettingsStyles);
   const styles = useStyles(getStyles);
@@ -54,6 +54,7 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
     /\d$/.test(receiver) ? `${receiver} ${text}` : `${receiver}${text}`;
 
   const send = async () => {
+    if (!connected) return;
     const name = ssid.trim();
     try {
       wifiCommand('upsert', name, password);
@@ -80,6 +81,7 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
     }
   };
   const remove = async () => {
+    if (!connected) return;
     setRemoveBusy(true);
     setRemoveError('');
     try {
@@ -114,12 +116,22 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
           style={[styles.note, styles.firstNote]}
           accessibilityLiveRegion="polite"
         >
-          {of(t("c1017"))}
+          {paired ? t('c1242') : t('c1245')}
         </Text>
       )}
-      <GroupTitle>{of(t("c1030"))}</GroupTitle>
       <GroupCard flat>
-        {wifi.error ? (
+        <ListRow
+          testID={connected ? 'wifi-change' : paired ? 'wifi-connect' : 'wifi-pair'}
+          title={connected ? t('c206') : paired ? t('c1243') : t('c011')}
+          titleTone="tonal"
+          chevron={connected || !paired}
+          onPress={connected ? onChange : paired ? onReconnect : onConnect}
+        />
+      </GroupCard>
+      {paired && <>
+      <GroupTitle>{connected ? of(t("c1030")) : t('c1244')}</GroupTitle>
+      <GroupCard flat>
+        {connected && wifi.error ? (
           <ListRow
             testID="wifi-load-error"
             problem
@@ -131,7 +143,7 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
             label={t("c1024", { error: wifi.error })}
           />
         ) : null}
-        {!wifi.error && wifi.loading && !wifi.ssids ? (
+        {connected && !wifi.error && wifi.loading && !wifi.ssids ? (
           <View style={styles.loading}>
             <ActivityIndicator
               color={colors.tonalText}
@@ -152,10 +164,10 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
             key={network}
             testID={`wifi-${network}`}
             title={network}
-            right={network === wifi.activeSsid ? t("c1027") : undefined}
+            right={connected && network === wifi.activeSsid ? t("c1027") : undefined}
             rightTone={['mutedBold']}
-            onPress={() => setSsid(network)}
-            label={((network === wifi.activeSsid) ? t("c1025", { network: network }) : t("c1026", { network: network }))}
+            onPress={connected ? () => setSsid(network) : undefined}
+            label={connected ? (network === wifi.activeSsid ? t("c1025", { network: network }) : t("c1026", { network: network })) : network}
           >
             <Pressable
               testID={`wifi-delete-${network}`}
@@ -237,7 +249,7 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
           >
             {result.text}
           </Text>
-          {result.retry ? (
+          {result.retry && connected ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('c049')}
@@ -278,7 +290,7 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
 
       <ConfirmDialog
         testID="wifi-delete-dialog"
-        visible={removing != null}
+        visible={connected && removing != null}
         title={t("c1029")}
         body={of(t("c1023", { value: removing ?? '' }))}
         problem={removeError || null}
@@ -289,6 +301,7 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
         onCancel={() => setRemoving(null)}
         problemBlocks={false}
       />
+      </>}
     </ScrollView>
   );
 }

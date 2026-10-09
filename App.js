@@ -38,7 +38,7 @@ import AdvancedSettings from './src/settings/AdvancedSettings';
 import DiagnosticsSettings from './src/settings/DiagnosticsSettings';
 import LiveDataSettings from './src/settings/LiveDataSettings';
 import WifiSettings from './src/settings/WifiSettings';
-import { useReceiverWifi } from './src/settings/useReceiverWifi';
+import { useReceiverWifi, wifiSummary } from './src/settings/useReceiverWifi';
 import { useDeleteDogData } from './src/settings/DeleteDogData';
 import { diagnosticsPage } from './src/diagnostics/DiagnosticsModel';
 import { useRecentRows } from './src/diagnostics/useRecentRows';
@@ -74,6 +74,7 @@ import AlertPreview from './src/dev/AlertPreview';
 import {
   phonePage,
   receiverPage,
+  receiverSetUp,
   settingsHome,
   settingsInput,
 } from './src/settings/SettingsModel';
@@ -935,6 +936,7 @@ function TrackerApp({ resume = null, onRestart }) {
       tracking.foreground &&
       (route.name === 'advanced' || route.name === 'wifi'),
     connected: !!receiverState?.connected,
+    receiverKey: receiverState?.deviceId ?? receiverNumber(receiverState),
   });
   const receiverName =
     receiverNumber(receiverState) != null
@@ -1157,6 +1159,10 @@ function TrackerApp({ resume = null, onRestart }) {
           wifi={wifi}
           draft={wifiDraft}
           receiver={receiverName}
+          paired={receiverSetUp(receiverState)}
+          onReconnect={() => { setWaitingSourcesPaused(false); receiverControl.reconnect(); }}
+          onChange={() => { setWaitingSourcesPaused(false); openPairing('wifi', 'change'); }}
+          onConnect={() => openPairing('wifi')}
         />
       );
       break;
@@ -1274,6 +1280,8 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <AdvancedSettings
           wifi={wifi}
+          receiver={receiverName}
+          paired={receiverSetUp(receiverState)}
           deletion={deletion}
           onWifi={() => open('wifi')}
           deletedText={deletedAt ? t("c480", { value: formatClock(deletedAt) }) : null}
@@ -1283,6 +1291,8 @@ function TrackerApp({ resume = null, onRestart }) {
     default:
       break;
   }
+  const headerTitle = route.name === 'wifi'
+    ? wifiSummary(wifi, receiverName, receiverSetUp(receiverState)) : pageTitle(route);
   const light = LIGHT_PAGES.has(route.name);
   const full = FULL_PAGES.has(route.name);
 
@@ -1307,7 +1317,7 @@ function TrackerApp({ resume = null, onRestart }) {
             <Pressable
               testID="page-back"
               accessibilityRole="button"
-              accessibilityLabel={t("c479", { value: pageTitle(route) })}
+              accessibilityLabel={t("c479", { value: headerTitle })}
               onPress={goBack}
               hitSlop={space.s}
               style={({ pressed }) => [styles.back, pressed && styles.pressed]}
@@ -1316,7 +1326,7 @@ function TrackerApp({ resume = null, onRestart }) {
                   hard to hit) with room before the title; the whole row is
                   the 48dp target. */}
               <Glyph name="back" color={colors.text} size={sizes.icon.navigation} />
-              <Text style={styles.brand}>{pageTitle(route)}</Text>
+              <Text style={styles.brand}>{headerTitle}</Text>
             </Pressable>
           </View>
         )}
