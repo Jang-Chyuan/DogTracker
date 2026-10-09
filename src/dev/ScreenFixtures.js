@@ -29,6 +29,8 @@ import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
 import { fixtureAddressLookup } from './fixtureGeocoder';
 import { fixtureExporter } from './fixtureExporter';
 import { dayKey } from '../history/screen/HistoryScreenDates';
+import { activityMinutes, activityReadings } from '../activity/ActivityMinutes';
+import { ACTIVITY_CONTEXT_MS } from '../activity/ActivityData';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
 export const FIXTURE_NOW = Date.parse('2026-10-07T01:30:00Z');
@@ -1458,6 +1460,26 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
     historyExport = null, activityView = null, activity = null, activityClock = null, alertPause = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
+  const fixtureHistory = history || historyPage(now, { ble, cloudRows });
+  const genericActivity = {
+    readActivity: async (slaveId, { start, end, detail }) => {
+      const rows = cardRows(ble, cloud?.ownerId ? cloudRows : [], slaveId, start - ACTIVITY_CONTEXT_MS);
+      const within = items => items.filter(row => row.time < end + ACTIVITY_CONTEXT_MS);
+      const local = within(rows.local), remote = within(rows.cloud);
+      return detail === 'raw' ? { local, cloud: remote } : { minutes: activityMinutes([
+        ...activityReadings(local, 'ble'), ...activityReadings(remote, 'cloud'),
+      ], { now }) };
+    },
+    readActivityEarliest: async slaveId => {
+      const rows = cardRows(ble, cloud?.ownerId ? cloudRows : [], slaveId, -Infinity);
+      const times = [...rows.local, ...rows.cloud].map(row => row.time);
+      return times.length ? Math.min(...times) : null;
+    },
+  };
+  const fixtureActivity = activity ? {
+    readActivity: (slaveId, query) => (slaveId === 6 ? activity : genericActivity).readActivity(slaveId, query),
+    readActivityEarliest: slaveId => (slaveId === 6 ? activity : genericActivity).readActivityEarliest(slaveId),
+  } : genericActivity;
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -1570,7 +1592,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     pairing,
     // The history page (054a): its query, the map's tracks and the day reader
     // of the time-line list, all from the fixture's rows.
-    history: history && historyFixture(history, [...(history.phoneDays || []), ...(phone?.today || [])]),
+    history: historyFixture(fixtureHistory, [...(fixtureHistory.phoneDays || []), ...(phone?.today || [])]),
     // The history screen opened as it was left (H2b: the range bar open, a
     // range already dragged; 054b: the calendar open, another day chosen).
     historyView,
@@ -1579,8 +1601,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     activityView,
     // activity-today's page runs 40 s into a minute (the running one is left out).
     activityNow: activityClock,
-    readActivity: activity?.readActivity,
-    readActivityEarliest: activity?.readActivityEarliest,
+    readActivity: fixtureActivity.readActivity,
+    readActivityEarliest: fixtureActivity.readActivityEarliest,
     // The history's stand-in cloud (054b): { cloud, online, seed } or null.
     historyCloud,
     // The export (056): 'hang' (產生中 never ends), 'fail', 'fail-once'; else

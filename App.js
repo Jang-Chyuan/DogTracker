@@ -404,9 +404,8 @@ function TrackerApp({ resume = null, onRestart }) {
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   // The history page shows live data unless a history fixture (054a) is on.
-  const historyFixture = !!fixture?.history;
   const mapInputs = applyScreenFixture(
-    isHistory && !historyFixture ? null : fixture,
+    fixture,
     {
       tracking,
       phone,
@@ -1308,7 +1307,7 @@ function TrackerApp({ resume = null, onRestart }) {
             // screen's bottom edge.
             bottomInset={insets.bottom + layout.screenEdge}
             mapProvider={GOOGLE_MAP_PROVIDER}
-            fixture={isHistory && !historyFixture ? null : fixture}
+            fixture={fixture}
             todayRoute={mapInputs.todayRoute}
             onOpenSettings={() => open('settings')}
             // Restoring a saved sign-in counts: A6 offers no 「登入 Supabase」.
