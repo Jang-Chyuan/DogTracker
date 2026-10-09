@@ -16,8 +16,7 @@
     "lint": "eslint .",
     "postinstall": "patch-package --error-on-fail",
     "start": "react-native start",
-    "test": "node --experimental-sqlite node_modules/jest/bin/jest.js",
-    "postinstall": "node scripts/patch-avatar-picker.js"
+    "test": "node --experimental-sqlite node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^9.2.1",
