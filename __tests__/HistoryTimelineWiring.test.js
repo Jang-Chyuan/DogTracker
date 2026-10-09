@@ -13,7 +13,7 @@ import { AddressLookupContext, createAddressLookup } from '../src/placement/Addr
 import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
 import { applyScreenFixture, buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { endOfDay, formatTodayDistance, startOfToday } from '../src/tracking/TodayDistance';
-import { timelineSubject, useHistoryTimeline } from '../src/mapHistory/useHistoryTimeline';
+import { historyTargetOf, useHistoryDayRows } from '../src/mapHistory/useHistoryScreen';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 
 const MINUTE = 60000;
@@ -22,7 +22,7 @@ const DAY = startOfToday(FIXTURE_NOW);
 // The list of a history fixture, as the old history page computes it.
 async function fixtureList(name) {
   const fixture = buildFixture(name);
-  const target = timelineSubject(fixture.history.preferences, fixture.now);
+  const target = { ...historyTargetOf(fixture.history.preferences), day: startOfToday(fixture.now) };
   const answer = await fixture.history.readDay({ subject: target.subject, slaveId: target.slaveId, start: target.day,
     end: endOfDay(target.day), source: 'all', owner: fixture.cloudSync.ownerId });
   const model = historyTimeline(answer.rows, { subject: target.subject, dayStart: target.day,
@@ -260,18 +260,15 @@ describe('addresses (053a)', () => {
   });
 });
 
-describe('the old history page shows the list', () => {
-  test('timelineSubject: the dog it was opened for, else my route; the query\'s day', () => {
-    const now = new Date(2026, 9, 7, 9, 30).getTime();
-    expect(timelineSubject({ client: true, phone: true, slaves: [6], timeMode: 'recent' }, now))
-      .toEqual({ subject: 'dog', slaveId: 6, day: new Date(2026, 9, 7).getTime() });
-    expect(timelineSubject({ client: false, phone: true, slaves: [4], timeMode: 'fixed',
-      startAt: new Date(2026, 9, 3, 8).getTime() }, now)).toEqual({ subject: 'phone', slaveId: null,
-      day: new Date(2026, 9, 3).getTime() });
-    expect(timelineSubject({ client: false, phone: false, slaves: [4] }, now)).toBeNull();
+describe('the history screen shows the list', () => {
+  test('historyTargetOf: the dog the query was saved for, else my route', () => {
+    expect(historyTargetOf({ client: true, phone: true, slaves: [6] })).toEqual({ subject: 'dog', slaveId: 6 });
+    expect(historyTargetOf({ client: false, phone: true, slaves: [4] })).toEqual({ subject: 'phone', slaveId: null });
+    expect(historyTargetOf({ client: false, phone: false, slaves: [4] })).toBeNull();
+    expect(historyTargetOf(null)).toBeNull();
   });
 
-  test('useHistoryTimeline reads once for a past day and follows new rows today', async () => {
+  test('useHistoryDayRows reads once for a past day and follows new rows today', async () => {
     jest.useFakeTimers();
     const reads = [];
     let extra = [];
@@ -285,16 +282,17 @@ describe('the old history page shows the list', () => {
     });
     let result;
     function Probe({ target }) {
-      result = useHistoryTimeline({ read, target, clock: () => FIXTURE_NOW });
+      result = useHistoryDayRows({ read, subject: target.subject, slaveId: null, day: target.day, clock: () => FIXTURE_NOW });
       return null;
     }
     const today = { subject: 'phone', slaveId: null, day: DAY };
     let renderer;
     await act(async () => { renderer = Renderer.create(<Probe target={today} />); });
-    expect(result.model.points).toHaveLength(60);
+    expect(result.rows).toHaveLength(60);
+    expect(result.loaded).toBe(true);
     extra = [phoneHistoryRow({ id: 61, time: DAY + 8 * 60 * MINUTE + 600000, latitude: 24.987, longitude: 121.31, accuracy: 5 })];
     await act(async () => jest.advanceTimersByTimeAsync(15000));
-    expect(result.model.points).toHaveLength(61);
+    expect(result.rows).toHaveLength(61);
     expect(reads[1]).toEqual({ done: true });
     // A past day: read again only every minute (a download can add rows).
     const past = { subject: 'phone', slaveId: null, day: DAY - 86400000 };
@@ -308,7 +306,7 @@ describe('the old history page shows the list', () => {
     jest.useRealTimers();
   });
 
-  test('history-mode-switch on the history page: summary, two numbered switch points, the car row', async () => {
+  test('history-mode-switch on the history screen: summary, two numbered switch points, the car row', async () => {
     const MapView = require('react-native-maps').default;
     const { Platform } = require('react-native');
     const NativePlatform = require('../specs/NativeTrackingPlatform').default;
@@ -331,13 +329,16 @@ describe('the old history page shows the list', () => {
     await act(async () => {
       renderer = Renderer.create(<MapScreen tracking={inputs.tracking} phone={inputs.phone} history={inputs.history}
         cloudDogs={inputs.cloudDogs} cloudOwner={inputs.cloudSync.ownerId} bottomInset={80} historical active
-        dogAvatars={inputs.dogAvatars} mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture} />);
+        dogAvatars={inputs.dogAvatars} mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture}
+        historyTarget={historyTargetOf(inputs.history.preferences)} />);
     });
     await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+    await act(async () => {});
     const ids = renderer.root.findAll(node => typeof node.type === 'string' && /^timeline-/.test(node.props.testID || ''))
       .map(node => node.props.testID);
     expect(ids).toEqual(['timeline-departure', 'timeline-movement-walking', 'timeline-switch', 'timeline-movement-driving',
-      'timeline-switch', 'timeline-movement-walking', 'timeline-stop', 'timeline-end']);
+      // The cursor opens on the newest fix, inside the last stay: that row is lit.
+      'timeline-switch', 'timeline-movement-walking', 'timeline-stop', 'timeline-selected', 'timeline-end']);
     const text = JSON.stringify(renderer.toJSON());
     expect(text).toContain('開車');
     expect(text).toContain('不算距離');

@@ -125,7 +125,10 @@ export function historyTimeline(rows = [], options = {}) {
   // midnight does not count (判定表「停住期間的封包算不算『有紀錄』」: held
   // packets do).
   const dayRecords = stream.packets.some(p => p.time >= dayStart && p.time < dayEnd);
-  return { ...stream, dayRecords, points, range, departure, nodes, locations: keptLocations, sections: keptSections,
+  // dayPoints: the whole day's filtered fixes (the range bar snaps to them);
+  // edges: the range's fix-to-fix steps (the history cursor's distance).
+  return { ...stream, dayRecords, points, dayPoints, edges: movement.edges, range, departure, nodes,
+    locations: keptLocations, sections: keptSections,
     state: stays.state, typicalMs: stays.typicalMs,
     distanceM: movement.edges.reduce((sum, e) => sum + e.countedDistanceM, 0),
     durationMs: first ? last.time - first.time : 0,

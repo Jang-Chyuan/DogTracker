@@ -157,6 +157,18 @@ export default function Glyph({ name, color, size = 16, level = null }) {
         </>
       )}
       {name === 'close' && <Path d="M6 6l12 12M18 6 6 18" {...stroke} />}
+      {name === 'share' && (
+        // 匯出 (history top right): an arrow up out of a tray.
+        <Path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" {...stroke} />
+      )}
+      {name === 'sliders' && (
+        // 調整範圍: two sliders with their knobs.
+        <>
+          <Path d="M4 8h4M12 8h8M4 16h10M18 16h2" {...stroke} />
+          <Circle cx={10} cy={8} r={2} {...stroke} />
+          <Circle cx={16} cy={16} r={2} {...stroke} />
+        </>
+      )}
       {name === 'compass' && (
         // The compass (shown once the map is turned): north half in red.
         <>

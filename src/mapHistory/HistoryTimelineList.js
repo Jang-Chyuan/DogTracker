@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { LayoutAnimation, StyleSheet, Text, View } from 'react-native';
+import { LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
 import { colors } from '../theme/tokens';
 import {
-  emptyText, interruptionText, nodePill, nodeTimes, placeLines, sectionText, summaryText,
+  interruptionText, nodePill, nodeTimes, placeLines, sectionText,
 } from '../history/HistoryText';
 import { usePlaceNames } from '../placement/AddressLookup';
 
@@ -65,12 +65,13 @@ function Pill({ pill, color }) {
   return <View style={[styles.pill, tone[0]]}><Text style={[styles.pillText, tone[1]]}>{pill.text}</Text></View>;
 }
 
-function PlaceRow({ node, next, color, place }) {
+function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
   const [start, end] = nodeTimes(node);
   const note = interruptionText(node);
   const lines = placeLines(node, place);
   return (
-    <View style={styles.row} testID={`timeline-${node.type}`}>
+    <Pressable style={styles.row} testID={`timeline-${node.type}`} onPress={onPress ? () => onPress(node) : undefined}
+      onLayout={onLayout} accessibilityRole="button" accessibilityState={{ selected: !!selected }}>
       <View style={styles.timeColumn}>
         <Text style={styles.time}>{start}</Text>
         {end ? <Text style={styles.timeEnd}>{end}</Text> : null}
@@ -80,27 +81,32 @@ function PlaceRow({ node, next, color, place }) {
         <Track kind={lineOf(next)} color={color} from={12} />
         <Node node={node} color={color} />
       </View>
-      <View style={styles.place}>
-        {/* Two lines kept while the address is asked for (判定表「清單節點的內容」). */}
-        <Text style={[styles.address, lines.titleMuted && styles.asking]} testID="place-title">
-          {lines.title}
-        </Text>
-        <View style={styles.second}>
-          <Pill pill={nodePill(node)} color={color} />
-          {lines.coordinates ? <Text style={styles.note}>{lines.coordinates}</Text> : null}
-          {lines.missing ? <Text style={styles.note}>{lines.missing}</Text> : null}
-          {note ? <Text style={styles.note}>{note}</Text> : null}
+      <View style={styles.placeOuter}>
+        {/* The row the cursor is on: a pale fill of the route colour (H2). */}
+        <View style={[styles.place, selected && { backgroundColor: `${color}1A` }]}
+          testID={selected ? 'timeline-selected' : undefined}>
+          {/* Two lines kept while the address is asked for (判定表「清單節點的內容」). */}
+          <Text style={[styles.address, lines.titleMuted && styles.asking]} testID="place-title">
+            {lines.title}
+          </Text>
+          <View style={styles.second}>
+            <Pill pill={nodePill(node)} color={color} />
+            {lines.coordinates ? <Text style={styles.note}>{lines.coordinates}</Text> : null}
+            {lines.missing ? <Text style={styles.note}>{lines.missing}</Text> : null}
+            {note ? <Text style={styles.note}>{note}</Text> : null}
+          </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-function SectionRow({ section, color }) {
+function SectionRow({ section, color, onPress }) {
   const text = sectionText(section);
   const muted = section.type === 'gap';
   return (
-    <View style={[styles.row, styles.sectionRow]} testID={`timeline-${section.type}-${section.mode}`}>
+    <Pressable style={[styles.row, styles.sectionRow]} testID={`timeline-${section.type}-${section.mode}`}
+      onPress={onPress ? () => onPress(section) : undefined} accessibilityRole="button">
       <View style={styles.timeColumn} />
       <View style={styles.trackColumn}><Track kind={lineOf(section)} color={color} /></View>
       <View style={styles.sectionText}>
@@ -109,32 +115,18 @@ function SectionRow({ section, color }) {
           {text.lead}{text.time ? ' ' : ''}<Text style={styles.bold}>{text.time}</Text>{text.rest}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
 /**
  * The time-line list of one dog or my route (H1/H2, 判定表「時間軸清單」):
- * the summary, then places (出發, numbered stays and switch points, holds,
- * 恢復記錄, the end) with the movement and 沒有資料 rows between them.
- * Shown on the old history page until 055 builds the new one.
+ * places (出發, numbered stays and switch points, holds, 恢復記錄, the end)
+ * with the movement and 沒有資料 rows between them. `selected` is the start
+ * of the place row the cursor is on; a tap on a row calls `onPressNode` with
+ * its node; `onRowLayout(start, y)` says where each place row sits.
  */
-function HistoryTimelineList({ model, subject, today, name, color, loading, error }) {
-  if (error) return <Text style={styles.empty}>{error}</Text>;
-  if (!model) return loading ? <Text style={styles.empty}>讀取中…</Text> : null;
-  if (!model.dayRecords) return <Text style={styles.empty}>{emptyText({ subject, today, name })}</Text>;
-  if (!model.points.length) return <Text style={styles.empty}>這段時間沒有紀錄</Text>;
-  return <TimelineBody model={model} subject={subject} color={color} />;
-}
-
-const isSection = node => ['movement', 'gap'].includes(node?.type);
-
-// Addresses fade in where they land and the rows below slide (180 ms).
-const ADDRESS_MOTION = LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut,
-  LayoutAnimation.Properties.opacity);
-
-function TimelineBody({ model, subject, color }) {
-  const summary = summaryText(model, { subject });
+function HistoryTimelineList({ model, color, selected = null, onPressNode, onRowLayout }) {
   const nodes = model.nodes;
   const places = usePlaceNames(nodes.map(node => (isSection(node) ? null : node)));
   const states = places.map(place => place.state).join();
@@ -145,26 +137,27 @@ function TimelineBody({ model, subject, color }) {
   }, [states]);
   return (
     <View testID="history-timeline">
-      <View style={styles.summary} accessible accessibilityLabel={`${summary.title}，${summary.detail}`}>
-        <Text style={styles.title}>{summary.title}</Text>
-        <Text style={styles.detail}>{summary.detail}</Text>
-      </View>
-      {nodes.map((node, index) => (['movement', 'gap'].includes(node.type)
-        ? <SectionRow key={`s${node.start}-${index}`} section={node} color={color} />
+      {nodes.map((node, index) => (isSection(node)
+        ? <SectionRow key={`s${node.start}-${index}`} section={node} color={color} onPress={onPressNode} />
         : <PlaceRow key={`n${node.type}${node.start}-${index}`} node={node} color={color} place={places[index]}
+          selected={selected != null && node.start === selected} onPress={onPressNode}
+          onLayout={onRowLayout ? event => onRowLayout(node.start, event.nativeEvent.layout.y) : undefined}
           next={isSection(nodes[index + 1]) ? nodes[index + 1] : null} />))}
     </View>
   );
 }
 
-// The page re-renders every second (useMapHistory's clock); the list only
-// when its model changes.
+const isSection = node => ['movement', 'gap'].includes(node?.type);
+
+// Addresses fade in where they land and the rows below slide (180 ms).
+const ADDRESS_MOTION = LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut,
+  LayoutAnimation.Properties.opacity);
+
+// The screen re-renders on every cursor move; the list only when its model
+// or the selected row changes.
 export default React.memo(HistoryTimelineList);
 
 const styles = StyleSheet.create({
-  summary: { paddingVertical: 10 },
-  title: { color: colors.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  detail: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
   // The 12dp between rows is inside the place column, so the track column
   // runs the full row and the line has no breaks.
   row: { flexDirection: 'row' },
@@ -187,7 +180,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.receiver, alignItems: 'center', justifyContent: 'center', marginTop: -3 },
   resume: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, backgroundColor: colors.surface, marginTop: 4 },
   end: { width: 18, height: 18, borderRadius: 9, borderWidth: 4, marginTop: 1 },
-  place: { flex: 1, paddingLeft: 8, paddingBottom: 12 },
+  // 12dp between rows, outside the selected fill (radius.stayRow 12).
+  placeOuter: { flex: 1, paddingBottom: 6 },
+  place: { marginTop: -4, paddingTop: 4, paddingLeft: 8, paddingRight: 8, paddingBottom: 6, borderRadius: 12,
+    overflow: 'hidden' },
   address: { color: colors.text, fontSize: 15, fontWeight: '700', lineHeight: 20, fontVariant: ['tabular-nums'] },
   asking: { color: colors.textMuted, fontWeight: '400', minHeight: 40 },
   second: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 4 },
@@ -197,5 +193,4 @@ const styles = StyleSheet.create({
   sectionText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8 },
   movement: { color: colors.textMuted, fontSize: 13, flexShrink: 1 },
   bold: { color: colors.text, fontWeight: '700' },
-  empty: { color: colors.textMuted, fontSize: 16, textAlign: 'center', paddingVertical: 32 },
 });

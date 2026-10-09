@@ -37,6 +37,11 @@ export function useMapHistory(database, ready, active, owner) {
     if (!db.current?.historyDayRows) return Promise.resolve({ rows: [], seed: [], after: {} });
     return db.current.historyDayRows(request);
   });
+  // The days holding one dog's (or my route's) rows, for the date row.
+  const readDays = useRef(request => {
+    if (!db.current?.historyDays) return Promise.resolve([]);
+    return db.current.historyDays(request);
+  });
   const key = JSON.stringify(preferences) + ':' + (owner || '');
   const currentKey = useRef(key);
   currentKey.current = key;
@@ -168,6 +173,8 @@ export function useMapHistory(database, ready, active, owner) {
     data,
     /** One day of one dog's or this phone's rows for the time-line list. */
     readDay: readDay.current,
+    /** The local days with rows of one dog or my route (HistoryDatabase.historyDays). */
+    readDays: readDays.current,
     async exportRows() {
       if (!data) throw new Error('請等待歷史資料載入');
       const alive = () => currentKey.current === key && !!db.current;

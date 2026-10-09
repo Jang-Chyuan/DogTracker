@@ -282,14 +282,38 @@ function routePhone(path, now) {
 
 // The history page opened for a dog (看軌跡) or my route (「今天 x km」),
 // today: the query the old page keeps, plus the dog's rows.
-function historyPage(now, { slave = null, ble = [], cloudRows = [] } = {}) {
+function historyPage(now, { slave = null, ble = [], cloudRows = [], phoneDays = [] } = {}) {
   return {
     preferences: slave == null
       ? { phone: true, client: false, timeMode: 'recent', hours: 24, slaves: [4], masters: [7] }
       : { phone: false, client: true, source: 'ble', timeMode: 'recent', hours: 24, slaves: [slave], masters: [7] },
-    ble, cloudRows,
+    // phoneDays: my route on other days ({ time, latitude, longitude }).
+    ble, cloudRows, phoneDays,
   };
 }
+
+// ---- history (055a): the history screen ----------------------------------
+// Made-up addresses near the fixtures' place, in the order the list asks
+// (出發, then each place down to the end); null = no answer.
+const HISTORY_NAMES = [
+  { line: '330台灣桃園市桃園區中正路50號' }, { line: '330台灣桃園市桃園區民生路120號' },
+  { line: '330台灣桃園市桃園區三民路二段88號' }, { line: '330台灣桃園市桃園區復興路201號' },
+  null, { line: '330台灣桃園市桃園區成功路三段16號' }, { line: '330台灣桃園市桃園區大興路32號' },
+  { line: '330台灣桃園市桃園區莒光街7號' },
+];
+// My morning like H1 我的路線: home until about 06:57, two stays, a 10-minute
+// drive, a stay, walking now (09:30).
+const myRouteMorning = now => legsPath(now, 158 * MINUTE, at(-10, -100), [
+  { stay: 12 }, { walk: 24, bearing: 35, speed: 0.6 }, { stay: 17 }, { walk: 25, bearing: 95, speed: 0.6 },
+  { stay: 20 }, { drive: 6, speed: 6, bearing: 150 }, { walk: 20, bearing: 210, speed: 0.6 }, { stay: 11 },
+  { walk: 23, bearing: 280, speed: 0.6 },
+]);
+// 小黑's morning like H1 狗的歷史: out at about 07:00, stays, a ride, now.
+const dogMorning = now => legsPath(now, 158 * MINUTE, at(0, -80), [
+  { stay: 12 }, { walk: 24, bearing: 30, speed: 0.7 }, { stay: 17 }, { walk: 30, bearing: 100, speed: 0.7 },
+  { stay: 25 }, { drive: 3, speed: 10, bearing: 160 }, { walk: 25, bearing: 230, speed: 0.7 }, { stay: 10 },
+  { walk: 12, bearing: 300, speed: 0.7 },
+]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix }));
 // The handler's morning (H1 我的路線): at home from 06:50, out at about 07:05,
 // two stays, walking until now (09:30).
 const morningRoute = now => legsPath(now, 160 * MINUTE, at(-40, -150), [
@@ -895,6 +919,27 @@ const FIXTURES = {
       { stay: 19 }]), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
   },
+  // ---- history (055a): the history screen --------------------------------
+  // H1 我的路線 (「今天 x km」): two stays, a drive (a numbered switch point),
+  // a stay, walking now.
+  'history-my-route': now => ({ ...FIXTURES['all-good'](now), phone: routePhone(myRouteMorning(now), now),
+    openRoute: 'history', history: historyPage(now), geocoder: { names: HISTORY_NAMES } }),
+  // H1 狗的歷史 (看軌跡 on 小黑's card): stays, a ride (坐車), moving now.
+  'history-dog': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: dogMorning(now) }), geocoder: { names: HISTORY_NAMES } }),
+  // H2b: my route with the range bar open; the start dragged to the walk after
+  // the first stay (出發（手動）), the end following now.
+  'history-range-open': now => ({ ...FIXTURES['history-my-route'](now),
+    historyView: { rangeOpen: true, manual: { start: now - 100 * MINUTE, end: null, following: true } } }),
+  // 豆豆 has one fix today: one point, no distance, no range bar (只有一筆).
+  'history-single-point': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 4, ble: [bleRow({ slave: 4, time: now - 20 * MINUTE, fix: at(4, 6) })] }) }),
+  // H8: my route without a fix today (yesterday has one): 今天還沒有路線, the
+  // export icon faded, ‹ goes to yesterday.
+  'history-empty-day': now => ({ ...FIXTURES['all-good'](now), phone: { ...walkingPhone(now), today: [] },
+    openRoute: 'history', history: historyPage(now, {
+      phoneDays: legsPath(now - 20 * 60 * MINUTE, 60 * MINUTE, at(-30, -60), [{ walk: 50, bearing: 70 }])
+        .map(row => ({ time: row.time, ...row.fix })) }) }),
   // 豆豆's day with two breaks: 12 minutes (沒有資料) and 40 minutes (沒有資料
   // then 恢復記錄).
   'history-gap': now => {
@@ -1029,7 +1074,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, readFailure = null, deletion = null, launch = null, restoring = false,
-    permissionsGuide = null, pairing = null, history = null, geocoder = null,
+    permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
@@ -1139,7 +1184,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     pairing,
     // The history page (054a): its query, the map's tracks and the day reader
     // of the time-line list, all from the fixture's rows.
-    history: history && historyFixture(history, phone?.today || [], now),
+    history: history && historyFixture(history, [...(history.phoneDays || []), ...(phone?.today || [])], now),
+    // The history screen opened as it was left (H2b: the range bar open, a
+    // range already dragged).
+    historyView,
     // Its places' names (053a): made-up answers, none, or this phone's
     // Geocoder; never this phone's address cache.
     addressLookup: fixtureAddressLookup(geocoder),
@@ -1165,6 +1213,18 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today, now) {
       .filter(row => row.slave_id === slaveId && within(timeOf(row))).map(row => dogHistoryRow(row, 'cloud'));
     return { rows: [...local, ...cloud], seed: [], after: { fixture: true } };
   };
+  // The days holding rows (HistoryDatabase.historyDays): the date row's ‹ ›.
+  const keyOf = time => {
+    const date = new Date(time);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  const readDays = async ({ subject, slaveId, source = 'all', owner = null }) => {
+    const times = subject === 'phone' ? phoneRows.map(row => row.time) : [
+      ...(source === 'cloud' ? [] : ble.filter(row => row.slave_id === slaveId).map(row => row.received_at)),
+      ...(source === 'local' || !owner ? [] : cloudRows.filter(row => row.slave_id === slaveId).map(timeOf)),
+    ];
+    return [...new Set(times.map(keyOf))].sort();
+  };
   const dogTrack = slaveId => ble.filter(row => row.slave_id === slaveId && row.received_at >= dayStart)
     .map(row => ({ id: row.id, time: row.received_at, latitude: row.slave_lat, longitude: row.slave_lon,
       master_id: row.master_id, slave_id: row.slave_id }));
@@ -1173,7 +1233,7 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today, now) {
     clients: preferences.slaves.map(slaveId => ({ slaveId,
       ...historyGeometry(preferences.client ? dogTrack(slaveId) : []) })),
     since: dayStart, until: now, coverage: null, message: '' });
-  return { preferences, readDay, data };
+  return { preferences, readDay, readDays, data };
 }
 
 const rejectRead = reason => async () => { throw new Error(reason); };
@@ -1311,7 +1371,8 @@ export function applyScreenFixture(fixture, live, edits = null) {
     history: history && {
       ...history, preferences: { ...history.preferences, ...fixture.history?.preferences, dogAliases: aliases },
       // A history fixture (054a) draws its own day, never this phone's.
-      ...(fixture.history ? { data: fixture.history.data, readDay: fixture.history.readDay, loaded: true,
+      ...(fixture.history ? { data: fixture.history.data, readDay: fixture.history.readDay,
+        readDays: fixture.history.readDays, loaded: true,
         busy: false, error: '', key: `fixture:${fixture.name}`, devices: [], days: [], phoneRecorded: true } : {}),
       // The card's 看軌跡 and the dog page's name must not store a fixture's
       // dog in this phone's real history query or names.

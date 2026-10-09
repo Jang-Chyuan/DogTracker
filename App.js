@@ -49,6 +49,7 @@ import { useMapClock } from './src/map/useMapClock';
 import NativeTrackingPlatform from './specs/NativeTrackingPlatform';
 import { useDefaultLocationRecording } from './src/locationTracker/useDefaultLocationRecording';
 import { useMapHistory } from './src/mapHistory/useMapHistory';
+import { historyTargetOf } from './src/mapHistory/useHistoryScreen';
 import { useDogAvatars } from './src/dogs/useDogAvatars';
 import { useHistoryDownload } from './src/mapHistory/useHistoryDownload';
 import { useCloudSync } from './src/cloud/useCloudSync';
@@ -195,6 +196,8 @@ function TrackerApp({ resume = null, onRestart }) {
   // D3 keeps its own back steps (a dialog, D3c → D3a, 取消): App's back key
   // asks it first.
   const pairBack = useRef(null);
+  // The history screen's own back steps (range bar, panel at 75%).
+  const historyBack = useRef(null);
   // Back on the map from D3 opened by A6: frame the new receiver's dogs.
   const [frameRequest, setFrameRequest] = useState(null);
   // The dog whose history 看軌跡 opened: back on the live map, its card opens
@@ -464,6 +467,8 @@ function TrackerApp({ resume = null, onRestart }) {
         else if (route.name === 'signIn') leaveSignInPage('back');
         // D3's own steps first (a dialog, D3c, a connection), then out.
         else if (route.name === 'pair') pairBack.current?.();
+        // The history's own layers first (the range bar, the panel at 75%).
+        else if (route.name === 'history' && historyBack.current?.()) return true;
         else if (route.entry === 'onboarding') guideBack();
         // Nothing under the failure screen: back leaves the app.
         else if (route.name === 'startFailed') BackHandler.exitApp();
@@ -648,8 +653,13 @@ function TrackerApp({ resume = null, onRestart }) {
           frameRequest={frameRequest}
           onOpenHistory={slaveId => {
             setCardHistory(slaveId);
-            open('history');
+            open('history', { target: slaveId == null ? { subject: 'phone', slaveId: null }
+              : { subject: 'dog', slaveId } });
           }}
+          // A fixture's history page (no route target): whom its query is about.
+          historyTarget={isHistory ? route.target ?? historyTargetOf(mapInputs.history?.preferences) : null}
+          onLeaveHistory={goBack}
+          historyBack={historyBack}
         />
 
 

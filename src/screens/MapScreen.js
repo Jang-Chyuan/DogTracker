@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import HistorySheet, { shortRangeLabel } from '../mapHistory/HistorySheet';
-import HistoryPlaybackControls from '../mapHistory/HistoryPlaybackControls';
-import { clipTrackTo } from '../mapHistory/HistoryPlayback';
-import { dogHistoryLabel } from '../mapHistory/DogAliases';
-import { useHistoryPlayback } from '../mapHistory/useHistoryPlayback';
+import HistoryScreen from '../mapHistory/HistoryScreen';
+import { panelLevels } from '../mapHistory/HistoryPanel';
+import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import {
@@ -15,10 +13,7 @@ import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
 import { useAddress } from '../placement/AddressLookup';
-import { dogColor } from '../map/CloudTracks';
 import { useMapClock } from '../map/useMapClock';
-import DeviceDetails from '../map/DeviceDetails';
-import { SHEET_COLLAPSED_HEIGHT } from '../map/SheetMotion';
 import { floatingShadow, mapColors as colors } from '../map/MapTheme';
 import { useReceiverState } from '../map/useReceiverState';
 import { isOtherReceiver, receiverLink, receiverNumber } from '../map/ReceiverState';
@@ -37,7 +32,7 @@ import TopAlertCards from '../map/TopAlertCards';
 import {
   gearLabel, gearReasons, receiverOutage, showsNoDogs, storageProblem, topCards, trackReceiverWait,
 } from '../map/TopAlerts';
-import { startOfToday, todayPill } from '../tracking/TodayDistance';
+import { endOfDay, startOfToday, todayPill } from '../tracking/TodayDistance';
 
 // How long the first framing waits for the phone's first position report
 // before framing without it (the launch screen is still up meanwhile).
@@ -68,6 +63,12 @@ export default function MapScreen({
   onOpenHistory,
   // { slaveId, key }: open this dog's card (back from its history).
   openDogRequest = null,
+  // The history screen's subject ({ subject: 'dog', slaveId } or { subject:
+  // 'phone' }), its ‹ 回到現在 (onLeaveHistory) and its back-key steps
+  // (historyBack.current(): true when the screen used the key).
+  historyTarget = null,
+  onLeaveHistory,
+  historyBack = null,
   // Back from D3 opened by A6: frame that receiver's located dogs (once per key).
   frameRequest = null,
   // 「今天 x km」: today's recorded route of this phone ({ count, metres },
@@ -96,7 +97,6 @@ export default function MapScreen({
   const insets = useSafeAreaInsets();
   const snapshot = useRef(null);
   const onSnapshotReady = useCallback(value => { snapshot.current = value; }, []);
-  const [sheetHeight, setSheetHeight] = useState(0);
   // The base map's state (GoogleTrackingMap): drives the 地圖載入失敗 card.
   const [mapState, setMapState] = useState('loading');
   const [mapRetry, setMapRetry] = useState(0);
@@ -109,7 +109,6 @@ export default function MapScreen({
   // What is open: one dog's card on the live map, or a track's panel in
   // history. Both are answered by a tap on the marker.
   const [selected, setSelected] = useState(null);
-  const closeDetails = useCallback(() => setSelected(null), []);
   const card = useRef(null);
   // The card's height while it is up (the map buttons sit above it).
   const [cardHeight, setCardHeight] = useState(0);
@@ -141,7 +140,6 @@ export default function MapScreen({
     setCardPage(null);
     setFocusRequest({ slaveId, key: Date.now() });
   }, [historical]);
-  const openTrack = useCallback(name => setSelected({ kind: 'track', name }), []);
   // Tapping empty map closes the card (sliding away), like swiping it down.
   const pressMap = useCallback(() => card.current?.close(), []);
   const { point, route, positionSamples, mode } = tracking;
@@ -322,48 +320,36 @@ export default function MapScreen({
   // Settled once the phone has a fix, or says it is not recording, or the
   // wait is over; a report without a position yet keeps waiting.
   const phoneSettled = !!fixture || !!phoneSpot || (livePhone != null && !livePhone.running) || phoneWaitOver;
-  const playback = useHistoryPlayback(history?.data, history?.key, historical);
-  const playbackAt = playback.at;
+  // ---- the history screen (055a) -----------------------------------------
+  const target = historical ? historyTarget : null;
+  const saveHistory = history?.save;
+  const historyPreferences = history?.preferences;
+  // The export (the old one, until 056) reads the history query: it follows
+  // the day shown (useMapHistory.save).
+  const followDay = useCallback(dayStart => {
+    if (!saveHistory || !historyPreferences) return;
+    saveHistory({ ...historyPreferences, timeMode: 'fixed', startAt: dayStart, endAt: endOfDay(dayStart) });
+  }, [saveHistory, historyPreferences]);
+  const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
+    clock: fixtureClock, active: historical && active && tracking.foreground !== false,
+    recording: livePhone ? !!livePhone.running : null, onDayChange: followDay,
+    // A fixture's ranges stay apart from the real ones; H2b starts dragged.
+    memoryScope: fixture ? `fixture:${fixture.name}:` : '', preset: fixture?.historyView ?? null });
+  const window = useWindowDimensions();
+  const historyEmpty = !!screen.model && !screen.model.dayRecords;
+  const levels = useMemo(() => panelLevels(window.height, insets.bottom, { empty: historyEmpty }),
+    [window.height, insets.bottom, historyEmpty]);
+  const [panel, setPanel] = useState({ level: 'half' });
+  const historyScreen = useRef(null);
+  if (historyBack) historyBack.current = () => !!historyScreen.current?.back();
+  const [historyFrame, setHistoryFrame] = useState(null);
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is never decided by the
-    // history tab's parameters.
+    // history's parameters.
     if (!historical) return { ...framedPresentation, dogAliases: history?.preferences.dogAliases, dogAvatars: avatars };
-    const data = history.data;
-    // Playback draws the same tracks up to the cursor, so the map never shows a
-    // position the replayed moment did not have yet.
-    const clip = track => (Number.isFinite(playbackAt) ? clipTrackTo(track, playbackAt) : track);
-    // One track per dog, each with its own colour, plus this phone's own trace.
-    const tracks = data ? [
-      { ...clip(data.phone), name: '手機', color: '#2563EB', role: 'phone',
-        sourceLabel: '來源：這支手機自己的定位記錄' },
-      // Each dog's position at the replayed moment wears the same face as on
-      // the live map, instead of an anonymous map pin.
-      ...(data.clients || []).map((track, index) => ({
-        ...clip(track),
-        name: dogHistoryLabel(track.slaveId, history.preferences.dogAliases),
-        avatar: avatars[track.slaveId],
-        color: dogColor(track.slaveId, index),
-        role: 'slave',
-        sourceLabel: history.preferences.source === 'cloud'
-          ? '來源：雲端下載的資料' : '來源：這支手機用 BLE 收到的資料',
-      })),
-    ] : [];
-    const points = tracks.flatMap(track => track.segments.flat());
-    const cameraPositions = [];
-    if (points.length) {
-      let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-      for (const p of points) { minLat = Math.min(minLat, p.latitude); maxLat = Math.max(maxLat, p.latitude); minLon = Math.min(minLon, p.longitude); maxLon = Math.max(maxLon, p.longitude); }
-      cameraPositions.push({ latitude: minLat, longitude: minLon }, { latitude: maxLat, longitude: maxLon });
-    }
-    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], cameraPositions, historyTracks: tracks };
-  }, [historical, history?.data, history?.preferences.source, history?.preferences.dogAliases, framedPresentation,
-    playbackAt, avatars]);
-  // A history track's panel (the live map's dogs answer with their card).
-  const trackSubject = useMemo(() => {
-    if (!historical || selected?.kind !== 'track') return null;
-    const track = (presentation.historyTracks || []).find(item => item.name === selected.name);
-    return track ? { kind: 'track', track } : null;
-  }, [selected, historical, presentation.historyTracks]);
+    return { positions: {}, slave: null, slaveSegments: [], rangeRing: null, rangeLines: [], dogMarkers: [],
+      cameraPositions: screen.map?.camera ?? [], historyRoute: screen.map };
+  }, [historical, history?.preferences.dogAliases, framedPresentation, avatars, screen.map]);
   // ---- the dog's card (A3) ------------------------------------------------
   // The card belongs to a dog drawn on the live map: it goes when the dog
   // does (a dog that never had a position has no card).
@@ -486,21 +472,12 @@ export default function MapScreen({
   // History notices live in the history card, next to the controls that cause
   // them; the map keeps only what belongs to the map itself.
   const messages = [];
-  if (historical && Number.isFinite(playbackAt))
-    messages.push(`回放中：${new Date(playbackAt).toLocaleString()}`);
   // The base map, cloud sync and storage speak through the top cards and the
   // gear's red dot (A2); reading this phone's own copies can still fail.
   if (!historical && cloudDogs?.error)
     messages.push(`雲端定位讀取失敗：${cloudDogs.error}。下一輪自動重試。`);
   if (phone?.error)
     messages.push(`手機定位讀取失敗：${phone.error}。回到前景時會重試。`);
-  if (
-    historical && (history?.data?.phone.limited ||
-      history?.data?.clients?.some(track => track.limited))
-  )
-    messages.push(
-      '歷史軌跡已簡化顯示，保留各時段代表路段；完整資料仍保留，未顯示的斷續路段不會連線。',
-    );
   if (tracking.errors[mode])
     messages.push(
       `讀取失敗：${tracking.errors[mode]}。${
@@ -518,19 +495,28 @@ export default function MapScreen({
   const cardsTop = gearTop + 48 + 8;
   const cardsBottom = cards.length && topHeight ? cardsTop + topHeight : 0;
   const noticesTop = cardsBottom ? cardsBottom + 8 : top + 44;
-  const controlsTop = top + 44 + (messages.length ? noticeHeight + 8 : 0);
+  // History: under the top capsule row (8dp under the status bar, 48dp).
+  const controlsTop = historical ? gearTop + 48 + 8 + (messages.length ? noticeHeight + 8 : 0)
+    : top + 44 + (messages.length ? noticeHeight + 8 : 0);
   // The compass: 12dp under the gear, or under the whole stack of cards.
   const compassTop = historical ? controlsTop + 12 : (cardsBottom || gearTop + 48) + 12;
   // The live map's padding stays put (an open card covers the map, it does
   // not move it); its buttons sit 12dp above the open card, else above the tabs.
-  const mapBottom = historical ? bottomInset + (sheetHeight || SHEET_COLLAPSED_HEIGHT) + 12 : bottomInset;
-  const coverBottom = !historical && cardHeight ? cardHeight + layout.floatingGap : 0;
+  // History: the map's padding is the panel at half height (its default);
+  // at 75% the route is framed above it (historyPanel.extraBottom).
+  const mapBottom = historical ? levels.half : bottomInset;
+  const coverBottom = historical ? (panel.height ?? levels[panel.level] ?? levels.half)
+    : cardHeight ? cardHeight + layout.floatingGap : 0;
+  const historyPanel = historical ? { level: panel.level,
+    extraBottom: Math.max(0, (panel.height ?? levels.half) - levels.half) } : null;
+  const historySource = historical && target
+    ? `history:${target.subject}:${target.slaveId ?? ''}:${screen.day}:${fixture?.name ?? ''}` : null;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
         provider={mapProvider}
         // A screen fixture counts as a new source, so the map frames its dogs.
-        source={historical ? 'history:' + history.key : fixture ? `${mode}:fixture:${fixture.name}` : mode}
+        source={historySource ?? (fixture ? `${mode}:fixture:${fixture.name}` : mode)}
         presentation={presentation}
         topInset={controlsTop}
         bottomInset={mapBottom}
@@ -547,7 +533,7 @@ export default function MapScreen({
         // again: frame only once its link is known, so the ring is framed.
         // The first view also waits for the phone's first report (or a
         // moment), so it frames the phone with the local dogs.
-        framingReady={historical || (receiverActive && receiverState !== undefined && phoneSettled)}
+        framingReady={historical ? !!screen.model : (receiverActive && receiverState !== undefined && phoneSettled)}
         dataReady={
           tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&
@@ -557,8 +543,14 @@ export default function MapScreen({
         }
         phoneEnabled={!!phone?.enabled}
         onDogPress={openDog}
-        onTrackPress={openTrack}
-        onMapPress={cardOpen ? pressMap : undefined}
+        onMapPress={historical ? () => historyScreen.current?.mapPressed() : cardOpen ? pressMap : undefined}
+        onCursorMove={screen.moveCursor}
+        onStopPress={place => screen.moveCursor(place.start, 'stop', { start: place.start })}
+        historyFocus={historical && screen.focus && screen.cursor?.point ? { key: screen.focus.key,
+          centre: screen.focus.action === 'node' || screen.focus.action === 'stop',
+          coordinate: { latitude: screen.cursor.point.latitude, longitude: screen.cursor.point.longitude } } : null}
+        historyFrame={historyFrame}
+        historyPanel={historyPanel}
         onHeading={setHeading}
         focusDog={focusDog}
         frameRequest={historical ? null : frameRequest}
@@ -573,13 +565,9 @@ export default function MapScreen({
       )}
       <TopAlertCards cards={cards} top={cardsTop} onAction={pressCardAction} onClose={closeCard}
         onHeight={setTopHeight} />
-      {(historical || !tracking.preferences.ready) && <View style={[styles.source, { top }]}>
+      {!historical && !tracking.preferences.ready && <View style={[styles.source, { top }]}>
         <View style={styles.statusDot} />
-        <Text style={styles.sourceText}>
-          {historical
-            ? `歷史 · ${shortRangeLabel(history.preferences)}`
-            : '讀取設定中…'}
-        </Text>
+        <Text style={styles.sourceText}>讀取設定中…</Text>
       </View>}
       {!!messages.length && (
         <View
@@ -599,22 +587,17 @@ export default function MapScreen({
           </ScrollView>
         </View>
       )}
-      {historical && (
-        <HistorySheet
-          // A fixture switch opens its history page afresh (half high, top).
-          key={fixture ? `fixture:${fixture.name}` : 'live'}
-          history={history}
-          download={historyDownload}
-          extras={<HistoryPlaybackControls playback={playback} />}
-          snapshot={snapshot}
-          bottomInset={bottomInset}
-          topInset={controlsTop}
-          onHeight={setSheetHeight}
-          owner={cloudOwner}
-          clock={fixtureClock}
-          // Recording switched off: my route's end is fixed at its last fix.
-          recording={livePhone ? !!livePhone.running : null}
-        />
+      {historical && target && (
+        <HistoryScreen key={fixture ? `fixture:${fixture.name}` : 'live'} ref={historyScreen} screen={screen}
+          top={gearTop} initialRangeOpen={!!fixture?.historyView?.rangeOpen}
+          name={target.subject === 'dog' ? displayName(target.slaveId, dogAliases) : ''}
+          avatar={target.subject === 'dog' ? avatars[target.slaveId] : null}
+          levels={levels} bottomInset={insets.bottom} onBack={onLeaveHistory}
+          onFrame={() => setHistoryFrame({ key: Date.now() })}
+          onLevel={(level, height) => setPanel({ level, height })}
+          history={history} snapshot={snapshot}
+          closedAt={target.subject === 'phone' && screen.today && livePhone && !livePhone.running
+            ? screen.model?.points.at(-1)?.time ?? null : null} />
       )}
       {cardModel && (
         <DogCard
@@ -641,18 +624,6 @@ export default function MapScreen({
           name={displayName(cardModel.slaveId, dogAliases)} alias={dogAliases?.[cardModel.slaveId] || ''}
           avatar={avatars[cardModel.slaveId] || null} onSaveName={saveName} onSaveAvatar={saveAvatar}
           onBack={closePage} />
-      )}
-      {trackSubject && (
-        <DeviceDetails
-          activityOwner={cloudOwner}
-          activityActive={active}
-          tracking={tracking}
-          subject={trackSubject}
-          dogAliases={history?.preferences.dogAliases}
-          topInset={controlsTop}
-          bottomInset={bottomInset}
-          onClose={closeDetails}
-        />
       )}
     </View>
   );
