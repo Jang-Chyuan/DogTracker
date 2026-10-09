@@ -107,6 +107,7 @@ test('PNG single subject omits legend/headers, crops pages, only first map, uses
     expect(page.legend).toEqual([]);
     expect(page.blocks.some(b => b.type === 'section')).toBe(false);
     expect(page.blocks.filter(b => b.type === 'map')).toHaveLength(i === 0 ? 1 : 0);
+    expect(page.footer.text).toBeUndefined();
     expect(page.footer.page).toBe(`${i + 1}/${layout.pages.length}`);
     expect(page.height).toBe(page.footer.y + 60);
   });

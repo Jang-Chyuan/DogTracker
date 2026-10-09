@@ -28,7 +28,6 @@ const S = PNG_STYLE;
 export const PLACE_X = S.timeColumn + S.trackColumn + tokenSize.export.sectionInset;
 export const PLACE_WIDTH = S.width - PLACE_X - S.side;
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
-const FOOTER = '停留＝待得比這條路線一般地方久很多的地方';
 
 // Deterministic conservative measurement for tests; the app passes font widths.
 export const defaultMeasure = (text, size) => Array.from(String(text)).reduce((width, char) =>
@@ -181,7 +180,7 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     });
   });
   pages.forEach((item, index) => {
-    item.footer = { y: item.height, height: S.footerHeight, text: FOOTER, page: `${index + 1}/${pages.length}` };
+    item.footer = { y: item.height, height: S.footerHeight, page: `${index + 1}/${pages.length}` };
     item.height += S.footerHeight;
   });
   return { ...PNG_STYLE, pages };

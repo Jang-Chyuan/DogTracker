@@ -167,7 +167,6 @@ export function pngDrawPages(layout) {
       else ops.push(...rowOps(block));
     }
     const footer = page.footer;
-    ops.push(text(footer.text, S.side, footer.y, footer.height, S.footerFont, colors.textMuted));
     ops.push(text(footer.page, page.width - S.side, footer.y, footer.height, S.footerFont, colors.textMuted, { align: 'right' }));
     return { width: page.width, height: page.height, ops };
   });
