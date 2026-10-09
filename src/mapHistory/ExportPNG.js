@@ -68,7 +68,7 @@ export function pngTitle(snapshot, subjects) {
   const date = `${+start.year}/${+start.month}/${+start.day}（${WEEKDAYS[weekday]}）${clock(start)}–${clock(end)}`;
   if (subjects.length > 1) return { title: t("c796", { length: subjects.length }), subtitle: date };
   const one = subjects[0];
-  return { title: `DogTracker・${displayName(one)}`, subtitle: `${date}・${one.distanceWord || t('c125')} ${one.distanceKm}${one.distanceExclusion || ''}` };
+  return { title: t('c1156', { name: displayName(one) }), subtitle: t('c1157', { date, movement: one.distanceWord || t('c125'), distance: one.distanceKm, exclusion: one.distanceExclusion || '' }) };
 }
 
 /** One list row laid out: its height and lines (判定表「時間軸清單（匯出 PNG）」). */

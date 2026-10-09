@@ -67,7 +67,7 @@ export function activityPeriod(mode, date) {
     : new Date(first.getFullYear() + (mode === 'year' ? 1 : 0),
       mode === 'year' ? 0 : first.getMonth() + 1, 1).getTime();
   const label = mode === 'day' ? dateLabel(start) : mode === 'week'
-    ? `${dateLabel(start)}– ${dateLabel(addDays(end, -1))}`
+    ? t('c091', { date: dateLabel(start), date2: dateLabel(addDays(end, -1)) })
     : mode === 'month' ? t("c449", { value: first.getFullYear(), value2: first.getMonth() + 1 }) : t("c450", { value: first.getFullYear() });
   return { mode, start, end, label };
 }
@@ -86,11 +86,11 @@ export function activityNavigation(mode, date, { now, earliest }) {
 
 function rangeLabel(span, period) {
   const endClock = span.end === dayStart(span.end) ? '24:00' : clock(span.end);
-  if (period.mode === 'day') return `${clock(span.start)}–${endClock}`;
+  if (period.mode === 'day') return t('c090', { time: clock(span.start), time2: endClock });
   const fullDay = span.start === dayStart(span.start) && span.end === addDays(span.start, 1);
   if (fullDay) return t('c096', { date: dateLabel(span.start) });
   // Week, month and year spans never cross midnight (split per day).
-  return `${dateLabel(span.start)} ${clock(span.start)}–${endClock}`;
+  return t('c1158', { date: dateLabel(span.start), time: clock(span.start), time2: endClock });
 }
 
 // Week/month/year: a gap that runs over midnight is listed per day, so each
@@ -149,7 +149,7 @@ export function classify(values, config = ACTIVITY) {
   const restDiff = new Int32Array(n + 1);
   const vigorousDiff = new Int32Array(n + 1);
   let high = 0;
-  for (let tick = 0; tick < n; t += 1) {
+  for (let tick = 0; tick < n; tick += 1) {
     const v = values[tick];
     high = v >= vigorousMin ? high + 1 : 0;
     const from = tick - size + 1 > 0 ? tick - size + 1 : 0;

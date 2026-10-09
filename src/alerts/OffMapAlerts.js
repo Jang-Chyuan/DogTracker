@@ -41,7 +41,7 @@ export function alertBadge(active) {
   const count = dogs.size + list.filter(event => !isDog(event)).length;
   return {
     count,
-    text: `⚠ ${count}`,
+    text: t('c1155', { count }),
     label: t("c478", { count: count, value: alertLine(list[0]) }),
     target: alertTarget(list[0]),
   };

@@ -42,8 +42,8 @@ const MODE_WORD = { walking: t('c134'), driving: t('c135'), moving: t('c125'), r
 
 /**
  * A movement row (判定表「移動段的文字」): { icon, lead, time, rest } —
- * 「走路 28 分・1.4 km」, 「開車 12 分・6.3 km・不算距離」, 「移動 …」,
- * 「坐車 9 分・4.1 km・不算距離」, 「沒有資料 10:21–10:40」. `time` is bold.
+ * 「走路 28 分・1.4 km」, 「開車 12 分・6.3 km」, 「移動 …」,
+ * 「坐車 9 分・4.1 km」, 「沒有資料 10:21–10:40」. `time` is bold.
  */
 export function sectionText(section) {
   if (section.type === 'gap') {
@@ -126,9 +126,12 @@ export function vehicleExclusion(model, subject) {
 export function summaryText(model, { subject }) {
   const first = model.points[0], last = model.points[model.points.length - 1];
   const end = model.nodes[model.nodes.length - 1];
-  const until = end?.type === 'end' && end.label === t('c130') ? t('c130')
-    : end?.type === 'end' && end.label === t("c660") ? t('c315', { time: clock(last.time) }) : clock(last.time);
-  const span = `${clock(first.time)} – ${until}`;
+  const startTime = clock(first.time), endTime = clock(last.time);
+  const span = end?.type === 'end' && end.label === t('c130')
+    ? t('c120', { time: startTime })
+    : end?.type === 'end' && end.label === t("c660")
+      ? t('c1154', { time: startTime, time2: endTime })
+      : t('c432', { time: startTime, time2: endTime });
   const moved = ((subject === 'phone') ? t("c651", { value: km(model.distanceM), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }) : t("c652", { value: km(model.distanceM), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }));
   return { title: span, detail: moved };
 }
@@ -154,7 +157,7 @@ export const spoken = text =>
     .trim();
 
 /**
- * One item per movement or gap: 「開車 12 分鐘，6.3 公里，不算距離」,
+ * One item per movement or gap: 「開車 12 分鐘，6.3 公里」,
  * 「走路 27 分鐘，1.7 公里」, 「沒有資料 10:29 到 10:41」.
  */
 export function sectionSpeech(section) {

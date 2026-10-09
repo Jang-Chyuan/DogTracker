@@ -996,5 +996,14 @@
   "c1150": "正在同步狗的位置",
   "c1151": "DogTracker・資料同步",
   "c1152": "準備同步待傳資料",
-  "c1153": "DogTracker"
+  "c1153": "DogTracker",
+  "c120": "{{time}} – 現在",
+  "c432": "{{time}} – {{time2}}",
+  "c1154": "{{time}} – 最後 {{time2}}",
+  "c1155": "⚠ {{count}}",
+  "c090": "{{time}}–{{time2}}",
+  "c091": "{{date}}– {{date2}}",
+  "c1156": "DogTracker・{{name}}",
+  "c1157": "{{date}}・{{movement}} {{distance}}{{exclusion}}",
+  "c1158": "{{date}} {{time}}–{{time2}}"
 }

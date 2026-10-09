@@ -50,10 +50,11 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
       ), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }) : t("c652", { value: km(
         model.distanceM,
       ), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }));
-  const until = range?.following ? t('c130') : clock(range?.end);
   if (!open && !who) return summaryText(model, { subject });
   // Several dogs share one range: the title is that range, whoever leads.
-  return { title: `${clock(range.start)} – ${until}`, detail: moved };
+  return { title: range?.following
+    ? t('c120', { time: clock(range.start) })
+    : t('c432', { time: clock(range.start), time2: clock(range.end) }), detail: moved };
 }
 
 function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
