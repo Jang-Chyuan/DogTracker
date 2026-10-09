@@ -94,6 +94,21 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
   const precise = { permission: 'precise', services: true, busy: false };
   const recording = { running: true, position: START, ageSeconds: 2 };
 
+  // 067: the icon turned grey with every permission given. A check that is
+  // still running or failed says nothing; only a known problem greys it.
+  test('a passing or failed permission check never greys the walker', () => {
+    for (const phone of [{ ...precise, busy: true }, { permission: 'checking', services: false },
+      { ...precise, error: 'not attached to an Activity' }, { ...precise, services: false, error: 'x' }]) {
+      expect(todayPill({ route, livePhone: recording, phone })).toMatchObject({ icon: 'walk', muted: false });
+    }
+    // Known problems still do.
+    expect(todayPill({ route, livePhone: recording, phone: { ...precise, services: false } }).icon).toBe('walk-off');
+    expect(todayPill({ route, livePhone: recording, phone: { ...precise, permission: 'approximate' } }).icon)
+      .toBe('walk-off');
+    expect(todayPill({ route, livePhone: { ...recording, ageSeconds: 11 * 60 }, phone: precise }).icon).toBe('walk-off');
+    expect(todayPill({ route, livePhone: { running: false }, phone: precise }).icon).toBe('walk-muted');
+  });
+
   test('recording: walker in the phone colour and today\'s distance', () => {
     expect(todayPill({ route, livePhone: recording, phone: precise }))
       .toMatchObject({ text: '今天 2.7 km', icon: 'walk', muted: false, label: '今天 2.7 公里' });
@@ -263,3 +278,4 @@ test('a bottom hint sits above the bottom row (「今天 x km」 beside 我的�
   expect(plain.side).toBe('bottom');
   expect(raised.y + raised.height).toBeLessThanOrEqual(830 - 40 - 48 - 12);
 });
+

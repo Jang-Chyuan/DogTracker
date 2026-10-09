@@ -76,7 +76,9 @@ export function todayPill({ route, livePhone, phone, now = null, waitingSince = 
   // flashing before the real number.
   if (!route) return null;
   const permission = phone?.permission;
-  const known = permission && permission !== 'checking' && !phone?.busy;
+  // A check still running, or one that failed (phone.error), says nothing:
+  // no slash on a passing state while the permission is fine (067).
+  const known = permission && permission !== 'checking' && !phone?.busy && !phone?.error;
   const permissionProblem = known && (permission !== 'precise' || !phone.services);
   const recording = !!livePhone?.running;
   const fixAge = Number.isFinite(livePhone?.ageSeconds) ? livePhone.ageSeconds : null;

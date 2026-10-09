@@ -80,10 +80,13 @@ export function usePhoneLocation(
             error: null,
           }));
       } catch (error) {
+        // A failed check (067: e.g. while the Activity comes back from the
+        // photo picker or the share sheet) says nothing new about the
+        // permission or the location service: keep what was known, with the
+        // error, instead of reporting the service off.
         if (alive())
           setState(value => ({
             ...value,
-            services: false,
             busy: false,
             error: getErrorMessage(error),
           }));

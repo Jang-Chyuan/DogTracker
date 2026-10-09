@@ -174,11 +174,27 @@ test('system location disabled, service read failure and retry are visible', asy
   await act(async () => state.retry());
   expect(state.error).toBe('unavailable');
   expect(state.enabled).toBe(false);
+  // 067: a failed check keeps what was known (here: the service off).
+  expect(state.services).toBe(false);
   platform.locationServicesEnabled.mockResolvedValue(true);
   await act(async () => state.retry());
   expect(state.error).toBeNull();
   expect(state.enabled).toBe(true);
 });
+// 067: a check that fails while the Activity comes back keeps the permission
+// and the service as they were: no 「定位服務關著」 for a passing error.
+test('a failed check does not report the location service off', async () => {
+  PermissionsAndroid.check.mockResolvedValue(true);
+  platform.locationServicesEnabled.mockResolvedValue(true);
+  await mount();
+  expect(state).toMatchObject({ permission: 'precise', services: true });
+  platform.locationServicesEnabled.mockRejectedValueOnce(new Error('not attached to an Activity'));
+  await act(async () => state.retry());
+  expect(state).toMatchObject({ permission: 'precise', services: true, error: 'not attached to an Activity' });
+  await act(async () => state.retry());
+  expect(state).toMatchObject({ services: true, error: null, enabled: true });
+});
+
 test('foreground rechecks revoked permission; background disables layer immediately', async () => {
   PermissionsAndroid.check.mockResolvedValue(true);
   await mount();
