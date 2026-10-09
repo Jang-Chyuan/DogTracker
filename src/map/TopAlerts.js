@@ -88,7 +88,7 @@ export function showsNoDogs({ receiverState, hasDogData, dataRead, dismissed }) 
  *  - dismissed: { receiver: outage key, storage: true }.
  */
 export function topCards({ outage = null, storage = null, map = null, retrying = false, noDogs = false,
-  signedIn = false, dismissed = {} }) {
+  signedIn = false, dismissed = {}, waitingSources = 0 }) {
   const cards = [];
   if (outage && dismissed.receiver !== outage.key) {
     cards.push({
@@ -117,7 +117,13 @@ export function topCards({ outage = null, storage = null, map = null, retrying =
       closable: false,
     });
   }
-  if (noDogs) {
+  if (waitingSources > 0) {
+    cards.push({ id: 'waiting-sources', kind: 'info', icon: 'locate',
+      title: `${waitingSources} 個訊號源等待定位`,
+      detail: '定位後狗會出現在地圖上；點這裡看訊號源',
+      label: `${waitingSources} 個訊號源等待定位，定位後狗會出現在地圖上，點兩下看訊號源`,
+      tapAction: 'waiting-source-settings', closeLabel: '關閉等待定位提示', actions: [], closable: true });
+  } else if (noDogs) {
     cards.push({
       id: 'no-dogs', kind: 'info', icon: 'dog',
       title: '還沒有狗的資料',

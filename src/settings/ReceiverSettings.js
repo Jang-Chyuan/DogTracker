@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useStyles } from '../theme/ThemeProvider';
 import { ScrollView, View } from 'react-native';
 import ReceiverIcon from './ReceiverIcon';
@@ -18,16 +19,20 @@ import { space } from '../theme/tokens';
  */
 export default function ReceiverSettings({
   page,
+  fromWaitingSources = false,
   onDisconnect,
   onReconnect,
   onChange,
   onConnect,
 }) {
+  const scroll = useRef(null);
+  const scrolled = useRef(false);
   const settingsStyles = useStyles(getSettingsStyles);
   if (!page.setUp) {
     return (
       <ScrollView
-        testID="receiver-settings"
+        ref={scroll}
+      testID="receiver-settings"
         style={settingsStyles.page}
         contentContainerStyle={settingsStyles.content}
       >
@@ -49,6 +54,7 @@ export default function ReceiverSettings({
   const off = page.connectAction === 'reconnect';
   return (
     <ScrollView
+      ref={scroll}
       testID="receiver-settings"
       style={settingsStyles.page}
       contentContainerStyle={settingsStyles.content}
@@ -108,7 +114,12 @@ export default function ReceiverSettings({
           label="換接收器"
         />
       </GroupCard>
-      <GroupTitle>收到的訊號源</GroupTitle>
+      <View onLayout={event => {
+        if (fromWaitingSources && !scrolled.current) {
+          scrolled.current = true;
+          scroll.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: false });
+        }
+      }} testID="receiver-sources-heading"><GroupTitle>收到的訊號源</GroupTitle></View>
       <GroupCard flat testID="receiver-sources">
         {page.sources.length ? (
           page.sources.map(source => (

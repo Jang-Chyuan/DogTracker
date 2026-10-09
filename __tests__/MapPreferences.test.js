@@ -76,7 +76,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showSlaveMarker: false,
     showTrails: true,
     windowMinutes: 2,
-    noDataCardDismissed: false,
+    noDataCardDismissed: false, waitingLocationSources: null,
     diagnosticsEnabled: false,
     alerts: DEFAULT_ALERT_PREFERENCES,
     // Saved before the first-launch guide existed: it counts as passed.
@@ -133,7 +133,8 @@ test('every setting survives a new controller and shares no tracking-row writes'
       showSlaveMarker: true,
       showTrails: true,
       windowMinutes: 30,
-      noDataCardDismissed: false,
+      noDataCardDismissed: false, waitingLocationSources: { receiver: 'AA:7',
+        sources: { 4: { firstAt: 1000, fixed: false } }, dismissed: ['4'], paused: false, since: null },
       diagnosticsEnabled: true,
       // S6: 不在接收範圍 and 接收器電量低 off, 聲音 on.
       alerts: { ...DEFAULT_ALERT_PREFERENCES, dogOutOfRange: false, receiverBattery: false, sound: true },

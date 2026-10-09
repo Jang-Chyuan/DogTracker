@@ -213,7 +213,7 @@ async function renderMap(name) {
   }
   const host = id => renderer.root.findAll(node => node.props.testID === id && typeof node.type === 'string');
   const cards = () => renderer.root.findAll(node => typeof node.type === 'string'
-    && /^top-card-(receiver|storage|map|no-dogs)$/.test(node.props.testID || '')).map(node => node.props.testID.slice(9));
+    && /^top-card-(receiver|storage|map|no-dogs|waiting-sources)$/.test(node.props.testID || '')).map(node => node.props.testID.slice(9));
   const gear = () => renderer.root.findAll(node => node.props.testID === 'map-settings'
     && typeof node.type === 'string')[0].props.accessibilityLabel;
   const text = () => JSON.stringify(renderer.toJSON());
@@ -316,5 +316,33 @@ test('no-data: A6 buttons go to the hardware and cloud pages; ✕ stores that it
   expect(view.gear()).toBe('設定');
   // A fixture never writes this phone's preferences.
   expect(view.live.tracking.saveTrackingPreferences).not.toHaveBeenCalled();
+  await act(async () => view.renderer.unmount());
+});
+
+
+test.each([
+  ['waiting-sources', ['waiting-sources'], 3], ['waiting-sources-grace', [], 0],
+  ['waiting-sources-partial', ['waiting-sources'], 2], ['waiting-sources-dismissed', [], 0],
+  ['waiting-sources-new', ['waiting-sources'], 4],
+  ['waiting-sources-disconnected', ['receiver', 'waiting-sources'], 3],
+  ['waiting-sources-cloud-only', [], 0],
+])('A6b %s renders only local waiting sources without a gear dot', async (name, expected, count) => {
+  const view = await renderMap(name);
+  expect(view.cards()).toEqual(expected);
+  expect(view.gear()).toBe('設定');
+  if (count) expect(view.text()).toContain(`${count} 個訊號源等待定位`);
+  await act(async () => view.renderer.unmount());
+});
+
+test('A6b tapping opens S2; dismissing it leaves no gear dot', async () => {
+  const view = await renderMap('waiting-sources');
+  const card = view.renderer.root.findAll(node => node.props.accessibilityRole === 'button'
+    && node.props.accessibilityLabel?.startsWith('3 個訊號源等待定位') && typeof node.props.onPress === 'function')[0];
+  await act(async () => card.props.onPress());
+  expect(view.onAlertAction).toHaveBeenCalledWith('waiting-source-settings');
+  await act(async () => view.renderer.root.findAll(node => node.props.accessibilityLabel === '關閉等待定位提示'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+  expect(view.cards()).toEqual([]);
+  expect(view.gear()).toBe('設定');
   await act(async () => view.renderer.unmount());
 });

@@ -324,3 +324,19 @@ test('K11: partial download markers survive a new database adapter and are isola
     expect((await first.historyDownloadStates('a', 4))[0].complete).toBe(1);
   } finally { connection.close(); }
 });
+
+test('local waiting-source grace uses first reception without replacing the latest packet fields', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const database = createCloudDatabase(connection);
+    await database.initialize();
+    await connection.executeAsync(`INSERT INTO dog_status
+      (slave_id, master_id, received_at, slave_lat, slave_lon, battery_percentage)
+      VALUES (9, 7, ?, 0, 0, 10), (9, 7, ?, 0, 0, 70), (9, 8, ?, 0, 0, 5)`,
+    [NOW - 20000, NOW, NOW - 30000]);
+    const packets = await database.latestStatusRows(null, 0, NOW);
+    expect(packets.find(p => p.slave_id === 9)).toMatchObject({ master_id: 7,
+      received_at: NOW, first_received_at: NOW - 20000, battery_percentage: 70 });
+  } finally { connection.close(); }
+});

@@ -1,3 +1,4 @@
+import { dismissWaitingSources, waitingSourcesState } from '../map/WaitingSources';
 // Debug builds only: named screen states the emulator cannot reach on demand
 // (a receiver that dropped, a dog held indoors, cloud data), so each can be
 // opened with dogtracker://dev/fixture?name=<name> and screenshotted.
@@ -1038,6 +1039,20 @@ const FIXTURES = {
   // S2 收到的訊號源: 豆豆 (4) and dog 5 (never named: 「狗 5」) located;
   // collar 9 talks to receiver 7 but never had a fix: only 「訊號源 9」 with
   // 「還沒定位」.
+  'waiting-sources': now => ({ receiver: receiving(now), phone: walkingPhone(now), cloud: synced(now),
+    ble: [4, 6, 8].map(slave => bleRow({ slave, time: now - 20 * SECOND })), cloudRows: [] }),
+  'waiting-sources-grace': now => ({ ...FIXTURES['waiting-sources'](now),
+    ble: [4, 6, 8].map(slave => bleRow({ slave, time: now - 9 * SECOND })) }),
+  'waiting-sources-partial': now => ({ ...FIXTURES['waiting-sources'](now),
+    ble: [bleRow({ slave: 4, time: now - 20 * SECOND, fix: at(10, 10) }),
+      ...[6, 8].map(slave => bleRow({ slave, time: now - 20 * SECOND }))] }),
+  'waiting-sources-dismissed': now => ({ ...FIXTURES['waiting-sources'](now), waitingDismissed: true }),
+  'waiting-sources-new': now => ({ ...FIXTURES['waiting-sources'](now), waitingDismissed: true, waitingNew: true,
+    ble: [4, 6, 8, 9].map(slave => bleRow({ slave, time: now - 20 * SECOND })) }),
+  'waiting-sources-disconnected': now => ({ ...FIXTURES['waiting-sources'](now),
+    receiver: { ...receiving(now), connected: false, receiving: false, disconnectedAt: now - MINUTE } }),
+  'waiting-sources-cloud-only': now => ({ ...FIXTURES['waiting-sources'](now), ble: [],
+    cloudRows: [4, 6, 8].map(slave => cloudRow({ slave, time: now - 20 * SECOND })) }),
   'receiver-sources-unfixed': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openRoute: 'receiver',
     ble: inTimeOrder([
@@ -1459,6 +1474,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
     historyExport = null, activityView = null, activity = null, activityClock = null, alertPause = null,
+    waitingDismissed = false, waitingNew = false,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   const fixtureHistory = history || historyPage(now, { ble, cloudRows });
   const genericActivity = {
@@ -1493,16 +1509,21 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const recent = () => true;
   const recentFix = row => hasFix(row);
   const packets = [
-    ...newestBy(ble, recent).map(row => withEnvironment(packet(row, 'ble'), ble, now)),
+    ...newestBy(ble, recent).map(row => withEnvironment({ ...packet(row, 'ble'),
+      first_received_at: Math.min(...ble.filter(other => other.slave_id === row.slave_id && other.master_id === row.master_id).map(other => other.received_at)) }, ble, now)),
     ...newestBy(ble, recentFix).map(row => withEnvironment(packet(row, 'ble'), ble, now)),
     ...newestBy(cloudRows, recent).map(row => withEnvironment(packet(row, 'cloud'), cloudRows, now)),
   ];
   // RideAlong: the handler's phone speeds over the last half minute.
   const rides = createRideDetector();
   for (const position of phone?.route || []) rides.add(position, now);
+  const waitingSeed = waitingSourcesState(null, receiver, packets, now);
+  const waitingLocationSources = waitingDismissed ? dismissWaitingSources({ ...waitingSeed,
+    sources: Object.fromEntries(Object.entries(waitingSeed.sources).filter(([id]) => !waitingNew || id !== '9')) }) : null;
   return {
     name,
     now,
+    waitingLocationSources,
     receiverState: receiver,
     readReceiverState: { getState: async () => receiver },
     cloudSync: cloud,
@@ -1758,6 +1779,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       realWriteError: fixture.storageError,
       preferences: { ...tracking.preferences, ready: true, busy: false, error: null,
         value: { ...tracking.preferences.value, ...FIXTURE_PREFERENCES,
+          waitingLocationSources: fixture.waitingLocationSources,
           alerts: edits?.alerts ?? fixture.alerts,
           diagnosticsEnabled: edits?.diagnosticsEnabled ?? fixture.diagnosticsEnabled } },
       // A tap on a fixture's eye or follow button must not save the fixture's

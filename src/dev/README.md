@@ -227,3 +227,10 @@ adb shell am start -a android.intent.action.VIEW -d 'dogtracker://dev/fixture?na
 - d：Google 預設紅色圖釘；深色截圖的大片白色。
 
 每組在 `<輸出>/<字體>-<light|dark>/report.txt`（`report.json`）。結束時字體回 1.0、主題回淺色。需要 debug 版＋Metro，和 `fixture-screenshots.sh` 一樣。命中的每一項都要人看：c 會把被小視窗蓋住的膠囊、TalkBack 焦點框也算進去。
+
+### Final review A6b fixtures
+
+`waiting-sources` (3 local sources), `waiting-sources-grace` (under 10 seconds),
+`waiting-sources-partial` (2 still waiting), `waiting-sources-dismissed` (persisted ✕),
+`waiting-sources-new` (a new source after ✕), `waiting-sources-disconnected` (below the outage card),
+and `waiting-sources-cloud-only` (no A6b). These fixtures use the real source-state rules and never save to the live phone.

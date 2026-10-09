@@ -31,6 +31,8 @@ import {
   border,
 } from '../theme/tokens';
 
+// A6b (D10): the whole card is one button to S2.
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const ease = Easing.bezier(...motion.easeOut);
 const card = sizes.alertCard;
 // The ✕ is a 48dp target around an 18dp glyph.
@@ -143,7 +145,9 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
       useNativeDriver: true,
     }).start(() => onGone?.(value.id));
   }, [leaving, shown, onGone, value.id]);
-  const close = () => onClose?.(value);
+  const close = event => { event?.stopPropagation?.(); onClose?.(value); };
+  const tap = value.tapAction ? () => onAction?.(value.tapAction) : undefined;
+  const Container = value.tapAction ? AnimatedPressable : Animated.View;
   const info = value.kind === 'info';
   // With a large system font an alert card's button goes under its words
   // (like A6's), so the title is not squeezed into a narrow column.
@@ -156,7 +160,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
     <Pressable
       testID={`top-card-close-${value.id}`}
       accessibilityRole="button"
-      accessibilityLabel="關閉"
+      accessibilityLabel={value.closeLabel || '關閉'}
       hitSlop={CLOSE_SLOP}
       onPress={close}
       style={({ pressed }) => [styles.close, pressed && styles.pressed]}
@@ -166,7 +170,9 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
   );
 
   return (
-    <Animated.View
+    <Container
+      accessible={false}
+      onPress={tap}
       testID={leaving ? undefined : `top-card-${value.id}`}
       accessibilityLiveRegion="polite"
       pointerEvents={leaving ? 'none' : 'auto'}
@@ -174,12 +180,15 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
         styles.card,
         info ? styles.info : styles.alert,
         stacked && styles.stackedCard,
+        value.tapAction && styles.waiting,
         { opacity: shown, transform: [{ translateY }] },
       ]}
     >
       <View style={[styles.icon, info ? styles.iconInfo : styles.iconAlert]}>
         {info ? (
-          <DogMark color={colors.tonalText} />
+          value.tapAction
+            ? <Glyph name="locate" color={colors.tonalText} size={sizes.icon.row} />
+            : <DogMark color={colors.tonalText} />
         ) : (
           <Glyph name={value.icon} color={colors.problemBadge} size={sizes.icon.smallAction} />
         )}
@@ -195,8 +204,9 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
             style={[styles.title, !info && styles.alertTitle]}
             numberOfLines={info ? undefined : linesFor(2)}
             accessible
-            accessibilityRole={info ? undefined : 'alert'}
-            accessibilityLabel={`${value.title}，${value.detail}`}
+            onPress={tap}
+            accessibilityRole={value.tapAction ? 'button' : info ? undefined : 'alert'}
+            accessibilityLabel={value.label || `${value.title}，${value.detail}`}
           >
             {value.title}
           </Text>
@@ -209,7 +219,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
         >
           {value.detail}
         </Text>
-        {stacked && (
+        {stacked && value.actions.length > 0 && (
           <View style={styles.buttons}>
             {value.actions.map(action => (
               <Pill key={action.id} action={action} onPress={onAction} />
@@ -222,7 +232,7 @@ function TopCard({ value, leaving = false, onAction, onClose, onGone }) {
           <Pill key={action.id} action={action} onPress={onAction} />
         ))}
       {closeButton}
-    </Animated.View>
+    </Container>
   );
 }
 
@@ -416,6 +426,7 @@ const getStyles = makeStyles(theme => {
       borderLeftColor: colors.accent,
       alignItems: 'flex-start',
     },
+    waiting: { borderColor: colors.floatingOutline, borderLeftColor: colors.accent },
     icon: {
       width: card.icon,
       height: card.icon,

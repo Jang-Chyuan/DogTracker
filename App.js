@@ -351,6 +351,7 @@ function TrackerApp({ resume = null, onRestart }) {
   // D3 連接接收器 from `entry` (Pairing.pairingFlow): S2 ('receiver', with
   // its mode), A6 ('map'), a mismatch dialog ('alert'; `view` 'manual' when
   // the receiver was typed in) or the guide ('onboarding').
+  const [waitingSourcesPaused, setWaitingSourcesPaused] = useState(false);
   const openPairing = (entry, mode = 'first', view = 'scan') =>
     open('pair', { entry, mode, view, key: Date.now() });
   const isMap = route.name === 'map';
@@ -474,6 +475,7 @@ function TrackerApp({ resume = null, onRestart }) {
   // A top card's button (A2/A6): where it takes the user. Back returns to the map.
   const alertAction = id => {
     if (id === 'receiver-settings') open('receiver');
+    else if (id === 'waiting-source-settings') open('receiver', { fromWaitingSources: true });
     else if (id === 'phone-unrecorded') open('phone', { fromUnrecorded: true });
     else if (id === 'connect-receiver') openPairing('map');
     // 診斷 (S8) starts with the reason.
@@ -1152,9 +1154,10 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <ReceiverSettings
           page={receiverPage(settingsData)}
-          onDisconnect={receiverControl.disconnect}
-          onReconnect={receiverControl.reconnect}
-          onChange={() => openPairing('receiver', 'change')}
+          fromWaitingSources={route.fromWaitingSources}
+          onDisconnect={() => { setWaitingSourcesPaused(true); receiverControl.disconnect(); }}
+          onReconnect={() => { setWaitingSourcesPaused(false); receiverControl.reconnect(); }}
+          onChange={() => { setWaitingSourcesPaused(false); openPairing('receiver', 'change'); }}
           onConnect={() => openPairing('receiver')}
         />
       );
@@ -1332,6 +1335,7 @@ function TrackerApp({ resume = null, onRestart }) {
               wait: receiverWait.current,
             }}
             onAlertAction={alertAction}
+            switchingReceiver={waitingSourcesPaused || (route.name === 'pair' && route.mode === 'change')}
             onAlertInput={onAlertInput}
             openDogRequest={openDogRequest}
             frameRequest={frameRequest}
