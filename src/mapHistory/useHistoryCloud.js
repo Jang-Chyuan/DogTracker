@@ -165,6 +165,8 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   }, [scope]);
   // ---- downloading a day --------------------------------------------------
   const incompleteKey = scope;
+  const [completenessRetry, setCompletenessRetry] = useState(0);
+  const retryCompleteness = useCallback(() => setCompletenessRetry(value => value + 1), []);
   const [durable, setDurable] = useState({ scope: null, states: [] });
   useEffect(() => {
     if (!enabled || !cloud.downloadStates) return undefined;
@@ -175,9 +177,15 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       pending.clear();
       for (const row of states) if (!row.complete) pending.add(row.day);
       setDurable({ scope, states });
-    }).catch(() => { if (alive) setDurable({ scope, states: local.map(day => ({ day, complete: 0 })) }); });
+    }).catch(() => {
+      if (!alive) return;
+      const pending = incompleteOf(scope);
+      local.forEach(day => pending.add(day));
+      const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
+      setDurable({ scope: null, states: ids.flatMap(id => local.map(day => ({ slave_id: id, day, complete: 0 }))) });
+    });
     return () => { alive = false; };
-  }, [enabled, cloud, scope]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, cloud, scope, active, completenessRetry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [incompleteRevision, setIncompleteRevision] = useState(0);
   const markIncomplete = useCallback((day, value) => {
@@ -189,8 +197,8 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   const [dogDownloads, setDogDownloads] = useState({});
   const completeness = durable.scope === scope ? durable.states : [];
   const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
-  const completeFor = (id, day) => completeness.some(row => row.slave_id === id && row.day === day && row.complete)
-    || (localByDog?.[id]?.includes(day) && !completeness.some(row => row.slave_id === id && row.day === day && !row.complete));
+  const completeFor = (id, day) => (!cloud?.downloadStates || durable.scope === scope) && (completeness.some(row => row.slave_id === id && row.day === day && row.complete)
+    || (localByDog?.[id]?.includes(day) && !completeness.some(row => row.slave_id === id && row.day === day && !row.complete)));
   const partialLocal = localByDog && ids.length > 1 ? local.filter(day => ids.some(id => !completeFor(id, day))) : [];
   const startDownload = useCallback((day, onEnd) => {
     if (!enabled) return;
@@ -248,6 +256,6 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     incomplete: enabled ? [...new Set([...incompleteOf(incompleteKey), ...partialLocal, ...(cloud?.downloadStates && durable.scope !== scope ? local : [])])] : [] }),
   // incompleteRevision stands for INCOMPLETE's contents.
   [local, known, enabled, status, incompleteKey, incompleteRevision, cloud, durable, scope, partialLocal]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { knowledge, dogDownloads, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download, startDownload, cancelDownload,
+  return { knowledge, retryCompleteness, dogDownloads, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download, startDownload, cancelDownload,
     downloadingDay: download?.status === 'downloading' ? download.day : null };
 }

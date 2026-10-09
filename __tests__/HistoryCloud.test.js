@@ -1,3 +1,6 @@
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { useHistoryCloud } from '../src/mapHistory/useHistoryCloud';
 // 054b: what the history's calendar asks Supabase, and its downloads through
 // the sync's slot.
 import { createHistoryCloud, DOWNLOAD_AFTER_MS, DOWNLOAD_BEFORE_MS } from '../src/mapHistory/HistoryCloud';
@@ -106,4 +109,23 @@ test('K12: multi-dog downloads complete each dog independently and report exactl
   await expect(cloud.download({ slaveId: [4, 6], dayStart: 0, dayEnd: 86400000, onDogEnd: (id, status) => statuses.push([id, status]) })).rejects.toThrow('下載失敗');
   expect(statuses).toEqual([[4, 'done'], [6, 'failed']]);
   expect(complete).toEqual([[4, false], [6, false], [4, true]]);
+});
+
+
+test('K11: failed completeness reads keep local days incomplete per dog and can retry', async () => {
+  const day = '2026-10-03';
+  const cloud = { downloadStates: jest.fn().mockRejectedValueOnce(new Error('locked'))
+    .mockResolvedValue([{ slave_id: 4, day, complete: 1 }, { slave_id: 6, day, complete: 1 }]) };
+  let state, renderer;
+  function Probe() {
+    state = useHistoryCloud({ cloud, slaveId: [4, 6], scope: 'K11-failure', todayKey: day,
+      local: [day], localByDog: { 4: [day], 6: [day] } });
+    return null;
+  }
+  await act(async () => { renderer = Renderer.create(<Probe />); });
+  expect(state.knowledge.incomplete).toContain(day);
+  await act(async () => state.retryCompleteness());
+  expect(cloud.downloadStates).toHaveBeenCalledTimes(2);
+  expect(state.knowledge.incomplete).toEqual([]);
+  await act(async () => renderer.unmount());
 });
