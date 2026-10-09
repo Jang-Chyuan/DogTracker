@@ -6,6 +6,7 @@ import { radius, size, space, touch, type, border } from '../theme/tokens';
 import { isLargeFont, linesFor } from '../utils/textScale';
 import BangGlyph from '../components/BangGlyph';
 import Glyph from '../map/Glyph';
+import ReceiverLinkPaths from './ReceiverLinkPaths';
 
 // The v3 settings look (design 「設定首頁的分組」「設定裡的紅色「!」」): light
 // pages, white rounded cards of 56dp rows, group names in 12sp muted text,
@@ -91,13 +92,6 @@ export function GroupCard({ children, testID, flat = false, onRowLayout }) {
 // The 2dp line icons of the settings home (design 「設定首頁」 icons), drawn
 // on their tinted circles (tokens.settingIcon).
 const ICONS = {
-  receiver: (
-    <>
-      <Rect x={6} y={10} width={size.glyph.receiverBodyWidth} height={size.glyph.receiverBodyHeight} rx={2} />
-      <Path d="M12 10V5" />
-      <Path d="M8.5 4.5a5 5 0 0 1 7 0" />
-    </>
-  ),
 
   phone: (
     <>
@@ -129,12 +123,13 @@ const ICONS = {
   ),
 };
 
-export function SettingIcon({ kind }) {
+export function SettingIcon({ kind, receiverPhase }) {
   const { settingIcon } = useTheme();
   const styles = useStyles(getStyles);
   const tint = settingIcon[kind] || settingIcon.advanced;
   return (
-    <View style={[styles.icon, { backgroundColor: tint.bg }]}>
+    <View style={[styles.icon, { backgroundColor: tint.bg }]} accessible={false}
+      importantForAccessibility="no-hide-descendants">
       <Svg
         width={size.icon.row}
         height={size.icon.row}
@@ -145,7 +140,7 @@ export function SettingIcon({ kind }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        {ICONS[kind]}
+        {kind === 'receiver' ? <ReceiverLinkPaths phase={receiverPhase} /> : ICONS[kind]}
       </Svg>
     </View>
   );
@@ -194,7 +189,7 @@ export function HomeRow({ row, onPress }) {
       onPress={onPress}
       style={({ pressed }) => [styles.homeRow, pressed && styles.pressed]}
     >
-      <SettingIcon kind={row.id} />
+      <SettingIcon kind={row.id} receiverPhase={row.receiverPhase} />
       <View style={styles.middle}>
         <Text style={styles.name} numberOfLines={linesFor(1)}>
           {row.title}
@@ -230,6 +225,7 @@ export function ListRow({
   problem = false,
   success = false,
   leading = null,
+  leadingWithProblem = false,
   titleTone,
   onPress,
   chevron = false,
@@ -270,7 +266,10 @@ export function ListRow({
   const body = (
     <>
       {problem ? (
-        <ProblemBang style={styles.leadBang} />
+        <>
+          {leadingWithProblem && leading}
+          <ProblemBang style={styles.leadBang} />
+        </>
       ) : success ? (
         <SuccessCheck style={styles.leadBang} />
       ) : (

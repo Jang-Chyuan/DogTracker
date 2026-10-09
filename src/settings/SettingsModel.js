@@ -172,7 +172,7 @@ export function settingsHome(input) {
     const problem = own.length > 0;
     const why = own.map(reason => reasonText(reason, input)).filter(Boolean)
       .filter((text, index, all) => all.indexOf(text) === index).join('、');
-    return { id, title, subtitle, status: problem ? [] : status, statusTone: problem ? null : statusTone, problem,
+    return { id, title, subtitle, ...(id === 'receiver' ? { receiverPhase: phase } : {}), status: problem ? [] : status, statusTone: problem ? null : statusTone, problem,
       label: problem ? t("c1012", { title: title, why: why }) : [title, subtitle, ...status].filter(Boolean).join('，') };
   };
   return {

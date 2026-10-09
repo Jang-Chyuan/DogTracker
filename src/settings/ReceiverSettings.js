@@ -69,9 +69,10 @@ export default function ReceiverSettings({
           detail={page.subtitle}
           detailTone={page.subtitleProblem ? 'crit' : undefined}
           problem={page.subtitleProblem}
+          leadingWithProblem
           leading={
             <View style={{ marginRight: space.m }}>
-              <ReceiverIcon number={page.number} ring={40} />
+              <ReceiverIcon number={page.number} ring={40} phase={page.phase} />
             </View>
           }
           right={[page.battery, page.lastHeard].filter(Boolean)}
