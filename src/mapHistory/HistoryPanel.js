@@ -4,7 +4,7 @@ import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useStyles } from '../theme/ThemeProvider';
 import { size, space, motion } from '../theme/tokens';
-import { mapPanelHeight, historyPanelMinHeight } from '../map/MapPanelHeight';
+import { historyPanelMaxHeight, historyPanelMinHeight } from '../map/MapPanelHeight';
 import { behindSheet } from '../utils/a11yFocus';
 
 const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
@@ -20,7 +20,7 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   }), []);
   const { height: windowHeight, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const cap = mapPanelHeight(windowHeight, insets.top);
+  const cap = historyPanelMaxHeight(windowHeight, insets.top);
   // Reserve the date/summary header and two rows, plus the bottom inset.
   const minimum = historyPanelMinHeight(windowHeight, insets.top, bottomInset);
   const [height, setHeight] = useState(minimum);

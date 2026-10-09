@@ -10,7 +10,7 @@ import {
 import { cursorHaptic } from '../src/history/screen/HistoryScreenCursor';
 import { dateRowLabel } from '../src/history/screen/HistoryScreenDates';
 import { forgetRanges, rememberedRange, rememberRangeFor } from '../src/history/screen/RangeMemory';
-import { mapPanelHeight, dogCardMaxHeight } from '../src/map/MapPanelHeight';
+import { mapPanelHeight, dogCardMaxHeight, historyPanelMaxHeight, historyPanelMinHeight } from '../src/map/MapPanelHeight';
 import { rangeSummaryLines } from '../src/mapHistory/HistoryRangeSummary';
 import { HAPTIC_EFFECTS, haptic } from '../src/utils/haptics';
 import NativeTrackingPlatform from '../specs/NativeTrackingPlatform';
@@ -169,7 +169,10 @@ describe('haptics', () => {
 });
 
 describe('the panel and the date row', () => {
-  test('history shares the live card cap, including safe-area and scroll space', () => {
+  test('history keeps half the screen for the map and the live card keeps its cap', () => {
+    expect(historyPanelMaxHeight(800, 24)).toBe(388);
+    expect(historyPanelMinHeight(400, 24, 20)).toBe(188);
+    expect(historyPanelMaxHeight(20, 24)).toBe(0);
     expect(mapPanelHeight(800, 24)).toBe(582);
     expect(dogCardMaxHeight(800, 24, 20) + 8 + 20).toBe(mapPanelHeight(800, 24));
   });
