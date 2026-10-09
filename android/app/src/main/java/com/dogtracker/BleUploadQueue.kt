@@ -36,25 +36,25 @@ internal object BleUploadQueue {
     db.execSQL("INSERT OR IGNORE INTO ble_upload_meta(key,value) VALUES('phone_id',?)", arrayOf(UUID.randomUUID().toString()))
   }
 
-  fun enqueue(db: SQLiteDatabase, data: JSONObject, payload: String, receivedAt: Long) {
-    val master = (data.opt("mid") as? Number)?.toDouble() ?: return
-    if (!master.isFinite() || master < 1 || master > 65535 || master % 1.0 != 0.0) return
+  fun enqueue(db: SQLiteDatabase, data: JSONObject, payload: String, receivedAt: Long): String? {
+    val master = (data.opt("mid") as? Number)?.toDouble() ?: return null
+    if (!master.isFinite() || master < 1 || master > 65535 || master % 1.0 != 0.0) return null
     val owner = db.rawQuery("SELECT value FROM ble_upload_meta WHERE key='owner'", null).use {
       if (it.moveToFirst()) it.getString(0) else ""
     }
-    if (owner.isEmpty()) return
+    if (owner.isEmpty()) return null
     val enabled = db.rawQuery("SELECT mode FROM ble_upload_settings WHERE owner_user_id=? AND master_id=?", arrayOf(owner, master.toInt().toString())).use {
       it.moveToFirst() && it.getString(0) == "phone"
     }
-    if (!enabled) return
+    if (!enabled) return null
     val fingerprint = MessageDigest.getInstance("SHA-256").digest(payload.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     val duplicate = db.rawQuery("SELECT id FROM ble_upload_queue WHERE owner_user_id=? AND master_id=? AND fingerprint=? AND received_at>=? LIMIT 1",
       arrayOf(owner, master.toInt().toString(), fingerprint, (receivedAt - 60000).toString())).use { it.moveToFirst() }
-    if (duplicate) return
+    if (duplicate) return null
     val full = db.rawQuery("SELECT COUNT(*) FROM ble_upload_queue WHERE status<>'sent'", null).use { it.moveToFirst(); it.getLong(0) >= 20000 }
     if (full) {
       db.execSQL("INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('queue_error','待傳佇列已滿（20,000 筆），新轉送資料未入列；請恢復上傳。')")
-      return
+      return null
     }
     db.insertOrThrow("ble_upload_queue", null, ContentValues().apply {
       put("event_id", UUID.randomUUID().toString()); put("owner_user_id", owner)
@@ -63,5 +63,6 @@ internal object BleUploadQueue {
       put("slave_id", data.optInt("sid", 0))
     })
     db.execSQL("DELETE FROM ble_upload_meta WHERE key='queue_error'")
+    return owner
   }
 }

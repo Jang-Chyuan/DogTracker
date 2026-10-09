@@ -62,7 +62,7 @@ test('legacy metadata repair preserves raw rows/checkpoints, isolates owners, in
     await cloud.savePage('b', [original]);
     await db.executeAsync(`UPDATE supabase_dog_status SET track_at=NULL, track_time_version=NULL,
       upload_source=NULL, phone_received_at=NULL, display_version=1, display_latitude=99`);
-    await cloud.initialize();
+    await createCloudDatabase({ ...db }).initialize();
     expect((await cloud.pendingTrackTimes('a')).map(r => r.event_id)).toEqual([original.event_id]);
     const before = (await cloud.listHistory('a'))[0];
     const query = { select: jest.fn(() => query), in: jest.fn(() => query),

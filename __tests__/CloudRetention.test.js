@@ -18,7 +18,8 @@ test('keeps the newest rows globally on upgrade and writes without changing sync
     for (let i = 1; i <= 15002; i += 1) insert.run(i, i % 2 ? 'a' : 'b', String(i), i % 2 ? 5 : 7);
     sql.exec('COMMIT');
     sql.exec('INSERT INTO dog_status(received_at) VALUES (1)');
-    await cloud.initialize();
+    // Simulate reopening a pre-upgrade database, not a sync tick.
+    await createCloudDatabase({ ...connection }, { maxRows: 15000 }).initialize();
     const summary = () => sql.prepare(`SELECT COUNT(*) AS count, MIN(received_at) AS oldest
       FROM supabase_dog_status`).get();
     expect(summary()).toMatchObject({ count: 15000, oldest: 3 });
@@ -63,7 +64,7 @@ test('the cap is a size budget, and the original JSON only outlives a day', asyn
     insert.run(now - 2 * CLOUD_PAYLOAD_MS, 'old');
     insert.run(now - 60000, 'fresh');
     // The sweep runs on open and then every twentieth page.
-    await cloud.initialize();
+    await createCloudDatabase({ ...connection }).initialize();
     const payload = event => sql.prepare(
       'SELECT raw_payload FROM supabase_dog_status WHERE event_id = ?').get(event).raw_payload;
     expect(payload('old')).toBeNull();

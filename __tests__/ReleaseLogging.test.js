@@ -12,3 +12,11 @@ test('release logger drops all payloads including error objects', () => {
   require('../src/logger').logger.info({ deviceId: 'private' }, new Error('coordinates'));
   expect(spy).not.toHaveBeenCalled(); spy.mockRestore(); global.__DEV__ = previous;
 });
+test('native main sources log only through AppLog (silent in release)', () => {
+  const root = path.join(__dirname, '../android/app/src/main/java');
+  for (const file of files(root).filter(name => name.endsWith('.kt') || name.endsWith('.java'))) {
+    if (file.endsWith('/AppLog.kt')) continue;
+    expect([file, fs.readFileSync(file, 'utf8').match(/(^|[^.\w])(android\.util\.)?Log\.[vdiwe]\(/m)?.[0] ?? null])
+      .toEqual([file, null]);
+  }
+});

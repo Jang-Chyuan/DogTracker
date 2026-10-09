@@ -2,10 +2,17 @@
 
 When BLE reception is running and an account has a Master set to `phone`, the
 foreground UI starts `SearchRelayService`, an Android `dataSync` foreground
-service with a persistent notification. Its native 10-second timer launches a
-bounded Headless JS upload pass, including while the screen is off. No new pass
-starts while the previous pass is active. Requests, network availability and
-device power management can increase actual latency.
+service with a persistent notification while pending work exists. Incoming
+queue events are batched over ten seconds without a wake lock. The service
+stops when the queue is empty; queued events restart it only for the configured
+account and an active BLE service. Future retry times use a delayed callback;
+offline work waits for a validated-network callback. No empty Headless JS pass
+or idle polling loop runs. An active pass has a 25-second JS cancellation
+limit and a 26-second native wake-lock/cleanup ceiling; completion releases the
+lock immediately. Nonempty queues keep a ten-second cooldown between passes.
+Android may defer a background service start; the durable queue and WorkManager
+fallback preserve those events. Requests and device power management can
+increase actual latency.
 
 Each pass selects each Master/Slave's newest pending event first, then older
 events. The native queue stores `slave_id`; existing queue rows are migrated

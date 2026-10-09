@@ -1,0 +1,4 @@
+before packet.save                      warm     4.925 cold     5.658 rows null
+before packet.insertTrigger             warm     0.305 cold     0.323 rows null
+after packet.save                      warm     4.921 cold     5.418 rows null
+after packet.insertTrigger             warm     0.479 cold     0.414 rows null

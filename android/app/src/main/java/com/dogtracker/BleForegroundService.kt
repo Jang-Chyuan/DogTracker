@@ -53,7 +53,9 @@ class BleForegroundService : Service() {
   private lateinit var handler: Handler
   private val prefs by lazy { getSharedPreferences("ble_session", MODE_PRIVATE) }
   private var gatt: BluetoothGatt? = null
-  private var reconnectAttempt = 0
+  private val reconnectBackoff = BleReconnectBackoff()
+  // The wait before the next reconnect attempt (0 while connected or connecting).
+  private var retryDelayMs = 0L
   private var manualStop = false
   private var connecting = false
   private var deviceId = ""
@@ -174,7 +176,7 @@ class BleForegroundService : Service() {
           .putString("dataUuid", dataUuid).putInt("expectedMasterId", expectedMasterId)
           .putString("sessionId", intent.getStringExtra("sessionId"))
           .remove("lastPayload").remove("lastReceivedAt").remove("storageError").commit()
-        reconnectAttempt = 0
+        reconnectBackoff.reset(); retryDelayMs = 0L
         BackgroundAlerts.forgetReceiver(this)
       } else {
         val restored = com.dogtracker.alerts.ReceiverLinkState.restore(prefs.getString("receiverLink", null), System.currentTimeMillis())
@@ -212,19 +214,19 @@ class BleForegroundService : Service() {
     handler.removeCallbacks(reconnectRunnable)
     if (manualStop || connecting || isConnected) return
     if (!hasPermission()) {
-      publishStatus("缺少藍牙連線權限，等待重新授權")
-      scheduleReconnect(30_000)
+      scheduleReconnect(30_000, "缺少藍牙連線權限，等待重新授權")
       return
     }
     try {
       val adapter = getSystemService(BluetoothManager::class.java)?.adapter
       if (adapter == null || !adapter.isEnabled) {
-        publishStatus("藍牙未開啟，30 秒後重試")
-        scheduleReconnect(30_000)
+        scheduleReconnect(30_000, "藍牙未開啟")
         return
       }
       closeGatt()
       connecting = true
+      // An attempt is running: not the widened wait any more.
+      retryDelayMs = 0L
       publishStatus("正在連線 $deviceName")
       gatt = adapter.getRemoteDevice(deviceId).connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE)
       if (gatt == null) return fail("無法建立 BLE 連線")
@@ -272,7 +274,7 @@ class BleForegroundService : Service() {
         isConnected = true
         disconnectedAt = 0
         prefs.edit().putString("receiverLink", com.dogtracker.alerts.ReceiverLinkState(true).write()).commit()
-        reconnectAttempt = 0
+        reconnectBackoff.reset(); retryDelayMs = 0L
         // Receiving again after the user switched it off: closes that pause.
         prefs.edit().putString(ReceiverPauses.KEY,
           ReceiverPauses.resumed(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis())).apply()
@@ -418,14 +420,14 @@ class BleForegroundService : Service() {
       runCatching { wakeLock.acquire(Events.DISCONNECT_GRACE_MS + 2 * ALERT_CHECK_MS) }
     }
     closeGatt()
-    publishStatus(message)
-    scheduleReconnect()
+    scheduleReconnect(reason = message)
   }
 
-  private fun scheduleReconnect(delayOverride: Long? = null) {
+  private fun scheduleReconnect(delayOverride: Long? = null, reason: String = "等待自動重連") {
     if (manualStop) return
-    val delay = delayOverride ?: minOf(2_000L * (1L shl minOf(reconnectAttempt, 4)), 30_000L)
-    reconnectAttempt++
+    val delay = reconnectBackoff.next(SystemClock.elapsedRealtime(), delayOverride)
+    retryDelayMs = delay
+    publishStatus("$reason；${delay / 1000} 秒後重試")
     handler.removeCallbacks(reconnectRunnable)
     handler.postDelayed(reconnectRunnable, delay)
   }
@@ -456,6 +458,7 @@ class BleForegroundService : Service() {
   private fun stopSession(status: String = "背景接收已停止") {
     manualStop = true
     isRunning = false
+    com.dogtracker.cloud.SearchRelayService.receiverStopped(this)
     disconnectedAt = 0
     handler.removeCallbacksAndMessages(null)
     closeGatt()
@@ -469,11 +472,9 @@ class BleForegroundService : Service() {
   // which receiver, and whether the dogs' positions are coming in. A tap opens
   // 設定 → 接收器 (S2); 「中斷連線」 is S2's 中斷連線.
   private fun notification(@Suppress("UNUSED_PARAMETER") status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-    .setContentTitle(receiverTitle()).setContentText(when {
-      isConnected -> "正在接收狗的位置"
-      disconnectedAt > 0 -> "斷線了，正在自動重連"
-      else -> "正在連線接收器"
-    }).setColor(NotificationChannels.accent(this)).setSmallIcon(R.drawable.ic_stat_dog)
+    .setContentTitle(receiverTitle()).setContentText(
+      ReceiverNotificationText.of(isConnected, disconnectedAt > 0, retryDelayMs),
+    ).setColor(NotificationChannels.accent(this)).setSmallIcon(R.drawable.ic_stat_dog)
     .setContentIntent(NotificationChannels.launch(this, "receiver-settings"))
     .addAction(0, "中斷連線", PendingIntent.getService(this, NOTIFICATION_ID,
       Intent(this, BleForegroundService::class.java).setAction(ACTION_USER_STOP),
@@ -493,6 +494,7 @@ class BleForegroundService : Service() {
     }
     instance = null
     isRunning = false
+    com.dogtracker.cloud.SearchRelayService.receiverStopped(this)
     isConnected = false
     disconnectedAt = 0
     handler.post {

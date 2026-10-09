@@ -32,12 +32,21 @@ export async function persistCloudDisplayCoordinates(db, page, owner, ble = fals
       continue;
     }
     const first = group[0];
-    const context = rows(await db.executeAsync(`SELECT id, ${timeColumn} AS time,
-      slave_lat AS latitude, slave_lon AS longitude, speed_kmh, master_id
-      FROM ${table} WHERE ${ownerFilter}master_id IS ? AND slave_id IS ?
-      AND (${timeColumn} < ? OR (${timeColumn}=? AND id < ?))
-      ORDER BY ${timeColumn} DESC, id DESC LIMIT 2`,
-    [...ownerParams, first.master_id, first.slave_id, first.time, first.time, first.id])).reverse();
+    const fields = `id, ${timeColumn} AS time,
+      slave_lat AS latitude, slave_lon AS longitude, speed_kmh, master_id`;
+    // ANALYZE can turn the OR cursor into two scans plus a sort of the whole
+    // stream. Bound each half first; merge at most four rows for the two seeds.
+    const context = rows(await db.executeAsync(`SELECT * FROM (
+      SELECT ${fields} FROM ${table}
+      WHERE ${ownerFilter}master_id IS ? AND slave_id IS ? AND ${timeColumn}=? AND id<?
+      ORDER BY id DESC LIMIT 2
+    ) UNION ALL SELECT * FROM (
+      SELECT ${fields} FROM ${table}
+      WHERE ${ownerFilter}master_id IS ? AND slave_id IS ? AND ${timeColumn}<?
+      ORDER BY ${timeColumn} DESC, id DESC LIMIT 2
+    ) ORDER BY time DESC, id DESC LIMIT 2`,
+    [...ownerParams, first.master_id, first.slave_id, first.time, first.id,
+      ...ownerParams, first.master_id, first.slave_id, first.time])).reverse();
     const smoothed = smoothCloudHistory([...context, ...group]).slice(context.length);
     group.forEach((point, index) => {
       if (point.display_version === 1) { output.set(point.id, point); return; }

@@ -340,3 +340,27 @@ test('local waiting-source grace uses first reception without replacing the late
       received_at: NOW, first_received_at: NOW - 20000, battery_percentage: 70 });
   } finally { connection.close(); }
 });
+
+test('latest seeks retain first reception, no-fix packets, ties and nullable streams', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db);
+    await cloud.initialize();
+    db.sqlite.exec(`INSERT INTO dog_status(received_at,master_id,slave_id,slave_lat,slave_lon)
+      VALUES (1,5,4,25,121),(2,5,4,0,0),(2,6,4,26,122),
+      (3,NULL,NULL,25,121),(4,NULL,NULL,0,0)`);
+    const local = (await cloud.latestStatusRows(null, 0, 5)).filter(r => r.source === 'ble');
+    expect(local.filter(r => r.slave_id === 4)).toHaveLength(2);
+    expect(local.filter(r => r.slave_id === 4).every(r => r.master_id === 6 && r.track_at === 2)).toBe(true);
+    expect(local.filter(r => r.slave_id === null).map(r => r.track_at)).toEqual([4,3]);
+    const first = await cloud.latestStatusRows(null, 0, 2);
+    // An old fix belongs to its own Master's stream, not the newest Master's.
+    expect(first.find(r => r.master_id === 6).first_received_at).toBe(2);
+    const cloudRows = [row('same-a',4,2,5), row('same-b',4,2,6), row('bad',6,3,5,{slave_lat:0,slave_lon:0})];
+    await cloud.savePage('a',cloudRows);
+    await cloud.savePage('b',[row('other',8,5,5)]);
+    expect(await cloud.latestBySlave('a',0)).toMatchObject([{ slave_id:4,master_id:6 }]);
+    expect(await cloud.latestBySlave('a',3)).toEqual([]);
+  } finally { db.close(); }
+});
