@@ -667,9 +667,11 @@ export const size = {
     chart: 180,
   },
 
-  // History dog-picker avatar and selected radio indicator.
+  // 「看哪幾隻狗」 rows (清單列: at least 56dp, avatar 32dp; user 2026-10-09)
+  // and the selected radio indicator.
   historyPicker: {
-    avatar: 28,
+    row: 56,
+    avatar: 32,
     radio: 20,
     radioFillRing: 6,
     // Plus sign inside the history dog-picker button.

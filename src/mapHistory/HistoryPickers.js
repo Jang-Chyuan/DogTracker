@@ -75,9 +75,9 @@ const getStyles = makeStyles(theme => {
     // 設計稿「元件狀態」: the pressed state.
     pressedRow: { backgroundColor: colors.brandSoft },
     section: { fontSize: type.micro.fontSize, fontWeight: type.micro.fontWeight, color: colors.textMuted, marginTop: space.s, marginBottom: space.xs },
-    row: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: space.s,
+    row: { minHeight: sizes.historyPicker.row, flexDirection: 'row', alignItems: 'center', gap: space.s,
       borderTopWidth: border.hairline, borderTopColor: colors.line },
-    choice: { flex: 1, minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: space.s },
+    choice: { flex: 1, minHeight: sizes.historyPicker.row, flexDirection: 'row', alignItems: 'center', gap: space.s },
     name: { flexShrink: 1, fontSize: type.value.fontSize, fontWeight: type.value.fontWeight, color: colors.text },
     failure: { marginLeft: space.xs },
     spacer: { flex: 1 },
