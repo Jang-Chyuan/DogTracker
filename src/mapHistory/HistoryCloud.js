@@ -4,6 +4,7 @@
 // page's writer (downloadCloudHistory → CloudDatabase.savePage) through the
 // sync's exclusive slot (runManual), so it never races the 30-second sync.
 // Signed out there is no adapter at all: nothing is asked.
+import { dayKey } from '../history/screen/HistoryScreenDates';
 import { useMemo, useRef } from 'react';
 import { downloadCloudHistory } from '../cloud/CloudDownload';
 import { getCloudClient } from '../cloud/CloudClient';
@@ -59,6 +60,7 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
   let previous = Promise.resolve();
   return {
     owner,
+    downloadStates: ({ slaveId }) => database.historyDownloadStates?.(owner, slaveId) ?? Promise.resolve([]),
     /** The time of the dog's newest row in [since, cutoff), or null. */
     newestBefore({ slaveId, cutoff, since, signal }) {
       return oneTime(rows(slaveId).gte('received_at', iso(since)).lt('received_at', iso(cutoff))
@@ -75,6 +77,9 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
         await before.catch(() => {});
         if (signal?.aborted) throw new Error('下載已取消');
         await database.initialize();
+        const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
+        const day = dayKey(new Date(dayStart));
+        for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
         const abort = new AbortController();
         if (signal?.aborted) abort.abort();
         signal?.addEventListener?.('abort', () => abort.abort());
@@ -83,7 +88,10 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
         const work = leaseCurrent => downloadCloudHistory({ client, database, owner,
           startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId,
           signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
-        return runManual ? runManual(work, abort) : work(() => true);
+        const count = await (runManual ? runManual(work, abort) : work(() => true));
+        if (abort.signal.aborted) throw new Error('下載已取消');
+        for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, true);
+        return count;
       })();
       previous = run;
       return run;

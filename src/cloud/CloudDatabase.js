@@ -48,7 +48,7 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -65,6 +65,16 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     if (!owner) throw new Error('請先登入');
   };
   return {
+    async historyDownloadStates(owner, ids) {
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      const list = Array.isArray(ids) ? ids : [ids];
+      if (!list.length) return [];
+      return rows(await connection.executeAsync(`SELECT slave_id,day,complete FROM history_download_state WHERE owner=? AND slave_id IN (${list.map(() => '?').join(',')})`, [owner, ...list]));
+    },
+    async setHistoryDownloadState(owner, slaveId, day, complete) {
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      await connection.executeAsync('INSERT OR REPLACE INTO history_download_state(owner,slave_id,day,complete) VALUES(?,?,?,?)', [owner, slaveId, day, complete ? 1 : 0]);
+    },
     async loadRangeState(owner) {
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS receiver_range_state (scope TEXT PRIMARY KEY, value TEXT NOT NULL)');
       const saved = rows(await connection.executeAsync('SELECT value FROM receiver_range_state WHERE scope=?', [owner ?? 'local']))[0]?.value;

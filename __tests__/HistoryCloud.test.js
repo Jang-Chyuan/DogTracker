@@ -76,3 +76,20 @@ test('downloads one at a time through the slot; the day reaches past midnight by
     ['gte', 'received_at', new Date(dayEnd - DOWNLOAD_BEFORE_MS).toISOString()],
     ['lt', 'received_at', new Date(dayEnd + 86400000 + DOWNLOAD_AFTER_MS).toISOString()]]));
 });
+
+test('K11: incomplete download is durable before network writes and complete only after success', async () => {
+  const order = [];
+  const database = { initialize: async () => {}, savePage: async () => {},
+    setHistoryDownloadState: jest.fn(async (owner, id, day, complete) => order.push(complete)),
+    historyDownloadStates: async () => [{ slave_id: 6, day: '2026-10-03', complete: 0 }] };
+  const c = client(() => { expect(order.at(-1)).toBe(false); return Promise.resolve({ data: [], error: null }); });
+  const cloud = createHistoryCloud({ client: c, database, owner: 'a' });
+  const dayStart = new Date(2026, 9, 3).getTime();
+  await cloud.download({ slaveId: 6, dayStart, dayEnd: dayStart + 86400000 });
+  expect(order).toEqual([false, true]);
+  expect(await cloud.downloadStates({ slaveId: 6 })).toEqual([{ slave_id: 6, day: '2026-10-03', complete: 0 }]);
+  order.length = 0;
+  const failed = createHistoryCloud({ client: client(() => Promise.resolve({ data: null, error: { message: 'failed' } })), database, owner: 'a' });
+  await expect(failed.download({ slaveId: 6, dayStart, dayEnd: dayStart + 86400000 })).rejects.toThrow('下載失敗');
+  expect(order).toEqual([false]);
+});

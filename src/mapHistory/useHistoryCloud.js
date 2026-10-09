@@ -165,6 +165,20 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
   }, [scope]);
   // ---- downloading a day --------------------------------------------------
   const incompleteKey = scope;
+  const [durable, setDurable] = useState({ scope: null, states: [] });
+  useEffect(() => {
+    if (!enabled || !cloud.downloadStates) return undefined;
+    let alive = true;
+    Promise.resolve(cloud.downloadStates({ slaveId })).then(states => {
+      if (!alive) return;
+      const pending = incompleteOf(scope);
+      pending.clear();
+      for (const row of states) if (!row.complete) pending.add(row.day);
+      setDurable({ scope, states });
+    }).catch(() => { if (alive) setDurable({ scope, states: local.map(day => ({ day, complete: 0 })) }); });
+    return () => { alive = false; };
+  }, [enabled, cloud, scope]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [incompleteRevision, setIncompleteRevision] = useState(0);
   const markIncomplete = useCallback((day, value) => {
     const days = incompleteOf(incompleteKey);
@@ -211,9 +225,9 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
   }, []);
   const knowledge = useMemo(() => ({ local, cloud: known.cloud, checked: known.checked, earliest: known.earliest,
     cloudEnabled: enabled && !known.none, query: enabled ? status : 'idle',
-    incomplete: enabled ? [...incompleteOf(incompleteKey)] : [] }),
+    incomplete: enabled ? [...new Set([...incompleteOf(incompleteKey), ...(cloud?.downloadStates && durable.scope !== scope ? local : [])])] : [] }),
   // incompleteRevision stands for INCOMPLETE's contents.
-  [local, known, enabled, status, incompleteKey, incompleteRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  [local, known, enabled, status, incompleteKey, incompleteRevision, cloud, durable, scope]); // eslint-disable-line react-hooks/exhaustive-deps
   return { knowledge, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download, startDownload, cancelDownload,
     downloadingDay: download?.status === 'downloading' ? download.day : null };
 }

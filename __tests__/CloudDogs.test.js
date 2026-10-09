@@ -287,3 +287,16 @@ test('K07: receiver range state survives database recreation and isolates accoun
     expect(await reopened.loadRangeState('b')).toEqual({});
   } finally { connection.close(); }
 });
+
+test('K11: partial download markers survive a new database adapter and are isolated per dog/account', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const first = createCloudDatabase(connection);
+    await first.setHistoryDownloadState('a', 4, '2026-10-03', false);
+    const next = createCloudDatabase(connection);
+    expect(await next.historyDownloadStates('a', [4, 6])).toEqual([{ slave_id: 4, day: '2026-10-03', complete: 0 }]);
+    expect(await next.historyDownloadStates('b', 4)).toEqual([]);
+    await next.setHistoryDownloadState('a', 4, '2026-10-03', true);
+    expect((await first.historyDownloadStates('a', 4))[0].complete).toBe(1);
+  } finally { connection.close(); }
+});
