@@ -21,7 +21,15 @@ import MapView, {
   Polyline,
   PROVIDER_GOOGLE,
 } from 'react-native-maps';
-import { layout, motion, size as sizes } from '../theme/tokens';
+import {
+  layout,
+  motion,
+  size as sizes,
+  border,
+  space,
+  type,
+  touch,
+} from '../theme/tokens';
 
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
@@ -47,6 +55,9 @@ import {
   splashChrome,
   useSplashMarkersHidden,
 } from '../app/hideSplash';
+import { moveDuration } from '../utils/reduceMotion';
+import MarkerA11yLayer, { markerA11yItems, stopSpeech } from './MarkerA11yLayer';
+import { behindSheet } from '../utils/a11yFocus';
 import {
   framedCoordinates,
   framePadding,
@@ -75,7 +86,7 @@ const getRANGE_RING = makeStyles(theme => {
   return {
     stroke: withOpacity(tokens.rangeRing, opacity.rangeRingStroke),
     fill: withOpacity(tokens.rangeRing, opacity.rangeRingFill),
-    width: 1.5,
+    width: border.regular,
   };
 });
 const OUT_OF_RANGE_WIDTH = 2;
@@ -107,11 +118,14 @@ const getNO_BASE_MAP = makeStyles(theme => {
 // this long after the map loaded when there is still nothing to frame (the
 // native side lets go after 10 s whatever happens).
 export const FIRST_FRAME_WAIT_MS = 3000;
+// When there is nothing to frame, the most the launch screen is held from the
+// map's mount, whatever is still loading (the phone's first fix, tiles).
+export const FRAMING_WAIT_MAX_MS = 9000;
 // A fit is drawn within a frame or two; release the launch screen after it
 // even if the map reports no camera change (the camera was already there).
 const AFTER_FIT_MS = 250;
 // The map's own padding at the sides (dp).
-const MAP_SIDE_PADDING = 12;
+const MAP_SIDE_PADDING = layout.floatingGap;
 // History framing: 24dp all round, the cursor label on top, 框住全部 below.
 const HISTORY_FRAME = HISTORY_FRAME_PADDING;
 // Coordinates all within about 30 m of each other.
@@ -534,6 +548,8 @@ function GoogleTrackingMapRenderer({
   phoneEnabled,
   livePhone,
   onDogPress,
+  // A sheet is open over the map (history): hidden from TalkBack.
+  a11yHidden = false,
   // A tap on the map itself (not on a dog): closes the open card.
   onMapPress,
   // The map's rotation in degrees (the card's direction arrow follows it).
@@ -644,6 +660,8 @@ function GoogleTrackingMapRenderer({
   const afterFit = useRef(null);
   useEffect(() => () => clearTimeout(afterFit.current), []);
   const splashReleased = useRef(false);
+  // The latest the launch screen is held when there is nothing to frame.
+  const splashDeadline = useRef(Date.now() + FRAMING_WAIT_MAX_MS);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -764,6 +782,37 @@ function GoogleTrackingMapRenderer({
     topInset,
     bottomInset,
   ]);
+  // Where the history's stops are on screen, for TalkBack (MarkerA11yLayer):
+  // read again whenever the camera stops.
+  const [stopPoints, setStopPoints] = useState(null);
+  const historyPlaces = historyRoute?.places;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!usable || !historyPlaces?.length || !map?.pointForCoordinate) {
+      setStopPoints(null);
+      return undefined;
+    }
+    let alive = true;
+    Promise.all(
+      historyPlaces.map(place =>
+        map
+          .pointForCoordinate(place.coordinate)
+          .then(point => ({
+            id: place.key,
+            label: stopSpeech(place),
+            x: point.x,
+            y: point.y,
+            place,
+          }))
+          .catch(() => null),
+      ),
+    ).then(items => {
+      if (alive) setStopPoints(items.filter(Boolean));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [usable, historyPlaces, cursorRevision, cursorLayout.width, cursorLayout.height]);
   const projecting =
     usable &&
     dogMarkers.length > 1 &&
@@ -887,10 +936,19 @@ function GoogleTrackingMapRenderer({
     }
     // With something to frame the launch screen waits for the framing (the
     // native side still lets go after 10 s).
-    if (!loaded || positions.length) return undefined;
-    const timer = setTimeout(releaseSplash, FIRST_FRAME_WAIT_MS);
+    if (positions.length) return undefined;
+    // Nothing to frame yet. The launch screen waits for the map to load and
+    // for what it frames to be known (the phone's first fix, MapScreen's
+    // PHONE_ALONE_WAIT_MS), then 3 s more at most — and never past one
+    // deadline counted from the map's mount (FRAMING_WAIT_MAX_MS).
+    const remaining = Math.max(0, splashDeadline.current - Date.now());
+    const wait =
+      loaded && framingReady
+        ? Math.min(FIRST_FRAME_WAIT_MS, remaining)
+        : remaining;
+    const timer = setTimeout(releaseSplash, wait);
     return () => clearTimeout(timer);
-  }, [configured, loaded, positions.length, releaseSplash]);
+  }, [configured, loaded, positions.length, releaseSplash, framingReady]);
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !historyMode;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
@@ -966,10 +1024,10 @@ function GoogleTrackingMapRenderer({
       width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
       height: cursorLayout.height - topInset - bottomInset,
     });
-    if (region) mapRef.current?.animateToRegion(region, motion.camera.duration);
+    if (region) mapRef.current?.animateToRegion(region, moveDuration(motion.camera.duration));
     else
       mapRef.current?.fitToCoordinates(points, {
-        animated: true,
+        animated: moveDuration(motion.camera.duration) > 0,
         edgePadding: framing,
       });
   };
@@ -1000,12 +1058,20 @@ function GoogleTrackingMapRenderer({
       .pointForCoordinate(focusDog.coordinate)
       .then(async point => {
         const margin = sizes.marker.attention + layout.framePadding;
+        // Below the face: its name tag (two lines at most, growing with the
+        // system font) and, on the live map, the button row standing on the
+        // card (「今天 x km」, 我的位置) — a dog under them is hidden too.
+        const tag =
+          (type.mapLabel.lineHeight * sizes.mapLabel.maxLines +
+            2 * sizes.mapLabel.paddingV) *
+          fontScale;
+        const buttons = historyMode ? 0 : sizes.floatingButton + layout.floatingGap;
         const hidden =
           !point ||
           point.x < margin ||
           point.x > width - margin ||
           point.y < overlayTop + margin ||
-          point.y > height - overlayBottom - margin;
+          point.y > height - overlayBottom - margin - buttons - tag;
         if (!hidden || focused.current !== focusDog.key) return;
         // The camera's centre is the middle of the padded map; move it by how
         // far the dog is from where it should be.
@@ -1028,7 +1094,7 @@ function GoogleTrackingMapRenderer({
         takeCamera();
         map.animateCamera(
           { center: moved || focusDog.coordinate },
-          { duration: motion.camera.duration },
+          { duration: moveDuration(motion.camera.duration) },
         );
       })
       .catch(() => {});
@@ -1081,7 +1147,7 @@ function GoogleTrackingMapRenderer({
     if (tinySpan(routeCamera)) {
       mapRef.current?.animateCamera(
         { center: routeCamera[0], zoom: 16 },
-        { duration: motion.camera.duration },
+        { duration: moveDuration(motion.camera.duration) },
       );
       return;
     }
@@ -1090,11 +1156,11 @@ function GoogleTrackingMapRenderer({
       routeCamera,
       historyRoute?.cursor?.coordinate,
       extraBottom > 0
-        ? { top: 16, right: 24, bottom: 8, left: 24 }
+        ? { top: space.l, right: space.xl, bottom: space.s, left: space.xl }
         : HISTORY_FRAME,
     );
     mapRef.current?.fitToCoordinates(routeCamera, {
-      animated,
+      animated: animated && moveDuration(motion.camera.duration) > 0,
       edgePadding: { ...room, bottom: room.bottom + extraBottom },
     });
   };
@@ -1151,7 +1217,7 @@ function GoogleTrackingMapRenderer({
       }
       map.animateCamera(
         { center: coordinate },
-        { duration: motion.cursorJump.duration },
+        { duration: moveDuration(motion.cursorJump.duration) },
       );
     },
     [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom],
@@ -1189,7 +1255,7 @@ function GoogleTrackingMapRenderer({
     takeCamera();
     mapRef.current?.animateCamera(
       { center: position },
-      { duration: motion.camera.duration },
+      { duration: moveDuration(motion.camera.duration) },
     );
   };
   // The overlap menu: which group tag was tapped (by the dog carrying it).
@@ -1237,6 +1303,13 @@ function GoogleTrackingMapRenderer({
       testID="tracking-map-container"
       onLayout={event => setCursorLayout(event.nativeEvent.layout)}
     >
+      {/* Hidden from TalkBack while a sheet (history) or the overlap menu is
+          over it: Android ignores accessibilityViewIsModal. */}
+      <View
+        style={StyleSheet.absoluteFill}
+        pointerEvents="box-none"
+        importantForAccessibility={behindSheet(a11yHidden || !!picker)}
+      >
       {!component && mountedMap ? (
         <MapView
           key={instance}
@@ -1539,7 +1612,7 @@ function GoogleTrackingMapRenderer({
       )}
       {!component && mountedMap && !loaded && !timedOut && (
         <View
-          style={[styles.loading, { top: topInset + 56 }]}
+          style={[styles.loading, { top: topInset + touch.subpageHeader }]}
           pointerEvents="none"
         >
           <ActivityIndicator
@@ -1554,6 +1627,34 @@ function GoogleTrackingMapRenderer({
         pointerEvents="box-none"
         style={[StyleSheet.absoluteFill, { opacity: splashChrome }]}
       >
+        {!live && usable && foreground && onStopPress && stopPoints && (
+          <MarkerA11yLayer
+            items={stopPoints.filter(
+              item =>
+                item.x >= 0 &&
+                item.y >= 0 &&
+                item.x <= cursorLayout.width &&
+                item.y <= cursorLayout.height,
+            )}
+            onActivate={key =>
+              onStopPress(stopPoints.find(item => item.id === key)?.place)
+            }
+          />
+        )}
+        {live && usable && foreground && !movingState && onDogPress && (
+          <MarkerA11yLayer
+            items={markerA11yItems(dogMarkers, screenPoints, {
+              width: cursorLayout.width,
+              height: cursorLayout.height,
+              groupLabel: marker =>
+                tags[marker.slaveId]?.group > 1
+                  ? groupSpeech(tags[marker.slaveId], dogMarkers)
+                  : null,
+              grouped: marker => tags[marker.slaveId] === null,
+            })}
+            onActivate={pressDog}
+          />
+        )}
         {live &&
           usable &&
           foreground &&
@@ -1592,11 +1693,12 @@ function GoogleTrackingMapRenderer({
           onPress={() =>
             mapRef.current?.animateCamera(
               { heading: 0 },
-              { duration: motion.camera.duration },
+              { duration: moveDuration(motion.camera.duration) },
             )
           }
         />
       )}
+      </View>
       {pickerMarkers && pickerPlace && (
         <OverlapPicker
           markers={pickerMarkers}
@@ -1635,14 +1737,14 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    unavailableText: { color: colors.master, fontWeight: '700', fontSize: 20 },
+    unavailableText: { color: colors.master, fontWeight: type.title.fontWeight, fontSize: type.title.fontSize },
     loading: {
       position: 'absolute',
-      left: 14,
-      width: 36,
-      height: 36,
+      left: space.m,
+      width: sizes.mapLoading.spinnerDisc,
+      height: sizes.mapLoading.spinnerDisc,
       backgroundColor: colors.surface,
-      borderRadius: 18,
+      borderRadius: sizes.mapLoading.spinnerDisc / 2,
       justifyContent: 'center',
       ...floatingShadow,
     },

@@ -313,19 +313,25 @@ test('a change in flight is dropped when the source changes (live ↔ fixture)',
   expect(latest.value.sound).toBe(false);
 });
 
-test('S6: TalkBack reaches each switch itself, with its own label', async () => {
+test('S6: each switch row is one TalkBack switch — its label and on/off — and the whole row toggles it (060)', async () => {
   let renderer;
+  const onChange = jest.fn();
   await act(async () => {
-    renderer = Renderer.create(<AlertSettings page={alertsPage({}, {})} onChange={jest.fn()} />);
+    renderer = Renderer.create(<AlertSettings page={alertsPage({}, {})} onChange={onChange} />);
   });
-  for (const item of renderer.root.findAllByType(Switch)) {
-    expect(item.props.accessibilityLabel).toBeTruthy();
-    let parent = item.parent;
-    while (parent) {
-      if (parent.type === 'View') expect(parent.props.accessible).not.toBe(true);
-      parent = parent.parent;
-    }
+  const rows = renderer.root.findAll(node => node.props.accessibilityRole === 'switch' && node.props.onPress);
+  expect(rows.length).toBeGreaterThanOrEqual(4);
+  for (const row of rows) {
+    expect(row.props.accessibilityLabel).toBeTruthy();
+    expect(typeof row.props.accessibilityState.checked).toBe('boolean');
   }
+  // The switch itself is drawn but not a second TalkBack item.
+  for (const item of renderer.root.findAllByType(Switch)) {
+    expect(item.parent.props.importantForAccessibility).toBe('no-hide-descendants');
+  }
+  const vibrate = rows.find(row => row.props.accessibilityLabel === '震動');
+  await act(async () => vibrate.props.onPress());
+  expect(onChange).toHaveBeenCalledWith({ vibrate: !vibrate.props.accessibilityState.checked });
 });
 
 test('S1 priority: permission denied, all off, active pause, delivery; expired pause clears', () => {

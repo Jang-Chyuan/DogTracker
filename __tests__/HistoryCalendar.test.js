@@ -35,7 +35,7 @@ test('today is always tappable, even without records', () => {
   const view = calendarMonth({ year: 2026, month: 10, today, selected: '2026-10-02',
     knowledge: { local: ['2026-10-02'], cloudEnabled: false } });
   expect(view.cells.find(c => c.day === today)).toMatchObject({ today: true, dot: false, tappable: true, muted: false,
-    label: '10 月 7 日，今天，沒有紀錄' });
+    label: '今天，10 月 7 日，沒有紀錄' });
   expect(chooseDay(today, { today, knowledge: { local: [] } })).toEqual({ type: 'show', day: today });
 });
 
@@ -160,4 +160,23 @@ test('a day whose download was not finished: a dot, downloaded again when chosen
   expect(chooseDay(today, { today, knowledge: cloudToday })).toEqual({ type: 'download', day: today });
   expect(chooseDay(today, { today, knowledge: cloudToday, online: false }).type).toBe('offline');
   expect(chooseDay(today, { today, knowledge: { cloudEnabled: true, checked: [today] } }).type).toBe('show');
+});
+
+test('200% font: the month as a list of the days with records and today, newest first (060)', () => {
+  const { calendarDayList } = require('../src/history/screen/HistoryCalendar');
+  const view = calendarMonth({ year: 2026, month: 10, today, selected: '2026-10-03', knowledge: checkedOctober });
+  const list = calendarDayList(view);
+  // September's 28–30 are on the grid's first row but belong to the previous month's list.
+  expect(list.map(row => row.day)).toEqual([today, '2026-10-03', '2026-10-02']);
+  expect(list[0]).toMatchObject({ title: '10 月 7 日（三）', today: true, dot: true });
+  expect(list[1]).toMatchObject({ selected: true, dot: true, label: '10 月 3 日，有紀錄，只在雲端' });
+  // Today without records is listed without a dot.
+  const empty = calendarDayList(calendarMonth({ year: 2026, month: 10, today, selected: today,
+    knowledge: { local: [], cloudEnabled: false } }));
+  expect(empty).toEqual([expect.objectContaining({ day: today, dot: false })]);
+  // A failed cloud question lists the days not known yet (not the future).
+  const failed = calendarDayList(calendarMonth({ year: 2026, month: 10, today, selected: today,
+    knowledge: { ...known, query: 'failed' } }));
+  expect(failed.map(row => row.day)).toContain('2026-10-05');
+  expect(failed.map(row => row.day)).not.toContain('2026-10-08');
 });

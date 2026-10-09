@@ -704,8 +704,9 @@ test('a dog whose card opens is moved into view once, only when the card or an e
     // The same opening never moves it again (new positions, a re-render).
     await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 1, coordinate }} />));
     expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
-    // A dog already in view above the card stays where it is.
-    point = { x: 200, y: 300 };
+    // A dog already in view above the card — and above the button row and
+    // its own name tag (060) — stays where it is.
+    point = { x: 200, y: 250 };
     await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 2, coordinate }} />));
     expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
     // The buttons sit above the card.

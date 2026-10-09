@@ -1,7 +1,7 @@
 // What each dog's map marker shows (design v3「狗的標記：所有情況」, DESIGN.md
 // §15 角標與放大), and which name tags merge into a 「3 隻」 group tag. Pure and
 // provider-neutral: the renderer only draws what these return.
-import { size as sizes } from '../theme/tokens';
+import { size as sizes, type } from '../theme/tokens';
 import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 import { dogFreshness, isIndoorHold, staleSpeech, staleText } from '../tracking/DogFreshness';
 import { RANGE_STATUS } from '../tracking/ReceiverRange';
@@ -112,7 +112,7 @@ export function tagSize(text, fontScale = 1) {
   const { paddingH, paddingV, border } = sizes.mapLabel;
   return {
     width: width * fontScale + 2 * (paddingH + border),
-    height: 16 * fontScale + 2 * (paddingV + border),
+    height: type.mapLabel.lineHeight * fontScale + 2 * (paddingV + border),
   };
 }
 

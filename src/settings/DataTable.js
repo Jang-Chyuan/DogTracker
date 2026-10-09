@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { radius, size, space, touch, type } from '../theme/tokens';
+import { radius, size, space, touch, type, border } from '../theme/tokens';
 
 // The light pieces the 診斷 data pages share (design S8: 「可選欄位、恢復預設欄
 // 位；欄位不截字；載入中、空、讀取失敗都有樣子」).
@@ -17,6 +17,9 @@ import { radius, size, space, touch, type } from '../theme/tokens';
  * a cell wraps instead of being cut (its width is the narrowest it gets).
  * `onRowPress(row)` makes a row pressable (its detail), `openId` marks it.
  */
+// 36dp chips, 48dp to the finger.
+const CHIP_SLOP = (touch.min - size.chip.height) / 2;
+
 export function DataTable({
   columns,
   rows,
@@ -102,6 +105,7 @@ export function ColumnPicker({ columns, selected, onToggle, onReset }) {
             accessibilityLabel={column.label}
             accessibilityState={{ checked: on }}
             onPress={() => onToggle(column.key)}
+            hitSlop={CHIP_SLOP}
             style={({ pressed }) => [
               styles.pill,
               on && styles.pillOn,
@@ -119,6 +123,7 @@ export function ColumnPicker({ columns, selected, onToggle, onReset }) {
         accessibilityLabel="恢復預設欄位"
         onPress={onReset}
         style={({ pressed }) => [styles.reset, pressed && styles.pressed]}
+        hitSlop={CHIP_SLOP}
       >
         <Text style={styles.link}>恢復預設欄位</Text>
       </Pressable>
@@ -188,7 +193,7 @@ export function TextButton({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      hitSlop={4}
+      hitSlop={space.xs}
       style={({ pressed }) => [
         styles.textButton,
         disabled && styles.disabled,
@@ -250,13 +255,13 @@ const getStyles = makeStyles(theme => {
     table: {
       marginTop: space.m,
       borderRadius: radius.input,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       borderColor: colors.line,
     },
     row: {
       flexDirection: 'row',
-      minHeight: 40,
-      borderBottomWidth: 1,
+      minHeight: touch.min,
+      borderBottomWidth: border.hairline,
       borderBottomColor: colors.line,
     },
     headerRow: { backgroundColor: colors.bg },
@@ -266,9 +271,9 @@ const getStyles = makeStyles(theme => {
       ...type.small,
       color: colors.text,
       paddingHorizontal: space.s,
-      paddingVertical: space.m - 2,
+      paddingVertical: space.s,
     },
-    headerCell: { fontWeight: '700', color: colors.textMuted },
+    headerCell: { fontWeight: type.status.fontWeight, color: colors.textMuted },
     pressed: { backgroundColor: colors.pressedOverlay },
     picker: {
       flexDirection: 'row',
@@ -279,14 +284,14 @@ const getStyles = makeStyles(theme => {
     pill: {
       minHeight: size.chip.height,
       borderRadius: radius.chip,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       borderColor: colors.line,
       paddingHorizontal: size.chip.paddingH,
       justifyContent: 'center',
     },
     pillOn: { backgroundColor: colors.tonal, borderColor: colors.tonal },
     pillText: { ...type.caption, color: colors.textMuted },
-    pillTextOn: { color: colors.tonalText, fontWeight: '700' },
+    pillTextOn: { color: colors.tonalText, fontWeight: type.status.fontWeight },
     reset: {
       minHeight: size.chip.height,
       justifyContent: 'center',

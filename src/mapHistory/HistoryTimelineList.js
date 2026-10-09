@@ -1,7 +1,10 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
+import { isReduceMotion } from '../utils/reduceMotion';
+import { touch, size as sizes, space, type, border, radius, fontScale } from '../theme/tokens';
 import React, { useEffect, useRef } from 'react';
 import {
   LayoutAnimation,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
@@ -14,13 +17,24 @@ import {
   nodePill,
   nodeTimes,
   placeLines,
+  placeSpeech,
+  sectionSpeech,
   sectionText,
 } from '../history/HistoryText';
 import { usePlaceNames } from '../placement/AddressLookup';
 
 // 判定表「時間軸清單」: time column 54dp, track 36dp, then the place.
-const TIME_WIDTH = 54;
-const TRACK_WIDTH = 36;
+const TIME_WIDTH = sizes.timeline.timeColumn;
+// 200% 字體 (DESIGN.md §3.4): the time column widens with the system font up to
+// 72dp, and its times grow only as far as 「07:02」 fits there (no wrapping).
+const TIME_MAX_SCALE = fontScale.timeColumnTextMax;
+const timeWidth = () => ({
+  width: Math.min(
+    sizes.timeline.timeColumnMax,
+    Math.round(TIME_WIDTH * (PixelRatio.getFontScale?.() || 1)),
+  ),
+});
+const TRACK_WIDTH = sizes.timeline.track;
 // Enough dots or dashes for the tallest row; the row clips the rest.
 const MARKS = 40;
 
@@ -99,7 +113,7 @@ function Node({ node, color }) {
     case 'indoor':
       return (
         <View style={styles.indoor}>
-          <Glyph name="house" color={colors.onRoute} size={14} />
+          <Glyph name="house" color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
         </View>
       );
     case 'resume':
@@ -142,16 +156,24 @@ function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
   const pill = nodePill(node);
   return (
     <Pressable
-      style={styles.row}
+      style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
+      hitSlop={ROW_SLOP}
       testID={`timeline-${node.type}`}
       {...tap}
       onLayout={onLayout}
       accessibilityRole="button"
+      accessibilityLabel={placeSpeech(node, lines.title)}
       accessibilityState={{ selected: !!selected }}
     >
-      <View style={styles.timeColumn}>
-        <Text style={styles.time}>{start}</Text>
-        {end ? <Text style={styles.timeEnd}>{end}</Text> : null}
+      <View style={[styles.timeColumn, timeWidth()]}>
+        <Text style={styles.time} maxFontSizeMultiplier={TIME_MAX_SCALE}>
+          {start}
+        </Text>
+        {end ? (
+          <Text style={styles.timeEnd} maxFontSizeMultiplier={TIME_MAX_SCALE}>
+            {end}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.trackColumn}>
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
@@ -192,12 +214,14 @@ function SectionRow({ section, color, onPress }) {
   const tap = useTap(onPress, section);
   return (
     <Pressable
-      style={[styles.row, styles.sectionRow]}
+      style={({ pressed }) => [styles.row, styles.sectionRow, pressed && styles.pressedRow]}
+      hitSlop={ROW_SLOP}
       testID={`timeline-${section.type}-${section.mode}`}
       {...tap}
       accessibilityRole="button"
+      accessibilityLabel={sectionSpeech(section)}
     >
-      <View style={styles.timeColumn} />
+      <View style={[styles.timeColumn, timeWidth()]} />
       <View style={styles.trackColumn}>
         <Track kind={lineOf(section)} color={color} />
       </View>
@@ -205,7 +229,7 @@ function SectionRow({ section, color, onPress }) {
         <Glyph
           name={text.icon}
           color={muted ? colors.iconMuted : color}
-          size={20}
+          size={sizes.timeline.icon}
         />
         <Text style={styles.movement}>
           {text.lead}
@@ -239,7 +263,9 @@ function HistoryTimelineList({
   const states = places.map(place => place.state).join();
   const shown = useRef(states);
   useEffect(() => {
-    if (shown.current !== states) LayoutAnimation.configureNext(ADDRESS_MOTION);
+    // 減少動態效果: the addresses just appear (no rows sliding).
+    if (shown.current !== states && !isReduceMotion())
+      LayoutAnimation.configureNext(ADDRESS_MOTION);
     shown.current = states;
   }, [states]);
   return (
@@ -273,6 +299,10 @@ function HistoryTimelineList({
   );
 }
 
+// Rows are 40dp at least with 12dp between: 4dp more above and below reach
+// 48dp without overlapping the next row.
+const ROW_SLOP = { top: (touch.min - sizes.timeline.sectionHeight) / 2, bottom: (touch.min - sizes.timeline.sectionHeight) / 2 };
+
 const isSection = node => ['movement', 'gap'].includes(node?.type);
 
 // Addresses fade in where they land and the rows below slide (180 ms).
@@ -289,21 +319,23 @@ export default React.memo(HistoryTimelineList);
 const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
+    // 設計稿「元件狀態」: the pressed state.
+    pressedRow: { backgroundColor: colors.brandSoft },
     // The 12dp between rows is inside the place column, so the track column
     // runs the full row and the line has no breaks.
     row: { flexDirection: 'row' },
-    sectionRow: { minHeight: 40 },
-    timeColumn: { width: TIME_WIDTH, alignItems: 'flex-end', paddingRight: 4 },
+    sectionRow: { minHeight: sizes.timeline.sectionHeight },
+    timeColumn: { width: TIME_WIDTH, alignItems: 'flex-end', paddingRight: space.xs },
     time: {
       color: colors.text,
-      fontSize: 14,
-      fontWeight: '700',
+      ...type.value,
+
       fontVariant: ['tabular-nums'],
-      lineHeight: 20,
+
     },
     timeEnd: {
       color: colors.textMuted,
-      fontSize: 12,
+      fontSize: type.small.fontSize,
       fontVariant: ['tabular-nums'],
     },
     trackColumn: { width: TRACK_WIDTH, alignItems: 'center' },
@@ -315,103 +347,103 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       overflow: 'hidden',
     },
-    solid: { left: TRACK_WIDTH / 2 - 1.5, right: undefined, width: 3 },
+    solid: { left: TRACK_WIDTH / 2 - sizes.timeline.driveLine / 2, right: undefined, width: sizes.timeline.driveLine },
     marks: { flexDirection: 'column' },
     // 判定表「時間軸清單」: 3dp dots, 7dp apart.
-    dot: { width: 3, height: 3, borderRadius: 1.5, marginBottom: 7 },
+    dot: { width: sizes.timeline.dot, height: sizes.timeline.dot, borderRadius: sizes.timeline.dot / 2, marginBottom: sizes.timeline.dotGap },
     dash: {
-      width: 2,
-      height: 6,
-      marginBottom: 4,
+      width: sizes.timeline.noDataLine,
+      height: sizes.timeline.noDataDash[0],
+      marginBottom: sizes.timeline.noDataDash[1],
       backgroundColor: colors.noDataLine,
     },
     departure: {
-      width: 16,
-      height: 16,
-      borderRadius: 8,
-      borderWidth: 3,
+      width: sizes.timeline.node.start,
+      height: sizes.timeline.node.start,
+      borderRadius: sizes.timeline.node.start / 2,
+      borderWidth: border.heavy,
       backgroundColor: colors.elevated,
-      marginTop: 2,
+      marginTop: sizes.timeline.node.departureDrop,
     },
     numbered: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
-      borderWidth: 3,
+      width: sizes.timeline.node.stop + border.heavy * 2,
+      height: sizes.timeline.node.stop + border.heavy * 2,
+      borderRadius: (sizes.timeline.node.stop + border.heavy * 2) / 2,
+      borderWidth: border.heavy,
       borderColor: colors.elevated,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: -3,
+      marginTop: -sizes.timeline.node.stayLift,
     },
-    number: { color: colors.onRoute, fontSize: 12, fontWeight: '700' },
+    number: { color: colors.onRoute, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
     indoor: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
-      borderWidth: 3,
+      width: sizes.timeline.node.hold + border.heavy * 2,
+      height: sizes.timeline.node.hold + border.heavy * 2,
+      borderRadius: (sizes.timeline.node.hold + border.heavy * 2) / 2,
+      borderWidth: border.heavy,
       borderColor: colors.elevated,
       backgroundColor: colors.receiver,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: -3,
+      marginTop: -sizes.timeline.node.stayLift,
     },
     resume: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      borderWidth: 2,
+      width: sizes.timeline.node.resume,
+      height: sizes.timeline.node.resume,
+      borderRadius: sizes.timeline.node.resume / 2,
+      borderWidth: border.strong,
       backgroundColor: colors.elevated,
-      marginTop: 4,
+      marginTop: space.xs,
     },
     end: {
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      borderWidth: 4,
-      marginTop: 1,
+      width: sizes.timeline.node.end,
+      height: sizes.timeline.node.end,
+      borderRadius: sizes.timeline.node.end / 2,
+      borderWidth: border.emphasis,
+      marginTop: sizes.timeline.node.endDrop,
     },
     // 12dp between rows, outside the selected fill (radius.stayRow 12).
-    placeOuter: { flex: 1, paddingBottom: 6 },
+    placeOuter: { flex: 1, paddingBottom: space.xs },
     place: {
-      marginTop: -4,
-      paddingTop: 4,
-      paddingLeft: 8,
-      paddingRight: 8,
-      paddingBottom: 6,
-      borderRadius: 12,
+      marginTop: -space.xs,
+      paddingTop: space.xs,
+      paddingLeft: space.s,
+      paddingRight: space.s,
+      paddingBottom: space.xs,
+      borderRadius: radius.input,
       overflow: 'hidden',
     },
     address: {
       color: colors.text,
-      fontSize: 15,
-      fontWeight: '700',
-      lineHeight: 20,
+      ...type.cardTitle,
+
       fontVariant: ['tabular-nums'],
     },
-    asking: { color: colors.textMuted, fontWeight: '400', minHeight: 40 },
+    asking: { color: colors.textMuted, fontWeight: type.body.fontWeight, minHeight: sizes.timeline.sectionHeight },
     second: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       alignItems: 'center',
-      gap: 8,
-      marginTop: 4,
+      gap: space.s,
+      marginTop: space.xs,
     },
     pill: {
-      height: 18,
-      borderRadius: 9,
-      paddingHorizontal: 7,
+      // 18dp, taller with a large system font (膠囊可以變高、不裁字).
+      minHeight: sizes.timeline.pill.height,
+      borderRadius: sizes.timeline.pill.height / 2,
+      paddingHorizontal: space.s,
       justifyContent: 'center',
     },
-    pillText: { fontSize: 11, fontWeight: '700' },
-    note: { color: colors.textMuted, fontSize: 12 },
+    pillText: { fontSize: type.micro.fontSize, fontWeight: type.micro.fontWeight },
+    note: { color: colors.textMuted, fontSize: type.small.fontSize },
     sectionText: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      paddingLeft: 8,
+      gap: space.xs,
+      paddingLeft: space.s,
     },
-    movement: { color: colors.textMuted, fontSize: 13, flexShrink: 1 },
-    bold: { color: colors.text, fontWeight: '700' },
+    movement: { color: colors.textMuted, fontSize: type.caption.fontSize, flexShrink: 1 },
+    bold: { color: colors.text, fontWeight: type.status.fontWeight },
   });
 });

@@ -318,7 +318,7 @@ function otherLines(edges, color, cursorTime, theme = getTheme()) {
 }
 
 // 多隻狗時的游標點 (non-protagonist): a 32dp face and its name.
-export const OTHER_FACE = 32;
+export const OTHER_FACE = sizes.historyFace.companion;
 
 /**
  * The other dogs' faces as the map's dog markers (DogMarkerView): 32dp, the

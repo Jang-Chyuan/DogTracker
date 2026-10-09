@@ -11,14 +11,14 @@
 // - The visible map is the screen minus the top controls and the bottom card;
 //   a dog under the card counts as off screen. Hints keep clear of the bottom
 //   right buttons.
-import { layout, size as sizes } from '../theme/tokens';
+import { layout, size as sizes, space } from '../theme/tokens';
 
 const hint = sizes.edgeHint;
-export const EDGE_HINT_MARGIN = 8;
+export const EDGE_HINT_MARGIN = space.s;
 // Inside a hint: side padding, the arrow and the gap after it.
-const PADDING = 8;
-const ARROW = 10;
-const GAP = 4;
+const PADDING = space.s;
+const ARROW = sizes.edgeHint.arrow;
+const GAP = space.xs;
 // 「+N」 at 14sp bold: about 9dp per character.
 const plusWidth = extra => (extra > 0 ? GAP + 9 * String(`+${extra}`).length : 0);
 

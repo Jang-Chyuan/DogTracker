@@ -1,3 +1,4 @@
+import { size as sizes, space, radius, type } from '../theme/tokens';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { StyleSheet, Text, View } from 'react-native';
 import Glyph from './Glyph';
@@ -18,7 +19,7 @@ export default function Stat({ icon, label, value, level = null }) {
       accessibilityLabel={`${label} ${value}`}
       style={styles.stat}
     >
-      <Glyph name={icon} color={colors.muted} size={15} level={level} />
+      <Glyph name={icon} color={colors.muted} size={sizes.icon.stat} level={level} />
       <Text style={styles.value}>{value}</Text>
     </View>
   );
@@ -30,12 +31,12 @@ const getStyles = makeStyles(theme => {
     stat: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 5,
-      paddingVertical: 4,
-      paddingHorizontal: 9,
-      borderRadius: 10,
+      gap: space.xs,
+      paddingVertical: space.xs,
+      paddingHorizontal: space.s,
+      borderRadius: radius.settingIcon,
       backgroundColor: themeLiteral.surface,
     },
-    value: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+    value: { color: colors.ink, fontSize: type.caption.fontSize, fontWeight: type.captionBold.fontWeight },
   });
 });

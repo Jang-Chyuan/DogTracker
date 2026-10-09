@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { radius, size, space, touch, type } from '../theme/tokens';
+import { radius, size, space, touch, type, border } from '../theme/tokens';
 import ConfirmDialog from './ConfirmDialog';
 import {
   GroupCard,
@@ -149,7 +149,7 @@ export default function WifiSettings({ wifi, receiver = '接收器' }) {
                 setRemoveError('');
                 setRemoving(network);
               }}
-              hitSlop={4}
+              hitSlop={space.xs}
               style={({ pressed }) => [
                 styles.delete,
                 !connected && styles.disabled,
@@ -205,8 +205,8 @@ export default function WifiSettings({ wifi, receiver = '接收器' }) {
           accessibilityRole="button"
           accessibilityLabel={shown ? '隱藏密碼' : '顯示密碼'}
           onPress={() => setShown(value => !value)}
-          style={styles.show}
-          hitSlop={4}
+          style={({ pressed }) => [styles.show, pressed && styles.pressed]}
+          hitSlop={space.xs}
         >
           <Text style={styles.showText}>{shown ? '隱藏' : '顯示'}</Text>
         </Pressable>
@@ -225,7 +225,7 @@ export default function WifiSettings({ wifi, receiver = '接收器' }) {
               accessibilityRole="button"
               accessibilityLabel="重試"
               onPress={send}
-              hitSlop={8}
+              hitSlop={space.s}
               style={({ pressed }) => [styles.retry, pressed && styles.pressed]}
             >
               <Text style={styles.retryText}>重試</Text>
@@ -293,7 +293,7 @@ const getStyles = makeStyles(theme => {
     field: {
       minHeight: size.input.height,
       borderRadius: radius.input,
-      borderWidth: size.input.border,
+      borderWidth: border.regular,
       borderColor: colors.floatingOutline,
       // 深色模式「鍵盤」: inputs sit on surface (white in light, as before).
       backgroundColor: colors.surface,
@@ -312,7 +312,7 @@ const getStyles = makeStyles(theme => {
       ...type.body,
       color: colors.text,
       padding: 0,
-      minHeight: 52,
+      minHeight: size.login.passwordHeight,
     },
     show: {
       minWidth: touch.min,

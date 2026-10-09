@@ -47,7 +47,7 @@ import {
   dogFreshness,
   isIndoorHold,
 } from '../tracking/DogFreshness';
-import { layout } from '../theme/tokens';
+import { layout, space, radius, size as sizes, type } from '../theme/tokens';
 import { SettingsGear } from '../map/MapControls';
 import TopAlertCards from '../map/TopAlertCards';
 import {
@@ -60,10 +60,16 @@ import {
   trackReceiverWait,
 } from '../map/TopAlerts';
 import { startOfToday, todayPill } from '../tracking/TodayDistance';
+import { behindSheet } from '../utils/a11yFocus';
 
 // How long the first framing waits for the phone's first position report
 // before framing without it (the launch screen is still up meanwhile).
 export const PHONE_WAIT_MS = 1500;
+// With no local dog to frame the phone is all the cold start frames (設計稿
+// 「冷啟動」: 都還沒定位就只框手機), and the launch screen stays until the map is
+// framed (「啟動畫面 → 地圖」): so it waits this long for the phone's first fix
+// instead (the native side lets go at 10 s whatever happens).
+export const PHONE_ALONE_WAIT_MS = 6000;
 
 export default function MapScreen({
   tracking,
@@ -530,18 +536,32 @@ export default function MapScreen({
     [livePresentation, phoneSpot, receiverId],
   );
   // The first framing waits (briefly) for the phone's first report.
+  // A history sheet is open: the map behind it is hidden from TalkBack.
+  const [historySheet, setHistorySheet] = useState(false);
   const [phoneWaitOver, setPhoneWaitOver] = useState(false);
+  const [phoneAloneWaitOver, setPhoneAloneWaitOver] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setPhoneWaitOver(true), PHONE_WAIT_MS);
-    return () => clearTimeout(timer);
+    const alone = setTimeout(
+      () => setPhoneAloneWaitOver(true),
+      PHONE_ALONE_WAIT_MS,
+    );
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(alone);
+    };
   }, []);
   // Settled once the phone has a fix, or says it is not recording, or the
-  // wait is over; a report without a position yet keeps waiting.
+  // wait is over; a report without a position yet keeps waiting — longer
+  // when there is no local dog to frame without it.
+  const localToFrame =
+    coldStartCoordinates(livePresentation.dogMarkers, null, receiverId)
+      .length > 0;
   const phoneSettled =
     !!fixture ||
     !!phoneSpot ||
     (livePhone != null && !livePhone.running) ||
-    phoneWaitOver;
+    (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
   const saveHistory = history?.save;
@@ -898,15 +918,15 @@ export default function MapScreen({
     messages.push(
       `地圖設定讀取失敗：${tracking.preferences.error}。重新開啟 App 重試。`,
     );
-  const top = insets.top + 12;
+  const top = insets.top + layout.floatingGap;
   // The top cards hang 8dp under the gear (8dp under the status bar, 48dp).
   const gearTop = insets.top + layout.belowStatusBar;
-  const cardsTop = gearTop + 48 + 8;
+  const cardsTop = gearTop + sizes.floatingButton + layout.belowStatusBar;
   const cardsBottom = cards.length && topHeight ? cardsTop + topHeight : 0;
-  const noticesTop = cardsBottom ? cardsBottom + 8 : top + 44;
+  const noticesTop = cardsBottom ? cardsBottom + space.s : top + sizes.mapSource.noticeTopReserve;
   // History: under the top capsule row (8dp under the status bar, 48dp).
   const controlsTop = historical
-    ? gearTop + 48 + 8 + (messages.length ? noticeHeight + 8 : 0)
+    ? gearTop + sizes.floatingButton + layout.belowStatusBar + (messages.length ? noticeHeight + 8 : 0)
     : top + 44 + (messages.length ? noticeHeight + 8 : 0);
   // The compass: 12dp under the gear, or under the whole stack of cards.
   const compassTop = historical
@@ -937,6 +957,7 @@ export default function MapScreen({
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
       <TrackingMap
+        a11yHidden={historical && historySheet}
         provider={mapProvider}
         // A screen fixture counts as a new source, so the map frames its dogs.
         source={
@@ -1012,6 +1033,7 @@ export default function MapScreen({
       {/* The launch screen's handover fades these in (splashChrome). */}
       <Animated.View
         pointerEvents="box-none"
+        importantForAccessibility={behindSheet(historical && historySheet)}
         style={[
           StyleSheet.absoluteFill,
           styles.chrome,
@@ -1078,6 +1100,7 @@ export default function MapScreen({
           initialExport={fixture?.historyView?.export ?? null}
           alertBadge={alertBadge?.badge ?? null}
           onAlertBadge={alertBadge?.onPress}
+          onSheetOpen={setHistorySheet}
           closedAt={
             target.subject === 'phone' &&
             screen.today &&
@@ -1154,38 +1177,38 @@ const getStyles = makeStyles(theme => {
     source: {
       position: 'absolute',
       zIndex: 20,
-      left: 14,
-      borderRadius: 20,
+      left: space.m,
+      borderRadius: radius.full,
       backgroundColor: colors.surface,
-      paddingHorizontal: 14,
-      height: 36,
+      paddingHorizontal: space.m,
+      height: sizes.mapSource.height,
       flexDirection: 'row',
       alignItems: 'center',
       ...floatingShadow,
     },
     statusDot: {
-      width: 7,
-      height: 7,
-      borderRadius: 4,
+      width: sizes.mapSource.statusDot,
+      height: sizes.mapSource.statusDot,
+      borderRadius: radius.full,
       backgroundColor: colors.master,
-      marginRight: 8,
+      marginRight: space.s,
     },
-    sourceText: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+    sourceText: { color: colors.ink, fontSize: type.caption.fontSize, fontWeight: type.captionBold.fontWeight },
     notices: {
       position: 'absolute',
       zIndex: 20,
-      left: 14,
-      right: 14,
-      maxHeight: 108,
+      left: space.m,
+      right: space.m,
+      maxHeight: sizes.mapSource.noticeLimit,
       backgroundColor: themeLiteral.mapNoticeBackground,
-      borderRadius: 12,
-      padding: 10,
+      borderRadius: radius.snackbar,
+      padding: space.s,
       ...floatingShadow,
     },
     noticeText: {
       color: themeLiteral.mapNoticeText,
-      fontSize: 12,
-      lineHeight: 18,
+      fontSize: type.small.fontSize,
+      lineHeight: type.caption.lineHeight,
     },
   });
 });

@@ -1,3 +1,4 @@
+import { size as sizes, type, space, touch, border, radius } from '../theme/tokens';
 import { useTheme, makeStyles } from '../theme/ThemeProvider';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -33,14 +34,14 @@ export const DogsSheet = forwardRef(function DogsSheet(
           accessibilityState={{ checked: dog.protagonist }}
           accessibilityLabel={`${dog.name}${dog.protagonist ? '，主角' : '，換成主角'}`}
           onPress={() => onSelect(dog.id)} style={({ pressed }) => [styles.choice, pressed && styles.pressed]}>
-          <DogAvatar avatar={dog.avatar} size={28} border={0} tint={routeTint(dog, theme.colors)} />
+          <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} tint={routeTint(dog, theme.colors)} />
           <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
           {dog.protagonist && <View style={styles.tag}><Text style={styles.tagText}>主角</Text></View>}
           <View style={styles.spacer} />
           <View style={[styles.radio, dog.protagonist && styles.radioOn]} />
         </Pressable>
         {dog.removable && <Pressable testID={`history-remove-${dog.id}`} accessibilityRole="button"
-          accessibilityLabel={`移除${dog.name}`} onPress={() => onRemove(dog.id)} style={styles.remove}>
+          accessibilityLabel={`移除${dog.name}`} onPress={() => onRemove(dog.id)} style={({ pressed }) => [styles.remove, pressed && styles.pressedRow]}>
           <Text style={styles.detail}>✕</Text>
         </Pressable>}
       </View>)}
@@ -54,7 +55,7 @@ export const DogsSheet = forwardRef(function DogsSheet(
           accessibilityLabel={`${dog.name}，訊號源 ${dog.id}${dog.hasData ? '' : '，這天沒有紀錄'}`}
           disabled={dog.disabled} onPress={() => onAdd(dog)}
           style={({ pressed }) => [styles.row, dog.opacity < 1 && styles.faded, pressed && styles.pressed]}>
-          <DogAvatar avatar={dog.avatar} size={28} border={0} />
+          <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} />
           <Text style={styles.name} numberOfLines={1}>{dog.name}</Text>
           <Text style={styles.detail} numberOfLines={1}>{dog.detail}</Text>
           <View style={styles.spacer} />
@@ -68,21 +69,23 @@ export const DogsSheet = forwardRef(function DogsSheet(
 const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
-    section: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginTop: 10, marginBottom: 2 },
-    row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10,
-      borderTopWidth: 1, borderTopColor: colors.line },
-    choice: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
-    name: { flexShrink: 1, fontSize: 14, fontWeight: '700', color: colors.text },
+    // 設計稿「元件狀態」: the pressed state.
+    pressedRow: { backgroundColor: colors.brandSoft },
+    section: { fontSize: type.micro.fontSize, fontWeight: type.micro.fontWeight, color: colors.textMuted, marginTop: space.s, marginBottom: space.xs },
+    row: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: space.s,
+      borderTopWidth: border.hairline, borderTopColor: colors.line },
+    choice: { flex: 1, minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: space.s },
+    name: { flexShrink: 1, fontSize: type.value.fontSize, fontWeight: type.value.fontWeight, color: colors.text },
     spacer: { flex: 1 },
     sectionRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-    sectionNote: { marginLeft: 8 },
-    plus: { width: 48, textAlign: 'center', fontSize: 18, color: colors.tonalText },
-    detail: { fontSize: 12, color: colors.textMuted },
-    tag: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1, backgroundColor: colors.tonal },
-    tagText: { fontSize: 11, color: colors.tonalText },
-    radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.textMuted },
-    radioOn: { borderWidth: 6, borderColor: colors.accent },
-    remove: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+    sectionNote: { marginLeft: space.s },
+    plus: { width: touch.min, textAlign: 'center', fontSize: sizes.historyPicker.addGlyph, color: colors.tonalText },
+    detail: { fontSize: type.small.fontSize, color: colors.textMuted },
+    tag: { borderRadius: radius.full, paddingHorizontal: space.s, paddingVertical: space.xs, backgroundColor: colors.tonal },
+    tagText: { fontSize: type.micro.fontSize, color: colors.tonalText },
+    radio: { width: sizes.historyPicker.radio, height: sizes.historyPicker.radio, borderRadius: sizes.historyPicker.radio / 2, borderWidth: border.strong, borderColor: colors.textMuted },
+    radioOn: { borderWidth: sizes.historyPicker.radioFillRing, borderColor: colors.accent },
+    remove: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center' },
     faded: { opacity: 0.4 },
     pressed: { backgroundColor: colors.pressedOverlay },
   });

@@ -233,6 +233,10 @@ describe('DESIGN.md matches tokens.js', () => {
       'accessibilityLabel',
       'translateY',
       'height',
+      // Code names in the prose (060), not tokens.
+      'linesFor',
+      'PressScale',
+      'MarkerA11yLayer',
     ]);
     const unknown = referenced.filter(
       name => !exists(name) && !notTokens.has(name),
@@ -324,4 +328,13 @@ describe('dark text and graphic contrast', () => {
   ])('%s', (_, foreground, background, minimum) => {
     expect(contrast(foreground, background)).toBeGreaterThanOrEqual(minimum);
   });
+});
+
+test('spacing is exactly the design scale and border weights are documented widths', () => {
+  expect(tokens.space).toEqual({ xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 });
+  // §4 / §15: line, outline, selection, marker/time/endpoint and handle rings,
+  // plus the 4dp accent edge of alert cards.
+  const documented = [1, 1.5, 1.6, 2, 2.4, 2.5, 3, 4];
+  expect(Object.values(tokens.border).length).toBeGreaterThan(0);
+  Object.values(tokens.border).forEach(width => expect(documented).toContain(width));
 });

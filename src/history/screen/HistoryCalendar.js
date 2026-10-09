@@ -12,6 +12,7 @@
 // A day the cloud was not asked about yet is 'unknown': not grey (判定表
 // 「月曆查詢雲端失敗」「月曆查詢中可以點哪些」).
 import { dayBounds, dayKey } from './HistoryScreenDates';
+import { fontScale } from '../../theme/tokens';
 
 const pad = n => String(n).padStart(2, '0');
 const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
@@ -77,13 +78,16 @@ export function dayCell(day, { today, selected, knowledge, inMonth = true }) {
   const [y, m, d] = day.split('-').map(Number);
   const date = `${m} 月 ${d} 日`;
   let label = date;
-  if (isToday) label = `${date}，今天${records ? '' : '，沒有紀錄'}`;
+  // 設計稿「月曆」TalkBack: 「今天，」 in front (「已選取」 comes from the state).
+  if (isToday) label = `今天，${date}，${records ? '有紀錄' : '沒有紀錄'}`;
   else if (state === 'future') label = `${date}，還沒到`;
   else if (state === 'empty') label = `${date}，沒有紀錄`;
   else if (state === 'cloud') label = `${date}，有紀錄，只在雲端`;
   else if (state === 'partial') label = `${date}，有紀錄，還沒下載完`;
   else if (state === 'local') label = `${date}，有紀錄`;
-  else label = `${date}，查詢中`;
+  // Not asked yet: 查詢中 while the cloud is asked; after a failed question,
+  // not known (it can still be chosen and downloaded).
+  else label = k.query === 'failed' ? `${date}，還不知道有沒有紀錄` : `${date}，查詢中`;
   return { day, year: y, month: m, date: d, inMonth, state, dot: records, today: isToday,
     selected: day === selected, tappable, muted, label };
 }
@@ -118,6 +122,36 @@ export function calendarMonth({ year, month, today, selected, knowledge }) {
     returnTodayEnabled: selected !== today,
     status: k.cloudEnabled && k.query !== 'idle' ? k.query : null,
   };
+}
+
+// 200% 字體 (設計稿「月曆在 200% 字體」): from this system font scale on, the
+// month grid becomes a list of days (Android's steps are 1.3, 1.5, 1.8, 2.0;
+// at 1.5 the 44dp cells still hold a date and its dot, at 1.8 they do not).
+export const CALENDAR_LIST_FONT_SCALE = fontScale.calendarList;
+
+/**
+ * The month as the 200% list: only the days with records and today (today
+ * even without records, then without a dot); after a failed cloud question
+ * also the days not yet known, as on the grid (判定表「月曆查詢雲端失敗」).
+ * Newest first. Each row: { day, title 「10 月 3 日（六）」, today, dot,
+ * selected, label } — label is the grid cell's TalkBack sentence (已選取
+ * comes from accessibilityState, as on the grid).
+ */
+export function calendarDayList(month) {
+  return month.cells
+    .filter(cell => cell.inMonth && (cell.dot || cell.today || (cell.tappable && cell.state === 'unknown')))
+    .map(cell => {
+      const weekday = WEEKDAY_NAMES[new Date(cell.year, cell.month - 1, cell.date).getDay()];
+      return {
+        day: cell.day,
+        title: `${cell.month} 月 ${cell.date} 日（${weekday}）`,
+        today: cell.today,
+        dot: cell.dot,
+        selected: cell.selected,
+        label: cell.label,
+      };
+    })
+    .reverse();
 }
 
 /** The month before / after 「YYYY-MM」 as { year, month }. */

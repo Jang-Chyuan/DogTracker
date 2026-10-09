@@ -19,6 +19,7 @@ import {
   Animated,
   Easing,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -26,20 +27,27 @@ import {
 } from 'react-native';
 import Glyph from '../map/Glyph';
 import { PressScale } from '../map/MapControls';
+import { isReduceMotion, REDUCED_FADE_MS } from '../utils/reduceMotion';
 import {
+  CALENDAR_LIST_FONT_SCALE,
   CALENDAR_WEEKDAYS,
+  calendarDayList,
   calendarMonth,
   monthPicker,
   shiftMonth,
 } from '../history/screen/HistoryCalendar';
 import {
+  layout,
   motion,
   radius,
   size as sizes,
   space,
   touch,
   type,
+  border,
 } from '../theme/tokens';
+import { useInitialFocus } from '../utils/a11yFocus';
+import { fontScaleAtLeast } from '../utils/textScale';
 
 const ease = Easing.bezier(...motion.easeOut);
 const CLOSE_MS = motion.rangeCollapse.duration;
@@ -57,8 +65,10 @@ const getOTHER_MONTH = makeStyles(theme => {
   const { literalColors: themeLiteral } = theme;
   return themeLiteral.otherMonthText;
 });
-const CELL = 44;
-const MONTH_CELL = 56;
+const CELL = touch.calendarCell;
+const MONTH_CELL = touch.row;
+// The 40dp month pill, 48dp to the finger.
+const PILL_SLOP = (touch.min - sizes.monthPill.height) / 2;
 
 const monthOf = day => ({
   year: Number(day.slice(0, 4)),
@@ -77,16 +87,14 @@ function Arrow({ side, enabled, onPress, label, testID }) {
       disabled={!enabled}
       onPress={onPress}
       // The chevron sits at the sheet's edge, its 48dp target reaching inwards.
-      style={[
-        styles.arrow,
-        side === 'previous' ? styles.arrowStart : styles.arrowEnd,
-      ]}
-      hitSlop={4}
+      style={({ pressed }) => [styles.arrow,
+        side === 'previous' ? styles.arrowStart : styles.arrowEnd, pressed && styles.pressed]}
+      hitSlop={space.xs}
     >
       <Glyph
         name={side === 'previous' ? 'back' : 'chevron'}
         color={enabled ? colors.text : colors.line}
-        size={20}
+        size={sizes.icon.row}
       />
     </Pressable>
   );
@@ -118,8 +126,8 @@ function QueryStatus({ status, onRetry }) {
         accessibilityRole="button"
         accessibilityLabel="重試查詢雲端的紀錄"
         onPress={onRetry}
-        style={styles.statusRetry}
-        hitSlop={8}
+        style={({ pressed }) => [styles.statusRetry, pressed && styles.pressed]}
+        hitSlop={space.s}
       >
         <Text style={styles.retryText}>重試</Text>
       </Pressable>
@@ -159,7 +167,7 @@ function DayCell({ cell, onPress }) {
       accessibilityState={{ disabled: !cell.tappable, selected: cell.selected }}
       // A day that cannot be chosen does nothing at all (判定表「沒紀錄的日子被點」).
       onPress={cell.tappable ? () => onPress(cell.day) : undefined}
-      style={styles.dayCell}
+      style={({ pressed }) => [styles.dayCell, pressed && styles.pressedRow]}
     >
       <View style={[styles.dayInner, frame]} collapsable={false}>
         <Text style={text}>{cell.date}</Text>
@@ -186,14 +194,12 @@ function MonthCell({ entry, onPress }) {
       }}
       onPress={entry.tappable ? () => onPress(entry.month) : undefined}
       collapsable={false}
-      style={[
-        styles.monthCell,
+      style={({ pressed }) => [styles.monthCell,
         entry.selected
           ? styles.frameSelected
           : entry.tappable
           ? styles.frameOn
-          : styles.framePlain,
-      ]}
+          : styles.framePlain, pressed && styles.pressedRow]}
     >
       <Text
         style={[
@@ -217,6 +223,44 @@ function MonthCell({ entry, onPress }) {
 }
 
 /**
+ * One day of the 200% list (設計稿「月曆在 200% 字體」): 56dp at least, the
+ * date (and 今天) on the left, the 5dp records dot on the right; the day shown
+ * is filled like its calendar cell. A tap chooses it and closes the sheet.
+ */
+function DayRow({ row, onPress }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  return (
+    <Pressable
+      testID={`calendar-row-${row.day}`}
+      accessibilityRole="button"
+      accessibilityLabel={row.label}
+      accessibilityState={{ selected: row.selected }}
+      onPress={() => onPress(row.day)}
+      style={({ pressed }) => [
+        styles.dayRow,
+        row.selected
+          ? styles.frameSelected
+          : pressed
+          ? styles.rowPressed
+          : styles.framePlain,
+      ]}
+    >
+      <Text
+        style={[
+          styles.dayRowText,
+          { color: row.selected ? colors.tonalText : colors.text },
+        ]}
+      >
+        {row.title}
+        {row.today ? '　今天' : ''}
+      </Text>
+      <View style={[styles.rowDot, row.dot ? styles.shown : styles.hidden]} />
+    </Pressable>
+  );
+}
+
+/**
  * `screen` is useHistoryScreen's (dayKey, todayKey, knowledge, goTo, askMonth,
  * askYear, retryQuery, stopQuery). `onChosen(result)` after a day was chosen
  * (the sheet is closing); `onOffline(message)` when a cloud day needs the
@@ -232,7 +276,9 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
   // Day and month cells are drawn afresh on a theme switch: Android kept the
   // old (light) fill on some cells when only their colour changed.
   const scheme = theme.isDark ? 'dark' : 'light';
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
+  // 200% 字體: the month is a scrolling list of days instead of the grid.
+  const asList = fontScaleAtLeast(fontScale, CALENDAR_LIST_FONT_SCALE);
   const { dayKey, todayKey, knowledge, askMonth, askYear, stopQuery } = screen;
   // 再打開月曆停在哪個月: the month of the day shown.
   const [shown, setShown] = useState(() => monthOf(dayKey));
@@ -244,24 +290,29 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
   // The animated styles are made once: a native-driven style that changed
   // under a running animation left the sheet (or the scrim) undrawn.
   const opened = useRef(false);
+  // 減少動態效果: no slide, the sheet fades with its scrim (DESIGN.md §8).
+  const reduced = useRef(isReduceMotion()).current;
+  const sheetOpacity = reduced ? progress : 1;
   const translateY = useRef(
     progress.interpolate({
       inputRange: [0, 1],
-      outputRange: [windowHeight, 0],
+      outputRange: [reduced ? 0 : windowHeight, 0],
     }),
   ).current;
   const closing = useRef(false);
+  // TalkBack starts on the title (選日期 / ‹ 選月份).
+  const titleRef = useRef(null);
   const close = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
     stopQuery?.();
     Animated.timing(progress, {
       toValue: 0,
-      duration: CLOSE_MS,
+      duration: reduced ? REDUCED_FADE_MS : CLOSE_MS,
       easing: ease,
       useNativeDriver: true,
     }).start(() => onClosed?.());
-  }, [onClosed, progress, stopQuery]);
+  }, [onClosed, progress, stopQuery, reduced]);
   // Ask the cloud about what is on screen (a month, or a year's months).
   useEffect(() => {
     if (picker != null) askYear?.(picker);
@@ -288,7 +339,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
     opened.current = true;
     Animated.timing(progress, {
       toValue: 1,
-      duration: motion.cardRise.duration,
+      duration: reduced ? REDUCED_FADE_MS : motion.cardRise.duration,
       easing: ease,
       useNativeDriver: true,
     }).start();
@@ -308,6 +359,12 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
       calendarMonth({ ...shown, today: todayKey, selected: dayKey, knowledge }),
     [shown, todayKey, dayKey, knowledge],
   );
+  const dayList = useMemo(
+    () => (asList ? calendarDayList(month) : []),
+    [asList, month],
+  );
+  // Again on every switch between the month and 選月份 (each has its title).
+  useInitialFocus(titleRef, picker != null ? 'months' : 'month');
   const months = useMemo(
     () =>
       picker == null
@@ -326,12 +383,13 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
       <>
         <View style={styles.titleRow}>
           <Pressable
+            ref={titleRef}
             testID="calendar-months-back"
             accessibilityRole="button"
             accessibilityLabel="選月份，回到月曆"
             onPress={() => setPicker(null)}
-            style={styles.backTitle}
-            hitSlop={8}
+            style={({ pressed }) => [styles.backTitle, pressed && styles.pressed]}
+            hitSlop={space.s}
           >
             <Text style={styles.title}>‹ 選月份</Text>
           </Pressable>
@@ -374,10 +432,14 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
     body = (
       <>
         <View style={styles.titleRow}>
-          <Text style={styles.title} accessibilityRole="header">
+          <Text ref={titleRef} style={styles.title} accessibilityRole="header">
             選日期
           </Text>
-          <QueryStatus status={month.status} onRetry={screen.retryQuery} />
+          {asList ? (
+            <View style={styles.spacer} />
+          ) : (
+            <QueryStatus status={month.status} onRetry={screen.retryQuery} />
+          )}
           <PressScale
             testID="calendar-today"
             accessibilityRole="button"
@@ -385,7 +447,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             accessibilityState={{ disabled: !month.returnTodayEnabled }}
             disabled={!month.returnTodayEnabled}
             onPress={() => choose(todayKey)}
-            hitSlop={8}
+            hitSlop={space.s}
             style={[
               styles.todayButton,
               !month.returnTodayEnabled && styles.disabled,
@@ -394,6 +456,12 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             <Text style={styles.todayText}>回到今天</Text>
           </PressScale>
         </View>
+        {/* 200%: 「查詢中…」「雲端的紀錄查不到　重試」 get their own line. */}
+        {asList && month.status && (
+          <View style={styles.statusLine}>
+            <QueryStatus status={month.status} onRetry={screen.retryQuery} />
+          </View>
+        )}
         <View style={styles.monthRow}>
           <Arrow
             side="previous"
@@ -407,7 +475,8 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             accessibilityRole="button"
             accessibilityLabel={`${month.title}，選月份`}
             onPress={() => setPicker(shown.year)}
-            style={styles.monthPill}
+            style={({ pressed }) => [styles.monthPill, pressed && styles.pressed]}
+            hitSlop={PILL_SLOP}
           >
             <Text style={styles.monthTitle}>{month.title}</Text>
             <Text style={styles.caret}> ▾</Text>
@@ -420,24 +489,42 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             testID="calendar-month-next"
           />
         </View>
-        <View style={styles.weekRow}>
-          {CALENDAR_WEEKDAYS.map(name => (
-            <Text key={name} style={styles.weekday}>
-              {name}
-            </Text>
-          ))}
-        </View>
-        {month.weeks.map(week => (
-          <View key={week[0].day} style={styles.weekRow}>
-            {week.map(cell => (
-              <DayCell
-                key={`${cell.day}-${scheme}`}
-                cell={cell}
-                onPress={choose}
-              />
+        {asList ? (
+          <ScrollView
+            testID="calendar-list"
+            style={styles.list}
+            contentContainerStyle={styles.listContent}
+          >
+            {dayList.length ? (
+              dayList.map(row => (
+                <DayRow key={`${row.day}-${scheme}`} row={row} onPress={choose} />
+              ))
+            ) : (
+              <Text style={styles.listEmpty}>這個月沒有紀錄</Text>
+            )}
+          </ScrollView>
+        ) : (
+          <>
+            <View style={styles.weekRow}>
+              {CALENDAR_WEEKDAYS.map(name => (
+                <Text key={name} style={styles.weekday}>
+                  {name}
+                </Text>
+              ))}
+            </View>
+            {month.weeks.map(week => (
+              <View key={week[0].day} style={styles.weekRow}>
+                {week.map(cell => (
+                  <DayCell
+                    key={`${cell.day}-${scheme}`}
+                    cell={cell}
+                    onPress={choose}
+                  />
+                ))}
+              </View>
             ))}
-          </View>
-        ))}
+          </>
+        )}
       </>
     );
   }
@@ -467,6 +554,7 @@ const HistoryCalendarSheet = forwardRef(function HistoryCalendarSheet(
             paddingBottom: space.l + bottomInset,
             maxHeight: Math.round(windowHeight * sizes.sheet.maxRatio),
             transform: [{ translateY }],
+            opacity: sheetOpacity,
           },
         ]}
       >
@@ -483,6 +571,10 @@ const getStyles = makeStyles(theme => {
   const { colors, opacity } = theme;
   const HANDLE = getHANDLE(theme);
   return StyleSheet.create({
+    // 設計稿「元件狀態」: the pressed state.
+    pressed: { backgroundColor: colors.pressedOverlay },
+    // 設計稿「元件狀態」: the pressed state.
+    pressedRow: { backgroundColor: colors.brandSoft },
     // Over the top capsules (30) and the panel (40).
     layer: { zIndex: 60, elevation: 30 },
     scrim: { backgroundColor: colors.scrim },
@@ -500,9 +592,9 @@ const getStyles = makeStyles(theme => {
     },
     handle: {
       alignSelf: 'center',
-      width: 32,
-      height: 4,
-      borderRadius: 2,
+      width: sizes.sheet.handleLength,
+      height: sizes.sheet.handleThickness,
+      borderRadius: sizes.sheet.handleThickness / 2,
       backgroundColor: HANDLE,
       marginBottom: space.s,
     },
@@ -522,6 +614,8 @@ const getStyles = makeStyles(theme => {
       gap: space.xs,
     },
     status: { ...type.caption, color: colors.textMuted, flexShrink: 1 },
+    spacer: { flex: 1 },
+    statusLine: { flexDirection: 'row' },
     statusRetry: {
       minHeight: touch.min,
       justifyContent: 'center',
@@ -530,10 +624,10 @@ const getStyles = makeStyles(theme => {
     retryText: { ...type.value, color: colors.tonalText },
     // 回到今天: 32dp high (48dp to the finger), outlined; faded on today.
     todayButton: {
-      height: 32,
+      minHeight: sizes.calendar.todayPill,
       paddingHorizontal: space.m,
       borderRadius: radius.input,
-      borderWidth: 1.5,
+      borderWidth: border.regular,
       borderColor: colors.line,
       alignItems: 'center',
       justifyContent: 'center',
@@ -552,14 +646,14 @@ const getStyles = makeStyles(theme => {
     monthPill: {
       flexDirection: 'row',
       alignItems: 'center',
-      height: 40,
-      paddingHorizontal: 18,
-      borderRadius: 20,
-      borderWidth: 1.5,
+      minHeight: sizes.monthPill.height,
+      paddingHorizontal: space.l,
+      borderRadius: radius.full,
+      borderWidth: border.regular,
       borderColor: colors.line,
     },
-    monthTitle: { ...type.status, fontSize: 17, color: colors.text },
-    caret: { color: colors.text, fontSize: 13 },
+    monthTitle: { ...type.status, fontSize: type.body.fontSize, color: colors.text },
+    caret: { color: colors.text, fontSize: type.caption.fontSize },
     weekRow: { flexDirection: 'row' },
     weekday: {
       flex: 1,
@@ -568,7 +662,7 @@ const getStyles = makeStyles(theme => {
       color: colors.textMuted,
       paddingVertical: space.s,
     },
-    dayCell: { flex: 1, height: CELL + 4, padding: 2 },
+    dayCell: { flex: 1, height: CELL + sizes.calendar.cellGutter, padding: space.xs },
     dayInner: {
       flex: 1,
       borderRadius: radius.input,
@@ -591,19 +685,19 @@ const getStyles = makeStyles(theme => {
     },
     frameToday: {
       backgroundColor: colors.elevated,
-      borderWidth: 1.5,
+      borderWidth: border.regular,
       borderColor: colors.text,
     },
     frameSelected: {
       backgroundColor: colors.tonal,
-      borderWidth: 2,
+      borderWidth: border.strong,
       borderColor: colors.accent,
     },
     shown: { opacity: 1 },
     hidden: { opacity: 0 },
     dot: {
       position: 'absolute',
-      bottom: 4,
+      bottom: space.xs,
       width: sizes.calendarDot,
       height: sizes.calendarDot,
       borderRadius: sizes.calendarDot / 2,
@@ -615,7 +709,7 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'space-between',
       marginBottom: space.m,
     },
-    yearText: { ...type.status, fontSize: 18, color: colors.text },
+    yearText: { ...type.status, fontSize: type.body.fontSize, color: colors.text },
     monthGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -630,9 +724,39 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     monthText: { ...type.status, color: colors.text },
+    // The 200% list (設計稿「月曆在 200% 字體」).
+    list: { flexShrink: 1, marginTop: space.s },
+    listContent: { gap: space.xs, paddingBottom: space.xs },
+    listEmpty: {
+      ...type.body,
+      color: colors.textMuted,
+      textAlign: 'center',
+      paddingVertical: layout.emptyStatePadding,
+    },
+    dayRow: {
+      minHeight: touch.row,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.m,
+      paddingHorizontal: space.l,
+      paddingVertical: space.s,
+      borderRadius: radius.input,
+    },
+    rowPressed: {
+      backgroundColor: colors.brandSoft,
+      borderWidth: 0,
+      borderColor: colors.brandSoft,
+    },
+    dayRowText: { ...type.body, flex: 1 },
+    rowDot: {
+      width: sizes.calendarDot,
+      height: sizes.calendarDot,
+      borderRadius: sizes.calendarDot / 2,
+      backgroundColor: colors.accent,
+    },
     monthDot: {
       position: 'absolute',
-      bottom: 8,
+      bottom: space.s,
       width: sizes.calendarDot,
       height: sizes.calendarDot,
       borderRadius: sizes.calendarDot / 2,

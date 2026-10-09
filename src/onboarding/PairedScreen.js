@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import SittingDogArt from '../dogs/SittingDogArt';
 import { GuideButton, GuidePage } from './GuideUI';
 import DogAvatar from '../dogs/DogAvatar';
-import { space, type } from '../theme/tokens';
+import { space, type, size as sizes, touch } from '../theme/tokens';
 
 /**
  * D4 已連上接收器 N (and D4b, nothing received yet): `page` is
@@ -37,7 +37,7 @@ export default function PairedScreen({ page, step = null, onStart, onLayout }) {
           accessible
           accessibilityLabel={source.label}
         >
-          <DogAvatar size={32} border={0} />
+          <DogAvatar size={sizes.listRow.avatar} border={0} />
           <Text style={styles.label}>{source.label}</Text>
         </View>
       ))}
@@ -49,7 +49,7 @@ const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
     icon: { alignItems: 'center', marginTop: space.s, marginBottom: space.l },
-    row: { minHeight: 56, flexDirection: 'row', alignItems: 'center' },
+    row: { minHeight: touch.row, flexDirection: 'row', alignItems: 'center' },
     label: { ...type.status, color: colors.text, marginLeft: space.m },
   });
 });

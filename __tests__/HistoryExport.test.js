@@ -408,3 +408,31 @@ test('GPX merges fixes across packet times, prefers local coordinates and keeps 
   expect(gpx).toContain('lat="25.1"');
   expect(gpx).toContain('小黑-6');
 });
+
+test('several dogs setting off together: crowded first/last times keep one label (060, #70)', () => {
+  const { thinExportTimes } = require('../src/mapHistory/ExportSnapshot');
+  const layer = (shift, start, end) => ({
+    lines: [{ coordinates: [[24.989, 121.313 + shift], [25.0, 121.33 + shift]] }],
+    points: [],
+    places: [],
+    times: [
+      { label: start, end: true, time: 1, latitude: 24.989, longitude: 121.313 + shift },
+      { label: end, end: true, time: 2, latitude: 25.0, longitude: 121.33 + shift },
+    ],
+  });
+  // Two dogs leave the same kennel (a few metres apart) and end 1.5 km apart.
+  const layers = thinExportTimes([layer(0, '08:00', '10:00'), layer(0.00005, '08:01', '10:05')]);
+  expect(layers[0].times.map(t => t.label)).toEqual(['08:00', '10:00']);
+  expect(layers[1].times.map(t => t.label)).toEqual(['', '']);
+  // Far apart: everyone keeps their times.
+  const apart = thinExportTimes([layer(0, '08:00', '10:00'), layer(0.05, '08:01', '10:05')]);
+  expect(apart[1].times.map(t => t.label)).toEqual(['08:01', '10:05']);
+});
+
+test('thinning a full day of several dogs: 400 000 points, no argument-limit crash (060)', () => {
+  const { thinExportTimes } = require('../src/mapHistory/ExportSnapshot');
+  const coordinates = Array.from({ length: 200000 }, (_, i) => [24.98 + i * 1e-7, 121.3 + i * 1e-7]);
+  const layer = shift => ({ lines: [{ coordinates }], points: [], places: [],
+    times: [{ label: '08:00', end: true, time: 1, latitude: 24.98, longitude: 121.3 + shift }] });
+  expect(() => thinExportTimes([layer(0), layer(0.01)])).not.toThrow();
+});

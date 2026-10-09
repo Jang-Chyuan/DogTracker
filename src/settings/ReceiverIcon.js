@@ -1,3 +1,4 @@
+import { size as sizes, border } from '../theme/tokens';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -12,14 +13,14 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
  * In a list row (`ring`) the circle is exactly the dogs' avatar ring and the
  * tag may hang over its edge; otherwise the whole drawing fits `size`.
  */
-export default function ReceiverIcon({ number, size = 48, ring }) {
+export default function ReceiverIcon({ number, size = sizes.floatingButton, ring }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const circle = ring ?? Math.round(size * 0.82);
   const box = ring ?? size;
   const glyph = Math.round(circle * 0.62);
-  const tag = ring ? 18 : Math.max(18, Math.round(size * 0.42));
-  const hang = ring ? -6 : 0;
+  const tag = ring ? sizes.receiver.tagMinimum : Math.max(sizes.receiver.tagMinimum, Math.round(size * 0.42));
+  const hang = ring ? -sizes.receiver.tagOverhang : 0;
   return (
     // Whatever it sits in names it; the number alone is never read out.
     <View
@@ -44,7 +45,7 @@ export default function ReceiverIcon({ number, size = 48, ring }) {
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          <Rect x={6} y={11} width={12} height={9} rx={2} />
+          <Rect x={6} y={11} width={sizes.receiver.bodyWidth} height={sizes.receiver.bodyHeight} rx={2} />
           <Path d="M12 11V6" />
           <Path d="M8.5 6.5a5 5 0 0 1 7 0" />
           <Path d="M6 4a8.5 8.5 0 0 1 12 0" />
@@ -90,20 +91,20 @@ const getStyles = makeStyles(theme => {
       left: 0,
       top: 0,
       backgroundColor: colors.surface,
-      borderWidth: 3,
+      borderWidth: border.heavy,
       borderColor: colors.receiverRing,
       alignItems: 'center',
       justifyContent: 'center',
     },
     tag: {
       position: 'absolute',
-      paddingHorizontal: 3,
+      paddingHorizontal: sizes.receiver.tagPaddingH,
       backgroundColor: colors.receiverRing,
-      borderWidth: 1.5,
+      borderWidth: border.regular,
       borderColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    tagText: { color: colors.onRoute, fontWeight: '800' },
+    tagText: { color: colors.onRoute, fontWeight: sizes.badge.cardWeight },
   });
 });

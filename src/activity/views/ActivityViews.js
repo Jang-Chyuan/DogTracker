@@ -29,7 +29,18 @@ const clock = time => {
   const date = new Date(time);
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 };
-const totalText = minutes => durationText(minutes).replace('分鐘', '分');
+// A4 totals: 「5 小時 40 分」 up to a day; longer totals (a month's, a year's
+// 休息 or 沒有資料) in days and whole hours, 「82 天 14 小時」 — the design gives
+// no form for them, and 「1981 小時 58 分」 cannot be read at a glance.
+export function totalText(minutes) {
+  if (Number.isFinite(minutes) && Math.round(minutes) > 24 * 60) {
+    const hours = Math.round(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const rest = hours % 24;
+    return rest ? `${days} 天 ${rest} 小時` : `${days} 天`;
+  }
+  return durationText(minutes).replace('分鐘', '分');
+}
 const dayStart = time => {
   const date = new Date(time);
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();

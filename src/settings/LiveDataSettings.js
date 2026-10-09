@@ -1,3 +1,4 @@
+import { size as sizes } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
@@ -18,26 +19,26 @@ export const LIVE_COLUMNS = Object.freeze([
   {
     key: 'received_at',
     label: '接收時間',
-    width: 84,
+    width: sizes.diagnostics.columnWidth.time,
     format: formatClockSeconds,
   },
-  { key: 'master_id', label: '接收器', width: 64 },
-  { key: 'slave_id', label: '訊號源', width: 64 },
-  { key: 'slave_lat', label: '狗的緯度', width: 96 },
-  { key: 'slave_lon', label: '狗的經度', width: 104 },
-  { key: 'master_lat', label: '接收器緯度', width: 96 },
-  { key: 'master_lon', label: '接收器經度', width: 104 },
-  { key: 'distance_meters', label: '距離 (m)', width: 76 },
-  { key: 'speed_kmh', label: '速度 (km/h)', width: 92 },
-  { key: 'satellites', label: '衛星', width: 52 },
-  { key: 'hdop', label: 'HDOP', width: 64 },
-  { key: 'activity', label: '活動量', width: 72 },
-  { key: 'battery_percentage', label: '狗的電量 %', width: 92 },
-  { key: 'master_battery_percentage', label: '接收器電量 %', width: 104 },
-  { key: 'rssi', label: 'RSSI', width: 64 },
-  { key: 'snr', label: 'SNR', width: 56 },
-  { key: 'gps_time', label: 'GPS 時間', width: 84 },
-  { key: 'sequence', label: '序號', width: 60 },
+  { key: 'master_id', label: '接收器', width: sizes.diagnostics.columnWidth.receiverId },
+  { key: 'slave_id', label: '訊號源', width: sizes.diagnostics.columnWidth.sourceId },
+  { key: 'slave_lat', label: '狗的緯度', width: sizes.diagnostics.columnWidth.latitude },
+  { key: 'slave_lon', label: '狗的經度', width: sizes.diagnostics.columnWidth.longitude },
+  { key: 'master_lat', label: '接收器緯度', width: sizes.diagnostics.columnWidth.latitude },
+  { key: 'master_lon', label: '接收器經度', width: sizes.diagnostics.columnWidth.longitude },
+  { key: 'distance_meters', label: '距離 (m)', width: sizes.diagnostics.columnWidth.distance },
+  { key: 'speed_kmh', label: '速度 (km/h)', width: sizes.diagnostics.columnWidth.speed },
+  { key: 'satellites', label: '衛星', width: sizes.diagnostics.columnWidth.satellites },
+  { key: 'hdop', label: 'HDOP', width: sizes.diagnostics.columnWidth.precision },
+  { key: 'activity', label: '活動量', width: sizes.diagnostics.columnWidth.activity },
+  { key: 'battery_percentage', label: '狗的電量 %', width: sizes.diagnostics.columnWidth.dogBattery },
+  { key: 'master_battery_percentage', label: '接收器電量 %', width: sizes.diagnostics.columnWidth.receiverBattery },
+  { key: 'rssi', label: 'RSSI', width: sizes.diagnostics.columnWidth.signalStrength },
+  { key: 'snr', label: 'SNR', width: sizes.diagnostics.columnWidth.signalNoise },
+  { key: 'gps_time', label: 'GPS 時間', width: sizes.diagnostics.columnWidth.time },
+  { key: 'sequence', label: '序號', width: sizes.diagnostics.columnWidth.sequence },
 ]);
 
 /**

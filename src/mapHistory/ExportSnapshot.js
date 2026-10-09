@@ -99,7 +99,7 @@ export function exportMapLayer(model, color, { multi = false } = {}) {
       coordinates: line.coordinates.map(p => [p.latitude, p.longitude]) })),
     places: places.map(place => ({ kind: place.kind, number: place.number,
       latitude: place.coordinate.latitude, longitude: place.coordinate.longitude })),
-    times: times.map(marker => ({ label: marker.label, end: marker.end,
+    times: times.map(marker => ({ label: marker.label, end: marker.end, time: marker.time,
       latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude })),
     points: single.map(p => [p.latitude, p.longitude]),
   };
@@ -151,5 +151,58 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       map: first ? exportMapLayer(model, color, { multi }) : null,
     };
   });
+  if (multi) thinExportTimes(subjects.map(entry => entry.map).filter(Boolean));
   return captureExportSnapshot({ since, until: Math.max(since, until), timeZone, subjects });
+}
+
+// The PNG map is 1080 px wide with 128 px framing on each side (ExportPNG);
+// a time label is about 120 px wide and 48 px high there.
+const EXPORT_MAP_PX = 1080 - 2 * 128;
+const LABEL_APART_PX = 120;
+const metresBetween = (a, b) => {
+  const lat = ((a[0] + b[0]) / 2) * (Math.PI / 180);
+  const dy = (a[0] - b[0]) * 111320;
+  const dx = (a[1] - b[1]) * 111320 * Math.cos(lat);
+  return Math.hypot(dx, dy);
+};
+
+/**
+ * Several dogs' first and last times crowd where they set off together (#70):
+ * thinned like the screen's time markers (uncrowded) — a time keeps its label
+ * only when no number or label already kept is within a label's width on the
+ * exported map. The protagonist (first subject) keeps its labels first, a
+ * start before an end. Mutates the layers' `times`; the rings stay (the native
+ * drawer draws a ring for every marker, and a label only for these).
+ */
+export function thinExportTimes(layers) {
+  const all = layers.flatMap(layer => [
+    ...layer.lines.flatMap(line => line.coordinates),
+    ...layer.points,
+    ...layer.places.map(place => [place.latitude, place.longitude]),
+  ]);
+  if (!all.length) return layers;
+  // A loop, not Math.min(...all): a full day of several dogs is more points
+  // than a call takes arguments.
+  let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+  for (const [lat, lon] of all) {
+    if (lat < south) south = lat;
+    if (lat > north) north = lat;
+    if (lon < west) west = lon;
+    if (lon > east) east = lon;
+  }
+  const span = Math.max(
+    metresBetween([south, west], [north, west]),
+    metresBetween([south, west], [south, east]),
+    1,
+  );
+  const apartM = (span / EXPORT_MAP_PX) * LABEL_APART_PX;
+  const kept = layers.flatMap(layer => layer.places.map(place => [place.latitude, place.longitude]));
+  for (const layer of layers) {
+    for (const marker of [...layer.times].sort((a, b) => a.time - b.time)) {
+      const at = [marker.latitude, marker.longitude];
+      if (kept.some(other => metresBetween(at, other) < apartM)) marker.label = '';
+      else kept.push(at);
+    }
+  }
+  return layers;
 }

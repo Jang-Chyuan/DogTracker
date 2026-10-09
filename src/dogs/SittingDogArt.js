@@ -1,3 +1,4 @@
+import { size as sizes } from '../theme/tokens';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -20,7 +21,7 @@ export const SITTING_DOG_PATHS = [
 // Includes rounded stroke caps on the tail marks, with breathing room.
 export const SITTING_DOG_VIEW_BOX = '12 24 106 112';
 
-export default function SittingDogArt({ size = 80 }) {
+export default function SittingDogArt({ size = sizes.sittingDog.canvas }) {
   const { colors } = useTheme();
   return (
     <Svg width={size} height={size} viewBox={SITTING_DOG_VIEW_BOX} accessible={false}>

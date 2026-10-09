@@ -279,3 +279,12 @@ test('time before the dog\'s first reading is not 沒有資料', () => {
   expect(week.bars[0].pendingMinutes).toBe(1440);
   expect(week.rows[2].rangeLabels[0]).toBe('10/1（四） 12:01–24:00');
 });
+
+test('totals longer than a day read in days and hours (060)', () => {
+  const { totalText } = require('../src/activity/views/ActivityViews');
+  expect(totalText(340)).toBe('5 小時 40 分');
+  expect(totalText(24 * 60)).toBe('24 小時');
+  expect(totalText(1981 * 60 + 58)).toBe('82 天 14 小時');
+  expect(totalText(48 * 60 + 10)).toBe('2 天');
+  expect(totalText(25 * 60)).toBe('1 天 1 小時');
+});

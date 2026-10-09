@@ -1,3 +1,4 @@
+import { size as sizes } from '../theme/tokens';
 // D0's JavaScript copy and its handover to the map (design 動效「啟動畫面 →
 // 地圖」, 「D0 → 地圖銜接（C）」). It draws exactly what the system launch screen
 // shows (the whole white sitting dog, finished, centred; light on accent,
@@ -35,10 +36,11 @@ import {
   splashChrome,
   useSplashState,
 } from './hideSplash';
+import { REDUCED_FADE_MS, setReduceMotion } from '../utils/reduceMotion';
 
 // The system launch screen's icon box (res/drawable/splash_icon_animated, a
 // 108-unit vector), measured on the device: SPLASH_ICON dp square, centred.
-export const SPLASH_ICON = 288;
+export const SPLASH_ICON = sizes.splash.handoverCanvas;
 const VIEW = 108;
 // The dog's own coordinates inside the vector (its <group>).
 const GROUP = { x: 20.258, y: 13.064, scale: 0.4962 };
@@ -78,7 +80,7 @@ export const TIMING = {
   chrome: 200,
   settled: 600,
   fade: 300,
-  reduced: 200,
+  reduced: REDUCED_FADE_MS,
 };
 const easeOut = Easing.bezier(0.2, 0, 0, 1);
 const flightEase = Easing.bezier(0.3, 0, 0.1, 1);
@@ -164,6 +166,7 @@ export default function SplashOverlay() {
       .then(value => {
         reduceMotion.current = !!value;
         setReducedMotion(value);
+        setReduceMotion(value);
       })
       .catch(() => {});
     // A hang somewhere (nothing ever reported): fade to what is there.

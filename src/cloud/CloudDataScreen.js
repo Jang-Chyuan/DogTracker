@@ -1,7 +1,7 @@
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { radius, space as gap, type } from '../theme/tokens';
+import { radius, space as gap, type, border } from '../theme/tokens';
 import { formatClockSeconds, formatDateTime } from '../map/MapFormat';
 import {
   ColumnPicker,
@@ -399,7 +399,7 @@ const getStyles = makeStyles(theme => {
       padding: gap.m,
       borderRadius: radius.input,
       backgroundColor: colors.bg,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       borderColor: colors.line,
     },
     rawTitle: { ...type.captionBold, color: colors.text, marginBottom: gap.s },

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../auth/AuthProvider';
-import { radius, space, type } from '../theme/tokens';
+import { radius, space, type, touch, border, size as sizes } from '../theme/tokens';
 import { GuideProgress } from '../onboarding/GuideUI';
 
 // What a failed sign-in says (D1): wrong account details under the fields
@@ -217,8 +217,8 @@ export default function LoginScreen({
             accessibilityRole="button"
             accessibilityLabel={shown ? '隱藏密碼' : '顯示密碼'}
             onPress={() => setShown(value => !value)}
-            style={styles.show}
-            hitSlop={4}
+            style={({ pressed }) => [styles.show, pressed && styles.pressed]}
+            hitSlop={space.xs}
           >
             <Text style={styles.showText}>{shown ? '隱藏' : '顯示'}</Text>
           </Pressable>
@@ -238,7 +238,7 @@ export default function LoginScreen({
                 accessibilityLabel="重試"
                 onPress={login}
                 disabled={busy}
-                hitSlop={12}
+                hitSlop={space.m}
                 style={({ pressed }) => [
                   styles.retry,
                   pressed && styles.pressed,
@@ -310,27 +310,27 @@ const getStyles = makeStyles(theme => {
     // DESIGN.md 文字輸入欄: 56dp, radius 12, 1.5dp line; focused 2dp accent;
     // an error 2dp critLine.
     field: {
-      minHeight: 56,
+      minHeight: sizes.input.height,
       borderRadius: radius.input,
-      borderWidth: 1.5,
+      borderWidth: border.regular,
       borderColor: colors.floatingOutline,
       paddingHorizontal: space.l,
       marginBottom: space.m,
       justifyContent: 'center',
       backgroundColor: colors.surface,
     },
-    fieldFocused: { borderWidth: 2, borderColor: colors.accent },
-    fieldError: { borderWidth: 2, borderColor: colors.critLine },
+    fieldFocused: { borderWidth: border.strong, borderColor: colors.accent },
+    fieldError: { borderWidth: border.strong, borderColor: colors.critLine },
     input: { ...type.body, color: colors.text },
     passwordRow: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingRight: 0,
     },
-    passwordInput: { flex: 1, padding: 0, minHeight: 52 },
+    passwordInput: { flex: 1, padding: 0, minHeight: sizes.login.passwordHeight },
     show: {
-      minWidth: 48,
-      minHeight: 48,
+      minWidth: touch.min,
+      minHeight: touch.min,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: space.s,
@@ -342,7 +342,7 @@ const getStyles = makeStyles(theme => {
       marginTop: -space.xs,
     },
     error: { ...type.caption, color: colors.crit, flexShrink: 1 },
-    retry: { marginLeft: space.m, minHeight: 32, justifyContent: 'center' },
+    retry: { marginLeft: space.m, minHeight: sizes.login.retryHeight, justifyContent: 'center' },
     retryText: { ...type.captionBold, color: colors.tonalText },
     // Pinned to the bottom: 登入 (56dp tonal pill) and 「稍後再說」 (48dp text).
     bottom: {
@@ -351,7 +351,7 @@ const getStyles = makeStyles(theme => {
       paddingBottom: space.l,
     },
     primary: {
-      minHeight: 56,
+      minHeight: touch.primary,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
       alignItems: 'center',
@@ -361,7 +361,7 @@ const getStyles = makeStyles(theme => {
     busy: { flexDirection: 'row', alignItems: 'center' },
     busyText: { marginLeft: space.s },
     later: {
-      minHeight: 48,
+      minHeight: touch.min,
       alignItems: 'center',
       justifyContent: 'center',
       marginTop: space.xs,

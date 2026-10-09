@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { radius, space, touch, type } from '../theme/tokens';
+import { radius, space, touch, type, size as sizes } from '../theme/tokens';
 
 /**
  * The v3 confirmation dialog (design 「確認對話框（切換上傳、登出、關閉 App、
@@ -155,36 +155,39 @@ const getStyles = makeStyles(theme => {
     },
     dialog: {
       width: '100%',
-      maxWidth: 400,
+      maxWidth: sizes.dialog.contentLimit,
       backgroundColor: colors.elevated,
       borderRadius: radius.dialog,
       // S7 確認對話框・深色: a 1dp floatingOutline edge (none in light).
       ...theme.floatingBorder,
-      padding: 24,
+      padding: space.xl,
     },
     title: { ...type.title, color: colors.text, marginBottom: space.l },
     body: { ...type.body, color: colors.textMuted },
     note: {
       ...type.body,
-      fontWeight: '700',
+      fontWeight: type.status.fontWeight,
       color: colors.text,
       marginTop: space.m,
     },
     problem: {
       ...type.body,
-      fontWeight: '700',
+      fontWeight: type.status.fontWeight,
       color: colors.crit,
       marginTop: space.m,
     },
     buttons: {
       flexDirection: 'row',
+      // With a large system font three buttons do not fit one line: they wrap
+      // (still 取消 first), never past the dialog's edge.
+      flexWrap: 'wrap',
       justifyContent: 'flex-end',
       marginTop: space.xl,
       gap: space.s,
     },
     button: {
       minHeight: touch.secondary,
-      minWidth: 64,
+      minWidth: sizes.dialog.actionMinimum,
       paddingHorizontal: space.m,
       alignItems: 'center',
       justifyContent: 'center',

@@ -1,8 +1,9 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import React, { createContext, useContext } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { radius, size, space, touch, type } from '../theme/tokens';
+import { radius, size, space, touch, type, border } from '../theme/tokens';
+import { isLargeFont, linesFor } from '../utils/textScale';
 
 // The v3 settings look (design 「設定首頁的分組」「設定裡的紅色「!」」): light
 // pages, white rounded cards of 56dp rows, group names in 12sp muted text,
@@ -64,7 +65,7 @@ export function GroupCard({ children, testID, flat = false }) {
 const ICONS = {
   receiver: (
     <>
-      <Rect x={6} y={10} width={12} height={10} rx={2} />
+      <Rect x={6} y={10} width={size.glyph.receiverBodyWidth} height={size.glyph.receiverBodyHeight} rx={2} />
       <Path d="M12 10V5" />
       <Path d="M8.5 4.5a5 5 0 0 1 7 0" />
     </>
@@ -72,7 +73,7 @@ const ICONS = {
 
   phone: (
     <>
-      <Rect x={7} y={2.5} width={10} height={19} rx={2.5} />
+      <Rect x={7} y={2.5} width={size.glyph.settingsPhoneWidth} height={size.glyph.phoneBodyHeight} rx={2.5} />
       <Path d="M11 18.5h2" />
     </>
   ),
@@ -137,6 +138,25 @@ const Chevron = () => {
  */
 export function HomeRow({ row, onPress }) {
   const styles = useStyles(getStyles);
+  // 大字體: the status goes under the name (as on the subpages' rows).
+  const stacked = isLargeFont();
+  const status = (
+    <View style={stacked ? styles.statusStacked : styles.status}>
+      {row.status.map(line => (
+        <Text
+          key={line}
+          style={[
+            styles.statusText,
+            stacked && styles.rowRightStacked,
+            row.statusTone === 'warn' && styles.statusWarn,
+          ]}
+          numberOfLines={linesFor(1)}
+        >
+          {line}
+        </Text>
+      ))}
+    </View>
+  );
   return (
     <Pressable
       testID={`settings-row-${row.id}`}
@@ -147,30 +167,17 @@ export function HomeRow({ row, onPress }) {
     >
       <SettingIcon kind={row.id} />
       <View style={styles.middle}>
-        <Text style={styles.name} numberOfLines={1}>
+        <Text style={styles.name} numberOfLines={linesFor(1)}>
           {row.title}
         </Text>
         {row.subtitle ? (
-          <Text style={styles.subtitle} numberOfLines={1}>
+          <Text style={styles.subtitle} numberOfLines={linesFor(1)}>
             {row.subtitle}
           </Text>
         ) : null}
+        {stacked && !row.problem && status}
       </View>
-      {row.problem ? (
-        <ProblemBang />
-      ) : (
-        <View style={styles.status}>
-          {row.status.map(line => (
-            <Text
-              key={line}
-              style={[styles.statusText, row.statusTone === 'warn' && styles.statusWarn]}
-              numberOfLines={1}
-            >
-              {line}
-            </Text>
-          ))}
-        </View>
-      )}
+      {row.problem ? <ProblemBang /> : !stacked && status}
       <Chevron />
     </Pressable>
   );
@@ -199,50 +206,59 @@ export function ListRow({
   testID,
   accessibilityState,
   accessible = true,
+  toggle = null,
   children,
 }) {
+  const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const TONES = useStyles(getTONES);
   const rowStyle = useContext(Flat)
     ? [styles.listRow, styles.flatRow]
     : styles.listRow;
   const rights = Array.isArray(right) ? right : right ? [right] : [];
+  // 大字體 (130% and up): the right-hand statuses go under the title and
+  // detail, so neither is squeezed into a narrow column and cut.
+  const stackRights = isLargeFont() && rights.length > 0;
+  const rightLines = (
+    <View style={stackRights ? styles.statusStacked : styles.status}>
+      {rights.map((line, index) => (
+        <Text
+          key={`${index}-${line}`}
+          style={[
+            styles.rowRight,
+            stackRights && styles.rowRightStacked,
+            rightTone?.[index] && TONES[rightTone[index]],
+          ]}
+          numberOfLines={linesFor(1)}
+        >
+          {line}
+        </Text>
+      ))}
+    </View>
+  );
   const body = (
     <>
       {problem ? <ProblemBang style={styles.leadBang} /> : leading}
       <View style={styles.middle}>
         <Text
           style={[styles.rowTitle, titleTone && TONES[titleTone]]}
-          numberOfLines={1}
+          numberOfLines={linesFor(1)}
         >
           {title}
         </Text>
         {detail ? (
           <Text
             style={[styles.rowDetail, detailTone && TONES[detailTone]]}
-            numberOfLines={2}
+            numberOfLines={stackRights ? undefined : 2}
           >
             {detail}
           </Text>
         ) : null}
+        {stackRights && rightLines}
       </View>
-      {rights.length > 0 && (
-        <View style={styles.status}>
-          {rights.map((line, index) => (
-            <Text
-              key={`${index}-${line}`}
-              style={[
-                styles.rowRight,
-                rightTone?.[index] && TONES[rightTone[index]],
-              ]}
-              numberOfLines={1}
-            >
-              {line}
-            </Text>
-          ))}
-        </View>
-      )}
+      {!stackRights && rights.length > 0 && rightLines}
       {action ? (
+
         <Text style={[styles.action, TONES[actionTone]]}>{action}</Text>
       ) : null}
       {children}
@@ -250,6 +266,33 @@ export function ListRow({
     </>
   );
 
+  if (toggle) {
+    // A switch row (設計稿「S6 提醒開關」): the whole row is the switch — 48dp
+    // high and full width to the finger, one TalkBack item 「…，開關，已開啟」.
+    return (
+      <Pressable
+        testID={testID}
+        accessibilityRole="switch"
+        accessibilityLabel={label ?? title}
+        accessibilityState={{ checked: !!toggle.value, disabled: !!toggle.disabled }}
+        disabled={!!toggle.disabled}
+        onPress={() => toggle.onChange(!toggle.value)}
+        style={({ pressed }) => [rowStyle, pressed && styles.pressed]}
+      >
+        {body}
+        <View pointerEvents="none" importantForAccessibility="no-hide-descendants">
+          <Switch
+            testID={toggle.testID}
+            value={!!toggle.value}
+            disabled={!!toggle.disabled}
+            onValueChange={toggle.onChange}
+            trackColor={{ false: colors.switchOff, true: colors.accent }}
+            thumbColor={colors.avatarFrameMap}
+          />
+        </View>
+      </Pressable>
+    );
+  }
   if (!onPress) {
     // `accessible={false}`: a row holding its own control (a switch) leaves
     // that control for TalkBack to reach, with its own label and state.
@@ -288,7 +331,7 @@ const getTONES = makeStyles(theme => {
     tonal: { color: colors.tonalText },
     muted: { color: colors.textMuted },
     // A value on the right in bold (S3 「12 筆」「10:04」, as .v7li .r).
-    mutedBold: { color: colors.textMuted, fontWeight: '700' },
+    mutedBold: { color: colors.textMuted, fontWeight: type.status.fontWeight },
     danger: { color: colors.critAction },
     plain: { color: colors.text },
   });
@@ -327,9 +370,9 @@ const getStyles = makeStyles(theme => {
     },
     bangText: {
       color: colors.avatarFrameMap,
-      fontSize: 11,
-      lineHeight: 14,
-      fontWeight: '900',
+      fontSize: type.micro.fontSize,
+      lineHeight: type.micro.lineHeight,
+      fontWeight: size.badge.problemWeight,
     },
     leadBang: { marginRight: space.m },
     // DESIGN.md 「設定區塊」: group names 13sp bold textMuted, 24dp above.
@@ -343,15 +386,15 @@ const getStyles = makeStyles(theme => {
     card: {
       backgroundColor: colors.surface,
       borderRadius: radius.alertCard,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       borderColor: colors.line,
       overflow: 'hidden',
     },
     flat: { backgroundColor: colors.surface },
-    divider: { height: 1, backgroundColor: colors.line },
+    divider: { height: border.hairline, backgroundColor: colors.line },
     icon: {
-      width: 36,
-      height: 36,
+      width: size.settings.icon,
+      height: size.settings.icon,
       borderRadius: radius.settingIcon,
       alignItems: 'center',
       justifyContent: 'center',
@@ -362,33 +405,35 @@ const getStyles = makeStyles(theme => {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: space.l,
-      paddingVertical: space.s + 2,
+      paddingVertical: space.s,
     },
     listRow: {
       minHeight: touch.row,
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: space.l,
-      paddingVertical: space.s + 2,
+      paddingVertical: space.s,
     },
     flatRow: { paddingHorizontal: space.xs },
     pressed: { backgroundColor: colors.pressedOverlay },
     middle: { flex: 1, minWidth: 0, justifyContent: 'center' },
     name: { ...type.status, color: colors.text },
-    subtitle: { ...type.small, color: colors.textMuted, marginTop: 2 },
+    subtitle: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     status: { alignItems: 'flex-end', marginLeft: space.s, flexShrink: 0 },
     statusText: { ...type.caption, color: colors.textMuted },
     // S1 提醒 「暫停到 11:10」.
     statusWarn: { color: colors.warn },
     chevron: {
-      fontSize: 20,
-      lineHeight: 24,
+      fontSize: type.title.fontSize,
+      lineHeight: type.body.lineHeight,
       color: colors.iconMuted,
       marginLeft: space.s,
     },
     rowTitle: { ...type.status, color: colors.text },
-    rowDetail: { ...type.small, color: colors.textMuted, marginTop: 2 },
+    rowDetail: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     rowRight: { ...type.caption, color: colors.textMuted },
+    statusStacked: { marginTop: space.xs },
+    rowRightStacked: { textAlign: 'left' },
     action: { ...type.captionBold, marginLeft: space.s },
   });
 });

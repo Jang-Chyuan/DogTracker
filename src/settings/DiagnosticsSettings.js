@@ -139,7 +139,7 @@ const getStyles = makeStyles(theme => {
     line: { marginTop: space.s },
     label: { ...type.captionBold, color: colors.textMuted },
     value: { ...type.body, color: colors.text },
-    extra: { ...type.small, color: colors.textMuted, marginTop: 2 },
+    extra: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     footnote: { ...type.small, color: colors.textMuted, marginTop: space.l },
   });
 });

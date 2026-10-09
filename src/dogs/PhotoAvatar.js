@@ -1,3 +1,4 @@
+import { size as sizes } from '../theme/tokens';
 // A photo for a dog's face (design v3 A5c 拍照／相簿; DESIGN.md §12): taken
 // with the camera or picked with the Android photo picker, then cropped to a
 // circle and shrunk to a 256×256 JPEG. Only that small picture is kept (in
@@ -5,7 +6,7 @@
 // copies are deleted straight away, whatever happened.
 import ImageCropPicker from 'react-native-image-crop-picker';
 
-export const PHOTO_SIZE = 256;
+export const PHOTO_SIZE = sizes.avatar.photoSource;
 
 // No compressImageQuality: with it the picker (0.52) writes the 256×256
 // resize and then a second, recompressed copy, and only reports the second,

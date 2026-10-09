@@ -1,7 +1,7 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { PixelRatio, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { size as sizes, type } from '../theme/tokens';
+import { size as sizes, type, border, radius, space } from '../theme/tokens';
 import DogAvatar from '../dogs/DogAvatar';
 import { problemBadgePosition, houseBadgePosition } from './BadgeGeometry';
 
@@ -14,9 +14,9 @@ import { problemBadgePosition, houseBadgePosition } from './BadgeGeometry';
 // its own marker, anchored at `anchor` (the centre of the face is the dog's
 // position, there is no pointer).
 
-export const MARKER_WIDTH = 168;
+export const MARKER_WIDTH = sizes.marker.canvas;
 // Room above the face for the "!" badge reaching out of it.
-const TOP = 8;
+const TOP = sizes.marker.headroom;
 const { badge, marker: markerSize, mapLabel, groupTag } = sizes;
 
 const fontScale = () => PixelRatio.getFontScale?.() || 1;
@@ -90,14 +90,14 @@ function HouseBadge({ size }) {
 // The shadow circle under a face: 1dp wider and 1dp lower (0 1 3 in the
 // mockups), 3dp lower and 3dp wider when its card is open.
 function shadowFrame(size, selected, width) {
-  const spread = selected ? 3 : 1;
+  const spread = selected ? sizes.marker.selectedShadowDrop : sizes.marker.shadowDrop;
   const side = size + 2 * spread;
   return {
     width: side,
     height: side,
     borderRadius: side / 2,
     left: (width - side) / 2,
-    top: TOP - spread + (selected ? 3 : 1),
+    top: TOP - spread + (selected ? sizes.marker.selectedShadowDrop : sizes.marker.shadowDrop),
   };
 }
 
@@ -153,7 +153,7 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
         {staleRing && (
           <View
             testID="dog-stale-ring"
-            style={[styles.staleRing, { borderRadius: (size + 6) / 2 }]}
+            style={[styles.staleRing, { borderRadius: (size + sizes.marker.staleRingOutset * 2) / 2 }]}
           />
         )}
         {indoor && <HouseBadge size={size} />}
@@ -197,11 +197,11 @@ const getStyles = makeStyles(theme => {
     selected: {},
     staleRing: {
       position: 'absolute',
-      top: -3,
-      left: -3,
-      right: -3,
-      bottom: -3,
-      borderWidth: 2,
+      top: -sizes.marker.staleRingOutset,
+      left: -sizes.marker.staleRingOutset,
+      right: -sizes.marker.staleRingOutset,
+      bottom: -sizes.marker.staleRingOutset,
+      borderWidth: border.strong,
       borderStyle: 'dashed',
       borderColor: colors.staleRing,
     },
@@ -212,7 +212,7 @@ const getStyles = makeStyles(theme => {
       width: badge.size,
       height: badge.size,
       borderRadius: badge.size / 2,
-      borderWidth: badge.border,
+      borderWidth: border.regular,
       borderColor: themeLiteral.avatarFrameMap,
       alignItems: 'center',
       justifyContent: 'center',
@@ -221,11 +221,11 @@ const getStyles = makeStyles(theme => {
     house: { backgroundColor: colors.receiver },
     tagRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
     nameTag: {
-      maxWidth: MARKER_WIDTH - 8,
+      maxWidth: MARKER_WIDTH - sizes.marker.labelSafety,
       paddingHorizontal: mapLabel.paddingH,
       paddingVertical: mapLabel.paddingV,
-      borderRadius: 6,
-      borderWidth: mapLabel.border,
+      borderRadius: radius.mapLabel,
+      borderWidth: border.hairline,
       borderColor: colors.floatingOutline,
       backgroundColor: colors.surface,
     },
@@ -233,8 +233,8 @@ const getStyles = makeStyles(theme => {
     groupTag: {
       minHeight: groupTag.height,
       paddingHorizontal: groupTag.paddingH,
-      borderRadius: 999,
-      borderWidth: mapLabel.border,
+      borderRadius: radius.full,
+      borderWidth: border.hairline,
       borderColor: colors.floatingOutline,
       backgroundColor: colors.surface,
       flexDirection: 'row',
@@ -245,7 +245,7 @@ const getStyles = makeStyles(theme => {
       height: groupTag.problemDot,
       borderRadius: groupTag.problemDot / 2,
       backgroundColor: colors.problemBadge,
-      marginRight: 6,
+      marginRight: space.xs,
     },
     groupText: { ...type.value, color: colors.text },
   });

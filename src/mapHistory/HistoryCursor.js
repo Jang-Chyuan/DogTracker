@@ -1,3 +1,4 @@
+import { touch } from '../theme/tokens';
 // The history cursor's touch handle (H1; 判定表「游標標籤」「操作與震動」): a
 // 48dp invisible target over the cursor point (the point and its label are a
 // marker of the map). Dragging it moves the cursor along the route: the
@@ -8,7 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, StyleSheet, View } from 'react-native';
 import { nearestRouteSpot } from '../history/screen/HistoryMapModel';
 
-const TOUCH = 48;
+const TOUCH = touch.min;
 
 export default function HistoryCursor({ mapRef, cursor, points, revision, width, height, top, bottom,
   hidden = false, onMove, onDraggingChange }) {

@@ -13,6 +13,8 @@ import {
   View,
 } from 'react-native';
 import Glyph from './Glyph';
+import { useReduceMotion, moveDuration } from '../utils/reduceMotion';
+import { linesFor } from '../utils/textScale';
 import DogAvatar from '../dogs/DogAvatar';
 import {
   layout,
@@ -21,21 +23,33 @@ import {
   size as sizes,
   tabularNumbers,
   type,
+  border,
+  space,
+  touch,
 } from '../theme/tokens';
 
 const ease = Easing.bezier(...motion.easeOut);
 const visibleOverflow = StyleSheet.create({ visible: { overflow: 'visible' } }).visible;
 
-/** A pressable that shrinks to 0.97 for 120 ms while pressed (motion.press). */
-export function PressScale({ style, children, onPress, ...rest }) {
+/**
+ * Every button's press (DESIGN.md §5.8, 設計稿「元件狀態」): it shrinks to 0.97
+ * for 120 ms (motion.press) with pressedOverlay laid over it. Under 減少動態效果
+ * only the overlay shows (no shrinking).
+ */
+export function PressScale({ style, children, onPress, overlay = true, ...rest }) {
+  const { colors } = useTheme();
+  const reduced = useReduceMotion();
   const scale = useRef(new Animated.Value(1)).current;
   const to = value =>
-    Animated.timing(scale, {
-      toValue: value,
-      duration: motion.press.duration,
-      easing: ease,
-      useNativeDriver: true,
-    }).start();
+    reduced
+      ? scale.setValue(1)
+      : Animated.timing(scale, {
+          toValue: value,
+          duration: motion.press.duration,
+          easing: ease,
+          useNativeDriver: true,
+        }).start();
+  const corner = StyleSheet.flatten(style)?.borderRadius ?? 0;
   return (
     <Pressable
       style={visibleOverflow}
@@ -44,12 +58,23 @@ export function PressScale({ style, children, onPress, ...rest }) {
       onPressOut={() => to(1)}
       {...rest}
     >
-      <Animated.View
-        collapsable={false}
-        style={[style, visibleOverflow, { transform: [{ scale }] }]}
-      >
-        {children}
-      </Animated.View>
+      {({ pressed }) => (
+        <Animated.View
+          collapsable={false}
+          style={[style, visibleOverflow, { transform: [{ scale }] }]}
+        >
+          {children}
+          {overlay && pressed && (
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                { borderRadius: corner, backgroundColor: colors.pressedOverlay },
+              ]}
+            />
+          )}
+        </Animated.View>
+      )}
     </Pressable>
   );
 }
@@ -76,7 +101,8 @@ export function MapButtons({
   useEffect(() => {
     const move = Animated.timing(lift, {
       toValue: bottom,
-      duration: motion.cardRise.duration,
+      // 減少動態效果: straight to the new place.
+      duration: moveDuration(motion.cardRise.duration),
       easing: ease,
       useNativeDriver: false,
     });
@@ -231,7 +257,7 @@ function HintFace({ marker, avatar, first }) {
       avatar={avatar}
       size={hint.avatar}
       stale={marker.stale}
-      border={1.5}
+      border={border.regular}
     />
   );
   return (
@@ -266,7 +292,7 @@ export function EdgeHintView({ value, avatars = {}, onPress }) {
       accessibilityLabel={value.label}
       onPress={onPress}
       hitSlop={(sizes.floatingButton - hint.height) / 2}
-      style={[styles.hint, { left: value.x, top: value.y, width: value.width }]}
+      style={({ pressed }) => [styles.hint, { left: value.x, top: value.y, width: value.width }, pressed && styles.pressed]}
     >
       {value.side !== 'right' && arrow}
       <View style={styles.faces}>
@@ -318,7 +344,7 @@ export function MapTip({ message, bottom, onDone, strong = false }) {
     >
       <Text
         style={[styles.tipText, strong && styles.tipStrong]}
-        numberOfLines={strong ? 2 : 1}
+        numberOfLines={linesFor(strong ? 2 : 1)}
       >
         {message.text}
       </Text>
@@ -329,6 +355,8 @@ export function MapTip({ message, bottom, onDone, strong = false }) {
 const getStyles = makeStyles(theme => {
   const { colors, shadow } = theme;
   return StyleSheet.create({
+    // 設計稿「元件狀態」: the pressed state.
+    pressed: { backgroundColor: colors.pressedOverlay },
     buttons: {
       position: 'absolute',
       right: layout.screenEdge,
@@ -341,7 +369,7 @@ const getStyles = makeStyles(theme => {
       gap: layout.floatingGap,
     },
     pill: {
-      height: sizes.todayPill.height,
+      minHeight: sizes.todayPill.height,
       paddingHorizontal: sizes.todayPill.paddingH,
       borderRadius: radius.full,
       backgroundColor: colors.surface,
@@ -357,13 +385,13 @@ const getStyles = makeStyles(theme => {
     // Centre on the top-right rim of the 48dp circle; ring matches its surface.
     gearDot: {
       position: 'absolute',
-      top: 2,
-      right: 2,
-      width: 10,
-      height: 10,
-      borderRadius: 5,
+      top: sizes.gear.problemDotInset,
+      right: sizes.gear.problemDotInset,
+      width: sizes.gear.problemDot,
+      height: sizes.gear.problemDot,
+      borderRadius: sizes.gear.problemDot / 2,
       backgroundColor: colors.critLine,
-      borderWidth: 2,
+      borderWidth: border.strong,
       borderColor: colors.surface,
     },
     round: {
@@ -383,8 +411,8 @@ const getStyles = makeStyles(theme => {
       backgroundColor: colors.surface,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 8,
-      gap: 4,
+      paddingHorizontal: space.s,
+      gap: space.xs,
       ...shadow.floating,
       ...theme.floatingBorder,
     },
@@ -397,12 +425,12 @@ const getStyles = makeStyles(theme => {
     problemRing: {
       margin: -hint.problemBorder,
       borderRadius: hint.avatar / 2 + hint.problemBorder,
-      borderWidth: hint.problemBorder,
+      borderWidth: border.strong,
       borderColor: colors.problemBadge,
     },
     arrow: {
       ...type.value,
-      width: 10,
+      width: sizes.edgeHint.arrow,
       textAlign: 'center',
       color: colors.text,
     },
@@ -411,7 +439,7 @@ const getStyles = makeStyles(theme => {
       position: 'absolute',
       left: layout.screenEdge,
       right: layout.screenEdge,
-      minHeight: 48,
+      minHeight: touch.min,
       borderRadius: radius.snackbar,
       backgroundColor: colors.snackbar,
       justifyContent: 'center',
@@ -424,6 +452,6 @@ const getStyles = makeStyles(theme => {
     },
     tipText: { ...type.body, color: colors.text },
     // The history's H3d sentence: one line on a 360dp phone.
-    tipStrong: { ...type.value, paddingVertical: 12 },
+    tipStrong: { ...type.value, paddingVertical: space.m },
   });
 });

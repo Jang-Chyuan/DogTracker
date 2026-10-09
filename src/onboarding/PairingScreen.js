@@ -22,7 +22,9 @@ import {
 import QrCamera from './QrCamera';
 import { signalBars, signalBarsLabel } from './Pairing';
 import SignalBars from './SignalBars';
-import { radius, space, type } from '../theme/tokens';
+import { radius, space, type, size as sizes, border, touch } from '../theme/tokens';
+import { useReduceMotion } from '../utils/reduceMotion';
+import { isLargeFont } from '../utils/textScale';
 
 // The frame's backdrop before (or without) the camera picture.
 const getCAMERA_DARK = makeStyles(theme => {
@@ -87,7 +89,7 @@ function ScanPage({ pairing, step, camera, onLayout }) {
   const styles = useStyles(getStyles);
   const guideStyles = useStyles(getGuideStyles);
   const { width } = useWindowDimensions();
-  const size = Math.max(160, width - 96);
+  const size = Math.max(sizes.scanFrame.minimum, width - sizes.scanFrame.inset);
   const denied = pairing.camera === 'denied';
   const live = camera && pairing.camera === 'granted';
   return (
@@ -127,7 +129,7 @@ function ScanPage({ pairing, step, camera, onLayout }) {
               accessibilityRole="button"
               accessibilityLabel="開系統設定"
               onPress={() => Linking.openSettings()}
-              hitSlop={8}
+              hitSlop={space.s}
               style={({ pressed }) => [
                 styles.deniedAction,
                 pressed && styles.pressed,
@@ -173,7 +175,7 @@ function Corners({ size }) {
   const line = {
     position: 'absolute',
     backgroundColor: colors.accent,
-    borderRadius: 2,
+    borderRadius: sizes.scanFrame.corner / 2,
   };
   const corner = (vertical, horizontal) => (
     <React.Fragment key={`${vertical}${horizontal}`}>
@@ -210,7 +212,13 @@ function Corners({ size }) {
 function ScanLine({ size }) {
   const styles = useStyles(getStyles);
   const move = useRef(new Animated.Value(0)).current;
+  const reduced = useReduceMotion();
   useEffect(() => {
+    // 減少動態效果: the line rests in the middle of the frame.
+    if (reduced) {
+      move.setValue(0.5);
+      return undefined;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(move, {
@@ -229,7 +237,7 @@ function ScanLine({ size }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [move]);
+  }, [move, reduced]);
   const inset = Math.round(size * 0.16);
   return (
     <Animated.View
@@ -274,7 +282,7 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           accessibilityRole="button"
           accessibilityLabel="返回，掃描 QR Code"
           onPress={pairing.back}
-          hitSlop={8}
+          hitSlop={space.s}
           style={({ pressed }) => [styles.topLink, pressed && styles.pressed]}
         >
           <Text style={guideStyles.link}>‹ 掃描 QR Code</Text>
@@ -314,8 +322,16 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           returnKeyType="search"
           onSubmitEditing={pairing.searchName}
         />
-        <Text style={styles.example}>例：DogGPS-Master7</Text>
+        {!isLargeFont() && (
+          <Text style={styles.example}>例：DogGPS-Master7</Text>
+        )}
       </View>
+      {/* 大字體: the example goes under the field, which keeps its width for the name. */}
+      {isLargeFont() && (
+        <Text style={[styles.example, styles.exampleBelow]}>
+          例：DogGPS-Master7
+        </Text>
+      )}
       {pairing.inputError ? (
         <Text
           testID="pair-name-error"
@@ -374,7 +390,7 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           accessibilityRole="button"
           accessibilityLabel="重新搜尋"
           onPress={pairing.search}
-          hitSlop={8}
+          hitSlop={space.s}
           style={({ pressed }) => [styles.again, pressed && styles.pressed]}
         >
           <Text style={guideStyles.link}>重新搜尋</Text>
@@ -478,7 +494,7 @@ const getStyles = makeStyles(theme => {
     deniedFrame: {
       borderRadius: radius.scanFrame,
       backgroundColor: colors.bg,
-      borderWidth: 1,
+      borderWidth: border.hairline,
       borderColor: colors.line,
       alignItems: 'center',
       justifyContent: 'center',
@@ -486,38 +502,38 @@ const getStyles = makeStyles(theme => {
     },
     deniedText: { ...type.status, color: colors.text, textAlign: 'center' },
     deniedAction: {
-      minHeight: 48,
+      minHeight: touch.min,
       justifyContent: 'center',
       marginTop: space.s,
     },
-    cornerAcross: { height: 4 },
-    cornerDown: { width: 4 },
+    cornerAcross: { height: sizes.scanFrame.corner },
+    cornerDown: { width: sizes.scanFrame.corner },
     scanLine: {
       position: 'absolute',
-      height: 2,
-      borderRadius: 1,
+      height: sizes.scanFrame.beam,
+      borderRadius: sizes.scanFrame.beamRadius,
       backgroundColor: colors.accent,
       opacity: 0.8,
     },
     topLink: {
-      minHeight: 48,
+      minHeight: touch.min,
       justifyContent: 'center',
       alignSelf: 'flex-start',
       marginTop: -space.m,
       marginBottom: space.xs,
     },
     field: {
-      minHeight: 56,
+      minHeight: sizes.input.height,
       borderRadius: radius.input,
-      borderWidth: 1.5,
+      borderWidth: border.regular,
       borderColor: colors.floatingOutline,
       paddingHorizontal: space.l,
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.surface,
     },
-    fieldFocused: { borderWidth: 2, borderColor: colors.accent },
-    fieldError: { borderWidth: 2, borderColor: colors.critLine },
+    fieldFocused: { borderWidth: border.strong, borderColor: colors.accent },
+    fieldError: { borderWidth: border.strong, borderColor: colors.critLine },
     input: {
       ...type.body,
       color: colors.text,
@@ -525,39 +541,40 @@ const getStyles = makeStyles(theme => {
       paddingVertical: space.s,
     },
     example: { ...type.caption, color: colors.textMuted, marginLeft: space.s },
+    exampleBelow: { marginLeft: 0, marginTop: space.xs },
     error: { ...type.caption, color: colors.crit, marginTop: space.xs },
     searchButton: { marginTop: space.m },
     sectionRow: {
       flexDirection: 'row',
       alignItems: 'center',
       marginTop: space.xl,
-      minHeight: 32,
-      borderBottomWidth: 1,
+      minHeight: sizes.groupTag.height,
+      borderBottomWidth: border.hairline,
       borderBottomColor: colors.line,
       paddingBottom: space.xs,
     },
     sectionText: { ...type.captionBold, color: colors.textMuted, flex: 1 },
     nearby: {
-      minHeight: 56,
+      minHeight: touch.row,
       flexDirection: 'row',
       alignItems: 'center',
-      borderBottomWidth: 1,
+      borderBottomWidth: border.hairline,
       borderBottomColor: colors.line,
     },
     lastNearby: { borderBottomWidth: 0 },
     pressedRow: { backgroundColor: colors.pressedOverlay },
     nearbyName: { ...type.body, color: colors.text, flex: 1 },
     none: { ...type.body, color: colors.textMuted, marginTop: space.l },
-    again: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start' },
+    again: { minHeight: touch.min, justifyContent: 'center', alignSelf: 'flex-start' },
     connectedRow: {
       flexDirection: 'row',
       alignItems: 'center',
       marginTop: space.l,
     },
     okCircle: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
+      width: sizes.permission.statusDisc,
+      height: sizes.permission.statusDisc,
+      borderRadius: sizes.permission.statusDisc / 2,
       backgroundColor: colors.okBg,
       alignItems: 'center',
       justifyContent: 'center',

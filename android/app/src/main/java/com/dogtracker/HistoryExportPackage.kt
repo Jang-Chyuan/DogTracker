@@ -445,7 +445,9 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
         canvas.drawCircle(px, py, r - (if (end) 3.6f else 2.4f), Paint(Paint.ANTI_ALIAS_FLAG).apply {
           style = Paint.Style.STROKE; strokeWidth = if (end) 7.2f else 4.8f; color = colour })
-        labels.add(Triple(marker.getString("label"), px to py, r))
+        // A thinned time (several dogs' crowded ends, ExportSnapshot) keeps its ring only.
+        val label = marker.optString("label")
+        if (label.isNotEmpty()) labels.add(Triple(label, px to py, r))
       }
     }
     // The time labels where they cover no number, house or other label:
@@ -468,7 +470,8 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         RectF(px - half, py - r - 48f, px + half, py - r - 4f),
         RectF(px + r + 6f, py - 22f, px + r + 6f + 2 * half, py + 22f),
         RectF(px - r - 6f - 2 * half, py - 22f, px - r - 6f, py + 22f))
-      val box = options.firstOrNull { option -> taken.none { RectF.intersects(it, option) } } ?: options[0]
+      // No free side: leave this label out rather than draw it over another.
+      val box = options.firstOrNull { option -> taken.none { RectF.intersects(it, option) } } ?: continue
       taken.add(box)
       drawText(canvas, label, box.centerX(), box.top, box.height(), 39f, true, ink, "center", halo)
     }

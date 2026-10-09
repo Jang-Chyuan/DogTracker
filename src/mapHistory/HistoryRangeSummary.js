@@ -9,6 +9,7 @@ import Glyph from '../map/Glyph';
 import {
   clock,
   km,
+  spoken,
   summaryDuration,
   summaryText,
 } from '../history/HistoryText';
@@ -18,12 +19,23 @@ import {
   stepRangeHandle,
   xOfTime,
 } from '../history/screen/HistoryRangeBar';
-import { size as sizes, tabularNumbers } from '../theme/tokens';
+import {
+  size as sizes,
+  tabularNumbers,
+  touch,
+  space,
+  radius,
+  type,
+  border,
+  fontScale,
+} from '../theme/tokens';
 import { haptic } from '../utils/haptics';
+import { isLargeFont, linesFor } from '../utils/textScale';
+import { useInitialFocus } from '../utils/a11yFocus';
 
 const HANDLE = sizes.rangeBar.handle;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
-const TOUCH = 48;
+const TOUCH = touch.min;
 
 /** The summary's two lines while the bar is closed, or open (the range itself). */
 export function rangeSummaryLines(model, { subject, open, range, who = null }) {
@@ -164,6 +176,9 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
   // 判定表「範圍條把手太近」: closer than 48dp, the start's time sits left of
   // its handle and the end's right of it (and 12dp lower if still too close).
   const close = endX - startX < TOUCH;
+  // Opened, TalkBack moves to the start handle (設計稿「範圍條在 TalkBack 開著時」).
+  const startRef = useRef(null);
+  useInitialFocus(startRef);
   const startLabel = clock(handles.start);
   const endLabel = clock(handles.end);
   return (
@@ -187,6 +202,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
         {/* TalkBack: each end is its own adjustable control (one fix, at
                least a minute, per step). */}
         <View
+          ref={startRef}
           testID="range-handle-start"
           style={[styles.handle, { left: startX + (TOUCH - HANDLE) / 2 }]}
           accessible
@@ -212,9 +228,11 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
           style={[
             styles.label,
             close
-              ? [styles.labelRight, { right: width - startX + TOUCH / 2 + 2 }]
+              ? [styles.labelRight, { right: width - startX + TOUCH / 2 + sizes.rangeBar.labelEdgeGap }]
               : [styles.labelCentre, { left: startX }],
           ]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={HANDLE_LABEL_MAX_SCALE}
         >
           {startLabel}
         </Text>
@@ -222,9 +240,11 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
           style={[
             styles.label,
             close
-              ? { left: endX + TOUCH / 2 + 2 }
+              ? { left: endX + TOUCH / 2 + sizes.rangeBar.labelEdgeGap }
               : [styles.labelCentre, { left: endX }],
           ]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={HANDLE_LABEL_MAX_SCALE}
         >
           {endLabel}
         </Text>
@@ -239,6 +259,10 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit }) {
  * handle moves) and `onCommit` (the range when it is let go). `closedAt`:
  * my route's recording was switched off then (「記錄已在 10:20 關閉」).
  */
+// The times under the 24dp handles stay within their 48dp target: they grow
+// with the system font only a little (a 200% font would wrap 「07:50」).
+const HANDLE_LABEL_MAX_SCALE = fontScale.graphicTextMax;
+
 export default function HistoryRangeSummary({
   model,
   subject,
@@ -262,22 +286,29 @@ export default function HistoryRangeSummary({
   const enabled =
     dayPoints?.length > 1 &&
     dayPoints[dayPoints.length - 1].time - dayPoints[0].time >= 60000;
-  const speech = `${lines.title.replace(' – ', ' 到 ')}，${lines.detail}${
+  // 「08:03 到現在，走了 5.2 公里，點兩下調整範圍」 (設計稿「無障礙」範圍條).
+  const speech = `${lines.title.replace(' – ', ' 到')}，${spoken(lines.detail)}${
     enabled ? '，點兩下調整範圍' : ''
   }`;
+  // 大字體: 「調整範圍」 goes under the times, which keep the full width.
+  const stacked = isLargeFont();
   return (
     <View style={[styles.box, open && styles.boxOpen]} testID="history-summary">
       <Pressable
         onPress={enabled ? onToggle : undefined}
-        style={styles.summary}
+        style={({ pressed }) => [
+          styles.summary,
+          stacked && styles.summaryStacked,
+          pressed && styles.pressedRow,
+        ]}
         accessibilityRole="button"
         accessibilityLabel={speech}
         accessibilityState={{ expanded: open }}
       >
-        <View style={styles.texts}>
+        <View style={[styles.texts, stacked && styles.textsStacked]}>
           <Text
             style={[styles.title, open && styles.titleOpen]}
-            numberOfLines={1}
+            numberOfLines={linesFor(1)}
           >
             {lines.title}
             {enabled ? (
@@ -286,7 +317,7 @@ export default function HistoryRangeSummary({
               </Text>
             ) : null}
           </Text>
-          <Text style={styles.detail} numberOfLines={2}>
+          <Text style={styles.detail} numberOfLines={linesFor(2)}>
             {lines.detail}
           </Text>
         </View>
@@ -296,8 +327,8 @@ export default function HistoryRangeSummary({
             testID="history-adjust"
             accessibilityRole="button"
             accessibilityLabel={open ? '完成' : '調整範圍'}
-            hitSlop={8}
-            style={[styles.adjust, open && styles.adjustOpen]}
+            hitSlop={space.s}
+            style={({ pressed }) => [styles.adjust, open && styles.adjustOpen, pressed && styles.pressed]}
           >
             <Glyph
               name="sliders"
@@ -333,63 +364,68 @@ export default function HistoryRangeSummary({
 const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
+    // 設計稿「元件狀態」: the pressed state.
+    pressed: { backgroundColor: colors.pressedOverlay },
+    // 設計稿「元件狀態」: the pressed state.
+    pressedRow: { backgroundColor: colors.brandSoft },
     // Closed: no fill and no frame. Open: white, 1.5dp accent frame, radius 14.
     box: {
-      marginHorizontal: 16,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-      borderRadius: 14,
-      borderWidth: sizes.rangeBar.frameBorder,
+      marginHorizontal: space.l,
+      paddingHorizontal: space.s,
+      paddingVertical: space.s,
+      borderRadius: radius.rangeFrame,
+      borderWidth: border.regular,
       borderColor: 'transparent',
     },
     boxOpen: { borderColor: colors.accent, backgroundColor: colors.elevated },
-    summary: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    summary: { flexDirection: 'row', alignItems: 'center', gap: space.s, minHeight: touch.min },
     texts: { flex: 1 },
+    summaryStacked: { flexDirection: 'column', alignItems: 'flex-start' },
+    textsStacked: { flex: 0, alignSelf: 'stretch' },
     title: {
       color: colors.text,
-      fontSize: 20,
-      lineHeight: 28,
-      fontWeight: '700',
+      ...type.title,
+
       ...tabularNumbers,
     },
     titleOpen: { color: colors.tonalText },
-    caret: { color: colors.textMuted, fontSize: 14 },
+    caret: { color: colors.textMuted, fontSize: type.value.fontSize },
     detail: {
       color: colors.textMuted,
-      fontSize: 13,
-      lineHeight: 18,
+      fontSize: type.caption.fontSize,
+      lineHeight: type.caption.lineHeight,
       ...tabularNumbers,
     },
     adjust: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      height: 36,
-      paddingHorizontal: 12,
-      borderRadius: 18,
-      borderWidth: 1,
+      gap: space.xs,
+      height: sizes.chip.height,
+      paddingHorizontal: space.m,
+      borderRadius: radius.full,
+      borderWidth: border.hairline,
       borderColor: colors.line,
       backgroundColor: colors.elevated,
     },
     adjustOpen: { backgroundColor: colors.tonal, borderColor: colors.tonal },
-    adjustText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+    adjustText: { color: colors.text, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
     adjustTextOpen: { color: colors.tonalText },
-    closed: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+    closed: { color: colors.textMuted, fontSize: type.caption.fontSize, marginTop: space.xs },
     // 12sp textMuted, 4dp above and below, right on top of the bar.
     hint: {
       color: colors.textMuted,
-      fontSize: 12,
-      lineHeight: 16,
-      marginTop: 4,
-      marginBottom: 4,
+      fontSize: type.small.fontSize,
+      lineHeight: type.small.lineHeight,
+      marginTop: space.xs,
+      marginBottom: space.xs,
     },
     // The 48dp touch row overlaps the hint's 4dp: the track sits right under it.
-    bar: { paddingBottom: 2, marginTop: -14 },
+    bar: { paddingBottom: space.xs, marginTop: -sizes.rangeBar.summaryOverlap },
     trackArea: { height: TOUCH, justifyContent: 'center' },
     track: {
       marginHorizontal: TOUCH / 2,
       height: sizes.rangeBar.track,
-      borderRadius: 3,
+      borderRadius: sizes.rangeBar.track / 2,
       backgroundColor: colors.line,
     },
     selection: {
@@ -402,15 +438,15 @@ const getStyles = makeStyles(theme => {
       width: HANDLE,
       height: HANDLE,
       borderRadius: HANDLE / 2,
-      borderWidth: sizes.rangeBar.handleBorder,
+      borderWidth: border.heavy,
       borderColor: colors.accent,
       backgroundColor: colors.avatarFrameMap,
     },
-    labels: { height: 18, marginTop: -6, marginHorizontal: 0 },
+    labels: { minHeight: sizes.rangeBar.labelHeight, marginTop: -sizes.rangeBar.labelBaselineLift, marginHorizontal: 0 },
     label: {
       position: 'absolute',
       color: colors.textMuted,
-      fontSize: 13,
+      fontSize: type.caption.fontSize,
       ...tabularNumbers,
     },
     labelRight: { textAlign: 'right' },

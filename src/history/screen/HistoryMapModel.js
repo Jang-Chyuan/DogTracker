@@ -2,7 +2,7 @@
 // 「路線」「時間標記」「歷史游标點」): provider-neutral lines, stop numbers, the
 // indoor house, time markers and the cursor. Pure; GoogleTrackingMap draws it.
 import { getTheme } from '../../theme/ThemeProvider';
-import { size as sizes } from '../../theme/tokens';
+import { size as sizes, space, layout } from '../../theme/tokens';
 import { clock } from '../HistoryText';
 
 const MINUTE = 60000;
@@ -176,6 +176,10 @@ export function placeMarkers(locations) {
     .map(n => ({
       key: `${n.type}${n.start}`,
       kind: n.type === 'indoor' ? 'indoor' : 'number',
+      // For TalkBack (MarkerA11yLayer.stopSpeech): a stay or a switch, and
+      // the stay's own length (interruptions left out, as its pill).
+      type: n.type,
+      durationMs: n.durationMs ?? null,
       number: n.number ?? null,
       start: n.start,
       end: n.end,
@@ -358,14 +362,14 @@ export function nearestRouteSpot(
 
 // The bottom keeps clear of 框住全部 (48dp, 12dp above the panel).
 export const HISTORY_FRAME_PADDING = {
-  top: 24 + 56,
-  right: 24,
-  bottom: 24 + 48,
-  left: 24,
+  top: layout.framePadding + sizes.mapFrame.historyControls,
+  right: space.xl,
+  bottom: layout.framePadding + sizes.mapFrame.historyPanel,
+  left: space.xl,
 };
 // Half the cursor label's width (about 「08:46」「已移動 0.8 km」), so a label
 // over a point at the left or right edge of the route is not cut off.
-const LABEL_HALF = 72;
+const LABEL_HALF = sizes.mapFrame.labelHalf;
 /**
  * The history frame for `positions` with the cursor at `cursor`: more room
  * on the side where the cursor sits at the edge of the route (its label is

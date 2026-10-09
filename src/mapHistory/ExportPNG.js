@@ -1,3 +1,4 @@
+import { size as tokenSize } from '../theme/tokens';
 // The PNG layout (H10a/H10b; 判定表「PNG 尺寸」「PNG 內容」「PNG 分頁」
 // 「時間軸清單（匯出 PNG）」): pages 1080px wide of title, legend (several
 // dogs), the 1080×1080 map (page 1 only), the list rows and the footer, with
@@ -12,19 +13,19 @@ import { activeSubjects, displayName } from './ExportData';
 import { localDateParts } from './ExportFiles';
 
 export const PNG_STYLE = {
-  width: 1080, maxHeight: 2400, mapHeight: 1080, footerHeight: 60, side: 48,
-  timeColumn: 150, trackColumn: 80, titleFont: 40, titleWeight: 'bold', subtitleFont: 28, fontFamily: 'app',
-  addressWeight: 'bold', addressFont: 40, addressLine: 52, timeFont: 36, endTimeFont: 28, detailFont: 30,
-  detailLine: 42, pillHeight: 52, pillPadding: 20, secondLine: 64, nodeSize: 64, movementIcon: 72,
-  legendFont: 28, legendWeight: 'bold', legendHeight: 56, sectionFont: 36, sectionDetailFont: 28,
-  sectionWeight: 'bold', sectionHeight: 72, footerFont: 24, placeMin: 140, movementMin: 96, rowGap: 36,
+  width: tokenSize.export.width, maxHeight: tokenSize.export.maxHeight, mapHeight: tokenSize.export.mapHeight, footerHeight: tokenSize.export.footerHeight, side: tokenSize.export.side,
+  timeColumn: tokenSize.export.timeColumn, trackColumn: tokenSize.export.trackColumn, titleFont: tokenSize.export.titleFont, titleWeight: tokenSize.export.titleWeight, subtitleFont: tokenSize.export.subtitleFont, fontFamily: tokenSize.export.fontFamily,
+  addressWeight: tokenSize.export.addressWeight, addressFont: tokenSize.export.addressFont, addressLine: tokenSize.export.addressLine, timeFont: tokenSize.export.timeFont, endTimeFont: tokenSize.export.endTimeFont, detailFont: tokenSize.export.detailFont,
+  detailLine: tokenSize.export.detailLine, pillHeight: tokenSize.export.pillHeight, pillPadding: tokenSize.export.pillPadding, secondLine: tokenSize.export.secondLine, nodeSize: tokenSize.export.nodeSize, movementIcon: tokenSize.export.movementIcon,
+  legendFont: tokenSize.export.legendFont, legendWeight: tokenSize.export.legendWeight, legendHeight: tokenSize.export.legendHeight, sectionFont: tokenSize.export.sectionFont, sectionDetailFont: tokenSize.export.sectionDetailFont,
+  sectionWeight: tokenSize.export.sectionWeight, sectionHeight: tokenSize.export.sectionHeight, footerFont: tokenSize.export.footerFont, placeMin: tokenSize.export.placeMin, movementMin: tokenSize.export.movementMin, rowGap: tokenSize.export.rowGap,
   text: colors.text, textMuted: colors.textMuted, background: colors.surface,
   holdText: colors.receiver, warningText: colors.warn,
-  dottedLine: { diameter: 9, gap: 21 }, driveLine: 9, gapLine: { width: 6, dash: [18, 12] },
+  dottedLine: tokenSize.export.dottedLine, driveLine: tokenSize.export.driveLine, gapLine: tokenSize.export.gapLine,
 };
 const S = PNG_STYLE;
 // The place column: from after the track column to the right margin.
-export const PLACE_X = S.timeColumn + S.trackColumn + 24;
+export const PLACE_X = S.timeColumn + S.trackColumn + tokenSize.export.sectionInset;
 export const PLACE_WIDTH = S.width - PLACE_X - S.side;
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 const FOOTER = '停留＝待得比這條路線一般地方久很多的地方';
@@ -75,7 +76,7 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
   if (row.kind === 'section') {
     const text = `${row.lead}${row.time ? ` ${row.time}` : ''}${row.rest}`;
     const lines = wrap(text, S.detailFont, PLACE_WIDTH - S.movementIcon, measure, { bold: false });
-    return { lines, height: Math.max(S.movementMin, lines.length * S.detailLine + 54) };
+    return { lines, height: Math.max(S.movementMin, lines.length * S.detailLine + tokenSize.export.movementInset) };
   }
   // 「PNG 一列比一頁還高」: the address is cut after 2 lines (in the PNG only).
   const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH, measure, { bold: true, maxLines: truncate ? 2 : Infinity });
@@ -91,10 +92,10 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
   for (const item of items) {
     if (x > 0 && x + item.width > PLACE_WIDTH) { x = 0; line += 1; }
     placed.push({ ...item, x, line });
-    x += item.width + 20;
+    x += item.width + tokenSize.export.itemGap;
   }
   const secondLines = items.length ? line + 1 : 0;
-  const height = Math.max(S.placeMin, 8 + titleLines.length * S.addressLine + 8 + secondLines * S.secondLine + S.rowGap);
+  const height = Math.max(S.placeMin, tokenSize.export.rowInset + titleLines.length * S.addressLine + tokenSize.export.rowInset + secondLines * S.secondLine + S.rowGap);
   return { titleLines, items: placed, secondLines, height };
 }
 
@@ -109,21 +110,21 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
   const head = pngTitle(snapshot, subjects);
   const titleLines = wrap(head.title, S.titleFont, S.width - 2 * S.side, measure, { bold: true });
   const subtitleLines = wrap(head.subtitle, S.subtitleFont, S.width - 2 * S.side, measure);
-  const titleHeight = Math.max(120, 32 + titleLines.length * 52 + 8 + subtitleLines.length * 38 + 24);
+  const titleHeight = Math.max(tokenSize.export.headerMin, tokenSize.export.headerTop + titleLines.length * tokenSize.export.titleLine + tokenSize.export.titleGap + subtitleLines.length * tokenSize.export.subtitleLine + tokenSize.export.headerBottom);
   // 圖例: a route-colour swatch, the name (bold) and its distance per dog;
   // a row that does not fit goes on to the next (判定表「PNG 圖例放不下」).
   const legend = [];
   let legendX = S.side, legendRow = 0;
   if (multi) subjects.forEach((subject, index) => {
     const name = subject.name, distance = subject.distanceKm;
-    const nameWidth = Math.min(S.width - 2 * S.side - 160, measure(name, S.legendFont, true));
-    const width = 44 + nameWidth + 12 + measure(distance, S.legendFont, false) + 40;
+    const nameWidth = Math.min(S.width - 2 * S.side - tokenSize.export.legendReserve, measure(name, S.legendFont, true));
+    const width = tokenSize.export.legendTextInset + nameWidth + tokenSize.export.legendGap + measure(distance, S.legendFont, false) + tokenSize.export.legendTrailing;
     if (legendX + width > S.width - S.side && legendX > S.side) { legendX = S.side; legendRow += 1; }
     legend.push({ subjectIndex: index, name, distance, nameWidth, x: legendX, y: legendRow * S.legendHeight,
       width, height: S.legendHeight, color: subject.routeColor || routeColors[index % 4] });
     legendX += width;
   });
-  const legendHeight = multi ? (legendRow + 1) * S.legendHeight + 16 : 0;
+  const legendHeight = multi ? (legendRow * S.legendHeight + S.legendHeight) + tokenSize.export.legendBottom : 0;
   const top = titleHeight + legendHeight;
   if (top + S.mapHeight + S.footerHeight > S.maxHeight) throw new Error('標題或圖例超過可用高度');
   const room = S.maxHeight - S.footerHeight;
@@ -136,7 +137,7 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     if (first) {
       // 128 px keeps every route point clear of the 指北 disc (centre 72 px in
       // from the top-right corner, radius 40) and endpoint labels inside the frame.
-      page.blocks.push({ type: 'map', y: top, height: S.mapHeight, width: S.width, padding: 128,
+      page.blocks.push({ type: 'map', y: top, height: S.mapHeight, width: S.width, padding: tokenSize.export.mapInset,
         subjects: subjects.map((subject, index) => ({ ...subject.map, color: subject.routeColor || routeColors[index % 4] })),
         holds: subjects.flatMap(subject => subject.holds || []),
         timeMarkers: multi ? 'endpoints' : 'all', cursor: null, fadeByCursor: false,
@@ -161,12 +162,12 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     // the times under the name when a long name leaves no room.
     const section = continued => {
       const title = `${subject.name}${continued ? '（續）' : ''}`, detail = `${span}・${subject.distanceKm}`;
-      const width = S.width - 2 * S.side - 28;
+      const width = S.width - 2 * S.side - tokenSize.export.sectionTextInset;
       const nameLines = wrap(title, S.sectionFont, width, measure, { bold: true });
       const oneLine = nameLines.length === 1 && measure(`${title}  ${detail}`, S.sectionFont, true) <= width;
       const lines = oneLine ? 1 : nameLines.length + 1;
       return { type: 'section', subjectIndex, color, title, detail, titleLines: nameLines, oneLine,
-        height: Math.max(S.sectionHeight, 24 + lines * 48) };
+        height: Math.max(S.sectionHeight, tokenSize.export.sectionInset + lines * tokenSize.export.sectionLine) };
     };
     // 判定表「PNG 第 1 張放不下清單」: the header goes with the first row.
     if (page.height + (multi ? section(false).height : 0) + rows[0].height > room) newPage();

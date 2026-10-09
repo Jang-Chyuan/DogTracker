@@ -1,3 +1,4 @@
+import { size as sizes } from '../theme/tokens';
 import React from 'react';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
@@ -7,7 +8,7 @@ import Svg, { Circle, Line, Path } from 'react-native-svg';
 // so this is the real path, scaled from a 24×24 grid.
 const LENS = 'M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z';
 
-export default function EyeIcon({ color, open = true, size = 26 }) {
+export default function EyeIcon({ color, open = true, size = sizes.icon.visibility }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
       <Path

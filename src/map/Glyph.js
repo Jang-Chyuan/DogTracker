@@ -1,3 +1,4 @@
+import { size as sizes } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeProvider';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
@@ -10,7 +11,7 @@ const GEAR =
  * from, and what its numbers are. Drawn as paths on a 24×24 grid, the way icon
  * sets do, because the app ships no icon font.
  */
-export default function Glyph({ name, color, size = 16, level = null }) {
+export default function Glyph({ name, color, size = sizes.icon.inline, level = null }) {
   const { literalColors: themeLiteral } = useTheme();
   const stroke = {
     stroke: color,
@@ -42,14 +43,14 @@ export default function Glyph({ name, color, size = 16, level = null }) {
       )}
       {name === 'battery' && (
         <>
-          <Rect x={2} y={7} width={17} height={10} rx={2.5} {...stroke} />
+          <Rect x={2} y={7} width={sizes.glyph.batteryBodyWidth} height={sizes.glyph.batteryBodyHeight} rx={2.5} {...stroke} />
           <Line x1={21.5} y1={10.5} x2={21.5} y2={13.5} {...stroke} />
           {Number.isFinite(level) && level > 0 && (
             <Rect
               x={4}
               y={9}
-              width={Math.max(1.5, 13 * Math.min(1, level / 100))}
-              height={6}
+              width={Math.max(sizes.glyph.batteryFillMin, sizes.glyph.batteryFillSpan * Math.min(1, level / 100))}
+              height={sizes.glyph.batteryFillHeight}
               rx={1}
               fill={color}
             />
@@ -163,7 +164,7 @@ export default function Glyph({ name, color, size = 16, level = null }) {
       {name === 'receiver-off' && (
         // 接收器斷線 (A2): the mockup's receiver box with its antenna.
         <>
-          <Rect x={6} y={10} width={12} height={10} rx={2} {...stroke} />
+          <Rect x={6} y={10} width={sizes.glyph.receiverBodyWidth} height={sizes.glyph.receiverBodyHeight} rx={2} {...stroke} />
           <Path d="M12 10V5M8.5 4.5a5 5 0 0 1 7 0" {...stroke} />
         </>
       )}
@@ -174,7 +175,7 @@ export default function Glyph({ name, color, size = 16, level = null }) {
       {name === 'storage' && (
         // 位置存不進手機: a phone with a cross where the data would go.
         <>
-          <Rect x={6} y={2.5} width={12} height={19} rx={2.5} {...stroke} />
+          <Rect x={6} y={2.5} width={sizes.glyph.phoneBodyWidth} height={sizes.glyph.phoneBodyHeight} rx={2.5} {...stroke} />
           <Path d="M10 10l4 4M14 10l-4 4M11 18.5h2" {...stroke} />
         </>
       )}

@@ -5,7 +5,7 @@
 // 32dp face, at most 5 rows before it scrolls. A tap outside or the back key
 // closes it (a small window closes before anything else).
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   BackHandler,
   Pressable,
@@ -16,12 +16,13 @@ import {
 } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
 import { problemBadgePosition } from './BadgeGeometry';
-import { radius, size as sizes, type } from '../theme/tokens';
+import { radius, size as sizes, type, space, border } from '../theme/tokens';
+import { useInitialFocus } from '../utils/a11yFocus';
 
 const menu = sizes.overlapMenu;
-const PADDING_V = 8;
+const PADDING_V = space.s;
 // Gap between the menu and the tag it came from, and from the screen edges.
-const GAP = 8;
+const GAP = space.s;
 
 const getNOTE_COLOR = makeStyles(theme => {
   const { colors } = theme;
@@ -75,6 +76,9 @@ export default function OverlapPicker({
 }) {
   const styles = useStyles(getStyles);
   const NOTE_COLOR = useStyles(getNOTE_COLOR);
+  // TalkBack starts on the first dog of the menu (設計稿「無障礙」焦點順序).
+  const firstRow = useRef(null);
+  useInitialFocus(firstRow);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
@@ -89,6 +93,7 @@ export default function OverlapPicker({
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <Pressable
         testID="overlap-picker-outside"
+        accessibilityRole="button"
         accessibilityLabel="關閉"
         style={StyleSheet.absoluteFill}
         onPress={onClose}
@@ -105,8 +110,9 @@ export default function OverlapPicker({
           contentContainerStyle={styles.content}
           scrollEnabled={markers.length > menu.maxRows}
         >
-          {markers.map(marker => (
+          {markers.map((marker, index) => (
             <Pressable
+              ref={index === 0 ? firstRow : undefined}
               key={marker.slaveId}
               testID={`overlap-row-${marker.slaveId}`}
               accessibilityRole="button"
@@ -125,7 +131,7 @@ export default function OverlapPicker({
                   avatar={avatars[marker.slaveId]}
                   size={menu.avatar}
                   stale={marker.stale}
-                  border={1.5}
+                  border={border.regular}
                 />
                 {marker.problem && (
                   <View testID="overlap-row-problem" style={styles.badge}>
@@ -177,8 +183,8 @@ const getStyles = makeStyles(theme => {
       height: menu.row,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 12,
-      gap: 12,
+      paddingHorizontal: space.m,
+      gap: space.m,
     },
     pressed: { backgroundColor: colors.pressedOverlay },
     words: { flex: 1 },
@@ -187,11 +193,11 @@ const getStyles = makeStyles(theme => {
     face: { width: menu.avatar, height: menu.avatar, overflow: 'visible' },
     badge: {
       position: 'absolute',
-      ...problemBadgePosition(menu.avatar, sizes.badge.size - 2),
-      width: sizes.badge.size - 2,
-      height: sizes.badge.size - 2,
+      ...problemBadgePosition(menu.avatar, sizes.badge.size - border.strong),
+      width: sizes.badge.size - border.strong,
+      height: sizes.badge.size - border.strong,
       borderRadius: sizes.badge.size,
-      borderWidth: sizes.badge.border,
+      borderWidth: border.regular,
       borderColor: themeLiteral.avatarFrameMap,
       backgroundColor: colors.problemBadge,
       alignItems: 'center',
@@ -199,9 +205,9 @@ const getStyles = makeStyles(theme => {
     },
     badgeText: {
       color: themeLiteral.avatarFrameMap,
-      fontSize: 9,
-      lineHeight: 10,
-      fontWeight: '900',
+      fontSize: sizes.badge.glyph,
+      lineHeight: sizes.badge.problemLine,
+      fontWeight: sizes.badge.problemWeight,
     },
   });
 });
