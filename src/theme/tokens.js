@@ -234,6 +234,8 @@ export const size = {
 
     // Icon roles used by compact actions and navigation (§5 / §15).
     inline: 16,
+    // Paired share/download actions in the history export sheet.
+    exportAction: 32,
     // The back icon of every page header (066: 22 was too small to hit).
     navigation: 28,
     smallAction: 18,

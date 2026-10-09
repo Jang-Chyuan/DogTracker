@@ -13,9 +13,6 @@ import HistoryBottomSheet from './HistoryBottomSheet';
 import Glyph from '../map/Glyph';
 import { EXPORT_FORMATS } from './useHistoryExport';
 
-// Export's paired actions need a larger glyph than inline card symbols.
-const ACTION_ICON = 32;
-
 /** 「匯出 08:03–12:11」 (always one day; the end is the last fix's time). */
 export const exportTitle = range => (range ? t('c160', { time: clock(range.start), time2: clock(range.end) }) : t("c821"));
 
@@ -68,12 +65,12 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
             accessibilityLabel={t('c1171', { format: format.title })}
             onPress={() => exporter.start(format.id)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-            <Glyph name="share" color={colors.tonalText} size={ACTION_ICON} />
+            <Glyph name="share" color={colors.tonalText} size={sizes.icon.exportAction} />
           </Pressable>
           {exporter.canSave && <Pressable testID={`history-export-save-${format.id}`} accessibilityRole="button"
             accessibilityLabel={t('c1166', { format: format.title })} onPress={() => exporter.save(format.id)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-            <Glyph name="download" color={colors.tonalText} size={ACTION_ICON} />
+            <Glyph name="download" color={colors.tonalText} size={sizes.icon.exportAction} />
           </Pressable>}
         </View>
       );
