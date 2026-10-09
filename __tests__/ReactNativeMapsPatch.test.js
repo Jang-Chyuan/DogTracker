@@ -67,3 +67,20 @@ test('the image-load callback no longer shows a marker by itself', () => {
   expect(source).toContain(MARK);
   expect(source).not.toMatch(/setVisible\(true\)/);
 });
+
+// E02 and the history memory leak: removing a feature from the map also
+// detaches a marker's view from any old attacher group
+// (DOGTRACKER_MARKER_PARENT) and empties every lookup map addFeature filled
+// (DOGTRACKER_FEATURE_MAPS); upstream kept each removed line, area and overlay.
+test('the installed MapView.java removes features completely', () => {
+  const source = fs.readFileSync(path.join(javaRoot, 'maps/MapView.java'), 'utf8');
+  const remove = source.slice(
+    source.indexOf('public void removeFeatureAt(int index)'),
+    source.indexOf('public void removeFeatureAt(int index)') + 3000,
+  );
+  expect(remove).toContain('DOGTRACKER_MARKER_PARENT');
+  expect(remove).toMatch(/safeRemoveFromParent\(feature\);/);
+  expect(remove).toContain('DOGTRACKER_FEATURE_MAPS');
+  for (const lookup of ['markerMap', 'heatmapMap', 'overlayMap', 'polygonMap', 'polylineMap', 'gradientPolylineMap'])
+    expect(remove).toContain(`${lookup}.remove(feature.getFeature());`);
+});

@@ -61,10 +61,10 @@ index 3e0250f..95cc196 100644
          return options;
      }
 diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
-index def61f5..11a71c6 100644
+index def61f5..54c6904 100644
 --- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
 +++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
-@@ -1326,7 +1326,14 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -1326,18 +1326,36 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
          if (feature instanceof MapMarker) {
              markerMap.remove(feature.getFeature());
              feature.removeFromMap(markerCollection);
@@ -80,3 +80,25 @@ index def61f5..11a71c6 100644
          } else if (feature instanceof MapHeatmap) {
              heatmapMap.remove(feature.getFeature());
              feature.removeFromMap(map);
+         } else if (feature instanceof MapCircle) {
+             feature.removeFromMap(circleCollection);
+         } else if (feature instanceof MapOverlay) {
++            // DOGTRACKER_FEATURE_MAPS (DogTracker patch): every lookup map that
++            // addFeature filled is emptied again; upstream only empties
++            // markerMap and heatmapMap, so each removed line, area and overlay
++            // (and the Google object and GL buffers behind it) stayed in memory
++            // for the map's whole life: ~3 lines per history opening.
++            overlayMap.remove(feature.getFeature());
+             feature.removeFromMap(groundOverlayCollection);
+         } else if (feature instanceof MapPolygon) {
++            polygonMap.remove(feature.getFeature());
+             feature.removeFromMap(polygonCollection);
+         } else if (feature instanceof MapPolyline) {
++            polylineMap.remove(feature.getFeature());
+             feature.removeFromMap(polylineCollection);
++        } else if (feature instanceof MapGradientPolyline) {
++            gradientPolylineMap.remove(feature.getFeature());
++            feature.removeFromMap(map);
+         } else if (feature != null) {
+             feature.removeFromMap(map);
+         }
