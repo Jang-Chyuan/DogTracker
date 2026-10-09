@@ -939,8 +939,12 @@ export default function MapScreen({
           whether this view is flattened: either one detaches the native
           MapView, and react-native-maps re-creates its GoogleMap on every
           re-attach without destroying the old one (a leak per opening).
-          collapsable={false} keeps this one native view for good. */}
-      <View testID="map-background-layer" style={StyleSheet.absoluteFill}
+          collapsable={false} keeps this one native view for good. Under a
+          page the layer is moved off screen (a transform, which keeps it
+          attached): the native map draws into its own surface under the
+          window, and an opaque page alone left it showing in the status-bar
+          inset. */}
+      <View testID="map-background-layer" style={[StyleSheet.absoluteFill, cardPage && styles.coveredMap]}
         collapsable={false}
         pointerEvents={cardPage ? 'none' : 'auto'}
         accessibilityElementsHidden={!!cardPage}
@@ -1157,6 +1161,8 @@ const getStyles = makeStyles(theme => {
     // The gear and the top cards, above the map and the card (as before).
     chrome: { zIndex: 70, elevation: 32 },
     hiddenChrome: { display: 'none' },
+    // Far enough that no part of the covered map is on screen.
+    coveredMap: { transform: [{ translateX: layout.offscreen }] },
     // MapScreen lives in App's persistent absolute map layer. A flex-only child
     // can measure to zero under Fabric, sending bottom-anchored overlays above
     // the viewport, so make this screen an explicit inset box as well.

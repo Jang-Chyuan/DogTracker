@@ -1486,7 +1486,12 @@ const getStyles = makeStyles(theme => {
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
       zIndex: -1,
     },
-    hiddenMapLayer: { opacity: 0 },
+    // Off the map the layer is moved off screen as well as made transparent:
+    // the native map draws into its own surface under the window, which a
+    // transparent view does not hide (it showed in the status-bar inset).
+    // A transform changes neither the layer's flattening nor its order, so
+    // the native map stays attached (see persistent-map-layer).
+    hiddenMapLayer: { opacity: 0, transform: [{ translateX: layout.offscreen }] },
     // Above the (hidden) map, below the page: the page colour edge to edge,
     // status bar and navigation bar insets included.
     mapCover: {

@@ -1,4 +1,5 @@
 import MapScreen from '../src/screens/MapScreen';
+import { layout } from '../src/theme/tokens';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import {
@@ -1132,6 +1133,8 @@ test('E01/E16: A4 and A5 isolate background controls and accessibility', async (
     // native MapView, which leaks a GoogleMap per opening).
     expect(layer.props.collapsable).toBe(false);
     expect(StyleSheet.flatten(layer.props.style).display).toBeUndefined();
+    // Off screen, so its surface cannot show in the status-bar inset.
+    expect(StyleSheet.flatten(layer.props.style).transform).toEqual([{ translateX: layout.offscreen }]);
   }
 });
 
@@ -1151,6 +1154,8 @@ test('leak: hiding the map layer never re-parents the native map', async () => {
   const onSettings = layerStyle();
   // Hidden by opacity only; the order (zIndex) and display never change.
   expect(onSettings.opacity).toBe(0);
+  expect(onSettings.transform).toEqual([{ translateX: layout.offscreen }]);
+  expect(onMap.transform).toBeUndefined();
   expect(onSettings.zIndex).toBe(onMap.zIndex);
   expect(onSettings.display).toBeUndefined();
 });
