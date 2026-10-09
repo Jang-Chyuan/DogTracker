@@ -5,6 +5,13 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SearchRelayTimingTest {
+  @Test fun reactStartupRetryIsPositiveAndCapped() {
+    assertEquals(1000L, SearchRelayTiming.reactWaitMs(0))
+    assertEquals(2000L, SearchRelayTiming.reactWaitMs(1))
+    assertEquals(16000L, SearchRelayTiming.reactWaitMs(4))
+    assertEquals(16000L, SearchRelayTiming.reactWaitMs(Int.MAX_VALUE))
+    assertEquals(1000L, SearchRelayTiming.reactWaitMs(-1))
+  }
   @Test fun noQueueStopsAndFutureRetryWaitsWithoutAnActivePass() {
     assertNull(SearchRelayTiming.waitMs(null,1000))
     assertEquals(0L,SearchRelayTiming.waitMs(0,1000))

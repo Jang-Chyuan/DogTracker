@@ -65,6 +65,7 @@ class SearchRelayService : Service() {
   @Volatile private var owner = ""
   @Volatile private var runId: String? = null
   private var lock: PowerManager.WakeLock? = null
+  private var reactWaitAttempt = 0
   private var nextPassElapsed = 0L
   private val network by lazy { getSystemService(ConnectivityManager::class.java) }
   private var networkRegistered = false
@@ -93,7 +94,13 @@ class SearchRelayService : Service() {
         ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
       if (!online) { show("等待網路，待傳資料已保留"); return }
       val context = (application as ReactApplication).reactHost?.currentReactContext
-      if (context == null) { show("等待同步程式，待傳資料已保留"); return }
+      if (context == null) {
+        show("等待同步程式，待傳資料已保留")
+        handler.postDelayed(this, SearchRelayTiming.reactWaitMs(reactWaitAttempt))
+        reactWaitAttempt = minOf(reactWaitAttempt + 1, 4)
+        return
+      }
+      reactWaitAttempt = 0
       val id = UUID.randomUUID().toString()
       runId = id
       show("正在同步狗的位置")
@@ -129,6 +136,7 @@ class SearchRelayService : Service() {
       runId = null
       handler.removeCallbacks(deadline)
       if (lock?.isHeld == true) lock?.release()
+      reactWaitAttempt = 0
       owner = next
     }
     request(next)
