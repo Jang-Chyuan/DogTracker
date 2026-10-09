@@ -26,10 +26,12 @@ import com.dogtracker.R
  * background check and by the app in front (which only vibrates and sounds:
  * no system notification while the app is on screen).
  *
- * - A new alert is posted to pop up on screen; content updates are silent.
- *   Automatic channel attention is suppressed to avoid duplicating the
- *   explicit vibration and sound. Both S6 and the channel's user settings
- *   must allow that attention; sound uses the channel's selected URI.
+ * - A new alert is posted to pop up on screen (not silent: a silenced
+ *   notification never pops up); content updates are silent. The channel
+ *   starts without sound or vibration, and the attention is the explicit
+ *   vibration and sound, which S6 and the channel's system settings decide
+ *   (AlertAttention): none when the user set the channel to 靜音／最低, and
+ *   not doubled when the user gave the channel a sound or vibration.
  * - The user's own settings still win: no vibration when the 「提醒」 channel
  *   is blocked or the phone is on silent; it is a notification vibration
  *   (the system's notification vibration strength applies). The sound only
@@ -68,10 +70,15 @@ object AlertPoster {
     return context.getSystemService(NotificationManager::class.java).getNotificationChannel(NotificationChannels.ALERTS)
   }
 
+  /** The channel may make noise: 「預設」 or 「高」, not 「靜音」／「最低」 (API < 26: no channels). */
+  private fun channelAlerts(channel: android.app.NotificationChannel?): Boolean =
+    Build.VERSION.SDK_INT < 26 || channel == null || channel.importance >= NotificationManager.IMPORTANCE_DEFAULT
+
   fun vibrate(context: Context, pattern: LongArray, critical: Boolean): Boolean {
     val audio = context.getSystemService(AudioManager::class.java)
+    val channel = channel(context)
     if (!AlertAttention.vibration(alertsEnabled(context), audio?.ringerMode == AudioManager.RINGER_MODE_SILENT,
-        Build.VERSION.SDK_INT < 26 || channel(context)?.shouldVibrate() == true)) {
+        channelAlerts(channel), channel?.shouldVibrate() == true)) {
       Log.i(TAG, "vibration skipped (silent mode or the 提醒 channel is blocked)")
       return false
     }
@@ -92,8 +99,10 @@ object AlertPoster {
 
   fun sound(context: Context): Boolean {
     val audio = context.getSystemService(AudioManager::class.java)
-    val uri = if (Build.VERSION.SDK_INT >= 26) channel(context)?.sound else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-    if (!AlertAttention.sound(alertsEnabled(context), audio?.ringerMode == AudioManager.RINGER_MODE_NORMAL, uri != null)) return false
+    val channel = channel(context)
+    if (!AlertAttention.sound(alertsEnabled(context), audio?.ringerMode == AudioManager.RINGER_MODE_NORMAL,
+        channelAlerts(channel), channel?.sound != null)) return false
+    val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
     val ringtone = RingtoneManager.getRingtone(context, uri)
       ?: return false
     ringtone.audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION)
@@ -142,7 +151,7 @@ object AlertPoster {
       .setCategory(NotificationCompat.CATEGORY_STATUS)
       // A new alert pops up (the channel makes no sound of its own); an
       // update only changes the lines.
-      .setSilent(true).setOnlyAlertOnce(command == "update").setAutoCancel(true)
+      .setSilent(command == "update").setOnlyAlertOnce(command == "update").setAutoCancel(true)
       .setShowWhen(true).setWhen(System.currentTimeMillis())
       .setPriority(NotificationCompat.PRIORITY_HIGH)
       .setContentIntent(NotificationChannels.launch(context, target.screen, target.dogId, 1))

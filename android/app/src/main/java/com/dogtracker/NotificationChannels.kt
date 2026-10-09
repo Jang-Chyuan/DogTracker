@@ -29,11 +29,12 @@ object NotificationChannels {
     val manager = context.getSystemService(NotificationManager::class.java)
     manager.createNotificationChannel(NotificationChannel(ALERTS, "提醒", NotificationManager.IMPORTANCE_HIGH).apply {
       description = "狗不在接收範圍、沒有新位置、電量低，接收器斷線等"
-      // S6 requests attention explicitly; this channel is the system's
-      // upper limit. Existing channels retain the user's system choices.
-      setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION),
-        android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION).build())
-      enableVibration(true)
+      // High so a new alert pops up on screen (N1/N2). Its sound and
+      // vibration are the alert's own (S6 震動／聲音, critical or normal
+      // pattern), so the channel starts silent; what the user then sets on
+      // it in system settings wins (AlertAttention).
+      setSound(null, null)
+      enableVibration(false)
     })
     manager.createNotificationChannel(NotificationChannel(TRACKING, "常駐", NotificationManager.IMPORTANCE_LOW).apply {
       description = "接收器、位置記錄、資料同步在背景工作時"
