@@ -582,6 +582,9 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         anchorAt: held.anchorAt,
       };
     },
+    snapshot: () => JSON.parse(JSON.stringify({ goods, weak, lastGoodAt, lastTime: Number.isFinite(lastTime) ? lastTime : null,
+      usb, environment, held, previous, previousHold, recentFixes, bleSignal,
+      buckets: Object.fromEntries(buckets), bucketStart })),
     environment: () => environment,
     // The good fixes it knows, to seed a replacement when rows arrive late.
     goodFixes: () => goods.slice(),

@@ -396,6 +396,7 @@ export default function MapScreen({
         ...dog,
         name: dogName(dog.slaveId, alertDogAliases),
         range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
+        indoorState: cloudDogs?.statuses?.[dog.slaveId]?.indoorState ?? null,
       })),
       receiverBattery:
         alertBatteryValid == null
@@ -409,6 +410,7 @@ export default function MapScreen({
     dogs,
     alertDogAliases,
     cloudDogs?.ranges,
+    cloudDogs?.statuses,
     alertBatteryValid,
     alertBatteryPercentage,
   ]);

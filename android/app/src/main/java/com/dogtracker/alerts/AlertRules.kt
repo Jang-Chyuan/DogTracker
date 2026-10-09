@@ -135,6 +135,7 @@ data class AlertDog(
   val batteryPercentage: Int? = null,
   val charging: Boolean = false,
   val range: RangeState = RangeState(),
+  val indoorState: String? = null,
 )
 
 data class Packet(
@@ -147,11 +148,15 @@ data class Packet(
   // IndoorHold.fixQuality: enough satellites and a sharp enough HDOP (or a
   // packet without those fields). Weak indoor drift never lets a hold go.
   val good: Boolean = true,
+  val masterId: Int? = null,
+  val satellites: Double? = null,
+  val hdop: Double? = null,
+  val rssi: Double? = null,
+  val snr: Double? = null,
 )
 
 object Dogs {
-  // A hold the app handed over lets go after two good positions this far
-  // from where the dog is held (IndoorHold's releaseFarM, the plain case).
+  // Quality thresholds shared with IndoorHold.fixQuality.
   const val RELEASE_FAR_M = 100.0
   const val RELEASE_FIXES = 2
   const val GOOD_MIN_SATELLITES = 5
@@ -169,18 +174,16 @@ object Dogs {
   fun apply(previous: AlertDog?, packet: Packet): AlertDog {
     val dog = previous ?: AlertDog(packet.slaveId)
     if (dog.packetAt != null && packet.time <= dog.packetAt) return dog
-    var held = dog.held
-    var far = dog.farFixes
-    if (held && packet.dog != null && packet.good && dog.coordinate != null) {
-      if (Geo.distance(packet.dog, dog.coordinate) > RELEASE_FAR_M) far += 1 else far = 0
-      if (far >= RELEASE_FIXES) { held = false; far = 0 }
-    }
+    val tracker = IndoorHold.fromDog(dog)
+    tracker.push(packet)
+    val anchor = tracker.coordinate()
+    val held = anchor != null
     val range = Range.advance(dog.range, RangeRow(packet.time, packet.dog, packet.receiver, held))
     return dog.copy(
       packetAt = packet.time,
       fixAt = if (packet.dog != null) packet.time else dog.fixAt,
-      coordinate = if (packet.dog != null && !held) packet.dog else dog.coordinate,
-      held = held, farFixes = far,
+      coordinate = anchor ?: packet.dog ?: dog.coordinate,
+      held = held, farFixes = 0, indoorState = tracker.write(),
       // As DogMerge: the newest packet's reading, none when it is not valid.
       batteryPercentage = packet.batteryPercentage,
       charging = packet.usb ?: dog.charging,

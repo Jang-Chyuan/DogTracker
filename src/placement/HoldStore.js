@@ -126,7 +126,7 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
     },
     statuses() {
       const result = {};
-      for (const [slaveId, state] of dogs) result[slaveId] = state.tracker.status();
+      for (const [slaveId, state] of dogs) result[slaveId] = { ...state.tracker.status(), indoorState: state.tracker.snapshot() };
       return result;
     },
   };

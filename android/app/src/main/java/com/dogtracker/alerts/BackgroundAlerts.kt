@@ -59,6 +59,8 @@ object BackgroundAlerts {
     context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
   private fun loadDogs(context: Context): MutableMap<Int, AlertDog> {
+    if (IndoorEnvironment.model == null) IndoorEnvironment.model = JSONObject(
+      context.resources.openRawResource(com.dogtracker.R.raw.indoor_model).bufferedReader().use { it.readText() })
     dogs?.let { return it }
     val prefs = prefs(context)
     val loaded = try {
@@ -128,6 +130,7 @@ object BackgroundAlerts {
     val packet = AlertCodec.readPacket(data, receivedAt) ?: return@synchronized
     val known = loadDogs(context)
     known[packet.slaveId] = Dogs.apply(known[packet.slaveId], packet)
+    prefs(context).edit().putString(DOGS, AlertCodec.writeDogs(known.values).toString()).commit()
     AlertCodec.readReceiverBattery(data)?.let { receiverBattery = it }
   }
 
