@@ -51,7 +51,7 @@ import {
   uncrowded,
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
-import { groupsAtZoom, nameTags } from './DogMarkers';
+import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
   splashChrome,
@@ -1340,7 +1340,18 @@ function GoogleTrackingMapRenderer({
     clearTimeout(mapPressTimer.current);
     onDogPress?.(slaveId);
   };
-  const pressMapLive = () => {
+  const pressMapLive = event => {
+    // Google can report a tap on a dog as a tap on the map (a card open):
+    // a tap on a dog's face opens that dog.
+    const position = event?.nativeEvent?.position;
+    const scale = PixelRatio.get?.() || 1;
+    const hit = position && screenPoints
+      ? dogAtPoint(dogMarkers, screenPoints, { x: position.x / scale, y: position.y / scale })
+      : null;
+    if (hit != null) {
+      pressDog(hit);
+      return;
+    }
     clearTimeout(mapPressTimer.current);
     mapPressTimer.current = setTimeout(() => {
       if (Date.now() - lastDogPress.current > MAP_TAP_HOLD_MS) onMapPress?.();

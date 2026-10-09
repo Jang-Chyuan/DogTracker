@@ -768,6 +768,34 @@ test('066: a dog tapped with a card open switches the card in one tap (the map t
   expect(onMapPress).not.toHaveBeenCalled();
 });
 
+test('066: a tap Google reports as a map tap but lands on a dog face opens that dog (one tap)', async () => {
+  const { PixelRatio } = require('react-native');
+  const onMapPress = jest.fn();
+  const onDogPress = jest.fn();
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 150, y: 300 }));
+  try {
+    await render({ onMapPress, onDogPress });
+    await readyMap();
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    await act(async () => jest.advanceTimersByTime(2000));
+    const ratio = PixelRatio.get();
+    // On the face (5dp off its centre), in screen pixels as Google reports it.
+    await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 155 * ratio, y: 300 * ratio } } }));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onDogPress).toHaveBeenCalledWith(7);
+    expect(onMapPress).not.toHaveBeenCalled();
+    // Empty map further away still closes the card.
+    await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 300 * ratio, y: 600 * ratio } } }));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onMapPress).toHaveBeenCalledTimes(1);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+  }
+});
+
 test('066: 我的位置 with a card open puts the phone in the middle of the map above the card', async () => {
   // 400 × 800, the card covers the bottom 300dp, the map's own padding 80.
   mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 200, y: 700 }));

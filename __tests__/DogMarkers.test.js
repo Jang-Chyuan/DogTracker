@@ -148,3 +148,12 @@ describe('the marker view', () => {
     expect(stale.root.findAll(node => node.props.testID === 'svg-ellipse')[0].props.fill).toBe(STALE_LINE);
   });
 });
+
+test('066: dogAtPoint picks the dog under a tap, the nearest when faces overlap, none on empty map', () => {
+  const { dogAtPoint } = require('../src/map/DogMarkers');
+  const markers = [{ slaveId: 4, size: 40 }, { slaveId: 6, size: 40 }];
+  const points = { 4: { x: 100, y: 100 }, 6: { x: 110, y: 100 } };
+  expect(dogAtPoint(markers, points, { x: 108, y: 101 })).toBe(6);
+  expect(dogAtPoint(markers, points, { x: 95, y: 100 })).toBe(4);
+  expect(dogAtPoint(markers, points, { x: 200, y: 300 })).toBeNull();
+});

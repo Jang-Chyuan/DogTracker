@@ -186,3 +186,22 @@ export function nameTags(markers, points = {}, fontScale = 1, { group = true } =
   }
   return result;
 }
+
+/**
+ * The dog whose face is under a tap at `tap` (dp), the nearest when faces
+ * overlap; null when the tap is on empty map. `slack` widens each face to a
+ * fair finger target (066: a tap on a dog with a card open reached the map
+ * as an empty-map tap and closed the card instead of switching it).
+ */
+export function dogAtPoint(markers, points = {}, tap, slack = 8) {
+  if (!tap || !Number.isFinite(tap.x) || !Number.isFinite(tap.y)) return null;
+  let best = null;
+  for (const marker of markers) {
+    const point = points[marker.slaveId];
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    const distance = Math.hypot(point.x - tap.x, point.y - tap.y);
+    if (distance > (marker.size || 0) / 2 + slack) continue;
+    if (!best || distance < best.distance) best = { slaveId: marker.slaveId, distance };
+  }
+  return best ? best.slaveId : null;
+}
