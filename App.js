@@ -397,13 +397,7 @@ function TrackerApp({ resume = null, onRestart }) {
     undefined,
     null,
     {
-      active:
-        tracking.foreground &&
-        (showsMap ||
-          route.name === 'receiver' ||
-          route.name === 'diagnostics' ||
-          route.name === 'paired') &&
-        !fixture,
+      active: tracking.foreground && !fixture,
       revision: cloudSync.revision,
     },
   );

@@ -1099,3 +1099,15 @@ test('the settings header stays above the page-colour map cover', async () => {
   const cover = StyleSheet.flatten(renderer.root.findAllByProps({ testID: 'map-cover' })[0].props.style);
   expect(StyleSheet.flatten(header.props.style).zIndex).toBeGreaterThan(cover.zIndex ?? 0);
 });
+
+test('K02: foreground settings keep polling the alert dog snapshot', async () => {
+  await mount();
+  await advance(100);
+  await press('設定');
+  const before = renderer.root.findByType(MapScreen).props.cloudDogs;
+  await act(async () => { await renderer.root.findByType(MapScreen).props.tracking.hardwareDatabase.saveStatus({ ...trackingPoint, slaveId: 19, receivedAt: Date.now(), timestamp: Math.floor(Date.now() / 1000) }, 'settings-packet'); });
+  await advance(10000);
+  const after = renderer.root.findByType(MapScreen).props.cloudDogs;
+  expect(after).not.toBe(before);
+  expect(after.packets.some(row => row.slave_id === 19)).toBe(true);
+});
