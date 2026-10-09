@@ -68,7 +68,7 @@ export function pngTitle(snapshot, subjects) {
   const date = `${+start.year}/${+start.month}/${+start.day}（${WEEKDAYS[weekday]}）${clock(start)}–${clock(end)}`;
   if (subjects.length > 1) return { title: `DogTracker・狗的歷史（${subjects.length} 隻）`, subtitle: date };
   const one = subjects[0];
-  return { title: `DogTracker・${displayName(one)}`, subtitle: `${date}・${one.distanceWord || '移動'} ${one.distanceKm}` };
+  return { title: `DogTracker・${displayName(one)}`, subtitle: `${date}・${one.distanceWord || '移動'} ${one.distanceKm}${one.distanceExclusion || ''}` };
 }
 
 /** One list row laid out: its height and lines (判定表「時間軸清單（匯出 PNG）」). */
@@ -161,7 +161,7 @@ export function buildPNGLayout(snapshot, { measureText = defaultMeasure } = {}) 
     // 段頭: the name (36px bold) and 「08:03–12:11・7.3 km」 (28px) on one line,
     // the times under the name when a long name leaves no room.
     const section = continued => {
-      const title = `${subject.name}${continued ? '（續）' : ''}`, detail = `${span}・${subject.distanceKm}`;
+      const title = `${subject.name}${continued ? '（續）' : ''}`, detail = `${span}・${subject.distanceKm}${subject.distanceExclusion || ''}`;
       const width = S.width - 2 * S.side - tokenSize.export.sectionTextInset;
       const nameLines = wrap(title, S.sectionFont, width, measure, { bold: true });
       const oneLine = nameLines.length === 1 && measure(`${title}  ${detail}`, S.sectionFont, true) <= width;

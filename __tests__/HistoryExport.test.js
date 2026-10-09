@@ -153,7 +153,7 @@ describe('the files', () => {
     expect(stack).toEqual([]);
     [...gpx.matchAll(/<time>([^<]+)<\/time>/g)].forEach(m => expect(m[1]).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/));
     expect(gpx).toContain('<name>小黑-6</name>');
-    expect(gpx).toContain('<name>小黑-6 坐車 1（不算距離）</name><type>drive</type>');
+    expect(gpx).toContain('<name>小黑-6 坐車 1</name><type>drive</type>');
     expect(gpx).toMatch(/<name>小黑-6 停留 1・\d+ 分<\/name>/);
   });
 
@@ -346,7 +346,7 @@ describe('056 review fixes', () => {
     const trips = vehicleTrips(nodes, 11 * minute);
     expect(trips).toEqual([{ start: 0, end: 11 * minute + 1 }]);
     const gpx = buildGPX(one({ rides: trips, gaps: [{ start: minute, end: 10 * minute }] }));
-    expect(gpx).toContain('小黑-4 坐車 1（不算距離）');
+    expect(gpx).toContain('小黑-4 坐車 1');
     expect(gpx).not.toContain('坐車 2');
     expect(gpx).not.toContain('<name>小黑-4</name>');
   });

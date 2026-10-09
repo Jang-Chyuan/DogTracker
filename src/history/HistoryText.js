@@ -53,7 +53,7 @@ export function sectionText(section) {
     icon: vehicle ? 'car' : section.mode === 'walking' ? 'walk' : 'paw',
     lead: MODE_WORD[section.mode] || '移動',
     time: listDuration(section.durationMs),
-    rest: vehicle ? `・${km(section.distanceM)}・不算距離` : `・${km(section.countedDistanceM)}`,
+    rest: vehicle ? `・${km(section.distanceM)}` : `・${km(section.countedDistanceM)}`,
   };
 }
 
@@ -111,6 +111,12 @@ export function interruptionText(node) {
   return node.type === 'stop' && node.interruptionMs > 0 ? `不含中斷 ${listDuration(node.interruptionMs)}` : '';
 }
 
+export function vehicleExclusion(model, subject) {
+  const mode = subject === 'phone' ? 'driving' : 'ride';
+  return (model?.nodes || []).some(node => node.type === 'movement' && node.mode === mode)
+    ? `（不含${subject === 'phone' ? '開車' : '坐車'}）` : '';
+}
+
 /**
  * The summary above the list (H1 「08:03 – 現在」「走了 5.2 km・4 小時 8 分」):
  * { title, detail }. Before the departure is known the title says so
@@ -125,7 +131,7 @@ export function summaryText(model, { subject }) {
   const status = model.departure.manual ? 'confirmed' : model.departure.status;
   const title = status === 'not-departed' ? '還沒出發' : status === 'confirming' ? '確認出發中…'
     : status === 'undetermined' ? '沒辦法自動判斷出發' : span;
-  const moved = `${subject === 'phone' ? '走了' : '移動'} ${km(model.distanceM)}・${summaryDuration(model.durationMs)}`;
+  const moved = `${subject === 'phone' ? '走了' : '移動'} ${km(model.distanceM)}${vehicleExclusion(model, subject)}・${summaryDuration(model.durationMs)}`;
   return { title, detail: title === span ? moved : `${span}　${moved}` };
 }
 

@@ -113,9 +113,9 @@ describe('words (copy deck)', () => {
   test('movement rows: 走路／開車 for my route, 移動／坐車 for a dog, 沒有資料', () => {
     const base = { type: 'movement', durationMs: 28 * MINUTE, distanceM: 6300, countedDistanceM: 1400 };
     expect(sectionText({ ...base, mode: 'walking' })).toEqual({ icon: 'walk', lead: '走路', time: '28 分', rest: '・1.4 km' });
-    expect(sectionText({ ...base, mode: 'driving' })).toMatchObject({ icon: 'car', lead: '開車', rest: '・6.3 km・不算距離' });
+    expect(sectionText({ ...base, mode: 'driving' })).toMatchObject({ icon: 'car', lead: '開車', rest: '・6.3 km' });
     expect(sectionText({ ...base, mode: 'moving' })).toMatchObject({ icon: 'paw', lead: '移動' });
-    expect(sectionText({ ...base, mode: 'ride' })).toMatchObject({ icon: 'car', lead: '坐車', rest: '・6.3 km・不算距離' });
+    expect(sectionText({ ...base, mode: 'ride' })).toMatchObject({ icon: 'car', lead: '坐車', rest: '・6.3 km' });
     const gap = sectionText({ type: 'gap', start: new Date(2026, 9, 3, 10, 21).getTime(), end: new Date(2026, 9, 3, 10, 40).getTime() });
     expect(`${gap.lead}${gap.rest}`).toBe('沒有資料 10:21–10:40');
   });
@@ -342,7 +342,7 @@ describe('the history screen shows the list', () => {
       'timeline-switch', 'timeline-movement-walking', 'timeline-stop', 'timeline-selected', 'timeline-end']);
     const text = JSON.stringify(renderer.toJSON());
     expect(text).toContain('開車');
-    expect(text).toContain('不算距離');
+    expect(text).not.toContain('不算距離');
     expect(text).toContain('現在');
     await act(async () => renderer.unmount());
     Platform.OS = original;
