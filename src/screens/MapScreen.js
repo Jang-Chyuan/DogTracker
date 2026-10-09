@@ -3,7 +3,7 @@ import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from 
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
-import { mapPanelHeight } from '../map/MapPanelHeight';
+import { historyPanelMinHeight } from '../map/MapPanelHeight';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
@@ -634,10 +634,14 @@ export default function MapScreen({
   selectHistoryDog.current = screen.selectDog;
   if (historySnapshot) historySnapshot.current = historical ? screen.snapshot : null;
   const window = useWindowDimensions();
-  const historyHeight = mapPanelHeight(window.height, insets.top);
+  const [historyHeight, setHistoryHeight] = useState(() => historyPanelMinHeight(window.height, insets.top, insets.bottom));
   const historyScreen = useRef(null);
   if (historyBack) historyBack.current = () => !!historyScreen.current?.back();
   const [historyFrame, setHistoryFrame] = useState(null);
+  const settleHistoryPanel = useCallback(height => {
+    setHistoryHeight(height);
+    setHistoryFrame(previous => ({ key: (previous?.key ?? 0) + 1 }));
+  }, []);
   const presentation = useMemo(() => {
     // The live map is live only: what it draws is never decided by the
     // history's parameters.
@@ -954,7 +958,7 @@ export default function MapScreen({
     : (cardsBottom || gearTop + 48) + 12;
   // The live map's padding stays put (an open card covers the map, it does
   // not move it); its buttons sit 12dp above the open card, else above the tabs.
-  // History reserves the fixed panel height for all camera actions.
+  // History reserves the measured panel height for all camera actions.
   const mapBottom = historical ? historyHeight : bottomInset;
   const coverBottom = historical
     ? historyHeight
@@ -1130,6 +1134,7 @@ export default function MapScreen({
           candidates={historyCandidates}
           initialSheet={fixture?.historyView?.sheet ?? null}
           bottomInset={insets.bottom}
+          onPanelHeight={settleHistoryPanel}
           onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           exportNative={exportNative}

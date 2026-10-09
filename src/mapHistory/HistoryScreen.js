@@ -292,7 +292,7 @@ function FrameButton({ onPress }) {
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, bottomInset,
   onBack, onFrame, closedAt = null, initialRangeOpen = false, initialCalendar = null,
   candidates = [], initialSheet = null, exportNative = null, initialExport = null, alertBadge = null,
-  onAlertBadge, onSheetOpen },
+  onAlertBadge, onSheetOpen, onPanelHeight },
 ref) {
   const styles = getStyles(useTheme());
   const panel = useRef(null);
@@ -551,6 +551,8 @@ ref) {
         hidden={sheetOpen} />
       <HistoryPanel ref={panel} header={header}
         hidden={sheetOpen}
+        onHeightChange={onPanelHeight}
+        measureKey={`${screen.day}:${subject}:${screen.protagonist}:${(screen.dogs ?? []).map(dog => dog.id).join(',')}:${screen.range?.start}:${screen.range?.end}:${!!model}:${download?.kind ?? ''}`}
         bottomInset={bottomInset} scrollRef={list}
         above={hasRoute ? <FrameButton onPress={onFrame} /> : null}
       >
