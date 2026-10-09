@@ -3,6 +3,7 @@ import { useTheme, makeStyles } from '../theme/ThemeProvider';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
+import BangGlyph from '../components/BangGlyph';
 import { historyDogsSheet, routeTint } from '../history/screen/HistoryDogsPill';
 import HistoryBottomSheet from './HistoryBottomSheet';
 import { linesFor } from '../utils/textScale';
@@ -37,7 +38,7 @@ export const DogsSheet = forwardRef(function DogsSheet(
           onPress={() => onSelect(dog.id)} style={({ pressed }) => [styles.choice, pressed && styles.pressed]}>
           <DogAvatar avatar={dog.avatar} size={sizes.historyPicker.avatar} border={0} tint={routeTint(dog, theme.colors)} />
           <Text style={styles.name} numberOfLines={linesFor(1)}>{dog.name}</Text>
-          {dog.downloadFailed && <Text style={styles.failure}>!</Text>}
+          {dog.downloadFailed && <View testID={`history-download-failed-${dog.id}`} style={styles.failure}><BangGlyph size={sizes.badge.size} background={theme.colors.problemBadge} color={theme.colors.avatarFrameMap} /></View>}
           {dog.protagonist && <View style={styles.tag}><Text style={styles.tagText}>主角</Text></View>}
           <View style={styles.spacer} />
           <View style={[styles.radio, dog.protagonist && styles.radioOn]} />
@@ -78,7 +79,7 @@ const getStyles = makeStyles(theme => {
       borderTopWidth: border.hairline, borderTopColor: colors.line },
     choice: { flex: 1, minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: space.s },
     name: { flexShrink: 1, fontSize: type.value.fontSize, fontWeight: type.value.fontWeight, color: colors.text },
-    failure: { color: colors.crit, fontWeight: type.status.fontWeight },
+    failure: { marginLeft: space.xs },
     spacer: { flex: 1 },
     sectionRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
     sectionNote: { marginLeft: space.s },

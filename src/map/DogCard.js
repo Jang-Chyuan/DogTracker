@@ -33,7 +33,6 @@ import { slideOrFade } from '../utils/reduceMotion';
 import { linesFor } from '../utils/textScale';
 import {
   layout,
-  space,
   motion,
   radius,
   size as sizes,
