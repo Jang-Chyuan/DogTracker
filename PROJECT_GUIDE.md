@@ -62,7 +62,7 @@ android/app/src/main/java/com/dogtracker/
 ├─ MainActivity.kt、MainApplication.kt    Activity 與原生模組註冊
 ├─ BleBackgroundModule.kt、BleBackgroundPackage.kt、BleForegroundService.kt  背景 BLE
 ├─ DogStatusStore.kt、BleUploadQueue.kt   共用 SQLite owner 與待傳佇列
-├─ QrCameraViewManager.kt、QrScannerPackage.kt  CameraX／ML Kit 掃描
+├─ QrCameraViewManager.kt、QrScanLifecycle.kt、QrScannerPackage.kt  CameraX／ML Kit 掃描
 ├─ TrackingPlatformModule.kt、TrackingPlatformPackage.kt  定位狀態與操作震動橋接
 ├─ HistoryExportPackage.kt、ExportLifecycle.kt、ExportLabelLayout.kt、HistoryExportCleanup.kt  匯出繪圖、分享與清理
 ├─ PlaceLookupModule.kt                  地址查詢
