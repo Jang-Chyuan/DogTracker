@@ -136,3 +136,12 @@ test('活動量: judged at now; 「—」 when stale; old readings judged when t
   const model = card(dog(), { activity: old });
   expect(row(model, 'activity').speech).toBe('活動量，休息中，已 20 分鐘，09:09');
 });
+
+test('the card falls back to the map blue dot when the recording service has no fix', () => {
+  const { nativePhoneReading } = require('../src/map/DogCardModel');
+  const now = 1_000_000;
+  expect(nativePhoneReading({ latitude: 24.99, longitude: 121.31, receivedAt: now - 5000 }, now))
+    .toEqual({ coordinate: { latitude: 24.99, longitude: 121.31 }, ageMs: 5000 });
+  expect(nativePhoneReading({ latitude: 24.99, longitude: 121.31, receivedAt: now - 11 * 60 * 1000 }, now)).toBeNull();
+  expect(nativePhoneReading(null, now)).toBeNull();
+});

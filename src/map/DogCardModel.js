@@ -42,6 +42,19 @@ export function phoneReading(livePhone, now) {
 }
 
 /**
+ * The map's own blue dot (MapView onUserLocationChange, `receivedAt` = when it
+ * came), for when the recording service has no fix: 位置記錄 off still leaves
+ * the phone located, and the card must not say 手機沒有定位 under a blue dot.
+ */
+export function nativePhoneReading(nativePhone, now) {
+  if (!Number.isFinite(nativePhone?.latitude) || !Number.isFinite(nativePhone?.longitude)
+    || !Number.isFinite(nativePhone?.receivedAt)) return null;
+  const ageMs = Math.max(0, now - nativePhone.receivedAt);
+  if (ageMs > PHONE_FIX_MAX_AGE_S * 1000) return null;
+  return { coordinate: { latitude: nativePhone.latitude, longitude: nativePhone.longitude }, ageMs };
+}
+
+/**
  * The headline: 「↗ 850 m 離手機」 and its variants, or 「手機沒有定位」.
  * @returns {{ kind: 'distance', distance, bearing, compass, suffix } |
  *   { kind: 'no-phone', text: '手機沒有定位' } | { kind: 'no-dog' }}

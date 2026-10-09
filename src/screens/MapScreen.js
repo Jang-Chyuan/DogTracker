@@ -40,7 +40,7 @@ import DogCard from '../map/DogCard';
 import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
-import { dogCard, phoneReading } from '../map/DogCardModel';
+import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
 import { useDogCardReadings } from '../map/useDogCardReadings';
 import {
   cloudClock,
@@ -720,7 +720,8 @@ export default function MapScreen({
       range: cloudDogs?.ranges?.[cardDog.slaveId] ?? null,
       battery: readings.battery,
       activity: readings.activity,
-      phone: phoneReading(livePhone, now),
+      // The recording service's fix, else the map's blue dot (E03).
+      phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
       now,
       reference:
         freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
@@ -735,6 +736,8 @@ export default function MapScreen({
     cloudDogs?.ranges,
     readings,
     livePhone,
+    nativePhone,
+    fixture,
     dogAliases,
     address,
   ]);
