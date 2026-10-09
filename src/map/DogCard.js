@@ -72,6 +72,7 @@ const getACTIVITY_TONE = makeStyles(theme => {
     rest: colors.activityLow,
     vigorous: colors.activityHighText,
     normal: colors.text,
+    missing: colors.activityMissing,
   };
 });
 
@@ -107,8 +108,8 @@ function StatusRow({ row, first, onPress }) {
   const tone = row.tone && TONE[row.tone];
   const valueColor = tone
     ? tone.text
-    : row.activityTone
-    ? ACTIVITY_TONE[row.activityTone]
+    : row.key === 'activity'
+    ? ACTIVITY_TONE[row.activityTone] || ACTIVITY_TONE.missing
     : colors.text;
   const content = (
     <View

@@ -55,6 +55,7 @@
 | `rangeRing` | `#5B7A8C` | `#93B3C6` | 接收範圍圈：線透明度 55%、填色 6%（`opacity.rangeRingStroke`、`opacity.rangeRingFill`） |
 | `activityLow` | `#3E5A8C` | `#92ACE0` | 低活動：A4 圖、卡片「休息中」 |
 | `activityNormal` | `#D3CCC4` | `#7A706A` | 一般活動：A4 圖 |
+| `activityMissing` | `#686868` | `#BAB0AD` | 沒有活動資料：卡片文字、A4 缺資料圖形與圖例；不代表低活動 |
 | `activityHigh` | `#E07A2E` | `#F0944A` | 高活動：A4 圖（圖形，不放字） |
 | `activityHighText` | `#B85A12` | `#F5A86A` | 卡片「劇烈活動」的字 |
 | `activityHighBand` | `#FDE7D6` | `#362A21` | A4 日：「高活動 0.8 以上」的區域、劇烈那幾段時間的淡底（區域標籤用 `warn` 字） |

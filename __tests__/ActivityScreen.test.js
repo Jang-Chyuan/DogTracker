@@ -199,7 +199,10 @@ test.each(['light', 'dark'])('day bars use %s tokens, 1dp gaps and rounded tops;
   expect(StyleSheet.flatten(bar.props.style)).toMatchObject({ height: 60,
     backgroundColor: theme.colors.activityNormal, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 });
   const gap = renderer.root.findAll(node => node.props.testID === 'activity-day-gap-0')[0];
-  expect(StyleSheet.flatten(gap.props.style).backgroundColor).toBe(theme.colors.noDataLine);
+  expect(StyleSheet.flatten(gap.props.style).backgroundColor).toBe(theme.colors.activityMissing);
+  const legend = state => renderer.root.findAll(node => node.props.testID === `activity-legend-${state}`)[0];
+  expect(StyleSheet.flatten(legend('missing').props.style).backgroundColor).toBe(theme.colors.activityMissing);
+  expect(StyleSheet.flatten(legend('normal').props.style).backgroundColor).toBe(theme.colors.activityNormal);
   expect(text('activity-row-missing')).toContain('合計');
 });
 
