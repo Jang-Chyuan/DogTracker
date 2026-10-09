@@ -184,11 +184,11 @@ test('D3 dialogs say what the copy deck says', () => {
   expect(pairingDialog('failed', { number: 7, method: 'manual' }).buttons.map(button => button.label))
     .toEqual([i18nT('c272'), i18nT('c049')]);
   const mismatch = pairingDialog('mismatch', { expected: 7, got: 3 });
-  expect(mismatch).toMatchObject({ title: i18nT("c865"), body: '要連 7，收到的是 3，已中斷連線' });
+  expect(mismatch).toMatchObject({ title: i18nT("c865"), body: '接收器編號不符：要連的是 7，收到的是 3。已中斷連線' });
   expect(mismatch.buttons.map(button => button.label)).toEqual([i18nT('c007'), i18nT('c268')]);
   expect(pairingDialog('mismatch', { expected: 7, got: 3, method: 'manual' }).buttons[1].label).toBe(i18nT('c264'));
   expect(pairingDialog('mismatch', { expected: 8, got: 3, mode: 'change', previous: { number: 7 } }).body)
-    .toBe('要連 8，收到的是 3，已中斷連線。沒有更換，還是接收器 7');
+    .toBe('接收器編號不符：要連的是 8，收到的是 3。已中斷連線。沒有更換，還是接收器 7');
   expect(pairingDialog('noData', { number: 8, mode: 'change', previous: { number: 7 } }))
     .toMatchObject({ title: '接收器 8 還沒有送資料' });
   expect(pairingDialog('noData', { number: 8, mode: 'change', previous: { number: 7 } }).buttons
@@ -443,7 +443,7 @@ test('換接收器: the first packet from 8 takes it; leaving without one puts 7
     hook.update({ receiverState: { ...receiver7, sessionId: 'new', enabled: false, expectedMasterId: 8,
       lastStatus: 'Master ID 不符合：QR=8，BLE=3' } });
     expect(hook.get().dialog).toMatchObject({ title: i18nT("c865"),
-      body: '要連 8，收到的是 3，已中斷連線。沒有更換，還是接收器 7' });
+      body: '接收器編號不符：要連的是 8，收到的是 3。已中斷連線。沒有更換，還是接收器 7' });
     await act(async () => { hook.get().press('later'); });
     expect(onLeave).toHaveBeenCalledWith('later');
     expect(restore).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'AA:07', number: 7 }));
@@ -536,7 +536,7 @@ test('D4 lists the sources heard as 訊號源 N; D4b when none (c050–c054)', (
     { source: 'cloud', master_id: 7, slave_id: 6, slave_lat: 24.99, slave_lon: 121.31, received_at: 50 },
   ];
   expect(pairedPage(7, packets)).toEqual({ title: '已連上接收器 7',
-    body: '收到 2 個訊號源。狗定位後會出現在地圖上，點狗就能改名字和頭像。',
+    body: '已經收到 2 個訊號源。狗第一次定位、出現在地圖上之後，點狗、按鉛筆就能改名字和頭像。',
     sources: [{ slaveId: 4, label: '訊號源 4' }, { slaveId: 9, label: '訊號源 9' }] });
   expect(pairedPage(7, [])).toEqual({ title: '已連上接收器 7', body: i18nT('c054'),
     sources: [] });

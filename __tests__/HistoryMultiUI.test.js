@@ -77,7 +77,7 @@ test('「＋ 加入」: the list, a dog without records faded, added with the sm
   const four = await mount('history-multi-four');
   expect(four.screen.full).toBe(true);
   await act(async () => four.press('history-dogs-pill'));
-  expect(four.text()).toContain(i18nT("c696"));
+  expect(four.text()).toContain(i18nT('c326', { count: 4 }));
   expect(four.text()).toContain(i18nT('c403'));
   await unmount(four);
 });
@@ -138,7 +138,7 @@ test('chooser stays open after immediate add, switch and remove; Back closes it 
   await act(async () => s.press('history-add-5'));
   expect(s.screen.dogs).toHaveLength(4);
   expect(s.text()).toContain(i18nT('c403'));
-  expect(s.text()).toContain(i18nT("c696"));
+  expect(s.text()).toContain(i18nT('c326', { count: 4 }));
   await act(async () => s.press('history-dog-4'));
   expect(s.screen.protagonist).toBe(4);
   expect(s.renderer.root.findAllByProps({ testID: 'history-remove-4' })).toHaveLength(0);

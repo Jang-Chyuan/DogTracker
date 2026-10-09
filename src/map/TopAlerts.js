@@ -95,7 +95,7 @@ export function topCards({ outage = null, storage = null, map = null, retrying =
     cards.push({
       id: 'receiver', kind: 'alert', icon: 'receiver-off',
       title: outage.number != null ? t('c058', { number: outage.number }) : t("c773"),
-      detail: t("c1014", { value: formatClock(outage.since) }),
+      detail: t('c059', { time: formatClock(outage.since) }),
       actions: [{ id: 'receiver-settings', label: t('c060') }],
       closable: true,
     });
@@ -166,5 +166,5 @@ export function gearReasons({ outage = null, storage = null, dismissed = {}, rec
 
 /** The gear's TalkBack label. */
 export function gearLabel(reasons) {
-  return reasons.length ? t("c772", { length: reasons.length }) : t("c482");
+  return reasons.length ? t('c305', { count: reasons.length }) : t("c482");
 }

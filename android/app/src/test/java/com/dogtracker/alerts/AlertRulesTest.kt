@@ -134,10 +134,10 @@ class AlertRulesTest {
   }
 
   @Test fun theNotificationWordsAndDurations() {
-    assertEquals("10 分鐘", Content.duration(0))
+    assertEquals("0 分鐘", Content.duration(0))
     assertEquals("59 分鐘", Content.duration(59 * m + 59000))
-    assertEquals("2 小時", Content.duration(125 * m))
-    assertEquals("3 天", Content.duration(3 * 24 * 60 * m))
+    assertEquals("125 分鐘", Content.duration(125 * m))
+    assertEquals("4320 分鐘", Content.duration(3 * 24 * 60 * m))
     val storage = AlertEvent("storage:phone", "storage", "phone", 0, storageFull = false)
     assertEquals(Target("diagnostics"), Content.target(storage))
     assertEquals(Target("system-storage"), Content.target(storage.copy(storageFull = true)))

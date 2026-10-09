@@ -55,10 +55,10 @@ export function accountPage(input) {
       label: t("c912", { title: title, since: since }) };
   } else if (sync.lastSuccess != null) {
     const time = formatClock(sync.lastSuccess);
-    download = { title: t("c918"), detail: null, right: time, problem: false, retry: false,
-      label: t("c913", { time: time }) };
+    download = { title: t('c217'), detail: null, right: time, problem: false, retry: false,
+      label: [t('c217'), time].join(' ') };
   } else {
-    download = { title: t("c918"), detail: null, right: t('c319'), problem: false, retry: false,
+    download = { title: t('c217'), detail: null, right: t('c319'), problem: false, retry: false,
       label: t("c914") };
   }
 
@@ -115,10 +115,10 @@ export function switchDialog(route, { offline = false, error = null } = {}) {
   const toPhone = route.to === 'phone';
   const title = toPhone ? t("c930") : t("c931");
   const change = toPhone ? t("c926") : t("c927");
-  const first = route.pending > 0 ? t("c929", { pending: route.pending }) : '';
+  const first = route.pending > 0 ? (toPhone ? t('c255', { count: route.pending }) : t('c929', { pending: route.pending })) : '';
   const blockedBy = error
     || (offline && route.pending > 0 ? t('c256', { count: route.pending }) : null);
-  return { title, body: change + first, blockedBy, confirm: t("c928") };
+  return { title, body: toPhone && route.pending > 0 ? first : change + first, blockedBy, confirm: t("c928") };
 }
 
 /** The sign-out confirmation: what stops, what stays. */

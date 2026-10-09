@@ -1093,7 +1093,7 @@ export default function MapScreen({
       {!historical && !tracking.preferences.ready && (
         <View style={[styles.source, { top }]}>
           <View style={styles.statusDot} />
-          <Text style={styles.sourceText}>{t("c908")}</Text>
+          <Text style={styles.sourceText}>{t('c424')}</Text>
         </View>
       )}
       {!!messages.length && (

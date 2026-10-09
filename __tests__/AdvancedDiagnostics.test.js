@@ -114,7 +114,7 @@ test('S8 draws the reason, the three pages and each dog without cutting lines sh
   let renderer;
   await act(async () => { renderer = Renderer.create(<DiagnosticsSettings page={page} onOpen={id => opened.push(id)} />); });
   expect(text(renderer)).toContain('attempt to write a readonly database');
-  for (const title of ['即時資料', '本機／雲端資料', '記錄清單', '每隻狗的判斷']) expect(text(renderer)).toContain(title);
+  for (const title of ['即時資料', '本機雲端資料', '記錄清單', '每隻狗的判斷']) expect(text(renderer)).toContain(title);
   for (const id of ['liveData', 'cloudData', 'locationRecords']) {
     await act(async () => renderer.root.findByProps({ testID: `diagnostics-${id}` }).props.onPress());
   }
@@ -500,7 +500,7 @@ test('a Wi-Fi read started before a deletion does not bring the network back', a
   await act(async () => renderer.unmount());
 });
 
-test('本機／雲端資料: reading says so, a failed read offers 重試, columns can be picked', async () => {
+test('本機雲端資料: reading says so, a failed read offers 重試, columns can be picked', async () => {
   const CloudDataScreen = require('../src/cloud/CloudDataScreen').default;
   const sources = buildFixture('diagnostics-ok').diagnostics;
   let finish;

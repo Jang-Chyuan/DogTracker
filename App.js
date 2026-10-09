@@ -179,7 +179,7 @@ const PAGE_TITLES = {
   diagnostics: t('c186'),
   advanced: t('c195'),
   liveData: t('c251'),
-  cloudData: t("c481"),
+  cloudData: t('c252'),
   locationRecords: t('c253'),
   wifi: t('c247'),
   // Debug builds only: the alert engine's preview (src/dev/AlertPreview).

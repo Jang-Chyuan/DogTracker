@@ -249,7 +249,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   expect(renderer.root.findAllByProps({ testID: 'account-settings' }).length).toBeGreaterThan(0);
   expect(text()).toContain(i18nT('c208'));
   // No phone upload route is loaded in this live navigation setup.
-  expect(text()).not.toContain(i18nT("c938"));
+  expect(row('account-upload-last')).toBeUndefined();
   expect(text()).not.toContain('轉送 Supabase');
   await press('返回，Supabase 帳號');
   expect(row('settings-row-diagnostics')).toBeUndefined();
@@ -269,7 +269,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   await act(async () => expect(onBack()).toBe(true));
   expect(title()).toBe('返回，診斷');
   await tap('diagnostics-cloudData');
-  expect(title()).toBe('返回，本機／雲端資料');
+  expect(title()).toBe('返回，本機雲端資料');
   expect(renderer.root.findAllByProps({ testID: 'cloud-data' }).length).toBeGreaterThan(0);
   await act(async () => expect(onBack()).toBe(true));
   await tap('diagnostics-locationRecords');

@@ -24,7 +24,7 @@ export function dogTransition(state, event) {
   if (event.type === 'add') {
     if (dogs.some(d => d.id === event.dog.id))
       return { ...state, message: null };
-    if (dogs.length === 4) return { ...state, message: t("c696") };
+    if (dogs.length === 4) return { ...state, message: t('c326', { count: 4 }) };
     const slot = [0, 1, 2, 3].find(s => !dogs.some(d => d.slot === s));
     dogs = [
       ...dogs,

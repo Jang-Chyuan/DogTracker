@@ -67,13 +67,13 @@ export function mismatchDialog({ expected, got }, previous, method = 'qr') {
   if (back != null) {
     return {
       title: t("c865"),
-      message: t("c996", { expected: expected, got: got, back: back }),
+      message: t('c295', { expected, got, number: back }),
       buttons: [{ id: 'reconnect', label: t("c995", { back: back }) }, { id: 'rescan', label: t('c268') }],
     };
   }
   return {
     title: t("c865"),
-    message: t("c997", { expected: expected, got: got }),
+    message: t('c267', { expected, got }),
     buttons: [{ id: 'later', label: t('c007') },
       method === 'manual' ? { id: 'rescan', label: t('c264') } : { id: 'rescan', label: t('c268') }],
   };

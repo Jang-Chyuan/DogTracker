@@ -1,28 +1,26 @@
 <!-- Generated from src/i18n/zh-TW.json by i18n/generate-native.cjs. -->
 <resources>
+    <string name="c058" formatted="false">"接收器 {{number}} 斷線了"</string>
     <string name="c075" formatted="false">"接收器"</string>
     <string name="c114" formatted="false">"室內"</string>
     <string name="c168" formatted="false">"{{dogName}} 不在接收範圍"</string>
     <string name="c169" formatted="false">"DogTracker・{{count}} 隻狗要注意"</string>
-    <string name="c170" formatted="false">"{{dogName}} {{duration}}沒有新位置"</string>
     <string name="c171" formatted="false">"打開地圖"</string>
     <string name="c173" formatted="false">"DogTracker・接收器與手機要注意"</string>
+    <string name="c174" formatted="false">"接收器 {{number}} 已斷線（{{count}} 隻狗收不到）"</string>
     <string name="c177" formatted="false">"接收器 {{number}}"</string>
     <string name="c191" formatted="false">"提醒"</string>
     <string name="c204" formatted="false">"中斷連線"</string>
     <string name="c282" formatted="false">"手機空間不足，位置存不進手機"</string>
     <string name="c287" formatted="false">"還沒設定接收器"</string>
     <string name="c289" formatted="false">"已中斷連線"</string>
-    <string name="c435" formatted="false">"{{whole}} 分鐘"</string>
-    <string name="c437" formatted="false">"{{hours}} 小時"</string>
-    <string name="c459" formatted="false">"{{days}} 天"</string>
+    <string name="c304" formatted="false">"DogTracker・{{count}} 件事要注意"</string>
     <string name="c462" formatted="false">"暫停提醒 {{PAUSE_MINUTES}} 分"</string>
-    <string name="c463" formatted="false">"{{name}} {{value}}沒有新資料"</string>
     <string name="c464" formatted="false">"{{name}} 電量低 {{percentage}}%"</string>
     <string name="c466" formatted="false">"位置存不進手機"</string>
     <string name="c467" formatted="false">"{{value}} 斷線了（{{count}} 隻狗收不到）"</string>
     <string name="c468" formatted="false">"{{value}} 斷線了"</string>
-    <string name="c471" formatted="false">"DogTracker・{{length}} 件事要注意"</string>
+    <string name="c469" formatted="false">"{{minutes}} 分鐘"</string>
     <string name="c477" formatted="false">"常駐"</string>
     <string name="c731" formatted="false">"充電中"</string>
     <string name="c783" formatted="false">"狗 {{value1}}"</string>
@@ -133,4 +131,6 @@
     <string name="c1151" formatted="false">"DogTracker・資料同步"</string>
     <string name="c1152" formatted="false">"準備同步待傳資料"</string>
     <string name="c1153" formatted="false">"DogTracker"</string>
+    <string name="c1159" formatted="false">"{{dogName}}：{{duration}}沒有新位置"</string>
+    <string name="c1161" formatted="false">"{{dogName}}：{{duration}}沒有新資料"</string>
 </resources>

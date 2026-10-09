@@ -55,7 +55,7 @@ test('cloud-ok: signed in, last download, nothing waiting, receiver 7 uploads th
   const { data } = input('cloud-ok');
   const page = accountPage(data);
   expect(page).toMatchObject({ signedIn: true, email: 'tim@example.com', offline: false, routesLoading: false });
-  expect(page.download).toMatchObject({ title: i18nT("c918"), right: formatClock(FIXTURE_NOW - 5000), problem: false });
+  expect(page.download).toMatchObject({ title: i18nT('c217'), right: formatClock(FIXTURE_NOW - 5000), problem: false });
   expect(page.upload).toMatchObject({ problem: null, pendingText: '0 筆', lastText: formatClock(FIXTURE_NOW - 8000) });
   expect(page.routes).toEqual([expect.objectContaining({ master: 7, title: '接收器 7 的上傳方式',
     detail: i18nT('c219'), mode: 'phone', to: 'wifi', canSwitch: true })]);
@@ -166,7 +166,7 @@ test('S3 rows in the mockup order; 重試 and 登出 (confirmed) reach their han
   expect(ids).toEqual(['account-signed-in', 'account-sign-out', 'account-download', 'account-upload-pending',
     'account-upload-last', 'account-route-7']);
   for (const words of ['tim@example.com', '已登入', '下載', '下載失敗', '重試 ›', '上傳', '手機還沒上傳', '12 筆',
-    '最後上傳成功', '接收器 7 的上傳方式', '由這支手機上傳']) expect(text(renderer)).toContain(words);
+    '最後成功', '接收器 7 的上傳方式', '由這支手機上傳']) expect(text(renderer)).toContain(words);
   await act(async () => pressable(renderer, accountPage(data).download.label).props.onPress());
   expect(retryDownload).toHaveBeenCalledTimes(1);
   await act(async () => pressable(renderer, '登出').props.onPress());
@@ -335,7 +335,7 @@ test.each([
     if (!page.upload.pending) expect(text(renderer)).not.toContain('0 筆');
   }
   else {
-    expect(text(renderer)).not.toContain(i18nT("c938"));
+    expect(renderer.root.findAllByProps({ testID: 'account-upload-last' })).toHaveLength(0);
     expect(text(renderer)).not.toContain(i18nT('c215'));
     for (const route of page.routes) expect(text(renderer)).toContain(route.label);
   }

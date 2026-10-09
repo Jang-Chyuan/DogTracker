@@ -31,7 +31,7 @@ test('sheet excludes selected dogs, protects the protagonist and dims no-record 
 });
 test('four dogs disable the whole add section, even dogs with records', () => {
   const result = sheet(dogs, [...dogs, { id: 9, name: '狗 9' }]);
-  expect(result).toMatchObject({ full: true, note: i18nT("c696") });
+  expect(result).toMatchObject({ full: true, note: i18nT('c326', { count: 4 }) });
   expect(result.addable[0]).toMatchObject({ disabled: true, opacity: 0.4 });
 });
 

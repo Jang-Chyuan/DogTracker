@@ -114,14 +114,14 @@ function receiverBattery(state, point) {
 }
 
 const batteryText = battery => (battery?.valid && Number.isFinite(battery.percentage)
-  ? t("c999", { value: Math.round(battery.percentage) }) : null);
+  ? t('c179', { percentage: String(Math.round(battery.percentage)) + "%" }) : null);
 
 // What each reason is called when TalkBack reads a row with 「!」.
 function reasonText(reason, input) {
   const number = receiverNumber(input.receiverState);
   const phone = input.phone || {};
   switch (reason) {
-    case 'receiver-missing': return number != null ? t('c290', { number: number }) : t("c1004");
+    case 'receiver-missing': return number != null ? t('c290', { number: number }) : t('c271');
     case 'receiver-disconnected': return number != null ? t('c058', { number: number }) : t("c773");
     case 'receiver-battery': return t('c236');
     case 'cloud': return input.signInExpired ? t('c276') : t("c1005");
@@ -195,7 +195,7 @@ export function settingsHome(input) {
       })()] },
       // 進階 (S7): the receiver's Wi-Fi and 刪除全部狗資料 (c196).
       { title: t('c194'), rows: [row('advanced', t('c195'), t('c196'), []),
-        ...(input.diagnosticsEnabled ? [row('diagnostics', t('c186'), t("c1001"), [])] : [])] },
+        ...(input.diagnosticsEnabled ? [row('diagnostics', t('c186'), t('c187'), [])] : [])] },
     ],
     reasons,
   };
@@ -252,9 +252,9 @@ export function receiverPage(input) {
   const name = state?.deviceName || (number != null ? `DogGPS-Master${number}` : t('c075'));
   const silentFor = Math.floor((now - Number(state?.lastReceivedAt)) / MINUTE);
   const status = {
-    off: t('c289'), connecting: t("c1010"), missing: number != null ? t('c290', { number: number }) : t("c1004"),
-    disconnected: Number(state?.disconnectedAt) > 0 ? t("c1014", { value: formatClock(Number(state.disconnectedAt)) }) : t("c1011"),
-    waiting: t('c291'), silent: t("c1015", { silentFor: silentFor }), connected: t('c178'),
+    off: t('c289'), connecting: t("c1010"), missing: number != null ? t('c290', { number: number }) : t('c271'),
+    disconnected: Number(state?.disconnectedAt) > 0 ? t('c059', { time: formatClock(Number(state.disconnectedAt)) }) : t("c1011"),
+    waiting: t('c291'), silent: t('c292', { count: silentFor }), connected: t('c178'),
   }[phase];
   const battery = ['off', 'none'].includes(phase) ? null : batteryText(receiverBattery(state, point));
   const last = Number(state?.lastReceivedAt) > 0 ? Number(state.lastReceivedAt) : null;

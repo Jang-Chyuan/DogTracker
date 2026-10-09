@@ -124,7 +124,7 @@ export function alertsPage(preferences, permissions = {}, pause = null, now = Da
   return {
     pause: paused ? { title: t('c298', { time: formatClock(pause.until) }), action: t('c299') } : null,
     dogs: {
-      status: groupStatus(value, DOG_ALERTS.map(alert => alert.key)),
+      status: paused ? t('c1160') : groupStatus(value, DOG_ALERTS.map(alert => alert.key)),
       items: DOG_ALERTS.map(alert => ({ ...alert, on: value[alert.key] })),
     },
     receiverBattery: value.receiverBattery,

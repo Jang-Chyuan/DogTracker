@@ -13,7 +13,7 @@ import { StorageWarning } from './SettingsHome';
 // The three data pages (design S8, 文案 c251–c253 with c252's suggestion).
 export const DIAGNOSTICS_PAGES = Object.freeze([
   { id: 'liveData', title: t('c251') },
-  { id: 'cloudData', title: t("c481") },
+  { id: 'cloudData', title: t('c252') },
   { id: 'locationRecords', title: t('c253') },
 ]);
 
@@ -62,7 +62,7 @@ export default function DiagnosticsSettings({ page, onOpen, onHide, canHide = tr
             >
               <Text style={styles.name}>
                 {dog.name}
-                <Text style={styles.source}>{t("c962", { slaveId: dog.slaveId })}</Text>
+                <Text style={styles.source}>{t('c052', { number: dog.slaveId })}</Text>
               </Text>
               <Line
                 label={t("c959")}

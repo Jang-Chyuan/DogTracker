@@ -424,24 +424,26 @@ object Content {
   }
 
   fun duration(ms: Long?): String {
-    val minutes = max(10L, floor((ms ?: 0L) / 60000.0).toLong())
-    return when {
-      minutes < 60 -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c435, minutes)
-      minutes < 24 * 60 -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c437, minutes / 60)
-      else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c459, minutes / (24 * 60))
-    }
+    val minutes = max(0L, floor((ms ?: 0L) / 60000.0).toLong())
+    return com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c469, minutes)
   }
 
   private fun receiverName(number: Int?) = if (number != null) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c177, number) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c075)
 
   fun line(event: AlertEvent): String = when (event.kind) {
     "dog-out-of-range" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c168, event.name)
-    "dog-stale" -> com.dogtracker.NativeCopy.text(if (event.basis == "packet") com.dogtracker.R.string.c463 else com.dogtracker.R.string.c170, event.name, duration(event.ageMs))
+    "dog-stale" -> com.dogtracker.NativeCopy.text(if (event.basis == "packet") com.dogtracker.R.string.c1161 else com.dogtracker.R.string.c1159, event.name, duration(event.ageMs))
     "dog-battery" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c464, event.name, event.percentage)
     "receiver-battery" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c464, receiverName(event.number), event.percentage)
     "storage" -> if (event.storageFull) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c282) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c466)
     "receiver-disconnected" ->
-      if (event.dogCount > 0) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c467, receiverName(event.number), event.dogCount) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c468, receiverName(event.number))
+      if (event.number != null) {
+        if (event.dogCount > 0) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c174, event.number, event.dogCount)
+        else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c058, event.number)
+      } else {
+        if (event.dogCount > 0) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c467, receiverName(event.number), event.dogCount)
+        else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c468, receiverName(event.number))
+      }
     else -> ""
   }
 
@@ -455,7 +457,7 @@ object Content {
     val title = when {
       devices.isEmpty() -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c169, dogs.size)
       dogs.isEmpty() -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c173)
-      else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c471, shown.size)
+      else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c304, shown.size)
     }
     return NotificationContent(title, shown.map(::line), target(shown[0]))
   }

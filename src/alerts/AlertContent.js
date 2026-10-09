@@ -16,12 +16,9 @@ export function alertTarget(event) {
   return { screen: 'receiver-settings' };
 }
 
-// 「10 分鐘」, 「1 小時」, 「2 天」 (c170 {時長}).
+// Keep the actual elapsed minutes, including durations over an hour/day.
 function duration(ms) {
-  const minutes = Math.max(10, Math.floor((Number(ms) || 0) / 60000));
-  if (minutes < 60) return t("c469", { minutes: minutes });
-  if (minutes < 24 * 60) return t("c670", { value: Math.floor(minutes / 60) });
-  return t("c470", { value: Math.floor(minutes / (24 * 60)) });
+  return t("c469", { minutes: Math.max(0, Math.floor((Number(ms) || 0) / 60000)) });
 }
 
 const receiverName = number => (number != null ? t('c177', { number: number }) : t('c075'));
@@ -33,7 +30,7 @@ export function alertLine(event) {
       return t('c168', { dogName: event.name });
     case 'dog-stale':
       // The card's words: a dog held indoors is judged by its packets.
-      return ((event.basis === 'packet') ? t("c463", { name: event.name, value: duration(event.ageMs) }) : t('c170', { dogName: event.name, duration: duration(event.ageMs) }));
+      return ((event.basis === 'packet') ? t('c1161', { dogName: event.name, duration: duration(event.ageMs) }) : t('c1159', { dogName: event.name, duration: duration(event.ageMs) }));
     case 'dog-battery':
       return t("c464", { name: event.name, percentage: event.percentage });
     case 'receiver-battery':
@@ -42,7 +39,9 @@ export function alertLine(event) {
       return event.storage?.full ? t('c282') : t("c466");
     case 'receiver-disconnected': {
       const count = event.outage?.dogCount || 0;
-      return ((count) ? t("c467", { value: receiverName(event.outage?.number), count: count }) : t("c468", { value: receiverName(event.outage?.number) }));
+      const number = event.outage?.number;
+      if (number != null) return count ? t('c174', { number, count }) : t('c058', { number });
+      return count ? t("c467", { value: receiverName(number), count }) : t("c468", { value: receiverName(number) });
     }
     default:
       return '';
@@ -69,7 +68,7 @@ export function notificationContent(problems) {
   let title;
   if (!devices.length) title = t('c169', { count: dogs.size });
   else if (!dogs.size) title = t('c173');
-  else title = t("c471", { length: shown.length });
+  else title = t('c304', { count: shown.length });
   const lines = shown.map(alertLine);
   return {
     id: ALERT_NOTIFICATION_ID,

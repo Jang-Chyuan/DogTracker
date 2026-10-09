@@ -5,7 +5,7 @@ test('add order, duplicate protection, four slots and full add chip', () => {
   const state = multiSelection(['a', 'b', 'c', 'd'].map(dog));
   expect(state.dogs.map(d => d.id)).toEqual(['a', 'b', 'c', 'd']);
   expect(transition(state, { type: 'add', dog: dog('a') }).dogs).toHaveLength(4);
-  expect(transition(state, { type: 'add', dog: dog('e') }).message).toBe(i18nT("c696"));
+  expect(transition(state, { type: 'add', dog: dog('e') }).message).toBe(i18nT('c326', { count: 4 }));
 });
 test('colours/avatars remain tied to IDs across protagonist, removal and catalogue reorder', () => {
   const state = multiSelection(['a', 'b', 'c'].map(dog));

@@ -69,12 +69,12 @@ export function nodePill(node) {
       return { text: t('c124'), tone: 'plain' };
     case 'stop': {
       const stay = t('c127', { duration: listDuration(node.durationMs) });
-      return { text: node.continuesPreviousDay ? t("c657", { stay: stay }) : stay, tone: 'stay' };
+      return { text: node.continuesPreviousDay ? t('c332') : stay, tone: 'stay' };
     }
     case 'indoor': {
       // 判定表「跨午夜」 for a hold over midnight, as for a stay.
       const inside = t('c344', { duration: listDuration(node.end - node.start) });
-      const text = node.continuesPreviousDay ? t("c658", { inside: inside }) : node.continuesNextDay ? t("c659", { inside: inside }) : inside;
+      const text = node.continuesPreviousDay ? t('c332') : node.continuesNextDay ? t('c334') : inside;
       return { text, tone: 'indoor' };
     }
     case 'resume':
@@ -118,6 +118,14 @@ export function vehicleExclusion(model, subject) {
     ? ((subject === 'phone') ? t("c673") : t("c672")) : '';
 }
 
+/** Same deck wording, with the vehicle exclusion only when it applies. */
+export function movementSummary(model, subject) {
+  const params = { distance: km(model.distanceM), duration: summaryDuration(model.durationMs) };
+  const excluded = !!vehicleExclusion(model, subject);
+  if (subject === 'phone') return excluded ? t('c419', { distance: params.distance, duration: params.duration }) : t('c133', { distance: params.distance, duration: params.duration });
+  return excluded ? t('c418', { distance: params.distance, duration: params.duration }) : t('c121', { distance: params.distance, duration: params.duration });
+}
+
 /**
  * The summary above the list (H1 「08:03 – 現在」「走了 5.2 km・4 小時 8 分」):
  * { title, detail }. Always show the selected time range, including a tentative
@@ -132,7 +140,7 @@ export function summaryText(model, { subject }) {
     : end?.type === 'end' && end.label === t("c660")
       ? t('c1154', { time: startTime, time2: endTime })
       : t('c432', { time: startTime, time2: endTime });
-  const moved = ((subject === 'phone') ? t("c651", { value: km(model.distanceM), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }) : t("c652", { value: km(model.distanceM), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }));
+  const moved = movementSummary(model, subject);
   return { title: span, detail: moved };
 }
 

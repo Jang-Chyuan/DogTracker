@@ -313,7 +313,9 @@
       "N3"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c1161"
   },
   {
     "id": "c464",
@@ -399,7 +401,9 @@
       "N3"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c469"
   },
   {
     "id": "c471",
@@ -413,7 +417,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c304",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c304"
   },
   {
     "id": "c472",
@@ -529,7 +534,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c252",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c252"
   },
   {
     "id": "c482",
@@ -2233,7 +2239,9 @@
       "H9"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c133"
   },
   {
     "id": "c652",
@@ -2247,7 +2255,9 @@
       "H9"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c121"
   },
   {
     "id": "c653",
@@ -2319,7 +2329,9 @@
       "H9"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c332"
   },
   {
     "id": "c658",
@@ -2335,7 +2347,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c332",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c332"
   },
   {
     "id": "c659",
@@ -2351,7 +2364,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c334",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c334"
   },
   {
     "id": "c660",
@@ -2873,7 +2887,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c326",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c326"
   },
   {
     "id": "c697",
@@ -3529,7 +3544,9 @@
       "A7"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c425"
   },
   {
     "id": "c754",
@@ -3759,7 +3776,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c305",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c305"
   },
   {
     "id": "c773",
@@ -4031,7 +4049,9 @@
       "H9"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c337"
   },
   {
     "id": "c792",
@@ -4972,7 +4992,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c051",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c051"
   },
   {
     "id": "c861",
@@ -5002,7 +5023,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c267",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c267"
   },
   {
     "id": "c863",
@@ -5017,7 +5039,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c294",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c294"
   },
   {
     "id": "c864",
@@ -5140,7 +5163,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c039",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c039"
   },
   {
     "id": "c873",
@@ -5192,7 +5216,9 @@
       "D4"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c225"
   },
   {
     "id": "c877",
@@ -5567,7 +5593,9 @@
       "App"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c424"
   },
   {
     "id": "c909",
@@ -5621,7 +5649,9 @@
       "S3"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c217"
   },
   {
     "id": "c914",
@@ -5671,7 +5701,9 @@
       "S3"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c217"
   },
   {
     "id": "c919",
@@ -5853,7 +5885,9 @@
       "S3"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c217"
   },
   {
     "id": "c937",
@@ -5875,7 +5909,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c217",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c217"
   },
   {
     "id": "c939",
@@ -6211,7 +6246,9 @@
       "S8"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c052"
   },
   {
     "id": "c963",
@@ -6481,7 +6518,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c230",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c230"
   },
   {
     "id": "c983",
@@ -6531,7 +6569,9 @@
       "S4"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c230"
   },
   {
     "id": "c988",
@@ -6643,7 +6683,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c295",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c295"
   },
   {
     "id": "c997",
@@ -6657,7 +6698,9 @@
       "S8"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c267"
   },
   {
     "id": "c998",
@@ -6685,7 +6728,9 @@
       "S8"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c179"
   },
   {
     "id": "c1000",
@@ -6715,7 +6760,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c187",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c187"
   },
   {
     "id": "c1002",
@@ -6757,7 +6803,9 @@
       "S8"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "replaced_by": "c271"
   },
   {
     "id": "c1005",
@@ -6899,7 +6947,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c059",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c059"
   },
   {
     "id": "c1015",
@@ -6915,7 +6964,8 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c292",
-    "pending_user": true
+    "retired": true,
+    "replaced_by": "c292"
   },
   {
     "id": "c1016",
@@ -8371,6 +8421,38 @@
     "area": "活動量跨日清單的日期＋時間",
     "screens": [
       "A4"
+    ],
+    "src": "程式（062 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1159",
+    "tpl": "{狗名}：{時長}沒有新位置",
+    "area": "提醒：沒有新位置（實際分鐘）",
+    "screens": [
+      "N1",
+      "N3"
+    ],
+    "src": "程式（062 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1160",
+    "tpl": "暫停中",
+    "area": "提醒設定：暫停中的狗群組",
+    "screens": [
+      "S6"
+    ],
+    "src": "程式（062 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1161",
+    "tpl": "{狗名}：{時長}沒有新資料",
+    "area": "提醒：室內沒有新資料（實際分鐘）",
+    "screens": [
+      "N1",
+      "N3"
     ],
     "src": "程式（062 補登）",
     "kind": "定稿"

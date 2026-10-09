@@ -1630,7 +1630,7 @@ function GoogleTrackingMapRenderer({
           <ActivityIndicator
             size="small"
             color={colors.master}
-            accessibilityLabel={t("c753")}
+            accessibilityLabel={t('c425')}
           />
         </View>
       )}

@@ -109,14 +109,14 @@ export default function PhoneSettings({
         <ListRow
           testID="phone-battery"
           title={t('c229')}
-          detail={t("c982")}
+          detail={t('c230')}
           right={battery.status}
           action={battery.action}
           actionTone="plain"
           onPress={battery.action ? onBattery : undefined}
           label={
             battery.action
-              ? t("c987")
+              ? [t('c229'), t('c230'), t('c225')].join('，')
               : t("c988")
           }
         />

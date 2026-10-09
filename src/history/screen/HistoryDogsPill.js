@@ -15,7 +15,7 @@ export function historyDogsPill(dogs = [], candidates = [], subject = 'dog') {
 
 export function historyDogsSheet(dogs = [], candidates = [], days = {}) {
   const full = dogs.length >= 4;
-  return { full, note: full ? t("c696") : null,
+  return { full, note: full ? t('c326', { count: 4 }) : null,
     // The protagonist first (H7b), the others in the order they were added.
     shown: [...dogs].sort((a, b) => Number(!!b.protagonist) - Number(!!a.protagonist))
       .map(dog => ({ ...dog, removable: !dog.protagonist })),

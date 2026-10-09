@@ -127,7 +127,7 @@ function ScanPage({ pairing, step, camera, onLayout }) {
             <Pressable
               testID="pair-camera-settings"
               accessibilityRole="button"
-              accessibilityLabel={t("c876")}
+              accessibilityLabel={t('c225')}
               onPress={() => Linking.openSettings()}
               hitSlop={space.s}
               style={({ pressed }) => [
@@ -323,7 +323,7 @@ function ManualPage({ pairing, step, keyboard, onLayout }) {
           onSubmitEditing={pairing.searchName}
         />
       </View>
-      <Text testID="pair-name-example" style={styles.example}>{t("c872")}</Text>
+      <Text testID="pair-name-example" style={styles.example}>{t('c039', { number: 7 })}</Text>
       {pairing.inputError ? (
         <Text
           testID="pair-name-error"

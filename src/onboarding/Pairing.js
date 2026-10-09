@@ -85,8 +85,8 @@ export function pairingDialog(kind, { number = null, expected = null, got = null
         buttons: [method === 'manual' ? { id: 'search', label: t('c272') } : { id: 'manual', label: t('c034') },
           { id: 'retry', label: t('c049') }] };
     case 'mismatch': {
-      const kept = mode === 'change' && previous?.number != null ? t("c863", { number: previous.number }) : '';
-      return { kind, title: t("c865"), body: t("c862", { expected: expected, got: got, kept: kept }),
+      const kept = mode === 'change' && previous?.number != null ? t('c294', { number: previous.number }) : '';
+      return { kind, title: t("c865"), body: [t('c267', { expected, got }), kept].filter(Boolean).join('。'),
         buttons: [{ id: 'later', label: t('c007') },
           method === 'manual' ? { id: 'search', label: t('c264') } : { id: 'rescan', label: t('c268') }] };
     }
@@ -147,7 +147,7 @@ export function pairedPage(number, packets) {
   return {
     title: number != null ? t('c050', { number: number }) : t("c861"),
     body: sources.length
-      ? t("c860", { length: sources.length })
+      ? t('c051', { count: sources.length })
       : t('c054'),
     sources,
   };

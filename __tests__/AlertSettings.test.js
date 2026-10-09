@@ -357,3 +357,12 @@ test('S1 priority: permission denied, all off, active pause, delivery; expired p
   expect(alertsRow(data).status).toEqual([i18nT('c414')]);
   expect(alertsRow(data).label).toBe('提醒，震動、聲音、各項開關，只有通知');
 });
+
+test('S6 dog group says paused until the pause expires, preserving its switches', () => {
+  const preferences = { dogOutOfRange: false };
+  const pause = { until: 120000 };
+  const active = alertsPage(preferences, {}, pause, 60000);
+  expect(active.dogs.status).toBe('暫停中');
+  expect(active.dogs.items.map(item => item.on)).toEqual([true, false, true]);
+  expect(alertsPage(preferences, {}, pause, 120000).dogs.status).toBe('部分開');
+});

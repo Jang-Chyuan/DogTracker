@@ -39,7 +39,7 @@ test('the receiver card says which receiver and when it dropped (c058, c059 as s
   const outage = receiverOutage(dropped(8 * 60000), NOW);
   const [card] = topCards({ outage });
   expect(card).toMatchObject({ id: 'receiver', kind: 'alert', title: '接收器 7 斷線了',
-    detail: `${formatClock(NOW - 8 * 60000)} 斷線・正在自動重連`, closable: true,
+    detail: `${formatClock(NOW - 8 * 60000)} 還連著・正在自動重連`, closable: true,
     actions: [{ id: 'receiver-settings', label: i18nT('c060') }] });
   expect(topCards({ outage: { ...outage, number: null } })[0].title).toBe(i18nT("c773"));
 });
@@ -247,7 +247,7 @@ test.each([
 test('receiver-disconnected: 「接收器 7 斷線了」, no range ring; ✕ collapses it into the dot', async () => {
   const view = await renderMap('receiver-disconnected');
   expect(view.text()).toContain('接收器 7 斷線了');
-  expect(view.text()).toContain(`${formatClock(FIXTURE_NOW - 5 * 60000)} 斷線・正在自動重連`);
+  expect(view.text()).toContain(`${formatClock(FIXTURE_NOW - 5 * 60000)} 還連著・正在自動重連`);
   const { Polygon } = require('react-native-maps');
   expect(view.renderer.root.findAllByType(Polygon)).toHaveLength(0);
   await act(async () => view.renderer.root.findAll(node => node.props.testID === 'top-card-action-receiver-settings'

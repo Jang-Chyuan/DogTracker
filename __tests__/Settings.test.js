@@ -207,7 +207,7 @@ test('S2 phases: nothing set up, disconnected for 30 s, not found', () => {
   const state = { enabled: true, running: true, connected: false, deviceId: 'x', deviceName: 'DogGPS-Master7',
     expectedMasterId: 7, lastReceivedAt: FIXTURE_NOW - 5 * MINUTE, disconnectedAt: FIXTURE_NOW - 5 * MINUTE };
   const dropped = receiverPage({ now: FIXTURE_NOW, receiverState: state });
-  expect(dropped).toMatchObject({ subtitle: 'DogGPS-Master7・09:25 斷線・正在自動重連', subtitleProblem: true });
+  expect(dropped).toMatchObject({ subtitle: 'DogGPS-Master7・09:25 還連著・正在自動重連', subtitleProblem: true });
   // Within 30 s it is still reconnecting quietly.
   expect(receiverPhase({ ...state, disconnectedAt: FIXTURE_NOW - 10000 }, [], FIXTURE_NOW)).toBe('connecting');
   const missing = receiverPage({ now: FIXTURE_NOW, receiverState: { ...state, disconnectedAt: 0, lastReceivedAt: 0 },
@@ -284,7 +284,7 @@ test('a change of receiver waits for the first packet; another Master puts the o
     .toEqual({ expected: 8, got: 3 });
   expect(mismatchDialog({ expected: 8, got: 3 }, previous)).toEqual({
     title: i18nT("c865"),
-    message: '要連 8，收到的是 3，已中斷連線，改回接收器 7（已中斷連線）',
+    message: '接收器編號不符：要連的是 8，收到的是 3。已改回接收器 7（已中斷連線）',
     buttons: [{ id: 'reconnect', label: '連線接收器 7' }, { id: 'rescan', label: i18nT('c268') }],
   });
   expect(mismatchDialog({ expected: 8, got: 3 }, null).buttons.map(button => button.label))
@@ -324,7 +324,7 @@ test('useReceiverControl: 中斷連線, 重新連線, and the wrong-receiver dia
   expect(alert).toHaveBeenCalledTimes(1);
   const [title, message, buttons] = alert.mock.calls[0];
   expect(title).toBe(i18nT("c865"));
-  expect(message).toBe('要連 8，收到的是 3，已中斷連線，改回接收器 7（已中斷連線）');
+  expect(message).toBe('接收器編號不符：要連的是 8，收到的是 3。已改回接收器 7（已中斷連線）');
   expect(buttons.map(button => button.text)).toEqual(['連線接收器 7', i18nT('c268')]);
   buttons[0].onPress();
   expect(native.reconnect).toHaveBeenCalledTimes(2);
@@ -346,7 +346,7 @@ test('useReceiverControl: 中斷連線, 重新連線, and the wrong-receiver dia
     expectedMasterId: 5, lastStatus: 'Master ID 不符合：QR=5，BLE=2' }} />));
   expect(native.restoreReceiver).toHaveBeenLastCalledWith('', '', '', '', 0);
   const [, firstMessage, firstButtons] = alert.mock.calls.at(-1);
-  expect(firstMessage).toBe('要連 5，收到的是 2，已中斷連線');
+  expect(firstMessage).toBe('接收器編號不符：要連的是 5，收到的是 2。已中斷連線');
   expect(firstButtons.map(button => button.text)).toEqual([i18nT('c007'), i18nT('c264')]);
   firstButtons[1].onPress();
   expect(onRescan).toHaveBeenLastCalledWith('manual');
@@ -399,7 +399,7 @@ test('S4 draws the rows and opens the system pages', async () => {
   });
   const out = text(renderer);
   for (const words of ['位置記錄', '離開 App、鎖螢幕時也會繼續在背景記錄', '權限', '位置未允許、通知未允許', '開系統設定 ›', '定位服務', '定位服務關著', '打開 ›',
-    '忽略電池最佳化', '讓 App 在背景也能一直收資料', '已允許']) expect(out).toContain(words);
+    '忽略電池最佳化', '背景收資料比較不會被停', '已允許']) expect(out).toContain(words);
   const press = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress());
   await press('phone-permissions');

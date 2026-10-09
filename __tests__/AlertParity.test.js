@@ -34,6 +34,10 @@ const jsDog = value => ({
 });
 
 const SCENARIOS = [
+  ...[75, 1501].map(minutes => ({
+    name: `numbered dog stale: ${minutes} actual minutes`, preferences: {},
+    steps: [{ at: T + minutes * M, dogs: [dog(5, '狗 5')] }],
+  })),
   {
     name: 'K07: out-of-range status survives 25 hours and a restart until local clearing', preferences: { dogStale: false },
     steps: [
@@ -187,7 +191,7 @@ test('the background check agrees with the app (fixture for AlertParityTest.kt)'
 test('the scenarios cover each kind of alert and each notification command', () => {
   const all = SCENARIOS.map(runScenario).flatMap(scenario => scenario.steps.map(step => step.expect));
   const lines = all.flatMap(step => step.lines).join('\n');
-  for (const words of ['不在接收範圍', '沒有新位置', '電量低', '斷線了', '空間不足', '接收器 7 電量低']) {
+  for (const words of ['不在接收範圍', '沒有新位置', '電量低', '已斷線', '空間不足', '接收器 7 電量低']) {
     expect(lines).toContain(words);
   }
   expect(new Set(all.map(step => step.notification))).toEqual(new Set(['notify', 'update', 'cancel']));

@@ -11,7 +11,7 @@ import {
   clock,
   km,
   spoken,
-  summaryDuration,
+  movementSummary,
   summaryText,
   vehicleExclusion,
 } from '../history/HistoryText';
@@ -45,11 +45,7 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
   // Several dogs: the second line names the protagonist (c158: 「豆豆・移動 7.4 km」).
   const moved = who
     ? t("c828", { who: who, value: km(model.distanceM), value2: vehicleExclusion(model, subject) })
-    : ((subject === 'phone') ? t("c651", { value: km(
-        model.distanceM,
-      ), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }) : t("c652", { value: km(
-        model.distanceM,
-      ), value2: vehicleExclusion(model, subject), value3: summaryDuration(model.durationMs) }));
+    : movementSummary(model, subject);
   if (!open && !who) return summaryText(model, { subject });
   // Several dogs share one range: the title is that range, whoever leads.
   return { title: range?.following

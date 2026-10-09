@@ -5,7 +5,7 @@ const add = (state, id, hasData = true) => dogTransition(state, { type: 'add', d
 test('2–4 dogs retain shared range, cursor and stable colours, recycling smallest slot', () => {
   let state = add(add(add(add(initial, 'a'), 'b'), 'c'), 'd');
   expect(state.dogs.map(d => d.colourToken)).toEqual(['route1', 'route2', 'route3', 'route4']);
-  expect(add(state, 'e').message).toBe(i18nT("c696"));
+  expect(add(state, 'e').message).toBe(i18nT('c326', { count: 4 }));
   state = dogTransition(state, { type: 'remove', id: 'b' });
   state = add(state, 'e');
   expect(state.dogs.map(d => d.colourToken)).toEqual(['route1', 'route3', 'route4', 'route2']);

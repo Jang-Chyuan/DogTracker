@@ -6,6 +6,7 @@ import traverse from '@babel/traverse';
 import resources from '../src/i18n/zh-TW.json';
 import deckSnapshot from './fixtures/i18n-copy-deck.json';
 import additions from '../i18n/deck-additions.json';
+import exampleMappings from '../i18n/deck-template-mappings.json';
 import { t } from '../src/i18n';
 
 const root = path.resolve(__dirname, '..');
@@ -89,7 +90,7 @@ test('all translation calls are static, exist and supply exactly their named par
 test('every used copy-deck id exactly preserves its authoritative template after parameter mapping', () => {
   const deck = new Map([...deckSnapshot, ...additions].map(row => [row.id, row.tpl]));
   const mismatches = Object.keys(resources).filter(key => /^c\d+$/.test(key))
-    .filter(key => !deck.has(key) || resources[key] !== mappedTemplate(deck.get(key)))
+    .filter(key => !deck.has(key) || resources[key] !== mappedTemplate(exampleMappings[key]?.tpl || deck.get(key)))
     .map(key => ({ key, actual: resources[key], deck: deck.get(key) }));
   expect(mismatches).toEqual([]);
 });
@@ -162,4 +163,18 @@ test('copy removed by D15 and the design decisions stays out of production resou
 
 test('translation imports are never assigned to or incremented', () => {
   expect(translationWrites).toEqual([]);
+});
+
+// Only fixed example values are generalized; authoritative wording stays intact.
+test('deck example mappings preserve wording and retired ids stay unused', () => {
+  const examples = { c304: '3', c305: '2', c292: 'N' };
+  for (const [id, mapping] of Object.entries(exampleMappings)) {
+    expect(deckSnapshot.find(row => row.id === id).tpl).toBe(mapping.example);
+    const values = id === 'c267' ? { expected: '7', got: '3' } : id === 'c295' ? { expected: '8', got: '3' } : { 數量: examples[id] };
+    expect(mapping.tpl.replace(/\{([^{}]+)\}/g, (placeholder, name) => values[name] ?? placeholder)).toBe(mapping.example);
+  }
+  for (const row of additions.filter(item => item.retired)) {
+    expect(resources[row.id]).toBeUndefined();
+    expect(resources[row.replaced_by]).toBeDefined();
+  }
 });

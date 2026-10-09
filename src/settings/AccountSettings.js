@@ -200,10 +200,10 @@ export default function AccountSettings({
             />
             <ListRow
               testID="account-upload-last"
-              title={t("c938")}
+              title={t('c217')}
               right={upload.lastText}
               rightTone={['mutedBold']}
-              label={t("c936", { lastText: upload.lastText })}
+              label={[t('c217'), upload.lastText].join(' ')}
             />
           </>
         )}

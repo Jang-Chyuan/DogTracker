@@ -125,7 +125,7 @@ describe('words (copy deck)', () => {
     expect(nodePill({ type: 'departure', manual: true })).toEqual({ text: i18nT('c124'), tone: 'plain' });
     expect(nodePill({ type: 'departure', continuesPreviousDay: true }).text).toBe(i18nT('c124'));
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE })).toEqual({ text: '停 17 分', tone: 'stay' });
-    expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('接續前一天・停 17 分');
+    expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('接續前一天');
     expect(nodePill({ type: 'indoor', start: 0, end: 40 * MINUTE })).toEqual({ text: '室內・40 分', tone: 'indoor' });
     expect(nodePill({ type: 'resume' }).text).toBe(i18nT('c335'));
     expect(nodePill({ type: 'switch' })).toBeNull();
