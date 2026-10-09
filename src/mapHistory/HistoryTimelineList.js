@@ -27,6 +27,32 @@ const MARKS = 40;
 const isVehicle = mode => mode === 'driving' || mode === 'ride';
 
 /** The track of one row: dotted (on foot), solid (car), long dash (no data). */
+
+// A row is tapped only when the finger let go near where it touched: a swipe
+// over the list that the list could not scroll (at its end) or that began on
+// a row while the list was still gliding must never move the cursor (the
+// cursor jumped to that row's start during scrolls on the device).
+export const TAP_SLOP = 10;
+export function useTap(onPress, value) {
+  const down = useRef(null);
+  return {
+    onPressIn: event => {
+      const { pageX, pageY } = event?.nativeEvent ?? {};
+      down.current = Number.isFinite(pageY) ? { x: pageX, y: pageY } : null;
+    },
+    onPress: onPress
+      ? event => {
+          const { pageX, pageY } = event?.nativeEvent ?? {};
+          const from = down.current;
+          down.current = null;
+          if (from && Number.isFinite(pageY)
+            && Math.hypot(pageX - from.x, pageY - from.y) > TAP_SLOP) return;
+          onPress(value);
+        }
+      : undefined,
+  };
+}
+
 function Track({ kind, color, from = 0 }) {
   const styles = useStyles(getStyles);
   if (!kind) return null;
@@ -110,6 +136,7 @@ function Pill({ pill, color }) {
 
 function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
   const styles = useStyles(getStyles);
+  const tap = useTap(onPress, node);
   const [start, end] = nodeTimes(node);
   const note = interruptionText(node);
   const lines = placeLines(node, place);
@@ -117,7 +144,7 @@ function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
     <Pressable
       style={styles.row}
       testID={`timeline-${node.type}`}
-      onPress={onPress ? () => onPress(node) : undefined}
+      {...tap}
       onLayout={onLayout}
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
@@ -165,11 +192,12 @@ function SectionRow({ section, color, onPress }) {
   const styles = useStyles(getStyles);
   const text = sectionText(section);
   const muted = section.type === 'gap';
+  const tap = useTap(onPress, section);
   return (
     <Pressable
       style={[styles.row, styles.sectionRow]}
       testID={`timeline-${section.type}-${section.mode}`}
-      onPress={onPress ? () => onPress(section) : undefined}
+      {...tap}
       accessibilityRole="button"
     >
       <View style={styles.timeColumn} />

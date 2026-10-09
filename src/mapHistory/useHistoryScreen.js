@@ -466,6 +466,13 @@ export function useHistoryScreen({
     ...subjects.map(s => s.rows[s.rows.length - 1]?.time ?? 0),
   );
   const modelNow = Math.max(now, lastRow);
+  // My route today with recording off ends on 「記錄已關閉 10:20」: the last
+  // fix it recorded (判定表「記錄被迫中止的終點膠囊」; the summary's 「記錄已在
+  // 10:20 關閉」 uses the same time). A fixed end the user dragged is 「結束」.
+  const closedAt =
+    subject === 'phone' && today && recording === false && (!manual || manual.following) && lastRow
+      ? lastRow
+      : null;
   // The first view waits for every dog shown (the map frames the
   // protagonist once); a dog added later is left out while it is read.
   const allLoaded =
@@ -488,6 +495,7 @@ export function useHistoryScreen({
       source,
       manual,
       following,
+      closedAt,
       protagonist: main,
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
@@ -504,6 +512,7 @@ export function useHistoryScreen({
     source,
     manual,
     following,
+    closedAt,
     current.protagonist,
     current.rangeOwner,
     current.kept,
@@ -693,11 +702,16 @@ export function useHistoryScreen({
   });
   // A screen fixture can open on another day (preset.goTo: H3c starts its
   // download), once per opening.
+  // A day this phone holds is only known once its days are read: try again
+  // when they are, until the day opens.
   const goToNow = useRef(goTo);
   goToNow.current = goTo;
+  const wentTo = useRef('');
   useEffect(() => {
-    if (preset?.goTo && sessionKey) goToNow.current(preset.goTo);
-  }, [preset?.goTo, sessionKey]);
+    const wanted = preset?.goTo && sessionKey ? `${sessionKey}|${preset.goTo}` : '';
+    if (!wanted || wentTo.current === wanted) return;
+    if (goToNow.current(preset.goTo)?.type !== 'none') wentTo.current = wanted;
+  }, [preset?.goTo, sessionKey, knowledge]);
   // ---- dragging the range -------------------------------------------------
   const dragRange = useCallback(value => setDraft(value), []);
   const commitRange = useCallback(
