@@ -892,6 +892,8 @@ function TrackerApp({ resume = null, onRestart }) {
   const sources = fixture?.diagnostics ?? null;
   const listRecent =
     sources?.listHistory ?? tracking.hardwareDatabase.listHistory;
+  const wifiDraft = useRef(null);
+  useEffect(() => { if (!stack.some(item => item.name === 'wifi')) wifiDraft.current = null; }, [stack]);
   const wifi = useReceiverWifi(fixture?.wifiService ?? sharedBleService, {
     active:
       tracking.foreground &&
@@ -1117,6 +1119,7 @@ function TrackerApp({ resume = null, onRestart }) {
         <WifiSettings
           key={fixtureName ?? 'live'}
           wifi={wifi}
+          draft={wifiDraft}
           receiver={receiverName}
         />
       );
