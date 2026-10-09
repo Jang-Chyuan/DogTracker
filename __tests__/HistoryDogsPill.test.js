@@ -13,9 +13,9 @@ test('one addable dog has plus and invitation; alone and my route are inert', ()
 });
 test('three dogs show two small faces and TalkBack counts; four show +1', () => {
   expect(pill(dogs.slice(0, 3), dogs)).toMatchObject({ faces: dogs.slice(1, 3), more: 0, caret: true,
-    label: '小黑，主角，另外 2 隻，點兩下選擇要看的狗' });
+    label: '小黑，目前選擇，另外 2 隻，點兩下選擇要看的狗' });
   expect(pill(dogs, dogs)).toMatchObject({ faces: dogs.slice(1, 3), more: 1,
-    label: '小黑，主角，另外 3 隻，點兩下選擇要看的狗' });
+    label: '小黑，目前選擇，另外 3 隻，點兩下選擇要看的狗' });
   const switched = dogs.map(d => ({ ...d, protagonist: d.id === 4 }));
   expect(pill(switched).lead).toEqual(switched[1]);
   expect(pill(switched).faces.map(d => d.id)).toEqual([6, 8]);
