@@ -144,6 +144,11 @@ export function createDogDatabase(connection) {
         );
       }
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)');
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_latest ON dog_status(slave_id, received_at DESC, id DESC)');
+      await db.executeAsync(`CREATE INDEX IF NOT EXISTS idx_dog_status_slave_fix
+        ON dog_status(slave_id, received_at DESC, id DESC)
+        WHERE slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)`);
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_ble_display_stream ON dog_status(master_id, slave_id, received_at, id)');
       if (!native?.initializeDatabase) await cleanupOldRecords();
       });
     },

@@ -31,16 +31,25 @@ const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
   WHERE id IN (SELECT id FROM supabase_dog_status
     WHERE raw_payload IS NOT NULL AND received_at < ? ORDER BY received_at LIMIT 1000)`;
 
+// Enumerate dogs by seeking to the next indexed id, then seek each newest row.
+// DISTINCT still walks the whole account even when its output has only six dogs.
 export function latestCloudStatusQuery(validFix) {
   const fix = validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : '';
   return `SELECT slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
     received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present, 'cloud' AS source
     FROM supabase_dog_status WHERE id IN (
       SELECT (SELECT id FROM supabase_dog_status AS newest
-        WHERE newest.owner_user_id=? AND newest.slave_id=devices.slave_id ${fix}
-          AND CAST(COALESCE(track_at, received_at) AS INTEGER)>=?
+        WHERE newest.owner_user_id=devices.owner AND newest.slave_id=devices.slave_id ${fix}
+          AND CAST(COALESCE(track_at, received_at) AS INTEGER)>=devices.since
         ORDER BY CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC LIMIT 1)
-      FROM (SELECT DISTINCT slave_id FROM supabase_dog_status WHERE owner_user_id=?) AS devices)
+      FROM (
+        WITH RECURSIVE dogs(slave_id, owner, since) AS (
+          SELECT MIN(slave_id), ?, ? FROM supabase_dog_status WHERE owner_user_id=?
+          UNION ALL
+          SELECT (SELECT MIN(slave_id) FROM supabase_dog_status
+            WHERE owner_user_id=dogs.owner AND slave_id>dogs.slave_id), owner, since
+          FROM dogs WHERE slave_id IS NOT NULL)
+        SELECT * FROM dogs WHERE slave_id IS NOT NULL) AS devices)
     ORDER BY slave_id`;
 }
 
@@ -265,10 +274,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         AND received_at >= ? AND received_at < ?`, [owner, masterId, fromMs, toMs]));
       return Number(result[0]?.count || 0);
     },
-    // Newest downloaded row per dog, whichever Master reported it. Rows without
-    // a position cannot place a marker, so they are not candidates; 0,0 is what
-    // the hardware sends with no GPS fix. SQLite fills the bare columns from the
-    // row that matched MAX(received_at).
+    // Newest downloaded fix per dog, whichever Master reported it; 0,0 is no fix.
     /**
      * Every downloaded position of every dog since a moment, for the home map's
      * path: the live feed only holds the pair this phone is connected to, so
@@ -301,17 +307,25 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         ? rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner])) : [];
       // Read both the latest packet and last valid fix per local dog. No raw
       // history pages are retained in React, including after a restart.
-      const local = rows(await connection.executeAsync(`SELECT slave_id, master_id,
-        MAX(received_at) AS track_at, received_at, slave_lat, slave_lon, (SELECT MIN(first.received_at) FROM dog_status first WHERE first.master_id = dog_status.master_id AND first.slave_id = dog_status.slave_id) AS first_received_at,
+      const pickLocal = validFix => `SELECT slave_id, master_id,
+        received_at AS track_at, received_at, slave_lat, slave_lon,
+        (SELECT MIN(first.received_at) FROM dog_status first
+          WHERE first.master_id = dog_status.master_id AND first.slave_id = dog_status.slave_id) AS first_received_at,
         speed_kmh, battery_percentage, battery_valid, usb_present, distance_meters, 'ble' AS source
-        FROM dog_status WHERE received_at >= ? GROUP BY slave_id
-        UNION ALL
-        SELECT slave_id, master_id, MAX(received_at) AS track_at, received_at,
-        slave_lat, slave_lon, (SELECT MIN(first.received_at) FROM dog_status first WHERE first.master_id = dog_status.master_id AND first.slave_id = dog_status.slave_id) AS first_received_at, speed_kmh, battery_percentage, battery_valid, usb_present,
-        distance_meters, 'ble' AS source
-        FROM dog_status WHERE received_at >= ? AND slave_lat IS NOT NULL
-          AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
-        GROUP BY slave_id`, [sinceMs, sinceMs]));
+        FROM dog_status WHERE id IN (
+          WITH RECURSIVE dogs(slave_id) AS (
+            SELECT MIN(slave_id) FROM dog_status
+            UNION ALL SELECT (SELECT MIN(slave_id) FROM dog_status WHERE slave_id>dogs.slave_id)
+              FROM dogs WHERE slave_id IS NOT NULL),
+          devices(slave_id) AS (
+            SELECT slave_id FROM dogs WHERE slave_id IS NOT NULL
+            UNION ALL SELECT NULL WHERE EXISTS (SELECT 1 FROM dog_status WHERE slave_id IS NULL))
+          SELECT (SELECT id FROM dog_status newest
+            WHERE newest.slave_id IS devices.slave_id AND received_at>=?
+              ${validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : ''}
+            ORDER BY received_at DESC, id DESC LIMIT 1) FROM devices)`;
+      const local = rows(await connection.executeAsync(
+        `${pickLocal(false)} UNION ALL ${pickLocal(true)}`, [sinceMs, sinceMs]));
       return Promise.all([...local, ...cloud].map(async row => {
         const isCloud = row.source === 'cloud';
         const table = isCloud ? 'supabase_dog_status' : 'dog_status';
@@ -351,7 +365,9 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         // range is judged against that); the cloud copy has no such column.
         const columns = account ? shared
           : `${shared}, master_lat AS master_latitude, master_lon AS master_longitude`;
-        const accountFilter = account ? 'owner_user_id = ? AND ' : '';
+        // A cursor is insertion order, independent of corrected track time.
+        // Unary + keeps SQLite on the rowid seek rather than an owner/time scan.
+        const accountFilter = account ? `${cursors ? '+' : ''}owner_user_id = ? AND ` : '';
         const params = account ? [owner] : [];
         const fresh = rows(await connection.executeAsync(cursors
           ? `SELECT ${columns}, ${clock} AS time FROM ${table}
