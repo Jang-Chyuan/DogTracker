@@ -20,6 +20,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import DogAvatar from '../dogs/DogAvatar';
 import BangGlyph from '../components/BangGlyph';
 import Glyph from '../map/Glyph';
@@ -60,6 +61,27 @@ const CLOSE_MOTION = LayoutAnimation.create(
   LayoutAnimation.Types.easeOut,
   LayoutAnimation.Properties.opacity,
 );
+
+// 「＋」 (add or choose more dogs): a coral plus in a dashed coral circle the
+// size of an avatar, no fill (user 2026-10-09, option B). The capsule around
+// it stays the 48dp target. SVG: Android draws dashed round borders unevenly.
+function PlusRing({ color, style }) {
+  const { plusRing: ring, plusRingDash: dash } = sizes.historyTop;
+  const stroke = border.regular;
+  return (
+    <View testID="history-dogs-plus" style={styles2.plusRing}>
+      <Svg width={ring} height={ring} style={StyleSheet.absoluteFill}>
+        <Circle cx={ring / 2} cy={ring / 2} r={(ring - stroke) / 2} fill="none" stroke={color}
+          strokeWidth={stroke} strokeDasharray={dash} />
+      </Svg>
+      <Text style={style} maxFontSizeMultiplier={fontScales.graphicTextMax}>＋</Text>
+    </View>
+  );
+}
+const styles2 = StyleSheet.create({
+  plusRing: { width: sizes.historyTop.plusRing, height: sizes.historyTop.plusRing, alignItems: 'center',
+    justifyContent: 'center' },
+});
 
 function Capsule({ children, onPress, testID, label, style, disabled, onLayout }) {
   const styles = useStyles(getStyles);
@@ -132,7 +154,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
             </View>)}
             {pill.more > 0 && <Text style={styles.more} maxFontSizeMultiplier={fontScales.graphicTextMax}>{`+${pill.more}`}</Text>}
           </View>}
-          {pill.plus && <Text style={styles.plus} maxFontSizeMultiplier={fontScales.graphicTextMax}>＋</Text>}
+          {pill.plus && <PlusRing color={colors.accent} style={styles.plus} />}
           {pill.caret && <Text style={styles.caret}>▾</Text>}
         </Capsule>
       </View>
@@ -604,7 +626,8 @@ const getStyles = makeStyles(theme => {
     overlap: { marginLeft: -sizes.historyTop.avatarOverlap },
     more: { fontSize: type.micro.fontSize, fontWeight: type.micro.fontWeight, color: colors.textMuted, marginLeft: space.xs },
     caret: { fontSize: sizes.historyTop.caretGlyph, color: colors.textMuted },
-    plus: { fontSize: type.body.fontSize, fontWeight: type.status.fontWeight, color: colors.tonalText },
+    plus: { fontSize: type.body.fontSize, fontWeight: type.status.fontWeight, color: colors.accent,
+      lineHeight: sizes.historyTop.plusRing, textAlign: 'center', includeFontPadding: false },
     alertBadge: { marginRight: space.xs },
     // A dog whose download failed (K12): the problem 「!」 on its face.
     downloadFailure: { position: 'absolute', top: -space.xs, right: -space.xs, zIndex: 1 },

@@ -172,6 +172,17 @@ test('「看哪幾隻狗」 rows are 56dp with 32dp faces (清單列; user 2026-
   await unmount(s);
 });
 
+test('the capsule\'s 「＋」 sits in a 32dp dashed accent circle with no fill (user 2026-10-09, B)', async () => {
+  const { Circle } = require('react-native-svg');
+  const s = await mount('history-dogs-one-addable');
+  const plus = s.renderer.root.findByProps({ testID: 'history-dogs-plus' });
+  const circle = plus.findByType(Circle);
+  expect(circle.props).toMatchObject({ fill: 'none', stroke: colors.accent, strokeWidth: 1.5 });
+  expect(circle.props.strokeDasharray).toBeTruthy();
+  expect(plus.props.style).toMatchObject({ width: 32, height: 32 });
+  await unmount(s);
+});
+
 test('no-record dog can be added immediately; outside tap closes the chooser', async () => {
   const s = await mount('history-dogs-sheet-no-record');
   expect(s.text()).toContain(i18nT('c327'));

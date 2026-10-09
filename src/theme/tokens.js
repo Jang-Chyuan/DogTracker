@@ -687,6 +687,9 @@ export const size = {
     slotLimit: 240,
     exportDisc: 36,
     caretGlyph: 10,
+    // 「＋」 in a dashed accent circle, avatar-sized (user 2026-10-09, B).
+    plusRing: 32,
+    plusRingDash: [3, 3],
   },
 
   // History face name tag and stale-ring clearance (§15 map labels).
