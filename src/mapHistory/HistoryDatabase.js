@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { simplifyRoute } from '../tracking/SimplifyRoute';
 import { normalizeAvatar } from '../dogs/DogArt';
 import { createHistoryHolds, HOLD_CONFIG } from '../placement/IndoorHold';
@@ -294,7 +295,7 @@ export function createHistoryDatabase(db) {
       const queuedAt = Date.now();
       return withCloudDisplayLock(db, async () => {
         const startedAt = Date.now();
-        if (startedAt - queuedAt >= 250) console.info(`[History timing] lockWaitMs=${startedAt - queuedAt}`);
+        if (startedAt - queuedAt >= 250) logger.info(`[History timing] lockWaitMs=${startedAt - queuedAt}`);
         if (!alive()) return null;
         const p = validateHistory(value);
         if (p.client && p.source === 'ble') await ensureBleDisplayColumns(db);
@@ -324,14 +325,14 @@ export function createHistoryDatabase(db) {
             const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} ${recovery} FROM ${table}
               WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
               ORDER BY ${time},id LIMIT 1000`, [scanSince, until, ...params, cursor, cursor, id]));
-            if (Date.now() - queryStarted >= 250) console.info(`[History timing] table=${table} pageMs=${Date.now() - queryStarted} rows=${page.length}`);
+            if (Date.now() - queryStarted >= 250) logger.info(`[History timing] table=${table} pageMs=${Date.now() - queryStarted} rows=${page.length}`);
             if (!page.length) break;
             all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay)
               : page.map(safePhoneHistoryCoordinate)));
             const last = page[page.length - 1]; cursor = last.time; id = last.id;
             if (page.length < 1000) break;
           }
-          console.info(`[History timing] table=${table} scanMs=${Date.now() - scanStarted} rows=${all.length}`);
+          logger.info(`[History timing] table=${table} scanMs=${Date.now() - scanStarted} rows=${all.length}`);
           return all;
         }
         // Every selected dog gets an entry, with or without rows: the card lists
@@ -398,7 +399,7 @@ export function createHistoryDatabase(db) {
           since, until, coverage,
           message: p.client && p.source === 'cloud' && !owner ? '請先登入雲端帳號，才能查看該帳號下載的定位。' : '' };
         const output = raw ? result : budgetHistory(result);
-        console.info(`[History timing] totalMs=${Date.now() - startedAt} raw=${raw}`);
+        logger.info(`[History timing] totalMs=${Date.now() - startedAt} raw=${raw}`);
         return output;
       });
     },

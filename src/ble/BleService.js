@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { wifiCommand } from '../settings/WifiValidation';
 import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
@@ -259,7 +260,7 @@ export function createBleService(manager = new BleManager()) {
         foundDevice => {
           const foundName = foundDevice.name || foundDevice.localName;
           const normalizedName = normalizeDeviceName(foundName);
-          console.info('BLE 廣播', {
+          logger.info('BLE 廣播', {
             id: foundDevice.id,
             name: foundName || null,
             localName: foundDevice.localName || null,

@@ -101,7 +101,7 @@ class MainActivity : ReactActivity() {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent)
       else startService(intent)
     } catch (error: Exception) {
-      Log.e("DogTracker", "Unable to resume saved BLE session", error)
+      com.dogtracker.AppLog.e("DogTracker", "Unable to resume saved BLE session", error)
       prefs.edit().putString("resumeError", "背景恢復失敗：${error.message}").apply()
     }
   }

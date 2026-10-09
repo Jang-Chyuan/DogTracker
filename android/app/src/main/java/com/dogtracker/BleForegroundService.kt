@@ -81,7 +81,7 @@ class BleForegroundService : Service() {
       try {
         BackgroundAlerts.evaluate(this@BleForegroundService, alertInput(), System.currentTimeMillis())
       } catch (error: Exception) {
-        android.util.Log.w("DogTrackerAlerts", "background alert check failed", error)
+        com.dogtracker.AppLog.w("DogTrackerAlerts", "background alert check failed", error)
       }
       handler.postDelayed(this, ALERT_CHECK_MS)
     }

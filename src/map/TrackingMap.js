@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { makeStyles, resolveStyles } from '../theme/ThemeProvider';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -77,7 +78,7 @@ class MapBoundary extends React.Component {
       this.setState({ failed: false });
   }
   componentDidCatch(error) {
-    console.warn('[Map] could not open', error?.message);
+    logger.warn('[Map] could not open', error?.message);
     this.props.onMapState?.('unavailable');
   }
   render() {

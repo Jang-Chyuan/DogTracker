@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 // The export of the history screen (H9/H10; 判定表「匯出產生中」, flow.txt
 // 「匯出」): the small window's state, one export at a time from the moment a
 // format is chosen — the day shown (range, dogs) captured then, the
@@ -124,7 +125,7 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       setState({ phase: 'closed', format: null });
     } catch (error) {
       if (!alive()) return;
-      console.warn('[History export]', error?.message || error);
+      logger.warn('[History export]', error?.message || error);
       setState({ phase: 'failed', format });
     }
   }, [exporter, screen, lookup, now]);

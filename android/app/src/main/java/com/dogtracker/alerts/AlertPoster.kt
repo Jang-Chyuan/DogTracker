@@ -48,7 +48,7 @@ object AlertPoster {
   fun dismissed(context: Context) {
     context.getSharedPreferences("alert_notifications", Context.MODE_PRIVATE).edit().putBoolean(DISMISSED, true).apply()
     showing = null
-    Log.i(TAG, "notification swiped away")
+    com.dogtracker.AppLog.i(TAG, "notification swiped away")
   }
 
   fun allowed(context: Context): Boolean =
@@ -85,14 +85,14 @@ object AlertPoster {
     val channel = channel(context)
     if (!AlertAttention.vibration(alertsEnabled(context), audio?.ringerMode == AudioManager.RINGER_MODE_SILENT,
         channelAlerts(channel), systemAlerts && channel?.shouldVibrate() == true)) {
-      Log.i(TAG, "vibration skipped (silent mode or the 提醒 channel is blocked)")
+      com.dogtracker.AppLog.i(TAG, "vibration skipped (silent mode or the 提醒 channel is blocked)")
       return false
     }
     val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return false
-    if (!vibrator.hasVibrator()) Log.i(TAG, "this device has no vibrator")
+    if (!vibrator.hasVibrator()) com.dogtracker.AppLog.i(TAG, "this device has no vibrator")
     vibrator.cancel()
     val kind = if (critical) "critical" else "normal"
-    Log.i(TAG, "VibrationEffect.createWaveform(${pattern.joinToString(",", "[", "]")}, -1) $kind")
+    com.dogtracker.AppLog.i(TAG, "VibrationEffect.createWaveform(${pattern.joinToString(",", "[", "]")}, -1) $kind")
     when {
       Build.VERSION.SDK_INT >= 33 -> vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1),
         VibrationAttributes.createForUsage(VibrationAttributes.USAGE_NOTIFICATION))
@@ -115,7 +115,7 @@ object AlertPoster {
       ?: return false
     ringtone.audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION)
       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
-    Log.i(TAG, "alert sound")
+    com.dogtracker.AppLog.i(TAG, "alert sound")
     ringtone.play()
     return true
   }
@@ -173,7 +173,7 @@ object AlertPoster {
     if (command == "notify") manager.cancel(ID)
     manager.notify(ID, notification)
     showing = words
-    Log.i(TAG, "notification $command: ${content.title} | ${content.lines.joinToString(" / ")}")
+    com.dogtracker.AppLog.i(TAG, "notification $command: ${content.title} | ${content.lines.joinToString(" / ")}")
     return true
   }
 

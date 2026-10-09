@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import React, { createContext, useContext, useEffect } from 'react';
 import { Appearance, useColorScheme } from 'react-native';
 import * as light from './tokens';
@@ -78,7 +79,7 @@ export function ThemeProvider({ children }) {
   // Debug builds say when a scheme has been committed to the whole tree
   // (screenshot scripts wait for it; a debug re-render can take seconds).
   useEffect(() => {
-    if (__DEV__) console.log(`[Theme] applied ${scheme || 'light'}`);
+    if (__DEV__) logger.log(`[Theme] applied ${scheme || 'light'}`);
   }, [scheme]);
   return (
     <ThemeContext.Provider value={scheme === 'dark' ? darkTheme : lightTheme}>

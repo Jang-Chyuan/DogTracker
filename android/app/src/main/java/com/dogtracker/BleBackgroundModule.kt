@@ -178,7 +178,7 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
         val elapsed = SystemClock.elapsedRealtime() - startedAt
         val queued = startedAt - queuedAt
         if (elapsed >= 250 || queued >= 250) {
-          Log.w("DogTracker-Database", "$label queueMs=$queued runMs=$elapsed")
+          com.dogtracker.AppLog.w("DogTracker-Database", "$label queueMs=$queued runMs=$elapsed")
         }
       }
     }

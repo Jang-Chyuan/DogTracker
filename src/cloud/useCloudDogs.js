@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { useEffect, useRef, useState } from 'react';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 
@@ -89,7 +90,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
             state.polledAt = now();
           } catch (error) {
             // A failed hold read must not empty the map: keep drawing the last holds.
-            console.warn('[Indoor hold] read failed', error?.message);
+            logger.warn('[Indoor hold] read failed', error?.message);
           }
           holds = state.store.holds(now());
           statuses = state.store.statuses();

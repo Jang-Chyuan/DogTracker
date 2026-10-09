@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARD_ACTIVITY_LOOKBACK_MS, dogCardReadings } from '../activity/DogCardReadings';
 
@@ -27,7 +28,7 @@ export function useDogCardReadings(read, slaveId, now) {
         if (alive) setState({ read, slaveId, rows });
       } catch (error) {
         // The rows say 「—」 rather than another dog's or an error text.
-        console.warn('[Dog card] read failed', error?.message);
+        logger.warn('[Dog card] read failed', error?.message);
         if (alive) setState(current => (current.slaveId === slaveId && current.read === read ? current
           : { read, slaveId, rows: null }));
       } finally {

@@ -135,7 +135,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         if (exportId in cancelled) throw InterruptedException("cancelled")
         promise.resolve(paths)
       } catch (e: Exception) {
-        android.util.Log.w("HistoryExport", "PNG export failed", e)
+        com.dogtracker.AppLog.w("HistoryExport", "PNG export failed", e)
         written.forEach { it.delete() }
         promise.reject("EXPORT_PNG", if (e is InterruptedException) "已取消" else "無法產生圖片", e)
       } finally { cancelled.remove(exportId) }
@@ -160,7 +160,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         intent.clipData = ClipData.newRawUri("DogTracker", uris[0]).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
         activity.startActivity(Intent.createChooser(intent, null))
         promise.resolve("opened")
-      } catch (e: Exception) { android.util.Log.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", "無法開啟分享選單", e) }
+      } catch (e: Exception) { com.dogtracker.AppLog.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", "無法開啟分享選單", e) }
     }
   }
 

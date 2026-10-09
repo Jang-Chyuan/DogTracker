@@ -26,7 +26,7 @@ class TrackingPlatformModule(context: ReactApplicationContext) : NativeTrackingP
       if (Build.VERSION.SDK_INT >= 26) manager.deleteNotificationChannel("tracking_stale")
     } catch (error: Exception) {
       // Cleanup of an obsolete notice must not prevent maps/location startup.
-      Log.w(NAME, "Unable to remove legacy tracking notification", error)
+      com.dogtracker.AppLog.w(NAME, "Unable to remove legacy tracking notification", error)
     }
   }
 

@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
@@ -98,7 +99,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           );
         if (reportedReadErrors[source] !== message) {
           reportedReadErrors[source] = message;
-          console.error(`${source} SQLite:`, error);
+          logger.error(`${source} SQLite:`, error);
         }
       };
       const createFeed = (source, repository) =>
@@ -294,13 +295,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     lifecycle.ready.catch(error => {
       const message = getErrorMessage(error);
       if (!disposed) setErrors({ real: message });
-      console.error('SQLite 開啟失敗:', error);
+      logger.error('SQLite 開啟失敗:', error);
     });
     return () => {
       disposed = true;
       controlsRef.current = null;
       lifecycle.close().catch(error => {
-        console.error('SQLite 關閉失敗:', error);
+        logger.error('SQLite 關閉失敗:', error);
       });
     };
   }, [createDatabases]);
