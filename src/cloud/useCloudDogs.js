@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_AGE_MS } from '../map/DogMerge';
+import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 
 export const POLL_MS = 10000;
 
@@ -10,15 +11,20 @@ export const POLL_MS = 10000;
  *
  * Demo mode must not see real positions, so the caller passes enabled=false.
  */
-const empty = () => ({ rows: [], packets: [], track: [], error: '' });
+const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, error: '' });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
   { active = true, revision = 0 } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
   const refresh = useRef(null);
   const inFlight = useRef(Promise.resolve());
   const lastRevision = useRef(revision);
+  // Indoor holds follow every row, so their trackers live across polls; a new
+  // account or database starts them over.
+  const holdState = useRef(null);
   useEffect(() => {
-    if (!database || !owner || !enabled) {
+    if (!database || !enabled) {
+      // Demo mode: the next start replays from scratch.
+      holdState.current = null;
       setCache({ owner, database, value: empty() });
       return undefined;
     }
@@ -39,15 +45,40 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
       try {
         await previous;
         if (!alive) return;
-        const rows = await database.latestBySlave(owner, now() - MAX_AGE_MS);
+        // Logged out, only the indoor holds of this phone's own BLE rows apply.
+        const rows = owner ? await database.latestBySlave(owner, now() - MAX_AGE_MS) : [];
         if (!alive) return;
-        const packets = database.latestStatusRows
+        const packets = owner && database.latestStatusRows
           ? await database.latestStatusRows(owner, now() - MAX_AGE_MS, now()) : [];
         // The path is only read when something asks for it: it is the larger
         // query, and the card draws no line while the path switch is off.
-        const track = Number.isFinite(trackSinceMs)
+        const track = owner && Number.isFinite(trackSinceMs)
           ? await database.trackBySlave(owner, now() - trackSinceMs) : [];
-        if (alive) setCache({ owner, database, value: { rows, packets, track, error: '' } });
+        let holds = {}, statuses = {};
+        if (database.holdRows) {
+          // A long pause (background) replays from scratch instead of catching
+          // up on every row since.
+          if (holdState.current?.owner !== owner || holdState.current?.database !== database
+            || now() - holdState.current.polledAt > HOLD_LOOKBACK_MS) {
+            holdState.current = { owner, database, store: createHoldStore(), cursors: null, polledAt: now() };
+          }
+          const state = holdState.current;
+          try {
+            const batch = await database.holdRows(owner, now() - HOLD_LOOKBACK_MS, state.cursors);
+            if (!alive || holdState.current !== state) return;
+            // Stored rows moved in time (cloud time repair): replay them all.
+            if (batch.reset) state.store = createHoldStore();
+            state.store.ingest(batch);
+            state.cursors = batch.cursors;
+            state.polledAt = now();
+          } catch (error) {
+            // A failed hold read must not empty the map: keep drawing the last holds.
+            console.warn('[Indoor hold] read failed', error?.message);
+          }
+          holds = state.store.holds(now());
+          statuses = state.store.statuses();
+        }
+        if (alive) setCache({ owner, database, value: { rows, packets, track, holds, statuses, error: '' } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
         if (alive) setCache(current => ({ owner, database,
@@ -70,5 +101,5 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     lastRevision.current = revision;
   }, [revision]);
   // Never expose another account's cache, even for the render before effects run.
-  return enabled && owner && cache.owner === owner && cache.database === database ? cache.value : empty();
+  return enabled && cache.owner === owner && cache.database === database ? cache.value : empty();
 }

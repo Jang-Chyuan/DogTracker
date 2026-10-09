@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TrackingMap from '../map/TrackingMap';
 import { createTrackingMapPresentation } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
+import { createRideDetector } from '../placement/RideAlong';
 import { dogColor } from '../map/CloudTracks';
 import TrackingSheet from '../map/TrackingSheet';
 import { useMapClock } from '../map/useMapClock';
@@ -51,7 +52,6 @@ export default function MapScreen({
   historical = false,
   cloudDogs,
   cloudOwner,
-  fixedLocations,
   historyDownload,
 }) {
   const insets = useSafeAreaInsets();
@@ -89,13 +89,24 @@ export default function MapScreen({
   // rows. Demo positions stay isolated, so cloud dogs only join in real mode.
   // The eye hides the markers, not the list: the card must still say which dogs
   // reported and when.
+  // The handler's phone driving tells the map which dogs ride along.
+  const livePhone = useLiveLocation(active && tracking.foreground);
+  const rideDetector = useRef(null);
+  if (!rideDetector.current) rideDetector.current = createRideDetector();
+  if (livePhone?.running && livePhone.position) rideDetector.current.add(livePhone.position, now);
+  const currentRide = rideDetector.current.ride(now);
+  const rideKey = currentRide
+    ? `${currentRide.coordinate.latitude},${currentRide.coordinate.longitude}` : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const ride = useMemo(() => currentRide, [rideKey]);
   const dogs = useMemo(
     () => (mode === 'real'
       ? mergeDogMarkers({ point, samples: positionSamples, cloudRows: cloudDogs?.rows,
-        packetRows: cloudDogs?.packets, fixedLocations, now,
-        windowMs: LIVE_PACKET_WINDOW_MS })
+        packetRows: cloudDogs?.packets, holds: cloudDogs?.holds, statuses: cloudDogs?.statuses,
+        ride, now, windowMs: LIVE_PACKET_WINDOW_MS })
       : []),
-    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, fixedLocations, now],
+    [mode, point, positionSamples, cloudDogs?.rows, cloudDogs?.packets, cloudDogs?.holds,
+      cloudDogs?.statuses, ride, now],
   );
   // Each dog's recent BLE route owns its source independently. Other dogs'
   // packets must not replace it with the cloud copy on every notification.
@@ -135,7 +146,6 @@ export default function MapScreen({
         : homeCameraPositions(basePresentation, drawn, dogsVisible, dogPaths),
     };
   }, [basePresentation, dogPaths, dogs, dogsVisible, focusSlaveId, hiddenSlaveIds, mode]);
-  const livePhone = useLiveLocation(active && tracking.foreground);
   const playback = useHistoryPlayback(history?.data, history?.key, historical);
   const playbackAt = playback.at;
   const presentation = useMemo(() => {

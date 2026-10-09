@@ -1,5 +1,8 @@
 import { simplifyRoute } from '../tracking/SimplifyRoute';
-import { applyHistoryFixedPositions } from '../map/FixedPosition';
+import { createHistoryHolds, HOLD_CONFIG } from '../placement/IndoorHold';
+
+// A hold can start before the window: read this much earlier as context.
+const HOLD_CONTEXT_MS = 10 * 60000;
 import { safePhoneHistoryCoordinate } from './PhoneHistoryCoordinates';
 import { coordinate } from '../tracking/RouteSamples';
 import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
@@ -59,7 +62,46 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
+// A cached hold pass is rebuilt once it carries this many rows the window
+// has already left behind.
+const HOLD_CACHE_SLACK = 5000;
+
+/**
+ * The hold pass of one dog's history, continued across polls: the screen
+ * re-reads the same window every 10 s, and a day of rows through the tracker
+ * takes the better part of a second per dog on a phone.
+ */
+export function continueHistoryHolds(cache, key, points, seed) {
+  // The seed only matters to a new pass; a continued one already holds the
+  // points before the window.
+  let entry = cache.get(key);
+  const first = points.length ? entry?.index.get(points[0].id) : undefined;
+  const reuse = entry && first !== undefined
+    && first <= HOLD_CACHE_SLACK
+    && points.slice(0, entry.ids.length - first).every((row, at) => entry.ids[first + at] === row.id
+      && entry.times[first + at] === row.time);
+  if (!reuse) {
+    entry = { holds: createHistoryHolds({ seed }), ids: [], times: [], index: new Map() };
+    cache.set(key, entry);
+  }
+  const offset = reuse ? first : 0;
+  const added = points.slice(entry.ids.length - offset);
+  entry.holds.append(added);
+  for (const row of added) {
+    entry.index.set(row.id, entry.ids.length);
+    entry.ids.push(row.id);
+    entry.times.push(row.time);
+  }
+  // Fresh points keep their newest display fields; only the hold is carried over.
+  return points.map((row, at) => {
+    const held = entry.holds.output[offset + at];
+    return held?.heldReason ? { ...row, latitude: held.latitude, longitude: held.longitude, speed_kmh: null,
+      heldReason: held.heldReason, heldSince: held.heldSince, heldSource: held.heldSource } : row;
+  });
+}
+
 export function createHistoryDatabase(db) {
+  const holdCache = new Map();
   return {
     async load() {
       await db.executeAsync('CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
@@ -133,7 +175,7 @@ export function createHistoryDatabase(db) {
         // queried a dog that does not exist and looked like "no data".
         .filter(pair => pair.master > 0 && pair.slave > 0);
     },
-    async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null, fixedLocations = []) {
+    async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null) {
       const queuedAt = Date.now();
       return withCloudDisplayLock(db, async () => {
         const startedAt = Date.now();
@@ -144,10 +186,10 @@ export function createHistoryDatabase(db) {
         const { since, until } = bounds || historyWindow(p, now);
         async function scan(table, time, extra, params, lat, lon) {
           const scanStarted = Date.now();
-          const scanSince = table !== 'myLocationTracker' && !raw && fixedLocations.length
-            ? Math.floor(since / 60000) * 60000 - 120000 : since;
+          const holdsApply = table !== 'myLocationTracker' && !raw;
+          const scanSince = holdsApply ? since - HOLD_CONTEXT_MS : since;
           let cursor = scanSince, id = 0, all = [];
-          const columns = table === 'myLocationTracker' || raw || fixedLocations.length
+          const columns = table === 'myLocationTracker' || raw || holdsApply
             ? new Set(rows(await db.executeAsync(`PRAGMA table_info(${table})`)).map(column => column.name)) : new Set();
           const displayColumns = table === 'myLocationTracker' && columns.has('display_latitude') && columns.has('display_longitude');
           const selectedLat = displayColumns ? `COALESCE(display_latitude, ${lat})` : lat;
@@ -158,7 +200,7 @@ export function createHistoryDatabase(db) {
             // `raw` requests all records for export, not unsmoothed coordinates.
             const cloudDisplay = table === 'supabase_dog_status';
             const bleDisplay = table === 'dog_status';
-            const quality = (raw || fixedLocations.length) && table !== 'myLocationTracker'
+            const quality = table !== 'myLocationTracker'
               ? ['satellites', 'hdop', 'rssi', 'snr', 'usb_present'].filter(column => columns.has(column)).map(column => ', ' + column).join('') : '';
             const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + quality + (cloudDisplay || bleDisplay
               ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
@@ -193,15 +235,29 @@ export function createHistoryDatabase(db) {
             + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
           // One query per dog: each keeps its own line and marker on the map, so
           // a track can never mix two dogs.
+          const usedKeys = new Set();
           for (const entry of clients) {
             const params = p.source === 'cloud'
               ? [...p.masters, entry.slaveId, owner] : [...p.masters, entry.slaveId];
             entry.rows = await scan(table, time, extra, params, 'slave_lat', 'slave_lon');
-            if (!raw && fixedLocations.length) {
-              entry.rows = applyHistoryFixedPositions(entry.rows, fixedLocations, now)
+            if (!raw) {
+              // Indoors the line stops where the dog was last seen clearly. The
+              // last good fixes before the context window tell where that was
+              // when the dog has been inside since before it, however long ago.
+              const seed = rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude,
+                slave_lon AS longitude, master_id, satellites, hdop FROM ${table}
+                WHERE ${time} < ? ${extra} AND satellites >= ?
+                  AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
+                ORDER BY ${time} DESC LIMIT 40`,
+              [since - HOLD_CONTEXT_MS, ...params, HOLD_CONFIG.goodMinSatellites]));
+              const key = [table, owner ?? '', p.masters.join(','), entry.slaveId].join('|');
+              usedKeys.add(key);
+              entry.rows = continueHistoryHolds(holdCache, key, entry.rows, seed)
                 .filter(point => point.time >= since);
             }
           }
+          // Dogs no longer on the card free their cached pass.
+          if (!raw) for (const key of holdCache.keys()) if (!usedKeys.has(key)) holdCache.delete(key);
           const client = clients.flatMap(entry => entry.rows);
           // This screen only reads what the phone already stores: the cloud copy
           // holds what was downloaded, and both tables are trimmed by retention.
@@ -242,7 +298,7 @@ export function historyGeometry(points) {
       // Preserve actual signal gaps within each receiver/session stream.
       const valid = !!coordinate(point.latitude, point.longitude);
       if (!valid || (last && (point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180
-        || point.fixedReason !== last.fixedReason || point.fixedName !== last.fixedName))) {
+        || point.heldReason !== last.heldReason || point.heldSince !== last.heldSince))) {
         if (segment.length) segments.push(segment);
         segment = [];
       }

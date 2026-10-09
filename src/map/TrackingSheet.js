@@ -220,7 +220,7 @@ export default function TrackingSheet({
             </>
           )}
         </View>
-        : <Text style={styles.hint}>狗圖示超過 3 分鐘未收到封包才隱藏；充電時維持已設定的固定位置並標示通訊狀態。GPS 未定位時保留最後有效位置，歷史軌跡仍保留查詢區間內的最後位置。</Text>}
+        : <Text style={styles.hint}>狗圖示超過 3 分鐘未收到封包才隱藏；充電時保留在原處並標示通訊狀態。在室內或 GPS 訊號弱時，狗停在最後清楚定位的地方，離開後自動恢復跟隨；GPS 未定位時保留最後有效位置，歷史軌跡仍保留查詢區間內的最後位置。</Text>}
         {preferences.busy && <Text style={styles.hint}>儲存中…</Text>}
         {preferences.error && (
           <View>

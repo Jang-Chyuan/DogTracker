@@ -1,5 +1,5 @@
 import { coordinate as toCoordinate } from '../tracking/RouteSamples';
-import { fixedPosition } from './FixedPosition';
+import { ridesAlong } from '../placement/RideAlong';
 
 // A slave_id identifies the same dog across the whole team, whichever Master
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
@@ -61,7 +61,7 @@ function bleCandidate(point, samples) {
  * and dogs that are not wanted can be hidden one by one.
  */
 export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
-  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, fixedLocations = [] }) {
+  now = Date.now(), maxAgeMs = MAX_AGE_MS, windowMs = null, holds = {}, statuses = {}, ride = null }) {
   const local = bleCandidate(point, samples);
   const dogs = new Map();
   if (local) dogs.set(local.slaveId, local);
@@ -134,26 +134,36 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const lastPacketAt = packet?.time ?? dog.receivedAt;
       const communicating = now - lastPacketAt <= (windowMs ?? LIVE_PACKET_WINDOW_MS);
       const environment = environments.get(dog.slaveId) ?? null;
-      const candidate = fixedPosition(fixedLocations.find(row => row.slave_id === dog.slaveId),
-        packet?.row.usb_present, environment, now);
-      const charging = candidate?.fixedReason === '充電（USB 已連接）';
-      const fixed = communicating || charging ? candidate : null;
-      const positionAt = fixed ? lastPacketAt : dog.receivedAt;
-      const stale = !(fixed || dog.coordinate) || (!communicating && !charging);
+      // Indoors the dog is drawn where it was last seen clearly (IndoorHold),
+      // never at a hand-entered point. A charging collar keeps that place after
+      // its packets stop, as the set point used to.
+      const usb = packet?.row.usb_present;
+      const charging = usb === 1 || usb === true || (usb !== 0 && usb !== false
+        && environment?.source === 'usb_rule');
+      // Riding in the handler's vehicle beats a hold at the place it got in.
+      // The dog is simply drawn where it is, with nothing said about it: it is
+      // where the handler expects it, not a state to point out.
+      const hold = ridesAlong(statuses[dog.slaveId], ride, now)
+        ? { coordinate: ride.coordinate, reason: null, source: 'ride', since: lastPacketAt }
+        : holds[dog.slaveId] ?? null;
+      const held = hold && (communicating || charging) ? hold : null;
+      const positionAt = held ? held.anchorAt ?? lastPacketAt : dog.receivedAt;
+      const stale = !(held || dog.coordinate) || (!communicating && !charging);
       const noFix = packet && !packet.position;
-      return { ...dog, ...(fixed ? { coordinate: { latitude: fixed.latitude, longitude: fixed.longitude },
-        fixedReason: fixed.fixedReason, fixedName: fixed.fixedName, receivedAt: positionAt } : {}),
+      return { ...dog, ...(held ? { coordinate: held.coordinate, heldReason: held.reason,
+        heldSince: held.since, heldSource: held.source,
+        receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
         environment,
-        retained: fixed ? false : dog.retained || !!noFix,
+        retained: held ? false : dog.retained || !!noFix,
         communicationStatus: !communicating ? '未收到新資料'
           : noFix ? '有通訊／GPS 未定位' : '有通訊／定位正常',
         batteryPercentage: packet
           ? (packet.row.battery_valid !== 0 && packet.row.battery_valid !== false
             && Number.isFinite(packet.row.battery_percentage) ? packet.row.battery_percentage : null)
           : dog.batteryPercentage,
-        speedKmh: fixed || noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
-        distanceMeters: fixed || stale || noFix || packet?.source !== 'ble' ? null
+        speedKmh: held || noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
+        distanceMeters: held || stale || noFix || packet?.source !== 'ble' ? null
           : packet.row.distance_meters ?? null,
       };
     })
@@ -162,9 +172,23 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
 }
 
 export function describeDogSource(dog) {
-  if (dog.fixedReason) return `${dog.fixedName}・設定位置・${dog.fixedReason}`;
+  if (dog.heldReason) return `${heldLabel(dog)}・${dog.source === 'ble' ? 'BLE' : `經 Master ${dog.masterId ?? '?'}・雲端`}`;
   if (dog.source === 'ble') {
     return dog.retained ? 'BLE・最後有效位置，非最新定位' : 'BLE';
   }
   return `經 Master ${dog.masterId ?? '?'}・雲端`;
+}
+
+// What a held marker says under the name: where the dog is (室內、窗邊、充電中…).
+export function heldLabel(dog) {
+  return dog?.heldReason || null;
+}
+
+// The sentence for the panels: a hold from weak fixes is an estimate, not the
+// last clear fix, and must not read like one.
+export function heldSentence(dog, formatTime) {
+  if (!dog?.heldReason) return null;
+  // "Since" reads as a state that is still going on, not as stale data.
+  const since = `${dog.heldReason}・${formatTime(dog.heldSince)} 起`;
+  return dog.heldSource === 'weak' ? `${since}（位置是依訊號弱的定位估計的）` : since;
 }

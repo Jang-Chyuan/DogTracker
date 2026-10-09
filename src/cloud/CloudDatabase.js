@@ -3,6 +3,8 @@ import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
 import { readActivityHistory } from './ActivityHistory';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
+import { HOLD_CONFIG } from '../placement/IndoorHold';
+import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -45,7 +47,7 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory', 'holdRows'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -55,6 +57,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET ${cap}
   )`;
   let pagesSaved = 0;
+  // Bumped when stored rows move in time, so the indoor hold replays them.
+  let trackRepairs = 0;
   const rows = result => result.results || result.rows?._array || [];
   const requireOwner = owner => {
     if (!owner) throw new Error('請先登入');
@@ -156,6 +160,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           SET track_time_version=-1 WHERE owner_user_id=? AND event_id=? AND track_time_version IS NULL`,
         params: [owner, id] });
         await connection.executeBatchAsync(commands);
+        if (metadata.length) trackRepairs += 1;
       });
     },
     async savePage(owner, records, checkpoint = null) {
@@ -302,6 +307,78 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         [...pair, windowStart, windowStart + ENVIRONMENT_WINDOW_MS, ...account]));
         return { ...row, environment: predictEnvironment(window) };
       }));
+    },
+    /**
+     * Rows for the indoor hold, from both the BLE table and this account's
+     * cloud copy. A cold start (no cursors) reads the last lookback window and
+     * each dog's last good fixes before it; later calls read only rows added
+     * since the cursors, so a poll stays small whatever the retention holds.
+     */
+    async holdRows(owner, sinceMs, cursors = null, quality = HOLD_CONFIG) {
+      // Rows already read may have moved in time: start over from the window.
+      const reset = !!cursors && cursors.repairs !== trackRepairs;
+      if (reset) cursors = null;
+      const columns = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
+        satellites, hdop, rssi, snr, usb_present`;
+      const read = async (table, clock, account) => {
+        const accountFilter = account ? 'owner_user_id = ? AND ' : '';
+        const params = account ? [owner] : [];
+        const fresh = rows(await connection.executeAsync(cursors
+          ? `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${accountFilter}id > ? ORDER BY id LIMIT 20000`
+          : `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${accountFilter}${clock} >= ? ORDER BY id LIMIT 20000`,
+        [...params, cursors ? cursors[table] ?? 0 : sinceMs]));
+        let seeds = [];
+        const older = [];
+        if (!cursors) {
+          // A dog silent for longer than the window (charging, out of range)
+          // replays its own last half hour instead, so it keeps its hold.
+          const heard = new Set(fresh.map(row => row.slave_id));
+          const silent = rows(await connection.executeAsync(`SELECT slave_id, MAX(${clock}) AS newest
+            FROM ${table} WHERE ${accountFilter}${clock} < ? AND ${clock} >= ? GROUP BY slave_id`,
+          [...params, sinceMs, sinceMs - 24 * 60 * 60000])).filter(row => !heard.has(row.slave_id));
+          const windows = new Map();
+          for (const row of silent) {
+            const from = Number(row.newest) - HOLD_LOOKBACK_MS;
+            windows.set(row.slave_id, from);
+            older.push(...rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time FROM ${table}
+              WHERE ${accountFilter}slave_id = ? AND ${clock} >= ? AND ${clock} < ? ORDER BY ${clock}, id LIMIT 20000`,
+            [...params, row.slave_id, from, sinceMs])));
+          }
+          // Indoors for hours or days (charging in a kennel): the anchor is the
+          // last good fixes before the replayed window, however long ago.
+          for (const slave of [...heard, ...windows.keys()]) {
+            const until = windows.get(slave) ?? sinceMs;
+            seeds = seeds.concat(rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time
+              FROM ${table} WHERE ${accountFilter}slave_id = ? AND ${clock} < ?
+                AND satellites >= ? AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+                AND NOT (slave_lat = 0 AND slave_lon = 0)
+              ORDER BY ${clock} DESC LIMIT 40`,
+            [...params, slave, until, quality.goodMinSatellites])));
+          }
+        }
+        // Ordered by id: the last row carries the cursor (no spread over 20000 ids).
+        const last = fresh.length ? Number(fresh[fresh.length - 1].id) : cursors?.[table] ?? 0;
+        if (!cursors && !fresh.length) {
+          const top = rows(await connection.executeAsync(`SELECT MAX(id) AS id FROM ${table}
+            ${account ? 'WHERE owner_user_id = ?' : ''}`, params))[0]?.id;
+          return { fresh: older, seeds, last: Number(top) || 0 };
+        }
+        return { fresh: [...older, ...fresh], seeds, last };
+      };
+      const tag = (batch, source) => ({ ...batch, fresh: batch.fresh.map(row => ({ ...row, source })),
+        seeds: batch.seeds.map(row => ({ ...row, source })) });
+      const ble = tag(await read('dog_status', 'received_at', false), 'ble');
+      const cloud = owner
+        ? tag(await read('supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', true), 'cloud')
+        : { fresh: [], seeds: [], last: 0 };
+      return {
+        rows: [...ble.fresh, ...cloud.fresh],
+        seeds: [...ble.seeds, ...cloud.seeds],
+        cursors: { dog_status: ble.last, supabase_dog_status: cloud.last, repairs: trackRepairs },
+        reset,
+      };
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);
