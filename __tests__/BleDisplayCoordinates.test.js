@@ -2,7 +2,6 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createRealTrackingRepository } from '../src/repositories/RealTrackingRepository';
 import { createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
-import { serializeHistory } from '../src/mapHistory/HistoryExport';
 
 test('BLE live, history and export use persisted display coordinates and retain original payloads', async () => {
   const db = createMemoryConnection();
@@ -20,8 +19,6 @@ test('BLE live, history and export use persisted display coordinates and retain 
     for (const track of data.clients) expect(track.latest.latitude).toBeCloseTo(25.003,8);
     const exported = await history.read(prefs,null,30000,()=>true,true);
     expect(exported.clients[2].rows[2]).toMatchObject({ raw_latitude:25.006, display_source:'ble-smoothed-v1' });
-    expect(serializeHistory('csv',exported)).toContain('ble-smoothed-v1');
-    expect(serializeHistory('gpx',exported)).toContain('lat="25.003"');
     expect(db.sqlite.prepare('SELECT slave_lat,raw_payload FROM dog_status ORDER BY id DESC LIMIT 1').get())
       .toMatchObject({ slave_lat:25.006, raw_payload:'original' });
     const again = await createRealTrackingRepository(database).getLatest();

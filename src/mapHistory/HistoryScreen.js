@@ -5,7 +5,7 @@
 // protagonist and, for dogs, 資料來源 at its foot. The map itself draws
 // useHistoryScreen's presentation (GoogleTrackingMap).
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { LayoutAnimation, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, LayoutAnimation, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
 import Glyph from '../map/Glyph';
 import { MapTip, PressScale } from '../map/MapControls';
@@ -15,7 +15,8 @@ import { colors, layout, motion, opacity, radius, shadow, size as sizes, space, 
 import HistoryPanel from './HistoryPanel';
 import HistoryRangeSummary from './HistoryRangeSummary';
 import HistoryTimelineList from './HistoryTimelineList';
-import HistoryExportDialog from './HistoryExportDialog';
+import HistoryExportSheet from './HistoryExportSheet';
+import { useHistoryExport } from './useHistoryExport';
 import HistoryCalendarSheet from './HistoryCalendarSheet';
 import { AddDogSheet, SourceSheet } from './HistoryPickers';
 import { sourceLabel } from '../history/screen/HistoryMultiSources';
@@ -63,7 +64,7 @@ function DogChip({ dog, name, onPress, onRemove, onLayout }) {
  * sideways when they do not fit) or 「我的路線」; the export icon fixed right.
  */
 function TopRow({ top, subject, dogs, nameOf, full, onBack, onExport, onSelect, onRemove, onAdd, exportEnabled,
-  exportLabel = '匯出' }) {
+  exportLabel = '匯出', exportBusy = false }) {
   // The protagonist's chip is scrolled into view when it changes (a face
   // tapped on the map can lead to a chip out of sight).
   const scroller = useRef(null);
@@ -97,10 +98,14 @@ function TopRow({ top, subject, dogs, nameOf, full, onBack, onExport, onSelect, 
           </Capsule>
         </ScrollView>
       )}
-      <PressScale testID="history-export" accessibilityRole="button" accessibilityLabel={exportLabel}
-        accessibilityState={{ disabled: !exportEnabled }} disabled={!exportEnabled} onPress={onExport}
-        style={[styles.exportButton, !exportEnabled && styles.disabled]}>
-        <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />
+      {/* 產生中: a 20dp spinner instead, not pressable (判定表「載入中、產生中」). */}
+      <PressScale testID="history-export" accessibilityRole="button"
+        accessibilityLabel={exportBusy ? '匯出，產生中' : exportLabel}
+        accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
+        disabled={!exportEnabled || exportBusy} onPress={onExport}
+        style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
+        {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
+          : <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
       </PressScale>
     </View>
   );
@@ -195,14 +200,19 @@ function FrameButton({ onPress }) {
  * should leave the history. { mapPressed() } closes the range bar.
  */
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, levels, bottomInset,
-  onBack, onFrame, onLevel, history, snapshot, closedAt = null, initialRangeOpen = false, initialCalendar = null,
-  candidates = [], initialSheet = null }, ref) {
+  onBack, onFrame, onLevel, closedAt = null, initialRangeOpen = false, initialCalendar = null,
+  candidates = [], initialSheet = null, exportNative = null, lastExport = 'png', onRememberExport, initialExport = null },
+ref) {
   const panel = useRef(null);
   const list = useRef(null);
   const rows = useRef({});
   const [rangeOpen, setRangeOpen] = useState(initialRangeOpen);
   const raised = useRef(false);
-  const [exporting, setExporting] = useState(false);
+  // H9/H10: the export window and the export running from it.
+  const exporter = useHistoryExport({ screen, exporter: exportNative, lastFormat: lastExport,
+    onRemember: onRememberExport, initial: initialExport });
+  const exportSheet = useRef(null);
+  const exporting = exporter.phase !== 'closed';
   // initialCalendar ('month' | 'months'): a screen fixture opens on H3b / H3e.
   const [calendarOpen, setCalendarOpen] = useState(!!initialCalendar);
   const calendar = useRef(null);
@@ -236,7 +246,11 @@ const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top
   const closeRange = useCallback(() => { if (rangeOpen) openRange(false); }, [rangeOpen, openRange]);
   useImperativeHandle(ref, () => ({
     back: () => {
-      if (exporting) { setExporting(false); return true; }
+      // 匯出產生中: 返回鍵＝取消; the window closes first like any other.
+      if (exporting) {
+        if (!exportSheet.current?.back()) exporter.close();
+        return true;
+      }
       // A small window closes before anything else (返回鍵 table).
       if (sheet) {
         if (!sheetRef.current?.back()) setSheet(null);
@@ -250,7 +264,7 @@ const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top
       return !!panel.current?.back();
     },
     mapPressed: closeRange,
-  }), [exporting, sheet, calendarOpen, downloading, screen, rangeOpen, openRange, closeRange]);
+  }), [exporting, exporter, sheet, calendarOpen, downloading, screen, rangeOpen, openRange, closeRange]);
   const step = useCallback(move => {
     closeRange();
     const result = move();
@@ -361,7 +375,8 @@ const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top
     <>
       <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} full={screen.full} onBack={onBack}
         onSelect={pressDog} onRemove={id => { closeRange(); screen.removeDog(id); }} onAdd={pressAdd}
-        exportEnabled={hasRoute && !!history} onExport={() => setExporting(true)}
+        exportEnabled={hasRoute} exportBusy={exporter.generating}
+        onExport={() => { closeRange(); exporter.open(); }}
         exportLabel={hasRoute ? '匯出' : downloading ? '匯出，無法使用，正在下載'
           : empty ? '匯出，無法使用，這天沒有紀錄' : model ? '匯出，無法使用，這段時間沒有紀錄' : '匯出，無法使用'} />
       <HistoryPanel ref={panel} levels={levels} header={header} onLevel={panelLevel} onDragStart={dragStart}
@@ -371,10 +386,7 @@ const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top
           : null}>
         <Pressable onPress={closeRange} disabled={!rangeOpen} accessible={false}>{body}</Pressable>
       </HistoryPanel>
-      {history && (
-        <HistoryExportDialog history={history} snapshot={snapshot} visible={exporting}
-          onClose={() => setExporting(false)} />
-      )}
+      {exporting && <HistoryExportSheet ref={exportSheet} exporter={exporter} bottomInset={bottomInset} />}
       {calendarOpen && (
         <HistoryCalendarSheet ref={calendar} screen={screen} bottomInset={bottomInset} onOffline={showTip}
           initialView={initialCalendar}
@@ -416,7 +428,7 @@ const styles = StyleSheet.create({
   capsuleText: { color: colors.text, fontSize: 16, fontWeight: '700', maxWidth: 120 },
   exportButton: { width: sizes.floatingButton, height: sizes.floatingButton, borderRadius: sizes.floatingButton / 2,
     backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadow.floating },
-  disabled: { opacity: 0.6 },
+  disabled: { opacity: opacity.disabled },
   dateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingBottom: 4 },
   dayArrow: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   datePill: { flexDirection: 'row', alignItems: 'center', height: 40, paddingHorizontal: 18, borderRadius: 20,

@@ -73,6 +73,10 @@ export const colors = {
   noDataLine: '#C9CFCC',
   // Grey map background when the base map cannot load.
   mapFallback: '#ECEEEC',
+  // History list pills (screen and exported PNG): 出發、結束、恢復記錄 on
+  // pillPlain, 室內 on pillIndoor (receiver text).
+  pillPlain: '#F1EEEC',
+  pillIndoor: '#E6EEF3',
 };
 
 export const routeColors = [colors.route1, colors.route2, colors.route3, colors.route4];
@@ -184,6 +188,8 @@ export const size = {
   alertCard: { edge: 4, border: 1, icon: 32, buttonHeight: 28, gap: 8 },
   smallChip: { height: 28 },
   listRow: { avatar: 32 },
+  // 判定表「載入中、產生中」: the small spinner (export, downloads).
+  spinner: 20,
   edit: { avatar: 96, camera: 36, pencil: 16, choice: 48, colorDot: 32 },
   switch: { width: 52, height: 32 },
   input: { height: 56, border: 1.5, focusBorder: 2 },

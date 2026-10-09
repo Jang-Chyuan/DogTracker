@@ -266,7 +266,6 @@ function GoogleTrackingMapRenderer({
   // Where the compass sits (12dp under the gear or under the top cards).
   compassTop = null,
   onReadyChange,
-  onSnapshotReady,
   foreground,
   dataReady = true,
   framingReady = true,
@@ -355,10 +354,6 @@ function GoogleTrackingMapRenderer({
   // onMapReady can precede native layout under Fabric. onMapLoaded is the first
   // callback after which bounds-based camera commands are safe on Android.
   const usable = ready && loaded;
-  useEffect(() => {
-    onSnapshotReady?.(usable ? () => mapRef.current.takeSnapshot({ format: 'png', result: 'file' }) : null);
-    return () => onSnapshotReady?.(null);
-  }, [usable, instance, onSnapshotReady]);
   const [mountedMap, setMountedMap] = useState(false);
   const [needsFirstPositionFit, setNeedsFirstPositionFit] = useState(false);
   const interacted = useRef(false);

@@ -68,7 +68,9 @@
 | `alertBorder` | `#F4CFC9` | 提醒卡和「⚠ N」的 1dp 框 |
 | `alertIconBg` | `#FDE7E4` | 提醒卡左側圖示的圓底 |
 | `alertDetail` | `#8A5A55` | 提醒卡的說明（第二行） |
-| `mapFallback` | `#ECEEEC` | 底圖載不出來時的灰底（狗、手機、接收範圍圈照畫，不加比例尺） |
+| `mapFallback` | `#ECEEEC` | 底圖載不出來時的灰底（狗、手機、接收範圍圈照畫，不加比例尺）；匯出 PNG 沒有底圖時的地圖底（加比例尺） |
+| `pillPlain` | `#F1EEEC` | 時間軸清單（畫面和匯出 PNG）的一般膠囊底：出發、結束、恢復記錄、接續前一天 |
+| `pillIndoor` | `#E6EEF3` | 時間軸清單「室內・N 分」膠囊底（字用 `receiver`） |
 
 ### 設定首頁 icon（底色／線色）
 
