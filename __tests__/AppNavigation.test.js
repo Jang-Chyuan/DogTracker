@@ -794,6 +794,10 @@ test('first launch, signed out: D1 with the guide progress; 稍後再說 opens t
   expect(page('pair-scan')).toBe(false);
   expect(NativeTrackingPlatform.claimLocationPermissionPrompt).toHaveBeenCalled();
   expect(preferences().onboarding).toBe('done');
+  const handlers = Linking.addEventListener.mock.calls.filter(call => call[0] === 'url').map(call => call[1]);
+  await act(async () => handlers.forEach(handler => handler({ url: 'dogtracker://notification/receiver-settings' })));
+  expect(page('receiver-settings')).toBe(true);
+
   await act(async () => renderer.unmount());
   await mount();
   await advance(100);
@@ -951,6 +955,10 @@ test('登入失效 found by the restore: D1 with 需要重新登入; 稍後再�
   expect(signInPage()).toBe(false);
   // The map (not settings) and the gear's red dot for the expired sign-in.
   expect(renderer.root.findAllByProps({ testID: 'map-settings-dot' }).length).toBeGreaterThan(0);
+  const handlers = Linking.addEventListener.mock.calls.filter(call => call[0] === 'url').map(call => call[1]);
+  await act(async () => handlers.forEach(handler => handler({ url: 'dogtracker://notification/receiver-settings' })));
+  expect(page('receiver-settings')).toBe(true);
+
 });
 
 test('the database cannot be opened: 手機裡的資料打不開; 診斷 says why; 重試 opens it again', async () => {

@@ -651,12 +651,14 @@ function TrackerApp({ resume = null, onRestart }) {
       else open('permissions', { entry: 'onboarding' });
       return;
     }
+    if (route.entry === 'expired') setLaunch(current => ({ ...current, screen: 'map' }));
     goBack();
   };
   // The guide ends on the map (D3 「稍後再說」, D4 「開始使用」); A6 shows when
   // there is no dog data.
   const finishGuide = () => {
     saveGuideStep(ONBOARDING_DONE);
+    setLaunch(current => ({ ...current, screen: 'map' }));
     setStack([{ name: 'map' }]);
   };
   // Back in the guide: the step before (saved, so a restart continues there),
