@@ -1,6 +1,10 @@
 // 063 (audit R01–R06, R13; tests T01, T02): an answer that arrives after its
 // page was left, its receiver or database replaced, or a newer read started
 // never reaches the page; the operation itself still finishes.
+// React 19 ignores a state update after unmount without a warning, so the
+// unmount cases of T01/T02 check what is observable (the operation finishes,
+// nothing rejects unhandled, the draft and the next page stay as they were);
+// R02, R04 and R13 fail without their guards.
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { TextInput } from 'react-native';
@@ -228,6 +232,22 @@ describe('R13 即時資料 polling', () => {
     await act(async () => renderer.unmount());
     await act(async () => { reads[1].resolve([]); jest.advanceTimersByTime(5000); });
     expect(dogDatabase.listHistory).toHaveBeenCalledTimes(2);
+  });
+
+  test('重試 while a read runs joins it instead of starting another', async () => {
+    const reads = [];
+    const dogDatabase = { listHistory: jest.fn(() => { const read = deferred(); reads.push(read); return read.promise; }) };
+    const profile = { tableColumns: ['dog'], historyLimit: 10, tableRefreshIntervalMs: 1000 };
+    let renderer;
+    await act(async () => { renderer = Renderer.create(<LiveDataSettings dogDatabase={dogDatabase} profile={profile} />); });
+    await act(async () => { reads[0].reject(new Error('busy')); });
+    const retry = () => renderer.root.findAll(node => typeof node.props.onRetry === 'function')[0].props.onRetry();
+    await act(async () => { jest.advanceTimersByTime(1000); }); // the timer's read starts
+    expect(dogDatabase.listHistory).toHaveBeenCalledTimes(2);
+    await act(async () => { retry(); retry(); });
+    expect(dogDatabase.listHistory).toHaveBeenCalledTimes(2);
+    await act(async () => { reads[1].resolve([]); });
+    await act(async () => renderer.unmount());
   });
 });
 

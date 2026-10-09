@@ -60,12 +60,13 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   private val jobs = ExportJobs()
   private val root get() = File(context.cacheDir, "history_exports").apply { mkdirs() }
 
-  // The share sheet's Promise, settled once: chosen, closed, or the module gone.
-  private val sharePromise = SettleOnce<Promise>()
+  // The share sheet's sessions: each Promise settled once (chosen, closed,
+  // failed, or the module gone), and only by its own chooser's callbacks.
+  private val shares = ShareSessions<Promise>()
   private val shareAction = "${context.packageName}.HISTORY_EXPORT_CHOSEN"
   private val shareChosen = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
-      sharePromise.take()?.resolve("shared")
+      shares.chosen(intent?.getIntExtra(SHARE_CODE, -1) ?: -1)?.resolve("shared")
     }
   }
 
@@ -91,7 +92,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
   override fun onNewIntent(intent: Intent) {}
   override fun onActivityResult(activity: android.app.Activity, requestCode: Int, resultCode: Int, data: Intent?) {
-    if (requestCode == 7401) sharePromise.take()?.resolve("cancelled")
+    if (shares.owns(requestCode)) shares.closed(requestCode)?.resolve("cancelled")
   }
 
   @ReactMethod
@@ -103,6 +104,8 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   override fun getName() = "HistoryExport"
+
+  private companion object { const val SHARE_CODE = "shareCode" }
 
   private fun folder(directory: String): File {
     require(Regex("^history_exports/[A-Za-z0-9_-]+$").matches(directory)) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1056) }
@@ -157,7 +160,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
 
   @ReactMethod
   fun renderPng(exportId: String, directory: String, json: String, promise: Promise) {
-    onWorker(promise, "EXPORT_PNG", "已取消") {
+    onWorker(promise, "EXPORT_PNG", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1060)) {
       val written = mutableListOf<File>()
       try {
         if (!jobs.begin(exportId)) throw InterruptedException("cancelled")
@@ -198,7 +201,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   @ReactMethod
   fun share(paths: ReadableArray, mime: String, promise: Promise) {
     UiThreadUtil.runOnUiThread {
-      var claimed = false
+      var code: Int? = null
       try {
         val activity = context.currentActivity ?: error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1062))
         val uris = ArrayList<Uri>()
@@ -212,41 +215,50 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
         intent.setType(mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         intent.clipData = ClipData.newRawUri("DogTracker", uris[0]).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
-        check(sharePromise.claim(promise)) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1065) }
-        claimed = true
-        val chosen = PendingIntent.getBroadcast(context, 7401,
-          Intent(shareAction).setPackage(context.packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        activity.startActivityForResult(Intent.createChooser(intent, null, chosen.intentSender), 7401)
+        // Null while another share is open, or once the module is invalidated.
+        val session = shares.open(promise) ?: error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1065))
+        code = session
+        val chosen = PendingIntent.getBroadcast(context, session,
+          Intent(shareAction).setPackage(context.packageName).putExtra(SHARE_CODE, session),
+          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        activity.startActivityForResult(Intent.createChooser(intent, null, chosen.intentSender), session)
       } catch (e: Exception) {
-        // Only this call's Promise is dropped: a share still open keeps its own.
-        if (claimed) sharePromise.take()
-        com.dogtracker.AppLog.w("HistoryExport", "share failed", e); promise.reject("EXPORT_SHARE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1066), e) }
+        com.dogtracker.AppLog.w("HistoryExport", "share failed", e)
+        // This call's own session only (a share still open keeps its own);
+        // after invalidate() its Promise was rejected already.
+        val settle = code?.let { shares.failed(it) } ?: promise.takeIf { code == null }
+        settle?.reject("EXPORT_SHARE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1066), e)
+      }
     }
   }
 
   @ReactMethod
   fun listExports(promise: Promise) {
     onWorker(promise, "EXPORT_LIST", "export worker stopped") {
-      val list = Arguments.createArray()
-      root.listFiles()?.forEach { entry ->
-        list.pushMap(Arguments.createMap().apply {
-          putString("directory", "history_exports/${entry.name}")
-          putDouble("createdAt", entry.lastModified().toDouble())
-        })
-      }
-      promise.resolve(list)
+      try {
+        val list = Arguments.createArray()
+        root.listFiles()?.forEach { entry ->
+          list.pushMap(Arguments.createMap().apply {
+            putString("directory", "history_exports/${entry.name}")
+            putDouble("createdAt", entry.lastModified().toDouble())
+          })
+        }
+        promise.resolve(list)
+      } catch (e: Exception) { promise.reject("EXPORT_LIST", "export list failed", e) }
     }
   }
 
   @ReactMethod
   fun removeExports(directories: ReadableArray, promise: Promise) {
     onWorker(promise, "EXPORT_REMOVE", "export worker stopped") {
-      for (i in 0 until directories.size()) {
-        val name = directories.getString(i) ?: continue
-        val entry = File(context.cacheDir, name).canonicalFile
-        if (entry.parentFile == root.canonicalFile) entry.deleteRecursively()
-      }
-      promise.resolve(null)
+      try {
+        for (i in 0 until directories.size()) {
+          val name = directories.getString(i) ?: continue
+          val entry = File(context.cacheDir, name).canonicalFile
+          if (entry.parentFile == root.canonicalFile) entry.deleteRecursively()
+        }
+        promise.resolve(null)
+      } catch (e: Exception) { promise.reject("EXPORT_REMOVE", "export cleanup failed", e) }
     }
   }
 
@@ -415,13 +427,18 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     val cx = (minX + maxX) / 2; val cy = (minY + maxY) / 2
     val centre = LatLng(atan(sinh(PI * (1 - 2 * cy))) * 180 / PI, cx * 360 - 180)
     val latch = CountDownLatch(1)
-    var result: Pair<Bitmap, Projector>? = null
-    var view: MapView? = null
-    // Set on the UI thread when the wait is over: a map that loads later
-    // draws nothing (its view is already destroyed).
+    val projector = Projector({ la, lo -> val (x, y) = mercator(la, lo)
+      ((w / 2.0 + (x - cx) * scale).toFloat()) to ((h / 2.0 + (y - cy) * scale).toFloat()) },
+      40075016.0 * cos(centre.latitude * PI / 180.0) / scale)
+    // The bitmap passes from the UI thread to this worker under `lock`. Once
+    // the wait is over (`abandoned`), a map that loads later keeps nothing:
+    // whatever it drew is recycled at once.
+    val lock = Any()
+    var result: Bitmap? = null
     var abandoned = false
+    var view: MapView? = null
     UiThreadUtil.runOnUiThread {
-      if (abandoned) { latch.countDown(); return@runOnUiThread }
+      if (synchronized(lock) { abandoned }) { latch.countDown(); return@runOnUiThread }
       try {
         MapsInitializer.initialize(activity)
         val map = MapView(activity, GoogleMapOptions().liteMode(true).mapToolbarEnabled(false)
@@ -435,37 +452,47 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           mapStyle?.let { google.setMapStyle(MapStyleOptions(it.toString())) }
           google.uiSettings.isMapToolbarEnabled = false
           google.setOnMapLoadedCallback {
-            if (abandoned) { latch.countDown(); return@setOnMapLoadedCallback }
+            if (synchronized(lock) { abandoned }) { latch.countDown(); return@setOnMapLoadedCallback }
+            // Every bitmap made here is recycled unless handed over.
+            var full: Bitmap? = null
+            var scaled: Bitmap? = null
             try {
-              val full = Bitmap.createBitmap(viewW, viewH, Bitmap.Config.ARGB_8888)
-              map.draw(Canvas(full))
-              val bitmap = if (viewW == w && viewH == h) full
-                else Bitmap.createScaledBitmap(full, w, h, true).also { full.recycle() }
-              result = bitmap to Projector({ la, lo -> val (x, y) = mercator(la, lo)
-                ((w / 2.0 + (x - cx) * scale).toFloat()) to ((h / 2.0 + (y - cy) * scale).toFloat()) },
-                40075016.0 * cos(centre.latitude * PI / 180.0) / scale)
-            } catch (_: Exception) { }
+              val drawn = Bitmap.createBitmap(viewW, viewH, Bitmap.Config.ARGB_8888)
+              full = drawn
+              map.draw(Canvas(drawn))
+              val bitmap = if (viewW == w && viewH == h) drawn.also { full = null }
+                else Bitmap.createScaledBitmap(drawn, w, h, true).also { scaled = it }
+              val kept = synchronized(lock) { if (abandoned) false else { result = bitmap; true } }
+              if (kept) scaled = null else bitmap.recycle()
+            } catch (_: Exception) {
+            } finally {
+              full?.recycle()
+              scaled?.recycle()
+            }
             latch.countDown()
           }
         }
       } catch (_: Exception) { latch.countDown() }
     }
+    var waited = false
+    var taken: Bitmap? = null
     try {
       // At most 12 s, and no longer than the export is wanted (取消, a reload).
       val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
       while (!latch.await(100, TimeUnit.MILLISECONDS)) {
         if (jobs.isCancelled(exportId) || System.nanoTime() > deadline) break
       }
+      waited = true
     } finally {
+      taken = synchronized(lock) { abandoned = true; result.also { result = null } }
       // The hidden MapView goes on every path, the interrupted one included.
       UiThreadUtil.runOnUiThread {
-        abandoned = true
         view?.let { it.onPause(); it.onDestroy(); (it.parent as? ViewGroup)?.removeView(it) }
         view = null
       }
+      if (!waited || jobs.isCancelled(exportId)) { taken?.recycle(); taken = null }
     }
-    if (jobs.isCancelled(exportId)) { result?.first?.recycle(); return null }
-    return result
+    return taken?.let { it to projector }
   }
 
   private fun drawMap(canvas: Canvas, op: JSONObject, exportId: String) {
@@ -482,7 +509,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
       else baseMap(coords, w, h, padding, op.optJSONArray("mapStyle"), exportId)
     val projector = base?.second?.takeIf { it.metresPerPixel.isFinite() && it.metresPerPixel > 0 }
       ?: ownFit(coords, w, h, padding.toFloat())
-    base?.first?.let { canvas.drawBitmap(it, 0f, 0f, null); it.recycle() }
+    base?.first?.releasing({ it.recycle() }) { canvas.drawBitmap(it, 0f, 0f, null) }
     val subjects = op.getJSONArray("subjects")
     val halo = color(op.getString("halo"))
     val ink = color(op.getString("text"))
@@ -615,7 +642,7 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     // queued calls are dropped with their Promises rejected; shutdownNow
     // alone would leave the running page drawing on.
     jobs.dispose()
-    sharePromise.take()?.reject("EXPORT_SHARE", "無法開啟分享選單")
+    shares.dispose()?.reject("EXPORT_SHARE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1066))
     worker.shutdownNow().forEach { (it as? WorkerTask)?.drop() }
     super.invalidate()
   }

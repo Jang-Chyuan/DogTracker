@@ -51,22 +51,59 @@ class ExportJobs(private val remember: Int = 16) {
 }
 
 /**
- * A value that is settled at most once (the share sheet's Promise): `claim`
- * only when none is pending; `take` hands it to exactly one caller — the
- * chooser's broadcast, the activity result, or the module's invalidation.
+ * The share sheet's sessions (HistoryExportModule.share). One session at a
+ * time, each with its own request code, so a callback of an earlier chooser
+ * can never settle a later share. Its Promise is settled exactly once: by the
+ * chooser's broadcast ("shared"), by the activity result when nothing was
+ * chosen ("cancelled"), by a failed launch, or by the module's invalidation.
+ *
+ * After "shared" the session stays until its activity result arrives (that
+ * result must not settle the next share), but a new share may replace it, as
+ * the activity result is not guaranteed (the activity may be gone).
  */
-class SettleOnce<T : Any> {
-  private var pending: T? = null
+class ShareSessions<T : Any>(private val firstCode: Int = 7401, private val codes: Int = 64) {
+  private class Session<T>(val code: Int, val value: T, var settled: Boolean = false)
+  private var current: Session<T>? = null
+  private var next = 0
+  var disposed = false
+    private set
 
-  @Synchronized fun claim(value: T): Boolean {
-    if (pending != null) return false
-    pending = value
-    return true
+  /** The request code of a new session, or null (one still open, or disposed). */
+  @Synchronized fun open(value: T): Int? {
+    if (disposed) return null
+    if (current?.settled == false) return null
+    val code = firstCode + next
+    next = (next + 1) % codes
+    current = Session(code, value)
+    return code
   }
 
-  @Synchronized fun take(): T? = pending.also { pending = null }
+  fun owns(code: Int) = code >= firstCode && code < firstCode + codes
 
-  @Synchronized fun isPending() = pending != null
+  /** The chooser's broadcast: the Promise to resolve "shared", once. */
+  @Synchronized fun chosen(code: Int): T? {
+    val session = current?.takeIf { it.code == code && !it.settled } ?: return null
+    session.settled = true
+    return session.value
+  }
+
+  /** The chooser closed (activity result): the Promise to resolve "cancelled" when not shared. */
+  @Synchronized fun closed(code: Int): T? {
+    val session = current?.takeIf { it.code == code } ?: return null
+    current = null
+    return session.value.takeIf { !session.settled }
+  }
+
+  /** The launch failed: the Promise to reject, unless settled already. */
+  @Synchronized fun failed(code: Int): T? = closed(code)
+
+  /** The module is gone: the open Promise to reject; no session opens again. */
+  @Synchronized fun dispose(): T? {
+    disposed = true
+    val session = current
+    current = null
+    return session?.value?.takeIf { !session.settled }
+  }
 }
 
 /** Runs `block` with `resource` and always releases it (a page's bitmap). */

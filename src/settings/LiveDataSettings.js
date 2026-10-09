@@ -68,23 +68,32 @@ export default function LiveDataSettings({
       mounted.current = false;
     };
   }, []);
-  // Only the newest read (a 重試, another database) may set the table.
-  const reading = useRef(0);
-  const load = useCallback(async () => {
-    const id = ++reading.current;
-    const latest = () => mounted.current && id === reading.current;
-    try {
-      const next = await dogDatabase.listHistory(limit);
-      if (latest()) {
-        setRows(next || []);
-        setError('');
+  // One read at a time: 重試 while the timer's read runs joins that read.
+  // A read of an earlier database never sets the table.
+  const reading = useRef(null);
+  const load = useCallback(() => {
+    const running = reading.current;
+    if (running && running.db === dogDatabase && running.limit === limit)
+      return running.promise;
+    const entry = { db: dogDatabase, limit };
+    reading.current = entry;
+    const latest = () => mounted.current && reading.current === entry;
+    entry.promise = (async () => {
+      try {
+        const next = await dogDatabase.listHistory(limit);
+        if (latest()) {
+          setRows(next || []);
+          setError('');
+        }
+      } catch (failure) {
+        if (latest())
+          setError(t("c565", { value: failure?.message || t("c966") }));
+      } finally {
+        if (latest()) setLoading(false);
+        if (reading.current === entry) reading.current = null;
       }
-    } catch (failure) {
-      if (latest())
-        setError(t("c565", { value: failure?.message || t("c966") }));
-    } finally {
-      if (latest()) setLoading(false);
-    }
+    })();
+    return entry.promise;
   }, [dogDatabase, limit]);
   // The next read is planned when this one is done, so a slow read never
   // overlaps the next one (an older answer cannot replace a newer one).
