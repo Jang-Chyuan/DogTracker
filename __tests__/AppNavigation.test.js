@@ -9,6 +9,7 @@ import {
   NativeModules,
   PermissionsAndroid,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import MapView, { Circle, Marker, Polygon, Polyline } from 'react-native-maps';
 import { mockDatabase, open } from 'react-native-nitro-sqlite';
@@ -1115,4 +1116,18 @@ test('K08: rerenders do not register a newer root back handler', async () => {
   await act(async () => renderer.update(<App />));
   await advance(10000);
   expect(BackHandler.addEventListener.mock.calls.length).toBe(handlers);
+});
+
+test('E01/E16: A4 and A5 isolate background controls and accessibility', async () => {
+  await mount();
+  await advance(100);
+  await tapDog(7);
+  const DogCard = require('../src/map/DogCard').default;
+  const card = renderer.root.findByType(DogCard);
+  for (const action of ['onActivity', 'onEdit']) {
+    await act(async () => card.props[action]());
+    const layer = renderer.root.findAllByProps({ testID: 'map-background-layer' })[0];
+    expect(layer.props).toMatchObject({ pointerEvents: 'none', accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' });
+    expect(StyleSheet.flatten(layer.props.style).display).toBe('none');
+  }
 });

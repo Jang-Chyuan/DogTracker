@@ -925,6 +925,10 @@ export default function MapScreen({
       : null;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
+      <View testID="map-background-layer" style={[StyleSheet.absoluteFill, cardPage && styles.hiddenBackground]}
+        pointerEvents={cardPage ? 'none' : 'auto'}
+        accessibilityElementsHidden={!!cardPage}
+        importantForAccessibility={cardPage ? 'no-hide-descendants' : 'auto'}>
       <TrackingMap
         a11yHidden={historical && historySheet}
         provider={mapProvider}
@@ -1006,6 +1010,7 @@ export default function MapScreen({
         style={[
           StyleSheet.absoluteFill,
           styles.chrome,
+          cardPage && { display: 'none' },
           { opacity: splashChrome },
         ]}
       >
@@ -1095,6 +1100,7 @@ export default function MapScreen({
           trackBusy={trackBusy}
         />
       )}
+      </View>
       {cardModel && cardPage === 'activity' && (
         <ActivityScreen
           key={`${fixture?.name ?? 'live'}:${cardModel.slaveId}`}
@@ -1132,6 +1138,7 @@ const getStyles = makeStyles(theme => {
   return StyleSheet.create({
     // The gear and the top cards, above the map and the card (as before).
     chrome: { zIndex: 70, elevation: 32 },
+    hiddenBackground: { display: 'none' },
     // MapScreen lives in App's persistent absolute map layer. A flex-only child
     // can measure to zero under Fabric, sending bottom-anchored overlays above
     // the viewport, so make this screen an explicit inset box as well.
