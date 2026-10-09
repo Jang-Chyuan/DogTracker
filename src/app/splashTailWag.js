@@ -1,6 +1,7 @@
 import { Animated, Easing } from 'react-native';
 
-export const WAG_TIMING = { draw: 800, angle: 12, cycle: 900, pause: 400 };
+export const WAG_MAX_ANGLE = 12;
+export const WAG_TIMING = { draw: 800, angle: WAG_MAX_ANGLE, cycle: 900, pause: 400 };
 
 // Start only after the finished copy has appeared. Its first frame and the
 // native vector's last frame both have a neutral tail. Native-driven holds
