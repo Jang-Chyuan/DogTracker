@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, PermissionsAndroid, Platform } from 'react-native';
+import { AppState, Linking, PermissionsAndroid, Platform } from 'react-native';
 import NativeTrackingPlatform from '../../specs/NativeTrackingPlatform';
 import { getErrorMessage } from '../utils/errors';
 import {
@@ -24,9 +24,19 @@ export function usePhoneLocation(
   const busy = useRef(false);
   const active = useRef(false);
   const permissionRequest = useRef(null);
+  const hasForeground = useRef(false);
+  const previousForeground = useRef(foreground);
   const refresh = useCallback(
-    async (request = false) => {
-      if (!active.current || busy.current) return;
+    async (request = false, resumed = false) => {
+      if (!active.current) return;
+      if (resumed) {
+        // A paused Activity can leave the dialog promise unresolved. Resume
+        // reads current system state and invalidates all older async results.
+        generation.current += 1;
+        busy.current = false;
+        permissionRequest.current = null;
+      }
+      if (busy.current) return;
       busy.current = true;
       const token = generation.current;
       const alive = () => active.current && generation.current === token;
@@ -46,12 +56,11 @@ export function usePhoneLocation(
         let requested = request;
         if (!alive()) return;
         if (permissionRequest.current) {
-          // The Android permission dialog can pause/resume the Activity. A new
-          // foreground refresh must await that result, not start another dialog
-          // or publish the pre-dialog denied state after a successful grant.
+          // Within the same foreground lifetime, do not publish a pre-dialog
+          // denial while the user's permission choice is still pending.
           requested = true;
           permission = await permissionRequest.current;
-        } else if (permission === 'denied' && (request || promptOnFirstUse)) {
+        } else if (!resumed && permission === 'denied' && (request || promptOnFirstUse)) {
           const firstRequest = await platform.claimLocationPermissionPrompt();
           if (!alive()) return;
           if (request || firstRequest) {
@@ -103,8 +112,20 @@ export function usePhoneLocation(
     active.current = foreground;
     generation.current += 1;
     busy.current = false;
-    if (foreground) refresh();
+    if (foreground) {
+      refresh(false, hasForeground.current && !previousForeground.current);
+      hasForeground.current = true;
+    }
+    previousForeground.current = foreground;
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') refresh(false, true);
+      else {
+        generation.current += 1;
+        busy.current = false;
+      }
+    });
     return () => {
+      subscription.remove();
       active.current = false;
       generation.current += 1;
       busy.current = false;
