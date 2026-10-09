@@ -93,3 +93,17 @@ test('K11: incomplete download is durable before network writes and complete onl
   await expect(failed.download({ slaveId: 6, dayStart, dayEnd: dayStart + 86400000 })).rejects.toThrow('下載失敗');
   expect(order).toEqual([false]);
 });
+
+test('K12: multi-dog downloads complete each dog independently and report exactly which failed', async () => {
+  const statuses = [];
+  const complete = [];
+  const c = client(log => {
+    const id = log.find(([key, name]) => key === 'eq' && name === 'slave_id')[2];
+    return Promise.resolve(id === 6 ? { data: null, error: { message: 'offline' } } : { data: [], error: null });
+  });
+  const database = { initialize: async () => {}, setHistoryDownloadState: async (owner, id, day, done) => complete.push([id, done]) };
+  const cloud = createHistoryCloud({ client: c, database, owner: 'a' });
+  await expect(cloud.download({ slaveId: [4, 6], dayStart: 0, dayEnd: 86400000, onDogEnd: (id, status) => statuses.push([id, status]) })).rejects.toThrow('下載失敗');
+  expect(statuses).toEqual([[4, 'done'], [6, 'failed']]);
+  expect(complete).toEqual([[4, false], [6, false], [4, true]]);
+});

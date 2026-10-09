@@ -115,6 +115,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
       <View style={styles.pillSlot}>
         <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
           {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
+            {pill.lead.downloadFailed && <Text style={styles.downloadFailure}>!</Text>}
             <DogAvatar avatar={pill.lead.avatar} size={sizes.historyTop.avatar} border={0} tint={routeTint(pill.lead, colors)} />
           </View>}
           {/* A dog's name is cut (or, at 180%, left to TalkBack); 「我的路線」 is
@@ -123,6 +124,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
             numberOfLines={pill.lead ? 1 : undefined}>{pill.name}</Text>}
           {!!pill.faces.length && <View style={styles.others}>
             {pill.faces.map((dog, index) => <View key={dog.id} style={index > 0 && styles.overlap}>
+              {dog.downloadFailed && <Text style={styles.downloadFailure}>!</Text>}
               <DogAvatar avatar={dog.avatar} size={sizes.historyTop.companionAvatar} border={border.regular} tint={routeTint(dog, colors)} />
             </View>)}
             {pill.more > 0 && <Text style={styles.more} maxFontSizeMultiplier={fontScales.graphicTextMax}>{`+${pill.more}`}</Text>}
@@ -609,6 +611,7 @@ const getStyles = makeStyles(theme => {
     caret: { fontSize: sizes.historyTop.caretGlyph, color: colors.textMuted },
     plus: { fontSize: type.body.fontSize, fontWeight: type.status.fontWeight, color: colors.tonalText },
     alertBadge: { marginRight: space.xs },
+    downloadFailure: { color: colors.crit, fontWeight: type.status.fontWeight },
     capsule: {
       // 36dp, taller with a large system font (膠囊可以變高、不裁字).
       minHeight: sizes.chip.height,

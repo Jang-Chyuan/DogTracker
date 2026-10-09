@@ -23,7 +23,7 @@ const merge = (list, more) => (more.length ? [...new Set([...list, ...more])] : 
  * days this phone holds. Returns { knowledge, askMonth, askYear, retryQuery,
  * stopQuery, download, startDownload, cancelDownload }.
  */
-export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active = true, seed = null }) {
+export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localByDog = null, active = true, seed = null }) {
   const enabled = !!cloud && slaveId != null;
   // `seed`: what a screen fixture says was already found (its H3c starts on
   // a cloud day); never set for real.
@@ -186,6 +186,12 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
     if (value) days.add(day); else days.delete(day);
     setIncompleteRevision(revision => revision + 1);
   }, [incompleteKey]);
+  const [dogDownloads, setDogDownloads] = useState({});
+  const completeness = durable.scope === scope ? durable.states : [];
+  const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
+  const completeFor = (id, day) => completeness.some(row => row.slave_id === id && row.day === day && row.complete)
+    || (localByDog?.[id]?.includes(day) && !completeness.some(row => row.slave_id === id && row.day === day && !row.complete));
+  const partialLocal = localByDog && ids.length > 1 ? local.filter(day => ids.some(id => !completeFor(id, day))) : [];
   const startDownload = useCallback((day, onEnd) => {
     if (!enabled) return;
     // Incomplete until it has finished.
@@ -197,7 +203,21 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
     downloadSeq.current = id;
     setDownload({ day, status: 'downloading', id });
     const { dayStart, dayEnd } = dayBounds(day);
-    Promise.resolve().then(() => cloud.download({ slaveId, dayStart, dayEnd, signal: controller.signal }))
+    const subjects = Array.isArray(slaveId) && localByDog ? slaveId.filter(dogId => !completeFor(dogId, day)) : slaveId;
+    const requestedIds = Array.isArray(subjects) ? subjects : [subjects];
+    setDurable(current => ({ scope, states: [
+      ...(current.scope === scope ? current.states.filter(row => !requestedIds.includes(row.slave_id) || row.day !== day) : []),
+      ...requestedIds.map(dogId => ({ slave_id: dogId, day, complete: 0 })),
+    ] }));
+    const onDogEnd = (dogId, status) => {
+      if (!alive.current || downloadSeq.current !== id) return;
+      setDogDownloads(current => ({ ...current, [dogId]: { scope, day, status } }));
+      if (status === 'done') setDurable(current => ({ scope, states: [
+        ...(current.scope === scope ? current.states.filter(row => row.slave_id !== dogId || row.day !== day) : []),
+        { slave_id: dogId, day, complete: 1 },
+      ] }));
+    };
+    Promise.resolve().then(() => cloud.download({ slaveId: subjects, dayStart, dayEnd, signal: controller.signal, onDogEnd }))
       .then(() => {
         if (!alive.current || downloadSeq.current !== id) return;
         setDownload({ day, status: 'done', id });
@@ -212,7 +232,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
         onEnd?.('failed');
       })
       .finally(() => { if (downloading.current === controller) downloading.current = null; });
-  }, [enabled, cloud, slaveId, add, markIncomplete]);
+  }, [enabled, cloud, slaveId, add, markIncomplete, localByDog, durable, scope]); // eslint-disable-line react-hooks/exhaustive-deps
   /** 取消, 返回鍵, ‹ › or another day while downloading. */
   const cancelDownload = useCallback(() => {
     if (!downloading.current) return false;
@@ -225,9 +245,9 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, active
   }, []);
   const knowledge = useMemo(() => ({ local, cloud: known.cloud, checked: known.checked, earliest: known.earliest,
     cloudEnabled: enabled && !known.none, query: enabled ? status : 'idle',
-    incomplete: enabled ? [...new Set([...incompleteOf(incompleteKey), ...(cloud?.downloadStates && durable.scope !== scope ? local : [])])] : [] }),
+    incomplete: enabled ? [...new Set([...incompleteOf(incompleteKey), ...partialLocal, ...(cloud?.downloadStates && durable.scope !== scope ? local : [])])] : [] }),
   // incompleteRevision stands for INCOMPLETE's contents.
-  [local, known, enabled, status, incompleteKey, incompleteRevision, cloud, durable, scope]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { knowledge, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download, startDownload, cancelDownload,
+  [local, known, enabled, status, incompleteKey, incompleteRevision, cloud, durable, scope, partialLocal]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { knowledge, dogDownloads, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download, startDownload, cancelDownload,
     downloadingDay: download?.status === 'downloading' ? download.day : null };
 }

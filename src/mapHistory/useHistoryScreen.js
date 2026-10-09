@@ -355,6 +355,7 @@ export function useHistoryScreen({
   // The days with rows of any dog shown (‹ › step between them; 判定表「多隻
   // 狗的月曆」: a day of any of them has a dot), across both sources.
   const [days, setDays] = useState([]);
+  const [daysByDog, setDaysByDog] = useState({ key: null, value: {} });
   const anyLoaded = slots.some(slot => slot.version > 0);
   useEffect(() => {
     if (!active || !readDays || !subject) return undefined;
@@ -369,7 +370,8 @@ export function useHistoryScreen({
             );
     Promise.all(asks.map(ask => Promise.resolve(ask).catch(() => [])))
       .then(lists => {
-        if (alive)
+        if (alive) {
+          setDaysByDog({ key: `${baseKey}|${idsKey}`, value: Object.fromEntries(idsKey.split(',').map((id, index) => [id, lists[index] || []])) });
           setDays(
             [
               ...new Set(
@@ -377,6 +379,7 @@ export function useHistoryScreen({
               ),
             ].sort(),
           );
+        }
       })
       .catch(() => {
         if (alive) setDays([]);
@@ -394,6 +397,7 @@ export function useHistoryScreen({
     owner,
     anyLoaded,
     readRevision,
+    baseKey,
   ]);
   const todayKey = dayKey(new Date(todayStart));
   const shownKey = dayKey(new Date(day));
@@ -419,12 +423,17 @@ export function useHistoryScreen({
   // downloads (a day only the cloud holds is downloaded for all of them).
   // Not asked for 這支手機收到的.
   const cloudDogs = subject === 'dog' ? dogIds : [];
+  const localByDog = useMemo(() => Object.fromEntries(current.dogs.map(d => [d.id, [
+    ...(daysByDog.key === `${baseKey}|${idsKey}` ? daysByDog.value[d.id] ?? [] : []),
+    ...(dayHasRecords(rowsOf(d.id).rows, { dayStart: day, dayEnd }) ? [shownKey] : []),
+  ]])), [daysByDog, baseKey, idsKey, versions, day, dayEnd, shownKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const cloudDays = useHistoryCloud({
     cloud: cloudDogs.length ? cloud : null,
     slaveId: cloudDogs.length > 1 ? cloudDogs : cloudDogs[0] ?? null,
     scope: `${baseKey}|${cloudDogs.join(',')}|${cloud?.owner ?? ''}`,
     todayKey,
     local: localDays,
+    localByDog,
     active,
     seed: cloudSeed,
   });
@@ -782,6 +791,7 @@ export function useHistoryScreen({
       slot: d.slot,
       ...look[d.id],
       hasData,
+      downloadFailed: cloudDays.dogDownloads[d.id]?.scope === cloudDays.cloudScope && cloudDays.dogDownloads[d.id]?.day === shownKey && cloudDays.dogDownloads[d.id]?.status === 'failed',
       protagonist: d.id === protagonistId,
       // 判定表「全部加入的狗都沒資料」: then a faded one can lead too.
       selectable: hasData || !anyData,
@@ -798,6 +808,7 @@ export function useHistoryScreen({
     id => {
       const dog = dogs.find(d => d.id === id);
       if (!dog) return;
+      if (dog.downloadFailed) { cloudDays.startDownload(shownKey, reread); return; }
       haptic('tick');
       if (id === protagonistId || !dog.selectable) {
         // 點已經是主角的狗膠囊: the map moves to its cursor (if out of sight).
@@ -817,7 +828,7 @@ export function useHistoryScreen({
       // 換主角時的地圖: always to the new protagonist's cursor (a chosen move).
       setFocus({ key: Date.now(), time: null, action: 'protagonist', id });
     },
-    [dogs, protagonistId, cursor, cursorTime, time],
+    [dogs, protagonistId, cursor, cursorTime, time, cloudDays, shownKey, reread],
   );
   /** ✕ on a chip (not on the last one). */
   const shownRange = dayModel?.range ?? null;
@@ -842,12 +853,14 @@ export function useHistoryScreen({
     [shownRange, entryId, remembered, cursorTime, time, protagonistId],
   );
   /** A row of 「＋ 加入」: added with the smallest free colour; full at four. */
+  const addedDownloads = useRef(new Set());
   const addDog = useCallback(
     dog => {
       if (current.dogs.length >= MAX_DOGS) {
         say(`最多同時 ${MAX_DOGS} 隻`);
         return false;
       }
+      addedDownloads.current.add(dog.id);
       setSelection(state => {
         const next = dogTransition(state, {
           type: 'add',
@@ -860,6 +873,15 @@ export function useHistoryScreen({
     },
     [current.dogs.length, say],
   );
+  useEffect(() => {
+    if (!active || !cloud || daysByDog.key !== `${baseKey}|${idsKey}` || !addedDownloads.current.size) return;
+    const added = [...addedDownloads.current].filter(id => dogIds.includes(id));
+    addedDownloads.current.clear();
+    if (added.some(id => !localByDog[id]?.includes(shownKey))) {
+      cloudDays.startDownload(shownKey, reread);
+    }
+  }, [active, cloud, daysByDog, baseKey, idsKey, shownKey, localByDog]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Whether a dog not shown has records on the day shown across both sources (加入 list). */
   const checkDay = useCallback(
     async id => {

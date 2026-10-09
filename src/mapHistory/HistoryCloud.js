@@ -71,7 +71,7 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
       return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
     },
     /** Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone. */
-    download({ slaveId, dayStart, dayEnd, signal }) {
+    download({ slaveId, dayStart, dayEnd, signal, onDogEnd }) {
       const before = previous;
       const run = (async () => {
         await before.catch(() => {});
@@ -85,13 +85,27 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
         signal?.addEventListener?.('abort', () => abort.abort());
         // By upload time (received_at): rows shown on this day by their fix
         // time can arrive a little before it and up to a while after it.
-        const work = leaseCurrent => downloadCloudHistory({ client, database, owner,
-          startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId,
-          signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
-        const count = await (runManual ? runManual(work, abort) : work(() => true));
-        if (abort.signal.aborted) throw new Error('下載已取消');
-        for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, true);
-        return count;
+        const work = async leaseCurrent => {
+          let count = 0, failure = null;
+          for (const id of ids) {
+            if (abort.signal.aborted || !leaseCurrent()) throw new Error('下載已取消');
+            try {
+              count += await downloadCloudHistory({ client, database, owner,
+                startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId: id,
+                signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+              if (abort.signal.aborted || !leaseCurrent()) throw new Error('下載已取消');
+              await database.setHistoryDownloadState?.(owner, id, day, true);
+              onDogEnd?.(id, 'done');
+            } catch (error) {
+              onDogEnd?.(id, abort.signal.aborted ? 'cancelled' : 'failed');
+              if (abort.signal.aborted || !leaseCurrent()) throw error;
+              failure = error;
+            }
+          }
+          if (failure) throw failure;
+          return count;
+        };
+        return runManual ? runManual(work, abort) : work(() => true);
       })();
       previous = run;
       return run;
