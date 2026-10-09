@@ -10,11 +10,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  PixelRatio,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import Glyph from './Glyph';
@@ -71,6 +73,7 @@ function DogMark({ color, size = sizes.icon.row }) {
 // past its 180dp under a fixed title (設計稿「A6 卡片的高度」).
 function Wrap({ info, head, children }) {
   const styles = useStyles(getStyles);
+  const { height: windowHeight } = useWindowDimensions();
   if (!info)
     return (
       <View style={styles.body}>
@@ -78,8 +81,16 @@ function Wrap({ info, head, children }) {
         {children}
       </View>
     );
+  // A6 grows with the system font (its 180dp is for 1.0), up to half the
+  // screen; only past that do its words and buttons scroll (at 2.0 the
+  // second button was cut at the card's edge).
+  const scale = Math.max(1, PixelRatio.getFontScale?.() || 1);
+  const maxHeight = Math.min(
+    (card.a6MaxHeight - 2 * space.s) * scale,
+    windowHeight * card.a6MaxScreenShare,
+  );
   return (
-    <View style={[styles.body, styles.infoBody]}>
+    <View style={[styles.body, { maxHeight }]}>
       {head}
       <ScrollView
         nestedScrollEnabled
@@ -441,8 +452,6 @@ const getStyles = makeStyles(theme => {
     infoScroll: { flexShrink: 1 },
     // A card whose button went under its words: icon and ✕ at the top.
     stackedCard: { alignItems: 'flex-start' },
-    // 180dp for the whole card, less its padding.
-    infoBody: { maxHeight: card.a6MaxHeight - 2 * space.s },
     title: { ...type.cardTitle, color: colors.text },
     alertTitle: { color: colors.crit },
     detail: { ...type.small, color: colors.textMuted },
