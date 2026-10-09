@@ -1,3 +1,6 @@
+// Screen fixtures use Taiwan local times; keep assertions deterministic on CI.
+process.env.TZ = 'Asia/Taipei';
+
 module.exports = {
   preset: '@react-native/jest-preset',
   transformIgnorePatterns: [

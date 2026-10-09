@@ -1,0 +1,236 @@
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { BackHandler, Text } from 'react-native';
+import DogCard from '../src/map/DogCard';
+import { ActivityPage, RenameDialog } from '../src/map/DogCardPages';
+import { dogCard, phoneReading } from '../src/map/DogCardModel';
+import { dogCardReadings, readDogCardRows } from '../src/activity/DogCardReadings';
+import { RANGE_STATUS } from '../src/tracking/ReceiverRange';
+import { colors } from '../src/theme/tokens';
+import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+import { createDogDatabase } from '../src/database/DogDatabase';
+import { createCloudDatabase } from '../src/cloud/CloudDatabase';
+
+const NOW = new Date(2026, 9, 7, 9, 30, 0).getTime();
+const HOME = { latitude: 24.9893, longitude: 121.3135 };
+const model = (extra = {}, options = {}) => dogCard({ slaveId: 4, coordinate: { latitude: 24.9947, longitude: 121.3194 },
+  fixAt: NOW - 5000, packetAt: NOW - 5000, batteryPercentage: 15, charging: false, ...extra }, {
+  freshness: { stale: true, basis: 'position', source: 'ble', lastAt: new Date(2026, 9, 7, 9, 5).getTime() },
+  range: { status: RANGE_STATUS.NEAR, judgedAt: NOW, cloudOnly: false },
+  phone: phoneReading({ running: true, position: { ...HOME, timestamp: NOW } }, NOW), now: NOW, name: '豆豆',
+  ...options,
+});
+
+let renderer, onBack, removeBack;
+beforeEach(() => {
+  jest.useFakeTimers();
+  removeBack = jest.fn();
+  jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_, callback) => {
+    onBack = callback;
+    return { remove: removeBack };
+  });
+});
+afterEach(async () => {
+  if (renderer) await act(async () => renderer.unmount());
+  renderer = null;
+  jest.restoreAllMocks();
+  jest.useRealTimers();
+});
+
+const flatten = node => {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(flatten).join('');
+  return flatten(node.children);
+};
+const byTestId = id => renderer.root.findAll(node => node.props.testID === id, { deep: true });
+
+async function mount(props = {}) {
+  const handlers = { onClosed: jest.fn(), onHeight: jest.fn(), onEdit: jest.fn(), onActivity: jest.fn(),
+    onTrack: jest.fn() };
+  const ref = React.createRef();
+  await act(async () => {
+    renderer = Renderer.create(<DogCard ref={ref} card={model()} {...handlers} {...props} />);
+  });
+  // The card rises once it knows its height.
+  await act(async () => byTestId('dog-card')[0].props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
+  return { ...handlers, ref };
+}
+
+test('A3b on screen: name, 訊號源, headline, rows in order, red and amber 「!」, no receiver row', async () => {
+  const { onHeight } = await mount();
+  // What it covers: its height and the 8dp it floats above the screen edge.
+  expect(onHeight).toHaveBeenLastCalledWith(428);
+  const text = flatten(renderer.toJSON());
+  expect(text).toContain('豆豆');
+  expect(text).toContain('訊號源 4');
+  expect(text).toContain('845 m');
+  expect(text).toContain('離手機・最後位置');
+  const order = ['位置', '電量', '接收範圍', '活動量'].map(label => text.indexOf(label));
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  expect(text).not.toContain('接收器');
+  expect(text).toContain('看軌跡');
+  // Problem values: dark red bold behind a red 「!」; 快離開: amber behind an amber 「!」.
+  const value = words => renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === words);
+  expect(value('沒有新位置・最後 09:05').props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
+  expect(value('快離開接收範圍').props.style).toEqual(expect.arrayContaining([{ color: colors.warn }]));
+  const marks = renderer.root.findAll(node => Array.isArray(node.props.style)
+    && node.props.style.some(style => style?.backgroundColor === colors.problemBadge), { deep: false });
+  expect(marks.length).toBeGreaterThanOrEqual(2);
+  expect(renderer.root.findAll(node => Array.isArray(node.props.style)
+    && node.props.style.some(style => style?.backgroundColor === colors.warnIcon))).not.toHaveLength(0);
+  // Rows have no fill (the design's correction): only the 「!」 is coloured.
+  for (const id of ['position', 'battery', 'range', 'activity']) {
+    const row = byTestId(`dog-card-row-${id}`)[0];
+    const style = [row.props.style].flat(3).filter(Boolean);
+    expect(style.some(item => item.backgroundColor)).toBe(false);
+  }
+});
+
+test('only 活動量, the pencil and 看軌跡 can be pressed; each reads out what it does', async () => {
+  const { onEdit, onActivity, onTrack } = await mount();
+  const pressables = renderer.root.findAll(node => typeof node.props.onPress === 'function'
+    && node.props.accessibilityRole === 'button', { deep: false });
+  expect(pressables.map(node => node.props.accessibilityLabel).sort())
+    .toEqual(['活動量，沒有資料', '看軌跡', '編輯豆豆的名字和頭像'].sort());
+  for (const node of pressables) await act(async () => node.props.onPress());
+  expect(onEdit).toHaveBeenCalledTimes(1);
+  expect(onActivity).toHaveBeenCalledTimes(1);
+  expect(onTrack).toHaveBeenCalledTimes(1);
+  // The headline is a heading TalkBack reads as one.
+  expect(renderer.root.findAll(node => node.props.accessibilityRole === 'header')[0].props.accessibilityLabel)
+    .toBe('豆豆，東北方 845 公尺，離手機，最後位置');
+});
+
+test('the arrow points at the dog on the map as drawn (turned by the map heading)', async () => {
+  await mount({ heading: 40 });
+  const bearing = model().headline.bearing;
+  const turn = byTestId('dog-card-arrow')[0].props.style.transform[0].rotate;
+  expect(parseFloat(turn)).toBeCloseTo((bearing - 40 + 360) % 360, 3);
+});
+
+test('back closes it: it slides away, then reports closed and height 0', async () => {
+  const { onClosed, onHeight } = await mount();
+  expect(onBack()).toBe(true);
+  expect(onClosed).not.toHaveBeenCalled();
+  await act(async () => jest.advanceTimersByTime(400));
+  expect(onClosed).toHaveBeenCalledTimes(1);
+  expect(onHeight).toHaveBeenLastCalledWith(0);
+});
+
+test('close() (a tap on empty map) closes it too; the card itself takes the swipe', async () => {
+  const { onClosed, ref } = await mount();
+  await act(async () => ref.current.close());
+  await act(async () => jest.advanceTimersByTime(400));
+  expect(onClosed).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+  await mount();
+  const card = byTestId('dog-card')[0];
+  // The pan handlers belong to the card itself (swipe down anywhere on it;
+  // the swipe itself is checked on the emulator, frame by frame).
+  expect(typeof card.props.onMoveShouldSetResponderCapture).toBe('function');
+});
+
+test('a held dog\'s 位置 row is two lines high (A7b); the address line shows once known', async () => {
+  const held = { heldReason: '室內', heldSource: 'weak' };
+  const fresh = { freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW } };
+  await mount({ card: model(held, fresh) });
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內');
+  // The row keeps its two-line height (64dp) for the address to come.
+  const style = [byTestId('dog-card-row-position')[0].props.style].flat(3).filter(Boolean);
+  expect(style.some(item => item.minHeight === 64)).toBe(true);
+  await act(async () => renderer.update(<DogCard card={model(held, { ...fresh, address: '桃園區中正路 1 號附近' })} />));
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內桃園區中正路 1 號附近');
+});
+
+test('the rename dialog: at most 20 characters, empty restores the number, back cancels', async () => {
+  const onSave = jest.fn(async () => true);
+  const onCancel = jest.fn();
+  await act(async () => {
+    renderer = Renderer.create(<RenameDialog name="豆豆" initial="豆豆" defaultName="狗 4" onSave={onSave}
+      onCancel={onCancel} />);
+  });
+  const input = renderer.root.findAll(node => node.props.accessibilityLabel === '狗的名字'
+    && typeof node.props.onChangeText === 'function')[0];
+  expect(input.props.maxLength).toBe(20);
+  expect(input.props.placeholder).toBe('狗 4');
+  await act(async () => input.props.onChangeText('  '));
+  expect(flatten(renderer.toJSON())).toContain('2/20');
+  const done = renderer.root.findAll(node => typeof node.props.onPress === 'function'
+    && flatten(node.props.children?.props?.children ?? node.props.children) === '完成')[0];
+  await act(async () => done.props.onPress());
+  expect(onSave).toHaveBeenCalledWith('');
+  expect(onBack()).toBe(true);
+  expect(onCancel).toHaveBeenCalledTimes(1);
+});
+
+test('the activity page shows that dog\'s chart and returns to the card on back', async () => {
+  const onBackPage = jest.fn();
+  const database = { activityHistory: jest.fn(async () => []) };
+  await act(async () => {
+    renderer = Renderer.create(<ActivityPage name="豆豆" slaveId={4} database={database} owner="a" active
+      onBack={onBackPage} />);
+  });
+  expect(flatten(renderer.toJSON())).toContain('豆豆・活動量');
+  expect(database.activityHistory).toHaveBeenCalledWith('a', 4, expect.any(Number));
+  expect(onBack()).toBe(true);
+  expect(onBackPage).toHaveBeenCalledTimes(1);
+});
+
+test('the card\'s readings from SQLite: both tables, one copy per reading, the newest valid battery', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const cloud = createCloudDatabase(connection);
+    await cloud.initialize();
+    const insert = (table, row) => {
+      const keys = Object.keys(row);
+      return connection.executeAsync(`INSERT INTO ${table}(${keys.join(',')}) VALUES(${keys.map(() => '?').join(',')})`,
+        keys.map(key => row[key]));
+    };
+    for (let index = 0; index < 12; index += 1) {
+      const time = NOW - (12 - index) * 60000 + 5000;
+      await insert('dog_status', { received_at: time, slave_id: 4, master_id: 7, activity: '0.02', activity_valid: 1,
+        battery_percentage: 60, battery_valid: index < 6 ? 1 : 0 });
+      // This phone's upload, downloaded back: the same reading.
+      await insert('supabase_dog_status', { owner_user_id: 'o', event_id: `e${index}`, received_at: time, track_at: time,
+        slave_id: 4, master_id: 7, activity: '0.9', activity_valid: 1, battery_valid: 0 });
+    }
+    // Another dog and an invalid reading are not read.
+    await insert('dog_status', { received_at: NOW - 30000, slave_id: 6, activity: '0.9', activity_valid: 1 });
+    await insert('dog_status', { received_at: NOW - 40000, slave_id: 4, activity: '0.9', activity_valid: 0 });
+    const rows = await readDogCardRows(connection, 'o', 4, NOW - 3600000);
+    const readings = dogCardReadings(rows, NOW);
+    // Same time to the millisecond and no collar stamp: one reading, the local one.
+    expect(readings.activity.minutes).toHaveLength(12);
+    expect(readings.activity.minutes.every(minute => minute.value === 0.02 && minute.count === 1)).toBe(true);
+    expect(readings.battery).toEqual({ percentage: 60, charging: false, at: NOW - 7 * 60000 + 5000 });
+    // Signed out: the local table only.
+    const local = await readDogCardRows(connection, null, 4, NOW - 3600000);
+    expect(local.cloud).toEqual([]);
+    expect(await cloud.dogCardRows('o', 4, NOW - 3600000)).toEqual(rows);
+    await expect(readDogCardRows(connection, 'o', 0, NOW)).rejects.toThrow();
+  } finally {
+    connection.close();
+  }
+});
+
+test('the card readings never show another reader\'s rows (logout, account or fixture switch)', async () => {
+  const { useDogCardReadings } = require('../src/map/useDogCardReadings');
+  const seen = [];
+  function Probe({ read }) {
+    seen.push(useDogCardReadings(read, 4, NOW));
+    return null;
+  }
+  const rows = value => ({ local: [], cloud: [], battery: [{ time: NOW - 60000, battery_percentage: value, source: 'ble' }] });
+  const first = jest.fn(async () => rows(50));
+  let resolveSecond;
+  const second = jest.fn(() => new Promise(resolve => { resolveSecond = resolve; }));
+  await act(async () => { renderer = Renderer.create(<Probe read={first} />); });
+  expect(seen.at(-1).battery.percentage).toBe(50);
+  await act(async () => renderer.update(<Probe read={second} />));
+  // The new reader has not answered yet: nothing, not the old account's 50%.
+  expect(seen.at(-1)).toMatchObject({ loaded: false, battery: null });
+  await act(async () => resolveSecond(rows(70)));
+  expect(seen.at(-1).battery.percentage).toBe(70);
+});

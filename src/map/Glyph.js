@@ -62,6 +62,20 @@ export default function Glyph({ name, color, size = 16, level = null }) {
           <Path d="M12 2v3M12 19v3M2 12h3M19 12h3" {...stroke} />
         </>
       )}
+      {name === 'pencil' && (
+        // 編輯: a pencil leaning right, as in the mockups.
+        <>
+          <Path d="M4 20l1-4.5L15.5 5a2.1 2.1 0 0 1 3 3L8 18.5z" {...stroke} />
+          <Path d="M13.5 7l3 3M12 20h8" {...stroke} />
+        </>
+      )}
+      {name === 'arrow' && (
+        // The card's direction arrow, pointing up (north on screen); the card
+        // turns it to the dog's bearing.
+        <Path d="M12 20V4M5.5 10.5 12 4l6.5 6.5" {...stroke} />
+      )}
+      {name === 'chevron' && <Path d="M9 5l7 7-7 7" {...stroke} />}
+      {name === 'back' && <Path d="M15 5l-7 7 7 7" {...stroke} />}
       {name === 'clock' && (
         <>
           <Circle cx={12} cy={12} r={9} {...stroke} />

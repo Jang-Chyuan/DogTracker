@@ -161,11 +161,13 @@ export function useMapHistory(database, ready, active, owner) {
       if (value.message) throw new Error(value.message);
       return value;
     },
+    // Resolves true only when the value was stored, so a caller that moves on
+    // afterwards (the card's 看軌跡) never lands on the old query.
     async save(value) {
-      if (!db.current || saving.current) return;
+      if (!db.current || saving.current) return false;
       saving.current = true; setBusy(true);
-      try { setPreferences(await db.current.save(value)); setError(''); setLoaded(true); }
-      catch (e) { setError(e.message); }
+      try { setPreferences(await db.current.save(value)); setError(''); setLoaded(true); return true; }
+      catch (e) { setError(e.message); return false; }
       finally { saving.current = false; setBusy(false); }
     },
   };

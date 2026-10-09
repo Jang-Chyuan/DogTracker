@@ -8,24 +8,15 @@ import {
   View,
 } from 'react-native';
 import { floatingShadow, mapColors as colors } from './MapTheme';
-import { describeDogSource, heldSentence } from './DogMerge';
+import { heldSentence } from './DogMerge';
 import { formatTime } from './MapFormat';
 import Stat from './Stat';
-import { Position } from './TrackingSheet';
 import ActivityHistoryChart from './ActivityHistoryChart';
-import { environmentLabel, environmentEvidence } from '../ml/Environment';
-
-function battery(valid, percentage) {
-  return valid && percentage !== null ? percentage + '%' : '尚無有效資料';
-}
 
 /**
- * One panel for whichever marker was tapped.
- *
- * The dog and the handler used to answer a tap differently — a native callout
- * for one, this panel for the other. Both now open the same panel, and the
- * hardware and LoRa readings live in it rather than on the card: they describe
- * one pair, and the card can hold several dogs from several Masters.
+ * The panel of a history track's marker (the phone's or a dog's position at
+ * the replayed moment). On the live map a dog answers with its card (DogCard)
+ * and the receiver is not drawn at all (v3), so this panel is history only.
  */
 export default function DeviceDetails({
   tracking,
@@ -33,7 +24,6 @@ export default function DeviceDetails({
   dogAliases,
   activityOwner,
   activityActive = true,
-  master,
   topInset,
   bottomInset,
   onClose,
@@ -48,18 +38,10 @@ export default function DeviceDetails({
     );
     return () => subscription.remove();
   }, [onClose]);
-  const { point } = tracking;
-  const dog = subject?.kind === 'dog' ? subject.dog : null;
-  // A history track answers a tap with the same panel as a live marker; only
-  // its content differs, because a replayed moment has no hardware feed.
   const track = subject?.kind === 'track' ? subject.track : null;
-  // Hardware fields come from this phone's BLE feed, so they only describe the
-  // dog it is connected to.
-  const live = dog && dog.source === 'ble' && dog.slaveId === point.slaveId;
-  const slaveId = dog?.slaveId ?? (track?.role === 'slave' ? track.slaveId : null);
+  const slaveId = track?.role === 'slave' ? track.slaveId : null;
   const alias = slaveId != null ? dogAliases?.[slaveId]?.trim() : null;
-  const title = alias ? `${alias}(id_${slaveId})`
-    : track ? track.name : dog ? `狗 ${dog.slaveId}` : '領犬員資訊';
+  const title = alias ? `${alias}(id_${slaveId})` : track?.name ?? '';
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]} testID="device-details">
       <Pressable
@@ -102,90 +84,7 @@ export default function DeviceDetails({
                 歷史只讀這支手機存下來的資料；硬體回報與 LoRa 訊號只有即時連線那一對才有。
               </Text>
             </>
-          ) : dog ? (
-            <>
-              <Text style={styles.hint}>來源：{describeDogSource(dog)}</Text>
-              <Text style={styles.label}>目前環境：{environmentLabel(dog.environment)}</Text>
-              {!!dog.environment && (
-                <>
-                  <Text style={styles.hint}>{environmentEvidence(dog.environment)}</Text>
-                  <Text style={styles.hint}>
-                    判斷區間：{formatTime(dog.environment.windowStart)} 至 {formatTime(dog.environment.windowEnd ?? dog.environment.windowStart + 120000)}
-                    {' · '}{dog.environment.samples} 筆取樣
-                  </Text>
-                  <Text style={styles.hint}>資料時間：{formatTime(dog.environment.observedAt)}</Text>
-                  <Text style={styles.hint}>使用已結束的一分鐘內收到的資料；缺少封包仍可能影響判斷。</Text>
-                </>
-              )}
-              {/* No coordinates: the marker this panel belongs to is already
-                  on the map, and six decimals tell nobody anything. */}
-              <Text style={styles.hint}>位置時間：{formatTime(dog.lastPositionAt ?? dog.receivedAt)}</Text>
-              {!!dog.heldReason && (
-                <Text style={styles.label}>
-                  位置：{heldSentence(dog, formatTime)}。GPS 在室內會飄，地圖畫在牠進去前最後清楚定位的地方，狗離開後自動恢復跟隨。
-                </Text>
-              )}
-              {dog.retained && (
-                <Text style={styles.warning}>最後有效位置，非最新定位</Text>
-              )}
-              {dog.stale && (
-                <Text style={styles.warning}>尚無可顯示位置，或超過 3 分鐘未收到封包</Text>
-              )}
-              {live || Number.isFinite(dog.distanceMeters) ? (
-                <View style={styles.stats}>
-                  <Stat icon="speed" label="速度"
-                    value={Number.isFinite(dog.speedKmh) ? `${dog.speedKmh} km/h` : '— km/h'} />
-                  <Stat icon="battery" label="電量" level={dog.batteryPercentage}
-                    value={Number.isFinite(dog.batteryPercentage)
-                      ? `${dog.batteryPercentage}%` : '—'} />
-                  {Number.isFinite(dog.distanceMeters) && (
-                    <Stat icon="distance" label={`與 Master ${dog.masterId ?? '—'} 的距離`}
-                      value={`${dog.distanceMeters} m`} />
-                  )}
-                </View>
-              ) : null}
-              {live ? (
-                <>
-                  <View style={styles.divider} />
-                  <Text style={styles.label}>硬體回報的定位與活動</Text>
-                  <Text style={styles.hint}>
-                    衛星 {point.satellites ?? '—'} · HDOP {point.hdop ?? '—'}
-                  </Text>
-                  <Text style={styles.hint}>
-                    活動：{point.activityValid ? point.activity ?? '—' : '無有效資料'}
-                  </Text>
-                  <Text style={styles.hint}>GPS 時間：{point.gpsTime ?? '—'}</Text>
-                  <View style={styles.divider} />
-                  <Text style={styles.label}>LoRa 訊號品質</Text>
-                  <Text style={styles.hint}>
-                    RSSI {point.rssi ?? '—'} · SNR {point.snr ?? '—'}
-                  </Text>
-                  <Text style={styles.hint}>
-                    Master ID: {point.masterId ?? '-'} | Slave ID: {point.slaveId ?? '-'}
-                  </Text>
-                  <Text style={styles.hint}>
-                    資料表：dog_status
-                    {' '}· DB row ID: {point.id ?? '—'}
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.hint}>
-                  硬體細節（速度、電量、衛星、LoRa 訊號）只有這支手機正在收的那一對才有；
-                  這隻狗的資料是 Master {dog.masterId ?? '—'} 上傳到雲端後下載的。
-                </Text>
-              )}
-            </>
-          ) : (
-            <>
-              <Position role="master" position={master} />
-              <Text style={styles.hint}>Master ID: {point.masterId ?? '—'}</Text>
-              <Text style={styles.hint}>
-                領犬員裝置電量：
-                {battery(point.masterBatteryValid, point.masterBatteryPercentage)}
-              </Text>
-              <Text style={styles.hint}>接收範圍圈半徑 1 公里，以接收器為中心；接收器連著而且有位置時才畫。</Text>
-            </>
-          )}
+          ) : null}
           {Number.isInteger(slaveId) && slaveId >= 1 && slaveId <= 255 && (
             <ActivityHistoryChart database={tracking.cloudDatabase} owner={activityOwner}
               dogAliases={dogAliases} slaveId={slaveId} key={slaveId}

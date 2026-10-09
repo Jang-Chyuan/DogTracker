@@ -355,7 +355,7 @@ test('new DB rows never refit the camera after panning', async () => {
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(count);
   expect(mockCamera.animateToRegion).not.toHaveBeenCalled();
 });
-test('the live map ignores the history tab parameters and only obeys its own card', async () => {
+test('the live map ignores the history tab parameters and old per-dog eyes', async () => {
   const tracking = {
     mode: 'real', point: trackingPoint, route: emptyLiveRoute(),
     ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
@@ -374,15 +374,18 @@ test('the live map ignores the history tab parameters and only obeys its own car
   await act(async () => renderer.update(screen(false)));
   expect(dogShown()).toBe(true);
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
-  // The card's own eye is what hides it.
+  // v3 has no eyes: what an older version stored (all dogs hidden, one dog
+  // hidden, one followed) no longer hides or moves anything.
   await act(async () => renderer.update(
     <MapScreen tracking={{ ...tracking, preferences: { ready: true,
-      value: { ...DEFAULT_TRACKING_PREFERENCES, showSlaveMarker: false } } }}
+      value: { ...DEFAULT_TRACKING_PREFERENCES, showSlaveMarker: false, hiddenSlaveIds: [7], focusSlaveId: 7 } } }}
       phone={{ enabled: true }} bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />));
-  expect(dogShown()).toBe(false);
+  expect(dogShown()).toBe(true);
+  expect(renderer.root.findAll(node => !!node.props.presentation, { deep: false })[0].props.presentation.follow)
+    .toBeUndefined();
 });
 
-test('map starts collapsed, the sheet owns visibility controls and Master details contain information only', async () => {
+test('the live map has no sheet: a tapped dog opens its card, and the receiver has no panel', async () => {
   const tracking = {
     mode: 'real',
     point: trackingPoint,
@@ -391,122 +394,38 @@ test('map starts collapsed, the sheet owns visibility controls and Master detail
     errors: { real: 'locked' },
     historyLoaded: true,
     foreground: true,
-    preferences: {
-      ready: true,
-      busy: false,
-      value: DEFAULT_TRACKING_PREFERENCES,
-    },
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
     saveTrackingPreferences: jest.fn(),
   };
+  const onCardChange = jest.fn();
   await act(async () => {
     renderer = Renderer.create(
-      <MapScreen
-        tracking={tracking}
-        alerts={{ status: 'fresh' }}
-        phone={{ enabled: true, permission: 'precise' }}
-        bottomInset={80}
-        mapProvider={GOOGLE_MAP_PROVIDER}
-      />,
+      <MapScreen tracking={tracking} phone={{ enabled: true, permission: 'precise' }} bottomInset={80}
+        mapProvider={GOOGLE_MAP_PROVIDER} onCardChange={onCardChange} />,
     );
   });
-  const adjust = async actionName =>
-    act(async () =>
-      renderer.root
-        .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
-        .props.onAccessibilityAction({ nativeEvent: { actionName } }),
-    );
-  // One switch only: whether the path is drawn. Everything else on the card is
-  // a tap target of its own.
+  expect(StyleSheet.flatten(renderer.root.findByProps({ testID: 'fullscreen-map-screen' }).props.style))
+    .toMatchObject({ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 });
+  // No dog list, no follow button, no eyes, no receiver row: v3 removed them.
+  expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
   expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
-  expect(
-    StyleSheet.flatten(
-      renderer.root.findByProps({ testID: 'fullscreen-map-screen' }).props
-        .style,
-    ),
-  ).toMatchObject({
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  });
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('更多資料');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('找到狗');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('這支手機');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('手機位置');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('藍點');
-  expect(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet-summary' })[0].props
-      .children,
-  ).toBe('最新詳細資訊');
-  expect(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet-handle' })[0].props
-      .accessibilityValue.now,
-  ).toBe(0);
-  expect(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet-content' })[0].props
-      .accessibilityElementsHidden,
-  ).toBe(true);
-  expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('跟隨');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('領犬員');
   expect(JSON.stringify(renderer.toJSON())).toContain('讀取失敗：locked');
   await readyMap();
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(true);
-  await adjust('increment');
-  expect(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet' }).length,
-  ).toBeGreaterThan(0);
-  // Real mode lists the dogs instead of one 狗 row; the hardware and LoRa
-  // readings describe one pair, so they moved to that device's panel.
-  expect(JSON.stringify(renderer.toJSON())).toContain('領犬員電量');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('LoRa 訊號品質');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('硬體回報的定位與活動');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('定位與接收資料');
-  // No receiver marker on the map any more: its panel opens from the card's
-  // receiver row.
   expect(renderer.root.findAllByType(Marker).some(node => node.props.identifier === 'real-master')).toBe(false);
-  await act(async () =>
-    renderer.root.findByProps({ accessibilityLabel: '領犬員（接收器）詳細資料' }).props.onPress());
-  // One switch only: whether the path is drawn. Everything else on the card is
-  // a tap target of its own.
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
-  const detailsLayer = StyleSheet.flatten(
-    renderer.root.findByProps({ testID: 'device-details' }).props.style,
-  );
-  const sheetLayer = StyleSheet.flatten(
-    renderer.root.findAllByProps({ testID: 'tracking-sheet' })[0].props.style,
-  );
-  // JS hit testing and Android native control dispatch must agree. An inner
-  // panel shadow alone does not raise the details root above its sibling sheet.
-  expect(detailsLayer.zIndex).toBeGreaterThan(sheetLayer.zIndex);
-  expect(detailsLayer.elevation).toBeGreaterThan(sheetLayer.elevation);
-  expect(
-    StyleSheet.flatten(
-      renderer.root.findByProps({ testID: 'device-details-backdrop' }).props
-        .style,
-    ),
-  ).toMatchObject({
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  });
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('顯示領犬員路徑');
-  expect(JSON.stringify(renderer.toJSON())).toContain('Master ID: ');
-  // The same tap on a dog opens the same panel, carrying what the card no
-  // longer does — for that pair only.
-  await act(async () =>
-    renderer.root.findByProps({ testID: 'device-details-backdrop' }).props.onPress());
-  await act(async () =>
-    renderer.root
-      .findAllByType(Marker)
-      .find(node => node.props.identifier === 'real-dog-7')
-      .props.onPress(),
-  );
-  expect(JSON.stringify(renderer.toJSON())).toContain('LoRa 訊號品質');
-  expect(JSON.stringify(renderer.toJSON())).toContain('硬體回報的定位與活動');
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
+  // A tap on the dog opens its card (the bottom tabs hide under it).
+  const map = () => renderer.root.findAll(node => typeof node.props.onDogPress === 'function', { deep: false })[0];
+  await act(async () => map().props.onDogPress(7));
+  expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
+  expect(onCardChange).toHaveBeenLastCalledWith(true);
+  expect(JSON.stringify(renderer.toJSON())).toContain('看軌跡');
+  // Its marker is the selected one; a tap on the map itself is now listened to.
+  expect(map().props.presentation.dogMarkers[0].selected).toBe(true);
+  expect(typeof map().props.onMapPress).toBe('function');
 });
-
 test('tile completion and changed padding never refit an already framed map', async () => {
   await render();
   await readyMap();
@@ -578,7 +497,6 @@ test('map screen mounts after its initial snapshot while history pages are still
     );
   });
   expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
-  expect(JSON.stringify(renderer.toJSON())).toContain('正在載入本機路徑');
 });
 
 test('phone blue dot requires permission, ready map and foreground; never adds phone to DB markers or framing', async () => {
@@ -695,19 +613,89 @@ describe('off-screen hints and the overlap menu', () => {
   });
 });
 
-test('after the user drags the map, a followed dog\'s new positions do not move it', async () => {
-  const follow = coordinate => ({ ...defaults.presentation, follow: { slaveId: 7, coordinate } });
-  await render({ presentation: follow({ latitude: 25.001, longitude: 121.001 }) });
+test('a dog whose card opens is moved into view once, only when the card or an edge hides it', async () => {
+  // The map is 400 × 800; the card covers the bottom 300dp; the map's own
+  // padding stays at 80 (opening a card does not shift the map).
+  let point = { x: 200, y: 700 };
+  mockCamera.pointForCoordinate = jest.fn(async () => point);
+  mockCamera.coordinateForPoint = jest.fn(async ({ x, y }) => ({ latitude: y, longitude: x }));
+  const props = { bottomInset: 80, coverBottom: 300 };
+  try {
+    await render(props);
+    await readyMap();
+    const padding = renderer.root.findByType(MapView).props.mapPadding;
+    expect(padding.bottom).toBe(80);
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    const coordinate = { latitude: 25.001, longitude: 121.001 };
+    mockCamera.animateCamera.mockClear();
+    await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 1, coordinate }} />));
+    expect(renderer.root.findByType(MapView).props.mapPadding.bottom).toBe(80);
+    expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
+    // The dog (y 700) goes to the middle of what the card leaves (100…500 →
+    // 300): the camera centre (y 410 in the padded map) moves down by 400.
+    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 810 });
+    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({ center: { latitude: 810, longitude: 200 } });
+    // The same opening never moves it again (new positions, a re-render).
+    await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 1, coordinate }} />));
+    expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
+    // A dog already in view above the card stays where it is.
+    point = { x: 200, y: 300 };
+    await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 2, coordinate }} />));
+    expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
+    // The buttons sit above the card.
+    expect(renderer.root.findByProps({ testID: 'map-frame-all' })).toBeDefined();
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});
+
+test('a tap on the map reaches onMapPress, and the camera heading is reported', async () => {
+  const onMapPress = jest.fn();
+  const onHeading = jest.fn();
+  mockCamera.getCamera.mockResolvedValueOnce({ center: { latitude: 25, longitude: 121 }, heading: 33, zoom: 15 });
+  await render({ onMapPress, onHeading });
   await readyMap();
-  expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
-  await act(async () => renderer.root.findByType(MapView).props.onPanDrag());
-  await act(async () => renderer.update(<TrackingMap {...defaults}
-    presentation={follow({ latitude: 25.002, longitude: 121.001 })} />));
-  expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
-  // The dog stops reporting and comes back: still the same choice, still no move.
-  await act(async () => renderer.update(<TrackingMap {...defaults}
-    presentation={{ ...defaults.presentation, followId: 7 }} />));
-  await act(async () => renderer.update(<TrackingMap {...defaults}
-    presentation={{ ...follow({ latitude: 25.003, longitude: 121.001 }), followId: 7 }} />));
-  expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.root.findByType(MapView).props.onPress());
+  expect(onMapPress).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
+  expect(onHeading).toHaveBeenCalledWith(33);
+});
+
+
+test('看軌跡 whose save finishes after the card closed does not open history', async () => {
+  const tracking = {
+    mode: 'real', point: trackingPoint, route: emptyLiveRoute(), ready: { real: true }, errors: {},
+    initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
+    saveTrackingPreferences: jest.fn(),
+  };
+  let finish;
+  const history = { key: 'k', devices: [], preferences: { source: 'ble', slaves: [4], masters: [3], dogAliases: {} },
+    save: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+  const onOpenHistory = jest.fn();
+  await act(async () => {
+    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }} bottomInset={80}
+      mapProvider={GOOGLE_MAP_PROVIDER} history={history} onOpenHistory={onOpenHistory} />);
+  });
+  const map = () => renderer.root.findAll(node => typeof node.props.onDogPress === 'function', { deep: false })[0];
+  await act(async () => map().props.onDogPress(7));
+  await act(async () => renderer.root.findAllByProps({ testID: 'dog-card' })[0]
+    .props.onLayout({ nativeEvent: { layout: { height: 400 } } }));
+  const track = () => renderer.root.findAll(node => node.props.testID === 'dog-card-track'
+    && typeof node.props.onPress === 'function')[0];
+  await act(async () => { track().props.onPress(); });
+  expect(history.save).toHaveBeenCalledWith(expect.objectContaining({ slaves: [7], timeMode: 'fixed' }));
+  // The card is closed (tap on the map) before the save is done.
+  await act(async () => map().props.onMapPress());
+  await act(async () => finish(true));
+  expect(onOpenHistory).not.toHaveBeenCalled();
+  // Saved and still open: history opens for that dog.
+  await act(async () => map().props.onDogPress(7));
+  await act(async () => renderer.root.findAllByProps({ testID: 'dog-card' })[0]
+    .props.onLayout({ nativeEvent: { layout: { height: 410 } } }));
+  await act(async () => { track().props.onPress(); });
+  await act(async () => finish(true));
+  expect(onOpenHistory).toHaveBeenCalledWith(7);
 });

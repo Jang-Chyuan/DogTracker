@@ -2,6 +2,7 @@
 import { withCloudDisplayLock } from './CloudDisplayCoordinates';
 import { cloudTrackTime } from './CloudTrackTime';
 import { readActivityHistory } from './ActivityHistory';
+import { readDogCardRows } from '../activity/DogCardReadings';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
@@ -47,7 +48,7 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory', 'holdRows'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory', 'dogCardRows', 'holdRows'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -270,6 +271,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       return rows(await connection.executeAsync(latestCloudStatusQuery(true), [owner, sinceMs, owner]));
     },
     activityHistory: (owner, slaveId, now) => readActivityHistory(connection, owner, slaveId, now),
+    // The open dog card's activity and battery readings (DogCardReadings).
+    dogCardRows: (owner, slaveId, since) => readDogCardRows(connection, owner, slaveId, since),
     async latestStatusRows(owner, sinceMs, now = Date.now()) {
       requireOwner(owner);
       const cloud = rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner]));

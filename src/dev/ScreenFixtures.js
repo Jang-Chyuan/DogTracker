@@ -47,29 +47,36 @@ let nextId = 1;
 
 // A dog_status row as BleForegroundService stores it. `fix` is a position
 // ({latitude, longitude}) or null for a packet without a GPS fix (0,0).
+// `activity` (and `batteryValid`) can be a function of the row's time, for a
+// dog that went to rest at some point, or a collar whose battery reading
+// stopped.
+const valueAt = (value, time) => (typeof value === 'function' ? value(time) : value);
+
 function bleRow({ slave, master = 7, time, fix, receiver = at(-6, -4), satellites = 9, hdop = 0.9,
-  battery = 82, usb = 0, speed = 3, rssi = -72, snr = 8 }) {
+  battery = 82, usb = 0, speed = 3, rssi = -72, snr = 8, activity = 0.3, batteryValid = 1 }) {
   return {
     id: nextId++, received_at: time, master_id: master, slave_id: slave,
     slave_lat: fix ? fix.latitude : 0, slave_lon: fix ? fix.longitude : 0,
     master_lat: receiver?.latitude ?? null, master_lon: receiver?.longitude ?? null,
     distance_meters: fix ? 40 : null, speed_kmh: fix ? speed : 0,
     satellites: fix ? satellites : 0, hdop: fix ? hdop : 655.35,
-    battery_percentage: battery, battery_valid: 1, usb_present: usb,
+    battery_percentage: battery, battery_valid: valueAt(batteryValid, time), usb_present: usb,
     master_battery_percentage: 64, master_battery_valid: 1,
+    activity: valueAt(activity, time), activity_valid: valueAt(activity, time) == null ? 0 : 1,
     rssi, snr, packet_type: 'status',
   };
 }
 
 // A supabase_dog_status row as the cloud download stores it.
 function cloudRow({ slave, master = 9, time, fix, satellites = 9, hdop = 1.1, battery = 76, usb = 0,
-  speed = 2, rssi = -80, snr = 6 }) {
+  speed = 2, rssi = -80, snr = 6, activity = 0.3 }) {
   return {
     id: nextId++, owner_user_id: FIXTURE_OWNER, slave_id: slave, master_id: master,
     received_at: time, track_at: time,
     slave_lat: fix ? fix.latitude : 0, slave_lon: fix ? fix.longitude : 0,
     satellites: fix ? satellites : 0, hdop: fix ? hdop : 655.35,
     speed_kmh: fix ? speed : 0, battery_percentage: battery, battery_valid: 1, usb_present: usb, rssi, snr,
+    activity: valueAt(activity, time), activity_valid: valueAt(activity, time) == null ? 0 : 1,
   };
 }
 
@@ -149,6 +156,16 @@ function walkingPhone(now) {
   }
   return { route, position: route[route.length - 1] };
 }
+
+// The same walk, but the newest fix is `age` old (the phone lost GPS).
+function stalePhone(now, age) {
+  const { route } = walkingPhone(now - age);
+  return { route, position: route[route.length - 1] };
+}
+
+// An activity reading that is calm (0.02, under the 0.05 rest line) for the
+// last `minutes` before now and ordinary (0.3) before that.
+const restingFor = (now, span) => time => (time >= now - span ? 0.02 : 0.3);
 
 // ---- the dogs ------------------------------------------------------------
 
@@ -387,6 +404,90 @@ const FIXTURES = {
     cloudRows: series(cloudRow, now, { slave: 8, from: 26 * 60 * MINUTE + 10 * MINUTE, to: 26 * 60 * MINUTE,
       every: 15 * SECOND, start: [-640, -720], step: [0.02, 0.03] }),
   }),
+  // ---- a dog's card open (046, design A3/A3b/A7b) ------------------------
+  // 豆豆 on receiver 7, in range, battery 62%, resting for the last 18
+  // minutes: 位置 has no row, 接收範圍 「在範圍內」, 活動量 「休息中 已 18 分鐘」.
+  'card-ok': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 4, from: 30 * MINUTE, battery: 62, activity: restingFor(now, 18 * MINUTE),
+        dog: (progress, where) => northEastOf(where, 420 + 30 * progress, progress) }),
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // A3 itself: 豆豆 880 m from receiver 7 (快離開, amber), resting 18 minutes.
+  'card-near-edge': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+      ...track(bleRow, now, { slave: 4, from: 30 * MINUTE, battery: 62, activity: restingFor(now, 18 * MINUTE),
+        dog: (progress, where) => northEastOf(where, 500 + 380 * Math.min(1, progress * 1.4), progress) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // A3b: 豆豆 walked out to 1.4 km and has been silent since 09:05 (25
+  // minutes): no new position, battery 15%, out of range — every problem row
+  // at once, and 活動量 「—」.
+  'card-problems': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+      ...track(bleRow, now, { slave: 4, from: 40 * MINUTE, to: 25 * MINUTE, battery: 15,
+        dog: (progress, where) => awayFrom(where, 700 + 700 * progress, progress, 30) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // A7b: 小黑 held indoors (clear fixes, then packets without a fix for 12
+  // minutes), collar on USB at 62%, resting for 40 minutes. 位置 「室內」 (the
+  // address line comes with PR 059), no 接收範圍 row.
+  'card-indoor': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...series(bleRow, now, { slave: 6, from: 55 * MINUTE, to: 12 * MINUTE + 10 * SECOND, start: [-18, 24],
+        battery: 62, activity: restingFor(now, 40 * MINUTE) }).map((row, index) => ({ ...row,
+        slave_lat: row.slave_lat + (index % 5) * 0.00001, slave_lon: row.slave_lon - (index % 5) * 0.00001 })),
+      ...series(bleRow, now, { slave: 6, from: 12 * MINUTE, to: 8 * SECOND, rssi: -96, snr: -4, battery: 62, usb: 1,
+        activity: 0.02 }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 row at all;
+  // running hard for the last few minutes (劇烈活動).
+  'card-cloud-dog': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: dog4Ble(now),
+    cloudRows: [
+      ...series(cloudRow, now, { slave: 6, from: 20 * MINUTE, to: 15 * SECOND, every: 15 * SECOND,
+        start: [-18, 24], step: [0.03, -0.05], activity: time => (time >= now - 3 * MINUTE ? 0.92 : 0.3) }),
+      ...dog8Cloud(now),
+    ],
+  }),
+  // The phone's newest fix is 15 minutes old: the headline says 「手機沒有
+  // 定位」 instead of a direction and distance; 我的位置 turns grey.
+  'card-phone-no-fix': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: stalePhone(now, 15 * MINUTE), openDog: 4,
+    ble: dog4Ble(now), cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
+  }),
+  // 豆豆's position is current but its collar stopped sending battery and
+  // activity readings at 09:11: both rows say what they last said, with the
+  // time — 「62%（09:11）」, 「休息中 已 12 分鐘（09:11）」.
+  'card-readings-old': now => {
+    const until = now - 18 * MINUTE - 30 * SECOND;
+    return {
+      receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+      ble: inTimeOrder([
+        ...series(bleRow, now, { slave: 4, from: 30 * MINUTE, start: [14, 9], step: [0.02, 0.03], battery: 62,
+          batteryValid: time => (time <= until ? 1 : 0),
+          activity: time => (time > until ? null : 0.02) }),
+      ]),
+      cloudRows: dog8Cloud(now),
+    };
+  },
 };
 
 export const FIXTURE_NAMES = Object.freeze(Object.keys(FIXTURES));
@@ -487,7 +588,7 @@ export function buildFixture(name, now = FIXTURE_NOW) {
   const make = FIXTURES[name];
   if (!make) return null;
   nextId = 1;
-  const { receiver, cloud, phone, ble = [], cloudRows = [] } = make(now);
+  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null } = make(now);
   // The live feed (TrackingFeed → trackingSourceReducer) reads dog_status:
   // the newest row is the point, plus the last valid position per endpoint.
   const points = ble.map(mapDogStatusRow);
@@ -536,14 +637,33 @@ export function buildFixture(name, now = FIXTURE_NOW) {
     phoneRoute: phone?.route || [],
     ride: rides.ride(now),
     dogAliases: ALIASES,
+    // card-* states open this dog's card.
+    openDog,
+    // CloudDatabase.dogCardRows over the fixture's rows (DogCardReadings).
+    readCardRows: async (slaveId, since) => cardRows(ble, cloud?.ownerId ? cloudRows : [], slaveId, since),
   };
+}
+
+// What readDogCardRows would read from the two tables for one dog.
+function cardRows(ble, cloud, slaveId, since) {
+  const mine = (rows, time) => rows.filter(row => row.slave_id === slaveId)
+    .map(row => ({ ...row, time: time(row) }));
+  const activity = rows => rows.filter(row => row.time >= since && row.activity_valid === 1)
+    .sort((left, right) => left.time - right.time)
+    .map(row => ({ time: row.time, activity: row.activity, activity_valid: 1, activity_time: row.activity_time ?? null,
+      master_id: row.master_id, slave_id: row.slave_id }));
+  const newestBattery = (rows, source) => rows.filter(row => row.battery_valid === 1)
+    .sort((left, right) => right.time - left.time).slice(0, 1)
+    .map(row => ({ time: row.time, battery_percentage: row.battery_percentage, usb_present: row.usb_present, source }));
+  const local = mine(ble, row => row.received_at);
+  const remote = mine(cloud, timeOf);
+  return { local: activity(local), cloud: activity(remote),
+    battery: [...newestBattery(local, 'ble'), ...newestBattery(remote, 'cloud')] };
 }
 
 // The map's own preferences are the user's; a fixture shows every dog, none
 // followed, so its screenshot does not depend on what this phone saved.
-const FIXTURE_PREFERENCES = Object.freeze({
-  showMasterMarker: true, showSlaveMarker: true, focusSlaveId: null, hiddenSlaveIds: [],
-});
+const FIXTURE_PREFERENCES = Object.freeze({ showMasterMarker: true, showSlaveMarker: true });
 
 const ignoreWrite = () => Promise.resolve();
 
@@ -580,6 +700,9 @@ export function applyScreenFixture(fixture, live) {
     cloudSync: { ...cloudSync, ...fixture.cloudSync },
     history: history && {
       ...history, preferences: { ...history.preferences, dogAliases: fixture.dogAliases },
+      // The card's 看軌跡 and rename must not store a fixture's dog in this
+      // phone's real history query or names.
+      save: async () => true,
     },
   };
 }
