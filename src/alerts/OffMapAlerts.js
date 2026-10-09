@@ -10,10 +10,12 @@ import { t } from '../i18n';
 //   the whole card opens its problem.
 // - 「⚠ N」: the problems there are now, whatever S6 says (it is state, not an
 //   alert): each dog counts once, 接收器斷線, 接收器電量低 and 位置存不進手機
-//   once each; a battery hidden at 21–30% does not count. A tap opens the
-//   most severe one, as the merged notification does.
+//   once each; a dog gone quiet with the disconnected receiver is part of
+//   the disconnection (AlertEvents.alertProblemCount); a battery hidden at
+//   21–30% does not count. A tap opens the most severe one, as the merged
+//   notification does.
 import { alertLine, alertTarget } from './AlertContent';
-import { bySeverity } from './AlertEvents';
+import { alertProblemCount, bySeverity } from './AlertEvents';
 import { N3_CARD_MS } from './AlertScheduler';
 import { formatClock } from '../map/MapFormat';
 
@@ -23,7 +25,6 @@ export { N3_CARD_MS };
 // and the dogs' red 「!」).
 export const OFF_MAP_SCREENS = Object.freeze(['history', 'settings']);
 
-const isDog = event => event.kind.startsWith('dog-');
 const present = active =>
   (Array.isArray(active) ? active : Object.values(active || {}))
     .filter(event => event && event.kind && event.present !== false)
@@ -37,8 +38,7 @@ const present = active =>
 export function alertBadge(active) {
   const list = present(active);
   if (!list.length) return null;
-  const dogs = new Set(list.filter(isDog).map(event => event.subject));
-  const count = dogs.size + list.filter(event => !isDog(event)).length;
+  const count = alertProblemCount(list);
   return {
     count,
     text: t('c1155', { count }),

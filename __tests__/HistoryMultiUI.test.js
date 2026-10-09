@@ -155,6 +155,34 @@ test('chooser stays open after immediate add, switch and remove; Back closes it 
   await unmount(s);
 });
 
+test('「看哪幾隻狗」 rows are 56dp with 32dp faces (清單列; user 2026-10-09)', async () => {
+  const DogAvatar = require('../src/dogs/DogAvatar').default;
+  const { StyleSheet } = require('react-native');
+  const s = await mount('history-dogs-sheet-three');
+  const sheet = s.renderer.root.findByProps({ testID: 'history-dogs-sheet' });
+  const faces = sheet.findAllByType(DogAvatar);
+  expect(faces.length).toBeGreaterThan(1);
+  faces.forEach(face => expect(face.props.size).toBe(32));
+  const rows = ['history-dog-4', 'history-add-5'].map(id => s.renderer.root.findAll(node =>
+    node.props.testID === id && typeof node.props.onPress === 'function')[0]);
+  rows.forEach(row => {
+    const style = typeof row.props.style === 'function' ? row.props.style({ pressed: false }) : row.props.style;
+    expect(StyleSheet.flatten(style).minHeight).toBe(56);
+  });
+  await unmount(s);
+});
+
+test('the capsule\'s 「＋」 sits in a 32dp dashed accent circle with no fill (user 2026-10-09, B)', async () => {
+  const { Circle } = require('react-native-svg');
+  const s = await mount('history-dogs-one-addable');
+  const plus = s.renderer.root.findByProps({ testID: 'history-dogs-plus' });
+  const circle = plus.findByType(Circle);
+  expect(circle.props).toMatchObject({ fill: 'none', stroke: colors.accent, strokeWidth: 1.5 });
+  expect(circle.props.strokeDasharray).toBeTruthy();
+  expect(plus.props.style).toMatchObject({ width: 32, height: 32 });
+  await unmount(s);
+});
+
 test('no-record dog can be added immediately; outside tap closes the chooser', async () => {
   const s = await mount('history-dogs-sheet-no-record');
   expect(s.text()).toContain(i18nT('c327'));

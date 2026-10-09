@@ -20,7 +20,7 @@ import { t } from '../i18n';
 // - In the foreground there is no system notification, but it still vibrates;
 //   the N3 card only off the live map. Cloud dogs alert only in the foreground.
 import { alertDelivery, alertEnabled } from './AlertPreferences';
-import { bySeverity } from './AlertEvents';
+import { alertProblemCount, bySeverity } from './AlertEvents';
 import { notificationContent, PAUSE_MINUTES } from './AlertContent';
 import { formatClock } from '../map/MapFormat';
 
@@ -169,8 +169,9 @@ export function scheduleAlerts(previous = {}, {
     stopTouchHaptics: deliver && how.vibrate,
     // N3: one card, the most severe; the rest only count in 「⚠ N」.
     card: cardEvent ? { event: cardEvent, durationMs: N3_CARD_MS } : null,
-    // 「⚠ N」: every problem there is, switched on or not (it is state).
-    badgeCount: present.length,
+    // 「⚠ N」: every problem there is, switched on or not (it is state),
+    // counted as the badge counts them.
+    badgeCount: alertProblemCount(present),
   };
   return { state: { seen, pending, lastAttentionAt, pause }, effects };
 }

@@ -6,10 +6,12 @@ import { space, type, touch } from '../theme/tokens';
 import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
 
 /**
- * S6 提醒: while paused, 「已暫停提醒到 11:10」 with 「恢復」 first; 狗 (a group: 「全部開／部分開／全部關」, pressed it shows its three
- * switches), 接收器電量低, 接收器斷線、位置存不進手機 (a shared notification
- * switch), 震動 and 聲音 (shared by every alert), 通知權限 (未允許 →
- * 「開系統設定 ›」 opens the app's notification settings). Every change is
+ * S6 提醒: while paused, 「已暫停提醒到 11:10」 with 「恢復」 first; then
+ * 通知權限 when it is missing (未允許 → 「開系統設定 ›」 opens the app's
+ * notification settings; moved up from the bottom, user 2026-10-09); 狗 (a
+ * group: 「全部開／部分開／全部關」, pressed it shows its three switches),
+ * 接收器電量低, 接收器斷線、位置存不進手機 (a shared notification switch),
+ * 震動 and 聲音 (shared by every alert). Every change is
  * saved at once (`onChange(patch)`). `page` is AlertPreferences.alertsPage.
  */
 export default function AlertSettings({
@@ -48,6 +50,17 @@ export default function AlertSettings({
               <Text style={styles.resumeText}>{page.pause.action}</Text>
             </Pressable>
           </ListRow>
+        )}
+        {notifications && (
+          <ListRow
+            testID="alerts-notifications"
+            title={t('c245')}
+            detail={notifications.detail}
+            problem
+            action={notifications.action}
+            onPress={onNotificationSettings}
+            label={t("c944")}
+          />
         )}
         <ListRow
           testID="alerts-dogs"
@@ -95,17 +108,6 @@ export default function AlertSettings({
           label={t("c943")}
           toggle={{ testID: "alerts-sound", value: page.sound, onChange: on => onChange({ sound: on }) }}
         />
-        {notifications && (
-          <ListRow
-            testID="alerts-notifications"
-            title={t('c245')}
-            detail={notifications.detail}
-            problem
-            action={notifications.action}
-            onPress={onNotificationSettings}
-            label={t("c944")}
-          />
-        )}
       </GroupCard>
     </ScrollView>
   );

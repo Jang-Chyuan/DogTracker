@@ -19,6 +19,9 @@
 const fs = require('fs');
 const path = require('path');
 const { PNG } = require('pngjs');
+// The app's own nodes: the installed applicationId (PACKAGE, as
+// layout-audit.sh exports it), or either id the app has had.
+const APP_PACKAGES = new Set(process.env.PACKAGE ? [process.env.PACKAGE] : ['com.antgo.dogtracker', 'com.dogtracker']);
 
 const args = process.argv.slice(2);
 const dir = args[0];
@@ -141,7 +144,7 @@ for (const name of names) {
   // a: text outside its parent
   walk(tree, node => {
     const a = node.attrs;
-    if (a.package !== 'com.dogtracker' || !/TextView/.test(a.class || '') || !node.parent?.attrs?.class) return;
+    if (!APP_PACKAGES.has(a.package) || !/TextView/.test(a.class || '') || !node.parent?.attrs?.class) return;
     if (inScroll(node)) return;
     const p = node.parent.box;
     const b = node.box;
@@ -160,7 +163,7 @@ for (const name of names) {
   walk(tree, node => {
     const a = node.attrs;
     // Pills are views holding text, not the text itself.
-    if (a.package !== 'com.dogtracker' || /TextView/.test(a.class || '')) return;
+    if (!APP_PACKAGES.has(a.package) || /TextView/.test(a.class || '')) return;
     const { x1, y1, x2, y2 } = node.box;
     const h = (y2 - y1) / density;
     const w = (x2 - x1) / density;

@@ -15,7 +15,7 @@ import { t } from '../i18n';
 //   episode until the battery is over 30% (21–30% hides the problem but a drop
 //   back to 20% is not a new one): `present: false` while hidden.
 // - 接收器斷線 and 位置存不進手機 are TopAlerts' (the same as the top cards).
-import { dogFreshness } from '../tracking/DogFreshness';
+import { dogFreshness, STALE_AFTER_MS } from '../tracking/DogFreshness';
 import { dogProblems, LOW_BATTERY_PERCENT } from '../tracking/DogProblems';
 import { receiverOutage, storageProblem, RECEIVER_BATTERY_LOW } from '../map/TopAlerts';
 import { receiverNumber } from '../map/ReceiverState';
@@ -39,6 +39,32 @@ export const alertKey = (kind, subject) => `${kind}:${subject}`;
 
 /** Most severe first, then a stable order. */
 export const bySeverity = (left, right) => (right.severity - left.severity) || left.key.localeCompare(right.key);
+
+/**
+ * How many problems 「⚠ N」 counts in `present` (the events showing now):
+ * each dog once, 接收器斷線, 接收器電量低 and 位置存不進手機 once each. A
+ * disconnected receiver is one problem: a dog it heard that was fresh when it
+ * dropped (last fix at most STALE_AFTER_MS before) and is quiet now is part
+ * of it, not one more (user 2026-10-09). A dog quiet before, or with another problem, counts.
+ */
+export function alertProblemCount(present = []) {
+  const outage = present.find(event => event.kind === 'receiver-disconnected');
+  // Fresh when the receiver dropped: its last fix no more than STALE_AFTER_MS
+  // before the disconnection (when the episode was first seen does not say:
+  // a cold start sees an old stale dog only after the outage).
+  const freshAtOutage = event => Number.isFinite(event.lastAt)
+    ? outage.startedAt - event.lastAt <= STALE_AFTER_MS
+    : Number.isFinite(event.startedAt) && event.startedAt >= outage.startedAt;
+  const causedByOutage = event => !!outage && event.kind === 'dog-stale' && event.receiverAffected === true
+    && Number.isFinite(outage.startedAt) && freshAtOutage(event);
+  const dogs = new Set();
+  let others = 0;
+  for (const event of present) {
+    if (!event.kind.startsWith('dog-')) others += 1;
+    else if (!causedByOutage(event)) dogs.add(event.subject);
+  }
+  return dogs.size + others;
+}
 
 /**
  * @param previous the state this returned last time ({} at first)

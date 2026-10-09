@@ -1147,6 +1147,20 @@ const FIXTURES = {
   // card for 豆豆; 「⚠ 2」 still counts it (state, not an alert).
   'alerts-in-history-off': now => ({ ...FIXTURES['alerts-in-dog-history'](now),
     alerts: { dogOutOfRange: false, dogStale: false } }),
+  // My route today while receiver 7 has been down for 15 minutes: 豆豆, 小黑
+  // and 狗 5 (all on it) went quiet with it. 「⚠ 1」: the disconnection only,
+  // not one more per quiet dog (user 2026-10-09).
+  'alerts-history-receiver-down': now => ({
+    ...FIXTURES['alerts-in-history'](now),
+    receiver: { ...receiving(now), connected: false, receiving: false, lastReceivedAt: now - 15 * MINUTE,
+      disconnectedAt: now - 15 * MINUTE },
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 25 * MINUTE, to: 15 * MINUTE, start: [14, 9], step: [0.05, 0.08] }),
+      ...series(bleRow, now, { slave: 6, from: 25 * MINUTE, to: 15 * MINUTE, start: [-18, 24], step: [0.03, -0.05] }),
+      ...series(bleRow, now, { slave: 5, from: 25 * MINUTE, to: 15 * MINUTE, start: [-30, 40], step: [0.04, -0.02] }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
   // S6 open while receiver 7 drops (alerts-receiver-down): N3 「接收器 7 斷線了
   // （3 隻狗收不到）」 under the title row for 5 s, then no badge (D17).
   // Tap the card to open S2 接收器; back returns to the same S6 snapshot.

@@ -159,6 +159,24 @@ test('S6: notifications not allowed → 未允許 and 「開系統設定 ›」 
   expect(onNotificationSettings).toHaveBeenCalledTimes(1);
 });
 
+// User 2026-10-09: 通知權限 moves up — under the pause row, above 狗.
+test('S6: 通知權限 comes first, under 「已暫停提醒到」 while paused', async () => {
+  const now = new Date(2026, 9, 3, 10, 20).getTime();
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<AlertSettings page={alertsPage({}, { notificationsDenied: true },
+      { until: now + 50 * 60000 }, now)} onChange={jest.fn()} />);
+  });
+  const shown = text(renderer);
+  const order = ['已暫停提醒到 11:10', '通知權限', '未允許', '狗', '接收器電量低', '震動', '聲音'];
+  let at = -1;
+  for (const words of order) {
+    const next = shown.indexOf(`"${words}"`, at + 1);
+    expect(next).toBeGreaterThan(at);
+    at = next;
+  }
+});
+
 test('S6: allowed → 已允許, the row does nothing', async () => {
   let renderer;
   await act(async () => {

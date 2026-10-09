@@ -13,11 +13,11 @@
 # receiver, cloud, phone); its screenshot is receiver-connecting@receiver.png. The status
 # bar clock is set to the fixtures' fixed clock (09:30) with Android's demo mode,
 # and both are switched back off at the end (name=off returns to live data).
-# Override PACKAGE for other installed builds. No debug applicationIdSuffix is
-# currently configured; if one is added, include it (e.g. com.antgo.dogtracker.debug).
-PACKAGE=${PACKAGE:-com.antgo.dogtracker}
+# The app is the installed applicationId (scripts/app-package.sh:
+# com.antgo.dogtracker, then com.dogtracker); PACKAGE overrides it.
 set -e
 cd "$(dirname "$0")/.."
+. scripts/app-package.sh
 OUT=${1:-fixture-screenshots}
 shift 2>/dev/null || true
 NAMES=${*:-$(sed -n "s/^  '\([a-z0-9-]*\)': now =>.*/\1/p" src/dev/ScreenFixtures.js)}

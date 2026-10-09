@@ -101,7 +101,14 @@ import {
 import { layout, touch, type, space, size as sizes } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
-import { holdSplash, launchInto } from './src/app/hideSplash';
+import {
+  awaitInitialLink,
+  holdSplash,
+  initialLinkRead,
+  launchFromNotification,
+  launchInto,
+  useSplashState,
+} from './src/app/hideSplash';
 import SplashOverlay from './src/app/SplashOverlay';
 import {
   GUIDE_STEP_OF,
@@ -574,13 +581,20 @@ function TrackerApp({ resume = null, onRestart }) {
   useEffect(() => {
     const take = url => {
       const destination = notificationDestination(url);
-      if (destination) setNotificationRequest({ ...destination, key: Date.now() });
+      if (!destination) return;
+      // While the launch screen still waits: it flies to the alerted dog.
+      launchFromNotification(destination);
+      setNotificationRequest({ ...destination, key: Date.now() });
     };
     let alive = true;
+    // The launch screen's handover waits for this link (a notification's
+    // destination decides fly or fade, and to which dog).
+    awaitInitialLink();
     Promise.resolve()
       .then(() => Linking.getInitialURL())
       .then(url => alive && take(url))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(initialLinkRead);
     const subscription = Linking.addEventListener?.('url', event => take(event?.url));
     return () => {
       alive = false;
@@ -618,10 +632,14 @@ function TrackerApp({ resume = null, onRestart }) {
       setMapRequest({ screen: 'map', dogId: result.dogId, key });
     }
   };
+  const splashPhase = useSplashState().phase;
   const appliedNotification = useRef(null);
   useEffect(() => {
     const request = notificationRequest;
     if (!request || launch.screen !== 'map') return;
+    // Not while the launch screen's dog flies to the map: a page opened now
+    // would cover where it lands. Before (it then fades) or after is fine.
+    if (splashPhase === 'handover') return;
     if (appliedNotification.current === request.key) return;
     appliedNotification.current = request.key;
     // 「打開地圖」 and the 「常駐」 notification's my route: the live map.
@@ -636,7 +654,7 @@ function TrackerApp({ resume = null, onRestart }) {
       request.key,
     );
     // openAlert reads the stack as rendered (stackNow).
-  }, [notificationRequest, launch.screen]);
+  }, [notificationRequest, launch.screen, splashPhase]);
   // The guide's step, saved as it moves forward (a fixture's in memory only).
   const saveGuideStep = step => {
     Promise.resolve(
