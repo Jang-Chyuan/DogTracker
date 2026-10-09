@@ -10,7 +10,7 @@ import {
 import { cursorHaptic } from '../src/history/screen/HistoryScreenCursor';
 import { dateRowLabel } from '../src/history/screen/HistoryScreenDates';
 import { forgetRanges, rememberedRange, rememberRangeFor } from '../src/history/screen/RangeMemory';
-import { panelLevels, settleLevel } from '../src/mapHistory/HistoryPanel';
+import { mapPanelHeight, dogCardMaxHeight } from '../src/map/MapPanelHeight';
 import { rangeSummaryLines } from '../src/mapHistory/HistoryRangeSummary';
 import { HAPTIC_EFFECTS, haptic } from '../src/utils/haptics';
 import NativeTrackingPlatform from '../specs/NativeTrackingPlatform';
@@ -169,16 +169,9 @@ describe('haptics', () => {
 });
 
 describe('the panel and the date row', () => {
-  test('three heights: about 140dp, half (55%), 75%; a day without records keeps 40%', () => {
-    expect(panelLevels(800, 0)).toEqual({ summary: 140, half: 440, full: 600 });
-    expect(panelLevels(800, 0, { empty: true })).toEqual({ summary: 320, half: 320, full: 320 });
-  });
-  test('a drag settles on the nearest height; a flick goes one on', () => {
-    const levels = { summary: 140, half: 440, full: 600 };
-    expect(settleLevel(500, 0, levels)).toBe('half');
-    expect(settleLevel(560, 0, levels)).toBe('full');
-    expect(settleLevel(450, -1, levels)).toBe('full');
-    expect(settleLevel(430, 1, levels)).toBe('summary');
+  test('history shares the live card cap, including safe-area and scroll space', () => {
+    expect(mapPanelHeight(800, 24)).toBe(582);
+    expect(dogCardMaxHeight(800, 24, 20) + 8 + 20).toBe(mapPanelHeight(800, 24));
   });
   test('「10/03（六）今天」, another day 「9/28（一）」', () => {
     const today = new Date(2026, 9, 3).getTime();

@@ -3,7 +3,7 @@ import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from 
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
-import { panelLevels } from '../mapHistory/HistoryPanel';
+import { mapPanelHeight } from '../map/MapPanelHeight';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
@@ -623,14 +623,7 @@ export default function MapScreen({
   selectHistoryDog.current = screen.selectDog;
   if (historySnapshot) historySnapshot.current = historical ? screen.snapshot : null;
   const window = useWindowDimensions();
-  // A day downloading (H3c) or not finished keeps the half height.
-  const historyEmpty =
-    !!screen.model && !screen.model.dayRecords && !screen.download;
-  const levels = useMemo(
-    () => panelLevels(window.height, insets.bottom, { empty: historyEmpty }),
-    [window.height, insets.bottom, historyEmpty],
-  );
-  const [panel, setPanel] = useState({ level: 'half' });
+  const historyHeight = mapPanelHeight(window.height, insets.top);
   const historyScreen = useRef(null);
   if (historyBack) historyBack.current = () => !!historyScreen.current?.back();
   const [historyFrame, setHistoryFrame] = useState(null);
@@ -950,20 +943,13 @@ export default function MapScreen({
     : (cardsBottom || gearTop + 48) + 12;
   // The live map's padding stays put (an open card covers the map, it does
   // not move it); its buttons sit 12dp above the open card, else above the tabs.
-  // History: the map's padding is the panel at half height (its default);
-  // at 75% the route is framed above it (historyPanel.extraBottom).
-  const mapBottom = historical ? levels.half : bottomInset;
+  // History reserves the fixed panel height for all camera actions.
+  const mapBottom = historical ? historyHeight : bottomInset;
   const coverBottom = historical
-    ? panel.height ?? levels[panel.level] ?? levels.half
+    ? historyHeight
     : cardHeight
     ? cardHeight + layout.floatingGap
     : 0;
-  const historyPanel = historical
-    ? {
-        level: panel.level,
-        extraBottom: Math.max(0, (panel.height ?? levels.half) - levels.half),
-      }
-    : null;
   const historySource =
     historical && target
       ? `history:${target.subject}:${target.slaveId ?? ''}:${screen.day}:${
@@ -1057,7 +1043,6 @@ export default function MapScreen({
             : null
         }
         historyFrame={historyFrame}
-        historyPanel={historyPanel}
         onHeading={setHeading}
         focusDog={focusDog}
         frameRequest={historical ? null : mapFrameRequest}
@@ -1129,11 +1114,9 @@ export default function MapScreen({
           initialCalendar={fixture?.historyView?.calendar ?? null}
           candidates={historyCandidates}
           initialSheet={fixture?.historyView?.sheet ?? null}
-          levels={levels}
           bottomInset={insets.bottom}
           onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
-          onLevel={(level, height) => setPanel({ level, height })}
           exportNative={exportNative}
           initialExport={fixture?.historyView?.export ?? null}
           alertBadge={alertBadge?.badge ?? null}

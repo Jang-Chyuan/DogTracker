@@ -875,3 +875,44 @@ test('看軌跡 whose save finishes after the card closed does not open history'
   await act(async () => finish(true));
   expect(onOpenHistory).toHaveBeenCalledWith(7);
 });
+
+test('history route fit and cursor centering use the fixed panel coverage', async () => {
+  const { mapPanelHeight } = require('../src/map/MapPanelHeight');
+  const { layout, space } = require('../src/theme/tokens');
+  const { regionForFrame, overlayFramePadding } = require('../src/map/MapFraming');
+  const { historyFramePadding } = require('../src/history/screen/HistoryMapModel');
+  const height = mapPanelHeight(800, 24);
+  const camera = [{ latitude: 25, longitude: 121 }, { latitude: 25.01, longitude: 121.01 }];
+  const props = { ...defaults, topInset: 100, bottomInset: height, coverBottom: height,
+    source: 'history:fixed', presentation: { ...defaults.presentation, dogMarkers: [],
+      historyRoute: { color: colors.phone, lines: [], places: [], times: [], camera, points: [], cursor: null } } };
+  mockCamera.pointForCoordinate = jest.fn().mockResolvedValue({ x: 200, y: 400 });
+  mockCamera.coordinateForPoint = jest.fn().mockResolvedValue({ latitude: 25.005, longitude: 121.005 });
+  try {
+    await render(props);
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    await readyMap();
+    expect(renderer.root.findByType(MapView).props.mapPadding.bottom).toBe(height);
+    await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'frame-fixed' }} />));
+    const padding = overlayFramePadding(historyFramePadding(camera, null, {
+      top: space.l, right: space.xl, bottom: space.s, left: space.xl,
+    }), {
+      topInset: 100, bottomInset: height, overlayTop: 100, overlayBottom: height,
+    });
+    expect(mockCamera.animateToRegion).toHaveBeenLastCalledWith(regionForFrame(camera, padding, {
+      width: 400 - 2 * layout.floatingGap, height: 800 - 100 - height,
+    }), 300);
+    await act(async () => renderer.update(<TrackingMap {...props}
+      historyFocus={{ key: 'cursor-fixed', coordinate: camera[0], centre: true }} />));
+    // With SDK padding already applied, the requested point is moved from
+    // y=400 to the centre above the panel: (100 + 800 - height) / 2.
+    expect(mockCamera.coordinateForPoint).toHaveBeenLastCalledWith({ x: 200, y: 400 });
+    expect(mockCamera.animateCamera).toHaveBeenLastCalledWith({
+      center: { latitude: 25.005, longitude: 121.005 },
+    }, { duration: 220 });
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});

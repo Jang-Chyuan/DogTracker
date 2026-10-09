@@ -41,6 +41,8 @@ test('history-my-route (H1 我的路線): 我的路線, no ＋ 加入, the list,
   const s = await mountFixture('history-my-route');
   expect(s.text()).toContain(i18nT('c132'));
   expect(s.ids('history-add')).toEqual([]);
+  expect(s.ids('history-dogs-pill')).toEqual([]);
+  expect(s.ids('history-my-route-header')).toEqual(['history-my-route-header']);
   expect(s.text()).toContain('10/07（三）今天');
   expect(s.text()).toContain(i18nT('c122'));
   expect(s.screen.navigation).toEqual({ previous: null, next: null });
