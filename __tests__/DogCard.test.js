@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, Text } from 'react-native';
@@ -67,12 +68,12 @@ test('A3b on screen: name, 訊號源, headline, rows in order, red and amber 「
   expect(text).toContain('離手機・最後位置');
   const order = ['位置', '電量', '接收範圍', '活動量'].map(label => text.indexOf(label));
   expect(order).toEqual([...order].sort((a, b) => a - b));
-  expect(text).not.toContain('接收器');
-  expect(text).toContain('看軌跡');
+  expect(text).not.toContain(i18nT('c075'));
+  expect(text).toContain(i18nT('c071'));
   // Problem values: dark red bold behind a red 「!」; 快離開: amber behind an amber 「!」.
   const value = words => renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === words);
   expect(value('沒有新位置・最後 09:05').props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
-  expect(value('快離開接收範圍').props.style).toEqual(expect.arrayContaining([{ color: colors.warn }]));
+  expect(value(i18nT('c067')).props.style).toEqual(expect.arrayContaining([{ color: colors.warn }]));
   // The 「!」 circles are vectors (060): red for problems, amber for 快離開.
   const all = renderer.root.findAll(node => /^dog-card-mark-/.test(node.props.testID ?? '') && node.props.background);
   expect(all.filter(node => node.props.background === colors.problemBadge).length).toBeGreaterThanOrEqual(2);
@@ -90,7 +91,7 @@ test('only 活動量, the pencil and 看軌跡 can be pressed; each reads out wh
   const pressables = renderer.root.findAll(node => typeof node.props.onPress === 'function'
     && node.props.accessibilityRole === 'button', { deep: false });
   expect(pressables.map(node => node.props.accessibilityLabel).sort())
-    .toEqual(['活動量，沒有資料', '看軌跡', '編輯豆豆的名字和頭像'].sort());
+    .toEqual(['活動量，沒有資料', i18nT('c071'), '編輯豆豆的名字和頭像'].sort());
   for (const node of pressables) await act(async () => node.props.onPress());
   expect(onEdit).toHaveBeenCalledTimes(1);
   expect(onActivity).toHaveBeenCalledTimes(1);

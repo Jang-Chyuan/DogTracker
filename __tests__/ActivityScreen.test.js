@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler } from 'react-native';
@@ -89,7 +90,7 @@ test('‹ › move by the tab\'s period and stop at the first reading; tabs keep
   expect(text('activity-period')).toBe('10/7（三）今天');
   await press('activity-tab-week');
   expect(text('activity-period')).toBe('10/4（日）– 10/10（六）');
-  expect(flatten(renderer.toJSON())).toContain('這一週');
+  expect(flatten(renderer.toJSON())).toContain(i18nT('c095'));
   await press('activity-tab-month');
   expect(text('activity-period')).toBe('2026 年 10 月');
   await press('activity-previous');
@@ -101,13 +102,13 @@ test('‹ › move by the tab\'s period and stop at the first reading; tabs keep
   await press('activity-tab-year');
   expect(text('activity-period')).toBe('2026 年');
   // Hold the first year read so loading does not depend on act/timer speed.
-  expect(flatten(renderer.toJSON())).not.toContain('載入中…');
+  expect(flatten(renderer.toJSON())).not.toContain(i18nT('c283'));
   expect(renderer.root.findByType(require('../src/components/Skeleton').LoadingContent).props.loading).toBe(true);
   await act(async () => releaseYear());
   for (let i = 0; i < 20 && !flatten(renderer.toJSON()).includes('這一年'); i += 1) {
     await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
   }
-  expect(flatten(renderer.toJSON())).toContain('這一年');
+  expect(flatten(renderer.toJSON())).toContain(i18nT("c455"));
   expect(read.mock.calls.filter(([, period]) => period.detail === 'minute').length).toBeGreaterThan(2);
 });
 
@@ -123,20 +124,20 @@ test('載入中 with the period, then 讀取失敗 and 重試 reads again', asyn
   let fail = true;
   const read = jest.fn(() => (fail ? Promise.reject(new Error('x')) : new Promise(() => {})));
   await mount({ read, readEarliest: async () => FIRST, initialView: { mode: 'week', date: NOW } });
-  expect(flatten(renderer.toJSON())).toContain('讀取失敗');
+  expect(flatten(renderer.toJSON())).toContain(i18nT("c440"));
   expect(text('activity-period')).toBe('10/4（日）– 10/10（六）');
   fail = false;
   const retry = renderer.root.findAll(node => node.props.accessibilityLabel === '重試'
     && typeof node.props.onPress === 'function')[0];
   await act(async () => retry.props.onPress());
   expect(read).toHaveBeenCalledTimes(2);
-  expect(flatten(renderer.toJSON())).not.toContain('載入中…');
+  expect(flatten(renderer.toJSON())).not.toContain(i18nT('c283'));
   expect(renderer.root.findByType(require('../src/components/Skeleton').LoadingContent).props.loading).toBe(true);
 });
 
 test('沒有活動量資料 for a dog without readings; both arrows off', async () => {
   await mount({ read: async () => ({ local: [], cloud: [] }), readEarliest: async () => null });
-  expect(flatten(renderer.toJSON())).toContain('沒有活動量資料');
+  expect(flatten(renderer.toJSON())).toContain(i18nT('c352'));
   const states = ['activity-previous', 'activity-next'].map(id => renderer.root.findAll(node =>
     node.props.testID === id && node.props.accessibilityState)[0].props.accessibilityState.disabled);
   expect(states).toEqual([true, true]);
@@ -161,7 +162,7 @@ test('a tab switch that lands before the first reading shows the first period wi
   expect(text('activity-period')).toBe('9/13（日）– 9/19（六）');
   await press('activity-tab-day');
   expect(text('activity-period')).toBe('9/16（三）');
-  expect(flatten(renderer.toJSON())).not.toContain('讀取失敗');
+  expect(flatten(renderer.toJSON())).not.toContain(i18nT("c440"));
 });
 
 test('another reader (account) never shows the old answer; the first reading is read again', async () => {
@@ -170,16 +171,16 @@ test('another reader (account) never shows the old answer; the first reading is 
   const read = jest.fn((...args) => (first == null ? Promise.resolve({ local: [], cloud: [] }) : all.read(...args)));
   const readEarliest = jest.fn(async () => first);
   await mount({ read, readEarliest });
-  expect(flatten(renderer.toJSON())).toContain('沒有活動量資料');
+  expect(flatten(renderer.toJSON())).toContain(i18nT('c352'));
   // A new minute: the dog now has readings.
   first = FIRST;
   await act(async () => renderer.update(<ActivityScreen name="小黑" slaveId={6} now={NOW + M} read={read}
     readEarliest={readEarliest} onBack={jest.fn()} />));
-  expect(flatten(renderer.toJSON())).not.toContain('沒有活動量資料');
+  expect(flatten(renderer.toJSON())).not.toContain(i18nT('c352'));
   const pending = jest.fn(() => new Promise(() => {}));
   await act(async () => renderer.update(<ActivityScreen name="小黑" slaveId={6} now={NOW + M} read={pending}
     readEarliest={readEarliest} onBack={jest.fn()} />));
-  expect(flatten(renderer.toJSON())).not.toContain('載入中…');
+  expect(flatten(renderer.toJSON())).not.toContain(i18nT('c283'));
   expect(renderer.root.findByType(require('../src/components/Skeleton').LoadingContent).props.loading).toBe(true);
 });
 

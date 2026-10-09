@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { NativeModules, Platform } from 'react-native';
@@ -52,7 +53,7 @@ test('a route switch sends what waits first, then changes; offline it does not c
     waiting = 3;
     flush.mockImplementation(async () => ({ result: 'unauthorized', remaining: 3 }));
     await act(async () => { await upload.switchMode(7, 'phone').catch(error => { failure = error; }); });
-    expect(failure.message).toBe('需要重新登入');
+    expect(failure.message).toBe(i18nT('c276'));
     expect(failures).toHaveBeenCalledTimes(1);
     // K14: a cancellation during the last flush preserves the old route.
     const controller = new AbortController();

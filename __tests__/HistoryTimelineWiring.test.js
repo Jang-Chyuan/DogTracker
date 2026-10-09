@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // 054a wiring: the rows the list reads, its words, the fixtures, the old
 // history page showing the list, and 「今天 x km」 equal to the list's total.
 import React from 'react';
@@ -112,32 +113,32 @@ describe('words (copy deck)', () => {
   });
   test('movement rows: 走路／開車 for my route, 移動／坐車 for a dog, 沒有資料', () => {
     const base = { type: 'movement', durationMs: 28 * MINUTE, distanceM: 6300, countedDistanceM: 1400 };
-    expect(sectionText({ ...base, mode: 'walking' })).toEqual({ icon: 'walk', lead: '走路', time: '28 分', rest: '・1.4 km' });
-    expect(sectionText({ ...base, mode: 'driving' })).toMatchObject({ icon: 'car', lead: '開車', rest: '・6.3 km' });
-    expect(sectionText({ ...base, mode: 'moving' })).toMatchObject({ icon: 'paw', lead: '移動' });
-    expect(sectionText({ ...base, mode: 'ride' })).toMatchObject({ icon: 'car', lead: '坐車', rest: '・6.3 km' });
+    expect(sectionText({ ...base, mode: 'walking' })).toEqual({ icon: 'walk', lead: i18nT('c134'), time: '28 分', rest: '・1.4 km' });
+    expect(sectionText({ ...base, mode: 'driving' })).toMatchObject({ icon: 'car', lead: i18nT('c135'), rest: '・6.3 km' });
+    expect(sectionText({ ...base, mode: 'moving' })).toMatchObject({ icon: 'paw', lead: i18nT('c125') });
+    expect(sectionText({ ...base, mode: 'ride' })).toMatchObject({ icon: 'car', lead: i18nT('c128'), rest: '・6.3 km' });
     const gap = sectionText({ type: 'gap', start: new Date(2026, 9, 3, 10, 21).getTime(), end: new Date(2026, 9, 3, 10, 40).getTime() });
     expect(`${gap.lead}${gap.rest}`).toBe('沒有資料 10:21–10:40');
   });
   test('pills', () => {
-    expect(nodePill({ type: 'departure' })).toEqual({ text: '出發', tone: 'plain' });
-    expect(nodePill({ type: 'departure', manual: true })).toEqual({ text: '出發', tone: 'plain' });
-    expect(nodePill({ type: 'departure', continuesPreviousDay: true }).text).toBe('出發');
+    expect(nodePill({ type: 'departure' })).toEqual({ text: i18nT('c124'), tone: 'plain' });
+    expect(nodePill({ type: 'departure', manual: true })).toEqual({ text: i18nT('c124'), tone: 'plain' });
+    expect(nodePill({ type: 'departure', continuesPreviousDay: true }).text).toBe(i18nT('c124'));
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE })).toEqual({ text: '停 17 分', tone: 'stay' });
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('接續前一天・停 17 分');
     expect(nodePill({ type: 'indoor', start: 0, end: 40 * MINUTE })).toEqual({ text: '室內・40 分', tone: 'indoor' });
-    expect(nodePill({ type: 'resume' }).text).toBe('恢復記錄');
+    expect(nodePill({ type: 'resume' }).text).toBe(i18nT('c335'));
     expect(nodePill({ type: 'switch' })).toBeNull();
-    expect(nodePill({ type: 'end', label: '現在' }).text).toBe('現在');
-    expect(nodePill({ type: 'end', label: '結束' }).text).toBe('結束');
-    expect(nodePill({ type: 'end', label: '最後', end: new Date(2026, 9, 3, 12, 5).getTime() }).text).toBe('最後 12:05');
-    expect(nodePill({ type: 'end', label: '記錄已關閉', closedAt: new Date(2026, 9, 3, 10, 20).getTime() }))
+    expect(nodePill({ type: 'end', label: i18nT('c130') }).text).toBe(i18nT('c130'));
+    expect(nodePill({ type: 'end', label: i18nT('c330') }).text).toBe(i18nT('c330'));
+    expect(nodePill({ type: 'end', label: i18nT("c660"), end: new Date(2026, 9, 3, 12, 5).getTime() }).text).toBe('最後 12:05');
+    expect(nodePill({ type: 'end', label: i18nT("c656"), closedAt: new Date(2026, 9, 3, 10, 20).getTime() }))
       .toEqual({ text: '記錄已關閉 10:20', tone: 'closed' });
-    expect(nodePill({ type: 'end', label: '結束', continuesNextDay: true }).text).toBe('接續隔天');
+    expect(nodePill({ type: 'end', label: i18nT('c330'), continuesNextDay: true }).text).toBe(i18nT('c334'));
   });
   test('H8 lines', () => {
-    expect(emptyText({ subject: 'phone', today: true })).toBe('今天還沒有路線');
-    expect(emptyText({ subject: 'phone', today: false })).toBe('這天沒有路線');
+    expect(emptyText({ subject: 'phone', today: true })).toBe(i18nT('c159'));
+    expect(emptyText({ subject: 'phone', today: false })).toBe(i18nT('c317'));
     expect(emptyText({ subject: 'dog', name: '小黑' })).toBe('這天沒有小黑的紀錄');
   });
 });
@@ -204,7 +205,7 @@ describe('addresses (053a)', () => {
     expect(placeLines(stop, { state: 'found', text: '大園區航站南路 9 號附近（約 140 m）' }).title)
       .toBe('大園區航站南路 9 號附近（約\u00A0140\u00A0m）');
     expect(placeLines(stop, { state: 'pending' }))
-      .toEqual({ title: '查地址中…', titleMuted: true, coordinates: '24.9311, 121.2879', missing: '' });
+      .toEqual({ title: i18nT('c329'), titleMuted: true, coordinates: '24.9311, 121.2879', missing: '' });
     expect(placeLines(stop, { state: 'none' }))
       .toEqual({ title: '24.9311, 121.2879', titleMuted: false, coordinates: '', missing: '' });
     expect(placeLines(house, { state: 'none' }))
@@ -244,13 +245,13 @@ describe('addresses (053a)', () => {
       const titles = () => renderer.root.findAll(node => typeof node.type === 'string'
         && node.props.testID === 'place-title').map(node => [node.props.children].flat().join(''));
       const text = () => JSON.stringify(renderer.toJSON());
-      expect(titles()).toEqual(['查地址中…', '查地址中…', '查地址中…', '查地址中…']);
+      expect(titles()).toEqual([i18nT('c329'), i18nT('c329'), i18nT('c329'), i18nT('c329')]);
       // The first place answers: its address; the others still asking.
       const first = placesOf(model)[0];
       await act(async () => answers[0](JSON.stringify([{ line: '330台灣桃園市桃園區大興西路二段105號',
         latitude: first.latitude, longitude: first.longitude }])));
       expect(titles()[0]).toBe('桃園區大興西路二段 105 號附近');
-      expect(titles().slice(1)).toEqual(['查地址中…', '查地址中…', '查地址中…']);
+      expect(titles().slice(1)).toEqual([i18nT('c329'), i18nT('c329'), i18nT('c329')]);
       // Five seconds on, the rest count as not found: coordinates, 查不到地址.
       await act(async () => { jest.advanceTimersByTime(5000); });
       expect(titles()[1]).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
@@ -342,9 +343,9 @@ describe('the history screen shows the list', () => {
       // The cursor opens on the newest fix, inside the last stay: that row is lit.
       'timeline-switch', 'timeline-movement-walking', 'timeline-stop', 'timeline-selected', 'timeline-end']);
     const text = JSON.stringify(renderer.toJSON());
-    expect(text).toContain('開車');
+    expect(text).toContain(i18nT('c135'));
     expect(text).not.toContain('不算距離');
-    expect(text).toContain('現在');
+    expect(text).toContain(i18nT('c130'));
     await act(async () => renderer.unmount());
     Platform.OS = original;
   });

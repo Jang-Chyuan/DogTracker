@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React, { useEffect } from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { NativeModules, Text } from 'react-native';
@@ -41,7 +42,7 @@ test('the app starts while the sign-in is restored (under D0); logout keeps it a
     // Signing in is optional (v3 D1): no login wall in front of the map.
     await act(async () => f.restore(null));
     expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
-    expect(JSON.stringify(renderer.toJSON())).not.toContain('登入 Supabase 帳號');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(i18nT('c001'));
     expect(mounted).toHaveBeenCalledTimes(1);
     await act(async () => f.notify({ user: { id: 'a', email: 'a@example.com' } }));
     expect(mounted).toHaveBeenCalledTimes(1);
@@ -64,6 +65,6 @@ test('a restored session enters home without showing the login form', async () =
   </AuthProvider>); });
   await act(async () => f.restore({ user: { id: 'a' } }));
   expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('登入 Supabase 帳號');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain(i18nT('c001'));
   await act(async () => renderer.unmount());
 });

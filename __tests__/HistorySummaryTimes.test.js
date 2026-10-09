@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { historyTimeline } from '../src/history';
 import { clock, nodePill, summaryText } from '../src/history/HistoryText';
 import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';
@@ -14,7 +15,7 @@ test('past day without departure shows the entire recorded day', () => {
   expect(model.departure.status).toBe('undetermined');
   expect(summary(model).title).toBe('07:02 – 18:30');
   expect(summary(model).detail).toMatch(/^走了 /);
-  expect(nodePill(model.nodes[0])).toEqual({ text: '出發', tone: 'plain' });
+  expect(nodePill(model.nodes[0])).toEqual({ text: i18nT('c124'), tone: 'plain' });
 });
 
 test('a failed tentative departure returns the title to the whole-day range', () => {

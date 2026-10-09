@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
@@ -63,10 +64,10 @@ test('diagnostics-ok: each dog has its environment result; the receiver dog its 
     expect(dog.environment.evidence).toMatch(/^模型機率：室內 \d+% · 窗邊 \d+% · 室外 \d+%$/);
     expect(dog.environment.window).toMatch(/^09:2\d–09:\d\d・\d+ 筆$/);
   }
-  expect(page.dogs[0].environment.source).toBe('接收器');
-  expect(page.dogs[1].environment.source).toBe('雲端');
+  expect(page.dogs[0].environment.source).toBe(i18nT('c075'));
+  expect(page.dogs[1].environment.source).toBe(i18nT("c616"));
   // 豆豆 walks at 3 km/h on receiver 7; the cloud dogs have no rows of this phone.
-  expect(page.dogs[0].movement).toEqual({ label: '移動中', detail: expect.stringMatching(/^最近 3\.0 km\/h・\d+ 筆$/) });
+  expect(page.dogs[0].movement).toEqual({ label: i18nT("c624"), detail: expect.stringMatching(/^最近 3\.0 km\/h・\d+ 筆$/) });
   expect(page.dogs[1].movement).toBeNull();
   expect(page.dogs[0].label).toMatch(/^豆豆，訊號源 4，環境 .+，速度緩衝 移動中$/);
 });
@@ -80,8 +81,8 @@ test('diagnostics-empty: no dog, no reason; diagnostics-error: the storage reaso
   const page = diagnosticsPage({ packets: error.cloudDogs.packets, rows: error.raw.ble,
     storage: storageProblem(error.storageError), now: error.now });
   expect(page.storage).toEqual({ full: false, reason: '資料存檔失敗：attempt to write a readonly database',
-    title: '寫入失敗' });
-  expect(diagnosticsPage({ storage: storageProblem('database or disk is full') }).storage.title).toBe('手機空間不足');
+    title: i18nT("c623") });
+  expect(diagnosticsPage({ storage: storageProblem('database or disk is full') }).storage.title).toBe(i18nT("c622"));
 });
 
 test('a packet without a fix carries no speed; the newer environment window wins', () => {
@@ -101,8 +102,8 @@ test('a packet without a fix carries no speed; the newer environment window wins
     now: 30000,
   });
   expect(page.dogs[0].name).toBe('狗 5');
-  expect(page.dogs[0].movement.label).toBe('移動中');
-  expect(page.dogs[0].environment).toMatchObject({ label: '室外（信心 90%）', source: '接收器' });
+  expect(page.dogs[0].movement.label).toBe(i18nT("c624"));
+  expect(page.dogs[0].environment).toMatchObject({ label: '室外（信心 90%）', source: i18nT('c075') });
 });
 
 test('S8 draws the reason, the three pages and each dog without cutting lines short', async () => {
@@ -122,7 +123,7 @@ test('S8 draws the reason, the three pages and each dog without cutting lines sh
   const dog = renderer.root.findByProps({ testID: 'diagnostics-dog-4' });
   expect(dog.findAll(node => node.props.numberOfLines != null)).toHaveLength(0);
   await act(async () => renderer.update(<DiagnosticsSettings page={{ storage: null, dogs: [] }} onOpen={() => {}} />));
-  expect(text(renderer)).toContain('還沒有狗的資料');
+  expect(text(renderer)).toContain(i18nT('c109'));
   await act(async () => renderer.unmount());
 });
 
@@ -133,7 +134,7 @@ test('即時資料: rows in a table, columns picked and reset, 讀取失敗 with
   let renderer;
   await act(async () => { renderer = Renderer.create(<LiveDataSettings dogDatabase={{ listHistory }} />); });
   expect(listHistory).toHaveBeenCalledWith(100);
-  expect(text(renderer)).toContain('接收時間');
+  expect(text(renderer)).toContain(i18nT("c968"));
   expect(text(renderer)).not.toContain('HDOP');
   const press = async label => act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === label
     && typeof node.props.onPress === 'function')[0].props.onPress());
@@ -158,7 +159,7 @@ test('即時資料: rows in a table, columns picked and reset, 讀取失敗 with
   const failing = buildFixture('diagnostics-read-failed').diagnostics;
   await act(async () => { renderer = Renderer.create(<LiveDataSettings dogDatabase={{ listHistory: failing.listHistory }} />); });
   expect(text(renderer)).toContain('讀取失敗：database disk image is malformed');
-  expect(renderer.root.findAll(node => node.props.accessibilityLabel === '重試').length).toBeGreaterThan(0);
+  expect(renderer.root.findAll(node => node.props.accessibilityLabel === i18nT('c049')).length).toBeGreaterThan(0);
   await act(async () => renderer.unmount());
 
   await act(async () => { renderer = Renderer.create(<LiveDataSettings dogDatabase={{ listHistory: async () => [] }} />); });
@@ -209,15 +210,15 @@ test('S1 進階 says 「接收器 Wi-Fi、刪除資料」 (c196)', () => {
   const data = settingsInput({ ...fixture, tracking: { point: fixture.tracking.point, realWriteError: null },
     cloudDogs: fixture.cloudDogs }, { now: fixture.now, receiverState: fixture.receiverState });
   const advanced = settingsHome(data).groups.flatMap(group => group.rows).find(row => row.id === 'advanced');
-  expect(advanced).toMatchObject({ title: '進階', subtitle: '接收器 Wi-Fi、刪除資料', problem: false });
+  expect(advanced).toMatchObject({ title: i18nT('c195'), subtitle: i18nT('c196'), problem: false });
 });
 
 test('S7 Wi-Fi line: the receiver\'s networks, or why there are none', () => {
   expect(wifiSummary({ ssids: ['家裡', '辦公室'] })).toBe('家裡、辦公室');
-  expect(wifiSummary({ ssids: [] })).toBe('還沒有存 Wi-Fi');
-  expect(wifiSummary({ ssids: null, loading: true })).toBe('讀取中…');
-  expect(wifiSummary({ ssids: null, error: 'BLE 已斷線' })).toBe('讀取失敗');
-  expect(wifiSummary({ ssids: null, connected: false })).toBe('接收器連上後才能設定');
+  expect(wifiSummary({ ssids: [] })).toBe(i18nT("c1028"));
+  expect(wifiSummary({ ssids: null, loading: true })).toBe(i18nT('c424'));
+  expect(wifiSummary({ ssids: null, error: i18nT("c517") })).toBe(i18nT("c440"));
+  expect(wifiSummary({ ssids: null, connected: false })).toBe(i18nT("c1016"));
 });
 
 test('接收器 Wi-Fi page: the list, delete asks first, a failed send says why and offers 重試', async () => {
@@ -229,7 +230,7 @@ test('接收器 Wi-Fi page: the list, delete asks first, a failed send says why 
   let renderer;
   await act(async () => { renderer = Renderer.create(<WifiSettings wifi={wifi} receiver="接收器 7" />); });
   expect(text(renderer)).toContain('接收器 7 存的 Wi-Fi');
-  expect(text(renderer)).toContain('使用中');
+  expect(text(renderer)).toContain(i18nT("c1027"));
   const find = id => renderer.root.findByProps({ testID: id });
   await act(async () => find('wifi-delete-辦公室').props.onPress());
   expect(text(renderer)).toContain('接收器 7 不會再連「辦公室」。');
@@ -239,7 +240,7 @@ test('接收器 Wi-Fi page: the list, delete asks first, a failed send says why 
   expect(wifi.remove).toHaveBeenCalledWith('辦公室');
   // The password can be shown; a send without a name asks for one.
   await act(async () => find('wifi-send').props.onPress());
-  expect(text(renderer)).toContain('請輸入 Wi-Fi 名稱');
+  expect(text(renderer)).toContain(i18nT("c1035"));
   await act(async () => find('wifi-ssid').props.onChangeText('倉庫'));
   await act(async () => find('wifi-password').props.onChangeText('secret-1'));
   expect(find('wifi-password').props.secureTextEntry).toBe(true);
@@ -360,16 +361,16 @@ test('a phone without the upload queue (never ran the receiver service) deletes 
 
 test('the dialog says what goes and what stays; with rows waiting it asks 先上傳／一起刪除 (c296)', () => {
   expect(deleteDialog({ open: true, phase: 'ask', unsent: 0 })).toMatchObject({
-    visible: true, title: '刪除全部狗資料？', body: DELETE_BODY, note: null, confirm: '刪除', secondary: null,
+    visible: true, title: i18nT("c951"), body: DELETE_BODY, note: null, confirm: i18nT("c949"), secondary: null,
   });
   expect(DELETE_BODY).toContain('只刪這支手機裡的狗位置紀錄和下載紀錄');
   expect(DELETE_BODY).toContain('雲端、手機路線、狗的名字和頭像都不會動');
   expect(deleteDialog({ open: true, phase: 'ask', unsent: 120 })).toMatchObject({
-    note: '還有 120 筆沒上傳：先上傳／一起刪除', confirm: '一起刪除', secondary: '先上傳',
+    note: '還有 120 筆沒上傳：先上傳／一起刪除', confirm: i18nT("c948"), secondary: i18nT("c950"),
   });
   expect(unsentQuestion(3)).toBe('還有 3 筆沒上傳：先上傳／一起刪除');
   expect(uploadProblem('offline', 120)).toBe(OFFLINE_PROBLEM);
-  expect(OFFLINE_PROBLEM).toBe('沒有網路，現在不能上傳。連上網路後再試，或選「一起刪除」');
+  expect(OFFLINE_PROBLEM).toBe(i18nT("c952"));
   expect(uploadProblem('signed-out', 5)).toContain('沒有登入 Supabase');
   expect(uploadProblem('failed', 5)).toBe('還有 5 筆沒上傳完，請再試一次，或選「一起刪除」');
 });
@@ -391,7 +392,7 @@ test('nothing waiting: 刪除 deletes without the waiting rows, then starts over
   const { result, unmount } = flow(actions);
   expect(result.dialog.visible).toBe(false);
   await act(async () => result.start());
-  expect(result.dialog).toMatchObject({ visible: true, confirm: '刪除', busy: false });
+  expect(result.dialog).toMatchObject({ visible: true, confirm: i18nT("c949"), busy: false });
   await act(async () => result.confirm());
   expect(actions.deleteAll).toHaveBeenCalledWith({ includeUnsent: false });
   expect(actions.onDeleted).toHaveBeenCalledTimes(1);
@@ -407,7 +408,7 @@ test('先上傳 without a network deletes nothing and says so; 一起刪除 then
   expect(result.dialog.note).toBe('還有 120 筆沒上傳：先上傳／一起刪除');
   await act(async () => result.uploadFirst());
   expect(actions.deleteAll).not.toHaveBeenCalled();
-  expect(result.dialog).toMatchObject({ visible: true, problem: OFFLINE_PROBLEM, confirm: '一起刪除' });
+  expect(result.dialog).toMatchObject({ visible: true, problem: OFFLINE_PROBLEM, confirm: i18nT("c948") });
   await act(async () => result.confirm());
   expect(actions.deleteAll).toHaveBeenCalledWith({ includeUnsent: true });
   expect(actions.onDeleted).toHaveBeenCalled();

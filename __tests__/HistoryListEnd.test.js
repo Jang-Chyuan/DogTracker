@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // 057a: how each day's time-line list ends (判定表「清單節點的內容」「「現在」和
 // 「最後 12:05」」「記錄被迫中止的終點膠囊」, 接續隔天), through useHistoryScreen
 // as MapScreen drives it (recording from the phone's live state).
@@ -45,20 +46,20 @@ test.each([
 
 test('a dog without a fix for 17 minutes, following now: 「最後 09:13」', async () => {
   const { last } = await open('history-dog-stale');
-  expect(last).toMatchObject({ type: 'end', label: '最後' });
+  expect(last).toMatchObject({ type: 'end', label: i18nT("c660") });
   expect(nodePill(last)).toEqual({ text: '最後 09:13', tone: 'plain' });
 });
 
 test('only the end dragged back to 08:50: 「結束」 at that time, the start still 「出發」', async () => {
   const { last, screen } = await open('history-manual-end');
-  expect(nodePill(screen.model.nodes[0])).toEqual({ text: '出發', tone: 'plain' });
-  expect(last).toMatchObject({ type: 'end', label: '結束' });
+  expect(nodePill(screen.model.nodes[0])).toEqual({ text: i18nT('c124'), tone: 'plain' });
+  expect(last).toMatchObject({ type: 'end', label: i18nT('c330') });
   expect(clock(last.end)).toBe('08:50');
 });
 
 test('K15: last fix 09:05, switched off at 09:30: 「記錄已關閉 09:30」, not 「結束」', async () => {
   const { last } = await open('history-recording-off');
-  expect(last).toMatchObject({ type: 'end', label: '記錄已關閉' });
+  expect(last).toMatchObject({ type: 'end', label: i18nT("c656") });
   expect(clock(last.closedAt)).toBe('09:30');
   expect(nodePill(last)).toEqual({ text: '記錄已關閉 09:30', tone: 'closed' });
 });
@@ -66,14 +67,14 @@ test('K15: last fix 09:05, switched off at 09:30: 「記錄已關閉 09:30」, n
 test('a past day this phone holds opens (preset goTo) and ends on 「結束」', async () => {
   const { screen, last } = await open('history-past-day');
   expect(screen.today).toBe(false);
-  expect(last).toMatchObject({ type: 'end', label: '結束' });
+  expect(last).toMatchObject({ type: 'end', label: i18nT('c330') });
 });
 
 test('a day whose walk runs past midnight ends 「接續隔天」', async () => {
   const { screen, last } = await open('history-cross-midnight');
   expect(screen.today).toBe(false);
   expect(last.continuesNextDay).toBe(true);
-  expect(nodePill(last)).toEqual({ text: '接續隔天', tone: 'plain' });
+  expect(nodePill(last)).toEqual({ text: i18nT('c334'), tone: 'plain' });
 });
 
 test('indoors until now: the list ends on the house node 「室內・N 分」', async () => {

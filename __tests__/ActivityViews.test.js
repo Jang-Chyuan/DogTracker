@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { activityReadings } from '../src/activity/ActivityMinutes';
 import { ACTIVITY_VIEW_COPY, activityPeriod, activityNavigation, buildDayView,
   buildWeekView, buildMonthView, buildYearView } from '../src/activity/views';
@@ -64,7 +65,7 @@ test('today excludes unfinished minute and all future time from totals/gaps', ()
   const midnight = buildDayView({ ...options, now: START });
   expect(midnight.points).toEqual([]);
   expect(midnight.rows[2].durationText).toBe('0 分');
-  expect(midnight.emptyText).toBe('沒有活動量資料');
+  expect(midnight.emptyText).toBe(i18nT('c352'));
 });
 
 test('context on either side of midnight preserves backfill without leaking durations', () => {
@@ -110,7 +111,7 @@ test('month uses daily bars, future days pending rather than missing', () => {
   const view = buildMonthView({ ...options, now: date(10, 8, 0, 2), readings: input(date(10, 8), [0.9, 0.9, 1]) });
   expect(view.bars).toHaveLength(31);
   expect(view.label).toBe('2026 年 10 月');
-  expect(view.currentLabel).toBe('這個月');
+  expect(view.currentLabel).toBe(i18nT("c454"));
   expect(view.bars[7].totals.vigorous).toBe(2);
   expect(view.bars[7].pendingMinutes).toBe(1438);
   expect(view.bars[8].pendingMinutes).toBe(1440);
@@ -130,18 +131,18 @@ test('year uses month capacities including leap February, not averages of daily 
 
 test('empty data, durations, legend and thresholds use A4 text', () => {
   const view = buildDayView(options);
-  expect(view.emptyText).toBe('沒有活動量資料');
-  expect(view.rows.map(row => row.label)).toEqual(['休息', '劇烈', '沒有資料']);
+  expect(view.emptyText).toBe(i18nT('c352'));
+  expect(view.rows.map(row => row.label)).toEqual([i18nT('c086'), i18nT('c088'), i18nT('c089')]);
   expect(view.rows[2].durationText).toBe('24 小時');
   expect(view.rows[2].rangeLabels).toEqual(['00:00–24:00']);
   expect(view.thresholds).toEqual({ restMax: 0.05, vigorousMin: 0.8 });
   expect(view.thresholdBands).toEqual([
-    { state: 'rest', min: 0, max: 0.05, label: '休息' },
-    { state: 'vigorous', min: 0.8, max: 1, label: '劇烈' },
+    { state: 'rest', min: 0, max: 0.05, label: i18nT('c086') },
+    { state: 'vigorous', min: 0.8, max: 1, label: i18nT('c088') },
   ]);
-  expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual(['休息', '一般', '劇烈', '沒有資料']);
-  expect(ACTIVITY_VIEW_COPY.low).toBe('休息');
-  expect(ACTIVITY_VIEW_COPY.high).toBe('劇烈');
+  expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual([i18nT('c086'), i18nT("c434"), i18nT('c088'), i18nT('c089')]);
+  expect(ACTIVITY_VIEW_COPY.low).toBe(i18nT('c086'));
+  expect(ACTIVITY_VIEW_COPY.high).toBe(i18nT('c088'));
   expect(ACTIVITY_VIEW_COPY.explanation).toBeUndefined();
   const totals = buildDayView({ ...options, readings: input(START, Array(340).fill(0)) });
   expect(totals.rows[0].durationText).toBe('5 小時 40 分');

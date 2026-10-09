@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AuthProvider } from '../src/auth/AuthProvider';
@@ -54,7 +55,7 @@ test('signing in (on S3) loads only that account cache and signing out hides it'
   expect(database.listHistory).toHaveBeenCalledWith('account-a', 0);
   expect(text()).toContain('ACCOUNT_A_ONLY');
   // No sign-in form or 登出 here: those are on S3.
-  expect(text()).not.toContain('登入 Supabase 帳號');
+  expect(text()).not.toContain(i18nT('c001'));
   expect(text()).not.toContain('"登出"');
   await act(async () => { await client.auth.signOut(); });
   expect(text()).not.toContain('ACCOUNT_A_ONLY');

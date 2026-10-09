@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { ScrollView } from 'react-native';
@@ -59,7 +60,7 @@ test('waiting card is info, takes precedence over A6, follows outage, and adds n
   const cards = topCards({ waitingSources: 3, noDogs: true, outage: { key: 1, since: 1, number: 7 } });
   expect(cards.map(card => card.id)).toEqual(['receiver', 'waiting-sources']);
   expect(cards[1]).toMatchObject({ kind: 'info', actions: [], tapAction: 'waiting-source-settings',
-    label: '3 個訊號源等待定位，定位後狗會出現在地圖上，點兩下看訊號源', closeLabel: '關閉等待定位提示' });
+    label: '3 個訊號源等待定位，定位後狗會出現在地圖上，點兩下看訊號源', closeLabel: i18nT('c430') });
   expect(gearReasons({ waitingSources: 3, now })).toEqual([]);
 });
 

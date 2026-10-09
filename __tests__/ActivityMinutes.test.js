@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import {
   ACTIVITY, activityMinutes, activityReadings, activityState, activityWords, durationText, readingKey,
 } from '../src/activity/ActivityMinutes';
@@ -114,9 +115,9 @@ test('no data, or judged where nothing was read: 「—」', () => {
 });
 
 test('the card words, and durations past an hour', () => {
-  expect(activityWords({ state: 'rest', durationMinutes: 18 })).toEqual({ word: '休息中', detail: '已 18 分鐘', tone: 'rest' });
-  expect(activityWords({ state: 'vigorous', durationMinutes: 3 })).toEqual({ word: '劇烈活動', detail: '已 3 分鐘', tone: 'vigorous' });
-  expect(activityWords({ state: 'normal' })).toEqual({ word: '一般', detail: null, tone: 'normal' });
+  expect(activityWords({ state: 'rest', durationMinutes: 18 })).toEqual({ word: i18nT('c069'), detail: '已 18 分鐘', tone: 'rest' });
+  expect(activityWords({ state: 'vigorous', durationMinutes: 3 })).toEqual({ word: i18nT('c350'), detail: '已 3 分鐘', tone: 'vigorous' });
+  expect(activityWords({ state: 'normal' })).toEqual({ word: i18nT("c434"), detail: null, tone: 'normal' });
   expect(activityWords(null)).toEqual({ word: '—', detail: null, tone: null });
   expect(durationText(59)).toBe('59 分鐘');
   expect(durationText(60)).toBe('1 小時');

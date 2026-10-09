@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Platform } from 'react-native';
@@ -39,8 +40,8 @@ test('the receiver card says which receiver and when it dropped (c058, c059 as s
   const [card] = topCards({ outage });
   expect(card).toMatchObject({ id: 'receiver', kind: 'alert', title: '接收器 7 斷線了',
     detail: `${formatClock(NOW - 8 * 60000)} 斷線・正在自動重連`, closable: true,
-    actions: [{ id: 'receiver-settings', label: '接收器設定' }] });
-  expect(topCards({ outage: { ...outage, number: null } })[0].title).toBe('接收器斷線了');
+    actions: [{ id: 'receiver-settings', label: i18nT('c060') }] });
+  expect(topCards({ outage: { ...outage, number: null } })[0].title).toBe(i18nT("c773"));
 });
 
 test('✕ collapses that disconnection into the gear dot; the next one shows again', () => {
@@ -98,11 +99,11 @@ test('storage: phone full → 檢查空間, any other reason → 看原因 with 
   expect(storageProblem('  ')).toBeNull();
   const full = storageProblem('資料存檔失敗：database or disk is full (code 13 SQLITE_FULL)');
   expect(full.full).toBe(true);
-  expect(topCards({ storage: full })[0]).toMatchObject({ title: '位置存不進手機', detail: '手機空間不足',
-    actions: [{ id: 'storage-settings', label: '檢查空間' }], closable: true });
+  expect(topCards({ storage: full })[0]).toMatchObject({ title: i18nT("c466"), detail: i18nT("c622"),
+    actions: [{ id: 'storage-settings', label: i18nT('c280') }], closable: true });
   const other = storageProblem('attempt to write a readonly database');
   expect(topCards({ storage: other })[0]).toMatchObject({ detail: 'attempt to write a readonly database',
-    actions: [{ id: 'storage-reason', label: '看原因' }] });
+    actions: [{ id: 'storage-reason', label: i18nT('c281') }] });
   expect(gearReasons({ storage: other, dismissed: { storage: true }, now: NOW })).toEqual(['storage']);
   expect(topCards({ storage: other, dismissed: { storage: true } })).toEqual([]);
 });
@@ -112,12 +113,12 @@ test('storage: phone full → 檢查空間, any other reason → 看原因 with 
 test('map cards: 重試 and no ✕; 載入中… while retrying; 地圖打不開 says dogs are still received', () => {
   expect(topCards({ map: 'loading' })).toEqual([]);
   expect(topCards({ map: 'ok' })).toEqual([]);
-  expect(topCards({ map: 'load-failed' })[0]).toMatchObject({ title: '地圖載入失敗', detail: '沒有網路或地圖服務連不上',
-    closable: false, actions: [{ id: 'map-retry', label: '重試', busy: false }] });
+  expect(topCards({ map: 'load-failed' })[0]).toMatchObject({ title: i18nT('c061'), detail: i18nT('c062'),
+    closable: false, actions: [{ id: 'map-retry', label: i18nT('c049'), busy: false }] });
   expect(topCards({ map: 'load-failed', retrying: true })[0].actions[0]).toEqual(
-    { id: 'map-retry', label: '載入中…', busy: true });
-  expect(topCards({ map: 'unavailable' })[0]).toMatchObject({ title: '地圖打不開',
-    detail: '狗的位置還是會照常收、照常提醒', closable: false });
+    { id: 'map-retry', label: i18nT('c283'), busy: true });
+  expect(topCards({ map: 'unavailable' })[0]).toMatchObject({ title: i18nT('c359'),
+    detail: i18nT('c360'), closable: false });
 });
 
 // ---- A6 ---------------------------------------------------------------------
@@ -137,10 +138,10 @@ test('A6 only with no receiver set up and no dog data, once everything is read',
 
 test('A6 card: 連接接收器, and 登入 Supabase only when signed out; its ✕ never lights the gear', () => {
   const [signedOut] = topCards({ noDogs: true });
-  expect(signedOut).toMatchObject({ id: 'no-dogs', kind: 'info', title: '還沒有狗的資料',
-    detail: '連上接收器或登入 Supabase，狗就會出現在地圖上；只用「我的路線」也可以', closable: true });
-  expect(signedOut.actions.map(action => action.label)).toEqual(['連接接收器', '登入 Supabase']);
-  expect(topCards({ noDogs: true, signedIn: true })[0].actions.map(action => action.label)).toEqual(['連接接收器']);
+  expect(signedOut).toMatchObject({ id: 'no-dogs', kind: 'info', title: i18nT('c109'),
+    detail: i18nT('c110'), closable: true });
+  expect(signedOut.actions.map(action => action.label)).toEqual([i18nT('c011'), i18nT('c111')]);
+  expect(topCards({ noDogs: true, signedIn: true })[0].actions.map(action => action.label)).toEqual([i18nT('c011')]);
   expect(gearReasons({ dismissed: { noDogs: true }, now: NOW })).toEqual([]);
 });
 
@@ -172,7 +173,7 @@ test('gear dot: cloud, permissions, receiver battery; TalkBack counts them', () 
   expect(battery(21)).toEqual([]);
   expect(gearReasons({ receiverState: receiving, receiverBattery: { valid: false, percentage: 5 }, now: NOW }))
     .toEqual([]);
-  expect(gearLabel([])).toBe('設定');
+  expect(gearLabel([])).toBe(i18nT("c482"));
   expect(gearLabel(['cloud', 'phone-location'])).toBe('設定，有 2 件事要處理');
 });
 
@@ -239,7 +240,7 @@ test.each([
   const view = await renderMap(name);
   expect(view.cards()).toEqual(expected);
   expect(view.gear()).toBe(label);
-  expect(view.host('map-settings-dot')).toHaveLength(label === '設定' ? 0 : 1);
+  expect(view.host('map-settings-dot')).toHaveLength(label === i18nT("c482") ? 0 : 1);
   await act(async () => view.renderer.unmount());
 });
 
@@ -270,7 +271,7 @@ test('the settings page shows the storage warning above everything (c282) and le
     home={settingsHome({ now: 0, receiverState: null, storage })} />;
   let renderer;
   await act(async () => { renderer = Renderer.create(page(storageProblem('database or disk is full'))); });
-  expect(JSON.stringify(renderer.toJSON())).toContain('手機空間不足，位置存不進手機');
+  expect(JSON.stringify(renderer.toJSON())).toContain(i18nT('c282'));
   await act(async () => renderer.root.findAll(node => node.props.testID === 'settings-storage-warning'
     && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(onStorage).toHaveBeenCalled();
@@ -285,24 +286,24 @@ test('map-load-failed draws dogs and ring on a map without a base map; map-unava
   const { Marker, Polygon } = require('react-native-maps');
   expect(failed.renderer.root.findAllByType(Marker).length).toBeGreaterThan(0);
   expect(failed.renderer.root.findAllByType(Polygon)).toHaveLength(1);
-  expect(failed.text()).toContain('地圖載入失敗');
+  expect(failed.text()).toContain(i18nT('c061'));
   // 重試: 載入中… until the new map has loaded (still without tiles here).
   await act(async () => failed.renderer.root.findAll(node => node.props.testID === 'top-card-action-map-retry'
     && typeof node.props.onPress === 'function')[0].props.onPress());
-  expect(failed.text()).toContain('載入中…');
+  expect(failed.text()).toContain(i18nT('c283'));
   expect(failed.onAlertAction).not.toHaveBeenCalled();
   await act(async () => failed.renderer.unmount());
   const unavailable = await renderMap('map-unavailable');
   expect(unavailable.maps).toHaveLength(0);
   expect(unavailable.host('map-unavailable')).toHaveLength(1);
-  expect(unavailable.text()).toContain('地圖打不開');
-  expect(unavailable.text()).toContain('狗的位置還是會照常收、照常提醒');
+  expect(unavailable.text()).toContain(i18nT('c359'));
+  expect(unavailable.text()).toContain(i18nT('c360'));
   await act(async () => unavailable.renderer.unmount());
 });
 
 test('no-data: A6 buttons go to the hardware and cloud pages; ✕ stores that it never shows again', async () => {
   const view = await renderMap('no-data');
-  expect(view.text()).toContain('還沒有狗的資料');
+  expect(view.text()).toContain(i18nT('c109'));
   const press = id => view.renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress();
   await act(async () => press('top-card-action-connect-receiver'));
@@ -313,7 +314,7 @@ test('no-data: A6 buttons go to the hardware and cloud pages; ✕ stores that it
   await act(async () => { jest.advanceTimersByTime(400); });
   jest.useRealTimers();
   expect(view.cards()).toEqual([]);
-  expect(view.gear()).toBe('設定');
+  expect(view.gear()).toBe(i18nT("c482"));
   // A fixture never writes this phone's preferences.
   expect(view.live.tracking.saveTrackingPreferences).not.toHaveBeenCalled();
   await act(async () => view.renderer.unmount());
@@ -329,7 +330,7 @@ test.each([
 ])('A6b %s renders only local waiting sources without a gear dot', async (name, expected, count) => {
   const view = await renderMap(name);
   expect(view.cards()).toEqual(expected);
-  expect(view.gear()).toBe('設定');
+  expect(view.gear()).toBe(i18nT("c482"));
   if (count) expect(view.text()).toContain(`${count} 個訊號源等待定位`);
   await act(async () => view.renderer.unmount());
 });
@@ -343,6 +344,6 @@ test('A6b tapping opens S2; dismissing it leaves no gear dot', async () => {
   await act(async () => view.renderer.root.findAll(node => node.props.accessibilityLabel === '關閉等待定位提示'
     && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(view.cards()).toEqual([]);
-  expect(view.gear()).toBe('設定');
+  expect(view.gear()).toBe(i18nT("c482"));
   await act(async () => view.renderer.unmount());
 });

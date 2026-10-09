@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { activityRow, cardHeadline, dogCard, phoneReading } from '../src/map/DogCardModel';
 import { bearingAndDistance, compassWord, formatDistance } from '../src/map/DogReadout';
 import { activityMinutes, activityReadings } from '../src/activity/ActivityMinutes';
@@ -24,7 +25,7 @@ test('distance and bearing, five-metre steps, compass words', () => {
   expect(metres).toBeLessThan(900);
   expect(bearing).toBeGreaterThan(30);
   expect(bearing).toBeLessThan(60);
-  expect(compassWord(bearing)).toBe('東北');
+  expect(compassWord(bearing)).toBe(i18nT("c739"));
   expect(formatDistance(7.4)).toBe('7 m');
   expect(formatDistance(847)).toBe('845 m');
   expect(formatDistance(998)).toBe('1.0 km');
@@ -37,19 +38,19 @@ test('A3: a fresh dog in range — 電量, 接收範圍, 活動量, no 位置 ro
   expect(model.sourceLabel).toBe('訊號源 6');
   expect(model.rows.map(item => item.key)).toEqual(['battery', 'range', 'activity']);
   expect(row(model, 'battery')).toMatchObject({ value: '62%', tone: null });
-  expect(row(model, 'range')).toMatchObject({ value: '在範圍內', tone: null });
+  expect(row(model, 'range')).toMatchObject({ value: i18nT('c348'), tone: null });
   expect(row(model, 'activity')).toMatchObject({ value: '—', pressable: true });
-  expect(model.headline).toMatchObject({ kind: 'distance', distance: '845 m', suffix: '離手機' });
+  expect(model.headline).toMatchObject({ kind: 'distance', distance: '845 m', suffix: i18nT('c064') });
   expect(model.headlineSpeech).toBe('小黑，東北方 845 公尺，離手機');
   // No receiver row, ever.
-  expect(model.rows.some(item => item.label === '接收器')).toBe(false);
+  expect(model.rows.some(item => item.label === i18nT('c075'))).toBe(false);
 });
 
 test('快離開: amber, without a distance; out of range: red', () => {
   expect(row(card(dog(), { range: range(RANGE_STATUS.NEAR) }), 'range'))
-    .toMatchObject({ value: '快離開接收範圍', tone: 'warn' });
+    .toMatchObject({ value: i18nT('c067'), tone: 'warn' });
   expect(row(card(dog(), { range: range(RANGE_STATUS.OUT) }), 'range'))
-    .toMatchObject({ value: '不在接收範圍', tone: 'crit' });
+    .toMatchObject({ value: i18nT('c078'), tone: 'crit' });
   // A cloud dog (never judged by this phone): no row at all.
   expect(card(dog(), { range: null }).rows.map(item => item.key)).toEqual(['battery', 'activity']);
 });
@@ -96,7 +97,7 @@ test('A7b: held indoors — 位置 「室內」 (address line when known), 離�
   const freshness = { ...fresh, basis: 'packet' };
   const model = card(held, { freshness, range: range(RANGE_STATUS.NEAR), address: '桃園區中正路 1 號附近' });
   expect(model.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
-  expect(row(model, 'position')).toMatchObject({ value: '室內', tone: null, detail: '桃園區中正路 1 號附近',
+  expect(row(model, 'position')).toMatchObject({ value: i18nT('c114'), tone: null, detail: '桃園區中正路 1 號附近',
     speech: '位置，室內，桃園區中正路 1 號附近' });
   expect(model.headline.suffix).toBe('離手機・室內');
   // Out of range before it was held: the row stays, with the time it was confirmed.
@@ -112,13 +113,13 @@ test('the phone: none or over 10 minutes old is 手機沒有定位; 30 s to 10 m
   expect(phoneReading({ running: false, position: phone.position }, NOW)).toBeNull();
   expect(phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 11 * MINUTE } }, NOW)).toBeNull();
   const model = card(dog(), { phone: null });
-  expect(model.headline).toEqual({ kind: 'no-phone', text: '手機沒有定位' });
+  expect(model.headline).toEqual({ kind: 'no-phone', text: i18nT("c726") });
   expect(model.headlineSpeech).toBe('小黑，手機沒有定位');
   const threeMinutes = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 3 * MINUTE - 5000 } }, NOW);
   expect(cardHeadline({ dog: dog(), phone: threeMinutes, indoor: false, stale: true }).suffix)
     .toBe('離手機・最後位置・手機位置 3 分鐘前');
   const twentySeconds = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 20000 } }, NOW);
-  expect(cardHeadline({ dog: dog(), phone: twentySeconds, indoor: false, stale: false }).suffix).toBe('離手機');
+  expect(cardHeadline({ dog: dog(), phone: twentySeconds, indoor: false, stale: false }).suffix).toBe(i18nT('c064'));
 });
 
 test('活動量: judged at now; 「—」 when stale; old readings judged when they stopped, with their time', () => {
@@ -127,12 +128,12 @@ test('活動量: judged at now; 「—」 when stale; old readings judged when t
   const minutes = activityMinutes(activityReadings(rows, 'ble'), { now: NOW });
   const activity = { minutes, newestAt: NOW - 10000 };
   expect(activityRow(activity, { reference: NOW, positionAt: NOW - 5000, stale: false }))
-    .toMatchObject({ word: '休息中', detail: '已 40 分鐘', at: null });
+    .toMatchObject({ word: i18nT('c069'), detail: '已 40 分鐘', at: null });
   expect(activityRow(activity, { reference: NOW, positionAt: NOW - 5000, stale: true }).word).toBe('—');
   const stopped = rows.filter(item => item.time < NOW - 20 * MINUTE);
   const old = { minutes: activityMinutes(activityReadings(stopped, 'ble'), { now: NOW }), newestAt: stopped.at(-1).time };
   const result = activityRow(old, { reference: NOW, positionAt: NOW - 5000, stale: false });
-  expect(result).toMatchObject({ word: '休息中', detail: '已 20 分鐘', at: stopped.at(-1).time });
+  expect(result).toMatchObject({ word: i18nT('c069'), detail: '已 20 分鐘', at: stopped.at(-1).time });
   const model = card(dog(), { activity: old });
   expect(row(model, 'activity').speech).toBe('活動量，休息中，已 20 分鐘，09:09');
 });

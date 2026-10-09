@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { applyScreenFixture, buildFixture, FIXTURE_NOW, FIXTURE_PAGES } from '../src/dev/ScreenFixtures';
@@ -47,25 +48,25 @@ test('every S3 fixture opens on the account page; any fixture can (&page=cloud)'
 test('cloud-signed-out: 未登入 with 登入, no 「!」 (not signed in is a choice)', () => {
   const { data } = input('cloud-signed-out');
   expect(accountPage(data)).toEqual({ signedIn: false, expired: false, restoring: false });
-  expect(accountRow(data)).toMatchObject({ subtitle: '未登入', problem: false });
+  expect(accountRow(data)).toMatchObject({ subtitle: i18nT('c302'), problem: false });
 });
 
 test('cloud-ok: signed in, last download, nothing waiting, receiver 7 uploads through this phone', () => {
   const { data } = input('cloud-ok');
   const page = accountPage(data);
   expect(page).toMatchObject({ signedIn: true, email: 'tim@example.com', offline: false, routesLoading: false });
-  expect(page.download).toMatchObject({ title: '最後下載成功', right: formatClock(FIXTURE_NOW - 5000), problem: false });
+  expect(page.download).toMatchObject({ title: i18nT("c918"), right: formatClock(FIXTURE_NOW - 5000), problem: false });
   expect(page.upload).toMatchObject({ problem: null, pendingText: '0 筆', lastText: formatClock(FIXTURE_NOW - 8000) });
   expect(page.routes).toEqual([expect.objectContaining({ master: 7, title: '接收器 7 的上傳方式',
-    detail: '由這支手機上傳', mode: 'phone', to: 'wifi', canSwitch: true })]);
-  expect(accountRow(data)).toMatchObject({ problem: false, status: ['已登入'] });
+    detail: i18nT('c219'), mode: 'phone', to: 'wifi', canSwitch: true })]);
+  expect(accountRow(data)).toMatchObject({ problem: false, status: [i18nT('c208')] });
 });
 
 test('cloud-failing on S3 (as the mockup): 下載失敗 since when + 重試, 12 waiting, last upload', () => {
   const { data } = input('cloud-failing', 'cloud');
   const page = accountPage(data);
-  expect(page.download).toEqual({ title: '下載失敗', detail: `連不上 Supabase・${formatClock(FIXTURE_NOW - 6 * MINUTE)} 起`,
-    right: null, problem: true, retry: true, label: expect.stringContaining('下載失敗') });
+  expect(page.download).toEqual({ title: i18nT('c211'), detail: `連不上 Supabase・${formatClock(FIXTURE_NOW - 6 * MINUTE)} 起`,
+    right: null, problem: true, retry: true, label: expect.stringContaining(i18nT('c211')) });
   expect(page.upload).toMatchObject({ problem: null, pendingText: '12 筆', lastText: formatClock(FIXTURE_NOW - 16 * MINUTE) });
   expect(page.offline).toBe(true);
   expect(accountRow(data)).toMatchObject({ problem: true, label: 'Supabase 帳號，有問題：連不上' });
@@ -75,7 +76,7 @@ test('cloud-upload-pending: 需處理 with 「!」 + 重試, 手機還沒上傳 
   const { data, inputs } = input('cloud-upload-pending');
   const page = accountPage(data);
   expect(page.download.problem).toBe(false);
-  expect(page.upload.problem).toMatchObject({ title: '需處理', right: '3 筆', problem: true, retry: true });
+  expect(page.upload.problem).toMatchObject({ title: i18nT("c919"), right: '3 筆', problem: true, retry: true });
   expect(page.upload.pendingText).toBe('12 筆');
   expect(inputs.cloudProblem).toBe(true);
   expect(accountRow(data).problem).toBe(true);
@@ -84,7 +85,7 @@ test('cloud-upload-pending: 需處理 with 「!」 + 重試, 手機還沒上傳 
 test('cloud-unreachable-retrying: never reached Supabase since start → 「暫時連不上，會自動重試」', () => {
   const { data } = input('cloud-unreachable-retrying');
   const page = accountPage(data);
-  expect(page.download).toMatchObject({ title: '暫時連不上，會自動重試', problem: true, retry: true,
+  expect(page.download).toMatchObject({ title: i18nT('c257'), problem: true, retry: true,
     detail: `連不上 Supabase・${formatClock(FIXTURE_NOW - 3 * MINUTE)} 起` });
   expect(page.upload.pendingText).toBe('4 筆');
 });
@@ -100,10 +101,10 @@ test('upload-switch-confirm: receiver 7 by Wi-Fi with 120 waiting, the confirmat
   const { fixture, data } = input('upload-switch-confirm');
   const page = accountPage(data);
   const route = page.routes[0];
-  expect(route).toMatchObject({ master: 7, detail: '由接收器的 Wi-Fi 上傳', to: 'phone', pending: 120 });
+  expect(route).toMatchObject({ master: 7, detail: i18nT('c416'), to: 'phone', pending: 120 });
   expect(fixture.dialog).toEqual({ kind: 'switch', master: 7 });
-  expect(switchDialog(route, { offline: page.offline })).toEqual({ title: '改由這支手機上傳？',
-    body: '這台接收器改由這支手機上傳。手機裡還有 120 筆沒上傳，會先上傳。', blockedBy: null, confirm: '切換' });
+  expect(switchDialog(route, { offline: page.offline })).toEqual({ title: i18nT("c930"),
+    body: '這台接收器改由這支手機上傳。手機裡還有 120 筆沒上傳，會先上傳。', blockedBy: null, confirm: i18nT("c928") });
   let renderer;
   await act(async () => { renderer = Renderer.create(<AccountSettings page={page} dialog={fixture.dialog}
     onSwitch={fixture.upload.switchMode} />); });
@@ -127,12 +128,12 @@ test('download before the first pass says 下載中…; switching back to Wi-Fi 
   const page = accountPage({ account: { signedIn: true, email: 'a@b' }, sync: { ownerId: 'a' },
     upload: { supported: true, settingsReady: true, masters: [], settings: [{ master_id: 5, mode: 'phone' }],
       counts: [], error: '' } });
-  expect(page.download).toMatchObject({ right: '下載中…', problem: false });
-  expect(page.upload.lastText).toBe('還沒有');
+  expect(page.download).toMatchObject({ right: i18nT('c319'), problem: false });
+  expect(page.upload.lastText).toBe(i18nT("c917"));
   // Not authorized for 5 any more: going back to Wi-Fi is still allowed.
   expect(page.routes[0]).toMatchObject({ master: 5, canSwitch: true, to: 'wifi', pending: 0 });
-  expect(switchDialog(page.routes[0], { offline: true })).toEqual({ title: '改由接收器的 Wi-Fi 上傳？',
-    body: '這台接收器改由它自己的 Wi-Fi 上傳，這支手機不再上傳它的資料。', blockedBy: null, confirm: '切換' });
+  expect(switchDialog(page.routes[0], { offline: true })).toEqual({ title: i18nT("c931"),
+    body: i18nT("c927"), blockedBy: null, confirm: i18nT("c928") });
 });
 
 test('an unauthorized receiver cannot be switched to this phone; an upload error reads in field words', () => {
@@ -140,7 +141,7 @@ test('an unauthorized receiver cannot be switched to this phone; an upload error
     upload: { supported: true, settingsReady: true, masters: [], settings: [{ master_id: 9, mode: 'wifi' }],
       counts: [{ status: 'pending', count: 2 }], error: 'Network request failed' } });
   expect(page.routes[0]).toMatchObject({ canSwitch: false });
-  expect(page.upload.problem).toMatchObject({ title: '上傳失敗', detail: '連不上 Supabase', problem: true });
+  expect(page.upload.problem).toMatchObject({ title: i18nT("c920"), detail: i18nT("c932"), problem: true });
   expect(page.offline).toBe(true);
   const loading = accountPage({ account: { signedIn: true }, sync: {}, upload: { supported: true, settingsReady: false } });
   expect(loading).toMatchObject({ routes: [], routesLoading: true });
@@ -169,7 +170,7 @@ test('S3 rows in the mockup order; 重試 and 登出 (confirmed) reach their han
   await act(async () => pressable(renderer, accountPage(data).download.label).props.onPress());
   expect(retryDownload).toHaveBeenCalledTimes(1);
   await act(async () => pressable(renderer, '登出').props.onPress());
-  expect(text(renderer)).toContain('登出 Supabase 帳號？');
+  expect(text(renderer)).toContain(i18nT("c924"));
   expect(signOut).not.toHaveBeenCalled();
   const confirm = renderer.root.findByProps({ testID: 'sign-out-dialog' })
     .findAll(node => node.props.accessibilityLabel === '登出' && typeof node.props.onPress === 'function')[0];
@@ -189,9 +190,9 @@ test('a switch that cannot send first keeps the dialog open with the reason; 取
   expect(onSwitch).toHaveBeenCalledWith(7, 'phone', expect.objectContaining({ aborted: false }));
   expect(text(renderer)).toContain('要先上傳完 120 筆，請連上網路');
   // The reason disables the action until the dialog is opened again.
-  expect(pressable(renderer, '切換').props.disabled).toBe(true);
+  expect(pressable(renderer, i18nT("c928")).props.disabled).toBe(true);
   await act(async () => pressable(renderer, '取消').props.onPress());
-  expect(text(renderer)).not.toContain('改由這支手機上傳？');
+  expect(text(renderer)).not.toContain(i18nT("c930"));
   await act(async () => renderer.unmount());
 });
 
@@ -200,8 +201,8 @@ test('signed out S3: 未登入 or 需要重新登入 with 登入 (→ D1); resto
   let renderer;
   await act(async () => { renderer = Renderer.create(<AccountSettings page={{ signedIn: false, expired: true }}
     onSignIn={signIn} />); });
-  expect(text(renderer)).toContain('需要重新登入');
-  expect(text(renderer)).not.toContain('登入 Supabase 帳號');
+  expect(text(renderer)).toContain(i18nT('c276'));
+  expect(text(renderer)).not.toContain(i18nT('c001'));
   await act(async () => pressable(renderer, '需要重新登入，登入').props.onPress());
   expect(signIn).toHaveBeenCalledTimes(1);
   await act(async () => renderer.update(<AccountSettings page={{ signedIn: false, expired: false }} onSignIn={signIn} />));
@@ -209,7 +210,7 @@ test('signed out S3: 未登入 or 需要重新登入 with 登入 (→ D1); resto
   expect(signIn).toHaveBeenCalledTimes(2);
   await act(async () => renderer.update(<AccountSettings page={{ signedIn: false, expired: false, restoring: true }}
     onSignIn={signIn} />));
-  expect(text(renderer)).toContain('暫時連不上，會自動重試');
+  expect(text(renderer)).toContain(i18nT('c257'));
   expect(pressable(renderer, '未登入，登入')).toBeUndefined();
   await act(async () => renderer.unmount());
 });
@@ -226,8 +227,8 @@ test('a refused sign-in is told apart from no network', () => {
   expect(isAuthFailure(cloudError('x', { message: 'JWT expired' }))).toBe(true);
   expect(isAuthFailure({ context: { status: 401 } })).toBe(true);
   expect(isAuthFailure(cloudError('x', { message: 'TypeError: Network request failed' }, 0))).toBe(false);
-  expect(isNetworkFailure(cloudError('無法讀取 Master 清單，請確認連線及權限', { message: 'TypeError: Network request failed' }, 0))).toBe(true);
-  expect(isNetworkFailure(new Error('無法讀取 Master 清單，請確認連線及權限'))).toBe(false);
+  expect(isNetworkFailure(cloudError(i18nT("c581"), { message: 'TypeError: Network request failed' }, 0))).toBe(true);
+  expect(isNetworkFailure(new Error(i18nT("c581")))).toBe(false);
   expect(isNetworkFailure({ name: 'AuthRetryableFetchError', message: 'fetch' })).toBe(true);
   expect(isNetworkFailure(cloudError('x', { message: 'JWT expired' }, 401))).toBe(false);
 });
@@ -311,10 +312,10 @@ test('a dialog opened for one account closes when the account changes', async ()
   let renderer;
   await act(async () => { renderer = Renderer.create(<AccountSettings page={page} onSwitch={jest.fn()} />); });
   await act(async () => pressable(renderer, page.routes[0].label).props.onPress());
-  expect(text(renderer)).toContain('改由這支手機上傳？');
+  expect(text(renderer)).toContain(i18nT("c930"));
   await act(async () => renderer.update(<AccountSettings page={{ ...page, email: 'other@example.com' }}
     onSwitch={jest.fn()} />));
-  expect(text(renderer)).not.toContain('改由這支手機上傳？');
+  expect(text(renderer)).not.toContain(i18nT("c930"));
   await act(async () => renderer.unmount());
 });
 
@@ -330,12 +331,12 @@ test.each([
     expect(renderer.root.findAllByProps({ testID: id }).length > 0).toBe(visible);
   }
   if (visible) {
-    expect(text(renderer)).toContain(page.upload.pending > 0 ? `手機還沒上傳 ${page.upload.pendingText}` : '都已上傳');
+    expect(text(renderer)).toContain(page.upload.pending > 0 ? `手機還沒上傳 ${page.upload.pendingText}` : i18nT('c417'));
     if (!page.upload.pending) expect(text(renderer)).not.toContain('0 筆');
   }
   else {
-    expect(text(renderer)).not.toContain('最後上傳成功');
-    expect(text(renderer)).not.toContain('手機還沒上傳');
+    expect(text(renderer)).not.toContain(i18nT("c938"));
+    expect(text(renderer)).not.toContain(i18nT('c215'));
     for (const route of page.routes) expect(text(renderer)).toContain(route.label);
   }
   await act(async () => renderer.unmount());
@@ -379,6 +380,6 @@ test('K14: cancel during a slow switch aborts work and late failures do not reop
   expect(signal.aborted).toBe(true);
   await act(async () => reject(new Error('late failure')));
   expect(text(renderer)).not.toContain('late failure');
-  expect(pressable(renderer, '取消')).toBeUndefined();
+  expect(pressable(renderer, i18nT('c046'))).toBeUndefined();
   await act(async () => renderer.unmount());
 });

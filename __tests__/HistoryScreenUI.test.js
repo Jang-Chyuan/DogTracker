@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // 055a: the history screen (H1/H2/H2b/H3a/H8) drawn from the fixtures'
 // rows through useHistoryScreen, as MapScreen does.
 import React from 'react';
@@ -38,10 +39,10 @@ const unmount = state => act(async () => state.renderer.unmount());
 
 test('history-my-route (H1 我的路線): 我的路線, no ＋ 加入, the list, the summary, the map', async () => {
   const s = await mountFixture('history-my-route');
-  expect(s.text()).toContain('我的路線');
+  expect(s.text()).toContain(i18nT('c132'));
   expect(s.ids('history-add')).toEqual([]);
   expect(s.text()).toContain('10/07（三）今天');
-  expect(s.text()).toContain('調整範圍');
+  expect(s.text()).toContain(i18nT('c122'));
   expect(s.screen.navigation).toEqual({ previous: null, next: null });
   expect(s.ids('timeline-').filter(id => id !== 'timeline-selected')).toEqual(['timeline-departure',
     'timeline-movement-walking', 'timeline-stop', 'timeline-movement-walking', 'timeline-stop',
@@ -73,8 +74,8 @@ test('history-range-open (H2b): the bar open in its frame, 完成, the dragged s
   const s = await mountFixture('history-range-open');
   expect(s.ids('history-range-bar')).toEqual(['history-range-bar']);
   expect(s.text()).not.toContain('拖兩端的圓點改開始、結束');
-  expect(s.text()).toContain('完成');
-  expect(s.text()).toContain('出發');
+  expect(s.text()).toContain(i18nT('c101'));
+  expect(s.text()).toContain(i18nT('c124'));
   expect(s.text()).not.toContain('已手動調整');
   expect(s.text()).toContain('07:50 – 現在');
   // The right handle says this minute, not 「現在」.
@@ -91,7 +92,7 @@ test('history-range-open (H2b): the bar open in its frame, 完成, the dragged s
   await act(async () => { used = s.ref.current.back(); });
   expect(used).toBe(true);
   expect(s.ids('history-range-bar')).toEqual([]);
-  expect(s.text()).toContain('調整範圍');
+  expect(s.text()).toContain(i18nT('c122'));
   await act(async () => { used = s.ref.current.back(); });
   expect(used).toBe(false);
   await unmount(s);
@@ -105,7 +106,7 @@ test('a dragged range is kept for the day; the list and summary follow it', asyn
   expect(s.screen.model.points[0].time).toBe(start.time);
   await act(async () => s.screen.commitRange({ start: start.time, end: null, following: true }));
   expect(s.screen.manual).toBe(true);
-  expect(s.text()).toContain('出發');
+  expect(s.text()).toContain(i18nT('c124'));
   await unmount(s);
   // Opened again (same fixture scope): the range is still the dragged one.
   const again = await mountFixture('history-my-route');
@@ -164,14 +165,14 @@ test.each([
   const summary = s.renderer.root.findByProps({ testID: 'history-summary' });
   const speech = summary.findAll(node => typeof node.type === 'string' && node.props.accessibilityLabel)
     .map(node => node.props.accessibilityLabel);
-  expect(speech).toContainEqual(expect.stringContaining(`${title.replace(' – ', ' 到')}，走了 `));
+  expect(speech).toContainEqual(expect.stringContaining(`${title.replace(' – ', i18nT("c826"))}，走了 `));
   await unmount(s);
 });
 
 test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a route', async () => {
   const s = await mountFixture('history-empty-day');
   expect(s.ids('history-empty')).toEqual(['history-empty']);
-  expect(s.text()).toContain('今天還沒有路線');
+  expect(s.text()).toContain(i18nT('c159'));
   expect(s.ids('history-summary')).toEqual([]);
   const exportButton = s.renderer.root.findAll(node => node.props.testID === 'history-export'
     && node.props.accessibilityState)[0];
@@ -184,7 +185,7 @@ test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a
   await act(async () => pressable(s, 'history-day-previous').props.onPress());
   await act(async () => {});
   expect(s.text()).toContain('10/06（二）');
-  expect(s.text()).not.toContain('今天還沒有路線');
+  expect(s.text()).not.toContain(i18nT('c159'));
   expect(s.screen.model.points.length).toBeGreaterThan(0);
   // A past day: the end is its last fix (not 現在); › goes back to today.
   expect(s.screen.following).toBe(false);
@@ -279,7 +280,7 @@ test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
     'PNG 長圖，地圖＋時間軸清單', 'GPX，軌跡檔，可匯入地圖 App', 'CSV，每一筆位置',
   ]);
   expect(rows.map(node => node.findAllByType('Text').map(text => text.props.children))).toEqual([
-    ['PNG 長圖', '地圖＋時間軸清單'], ['GPX', '軌跡檔，可匯入地圖 App'], ['CSV', '每一筆位置'],
+    [i18nT('c161'), i18nT('c162')], ['GPX', i18nT('c165')], ['CSV', i18nT('c167')],
   ]);
   expect(s.text()).not.toContain('傳 LINE 最方便');
   expect(s.text()).not.toContain('上次用');

@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, Keyboard, TextInput } from 'react-native';
@@ -55,7 +56,7 @@ test('拍照: taken, cropped round to 256×256, and every file it made deleted',
   expect(picker.openCropper).toHaveBeenCalledWith(expect.objectContaining({ path: 'file:///pictures/shot.jpg',
     width: 256, height: 256, cropperCircleOverlay: true, includeBase64: true, forceJpg: true }));
   expect(PHOTO_SIZE).toBe(256);
-  expect(CROP_OPTIONS.cropperChooseText).toBe('使用');
+  expect(CROP_OPTIONS.cropperChooseText).toBe(i18nT("c648"));
   // Recompressing would leave the picker's first resized copy behind.
   expect(CROP_OPTIONS.compressImageQuality).toBeUndefined();
   expect(picker.cleanSingle).toHaveBeenCalledWith('file:///pictures/shot.jpg');
@@ -148,7 +149,7 @@ test('A5a: tapping the name edits it in place; 完成 stores the trimmed name', 
   await press('dog-profile-name');
   expect(input().props.value).toBe('豆豆');
   expect(input().props.autoFocus).toBe(true);
-  expect(input().props.placeholder).toBe('狗的名字');
+  expect(input().props.placeholder).toBe(i18nT('c347'));
   expect(input().props.returnKeyType).toBe('done');
   expect(flatten(renderer.toJSON())).not.toContain('2/20');
   await act(async () => input().props.onChangeText(' 豆豆二號 '));
@@ -174,7 +175,7 @@ test('A5a: emptied or only spaces — no error, the dog keeps its name', async (
   const { onSaveName } = await mount();
   await press('dog-profile-name');
   await act(async () => input().props.onChangeText(''));
-  expect(input().props.placeholder).toBe('狗的名字');
+  expect(input().props.placeholder).toBe(i18nT('c347'));
   expect(flatten(renderer.toJSON())).not.toContain('0/20');
   await act(async () => input().props.onSubmitEditing());
   expect(onSaveName).not.toHaveBeenCalled();
@@ -229,7 +230,7 @@ test('a name that could not be stored keeps the page and says so', async () => {
   await act(async () => input().props.onChangeText('小白'));
   await pressBack();
   expect(onBack).not.toHaveBeenCalled();
-  expect(flatten(renderer.toJSON())).toContain('沒有存成功，再試一次');
+  expect(flatten(renderer.toJSON())).toContain(i18nT("c627"));
   expect(input().props.value).toBe('小白');
 });
 
@@ -318,7 +319,7 @@ test('A5c: no camera permission is said in the sheet; 完成 without a change st
   const { onSaveAvatar } = await mount({ picker: stubPicker({ openCamera: jest.fn(async () => { throw denied; }) }) });
   await openAvatar();
   await press('avatar-source-拍照');
-  expect(flatten(renderer.toJSON())).toContain('需要相機才能拍照');
+  expect(flatten(renderer.toJSON())).toContain(i18nT("c647"));
   await press('avatar-done');
   await act(async () => { jest.runAllTimers(); });
   expect(onSaveAvatar).not.toHaveBeenCalled();
@@ -332,7 +333,7 @@ test('A5c: a face that could not be stored keeps the sheet open', async () => {
   await press('avatar-done');
   await act(async () => { jest.runAllTimers(); });
   expect(renderer.root.findAllByType(AvatarEditor)).toHaveLength(1);
-  expect(flatten(renderer.toJSON())).toContain('沒有存成功，再試一次');
+  expect(flatten(renderer.toJSON())).toContain(i18nT("c627"));
 });
 
 test('A5c rises from the bottom over a dimmed page (220 ms)', async () => {
@@ -376,7 +377,7 @@ test('A5c: after 取消 starts closing, 完成 and the choices do nothing', asyn
 test('stored names keep 20 characters as the user sees them', () => {
   const { normalizeDogAliases } = require('../src/mapHistory/DogAliases');
   expect(normalizeDogAliases({ 4: '🐶'.repeat(20) })[4]).toBe('🐶'.repeat(20));
-  expect(normalizeDogAliases({ 4: ` ${'一'.repeat(25)} ` })[4]).toBe('一'.repeat(20));
+  expect(normalizeDogAliases({ 4: ` ${i18nT("c687").repeat(25)} ` })[4]).toBe(i18nT("c687").repeat(20));
 });
 
 test('E25: name count appears only near the limit', async () => {

@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 // 054b: the date row's calendar (H3b), 選月份 (H3e) and a day only the cloud
 // holds (H3c, H3d), drawn from the fixtures through useHistoryScreen as
 // MapScreen does.
@@ -63,7 +64,7 @@ afterEach(() => jest.useRealTimers());
 test('H3b: dots on this phone\'s and the cloud\'s days, grey empty and future days, 回到今天 faded on today', async () => {
   const s = await mount('history-calendar');
   expect(s.has('history-calendar')).toBe(true);
-  expect(s.text()).toContain('選日期');
+  expect(s.text()).toContain(i18nT('c144'));
   expect(s.text()).toContain('2026 年 10 月');
   expect(s.text()).not.toContain('灰字＝沒有紀錄，不能點');
   // The October walk found the cloud's 9/28 and 10/3; all its days are known.
@@ -73,7 +74,7 @@ test('H3b: dots on this phone\'s and the cloud\'s days, grey empty and future da
   expect(s.cell('2026-10-01').props.accessibilityLabel).toBe('10 月 1 日，沒有紀錄');
   expect(s.cell('2026-10-08').props.accessibilityLabel).toBe('10 月 8 日，還沒到');
   expect(s.cell('2026-10-07').props.accessibilityState).toEqual({ disabled: false, selected: true });
-  expect(s.text()).not.toContain('查詢中…');
+  expect(s.text()).not.toContain(i18nT('c324'));
   const frame = s.cell('2026-10-07').findAll(n => n.props.collapsable === false && StyleSheet.flatten(n.props.style)?.borderRadius === radius.full)[0];
   expect(StyleSheet.flatten(frame.props.style)).toMatchObject({ width: 44, maxWidth: '100%', aspectRatio: 1, borderRadius: radius.full });
   const today = s.renderer.root.findAll(n => n.props.testID === 'calendar-today' && n.props.accessibilityState)[0];
@@ -102,10 +103,10 @@ test('H3c: a day only the cloud holds downloads (取消 shown), then the day app
   expect(s.has('history-calendar')).toBe(false);
   expect(s.text()).toContain('9/28（一）');
   expect(s.text()).toContain('下載 9/28 的紀錄…');
-  expect(s.text()).toContain('只有雲端有，正在下載');
+  expect(s.text()).toContain(i18nT('c156'));
   expect(s.has('history-skeleton')).toBe(true);
   const exportButton = s.renderer.root.findAll(n => n.props.testID === 'history-export' && n.props.accessibilityLabel)[0];
-  expect(exportButton.props.accessibilityLabel).toBe('匯出，無法使用，正在下載');
+  expect(exportButton.props.accessibilityLabel).toBe(i18nT("c832"));
   await settle(3600);
   expect(s.text()).not.toContain('下載 9/28 的紀錄…');
   expect(s.screen.model.dayRecords).toBe(true);
@@ -121,26 +122,26 @@ test('H3c 取消 / 返回鍵: the download stops, 這天的紀錄還沒下載完
   await act(async () => { used = s.ref.current.back(); });
   expect(used).toBe(true);
   await settle(0);
-  expect(s.text()).toContain('這天的紀錄還沒下載完');
+  expect(s.text()).toContain(i18nT('c321'));
   expect(s.text()).not.toContain('這天沒有小黑的紀錄');
   expect(s.screen.dayKey).toBe('2026-09-28');
   await s.press('history-download-retry');
   expect(s.text()).toContain('下載 9/28 的紀錄…');
   await s.press('history-download-cancel');
   await settle(0);
-  expect(s.text()).toContain('這天的紀錄還沒下載完');
+  expect(s.text()).toContain(i18nT('c321'));
   await act(async () => s.renderer.unmount());
 });
 
 test('a failed download with nothing here: 這天的紀錄還沒下載完; half a day: that half and 資料不完整　重試', async () => {
   const failed = await mount('history-cloud-failed');
   await settle(1600);
-  expect(failed.text()).toContain('這天的紀錄還沒下載完');
+  expect(failed.text()).toContain(i18nT('c321'));
   await act(async () => failed.renderer.unmount());
   const partial = await mount('history-cloud-incomplete');
   await settle(1600);
   expect(partial.has('history-incomplete')).toBe(true);
-  expect(partial.text()).toContain('資料不完整');
+  expect(partial.text()).toContain(i18nT("c686"));
   expect(partial.screen.model.dayRecords).toBe(true);
   await act(async () => partial.renderer.unmount());
 });
@@ -167,22 +168,22 @@ test('H3d: no network — the calendar and the day stay, with the sentence at th
 
 test('查詢中… then 雲端的紀錄查不到　重試; unknown days wait, then can be tapped', async () => {
   const querying = await mount('history-calendar-querying');
-  expect(querying.text()).toContain('查詢中…');
+  expect(querying.text()).toContain(i18nT('c324'));
   expect(querying.cell('2026-10-05').props.onPress).toBeUndefined();
   expect(querying.cell('2026-10-05').props.accessibilityLabel).toBe('10 月 5 日，查詢中');
   // Days this phone holds and today can be chosen while asking.
   expect(typeof querying.cell('2026-10-02').props.onPress).toBe('function');
   await act(async () => querying.renderer.unmount());
   const failed = await mount('history-calendar-failed');
-  expect(failed.text()).toContain('雲端的紀錄查不到');
-  expect(failed.text()).toContain('重試');
+  expect(failed.text()).toContain(i18nT("c809"));
+  expect(failed.text()).toContain(i18nT('c049'));
   expect(typeof failed.cell('2026-10-05').props.onPress).toBe('function');
   await act(async () => failed.renderer.unmount());
 });
 
 test('signed out: only this phone\'s days, the cloud is never asked', async () => {
   const s = await mount('history-calendar-signed-out');
-  expect(s.text()).not.toContain('查詢中…');
+  expect(s.text()).not.toContain(i18nT('c324'));
   expect(s.cell('2026-09-28').props.accessibilityLabel).toBe('9 月 28 日，沒有紀錄');
   expect(s.cell('2026-09-29').props.accessibilityLabel).toBe('9 月 29 日，有紀錄');
   await act(async () => s.renderer.unmount());
@@ -190,7 +191,7 @@ test('signed out: only this phone\'s days, the cloud is never asked', async () =
 
 test('H3e: 選月份, the months with records, back to the month; 返回鍵 order 選月份 → 選日期 → closed', async () => {
   const s = await mount('history-month-picker');
-  expect(s.text()).toContain('‹ 選日期');
+  expect(s.text()).toContain(i18nT("c800"));
   expect(s.text()).toContain('2026 年');
   expect(s.text()).not.toContain('這個月有紀錄')
   expect(s.text()).not.toContain('灰字＝沒有紀錄或還沒到，不能點');
@@ -206,9 +207,9 @@ test('H3e: 選月份, the months with records, back to the month; 返回鍵 orde
   await settle(0);
   expect(s.text()).toContain('2026 年 9 月');
   await s.press('calendar-month-title');
-  expect(s.text()).toContain('‹ 選日期');
+  expect(s.text()).toContain(i18nT("c800"));
   await act(async () => { s.ref.current.back(); });
-  expect(s.text()).toContain('選日期');
+  expect(s.text()).toContain(i18nT('c144'));
   await act(async () => { s.ref.current.back(); });
   await settle(400);
   expect(s.has('history-calendar')).toBe(false);
@@ -240,7 +241,7 @@ test('paused while the cloud is asked (app in the background): asked again in fr
   await settle(0);
   expect(screen.knowledge.query).toBe('idle');
   expect(screen.knowledge.earliest).toBe('2026-08-12');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('查詢中…');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain(i18nT('c324'));
   await act(async () => renderer.unmount());
 });
 

@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React, { useEffect, useState } from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AppState, NativeModules, Text, TextInput } from 'react-native';
@@ -92,7 +93,7 @@ test('signed out, the gate opens the app (the map) instead of a login wall', asy
   expect(mounted).toHaveBeenCalledTimes(1);
   await act(async () => s.restore(null));
   expect(text()).toContain('Live map');
-  expect(text()).not.toContain('登入 Supabase 帳號');
+  expect(text()).not.toContain(i18nT('c001'));
   expect(mounted).toHaveBeenCalledTimes(1);
 });
 
@@ -172,16 +173,16 @@ test('signing in from 設定 → Supabase 帳號 (S3) starts the sync and stays 
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={s.factory}><Page /></AuthProvider>); });
   // S3 signed out: 「未登入」 and 「登入」 → D1, whose 「稍後再說」 comes back.
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  expect(text()).toContain('未登入');
-  expect(text()).not.toContain('登入 Supabase 帳號');
+  expect(text()).toContain(i18nT('c302'));
+  expect(text()).not.toContain(i18nT('c001'));
   const button = label => renderer.root.findAll(node => node.props.accessibilityRole === 'button'
     && node.props.accessibilityLabel === label && typeof node.props.onPress === 'function')[0];
   await act(async () => button('未登入，登入').props.onPress());
-  expect(text()).toContain('登入 Supabase 帳號');
+  expect(text()).toContain(i18nT('c001'));
   expect(text()).toContain('不登入也可以用，只顯示這支手機連到的接收器。');
   await act(async () => button('稍後再說').props.onPress());
   expect(later).toHaveBeenCalledTimes(1);
-  expect(text()).toContain('未登入');
+  expect(text()).toContain(i18nT('c302'));
   await act(async () => button('未登入，登入').props.onPress());
   expect(database.calls.some(([name]) => name === 'initialize')).toBe(false);
   const input = label => renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === label);
@@ -197,7 +198,7 @@ test('signing in from 設定 → Supabase 帳號 (S3) starts the sync and stays 
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
   expect(database.calls.some(([name]) => name === 'initialize')).toBe(true);
   expect(text()).toContain('user@example.test');
-  expect(text()).toContain('登出');
+  expect(text()).toContain(i18nT('c209'));
 });
 
 test('登入失效 on S3 asks to sign in again there', async () => {
@@ -209,20 +210,20 @@ test('登入失效 on S3 asks to sign in again there', async () => {
   expect(text()).toContain('user@example.test');
   expect(database.calls).toEqual([]);
   await act(async () => s.emit('SIGNED_OUT', null));
-  expect(text()).toContain('需要重新登入');
+  expect(text()).toContain(i18nT('c276'));
   // 「登入」 opens D1, which says it too.
   const signIn = renderer.root.findAll(node => node.props.accessibilityLabel === '需要重新登入，登入'
     && typeof node.props.onPress === 'function')[0];
   await act(async () => signIn.props.onPress());
-  expect(text()).toContain('登入 Supabase 帳號');
-  expect(text()).toContain('需要重新登入');
+  expect(text()).toContain(i18nT('c001'));
+  expect(text()).toContain(i18nT('c276'));
 });
 
 test('settings says 未登入 as a plain state, and 需要重新登入 after 登入失效', async () => {
   const home = (account, signInExpired = false) => <SettingsHome onOpen={() => {}}
     home={settingsHome({ now: 0, receiverState: null, account, signInExpired })} />;
   await act(async () => { renderer = Renderer.create(home({ signedIn: false, email: '' })); });
-  expect(text()).toContain('未登入');
+  expect(text()).toContain(i18nT('c302'));
   // Not signed in is a choice: no red 「!」 on the Supabase row.
   expect(text()).not.toContain('Supabase 帳號，有問題');
   await act(async () => renderer.update(home({ signedIn: false, email: '' }, true)));
@@ -232,10 +233,10 @@ test('settings says 未登入 as a plain state, and 需要重新登入 after 登
 });
 
 test('sign-in failures read as the design says', () => {
-  expect(signInErrorText({ status: 400, message: 'Invalid login credentials' })).toBe('電子郵件或密碼不對');
-  expect(signInErrorText(new TypeError('Network request failed'))).toBe('連不上網路');
-  expect(signInErrorText(new Error('請輸入電子郵件和密碼'))).toBe('請輸入電子郵件和密碼');
-  expect(signInErrorText(null)).toBe('登入失敗，請稍後重試');
+  expect(signInErrorText({ status: 400, message: 'Invalid login credentials' })).toBe(i18nT('c274'));
+  expect(signInErrorText(new TypeError('Network request failed'))).toBe(i18nT('c275'));
+  expect(signInErrorText(new Error(i18nT("c496")))).toBe(i18nT("c496"));
+  expect(signInErrorText(null)).toBe(i18nT("c901"));
 });
 
 test('登入 is checked when pressed: empty fields say so and reach no server', async () => {
@@ -250,7 +251,7 @@ test('登入 is checked when pressed: empty fields say so and reach no server', 
     && typeof node.props.onPress === 'function')[0];
   expect(login.props.disabled).toBe(false);
   await act(async () => login.props.onPress());
-  expect(text()).toContain('請輸入電子郵件和密碼');
+  expect(text()).toContain(i18nT("c496"));
   expect(s.client.auth.signInWithPassword).not.toHaveBeenCalled();
 });
 

@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import { formatClock } from '../src/map/MapFormat';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
@@ -50,36 +51,36 @@ test('every notification category follows its switch', () => {
 
 test('group status: 全部開／部分開／全部關 (c300)', () => {
   const keys = ['dogStale', 'dogOutOfRange', 'dogBattery'];
-  expect(groupStatus({}, keys)).toBe('全部開');
-  expect(groupStatus({ dogOutOfRange: false }, keys)).toBe('部分開');
-  expect(groupStatus({ dogStale: false, dogOutOfRange: false, dogBattery: false }, keys)).toBe('全部關');
+  expect(groupStatus({}, keys)).toBe(i18nT("c472"));
+  expect(groupStatus({ dogOutOfRange: false }, keys)).toBe(i18nT("c473"));
+  expect(groupStatus({ dogStale: false, dogOutOfRange: false, dogBattery: false }, keys)).toBe(i18nT("c474"));
 });
 
 test('S1 提醒 row: how alerts arrive (c193 「震動」), including notification-only delivery', () => {
-  expect(alertsHomeStatus({})).toEqual(['震動']);
+  expect(alertsHomeStatus({})).toEqual([i18nT('c241')]);
   expect(alertsHomeStatus({ sound: true })).toEqual(['震動、聲音']);
-  expect(alertsHomeStatus({ vibrate: false, sound: true })).toEqual(['聲音']);
-  expect(alertsHomeStatus({ vibrate: false })).toEqual(['只有通知']);
-  expect(alertsHomeStatus({ receiverBattery: false })).toEqual(['震動']);
+  expect(alertsHomeStatus({ vibrate: false, sound: true })).toEqual([i18nT('dev.alertPreview.AlertPreview.detail')]);
+  expect(alertsHomeStatus({ vibrate: false })).toEqual([i18nT('c414')]);
+  expect(alertsHomeStatus({ receiverBattery: false })).toEqual([i18nT('c241')]);
   expect(alertsHomeStatus({ dogStale: false, dogOutOfRange: false, dogBattery: false, receiverBattery: false }))
-    .toEqual(['震動']);
+    .toEqual([i18nT('c241')]);
 });
 
 test('S6 page model: the 狗 group, the switches, 通知權限', () => {
   const page = alertsPage({ dogBattery: false, sound: true }, { notificationsDenied: false });
-  expect(page.dogs).toEqual({ status: '部分開', items: [
-    { key: 'dogStale', title: '沒有新位置', on: true },
-    { key: 'dogOutOfRange', title: '不在接收範圍', on: true },
-    { key: 'dogBattery', title: '電量低', on: false },
+  expect(page.dogs).toEqual({ status: i18nT("c473"), items: [
+    { key: 'dogStale', title: i18nT("c475"), on: true },
+    { key: 'dogOutOfRange', title: i18nT('c078'), on: true },
+    { key: 'dogBattery', title: i18nT("c476"), on: false },
   ] });
   // 判定表「S6 的「通知權限」列」: a row only while not allowed.
   expect(page).toMatchObject({ receiverBattery: true, vibrate: true, sound: true, notifications: null,
     pause: null });
   expect(alertsPage({}, { notificationsDenied: true }).notifications)
-    .toEqual({ denied: true, detail: '未允許', action: '開系統設定 ›' });
+    .toEqual({ denied: true, detail: i18nT('c028'), action: i18nT('c225') });
   // 「已暫停提醒到 11:10」＋「恢復」 (c298, c299) while a pause is in force.
   const until = new Date(2026, 9, 7, 11, 10).getTime();
-  expect(alertsPage({}, {}, { until }, until - 60000).pause).toEqual({ title: '已暫停提醒到 11:10', action: '恢復' });
+  expect(alertsPage({}, {}, { until }, until - 60000).pause).toEqual({ title: '已暫停提醒到 11:10', action: i18nT('dev.alertPreview.AlertPreview.label') });
   expect(alertsPage({}, {}, { until }, until).pause).toBeNull();
 });
 
@@ -104,7 +105,7 @@ test('S6: rows in order; disconnect/storage has a default-on switch', async () =
   }
   // No 「可以關」 subtitle (c237: removed; the switch says it); 通知權限 allowed: no row.
   expect(shown).not.toContain('可以關');
-  expect(shown).not.toContain('通知權限');
+  expect(shown).not.toContain(i18nT('c245'));
   // Four switches while the 狗 group is closed.
   expect(renderer.root.findAllByType(Switch).map(item => item.props.testID))
     .toEqual(['alerts-receiverBattery', 'alerts-receiverDisconnectedStorage', 'alerts-vibrate', 'alerts-sound']);
@@ -120,7 +121,7 @@ test('S6: pressing 狗 shows its three switches; each change goes out at once', 
   await act(async () => {
     renderer = Renderer.create(<AlertSettings page={alertsPage({ dogOutOfRange: false }, {})} onChange={onChange} />);
   });
-  expect(text(renderer)).toContain('部分開');
+  expect(text(renderer)).toContain(i18nT("c473"));
   await act(async () => byId(renderer, 'alerts-dogs').props.onPress());
   expect(byId(renderer, 'alerts-dogs').props.accessibilityState).toEqual({ expanded: true });
   for (const words of ['沒有新位置', '不在接收範圍', '電量低']) expect(text(renderer)).toContain(`"${words}"`);
@@ -147,9 +148,9 @@ test('S6: notifications not allowed → 未允許 and 「開系統設定 ›」 
     renderer = Renderer.create(<AlertSettings page={alertsPage({}, { notificationsDenied: true })}
       onChange={jest.fn()} onNotificationSettings={onNotificationSettings} />);
   });
-  expect(text(renderer)).toContain('未允許');
-  expect(text(renderer)).toContain('開系統設定 ›');
-  expect(text(renderer)).not.toContain('已允許');
+  expect(text(renderer)).toContain(i18nT('c028'));
+  expect(text(renderer)).toContain(i18nT('c225'));
+  expect(text(renderer)).not.toContain(i18nT('c017'));
   // E11: same problem-row contract as S4 permissions.
   expect(byId(renderer, 'alerts-notifications').props.problem).toBe(true);
   expect(byId(renderer, 'alerts-notifications').props.actionTone).toBeUndefined();
@@ -234,16 +235,16 @@ test('alerts-default: opens S6; every alert on; S1 says 「震動」', () => {
   const { fixture, data } = settingsOf('alerts-default');
   expect(fixture.openRoute).toBe('alerts');
   expect(data.alerts).toEqual(DEFAULT_ALERT_PREFERENCES);
-  expect(alertsPage(data.alerts, data.permissions)).toMatchObject({ dogs: { status: '全部開' },
+  expect(alertsPage(data.alerts, data.permissions)).toMatchObject({ dogs: { status: i18nT("c472") },
     receiverBattery: true, vibrate: true, sound: false, notifications: null });
-  expect(alertsRow(data)).toMatchObject({ problem: false, status: ['震動'] });
+  expect(alertsRow(data)).toMatchObject({ problem: false, status: [i18nT('c241')] });
 });
 
 test('alerts-some-off: 不在接收範圍 and 接收器電量低 off, 聲音 on, the 狗 group open', () => {
   const { fixture, data } = settingsOf('alerts-some-off');
   expect(fixture.alertsOpen).toBe(true);
   const page = alertsPage(data.alerts, data.permissions);
-  expect(page.dogs.status).toBe('部分開');
+  expect(page.dogs.status).toBe(i18nT("c473"));
   expect(page.dogs.items.map(item => item.on)).toEqual([true, false, true]);
   expect(page).toMatchObject({ receiverBattery: false, receiverDisconnectedStorage: false, vibrate: true, sound: true });
   expect(alertsRow(data)).toMatchObject({ problem: false, status: ['震動、聲音'] });
@@ -254,9 +255,9 @@ test('alerts-all-off: every notification disabled and S1 says 全部關閉', () 
   expect(fixture.alertsOpen).toBe(true);
   for (const kind of ALERT_KINDS) expect(alertEnabled(data.alerts, kind)).toBe(false);
   expect(Object.values(data.alerts).every(value => value === false)).toBe(true);
-  expect(alertsRow(data)).toMatchObject({ problem: false, status: ['全部關閉'] });
+  expect(alertsRow(data)).toMatchObject({ problem: false, status: [i18nT('c413')] });
   // Delivery controls may remain enabled while every category is disabled.
-  expect(alertsHomeStatus({ ...data.alerts, vibrate: true, sound: true })).toEqual(['全部關閉']);
+  expect(alertsHomeStatus({ ...data.alerts, vibrate: true, sound: true })).toEqual([i18nT('c413')]);
 });
 
 test('notifications-denied: S6 未允許; S1 提醒 (and 手機) only the red 「!」', () => {
@@ -343,7 +344,7 @@ test('S1 priority: permission denied, all off, active pause, delivery; expired p
   const pausedUntil = FIXTURE_NOW + 60000;
   data.alertPause = { until: pausedUntil };
   data.alerts = { ...data.alerts, vibrate: true, sound: true };
-  expect(alertsRow(data)).toMatchObject({ status: ['全部關閉'], statusTone: 'muted' });
+  expect(alertsRow(data)).toMatchObject({ status: [i18nT('c413')], statusTone: 'muted' });
   data.permissions = { ...data.permissions, notificationsDenied: true };
   expect(alertsRow(data)).toMatchObject({ problem: true, status: [], label: '提醒，有問題：通知未允許' });
   data.alerts = { ...DEFAULT_ALERT_PREFERENCES };
@@ -351,8 +352,8 @@ test('S1 priority: permission denied, all off, active pause, delivery; expired p
   data.permissions.notificationsDenied = false;
   expect(alertsRow(data)).toMatchObject({ status: [`暫停到 ${formatClock(pausedUntil)}`], statusTone: 'warn' });
   data.now = pausedUntil;
-  expect(alertsRow(data)).toMatchObject({ status: ['震動'], statusTone: null });
+  expect(alertsRow(data)).toMatchObject({ status: [i18nT('c241')], statusTone: null });
   data.alerts = { ...DEFAULT_ALERT_PREFERENCES, vibrate: false, sound: false };
-  expect(alertsRow(data).status).toEqual(['只有通知']);
+  expect(alertsRow(data).status).toEqual([i18nT('c414')]);
   expect(alertsRow(data).label).toBe('提醒，震動、聲音、各項開關，只有通知');
 });
