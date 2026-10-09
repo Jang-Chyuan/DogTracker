@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { wifiCommand } from './WifiValidation';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -41,6 +41,14 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
   const [removeError, setRemoveError] = useState('');
   const [removeBusy, setRemoveBusy] = useState(false);
   const { connected } = wifi;
+  // A send or deletion still running when the page is left finishes on the
+  // receiver; its answer is not shown on (or written into the draft of) a
+  // page that is gone.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   // 「接收器 7 存的…」, 「接收器存的…」 when it has no number.
   const of = text =>
     /\d$/.test(receiver) ? `${receiver} ${text}` : `${receiver}${text}`;
@@ -57,16 +65,18 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
     setResult(null);
     try {
       await wifi.save(name, password);
+      if (!mounted.current) return;
       setPassword('');
       setResult({ ok: true, text: t("c1033", { receiver: receiver }) });
     } catch (error) {
+      if (!mounted.current) return;
       setResult({
         ok: false,
         text: t("c1034", { value: error?.message || t("c545") }),
         retry: true,
       });
     } finally {
-      setSending(false);
+      if (mounted.current) setSending(false);
     }
   };
   const remove = async () => {
@@ -74,15 +84,16 @@ export default function WifiSettings({ wifi, receiver = t('c075'), draft = null 
     setRemoveError('');
     try {
       await wifi.remove(removing);
+      if (!mounted.current) return;
       if (ssid === removing) {
         setSsid('');
         setPassword('');
       }
       setRemoving(null);
     } catch (error) {
-      setRemoveError(t("c989", { value: error?.message || t("c545") }));
+      if (mounted.current) setRemoveError(t("c989", { value: error?.message || t("c545") }));
     } finally {
-      setRemoveBusy(false);
+      if (mounted.current) setRemoveBusy(false);
     }
   };
 

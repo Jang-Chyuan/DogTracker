@@ -1,20 +1,19 @@
 import { t } from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Linking, NativeModules, PermissionsAndroid, Platform, ToastAndroid } from 'react-native';
+import { AppState, NativeModules, PermissionsAndroid, Platform, ToastAndroid } from 'react-native';
 import { sharedBleService } from '../ble/sharedBle';
 import { DEFAULT_BLE_CONFIG } from '../ble/BleService';
 import { parseMasterQr, MASTER_SERVICE_UUID } from '../qr/MasterQrParser';
 import { judgeSwitch, notChangedMessage, snapshotReceiver } from '../settings/ReceiverSwitch';
 import { receiverSetUp } from '../settings/SettingsModel';
 import { receiverNumber } from '../map/ReceiverState';
+import { openSystemSettings } from '../utils/systemSettings';
 import { addNearby, CONNECT_TIMEOUT_MS, FIRST_PACKET_MS, pairingDialog, parseReceiverName, SEARCH_MS } from './Pairing';
 
 const NO_IDS = Object.freeze([]);
 const normalized = name => String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const openBluetooth = () => Linking.sendIntent('android.bluetooth.adapter.action.REQUEST_ENABLE')
-  .catch(() => Linking.openSettings());
-const openLocationServices = () => Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS')
-  .catch(() => Linking.openSettings());
+const openBluetooth = () => openSystemSettings('android.bluetooth.adapter.action.REQUEST_ENABLE');
+const openLocationServices = () => openSystemSettings('android.settings.LOCATION_SOURCE_SETTINGS');
 const sayNotChanged = message => {
   if (Platform.OS === 'android') ToastAndroid?.show?.(message, ToastAndroid.SHORT);
 };
@@ -401,7 +400,7 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
     if (id === 'keep' && waiting.current) { succeed({ ...waiting.current, kept: true }); return; }
     if (id === 'restore') { leave('back'); return; }
     if (id === 'open') { (kind === 'locationOff' ? openLocationServices : openBluetooth)(); return; }
-    if (id === 'settings') Linking.openSettings();
+    if (id === 'settings') openSystemSettings();
   };
   // Back: a dialog closes first; D3c goes to D3a; connecting stops (取消);
   // then out of D3 (引導中 → D2, otherwise back where it was opened).

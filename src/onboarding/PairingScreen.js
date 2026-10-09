@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -21,6 +20,7 @@ import {
   useKeyboardHeight,
 } from './GuideUI';
 import QrCamera from './QrCamera';
+import { openSystemSettings } from '../utils/systemSettings';
 import { signalBars, signalBarsLabel } from './Pairing';
 import SignalBars from './SignalBars';
 import { radius, space, type, size as sizes, border, touch } from '../theme/tokens';
@@ -128,7 +128,7 @@ function ScanPage({ pairing, step, camera, onLayout }) {
               testID="pair-camera-settings"
               accessibilityRole="button"
               accessibilityLabel={t('c225')}
-              onPress={() => Linking.openSettings()}
+              onPress={() => openSystemSettings()}
               hitSlop={space.s}
               style={({ pressed }) => [
                 styles.deniedAction,

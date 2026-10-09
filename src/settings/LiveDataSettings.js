@@ -68,24 +68,38 @@ export default function LiveDataSettings({
       mounted.current = false;
     };
   }, []);
+  // Only the newest read (a 重試, another database) may set the table.
+  const reading = useRef(0);
   const load = useCallback(async () => {
+    const id = ++reading.current;
+    const latest = () => mounted.current && id === reading.current;
     try {
       const next = await dogDatabase.listHistory(limit);
-      if (mounted.current) {
+      if (latest()) {
         setRows(next || []);
         setError('');
       }
     } catch (failure) {
-      if (mounted.current)
+      if (latest())
         setError(t("c565", { value: failure?.message || t("c966") }));
     } finally {
-      if (mounted.current) setLoading(false);
+      if (latest()) setLoading(false);
     }
   }, [dogDatabase, limit]);
+  // The next read is planned when this one is done, so a slow read never
+  // overlaps the next one (an older answer cannot replace a newer one).
   useEffect(() => {
-    load();
-    const timer = setInterval(load, refreshMs);
-    return () => clearInterval(timer);
+    let stopped = false;
+    let timer = null;
+    const tick = async () => {
+      await load();
+      if (!stopped) timer = setTimeout(tick, refreshMs);
+    };
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [load, refreshMs]);
   const toggle = key =>
     setSelected(current => {

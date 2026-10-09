@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
 import { startLocationTracker, stopLocationTracker } from '../locationTracker/LocationTrackerService';
 import { getErrorMessage } from '../utils/errors';
@@ -18,6 +18,14 @@ export function useRecordingSwitch(active, service = SERVICE) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const running = useRef(false);
+  // The page may be left while the system asks for location or the service
+  // starts: the start/stop still finishes (the user chose it), only this
+  // page's switch is no longer updated.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const toggle = useCallback(async on => {
     if (running.current) return;
     running.current = true;
@@ -27,11 +35,13 @@ export function useRecordingSwitch(active, service = SERVICE) {
     try {
       if (on) await service.start(); else await service.stop();
     } catch (failure) {
-      setWanted(null);
-      setError(getErrorMessage(failure));
+      if (mounted.current) {
+        setWanted(null);
+        setError(getErrorMessage(failure));
+      }
     } finally {
       running.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }, [service]);
   const stored = live ? live.enabled ?? live.running : null;

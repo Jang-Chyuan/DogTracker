@@ -17,13 +17,17 @@ export function useReceiverWifi(service, { active = false, connected = false } =
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
+  // The service the answers belong to: a save or deletion that ends after
+  // another service came (a fixture's, the live one again) leaves it alone.
+  const serviceNow = useRef(service);
+  serviceNow.current = service;
   // A new service (a fixture's, or the live one again) starts over.
   useEffect(() => {
     generation.current += 1;
     setState({ ssids: null, activeSsid: '', loading: false, error: '' });
   }, [service]);
   const load = useCallback(async () => {
-    if (!service?.getWifiList) return;
+    if (!service?.getWifiList || !mounted.current) return;
     const id = ++generation.current;
     const latest = () => mounted.current && id === generation.current;
     setState(current => ({ ...current, loading: true, error: '' }));
@@ -45,17 +49,18 @@ export function useReceiverWifi(service, { active = false, connected = false } =
     reload: load,
     /** Sends one network (name, password) to the receiver, then reads the list again. */
     async save(ssid, password) {
-      await service.configureWifi(ssid, password);
-      await load();
+      const owner = service;
+      await owner.configureWifi(ssid, password);
+      if (mounted.current && serviceNow.current === owner) await load();
     },
     async remove(ssid) {
+      const owner = service;
       generation.current += 1;
-      await service.removeWifi(ssid);
+      await owner.removeWifi(ssid);
+      if (!mounted.current || serviceNow.current !== owner) return;
       generation.current += 1;
-      if (mounted.current) {
-        setState(current => ({ ...current, loading: false, ssids: (current.ssids || []).filter(item => item !== ssid),
-          activeSsid: current.activeSsid === ssid ? '' : current.activeSsid }));
-      }
+      setState(current => ({ ...current, loading: false, ssids: (current.ssids || []).filter(item => item !== ssid),
+        activeSsid: current.activeSsid === ssid ? '' : current.activeSsid }));
     },
   };
 }

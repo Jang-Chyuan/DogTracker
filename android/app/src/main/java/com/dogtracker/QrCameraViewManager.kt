@@ -42,7 +42,7 @@ class QrCameraViewManager : SimpleViewManager<QrCameraViewManager.QrCameraView>(
   }
 
   override fun onDropViewInstance(view: QrCameraView) {
-    view.stop()
+    view.drop()
     super.onDropViewInstance(view)
   }
 
@@ -58,7 +58,12 @@ class QrCameraViewManager : SimpleViewManager<QrCameraViewManager.QrCameraView>(
   class QrCameraView(context: Context) : FrameLayout(context) {
     companion object {
       private const val REPEAT_MS = 2500L
-      private val analysisExecutor = Executors.newSingleThreadExecutor()
+      // Owned by the process, shared by every camera view and never shut
+      // down: one daemon thread, idle when no view is attached (a view only
+      // clears its analyzer from it).
+      private val analysisExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "QrCameraAnalysis").apply { isDaemon = true }
+      }
     }
 
     @Volatile var paused = false
@@ -66,9 +71,10 @@ class QrCameraViewManager : SimpleViewManager<QrCameraViewManager.QrCameraView>(
       scaleType = PreviewView.ScaleType.FILL_CENTER
       implementationMode = PreviewView.ImplementationMode.COMPATIBLE
     }
-    private val scanner = BarcodeScanning.getClient(
-      BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build(),
-    )
+    // The ML Kit scanner: made on attach, closed on detach and drop.
+    private val lifecycle = QrScanLifecycle {
+      BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
+    }
     private var controller: LifecycleCameraController? = null
     private var lastValue: String? = null
     private var lastAt = 0L
@@ -109,6 +115,8 @@ class QrCameraViewManager : SimpleViewManager<QrCameraViewManager.QrCameraView>(
     private fun start() {
       if (controller != null) return
       val lifecycleOwner = owner() ?: return
+      val scanner = lifecycle.attach() ?: return
+      val at = lifecycle.generation
       val camera = try {
         LifecycleCameraController(context).apply {
           cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
@@ -116,7 +124,7 @@ class QrCameraViewManager : SimpleViewManager<QrCameraViewManager.QrCameraView>(
           setImageAnalysisAnalyzer(analysisExecutor, MlKitAnalyzer(listOf(scanner),
             ImageAnalysis.COORDINATE_SYSTEM_VIEW_REFERENCED, analysisExecutor) { result ->
             val value = result?.getValue(scanner).orEmpty().firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
-            if (value != null) post { report(value) }
+            if (value != null) post { report(value, at) }
           })
           bindToLifecycle(lifecycleOwner)
         }
@@ -128,13 +136,26 @@ class QrCameraViewManager : SimpleViewManager<QrCameraViewManager.QrCameraView>(
       preview.controller = camera
     }
 
-    fun stop() {
-      controller?.unbind()
+    /** Off the window: the camera is unbound and the scanner closed; a reattach starts again. */
+    private fun stop() {
+      controller?.let {
+        it.clearImageAnalysisAnalyzer()
+        it.unbind()
+      }
       controller = null
       preview.controller = null
+      lifecycle.detach()
     }
 
-    private fun report(value: String) {
+    /** React dropped the view: everything goes, and it never starts again. */
+    fun drop() {
+      stop()
+      lifecycle.drop()
+    }
+
+    private fun report(value: String, at: Int) {
+      // A result read before the page was left (or the view reattached) is late.
+      if (!lifecycle.accepts(at)) return
       if (paused) return
       val now = SystemClock.elapsedRealtime()
       if (value == lastValue && now - lastAt < REPEAT_MS) return
