@@ -400,3 +400,20 @@ test.each([false, true])('notification row matches visible text and action, deni
   } else expect(row.props.onPress).toBeUndefined();
   await act(async () => renderer.unmount());
 });
+
+test.each([
+  [{}, '沒有新位置、不在接收範圍、電量低', '全部開'],
+  [{ dogOutOfRange: false }, '沒有新位置、電量低', '部分開'],
+  [{ dogStale: false, dogBattery: false }, '不在接收範圍', '部分開'],
+  [{ dogStale: false, dogOutOfRange: false, dogBattery: false }, null, '全部關'],
+])('dog row summarizes enabled types only: %j', async (preferences, detail, status) => {
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<AlertSettings page={alertsPage(preferences)} />); });
+  const row = renderer.root.findAllByType(require('../src/settings/SettingsUI').ListRow)
+    .find(item => item.props.testID === 'alerts-dogs');
+  expect(row.props.detail).toBe(detail);
+  expect(row.props.label).toBe(['狗', detail, status].filter(Boolean).join('，'));
+  if (detail === null) expect(JSON.stringify(row.findAllByType(require('react-native').Text).map(item => item.props.children)))
+    .not.toMatch(/沒有新位置|不在接收範圍|電量低/);
+  await act(async () => renderer.unmount());
+});
