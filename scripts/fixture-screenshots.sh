@@ -8,7 +8,9 @@
 #
 #   scripts/fixture-screenshots.sh [out-dir] [fixture ...]
 #
-# Without fixture names it takes every fixture in ScreenFixtures.js. The status
+# Without fixture names it takes every fixture in ScreenFixtures.js. A name can
+# carry a settings page, receiver-connecting@receiver (S1/S2/S4: settings,
+# receiver, phone); its screenshot is receiver-connecting@receiver.png. The status
 # bar clock is set to the fixtures' fixed clock (09:30) with Android's demo mode,
 # and both are switched back off at the end (name=off returns to live data).
 set -e
@@ -20,15 +22,23 @@ WAIT=${FIXTURE_WAIT:-8}
 mkdir -p "$OUT"
 
 open_link() {
+  case "$1" in
+    *@*) query="name=${1%@*}\\&page=${1#*@}" ;;
+    *) query="name=$1" ;;
+  esac
   adb shell am start -W -a android.intent.action.VIEW \
-    -d "dogtracker://dev/fixture?name=$1" com.dogtracker >/dev/null
+    -d "dogtracker://dev/fixture?$query" com.dogtracker >/dev/null
 }
 
 # useScreenFixture logs "[ScreenFixture] showing <name>" once the app has
 # swapped the inputs; a busy debug JS thread can take several seconds.
 wait_for() {
   tries=0
-  until adb logcat -d -s ReactNativeJS:I | grep -qE "\[ScreenFixture\] showing $1[[:space:]]*\$"; do
+  case "$1" in
+    *@*) shown="${1%@*} on ${1#*@}" ;;
+    *) shown="$1" ;;
+  esac
+  until adb logcat -d -s ReactNativeJS:I | grep -qE "\[ScreenFixture\] showing $shown[[:space:]]*\$"; do
     tries=$((tries + 1))
     # A link sent while the app was still starting can be lost: send it again.
     if [ "$tries" -eq 20 ]; then open_link "$1"; fi

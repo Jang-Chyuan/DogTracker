@@ -5,6 +5,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { Linking } from 'react-native';
 import {
   applyScreenFixture, buildFixture, FIXTURE_NAMES, FIXTURE_NOW, FIXTURE_ORIGIN, fixtureNameFromUrl,
+  fixturePageFromUrl,
 } from '../src/dev/ScreenFixtures';
 import { useScreenFixture } from '../src/dev/useScreenFixture';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../src/map/DogMerge';
@@ -449,6 +450,29 @@ test('in debug builds a link opens a fixture and name=off returns to the live da
   expect(result).toBeNull();
   listen.mockRestore();
   initial.mockRestore();
+});
+
+test('a fixture link can open a settings page of its state (&page=)', async () => {
+  const url = 'dogtracker://dev/fixture?name=receiver-connecting&page=receiver';
+  expect(fixtureNameFromUrl(url)).toBe('receiver-connecting');
+  expect(fixturePageFromUrl(url)).toBe('receiver');
+  expect(fixturePageFromUrl('dogtracker://dev/fixture?name=all-good&page=history')).toBeNull();
+  expect(fixturePageFromUrl('dogtracker://dev/fixture?name=all-good')).toBeNull();
+  const initial = jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(url);
+  const listen = jest.spyOn(Linking, 'addEventListener').mockImplementation(() => ({ remove: jest.fn() }));
+  let result;
+  function Probe() {
+    result = useScreenFixture(true);
+    return null;
+  }
+  await act(async () => { Renderer.create(<Probe />); });
+  expect(result).toMatchObject({ name: 'receiver-connecting', openRoute: 'receiver' });
+  // The settings fixtures open their own page; the map ones none.
+  expect(buildFixture('settings-problems').openRoute).toBe('settings');
+  expect(buildFixture('phone-permissions-missing').openRoute).toBe('phone');
+  expect(buildFixture('all-good').openRoute).toBeNull();
+  initial.mockRestore();
+  listen.mockRestore();
 });
 
 test('only the debug manifest declares the fixture link', () => {

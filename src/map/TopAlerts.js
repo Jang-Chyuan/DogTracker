@@ -139,7 +139,7 @@ export function topCards({ outage = null, storage = null, map = null, retrying =
  */
 export function gearReasons({ outage = null, storage = null, dismissed = {}, receiverState = null,
   receiverWait = null, receiverBattery = null, cloudFailing = false, signInExpired = false,
-  phone = null, notificationsDenied = false, now }) {
+  phone = null, notificationsDenied = false, nearbyDenied = false, now }) {
   const reasons = [];
   if (outage && dismissed.receiver === outage.key) reasons.push('receiver-disconnected');
   if (storage && dismissed.storage) reasons.push('storage');
@@ -152,6 +152,8 @@ export function gearReasons({ outage = null, storage = null, dismissed = {}, rec
   if (permission && permission !== 'checking' && permission !== 'unsupported' && !phone?.busy
     && (permission !== 'precise' || !phone.services)) reasons.push('phone-location');
   if (notificationsDenied) reasons.push('notifications');
+  // 附近的裝置 (Android 12+): without it the receiver cannot be reached.
+  if (nearbyDenied) reasons.push('nearby-devices');
   return reasons;
 }
 

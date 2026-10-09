@@ -5,6 +5,7 @@ import {
   Alert,
   AppState,
   BackHandler,
+  Linking,
   NativeModules,
   PermissionsAndroid,
   Platform,
@@ -150,39 +151,109 @@ test('first use shows the stored dog, no receiver marker, no ring without a conn
   expect(rows('dog_status')).toHaveLength(1);
   expect(ble.connect).not.toHaveBeenCalled();
 });
-test('no bottom tabs: the gear opens settings, and hardware preserves correct back destinations', async () => {
+const row = id => renderer.root.findAll(node => node.props.testID === id && typeof node.props.onPress === 'function')[0];
+async function tap(id) {
+  const control = row(id);
+  expect(control).toBeDefined();
+  await act(async () => { await control.props.onPress(); });
+}
+const title = () => renderer.root.findByProps({ testID: 'page-back' }).props.accessibilityLabel;
+
+test('no bottom tabs: the gear opens the grouped settings home; each row opens its page and back returns', async () => {
   await mount();
   expect(renderer.root.findAllByProps({ testID: 'bottom-navigation' })).toHaveLength(0);
   expect(button('歷史軌跡', 'tab')).toBeUndefined();
   await press('設定');
   expect(text()).toContain('‹ 設定');
-  expect(button('登入')).toBeUndefined();
-  expect(text()).not.toContain('允許手機定位');
-  await press('BLE／QR 與 Master 設定');
+  // S1: four groups, no 地圖 row; the old dark settings cards are gone.
+  for (const group of ['裝置', '帳號與資料', '提醒', '其他']) expect(text()).toContain(group);
+  for (const id of ['receiver', 'phone', 'account', 'diagnostics', 'alerts', 'advanced']) {
+    expect(row(`settings-row-${id}`)).toBeDefined();
+  }
+  expect(text()).not.toContain('BLE／QR 與 Master 設定');
+  expect(text()).not.toContain('#111827');
+  expect(text()).toContain('DogTracker 3.0.0');
+  // S2 接收器: nothing set up yet → 「還沒設定接收器」, 「連接接收器」 opens
+  // the QR scan; back returns to S2, then to S1.
+  await tap('settings-row-receiver');
+  expect(title()).toBe('返回，接收器');
+  expect(text()).toContain('還沒設定接收器');
+  await tap('receiver-connect');
+  expect(title()).toBe('返回，連接接收器');
   expect(text()).toContain('自動 BLE QR Code 掃描');
-  expect(text()).toContain('手動 BLE 掃描');
   await act(async () => expect(onBack()).toBe(true));
-  expect(text()).toContain('硬體連線');
+  expect(title()).toBe('返回，接收器');
   expect(ble.disconnect).not.toHaveBeenCalled();
-  // The hardware page's 「‹ 硬體連線」 goes back like the back key.
-  await press('BLE／QR 與 Master 設定');
-  expect(text()).toContain('‹ 硬體連線');
-  await press('返回，硬體連線');
-  expect(text()).toContain('‹ 設定');
-  expect(text()).not.toContain('手動 BLE 掃描');
-  // Every page the tabs reached is still reached: cloud and location
-  // recording from settings, each with its 「‹ 標題」 back to settings.
-  await press('雲端資料');
-  expect(text()).toContain('‹ 雲端資料');
-  await press('返回，雲端資料');
-  await press('手機位置記錄');
-  expect(text()).toContain('‹ 手機位置記錄');
+  await press('返回，接收器');
+  expect(title()).toBe('返回，設定');
+  // S4 手機.
+  await tap('settings-row-phone');
+  expect(title()).toBe('返回，手機');
+  expect(text()).toContain('位置記錄');
+  expect(text()).toContain('忽略電池最佳化');
   await act(async () => expect(onBack()).toBe(true));
-  expect(text()).toContain('硬體連線');
+  // Supabase 帳號 → the cloud page (sign-in) until S3.
+  await tap('settings-row-account');
+  expect(title()).toBe('返回，Supabase 帳號');
+  await press('返回，Supabase 帳號');
+  // 診斷 keeps the old data table and the phone's record list in reach.
+  await tap('settings-row-diagnostics');
+  expect(title()).toBe('返回，診斷');
+  await tap('settings-link-data');
+  expect(title()).toBe('返回，即時資料');
+  await act(async () => expect(onBack()).toBe(true));
+  expect(title()).toBe('返回，診斷');
+  await tap('settings-link-records');
+  expect(title()).toBe('返回，記錄清單');
+  expect(text()).toContain('80,000 筆');
+  await act(async () => expect(onBack()).toBe(true));
+  await act(async () => expect(onBack()).toBe(true));
+  // 進階 keeps 接收器 Wi-Fi and the upload settings in reach.
+  await tap('settings-row-advanced');
+  expect(title()).toBe('返回，進階');
+  await tap('settings-link-wifi');
+  expect(title()).toBe('返回，接收器 Wi-Fi');
+  // The hardware page's 「‹ 標題」 goes back like the back key.
+  await press('返回，接收器 Wi-Fi');
+  expect(title()).toBe('返回，進階');
+  await tap('settings-link-upload');
+  expect(title()).toBe('返回，上傳設定');
+  expect(text()).toContain('轉送 Supabase');
+  await act(async () => expect(onBack()).toBe(true));
+  await act(async () => expect(onBack()).toBe(true));
   // Settings' own 「‹ 設定」 (and the back key) return to the map.
   await press('返回，設定');
   expect(renderer.root.findByType(MapScreen).props.active).toBe(true);
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
+});
+
+test('a settings fixture opens its page over the map: S1 with red 「!」 rows, S2 中斷連線', async () => {
+  // React Native's jest setup mocks Linking: answer once, for this mount.
+  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=settings-problems');
+  let emit;
+  Linking.addEventListener.mockImplementationOnce((_, handler) => {
+    emit = handler;
+    return { remove: jest.fn() };
+  });
+  await mount();
+  await advance(100);
+  expect(title()).toBe('返回，設定');
+  const label = id => row(`settings-row-${id}`).props.accessibilityLabel;
+  expect(label('phone')).toBe('手機，有問題：定位服務關著、通知未允許');
+  expect(label('account')).toBe('Supabase 帳號，有問題：連不上');
+  expect(label('alerts')).toBe('提醒，有問題：通知未允許');
+  expect(label('receiver')).toBe('接收器，接收器 7，已連線，電量 64%');
+  // The map's gear says the same things need handling.
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=all-good&page=receiver' }));
+  await advance(100);
+  expect(title()).toBe('返回，接收器');
+  expect(text()).toContain('DogGPS-Master7・已連線');
+  await tap('receiver-disconnect');
+  expect(ble.disconnect).toHaveBeenCalledTimes(1);
+  // Back from S2 returns to S1, then to the map.
+  await press('返回，接收器');
+  expect(title()).toBe('返回，設定');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 
 test('「今天 x km」 opens my route on the same map, with its own card, and back returns home', async () => {
@@ -222,11 +293,11 @@ test('「今天 x km」 opens my route on the same map, with its own card, and b
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
   // Back from my route, not from a card's 看軌跡: no card opens.
   expect(renderer.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
-  // The settings page says where history went.
+  // Settings has no map or history options (v3: no 地圖 row).
   await press('設定');
   expect(button('顯示歷史地圖', 'switch')).toBeUndefined();
   expect(button('套用地圖設定')).toBeUndefined();
-  expect(text()).toContain('右下「今天 x km」');
+  expect(renderer.root.findAllByProps({ testID: 'settings-row-map' })).toHaveLength(0);
 });
 
 test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens the card', async () => {

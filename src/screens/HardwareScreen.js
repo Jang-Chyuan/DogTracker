@@ -14,19 +14,25 @@ import {
   View,
   NativeModules,
 } from 'react-native';
-import { createBleService, DEFAULT_BLE_CONFIG } from '../ble/BleService';
+import { DEFAULT_BLE_CONFIG } from '../ble/BleService';
+import { sharedBleService } from '../ble/sharedBle';
 import { getDeviceProfile } from '../config/DeviceProfiles';
 import { parseMasterQr } from '../qr/MasterQrParser';
-import { emptyTrackingPoint, mapDogStatusRow } from '../models/TrackingPoint';
 import DataTableScreen from '../screens/DataTableScreen';
 import WifiSettingsScreen from '../screens/WifiSettingsScreen';
-import UploadSettingsScreen from '../cloudUpload/UploadSettingsScreen';
 
-const sharedBleService = createBleService();
-
-// backRequest: a new value is the page header's 「‹ 硬體連線」, which goes back
-// exactly like the back key.
-export default function HardwareScreen({ dogDatabase, upload, active = true, onBack, onStorageError, backRequest = 0 }) {
+// The old hardware pages that v3 has not replaced yet: the BLE / QR scan
+// (until D3, 053), 接收器 Wi-Fi (until S7) and the live data table (until
+// S8, 051). Settings → 接收器 (S2) has the connection itself; there is no
+// menu page any more. `entry` ({ screen: 'scan' | 'qr' | 'wifi' | 'data',
+// key }) is the page to open, 'qr' starting the QR scanner at once; back
+// from it leaves the hardware pages (onBack). backRequest: a new value is the
+// page header's 「‹ 標題」, which goes back exactly like the back key.
+// onConnected: a receiver was connected (back to where the user came from);
+// onQrTarget(masterId): a QR code chose this receiver (settings watches its
+// first packet); onMismatch({ expected, got }): another Master answered.
+export default function HardwareScreen({ dogDatabase, active = true, onBack, onStorageError, backRequest = 0,
+  entry = null, onConnected, onConnectFailed, onQrTarget, onMismatch }) {
   const [bleService] = useState(() => sharedBleService);
   const databaseReadyRef = useRef(null);
   const lastSavedAtBySlaveRef = useRef(new Map());
@@ -38,12 +44,9 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [backgroundRunning, setBackgroundRunning] = useState(false);
-  const [receiving, setReceiving] = useState(false);
   const [storageError, setStorageError] = useState('');
   const [activeMasterName, setActiveMasterName] = useState('DogGPS Master');
   const [bleStatus, setBleStatus] = useState('尚未掃描');
-  const [bleData, setBleData] = useState(emptyTrackingPoint);
-  const [updatedAt, setUpdatedAt] = useState('-');
   const [activeProfile, setActiveProfile] = useState(() => getDeviceProfile('default'));
 
   useEffect(() => {
@@ -72,7 +75,6 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
         if (disposed || !state) return;
         setBackgroundRunning(Boolean(state.running && state.enabled));
         setConnected(Boolean(state.running && state.enabled && state.connected));
-        setReceiving(Boolean(state.running && state.enabled && state.receiving));
         setStorageError(state.storageError || '');
         onStorageError?.(state.storageError || null);
         if (state.enabled) {
@@ -81,9 +83,6 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
             setBleStatus(state.running ? state.lastStatus : (state.resumeError || '背景服務已停止，請重新連線'));
           }
         }
-        setUpdatedAt(state.lastReceivedAt
-          ? new Date(state.lastReceivedAt).toLocaleString('zh-TW', { hour12: false })
-          : '-');
       } catch (error) {
         console.error('讀取背景狀態失敗', error);
       } finally {
@@ -102,10 +101,23 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
     };
   }, [bleService, scanning, connecting, qrScanning, onStorageError]);
 
+  // Leaving the page stops a scan still running; a connection that finishes
+  // after the user left does not navigate (onConnected) from another page.
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useEffect(() => {
+    if (active) return;
+    bleService.stopScan?.();
+    setScanning(false);
+    setQrScanning(false);
+  }, [active, bleService]);
+  const finishConnect = ok => {
+    if (ok && activeRef.current) onConnected?.();
+  };
+
   const goBack = useRef(null);
   goBack.current = () => {
-    if (screen === 'wifi' || screen === 'data') setScreen('menu');
-    else if (screen === 'connect' || screen === 'menu') setScreen('scan');
+    if (screen === 'connect') setScreen('scan');
     else if (onBack) onBack();
   };
   const lastBackRequest = useRef(backRequest);
@@ -117,8 +129,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
   useEffect(() => {
     if (!active) return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (screen === 'wifi' || screen === 'data') setScreen('menu');
-      else if (screen === 'connect' || screen === 'menu') setScreen('scan');
+      if (screen === 'connect') setScreen('scan');
       else if (onBack) onBack();
       else if (connected || backgroundRunning) {
         NativeModules.BleBackground?.moveToBackground();
@@ -136,28 +147,6 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
     });
     return () => subscription.remove();
   }, [active, backgroundRunning, connected, onBack, screen]);
-
-  // Telemetry is read from SQLite, including the diagnostics header. BLE
-  // events only drive connection state and the non-native fallback writer.
-  useEffect(() => {
-    if (!active) return undefined;
-    let disposed = false;
-    let busy = false;
-    const refresh = async () => {
-      if (disposed || busy || AppState.currentState === 'background') return;
-      busy = true;
-      try {
-        await databaseReadyRef.current;
-        const rows = await dogDatabase.listHistory(1);
-        if (!disposed) setBleData(rows[0] ? mapDogStatusRow(rows[0]) : emptyTrackingPoint);
-      } catch (error) {
-        if (!disposed) setStorageError(`讀取 SQLite 失敗：${error.message}`);
-      } finally { busy = false; }
-    };
-    refresh();
-    const timer = setInterval(refresh, 1000);
-    return () => { disposed = true; clearInterval(timer); };
-  }, [active, dogDatabase]);
 
   const receiveData = (nextData, payload, metadata) => {
     if (metadata?.persistedNatively) return;
@@ -213,6 +202,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
       const config = parseMasterQr(await NativeModules.QrScanner.scan());
       applyProfile(config.profile);
       setActiveMasterName(config.bleName);
+      onQrTarget?.(config.masterId);
       setDevices([]);
       setSelectedDevice(null);
       setScanning(true);
@@ -223,7 +213,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
         config,
         setBleStatus,
         async device => {
-          if (connectingFromQr) return;
+          if (connectingFromQr || !activeRef.current) return;
           connectingFromQr = true;
           setScanning(false);
           setSelectedDevice(device);
@@ -235,6 +225,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
               bleService.disconnect();
               setConnected(false);
               setBackgroundRunning(false);
+              onMismatch?.({ expected: config.masterId, got: nextData.masterId });
               return;
             }
             receiveData(nextData, payload, metadata);
@@ -248,7 +239,9 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
           );
           setConnecting(false);
           setConnected(ok);
-          if (ok) setScreen('menu');
+          // Not connected (yet): the change of receiver did not happen.
+          if (!ok) onConnectFailed?.();
+          finishConnect(ok);
         },
         () => {
           setScanning(false);
@@ -275,31 +268,26 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
     setConnected(ok);
     if (ok) {
       applyProfile('default');
-      setScreen('menu');
+      finishConnect(ok);
     }
-  };
-
-  const stopBackgroundReception = () => {
-    bleService.disconnect();
-    setConnected(false);
-    setBackgroundRunning(false);
-    setReceiving(false);
-    setBleStatus('背景接收已停止');
-  };
-
-  const stopAndScanAgain = () => {
-    stopBackgroundReception();
-    setDevices([]);
-    setSelectedDevice(null);
-    setScreen('scan');
   };
 
   const steps = [
     { key: 'scan', number: 1, label: '掃描' },
     { key: 'connect', number: 2, label: '連線訂閱' },
-    { key: 'menu', number: 3, label: '功能' },
   ];
-  const activeStep = screen === 'scan' ? 1 : screen === 'connect' ? 2 : 3;
+  const activeStep = screen === 'scan' ? 1 : 2;
+
+  // Each new entry opens its page; 'qr' starts the QR scanner right away.
+  const scanQr = useRef(null);
+  scanQr.current = scanMasterQr;
+  const entryKey = entry?.key ?? null;
+  const entryScreen = entry?.screen ?? null;
+  useEffect(() => {
+    if (!entryScreen) return;
+    setScreen(entryScreen === 'qr' ? 'scan' : entryScreen);
+    if (entryScreen === 'qr') scanQr.current();
+  }, [entryKey, entryScreen]);
 
   if (!active) return null;
 
@@ -308,9 +296,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          {onBack ? <Pressable onPress={onBack}><Text style={styles.secondaryText}>返回設定</Text></Pressable> : null}
-          <Text style={styles.title}>硬體連線</Text>
-          <View style={styles.steps}>
+          {(screen === 'scan' || screen === 'connect') && <View style={styles.steps}>
             {steps.map(step => (
               <View key={step.key} style={styles.step}>
                 <View style={[styles.stepCircle, activeStep >= step.number && styles.stepCircleActive]}>
@@ -319,7 +305,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
                 <Text style={[styles.stepLabel, activeStep === step.number && styles.stepLabelActive]}>{step.label}</Text>
               </View>
             ))}
-          </View>
+          </View>}
 
           {screen === 'scan' ? (
             <View style={styles.card}>
@@ -335,25 +321,6 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
               <Pressable disabled={scanning} onPress={scan} style={[styles.primaryButton, scanning && styles.disabled]}>
                 <Text style={styles.buttonText}>{scanning ? 'BLE 掃描中...' : '手動 BLE 掃描'}</Text>
               </Pressable>
-              {backgroundRunning ? (
-                <View style={styles.backgroundDeviceRow}>
-                  <Pressable onPress={() => setScreen('menu')} style={styles.backgroundDeviceSelect}>
-                  <View style={styles.flex}>
-                    <Text style={styles.deviceName}>{activeMasterName}</Text>
-                    <Text style={styles.backgroundDeviceStatus}>
-                      ● {connected
-                        ? (receiving ? '背景接收資料中' : 'BLE 已連線，等待新資料')
-                        : '背景服務執行中，尚未連線'}
-                    </Text>
-                    <Text style={styles.hint}>最後資料：{updatedAt}</Text>
-                  </View>
-                  <Text style={styles.select}>選擇 ›</Text>
-                  </Pressable>
-                  <Pressable onPress={stopBackgroundReception} style={styles.scanStopButton}>
-                    <Text style={styles.scanStopText}>停止</Text>
-                  </Pressable>
-                </View>
-              ) : null}
               {devices.map(device => (
                 <Pressable
                   key={device.id}
@@ -367,7 +334,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
                   <Text style={styles.select}>選擇 ›</Text>
                 </Pressable>
               ))}
-              {!scanning && devices.length === 0 && !backgroundRunning ? <Text style={styles.hint}>可使用自動 BLE QR Code 掃描，或手動 BLE 掃描。</Text> : null}
+              {!scanning && devices.length === 0 ? <Text style={styles.hint}>可使用自動 BLE QR Code 掃描，或手動 BLE 掃描。</Text> : null}
             </View>
           ) : null}
 
@@ -389,47 +356,10 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
             </View>
           ) : null}
 
-          {upload && ['scan', 'connect', 'menu'].includes(screen) ? (
-            <View style={styles.card}>
-              <UploadSettingsScreen upload={upload} />
-            </View>
-          ) : null}
-
-          {screen === 'menu' ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>3. 選擇功能</Text>
-              <Text style={connected ? styles.connected : styles.disconnected}>
-                ● {connected ? (receiving ? '背景接收資料中' : 'BLE 已連線，等待新資料') : 'BLE 未連線'}
-              </Text>
-              <Text style={styles.status}>{bleStatus}</Text>
-              <Text style={styles.hint}>最後資料：{updatedAt}　Master {bleData.masterId ?? '-'} / Slave {bleData.slaveId ?? '-'}</Text>
-              <Pressable onPress={() => setScreen('data')} style={styles.menuButton}>
-                <Text style={styles.menuTitle}>即時資料顯示</Text>
-                <Text style={styles.menuDescription}>SQLite 表格、最近 100 筆、可選欄位</Text>
-              </Pressable>
-              <Pressable onPress={() => setScreen('wifi')} style={styles.menuButton}>
-                <Text style={styles.menuTitle}>Wi-Fi 設定</Text>
-                <Text style={styles.menuDescription}>查看、新增或刪除 {activeMasterName} Wi-Fi</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => NativeModules.BleBackground?.moveToBackground()}
-                style={styles.backgroundButton}
-              >
-                <Text style={styles.buttonText}>切到背景執行</Text>
-              </Pressable>
-              <Pressable onPress={stopBackgroundReception} style={styles.stopButton}>
-                <Text style={styles.buttonText}>停止背景接收</Text>
-              </Pressable>
-              <Pressable onPress={stopAndScanAgain} style={styles.secondaryButton}>
-                <Text style={styles.secondaryText}>停止並重新掃描</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
           {screen === 'data' ? (
             <DataTableScreen
               dogDatabase={dogDatabase}
-              onBack={() => setScreen('menu')}
+              onBack={onBack}
               profile={activeProfile}
             />
           ) : null}
@@ -437,7 +367,7 @@ export default function HardwareScreen({ dogDatabase, upload, active = true, onB
             <WifiSettingsScreen
               bleService={bleService}
               masterName={activeMasterName}
-              onBack={() => setScreen('menu')}
+              onBack={onBack}
             />
           ) : null}
         </ScrollView>
