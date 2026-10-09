@@ -1,0 +1,60 @@
+{
+  "sqlite": "3.49.1",
+  "rows": {
+    "dog_status": 60000,
+    "supabase_dog_status": 936228,
+    "myLocationTracker": 80000,
+    "ble_upload_queue": 21000
+  },
+  "cases": [
+    {
+      "id": "dogs.poll",
+      "firstMs": 6.083,
+      "warmMs": 3.506,
+      "hash": "5a8be0c8db098af0e7c45a524bdbf7536ac84a9720b93e62c3e06e180ccce0ff"
+    },
+    {
+      "id": "open.liveWindow",
+      "firstMs": 3382.451,
+      "warmMs": 3452.952,
+      "hash": "89f7ebbb4e21df9bed4d1c0239d113bb3870ba9aae9462b6f9e8dfa61babe10e"
+    },
+    {
+      "id": "feed.tick.beforeStatistics",
+      "firstMs": 0.609,
+      "warmMs": 0.325,
+      "hash": "63c3b38991e8a352638d24344ff38e1706026da131c6361735819210764eb16a"
+    },
+    {
+      "id": "sync.initialize.repeat",
+      "firstMs": 102.124,
+      "warmMs": 106.816,
+      "hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "id": "feed.tick.afterInitialize",
+      "firstMs": 0.334,
+      "warmMs": 0.241,
+      "hash": "63c3b38991e8a352638d24344ff38e1706026da131c6361735819210764eb16a"
+    },
+    {
+      "id": "feed.tick.afterAnalyze",
+      "firstMs": 8.931,
+      "warmMs": 9.018,
+      "hash": "63c3b38991e8a352638d24344ff38e1706026da131c6361735819210764eb16a"
+    },
+    {
+      "id": "dogs.poll.afterAnalyze",
+      "firstMs": 3.857,
+      "warmMs": 3.524,
+      "hash": "5a8be0c8db098af0e7c45a524bdbf7536ac84a9720b93e62c3e06e180ccce0ff"
+    },
+    {
+      "id": "open.liveWindow.afterAnalyze",
+      "firstMs": 3330.208,
+      "warmMs": 3399.986,
+      "hash": "89f7ebbb4e21df9bed4d1c0239d113bb3870ba9aae9462b6f9e8dfa61babe10e"
+    }
+  ],
+  "initializeFirstMs": 110.367
+}

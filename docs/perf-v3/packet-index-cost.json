@@ -1,0 +1,77 @@
+{
+  "meta": {
+    "generated": "2026-10-09T03:00:45.876Z",
+    "node": "v22.16.0",
+    "sqlite": "3.49.1",
+    "host": "Apple M2 Pro, macOS, node:sqlite, file on APFS SSD (OS cache warm)",
+    "source": "DogTracker lane-b-e2e worktree @ bf5ccef (v3 chain tip)",
+    "data": {
+      "dog_status": 60000,
+      "supabase_dog_status": 936228,
+      "myLocationTracker": 80000,
+      "ble_upload_queue": 21000
+    },
+    "cold": "first run on a fresh connection: SQLite page cache empty, OS file cache warm (not a true device cold read)",
+    "warm": "median of 5-15 runs after the cold run"
+  },
+  "variants": {
+    "before": {
+      "label": "shipped v3 indexes",
+      "rows": [
+        {
+          "id": "packet.save",
+          "warm": 4.925,
+          "cold": 5.658,
+          "runs": 15,
+          "rows": null,
+          "plan": "",
+          "path": "one BLE packet: upload enqueue (queue full 20k) + insert (4 idx + trigger) + per-dog trim",
+          "every": "per packet (1/s/dog max)",
+          "where": "DogStatusStore.kt:85-110, BleUploadQueue.kt:39-66, BleDisplayCoordinates.js:13",
+          "budget": 16
+        },
+        {
+          "id": "packet.insertTrigger",
+          "warm": 0.305,
+          "cold": 0.323,
+          "runs": 15,
+          "rows": null,
+          "plan": "",
+          "path": "dog_status INSERT incl. invalidate_ble_display trigger + 4 indexes",
+          "every": "per packet",
+          "where": "DogStatusStore.kt:106, BleDisplayCoordinates.js:13-19",
+          "budget": 16
+        }
+      ]
+    },
+    "after": {
+      "label": "P1/P3 indexes plus ANALYZE",
+      "rows": [
+        {
+          "id": "packet.save",
+          "warm": 4.921,
+          "cold": 5.418,
+          "runs": 15,
+          "rows": null,
+          "plan": "",
+          "path": "one BLE packet: upload enqueue (queue full 20k) + insert (4 idx + trigger) + per-dog trim",
+          "every": "per packet (1/s/dog max)",
+          "where": "DogStatusStore.kt:85-110, BleUploadQueue.kt:39-66, BleDisplayCoordinates.js:13",
+          "budget": 16
+        },
+        {
+          "id": "packet.insertTrigger",
+          "warm": 0.479,
+          "cold": 0.414,
+          "runs": 15,
+          "rows": null,
+          "plan": "",
+          "path": "dog_status INSERT incl. invalidate_ble_display trigger + 4 indexes",
+          "every": "per packet",
+          "where": "DogStatusStore.kt:106, BleDisplayCoordinates.js:13-19",
+          "budget": 16
+        }
+      ]
+    }
+  }
+}

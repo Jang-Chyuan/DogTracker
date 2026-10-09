@@ -6,6 +6,7 @@ import { readDogCardRows } from '../activity/DogCardReadings';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
+import { optimizeDatabase } from '../database/DatabaseStatistics';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -156,6 +157,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       // Also apply retention to databases downloaded by older app versions.
       await connection.executeAsync(trimHistory);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
+      // All cloud indexes/migrations exist before statistics are collected.
+      await optimizeDatabase(connection);
       });
       initialization.set(connection, ready);
       ready.catch(() => initialization.delete(connection));
