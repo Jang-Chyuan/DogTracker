@@ -876,12 +876,12 @@ test('看軌跡 whose save finishes after the card closed does not open history'
   expect(onOpenHistory).toHaveBeenCalledWith(7);
 });
 
-test('history route fit and cursor centering use the fixed panel coverage', async () => {
-  const { mapPanelHeight } = require('../src/map/MapPanelHeight');
+test('history route fit and cursor centering use the half-screen panel coverage', async () => {
+  const { historyPanelMaxHeight } = require('../src/map/MapPanelHeight');
   const { layout, space } = require('../src/theme/tokens');
   const { regionForFrame, overlayFramePadding } = require('../src/map/MapFraming');
   const { historyFramePadding } = require('../src/history/screen/HistoryMapModel');
-  const height = mapPanelHeight(800, 24);
+  const height = historyPanelMaxHeight(800, 24);
   const camera = [{ latitude: 25, longitude: 121 }, { latitude: 25.01, longitude: 121.01 }];
   const props = { ...defaults, topInset: 100, bottomInset: height, coverBottom: height,
     source: 'history:fixed', presentation: { ...defaults.presentation, dogMarkers: [],
