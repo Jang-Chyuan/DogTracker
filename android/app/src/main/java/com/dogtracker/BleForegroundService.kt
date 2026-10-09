@@ -225,6 +225,8 @@ class BleForegroundService : Service() {
       }
       closeGatt()
       connecting = true
+      // An attempt is running: not the widened wait any more.
+      retryDelayMs = 0L
       publishStatus("正在連線 $deviceName")
       gatt = adapter.getRemoteDevice(deviceId).connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE)
       if (gatt == null) return fail("無法建立 BLE 連線")

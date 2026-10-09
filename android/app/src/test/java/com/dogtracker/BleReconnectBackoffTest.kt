@@ -29,5 +29,6 @@ class BleReconnectBackoffTest {
     assertEquals("斷線了，正在自動重連", ReceiverNotificationText.of(false, true, 30000))
     assertEquals("斷線了，2 分鐘後再試著連線", ReceiverNotificationText.of(false, true, 120000))
     assertEquals("斷線了，5 分鐘後再試著連線", ReceiverNotificationText.of(false, true, 300000))
+    assertEquals("連不上接收器，2 分鐘後再試著連線", ReceiverNotificationText.of(false, false, 120000))
   }
 }

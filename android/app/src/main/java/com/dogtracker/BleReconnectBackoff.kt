@@ -27,6 +27,8 @@ internal object ReceiverNotificationText {
     connected -> "正在接收狗的位置"
     disconnected && retryDelayMs >= 60_000L -> "斷線了，${retryDelayMs / 60_000L} 分鐘後再試著連線"
     disconnected -> "斷線了，正在自動重連"
+    // Never connected this time, and the wait has widened after long failures.
+    retryDelayMs >= 60_000L -> "連不上接收器，${retryDelayMs / 60_000L} 分鐘後再試著連線"
     else -> "正在連線接收器"
   }
 }

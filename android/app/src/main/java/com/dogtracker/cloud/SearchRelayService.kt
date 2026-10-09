@@ -58,7 +58,7 @@ class SearchRelayService : Service() {
       // Android can deny a background start; retain every row for foreground or
       // WorkManager recovery rather than disrupting the BLE writer.
       runCatching { context.startForegroundService(Intent(context, SearchRelayService::class.java).putExtra("owner", owner)) }
-        .onFailure { android.util.Log.w("DogTracker", "Search relay start deferred", it) }
+        .onFailure { com.dogtracker.AppLog.w("DogTracker", "Search relay start deferred", it) }
     }
   }
   private val handler = Handler(Looper.getMainLooper())
