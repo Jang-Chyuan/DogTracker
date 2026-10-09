@@ -1137,3 +1137,13 @@ test('E15: settings content reserves measured N3 height and restores spacing whe
   expect(source).toContain('paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0');
   expect(source).toMatch(/top=\{layout.belowStatusBar\}\s*onHeight=\{setN3Height\}/);
 });
+
+test('E03: native phone fix participates in the first frame without recording', async () => {
+  await mount();
+  await advance(100);
+  const map = renderer.root.findAll(node => typeof node.props.onNativePhone === 'function', { deep: false })[0];
+  const coordinate = { latitude: 24.99, longitude: 121.31 };
+  await act(async () => map.props.onNativePhone(coordinate));
+  const updated = renderer.root.findAll(node => typeof node.props.onNativePhone === 'function', { deep: false })[0];
+  expect(updated.props.presentation.cameraPositions).toEqual(expect.arrayContaining([coordinate]));
+});

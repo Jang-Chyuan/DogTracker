@@ -35,7 +35,7 @@ import {
   receiverNumber,
 } from '../map/ReceiverState';
 import { dogMarkers, dogName } from '../map/DogMarkers';
-import { coldStartCoordinates, phoneFix } from '../map/MapFraming';
+import { coldStartCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
 import DogCard from '../map/DogCard';
 import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
@@ -513,7 +513,14 @@ export default function MapScreen({
   // What the first view (cold start, or a data source switch) frames: the
   // dogs from this phone's own receiver and the phone; a far cloud dog only
   // with 框住全部 (MapFraming).
-  const phoneSpotValue = phoneFix(livePhone);
+  const [nativePhone, setNativePhone] = useState(null);
+  const acceptNativePhone = useCallback(value => {
+    if (!Number.isFinite(value?.latitude) || !Number.isFinite(value?.longitude)
+      || Math.abs(value.latitude) > 90 || Math.abs(value.longitude) > 180) return;
+    setNativePhone({ ...value, receivedAt: Date.now() });
+  }, []);
+  const phoneSpotValue = phoneFix(livePhone) ?? (!fixture && nativePhone
+    && now - nativePhone.receivedAt <= PHONE_FIX_MAX_AGE_S * 1000 ? nativePhone : null);
   const receiverId = receiverState ? receiverNumber(receiverState) : null;
   const phoneKey = phoneSpotValue
     ? `${phoneSpotValue.latitude},${phoneSpotValue.longitude}`
@@ -945,6 +952,7 @@ export default function MapScreen({
         coverTop={cardsBottom}
         compassTop={compassTop}
         livePhone={livePhone}
+        onNativePhone={acceptNativePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
         // A fixture switch (or a return to live data) reads the receiver

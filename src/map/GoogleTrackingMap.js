@@ -545,6 +545,7 @@ function GoogleTrackingMapRenderer({
   foreground,
   dataReady = true,
   framingReady = true,
+  onNativePhone,
   phoneEnabled,
   livePhone,
   onDogPress,
@@ -1367,6 +1368,7 @@ function GoogleTrackingMapRenderer({
             if (!value) return;
             const receivedAt = Date.now();
             nativePhone.current = { ...value, receivedAt };
+            onNativePhone?.(value);
             if (nativeFixAt == null || receivedAt - nativeFixAt > 60000)
               setNativeFixAt(receivedAt);
           }}
