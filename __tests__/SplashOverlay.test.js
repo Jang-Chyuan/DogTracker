@@ -158,10 +158,9 @@ describe('waiting tail lifecycle', () => {
     expect((body.props.transform || [])).toEqual([]);
     const layers = tail.parent.children;
     expect(layers.indexOf(tail)).toBeLessThan(layers.indexOf(body));
-    // The moving base extends back under the haunch, with a shared round cap
-    // at (96,124); the original right contour now belongs to the body.
-    expect(SITTING_DOG_TAIL_LINES[0]).toBe('M97 121L96 124c-2 5-6 7-12 7');
-    expect(SITTING_DOG_BODY_LINES).toContain('M88 82c10 12 13 30 8 42');
+    // The lower haunch/foot must not be included in the rotating layer.
+    expect(SITTING_DOG_TAIL_LINES).toEqual(['M98 124h9M100 129h12']);
+    expect(SITTING_DOG_BODY_LINES).toContain('M88 82c10 12 13 30 8 42-2 5-6 7-12 7');
     await act(async () => renderer.unmount());
   });
 
