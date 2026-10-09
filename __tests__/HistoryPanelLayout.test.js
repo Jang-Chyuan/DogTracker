@@ -34,11 +34,10 @@ test.each([lightTheme, darkTheme])('my route is a header with a person glyph and
   await act(async () => renderer.unmount());
 });
 
-test.each([1, 1.3, 2])('content height and framing share the settled panel height at font scale %s', async fontScale => {
+test.each([1, 1.3, 2])('fixed height and framing agree at font scale %s', async fontScale => {
   const spy = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
     width: 400, height: 800, scale: 1, fontScale,
   });
-  jest.useFakeTimers();
   const onHeightChange = jest.fn();
   const ref = React.createRef();
   const scrollRef = React.createRef();
@@ -46,115 +45,89 @@ test.each([1, 1.3, 2])('content height and framing share the settled panel heigh
   let renderer;
   try {
     await act(async () => { renderer = Renderer.create(<HistoryPanel ref={ref} scrollRef={scrollRef} bottomInset={20} onHeightChange={onHeightChange}
-      header={<Text>Header</Text>}><Text testID="last-node">End</Text></HistoryPanel>); });
+      header={<Text accessibilityRole="header">Date and time range</Text>}><Text testID="last-node">End</Text></HistoryPanel>); });
     const panel = renderer.root.findByProps({ testID: 'history-panel' });
-    const content = renderer.root.findByProps({ testID: 'history-panel-content' });
-    await act(async () => {
-      renderer.root.findByProps({ testID: 'history-panel-header' }).props.onLayout({ nativeEvent: { layout: { height: 100 * fontScale } } });
-      content.props.onLayout({ nativeEvent: { layout: { height: 160 * fontScale } } });
-      jest.runAllTimers();
-    });
     const height = StyleSheet.flatten(panel.props.style).height;
-    expect(height).toBe(Math.min(388, 260 * fontScale + 20 + space.l));
-    expect(height).toBeLessThanOrEqual(388);
+    expect(height).toBe(388);
     expect(onHeightChange).toHaveBeenLastCalledWith(height);
-    expect(ref.current).toEqual({ back: expect.any(Function) });
     expect(ref.current.back()).toBe(false);
     expect(panel.props.onMoveShouldSetResponder).toBeUndefined();
     const scroll = renderer.root.findByType(ScrollView);
     expect(scroll.props.contentContainerStyle.paddingBottom).toBe(20 + space.l);
+    expect(scroll.props.nestedScrollEnabled).toBe(true);
+    expect(scroll.props.scrollEnabled).not.toBe(false);
     expect(scroll.findByProps({ testID: 'last-node' })).toBeTruthy();
     expect(scroll.findAllByProps({ testID: 'history-panel-header' })).toHaveLength(0);
     const header = renderer.root.findByProps({ testID: 'history-panel-header' });
     expect(StyleSheet.flatten(header.props.style).flexShrink).toBe(0);
-    expect(StyleSheet.flatten(scroll.props.style).minHeight).toBe(0);
+    expect(StyleSheet.flatten(scroll.props.style)).toMatchObject({ flex: 1, minHeight: 0 });
+    expect(header.findByProps({ accessibilityRole: 'header' })).toBeTruthy();
     scrollRef.current.scrollTo({ y: 240, animated: false });
     expect(scrollTo).toHaveBeenCalledWith({ y: 240, animated: false });
-    const padding = overlayFramePadding({ top: 24, bottom: 0, left: 24, right: 24 }, {
+    expect(overlayFramePadding({ top: 24, bottom: 0, left: 24, right: 24 }, {
       bottomInset: 0, overlayBottom: height,
-    });
-    expect(padding.bottom).toBe(height);
+    }).bottom).toBe(height);
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     spy.mockRestore();
     scrollTo.mockRestore();
-    jest.useRealTimers();
   }
 });
 
-
-test('long content caps, ignores scroll/layout refreshes, and remeasures a new day', async () => {
-  jest.useFakeTimers();
+test('short/long/empty days, phone/dog and expanded header all keep the same fixed height', async () => {
   const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
     width: 400, height: 800, scale: 1, fontScale: 2,
   });
   const onHeightChange = jest.fn();
   let renderer;
-  const render = day => <HistoryPanel measureKey={day} onHeightChange={onHeightChange}
-    header={<Text>Header</Text>}><Text>Timeline end</Text></HistoryPanel>;
-  const measure = async height => act(async () => {
-    renderer.root.findByProps({ testID: 'history-panel-content' }).props.onLayout({ nativeEvent: { layout: { height } } });
-    jest.runAllTimers();
-  });
+  const render = (day, subject, count, headerHeight) => <HistoryPanel measureKey={`${day}:${subject}`}
+    onHeightChange={onHeightChange} header={<Text style={{ height: headerHeight }}>Date and time range</Text>}>
+    {Array.from({ length: count }, (_, index) => <Text key={index}>Timeline row {index}</Text>)}
+    <Text testID="last-node">{count ? 'Last timeline node' : 'No data'}</Text>
+  </HistoryPanel>;
   try {
-    await act(async () => { renderer = Renderer.create(render('day-one')); });
-    await act(async () => { renderer.root.findByProps({ testID: 'history-panel-header' }).props.onLayout({ nativeEvent: { layout: { height: 60 } } });
-    });
-    await measure(2000);
-    const cap = StyleSheet.flatten(renderer.root.findByProps({ testID: 'history-panel' }).props.style).height;
-    expect(cap).toBe(historyPanelMaxHeight(800, 24));
-    expect(cap).toBe(388);
-    const scroll = renderer.root.findByType(ScrollView);
-    expect(scroll.props.scrollEnabled).not.toBe(false);
-    expect(scroll.props.nestedScrollEnabled).toBe(true);
-    await act(async () => { scroll.props.onScroll?.({ nativeEvent: { contentOffset: { y: 1000 } } }); });
-    await measure(100);
+    await act(async () => { renderer = Renderer.create(render('day-one', 'phone', 1, 60)); });
+    for (const props of [['day-two', 'dog', 120, 300], ['day-three', 'phone', 0, 60], ['day-four', 'dog', 2, 180]]) {
+      await act(async () => renderer.update(render(...props)));
+      expect(StyleSheet.flatten(renderer.root.findByProps({ testID: 'history-panel' }).props.style).height).toBe(388);
+      expect(renderer.root.findByType(ScrollView).findByProps({ testID: 'last-node' })).toBeTruthy();
+    }
     expect(onHeightChange).toHaveBeenCalledTimes(1);
-    expect(StyleSheet.flatten(renderer.root.findByProps({ testID: 'history-panel' }).props.style).height).toBe(cap);
-    await act(async () => renderer.update(render('day-two')));
-    await measure(300);
-    expect(onHeightChange).toHaveBeenLastCalledWith(360 + space.l);
-    expect(onHeightChange).toHaveBeenCalledTimes(2);
+    // Content/header layout cannot reopen the retired adaptive-height path.
+    expect(renderer.root.findByProps({ testID: 'history-panel-content' }).props.onLayout).toBeUndefined();
+    expect(renderer.root.findByProps({ testID: 'history-panel-header' }).props.onLayout).toBeUndefined();
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     dimensions.mockRestore();
-    jest.useRealTimers();
   }
 });
 
-
-test('range header expansion and collapse remeasure without moving it into the timeline', async () => {
-  jest.useFakeTimers();
-  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
-    width: 400, height: 800, scale: 1, fontScale: 2,
-  });
-  let renderer;
+test('only window/top inset changes update fixed height; font and bottom padding do not', async () => {
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions');
+  const safeArea = require('react-native-safe-area-context').useSafeAreaInsets;
+  dimensions.mockReturnValue({ width: 400, height: 800, scale: 1, fontScale: 1 });
   const onHeightChange = jest.fn();
+  const render = bottomInset => <HistoryPanel bottomInset={bottomInset} onHeightChange={onHeightChange}
+    header={<Text>Header</Text>}><Text>Timeline</Text></HistoryPanel>;
+  let renderer;
   try {
-    await act(async () => { renderer = Renderer.create(<HistoryPanel onHeightChange={onHeightChange}
-      header={<Text accessibilityRole="header">Date and time range</Text>}>
-      <Text testID="last-node">Last timeline node</Text></HistoryPanel>); });
-    const header = renderer.root.findByProps({ testID: 'history-panel-header' });
-    const content = renderer.root.findByProps({ testID: 'history-panel-content' });
-    const layoutHeader = async height => act(async () => {
-      header.props.onLayout({ nativeEvent: { layout: { height } } });
-      jest.runAllTimers();
-    });
-    await act(async () => content.props.onLayout({ nativeEvent: { layout: { height: 240 } } }));
-    await layoutHeader(60);
-    expect(onHeightChange).toHaveBeenLastCalledWith(300 + space.l);
-    await layoutHeader(300);
+    await act(async () => { renderer = Renderer.create(render(20)); });
     expect(onHeightChange).toHaveBeenLastCalledWith(388);
-    const scroll = renderer.root.findByType(ScrollView);
-    expect(scroll.findAllByProps({ accessibilityRole: 'header' })).toHaveLength(0);
-    expect(header.findByProps({ accessibilityRole: 'header' }).props.children).toBe('Date and time range');
-    expect(scroll.findByProps({ testID: 'last-node' })).toBeTruthy();
-    await layoutHeader(60);
-    expect(onHeightChange).toHaveBeenLastCalledWith(300 + space.l);
+    dimensions.mockReturnValue({ width: 400, height: 800, scale: 1, fontScale: 2 });
+    await act(async () => renderer.update(render(40)));
+    expect(onHeightChange).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findByType(ScrollView).props.contentContainerStyle.paddingBottom).toBe(40 + space.l);
+    dimensions.mockReturnValue({ width: 800, height: 500, scale: 1, fontScale: 2 });
+    await act(async () => renderer.update(render(40)));
+    expect(onHeightChange).toHaveBeenLastCalledWith(historyPanelMaxHeight(500, 24));
+    safeArea.mockReturnValue({ top: 40, bottom: 20, left: 0, right: 0 });
+    await act(async () => renderer.update(render(40)));
+    expect(StyleSheet.flatten(renderer.root.findByProps({ testID: 'history-panel' }).props.style).height).toBe(230);
+    expect(onHeightChange).toHaveBeenLastCalledWith(230);
     expect(onHeightChange).toHaveBeenCalledTimes(3);
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     dimensions.mockRestore();
-    jest.useRealTimers();
+    safeArea.mockReturnValue({ top: 24, bottom: 20, left: 0, right: 0 });
   }
 });
