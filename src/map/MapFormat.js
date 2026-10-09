@@ -1,11 +1,3 @@
-import { t } from '../i18n';
-// Times in the history panels.
-export function formatTime(value) {
-  return Number.isFinite(value)
-    ? new Date(value).toLocaleString('zh-TW', { hour12: false })
-    : t("c761");
-}
-
 // A moment of today as 「10:12」 (local time).
 export function formatClock(at) {
   const date = new Date(at);

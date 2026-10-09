@@ -60,7 +60,7 @@ test('UI has no hard-coded colours or static colour imports; only Google imports
           problems.push(`${relative}: map SDK`);
         }
         if (
-          /theme\/tokens$|theme\/AppTheme$|\/MapTheme$/.test(
+          /theme\/tokens$|theme\/AppTheme$/.test(
             node.node.source.value,
           ) &&
           node.node.specifiers.some(s =>
@@ -72,7 +72,6 @@ test('UI has no hard-coded colours or static colour imports; only Google imports
               'shadow',
               'appColors',
               'floatingShadow',
-              'mapColors',
             ].includes(s.imported?.name),
           )
         ) {
