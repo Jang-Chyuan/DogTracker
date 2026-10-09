@@ -101,7 +101,7 @@ import {
 import { layout, touch, type, space, size as sizes } from './src/theme/tokens';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
-import { holdSplash, launchInto } from './src/app/hideSplash';
+import { holdSplash, launchFromNotification, launchInto } from './src/app/hideSplash';
 import SplashOverlay from './src/app/SplashOverlay';
 import {
   GUIDE_STEP_OF,
@@ -574,7 +574,10 @@ function TrackerApp({ resume = null, onRestart }) {
   useEffect(() => {
     const take = url => {
       const destination = notificationDestination(url);
-      if (destination) setNotificationRequest({ ...destination, key: Date.now() });
+      if (!destination) return;
+      // While the launch screen still waits: it flies to the alerted dog.
+      launchFromNotification(destination);
+      setNotificationRequest({ ...destination, key: Date.now() });
     };
     let alive = true;
     Promise.resolve()

@@ -18,7 +18,8 @@ import com.facebook.react.uimanager.ViewManager
 // over to it. So there is never a black or empty window, whatever the timing.
 object SplashState {
   @Volatile var animationDone = false
-  // Opened from one of our notifications (the handover is a plain fade).
+  // Opened from one of our notifications. JavaScript reads where it leads
+  // from the link (hideSplash.launchFromNotification); kept for diagnostics.
   @Volatile var fromNotification = false
   // The handover has finished in this process: the window's launch picture
   // gives way to the plain app background; an activity made again later

@@ -50,7 +50,7 @@ class MainActivity : ReactActivity() {
   }
 
   // singleTask: a notification tapped while the app is still opening arrives
-  // here; its handover is the plain fade too.
+  // here (and its link through Linking's url event).
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     if (intent.getBooleanExtra(SplashState.EXTRA_FROM_NOTIFICATION, false)) SplashState.fromNotification = true

@@ -8,11 +8,13 @@ import { size as sizes } from '../theme/tokens';
 //   fly  (dogs on screen): the background fades (280 ms); the body, legs and
 //        tail fade (220 ms) while an accent disc fades in behind the head
 //        (240 ms); the head shrinks about its own centre and flies to the dog
-//        nearest the middle (520 ms, ease-out), becoming its face; the other
+//        nearest the middle, or opened from a notification to the alerted
+//        dog when it is on screen (520 ms, ease-out), becoming its face; the other
 //        dogs pop in (0 → 1.12 → 1, 260 ms, from 280 ms / 340 ms); the map's
 //        controls fade in from 380 ms. All settled by 600 ms.
 //   fade (no dog on screen, D1 / onboarding / failure page, map cannot open,
-//        opened from a notification): the copy fades out (300 ms).
+//        opened from a notification that opens a page): the copy fades out
+//        (300 ms).
 // Animations off (animator scale 0): straight to the map; reduce motion: a
 // 200 ms crossfade. Taps are ignored until the handover has finished.
 import React, { useEffect, useRef, useState } from 'react';

@@ -8,7 +8,7 @@ import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
 import { useLiveLocation } from '../locationTracker/useLiveLocation';
-import { splashChrome } from '../app/hideSplash';
+import { splashChrome, useSplashState } from '../app/hideSplash';
 import {
   Animated,
   ScrollView,
@@ -860,11 +860,16 @@ export default function MapScreen({
   // 判定表「通知本體和「打開地圖」按鈕」: the body opens the most severe
   // problem (a dog: its card); 「打開地圖」 only the live map, everything
   // framed, no card. A request waits until what it opens is there.
+  // From a cold start the launch screen first flies to the alerted dog
+  // (hideSplash.notificationTargets); its card rises, and the map moves to it,
+  // once the handover has finished (判定表「從通知冷啟動」). A warm start has
+  // no launch screen: at once.
+  const splashDone = useSplashState().phase === 'done';
   const handledNotification = useRef(null);
   const [notificationFrame, setNotificationFrame] = useState(null);
   useEffect(() => {
     const request = notificationRequest;
-    if (!request || handledNotification.current === request.key || !active || historical) return;
+    if (!request || handledNotification.current === request.key || !active || historical || !splashDone) return;
     if (request.screen === 'open-map') {
       handledNotification.current = request.key;
       if (cardOpen) card.current?.close();
@@ -878,7 +883,7 @@ export default function MapScreen({
       handledNotification.current = request.key;
       openMyRoute();
     } else handledNotification.current = request.key;
-  }, [notificationRequest, active, historical, cardOpen, dogs, openDog, history, openMyRoute]);
+  }, [notificationRequest, active, historical, splashDone, cardOpen, dogs, openDog, history, openMyRoute]);
   // The newer of the two framing requests.
   const mapFrameRequest =
     notificationFrame && (!frameRequest || notificationFrame.key > frameRequest.key)

@@ -7,11 +7,14 @@ import { Animated, NativeModules } from 'react-native';
 // the next screen: the map once it has framed its first view and placed its
 // dogs, or a page of its own (D1 登入, onboarding, the D0 failure screen) once
 // it is laid out. Then the copy hands over: 「狗跳到地圖上」 to the dog nearest
-// the middle of the screen, or a plain fade. Until the start is decided the
+// the middle of the screen (opened from a notification: the alerted dog when
+// it is on screen), or a plain fade. Until the start is decided the
 // map's framing alone does not release it, so a first launch never shows the
 // map for a moment before D1. Nothing black or blank ever shows in between:
 // the copy covers the screen until the next one is drawn under it.
-const gate = { mapFramed: false, launch: null, targets: [] };
+// `notification`: where the notification that opened the app leads
+// (AlertNotifications.notificationDestination), once JavaScript has read it.
+const gate = { mapFramed: false, launch: null, targets: [], notification: null };
 // 'waiting' (the copy covers the screen) → 'handover' (mode 'fly' | 'fade')
 // → 'done'. The map's controls fade in through `chrome`; the real dog
 // markers stay hidden while the copy draws them (markersHidden).
@@ -48,7 +51,7 @@ export function hideSplash() {
   NativeModules.AppSplash?.hide?.();
 }
 
-/** How this launch started (notification, animations off); see AppSplash.kt. */
+/** How this launch started (animations off); see AppSplash.kt. */
 export function launchInfo() {
   try {
     return NativeModules.AppSplash?.launchInfo?.() ?? {};
@@ -57,14 +60,39 @@ export function launchInfo() {
   }
 }
 
+// Notification destinations that stay on the live map; the others open a
+// page over it, so the copy fades instead of flying to a covered map.
+const MAP_DESTINATIONS = ['map', 'open-map'];
+
+/**
+ * The dogs to fly to, the alerted dog first when it is on screen (the others
+ * nearest to it), else as framed: the dog nearest the middle first (判定表
+ * 「從通知冷啟動」: 「狗飛到被提醒那隻（在畫面上時，不在就飛到最靠近中心的那隻）」).
+ */
+export function notificationTargets(targets, dogId) {
+  const alerted = dogId == null ? null : targets.find(target => target.slaveId === dogId);
+  if (!alerted) return targets;
+  const distance = target => Math.hypot(target.x - alerted.x, target.y - alerted.y);
+  return [alerted, ...targets.filter(target => target !== alerted).sort((a, b) => distance(a) - distance(b))];
+}
+
 function begin(mode, targets = []) {
   if (state.phase !== 'waiting') return;
+  const destination = gate.notification;
+  // Opened from a notification that opens a page (or one not read yet while
+  // the system says so): no map to land on.
+  const pageFromNotification = destination
+    ? !MAP_DESTINATIONS.includes(destination.screen)
+    : false;
   const fly =
     mode === 'fly' &&
     targets.length > 0 &&
     !reducedMotion &&
-    !launchInfo().fromNotification;
-  if (fly) splashChrome.setValue(0);
+    !pageFromNotification;
+  if (fly) {
+    splashChrome.setValue(0);
+    targets = notificationTargets(targets, destination?.dogId ?? null);
+  }
   setState({
     phase: 'handover',
     mode: fly ? 'fly' : 'fade',
@@ -87,6 +115,16 @@ export function reportMapFramed(targets = []) {
   gate.mapFramed = true;
   gate.targets = targets;
   release();
+}
+
+/**
+ * App: this launch came from a notification tap leading to `destination`
+ * ({ screen, dogId }). Called before the map is framed, the handover flies to
+ * the alerted dog; to a page, it fades.
+ */
+export function launchFromNotification(destination) {
+  if (state.phase !== 'waiting' || !destination) return;
+  gate.notification = destination;
 }
 
 /**
@@ -143,6 +181,7 @@ export function resetSplashGate() {
   gate.mapFramed = false;
   gate.launch = null;
   gate.targets = [];
+  gate.notification = null;
   splashChrome.setValue(1);
   reducedMotion = false;
   state = { phase: 'waiting', mode: null, targets: [], markersHidden: false };
