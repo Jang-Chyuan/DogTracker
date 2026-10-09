@@ -161,7 +161,11 @@ export function HomeRow({ row, onPress }) {
       ) : (
         <View style={styles.status}>
           {row.status.map(line => (
-            <Text key={line} style={styles.statusText} numberOfLines={1}>
+            <Text
+              key={line}
+              style={[styles.statusText, row.statusTone === 'warn' && styles.statusWarn]}
+              numberOfLines={1}
+            >
               {line}
             </Text>
           ))}
@@ -374,6 +378,8 @@ const getStyles = makeStyles(theme => {
     subtitle: { ...type.small, color: colors.textMuted, marginTop: 2 },
     status: { alignItems: 'flex-end', marginLeft: space.s, flexShrink: 0 },
     statusText: { ...type.caption, color: colors.textMuted },
+    // S1 提醒 「暫停到 11:10」.
+    statusWarn: { color: colors.warn },
     chevron: {
       fontSize: 20,
       lineHeight: 24,

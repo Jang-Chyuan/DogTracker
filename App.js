@@ -4,7 +4,7 @@ import {
   useStyles,
   makeStyles,
 } from './src/theme/ThemeProvider';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
   Linking,
@@ -50,6 +50,9 @@ import PhoneSettings from './src/settings/PhoneSettings';
 import AlertSettings from './src/settings/AlertSettings';
 import { alertsPage } from './src/alerts/AlertPreferences';
 import { useAlertPreferences } from './src/settings/useAlertPreferences';
+import { useAlertEngine } from './src/alerts/useAlertEngine';
+import { pauseAlertState } from './src/alerts/AlertEngine';
+import AlertPreview from './src/dev/AlertPreview';
 import {
   phonePage,
   receiverPage,
@@ -155,6 +158,8 @@ const PAGE_TITLES = {
   cloudData: '本機／雲端資料',
   locationRecords: '記錄清單',
   wifi: '接收器 Wi-Fi',
+  // Debug builds only: the alert engine's preview (src/dev/AlertPreview).
+  alertPreview: '提醒預覽',
 };
 // Pages of their own, without the 「‹ 標題」 header: the first-use pages
 // (D1 登入, D2 權限, D3 連接接收器, D4 完成) and D0's failure screen.
@@ -179,6 +184,7 @@ const LIGHT_PAGES = new Set([
   'cloudData',
   'locationRecords',
   'wifi',
+  'alertPreview',
 ]);
 // The page under each settings page (a fixture opens the whole way there).
 const PARENT_PAGES = {
@@ -186,6 +192,7 @@ const PARENT_PAGES = {
   cloudData: 'diagnostics',
   locationRecords: 'diagnostics',
   wifi: 'advanced',
+  alertPreview: 'alerts',
 };
 // A fixture on a page of the guide opens it as the guide has it (D2 → D3 →
 // D4, with the progress bar).
@@ -406,9 +413,18 @@ function TrackerApp({ resume = null, onRestart }) {
   const settingsClock = useMapClock(
     tracking.foreground && settingsOpen && !fixture,
   );
-  const now = fixture ? fixture.now : settingsClock;
+  // A fixture's fake clock, moved on by the alert preview (debug only).
+  const [alertClockOffset, setAlertClockOffset] = useState(0);
+  const [alertBackground, setAlertBackground] = useState(false);
+  useEffect(() => {
+    setAlertClockOffset(0);
+    setAlertBackground(false);
+  }, [fixture?.name]);
+  const now = fixture ? fixture.now + alertClockOffset : settingsClock;
+  // Read on every page while in front: the alerts judge 接收器斷線 there too
+  // (the history map itself draws no receiver: MapScreen gets null).
   const receiverState = useReceiverState(
-    tracking.foreground && !isHistory,
+    tracking.foreground,
     fixture?.readReceiverState,
   );
   const receiverWait = useRef(null);
@@ -608,19 +624,93 @@ function TrackerApp({ resume = null, onRestart }) {
   const recordingSwitch = useRecordingSwitch(
     tracking.foreground && route.name === 'phone' && !fixture,
   );
+  // S6's switches, saved with the tracking preferences (a fixture's only in
+  // memory). The alert engine below reads the same AlertPreferences.
+  const alertPreferences = useAlertPreferences(
+    mapInputs.tracking?.preferences?.value?.alerts,
+    mapInputs.tracking.saveTrackingPreferences,
+    fixtureName ?? 'live',
+  );
+
+  // ---- the alerts (058a) ---------------------------------------------------
+  // MapScreen hands over its merged dogs (onAlertInput); the engine judges
+  // them with the receiver, the storage and the cloud clock every few
+  // seconds while the app is in front, vibrates, and keeps the merged
+  // notification's content (sent by 058b's native module). A fixture runs
+  // its own engine on its fake clock (the preview moves it on), never saving.
+  const alertInput = useRef(null);
+  const onAlertInput = useCallback(input => {
+    alertInput.current = input;
+  }, []);
+  const alertSource = fixture
+    ? fixtureName
+    : preferences.ready
+    ? 'live'
+    : 'live-loading';
+  const alertPause = fixture?.alertPause ?? null;
+  const alerts = useAlertEngine({
+    running:
+      tracking.foreground &&
+      launch.key !== null &&
+      alertSource !== 'live-loading',
+    source: alertSource,
+    initial: fixture ? null : preferences.value.alertState,
+    clock: () => (fixture ? now : Date.now()),
+    readInput: () => {
+      const input = alertInput.current;
+      // Everything read first: a half-read start would clear problems and
+      // alert them again.
+      if (
+        !input ||
+        input.source !== (fixture ? fixtureName : 'live') ||
+        !input.ready ||
+        receiverState === undefined
+      )
+        return null;
+      return {
+        dogs: input.dogs,
+        receiverBattery: input.receiverBattery,
+        receiver: receiverState,
+        storageError: mapInputs.tracking.realWriteError,
+        cloud: {
+          lastDownloadAt: mapInputs.cloudSync?.lastDownloadAt ?? null,
+          failingSince: mapInputs.cloudSync?.failingSince ?? null,
+        },
+        pauses: Array.isArray(receiverState?.receiverPauses)
+          ? receiverState.receiverPauses
+          : [],
+      };
+    },
+    preferences: alertPreferences.value,
+    notificationsAllowed: !mapInputs.permissions?.notificationsDenied,
+    screen: isMap ? 'map' : isHistory ? 'history' : 'settings',
+    foreground: tracking.foreground && !alertBackground,
+    save: fixture
+      ? null
+      : value =>
+          Promise.resolve(
+            tracking.saveTrackingPreferences?.({ alertState: value }),
+          ).catch(() => false),
+    // alerts-paused: paused `since` before the fixture's now, until `until`.
+    setup: alertPause
+      ? (state, at) =>
+          pauseAlertState(state, at - alertPause.since, at + alertPause.until)
+      : null,
+  });
+
+  // The preview's 「+N 分」 is judged at once.
+  const tickAlerts = alerts.tick;
+  useEffect(() => {
+    if (alertClockOffset) tickAlerts();
+  }, [alertClockOffset, tickAlerts]);
+
   const settingsData = settingsInput(mapInputs, {
     now,
     receiverState,
     receiverWait: receiverWait.current,
     recording: recordingSwitch,
+    alertPause: alerts.pause,
   });
-  // S6's switches, saved with the tracking preferences (a fixture's only in
-  // memory). Nothing sends alerts yet: 058 reads the same AlertPreferences.
-  const alertPreferences = useAlertPreferences(
-    settingsData.alerts,
-    mapInputs.tracking.saveTrackingPreferences,
-    fixtureName ?? 'live',
-  );
 
   // ---- S7 進階, S8 診斷 -----------------------------------------------------
   // A fixture's rows, Wi-Fi and deletion stand in for the real ones; nothing
@@ -890,9 +980,15 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <AlertSettings
           key={fixtureName ?? 'live'}
-          page={alertsPage(alertPreferences.value, settingsData.permissions)}
+          page={alertsPage(
+            alertPreferences.value,
+            settingsData.permissions,
+            alerts.pause,
+            now,
+          )}
           onChange={alertPreferences.change}
           onNotificationSettings={openNotificationSettings}
+          onResume={alerts.resume}
           initiallyOpen={!!fixture?.alertsOpen}
         />
       );
@@ -938,6 +1034,19 @@ function TrackerApp({ resume = null, onRestart }) {
           onOpen={open}
         />
       );
+      break;
+    case 'alertPreview':
+      // Debug builds only (a fixture's &page=alertPreview).
+      page = __DEV__ ? (
+        <AlertPreview
+          alerts={alerts}
+          now={fixture ? now : Date.now()}
+          fake={!!fixture}
+          background={alertBackground}
+          onAdvance={ms => setAlertClockOffset(value => value + ms)}
+          onBackground={setAlertBackground}
+        />
+      ) : null;
       break;
     case 'advanced':
       page = (
@@ -1025,6 +1134,7 @@ function TrackerApp({ resume = null, onRestart }) {
               wait: receiverWait.current,
             }}
             onAlertAction={alertAction}
+            onAlertInput={onAlertInput}
             openDogRequest={openDogRequest}
             frameRequest={frameRequest}
             onOpenHistory={slaveId => {

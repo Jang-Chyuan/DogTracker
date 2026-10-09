@@ -1,7 +1,7 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { space } from '../theme/tokens';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { space, type } from '../theme/tokens';
 import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
 
 const AlertSwitch = ({ testID, label, value, onChange }) => {
@@ -19,7 +19,7 @@ const AlertSwitch = ({ testID, label, value, onChange }) => {
 };
 
 /**
- * S6 提醒: 狗 (a group: 「全部開／部分開／全部關」, pressed it shows its three
+ * S6 提醒: while paused, 「已暫停提醒到 11:10」 with 「恢復」 first; 狗 (a group: 「全部開／部分開／全部關」, pressed it shows its three
  * switches), 接收器電量低, 接收器斷線、位置存不進手機 (a shared notification
  * switch), 震動 and 聲音 (shared by every alert), 通知權限 (未允許 →
  * 「開系統設定 ›」 opens the app's notification settings). Every change is
@@ -29,6 +29,7 @@ export default function AlertSettings({
   page,
   onChange,
   onNotificationSettings,
+  onResume,
   initiallyOpen = false,
 }) {
   const settingsStyles = useStyles(getSettingsStyles);
@@ -42,6 +43,25 @@ export default function AlertSettings({
       contentContainerStyle={[settingsStyles.content, settingsStyles.firstCard]}
     >
       <GroupCard flat>
+        {page.pause && (
+          <ListRow
+            testID="alerts-paused"
+            title={page.pause.title}
+            label={page.pause.title}
+            accessible={false}
+          >
+            <Pressable
+              testID="alerts-resume"
+              accessibilityRole="button"
+              accessibilityLabel={`${page.pause.action}提醒`}
+              onPress={onResume}
+              hitSlop={8}
+              style={({ pressed }) => [styles.resume, pressed && styles.pressed]}
+            >
+              <Text style={styles.resumeText}>{page.pause.action}</Text>
+            </Pressable>
+          </ListRow>
+        )}
         <ListRow
           testID="alerts-dogs"
           title="狗"
@@ -103,21 +123,18 @@ export default function AlertSettings({
             onChange={on => onChange({ sound: on })}
           />
         </ListRow>
-        <ListRow
-          testID="alerts-notifications"
-          title="通知權限"
-          detail={notifications.detail}
-          detailTone={notifications.denied ? 'warn' : undefined}
-          right={notifications.status}
-          action={notifications.action}
-          actionTone="plain"
-          onPress={notifications.denied ? onNotificationSettings : undefined}
-          label={
-            notifications.denied
-              ? '通知權限，未允許，開系統設定'
-              : '通知權限，已允許'
-          }
-        />
+        {notifications && (
+          <ListRow
+            testID="alerts-notifications"
+            title="通知權限"
+            detail={notifications.detail}
+            detailTone="warn"
+            action={notifications.action}
+            actionTone="plain"
+            onPress={onNotificationSettings}
+            label="通知權限，未允許，開系統設定"
+          />
+        )}
       </GroupCard>
     </ScrollView>
   );
@@ -135,5 +152,9 @@ const getStyles = makeStyles(theme => {
     },
     toggleOpen: { transform: [{ rotate: '90deg' }] },
     nested: { paddingLeft: space.l },
+    // 「恢復」: a 48dp text button in tonalText (判定表「暫停提醒中的設定畫面」).
+    resume: { minHeight: 48, minWidth: 48, justifyContent: 'center', alignItems: 'flex-end' },
+    resumeText: { ...type.captionBold, color: colors.tonalText },
+    pressed: { opacity: 0.6 },
   });
 });
