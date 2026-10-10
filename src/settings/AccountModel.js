@@ -42,9 +42,13 @@ export function accountPage(input) {
 
   // ---- 下載 ----------------------------------------------------------------
   let download;
-  if (sync.lastSuccess == null && sync.busy && sync.mode === 'auto') {
-    download = { title: t('c217'), detail: null, right: t('c319'), problem: false, success: false, retry: false,
-      label: t('c914') };
+  if (sync.busy && sync.mode === 'auto' && (sync.lastSuccess == null || sync.catchUp?.phase === 'catching-up')) {
+    const time = sync.lastSuccess == null ? null : formatClock(sync.lastSuccess);
+    // A retry is in progress, not a completed failure. Keep its last success
+    // time without clearing the engine's error/failingSince before recovery.
+    download = { title: t('c217'), detail: time == null ? null : t('c319'), right: time ?? t('c319'),
+      problem: false, success: false, retry: false,
+      label: time == null ? t('c914') : [t('c217'), time, t('c319')].join(' ') };
   } else if (sync.failingSince != null) {
     const since = t('c212', { time: formatClock(sync.failingSince) });
     // Not reached Supabase once since the app started (restoring the sign-in
