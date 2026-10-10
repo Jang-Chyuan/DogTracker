@@ -1,5 +1,7 @@
+import { initializeHistoryCoverage, invalidateEvictedCoverage, invalidateRepairedCoverage } from './HistoryCoverage';
 import { t } from '../i18n';
 import { createStagedCloudDatabase } from './CloudStaging';
+import { createLatestSnapshotDatabase } from './CloudLatestSnapshot';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withConnectionLock } from '../database/connectionLock';
 import { cloudTrackTime } from './CloudTrackTime';
@@ -36,9 +38,9 @@ const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
 
 // Enumerate dogs by seeking to the next indexed id, then seek each newest row.
 // DISTINCT still walks the whole account even when its output has only six dogs.
-export function latestCloudStatusQuery(validFix) {
+export function latestCloudStatusQuery(validFix, full = false) {
   const fix = validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : '';
-  return `SELECT slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
+  return `SELECT ${full ? '*, ' : ''}slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
     received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present, 'cloud' AS source
     FROM supabase_dog_status WHERE id IN (
       SELECT (SELECT id FROM supabase_dog_status AS newest
@@ -58,7 +60,7 @@ export function latestCloudStatusQuery(validFix) {
 
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
-export const CLOUD_DATABASE_METHODS = ['initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
+export const CLOUD_DATABASE_METHODS = ['readArchivePublication', 'readLatestSnapshot', 'publishLatestSnapshot', 'initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
   'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
@@ -67,7 +69,35 @@ const initialization = new WeakMap();
 
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
-  return createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
+  const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
+  return { ...database, ...createLatestSnapshotDatabase(connection, database.initialize, async owner => {
+    const read = async fixed => {
+      const result = await connection.executeAsync(latestCloudStatusQuery(fixed, true), [owner, 0, owner]);
+      return result.results || result.rows?._array || [];
+    };
+    const packets = await read(false), contexts = new Map(); let contextRows = 0;
+    for (const packet of packets) {
+      if (contextRows >= 20000) break;
+      const from = Number(packet.track_at) - HOLD_LOOKBACK_MS;
+      const query = async (sql, params) => {
+        const result = await connection.executeAsync(sql, params);
+        return result.results || result.rows?._array || [];
+      };
+      const window = await query(`SELECT * FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=?
+        AND CAST(COALESCE(track_at,received_at) AS INTEGER)>=? AND CAST(COALESCE(track_at,received_at) AS INTEGER)<=?
+        ORDER BY CAST(COALESCE(track_at,received_at) AS INTEGER),id LIMIT 20001`, [owner, packet.slave_id, from, packet.track_at]);
+      // A truncated cache slice is not replayed as a complete hold context.
+      if (window.length > 20000) continue;
+      const seeds = await query(`SELECT * FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=?
+        AND CAST(COALESCE(track_at,received_at) AS INTEGER)<? AND satellites>=?
+        AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT(slave_lat=0 AND slave_lon=0)
+        ORDER BY CAST(COALESCE(track_at,received_at) AS INTEGER) DESC,id DESC LIMIT 40`, [owner, packet.slave_id, from, HOLD_CONFIG.goodMinSatellites]);
+      if (contextRows + window.length + seeds.length > 20000) continue;
+      contextRows += window.length + seeds.length;
+      contexts.set(packet.slave_id, { rows: window, seeds });
+    }
+    return { packets, fixes: await read(true), contexts };
+  }) };
 }
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
@@ -86,14 +116,19 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
   return {
     invalidatePublished() { trackRepairs++; },
     async historyDownloadStates(owner, ids) {
-      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      return withConnectionLock(connection, async () => {
+      await initializeHistoryCoverage(connection);
       const list = Array.isArray(ids) ? ids : [ids];
       if (!list.length) return [];
-      return rows(await connection.executeAsync(`SELECT slave_id,day,complete FROM history_download_state WHERE owner=? AND slave_id IN (${list.map(() => '?').join(',')})`, [owner, ...list]));
+      return rows(await connection.executeAsync(`SELECT slave_id,day,complete,range_start,range_end,received_before FROM history_download_state WHERE owner=? AND slave_id IN (${list.map(() => '?').join(',')})`, [owner, ...list])).map(row => Object.fromEntries(Object.entries(row).filter(([name, value]) =>
+        !['range_start', 'range_end', 'received_before'].includes(name) || value != null)));
+      });
     },
-    async setHistoryDownloadState(owner, slaveId, day, complete) {
-      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
-      await connection.executeAsync('INSERT OR REPLACE INTO history_download_state(owner,slave_id,day,complete) VALUES(?,?,?,?)', [owner, slaveId, day, complete ? 1 : 0]);
+    async setHistoryDownloadState(owner, slaveId, day, complete, coverage = {}) {
+      return withConnectionLock(connection, async () => {
+      await initializeHistoryCoverage(connection);
+      await connection.executeAsync('INSERT OR REPLACE INTO history_download_state(owner,slave_id,day,complete,range_start,range_end,received_before) VALUES(?,?,?,?,?,?,?)', [owner, slaveId, day, complete ? 1 : 0, coverage.range_start ?? null, coverage.range_end ?? null, coverage.received_before ?? null]);
+      });
     },
     async loadRangeState(owner) {
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS receiver_range_state (scope TEXT PRIMARY KEY, value TEXT NOT NULL)');
@@ -170,7 +205,8 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
         PRIMARY KEY (owner_user_id, master_id, bucket_start)
       )`);
       // Also apply retention to databases downloaded by older app versions.
-      await connection.executeAsync(trimHistory);
+      await initializeHistoryCoverage(connection);
+      await connection.executeBatchAsync([{ query: invalidateEvictedCoverage(trimHistory), params: [] }, { query: trimHistory, params: [] }]);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
@@ -221,6 +257,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
         for (const item of metadata) {
           const time = cloudTrackTime(item);
           if (!Number.isFinite(time.track_at) || !requested.includes(item.event_id)) continue;
+          commands.push(invalidateRepairedCoverage(owner, item.event_id, time.track_at));
           commands.push({ query: `UPDATE supabase_dog_status SET track_at=?, upload_source=?,
             phone_received_at=?, track_time_version=1 WHERE owner_user_id=? AND event_id=?`,
           params: [time.track_at, time.upload_source, time.phone_received_at, owner, item.event_id] });
@@ -269,6 +306,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
         }
         // Global cap across accounts/Masters. Keep newest reception times, not
         // newest download order, so manual historical downloads cannot evict newer rows.
+        commands.push({ query: invalidateEvictedCoverage(trimHistory), params: [] });
         commands.push({ query: trimHistory, params: [] });
         pagesSaved += 1;
         if (pagesSaved % PAYLOAD_EVERY_PAGES === 0) {

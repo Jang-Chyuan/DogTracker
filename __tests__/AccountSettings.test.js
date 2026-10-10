@@ -133,6 +133,32 @@ test('upload-switch-offline: it cannot switch without a network (c256)', () => {
 
 // ---- the model ----------------------------------------------------------------
 
+test('an active initial retry says downloading instead of a stale failure; later polling keeps the last success', () => {
+  const data = { account: { signedIn: true }, sync: { busy: true, mode: 'auto', lastSuccess: null,
+    failingSince: FIXTURE_NOW - MINUTE, offline: true } };
+  expect(accountPage(data).download).toMatchObject({ right: i18nT('c319'), problem: false, success: false, retry: false });
+  expect(accountPage({ ...data, sync: { ...data.sync, busy: false } }).download)
+    .toMatchObject({ problem: true, retry: true });
+  expect(accountPage({ ...data, sync: { ...data.sync, failingSince: null, lastSuccess: FIXTURE_NOW - MINUTE } }).download)
+    .toMatchObject({ right: formatClock(FIXTURE_NOW - MINUTE), problem: false, success: true, retry: false });
+});
+
+test('explicit retry keeps the previous success time with pending detail and restores failure if the retry fails', () => {
+  const data = { account: { signedIn: true }, sync: { busy: true, mode: 'auto', lastSuccess: FIXTURE_NOW - MINUTE,
+    failingSince: FIXTURE_NOW, error: 'Network request failed', catchUp: { phase: 'catching-up' } } };
+  const before = JSON.stringify(data);
+  const pending = accountPage(data).download;
+  expect(pending).toMatchObject({ title: i18nT('c217'), right: formatClock(FIXTURE_NOW - MINUTE),
+    detail: i18nT('c319'), problem: false, success: false, retry: false });
+  expect(pending.label).toContain(i18nT('c319'));
+  expect(JSON.stringify(data)).toBe(before);
+  const failure = accountPage({ ...data, sync: { ...data.sync, busy: false, catchUp: { phase: 'failed' } } }).download;
+  expect(failure).toMatchObject({ problem: true, success: false, retry: true });
+  // Ordinary background polling preserves the current failure instead of
+  // claiming that every 30-second pass is a user-initiated retry.
+  expect(accountPage({ ...data, sync: { ...data.sync, catchUp: { phase: 'idle' } } }).download).toEqual(failure);
+});
+
 test('download before the first pass says 下載中…; switching back to Wi-Fi needs no network when nothing waits', () => {
   const page = accountPage({ account: { signedIn: true, email: 'a@b' }, sync: { ownerId: 'a' },
     upload: { supported: true, settingsReady: true, masters: [], settings: [{ master_id: 5, mode: 'phone' }],

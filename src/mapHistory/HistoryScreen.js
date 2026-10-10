@@ -214,7 +214,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
   );
 }
 
-/** H3c: 「下載 9/28 的紀錄…」「只有雲端有，正在下載」 and 取消, where the summary goes. */
+/** H3c: 「下載 9/28 的紀錄…」「正在補齊紀錄，完成後顯示路線」 and 取消, where the summary goes. */
 function DownloadSummary({ panel, onCancel }) {
   const styles = useStyles(getStyles);
   return (
@@ -463,6 +463,13 @@ ref) {
         onNext={() => step(screen.nextDay)}
         onOpen={openCalendar}
       />
+      {screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
+        <Text style={styles.asOfText}>{t('c1247', { time: `${String(new Date(screen.asOf).getHours()).padStart(2, '0')}:${String(new Date(screen.asOf).getMinutes()).padStart(2, '0')}` })}</Text>
+        <PressScale testID="history-update-tail" accessibilityRole="button" accessibilityLabel={t('c1248')}
+          onPress={() => step(screen.updateHistory)} style={styles.updateTail}>
+          <Text style={styles.updateTailText}>{t('c1248')}</Text>
+        </PressScale>
+      </View>}
       {downloading && (
         <DownloadSummary panel={download} onCancel={screen.cancelDownload} />
       )}
@@ -554,7 +561,7 @@ ref) {
           disabled={!rangeOpen}
           accessible={false}
         >
-          {!model && !downloading && !screen.error && <Text style={styles.empty}>{t('c424')}</Text>}
+          {!model && !downloading && !screen.error && download?.kind !== 'unfinished' && <Text style={styles.empty}>{t('c424')}</Text>}
           <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
             shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
             {body}
@@ -661,6 +668,10 @@ const getStyles = makeStyles(theme => {
       ...theme.floatingBorder,
     },
     disabled: { opacity: opacity.disabled },
+    asOf: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.s },
+    asOfText: { color: colors.textMuted, fontSize: type.caption.fontSize },
+    updateTail: { minHeight: touch.min, minWidth: touch.min, justifyContent: 'center', alignItems: 'center' },
+    updateTailText: { color: colors.phone, fontSize: type.caption.fontSize },
     dateRow: {
       flexDirection: 'row',
       alignItems: 'center',

@@ -42,11 +42,27 @@ export function accountPage(input) {
 
   // ---- 下載 ----------------------------------------------------------------
   let download;
-  if (sync.failingSince != null) {
-    const since = t('c212', { time: formatClock(sync.failingSince) });
+  if (sync.latestFirst && sync.lastSuccess != null && sync.failingSince == null && (sync.archivePending || sync.contextPending)) {
+    const time = formatClock(sync.lastSuccess);
+    download = { title: t('c217'), detail: t('c1250'), right: time, problem: false, success: false, retry: false,
+      label: [t('c217'), time, t('c1250')].join(' ') };
+  } else if (sync.latestFirst && sync.lastSuccess != null && sync.failingSince == null && !sync.snapshotPending && sync.archiveError) {
+    const time = formatClock(sync.lastSuccess);
+    download = { title: t('c217'), detail: t('c1251'), right: time, problem: true, success: false, retry: true,
+      label: [t('c217'), time, t('c1251')].join(' ') };
+  } else if (sync.busy && sync.mode === 'auto' && sync.catchUp?.phase !== 'failed' && (sync.lastSuccess == null || sync.catchUp?.phase === 'catching-up')) {
+    const time = sync.lastSuccess == null ? null : formatClock(sync.lastSuccess);
+    // A retry is in progress, not a completed failure. Keep its last success
+    // time without clearing the engine's error/failingSince before recovery.
+    download = { title: t('c217'), detail: time == null ? null : t('c319'), right: time ?? t('c319'),
+      problem: false, success: false, retry: false,
+      label: time == null ? t('c914') : [t('c217'), time, t('c319')].join(' ') };
+  } else if (sync.failingSince != null) {
+    const time = formatClock(sync.failingSince);
+    const since = sync.offline ? t('c212', { time }) : t('c1246', { time });
     // Not reached Supabase once since the app started (restoring the sign-in
     // without a network): it keeps trying by itself (判定表「啟動與恢復登入」).
-    const restoring = sync.lastSuccess == null;
+    const restoring = sync.offline && sync.lastSuccess == null;
     const title = restoring ? t('c257') : t('c211');
     download = { title, detail: since, right: null, problem: true, success: false, retry: true,
       label: t("c912", { title: title, since: since }) };

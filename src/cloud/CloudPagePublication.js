@@ -20,3 +20,12 @@ export function capturePageRead(getPublication, owner, publishedReads = false) {
     valid: () => matches(before) && matches(getPublication()),
   };
 }
+
+// Latest positions are not evidence of a complete activity archive. History
+// has its own selected-day proof; Activity waits for the automatic archive.
+export function captureActivityRead(getPublication, owner, publishedReads = false) {
+  const publication = getPublication?.();
+  if (owner && publication?.latestFirst && !Number.isFinite(publication.archiveCutoff))
+    return { open: false, valid: () => false, error: publication.archiveError || '' };
+  return capturePageRead(getPublication, owner, publishedReads);
+}

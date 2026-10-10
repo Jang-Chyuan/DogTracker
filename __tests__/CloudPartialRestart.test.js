@@ -5,6 +5,8 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createCloudSync } from '../src/cloud/CloudSync';
 import { completedMapRevision } from '../src/cloud/CloudPublication';
+import { captureActivityRead, capturePageRead } from '../src/cloud/CloudPagePublication';
+import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 
 // Investigation-only regression: the production DB keeps committed pages
@@ -15,12 +17,9 @@ const coordinate = { latitude: 24.9892, longitude: 121.3132 };
 const record = (id, time, delta = 0) => ({ event_id: id, master_id: 7, slave_id: 6,
   received_at: time, track_at: time, track_time_version: 1, slave_lat: coordinate.latitude + delta,
   slave_lon: coordinate.longitude, satellites: 9, hdop: 1, activity_valid: 0, battery_valid: 0 });
-const client = fail => ({ from: () => {
-  const query = {};
-  for (const method of ['select', 'eq', 'order', 'range']) query[method] = () => query;
-  query.abortSignal = async () => { if (fail) throw new Error('offline after restart'); return { data: [] }; };
-  return query;
-} });
+const client = fail => latestArchiveRest({ events: [cloudEvent(1, NOW - 10000)],
+  beforeRead: async () => { if (fail) throw new Error('offline after restart'); },
+}).client;
 
 test.each([false, true])('cold bootstrap must not publish failed prior-process pages (restart download fails: %s)', async fail => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
@@ -37,15 +36,19 @@ test.each([false, true])('cold bootstrap must not publish failed prior-process p
     await jest.advanceTimersByTimeAsync(1); // completed first automatic pass
     const clock = () => NOW;
     function Harness() {
-      const publication = sync.mapPublication();
+      // This legacy row reader deliberately exercises the published archive,
+      // which now has its own fence independent of the live snapshot.
+      const publication = sync.historyPublication();
       value = useCloudDogs(readerDatabase, owner, true, clock, null, {
         cloudBusy: publication.busy, cloudSuccess: completedMapRevision(publication),
-        getMapPublication: () => sync.mapPublication(),
+        getMapPublication: () => sync.historyPublication(),
       });
       return null;
     }
     await act(async () => { renderer = Renderer.create(<Harness />); });
-    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 1 });
+    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 2 });
+    expect(sync.historyPublication()).toMatchObject({ archiveRevision: 1, archiveCutoff: NOW });
+    expect((await database.readLatestSnapshot(owner)).rows[0].slave_lat).toBe(coordinate.latitude);
     expect(value.rows[0].slave_lat).toBe(coordinate.latitude);
     // One real page transaction commits, then its larger pass is interrupted.
     await expect(sync.runManual(async () => {
@@ -158,14 +161,25 @@ test('next successful automatic pass publishes prior interrupted pages once', as
     await createDogDatabase(connection).initialize();
     const database = createCloudDatabase(connection);
     await database.initialize();
-    await database.savePage(owner, [record('old', NOW - 10000)]);
+    await database.savePage(owner, [record(cloudEvent(1, NOW - 10000).event_id, NOW - 10000)]);
     await database.beginDownload(owner);
     await database.savePage(owner, [record('new', NOW, 0.001)]);
-    sync = createCloudSync({ client: client(false), database: createCloudDatabase(connection) });
+    const restarted = createCloudDatabase(connection);
+    const publish = jest.spyOn(restarted, 'publishDownload');
+    const snapshots = [];
+    sync = createCloudSync({ client: client(false), database: restarted, onChange: state => snapshots.push(state) });
     sync.setSession({ user: { id: owner } }); sync.setForeground(true);
     expect((await database.latestBySlave(owner, 0))[0].slave_lat).toBe(coordinate.latitude);
     await jest.advanceTimersByTimeAsync(1);
-    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 1 });
+    // Latest and complete context each publish, while archive completion is
+    // exactly one separate terminal transaction with durable coverage proof.
+    expect(snapshots.some(state => state.mapSuccessRevision === 1 && state.contextPending && state.archiveRevision === 0)).toBe(true);
+    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 2 });
+    expect(sync.historyPublication()).toMatchObject({ archiveRevision: 1, archiveCutoff: NOW });
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith(owner, 'auto', NOW, expect.any(Function));
+    expect(await restarted.readArchivePublication(owner)).toEqual({ owner, cutoff: NOW, revision: 1 });
+    expect((await restarted.readLatestSnapshot(owner)).rows[0].slave_lat).toBe(coordinate.latitude);
     expect((await database.latestBySlave(owner, 0))[0].slave_lat).toBe(coordinate.latitude + 0.001);
     expect((await connection.executeAsync('SELECT COUNT(*) n FROM supabase_dog_status WHERE owner_user_id=?',
       [owner])).results[0].n).toBe(2);
@@ -195,59 +209,111 @@ test('bounded staging retention and a failed page preserve published rows and it
   } finally { connection.close(); }
 });
 
-test.each(['failure', 'cancel'])('actual automatic first page survives %s then restart without publication', async mode => {
+test.each(['failure', 'cancel'])('actual automatic first page survives %s then restart without archive publication', async mode => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
   const connection = createMemoryConnection();
-  let sync, renderer, value, fail = true, pages = 0;
-  const eventId = '00000000-0000-4000-8000-000000000007';
+  let sync, renderer, value, fail = true, releasePage;
+  const entered = new Promise(resolve => { releasePage = resolve; });
+  let releaseFailure;
+  const held = new Promise(resolve => { releaseFailure = resolve; });
+  const partial = cloudEvent(7, NOW - 2000, { latitude: coordinate.latitude + 0.001 });
+  const fixed = cloudEvent(8, NOW - 1000, { latitude: coordinate.latitude + 0.002 });
+  const packet = cloudEvent(9, NOW - 500, { latitude: 0, longitude: 0, upload_source: 'phone', phone_received_at: new Date(NOW - 500).toISOString() });
+  const eventId = partial.event_id;
   try {
     await createDogDatabase(connection).initialize();
     const database = createCloudDatabase(connection);
     await database.initialize();
     await database.savePage(owner, [record('old', NOW - 10000)]);
-    const network = { from: table => {
-      const query = { offset: 0, count: false };
-      for (const method of ['eq', 'gte', 'lt', 'order', 'limit', 'or', 'in']) query[method] = () => query;
-      query.select = (_fields, options) => { query.count = !!options?.head; return query; };
-      query.range = offset => { query.offset = offset; return query; };
-      query.abortSignal = async () => {
-        if (table === 'device_members') return { data: query.offset === 0 ? [{ gateway_id: 'master_7', slave_id: 6 }] : [] };
-        if (query.count) return { count: 0 };
-        if (pages++ === 0) return { data: [{ event_id: eventId, master_id: 7, slave_id: 6,
-          received_at: new Date(NOW - 1000).toISOString(), payload: { slaveId: 6, lat: 24990200, lon: 121313200 } }] };
-        if (fail) {
-          if (mode === 'failure') throw new Error('offline after page');
-          sync.setForeground(false);
-        }
-        return { data: [] };
-      };
-      return query;
-    } };
-    sync = createCloudSync({ database, client: network });
+    const network = latestArchiveRest({ events: [partial, fixed, packet], archivePageSize: 1,
+      beforeRead: async call => {
+        if (call.phase !== 'archive' || !call.params.has('or') || !fail) return;
+        releasePage(); await held;
+        if (mode === 'failure') throw new Error('offline after archive page');
+        sync.setForeground(false);
+      },
+    });
+    sync = createCloudSync({ database, client: network.client });
     sync.setSession({ user: { id: owner } }); sync.setForeground(true);
-    await jest.advanceTimersByTimeAsync(1);
-    expect(sync.mapPublication()).toMatchObject({ pending: true, mapSuccessRevision: 0 });
+    await jest.advanceTimersByTimeAsync(1); await entered;
+    // The actual archive cursor is durable while the next REST page is held.
+    // The no-GPS packet has already obtained its independent latest good fix.
+    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 2 });
+    expect(sync.historyPublication()).toMatchObject({ archiveCutoff: null, archiveRevision: 0 });
+    expect(captureActivityRead(() => sync.historyPublication(), owner, true).open).toBe(false);
+    const snapshot = await database.readLatestSnapshot(owner);
+    expect(snapshot.packets[0].event_id).toBe(packet.event_id);
+    expect(snapshot.rows[0].event_id).toBe(fixed.event_id);
+    expect(snapshot.context.map(row => row.event_id)).toEqual([partial.event_id, fixed.event_id, packet.event_id]);
+    expect(network.calls.some(call => call.phase === 'fix')).toBe(true);
+    expect(network.calls.some(call => call.phase === 'keys' && call.params.get('slave_id') === 'gt.6')).toBe(true);
     expect((await database.loadSyncState(owner, 7)).event_id).toBe(eventId);
+    expect((await connection.executeAsync('SELECT event_id FROM cloud_auto_supabase_dog_status WHERE owner_user_id=?', [owner])).results)
+      .toEqual([{ event_id: eventId }]);
+    expect(await database.readArchivePublication(owner)).toBeNull();
     expect((await database.latestBySlave(owner, 0))[0].slave_lat).toBe(coordinate.latitude);
+    releaseFailure(); await jest.advanceTimersByTimeAsync(1);
+    expect((await database.loadSyncState(owner, 7)).event_id).toBe(eventId);
+    expect(await database.readLatestSnapshot(owner)).toEqual(snapshot);
+    if (mode === 'failure') expect(sync.historyPublication().archiveError).toBeTruthy();
     await sync.dispose();
     const restart = createCloudDatabase(connection);
-    sync = createCloudSync({ database: restart, client: network });
+    sync = createCloudSync({ database: restart, client: network.client });
     sync.setSession({ user: { id: owner } });
     const clock = () => NOW;
     function Harness() {
-      value = useCloudDogs(restart, owner, true, clock, null, { getMapPublication: () => sync.mapPublication() });
+      value = useCloudDogs(restart, owner, true, clock, null, { getMapPublication: () => sync.historyPublication() });
       return null;
     }
     await act(async () => { renderer = Renderer.create(<Harness />); });
     expect(value.loaded).toBe(true);
     expect(value.rows[0].slave_lat).toBe(coordinate.latitude);
+    expect((await restart.readLatestSnapshot(owner)).rows[0].event_id).toBe(fixed.event_id);
+    expect(captureActivityRead(() => sync.historyPublication(), owner, true).open).toBe(false);
+    const restartOffset = network.calls.length;
     fail = false;
     sync.setForeground(true);
     await act(async () => { await jest.advanceTimersByTimeAsync(1); });
-    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 1 });
-    expect((await restart.latestBySlave(owner, 0))[0].slave_lat).toBe(coordinate.latitude + 0.001);
+    const resumed = network.calls.slice(restartOffset).find(call => call.phase === 'archive');
+    expect(resumed.params.get('or')).toContain(`event_id.gt.${eventId}`);
+    expect(sync.historyPublication()).toMatchObject({ archiveRevision: 1, archiveCutoff: NOW + 2 });
+    expect(capturePageRead(() => sync.historyPublication(), owner, true).open).toBe(true);
+    expect(await restart.readArchivePublication(owner)).toEqual({ owner, cutoff: NOW + 2, revision: 1 });
+    expect((await restart.latestBySlave(owner, 0))[0].slave_lat).toBe(coordinate.latitude + 0.002);
+    expect((await restart.readLatestSnapshot(owner)).rows[0].event_id).toBe(fixed.event_id);
+    expect(await restart.count(owner)).toBe(4);
   } finally {
+    releaseFailure?.();
     await act(async () => { renderer?.unmount(); });
     await sync?.dispose(); connection.close(); jest.useRealTimers();
   }
+});
+
+test.each(['packet', 'fix'])('real SDK %s failure cannot start archive or replace a complete cache', async failedPhase => {
+  jest.useFakeTimers(); jest.setSystemTime(NOW);
+  const connection = createMemoryConnection();
+  let sync;
+  try {
+    await createDogDatabase(connection).initialize();
+    const database = createCloudDatabase(connection);
+    await database.initialize();
+    await database.savePage(owner, [record('cached', NOW - 10000)]);
+    const cached = await database.readLatestSnapshot(owner);
+    const begin = jest.spyOn(database, 'beginDownload');
+    const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000),
+      cloudEvent(2, NOW - 500, { latitude: 0, longitude: 0 })],
+      beforeRead: async call => { if (call.phase === failedPhase) throw new Error('network failed before complete latest'); },
+    });
+    sync = createCloudSync({ database, client: network.client });
+    sync.setSession({ user: { id: owner } }); sync.setForeground(true);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(network.calls.some(call => call.phase === failedPhase)).toBe(true);
+    expect(network.calls.some(call => call.phase === 'archive')).toBe(false);
+    expect(begin).not.toHaveBeenCalled();
+    expect(sync.mapPublication().mapSuccessRevision).toBe(0);
+    expect(await database.readLatestSnapshot(owner)).toEqual(cached);
+    expect(await database.count(owner)).toBe(1);
+    expect(await database.loadSyncState(owner, 7)).toBeNull();
+    expect(await database.readArchivePublication(owner)).toBeNull();
+  } finally { await sync?.dispose(); connection.close(); jest.useRealTimers(); }
 });

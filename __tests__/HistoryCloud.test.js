@@ -129,3 +129,35 @@ test('K11: failed completeness reads keep local days incomplete per dog and can 
   expect(state.knowledge.incomplete).toEqual([]);
   await act(async () => renderer.unmount());
 });
+
+test('a single dog with local rows but no durable completed download remains incomplete', async () => {
+  const day = '2026-10-03';
+  const cloud = { downloadStates: async () => [] };
+  let state, renderer;
+  function Probe() {
+    state = useHistoryCloud({ cloud, slaveId: 6, scope: 'missing-coverage-single', todayKey: day,
+      local: [day], localByDog: { 6: [day] } });
+    return null;
+  }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(state.knowledge.incomplete).toContain(day);
+  } finally { await act(async () => renderer.unmount()); }
+});
+
+test.each([1, 0])('today tail uses retained completed prefix only (complete=%i)', async complete => {
+  const dayStart = new Date(2026, 9, 3).getTime(), dayEnd = dayStart + 86400000;
+  const prefix = dayStart + 3600000, cutoff = prefix + 60000;
+  const c = client(() => Promise.resolve({ data: [], error: null }));
+  const database = { initialize: async () => {}, setHistoryDownloadState: jest.fn(async () => {}),
+    historyDownloadStates: async () => [{ slave_id: 6, day: '2026-10-03', complete,
+      range_start: dayStart, range_end: prefix, received_before: prefix }] };
+  const cloud = createHistoryCloud({ client: c, database, owner: 'a' });
+  await cloud.download({ slaveId: 6, dayStart, dayEnd, cutoff });
+  expect(c.calls[0]).toEqual(expect.arrayContaining([
+    ['gte', 'received_at', new Date(complete ? prefix : dayStart - DOWNLOAD_BEFORE_MS).toISOString()],
+    ['lt', 'received_at', new Date(cutoff).toISOString()],
+  ]));
+  expect(database.setHistoryDownloadState).toHaveBeenLastCalledWith('a', 6, '2026-10-03', true,
+    { range_start: dayStart, range_end: cutoff, received_before: cutoff });
+});

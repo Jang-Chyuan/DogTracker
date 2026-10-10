@@ -94,3 +94,24 @@ test('automatic sync refreshes the local table without a manual download option'
   await press('重新讀取本機資料');
   expect(database.savePage).not.toHaveBeenCalled();
 });
+
+test('latest-first archive publication refreshes S8 only after the complete archive commits', async () => {
+  const { client, database } = fixtures();
+  const clientFactory = () => client;
+  const show = sync => <AuthProvider clientFactory={clientFactory}><CloudDataScreen database={database}
+    sync={sync} clientFactory={clientFactory} /></AuthProvider>;
+  await act(async () => { renderer = Renderer.create(show({ revision: 0, latestFirst: true,
+    publishedRevision: 0, publishedPending: false })); });
+  await login();
+  expect(text()).toContain('ACCOUNT_A_ONLY');
+  database.listHistory.mockResolvedValue([{ id: 2, sequence: 'ARCHIVE_COMPLETE_NEW_ROW' }]);
+  const before = database.listHistory.mock.calls.length;
+  await act(async () => renderer.update(show({ revision: 0, latestFirst: true,
+    publishedRevision: 1, publishedPending: true })));
+  expect(database.listHistory).toHaveBeenCalledTimes(before);
+  expect(text()).not.toContain('ARCHIVE_COMPLETE_NEW_ROW');
+  await act(async () => renderer.update(show({ revision: 0, latestFirst: true,
+    publishedRevision: 1, publishedPending: false })));
+  expect(text()).toContain('ARCHIVE_COMPLETE_NEW_ROW');
+  expect(text()).not.toContain('ACCOUNT_A_ONLY');
+});

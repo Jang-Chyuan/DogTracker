@@ -185,9 +185,9 @@ export function TodayPill({ value, onPress }) {
 }
 
 /**
- * 「正在更新狗的位置」 (070, A1 top centre): shown only while a return to the
- * app catches the map up (ResumeCatchUp), never on a cold start or an
- * ordinary load. A shimmer band sweeps across it; under 減少動態效果 the pill
+ * 「正在更新狗的位置」 (070, A1 top centre): shown while returning to the app
+ * or completing the initial cloud download. Local cold start and ordinary
+ * polling do not show it. A shimmer band sweeps across it; under 減少動態效果 the pill
  * stands still. `phase` 'failed' (the read failed, or it took longer than
  * CATCH_UP_TIMEOUT_MS) is 「更新失敗」 with 重試, which starts the catch-up over.
  */

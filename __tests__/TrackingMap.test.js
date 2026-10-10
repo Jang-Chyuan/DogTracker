@@ -1145,3 +1145,27 @@ test('native press uses the route current at start but discards a later route ch
   delete mockCamera.coordinateForPoint;
   delete mockCamera.pointForCoordinate;
 });
+
+test.each(['background', 'owner'])('automatic recovery map-read memory is cleared on %s change', async change => {
+  const tracking = {
+    mode: 'real', point: trackingPoint, route: emptyLiveRoute(), ready: { real: true }, errors: {},
+    initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
+  };
+  const sync = { foreground: true, mapSuccessRevision: 0, lastDownloadAt: null,
+    catchUp: { phase: 'failed', since: 1000 } };
+  const dogs = { rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, cloudCommit: null };
+  const screen = (cloudOwner, cloudSync) => <MapScreen tracking={tracking} phone={{ enabled: false }}
+    cloudOwner={cloudOwner} cloudSync={cloudSync} cloudDogs={dogs} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  await act(async () => { renderer = Renderer.create(screen('a', sync)); });
+  const success = { ...sync, catchUp: { phase: 'idle', since: null }, mapSuccessRevision: 1,
+    lastDownloadAt: 61000, lastSuccess: 61001 };
+  await act(async () => renderer.update(screen('a', success)));
+  expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers[0].dimmed).toBe(true);
+  expect(JSON.stringify(renderer.toJSON())).toContain('正在更新狗的位置');
+  await act(async () => renderer.update(screen(change === 'owner' ? 'b' : 'a', {
+    ...success, foreground: change !== 'background',
+  })));
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up' })).toHaveLength(0);
+  expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(dog => !dog.dimmed)).toBe(true);
+});

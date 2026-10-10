@@ -140,7 +140,7 @@ test('the cloud walk finds each day with rows and the empty days between, newest
 test('H3c and its cancelled or failed ends', () => {
   const day = '2026-09-28';
   expect(downloadPanel({ day, status: 'downloading' }, { day, hasRows: false })).toEqual({ kind: 'downloading',
-    title: '下載 9/28 的紀錄…', detail: i18nT('c156'), action: i18nT('c046') });
+    title: '下載 9/28 的紀錄…', detail: i18nT('c1253'), action: i18nT('c046') });
   expect(downloadPanel({ day, status: 'failed' }, { day, hasRows: false })).toEqual({ kind: 'unfinished',
     text: i18nT('c321'), action: i18nT('c049') });
   expect(downloadPanel({ day, status: 'cancelled' }, { day, hasRows: true })).toEqual({ kind: 'incomplete',

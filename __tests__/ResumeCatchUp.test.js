@@ -36,6 +36,18 @@ test('only a resume catches up; finish hides the pill and background cancels the
   sync.close();
 });
 
+test('a completed return releases its old freeze clock before a later explicit cloud retry', () => {
+  let now = 1000;
+  const sync = createResumeCatchUp({ now: () => now });
+  sync.caughtUp(); sync.away();
+  now = 61000; sync.back();
+  expect(sync.state()).toEqual({ phase: 'catching-up', since: 1000 });
+  sync.caughtUp();
+  now = 3 * 3600000; sync.started(true);
+  expect(sync.state()).toEqual({ phase: 'catching-up', since: now });
+  sync.close();
+});
+
 test('the exact 20 second timeout and a read error fail; retry restarts; a later read clears it', () => {
   const onRetry = jest.fn();
   const sync = createResumeCatchUp({ onRetry });

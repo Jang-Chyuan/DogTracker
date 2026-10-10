@@ -1,3 +1,4 @@
+import { initializeHistoryCoverage, invalidateEvictedCoverage, coverageContainsTime, HISTORY_CONTEXT_BEFORE_MS } from './HistoryCoverage';
 import { t } from '../i18n';
 import { withConnectionLock } from '../database/connectionLock';
 
@@ -18,14 +19,18 @@ const rewrite = (kind, sql) => tables.reduce((query, [table]) =>
 
 // Reclaim only oldest history. The newest packet and newest usable fix of
 // every owner/dog remain available even when another dog fills the cache.
-function reclaimHistory(table, excess, staged) {
+function reclaimHistory(table, excess, staged, protectManual = false) {
   const time = alias => `CAST(COALESCE(${alias}.track_at,${alias}.received_at) AS INTEGER)`;
   const fix = alias => `${alias}.slave_lat IS NOT NULL AND ${alias}.slave_lon IS NOT NULL AND NOT (${alias}.slave_lat=0 AND ${alias}.slave_lon=0)`;
   const newer = fixed => `EXISTS (SELECT 1 FROM ${table} n WHERE n.owner_user_id IS old.owner_user_id
     AND n.slave_id IS old.slave_id ${fixed ? `AND ${fix('n')}` : ''}
     AND (${time('n')}>${time('old')} OR (${time('n')}=${time('old')} AND n.id>old.id)))`;
   return `DELETE FROM ${table} WHERE id IN (SELECT old.id FROM ${table} old
-    WHERE ${staged ? 'COALESCE(old.had_base,0)<>1 AND' : ''} ${newer(false)}
+    WHERE ${staged ? 'COALESCE(old.had_base,0)<>1 AND' : ''}
+    ${protectManual ? `NOT EXISTS (SELECT 1 FROM cloud_manual_history_download_state needed
+      WHERE needed.complete=1 AND needed.owner=old.owner_user_id AND needed.slave_id=old.slave_id
+      AND (${coverageContainsTime(time('old'), 'needed')}
+        OR old.received_at>=needed.range_start-${HISTORY_CONTEXT_BEFORE_MS} AND old.received_at<needed.received_before)) AND` : ''} ${newer(false)}
     AND (NOT (${fix('old')}) OR ${newer(true)})
     ORDER BY old.received_at,old.id LIMIT MAX(0,${excess}))`;
 }
@@ -47,11 +52,12 @@ export function createStagedCloudDatabase(connection, options, createCore) {
     executeAsync: (query, params) => connection.executeAsync(rewrite(kind, query), params),
     executeBatchAsync: async commands => {
       // Retain the newest staged history within unused cache space plus the reserve.
-      const writes = commands.filter(command => !/^DELETE FROM supabase_dog_status WHERE id IN/.test(command.query));
+      const writes = commands.filter(command => !/^DELETE FROM supabase_dog_status WHERE id IN/.test(command.query)
+        && !/^UPDATE history_download_state SET complete=0 WHERE complete=1 AND EXISTS/.test(command.query));
       const stageUsed = kinds.map(value => `(SELECT COUNT(*) FROM ${tableName(value, 'supabase_dog_status')})`).join('+');
       const used = `(SELECT COUNT(*) FROM supabase_dog_status)+${stageUsed}`;
       const reclaim = [kind, ...kinds.filter(value => value !== kind)].map(value => ({
-        query: reclaimHistory(tableName(value, 'supabase_dog_status'), `(${used})-${cap + reserveRows}`, true), params: [],
+        query: value === 'manual' ? 'SELECT 1' : reclaimHistory(tableName(value, 'supabase_dog_status'), `(${used})-${cap + reserveRows}`, true), params: [],
       }));
       try {
         await connection.executeBatchAsync([
@@ -76,9 +82,12 @@ export function createStagedCloudDatabase(connection, options, createCore) {
   const initialize = () => {
     if (state.ready) return state.ready;
     state.ready = published.initialize().then(() => withConnectionLock(connection, async () => {
-      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      await initializeHistoryCoverage(connection);
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_download_jobs (owner TEXT, kind TEXT, scope TEXT, PRIMARY KEY(owner,kind))');
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_stage_quota (used INTEGER,budget INTEGER,CHECK(used<=budget))');
+      await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_archive_publication (
+        owner TEXT PRIMARY KEY, cutoff INTEGER NOT NULL CHECK(cutoff>=0),
+        revision INTEGER NOT NULL CHECK(revision>0))`);
       state.columns = Object.fromEntries(await Promise.all(tables.map(async ([table]) => [table,
         rows(await connection.executeAsync(`PRAGMA table_info(${table})`)).map(column => column.name)])));
       for (const kind of kinds) for (const [table] of tables) {
@@ -92,6 +101,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           else continue;
           await connection.executeAsync(sql);
         }
+        if (table === 'history_download_state') await initializeHistoryCoverage(connection, tableName(kind, table));
         if (table === 'supabase_dog_status') {
           const found = new Set(rows(await connection.executeAsync(`PRAGMA table_info(${tableName(kind, table)})`)).map(column => column.name));
           for (const name of ['had_base', ...baseFields.map(value => `base_${value}`)])
@@ -143,9 +153,27 @@ export function createStagedCloudDatabase(connection, options, createCore) {
     async beginManualScope(owner, slave, day) {
       await result.beginDownload(owner, 'manual', `${slave}:${day}`);
     },
-    async publishDownload(owner, kind = kindOf(owner)) {
+    async readArchivePublication(owner) {
+      if (!owner) throw new Error(t('c572'));
+      await initialize();
+      return withConnectionLock(connection, async () => {
+        const value = rows(await connection.executeAsync(
+          'SELECT cutoff,revision FROM cloud_archive_publication WHERE owner=?', [owner]))[0];
+        if (!value) return null;
+        const cutoff = Number(value.cutoff), revision = Number(value.revision);
+        if (!Number.isSafeInteger(cutoff) || cutoff < 0 || !Number.isSafeInteger(revision) || revision < 1)
+          throw new Error(t('c588'));
+        return { owner, cutoff, revision };
+      });
+    },
+    async publishDownload(owner, kind = kindOf(owner), archiveCutoff = null, isCurrent = () => true) {
+      // Only a completed automatic target supplies this proof. Legacy calls,
+      // selected history windows and latest-position snapshots cannot infer it.
+      if (kind === 'auto' && archiveCutoff != null
+        && (!Number.isSafeInteger(archiveCutoff) || archiveCutoff < 0)) throw new Error(t('c588'));
       await initialize();
       await withConnectionLock(connection, async () => {
+        if (!isCurrent()) throw new Error(t('c576'));
         if (!await job(owner, kind)) return;
         const telemetry = tableName(kind, 'supabase_dog_status');
         const fields = names('supabase_dog_status');
@@ -158,6 +186,15 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         // captured base. A later completed manual job must win over stale auto.
         const baseMatches = baseFields.map(name => `d.base_${name} IS supabase_dog_status.${name}`).join(' AND ');
         const match = `d.owner_user_id=supabase_dog_status.owner_user_id AND d.event_id=supabase_dog_status.event_id AND d.had_base=1 AND ${baseMatches}`;
+        // Apply the same COW identity check as the metadata write. An old
+        // repair that lost its base cannot invalidate newer completed proof.
+        const oldTime = 'CAST(COALESCE(p.track_at,p.received_at) AS INTEGER)';
+        const newTime = 'CAST(COALESCE(d.track_at,d.received_at) AS INTEGER)';
+        commands.push({ query: `UPDATE history_download_state SET complete=0 WHERE complete=1 AND EXISTS (
+          SELECT 1 FROM ${telemetry} d JOIN supabase_dog_status p ON d.owner_user_id=p.owner_user_id AND d.event_id=p.event_id
+          WHERE d.owner_user_id=? AND d.had_base=1 AND ${baseFields.map(name => `d.base_${name} IS p.${name}`).join(' AND ')}
+          AND ${oldTime}<>${newTime} AND p.owner_user_id=history_download_state.owner AND p.slave_id=history_download_state.slave_id
+          AND (${coverageContainsTime(oldTime, 'history_download_state')} OR ${coverageContainsTime(newTime, 'history_download_state')}))`, params: [owner] });
         // Move bounded chunks inside one transaction. Clear each delta chunk
         // before the next insert, rather than duplicate a whole first download.
         for (let start = 0; start < count; start += 1000) {
@@ -171,12 +208,30 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           const namesList = names(table).join(',');
           commands.push({ query: `INSERT OR REPLACE INTO ${table} (${namesList}) SELECT ${namesList} FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         }
-        commands.push({ query: reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, false), params: [] });
+        const eviction = reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, false, kind === 'manual');
+        commands.push({ query: invalidateEvictedCoverage(eviction), params: [] });
+        if (kind === 'manual') {
+          // A completed manual scope may not lose its own rows to the cap and
+          // still publish a complete marker. Roll back instead of showing part.
+          commands.push({ query: `INSERT INTO cloud_stage_quota(used,budget)
+            SELECT 1,0 WHERE EXISTS (SELECT 1 FROM cloud_manual_history_download_state d
+              JOIN history_download_state p ON d.owner=p.owner AND d.slave_id=p.slave_id AND d.day=p.day
+              WHERE d.owner=? AND d.complete=1 AND p.complete=0)`, params: [owner] });
+        }
+        commands.push({ query: eviction, params: [] });
         commands.push({ query: 'INSERT INTO cloud_stage_quota(used,budget) SELECT COUNT(*),? FROM supabase_dog_status', params: [cap] });
         commands.push({ query: 'DELETE FROM cloud_stage_quota', params: [] });
         for (const [table, ownerColumn] of tables) commands.push({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         commands.push({ query: 'DELETE FROM cloud_download_jobs WHERE owner=? AND kind=?', params: [owner, kind] });
+        if (kind === 'auto' && archiveCutoff != null) commands.push({
+          query: `INSERT OR REPLACE INTO cloud_archive_publication(owner,cutoff,revision)
+            VALUES(?,?,COALESCE((SELECT revision FROM cloud_archive_publication WHERE owner=?),0)+1)`,
+          params: [owner, archiveCutoff, owner],
+        });
         try {
+          // Generation may change while waiting for this connection or reads.
+          // Once sent, the native transaction itself remains atomic.
+          if (!isCurrent()) throw new Error(t('c576'));
           await connection.executeBatchAsync(commands);
         } catch (error) {
           if (String(error.message).includes('used<=budget')) throw new Error(t("c622"));
