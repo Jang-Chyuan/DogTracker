@@ -103,7 +103,7 @@ test('H3c: a day only the cloud holds downloads (取消 shown), then the day app
   expect(s.has('history-calendar')).toBe(false);
   expect(s.text()).toContain('9/28（一）');
   expect(s.text()).toContain('下載 9/28 的紀錄…');
-  expect(s.text()).toContain(i18nT('c156'));
+  expect(s.text()).toContain(i18nT('c1253'));
   expect(s.has('history-skeleton')).toBe(true);
   const exportButton = s.renderer.root.findAll(n => n.props.testID === 'history-export' && n.props.accessibilityLabel)[0];
   expect(exportButton.props.accessibilityLabel).toBe(i18nT("c832"));
@@ -123,6 +123,7 @@ test('H3c 取消 / 返回鍵: the download stops, 這天的紀錄還沒下載完
   expect(used).toBe(true);
   await settle(0);
   expect(s.text()).toContain(i18nT('c321'));
+  expect(s.text()).not.toContain(i18nT('c424'));
   expect(s.text()).not.toContain('這天沒有小黑的紀錄');
   expect(s.screen.dayKey).toBe('2026-09-28');
   await s.press('history-download-retry');
@@ -130,6 +131,7 @@ test('H3c 取消 / 返回鍵: the download stops, 這天的紀錄還沒下載完
   await s.press('history-download-cancel');
   await settle(0);
   expect(s.text()).toContain(i18nT('c321'));
+  expect(s.text()).not.toContain(i18nT('c424'));
   await act(async () => s.renderer.unmount());
 });
 

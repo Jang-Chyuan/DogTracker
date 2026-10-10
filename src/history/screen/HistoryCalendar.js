@@ -297,7 +297,7 @@ export function downloadPanel(download, { day, hasRows, incomplete = false }) {
   if ((!download || download.day !== day) && incomplete) download = { day, status: 'failed' };
   if (!download || download.day !== day || download.status === 'done') return null;
   if (download.status === 'downloading') {
-    return { kind: 'downloading', title: t('c155', { date: shortDate(day) }), detail: t('c156'),
+    return { kind: 'downloading', title: t('c155', { date: shortDate(day) }), detail: t('c1253'),
       action: t('c046') };
   }
   // Cancelled or failed: what this phone holds, marked as incomplete; with

@@ -214,7 +214,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
   );
 }
 
-/** H3c: 「下載 9/28 的紀錄…」「只有雲端有，正在下載」 and 取消, where the summary goes. */
+/** H3c: 「下載 9/28 的紀錄…」「正在補齊紀錄，完成後顯示路線」 and 取消, where the summary goes. */
 function DownloadSummary({ panel, onCancel }) {
   const styles = useStyles(getStyles);
   return (
@@ -561,7 +561,7 @@ ref) {
           disabled={!rangeOpen}
           accessible={false}
         >
-          {!model && !downloading && !screen.error && <Text style={styles.empty}>{t('c424')}</Text>}
+          {!model && !downloading && !screen.error && download?.kind !== 'unfinished' && <Text style={styles.empty}>{t('c424')}</Text>}
           <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
             shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
             {body}
