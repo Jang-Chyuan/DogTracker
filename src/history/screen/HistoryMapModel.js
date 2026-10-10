@@ -256,6 +256,22 @@ export function placeMarkers(locations) {
     }));
 }
 
+// Cursor changes must not restart native projection of every stay. Snapshot
+// every input node, including hidden ones: in-place replay can make one visible.
+const markerProjections = new WeakMap();
+const markerFields = ['type', 'start', 'end', 'number', 'durationMs', 'latitude', 'longitude'];
+const emptyLocations = [];
+function stablePlaceMarkers(locations) {
+  const cached = markerProjections.get(locations);
+  if (cached && cached.snapshot.length === locations.length
+    && locations.every((node, i) => markerFields.every((key, j) =>
+      Object.is(node[key], cached.snapshot[i][j])))) return cached.places;
+  const places = placeMarkers(locations).filter(place => place.kind === 'indoor' || place.number != null);
+  markerProjections.set(locations, { places,
+    snapshot: locations.map(node => markerFields.map(key => node[key])) });
+  return places;
+}
+
 // Metres between two coordinates (equirectangular: the history is a few km).
 const metresApart = (a, b) =>
   Math.hypot(
@@ -294,9 +310,7 @@ export function historyMapPresentation(
   const dayPoints = model.dayPoints || points;
   // The list numbers stays and switch points (the same node objects); a
   // switch the list dropped has no number and is not drawn.
-  const places = placeMarkers(model.locations || []).filter(
-    place => place.kind === 'indoor' || place.number != null,
-  );
+  const places = stablePlaceMarkers(model.locations || emptyLocations);
   const allIndoor = points.length > 0 && points.every(p => p.heldReason);
   const cursorTime = cursor?.point?.time ?? Infinity;
   const first = points[0],

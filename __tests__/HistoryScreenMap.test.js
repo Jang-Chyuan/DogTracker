@@ -275,3 +275,52 @@ test('grid longitude bounds use touch latitude even when the first fix is far so
       nearestRouteSpot(points, coordinate, points[200].time, { grid: false }));
   }
 });
+
+
+test('places cache checks all visible fields and hidden nodes, array order and membership', () => {
+  const stop = { type: 'stop', start: 1, end: 2, number: 1, durationMs: 1, latitude: 24.98, longitude: 121.31 };
+  const hidden = { ...stop, number: null, latitude: NaN };
+  const locations = [stop, hidden];
+  const model = { locations, points: [], edges: [] };
+  const present = () => historyMapPresentation(model, { color: colors.phone }).places;
+  let previous = present();
+  expect(present()).toBe(previous);
+  expect(historyMapPresentation(model, { color: colors.phone, cursor: { point: {time: 3} } }).places).toBe(previous);
+  for (const [field, value] of Object.entries({type: 'switch', start: 3, end: 4, number: 2, durationMs: 8, latitude: 24.99, longitude: 121.32})) {
+    stop[field] = value;
+    const next = present();
+    expect(next).not.toBe(previous);
+    expect(next[0]).toEqual(expect.objectContaining({ type: stop.type, start: stop.start, end: stop.end,
+      number: stop.number, durationMs: stop.durationMs, coordinate: { latitude: stop.latitude, longitude: stop.longitude } }));
+    previous = next;
+    expect(present()).toBe(previous);
+  }
+  hidden.latitude = 24.97; hidden.number = 3;
+  expect(present()).toHaveLength(2);
+  previous = present(); locations.reverse();
+  expect(present()).not.toBe(previous);
+  expect(present().map(p => p.number)).toEqual([3, 2]);
+  previous = present(); locations.pop();
+  expect(present()).not.toBe(previous);
+  previous = present(); locations.push(stop);
+  expect(present()).not.toBe(previous);
+  previous = present(); model.locations = locations.slice();
+  expect(present()).not.toBe(previous);
+});
+
+
+test('another day or range owns its markers even when stops overlap', () => {
+  const first = { type: 'stop', start: 1, end: 2, number: 1, latitude: 24.98, longitude: 121.31 };
+  const second = { ...first, start: 4, end: 5, number: 2 };
+  const day = { points: [], edges: [], locations: [first, second] };
+  const present = model => historyMapPresentation(model, { color: colors.phone }).places;
+  const all = present(day);
+  const range = { ...day, locations: [second] };
+  expect(present(range)).not.toBe(all);
+  expect(present(range).map(p => p.number)).toEqual([2]);
+  const nextDay = { ...day, locations: [{ ...first, start: 86400001, end: 86400002 }] };
+  expect(present(nextDay)[0].start).toBe(86400001);
+  expect(present(day)).toBe(all);
+  first.type = 'indoor'; first.number = null;
+  expect(present(day)[0]).toMatchObject({ kind: 'indoor', number: null });
+});
