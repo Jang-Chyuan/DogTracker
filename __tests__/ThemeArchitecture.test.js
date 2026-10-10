@@ -24,7 +24,7 @@ test('UI has no hard-coded colours or static colour imports; only Google imports
     ...files(path.join(root, 'src')),
     path.join(root, 'App.js'),
   ]) {
-    const relative = path.relative(root, file);
+    const relative = path.relative(root, file).split(path.sep).join('/');
     if (relative.startsWith('src/theme/')) continue;
     const ast = parser.parse(fs.readFileSync(file, 'utf8'), {
       sourceType: 'module',
@@ -202,7 +202,7 @@ test('components use tokens for style dimensions, typography and touch extension
     ...files(path.join(root, 'src')),
     path.join(root, 'App.js'),
   ]) {
-    const relative = path.relative(root, file);
+    const relative = path.relative(root, file).split(path.sep).join('/');
     if (/^src\/(theme|dev)\//.test(relative)) continue;
     problems.push(
       ...styleLiteralProblems(fs.readFileSync(file, 'utf8'), relative),

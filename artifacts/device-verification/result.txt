@@ -1,0 +1,9 @@
+﻿Android device verification — 2026-10-03 Asia/Taipei
+Device: Samsung SM-A326BR, serial RFCRC1B3W0H, arm64-v8a.
+Built release APK with Hermes and installed using adb install -r; existing application data retained.
+Observed real downloaded telemetry updating during verification.
+Latest details list: Hermes indoor (100%, later 99%); Bear unknown; Nana expired; slave 104 unknown; slave 108 expired.
+Map marker detail panel: slave 104 showed current environment unknown and updated position time.
+Filtered app-process ReactNativeJS/AndroidRuntime log showed startup and no errors in the inspected window.
+Evidence: list.png, details.png, list-bottom.png and accompanying UI XML.
+Scope: device execution, telemetry flow, per-slave labels and expired data were verified. Classification accuracy and indoor/outdoor transition behavior require physically moving collars through known environments; those were not verified.

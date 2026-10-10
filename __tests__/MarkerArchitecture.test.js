@@ -24,7 +24,7 @@ const MARKER_NAMES = new Set(['Marker', 'StyledMarker', 'GoogleMarker']);
 test('every map marker element draws a view of its own; only StyledMarker uses the SDK marker', () => {
   const problems = [];
   for (const file of files(path.join(root, 'src'))) {
-    const relative = path.relative(root, file);
+    const relative = path.relative(root, file).split(path.sep).join('/');
     const ast = parser.parse(fs.readFileSync(file, 'utf8'), {
       sourceType: 'module',
       plugins: ['jsx'],

@@ -50,6 +50,7 @@ import {
   uncrowded,
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
+import SeparatedDogMarkers from './SeparatedDogMarkers';
 import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
@@ -638,6 +639,7 @@ function GoogleTrackingMapRenderer({
   // { source, points }: points from another source (a fixture or data
   // source switch moves every dog) are never used for this one.
   const [dogPoints, setDogPoints] = useState({ source: null, points: {} });
+  const [displayDogPoints, setDisplayDogPoints] = useState(null);
   // The last read places and the re-reads made while they still change.
   const lastRead = useRef(null);
   const settleReads = useRef(0);
@@ -1009,6 +1011,8 @@ function GoogleTrackingMapRenderer({
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !historyMode;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
+  const displayKey = `${source}:${pointsKey}`;
+  const markerScreenPoints = displayDogPoints?.key === displayKey ? displayDogPoints.points : screenPoints;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const overlayTop = Math.max(topInset, coverTop || 0);
   const hints = useMemo(
@@ -1338,8 +1342,8 @@ function GoogleTrackingMapRenderer({
     // a tap on a dog's face opens that dog.
     const position = event?.nativeEvent?.position;
     const scale = PixelRatio.get?.() || 1;
-    const hit = position && screenPoints
-      ? dogAtPoint(dogMarkers, screenPoints, { x: position.x / scale, y: position.y / scale })
+    const hit = position && markerScreenPoints
+      ? dogAtPoint(dogMarkers, markerScreenPoints, { x: position.x / scale, y: position.y / scale })
       : null;
     if (hit != null) {
       pressDog(hit);
@@ -1614,14 +1618,26 @@ function GoogleTrackingMapRenderer({
               ))}
             </React.Fragment>
           ))}
-          {dogMarkers.map(marker => (
-            <DogMarker
-              key={source + '-dog-' + marker.slaveId}
+          <SeparatedDogMarkers mapRef={mapRef} revision={cursorRevision}
+            width={cursorLayout.width} height={cursorLayout.height} ready={usable && foreground}
+            MarkerComponent={StyledMarker} CircleComponent={Circle} PolylineComponent={Polyline}
+            top={overlayTop} bottom={overlayBottom}
+            identityKey={displayKey} onPlacement={setDisplayDogPoints}
+            items={dogMarkers.map(marker => ({
+              id: source + '-dog-' + marker.slaveId, coordinate: marker.coordinate, marker,
+              size: marker.size,
+              label: marker.tag || marker.name, color: colors.dog,
+              onPress: onDogPress ? () => pressDog(marker.slaveId) : undefined,
+            }))}
+            renderMarker={(item, coordinate, separated) => {
+              const marker = item.marker;
+              return (<DogMarker
+              key={item.id}
               source={source}
-              marker={marker}
-              tag={tags[marker.slaveId]}
+              marker={{ ...marker, coordinate }}
+              tag={separated ? null : tags[marker.slaveId]}
               avatar={presentation.dogAvatars?.[marker.slaveId]}
-              shownKey={shownKey}
+              shownKey={shownKey + (separated ? 1 : 0)}
               // Above the phone's dot (30), whose name tag layer they carry:
               // the open dog on top, then problems, then the dog carrying a
               // group tag over the faces it covers.
@@ -1632,13 +1648,14 @@ function GoogleTrackingMapRenderer({
                     (tags[marker.slaveId]?.group > 1 ? 2 : 0)
               }
               label={
-                tags[marker.slaveId]?.group > 1
+                !separated && tags[marker.slaveId]?.group > 1
                   ? groupSpeech(tags[marker.slaveId], dogMarkers, marker.slaveId)
                   : undefined
               }
               onPress={onDogPress ? () => pressDog(marker.slaveId) : undefined}
-            />
-          ))}
+            />);
+            }}
+          />
         </MapView>
       ) : component ? (
         // 地圖打不開: grey only; the top card says so (no list, no new page).
@@ -1697,7 +1714,7 @@ function GoogleTrackingMapRenderer({
         )}
         {live && usable && foreground && !movingState && onDogPress && (
           <MarkerA11yLayer
-            items={markerA11yItems(dogMarkers, screenPoints, {
+            items={markerA11yItems(dogMarkers, markerScreenPoints, {
               width: cursorLayout.width,
               height: cursorLayout.height,
               // Every dog its own TalkBack item, also inside a 「N 隻」 tag:
