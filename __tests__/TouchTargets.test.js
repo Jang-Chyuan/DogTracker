@@ -111,6 +111,17 @@ const hasText = jsx =>
     (child.type === 'JSXExpressionContainer' && child.expression.type === 'JSXElement' && hasText({ children: [child.expression] })),
   );
 
+// Pressable can style its visible child through the children render function,
+// while keeping the larger touch target transparent. Ignore the parameter
+// declaration: an unused `pressed` parameter is not visual feedback.
+function hasPressedChild(element, source) {
+  return element.children?.some(child => {
+    const fn = child.type === 'JSXExpressionContainer' && child.expression;
+    if (!['ArrowFunctionExpression', 'FunctionExpression'].includes(fn?.type)) return false;
+    return /\bpressed\b/.test(source.slice(fn.body.start, fn.body.end));
+  });
+}
+
 function audit() {
   const problems = [];
   let count = 0;
@@ -150,7 +161,8 @@ function audit() {
         const feedback =
           name === 'PressScale' ||
           attrs.android_ripple ||
-          /\bpressed\b/.test(styleSource);
+          /\bpressed\b/.test(styleSource) ||
+          hasPressedChild(p.node, source);
         if (!feedback) problems.push(`${where} <${name}> no pressed state`);
         if (EXCEPTIONS.has(`${relative}:${component}`)) return;
         const used = [...styleSource.matchAll(/\b[a-zA-Z_]\w*\.(\w+)/g)].map(m => m[1]).filter(key => entries[key]);
@@ -191,6 +203,17 @@ function audit() {
   }
   return { problems, count };
 }
+
+test('child render feedback requires using pressed in the visible child', () => {
+  for (const [source, expected] of [
+    ['<Pressable>{({ pressed }) => <View style={pressed && styles.highlight} />}</Pressable>', true],
+    ['<Pressable>{({ pressed }) => <View style={styles.disc} />}</Pressable>', false],
+    ['<Pressable><View style={styles.disc} /></Pressable>', false],
+  ]) {
+    const ast = parser.parseExpression(source, { plugins: ['jsx'] });
+    expect(hasPressedChild(ast, source)).toBe(expected);
+  }
+});
 
 test('every tappable element has a role, a label, a pressed state and a 48dp target', () => {
   const { problems, count } = audit();
