@@ -1,6 +1,7 @@
 import { initializeHistoryCoverage, invalidateEvictedCoverage } from './HistoryCoverage';
 import { t } from '../i18n';
 import { createStagedCloudDatabase } from './CloudStaging';
+import { createLatestSnapshotDatabase } from './CloudLatestSnapshot';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withConnectionLock } from '../database/connectionLock';
 import { cloudTrackTime } from './CloudTrackTime';
@@ -59,7 +60,7 @@ export function latestCloudStatusQuery(validFix) {
 
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
-export const CLOUD_DATABASE_METHODS = ['initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
+export const CLOUD_DATABASE_METHODS = ['readLatestSnapshot', 'publishLatestSnapshot', 'initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
   'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
@@ -68,7 +69,8 @@ const initialization = new WeakMap();
 
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
-  return createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
+  const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
+  return { ...database, ...createLatestSnapshotDatabase(connection, database.initialize) };
 }
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
