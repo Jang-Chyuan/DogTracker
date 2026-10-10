@@ -3,6 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { PanResponder, PixelRatio, ScrollView, StyleSheet } from 'react-native';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { buildFixture } from '../src/dev/ScreenFixtures';
+import { space, touch } from '../src/theme/tokens';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 
 jest.mock('react-native-safe-area-context', () => ({
@@ -49,6 +50,11 @@ test('short landscape keeps a fixed half panel and side-by-side full-scale date 
     expect(scroll.findAllByProps({ testID: 'history-summary' })).toHaveLength(0);
     expect(scroll.findAllByProps({ testID: 'timeline-end' })).not.toHaveLength(0);
     expect(one(tree, 'history-range-floating')).toBeUndefined();
+    // Compact mode spends fewer empty pixels, keeping system-scaled text and touch areas.
+    expect(StyleSheet.flatten(one(tree, 'history-summary').props.style).paddingVertical).toBe(space.xs);
+    const previous = one(tree, 'history-day-previous');
+    const previousStyle = StyleSheet.flatten(previous.props.style);
+    expect(previousStyle).toMatchObject({ width: touch.min, height: touch.min });
   } finally { await act(async () => tree.unmount()); }
 });
 
@@ -80,6 +86,7 @@ test.each([{ width: 393, height: 851 }, { width: 1024, height: 768 }, { width: 5
     expect(one(tree, 'history-header-columns')).toBeUndefined();
     expect(one(tree, 'history-range-floating')).toBeUndefined();
     expect(one(tree, 'history-panel-header').findAllByProps({ testID: 'history-range-bar' })).not.toHaveLength(0);
+    expect(StyleSheet.flatten(one(tree, 'history-summary').props.style).paddingVertical).toBe(space.s);
   } finally { await act(async () => tree.unmount()); }
 });
 

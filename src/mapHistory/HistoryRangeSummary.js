@@ -438,7 +438,8 @@ const getStyles = makeStyles(theme => {
       borderWidth: border.regular,
       borderColor: 'transparent',
     },
-    boxCompact: { marginHorizontal: space.xs },
+    // Preserve scaled lines and touch sizes; spend less of the half panel on empty space.
+    boxCompact: { marginHorizontal: space.xs, paddingVertical: space.xs },
     boxOpen: { borderColor: colors.accent, backgroundColor: colors.elevated },
     summary: { flexDirection: 'row', alignItems: 'center', gap: space.s, minHeight: touch.min },
     texts: { flex: 1 },
