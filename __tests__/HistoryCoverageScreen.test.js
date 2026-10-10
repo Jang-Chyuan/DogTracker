@@ -5,6 +5,8 @@ import { buildFixture } from '../src/dev/ScreenFixtures';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import { dayBounds, dayKey } from '../src/history/screen/HistoryScreenDates';
 import { historyCoverage } from '../src/cloud/HistoryCoverage';
+import { t } from '../src/i18n';
+import { SKELETON_TIMING } from '../src/components/Skeleton';
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 function fixtureHarness(cloud, scope = 'coverage-screen') {
@@ -12,13 +14,92 @@ function fixtureHarness(cloud, scope = 'coverage-screen') {
   let screen;
   const clock = () => fixture.now;
   const read = jest.fn(fixture.history.readDay);
-  const Probe = ({ owner = 'owner-a', active = true, publicationRevision = 0 }) => {
+  const Probe = ({ owner = 'owner-a', active = true, publicationRevision = 0, renderUI = false }) => {
     screen = useHistoryScreen({ target: historyTargetOf(fixture.history.preferences), owner,
       cloud, read, readDays: fixture.history.readDays, clock, active, publicationRevision, memoryScope: scope });
-    return null;
+    return renderUI ? <HistoryScreen screen={screen} top={24} bottomInset={0} name="QA" /> : null;
   };
   return { fixture, read, Probe, get screen() { return screen; } };
 }
+test.each(['cancel', 'failure'])('legacy local rows without proof: UI %s, failed retry, then completed retry stay exclusive', async terminal => {
+  jest.useFakeTimers();
+  const first = deferred(), second = deferred(), third = deferred();
+  let durable = [];
+  const cloud = { owner: 'owner-a', coverageRequired: true, downloadStates: async () => durable,
+    download: jest.fn().mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise).mockImplementationOnce(() => third.promise) };
+  const state = fixtureHarness(cloud, `coverage-ui-legacy-${terminal}`);
+  let renderer;
+  const text = () => JSON.stringify(renderer.toJSON());
+  const has = id => renderer.root.findAll(node => node.props.testID === id).length > 0;
+  const exportDisabled = () => renderer.root.findAll(node => node.props.testID === 'history-export'
+    && node.props.accessibilityState)[0].props.accessibilityState.disabled;
+  const press = async id => {
+    const node = renderer.root.findAll(n => n.props.testID === id && typeof n.props.onPress === 'function')[0];
+    if (!node) throw new Error(`missing UI action: ${id}`);
+    await act(async () => node.props.onPress());
+  };
+  const incomplete = () => {
+    expect(state.screen.dayModel).toBeNull();
+    expect(state.screen.map).toBeNull();
+    expect(has('history-unfinished')).toBe(true);
+    expect(has('history-skeleton')).toBe(false);
+    expect(has('history-empty')).toBe(false);
+    expect(exportDisabled()).toBe(true);
+    expect(text()).toContain(t('c321'));
+    expect(text()).not.toContain(t('c424'));
+    expect(text()).not.toContain(t('c1253'));
+  };
+  try {
+    await act(async () => { renderer = Renderer.create(<state.Probe renderUI />); });
+    await act(async () => jest.advanceTimersByTimeAsync(SKELETON_TIMING.delay));
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    // The production hook has really read retained local records, not an empty
+    // fixture or an injected prebuilt model. Their missing proof closes the UI.
+    const returned = await Promise.all(state.read.mock.results.map(result => result.value));
+    expect(returned.some(result => result.rows.length > 0)).toBe(true);
+    expect(state.screen.dayModel).toBeNull();
+    expect(has('history-skeleton')).toBe(true);
+    expect(exportDisabled()).toBe(true);
+    expect(text()).toContain(t('c1253'));
+    expect(text()).not.toContain('只有雲端有，正在下載');
+    if (terminal === 'cancel') {
+      await press('history-download-cancel');
+      incomplete();
+      expect(cloud.download.mock.calls[0][0].signal.aborted).toBe(true);
+    }
+    await act(async () => first.reject(new Error('download stopped')));
+    incomplete();
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    await press('history-download-retry');
+    await act(async () => jest.advanceTimersByTimeAsync(SKELETON_TIMING.delay));
+    expect(cloud.download).toHaveBeenCalledTimes(2);
+    expect(has('history-skeleton')).toBe(true);
+    expect(has('history-unfinished')).toBe(false);
+    expect(exportDisabled()).toBe(true);
+    expect(text()).toContain(t('c1253'));
+    await act(async () => second.reject(new Error('retry failed')));
+    incomplete();
+    expect(cloud.download).toHaveBeenCalledTimes(2);
+    await press('history-download-retry');
+    const request = cloud.download.mock.calls[2][0];
+    durable = [{ slave_id: request.slaveId, day: state.screen.dayKey, complete: 1,
+      ...historyCoverage(request.dayStart, request.dayEnd, request.cutoff) }];
+    await act(async () => third.resolve(0));
+    expect(cloud.download).toHaveBeenCalledTimes(3);
+    expect(state.screen.model.dayRecords).toBe(true);
+    expect(state.screen.map).not.toBeNull();
+    expect(has('history-skeleton')).toBe(false);
+    expect(has('history-unfinished')).toBe(false);
+    expect(exportDisabled()).toBe(false);
+    expect(text()).not.toContain(t('c424'));
+    expect(text()).not.toContain(t('c321'));
+    expect(text()).not.toContain(t('c1253'));
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    jest.useRealTimers();
+  }
+});
 test.each(['failure', 'cancel'])('partial local day auto-ensures, and %s exposes no route or export model', async terminal => {
   const job = deferred();
   const cloud = { owner: 'owner-a', coverageRequired: true, downloadStates: async () => [], download: jest.fn(() => job.promise) };
