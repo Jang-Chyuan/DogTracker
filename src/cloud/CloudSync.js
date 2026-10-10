@@ -163,7 +163,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     // Synchronous read fence: React may coalesce busy/idle updates. Failed or
     // aborted writes remain pending until a complete automatic pass succeeds.
     mapPublication() {
-      return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending,
+      return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending || state.publishedPending,
         busy: state.busy, mapSuccessRevision: state.mapSuccessRevision,
         publishedRevision: state.publishedRevision, publishedPending: state.publishedPending };
     },
@@ -172,13 +172,15 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       if (owner === next) return;
       cancelBackgroundSync();
       owner = next;
-      publishedOperation = null;
+      // The old owner's already-started native transaction cannot be cancelled.
+      // Keep its physical publication fence closed for the replacement owner
+      // until finally settles; global retention may affect another owner's rows.
       sweptAt = 0;
       resetResume();
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
-        offline: false, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: false, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
+        offline: false, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: !!publishedOperation, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
       wake();
     },
     setForeground(active) {

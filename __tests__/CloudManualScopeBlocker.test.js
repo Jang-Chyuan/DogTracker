@@ -140,3 +140,23 @@ test('publication fence changes before commit, after commit and across later man
     expect(notifications.some(state => state.publishedPending && state.publishedRevision === 3)).toBe(true);
   } finally { await sync.dispose(); jest.useRealTimers(); }
 });
+
+test('owner replacement keeps published reads fenced until an already-started native publication settles', async () => {
+  jest.useFakeTimers();
+  let finish, began;
+  const entered = new Promise(resolve => { began = resolve; });
+  const sync = createCloudSync({ client: {}, database: {} });
+  sync.setSession({ user: { id: owner } }); sync.setForeground(true);
+  try {
+    const manual = sync.runManual(async (_lease, publishScoped) => publishScoped(() => {
+      began(); return new Promise(resolve => { finish = resolve; });
+    })).catch(() => {});
+    await entered;
+    sync.setSession({ user: { id: 'another-anonymous-owner' } });
+    expect(sync.mapPublication()).toMatchObject({ owner: 'another-anonymous-owner', publishedPending: true });
+    finish();
+    await manual;
+    expect(sync.mapPublication()).toMatchObject({ owner: 'another-anonymous-owner', publishedPending: false });
+    expect(sync.mapPublication().publishedRevision).toBeGreaterThan(0);
+  } finally { finish?.(); await sync.dispose().catch(() => {}); jest.useRealTimers(); }
+});

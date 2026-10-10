@@ -296,3 +296,20 @@ test('published read proof closes on owner replacement and falls back to strict 
   value = { owner: 'owner-a', pending: true, mapSuccessRevision: 0 };
   expect(capturePageRead(getPublication, 'owner-a', true).open).toBe(false);
 });
+
+test('published activity reads survive auto-only attempt and success changes without waiting for another publication', async () => {
+  let renderer, state;
+  const ledger = { scope: {}, generation: 1, attempt: 0, owner: 'owner-a', pending: false,
+    mapSuccessRevision: 1, publishedRevision: 2, publishedPending: false };
+  const getPublication = () => ledger;
+  const readEarliest = async () => { ledger.attempt++; ledger.pending = true; return day; };
+  const read = async () => { ledger.mapSuccessRevision++; ledger.pending = false;
+    return { local: [], cloud: [{ time: day + MINUTE, activity: 0.4, activity_valid: 1, slave_id: 6 }] }; };
+  function Probe() { state = useActivityView({ read, readEarliest, slaveId: 6, mode: 'day', date: day, now,
+    owner: 'owner-a', getPublication, publishedReads: true }); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(state.status).toBe('ready');
+    expect(state.view).not.toBeNull();
+  } finally { if (renderer) await act(async () => renderer.unmount()); }
+});
