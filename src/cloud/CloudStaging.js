@@ -208,7 +208,25 @@ export function createStagedCloudDatabase(connection, options, createCore) {
     async pendingTrackTimes(owner) {
       if (!await hasJob(owner)) return published.pendingTrackTimes(owner);
       await initialize();
-      return read(kindOf(owner), 'supabase_dog_status', 'event_id', 'owner_user_id=? AND track_time_version IS NULL AND event_id IS NOT NULL ORDER BY received_at DESC LIMIT 200', [owner]);
+      const delta = tableName(kindOf(owner), 'supabase_dog_status');
+      // Either branch needs at most its newest 200 candidates to contribute
+      // to the global newest 200. Filter published shadows before that limit:
+      // a completed staged repair must not leave an old pending row visible.
+      // Branch ordering lets the existing track-repair indexes seek directly
+      // instead of sorting an account-wide overlay on every repair pass.
+      return rows(await connection.executeAsync(`SELECT event_id FROM (
+        SELECT event_id,received_at FROM (
+          SELECT event_id,received_at FROM ${delta}
+          WHERE owner_user_id=? AND track_time_version IS NULL AND event_id IS NOT NULL
+          ORDER BY received_at DESC LIMIT 200)
+        UNION ALL
+        SELECT event_id,received_at FROM (
+          SELECT p.event_id,p.received_at FROM supabase_dog_status p
+          WHERE p.owner_user_id=? AND p.track_time_version IS NULL AND p.event_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM ${delta} d
+            WHERE d.owner_user_id=p.owner_user_id AND d.event_id=p.event_id)
+          ORDER BY p.received_at DESC LIMIT 200)
+        ) ORDER BY received_at DESC LIMIT 200`, [owner, owner]));
     },
     async repairTrackTimes(owner, changes, requested) {
       if (!await hasJob(owner)) return published.repairTrackTimes(owner, changes, requested);
