@@ -245,7 +245,7 @@ function usePhotoMarker(avatar, ref) {
 // One dog on the live map. The marker view is not tracked for changes (that
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
-function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownKey = 0 }) {
+function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownKey = 0, compact = false }) {
   const { isDark, opacity } = useTheme();
   // The launch screen's handover draws a copy of each dog over the map while
   // it flies and pops them in; the real marker shows once they are in place.
@@ -253,8 +253,9 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownK
   const ref = useRef(null);
   const photo = usePhotoMarker(avatar, ref);
   const settled = useSettledMarker(ref);
-  const frame = markerFrame(marker.size);
+  const frame = markerFrame(marker.size, compact);
   const look = [
+    compact,
     marker.size,
     marker.problem,
     marker.stale,
@@ -297,6 +298,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownK
       >
         <DogMarkerView
           marker={marker}
+          compact={compact}
           tag={tag}
           avatar={avatar}
           onAvatarLoad={photo.onLoad}
@@ -1477,10 +1479,14 @@ function GoogleTrackingMapRenderer({
     onDogPress?.(slaveId);
   };
   const pressMapLive = event => {
+    const at = Date.now();
+    // Native marker identity wins over the duplicate map event, even when
+    // selecting the dog has already changed its projected display positions.
+    if (at - lastDogPress.current < 2 * MAP_TAP_HOLD_MS) return;
     // Google can report a tap on a dog as a tap on the map (a card open):
     // a tap on a dog's face opens that dog.
     const position = event?.nativeEvent?.position;
-    const scale = PixelRatio.get?.() || 1;
+    const scale = Platform.OS === 'android' ? PixelRatio.get?.() || 1 : 1;
     const hit = position && markerScreenPoints
       ? dogAtPoint(dogMarkers, markerScreenPoints, { x: position.x / scale, y: position.y / scale })
       : null;
@@ -1488,10 +1494,6 @@ function GoogleTrackingMapRenderer({
       pressDog(hit);
       return;
     }
-    const at = Date.now();
-    // A dog tap just before it (the marker reported first): this map tap
-    // belongs to it.
-    if (at - lastDogPress.current < 2 * MAP_TAP_HOLD_MS) return;
     clearTimeout(mapPressTimer.current);
     // A dog tap after it (the map reported first) cancels it.
     mapPressTimer.current = setTimeout(() => {
@@ -1781,6 +1783,7 @@ function GoogleTrackingMapRenderer({
               key={item.id}
               source={source}
               marker={{ ...marker, coordinate }}
+              compact={separated}
               tag={separated ? null : tags[marker.slaveId]}
               avatar={presentation.dogAvatars?.[marker.slaveId]}
               shownKey={shownKey + (separated ? 1 : 0)}
