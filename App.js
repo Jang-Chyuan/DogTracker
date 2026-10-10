@@ -89,6 +89,7 @@ import { historyTargetOf } from './src/mapHistory/useHistoryScreen';
 import { useDogAvatars } from './src/dogs/useDogAvatars';
 import { useHistoryCloudSource } from './src/mapHistory/HistoryCloud';
 import { useCloudSync } from './src/cloud/useCloudSync';
+import { completedMapRevision } from './src/cloud/CloudPublication';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
 import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
@@ -427,6 +428,9 @@ function TrackerApp({ resume = null, onRestart }) {
     {
       active: tracking.foreground && !fixture,
       revision: cloudSync.revision,
+      cloudBusy: cloudSync.busy || cloudSync.catchUp?.phase === 'catching-up',
+      cloudSuccess: completedMapRevision(cloudSync),
+      getMapPublication: cloudSync.getMapPublication,
     },
   );
   const fixtureEdits = useFixtureEdits(fixture);

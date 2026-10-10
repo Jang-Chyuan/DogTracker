@@ -14,7 +14,7 @@ export const CARD_READ_MS = 30000;
  * @param now the map clock
  * @returns {{ loaded: boolean, activity, battery }}
  */
-export function useDogCardReadings(read, slaveId, now) {
+export function useDogCardReadings(read, slaveId, now, revision = 0) {
   const [state, setState] = useState({ read: null, slaveId: null, rows: null });
   // Read back from the map clock (a screen fixture's clock is fixed).
   const clock = useRef(now);
@@ -37,7 +37,7 @@ export function useDogCardReadings(read, slaveId, now) {
     }
     poll();
     return () => { alive = false; clearTimeout(timer); };
-  }, [read, slaveId]);
+  }, [read, slaveId, revision]);
   // Another dog's, account's or fixture's rows are never shown for this one.
   const rows = state.slaveId === slaveId && state.read === read ? state.rows : null;
   // The minute buckets follow the clock (the running minute joins once it

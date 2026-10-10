@@ -1601,6 +1601,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       route: emptyLiveRoute(),
     },
     cloudDogs: {
+      // Fixtures are complete DB reads of their fixed successful snapshot.
+      cloudCommit: cloud?.lastSuccess ?? null,
       rows: cloud?.ownerId ? newestBy(cloudRows, recentFix).map(row => ({ ...row, source: 'cloud' })) : [],
       packets: cloud?.ownerId ? packets : packets.filter(row => row.source === 'ble'),
       track: [],

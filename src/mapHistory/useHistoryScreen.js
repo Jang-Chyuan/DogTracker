@@ -46,6 +46,8 @@ import {
   usableSnapshot,
 } from '../history/screen/HistoryScreenState';
 
+import { capturePageRead } from '../cloud/CloudPagePublication';
+
 import { haptic } from '../utils/haptics';
 
 // 多隻狗（2–4 隻）.
@@ -71,6 +73,9 @@ export function useHistoryDayRows({
   clock,
   scope = '',
   revision = 0,
+  getPublication = null,
+  publicationRevision = 0,
+  publishedReads = false,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -85,8 +90,11 @@ export function useHistoryDayRows({
   // `revision`: read the day again from the start (a download ended).
   const key =
     subject && day != null
-      ? JSON.stringify([subject, slaveId, day, owner, scope, revision])
+      ? JSON.stringify([subject, slaveId, day, owner, scope])
       : null;
+  // Phone rows are local: publishing dog telemetry must not cancel their
+  // in-flight read or restart the full-day cursor. Explicit reloads still do.
+  const readerPublicationRevision = subject === 'phone' ? 0 : publicationRevision;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
     let alive = true,
@@ -111,6 +119,8 @@ export function useHistoryDayRows({
     };
     const dayEnd = endOfDay(day);
     async function poll() {
+      const fence = capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads);
+      if (!fence.open) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
       try {
         const at = now.current();
         const today = at >= day && at < dayEnd;
@@ -123,6 +133,7 @@ export function useHistoryDayRows({
           after: cache.after,
         });
         if (!alive) return;
+        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
         const added = answer.rows?.length || 0;
@@ -150,6 +161,7 @@ export function useHistoryDayRows({
         timer = setTimeout(poll, today ? HISTORY_POLL_MS : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
+        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
         setResult(current => ({
           ...(current.key === key ? current : { rows: [], version: 0, replayHolds: null }),
           key,
@@ -164,7 +176,7 @@ export function useHistoryDayRows({
       clearTimeout(timer);
     };
     // key stands for subject, slaveId, day and owner.
-  }, [active, read, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, read, key, revision, getPublication, readerPublicationRevision, publishedReads]); // eslint-disable-line react-hooks/exhaustive-deps
   const current =
     result.key === key
       ? result
@@ -223,6 +235,7 @@ export function useHistoryScreen({
   memoryScope = '',
   preset = null,
   cloud = null,
+  publicationRevision = 0,
   online = true,
   cloudSeed = null,
   aliases = null,
@@ -339,6 +352,9 @@ export function useHistoryScreen({
     clock,
     scope: memoryScope,
     revision: readRevision,
+    publicationRevision,
+    getPublication: cloud?.getPublication ?? null,
+    publishedReads: !!cloud?.publishedReads,
     slaveId: subject === 'dog' ? slotOf(index)?.id ?? null : null,
     active: active && !!subject && !!slotOf(index),
   });
@@ -658,7 +674,7 @@ export function useHistoryScreen({
   );
   const { startDownload, cancelDownload, downloadingDay } = cloudDays;
   const reread = useCallback(() => setReadRevision(value => value + 1), []);
-  /** 取消 (and 返回鍵) while downloading: what arrived is shown, marked incomplete. */
+  /** Cancel retains the last complete rows and marks the window incomplete. */
   const cancel = useCallback(() => {
     if (!cancelDownload()) return false;
     reread();

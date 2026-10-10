@@ -128,6 +128,11 @@ export const opacity = {
   routeAfterCursor: 0.2,
   // The protagonist's face glow among several dogs (H7), in its route colour.
   faceGlow: 0.28,
+  // 070「正在更新狗的位置」: the dogs' faces while a return to the app catches
+  // the map up. They keep the colours the user left them with (nothing turns
+  // grey on data the reader has not read yet) and are dimmed this far instead,
+  // so it is visible that what is drawn is not the final answer.
+  catchingUp: 0.5,
 };
 
 // Text styles. Key text is at least 16sp and nothing is below 13sp, except the
@@ -286,6 +291,10 @@ export const size = {
   floatingButton: 48,
   chip: { height: 36, paddingH: 12, avatar: 20, leadBorder: border.strong },
   todayPill: { height: 48, paddingH: 16, iconGap: 6 },
+  // 070 the top-centre pill while a return to the app catches the map up:
+  // 36dp high while updating, 48dp (touch.min) once it carries 重試; the
+  // shimmer band that sweeps across it is this wide.
+  catchUpPill: { height: 36, paddingH: 12, gap: 8, shimmer: 64 },
   groupTag: { height: 32, paddingH: 8, problemDot: 8, dotGap: 6, safety: 8 },
   edgeHint: {
     height: 36,
@@ -810,6 +819,8 @@ export const motion = {
   rangeExpand: { duration: 220 },
   rangeCollapse: { duration: 180 },
   cursorJump: { duration: 220 },
+  // 070: one sweep of the shimmer across 正在更新狗的位置.
+  catchUpSweep: { duration: 1200 },
   camera: { duration: 300 },
   // 減少動態效果: a slide becomes this fade (the launch's own reduced fade too).
   reducedFade: { duration: 200 },

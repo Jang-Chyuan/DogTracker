@@ -50,7 +50,7 @@ async function oneTime(query, signal, ms) {
  * `client` the Supabase client, `database` the cloud database (savePage),
  * `owner` the account, `runManual(work, abort)` the sync's slot.
  */
-export function createHistoryCloud({ client, database, owner, runManual, questionMs = CLOUD_QUESTION_MS }) {
+export function createHistoryCloud({ client, database, owner, runManual, getPublication = null, questionMs = CLOUD_QUESTION_MS }) {
   // One dog, or the dogs shown together (H7: a day of any of them has a dot).
   const rows = slaveId => {
     const query = client.from('dog_telemetry').select('received_at');
@@ -61,6 +61,8 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
   let previous = Promise.resolve();
   return {
     owner,
+    getPublication,
+    publishedReads: typeof database.publishManualScope === 'function',
     downloadStates: ({ slaveId }) => database.historyDownloadStates?.(owner, slaveId) ?? Promise.resolve([]),
     /** The time of the dog's newest row in [since, cutoff), or null. */
     newestBefore({ slaveId, cutoff, since, signal }) {
@@ -80,22 +82,34 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
         await database.initialize();
         const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
         const day = dayKey(new Date(dayStart));
-        for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
         const abort = new AbortController();
         if (signal?.aborted) abort.abort();
         signal?.addEventListener?.('abort', () => abort.abort());
         // By upload time (received_at): rows shown on this day by their fix
         // time can arrive a little before it and up to a while after it.
-        const work = async leaseCurrent => {
+        const work = async (leaseCurrent, publishScoped) => {
           let count = 0, failure = null;
+          const markIncomplete = async () => {
+            for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
+          };
+          if (publishScoped) await publishScoped(markIncomplete);
+          else await markIncomplete();
           for (const id of ids) {
             if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
             try {
+              await database.beginManualScope?.(owner, id, day);
+              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               count += await downloadCloudHistory({ client, database, owner,
                 startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId: id,
                 signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               await database.setHistoryDownloadState?.(owner, id, day, true);
+              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
+              if (database.publishManualScope) {
+                const commit = () => database.publishManualScope(owner, id, day);
+                if (publishScoped) await publishScoped(commit);
+                else await commit();
+              }
               onDogEnd?.(id, 'done');
             } catch (error) {
               onDogEnd?.(id, abort.signal.aborted ? 'cancelled' : 'failed');
@@ -127,6 +141,7 @@ export function useHistoryCloudSource({ database, sync, owner, clientFactory = g
     let client;
     try { client = clientFactory(); } catch { return null; }
     return createHistoryCloud({ client, database, owner,
+      getPublication: () => syncRef.current?.getMapPublication?.() ?? null,
       runManual: (work, abort) => syncRef.current.runManual(work, abort) });
   }, [owner, database, clientFactory]);
   return { cloud, online: !sync?.offline };

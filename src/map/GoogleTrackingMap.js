@@ -231,7 +231,7 @@ function usePhotoMarker(avatar, ref) {
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
 function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownKey = 0 }) {
-  const { isDark } = useTheme();
+  const { isDark, opacity } = useTheme();
   // The launch screen's handover draws a copy of each dog over the map while
   // it flies and pops them in; the real marker shows once they are in place.
   const handover = useSplashMarkersHidden();
@@ -266,7 +266,9 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownK
       coordinate={marker.coordinate}
       anchor={frame.anchor}
       tracksViewChanges={photo.tracking || settled.tracking}
-      opacity={handover ? 0 : 1}
+      // 070: dimmed, in its own colours, while a return to the app catches
+      // the map up (the SDK's own opacity: no new bitmap, no redraw).
+      opacity={handover ? 0 : marker.dimmed ? opacity.catchingUp : 1}
       zIndex={zIndex}
       // No title or description: those draw the SDK's own bubble, and a tap
       // already opens the dog. The label below is what TalkBack reads.

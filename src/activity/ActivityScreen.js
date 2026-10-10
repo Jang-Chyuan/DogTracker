@@ -75,6 +75,10 @@ export default function ActivityScreen({
   readEarliest,
   now,
   active = true,
+  owner = null,
+  getPublication = null,
+  revision = 0,
+  publishedReads = false,
   initialView = null,
   onBack,
 }) {
@@ -92,6 +96,7 @@ export default function ActivityScreen({
     date,
     now,
     active,
+    owner, getPublication, revision, publishedReads,
   });
   // Until the answer the arrows keep the last navigation they had.
   const [navigation, setNavigation] = useState(null);
@@ -148,7 +153,7 @@ export default function ActivityScreen({
         />
         <LoadingContent loading={status === 'loading'} shape={mode === 'day' ? 'chart' : 'bars'} skeletonTestID="activity-loading">
           {status === 'error' && <Failure onRetry={retry} />}
-          {status === 'ready' && view && <ActivityBody view={view} />}
+          {view && <ActivityBody view={view} />}
         </LoadingContent>
       </ScrollView>
     </View>

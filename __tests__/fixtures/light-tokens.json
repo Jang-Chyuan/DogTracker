@@ -101,7 +101,8 @@
     "routeUpcoming": 0.3,
     "routeBeforeCursor": 0.5,
     "routeAfterCursor": 0.2,
-    "faceGlow": 0.28
+    "faceGlow": 0.28,
+    "catchingUp": 0.5
   },
   "shadow": {
     "floating": {

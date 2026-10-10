@@ -105,6 +105,8 @@ export async function runBackgroundCloudSync({ runId, owner }, {
       await check();
       const masters = await listCloudMasters(client, owner, abort.signal, check);
       const cutoff = now();
+      await database.beginDownload?.(owner);
+      await check();
       for (const masterId of masters) {
         await downloadMasterIncremental({ client, database, owner, masterId, cutoff,
           signal: abort.signal, check, maxPages: 4 });

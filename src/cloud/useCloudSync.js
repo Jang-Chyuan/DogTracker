@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, NativeModules } from 'react-native';
 import { getCloudClient } from './CloudClient';
 import { createCloudSync } from './CloudSync';
@@ -13,12 +13,13 @@ import { createCloudSync } from './CloudSync';
 export function useCloudSync(database, ready, clientFactory = getCloudClient, onAuthFailure = null,
   isDiscarded = null) {
   const engine = useRef(null);
+  const getMapPublication = useCallback(() => engine.current?.mapPublication() ?? null, []);
   const authFailure = useRef(onAuthFailure);
   authFailure.current = onAuthFailure;
   const discarded = useRef(isDiscarded);
   discarded.current = isDiscarded;
   const [ownerId, setOwnerId] = useState(null);
-  const [status, setStatus] = useState({ busy: false, error: '', revision: 0 });
+  const [status, setStatus] = useState({ busy: false, error: '', revision: 0, publishedRevision: 0, publishedPending: false });
   useEffect(() => {
     if (!ready) return undefined;
     let client;
@@ -70,6 +71,6 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
       sync.dispose()?.catch(() => {});
     };
   }, [database, ready, clientFactory]);
-  return { ...status, ownerId, retry: () => engine.current?.retry(), runManual: (work, abort) => engine.current
+  return { ...status, ownerId, getMapPublication, retry: () => engine.current?.retry(), runManual: (work, abort) => engine.current
     ? engine.current.runManual(work, abort) : Promise.reject(new Error(t("c599"))) };
 }

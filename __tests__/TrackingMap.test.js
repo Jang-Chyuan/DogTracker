@@ -965,3 +965,27 @@ test('history framing does not expand a real route beyond the tiny-span threshol
     historyFramePadding(camera, null, { top: space.l, right: space.xl, bottom: size.stopMarker.size / 2 + space.s, left: space.xl }),
     { width: 400 - 2 * layout.floatingGap, height: 312 }), 300);
 });
+
+test('resume pill and dog dimming are wired through the live map and clear on finish', async () => {
+  const away = trackingPoint.receivedAt + 60000;
+  jest.setSystemTime(away + 20 * 60000);
+  const tracking = {
+    mode: 'real', point: trackingPoint, route: emptyLiveRoute(), ready: { real: true }, errors: {},
+    positionSamples: [], initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
+    saveTrackingPreferences: jest.fn(), catchUp: { phase: 'catching-up', since: away },
+  };
+  const screen = value => <MapScreen tracking={value} phone={{ enabled: false }} bottomInset={80}
+    mapProvider={GOOGLE_MAP_PROVIDER} />;
+  await act(async () => { renderer = Renderer.create(screen(tracking)); });
+  const map = () => renderer.root.findByType(TrackingMap);
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up' }).length).toBeGreaterThan(0);
+  expect(map().props.presentation.dogMarkers[0]).toMatchObject({ stale: false, dimmed: true });
+  const nativeDog = () => renderer.root.findAllByType(Marker)
+    .find(node => node.props.identifier === 'real-dog-7');
+  expect(nativeDog().props.opacity).toBe(opacity.catchingUp);
+  await act(async () => renderer.update(screen({ ...tracking, catchUp: { phase: 'idle', since: null } })));
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up' })).toHaveLength(0);
+  expect(map().props.presentation.dogMarkers[0]).toMatchObject({ stale: true, dimmed: false });
+  expect(nativeDog().props.opacity).toBe(1);
+});

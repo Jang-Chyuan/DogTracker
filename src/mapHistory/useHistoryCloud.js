@@ -52,7 +52,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     downloading.current = null;
     lastAsk.current = null;
     setDownload(null);
-  }, [scope]);
+  }, [scope, cloud]);
   // Paused (the app in the background, another screen): the question stops;
   // back in front, the last one is asked again (the calendar may be open).
   const again = useRef(null);

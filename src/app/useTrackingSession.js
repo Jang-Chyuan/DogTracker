@@ -18,6 +18,7 @@ import {
   createTrackingSourceState,
   trackingSourceReducer,
 } from '../tracking/TrackingSourceState';
+import { CATCH_UP_IDLE, createResumeCatchUp } from '../tracking/ResumeCatchUp';
 
 function isForeground(state) {
   return state === 'active' || state === 'unknown' || state == null;
@@ -63,6 +64,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   const [foreground, setForeground] = useState(() =>
     isForeground(AppState.currentState),
   );
+  // 070: 正在更新狗的位置 while a return to the app catches the feed up.
+  const [catchUp, setCatchUp] = useState(CATCH_UP_IDLE);
 
   useEffect(() => {
     let disposed = false;
@@ -78,6 +81,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     setErrors({ real: null });
     setRealWriteError(null);
     setNativeWriteError(null);
+    setCatchUp(CATCH_UP_IDLE);
     // The shared owner covers full remounts as well as replays of this effect.
     const lifecycle = databaseSessions.open(() => {
       if (disposed) return;
@@ -103,13 +107,27 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           logger.error(`${source} SQLite:`, error);
         }
       };
+      // 重試 restarts the feed: stop() drops the callbacks of the read that
+      // failed, so its late answer cannot end the new attempt.
+      const resumeCatchUp = createResumeCatchUp({
+        onChange: state => {
+          if (!disposed) setCatchUp(state);
+        },
+        onRetry: () => {
+          feeds.real.stop();
+          resumeFeed();
+        },
+      });
+      let liveReadCaughtUp = false;
       const createFeed = (source, repository) =>
         createTrackingFeed(repository, {
           includeHistory: true,
           onRefreshing() {
+            liveReadCaughtUp = false;
             if (!disposed) dispatchTracking({ type: 'refreshing', source });
           },
           onCaughtUp() {
+            liveReadCaughtUp = true;
             if (!disposed) dispatchTracking({ type: 'caught-up', source });
           },
           onLatest(point) {
@@ -147,6 +165,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
               });
           },
           onSuccess() {
+            if (liveReadCaughtUp) resumeCatchUp.caughtUp();
             reportedReadErrors[source] = null;
             if (!disposed) {
               setErrors(current =>
@@ -156,7 +175,10 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
               );
             }
           },
-          onError: error => reportError(source, error),
+          onError: error => {
+            resumeCatchUp.failed();
+            reportError(source, error);
+          },
         });
       const repositories = {
         real: createRealTrackingRepository(databases.real),
@@ -200,10 +222,19 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           .catch(error => reportError(source, error));
       }
       const subscription = AppState.addEventListener('change', state => {
+        const wasActive = active;
         active = isForeground(state);
         if (!disposed) setForeground(active);
-        if (active) resumeFeed();
-        else {
+        if (active) {
+          if (!wasActive) resumeCatchUp.back();
+          resumeFeed();
+        } else {
+          if (wasActive) {
+            // A poll that finished before the app went away must not end the
+            // next catch-up: only a read after the return counts.
+            liveReadCaughtUp = false;
+            resumeCatchUp.away();
+          }
           if (!disposed) {
             dispatchTracking({ type: 'refreshing', source: 'real' });
           }
@@ -264,6 +295,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         saveTrackingPreferences: trackingPreferences.save,
         retryTrackingPreferences: trackingPreferences.load,
         resetTrackingPreferences: trackingPreferences.reset,
+        retryCatchUp: resumeCatchUp.retry,
         saveRealStatus(status, payload) {
           const task = initialization.real
             .then(() => databases.real.saveStatus(status, payload))
@@ -284,6 +316,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
 
       return () => {
         subscription.remove();
+        resumeCatchUp.close();
         // Never close the shared connection while an owned query/write is pending.
         return Promise.allSettled([
           initialization.real,
@@ -328,6 +361,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       controlsRef.current?.saveTrackingPreferences(patch),
     retryTrackingPreferences: () =>
       controlsRef.current?.retryTrackingPreferences(),
+    catchUp,
+    retryCatchUp: () => controlsRef.current?.retryCatchUp(),
     resetTrackingPreferences: () =>
       controlsRef.current?.resetTrackingPreferences(),
     ready: {

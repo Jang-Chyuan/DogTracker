@@ -1,4 +1,14 @@
 import { createCloudSync } from '../src/cloud/CloudSync';
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { useCloudDogs } from '../src/cloud/useCloudDogs';
+import { completedMapRevision } from '../src/cloud/CloudPublication';
+import MapScreen from '../src/screens/MapScreen';
+import TrackingMap from '../src/map/TrackingMap';
+import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
+import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
+import { emptyLiveRoute } from '../src/tracking/LiveRouteWindow';
+import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 import { createCloudSecureStorage } from '../src/cloud/CloudSecureStorage';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
@@ -230,4 +240,249 @@ test('cloud dogs\' clock: when the last download started, and since when downloa
   engine.setSession(account('b'));
   expect(changed.mock.calls.find(([state]) => state.owner === 'b')[0])
     .toMatchObject({ lastDownloadAt: null, failingSince: null });
+});
+
+test('resumed cloud download stays visible after local work finishes, then clears on actual success', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setForeground(false);
+  let finish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  finish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  // Normal 30s polling does not become a resume indicator.
+  changed.mockClear(); await jest.advanceTimersByTimeAsync(30000);
+  expect(changed.mock.calls.every(([value]) => value.catchUp.phase === 'idle')).toBe(true);
+});
+
+test('slow resumed cloud work stays updating past 20s and clears only on complete success', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  let finish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  engine.setForeground(true); await flush();
+  changed.mockClear();
+  await jest.advanceTimersByTimeAsync(60000);
+  expect(changed.mock.calls.some(([state]) => state.catchUp.phase === 'failed')).toBe(false);
+  finish(); await flush();
+  expect(changed.mock.calls.at(-1)[0]).toMatchObject({ busy: false, error: '', catchUp: { phase: 'idle' } });
+});
+
+test('cloud resume timeout retries a fresh generation and late old response cannot end it', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  let oldFinish, newFinish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { oldFinish = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { newFinish = resolve; }));
+  engine.setForeground(true); await flush();
+  await jest.advanceTimersByTimeAsync(21000);
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  await jest.advanceTimersByTimeAsync(99000);
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('failed');
+  engine.retry(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  oldFinish(); await flush();
+  expect(newFinish).toBeDefined();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  newFinish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('cloud failure exposes resume retry and leaving or changing account removes stale failure', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  database.initialize.mockRejectedValueOnce(new Error('Network request failed'));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('failed');
+  engine.setForeground(false);
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setSession(account('b'));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('a failed initial download still reports catch-up on the next foreground return', async () => {
+  const { database, changed } = fixture();
+  database.initialize.mockRejectedValueOnce(new Error('Network request failed'));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setForeground(false);
+  let finish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  finish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('backgrounding an unfinished initial download still shows the next return attempt', async () => {
+  const { database, changed } = fixture();
+  let oldFinish, currentFinish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { oldFinish = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { currentFinish = resolve; }));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  engine.setForeground(false); engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  oldFinish(); await flush();
+  expect(currentFinish).toBeDefined();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  currentFinish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('manual history work during resume cannot claim that the live cloud download is caught up', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  let oldFinish, liveFinish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { oldFinish = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { liveFinish = resolve; }));
+  engine.setForeground(true); await flush();
+  const manual = engine.runManual(async () => 'history window only');
+  oldFinish(); await flush(); await manual; await flush();
+  expect(liveFinish).toBeDefined();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  liveFinish(); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+});
+
+test('live map publication advances only on complete automatic work and resets on account switch', async () => {
+  const { changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(current().mapSuccessRevision).toBe(1);
+  await expect(engine.runManual(async () => { throw new Error('partial page failed'); })).rejects.toThrow('partial page failed');
+  expect(current().mapSuccessRevision).toBe(1);
+  await expect(engine.runManual(async () => 'complete window')).resolves.toBe('complete window');
+  expect(current().mapSuccessRevision).toBe(1);
+  let finish;
+  const late = engine.runManual(() => new Promise(resolve => { finish = resolve; }));
+  await Promise.resolve(); await Promise.resolve();
+  engine.setSession(account('b'));
+  expect(current().mapSuccessRevision).toBe(0);
+  finish('obsolete account'); await expect(late).rejects.toThrow('下載已取消');
+  expect(current().mapSuccessRevision).toBe(0);
+});
+
+test('automatic failure cannot publish a complete map generation; retry success can', async () => {
+  const { database, changed } = fixture();
+  database.initialize.mockRejectedValueOnce(new Error('download failed'));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0]).toMatchObject({ mapSuccessRevision: 0, error: 'download failed' });
+  engine.retry(); await flush();
+  expect(changed.mock.calls.at(-1)[0]).toMatchObject({ mapSuccessRevision: 1, error: '' });
+});
+
+
+test('manual window completion cannot publish canceled auto pages; the next complete auto updates the real Map', async () => {
+  const { database, changed } = fixture();
+  const latest = () => changed.mock.calls.at(-1)?.[0] ?? { busy: false, mapSuccessRevision: 0 };
+  let position = 25, state, renderer;
+  database.latestBySlave = jest.fn(async () => [{ slave_id: 8, master_id: 7,
+    received_at: NOW, slave_lat: position, slave_lon: 121 }]);
+  const clock = () => NOW;
+  const tracking = { mode: 'real', point: { ...trackingPoint, id: null, slaveId: null, slaveLat: null, slaveLon: null },
+    route: emptyLiveRoute(), positionSamples: [], ready: { real: true }, errors: {},
+    initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES } };
+  function Harness() {
+    const sync = latest();
+    state = useCloudDogs(database, 'a', true, clock, null, {
+      revision: sync.revision ?? 0,
+      cloudBusy: sync.busy || sync.catchUp?.phase === 'catching-up',
+      cloudSuccess: completedMapRevision(sync),
+      getMapPublication: engine.mapPublication,
+    });
+    return <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner="a" cloudDogs={state}
+      cloudSync={sync} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  }
+  const drawnLatitude = () => renderer.root.findByType(TrackingMap).props.presentation.dogMarkers
+    .find(dog => dog.slaveId === 8).coordinate.latitude;
+  try {
+    await act(async () => { renderer = Renderer.create(<Harness />); });
+    changed.mockImplementation(() => { renderer.update(<Harness />); });
+    await act(async () => { engine.setForeground(true); engine.setSession(account('a')); await flush(); });
+    expect(latest().mapSuccessRevision).toBe(1);
+    expect(drawnLatitude()).toBe(25);
+    let failPage;
+    database.savePage.mockImplementationOnce(() => new Promise((resolve, reject) => { failPage = reject; }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(30000); });
+    expect(latest()).toMatchObject({ busy: true, mode: 'auto', mapSuccessRevision: 1, catchUp: { phase: 'idle' } });
+    // Persist a partial page only after the busy render, before the failing
+    // continuation. The manual window is for another historical dog/day.
+    position = 26;
+    await act(async () => {
+      const manual = engine.runManual(async () => 'different history window complete');
+      failPage(new Error('cancelled automatic continuation'));
+      await expect(manual).resolves.toBe('different history window complete');
+    });
+    expect(latest()).toMatchObject({ busy: false, mapSuccessRevision: 1, catchUp: { phase: 'idle' } });
+    expect(state.cloudCommit).toBe(1);
+    expect(state.rows[0].slave_lat).toBe(25);
+    expect(drawnLatitude()).toBe(25);
+    await act(async () => { await flush(); }); // scheduled complete automatic pass
+    expect(latest().mapSuccessRevision).toBe(2);
+    expect(state.cloudCommit).toBe(2);
+    expect(drawnLatitude()).toBe(26);
+  } finally {
+    changed.mockImplementation(() => {});
+    await act(async () => { renderer?.unmount(); });
+  }
+});
+
+test.each(['error', 'abort'])('synchronous publication fence rejects %s pages when React skips every busy render', async failure => {
+  const { database, changed } = fixture();
+  const latest = () => changed.mock.calls.at(-1)?.[0] ?? { busy: false, mapSuccessRevision: 0 };
+  let position = 25, state, renderer;
+  database.latestBySlave = async () => [{ slave_id: 8, master_id: 7, received_at: NOW,
+    slave_lat: position, slave_lon: 121 }];
+  const clock = () => NOW;
+  const tracking = { mode: 'real', point: { ...trackingPoint, id: null, slaveId: null, slaveLat: null, slaveLon: null },
+    route: emptyLiveRoute(), positionSamples: [], ready: { real: true }, errors: {}, initialSnapshotReady: true,
+    foreground: true, preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES } };
+  const getMapPublication = () => engine.mapPublication?.();
+  function Harness() {
+    const sync = latest();
+    state = useCloudDogs(database, 'a', true, clock, null, {
+      revision: sync.revision ?? 0, cloudBusy: sync.busy,
+      cloudSuccess: completedMapRevision(sync), getMapPublication,
+    });
+    return <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner="a" cloudDogs={state}
+      cloudSync={{ ...sync, getMapPublication }} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  }
+  const latitude = () => renderer.root.findByType(TrackingMap).props.presentation.dogMarkers
+    .find(dog => dog.slaveId === 8).coordinate.latitude;
+  try {
+    await act(async () => { renderer = Renderer.create(<Harness />); });
+    changed.mockImplementation(() => { renderer.update(<Harness />); });
+    await act(async () => { engine.setForeground(true); engine.setSession(account('a')); await flush(); });
+    expect(latitude()).toBe(25);
+    // Coalesce all scheduler changes into one final render. The fence reads
+    // the actual engine while React never sees busy=true for this operation.
+    changed.mockImplementation(() => {});
+    if (failure === 'error') {
+      database.savePage.mockImplementationOnce(async () => { position = 26; throw new Error('partial page failed'); });
+      engine.retry(); await flush();
+    } else {
+      const abort = new AbortController();
+      await expect(engine.runManual(async () => {
+        position = 26; abort.abort(); throw new Error('cancelled download');
+      }, abort)).rejects.toThrow('cancelled download');
+    }
+    expect(latest().busy).toBe(false);
+    await act(async () => { renderer.update(<Harness />); });
+    if (failure === 'error') await act(async () => { await jest.advanceTimersByTimeAsync(10000); });
+    expect(state.rows[0].slave_lat).toBe(25);
+    expect(latitude()).toBe(25);
+  } finally {
+    changed.mockImplementation(() => {});
+    await act(async () => { renderer?.unmount(); });
+  }
 });

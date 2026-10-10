@@ -4,7 +4,7 @@ import { t } from '../i18n';
 // the off-screen dog hints (EdgeHints) and the bottom tip that says why a grey
 // button did nothing. Provider-neutral views: the renderer decides what they do.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -181,6 +181,84 @@ export function TodayPill({ value, onPress }) {
         {value.text}
       </Text>
     </PressScale>
+  );
+}
+
+/**
+ * 「正在更新狗的位置」 (070, A1 top centre): shown only while a return to the
+ * app catches the map up (ResumeCatchUp), never on a cold start or an
+ * ordinary load. A shimmer band sweeps across it; under 減少動態效果 the pill
+ * stands still. `phase` 'failed' (the read failed, or it took longer than
+ * CATCH_UP_TIMEOUT_MS) is 「更新失敗」 with 重試, which starts the catch-up over.
+ */
+export function CatchUpPill({ phase, top, onRetry }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  const reduced = useReduceMotion();
+  const sweep = useRef(new Animated.Value(0)).current;
+  const [width, setWidth] = useState(0);
+  const failed = phase === 'failed';
+  const shimmering = phase === 'catching-up' && !reduced && width > 0;
+  useEffect(() => {
+    if (!shimmering) return undefined;
+    sweep.setValue(0);
+    const run = Animated.loop(
+      Animated.timing(sweep, {
+        toValue: 1,
+        duration: motion.catchUpSweep.duration,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }),
+    );
+    run.start();
+    return () => run.stop();
+  }, [shimmering, sweep]);
+  if (phase !== 'catching-up' && !failed) return null;
+  const band = sizes.catchUpPill.shimmer;
+  return (
+    <View style={[styles.catchUp, { top }]} pointerEvents="box-none">
+      <View
+        testID="map-catch-up"
+        accessibilityLiveRegion="polite"
+        onLayout={event => setWidth(event.nativeEvent.layout.width)}
+        style={[styles.catchUpPill, failed && styles.catchUpFailed]}
+      >
+        {shimmering && (
+          <Animated.View
+            testID="map-catch-up-shimmer"
+            pointerEvents="none"
+            style={[
+              styles.shimmer,
+              {
+                width: band,
+                backgroundColor: colors.skeletonHighlight,
+                transform: [
+                  {
+                    translateX: sweep.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-band, width],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+        )}
+        <Text accessibilityLiveRegion="polite" style={styles.catchUpText} numberOfLines={linesFor(2)}>
+          {failed ? t('c1201') : t('c1200')}
+        </Text>
+        {failed && (
+          <PressScale
+            testID="map-catch-up-retry"
+            accessibilityRole="button"
+            onPress={onRetry}
+            style={styles.catchUpRetry}
+          >
+            <Text style={styles.catchUpRetryText}>{t('c049')}</Text>
+          </PressScale>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -398,6 +476,41 @@ const getStyles = makeStyles(theme => {
     pillText: { ...type.status, ...tabularNumbers, color: colors.text },
     pillMuted: { color: colors.textMuted },
     gear: { position: 'absolute', right: layout.screenEdge, overflow: 'visible' },
+    // 070 正在更新狗的位置: centred in the gear's band, between the columns the
+    // gear reserves on both sides, so no line of it runs under the gear.
+    catchUp: {
+      position: 'absolute',
+      left: layout.screenEdge + sizes.floatingButton + layout.floatingGap,
+      right: layout.screenEdge + sizes.floatingButton + layout.floatingGap,
+      minHeight: sizes.floatingButton,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    catchUpPill: {
+      minHeight: sizes.catchUpPill.height,
+      paddingHorizontal: sizes.catchUpPill.paddingH,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: sizes.catchUpPill.gap,
+      // The shimmer stays inside the capsule.
+      overflow: 'hidden',
+      ...shadow.floating,
+      ...theme.floatingBorder,
+    },
+    // With 重試 inside it the pill is as tall as the button (48dp).
+    catchUpFailed: { minHeight: touch.min, paddingRight: space.xs },
+    shimmer: { position: 'absolute', top: 0, bottom: 0 },
+    catchUpText: { ...type.value, color: colors.text, flexShrink: 1 },
+    catchUpRetry: {
+      minWidth: touch.min,
+      minHeight: touch.min,
+      paddingHorizontal: space.m,
+      borderRadius: radius.full,
+      justifyContent: 'center',
+    },
+    catchUpRetryText: { ...type.value, color: colors.tonalText },
     // Centre on the top-right rim of the 48dp circle; ring matches its surface.
     gearDot: {
       position: 'absolute',
