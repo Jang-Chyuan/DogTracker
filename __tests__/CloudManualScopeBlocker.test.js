@@ -4,6 +4,8 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createCloudSync } from '../src/cloud/CloudSync';
 import { createHistoryCloud } from '../src/mapHistory/HistoryCloud';
+import { captureActivityRead, capturePageRead } from '../src/cloud/CloudPagePublication';
+import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 
 const NOW = Date.parse('2026-10-09T12:00:00Z');
 const owner = 'anonymous-owner';
@@ -69,31 +71,38 @@ test('one completed manual dog stays visible when the next dog fails and auto ha
     await database.savePage(owner, [row('old', 6, NOW - 10000)]);
     await database.beginDownload(owner);
     await database.savePage(owner, [row('auto-partial', 8, NOW)]);
-    let calls = 0;
-    const client = { from: () => {
-      const query = { slave: null };
-      for (const method of ['select', 'gte', 'lt', 'order', 'limit', 'or']) query[method] = () => query;
-      query.eq = (key, value) => { if (key === 'slave_id') query.slave = value; return query; };
-      query.abortSignal = async () => {
-        if (query.slave === 10) throw new Error('second dog failed');
-        return { data: calls++ === 0 ? [{ event_id: '00000000-0000-4000-8000-000000000009',
-          received_at: new Date(NOW - 1000).toISOString(), master_id: 7, slave_id: 9,
-          payload: { slaveId: 9, lat: 24989200, lon: 121313200 } }] : [] };
-      };
-      return query;
-    } };
+    const { client, calls } = latestArchiveRest({ events: [cloudEvent(9, NOW - 1000, { slave: 9 })],
+      beforeRead: async call => {
+        if (call.phase === 'archive' && call.params.get('slave_id') === 'eq.10') throw new Error('second dog failed');
+      },
+    });
+    // Start from an already accepted live snapshot. Completing a historical
+    // dog must not replace it, expose partial auto rows, or prove all history.
+    await database.publishLatestSnapshot(owner, { cutoff: NOW - 5000, dogs: [{ slaveId: 6,
+      packet: row('live-only', 6, NOW - 5000), fix: row('live-only', 6, NOW - 5000) }] });
+    const snapshot = await database.readLatestSnapshot(owner);
     sync = createCloudSync({ database, client });
     sync.setForeground(true); sync.setSession({ user: { id: owner } });
     const ended = jest.fn();
     const history = createHistoryCloud({ client, database, owner, runManual: (...args) => sync.runManual(...args) });
     await expect(history.download({ slaveId: [9, 10], dayStart: NOW - 3600000, dayEnd: NOW, onDogEnd: ended }))
-      .rejects.toThrow('second dog failed');
+      .rejects.toMatchObject({ cause: { message: expect.stringContaining('second dog failed') } });
     expect(ended.mock.calls).toEqual([[9, 'done'], [10, 'failed']]);
     expect((await database.latestBySlave(owner, 0)).map(value => value.slave_id)).toEqual([6, 9]);
     expect(await database.historyDownloadStates(owner, [9, 10])).toEqual(expect.arrayContaining([
       expect.objectContaining({ slave_id: 9, complete: 1 }), expect.objectContaining({ slave_id: 10, complete: 0 }),
     ]));
-    expect(sync.mapPublication()).toMatchObject({ pending: true, mapSuccessRevision: 0 });
+    expect(calls.filter(call => call.phase === 'archive').map(call => call.params.get('slave_id'))).toEqual(['eq.9', 'eq.9', 'eq.10']);
+    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 0 });
+    expect(sync.historyPublication()).toMatchObject({ publishedPending: false, archiveCutoff: null, archiveRevision: 0 });
+    expect(capturePageRead(() => sync.historyPublication(), owner, true).open).toBe(true);
+    expect(captureActivityRead(() => sync.historyPublication(), owner, true).open).toBe(false);
+    expect(await database.readArchivePublication(owner)).toBeNull();
+    expect(await database.readLatestSnapshot(owner)).toEqual(snapshot);
+    const restarted = createCloudDatabase(connection);
+    expect((await restarted.latestBySlave(owner, 0)).map(value => value.slave_id)).toEqual([6, 9]);
+    expect(await restarted.readLatestSnapshot(owner)).toEqual(snapshot);
+    expect(await restarted.readArchivePublication(owner)).toBeNull();
   } finally { await sync?.dispose(); connection.close(); jest.useRealTimers(); }
 });
 
