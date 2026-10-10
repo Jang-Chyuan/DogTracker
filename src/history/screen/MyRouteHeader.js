@@ -1,9 +1,10 @@
 import { Text, View } from 'react-native';
 import { useStyles, makeStyles } from '../../theme/ThemeProvider';
-import { border, size, space, type, fontWeight } from '../../theme/tokens';
+import { border, size, space, type, fontWeight, radius } from '../../theme/tokens';
 import Glyph from '../../map/Glyph';
 import { useTheme } from '../../theme/ThemeProvider';
 import { t } from '../../i18n';
+import { withAlpha } from './HistoryMapModel';
 
 export default function MyRouteHeader() {
   const styles = useStyles(getStyles);
@@ -18,14 +19,14 @@ export default function MyRouteHeader() {
     </View>
   );
 }
-const getStyles = makeStyles(({ colors, settingIcon }) => ({
+const getStyles = makeStyles(({ colors, settingIcon, opacity }) => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.xs,
-    paddingHorizontal: size.chip.paddingH },
+    paddingHorizontal: size.chip.paddingH, paddingVertical: space.xs,
+    borderRadius: radius.full, backgroundColor: withAlpha(colors.surface, opacity.mapHeaderBacking) },
   avatar: { width: size.historyTop.phoneAvatar, height: size.historyTop.phoneAvatar,
     borderRadius: size.historyTop.phoneAvatar / 2, borderWidth: border.strong,
     borderColor: colors.phone, backgroundColor: settingIcon.phone.bg,
     alignItems: 'center', justifyContent: 'center' },
   label: { ...type.body, fontWeight: fontWeight.medium, color: colors.text,
-    textShadowColor: colors.mapLabelHalo, textShadowRadius: size.mapLabel.halo,
-    textShadowOffset: { width: 0, height: 0 }, flexShrink: 1 },
+    flexShrink: 1 },
 }));

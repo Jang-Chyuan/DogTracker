@@ -296,9 +296,18 @@ test('the original light palette is unchanged', () => {
   );
   const originalColors = { ...tokens.colors };
   delete originalColors.activityMissing;
+  const originalOpacity = { ...tokens.opacity };
+  delete originalOpacity.mapHeaderBacking;
   Object.entries(baseline).forEach(([group, value]) =>
-    expect(group === 'colors' ? originalColors : tokens[group]).toEqual(value),
+    expect(group === 'opacity' ? originalOpacity : group === 'colors' ? originalColors : tokens[group]).toEqual(value),
   );
+});
+
+test('map-header backing uses the same explicit alpha in both themes', () => {
+  expect(tokens.opacity.mapHeaderBacking).toBe(0.85);
+  expect(lightTheme.opacity.mapHeaderBacking).toBe(0.85);
+  expect(darkSpec.opacity.mapHeaderBacking).toBe(0.85);
+  expect(darkTheme.opacity.mapHeaderBacking).toBe(0.85);
 });
 
 describe('dark text and graphic contrast', () => {

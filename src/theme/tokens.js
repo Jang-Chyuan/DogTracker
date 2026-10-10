@@ -117,6 +117,7 @@ export const settingIcon = {
 };
 
 export const opacity = {
+  mapHeaderBacking: 0.85,
   disabled: 0.4,
   rangeRingStroke: 0.55,
   rangeRingFill: 0.06,
