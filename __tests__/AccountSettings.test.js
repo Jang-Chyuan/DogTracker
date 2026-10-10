@@ -133,6 +133,16 @@ test('upload-switch-offline: it cannot switch without a network (c256)', () => {
 
 // ---- the model ----------------------------------------------------------------
 
+test('an active initial retry says downloading instead of a stale failure; later polling keeps the last success', () => {
+  const data = { account: { signedIn: true }, sync: { busy: true, mode: 'auto', lastSuccess: null,
+    failingSince: FIXTURE_NOW - MINUTE, offline: true } };
+  expect(accountPage(data).download).toMatchObject({ right: i18nT('c319'), problem: false, success: false, retry: false });
+  expect(accountPage({ ...data, sync: { ...data.sync, busy: false } }).download)
+    .toMatchObject({ problem: true, retry: true });
+  expect(accountPage({ ...data, sync: { ...data.sync, failingSince: null, lastSuccess: FIXTURE_NOW - MINUTE } }).download)
+    .toMatchObject({ right: formatClock(FIXTURE_NOW - MINUTE), problem: false, success: true, retry: false });
+});
+
 test('download before the first pass says 下載中…; switching back to Wi-Fi needs no network when nothing waits', () => {
   const page = accountPage({ account: { signedIn: true, email: 'a@b' }, sync: { ownerId: 'a' },
     upload: { supported: true, settingsReady: true, masters: [], settings: [{ master_id: 5, mode: 'phone' }],

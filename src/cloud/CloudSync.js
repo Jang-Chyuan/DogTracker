@@ -29,6 +29,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let controller = null;
   let manualPending = false;
   let sweptAt = 0;
+  let failureDiagnostic = null;
   // lastDownloadAt: when the last successful live download started (what it
   // brought is current up to then); failingSince: the first failure since the
   // last success. DogFreshness judges cloud dogs by these (v3 判定表「未更新
@@ -63,8 +64,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     if (!disposed && foreground && owner) immediate = setTimeout(() => { tick(); }, 0);
   };
 
-  // The map's return indicator follows the actual cloud pass as well as the
-  // local feed. Ordinary polling and the initial download do not show it.
+  // The map waits for its initial cloud download and foreground return.
+  // Successful sessions' ordinary 30-second polling does not show a pill.
   let resumeCatchUp;
   const resetResume = () => {
     resumeCatchUp?.close();
@@ -85,22 +86,27 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     if (disposed || !foreground || !owner || running || manualPending) return;
     const version = generation;
     const userId = owner;
+    const startedAt = now();
+    const attempt = state.mapAttempt + 1;
+    let phase = 'initialize';
     const abort = new AbortController();
     controller = abort;
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, CLOUD_DOWNLOAD_TIMEOUT_MS);
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t("c586")); };
     // Each pass reports a refusal of the sign-in on its own (authFailed).
-    resumeCatchUp.started();
+    resumeCatchUp.started(state.lastSuccess == null);
     publish({ busy: true, mode: 'auto', error: '', authFailed: false,
-      mapPending: true, mapAttempt: state.mapAttempt + 1 });
+      mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
       try {
         check();
         await database.initialize();
         check();
+        phase = 'begin';
         await database.beginDownload?.(userId);
         check();
+        phase = 'masters';
         const masters = await listCloudMasters(client, userId, abort.signal, check);
         const cutoff = now();
         const save = async (...args) => {
@@ -110,6 +116,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         };
         for (const masterId of masters) {
           check();
+          phase = 'download';
           await downloadMasterIncremental({
             client, database, owner: userId, masterId, cutoff,
             signal: abort.signal, check,
@@ -117,6 +124,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           });
         }
         check();
+        phase = 'repair';
         await repairCloudTrackTimes({ client, database, owner: userId, signal: abort.signal, check,
           onChange: () => publish({ revision: state.revision + 1 }) });
         if (now() - sweptAt >= SWEEP) {
@@ -125,6 +133,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           sweptAt = now();
           for (const masterId of masters) {
             check();
+            phase = 'reconcile';
             await reconcileCloudWindow({
               client, owner: userId, masterId, now: cutoff,
               database: { ...database, savePage: save },
@@ -133,17 +142,35 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           }
         }
         check();
+        phase = 'publish';
         if (database.publishDownload) await publishScoped(version, () => database.publishDownload(userId));
         check();
         publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
         resumeCatchUp.caughtUp();
+        if (failureDiagnostic) {
+          console.info('[CloudSync] recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
+          failureDiagnostic = null;
+        }
       } catch (error) {
         if (valid(version) && (!abort.signal.aborted || timedOut)) {
+          const status = error?.status ?? error?.context?.status ?? error?.cause?.status ?? error?.cause?.context?.status;
+          const failureKind = timedOut ? 'timeout' : isAuthFailure(error) ? 'auth'
+            : isNetworkFailure(error) ? 'network'
+              : ['initialize', 'begin', 'publish'].includes(phase) ? 'storage' : 'unknown';
+          // Release diagnostics carry only whitelisted metadata. Repeated
+          // failures and successful polling stay quiet until the kind changes
+          // or the download recovers; no account, URL, message or payload.
+          const diagnostic = { attempt, phase, failureKind,
+            status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null };
+          if (!failureDiagnostic || ['phase', 'failureKind', 'status']
+            .some(field => diagnostic[field] !== failureDiagnostic[field]))
+            console.info('[CloudSync] failure', diagnostic);
+          failureDiagnostic = diagnostic;
           publish({ error: timedOut ? t("c587") : error.message,
             failingSince: state.failingSince ?? now(), authFailed: !timedOut && isAuthFailure(error),
             offline: timedOut || isNetworkFailure(error) });
-          // A completed initial attempt (even a failure) makes the next
-          // foreground return eligible; a cold-start failure has its S3 row.
+          // Initial and resumed attempts expose retry on the map. Ordinary
+          // polling keeps its S3 error without starting a return indicator.
           if (resumeCatchUp.state().phase === 'idle') resumeCatchUp.caughtUp();
           else resumeCatchUp.failed();
         }
@@ -176,6 +203,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       // Keep its physical publication fence closed for the replacement owner
       // until finally settles; global retention may affect another owner's rows.
       sweptAt = 0;
+      failureDiagnostic = null;
       resetResume();
       generation += 1;
       controller?.abort();
@@ -202,8 +230,12 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     },
     // S3 「重試」: a pass now instead of at the next 30-second tick.
     retry() {
+      if (disposed || !foreground || !owner) return;
       if (resumeCatchUp.state().phase === 'failed') resumeCatchUp.retry();
-      else wake();
+      else {
+        resumeCatchUp.started(true);
+        wake();
+      }
     },
     async runManual(work, abort = new AbortController()) {
       if (manualPending || state.mode === 'manual') throw new Error(t("c585"));

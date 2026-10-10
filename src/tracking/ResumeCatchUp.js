@@ -3,9 +3,9 @@
 // away, and the dogs keep the colours the user left them with, dimmed
 // (opacity.catchingUp), until that read is through.
 //
-// Only a return counts. A cold start and an ordinary load have their own
-// screens (the launch screen, the skeletons); nothing here shows before the
-// feed has caught up once in this session.
+// The local feed only shows returns; cold-start local reads use the launch
+// screen and skeletons. CloudSync explicitly includes its initial automatic
+// download, which can continue while the map is already open.
 //
 // The rules:
 // - The app goes away: the catch-up is cancelled and the moment is kept. It is
@@ -67,8 +67,11 @@ export function createResumeCatchUp({
   };
   return {
     state: () => state,
-    /** A cloud pass began: an interrupted initial download also counts as a return. */
-    started() { caughtUpOnce = true; },
+    /** A cloud pass began; opt in while its first automatic download is pending. */
+    started(showInitial = false) {
+      caughtUpOnce = true;
+      if (showInitial && state.phase !== 'catching-up') begin();
+    },
     /** The app went to the background: freeze the dogs' colours here. */
     away() {
       awayAt = now();

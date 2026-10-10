@@ -42,7 +42,10 @@ export function accountPage(input) {
 
   // ---- 下載 ----------------------------------------------------------------
   let download;
-  if (sync.failingSince != null) {
+  if (sync.lastSuccess == null && sync.busy && sync.mode === 'auto') {
+    download = { title: t('c217'), detail: null, right: t('c319'), problem: false, success: false, retry: false,
+      label: t('c914') };
+  } else if (sync.failingSince != null) {
     const since = t('c212', { time: formatClock(sync.failingSince) });
     // Not reached Supabase once since the app started (restoring the sign-in
     // without a network): it keeps trying by itself (判定表「啟動與恢復登入」).
