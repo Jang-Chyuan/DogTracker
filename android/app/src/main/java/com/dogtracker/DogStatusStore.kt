@@ -71,6 +71,7 @@ class DogStatusStore private constructor(private val context: Context) {
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_received_at ON dog_status(received_at DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_id ON dog_status(slave_id, id DESC)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_master ON dog_status(slave_id, master_id)")
     BleUploadQueue.initialize(db)
   }
 

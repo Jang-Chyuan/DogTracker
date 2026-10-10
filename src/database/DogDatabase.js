@@ -145,6 +145,7 @@ export function createDogDatabase(connection) {
         );
       }
       // Cutoff and deletion both seek this per-slave insertion-id index.
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_master ON dog_status(slave_id, master_id)');
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_id ON dog_status(slave_id, id DESC)');
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)');
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_latest ON dog_status(slave_id, received_at DESC, id DESC)');
