@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { activityPeriod, buildActivityView, combineYearView } from './views';
 import { activityDetail, activityViewInput } from './ActivityData';
 import { minuteOf } from './ActivityMinutes';
-import { capturePageRead } from '../cloud/CloudPagePublication';
+import { captureActivityRead } from '../cloud/CloudPagePublication';
 
 const pause = () => new Promise(resolve => setTimeout(resolve, 0));
 const PUBLICATION_RETRY_MS = 15000;
@@ -48,7 +48,7 @@ export function useActivityView({ read, readEarliest, slaveId, mode, date, now, 
       }, PUBLICATION_RETRY_MS);
     };
     (async () => {
-      const fence = capturePageRead(getPublication, owner, publishedReads);
+      const fence = captureActivityRead(getPublication, owner, publishedReads);
       const accepted = () => {
         if (!alive) return false;
         if (fence.valid()) return true;
@@ -58,7 +58,11 @@ export function useActivityView({ read, readEarliest, slaveId, mode, date, now, 
         return false;
       };
       try {
-        if (!fence.open) { retryPublication(); return; }
+        if (!fence.open) {
+          if (fence.error) setState(previous => previous.key === key && previous.view ? previous
+            : { key, status: 'error', view: null, error: fence.error });
+          retryPublication(); return;
+        }
         setState(previous => ({ key, status: previous.key === key && previous.view ? 'ready' : 'loading', view: previous.key === key ? previous.view : null }));
         // Read every time: the first reading moves when older history is
         // downloaded, and appears once a dog without any gets one.

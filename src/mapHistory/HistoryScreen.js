@@ -463,6 +463,13 @@ ref) {
         onNext={() => step(screen.nextDay)}
         onOpen={openCalendar}
       />
+      {screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
+        <Text style={styles.asOfText}>{t('c1247', { time: `${String(new Date(screen.asOf).getHours()).padStart(2, '0')}:${String(new Date(screen.asOf).getMinutes()).padStart(2, '0')}` })}</Text>
+        <PressScale testID="history-update-tail" accessibilityRole="button" accessibilityLabel={t('c1248')}
+          onPress={() => step(screen.updateHistory)} style={styles.updateTail}>
+          <Text style={styles.updateTailText}>{t('c1248')}</Text>
+        </PressScale>
+      </View>}
       {downloading && (
         <DownloadSummary panel={download} onCancel={screen.cancelDownload} />
       )}
@@ -661,6 +668,10 @@ const getStyles = makeStyles(theme => {
       ...theme.floatingBorder,
     },
     disabled: { opacity: opacity.disabled },
+    asOf: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.s },
+    asOfText: { color: colors.textMuted, fontSize: type.caption.fontSize },
+    updateTail: { minHeight: touch.min, minWidth: touch.min, justifyContent: 'center', alignItems: 'center' },
+    updateTailText: { color: colors.phone, fontSize: type.caption.fontSize },
     dateRow: {
       flexDirection: 'row',
       alignItems: 'center',

@@ -318,6 +318,11 @@ export function useHistoryScreen({
   if (coverageOpening.current.key !== coverageKey || (active && !coverageOpening.current.active))
     coverageOpening.current = { key: coverageKey, active, cutoff: clock() };
   else coverageOpening.current.active = active;
+  // Archive terminal success is the only automatic tail target. Snapshot and
+  // per-page/manual publication cannot recursively start another download.
+  const archiveCutoff = cloud?.getPublication?.()?.archiveCutoff;
+  if (active && today && Number.isFinite(archiveCutoff) && archiveCutoff > coverageOpening.current.cutoff)
+    coverageOpening.current.cutoff = archiveCutoff;
   const coverageCutoff = coverageOpening.current.cutoff;
   // ---- who is shown (H7) --------------------------------------------------
   // { key, dogs: [{ id, slot, colour, hasData }], protagonist }:
@@ -725,10 +730,19 @@ export function useHistoryScreen({
   // Ensure each selected cloud day once, including a day with only a recent
   // local slice. Failure/cancel stays actionable; it never loops retries.
   const ensured = useRef(new Set());
+  const ensureRequested = useRef(null);
   useEffect(() => {
     if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
     const key = `${cloudDays.cloudScope}|${shownKey}|${coverageCutoff}|${publicationRevision}`;
-    if (cloudDays.download?.day === shownKey && cloudDays.download.status !== 'done') { ensured.current.add(key); return; }
+    const explicit = ensureRequested.current === shownKey;
+    if (cloudDays.download?.day === shownKey && cloudDays.download.status !== 'done') {
+      if (cloudDays.download.status === 'downloading') {
+        if (cloudDays.download.cutoff === coverageCutoff) ensured.current.add(key);
+        return;
+      }
+      if (!explicit) { ensured.current.add(key); return; }
+    }
+    if (explicit) { ensured.current.delete(key); ensureRequested.current = null; }
     if (ensured.current.has(key)) return;
     ensured.current.add(key);
     startDownload(shownKey, reread);
@@ -755,7 +769,10 @@ export function useHistoryScreen({
       if (downloadingDay === next) return { type: 'show', day: next };
       cancel();
       if (next !== shownKey) changeDay(next);
-      if (choice.type === 'download' && !cloud?.coverageRequired) startDownload(next, reread);
+      if (choice.type === 'download') {
+        if (!cloud?.coverageRequired || next === shownKey) startDownload(next, reread);
+        else ensureRequested.current = next;
+      }
       return choice;
     },
     [
@@ -790,6 +807,13 @@ export function useHistoryScreen({
     startDownload(shownKey, reread);
     return { type: 'download', day: shownKey };
   }, [online, shownKey, startDownload, reread]);
+  const updateHistory = useCallback(() => {
+    if (!online) return { type: 'offline', day: shownKey, message: offlineMessage(shownKey) };
+    coverageOpening.current.cutoff = clock();
+    ensureRequested.current = shownKey;
+    reread();
+    return { type: 'download', day: shownKey };
+  }, [online, shownKey, clock, reread]);
   const dayRecords = !!dayModel?.subjects.some(s => s.dayRecords);
   const download = downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
     day: shownKey,
@@ -994,6 +1018,8 @@ export function useHistoryScreen({
     rangePreviewDelay: Math.max(120, buildCost.current * 4),
     rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
     rangeActive: active,
+    asOf: cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
+    updateHistory,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],
     // Several dogs (H7) and merged records.

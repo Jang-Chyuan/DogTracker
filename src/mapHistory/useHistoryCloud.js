@@ -229,7 +229,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     const id = downloadSeq.current + 1;
     downloadSeq.current = id;
     completenessEpoch.current += 1;
-    setDownload({ scope, day, status: 'downloading', id });
+    setDownload({ scope, day, cutoff, status: 'downloading', id });
     const { dayStart, dayEnd } = dayBounds(day);
     const coverage = historyCoverage(dayStart, dayEnd, cutoff);
     const subjects = Array.isArray(slaveId) && localByDog ? slaveId.filter(dogId => !completeFor(dogId, day)) : slaveId;
@@ -257,7 +257,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
           ...(current.scope === scope ? current.states.filter(row => !requestedIds.includes(row.slave_id) || row.day !== day) : []),
           ...requestedIds.map(dogId => ({ slave_id: dogId, day, complete: 1, ...coverage })),
         ] }));
-        setDownload({ scope, day, status: 'done', id });
+        setDownload({ scope, day, cutoff, status: 'done', id });
         markIncomplete(day, false);
         // Downloaded (rows or not): the cloud was asked about this day.
         add([], [day]);
@@ -266,7 +266,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       .catch(() => {
         if (!alive.current || downloadSeq.current !== id) return;
         completenessEpoch.current += 1;
-        setDownload({ scope, day, status: controller.signal.aborted ? 'cancelled' : 'failed', id });
+        setDownload({ scope, day, cutoff, status: controller.signal.aborted ? 'cancelled' : 'failed', id });
         onEnd?.('failed');
       })
       .finally(() => { if (downloading.current === controller) {

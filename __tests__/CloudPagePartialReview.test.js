@@ -359,3 +359,37 @@ test('published activity reads survive auto-only attempt and success changes wit
     expect(state.view).not.toBeNull();
   } finally { if (renderer) await act(async () => renderer.unmount()); }
 });
+
+test('latest snapshot alone cannot release initial activity loading; automatic archive completion does', async () => {
+  let renderer, state;
+  const ledger = { owner: 'owner-a', scope: {}, generation: 1, latestFirst: true,
+    publishedRevision: 0, publishedPending: false, archiveCutoff: null, archiveRevision: 0 };
+  const getPublication = () => ledger;
+  const time = now - MINUTE;
+  const read = jest.fn(async () => ({ local: [], cloud: [{ time, slave_id: 6, activity: 0.4, activity_valid: 1 }] }));
+  const readEarliest = jest.fn(async () => time);
+  function Probe({ revision = 0 }) {
+    state = useActivityView({ read, readEarliest, slaveId: 6, mode: 'day', date: day, now,
+      owner: 'owner-a', publishedReads: true, getPublication, revision });
+    return null;
+  }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(state.status).toBe('loading');
+    expect(state.view).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    ledger.snapshotRevision = 1;
+    await act(async () => renderer.update(<Probe revision={1} />));
+    expect(state.status).toBe('loading');
+    expect(read).not.toHaveBeenCalled();
+    ledger.archiveError = 'archive unavailable';
+    await act(async () => renderer.update(<Probe revision={2} />));
+    expect(state.status).toBe('error');
+    expect(state.view).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    ledger.archiveError = ''; ledger.archiveCutoff = now; ledger.archiveRevision = 1;
+    await act(async () => renderer.update(<Probe revision={3} />));
+    expect(state.status).toBe('ready');
+    expect(read).toHaveBeenCalledTimes(1);
+  } finally { await act(async () => renderer.unmount()); }
+});

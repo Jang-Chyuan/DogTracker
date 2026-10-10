@@ -1,4 +1,4 @@
-import { historyCoverage } from '../cloud/HistoryCoverage';
+import { coversHistory, historyCoverage } from '../cloud/HistoryCoverage';
 import { t } from '../i18n';
 // What the history's calendar asks the cloud (054b): which days hold the
 // rows of the dog (or dogs, 055b) (H3b's dots), the earliest one (how far back ‹ goes), and the
@@ -92,6 +92,16 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
         // time can arrive a little before it and up to a while after it.
         const work = async (leaseCurrent, publishScoped) => {
           let count = 0, failure = null;
+          // A retained completed prefix can be extended by reception-time tail.
+          // Missing/evicted/legacy proof always downloads the entire window.
+          const previousStates = await database.historyDownloadStates?.(owner, ids) ?? [];
+          const tailStart = id => {
+            const proof = previousStates.find(row => row.slave_id === id && row.day === day);
+            if (!Number.isFinite(proof?.received_before) || proof.received_before >= coverage.received_before)
+              return dayStart - DOWNLOAD_BEFORE_MS;
+            const prefix = historyCoverage(dayStart, dayEnd, proof.received_before);
+            return coversHistory(proof, prefix) ? proof.received_before : dayStart - DOWNLOAD_BEFORE_MS;
+          };
           const markIncomplete = async () => {
             for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
           };
@@ -103,7 +113,7 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
               await database.beginManualScope?.(owner, id, day);
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               count += await downloadCloudHistory({ client, database, owner,
-                startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.received_before), slaveId: id,
+                startAt: iso(tailStart(id)), endBefore: iso(coverage.received_before), slaveId: id,
                 signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               await database.setHistoryDownloadState?.(owner, id, day, true, coverage);

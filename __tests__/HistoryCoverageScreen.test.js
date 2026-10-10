@@ -1,5 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
+import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import { dayBounds, dayKey } from '../src/history/screen/HistoryScreenDates';
@@ -143,4 +144,103 @@ test('a new archive publication cannot expose rows before its new coverage proof
     expect(cloud.download).toHaveBeenCalledTimes(1);
     expect(state.screen.dayModel).toBeNull();
   } finally { await act(async () => renderer.unmount()); }
+});
+
+test('foreground during an old-cutoff download ensures the new today tail after the old job finishes', async () => {
+  const first = deferred(), tail = deferred();
+  let durable = [];
+  const cloud = { owner: 'owner-a', coverageRequired: true, downloadStates: async () => durable,
+    download: jest.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => tail.promise) };
+  const state = fixtureHarness(cloud, 'coverage-foreground-tail');
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(<state.Probe />); });
+    const initial = cloud.download.mock.calls[0][0];
+    await act(async () => renderer.update(<state.Probe active={false} />));
+    state.fixture.now += 60000;
+    await act(async () => renderer.update(<state.Probe active />));
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    durable = [{ slave_id: initial.slaveId, day: state.screen.dayKey, complete: 1, ...historyCoverage(initial.dayStart, initial.dayEnd, initial.cutoff) }];
+    await act(async () => first.resolve(0));
+    expect(cloud.download).toHaveBeenCalledTimes(2);
+    expect(cloud.download.mock.calls[1][0].cutoff).toBe(state.fixture.now);
+    expect(state.screen.dayModel).toBeNull();
+  } finally { await act(async () => renderer.unmount()); }
+});
+test('explicitly reselecting a cancelled selected day retries its ensure', async () => {
+  const first = deferred(), retry = deferred();
+  const cloud = { owner: 'owner-a', coverageRequired: true, downloadStates: async () => [],
+    download: jest.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => retry.promise) };
+  const state = fixtureHarness(cloud, 'coverage-reselect-cancelled');
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(<state.Probe />); });
+    await act(async () => state.screen.cancelDownload());
+    await act(async () => first.reject(new Error('cancelled')));
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    await act(async () => state.screen.goTo(state.screen.dayKey));
+    expect(cloud.download).toHaveBeenCalledTimes(2);
+    expect(state.screen.dayModel).toBeNull();
+  } finally { await act(async () => renderer.unmount()); }
+});
+
+test('automatic archive cutoff safely advances an open today view; manual publication does not loop tails', async () => {
+  const job = deferred();
+  const ledger = { archiveCutoff: null, owner: 'owner-a', scope: {}, generation: 1, publishedRevision: 0, publishedPending: false };
+  let durable = [];
+  const cloud = { owner: 'owner-a', coverageRequired: true, publishedReads: true, getPublication: () => ledger,
+    downloadStates: async () => durable, download: jest.fn(() => job.promise) };
+  const state = fixtureHarness(cloud, 'coverage-auto-archive-tail');
+  const day = dayKey(new Date(state.fixture.now)), bounds = dayBounds(day);
+  const dog = historyTargetOf(state.fixture.history.preferences).slaveId;
+  durable = [{ slave_id: dog, day, complete: 1, ...historyCoverage(bounds.dayStart, bounds.dayEnd, state.fixture.now) }];
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(<state.Probe />); });
+    expect(cloud.download).not.toHaveBeenCalled();
+    expect(state.screen.dayModel).not.toBeNull();
+    state.fixture.now += 120000; ledger.archiveCutoff = state.fixture.now;
+    await act(async () => renderer.update(<state.Probe publicationRevision={1} />));
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    expect(state.screen.dayModel).toBeNull();
+    const request = cloud.download.mock.calls[0][0];
+    expect(request.cutoff).toBe(ledger.archiveCutoff);
+    durable = [{ slave_id: dog, day, complete: 1, ...historyCoverage(request.dayStart, request.dayEnd, request.cutoff) }];
+    await act(async () => job.resolve(0));
+    await act(async () => renderer.update(<state.Probe publicationRevision={2} />));
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    expect(state.screen.dayModel).not.toBeNull();
+  } finally { await act(async () => renderer.unmount()); }
+});
+
+test('a frozen completed today view labels its as-of time and updates only on explicit request', async () => {
+  jest.useFakeTimers();
+  const pending = deferred();
+  let durable = [];
+  const cloud = { owner: 'owner-a', coverageRequired: true,
+    downloadStates: async () => durable, download: jest.fn(() => pending.promise) };
+  const state = fixtureHarness(cloud, 'coverage-as-of-label');
+  const cutoff = state.fixture.now, day = dayKey(new Date(cutoff)), bounds = dayBounds(day);
+  const dog = historyTargetOf(state.fixture.history.preferences).slaveId;
+  durable = [{ slave_id: dog, day, complete: 1, ...historyCoverage(bounds.dayStart, bounds.dayEnd, cutoff) }];
+  let renderer, ui;
+  try {
+    await act(async () => { renderer = Renderer.create(<state.Probe />); });
+    state.fixture.now += 60000;
+    await act(async () => jest.advanceTimersByTimeAsync(60000));
+    expect(cloud.download).not.toHaveBeenCalled();
+    expect(state.screen.asOf).toBe(cutoff);
+    await act(async () => { ui = Renderer.create(<HistoryScreen screen={state.screen} top={24}
+      levels={{ summary: 140, half: 420, full: 620 }} bottomInset={0} name="QA" history={null} />); });
+    expect(JSON.stringify(ui.toJSON())).toContain('截至');
+    const update = ui.root.findAll(node => node.props.testID === 'history-update-tail' && typeof node.props.onPress === 'function')[0];
+    await act(async () => update.props.onPress());
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    expect(cloud.download.mock.calls[0][0].cutoff).toBe(state.fixture.now);
+    expect(state.screen.dayModel).toBeNull();
+  } finally {
+    if (ui) await act(async () => ui.unmount());
+    if (renderer) await act(async () => renderer.unmount());
+    jest.useRealTimers();
+  }
 });
