@@ -1,3 +1,4 @@
+import { startupPhase } from '../diagnostics/StartupPhases';
 import {
   DEFAULT_LIVE_ROUTE_MAX_POINTS,
   DEFAULT_LIVE_ROUTE_WINDOW_MS,
@@ -148,7 +149,7 @@ export function createTrackingFeed(repository, options = {}) {
     try {
       onRefreshing();
       if (cursor === null) {
-        const latest = await repository.getLatest();
+        const latest = await startupPhase('initial-latest', () => repository.getLatest());
         if (refreshGeneration !== generation) return deliveredRows;
 
         if (includeHistory) {
@@ -158,7 +159,7 @@ export function createTrackingFeed(repository, options = {}) {
           onLatest(latest);
           if (refreshGeneration !== generation) return deliveredRows;
           if (latest && repository.getPositionContext) {
-            const context = await repository.getPositionContext(latest);
+            const context = await startupPhase('initial-position-context', () => repository.getPositionContext(latest));
             if (refreshGeneration !== generation) return deliveredRows;
             onPositionContext(context);
             if (refreshGeneration !== generation) return deliveredRows;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { startOfToday, todayRouteDistance } from '../tracking/TodayDistance';
+import { startOfToday } from '../tracking/TodayDistance';
+import { createTodayRouteEngine } from '../tracking/TodayRouteEngine';
 
 // How often the live map adds newly recorded positions to today's distance.
 // The pill shows tenths of a kilometre, so a few seconds late is invisible.
@@ -21,7 +22,10 @@ const PAGE = 2000;
  * change reads at once.
  */
 export function useTodayRoute(database, ready, active, clock = Date.now, pollMs = TODAY_ROUTE_POLL_MS) {
-  const rows = useRef({ day: null, list: [], cursor: null, state: null, read: 0 });
+  // `engine` keeps what the history logic built from the rows read so far
+  // (TodayRouteEngine): a poll only works through the new rows (068). A new
+  // day, or a row older than one already taken, starts a new one.
+  const rows = useRef({ day: null, engine: null, count: 0, cursor: null, last: null, read: 0 });
   const [route, setRoute] = useState(null);
   const now = useRef(clock);
   now.current = clock;
@@ -32,25 +36,32 @@ export function useTodayRoute(database, ready, active, clock = Date.now, pollMs 
       try {
         const at = now.current();
         const day = startOfToday(at);
-        if (rows.current.day !== day) rows.current = { day, list: [], cursor: null, state: null, read: -1 };
+        if (rows.current.day !== day) {
+          rows.current = { day, engine: createTodayRouteEngine({ dayStart: day }), count: 0,
+            cursor: null, last: null, read: -1 };
+        }
         const current = rows.current;
         for (;;) {
           const page = await database.phoneRouteSince(day, current.cursor, PAGE);
           if (!alive || rows.current !== current) return;
           if (!page.length) break;
-          current.list.push(...page);
+          if (!current.engine.add(page)) {
+            // Out of order (a clock change): read the day again from the start.
+            rows.current = { ...current, day: null };
+            return;
+          }
+          current.count += page.length;
           const last = page[page.length - 1];
+          current.last = last.time;
           current.cursor = { time: last.time, id: last.id };
           if (page.length < PAGE) break;
         }
         // New rows change the answer; without them only the clock can, while
         // a departure is being confirmed (it settles at minute 8 by the
         // phone's time even if no fix came, 判定表「出發偵測：資料不到 8 分鐘」).
-        if (current.read === current.list.length && current.status !== 'confirming') return;
-        current.read = current.list.length;
-        const sum = todayRouteDistance(current.list, { now: Math.max(at, current.list.at(-1)?.time ?? at),
-          dayStart: day, state: current.state });
-        current.state = sum.state;
+        if (current.read === current.count && current.status !== 'confirming') return;
+        current.read = current.count;
+        const sum = current.engine.sum(Math.max(at, current.last ?? at));
         current.status = sum.status;
         const { count, metres, status } = sum;
         setRoute(value => (value?.count === count && value?.metres === metres && value?.status === status

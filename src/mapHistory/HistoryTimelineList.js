@@ -148,9 +148,12 @@ function Pill({ pill, color }) {
   );
 }
 
-function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
+function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout }) {
   const styles = useStyles(getStyles);
   const tap = useTap(onPress, node);
+  const onLayout = onRowLayout
+    ? event => onRowLayout(node.start, event.nativeEvent.layout.y)
+    : undefined;
   const [start, end] = nodeTimes(node);
   const lines = placeLines(node, place);
   const note = lines.coordinates ? interruptionText(node) : '';
@@ -207,7 +210,16 @@ function PlaceRow({ node, next, color, place, selected, onPress, onLayout }) {
   );
 }
 
-function SectionRow({ section, color, onPress }) {
+// A cursor move changes one row's `selected`; the rest of a long day's rows
+// (hundreds of views) are left alone (068). The address is compared by what
+// it says: usePlaceNames answers with new objects on every render.
+const samePlace = (a, b) => a === b || (a?.state === b?.state && a?.text === b?.text);
+const PlaceRow = React.memo(PlaceRowView, (before, after) =>
+  before.node === after.node && before.next === after.next && before.color === after.color
+  && before.selected === after.selected && before.onPress === after.onPress
+  && before.onRowLayout === after.onRowLayout && samePlace(before.place, after.place));
+
+function SectionRowView({ section, color, onPress }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const text = sectionText(section);
@@ -242,6 +254,7 @@ function SectionRow({ section, color, onPress }) {
     </Pressable>
   );
 }
+const SectionRow = React.memo(SectionRowView);
 
 /**
  * The time-line list of one dog or my route (H1/H2, 判定表「時間軸清單」):
@@ -287,11 +300,7 @@ function HistoryTimelineList({
             place={places[index]}
             selected={selected != null && node.start === selected}
             onPress={onPressNode}
-            onLayout={
-              onRowLayout
-                ? event => onRowLayout(node.start, event.nativeEvent.layout.y)
-                : undefined
-            }
+            onRowLayout={onRowLayout}
             next={isSection(nodes[index + 1]) ? nodes[index + 1] : null}
           />
         ),

@@ -27,12 +27,13 @@ export function createDogDatabase(connection) {
       await db.executeAsync(
         `DELETE FROM dog_status
          WHERE slave_id = ?
-           AND id NOT IN (
+           -- The 10001st newest row is the last row removed; NULL deletes none.
+           AND id <= (
              SELECT id
              FROM dog_status
              WHERE slave_id = ?
              ORDER BY id DESC
-             LIMIT ?
+             LIMIT 1 OFFSET ?
            )`,
         [slaveId, slaveId, MAX_STATUS_RECORDS_PER_SLAVE],
       );
@@ -143,6 +144,9 @@ export function createDogDatabase(connection) {
           'ALTER TABLE dog_status ADD COLUMN slave_id INTEGER',
         );
       }
+      // Cutoff and deletion both seek this per-slave insertion-id index.
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_master ON dog_status(slave_id, master_id)');
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_id ON dog_status(slave_id, id DESC)');
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)');
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_latest ON dog_status(slave_id, received_at DESC, id DESC)');
       await db.executeAsync(`CREATE INDEX IF NOT EXISTS idx_dog_status_slave_fix

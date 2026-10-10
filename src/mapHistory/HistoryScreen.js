@@ -440,18 +440,19 @@ ref) {
             cursorTime <= n.end,
         );
   const selected = screen.pressed ?? stay?.start ?? null;
-  const pressNode = useCallback(
-    node => {
-      closeRange();
-      const action = ['movement', 'gap'].includes(node.type) ? 'route' : 'node';
-      screen.moveCursor(
-        node.start,
-        action,
-        action === 'node' || node.type === 'gap' ? node : null,
-      );
-    },
-    [closeRange, screen],
-  );
+  // Stable row callbacks use the current screen without rerendering a long list.
+  const latest = useRef({ screen, closeRange });
+  latest.current = { screen, closeRange };
+  const pressNode = useCallback(node => {
+    const { screen: current, closeRange: close } = latest.current;
+    close();
+    const action = ['movement', 'gap'].includes(node.type) ? 'route' : 'node';
+    current.moveCursor(node.start, action,
+      action === 'node' || node.type === 'gap' ? node : null);
+  }, []);
+  const rowLayout = useCallback((start, y) => {
+    rows.current[start] = y;
+  }, []);
   const header = (
     <View>
       <DateRow
@@ -479,6 +480,9 @@ ref) {
           onToggle={() => openRange(!rangeOpen)}
           onDrag={screen.dragRange}
           onCommit={screen.commitRange}
+          previewDelay={screen.rangePreviewDelay}
+          previewScope={screen.rangePreviewScope}
+          active={screen.rangeActive}
           closedAt={closedAt}
           dayPoints={screen.dayPoints}
           who={screen.multi ? leadName : null}
@@ -523,9 +527,7 @@ ref) {
           color={screen.color}
           selected={selected}
           onPressNode={pressNode}
-          onRowLayout={(start, y) => {
-            rows.current[start] = y;
-          }}
+          onRowLayout={rowLayout}
         />
       </View>
     );

@@ -1,3 +1,4 @@
+import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
 // route; H1/H2/H2b/H3a/H7/H8): the day shown, the rows of each dog shown, the
@@ -56,6 +57,12 @@ export const MAX_DOGS = 4;
 // only changes with a download.
 export const HISTORY_POLL_MS = 15000;
 const PAST_POLL_MS = 60000;
+// Today's rows are read again every 15 s, and each read with new fixes
+// builds the whole day's model again. On a long day (tens of thousands of
+// fixes) that build takes long enough to keep the JavaScript thread busy
+// (068): the next read waits at least this many times the last build, so it
+// never takes more than about 5% of the thread.
+const BUILD_COST_FACTOR = 20;
 // The clock moves on once a minute (「現在」, the range bar's right end).
 const CLOCK_MS = 60000;
 
@@ -76,6 +83,8 @@ export function useHistoryDayRows({
   getPublication = null,
   publicationRevision = 0,
   publishedReads = false,
+  // { current: ms } the last build of the day's model took (see above).
+  cost = null,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -124,14 +133,14 @@ export function useHistoryDayRows({
       try {
         const at = now.current();
         const today = at >= day && at < dayEnd;
-        const answer = await read({
+        const answer = await startupPhase(subject === 'phone' && cache.first ? 'phone-day-read' : '', () => read({
           subject,
           slaveId,
           start: day,
           end: dayEnd,
           owner,
           after: cache.after,
-        });
+        }));
         if (!alive) return;
         if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
         if (cache.first) cache.seed = answer.seed || [];
@@ -142,6 +151,7 @@ export function useHistoryDayRows({
             (a, b) => a.time - b.time,
           );
         if (added || cache.first) {
+          if (subject === 'phone' && cache.first) markStartupPhase('phone-day-publish');
           cache.first = false;
           setResult(current => ({
             key,
@@ -158,7 +168,9 @@ export function useHistoryDayRows({
               : current,
           );
         }
-        timer = setTimeout(poll, today ? HISTORY_POLL_MS : PAST_POLL_MS);
+        timer = setTimeout(poll, today
+          ? Math.max(HISTORY_POLL_MS, (cost?.current ?? 0) * BUILD_COST_FACTOR)
+          : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
         if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
@@ -344,7 +356,9 @@ export function useHistoryScreen({
   // Each colour slot reads its own dog's day (hooks cannot be in a loop of
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
+  const buildCost = useRef(0);
   const reader = index => ({
+    cost: buildCost,
     read,
     subject,
     day,
@@ -503,6 +517,12 @@ export function useHistoryScreen({
     ...subjects.map(s => s.rows[s.rows.length - 1]?.time ?? 0),
   );
   const modelNow = Math.max(now, lastRow);
+  // Keep the minute clock for date navigation, midnight and the range bar.
+  // A past day or fixed manual range has no clock-driven timeline changes:
+  // new row versions and range/subject changes still rebuild using modelNow.
+  // An automatic today range keeps departure's timed confirmation, including
+  // a phone whose recording stopped before that confirmation completed.
+  const modelClock = today && (!manual || manual.following) ? modelNow : null;
   // My route today with recording off ends on 「記錄已關閉 10:20」: the last
   // fix it recorded (判定表「記錄被迫中止的終點膠囊」; the summary's 「記錄已在
   // 10:20 關閉」 uses the same time). A fixed end the user dragged is 「結束」.
@@ -519,12 +539,17 @@ export function useHistoryScreen({
     shownOnce.current = `${sessionKey}|${day}`;
   const waiting =
     shownOnce.current !== `${sessionKey}|${day}` && !allLoaded;
+  const diagnosticModelDay = useRef(null);
+  const diagnosticCommittedDay = useRef(null);
   const dayModel = useMemo(() => {
     if (!subject || !subjects.length || waiting) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
       : subjects[0].id;
-    return multiDayModel(subjects, {
+    const started = Date.now();
+    const firstModelOfDay = diagnosticModelDay.current !== day;
+    diagnosticModelDay.current = day;
+    const built = startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '', () => multiDayModel(subjects, {
       dayStart: day,
       dayEnd,
       today,
@@ -535,7 +560,9 @@ export function useHistoryScreen({
       protagonist: main,
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
-    });
+    }));
+    buildCost.current = Date.now() - started;
+    return built;
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -544,7 +571,7 @@ export function useHistoryScreen({
     day,
     dayEnd,
     today,
-    modelNow,
+    modelClock,
     manual,
     following,
     closedAt,
@@ -554,6 +581,12 @@ export function useHistoryScreen({
     waiting,
   ]);
   const model = dayModel?.main ?? null;
+  useEffect(() => {
+    if (subject === 'phone' && model && diagnosticCommittedDay.current !== day) {
+      diagnosticCommittedDay.current = day;
+      markStartupPhase('phone-model-commit');
+    }
+  }, [subject, model, day]);
   const protagonistId = dayModel?.protagonist ?? current.protagonist;
   // Who has a fix in the range (40% chips, 地圖不畫牠); a dog still being
   // read keeps what it had.
@@ -930,6 +963,9 @@ export function useHistoryScreen({
     dayModel, look,
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
     following, cursor, cursors, pressed, focus, map, color, loading,
+    rangePreviewDelay: Math.max(120, buildCost.current * 4),
+    rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
+    rangeActive: active,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],
     // Several dogs (H7) and merged records.

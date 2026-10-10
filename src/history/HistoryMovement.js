@@ -8,52 +8,80 @@ const footMode = subject => (subject === 'phone' ? 'walking' : 'moving');
  * a run of edges. Each is { start, end, firstEdge, lastEdge }.
  */
 function detectVehicles(edges, config) {
-  const vehicles = [];
-  let high = null, active = null, low = null;
-  // `exited`: ended by 30/60 s of low speed, so its last fix is the first one
-  // on foot; ended by a gap, a hold or the data's end, its last fix was still
-  // in the car (判定表「開車和停留」: car fixes take no part in visits).
-  const close = (endIndex, exited = false) => {
-    vehicles.push({ start: edges[active].start, end: edges[endIndex].end,
-      firstEdge: active, lastEdge: endIndex, exited });
-    active = null; low = null; high = null;
-  };
-  for (let i = 0; i < edges.length; i += 1) {
-    const edge = edges[i];
-    if (edge.gap || edge.mode === 'indoor') {
-      if (active != null && (edge.mode === 'indoor' || edge.durationMs > config.maxVehicleGapMs
-        || !atLeast(edge.speed, config.vehicleSpeed))) close(i - 1);
-      high = null; low = null; continue;
-    }
-    if (active == null) {
-      if (atLeast(edge.speed, config.vehicleSpeed)) {
-        if (high == null) high = i;
-        if (edge.end - edges[high].start >= config.enterMs) {
-          active = high;
-          if (config.backtrackSpeed != null) {
-            while (active > 0 && !edges[active - 1].gap && edges[active - 1].mode !== 'indoor'
-              && atLeast(edges[active - 1].speed, config.backtrackSpeed)) active -= 1;
-          }
-          high = null;
-        }
-      } else high = null;
-    } else if (!atLeast(edge.speed, config.exitSpeed)) {
-      if (low == null) low = i;
-      if (edge.end - edges[low].start >= config.exitMs) close(low - 1, true);
-    } else low = null;
-  }
-  if (active != null) close(edges.length - 1);
-  return vehicles;
+  const scan = vehicleScan();
+  for (let i = 0; i < edges.length; i += 1) stepVehicles(scan, edges, i, config);
+  return finishVehicles(scan, edges);
 }
 
 /**
- * 判定表「距離怎麼加」: the range is cut into runs of continuous walking (or
- * a dog's movement), broken by a gap over 3 minutes, a vehicle or an indoor
- * hold. The first fix of a run is only a reference; each later fix is
- * compared with the last COUNTED one and counts once it is farther than the
- * larger accuracy of the two (at least 5 m, 10 m without an accuracy). The
- * distance lands on the edge that crossed the threshold.
+ * The vehicle detection one edge at a time (detectVehicles above), so today's
+ * distance (TodayRouteEngine) can carry it on from where it stopped instead
+ * of scanning the whole day again. `scan` is { high, active, low, vehicles }.
  */
+export const vehicleScan = () => ({ high: null, active: null, low: null, vehicles: [] });
+
+// `exited`: ended by 30/60 s of low speed, so its last fix is the first one
+// on foot; ended by a gap, a hold or the data's end, its last fix was still
+// in the car (判定表「開車和停留」: car fixes take no part in visits).
+function closeVehicle(scan, edges, endIndex, exited = false) {
+  scan.vehicles.push({ start: edges[scan.active].start, end: edges[endIndex].end,
+    firstEdge: scan.active, lastEdge: endIndex, exited });
+  scan.active = null; scan.low = null; scan.high = null;
+}
+
+export function stepVehicles(scan, edges, i, config) {
+  const edge = edges[i];
+  if (edge.gap || edge.mode === 'indoor') {
+    if (scan.active != null && (edge.mode === 'indoor' || edge.durationMs > config.maxVehicleGapMs
+      || !atLeast(edge.speed, config.vehicleSpeed))) closeVehicle(scan, edges, i - 1);
+    scan.high = null; scan.low = null; return;
+  }
+  if (scan.active == null) {
+    if (atLeast(edge.speed, config.vehicleSpeed)) {
+      if (scan.high == null) scan.high = i;
+      if (edge.end - edges[scan.high].start >= config.enterMs) {
+        scan.active = scan.high;
+        if (config.backtrackSpeed != null) {
+          while (scan.active > 0 && !edges[scan.active - 1].gap && edges[scan.active - 1].mode !== 'indoor'
+            && atLeast(edges[scan.active - 1].speed, config.backtrackSpeed)) scan.active -= 1;
+        }
+        scan.high = null;
+      }
+    } else scan.high = null;
+  } else if (!atLeast(edge.speed, config.exitSpeed)) {
+    if (scan.low == null) scan.low = i;
+    if (edge.end - edges[scan.low].start >= config.exitMs) closeVehicle(scan, edges, scan.low - 1, true);
+  } else scan.low = null;
+}
+
+/** The vehicles found, a vehicle still going closed at the data's end. */
+export function finishVehicles(scan, edges) {
+  if (scan.active != null) closeVehicle(scan, edges, edges.length - 1);
+  return scan.vehicles;
+}
+
+/**
+ * After stepping edge `i`: nothing later can change a vehicle up to it — none
+ * is going or about to start, and the edge stops backtracking (a gap, a hold,
+ * or slower than backtrackSpeed).
+ */
+export function vehiclesSettledAt(scan, edges, i, config) {
+  const edge = edges[i];
+  if (scan.active != null || scan.high != null) return false;
+  if (edge.gap || edge.mode === 'indoor') return true;
+  return config.backtrackSpeed == null ? true : !atLeast(edge.speed, config.backtrackSpeed);
+}
+
+/**
+ * Where counting a run stands between two edges: `anchor` is the last COUNTED
+ * fix the next move is measured from, `budget` how far the phone's own
+ * measured speeds say it went since that fix (config.speedBudget, phone only;
+ * Infinity once a fix has no speed). Today's distance (TodayRouteEngine)
+ * keeps one at the last edge that can no longer change, so a day of
+ * uninterrupted walking is not added up again every poll.
+ */
+export const countState = () => ({ anchor: null, budget: 0 });
+
 // The step's speed for the budget: the speed measured at the fix it
 // reaches; a long step (over 10 s, sparse fixes) also takes the speed it
 // left with, so a walk that ends on a fix taken standing still still counts
@@ -65,33 +93,55 @@ function stepSpeed(edge) {
   return Math.max(to ?? 0, from ?? 0);
 }
 
-export function countDistances(edges, config = configFor('dog')) {
-  let anchor = null;
-  // How far the phone's own measured speeds say it went since the anchor
-  // (config.speedBudget, phone only; Infinity once a fix has no speed).
-  let budget = 0;
-  for (const edge of edges) {
-    if (edge.mode !== 'walking' && edge.mode !== 'moving') {
-      edge.countedDistanceM = 0; anchor = null; continue;
-    }
-    if (!anchor) { anchor = edge.from; budget = 0; }
-    // A break at one place (samePlaceGap) is no walk.
-    if (edge.bridged) { edge.countedDistanceM = 0; continue; }
-    // With neither fix's speed measured, the old rule (Infinity).
-    const speed = config.speedBudget ? stepSpeed(edge) : null;
-    // Speeds under stillMps are a phone standing still (measurement noise).
-    budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
-    const moved = distanceMeters(anchor, edge.to);
-    const threshold = Math.max(config.minMoveM, accuracyOf(anchor, config), accuracyOf(edge.to, config));
-    // 067: indoors all day the position drifts 50–110 m for minutes while the
-    // phone measures 0–1 km/h. A move the measured speeds cannot cover (half
-    // again what they add up to, plus minMoveM) is drift: it neither counts
-    // nor becomes the anchor.
-    if (moved > threshold && moved <= budget * 1.5 + config.minMoveM) {
-      edge.countedDistanceM = moved; anchor = edge.to; budget = 0;
-    } else edge.countedDistanceM = 0;
+/** countDistances below for one edge, carrying `state` (countState). */
+export function countEdge(state, edge, config) {
+  if (edge.mode !== 'walking' && edge.mode !== 'moving') {
+    edge.countedDistanceM = 0; state.anchor = null; return;
   }
+  if (!state.anchor) { state.anchor = edge.from; state.budget = 0; }
+  // A break at one place (samePlaceGap) is no walk.
+  if (edge.bridged) { edge.countedDistanceM = 0; return; }
+  const speed = config.speedBudget ? stepSpeed(edge) : null;
+  // Speeds under stillMps are a phone standing still (measurement noise).
+  state.budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
+  const moved = distanceMeters(state.anchor, edge.to);
+  const threshold = Math.max(config.minMoveM, accuracyOf(state.anchor, config), accuracyOf(edge.to, config));
+  // 067: indoors all day the position drifts 50–110 m for minutes while the
+  // phone measures 0–1 km/h. A move the measured speeds cannot cover (half
+  // again what they add up to, plus minMoveM) is drift: it neither counts
+  // nor becomes the anchor.
+  if (moved > threshold && moved <= state.budget * 1.5 + config.minMoveM) {
+    edge.countedDistanceM = moved; state.anchor = edge.to; state.budget = 0;
+  } else edge.countedDistanceM = 0;
+}
+
+/**
+ * 判定表「距離怎麼加」: the range is cut into runs of continuous walking (or
+ * a dog's movement), broken by a gap over 3 minutes, a vehicle or an indoor
+ * hold. The first fix of a run is only a reference; each later fix is
+ * compared with the last COUNTED one and counts once it is farther than the
+ * larger accuracy of the two (at least 5 m, 10 m without an accuracy). The
+ * distance lands on the edge that crossed the threshold. `state` carries a
+ * run on from an earlier call (TodayRouteEngine); without one each call
+ * starts a fresh run.
+ */
+export function countDistances(edges, config = configFor('dog'), state = countState()) {
+  for (const edge of edges) countEdge(state, edge, config);
   return edges;
+}
+
+/** One fix-to-fix step, as historyMovement and today's distance (TodayRouteEngine) see it. */
+export function historyEdge(from, to, subject = 'dog', config = configFor(subject)) {
+  const durationMs = to.time - from.time;
+  const distanceM = distanceMeters(from, to);
+  // 067: a break at one place is part of the stay there, not a gap.
+  const bridged = samePlaceGap(from, to, config);
+  return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
+    speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs && !bridged,
+    // Into or within a hold: not movement (判定表「停在原處前後的距離」:
+    // the drift drawn onto the hold spot does not count); the release edge
+    // out of it is ordinary movement from the spot.
+    mode: to.heldReason ? 'indoor' : footMode(subject) };
 }
 
 /**
@@ -100,18 +150,7 @@ export function countDistances(edges, config = configFor('dog')) {
  * stream (the whole day), so clipping a range cannot lose a confirmation.
  */
 export function historyMovement(points, { subject = 'dog', config = configFor(subject), vehicles = null } = {}) {
-  const edges = points.slice(1).map((to, i) => {
-    const from = points[i], durationMs = to.time - from.time;
-    const distanceM = distanceMeters(from, to);
-    // 067: a break at one place is part of the stay there, not a gap.
-    const bridged = samePlaceGap(from, to, config);
-    return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
-      speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs && !bridged,
-      // Into or within a hold: not movement (判定表「停在原處前後的距離」:
-      // the drift drawn onto the hold spot does not count); the release edge
-      // out of it is ordinary movement from the spot.
-      mode: to.heldReason ? 'indoor' : footMode(subject) };
-  });
+  const edges = points.slice(1).map((to, i) => historyEdge(points[i], to, subject, config));
   const found = vehicles ?? detectVehicles(edges, config);
   for (const edge of edges) {
     if (edge.mode === 'indoor') continue;

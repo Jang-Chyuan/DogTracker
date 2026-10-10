@@ -203,3 +203,124 @@ describe('framing the history route', () => {
     expect(HISTORY_FRAME_PADDING.bottom).toBeGreaterThanOrEqual(24 + 48);
   });
 });
+
+describe('nearestRouteSpot on a long day (068)', () => {
+  // A deterministic walk that crosses itself, with breaks.
+  const day = (n, seed) => {
+    let x = seed, lat = 24.989, lon = 121.313, heading = 0, time = 0;
+    const r = () => { x = (x * 1664525 + 1013904223) % 2 ** 32; return x / 2 ** 32; };
+    return Array.from({ length: n }, () => {
+      heading += (r() - 0.5) * 0.8;
+      lat += (Math.cos(heading) * 2) / 110540;
+      lon += (Math.sin(heading) * 2) / 111320;
+      time += r() < 0.003 ? 5 * 60000 : 2000;
+      return { time, latitude: lat, longitude: lon };
+    });
+  };
+  test('the grid finds what going through every segment finds', () => {
+    for (const seed of [1, 2, 3]) {
+      const points = day(6000, seed);
+      const lats = points.map(p => p.latitude), lons = points.map(p => p.longitude);
+      const [south, north] = [Math.min(...lats), Math.max(...lats)];
+      const [west, east] = [Math.min(...lons), Math.max(...lons)];
+      for (let k = 0; k < 120; k += 1) {
+        const touch = { latitude: south + ((k * 37) % 120) / 120 * (north - south) * 1.2 - 0.0005,
+          longitude: west + ((k * 53) % 120) / 120 * (east - west) * 1.2 - 0.0005 };
+        const cursor = k % 3 ? points[(k * 97) % points.length].time : null;
+        expect(nearestRouteSpot(points, touch, cursor)).toEqual(nearestRouteSpot(points, touch, cursor, { grid: false }));
+      }
+    }
+  });
+});
+
+test('404-point bounding-box counterexample: 394.30 m diagonal cannot hide a 300 m segment', () => {
+  const touch = { latitude: 25, longitude: 121 };
+  const p = (x, y, time) => ({ time, latitude: touch.latitude + y / 110540,
+    longitude: touch.longitude + x / (111320 * Math.cos(25 * Math.PI / 180)) });
+  const intercept = 394.30 * Math.SQRT2;
+  const points = [p(-1000, intercept + 1000, 0), p(intercept + 1000, -1000, 1000),
+    p(-10, 300, 400000), p(10, 300, 401000)];
+  while (points.length < 404) points.push(p(2000, 2000, 401000 + points.length * 400000));
+  const linear = nearestRouteSpot(points, touch, null, { grid: false });
+  expect(linear.distanceM).toBeCloseTo(300, 6);
+  expect(nearestRouteSpot(points, touch)).toEqual(linear);
+});
+
+test('grid equality across randomized segments, latitudes, overlap and distant touches', () => {
+  let seed = 819;
+  const random = () => { seed = (seed * 1664525 + 1013904223) % 2 ** 32; return seed / 2 ** 32; };
+  for (const latitude of [0, 25, 70, 85]) {
+    const points = Array.from({ length: 404 }, (_, i) => ({ time: i * 1000,
+      latitude: latitude + (random() - 0.5) * 0.02,
+      longitude: 121 + (random() - 0.5) * 0.04 }));
+    for (let i = 0; i < 40; i += 1) {
+      const coordinate = { latitude: latitude + (random() - 0.5) * (i ? 0.06 : 2),
+        longitude: 121 + (random() - 0.5) * 0.08 };
+      const current = points[Math.floor(random() * points.length)].time;
+      const overlapM = random() * 50;
+      expect(nearestRouteSpot(points, coordinate, current, { overlapM })).toEqual(
+        nearestRouteSpot(points, coordinate, current, { overlapM, grid: false }));
+    }
+  }
+});
+
+test('grid longitude bounds use touch latitude even when the first fix is far south', () => {
+  const points = [{ time: 0, latitude: 1, longitude: 121 }, ...Array.from({ length: 403 }, (_, i) => ({
+    time: 400000 + i * 1000, latitude: 85 + Math.sin(i / 20) * 0.001,
+    longitude: 121 + i * 0.0001,
+  }))];
+  for (let i = 0; i < 20; i += 1) {
+    const coordinate = { latitude: 85.002, longitude: 121 + i * 0.002 };
+    expect(nearestRouteSpot(points, coordinate, points[200].time)).toEqual(
+      nearestRouteSpot(points, coordinate, points[200].time, { grid: false }));
+  }
+});
+
+
+test('places cache checks all visible fields and hidden nodes, array order and membership', () => {
+  const stop = { type: 'stop', start: 1, end: 2, number: 1, durationMs: 1, latitude: 24.98, longitude: 121.31 };
+  const hidden = { ...stop, number: null, latitude: NaN };
+  const locations = [stop, hidden];
+  const model = { locations, points: [], edges: [] };
+  const present = () => historyMapPresentation(model, { color: colors.phone }).places;
+  let previous = present();
+  expect(present()).toBe(previous);
+  expect(historyMapPresentation(model, { color: colors.phone, cursor: { point: {time: 3} } }).places).toBe(previous);
+  for (const [field, value] of Object.entries({type: 'switch', start: 3, end: 4, number: 2, durationMs: 8, latitude: 24.99, longitude: 121.32})) {
+    stop[field] = value;
+    const next = present();
+    expect(next).not.toBe(previous);
+    expect(next[0]).toEqual(expect.objectContaining({ type: stop.type, start: stop.start, end: stop.end,
+      number: stop.number, durationMs: stop.durationMs, coordinate: { latitude: stop.latitude, longitude: stop.longitude } }));
+    previous = next;
+    expect(present()).toBe(previous);
+  }
+  hidden.latitude = 24.97; hidden.number = 3;
+  expect(present()).toHaveLength(2);
+  previous = present(); locations.reverse();
+  expect(present()).not.toBe(previous);
+  expect(present().map(p => p.number)).toEqual([3, 2]);
+  previous = present(); locations.pop();
+  expect(present()).not.toBe(previous);
+  previous = present(); locations.push(stop);
+  expect(present()).not.toBe(previous);
+  previous = present(); model.locations = locations.slice();
+  expect(present()).not.toBe(previous);
+});
+
+
+test('another day or range owns its markers even when stops overlap', () => {
+  const first = { type: 'stop', start: 1, end: 2, number: 1, latitude: 24.98, longitude: 121.31 };
+  const second = { ...first, start: 4, end: 5, number: 2 };
+  const day = { points: [], edges: [], locations: [first, second] };
+  const present = model => historyMapPresentation(model, { color: colors.phone }).places;
+  const all = present(day);
+  const range = { ...day, locations: [second] };
+  expect(present(range)).not.toBe(all);
+  expect(present(range).map(p => p.number)).toEqual([2]);
+  const nextDay = { ...day, locations: [{ ...first, start: 86400001, end: 86400002 }] };
+  expect(present(nextDay)[0].start).toBe(86400001);
+  expect(present(day)).toBe(all);
+  first.type = 'indoor'; first.number = null;
+  expect(present(day)[0]).toMatchObject({ kind: 'indoor', number: null });
+});

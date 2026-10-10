@@ -12,7 +12,42 @@ const isVehicle = mode => mode === 'driving' || mode === 'ride';
 const STEPS = [10, 15, 30, 60, 120, 180, 240].map(minutes => minutes * MINUTE);
 const MAX_MIDDLE_MARKERS = 5;
 
-const coordinateOf = p => ({ latitude: p.latitude, longitude: p.longitude });
+const coordinates = new WeakMap();
+const coordinateOf = p => {
+  let coordinate = coordinates.get(p);
+  if (!coordinate || coordinate.latitude !== p.latitude || coordinate.longitude !== p.longitude) {
+    coordinate = { latitude: p.latitude, longitude: p.longitude };
+    coordinates.set(p, coordinate);
+  }
+  return coordinate;
+};
+const pointHashes = new WeakMap();
+const projectedRoutes = new WeakMap();
+const routeIdentities = new WeakMap();
+
+// Hold replay can mutate source points. Reuse only a matching value snapshot.
+function projectedRoute(points) {
+  let route = projectedRoutes.get(points);
+  if (!route || route.length !== points.length || points.some((p, i) =>
+    p.time !== route[i].time || p.latitude !== route[i].latitude || p.longitude !== route[i].longitude)) {
+    route = points.map(p => ({ time: p.time, ...coordinateOf(p) }));
+    projectedRoutes.set(points, route);
+  }
+  return route;
+}
+
+export function routeGeometryIdentity(points) {
+  if (!points?.length) return 'empty';
+  points = projectedRoute(points);
+  let identity = routeIdentities.get(points);
+  if (!identity) {
+    let hash = geometryId(points);
+    for (const point of points) hash = (hash * 31 + point.time) % 2 ** 32;
+    identity = `${points.length}:${points[0].time}:${points[points.length - 1].time}:${hash}`;
+    routeIdentities.set(points, identity);
+  }
+  return identity;
+}
 
 /** 「#RRGGBB」 at `alpha` (0–1) as rgba(), for the faded parts of a route. */
 export function withAlpha(hex, alpha) {
@@ -41,14 +76,22 @@ function runsOf(points, breakMs) {
  * after the cursor); nothing across a break. Consecutive edges of the same
  * look join into one line.
  */
+// A long day is drawn in pieces of at most this many edges, cut at the same
+// edges wherever the cursor is: a cursor move changes the piece it is in
+// (and the look of the pieces it passed), never the coordinates of the rest,
+// so the map does not send thousands of points to the native line again
+// (067: a tap on a long route froze the app).
+export const ROUTE_CHUNK_EDGES = 200;
+
 export function routeLines(
   edges,
-  { color, cursorTime = Infinity, theme = getTheme() },
+  { color, cursorTime = Infinity, theme = getTheme(), chunkEdges = ROUTE_CHUNK_EDGES },
 ) {
   const { opacity } = theme;
   const lines = [];
   let current = null;
-  for (const edge of edges) {
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index];
     if (edge.gap || edge.mode === 'gap') {
       current = null;
       continue;
@@ -66,7 +109,7 @@ export function routeLines(
       ? withAlpha(color, opacity.routeBeforeCursor)
       : color;
     const key = `${width}:${stroke}`;
-    if (current && current.key === key && current.end === edge.start) {
+    if (current && current.key === key && current.end === edge.start && index % chunkEdges !== 0) {
       current.coordinates.push(coordinateOf(edge.to));
       current.end = edge.end;
       continue;
@@ -83,7 +126,29 @@ export function routeLines(
     };
     lines.push(current);
   }
-  return lines.map(({ key, end, ...line }) => line);
+  return lines.map(({ key, ...line }) => ({ ...line, id: lineId(line) }));
+}
+
+// What a drawn line is: the same id, the same coordinates and look (the map
+// leaves a line with an unchanged id alone).
+const lineId = line =>
+  `${line.start}-${line.end}-${geometryId(line.coordinates)}-${line.width}-${line.color}-${line.dashed ? 1 : 0}`;
+
+// Hash exact coordinate text so reconciliation invalidates only changed pieces.
+function geometryId(points) {
+  let hash = 2166136261;
+  for (const point of points) {
+    const coordinate = coordinateOf(point);
+    let pointHash = pointHashes.get(coordinate);
+    if (pointHash == null) {
+      pointHash = 2166136261;
+      const text = `${point.latitude},${point.longitude};`;
+      for (let i = 0; i < text.length; i += 1) pointHash = (pointHash * 31 + text.charCodeAt(i)) % 2 ** 32;
+      pointHashes.set(coordinate, pointHash);
+    }
+    hash = (hash * 31 + pointHash) % 2 ** 32;
+  }
+  return hash;
 }
 
 /** The day outside the range: 2dp dashed routeFaded, broken where the data is. */
@@ -95,14 +160,18 @@ export function outsideLines(
   if (!range || range.start == null) return [];
   const before = dayPoints.filter(p => p.time <= range.start);
   const after = dayPoints.filter(p => p.time >= range.end);
-  return [...runsOf(before, breakMs), ...runsOf(after, breakMs)].map(run => ({
-    width: sizes.route.faded,
-    color,
-    dashed: true,
-    vehicle: false,
-    start: run[0].time,
-    coordinates: run.map(coordinateOf),
-  }));
+  return [...runsOf(before, breakMs), ...runsOf(after, breakMs)].map(run => {
+    const line = {
+      width: sizes.route.faded,
+      color,
+      dashed: true,
+      vehicle: false,
+      start: run[0].time,
+      end: run[run.length - 1].time,
+      coordinates: run.map(coordinateOf),
+    };
+    return { ...line, id: lineId(line) };
+  });
 }
 
 /**
@@ -187,6 +256,22 @@ export function placeMarkers(locations) {
     }));
 }
 
+// Cursor changes must not restart native projection of every stay. Snapshot
+// every input node, including hidden ones: in-place replay can make one visible.
+const markerProjections = new WeakMap();
+const markerFields = ['type', 'start', 'end', 'number', 'durationMs', 'latitude', 'longitude'];
+const emptyLocations = [];
+function stablePlaceMarkers(locations) {
+  const cached = markerProjections.get(locations);
+  if (cached && cached.snapshot.length === locations.length
+    && locations.every((node, i) => markerFields.every((key, j) =>
+      Object.is(node[key], cached.snapshot[i][j])))) return cached.places;
+  const places = placeMarkers(locations).filter(place => place.kind === 'indoor' || place.number != null);
+  markerProjections.set(locations, { places,
+    snapshot: locations.map(node => markerFields.map(key => node[key])) });
+  return places;
+}
+
 // Metres between two coordinates (equirectangular: the history is a few km).
 const metresApart = (a, b) =>
   Math.hypot(
@@ -225,9 +310,7 @@ export function historyMapPresentation(
   const dayPoints = model.dayPoints || points;
   // The list numbers stays and switch points (the same node objects); a
   // switch the list dropped has no number and is not drawn.
-  const places = placeMarkers(model.locations || []).filter(
-    place => place.kind === 'indoor' || place.number != null,
-  );
+  const places = stablePlaceMarkers(model.locations || emptyLocations);
   const allIndoor = points.length > 0 && points.every(p => p.heldReason);
   const cursorTime = cursor?.point?.time ?? Infinity;
   const first = points[0],
@@ -272,11 +355,7 @@ export function historyMapPresentation(
         }
       : null,
     camera: (points.length ? points : dayPoints).map(coordinateOf),
-    points: points.map(p => ({
-      time: p.time,
-      latitude: p.latitude,
-      longitude: p.longitude,
-    })),
+    points: projectedRoute(points),
   };
 }
 
@@ -292,9 +371,104 @@ export function nearestRouteSpot(
   points,
   coordinate,
   currentTime = null,
-  { overlapM = 15, breakMs = sizes.route.breakAfterMs } = {},
+  { overlapM = 15, breakMs = sizes.route.breakAfterMs, grid = true } = {},
 ) {
   if (!points?.length || !coordinate) return null;
+  // A long day (thousands of fixes) looks only at the segments in the grid
+  // cells around the touch (routeSpotGrid); the answer is the same as going
+  // through every segment (068: a drag or a tap on a long route was slow).
+  const near = grid && points.length > GRID_MIN_POINTS
+    ? gridCandidates(routeSpotGrid(points, breakMs), points, coordinate, overlapM)
+    : null;
+  return nearestOf(points, coordinate, currentTime, { overlapM, breakMs, near });
+}
+
+// Below this many fixes going through all of them is quick enough.
+const GRID_MIN_POINTS = 400;
+const GRID_CELL_M = 60;
+const grids = new WeakMap();
+
+/**
+ * The segments of `points` by grid cell (about 60 m square), built once per
+ * route (the points array of one presentation).
+ */
+export function routeSpotGrid(points, breakMs = sizes.route.breakAfterMs) {
+  const cached = grids.get(points);
+  if (cached && cached.breakMs === breakMs) return cached;
+  const lat0 = points[0].latitude;
+  const cellLat = GRID_CELL_M / 110540;
+  const cellLon = GRID_CELL_M / (111320 * Math.cos((lat0 * Math.PI) / 180));
+  const cells = new Map();
+  const cellOf = (lat, lon) => [Math.floor(lat / cellLat), Math.floor(lon / cellLon)];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p = points[i], q = points[i + 1];
+    if (q.time - p.time > breakMs) continue;
+    const [r0, c0] = cellOf(Math.min(p.latitude, q.latitude), Math.min(p.longitude, q.longitude));
+    const [r1, c1] = cellOf(Math.max(p.latitude, q.latitude), Math.max(p.longitude, q.longitude));
+    for (let r = r0; r <= r1; r += 1) {
+      for (let c = c0; c <= c1; c += 1) {
+        const key = `${r}:${c}`;
+        const list = cells.get(key);
+        if (list) list.push(i); else cells.set(key, [i]);
+      }
+    }
+  }
+  const grid = { breakMs, cells, cellOf, cellLat, cellLon, segments: points.length - 1 };
+  grids.set(points, grid);
+  return grid;
+}
+
+// Segment indices in rings of cells around the touch, out to where no
+// segment can be within `overlapM` of the nearest one found (null: look at
+// all of them, the grid found nothing nearby).
+function gridCandidates(grid, points, coordinate, overlapM) {
+  const [row, col] = grid.cellOf(coordinate.latitude, coordinate.longitude);
+  const found = new Set();
+  const lonM = Math.abs(Math.cos(coordinate.latitude * Math.PI / 180) * 111320);
+  let best = Infinity;
+  const visit = (r, c) => {
+    for (const index of grid.cells.get(`${r}:${c}`) || []) {
+      if (found.has(index)) continue;
+      found.add(index);
+      best = Math.min(best, projectedSegment(points[index], points[index + 1], coordinate).distanceM);
+    }
+  };
+  for (let ring = 0; ring < 200; ring += 1) {
+    for (let c = col - ring; c <= col + ring; c += 1) {
+      visit(row - ring, c);
+      if (ring) visit(row + ring, c);
+    }
+    for (let r = row - ring + 1; r < row + ring; r += 1) {
+      visit(r, col - ring);
+      visit(r, col + ring);
+    }
+    // Any undiscovered segment lies outside this rectangle: its bounding
+    // box occupied every visited cell it intersected. Distance to the four
+    // sides is a lower bound for ALL remaining rings, at the touch latitude.
+    const bound = Math.min(
+      (coordinate.latitude - (row - ring) * grid.cellLat) * 110540,
+      ((row + ring + 1) * grid.cellLat - coordinate.latitude) * 110540,
+      (coordinate.longitude - (col - ring) * grid.cellLon) * lonM,
+      ((col + ring + 1) * grid.cellLon - coordinate.longitude) * lonM,
+    );
+    if (bound > best + overlapM + 1e-6) return [...found].sort((a, b) => a - b);
+  }
+  // A bounded search is only an optimization, never an incomplete answer.
+  return null;
+}
+
+function projectedSegment(p, q, coordinate) {
+  const scale = Math.cos(coordinate.latitude * Math.PI / 180) * 111320;
+  const ax = (p.longitude - coordinate.longitude) * scale;
+  const ay = (p.latitude - coordinate.latitude) * 110540;
+  const dx = (q.longitude - p.longitude) * scale;
+  const dy = (q.latitude - p.latitude) * 110540;
+  const length = dx * dx + dy * dy;
+  const f = length ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / length)) : 0;
+  return { f, distanceM: Math.hypot(ax + dx * f, ay + dy * f) };
+}
+
+function nearestOf(points, coordinate, currentTime, { overlapM, breakMs, near }) {
   const lat0 = (coordinate.latitude * Math.PI) / 180;
   const xy = p => ({
     x: (p.longitude - coordinate.longitude) * Math.cos(lat0) * 111320,
@@ -313,30 +487,26 @@ export function nearestRouteSpot(
       index: 0,
     });
   }
-  for (let i = 0; i < points.length - 1; i += 1) {
+  const segment = i => {
     const p = points[i],
       q = points[i + 1];
-    if (q.time - p.time > breakMs) continue;
-    const a = xy(p),
-      b = xy(q);
-    const dx = b.x - a.x,
-      dy = b.y - a.y,
-      length = dx * dx + dy * dy;
-    const f = length
-      ? Math.max(0, Math.min(1, -(a.x * dx + a.y * dy) / length))
-      : 0;
+    if (q.time - p.time > breakMs) return;
+    const { f, distanceM } = projectedSegment(p, q, coordinate);
     spots.push({
       point: f < 0.5 ? p : q,
-      distanceM: Math.hypot(a.x + dx * f, a.y + dy * f),
+      distanceM,
       index: i,
       coordinate: {
         latitude: p.latitude + (q.latitude - p.latitude) * f,
         longitude: p.longitude + (q.longitude - p.longitude) * f,
       },
     });
-  }
+  };
+  if (near) near.forEach(segment);
+  else for (let i = 0; i < points.length - 1; i += 1) segment(i);
   if (!spots.length) return null;
-  const best = Math.min(...spots.map(spot => spot.distanceM));
+  let best = Infinity;
+  for (const spot of spots) if (spot.distanceM < best) best = spot.distanceM;
   // Passes: runs of consecutive segments near the touch; the nearest of each.
   const passes = [];
   let last = -2;

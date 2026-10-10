@@ -1,6 +1,7 @@
+import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { logger } from '../logger';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
 import { CLOUD_DATABASE_METHODS } from '../cloud/CloudDatabase';
@@ -46,11 +47,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     saveStatus: (status, payload) => controlsRef.current?.saveRealStatus(status, payload) ?? Promise.reject(new Error('Tracking session is closed')),
   }));
   const mode = 'real';
-  const [trackingSources, dispatchTracking] = useReducer(
-    trackingSourceReducer,
-    undefined,
-    createTrackingSourceState,
-  );
+  const [trackingSources, setTrackingSources] = useState(createTrackingSourceState);
+  // Empty feed polls still report refreshing/caught-up/the same route. Keep
+  // every action in the pure reducer, but let useState's eager identity check
+  // skip scheduling the App when that reducer returns the current state.
+  const dispatchTracking = useCallback(action => {
+    setTrackingSources(current => trackingSourceReducer(current, action));
+  }, []);
   const [preferences, setPreferences] = useState({
     value: DEFAULT_TRACKING_PREFERENCES,
     ready: false,
@@ -138,8 +141,10 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
               dispatchTracking({ type: 'position-context', source, rows });
           },
           onInitialSnapshotReady() {
-            if (!disposed)
+            if (!disposed) {
               dispatchTracking({ type: 'initial-snapshot-ready', source });
+              markStartupPhase('initial-snapshot-publish');
+            }
           },
           onRoute(route) {
             if (!disposed)
@@ -210,7 +215,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       const initialization = {};
       for (const source of ['real']) {
         initialization[source] = Promise.resolve().then(async () => {
-          await databases[source].initialize();
+          await startupPhase('real-initialize', () => databases[source].initialize());
         });
         initialization[source]
           .then(() => {
@@ -245,12 +250,12 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       let cloudInitialization;
       controlsRef.current = {
         historyCommand(method, args) {
-          const task = initialization.real.then(async () => {
+          const task = startupPhase('history-real-wait', () => initialization.real).then(async () => {
             if (disposed || !databases.history) throw new Error(t("c485"));
             // A day read of an account's cloud rows waits for the cloud table's migrations.
             if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner) {
-              if (!cloudInitialization) cloudInitialization = databases.cloud.initialize().catch(error => { cloudInitialization = null; throw error; });
-              await cloudInitialization;
+              if (!cloudInitialization) cloudInitialization = startupPhase('history-cloud-initialize', () => databases.cloud.initialize()).catch(error => { cloudInitialization = null; throw error; });
+              await startupPhase('history-cloud-wait', () => cloudInitialization);
             }
             return databases.history[method](...args);
           });
@@ -260,7 +265,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         cloudCommand(method, args) {
           if (!databases.cloud) return Promise.reject(new Error(t("c486")));
           if (!cloudInitialization) {
-            cloudInitialization = initialization.real.then(() => databases.cloud.initialize());
+            cloudInitialization = initialization.real.then(() => startupPhase('history-cloud-initialize', () => databases.cloud.initialize()));
             cloudInitialization.catch(() => { cloudInitialization = null; });
           }
           const task = cloudInitialization.then(() => {
@@ -339,7 +344,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         logger.error(t("c489"), error);
       });
     };
-  }, [createDatabases]);
+  }, [createDatabases, dispatchTracking]);
 
   return {
     cloudDatabase,
