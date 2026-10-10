@@ -105,9 +105,10 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
       await connection.executeAsync('INSERT OR REPLACE INTO receiver_range_state(scope,value) VALUES(?,?)', [owner ?? 'local', JSON.stringify(ranges)]);
     },
     initialize() {
-      // Share in-flight and completed migration work among wrappers of this
-      // open connection. Failed opens remain retryable; a new handle migrates again.
-      if (initialization.has(connection)) return initialization.get(connection);
+      // UI/headless wrappers of one native owner share migration work.
+      // A new owner/standalone handle migrates again; failed opens remain retryable.
+      const key = connection.lockKey || connection;
+      if (initialization.has(key)) return initialization.get(key);
       const ready = withConnectionLock(connection, async () => {
       const columns = new Set(rows(await connection.executeAsync(
         'PRAGMA table_info(supabase_dog_status)',
@@ -174,8 +175,8 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
       });
-      initialization.set(connection, ready);
-      ready.catch(() => initialization.delete(connection));
+      initialization.set(key, ready);
+      ready.catch(() => initialization.delete(key));
       return ready;
     },
     async loadSyncState(owner, masterId) {

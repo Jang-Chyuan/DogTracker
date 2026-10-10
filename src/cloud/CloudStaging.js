@@ -22,8 +22,9 @@ export function createStagedCloudDatabase(connection, options, createCore) {
   const published = createCore(connection, options);
   const cap = options.maxRows;
   const active = new Map();
-  if (!initialization.has(connection)) initialization.set(connection, { ready: null, columns: null });
-  const state = initialization.get(connection);
+  const initializationKey = connection.lockKey || connection;
+  if (!initialization.has(initializationKey)) initialization.set(initializationKey, { ready: null, columns: null });
+  const state = initialization.get(initializationKey);
   const cores = Object.fromEntries(kinds.map(kind => [kind, createCore({
     lockKey: connection.lockKey || connection,
     executeAsync: (query, params) => connection.executeAsync(rewrite(kind, query), params),
