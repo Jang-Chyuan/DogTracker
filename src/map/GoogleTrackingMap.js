@@ -21,6 +21,7 @@ import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
 import DogNameMarker, { DOG_NAME_ANCHOR } from './DogNameMarker';
 import { dogHistoryLabel } from '../mapHistory/DogAliases';
+import SeparatedDogMarkers from './SeparatedDogMarkers';
 
 const EMPTY_REGION = {
   latitude: 23.7,
@@ -28,7 +29,7 @@ const EMPTY_REGION = {
   latitudeDelta: 4,
   longitudeDelta: 4,
 };
-function DeviceMarker({ source, role, position, onPress, identifier, title, description }) {
+function DeviceMarker({ source, role, position, onPress, identifier, title, description, separated = false }) {
   // A position older than the selected window is drawn faded, so it reads as
   // "last seen here", not as where the dog is now. The followed dog gets a ring
   // so the camera's target is visible on the map, not only in the card.
@@ -39,7 +40,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
   // frame), so fading and the follow ring have to ask for one redraw each.
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [faded, focused, title, position.fixedReason]);
+  }, [faded, focused, title, position.fixedReason, separated]);
   const name = title || (role === 'master' ? '領犬員 · Master' : '狗 · Slave');
   const detail = description || (
     position.retained ? '最後有效位置，非最新定位' : 'SQLite 定位'
@@ -49,7 +50,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       ref={marker}
       identifier={identifier || source + '-' + role}
       coordinate={position.coordinate}
-      anchor={role === 'slave' ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
+      anchor={role === 'slave' && !separated ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       zIndex={role === 'slave' ? 20 : 10}
       // No title or description: those draw the SDK's own bubble, and a tap
@@ -57,7 +58,7 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
       // The text they carried lives on the view below, for screen readers.
       onPress={onPress}
     >
-      <DogNameMarker label={role === 'slave' ? name : null}
+      <DogNameMarker label={role === 'slave' && !separated ? name : null}
         status={position.fixedReason || (role === 'slave' && faded ? '未更新／最後位置' : null)}><View
         collapsable={false}
         accessible
@@ -74,9 +75,9 @@ function DeviceMarker({ source, role, position, onPress, identifier, title, desc
 // The history track's last drawn position. Same redraw dance as DeviceMarker:
 // a custom marker view that is not tracked for changes can reach the native
 // side before it has laid out, and then draws as a blank dot.
-function TrackMarker({ track, onPress }) {
+function TrackMarker({ track, onPress, separated = false }) {
   const marker = useRef(null);
-  useEffect(() => { marker.current?.redraw?.(); }, [track.name, track.latest?.fixedReason]);
+  useEffect(() => { marker.current?.redraw?.(); }, [track.name, track.latest?.fixedReason, separated]);
   const { latest } = track;
   const detail = `${new Date(latest.time).toLocaleString()} · ${
     latest.speed_kmh == null ? '速度未知' : latest.speed_kmh.toFixed(1) + ' km/h'}`;
@@ -88,13 +89,13 @@ function TrackMarker({ track, onPress }) {
     <Marker
       ref={marker}
       coordinate={latest}
-      anchor={track.role === 'slave' ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
+      anchor={track.role === 'slave' && !separated ? DOG_NAME_ANCHOR : { x: 0.5, y: 0.5 }}
       tracksViewChanges={false}
       // Like the live map: no title or description, because the tap opens this
       // device's panel and the SDK's own bubble would be a second box.
       onPress={onPress}
     >
-      <DogNameMarker label={track.role === 'slave' ? track.name : null}
+      <DogNameMarker label={track.role === 'slave' && !separated ? track.name : null}
         status={latest.fixedReason}><View
         collapsable={false}
         accessible
@@ -327,7 +328,7 @@ function GoogleTrackingMapRenderer({
                   onPress={onTrackPress ? () => onTrackPress(track.name) : undefined}
                   location={{ position: { latitude: track.latest.latitude, longitude: track.latest.longitude,
                     timestamp: track.latest.time, rawSpeedKmh: track.latest.speed_kmh } }} />
-                : <TrackMarker track={track}
+                : track.role === 'slave' ? null : <TrackMarker track={track}
                   onPress={onTrackPress ? () => onTrackPress(track.name) : undefined} />)}
             </React.Fragment>
           ))}
@@ -384,20 +385,29 @@ function GoogleTrackingMapRenderer({
               ))}
             </React.Fragment>
           ))}
-          {(presentation.dogs || []).map(dog => (
-            <DeviceMarker
-              key={source + '-dog-' + dog.slaveId}
-              identifier={source + '-dog-' + dog.slaveId}
-              source={source}
-              role="slave"
-              position={dog}
-              onPress={onDogPress ? () => onDogPress(dog.slaveId) : undefined}
-              title={dogHistoryLabel(dog.slaveId, presentation.dogAliases)}
-              description={describeDogSource(dog) + ' · '
-                + new Date(dog.receivedAt).toLocaleTimeString()
-                + (dog.stale ? '（早於所選時間範圍）' : '')}
-            />
-          ))}
+          <SeparatedDogMarkers mapRef={mapRef} revision={cursorRevision}
+            width={cursorLayout.width} height={cursorLayout.height} ready={usable}
+            items={[
+              ...(presentation.dogs || []).map(dog => ({
+                id: source + '-dog-' + dog.slaveId, coordinate: dog.coordinate, dog,
+                label: dogHistoryLabel(dog.slaveId, presentation.dogAliases),
+                status: dog.fixedReason || (dog.stale ? '未更新・最後位置' : null),
+                color: colors.dog, onPress: onDogPress ? () => onDogPress(dog.slaveId) : undefined,
+              })),
+              ...(presentation.historyTracks || []).filter(track => track.role === 'slave' && track.latest).map(track => ({
+                id: source + '-history-' + track.name, coordinate: track.latest, track,
+                label: track.name, status: track.latest.fixedReason, color: track.color,
+                onPress: onTrackPress ? () => onTrackPress(track.name) : undefined,
+              })),
+            ]}
+            renderMarker={(item, coordinate, separated) => item.track
+              ? <TrackMarker track={{ ...item.track, latest: { ...item.track.latest, ...coordinate } }}
+                  separated={separated} onPress={item.onPress} />
+              : <DeviceMarker identifier={item.id} source={source} role="slave"
+                  position={{ ...item.dog, coordinate }} separated={separated}
+                  onPress={item.onPress} title={item.label}
+                  description={describeDogSource(item.dog) + ' · ' + new Date(item.dog.receivedAt).toLocaleTimeString()} />}
+          />
         </MapView>
       ) : (
         <View style={styles.unavailable}>
