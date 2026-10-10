@@ -430,6 +430,7 @@ function TrackerApp({ resume = null, onRestart }) {
       revision: cloudSync.revision,
       cloudBusy: cloudSync.busy || cloudSync.catchUp?.phase === 'catching-up',
       cloudSuccess: completedMapRevision(cloudSync),
+      getMapPublication: cloudSync.getMapPublication,
     },
   );
   const fixtureEdits = useFixtureEdits(fixture);

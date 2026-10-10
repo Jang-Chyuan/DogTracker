@@ -398,6 +398,7 @@ test('manual window completion cannot publish canceled auto pages; the next comp
       revision: sync.revision ?? 0,
       cloudBusy: sync.busy || sync.catchUp?.phase === 'catching-up',
       cloudSuccess: completedMapRevision(sync),
+      getMapPublication: engine.mapPublication,
     });
     return <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner="a" cloudDogs={state}
       cloudSync={sync} mapProvider={GOOGLE_MAP_PROVIDER} />;
@@ -430,6 +431,56 @@ test('manual window completion cannot publish canceled auto pages; the next comp
     expect(latest().mapSuccessRevision).toBe(2);
     expect(state.cloudCommit).toBe(2);
     expect(drawnLatitude()).toBe(26);
+  } finally {
+    changed.mockImplementation(() => {});
+    await act(async () => { renderer?.unmount(); });
+  }
+});
+
+test.each(['error', 'abort'])('synchronous publication fence rejects %s pages when React skips every busy render', async failure => {
+  const { database, changed } = fixture();
+  const latest = () => changed.mock.calls.at(-1)?.[0] ?? { busy: false, mapSuccessRevision: 0 };
+  let position = 25, state, renderer;
+  database.latestBySlave = async () => [{ slave_id: 8, master_id: 7, received_at: NOW,
+    slave_lat: position, slave_lon: 121 }];
+  const clock = () => NOW;
+  const tracking = { mode: 'real', point: { ...trackingPoint, id: null, slaveId: null, slaveLat: null, slaveLon: null },
+    route: emptyLiveRoute(), positionSamples: [], ready: { real: true }, errors: {}, initialSnapshotReady: true,
+    foreground: true, preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES } };
+  const getMapPublication = () => engine.mapPublication?.();
+  function Harness() {
+    const sync = latest();
+    state = useCloudDogs(database, 'a', true, clock, null, {
+      revision: sync.revision ?? 0, cloudBusy: sync.busy,
+      cloudSuccess: completedMapRevision(sync), getMapPublication,
+    });
+    return <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner="a" cloudDogs={state}
+      cloudSync={{ ...sync, getMapPublication }} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  }
+  const latitude = () => renderer.root.findByType(TrackingMap).props.presentation.dogMarkers
+    .find(dog => dog.slaveId === 8).coordinate.latitude;
+  try {
+    await act(async () => { renderer = Renderer.create(<Harness />); });
+    changed.mockImplementation(() => { renderer.update(<Harness />); });
+    await act(async () => { engine.setForeground(true); engine.setSession(account('a')); await flush(); });
+    expect(latitude()).toBe(25);
+    // Coalesce all scheduler changes into one final render. The fence reads
+    // the actual engine while React never sees busy=true for this operation.
+    changed.mockImplementation(() => {});
+    if (failure === 'error') {
+      database.savePage.mockImplementationOnce(async () => { position = 26; throw new Error('partial page failed'); });
+      engine.retry(); await flush();
+    } else {
+      const abort = new AbortController();
+      await expect(engine.runManual(async () => {
+        position = 26; abort.abort(); throw new Error('cancelled download');
+      }, abort)).rejects.toThrow('cancelled download');
+    }
+    expect(latest().busy).toBe(false);
+    await act(async () => { renderer.update(<Harness />); });
+    if (failure === 'error') await act(async () => { await jest.advanceTimersByTimeAsync(10000); });
+    expect(state.rows[0].slave_lat).toBe(25);
+    expect(latitude()).toBe(25);
   } finally {
     changed.mockImplementation(() => {});
     await act(async () => { renderer?.unmount(); });

@@ -18,6 +18,7 @@ const CLOUD_DOWNLOAD_TIMEOUT_MS = 120000;
 // gate is enabled by foreground UI; WorkManager uses the same exclusive slot.
 // Manual and automatic downloads share the same exclusive network/write slot.
 export function createCloudSync({ client, database, onChange = () => {}, now = Date.now }) {
+  const mapScope = {};
   let owner = null;
   let foreground = false;
   let disposed = false;
@@ -36,7 +37,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   // 判定表「使用中登入失效」); offline: it never reached Supabase (S3 can
   // say a switch needs the network).
   let state = { busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
-    failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, catchUp: CATCH_UP_IDLE };
+    failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, catchUp: CATCH_UP_IDLE };
   const publish = patch => {
     state = { ...state, ...patch };
     if (!disposed) onChange({ ...state, owner, foreground });
@@ -76,7 +77,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t("c586")); };
     // Each pass reports a refusal of the sign-in on its own (authFailed).
     resumeCatchUp.started();
-    publish({ busy: true, mode: 'auto', error: '', authFailed: false });
+    publish({ busy: true, mode: 'auto', error: '', authFailed: false,
+      mapPending: true, mapAttempt: state.mapAttempt + 1 });
     running = withCloudSyncSlot(async () => {
       try {
         check();
@@ -114,7 +116,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           }
         }
         check();
-        publish({ mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
+        publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
         resumeCatchUp.caughtUp();
       } catch (error) {
         if (valid(version) && (!abort.signal.aborted || timedOut)) {
@@ -139,6 +141,12 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   }
 
   return {
+    // Synchronous read fence: React may coalesce busy/idle updates. Failed or
+    // aborted writes remain pending until a complete automatic pass succeeds.
+    mapPublication() {
+      return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending,
+        busy: state.busy, mapSuccessRevision: state.mapSuccessRevision };
+    },
     setSession(session) {
       const next = session?.user.id || null;
       if (owner === next) return;
@@ -149,7 +157,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
-        offline: false, mapSuccessRevision: 0, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
+        offline: false, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
       wake();
     },
     setForeground(active) {
@@ -183,7 +191,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         await running;
         if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
         controller = abort;
-        publish({ busy: true, mode: 'manual' });
+        publish({ busy: true, mode: 'manual', mapPending: true, mapAttempt: state.mapAttempt + 1 });
         running = withCloudSyncSlot(() => {
           if (!valid(version) || abort.signal.aborted) throw new Error('Download cancelled');
           return work(() => valid(version) && !abort.signal.aborted);

@@ -34,3 +34,23 @@ test('late reads spanning a download cannot replace cloud readings; a new owner 
   replacement.update(true, 0);
   expect(await replacement.read(7, 0)).toEqual({ local: [], cloud: [], battery: [] });
 });
+
+test('card fence rejects failed pages without any rendered busy transition and rejects a replaced engine scope', async () => {
+  let publication = { scope: {}, owner: 'a', generation: 1, attempt: 0, pending: false, mapSuccessRevision: 0 };
+  let rows = cloud(80), finish;
+  const database = { dogCardRows: jest.fn(async owner => owner ? rows : { local: [], cloud: [], battery: [] }) };
+  const reader = createAtomicDogCardReader(database, 'a', () => publication);
+  reader.update(false, null);
+  const before = await reader.read(7, 0);
+  publication = { ...publication, attempt: 1, pending: true }; // failure/abort survived a coalesced busy lifecycle
+  rows = cloud(20);
+  expect(await reader.read(7, 0)).toEqual(before);
+  expect(database.dogCardRows).toHaveBeenLastCalledWith(null, 7, 0);
+  publication = { ...publication, pending: false, mapSuccessRevision: 1 };
+  reader.update(false, 1);
+  database.dogCardRows.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const late = reader.read(7, 0);
+  publication = { ...publication, scope: {} }; // same owner/counters, different scheduler instance
+  finish(rows);
+  expect((await late).cloud).toEqual(before.cloud);
+});

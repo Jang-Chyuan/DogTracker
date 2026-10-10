@@ -402,7 +402,7 @@ export default function MapScreen({
   );
   const dogSnapshot = atomicDogs.current.select({
     owner: cloudOwner, dogs: mergedDogs, cloudDogs,
-    busy: !!cloudSync?.busy || cloudSync?.catchUp?.phase === 'catching-up',
+    busy: !!cloudSync?.busy || !!cloudSync?.getMapPublication?.()?.busy || cloudSync?.catchUp?.phase === 'catching-up',
     success: completedMapRevision(cloudSync),
   });
   const dogs = dogSnapshot.dogs;
@@ -748,7 +748,7 @@ export default function MapScreen({
   }, [cardOpen, onCardChange]);
   const database = tracking.cloudDatabase;
   const cardReader = useMemo(() => database?.dogCardRows
-    ? createAtomicDogCardReader(database, cloudOwner) : null, [database, cloudOwner]);
+    ? createAtomicDogCardReader(database, cloudOwner, cloudSync?.getMapPublication) : null, [database, cloudOwner, cloudSync?.getMapPublication]);
   const cardBusy = !!cloudSync?.busy || cloudSync?.catchUp?.phase === 'catching-up' || cloudReadPending;
   const cardSuccess = completedMapRevision(cloudSync);
   cardReader?.update(cardBusy, cardSuccess);

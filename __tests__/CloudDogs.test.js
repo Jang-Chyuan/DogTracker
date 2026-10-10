@@ -149,8 +149,8 @@ test('the newest downloaded row per dog, per account, with a position', async ()
 
 // A stable clock: the hook restarts its timer when `now` changes identity.
 const clock = () => NOW;
-function Probe({ database, owner, enabled, onState, active = true, revision = 0, cloudBusy = false, cloudSuccess = null }) {
-  onState(useCloudDogs(database, owner, enabled, clock, null, { active, revision, cloudBusy, cloudSuccess }));
+function Probe({ database, owner, enabled, onState, active = true, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null }) {
+  onState(useCloudDogs(database, owner, enabled, clock, null, { active, revision, cloudBusy, cloudSuccess, getMapPublication }));
   return null;
 }
 
@@ -567,6 +567,32 @@ test('post-success DB read failure is visible with retry and retains positions u
     expect(retry).toHaveBeenCalledTimes(1);
     expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers[0].coordinate.latitude).toBe(26);
     expect(renderer.root.findAllByProps({ testID: 'map-catch-up-retry' })).toHaveLength(0);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});
+
+test('synchronous owner/logout fence discards late cloud rows before React receives the account change', async () => {
+  jest.useFakeTimers();
+  let renderer, state, finish;
+  const scope = {};
+  let publication = { scope, owner: 'a', generation: 1, attempt: 0, pending: false, mapSuccessRevision: 0 };
+  const getter = () => publication;
+  const database = { latestBySlave: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+  const view = owner => <Probe database={database} owner={owner} enabled getMapPublication={getter}
+    onState={value => { state = value; }} />;
+  try {
+    await act(async () => { renderer = Renderer.create(view('a')); });
+    publication = { ...publication, owner: 'b', generation: 2 };
+    await act(async () => { finish([row('late-owner-a', 7, NOW, 5)]); });
+    expect(state.rows).toEqual([]);
+    database.latestBySlave.mockResolvedValueOnce([row('owner-b', 8, NOW, 5)]);
+    await act(async () => { renderer.update(view('b')); });
+    expect(state.rows.map(r => r.slave_id)).toEqual([8]);
+    publication = { ...publication, owner: null, generation: 3 };
+    await act(async () => { renderer.update(view(null)); });
+    expect(state.rows).toEqual([]);
   } finally {
     await act(async () => { renderer?.unmount(); });
     jest.useRealTimers();

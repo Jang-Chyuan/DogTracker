@@ -1,3 +1,4 @@
+import { captureMapRead } from './CloudPublication';
 import { logger } from '../logger';
 import { useEffect, useRef, useState } from 'react';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
@@ -15,7 +16,7 @@ export const LATEST_SINCE = 0;
 // before the stored dogs are read).
 const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: false });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
-  { active = true, revision = 0, cloudBusy = false, cloudSuccess = null } = {}) {
+  { active = true, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
   // A failed/aborted download leaves partial rows in SQLite. Keep its cloud
   // side quarantined until a complete pass, while still accepting local BLE.
@@ -34,6 +35,8 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     gate.busy = cloudBusy;
     gate.success = cloudSuccess;
   }
+  const scheduler = useRef(getMapPublication);
+  scheduler.current = getMapPublication;
   const refresh = useRef(null);
   const inFlight = useRef(Promise.resolve());
   const lastTrigger = useRef({ revision, cloudBusy, cloudSuccess });
@@ -71,9 +74,11 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         // dog, and a busy day already filled the old 24-hour window.
         const attempt = publication.current;
         const epoch = attempt.epoch;
+        const fence = captureMapRead(scheduler.current, owner, attempt.success);
+        const blockCloud = attempt.blocked || !fence.open;
         const acceptsCloud = () => alive && publication.current === attempt
-          && attempt.epoch === epoch && !attempt.blocked;
-        const readOwner = attempt.blocked ? null : owner;
+          && attempt.epoch === epoch && !attempt.blocked && fence.valid();
+        const readOwner = blockCloud ? null : owner;
         const readRows = readOwner ? await database.latestBySlave(readOwner, LATEST_SINCE) : [];
         if (!alive) return;
         // Signed out, this phone's own BLE packets only (latestStatusRows).
@@ -89,7 +94,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           // since their checkpoints, including fixes outside the hold window.
           const replaced = holdState.current;
           if (replaced?.owner !== owner || replaced?.database !== database
-            || (!attempt.blocked && now() - replaced.polledAt > HOLD_LOOKBACK_MS)) {
+            || (!blockCloud && now() - replaced.polledAt > HOLD_LOOKBACK_MS)) {
             const store = createHoldStore();
             store.seedRanges(await database.loadRangeState?.(owner) ?? {});
             // Same account and database: the receiver-range judgements stay.
