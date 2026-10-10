@@ -468,7 +468,9 @@ const HistoryLine = React.memo(
     before.dashed === after.dashed,
 );
 
-function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
+// Live snapshot age still updates the map controls. Reuse unchanged history
+// geometry until its route, stop handler, zoom or theme context changes.
+const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
     () => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)),
@@ -535,7 +537,7 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
       )}
     </>
   );
-}
+});
 
 /**
  * The dogs the launch screen hands over to: on screen (inside the map, clear
