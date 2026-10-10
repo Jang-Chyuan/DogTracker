@@ -111,6 +111,8 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
 
   private companion object {
     const val SHARE_CODE = "shareCode"
+    // One reservation at a time across module instances in this process.
+    private val DOWNLOAD_NAME_LOCK = Any()
     // 「存到下載」 on Android 7–9 (the system's "save as"); outside the share
     // sheet's 7401–7464.
     const val CREATE_DOCUMENT_CODE = 7500
@@ -297,10 +299,28 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   }
 
   @androidx.annotation.RequiresApi(29)
-  private fun saveToMediaStore(file: File, mime: String): ExportDownloads.Saved {
+  private fun saveToMediaStore(file: File, mime: String): ExportDownloads.Saved = synchronized(DOWNLOAD_NAME_LOCK) {
+    val resolver = context.contentResolver
+    val path = ExportDownloads.RELATIVE_PATH.trimEnd('/') + "/"
+    val existing = resolver.query(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+      arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME),
+      "${android.provider.MediaStore.MediaColumns.RELATIVE_PATH} = ?", arrayOf(path), null)?.use { cursor ->
+      buildList { while (cursor.moveToNext()) cursor.getString(0)?.let { add(it) } }
+    } ?: error("cannot query export filenames")
+    // Scoped storage cannot reveal every other app's files. MediaStore still
+    // prevents overwrites; a renamed reservation is discarded and retried.
+    ExportDownloadNames.save(file.name, existing,
+      create = { name -> createMediaStoreFile(file, mime, name) },
+      discard = { saved -> check(resolver.delete(Uri.parse(saved.uri), null, null) == 1) {
+        "cannot remove renamed export reservation"
+      } })
+  }
+
+  @androidx.annotation.RequiresApi(29)
+  private fun createMediaStoreFile(file: File, mime: String, name: String): ExportDownloads.Saved {
     val resolver = context.contentResolver
     val values = android.content.ContentValues().apply {
-      put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+      put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
       put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
       put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, ExportDownloads.RELATIVE_PATH)
       put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
@@ -309,15 +329,17 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
       ?: error("MediaStore insert failed")
     try {
       resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: error("no output stream")
-      resolver.update(uri, android.content.ContentValues().apply { put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+      check(resolver.update(uri, android.content.ContentValues().apply {
+        put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+      }, null, null) == 1) { "cannot publish export" }
+      val actual = resolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use {
+        if (it.moveToFirst()) it.getString(0) else null
+      } ?: error("cannot read saved export filename")
+      return ExportDownloads.Saved(actual, uri.toString())
     } catch (e: Exception) {
       resolver.delete(uri, null, null)
       throw e
     }
-    val name = resolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use {
-      if (it.moveToFirst()) it.getString(0) else null
-    } ?: file.name
-    return ExportDownloads.Saved(name, uri.toString())
   }
 
   private fun askCreateDocument() {

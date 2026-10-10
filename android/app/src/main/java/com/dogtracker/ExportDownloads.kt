@@ -4,8 +4,8 @@ package com.dogtracker
  * 「存到下載」 for the history export (067): the files go to the phone's
  * Download/DogTracker/ without a storage permission.
  * - Android 10 and up (API 29+): MediaStore.Downloads, RELATIVE_PATH
- *   Download/DogTracker; the system renames a clash, so the final names are
- *   read back and shown.
+ *   Download/DogTracker; names are reserved with an extension-preserving
+ *   suffix, then the system's final name is read back and checked.
  * - Android 7–9 (API 24–28): the system's "save as" (ACTION_CREATE_DOCUMENT),
  *   one file at a time, with the export's own name suggested.
  * Pure parts here (JUnit); HistoryExportModule does the Android calls.
