@@ -37,6 +37,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   const lastAsk = useRef(null);
   const downloading = useRef(null);
   const downloadSeq = useRef(0);
+  const completenessEpoch = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -48,6 +49,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     asking.current = null;
     // A late answer of the old subject's download is not this one's.
     downloadSeq.current += 1;
+    completenessEpoch.current += 1;
     downloading.current?.abort();
     downloading.current = null;
     lastAsk.current = null;
@@ -171,14 +173,19 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   useEffect(() => {
     if (!enabled || !cloud.downloadStates) return undefined;
     let alive = true;
+    // Reads cannot replace completeness changed since their start, including
+    // a dog finishing while a read begun during its download is still pending.
+    // An active manual request owns its in-memory incomplete/complete states.
+    const epoch = completenessEpoch.current;
+    const current = () => alive && completenessEpoch.current === epoch && !downloading.current;
     Promise.resolve(cloud.downloadStates({ slaveId })).then(states => {
-      if (!alive) return;
+      if (!current()) return;
       const pending = incompleteOf(scope);
       pending.clear();
       for (const row of states) if (!row.complete) pending.add(row.day);
       setDurable({ scope, states });
     }).catch(() => {
-      if (!alive) return;
+      if (!current()) return;
       const pending = incompleteOf(scope);
       local.forEach(day => pending.add(day));
       const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
@@ -209,6 +216,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     downloading.current = controller;
     const id = downloadSeq.current + 1;
     downloadSeq.current = id;
+    completenessEpoch.current += 1;
     setDownload({ day, status: 'downloading', id });
     const { dayStart, dayEnd } = dayBounds(day);
     const subjects = Array.isArray(slaveId) && localByDog ? slaveId.filter(dogId => !completeFor(dogId, day)) : slaveId;
@@ -220,14 +228,18 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     const onDogEnd = (dogId, status) => {
       if (!alive.current || downloadSeq.current !== id) return;
       setDogDownloads(current => ({ ...current, [dogId]: { scope, day, status } }));
-      if (status === 'done') setDurable(current => ({ scope, states: [
-        ...(current.scope === scope ? current.states.filter(row => row.slave_id !== dogId || row.day !== day) : []),
-        { slave_id: dogId, day, complete: 1 },
-      ] }));
+      if (status === 'done') {
+        completenessEpoch.current += 1;
+        setDurable(current => ({ scope, states: [
+          ...(current.scope === scope ? current.states.filter(row => row.slave_id !== dogId || row.day !== day) : []),
+          { slave_id: dogId, day, complete: 1 },
+        ] }));
+      }
     };
     Promise.resolve().then(() => cloud.download({ slaveId: subjects, dayStart, dayEnd, signal: controller.signal, onDogEnd }))
       .then(() => {
         if (!alive.current || downloadSeq.current !== id) return;
+        completenessEpoch.current += 1;
         setDownload({ day, status: 'done', id });
         markIncomplete(day, false);
         // Downloaded (rows or not): the cloud was asked about this day.
@@ -236,6 +248,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       })
       .catch(() => {
         if (!alive.current || downloadSeq.current !== id) return;
+        completenessEpoch.current += 1;
         setDownload({ day, status: controller.signal.aborted ? 'cancelled' : 'failed', id });
         onEnd?.('failed');
       })
@@ -247,6 +260,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     const controller = downloading.current;
     downloading.current = null;
     downloadSeq.current += 1;
+    completenessEpoch.current += 1;
     controller.abort();
     setDownload(current => (current?.status === 'downloading' ? { ...current, status: 'cancelled' } : current));
     return true;
