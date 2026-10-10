@@ -1,4 +1,14 @@
 import { createCloudSync } from '../src/cloud/CloudSync';
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { useCloudDogs } from '../src/cloud/useCloudDogs';
+import { completedMapRevision } from '../src/cloud/CloudPublication';
+import MapScreen from '../src/screens/MapScreen';
+import TrackingMap from '../src/map/TrackingMap';
+import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
+import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
+import { emptyLiveRoute } from '../src/tracking/LiveRouteWindow';
+import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 import { createCloudSecureStorage } from '../src/cloud/CloudSecureStorage';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
@@ -343,7 +353,7 @@ test('manual history work during resume cannot claim that the live cloud downloa
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
 });
 
-test('map publication advances only on complete successful work and resets on account switch', async () => {
+test('live map publication advances only on complete automatic work and resets on account switch', async () => {
   const { changed } = fixture();
   const current = () => changed.mock.calls.at(-1)[0];
   engine.setForeground(true); engine.setSession(account('a')); await flush();
@@ -351,7 +361,7 @@ test('map publication advances only on complete successful work and resets on ac
   await expect(engine.runManual(async () => { throw new Error('partial page failed'); })).rejects.toThrow('partial page failed');
   expect(current().mapSuccessRevision).toBe(1);
   await expect(engine.runManual(async () => 'complete window')).resolves.toBe('complete window');
-  expect(current().mapSuccessRevision).toBe(2);
+  expect(current().mapSuccessRevision).toBe(1);
   let finish;
   const late = engine.runManual(() => new Promise(resolve => { finish = resolve; }));
   await Promise.resolve(); await Promise.resolve();
@@ -368,4 +378,60 @@ test('automatic failure cannot publish a complete map generation; retry success 
   expect(changed.mock.calls.at(-1)[0]).toMatchObject({ mapSuccessRevision: 0, error: 'download failed' });
   engine.retry(); await flush();
   expect(changed.mock.calls.at(-1)[0]).toMatchObject({ mapSuccessRevision: 1, error: '' });
+});
+
+
+test('manual window completion cannot publish canceled auto pages; the next complete auto updates the real Map', async () => {
+  const { database, changed } = fixture();
+  const latest = () => changed.mock.calls.at(-1)?.[0] ?? { busy: false, mapSuccessRevision: 0 };
+  let position = 25, state, renderer;
+  database.latestBySlave = jest.fn(async () => [{ slave_id: 8, master_id: 7,
+    received_at: NOW, slave_lat: position, slave_lon: 121 }]);
+  const clock = () => NOW;
+  const tracking = { mode: 'real', point: { ...trackingPoint, id: null, slaveId: null, slaveLat: null, slaveLon: null },
+    route: emptyLiveRoute(), positionSamples: [], ready: { real: true }, errors: {},
+    initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES } };
+  function Harness() {
+    const sync = latest();
+    state = useCloudDogs(database, 'a', true, clock, null, {
+      revision: sync.revision ?? 0,
+      cloudBusy: sync.busy || sync.catchUp?.phase === 'catching-up',
+      cloudSuccess: completedMapRevision(sync),
+    });
+    return <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner="a" cloudDogs={state}
+      cloudSync={sync} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  }
+  const drawnLatitude = () => renderer.root.findByType(TrackingMap).props.presentation.dogMarkers
+    .find(dog => dog.slaveId === 8).coordinate.latitude;
+  try {
+    await act(async () => { renderer = Renderer.create(<Harness />); });
+    changed.mockImplementation(() => { renderer.update(<Harness />); });
+    await act(async () => { engine.setForeground(true); engine.setSession(account('a')); await flush(); });
+    expect(latest().mapSuccessRevision).toBe(1);
+    expect(drawnLatitude()).toBe(25);
+    let failPage;
+    database.savePage.mockImplementationOnce(() => new Promise((resolve, reject) => { failPage = reject; }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(30000); });
+    expect(latest()).toMatchObject({ busy: true, mode: 'auto', mapSuccessRevision: 1, catchUp: { phase: 'idle' } });
+    // Persist a partial page only after the busy render, before the failing
+    // continuation. The manual window is for another historical dog/day.
+    position = 26;
+    await act(async () => {
+      const manual = engine.runManual(async () => 'different history window complete');
+      failPage(new Error('cancelled automatic continuation'));
+      await expect(manual).resolves.toBe('different history window complete');
+    });
+    expect(latest()).toMatchObject({ busy: false, mapSuccessRevision: 1, catchUp: { phase: 'idle' } });
+    expect(state.cloudCommit).toBe(1);
+    expect(state.rows[0].slave_lat).toBe(25);
+    expect(drawnLatitude()).toBe(25);
+    await act(async () => { await flush(); }); // scheduled complete automatic pass
+    expect(latest().mapSuccessRevision).toBe(2);
+    expect(state.cloudCommit).toBe(2);
+    expect(drawnLatitude()).toBe(26);
+  } finally {
+    changed.mockImplementation(() => {});
+    await act(async () => { renderer?.unmount(); });
+  }
 });

@@ -188,10 +188,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           if (!valid(version) || abort.signal.aborted) throw new Error('Download cancelled');
           return work(() => valid(version) && !abort.signal.aborted);
         });
-        const result = await running;
-        if (valid(version) && !abort.signal.aborted)
-          publish({ mapSuccessRevision: state.mapSuccessRevision + 1 });
-        return result;
+        // A selected history window is not a complete live all-master pass.
+        // Canceled automatic pages remain quarantined until the next auto
+        // success, even when this manual window itself completes normally.
+        return await running;
       } finally {
         manualPending = false;
         controller = null;
