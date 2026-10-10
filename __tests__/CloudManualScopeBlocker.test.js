@@ -158,5 +158,5 @@ test('owner replacement keeps published reads fenced until an already-started na
     await manual;
     expect(sync.mapPublication()).toMatchObject({ owner: 'another-anonymous-owner', publishedPending: false });
     expect(sync.mapPublication().publishedRevision).toBeGreaterThan(0);
-  } finally { finish?.(); await sync.dispose().catch(() => {}); jest.useRealTimers(); }
+  } finally { finish?.(); await Promise.resolve(sync.dispose()).catch(() => {}); jest.useRealTimers(); }
 });

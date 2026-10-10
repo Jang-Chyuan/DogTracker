@@ -48,7 +48,8 @@ test('opening drops obsolete demo objects, preserves real data and is safe to re
     await real.saveStatus(trackingPoint, 'hardware');
     await settings.initialize();
     await settings.save({ mode: 'real', showTrails: true });
-    await createCloudDatabase(connection).initialize();
+    const cloud = createCloudDatabase(connection);
+    await cloud.initialize();
     await createHistoryDatabase(connection).load();
     const now = Date.now();
     connection.sqlite.exec(`
@@ -63,7 +64,12 @@ test('opening drops obsolete demo objects, preserves real data and is safe to re
       CREATE TABLE demo_metadata (key TEXT PRIMARY KEY, value TEXT);
       INSERT INTO demo_metadata VALUES ('seed_v1', 'done');
     `);
-    // Every table that is not simulated data must survive untouched.
+    await cloud.beginDownload('account-a');
+    await cloud.savePage('account-a', [{ event_id: 'staged-event', master_id: 7, slave_id: 7,
+      received_at: now + 1, track_at: now + 1, track_time_version: 1,
+      slave_lat: 24.9892, slave_lon: 121.3132, activity_valid: 0, battery_valid: 0 }],
+    { masterId: 7, throughAt: new Date(now + 1).toISOString(), eventId: 'staged-event' });
+    // Every table, including unfinished durable jobs, must survive untouched.
     const tables = connection.sqlite.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'demo_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     ).all().map(row => row.name);
@@ -72,7 +78,12 @@ test('opening drops obsolete demo objects, preserves real data and is safe to re
     const snapshot = () => tables.map(table => connection.sqlite
       .prepare(`SELECT * FROM ${table}`).all());
     const before = snapshot();
-    expect(before.every(table => table.length > 0)).toBe(true);
+    const seeded = ['app_settings', 'cloud_sync_buckets', 'cloud_sync_state', 'dog_status',
+      'map_history_settings', 'supabase_dog_status', 'cloud_auto_supabase_dog_status',
+      'cloud_auto_cloud_sync_state', 'cloud_download_jobs'];
+    expect(seeded.every(table => before[tables.indexOf(table)]?.length > 0)).toBe(true);
+    // Other job scopes and the transaction-only quota table legitimately start empty.
+    // The complete snapshot assertion below still preserves those tables too.
     mockDatabase.executeAsync.mockReset().mockImplementation(connection.executeAsync);
     for (let attempt = 0; attempt < 2; attempt++) {
       const databases = createLocalDatabases();
