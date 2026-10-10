@@ -652,7 +652,7 @@ export default function MapScreen({
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
-  const screen = useHistoryScreen({ target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
+  const screen = useHistoryScreen({ publicationRevision: fixture ? 0 : cloudSync?.mapSuccessRevision ?? 0, target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
     recording: livePhone ? !!livePhone.running : null,
     recordingStoppedAt: livePhone?.stoppedAt ?? null,
@@ -1212,6 +1212,10 @@ export default function MapScreen({
           now={fixture?.activityNow ?? now}
           active={active}
           initialView={fixture?.activityView ?? null}
+          owner={fixture ? null : cloudOwner}
+          getPublication={fixture ? null : cloudSync?.getMapPublication}
+          revision={fixture ? 0 : cloudSync?.mapSuccessRevision ?? 0}
+          publishedReads={!fixture && typeof database?.publishManualScope === 'function'}
           onBack={closePage}
         />
       )}

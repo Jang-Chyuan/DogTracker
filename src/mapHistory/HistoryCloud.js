@@ -50,7 +50,7 @@ async function oneTime(query, signal, ms) {
  * `client` the Supabase client, `database` the cloud database (savePage),
  * `owner` the account, `runManual(work, abort)` the sync's slot.
  */
-export function createHistoryCloud({ client, database, owner, runManual, questionMs = CLOUD_QUESTION_MS }) {
+export function createHistoryCloud({ client, database, owner, runManual, getPublication = null, questionMs = CLOUD_QUESTION_MS }) {
   // One dog, or the dogs shown together (H7: a day of any of them has a dot).
   const rows = slaveId => {
     const query = client.from('dog_telemetry').select('received_at');
@@ -61,6 +61,8 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
   let previous = Promise.resolve();
   return {
     owner,
+    getPublication,
+    publishedReads: typeof database.publishManualScope === 'function',
     downloadStates: ({ slaveId }) => database.historyDownloadStates?.(owner, slaveId) ?? Promise.resolve([]),
     /** The time of the dog's newest row in [since, cutoff), or null. */
     newestBefore({ slaveId, cutoff, since, signal }) {
@@ -139,6 +141,7 @@ export function useHistoryCloudSource({ database, sync, owner, clientFactory = g
     let client;
     try { client = clientFactory(); } catch { return null; }
     return createHistoryCloud({ client, database, owner,
+      getPublication: () => syncRef.current?.getMapPublication?.() ?? null,
       runManual: (work, abort) => syncRef.current.runManual(work, abort) });
   }, [owner, database, clientFactory]);
   return { cloud, online: !sync?.offline };

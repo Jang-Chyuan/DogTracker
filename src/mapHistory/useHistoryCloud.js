@@ -23,7 +23,7 @@ const merge = (list, more) => (more.length ? [...new Set([...list, ...more])] : 
  * days this phone holds. Returns { knowledge, askMonth, askYear, retryQuery,
  * stopQuery, download, startDownload, cancelDownload }.
  */
-export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localByDog = null, active = true, seed = null }) {
+export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localByDog = null, active = true, seed = null, onDogComplete = null }) {
   const enabled = !!cloud && slaveId != null;
   // `seed`: what a screen fixture says was already found (its H3c starts on
   // a cloud day); never set for real.
@@ -52,7 +52,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     downloading.current = null;
     lastAsk.current = null;
     setDownload(null);
-  }, [scope]);
+  }, [scope, cloud]);
   // Paused (the app in the background, another screen): the question stops;
   // back in front, the last one is asked again (the calendar may be open).
   const again = useRef(null);
@@ -220,6 +220,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     const onDogEnd = (dogId, status) => {
       if (!alive.current || downloadSeq.current !== id) return;
       setDogDownloads(current => ({ ...current, [dogId]: { scope, day, status } }));
+      if (status === 'done') onDogComplete?.(dogId, day);
       if (status === 'done') setDurable(current => ({ scope, states: [
         ...(current.scope === scope ? current.states.filter(row => row.slave_id !== dogId || row.day !== day) : []),
         { slave_id: dogId, day, complete: 1 },
@@ -240,7 +241,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
         onEnd?.('failed');
       })
       .finally(() => { if (downloading.current === controller) downloading.current = null; });
-  }, [enabled, cloud, slaveId, add, markIncomplete, localByDog, durable, scope]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, cloud, slaveId, add, markIncomplete, localByDog, durable, scope, onDogComplete]); // eslint-disable-line react-hooks/exhaustive-deps
   /** 取消, 返回鍵, ‹ › or another day while downloading. */
   const cancelDownload = useCallback(() => {
     if (!downloading.current) return false;

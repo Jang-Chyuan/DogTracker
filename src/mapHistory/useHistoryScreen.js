@@ -46,6 +46,8 @@ import {
   usableSnapshot,
 } from '../history/screen/HistoryScreenState';
 
+import { captureMapRead, completedMapRevision } from '../cloud/CloudPublication';
+
 import { haptic } from '../utils/haptics';
 
 // 多隻狗（2–4 隻）.
@@ -71,6 +73,10 @@ export function useHistoryDayRows({
   clock,
   scope = '',
   revision = 0,
+  getPublication = null,
+  publicationRevision = 0,
+  completedWindow = false,
+  publishedReads = false,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -79,13 +85,14 @@ export function useHistoryDayRows({
     error: '',
     replayHolds: null,
   });
+  const accepted = useRef(null);
   const now = useRef(clock);
   now.current = clock;
   // `scope`: another reader of the same day (a screen fixture) is another day's rows.
   // `revision`: read the day again from the start (a download ended).
   const key =
     subject && day != null
-      ? JSON.stringify([subject, slaveId, day, owner, scope, revision])
+      ? JSON.stringify([subject, slaveId, day, owner, scope])
       : null;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
@@ -111,6 +118,15 @@ export function useHistoryDayRows({
     };
     const dayEnd = endOfDay(day);
     async function poll() {
+      // A completed manual window reads the published tables independently of
+      // a failed global auto pass. It never authorizes map publication.
+      const firstPublishedRead = publishedReads && accepted.current !== key;
+      const publication = ((completedWindow && publishedReads) || firstPublishedRead) && getPublication
+        ? () => { const value = getPublication(); return value && { ...value, pending: firstPublishedRead ? false : value.busy }; }
+        : getPublication;
+      const fence = captureMapRead(publication, subject === 'phone' ? null : owner,
+        completedMapRevision(publication?.()));
+      if (!fence.open) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
       try {
         const at = now.current();
         const today = at >= day && at < dayEnd;
@@ -123,6 +139,7 @@ export function useHistoryDayRows({
           after: cache.after,
         });
         if (!alive) return;
+        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
         const added = answer.rows?.length || 0;
@@ -132,6 +149,7 @@ export function useHistoryDayRows({
           );
         if (added || cache.first) {
           cache.first = false;
+          accepted.current = key;
           setResult(current => ({
             key,
             rows: cache.rows,
@@ -150,6 +168,7 @@ export function useHistoryDayRows({
         timer = setTimeout(poll, today ? HISTORY_POLL_MS : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
+        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
         setResult(current => ({
           ...(current.key === key ? current : { rows: [], version: 0, replayHolds: null }),
           key,
@@ -164,7 +183,7 @@ export function useHistoryDayRows({
       clearTimeout(timer);
     };
     // key stands for subject, slaveId, day and owner.
-  }, [active, read, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, read, key, revision, getPublication, publicationRevision, completedWindow, publishedReads]); // eslint-disable-line react-hooks/exhaustive-deps
   const current =
     result.key === key
       ? result
@@ -223,6 +242,7 @@ export function useHistoryScreen({
   memoryScope = '',
   preset = null,
   cloud = null,
+  publicationRevision = 0,
   online = true,
   cloudSeed = null,
   aliases = null,
@@ -331,6 +351,12 @@ export function useHistoryScreen({
   // Each colour slot reads its own dog's day (hooks cannot be in a loop of
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
+  const [completedWindows, setCompletedWindows] = useState({});
+  const windowScope = `${owner ?? ''}|${memoryScope}`;
+  const onDogComplete = useCallback((id, downloadedDay) => {
+    setCompletedWindows(value => ({ ...value, [`${windowScope}|${id}|${downloadedDay}`]: { source: cloud, scope: cloud?.getPublication?.()?.scope } }));
+    setReadRevision(value => value + 1);
+  }, [windowScope, cloud]);
   const reader = index => ({
     read,
     subject,
@@ -339,6 +365,12 @@ export function useHistoryScreen({
     clock,
     scope: memoryScope,
     revision: readRevision,
+    publicationRevision,
+    getPublication: cloud?.getPublication ?? null,
+    publishedReads: !!cloud?.publishedReads,
+    completedWindow: completedWindows[`${windowScope}|${slotOf(index)?.id}|${dayKey(new Date(day))}`]?.source === cloud
+      && !!completedWindows[`${windowScope}|${slotOf(index)?.id}|${dayKey(new Date(day))}`]
+      && completedWindows[`${windowScope}|${slotOf(index)?.id}|${dayKey(new Date(day))}`].scope === cloud?.getPublication?.()?.scope,
     slaveId: subject === 'dog' ? slotOf(index)?.id ?? null : null,
     active: active && !!subject && !!slotOf(index),
   });
@@ -429,6 +461,7 @@ export function useHistoryScreen({
     ...(dayHasRecords(rowsOf(d.id).rows, { dayStart: day, dayEnd }) ? [shownKey] : []),
   ]])), [daysByDog, baseKey, idsKey, versions, day, dayEnd, shownKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const cloudDays = useHistoryCloud({
+    onDogComplete,
     cloud: cloudDogs.length ? cloud : null,
     slaveId: cloudDogs.length > 1 ? cloudDogs : cloudDogs[0] ?? null,
     scope: `${baseKey}|${cloudDogs.join(',')}|${cloud?.owner ?? ''}`,
@@ -658,7 +691,7 @@ export function useHistoryScreen({
   );
   const { startDownload, cancelDownload, downloadingDay } = cloudDays;
   const reread = useCallback(() => setReadRevision(value => value + 1), []);
-  /** 取消 (and 返回鍵) while downloading: what arrived is shown, marked incomplete. */
+  /** Cancel retains the last complete rows and marks the window incomplete. */
   const cancel = useCallback(() => {
     if (!cancelDownload()) return false;
     reread();
