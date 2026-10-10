@@ -1,3 +1,4 @@
+import { startupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { normalizeWaitingSources } from '../map/WaitingSources';
 import { getErrorMessage } from '../utils/errors';
@@ -120,13 +121,13 @@ export function createTrackingPreferences(database, onChange) {
   }
   return {
     load: () =>
-      run(async () => {
+      run(() => startupPhase('preferences', async () => {
         await database.initialize();
         const stored = await database.load();
         // Nothing saved and no data from before: the first launch.
         const fresh = firstLaunch(stored) && !(await Promise.resolve(database.usedBefore?.()).catch(() => false));
         return validateTrackingPreferences(fresh ? { onboarding: ONBOARDING_SIGN_IN } : stored);
-      }, true),
+      }), true),
     save: function save(patch) {
       if (!state.ready || disposed) return Promise.resolve(false);
       if (pending) {

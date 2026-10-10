@@ -1,3 +1,4 @@
+import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { logger } from '../logger';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
@@ -807,6 +808,7 @@ function GoogleTrackingMapRenderer({
     // under the launch screen (initialRegion only centres on the first point).
     setNeedsFirstPositionFit(true);
     setMountedMap(true);
+    markStartupPhase('map-mounted');
   }, [dataReady, mountedMap]);
   useEffect(() => {
     const map = mapRef.current;
@@ -1643,8 +1645,10 @@ function GoogleTrackingMapRenderer({
           onMapLoaded={() => {
             // The launch screen stays until the first framing is drawn (see
             // the fit above), so the whole of Taiwan never shows first.
-            if (activeInstance.current === instance)
+            if (activeInstance.current === instance) {
               setLoadedInstance(instance);
+              markStartupPhase('map-loaded');
+            }
           }}
         >
           {/* History draws no live phone (flow.txt: 只有可以拖的游標點). */}

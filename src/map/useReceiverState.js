@@ -1,3 +1,4 @@
+import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { useEffect, useRef, useState } from 'react';
 import { NativeModules, Platform } from 'react-native';
 
@@ -27,13 +28,14 @@ export function useReceiverState(active, reader) {
       if (reading) return;
       reading = true;
       try {
-        const next = await native.getState();
+        const next = await startupPhase('receiver-native', () => native.getState());
         if (!disposed) {
           const value = next ?? null;
           const key = JSON.stringify(value);
           if (key !== publishedKey.current) {
             publishedKey.current = key;
             setState(value);
+            markStartupPhase('receiver-publish');
           }
         }
       } catch {

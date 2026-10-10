@@ -1,3 +1,4 @@
+import { startupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { locationTrackerNative } from './LocationTrackerService';
@@ -18,7 +19,7 @@ export function useLiveLocation(active) {
     let alive = true, timer;
     async function poll() {
       try {
-        const value = JSON.parse(await locationTrackerNative.live());
+        const value = JSON.parse(await startupPhase('phone-native', () => locationTrackerNative.live()));
         if (alive) {
           const key = JSON.stringify(value);
           if (key !== publishedKey.current) {

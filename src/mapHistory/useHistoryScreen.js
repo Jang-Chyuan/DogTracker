@@ -1,3 +1,4 @@
+import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
 // route; H1/H2/H2b/H3a/H7/H8): the day shown, the rows of each dog shown, the
@@ -132,14 +133,14 @@ export function useHistoryDayRows({
       try {
         const at = now.current();
         const today = at >= day && at < dayEnd;
-        const answer = await read({
+        const answer = await startupPhase(subject === 'phone' && cache.first ? 'phone-day-read' : '', () => read({
           subject,
           slaveId,
           start: day,
           end: dayEnd,
           owner,
           after: cache.after,
-        });
+        }));
         if (!alive) return;
         if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
         if (cache.first) cache.seed = answer.seed || [];
@@ -150,6 +151,7 @@ export function useHistoryDayRows({
             (a, b) => a.time - b.time,
           );
         if (added || cache.first) {
+          if (subject === 'phone' && cache.first) markStartupPhase('phone-day-publish');
           cache.first = false;
           setResult(current => ({
             key,
@@ -537,13 +539,17 @@ export function useHistoryScreen({
     shownOnce.current = `${sessionKey}|${day}`;
   const waiting =
     shownOnce.current !== `${sessionKey}|${day}` && !allLoaded;
+  const diagnosticModelDay = useRef(null);
+  const diagnosticCommittedDay = useRef(null);
   const dayModel = useMemo(() => {
     if (!subject || !subjects.length || waiting) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
       : subjects[0].id;
     const started = Date.now();
-    const built = multiDayModel(subjects, {
+    const firstModelOfDay = diagnosticModelDay.current !== day;
+    diagnosticModelDay.current = day;
+    const built = startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '', () => multiDayModel(subjects, {
       dayStart: day,
       dayEnd,
       today,
@@ -554,7 +560,7 @@ export function useHistoryScreen({
       protagonist: main,
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
-    });
+    }));
     buildCost.current = Date.now() - started;
     return built;
     // versions stands for the rows.
@@ -575,6 +581,12 @@ export function useHistoryScreen({
     waiting,
   ]);
   const model = dayModel?.main ?? null;
+  useEffect(() => {
+    if (subject === 'phone' && model && diagnosticCommittedDay.current !== day) {
+      diagnosticCommittedDay.current = day;
+      markStartupPhase('phone-model-commit');
+    }
+  }, [subject, model, day]);
   const protagonistId = dayModel?.protagonist ?? current.protagonist;
   // Who has a fix in the range (40% chips, 地圖不畫牠); a dog still being
   // read keeps what it had.

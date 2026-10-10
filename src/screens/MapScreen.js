@@ -2,6 +2,7 @@ import { completedMapRevision } from '../cloud/CloudPublication';
 import { createAtomicDogCardReader } from '../map/AtomicDogCardReader';
 import { createAtomicDogSnapshot } from '../map/AtomicDogSnapshot';
 import { combinedResumeCatchUp } from '../tracking/ResumeCatchUp';
+import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
@@ -670,6 +671,10 @@ export default function MapScreen({
   selectHistoryDog.current = screen.selectDog;
   if (historySnapshot) historySnapshot.current = historical ? screen.snapshot : null;
   const window = useWindowDimensions();
+  useEffect(() => {
+    if (tracking.preferences.ready && (tracking.initialSnapshotReady === true || !!tracking.errors[mode])
+      && receiverState !== undefined) markStartupPhase('map-data-ready');
+  }, [tracking.preferences.ready, tracking.initialSnapshotReady, tracking.errors, mode, receiverState]);
   const [historyHeight, setHistoryHeight] = useState(() => historyPanelMinHeight(window.height, insets.top, insets.bottom));
   const historyScreen = useRef(null);
   if (historyBack) historyBack.current = () => !!historyScreen.current?.back();
