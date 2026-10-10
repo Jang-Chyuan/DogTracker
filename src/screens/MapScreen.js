@@ -108,12 +108,10 @@ export default function MapScreen({
   historyBack = null,
   // Alerts off the live map (058c): the history page's state kept under a
   // card or page an alert opened (`historyRestore`, its route's snapshot;
-  // `historySnapshot.current()` takes one), 「⚠ N」 on the history's top row
-  // ({ badge, onPress }) and the bottom of an N3 card over it (the compass
-  // moves under it).
+  // `historySnapshot.current()` takes one) and the bottom of an N3 card
+  // over it (the compass moves under it).
   historyRestore = null,
   historySnapshot = null,
-  alertBadge = null,
   n3Bottom = 0,
   // Back from D3 opened by A6: frame that receiver's located dogs (once per key).
   frameRequest = null,
@@ -1124,8 +1122,6 @@ export default function MapScreen({
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           exportNative={exportNative}
           initialExport={fixture?.historyView?.export ?? null}
-          alertBadge={alertBadge?.badge ?? null}
-          onAlertBadge={alertBadge?.onPress}
           onSheetOpen={setHistorySheet}
           closedAt={
             target.subject === 'phone' &&
