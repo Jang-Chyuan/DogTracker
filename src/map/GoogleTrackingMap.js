@@ -468,7 +468,9 @@ const HistoryLine = React.memo(
     before.dashed === after.dashed,
 );
 
-function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
+// Live snapshot age still updates the map controls. Reuse unchanged history
+// geometry until its route, stop handler, zoom or theme context changes.
+const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
     () => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)),
@@ -521,7 +523,7 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
           look={`${place.kind}:${place.number}`}
           zIndex={place.kind === 'indoor' ? 26 : 25}
           label={place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.number })}
-          onPress={onStopPress ? () => onStopPress(place) : undefined}
+          onPress={onStopPress ? event => onStopPress(place, event) : undefined}
         >
           {place.kind === 'indoor' ? (
             <IndoorMarkerView />
@@ -535,7 +537,7 @@ function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
       )}
     </>
   );
-}
+});
 
 /**
  * The dogs the launch screen hands over to: on screen (inside the map, clear
@@ -1220,6 +1222,15 @@ function GoogleTrackingMapRenderer({
   // (068: tap → cursor under 100 ms); the map's own report of the same tap
   // then does nothing. A tap on a stop number is left to its marker.
   const quickTap = useRef({ start: null, gesture: null, recent: [] });
+  const pressHistoryStop = useCallback((place, event) => {
+    // Marker selection wins over projections already awaiting the native map.
+    // Keep ownership on this touch token; a new touch starts a new token.
+    event?.stopPropagation?.();
+    if (event && quickTap.current.gesture) quickTap.current.gesture.owner = 'marker';
+    quickTap.current.start = null;
+    quickTap.current.native = null;
+    onStopPress?.(place);
+  }, [onStopPress]);
   const touchSurface = useRef(null);
   const tapContext = useRef(null);
   tapContext.current = { route: routeGeometryIdentity(historyRoute?.points) };
@@ -1286,6 +1297,8 @@ function GoogleTrackingMapRenderer({
     }
   };
   const pressHistoryMap = async event => {
+    // Android emits a second map event for the same native marker click.
+    if (event?.action === 'marker-press') return;
     const gesture = quickTap.current.gesture;
     const map = mapRef.current;
     const route = tapContext.current.route;
@@ -1663,7 +1676,7 @@ function GoogleTrackingMapRenderer({
           {historyRoute && (
             <HistoryRoute
               route={historyRoute}
-              onStopPress={onStopPress}
+              onStopPress={onStopPress ? pressHistoryStop : undefined}
               metresPerDp={metresPerDp}
             />
           )}

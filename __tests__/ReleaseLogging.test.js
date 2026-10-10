@@ -86,3 +86,29 @@ test('a refused logging sink cannot change cloud download outcomes', () => {
     expect(() => cloudSyncDiagnostic('failure', { attempt: 1, phase: 'download', failureKind: 'network' })).not.toThrow();
   } finally { spy.mockRestore(); }
 });
+
+
+test('latest timing extension is all-or-none fixed elapsed numbers; private fields never pass through', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  try {
+    const { cloudSyncDiagnostic } = require('../src/logger');
+    const base = { attempt: 2, elapsedMs: 140, revision: 3 };
+    const timings = { slotWaitMs: 10, initializeMs: 20, archiveProofMs: 0,
+      latestCacheReadMs: 30, mastersMs: 40, latestHTTPMs: 20, snapshotCommitMs: 10 };
+    const privateFields = { owner: 'private-account', masterIds: [4, 7], slaveId: 6,
+      payload: { latitude: 25 }, url: 'https://private.invalid', unknownTimingMs: 12 };
+    cloudSyncDiagnostic('latest-published', { ...base, ...timings, ...privateFields });
+    cloudSyncDiagnostic('archive-published', { ...base, ...timings, ...privateFields });
+    expect(spy.mock.calls).toEqual([
+      ['[CloudSync] latest-published', { ...base, ...timings }],
+      ['[CloudSync] archive-published', base],
+    ]);
+    spy.mockClear();
+    for (const name of Object.keys(timings)) {
+      for (const invalid of [undefined, -1, NaN, Infinity, 'private-account', new Error('private-payload')])
+        cloudSyncDiagnostic('latest-published', { ...base, ...timings, ...privateFields, [name]: invalid });
+    }
+    expect(spy.mock.calls).toHaveLength(42);
+    for (const entry of spy.mock.calls) expect(entry).toEqual(['[CloudSync] latest-published', base]);
+  } finally { spy.mockRestore(); }
+});

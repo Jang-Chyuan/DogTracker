@@ -97,15 +97,18 @@ export function useHistoryDayRows({
   });
   const now = useRef(clock);
   now.current = clock;
+  const materialRevision = publishedReads && subject !== 'phone' ? getPublication?.()?.dataRevision : null;
+  const rowRevision = Number.isSafeInteger(materialRevision) && materialRevision >= 0
+    ? `material:${materialRevision}` : `publication:${publicationRevision}`;
   // `scope`: another reader of the same day (a screen fixture) is another day's rows.
   // `revision`: read the day again from the start (a download ended).
   const key =
     subject && day != null
-      ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? publicationRevision : 0, readEnd])
+      ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? rowRevision : 0, readEnd])
       : null;
   // Phone rows are local: publishing dog telemetry must not cancel their
   // in-flight read or restart the full-day cursor. Explicit reloads still do.
-  const readerPublicationRevision = subject === 'phone' ? 0 : publicationRevision;
+  const readerPublicationRevision = subject === 'phone' ? 0 : rowRevision;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
     let alive = true,

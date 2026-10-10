@@ -22,6 +22,8 @@ export function logStartupPhase(phase, sequence, event, atMs, durationMs) {
 
 const CLOUD_PHASES = new Set(['initialize', 'begin', 'masters', 'download', 'repair', 'reconcile', 'publish']);
 const CLOUD_FAILURES = new Set(['timeout', 'auth', 'network', 'storage', 'unknown']);
+const LATEST_TIMINGS = ['slotWaitMs', 'initializeMs', 'archiveProofMs',
+  'latestCacheReadMs', 'mastersMs', 'latestHTTPMs', 'snapshotCommitMs'];
 
 // The sole release logging entry point accepts a fixed cloud-sync schema.
 // Rebuild the payload rather than passing caller objects to the console;
@@ -46,8 +48,13 @@ export function cloudSyncDiagnostic(event, fields) {
       const elapsedMs = fields?.elapsedMs;
       const revision = fields?.revision;
       if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || !Number.isSafeInteger(revision) || revision < 1) return;
-      if (event === 'latest-published') console.info('[CloudSync] latest-published', { attempt, elapsedMs, revision });
-      else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });
+      if (event === 'latest-published') {
+        // Optional extension: incomplete/invalid timings preserve the legacy
+        // success event. Copy only these fixed nonnegative elapsed numbers.
+        const timings = LATEST_TIMINGS.every(key => Number.isFinite(fields[key]) && fields[key] >= 0)
+          ? Object.fromEntries(LATEST_TIMINGS.map(key => [key, fields[key]])) : {};
+        console.info('[CloudSync] latest-published', { attempt, elapsedMs, revision, ...timings });
+      } else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });
     }
   } catch {
     // Do not retry or expose the sink's error/message in another log.

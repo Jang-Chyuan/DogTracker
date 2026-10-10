@@ -15,6 +15,13 @@ async function database() {
 }
 const start = async () => { sync.setSession({ user: { id: 'a' } }); sync.setForeground(true); await jest.advanceTimersByTimeAsync(1); };
 const stages = () => log.mock.calls.filter(([name]) => ['[CloudSync] latest-published', '[CloudSync] archive-published'].includes(name));
+// These real-SDK operations resolve without advancing the fake clock. The
+// extended release event still has an exact fixed schema and accepted stage.
+const latestStage = () => ['[CloudSync] latest-published', {
+  attempt: 1, elapsedMs: expect.any(Number), revision: 1,
+  slotWaitMs: 0, initializeMs: 0, archiveProofMs: 0, latestCacheReadMs: 0,
+  mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0,
+}];
 
 test.each(['complete', 'failure', 'cancel'])('real SDK latest stage precedes held archive; %s records only accepted publication', async mode => {
   const db = await database();
@@ -30,7 +37,7 @@ test.each(['complete', 'failure', 'cancel'])('real SDK latest stage precedes hel
   sync = createCloudSync({ database: db, client: network.client });
   try {
     await start(); await entered.promise;
-    expect(stages()).toEqual([['[CloudSync] latest-published', { attempt: 1, elapsedMs: expect.any(Number), revision: 1 }]]);
+    expect(stages()).toEqual([latestStage()]);
     const accepted = await db.readLatestSnapshot('a');
     expect(accepted.packets[0].event_id).toBe(cloudEvent(2, NOW - 500).event_id);
     expect(accepted.rows[0].event_id).toBe(cloudEvent(1, NOW - 1000).event_id);
@@ -40,7 +47,7 @@ test.each(['complete', 'failure', 'cancel'])('real SDK latest stage precedes hel
     expect(await db.readLatestSnapshot('a')).toEqual(accepted);
     if (mode === 'complete') {
       expect(stages()).toEqual([
-        ['[CloudSync] latest-published', { attempt: 1, elapsedMs: expect.any(Number), revision: 1 }],
+        latestStage(),
         ['[CloudSync] archive-published', { attempt: 1, elapsedMs: expect.any(Number), revision: 1 }],
       ]);
       expect(stages()[1][1].elapsedMs).toBeGreaterThanOrEqual(stages()[0][1].elapsedMs);

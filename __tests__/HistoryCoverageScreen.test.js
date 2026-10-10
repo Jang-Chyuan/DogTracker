@@ -325,3 +325,34 @@ test('a frozen completed today view labels its as-of time and updates only on ex
     jest.useRealTimers();
   }
 });
+test('unchanged material publication revalidates proof and restores the full model without rereading history', async () => {
+  const ledger = { scope: {}, owner: 'owner-a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 1 };
+  const cloud = { owner: 'owner-a', coverageRequired: true, publishedReads: true, getPublication: () => ledger, download: jest.fn() };
+  const state = fixtureHarness(cloud, 'coverage-material-unchanged');
+  const day = dayKey(new Date(state.fixture.now)), bounds = dayBounds(day);
+  const dog = historyTargetOf(state.fixture.history.preferences).slaveId;
+  const delayedProof = deferred();
+  cloud.downloadStates = jest.fn(async () => {
+    if (ledger.publishedPending) await delayedProof.promise;
+    return [{ slave_id: dog, day, complete: 1,
+      ...historyCoverage(bounds.dayStart, bounds.dayEnd, state.fixture.now) }];
+  });
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(<state.Probe publicationRevision={0} />); });
+    expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.map).not.toBeNull();
+    const accepted = state.screen.dayModel;
+    const reads = state.read.mock.calls.length, proofs = cloud.downloadStates.mock.calls.length;
+    ledger.publishedPending = true; ledger.publishedRevision = 1;
+    await act(async () => renderer.update(<state.Probe publicationRevision={1} />));
+    expect(state.screen.dayModel).toBe(accepted);
+    ledger.publishedPending = false; ledger.publishedRevision = 2;
+    await act(async () => renderer.update(<state.Probe publicationRevision={2} />));
+    expect(cloud.downloadStates.mock.calls.length).toBeGreaterThan(proofs);
+    expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.map).not.toBeNull();
+    expect(state.screen.dayModel).toBe(accepted);
+    expect(state.screen.loading).toBe(false); expect(state.read).toHaveBeenCalledTimes(reads);
+    expect(cloud.download).not.toHaveBeenCalled();
+    await act(async () => delayedProof.resolve());
+  } finally { if (renderer) await act(async () => renderer.unmount()); }
+});

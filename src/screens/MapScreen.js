@@ -672,6 +672,11 @@ export default function MapScreen({
     online: historyCloud?.online !== false,
     cloudSeed: historyCloud?.seed ?? null,
   });
+  const moveHistoryCursor = screen.moveCursor;
+  const pressHistoryStop = useCallback(
+    place => moveHistoryCursor(place.start, 'stop', { start: place.start }),
+    [moveHistoryCursor],
+  );
   selectHistoryDog.current = screen.selectDog;
   if (historySnapshot) historySnapshot.current = historical ? screen.snapshot : null;
   const window = useWindowDimensions();
@@ -1082,9 +1087,7 @@ export default function MapScreen({
             : undefined
         }
         onCursorMove={screen.moveCursor}
-        onStopPress={place =>
-          screen.moveCursor(place.start, 'stop', { start: place.start })
-        }
+        onStopPress={pressHistoryStop}
         historyFocus={
           historical && screen.focus && screen.cursor?.point
             ? {

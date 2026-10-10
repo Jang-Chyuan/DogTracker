@@ -57,7 +57,7 @@ test('manual publish protects a requested old day and evicts other nonrequired h
     await database.beginManualScope('a', 6, '2026-10-03');
     await database.savePage('a', [row('old-day', start + 1000)]);
     await database.setHistoryDownloadState('a', 6, '2026-10-03', true, historyCoverage(start, end, end + 7200000));
-    await expect(database.publishManualScope('a', 6, '2026-10-03')).resolves.toBeUndefined();
+    await expect(database.publishManualScope('a', 6, '2026-10-03')).resolves.toEqual({ materialChanged: true, dataRevision: expect.any(Number) });
     const states = await database.historyDownloadStates('a', 6);
     expect(states.find(s => s.day === '2026-10-03').complete).toBe(1);
     expect(states.find(s => s.day === '2026-10-04').complete).toBe(0);

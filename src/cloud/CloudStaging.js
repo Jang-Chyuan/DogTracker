@@ -1,3 +1,4 @@
+import { executeHistoryMaterialBatch, readHistoryMaterial } from './HistoryMaterialPublication';
 import { initializeHistoryCoverage, invalidateEvictedCoverage, coverageContainsTime, HISTORY_CONTEXT_BEFORE_MS } from './HistoryCoverage';
 import { t } from '../i18n';
 import { withConnectionLock } from '../database/connectionLock';
@@ -78,7 +79,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         throw error;
       }
     },
-  }, options)]));
+  }, { ...options, historyMaterialTracking: false })]));
   const initialize = () => {
     if (state.ready) return state.ready;
     state.ready = published.initialize().then(() => withConnectionLock(connection, async () => {
@@ -172,9 +173,9 @@ export function createStagedCloudDatabase(connection, options, createCore) {
       if (kind === 'auto' && archiveCutoff != null
         && (!Number.isSafeInteger(archiveCutoff) || archiveCutoff < 0)) throw new Error(t('c588'));
       await initialize();
-      await withConnectionLock(connection, async () => {
+      const publication = await withConnectionLock(connection, async () => {
         if (!isCurrent()) throw new Error(t('c576'));
-        if (!await job(owner, kind)) return;
+        if (!await job(owner, kind)) return { dataRevision: await readHistoryMaterial(connection), materialChanged: false };
         const telemetry = tableName(kind, 'supabase_dog_status');
         const fields = names('supabase_dog_status');
         const list = fields.join(',');
@@ -228,22 +229,27 @@ export function createStagedCloudDatabase(connection, options, createCore) {
             VALUES(?,?,COALESCE((SELECT revision FROM cloud_archive_publication WHERE owner=?),0)+1)`,
           params: [owner, archiveCutoff, owner],
         });
+        let material;
         try {
           // Generation may change while waiting for this connection or reads.
           // Once sent, the native transaction itself remains atomic.
           if (!isCurrent()) throw new Error(t('c576'));
-          await connection.executeBatchAsync(commands);
+          material = await executeHistoryMaterialBatch(connection, commands);
         } catch (error) {
+          // Failed readback may follow a committed TX; never retain hold cursors.
+          published.invalidatePublished();
           if (String(error.message).includes('used<=budget')) throw new Error(t("c622"));
           throw error;
         }
-        published.invalidatePublished();
+        if (!material || material.materialChanged) published.invalidatePublished();
+        return material;
       });
       if (kind === 'manual') active.delete(owner);
+      return publication;
     },
     async publishManualScope(owner, slave, day) {
       if ((await job(owner, 'manual'))?.scope !== `${slave}:${day}`) throw new Error(t("c576"));
-      await result.publishDownload(owner, 'manual');
+      return result.publishDownload(owner, 'manual');
     },
     async loadSyncState(owner, master) {
       if (!await hasJob(owner)) return published.loadSyncState(owner, master);

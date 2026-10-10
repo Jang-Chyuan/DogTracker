@@ -47,7 +47,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   // say a switch needs the network).
   let state = { latestFirst, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null,
     archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', contextPending: false, busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
-    failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: false, catchUp: CATCH_UP_IDLE };
+    failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, dataRevision: null, publishedRevision: 0, publishedPending: false, catchUp: CATCH_UP_IDLE };
   const publish = patch => {
     state = { ...state, ...patch };
     if (!disposed) onChange({ ...state, owner, foreground });
@@ -60,11 +60,16 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     publishedOperation = operation;
     // Fence multi-query UI reads before native commit can become visible.
     publish({ publishedPending: true, publishedRevision: state.publishedRevision + 1 });
-    try { return await work(); }
+    let result;
+    try { result = await work(); return result; }
     finally {
       if (publishedOperation === operation) {
         publishedOperation = null;
-        publish({ publishedPending: false, publishedRevision: state.publishedRevision + 1 });
+        // Unknown/failed commits invalidate conservatively. An old generation
+        // may close the physical fence, but cannot certify the new owner.
+        publish({ publishedPending: false, publishedRevision: state.publishedRevision + 1,
+          dataRevision: valid(version) && Number.isSafeInteger(result?.dataRevision) && result.dataRevision >= 0
+            ? result.dataRevision : null });
       }
     }
   };
@@ -96,6 +101,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const version = generation;
     const userId = owner;
     const startedAt = now();
+    // Observed wall time includes native bridge waits and JS continuation.
+    // latestHTTPMs measures downloadLatest as a whole, not HTTP or CPU alone.
+    const timings = { slotWaitMs: 0, initializeMs: 0, archiveProofMs: 0,
+      latestCacheReadMs: 0, mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0 };
     const attempt = state.mapAttempt + 1;
     let phase = 'initialize';
     let latestAccepted = false;
@@ -119,17 +128,24 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     publish({ busy: true, mode: 'auto', error: '', authFailed: false, snapshotPending: latestFirst,
       mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
+      timings.slotWaitMs = Math.max(0, now() - startedAt);
       try {
         check();
+        let phaseAt = now();
         await database.initialize();
+        timings.initializeMs = Math.max(0, now() - phaseAt);
         check();
         if (latestFirst) {
+          phaseAt = now();
           const archive = await database.readArchivePublication?.(userId);
+          timings.archiveProofMs = Math.max(0, now() - phaseAt);
           check();
           if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
             && Number.isSafeInteger(archive.revision) && archive.revision > 0)
             publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
+          phaseAt = now();
           const cached = await database.readLatestSnapshot(userId);
+          timings.latestCacheReadMs = Math.max(0, now() - phaseAt);
           check();
           publish({ snapshotBaseRevision: cached?.revision ?? null });
         }
@@ -139,21 +155,27 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           check();
         }
         phase = 'masters';
+        phaseAt = now();
         const masters = await listCloudMasters(client, userId, abort.signal, check);
+        timings.mastersMs = Math.max(0, now() - phaseAt);
         const cutoff = now();
         if (latestFirst) {
           phase = 'download';
+          phaseAt = now();
           const snapshot = await downloadLatest({ client, masterIds: masters, cutoff, signal: abort.signal, check });
+          timings.latestHTTPMs = Math.max(0, now() - phaseAt);
           check();
           phase = 'publish';
+          phaseAt = now();
           await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
+          timings.snapshotCommitMs = Math.max(0, now() - phaseAt);
           check();
           latestAccepted = true;
           latestPublishedAt = now();
           publish({ snapshotPending: false, mapPending: false, snapshotRevision: state.snapshotRevision + 1,
             snapshotCutoff: cutoff, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(),
             lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
-          cloudSyncDiagnostic('latest-published', { attempt, elapsedMs: Math.max(0, now() - startedAt), revision: state.snapshotRevision });
+          cloudSyncDiagnostic('latest-published', { attempt, elapsedMs: Math.max(0, now() - startedAt), revision: state.snapshotRevision, ...timings });
           resumeCatchUp.caughtUp();
           if (failureDiagnostic) {
             cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
@@ -303,7 +325,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     },
     historyPublication() {
       return { scope: mapScope, owner, generation, latestFirst, attempt: state.mapAttempt, pending: state.publishedPending,
-        busy: false, mapSuccessRevision: state.archiveRevision, publishedRevision: state.publishedRevision,
+        busy: false, mapSuccessRevision: state.archiveRevision, dataRevision: state.dataRevision, publishedRevision: state.publishedRevision,
         publishedPending: state.publishedPending, archiveRevision: state.archiveRevision, archiveCutoff: state.archiveCutoff, archiveError: state.archiveError };
     },
     setSession(session) {
@@ -322,7 +344,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
-        offline: false, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null, contextPending: false, archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: !!publishedOperation, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
+        offline: false, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null, contextPending: false, archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, dataRevision: null, publishedRevision: 0, publishedPending: !!publishedOperation, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
       wake();
     },
     setForeground(active) {

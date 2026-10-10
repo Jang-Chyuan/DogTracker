@@ -1,3 +1,4 @@
+import { capturePageRead } from '../cloud/CloudPagePublication';
 // The cloud side of the history's days (054b): what the calendar has found
 // out about one dog's days in the cloud, and the download of a day only the
 // cloud holds. The rules are src/history/screen/HistoryCalendar.js; this hook
@@ -173,20 +174,38 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   const publication = useRef(publicationRevision);
   publication.current = publicationRevision;
   const [durable, setDurable] = useState({ scope: null, revision: null, states: [] });
+  const currentPublication = cloud?.getPublication?.();
+  const accepted = durable.publication;
+  const proofCutoff = cloud?.coverageRequired ? cutoff : null;
+  const sameProofIdentity = !accepted || (accepted.dataRevision === currentPublication?.dataRevision
+    && accepted.scope === currentPublication?.scope && accepted.owner === currentPublication?.owner
+    && accepted.generation === currentPublication?.generation && durable.cutoff === proofCutoff);
+  // Retain only a previously accepted complete snapshot while its proof is
+  // refreshed. Material/owner/generation/cutoff changes cannot reuse it.
+  const retainedProof = !!cloud?.publishedReads && !!accepted
+    && Number.isSafeInteger(currentPublication?.dataRevision) && currentPublication.dataRevision >= 0
+    && sameProofIdentity
+    && !downloading.current;
+
   useEffect(() => {
     if (!enabled || !cloud.downloadStates) return undefined;
     let readAlive = true;
+    const fence = capturePageRead(cloud.getPublication, cloud.owner, cloud.publishedReads);
+    // The native writer owns this interval. Pending is not a failed proof.
+    if (!fence.open) return undefined;
+    const snapshot = cloud.getPublication?.();
+    const publicationProof = snapshot && { ...snapshot };
     // Reads cannot replace completeness changed since their start, including
     // a dog finishing while a read begun during its download is still pending.
     // An active manual request owns its in-memory incomplete/complete states.
     const epoch = completenessEpoch.current;
-    const current = () => readAlive && completenessEpoch.current === epoch && !downloading.current;
+    const current = () => readAlive && completenessEpoch.current === epoch && !downloading.current && fence.valid();
     Promise.resolve(cloud.downloadStates({ slaveId })).then(states => {
       if (!current()) return;
       const pending = incompleteOf(scope);
       pending.clear();
       for (const row of states) if (!row.complete) pending.add(row.day);
-      setDurable({ scope, revision: publicationRevision, states });
+      setDurable({ scope, revision: publicationRevision, states, publication: publicationProof, cutoff: proofCutoff });
     }).catch(() => {
       if (!current()) return;
       const pending = incompleteOf(scope);
@@ -195,7 +214,10 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       setDurable({ scope, revision: publicationRevision, states: ids.flatMap(id => local.map(day => ({ slave_id: id, day, complete: 0 }))) });
     });
     return () => { readAlive = false; };
-  }, [enabled, cloud, scope, active, completenessRetry, publicationRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  // local/slaveId changes are represented by the existing subject scope.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, cloud, scope, active, completenessRetry, publicationRevision, proofCutoff,
+    currentPublication?.scope, currentPublication?.owner, currentPublication?.generation, currentPublication?.dataRevision]);
 
   const [incompleteRevision, setIncompleteRevision] = useState(0);
   const markIncomplete = useCallback((day, value) => {
@@ -209,11 +231,11 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
   const completeFor = useCallback((id, day, at = cutoff) => {
     if (!cloud?.downloadStates) return !!localByDog?.[id]?.includes(day);
-    if (durable.scope !== scope || (cloud.coverageRequired && durable.revision !== publicationRevision)) return false;
+    if (durable.scope !== scope || (cloud.coverageRequired && (!sameProofIdentity || durable.revision !== publicationRevision && !retainedProof))) return false;
     const row = completeness.find(value => value.slave_id === id && value.day === day);
     const bounds = dayBounds(day);
     return cloud.coverageRequired ? coversHistory(row, historyCoverage(bounds.dayStart, bounds.dayEnd, at)) : !!row?.complete;
-  }, [cloud, durable, scope, localByDog, cutoff, publicationRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cloud, durable, scope, localByDog, cutoff, publicationRevision, retainedProof, sameProofIdentity]); // eslint-disable-line react-hooks/exhaustive-deps
   const scopedDownload = download?.scope === scope ? download : null;
   const completeDay = useCallback(day => !enabled || (ids.every(id => completeFor(id, day))
     && !incompleteOf(scope).has(day) && !(scopedDownload?.day === day && scopedDownload.status === 'downloading')),
@@ -290,6 +312,6 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     incomplete: enabled ? [...new Set([...incompleteOf(incompleteKey), ...partialLocal, ...(cloud?.downloadStates && durable.scope !== scope ? local : [])])] : [] }),
   // incompleteRevision stands for INCOMPLETE's contents.
   [local, known, enabled, status, incompleteKey, incompleteRevision, cloud, durable, scope, partialLocal]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { knowledge, completeDay, completenessLoaded: !cloud?.downloadStates || (durable.scope === scope && (!cloud.coverageRequired || durable.revision === publicationRevision)), retryCompleteness, dogDownloads, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download: scopedDownload, startDownload, cancelDownload,
+  return { knowledge, completeDay, completenessLoaded: !cloud?.downloadStates || (durable.scope === scope && (!cloud.coverageRequired || sameProofIdentity && (durable.revision === publicationRevision || retainedProof))), retryCompleteness, dogDownloads, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download: scopedDownload, startDownload, cancelDownload,
     downloadingDay: scopedDownload?.status === 'downloading' ? scopedDownload.day : null };
 }

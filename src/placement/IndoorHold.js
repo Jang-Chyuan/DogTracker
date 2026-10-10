@@ -461,7 +461,10 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
 
   function whileHeld(point, quality, time) {
     held.lately.push({ time, quality });
-    held.lately = held.lately.filter(entry => time - entry.time <= Math.max(shareWindow(), config.goodShareWindowMs));
+    // The cadence is fixed during each filter. Keep separate snapshots before
+    // and after trimming: sparse observations can change the median gap.
+    const retentionWindow = Math.max(shareWindow(), config.goodShareWindowMs);
+    held.lately = held.lately.filter(entry => time - entry.time <= retentionWindow);
     // A measured return interrupts departure evidence, even if that return's
     // GPS quality is weak. No-fix packets carry no evidence of a return.
     if (point && distanceMeters(point, held.anchor) <= config.releaseRadiusM) held.farGood = [];
@@ -497,7 +500,9 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         held.farGood = [];
         return null;
       }
-      held.farGood = held.farGood.filter(fix => point.time - fix.time <= Math.max(config.releaseWindowMs, shareWindow() * 2));
+      const goodWindow = shareWindow();
+      const releaseWindow = Math.max(config.releaseWindowMs, goodWindow * 2);
+      held.farGood = held.farGood.filter(fix => point.time - fix.time <= releaseWindow);
       // Between the refine and release radii a fix neither moves nor frees the dog.
       if (away <= config.releaseRadiusM) return null;
       held.farGood.push({ ...point, away });
@@ -509,7 +514,7 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       const agree = latest.length === needed
         && near(medianPoint(latest), latest, config.releaseAgreeM).length === needed;
       // Outside, most rows have a good fix; a window gives one now and then.
-      const lately = held.lately.filter(entry => point.time - entry.time <= shareWindow());
+      const lately = held.lately.filter(entry => point.time - entry.time <= goodWindow);
       const outside = lately.length >= 3
         && lately.filter(entry => entry.quality === 'good').length >= lately.length * config.goodShareOutside;
       const beyond = held.farGood.slice(-2);
