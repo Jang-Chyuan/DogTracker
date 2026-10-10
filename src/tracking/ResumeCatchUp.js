@@ -86,6 +86,7 @@ export function createResumeCatchUp({
     /** The feed is through (it reports this on every poll). */
     caughtUp() {
       caughtUpOnce = true;
+      awayAt = null;
       clear();
       set(CATCH_UP_IDLE);
     },
@@ -96,9 +97,11 @@ export function createResumeCatchUp({
       set({ phase: 'failed', since: state.since });
     },
     /** 重試 on the failure pill. */
-    retry() {
+    retry({ deferStart = false } = {}) {
       if (state.phase !== 'failed') return;
-      begin();
+      // Cloud retries may first need to drain a canceled request. Local reads
+      // retain their immediate retry indicator.
+      if (!deferStart) begin();
       onRetry?.();
     },
     close() {

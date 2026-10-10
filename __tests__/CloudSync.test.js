@@ -66,6 +66,161 @@ function fixture(cloudCounts = {}) {
 }
 const flush = () => jest.advanceTimersByTimeAsync(1);
 
+test('an explicit cloud retry after a completed return uses a fresh clock', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  const away = Date.now();
+  engine.setForeground(false);
+  jest.setSystemTime(away + 60000);
+  engine.setForeground(true); await flush();
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
+  jest.setSystemTime(away + 3 * 3600000);
+  let finish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const retryAt = Date.now();
+  engine.retry(); await flush();
+  const retryState = changed.mock.calls.at(-1)[0].catchUp;
+  finish(); await flush();
+  expect(retryState).toEqual({ phase: 'catching-up', since: retryAt });
+});
+
+test('retry during a manual download queues its actual auto pass without an idle timeout pill', async () => {
+  const { database, changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  let finishManual, finishAuto;
+  const manual = engine.runManual(() => new Promise(resolve => { finishManual = resolve; }));
+  await flush();
+  expect(current().mode).toBe('manual');
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finishAuto = resolve; }));
+  engine.retry(); await flush();
+  const queued = current();
+  await jest.advanceTimersByTimeAsync(120000);
+  const waiting = current();
+  const autoStartedEarly = !!finishAuto;
+  const start = Date.now();
+  finishManual(1); await expect(manual).resolves.toBe(1); await flush();
+  const active = current();
+  finishAuto(); await flush();
+  expect(queued.catchUp.phase).toBe('idle');
+  expect(waiting).toMatchObject({ busy: true, mode: 'manual', catchUp: { phase: 'idle' } });
+  expect(autoStartedEarly).toBe(false);
+  expect(active).toMatchObject({ busy: true, mode: 'auto', catchUp: { phase: 'catching-up' } });
+  expect(active.catchUp.since).toBeGreaterThanOrEqual(start);
+  expect(current().catchUp.phase).toBe('idle');
+});
+
+test('retry while manual cancellation is draining does not start a pill or cancel the queued history work', async () => {
+  const { database, changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  let finishOld, finishManual, finishAuto;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishAuto = resolve; }));
+  await jest.advanceTimersByTimeAsync(30000);
+  const manual = engine.runManual(() => new Promise(resolve => { finishManual = resolve; }));
+  engine.retry(); await flush();
+  const queued = current();
+  finishOld(); await flush();
+  expect(current().mode).toBe('manual');
+  finishManual(1); await expect(manual).resolves.toBe(1); await flush();
+  const active = current();
+  finishAuto(); await flush();
+  expect(queued.catchUp.phase).toBe('idle');
+  expect(active).toMatchObject({ mode: 'auto', catchUp: { phase: 'catching-up' } });
+});
+
+test('retry during ordinary running auto work waits to show until its requested new pass actually starts', async () => {
+  const { database, changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  let finishOld, finishRetry;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishRetry = resolve; }));
+  await jest.advanceTimersByTimeAsync(30000);
+  engine.retry(); await flush();
+  const queued = current();
+  finishOld(); await flush();
+  const active = current();
+  finishRetry?.(); await flush();
+  expect(queued).toMatchObject({ mode: 'auto', mapAttempt: 2, catchUp: { phase: 'idle' } });
+  expect(finishRetry).toBeDefined();
+  expect(active).toMatchObject({ mode: 'auto', mapAttempt: 3, catchUp: { phase: 'catching-up' } });
+});
+
+test.each(['owner', 'background'])('a queued retry is scoped away by %s changes', async change => {
+  const { database, changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  let finishOld, finishNew;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve; }));
+  await jest.advanceTimersByTimeAsync(30000);
+  engine.retry();
+  if (change === 'owner') engine.setSession(account('b'));
+  else engine.setForeground(false);
+  await flush();
+  const canceled = current();
+  finishOld(); await flush();
+  if (change === 'background') {
+    expect(finishNew).toBeUndefined();
+    engine.setForeground(true); await flush();
+  }
+  const active = current();
+  finishNew(); await flush();
+  const attempts = database.initialize.mock.calls.length;
+  await flush();
+  expect(canceled.catchUp.phase).toBe('idle');
+  expect(active).toMatchObject({ owner: change === 'owner' ? 'b' : 'a', catchUp: { phase: 'catching-up' } });
+  expect(database.initialize).toHaveBeenCalledTimes(attempts);
+  expect(attempts).toBe(3);
+});
+
+test('a failed initial pass can queue retry behind manual history without aborting its work', async () => {
+  const { database, changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  database.initialize.mockRejectedValueOnce(new Error('Network request failed'));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  let finishManual, finishAuto, isCurrent;
+  const manual = engine.runManual(check => {
+    isCurrent = check;
+    return new Promise(resolve => { finishManual = resolve; });
+  });
+  await flush();
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finishAuto = resolve; }));
+  engine.retry(); engine.retry(); await flush();
+  const queued = current();
+  const kept = isCurrent();
+  finishManual(2); await expect(manual).resolves.toBe(2); await flush();
+  const active = current();
+  finishAuto(); await flush();
+  expect(kept).toBe(true);
+  expect(queued).toMatchObject({ mode: 'manual', catchUp: { phase: 'failed' } });
+  expect(active).toMatchObject({ mode: 'auto', catchUp: { phase: 'catching-up' } });
+  expect(current().catchUp.phase).toBe('idle');
+});
+
+test('automatic retry after initial failure preserves the failed pill until success without loading flips', async () => {
+  const { database, changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  database.initialize.mockRejectedValueOnce(new Error('Network request failed'));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  const failedSince = current().failingSince;
+  expect(current().catchUp.phase).toBe('failed');
+  let reject;
+  database.initialize.mockImplementationOnce(() => new Promise((resolve, fail) => { reject = fail; }));
+  changed.mockClear(); await jest.advanceTimersByTimeAsync(30000);
+  const waiting = current();
+  const row = accountPage({ account: { signedIn: true }, sync: waiting }).download;
+  reject(new Error('Network request failed')); await flush();
+  const phases = changed.mock.calls.map(([value]) => value.catchUp.phase);
+  await jest.advanceTimersByTimeAsync(30000);
+  expect(waiting).toMatchObject({ busy: true, failingSince: failedSince, catchUp: { phase: 'failed' } });
+  expect(row).toMatchObject({ problem: true, retry: true });
+  expect(phases.every(phase => phase === 'failed')).toBe(true);
+  expect(current()).toMatchObject({ failingSince: null, catchUp: { phase: 'idle' } });
+});
+
 describe.each([false, true])('S3 real download failure with previous success=%s', previousSuccess => {
   test.each(['network', 'auth', 'storage', 'server'])('%s failure uses only the confirmed classification and hides raw details', async kind => {
     const { database, client, changed } = fixture();
@@ -372,11 +527,12 @@ test('cloud resume timeout retries a fresh generation and late old response cann
   await jest.advanceTimersByTimeAsync(99000);
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('failed');
   engine.retry(); await flush();
-  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  const waiting = changed.mock.calls.at(-1)[0].catchUp;
   oldFinish(); await flush();
   expect(newFinish).toBeDefined();
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
   newFinish(); await flush();
+  expect(waiting.phase).toBe('failed');
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
 });
 
@@ -424,7 +580,7 @@ test('backgrounding an unfinished initial download still shows the next return a
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
 });
 
-test('initial automatic download shows map failure/retry and stays updating until the complete map read accepts it', async () => {
+test.each(['explicit', 'automatic'])('%s recovery from an initial download failure stays visible until the complete map read accepts it', async recovery => {
   const { database, changed } = fixture();
   const latest = () => changed.mock.calls.at(-1)?.[0] ?? {};
   let finishDownload, finishPublish, finishRead, state, renderer;
@@ -454,25 +610,29 @@ test('initial automatic download shows map failure/retry and stays updating unti
     expect(changed.mock.calls.some(([value]) => value.busy && value.catchUp.phase === 'catching-up')).toBe(true);
     expect(latest()).toMatchObject({ lastSuccess: null, catchUp: { phase: 'failed' } });
     expect(shown()).toContain('更新失敗');
-    const retry = renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).find(node => node.props.onPress);
-    await act(async () => { retry.props.onPress(); await flush(); });
-    expect(latest()).toMatchObject({ busy: true, mode: 'auto', lastSuccess: null, catchUp: { phase: 'catching-up' } });
-    expect(shown()).toContain('正在更新狗的位置');
+    if (recovery === 'explicit') {
+      const retry = renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).find(node => node.props.onPress);
+      await act(async () => { retry.props.onPress(); await flush(); });
+    } else await act(async () => { await jest.advanceTimersByTimeAsync(30000); });
+    expect(latest()).toMatchObject({ busy: true, mode: 'auto', lastSuccess: null,
+      catchUp: { phase: recovery === 'explicit' ? 'catching-up' : 'failed' } });
+    expect(shown()).toContain(recovery === 'explicit' ? '正在更新狗的位置' : '更新失敗');
     // The initial cloud pass uses the 120s download budget, not the local 20s budget.
     await act(async () => { await jest.advanceTimersByTimeAsync(60000); });
-    expect(latest().catchUp.phase).toBe('catching-up');
+    expect(latest().catchUp.phase).toBe(recovery === 'explicit' ? 'catching-up' : 'failed');
     await act(async () => { finishDownload(); await flush(); });
     expect(latest()).toMatchObject({ busy: true, publishedPending: true, mapSuccessRevision: 0 });
-    expect(shown()).toContain('正在更新狗的位置');
+    expect(shown()).toContain(recovery === 'explicit' ? '正在更新狗的位置' : '更新失敗');
     await act(async () => { finishPublish(); await flush(); });
     expect(latest()).toMatchObject({ busy: false, catchUp: { phase: 'idle' }, mapSuccessRevision: 1 });
     expect(finishRead).toBeDefined();
     expect(state.cloudCommit).not.toBe(1);
-    expect(shown()).toContain('正在更新狗的位置');
+    const readWaiting = shown();
     await act(async () => {
       finishRead([{ slave_id: 8, master_id: 7, received_at: NOW, slave_lat: 25, slave_lon: 121 }]);
       await flush();
     });
+    expect(readWaiting).toContain('正在更新狗的位置');
     expect(state.cloudCommit).toBe(1);
     expect(renderer.root.findAllByProps({ testID: 'map-catch-up' })).toHaveLength(0);
     expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers

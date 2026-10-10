@@ -42,7 +42,7 @@ export function accountPage(input) {
 
   // ---- 下載 ----------------------------------------------------------------
   let download;
-  if (sync.busy && sync.mode === 'auto' && (sync.lastSuccess == null || sync.catchUp?.phase === 'catching-up')) {
+  if (sync.busy && sync.mode === 'auto' && sync.catchUp?.phase !== 'failed' && (sync.lastSuccess == null || sync.catchUp?.phase === 'catching-up')) {
     const time = sync.lastSuccess == null ? null : formatClock(sync.lastSuccess);
     // A retry is in progress, not a completed failure. Keep its last success
     // time without clearing the engine's error/failingSince before recovery.

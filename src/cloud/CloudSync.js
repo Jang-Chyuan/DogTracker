@@ -29,6 +29,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let running = null;
   let controller = null;
   let manualPending = false;
+  let initialAttemptStarted = false;
+  let retryQueued = false;
   let sweptAt = 0;
   let failureDiagnostic = null;
   // lastDownloadAt: when the last successful live download started (what it
@@ -96,7 +98,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, CLOUD_DOWNLOAD_TIMEOUT_MS);
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t("c586")); };
     // Each pass reports a refusal of the sign-in on its own (authFailed).
-    resumeCatchUp.started(state.lastSuccess == null);
+    const showCatchUp = retryQueued || !initialAttemptStarted;
+    retryQueued = false;
+    initialAttemptStarted = true;
+    resumeCatchUp.started(showCatchUp);
     publish({ busy: true, mode: 'auto', error: '', authFailed: false,
       mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
@@ -181,7 +186,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         running = null;
         publish({ busy: false, mode: null });
         // A user/foreground change may arrive while a canceled request drains.
-        if (generation !== version && foreground && owner) wake();
+        if ((retryQueued || generation !== version) && foreground && owner) wake();
       }
     });
     return running;
@@ -205,6 +210,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       // until finally settles; global retention may affect another owner's rows.
       sweptAt = 0;
       failureDiagnostic = null;
+      initialAttemptStarted = false;
+      retryQueued = false;
       resetResume();
       generation += 1;
       controller?.abort();
@@ -223,6 +230,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         interval = setInterval(() => { tick(); }, 30000);
         wake();
       } else {
+        retryQueued = false;
         resumeCatchUp.away();
         clearTimeout(immediate);
         controller?.abort();
@@ -232,11 +240,12 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     // S3 「重試」: a pass now instead of at the next 30-second tick.
     retry() {
       if (disposed || !foreground || !owner) return;
-      if (resumeCatchUp.state().phase === 'failed') resumeCatchUp.retry();
-      else {
-        resumeCatchUp.started(true);
-        wake();
-      }
+      // Queue the notice with the work, not while a manual download or old
+      // automatic request still owns the slot. Never abort queued history.
+      retryQueued = true;
+      if (!manualPending && state.mode !== 'manual' && resumeCatchUp.state().phase === 'failed')
+        resumeCatchUp.retry({ deferStart: true });
+      else wake();
     },
     async runManual(work, abort = new AbortController()) {
       if (manualPending || state.mode === 'manual') throw new Error(t("c585"));
@@ -272,6 +281,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     },
     dispose() {
       disposed = true;
+      retryQueued = false;
       resumeCatchUp.close();
       generation += 1;
       clearInterval(interval);

@@ -304,21 +304,25 @@ export default function MapScreen({
   const cloudSuccess = completedMapRevision(cloudSync);
   const cloudReadPending = cloudSuccess != null && incomingCloudDogs?.cloudCommit !== cloudSuccess;
   const catchUpMemory = useRef(null);
-  const mapReadFailed = cloudReadPending && !!incomingCloudDogs?.error;
-  const currentCatchUp = mapReadFailed
-    ? { phase: 'failed', since: catchUpMemory.current?.since ?? sourceCatchUp.since }
-    : sourceCatchUp;
   const catchUpOwner = useRef(cloudOwner);
   if (catchUpOwner.current !== cloudOwner) {
     catchUpOwner.current = cloudOwner;
     catchUpMemory.current = null;
   }
-  if (currentCatchUp.phase === 'catching-up') catchUpMemory.current = currentCatchUp;
-  else if (currentCatchUp.phase === 'failed' || incomingCloudDogs?.error || !cloudReadPending) catchUpMemory.current = null;
-  // Network success alone is not publication: keep the return shimmer until
-  // the complete map read has accepted that successful pass.
-  const catchUp = currentCatchUp.phase === 'idle' && cloudReadPending && catchUpMemory.current
-    ? catchUpMemory.current : currentCatchUp;
+  const mapReadFailed = cloudReadPending && !!incomingCloudDogs?.error;
+  const currentCatchUp = mapReadFailed
+    ? { phase: 'failed', since: catchUpMemory.current?.since ?? sourceCatchUp.since }
+    : sourceCatchUp;
+  if (tracking.foreground === false || cloudSync?.foreground === false) catchUpMemory.current = null;
+  else if (currentCatchUp.phase !== 'idle') catchUpMemory.current = currentCatchUp;
+  else if (!cloudReadPending) catchUpMemory.current = null;
+  // Automatic retries retain the failure until network success. That success
+  // starts a fresh read indicator, and only the accepted map snapshot clears it.
+  const waitingCatchUp = catchUpMemory.current?.phase === 'failed'
+    ? { phase: 'catching-up', since: cloudSync?.lastDownloadAt ?? catchUpMemory.current.since }
+    : catchUpMemory.current;
+  const catchUp = currentCatchUp.phase === 'idle' && cloudReadPending && waitingCatchUp
+    ? waitingCatchUp : currentCatchUp;
   const lastDownloadAt = cloudSync?.lastDownloadAt ?? null;
   const failingSince = cloudSync?.failingSince ?? null;
   const cloudClockInput = useMemo(
