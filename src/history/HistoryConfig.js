@@ -75,7 +75,12 @@ export function samePlaceGap(a, b, config) {
   if (!a || !b || !config?.samePlaceGapMaxMs) return false;
   const dt = b.time - a.time;
   if (!(dt > config.gapMs && dt <= config.samePlaceGapMaxMs)) return false;
-  const apart = distanceMeters(a, b);
+  if (config.stillMps && (a.phoneConfirmedMovement || b.phoneConfirmedMovement)) return false;
+  // A display lock may be far behind the last fix before a recording gap.
+  // Gap identity uses the observed endpoints, not a synthetic lock-to-raw jump.
+  const raw = p => config.stillMps && Number.isFinite(p.raw_latitude) && Number.isFinite(p.raw_longitude)
+    ? { latitude: p.raw_latitude, longitude: p.raw_longitude } : p;
+  const apart = distanceMeters(raw(a), raw(b));
   if (!(apart > config.radiusM + 1e-8)) return true;
   // Both ends measured standing still (the phone's own speed): indoors the
   // position drifts tens of metres while the phone stays put; within

@@ -6,12 +6,15 @@ const xml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const iso = time => new Date(time).toISOString();
 const minutes = ms => Math.round(ms / 60000);
 function waypoint(subject, item, piece, hold, gaps) {
-  const position = coordinate(item.latitude, item.longitude);
+  // A proven same-place display lock does not rewrite the calculated waypoint.
+  const point = item.gpxCoordinate || item;
+  const position = coordinate(point.latitude, point.longitude);
   if (!position) return '';
   const excluded = hold ? 0 : Number.isFinite(item.excludedMs) ? item.excludedMs : gaps.reduce((sum, gap) => sum + Math.max(0, Math.min(piece.end, gap.end) - Math.max(piece.start, gap.start)), 0);
   const prefix = subject.kind === 'phone' ? '' : `${subjectName(subject)} `;
   const name = ((hold) ? t("c792", { prefix: prefix, value: minutes(piece.end - piece.start - excluded) }) : t("c793", { prefix: prefix, number: item.number, value: minutes(piece.end - piece.start - excluded) }));
-  const desc = [item.address, excluded ? t('c337', { duration: t('c653', { minutes: minutes(excluded) }) }) : null].filter(Boolean).join('・');
+  const address = item.gpxCoordinate ? item.gpxAddress : item.address;
+  const desc = [address, excluded ? t('c337', { duration: t('c653', { minutes: minutes(excluded) }) }) : null].filter(Boolean).join('・');
   return `<wpt lat="${position.latitude}" lon="${position.longitude}"><time>${iso(piece.start)}</time><name>${xml(name)}</name>${desc ? `<desc>${xml(desc)}</desc>` : ''}</wpt>`;
 }
 function track(subject, name, type, segments) {

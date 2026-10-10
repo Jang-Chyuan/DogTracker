@@ -35,7 +35,8 @@ export function vehicleTrips(nodes, lastTime) {
 
 /** The places of a model whose address the export asks for (as the list does). */
 export function exportPlaces(model) {
-  return (model?.nodes || []).filter(node => !isSection(node) && Number.isFinite(node.latitude));
+  return (model?.nodes || []).filter(node => !isSection(node) && Number.isFinite(node.latitude))
+    .flatMap(node => node.originalRepresentative ? [node, node.originalRepresentative] : [node]);
 }
 
 /**
@@ -83,15 +84,15 @@ export function exportTimelineRows(nodes, addressOf) {
  * switch points and the indoor houses, and the time markers — all of them
  * for one dog or my route, only the first and last for several dogs.
  */
-export function exportMapLayer(model, color, { multi = false } = {}) {
+export function exportMapLayer(model, color, { multi = false, subject = 'dog' } = {}) {
   // Light, whatever the phone's theme (the PNG is a fixed-light file).
   const lines = routeLines(model.edges || [], { color, theme: exportLightTheme, chunkEdges: Infinity });
-  const presentation = historyMapPresentation(model, { color, cursor: null, theme: exportLightTheme });
+  const presentation = historyMapPresentation(model, { color, subject, cursor: null, theme: exportLightTheme });
   const places = (presentation?.places || []).length ? presentation.places : placeMarkers(model.locations || []);
   const allIndoor = model.points.length > 0 && model.points.every(p => p.heldReason);
   const stays = (model.locations || []).filter(n => ['stop', 'indoor', 'switch'].includes(n.type));
-  const times = multi ? timeMarkers(model.points, { allIndoor, stays }).filter(marker => marker.end)
-    : uncrowded(timeMarkers(model.points, { allIndoor, stays }), places);
+  const times = multi ? timeMarkers(model.points, { allIndoor, stays, subject }).filter(marker => marker.end)
+    : uncrowded(timeMarkers(model.points, { allIndoor, stays, subject }), places);
   // A route of one fix (or one hold) is still a point on the map.
   const single = model.points.length === 1 ? [{ latitude: model.points[0].latitude, longitude: model.points[0].longitude }] : [];
   return {
@@ -141,6 +142,8 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       holds: nodes.filter(n => n.type === 'indoor').map(n => ({ start: n.start, end: n.end,
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n) })),
       stays: nodes.filter(n => n.type === 'stop').map(n => ({ start: n.start, end: n.end, number: n.number,
+        ...(n.originalRepresentative ? { gpxCoordinate: n.originalRepresentative,
+          gpxAddress: addressOf(n.originalRepresentative) } : {}),
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n), excludedMs: n.interruptionMs || 0 })),
       rides: vehicleTrips(nodes, last?.time),
       gaps: nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
@@ -150,7 +153,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       start: first?.time ?? null,
       end: last?.time ?? null,
       timeline: exportTimelineRows(nodes, addressOf),
-      map: first ? exportMapLayer(model, color, { multi }) : null,
+      map: first ? exportMapLayer(model, color, { multi, subject }) : null,
     };
   });
   if (multi) thinExportTimes(subjects.map(entry => entry.map).filter(Boolean));

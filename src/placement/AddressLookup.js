@@ -247,6 +247,25 @@ export function createAddressLookup({
     Math.abs(anchor.latitude) <= 90 &&
     Math.abs(anchor.longitude) <= 180;
   const key = anchor => `${anchor.latitude},${anchor.longitude}`;
+  function nearestCached(anchor, accepts = () => true) {
+    let nearest;
+    let nearestDistance = Infinity;
+    for (const [name, entry] of cache) {
+      if (!entry.anchor || !accepts(entry)) continue;
+      const distance = distanceMeters(anchor, entry.anchor);
+      // LRU order changes on every read. Pick by distance, like the durable
+      // cache, so the stay and end at one displayed point keep one address.
+      if (
+        distance <= config.nearM &&
+        (distance < nearestDistance ||
+          (distance === nearestDistance && name < nearest?.[0]))
+      ) {
+        nearest = [name, entry];
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }
   function put(name, entry) {
     cache.delete(name);
     cache.set(name, entry);
@@ -308,10 +327,7 @@ export function createAddressLookup({
      */
     lookup(anchor, { retry = false } = {}) {
       if (!valid(anchor) || !native?.reverseGeocode) return null;
-      const nearby = [...cache.entries()].find(
-        ([, item]) =>
-          item.anchor && distanceMeters(anchor, item.anchor) <= config.nearM,
-      );
+      const nearby = nearestCached(anchor);
       const name = nearby ? nearby[0] : key(anchor);
       const entry = cache.get(name);
       if (entry?.pending) return undefined;
@@ -352,12 +368,7 @@ export function createAddressLookup({
       const resolved = points.map(() => undefined);
       const cached = point => {
         if (!valid(point)) return null;
-        return (
-          [...cache.values()].find(
-            item =>
-              item.value && distanceMeters(point, item.anchor) <= config.nearM,
-          )?.value ?? null
-        );
+        return nearestCached(point, item => Boolean(item.value))?.[1].value ?? null;
       };
       try {
         return await Promise.race([

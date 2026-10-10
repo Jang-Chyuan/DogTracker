@@ -1,4 +1,5 @@
 import { configFor, distanceMeters, atLeast, accuracyOf, measuredSpeedMps, samePlaceGap } from './HistoryConfig';
+import { phoneReliableSpeed } from '../locationTracker/PhoneMotion';
 import { rawCoordinate } from '../placement/RawObservation';
 import { hasFix } from '../placement/IndoorHold';
 
@@ -12,7 +13,7 @@ const footMode = subject => (subject === 'phone' ? 'walking' : 'moving');
 function detectVehicles(edges, config) {
   const scan = vehicleScan();
   for (let i = 0; i < edges.length; i += 1) stepVehicles(scan, edges, i, config);
-  return finishVehicles(scan, edges);
+  return finishVehicles(scan, edges, config);
 }
 
 /**
@@ -20,15 +21,18 @@ function detectVehicles(edges, config) {
  * distance (TodayRouteEngine) can carry it on from where it stopped instead
  * of scanning the whole day again. `scan` is { high, active, low, vehicles }.
  */
-export const vehicleScan = () => ({ high: null, active: null, low: null, vehicles: [] });
+export const vehicleScan = () => ({ high: null, active: null, low: null,
+  footLow: null, parked: null, vehicles: [] });
 
-// `exited`: ended by 30/60 s of low speed, so its last fix is the first one
-// on foot; ended by a gap, a hold or the data's end, its last fix was still
+// `exited`: confirmed walking or terminal parking (legacy: low speed), so
+// its last fix is the first one outside the vehicle; ended by a gap or hold,
+// its last fix was still
 // in the car (判定表「開車和停留」: car fixes take no part in visits).
 function closeVehicle(scan, edges, endIndex, exited = false) {
   scan.vehicles.push({ start: edges[scan.active].start, end: edges[endIndex].end,
     firstEdge: scan.active, lastEdge: endIndex, exited });
   scan.active = null; scan.low = null; scan.high = null;
+  scan.footLow = null; scan.parked = null;
 }
 
 export function stepVehicles(scan, edges, i, config) {
@@ -36,7 +40,7 @@ export function stepVehicles(scan, edges, i, config) {
   if (edge.gap || edge.mode === 'indoor') {
     if (scan.active != null && (edge.mode === 'indoor' || edge.durationMs > config.maxVehicleGapMs
       || !atLeast(edge.speed, config.vehicleSpeed))) closeVehicle(scan, edges, i - 1);
-    scan.high = null; scan.low = null; return;
+    scan.high = null; scan.low = null; scan.footLow = null; scan.parked = null; return;
   }
   if (scan.active == null) {
     if (atLeast(edge.speed, config.vehicleSpeed)) {
@@ -52,13 +56,55 @@ export function stepVehicles(scan, edges, i, config) {
     } else scan.high = null;
   } else if (!atLeast(edge.speed, config.exitSpeed)) {
     if (scan.low == null) scan.low = i;
-    if (edge.end - edges[scan.low].start >= config.exitMs) closeVehicle(scan, edges, scan.low - 1, true);
-  } else scan.low = null;
+    // Phone replay decorates legacy geometry-only rows too. That derived state
+    // does not prove the recorder supplied modern raw speed/motion evidence.
+    // Explicit null raw speed is modern missing evidence, not a legacy fix.
+    const recordedMotion = edge.to.raw_speed_kmh !== undefined
+      || edge.to.speed_kmh !== undefined || edge.to.motion_state !== undefined;
+    if (!config.stillMps || edge.to.phoneMotionState == null || !recordedMotion) {
+      if (edge.end - edges[scan.low].start >= config.exitMs) closeVehicle(scan, edges, scan.low - 1, true);
+    } else {
+      // A red light is not getting out of the car. Require positive walking
+      // evidence, rather than spending the exit clock on zero-speed fixes.
+      const measured = phoneReliableSpeed(edge.to);
+      const freshProgress = edge.to.phoneConfirmedMovement
+        && Number.isFinite(edge.to.phoneDepartureSince)
+        && edge.to.phoneDepartureSince >= edges[scan.low].start;
+      const walking = !edge.to.phoneStationary && (measured != null
+        ? measured >= config.stillMps && measured <= config.departureMaxSpeed
+        : freshProgress && edge.speed >= config.stillMps
+          && edge.speed <= config.departureMaxSpeed);
+      if (walking) {
+        if (scan.footLow == null) scan.footLow = i;
+        const first = edges[scan.footLow].from;
+        const raw = p => Number.isFinite(p.raw_latitude) && Number.isFinite(p.raw_longitude)
+          ? { latitude: p.raw_latitude, longitude: p.raw_longitude } : p;
+        const departure = edge.to.phoneConfirmedMovement && distanceMeters(raw(first), raw(edge.to))
+          > Math.max(config.minMoveM, accuracyOf(first, config), accuracyOf(edge.to, config));
+        if (departure || edge.end - edges[scan.footLow].start >= config.exitMs) {
+          closeVehicle(scan, edges, scan.footLow - 1, true);
+          return;
+        }
+      } else scan.footLow = null;
+      // Keep a pending long light; cap its lifetime at the existing vehicle
+      // interruption bound. finishVehicles can display terminal parking sooner.
+      if (edge.to.phoneStationary && measured != null && measured < config.stillMps) {
+        if (scan.parked == null) scan.parked = i;
+        if (edge.end - edges[scan.parked].start >= config.maxVehicleGapMs)
+          closeVehicle(scan, edges, scan.parked - 1, true);
+      } else scan.parked = null;
+    }
+  } else { scan.low = null; scan.footLow = null; scan.parked = null; }
 }
 
 /** The vehicles found, a vehicle still going closed at the data's end. */
-export function finishVehicles(scan, edges) {
-  if (scan.active != null) closeVehicle(scan, edges, edges.length - 1);
+export function finishVehicles(scan, edges, config = configFor('phone')) {
+  if (scan.active != null) {
+    // A terminal stationary interval can display a stay without committing
+    // an exit in the reusable scan. A long red light can still resume driving.
+    const parked = scan.parked != null && edges.at(-1).end - edges[scan.parked].start >= config.stayMs;
+    closeVehicle(scan, edges, parked ? scan.parked - 1 : edges.length - 1, parked);
+  }
   return scan.vehicles;
 }
 
@@ -88,9 +134,22 @@ export const countState = () => ({ anchor: null, budget: 0 });
 // reaches; a long step (over 10 s, sparse fixes) also takes the speed it
 // left with, so a walk that ends on a fix taken standing still still counts
 // (Codex review, 067). null when neither fix has one.
+function phoneBudgetSpeed(point) {
+  const speed = phoneReliableSpeed(point), spread = point.speed_accuracy_mps;
+  // A noisy speed is accepted only because its lower bound proves progress.
+  // Spend that bound, rather than crediting the full uncertain estimate.
+  return speed != null && Number.isFinite(spread) && spread > 1.5
+    ? Math.max(0, speed - spread) : speed;
+}
+
 function stepSpeed(edge) {
-  const to = measuredSpeedMps(edge.to);
-  const from = edge.durationMs > 10000 ? measuredSpeedMps(edge.from) : null;
+  if (edge.phoneSpeedEvidence != null && phoneReliableSpeed(edge.to) == null)
+    return phoneBudgetSpeed(edge.from) ?? edge.phoneSpeedEvidence;
+  const measured = edge.to.phoneMotionState != null ? phoneBudgetSpeed : measuredSpeedMps;
+  const to = measured(edge.to);
+  // Both endpoint measurements must remain credible; unknown endpoints are
+  // interrupted edges and never reach the distance budget.
+  const from = edge.durationMs > 10000 ? measured(edge.from) : null;
   if (to == null && (edge.durationMs <= 10000 || from == null)) return to == null && from == null ? null : to ?? from;
   return Math.max(to ?? 0, from ?? 0);
 }
@@ -101,9 +160,21 @@ export function countEdge(state, edge, config) {
     edge.countedDistanceM = 0; state.anchor = null; return;
   }
   if (!state.anchor) { state.anchor = edge.from; state.budget = 0; }
+  if (edge.from.phoneStationary && !edge.to.phoneStationary) {
+    state.anchor = edge.from; state.budget = 0;
+  }
+  // Confirmed phone stationarity spends no old speed budget. A missing speed
+  // earlier in the run must not turn a later stationary fix into movement.
+  if (edge.to.phoneStationary) {
+    edge.countedDistanceM = 0; state.anchor = edge.to; state.budget = 0; return;
+  }
   // A break at one place (samePlaceGap) is no walk.
   if (edge.bridged) { edge.countedDistanceM = 0; return; }
-  const speed = config.speedBudget ? stepSpeed(edge) : null;
+  const speed = config.speedBudget && !edge.to.phoneConfirmedMovement ? stepSpeed(edge) : null;
+  // A geometry-confirmed step cannot leave unlimited credit for later phone
+  // observations whose own speed contradicts travel. Fresh proof is required.
+  if (edge.to.phoneMotionState != null && !edge.to.phoneConfirmedMovement
+    && speed != null && !Number.isFinite(state.budget)) state.budget = 0;
   // Speeds under stillMps are a phone standing still (measurement noise).
   state.budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
   const moved = distanceMeters(state.anchor, edge.to);
@@ -142,11 +213,24 @@ export function historyEdge(from, to, subject = 'dog', config = configFor(subjec
     else missingReleaseFix = true;
   }
   const durationMs = to.time - from.time;
+  if (from.phoneStationary && !to.phoneStationary && Number.isFinite(from.raw_latitude)
+    && Number.isFinite(from.raw_longitude)) from = { ...from,
+      latitude: from.raw_latitude, longitude: from.raw_longitude };
   const distanceM = missingReleaseFix ? 0 : distanceMeters(from, to);
   // 067: a break at one place is part of the stay there, not a gap.
   const bridged = !missingReleaseFix && samePlaceGap(from, to, config);
+  // One missed speed in an otherwise measured walk may use the immediately
+  // preceding reliable speed for at most ten seconds, never across a gap.
+  const modernPhone = subject === 'phone' && to.phoneMotionState != null
+    && ('raw_speed_kmh' in to || 'speed_kmh' in to || 'speed_accuracy_mps' in to);
+  const phoneSpeedEvidence = modernPhone ? phoneReliableSpeed(to) ??
+    ((to.raw_speed_kmh === undefined ? to.speed_kmh : to.raw_speed_kmh) == null && durationMs <= 10000
+      ? phoneReliableSpeed(from) : null) : null;
+  const uncertain = modernPhone && !bridged && !to.phoneStationary
+    && !to.phoneConfirmedMovement && phoneSpeedEvidence == null;
   return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
-    speed: distanceM / (durationMs / 1000), gap: missingReleaseFix || (durationMs > config.gapMs && !bridged),
+    speed: distanceM / (durationMs / 1000), uncertain, phoneSpeedEvidence,
+    gap: missingReleaseFix || uncertain || (durationMs > config.gapMs && !bridged),
     ...(missingReleaseFix ? { gapReason: 'no-gps' } : {}),
     // Into or within a hold: not movement (判定表「停在原處前後的距離」:
     // the drift drawn onto the hold spot does not count); the release edge

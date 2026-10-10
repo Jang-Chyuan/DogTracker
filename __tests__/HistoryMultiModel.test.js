@@ -165,3 +165,21 @@ test('移除不改範圍: a kept range stays when the dog that gave it has gone'
   expect(day.main.points[day.main.points.length - 1].time).toBeLessThanOrEqual(at(120));
   expect(a.length).toBeGreaterThan(0);
 });
+
+test('moving the shared cursor reuses companion clipped geometry', () => {
+  const mapModel = require('../src/history/screen/HistoryMapModel');
+  const spy = jest.spyOn(mapModel, 'stayAwareModelEdges');
+  try {
+    const day = multiDayModel([subject(4, walk(4, 0, 100)),
+      subject(6, walk(6, 0, 100, { east: 0.01, stay: [20, 80] }))],
+    { ...options, protagonist: 4, manual: { start: at(0), end: at(100), following: false } });
+    const look = { 4: { color: colors.route1 }, 6: { color: colors.route2 } };
+    multiMapPresentation(day, multiCursors(day, at(10)), look);
+    const secondary = day.subjects.find(s => s.id === 6).model;
+    const first = spy.mock.results[spy.mock.calls.findIndex(([model]) => model === secondary)].value;
+    spy.mockClear();
+    multiMapPresentation(day, multiCursors(day, at(90)), look);
+    const second = spy.mock.results[spy.mock.calls.findIndex(([model]) => model === secondary)].value;
+    expect(second).toBe(first);
+  } finally { spy.mockRestore(); }
+});

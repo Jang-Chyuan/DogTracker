@@ -1,3 +1,4 @@
+import { replayPhoneMotion } from '../locationTracker/PhoneMotion';
 import { applyHistoryHolds } from '../placement/IndoorHold';
 import { coordinateValid, configFor, distanceMeters, atLeast, above } from './HistoryConfig';
 
@@ -76,7 +77,7 @@ export function filterHistoryPoints(points = [], { subject = 'dog', config = con
       accepted.push(...input.slice(i, i + count)); i += count - 1; highRun = true;
     }
   }
-  return accepted;
+  return subject === 'phone' && config.stillMps ? replayPhoneMotion(accepted) : accepted;
 }
 
 /** Reuse the live pure hold tracker, replaying deduped packets rather than GPS

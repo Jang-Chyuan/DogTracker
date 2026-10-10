@@ -4,6 +4,11 @@
 import { getTheme } from '../../theme/ThemeProvider';
 import { size as sizes, space, layout } from '../../theme/tokens';
 import { clock } from '../HistoryText';
+import { configFor, coordinateValid, distanceMeters } from '../HistoryConfig';
+import { historyMovement } from '../HistoryMovement';
+import { historyStops, historyIndoorNodes } from '../HistoryStops';
+import { phoneReliableSpeed } from '../../locationTracker/PhoneMotion';
+import { phoneDisplayLocations, phoneStayDisplayCoordinate } from '../PhoneStayDisplayAnchors';
 
 const MINUTE = 60000;
 const isVehicle = mode => mode === 'driving' || mode === 'ride';
@@ -55,21 +60,6 @@ export function withAlpha(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-// Runs of points split where the data breaks (over 3 minutes, edges marked gap).
-function runsOf(points, breakMs) {
-  const runs = [];
-  let run = [];
-  for (const p of points) {
-    if (run.length && p.time - run[run.length - 1].time > breakMs) {
-      if (run.length > 1) runs.push(run);
-      run = [];
-    }
-    run.push(p);
-  }
-  if (run.length > 1) runs.push(run);
-  return runs;
-}
-
 /**
  * The route inside the range as lines: on foot 4dp before the cursor and 3dp
  * at 30% after it; a car or ride 2dp solid in the route colour (also 30%
@@ -92,7 +82,7 @@ export function routeLines(
   let current = null;
   for (let index = 0; index < edges.length; index += 1) {
     const edge = edges[index];
-    if (edge.gap || edge.bridged || ['gap', 'indoor'].includes(edge.mode)) {
+    if (edge.gap || ['gap', 'indoor'].includes(edge.mode) || edge.bridged) {
       current = null;
       continue;
     }
@@ -151,35 +141,177 @@ function geometryId(points) {
   return hash;
 }
 
-/** The day outside the range: 2dp dashed routeFaded, broken where the data is. */
-export function outsideLines(
-  dayPoints,
-  range,
-  { color, breakMs = sizes.route.breakAfterMs, edges = null },
-) {
-  if (!range || range.start == null) return [];
-  // The timeline has already classified the whole day's observations. Reuse
-  // those edges so an indoor anchor or same-place bridge is not drawn again
-  // merely because it lies outside the selected range.
-  if (edges) return routeLines(edges.filter(edge => edge.end - edge.start <= breakMs
-    && (edge.end <= range.start || edge.start >= range.end)), { color })
-    .map(line => {
-      const faded = { ...line, width: sizes.route.faded, color, dashed: true };
-      return { ...faded, id: lineId(faded) };
+// Cache only drawing geometry; cursor-dependent colour/chunks are still built
+// by routeLines. The snapshot detects hold replay mutating source observations.
+const dayDrawings = new WeakMap();
+const rangeDrawings = new WeakMap();
+const drawingFields = ['time', 'latitude', 'longitude', 'accuracy', 'heldReason',
+  'heldSince', 'raw_speed_kmh', 'speed_kmh', 'speed_accuracy_mps',
+  'phoneMotionState', 'phoneStationary', 'phoneConfirmedMovement', 'raw_latitude', 'raw_longitude'];
+function dayDrawing(points, subject) {
+  const cached = dayDrawings.get(points);
+  if (cached && cached.subject === subject && cached.snapshot.length === points.length
+    && points.every((p, i) => drawingFields.every((key, j) => p[key] === cached.snapshot[i][j]))) {
+    return cached;
+  }
+  const config = configFor(subject);
+  const movement = historyMovement(points, { subject, config });
+  const start = points[0]?.time, end = points[points.length - 1]?.time;
+  const stays = historyStops(points, { subject, config, start, end, vehicles: movement.vehicles });
+  const places = [...stays.stops, ...historyIndoorNodes(points, { config })];
+  // A stationary whole day deliberately has no numbered stop. It still has
+  // no route: preserve 判定表「整天都停在原處的地圖」 for context lines too.
+  if (stays.visits.length === 1 && stays.visits[0].durationMs >= config.alwaysStayMs
+    && stays.visits[0].start === start && stays.visits[0].end === end) places.push(stays.visits[0]);
+  const quietRecoveries = stationaryRecoveryEdges(movement.edges, places);
+  const result = { subject, places, quietRecoveries,
+    edges: clipRouteAtStays(movement.edges, places, config.radiusM, quietRecoveries),
+    snapshot: points.map(p => drawingFields.map(key => p[key])) };
+  dayDrawings.set(points, result);
+  return result;
+}
+
+// A short zero-speed fix after a recording gap can jump within its accuracy
+// footprint before the detector confirms a stay. It supplies no drawn arrival
+// route. Keep the raw observations, timeline/gap and counted distance intact.
+function stationaryRecoveryEdges(edges, places) {
+  const quiet = new Set(), config = configFor('phone');
+  const raw = p => ({ latitude: p.raw_latitude, longitude: p.raw_longitude });
+  const stationarySpeed = p => {
+    const speed = phoneReliableSpeed(p);
+    return speed != null && speed < config.stillMps;
+  };
+  const valid = p => Number.isFinite(p.accuracy) && p.accuracy >= 0
+    && p.accuracy <= 30 && coordinateValid(raw(p));
+  const arrivals = new Set(places.filter(p => p.type === 'stop'
+    && p.end - p.start >= config.stayMs).map(p => p.start));
+  for (let i = 1; i < edges.length; i += 1) {
+    const edge = edges[i], prior = edges[i - 1];
+    if (edge.mode !== 'walking' || edge.gap || edge.bridged || edge.durationMs <= 0 || edge.durationMs > 10000
+      || !prior.gap || prior.durationMs <= config.gapMs || !arrivals.has(edge.end)
+      || edge.from.phoneMotionState == null || edge.to.phoneMotionState == null
+      || edge.from.phoneConfirmedMovement || edge.to.phoneConfirmedMovement
+      || !valid(edge.from) || !valid(edge.to)
+      || phoneReliableSpeed(edge.from) !== 0 || phoneReliableSpeed(edge.to) !== 0
+      || distanceMeters(raw(edge.from), raw(edge.to)) > edge.from.accuracy + edge.to.accuracy) continue;
+    // Confirm from the same production detector within its bounded entry
+    // window, rejecting credible travel, uncertain speed or another break.
+    for (let j = i; j < edges.length && j < i + 64; j += 1) {
+      const next = edges[j], p = next.to;
+      if (p.time - edge.end > config.enterMs || next.gap || next.bridged
+        || next.mode !== 'walking' || p.phoneConfirmedMovement || !valid(p)
+        || !stationarySpeed(p) || distanceMeters(raw(edge.to), raw(p)) > config.radiusM) break;
+      if (p.phoneStationary) { quiet.add(`${edge.start}:${edge.end}`); break; }
+    }
+  }
+  return quiet;
+}
+
+// The interval along a segment inside a stay's radius (local metre projection).
+function circleInterval(from, to, place, radiusM) {
+  const center = place.center || place;
+  const lonM = Math.cos(center.latitude * Math.PI / 180) * 111320;
+  const x = (from.longitude - center.longitude) * lonM;
+  const y = (from.latitude - center.latitude) * 110540;
+  const dx = (to.longitude - from.longitude) * lonM;
+  const dy = (to.latitude - from.latitude) * 110540;
+  const a = dx * dx + dy * dy;
+  if (!a) return x * x + y * y <= radiusM * radiusM ? [0, 1] : null;
+  const b = 2 * (x * dx + y * dy), c = x * x + y * y - radiusM * radiusM;
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const root = Math.sqrt(discriminant);
+  const lo = Math.max(0, (-b - root) / (2 * a)), hi = Math.min(1, (-b + root) / (2 * a));
+  return hi > lo ? [lo, hi] : null;
+}
+const between = (edge, fraction) => fraction === 0 ? edge.from : fraction === 1 ? edge.to : ({
+  time: edge.start + (edge.end - edge.start) * fraction,
+  latitude: edge.from.latitude + (edge.to.latitude - edge.from.latitude) * fraction,
+  longitude: edge.from.longitude + (edge.to.longitude - edge.from.longitude) * fraction,
+});
+
+/** Drawing only: never mutate measured edges, cursor fixes or distance totals.
+ * Suppress the visit's whole time interval (including unconfirmed excursions),
+ * plus the circle on its arrival/departure edge. The same place visited later
+ * does not hide a genuine earlier pass through that location. */
+export function clipRouteAtStays(edges, locations = [], radiusM = configFor().radiusM,
+  quietRecoveries = stationaryRecoveryEdges(edges, locations)) {
+  // Timeline edges are chronological. Sweep sorted intervals so each edge
+  // checks only concurrent stays, rather than every stay from the entire day.
+  const places = locations.filter(n => ['stop', 'indoor'].includes(n.type))
+    .slice().sort((a, b) => a.start - b.start);
+  let nextPlace = 0, active = [];
+  return edges.flatMap(edge => {
+    if (edge.gap || ['gap', 'indoor'].includes(edge.mode) || edge.bridged
+      || quietRecoveries.has(`${edge.start}:${edge.end}`)) return [];
+    while (nextPlace < places.length && places[nextPlace].start <= edge.end) {
+      active.push(places[nextPlace]); nextPlace += 1;
+    }
+    active = active.filter(place => place.end >= edge.start);
+    let intervals = [[0, 1]];
+    for (const place of active) {
+      const span = edge.end - edge.start;
+      const timeInside = span > 0
+        ? [Math.max(0, (place.start - edge.start) / span), Math.min(1, (place.end - edge.start) / span)]
+        : [0, 1];
+      const circle = circleInterval(edge.from, edge.to, place, radiusM);
+      for (const [lo, hi] of [timeInside, circle].filter(Boolean)) {
+        if (hi <= lo) continue;
+        intervals = intervals.flatMap(([a, b]) => hi <= a || lo >= b ? [[a, b]]
+          : [[a, Math.min(b, lo)], [Math.max(a, hi), b]].filter(([x, y]) => y - x > 1e-9));
+      }
+    }
+    return intervals.map(([a, b]) => {
+      if (a === 0 && b === 1) return edge;
+      const from = between(edge, a), to = between(edge, b);
+      return { ...edge, from, to, start: from.time, end: to.time };
     });
-  const before = dayPoints.filter(p => p.time <= range.start);
-  const after = dayPoints.filter(p => p.time >= range.end);
-  return [...runsOf(before, breakMs), ...runsOf(after, breakMs)].map(run => {
-    const line = {
-      width: sizes.route.faded,
-      color,
-      dashed: true,
-      vehicle: false,
-      start: run[0].time,
-      end: run[run.length - 1].time,
-      coordinates: run.map(coordinateOf),
-    };
-    return { ...line, id: lineId(line) };
+  });
+}
+
+// Cache secondary as well as primary clipped geometry independently of the
+// cursor. Value snapshots keep replay/in-place edits from leaving stale lines.
+const recoveryFields = ['accuracy', 'phoneMotionState', 'phoneStationary', 'phoneConfirmedMovement',
+  'raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_kmh', 'speed_accuracy_mps'];
+const edgeSnapshot = e => [e.start, e.end, e.mode, e.gap, e.bridged,
+  e.from.latitude, e.from.longitude, e.to.latitude, e.to.longitude, e.durationMs,
+  ...recoveryFields.map(key => e.from[key]), ...recoveryFields.map(key => e.to[key])];
+const edgeMatches = (e, v) => e.start === v[0] && e.end === v[1] && e.mode === v[2]
+  && e.gap === v[3] && e.bridged === v[4] && e.from.latitude === v[5]
+  && e.from.longitude === v[6] && e.to.latitude === v[7] && e.to.longitude === v[8]
+  && e.durationMs === v[9] && recoveryFields.every((key, i) => e.from[key] === v[10 + i]
+    && e.to[key] === v[10 + recoveryFields.length + i]);
+const placeSnapshot = p => [p.type, p.start, p.end, p.latitude, p.longitude,
+  p.center?.latitude, p.center?.longitude];
+const placeMatches = (p, v) => p.type === v[0] && p.start === v[1] && p.end === v[2]
+  && p.latitude === v[3] && p.longitude === v[4]
+  && p.center?.latitude === v[5] && p.center?.longitude === v[6];
+export function stayAwareModelEdges(model, { day = null, radiusM = configFor().radiusM } = {}) {
+  let cached = rangeDrawings.get(model);
+  const edges = model.edges || [], locations = model.locations || [];
+  const places = [...(day?.places || []), ...locations];
+  if (cached && cached.day === day && cached.radiusM === radiusM
+    && cached.sourceEdges === edges && cached.locations === locations
+    && cached.edgeSnapshot.length === edges.length && cached.placeSnapshot.length === places.length
+    && edges.every((e, i) => edgeMatches(e, cached.edgeSnapshot[i]))
+    && places.every((p, i) => placeMatches(p, cached.placeSnapshot[i]))) return cached.clipped;
+  cached = { day, radiusM, sourceEdges: edges, locations, places,
+    edgeSnapshot: edges.map(edgeSnapshot), placeSnapshot: places.map(placeSnapshot),
+    clipped: clipRouteAtStays(edges, places, radiusM, day?.quietRecoveries ?? stationaryRecoveryEdges(edges, places)) };
+  rangeDrawings.set(model, cached);
+  return cached.clipped;
+}
+
+/** The day outside the range: only stay-aware movement, dashed and chunked. */
+export function outsideLines(dayPoints, range, { color, subject = 'dog',
+  breakMs = sizes.route.breakAfterMs, edges = null } = {}) {
+  if (!range || range.start == null) return [];
+  const movement = edges || dayDrawing(dayPoints, subject).edges;
+  const outside = movement.filter(e => e.end - e.start <= breakMs
+    && (e.end <= range.start || e.start >= range.end));
+  return routeLines(outside, { color }).map(line => {
+    const faded = { ...line, width: sizes.route.faded, color, dashed: true };
+    return { ...faded, id: lineId(faded) };
   });
 }
 
@@ -190,7 +322,7 @@ export function outsideLines(
  */
 export function timeMarkers(
   points,
-  { breakMs = sizes.route.breakAfterMs, allIndoor = false, stays = [] } = {},
+  { breakMs = sizes.route.breakAfterMs, allIndoor = false, stays = [], subject = 'dog' } = {},
 ) {
   if (!points.length || allIndoor) return [];
   const first = points[0],
@@ -202,7 +334,7 @@ export function timeMarkers(
       time: first.time,
       label: clock(first.time),
       end: true,
-      coordinate: coordinateOf(first),
+      coordinate: (subject === 'phone' ? phoneStayDisplayCoordinate(stays, first.time) : null) || coordinateOf(first),
     },
   ];
   const step =
@@ -238,7 +370,7 @@ export function timeMarkers(
       time: last.time,
       label: clock(last.time),
       end: true,
-      coordinate: coordinateOf(last),
+      coordinate: (subject === 'phone' ? phoneStayDisplayCoordinate(stays, last.time) : null) || coordinateOf(last),
     });
   return markers;
 }
@@ -311,7 +443,7 @@ export function uncrowded(times, places, apartM = 150) {
  */
 export function historyMapPresentation(
   model,
-  { color, cursor = null, theme = getTheme() } = {},
+  { color, cursor = null, theme = getTheme(), subject = null } = {},
 ) {
   const { colors } = theme;
   if (!model) return null;
@@ -321,6 +453,11 @@ export function historyMapPresentation(
   // switch the list dropped has no number and is not drawn.
   const places = stablePlaceMarkers(model.locations || emptyLocations);
   const allIndoor = points.length > 0 && points.every(p => p.heldReason);
+  subject = subject || (dayPoints.some(p => p.slave_id === 'phone')
+    || model.edges?.some(e => ['walking', 'driving'].includes(e.mode)) ? 'phone' : 'dog');
+  const displayLocations = subject === 'phone' ? phoneDisplayLocations(model) : model.locations || emptyLocations;
+  const drawing = dayDrawing(dayPoints, subject);
+  const rangeEdges = stayAwareModelEdges(model, { day: drawing, radiusM: configFor(subject).radiusM });
   const cursorTime = cursor?.point?.time ?? Infinity;
   const first = points[0],
     last = points[points.length - 1];
@@ -330,9 +467,9 @@ export function historyMapPresentation(
       ...outsideLines(
         dayPoints,
         first ? { start: first.time, end: last.time } : null,
-        { color: colors.routeFaded, edges: model.dayEdges },
+        { color: colors.routeFaded, subject, edges: subject === 'dog' ? model.dayEdges ?? drawing.edges : drawing.edges },
       ),
-      ...routeLines(model.edges || [], { color, cursorTime, theme }),
+      ...routeLines(rangeEdges, { color, cursorTime, theme }),
     ],
 
     places,
@@ -341,8 +478,8 @@ export function historyMapPresentation(
     // out (its label would sit on theirs).
     times: uncrowded(
       timeMarkers(points, {
-        allIndoor,
-        stays: (model.locations || []).filter(n =>
+        subject, allIndoor,
+        stays: displayLocations.filter(n =>
           ['stop', 'indoor', 'switch'].includes(n.type),
         ),
       })
@@ -357,7 +494,9 @@ export function historyMapPresentation(
     cursor: cursor?.point
       ? {
           time: cursor.point.time,
-          coordinate: coordinateOf(cursor.point),
+          coordinate: subject === 'phone' && !cursor.stale
+            ? phoneStayDisplayCoordinate(displayLocations, cursor.point.time) || coordinateOf(cursor.point)
+            : coordinateOf(cursor.point),
           lines: cursor.label,
           stale: !!cursor.stale,
           key: cursor.point.time,

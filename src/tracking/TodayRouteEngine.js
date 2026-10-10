@@ -12,6 +12,7 @@
 // compares them on whole simulated days, row batch by row batch).
 //
 // Phone rows only (my route): no holds, no dog-only jump rules.
+import { PhoneMotion, phoneMotionPoint } from '../locationTracker/PhoneMotion';
 import { configFor, coordinateValid, distanceMeters, above } from '../history/HistoryConfig';
 import { normalizeHistoryRows } from '../history/HistorySources';
 import { phoneHistoryRow } from '../history/HistoryRows';
@@ -72,6 +73,7 @@ export function createTodayRouteEngine({ dayStart }) {
   // first of them is a fix of the route, but each one is a row of today
   // (`count` counts rows, as todayRouteDistance's does).
   const repeats = [];
+  let phoneMotion = new PhoneMotion();
   const points = [];
   const edges = [];
   // Vehicles: the scan as it stood after `settled` (the last edge nothing can
@@ -93,9 +95,28 @@ export function createTodayRouteEngine({ dayStart }) {
     if (previous) {
       const dt = (point.time - previous.time) / 1000;
       if (dt <= 0) return;
-      if (above(distanceMeters(previous, point) / dt, config.maxSpeed)) return;
+      const observed = { latitude: previous.phoneObservedLatitude ?? previous.latitude,
+        longitude: previous.phoneObservedLongitude ?? previous.longitude };
+      if (above(distanceMeters(observed, point) / dt, config.maxSpeed)) return;
+      point = phoneMotionPoint(point, phoneMotion);
+      if (point.phoneDepartureSince != null) {
+        for (let i = points.length - 1; i >= 0; i -= 1) {
+          const prior = points[i];
+          if (prior.time < point.phoneDepartureSince) break;
+          prior.latitude = prior.raw_latitude; prior.longitude = prior.raw_longitude;
+          prior.phoneStationary = false; prior.phoneConfirmedMovement = true;
+          prior.phoneMotionState = 'moving';
+        }
+        for (let i = Math.max(0, firstEdgeFrom(edges, point.phoneDepartureSince) - 1); i < edges.length; i += 1) {
+          if (edges[i].end >= point.phoneDepartureSince) edges[i] = historyEdge(points[i], points[i + 1], 'phone', config);
+        }
+        settled = -1; settledScan = vehicleScan();
+        departure.fromTime = -Infinity; departure.final = null;
+        counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0 };
+      }
       edges.push(historyEdge(previous, point, 'phone', config));
     }
+    if (!previous) point = phoneMotionPoint(point, phoneMotion);
     points.push(point);
   }
 
@@ -124,13 +145,17 @@ export function createTodayRouteEngine({ dayStart }) {
       let keep = points.length;
       while (keep && points[keep - 1].time > now) keep -= 1;
       if (keep < points.length) {
-        points.length = keep;
-        edges.length = Math.max(0, keep - 1);
+        phoneMotion = new PhoneMotion();
+        points.length = 0;
+        edges.length = 0;
         settled = -1;
         settledScan = vehicleScan();
         departure.fromTime = -Infinity;
         departure.final = null;
         counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0 };
+        // Replaying only the reached raw rows revokes any future-confirmed
+        // departure backfill when the clock moves backwards.
+        for (const point of recorded.slice(0, taken)) take(point);
       }
       // The rows the clock has reached since the last call.
       while (taken < recorded.length && recorded[taken].time <= now) { take(recorded[taken]); taken += 1; }
@@ -141,12 +166,18 @@ export function createTodayRouteEngine({ dayStart }) {
       let nextSettled = settled, nextScan = settledScan;
       for (let i = settled + 1; i < edges.length; i += 1) {
         stepVehicles(scan, edges, i, config);
-        if (vehiclesSettledAt(scan, edges, i, config)) {
+        // A confirmed car can retain its scan and counted prefix while its
+        // current edge is still fast. An exit may only backfill from the
+        // first low/foot/parking edge, all of which stay after this checkpoint.
+        // Keep active's original index: finishVehicles closes only the local
+        // scan copy, so a terminal stop can later resume the same car.
+        const confirmedFast = scan.active != null && scan.low == null;
+        if (confirmedFast || vehiclesSettledAt(scan, edges, i, config)) {
           nextSettled = i;
           nextScan = { ...scan, vehicles: scan.vehicles.slice() };
         }
       }
-      const vehicles = finishVehicles(scan, edges);
+      const vehicles = finishVehicles(scan, edges, config);
       // Edge modes as historyMovement gives them, for the edges not settled.
       let v = 0;
       for (let i = settled + 1; i < edges.length; i += 1) {
