@@ -134,3 +134,37 @@ test('only window/top inset changes update fixed height; font and bottom padding
     safeArea.mockReturnValue({ top: 24, bottom: 20, left: 0, right: 0 });
   }
 });
+
+
+test.each([
+  { width: 851, height: 393, fontScale: 2, gap: 0 },
+  { width: 851, height: 393, fontScale: 1.3, gap: space.l },
+  { width: 393, height: 851, fontScale: 2, gap: space.s },
+  { width: 1024, height: 768, fontScale: 2, gap: space.s },
+])('very large short-wide text keeps nav inset but omits optional tail space: %j', async viewport => {
+  const spy = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ ...viewport, scale: 2.75 });
+  let tree;
+  try {
+    await act(async () => { tree = Renderer.create(<HistoryPanel bottomInset={24} header={<Text>Fixed header</Text>}><Text testID="last-node">Complete END text</Text></HistoryPanel>); });
+    const scroll = tree.root.findByType(ScrollView);
+    expect(scroll.props.contentContainerStyle.paddingBottom).toBe(24 + viewport.gap);
+    expect(StyleSheet.flatten(tree.root.findByProps({ testID: 'history-panel' }).props.style).height)
+      .toBe(historyPanelMaxHeight(viewport.height, 24));
+    expect(scroll.findByProps({ testID: 'last-node' })).toBeTruthy();
+    expect(scroll.findAllByProps({ testID: 'history-panel-header' })).toHaveLength(0);
+    // Independent native sizing counterexample: settled list284px, nav66px,
+    // full END row216px at2.75scale. This arithmetic is not native Yoga proof.
+    if (viewport.gap === 0) {
+      const listHeight = 284 / 2.75;
+      const navigationHeight = 66 / 2.75;
+      const endRowHeight = 216 / 2.75;
+      const padding = scroll.props.contentContainerStyle.paddingBottom;
+      expect(padding).toBeGreaterThanOrEqual(navigationHeight);
+      expect(listHeight - padding).toBeGreaterThanOrEqual(endRowHeight);
+      expect(listHeight - navigationHeight - space.s).toBeLessThan(endRowHeight);
+    }
+  } finally {
+    if (tree) await act(async () => tree.unmount());
+    spy.mockRestore();
+  }
+});

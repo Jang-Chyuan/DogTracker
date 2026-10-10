@@ -4,7 +4,7 @@ import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useStyles } from '../theme/ThemeProvider';
 import { size, space, border, fontScale as fontScales } from '../theme/tokens';
-import { historyPanelMaxHeight } from '../map/MapPanelHeight';
+import { historyPanelMaxHeight, historyUsesWideHeader } from '../map/MapPanelHeight';
 import { behindSheet } from '../utils/a11yFocus';
 import { fontScaleAtLeast } from '../utils/textScale';
 
@@ -16,11 +16,17 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   useImperativeHandle(scrollRef, () => ({
     scrollTo: options => scroller.current?.scrollTo(options),
   }), []);
-  const { height: windowHeight, fontScale } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   // At large fonts the fixed header leaves a shorter list viewport. Avoid
   // pushing the last row's circle above it at maximum scroll, while retaining
-  // the entire navigation inset and a small gap below the last text.
-  const tailGap = fontScaleAtLeast(fontScale, fontScales.faceOnly) ? space.s : space.l;
+  // the entire navigation inset, and an optional gap where room permits.
+  const largeFont = fontScaleAtLeast(fontScale, fontScales.faceOnly);
+  const shortWide = historyUsesWideHeader({ width: windowWidth, height: windowHeight });
+  // A full END row can just fit in a short-wide large-font viewport after
+  // its required navigation inset. Extra gutter would push the top offscreen
+  // at maximum scroll; the navigation inset itself is never reduced.
+  const largeFontGap = shortWide ? 0 : space.s;
+  const tailGap = largeFont ? largeFontGap : space.l;
   const insets = useSafeAreaInsets();
   const cap = historyPanelMaxHeight(windowHeight, insets.top);
   // Report the actual fixed height immediately, including after rotation/inset changes.
