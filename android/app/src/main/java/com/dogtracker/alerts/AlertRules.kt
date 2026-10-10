@@ -153,6 +153,7 @@ data class Packet(
   val hdop: Double? = null,
   val rssi: Double? = null,
   val snr: Double? = null,
+  val speedKmh: Double? = null,
 )
 
 object Dogs {

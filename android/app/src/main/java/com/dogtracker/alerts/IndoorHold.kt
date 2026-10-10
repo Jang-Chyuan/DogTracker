@@ -14,7 +14,7 @@ class IndoorHold(saved: String? = null) {
   private fun num(o: JSONObject, name: String): Long? = (o.opt(name) as? Number)?.toLong()
   private fun time(p: JSONObject) = p.getLong("time")
   private fun coord(p: JSONObject) = LatLng(p.getDouble("latitude"), p.getDouble("longitude"))
-  private fun point(p: Packet) = p.dog?.let { JSONObject().put("time", p.time).put("latitude", it.latitude).put("longitude", it.longitude) }
+  private fun point(p: Packet) = p.dog?.let { JSONObject().put("time", p.time).put("latitude", it.latitude).put("longitude", it.longitude).put("speedKmh", p.speedKmh ?: JSONObject.NULL) }
   private fun median(values: List<Double>): Double { val a = values.sorted(); return if (a.size % 2 == 1) a[a.size / 2] else (a[a.size / 2 - 1] + a[a.size / 2]) / 2 }
   private fun medianPoint(values: List<JSONObject>) = JSONObject().put("latitude", median(values.map { it.getDouble("latitude") })).put("longitude", median(values.map { it.getDouble("longitude") }))
   private fun distance(a: JSONObject, b: JSONObject): Double {
@@ -53,6 +53,12 @@ class IndoorHold(saved: String? = null) {
     return centres.last() to (steps.all { (it.first * north + it.second * east) / length >= 12 } && distance(centres.first(), centres.last()) >= 60)
   }
   private fun settled(t: Long, strict: Boolean): Boolean {
+    val previousHold = s.optJSONObject("previousHold")
+    if (strict && previousHold != null && t - time(previousHold) <= 120000) {
+      val afterRelease = (points("goods") + points("weak")).filter { time(it) > time(previousHold) }
+      val first = afterRelease.minOfOrNull(::time)
+      if (afterRelease.size < 3 || first == null || t - first < 60000) return false
+    }
     val recent = points("goods").filter { t - time(it) <= 90000 }
     if (recent.size >= 2 && distance(recent.first(), recent.last()) > 120) return false
     return travel(t)?.let { !it.second } ?: !strict
@@ -90,15 +96,55 @@ class IndoorHold(saved: String? = null) {
     s.put("previousHold", JSONObject().put("time", t).put("why", why).put("anchor", h.getJSONObject("anchor")).put("source", h.getString("source")).put("refine", h.getJSONArray("refine")))
     held = null; return true
   }
+  private fun departure(t: Long): Long? {
+    val h = held ?: return null
+    val observed = points("rawTail").filter { time(it) <= t }
+    val window = min(600000.0, max(180000.0, gap(observed.takeLast(10)) * 4 * 2.2))
+    var tail = observed.filter { time(it) >= (num(h, "startedAt") ?: num(h, "since") ?: t) && t - time(it) <= window }
+    var start = 0
+    tail.forEachIndexed { index, p ->
+      val plateau = tail.take(index + 1).filter { time(p) - time(it) <= 60000 }
+      if (plateau.size >= 3 && time(p) - time(plateau.first()) >= 30000 && near(medianPoint(plateau), plateau, 3.0).size == plateau.size) start = index
+    }
+    tail = tail.drop(start)
+    for (index in 0 until (tail.size - 2).coerceAtLeast(0)) {
+      val run = tail.drop(index)
+      val steps = run.zipWithNext { a, b -> distance(a, b) }
+      val direct = distance(run.first(), run.last())
+      if (steps.count { it >= 1 } >= 2 && direct >= 12 && direct >= steps.sum() * 0.8
+        && steps.withIndex().all { (i, step) -> step <= direct * 0.8 && step / ((time(run[i + 1]) - time(run[i])) / 1000.0) <= 50 }) return time(run.first())
+    }
+    return null
+  }
+  private fun stationaryTail(t: Long): Boolean {
+    val h = held ?: return false
+    val tail = points("rawTail").filter { time(it) <= t && t - time(it) <= 120000 && distance(it, h.getJSONObject("anchor")) > 60 }
+    if (tail.size < 6 || t - time(tail.first()) < 60000) return false
+    val known = tail.filter { it.opt("speedKmh") is Number }
+    return known.size >= 6 && known.count { it.getDouble("speedKmh") < 1 } >= ceil(known.size * 0.8)
+      && near(medianPoint(tail), tail, 15.0).size == tail.size && departure(t) == null
+  }
+  private fun deferStationary(t: Long, why: String?): Boolean {
+    val h = held ?: return false
+    if (why !in listOf("window", "indoor") || !stationaryTail(t)) { h.put("stationarySince", JSONObject.NULL); return false }
+    val since = num(h, "stationarySince") ?: t.also { h.put("stationarySince", it) }
+    return t - since < 180000
+  }
   private fun shareWindow(h: JSONObject) = max(60000.0, gap(list(h.optJSONArray("lately"))) * 4)
   private fun whileHeld(p: JSONObject?, quality: String, t: Long): Boolean {
     val h = held ?: return false
     var lately = list(h.optJSONArray("lately")); lately.add(JSONObject().put("time", t).put("quality", quality))
     h.put("lately", JSONArray(lately)); lately = lately.filter { t - time(it) <= shareWindow(h) }.toMutableList(); h.put("lately", JSONArray(lately))
+    if (p != null && distance(p, h.getJSONObject("anchor")) <= 80) h.put("farGood", JSONArray())
+    if (p != null && distance(p, h.getJSONObject("anchor")) <= 60) h.put("nearby", JSONArray()).put("stationarySince", JSONObject.NULL)
     if (quality == "good" && p != null) {
       val anchor = h.getJSONObject("anchor"); val away = distance(p, anchor)
-      val nearby = list(h.optJSONArray("nearby")).filter { time(p) - time(it) <= 120000 }.toMutableList(); nearby.add(p); h.put("nearby", JSONArray(nearby))
-      if (nearby.size >= 6 && time(p) - time(nearby.first()) >= 60000 && lately.count { it.optString("quality") == "good" } >= lately.size * 0.7 && distance(medianPoint(nearby), anchor) > 60) return release(t, "good-fixes-nearby")
+      val why = evidence(t)
+      val nearby = list(h.optJSONArray("nearby")).filter { time(p) - time(it) <= 120000 }.toMutableList()
+      if (away > 60) nearby.add(p)
+      h.put("nearby", JSONArray(nearby))
+      if (nearby.size >= 6 && time(p) - time(nearby.first()) >= 60000 && lately.count { it.optString("quality") == "good" } >= lately.size * 0.7 && distance(medianPoint(nearby), anchor) > 60
+        && (why == null || near(medianPoint(nearby), nearby, 30.0).size == nearby.size) && !deferStationary(t, why)) return release(t, "good-fixes-nearby")
       if (away <= 20) {
         val refine = (list(h.optJSONArray("refine")) + p).takeLast(200); h.put("refine", JSONArray(refine))
         val refined = medianPoint(refine); if (distance(refined, anchor) >= 15) h.put("anchor", refined)
@@ -107,13 +153,26 @@ class IndoorHold(saved: String? = null) {
       val far = list(h.optJSONArray("farGood")).filter { t - time(it) <= max(180000.0, shareWindow(h) * 2) }.toMutableList()
       h.put("farGood", JSONArray(far)); if (away <= 80) return false
       p.put("away", away); far.add(p); h.put("farGood", JSONArray(far))
-      val needed = if (evidence(t) != null) 3 else 2
+      val needed = if (why != null) 3 else 2
       val latest = far.takeLast(needed)
       val agree = latest.size == needed && near(medianPoint(latest), latest, 30.0).size == needed
       val recent = lately.filter { t - time(it) <= shareWindow(h) }
       val outside = recent.size >= 3 && recent.count { it.optString("quality") == "good" } >= recent.size * 0.5
       val beyond = far.takeLast(2)
-      if ((outside && beyond.size == 2) || agree || (beyond.size == 2 && beyond.all { it.getDouble("away") > 100 })) return release(t, "good-fixes-away")
+      val agreeingRun = if (agree) far.asReversed().takeWhile { distance(it, medianPoint(latest)) <= 30 } else emptyList()
+      val sustained = agree && agreeingRun.isNotEmpty() && t - time(agreeingRun.last()) >= 30000
+      val farRun = far.drop(far.indexOfLast { it.getDouble("away") <= 100 } + 1)
+      val goodTravel = if (farRun.size >= 3) {
+        val first = farRun.first(); val last = farRun.last()
+        val direct = distance(first, last)
+        val path = farRun.zipWithNext { a, b -> distance(a, b) }.sum()
+        time(last) - time(first) >= 10000 && direct >= 60 && direct >= path * 0.8 && last.getDouble("away") - first.getDouble("away") >= 12
+          && farRun.zipWithNext { a, b -> b.getDouble("away") >= a.getDouble("away") - 15 }.all { it }
+      } else false
+      val travelling = if (why != null) travel(t) else null
+      val leaves = if (why != null) (sustained && !deferStationary(t, why)) || goodTravel || (travelling?.second == true && distance(travelling.first, anchor) > 80)
+        else (outside && beyond.size == 2) || agree || (beyond.size == 2 && beyond.all { it.getDouble("away") > 100 })
+      if (leaves) return release(t, "good-fixes-away")
     } else if (quality == "weak" && p != null) {
       val weak = (list(h.optJSONArray("weak")) + p).takeLast(300); h.put("weak", JSONArray(weak))
       if (h.optString("source") == "weak") { val anchor = medianPoint(weak); if (distance(anchor, h.getJSONObject("anchor")) >= 10) h.put("anchor", anchor) }
@@ -165,6 +224,7 @@ class IndoorHold(saved: String? = null) {
     val copy = p != null && seen.any { t - time(it) in 0..60000 && (it.optString("master") != master || time(it) == t) && distance(p, it) == 0.0 }
     s.put("lastTime", t)
     if (same || copy) return
+    if (p != null) set("rawTail", (points("rawTail") + p).filter { t - time(it) <= 600000 }.takeLast(300))
     if (p != null) { seen.add(JSONObject(p.toString()).put("master", master)); set("recentFixes", seen.filter { t - time(it) <= 60000 }) }
     val measured = if (p == null) "none" else if (packet.good) "good" else "weak"
     val backed = previous?.optString("quality") == "good" && t - previous.getLong("time") <= 90000
@@ -188,11 +248,12 @@ class IndoorHold(saved: String? = null) {
     val weakSince = points("weak").any { (num(s, "lastGoodAt") == null || time(it) > num(s, "lastGoodAt")!!) && t - time(it) < max(60000.0, typicalGap() * 3) }
     val wait = if (why == null || why == "window") 45000 else 20000
     val oldHold = s.optJSONObject("previousHold")
-    val cautious = why == null || why == "window" || oldHold != null && t - time(oldHold) <= 120000
-    val recentGood = points("goods").filter { t - time(it) <= 120000 }
+    val recentlyReleased = oldHold != null && t - time(oldHold) <= 120000
+    val cautious = why == null || why == "window" || recentlyReleased
+    val recentGood = points("goods").filter { t - time(it) <= 120000 && (oldHold == null || time(it) > time(oldHold)) }
     val parked = why != null && quality == "weak" && recentGood.size >= 4 && time(recentGood.last()) - time(recentGood.first()) >= 60000 && near(medianPoint(recentGood), recentGood, 15.0).size == recentGood.size
-    if (parked || (why != null || weakSince) && quiet >= wait && settled(t, cautious)) start(t, when (why) { "charging" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c731); "indoor" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c114); "window" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c853); else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c883) })
-    else if (!weakSince && quiet >= 60000 && travel(t)?.second != true) start(t, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c882))
+    if ((parked && (!recentlyReleased || settled(t, true))) || (why != null || weakSince) && quiet >= wait && settled(t, cautious)) start(t, when (why) { "charging" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c731); "indoor" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c114); "window" -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c853); else -> com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c883) })
+    else if (!weakSince && quiet >= 60000 && travel(t)?.second != true && (!recentlyReleased || settled(t, true))) start(t, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c882))
   }
   fun coordinate() = held?.getJSONObject("anchor")?.let(::coord)
   fun write() = s.toString()

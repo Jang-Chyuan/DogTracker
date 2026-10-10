@@ -92,7 +92,7 @@ export function routeLines(
   let current = null;
   for (let index = 0; index < edges.length; index += 1) {
     const edge = edges[index];
-    if (edge.gap || edge.mode === 'gap') {
+    if (edge.gap || edge.bridged || ['gap', 'indoor'].includes(edge.mode)) {
       current = null;
       continue;
     }
@@ -155,9 +155,18 @@ function geometryId(points) {
 export function outsideLines(
   dayPoints,
   range,
-  { color, breakMs = sizes.route.breakAfterMs },
+  { color, breakMs = sizes.route.breakAfterMs, edges = null },
 ) {
   if (!range || range.start == null) return [];
+  // The timeline has already classified the whole day's observations. Reuse
+  // those edges so an indoor anchor or same-place bridge is not drawn again
+  // merely because it lies outside the selected range.
+  if (edges) return routeLines(edges.filter(edge => edge.end - edge.start <= breakMs
+    && (edge.end <= range.start || edge.start >= range.end)), { color })
+    .map(line => {
+      const faded = { ...line, width: sizes.route.faded, color, dashed: true };
+      return { ...faded, id: lineId(faded) };
+    });
   const before = dayPoints.filter(p => p.time <= range.start);
   const after = dayPoints.filter(p => p.time >= range.end);
   return [...runsOf(before, breakMs), ...runsOf(after, breakMs)].map(run => {
@@ -321,7 +330,7 @@ export function historyMapPresentation(
       ...outsideLines(
         dayPoints,
         first ? { start: first.time, end: last.time } : null,
-        { color: colors.routeFaded },
+        { color: colors.routeFaded, edges: model.dayEdges },
       ),
       ...routeLines(model.edges || [], { color, cursorTime, theme }),
     ],

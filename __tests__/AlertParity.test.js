@@ -209,7 +209,17 @@ const holdRow = (time, metres, extra = {}) => ({ time, master_id: 7, slave_id: 4
   master_latitude: near.latitude, master_longitude: near.longitude, usb_present: 0, ...extra });
 const startRows = Array.from({ length: 10 }, (_, i) => holdRow(T + i * 5000, 0));
 const indoorRows = [...startRows, holdRow(T + M + 5000, null, { usb_present: 1 })];
+const stableHeldRows = [...indoorRows, ...Array.from({ length: 16 }, (_, i) =>
+  holdRow(T + 2 * M + i * 5000, 0, { usb_present: 1 }))];
 const packetCases = [
+  { name: 'stationary tail: compact zero-speed offset survives handover', initial: stableHeldRows,
+    rows: Array.from({ length: 13 }, (_, i) => holdRow(T + 4 * M + i * 10000, 65 + (i % 2), { speed_kmh: 0 })) },
+  { name: 'stationary tail: compact offset grace expires', initial: stableHeldRows,
+    rows: Array.from({ length: 25 }, (_, i) => holdRow(T + 4 * M + i * 10000, 65, { speed_kmh: 0 })) },
+  { name: 'stationary tail: zero-speed continuous walk leaves', initial: stableHeldRows,
+    rows: Array.from({ length: 61 }, (_, i) => holdRow(T + 4 * M + i * 5000, i * 2.5, { speed_kmh: 0 })) },
+  { name: 'stationary tail: legacy checkpoint without raw tail still evaluates fresh packets', initial: stableHeldRows,
+    legacy: true, rows: Array.from({ length: 13 }, (_, i) => holdRow(T + 4 * M + i * 10000, 65, { speed_kmh: 0 })) },
   { name: 'enter after lock screen: no fix', initial: startRows, rows: [holdRow(T + 2 * M, null)] },
   { name: 'enter while charging with weak fixes', initial: startRows,
     rows: [holdRow(T + M + 10000, 10, { usb_present: 1, satellites: 2, hdop: 5 })] },
@@ -228,6 +238,21 @@ const packetCases = [
   { name: 'charger keeps weak drift held; later good fixes release', initial: indoorRows,
     rows: [...Array.from({ length: 15 }, (_, i) => holdRow(T + 2 * M + i * 10000, 220, { usb_present: 1, satellites: 2, hdop: 5 })),
       holdRow(T + 5 * M, 140), holdRow(T + 5 * M + 10000, 140)] },
+  { name: 'continuity: opposed near-anchor good jumps stay held after handover', initial: stableHeldRows,
+    rows: [holdRow(T + 4 * M, 90, { usb_present: 1 }), holdRow(T + 4 * M + 5000, -90, { usb_present: 1 })] },
+  { name: 'continuity: a weak return interrupts separate good excursions', initial: stableHeldRows,
+    rows: [holdRow(T + 4 * M, 90, { usb_present: 1 }), holdRow(T + 4 * M + 5000, 90, { usb_present: 1 }),
+      holdRow(T + 4 * M + 10000, 0, { usb_present: 1, satellites: 2, hdop: 5 }),
+      holdRow(T + 4 * M + 30000, 90, { usb_present: 1 }), holdRow(T + 4 * M + 35000, 90, { usb_present: 1 })] },
+  { name: 'continuity: old parked fixes cannot swallow a nearby release', initial: stableHeldRows,
+    rows: [...Array.from({ length: 12 }, (_, i) => holdRow(T + 4 * M + i * 10000, 65, { usb_present: 1 })),
+      holdRow(T + 6 * M, 65, { usb_present: 1, satellites: 2, hdop: 5 })] },
+  { name: 'continuity: charging drive releases on consistent far good progression', initial: indoorRows,
+    rows: Array.from({ length: 6 }, (_, i) => holdRow(T + 2 * M + i * 5000, 200 + i * 50, { usb_present: 1 })) },
+  { name: 'continuity: window drive releases on consistent far good progression', initial: indoorRows,
+    rows: Array.from({ length: 6 }, (_, i) => holdRow(T + 2 * M + i * 5000, 200 + i * 50)) },
+  { name: 'continuity: opposed far fixes are not a charging drive', initial: stableHeldRows,
+    rows: [200, -200, 200].map((metres, i) => holdRow(T + 4 * M + i * 5000, metres, { usb_present: 1 })) },
 ];
 
 function runIndoorCase(scenario) {
@@ -239,6 +264,7 @@ function runIndoorCase(scenario) {
   const lastFix = scenario.initial.filter(row => row.latitude !== 0).at(-1);
   const initial = dog(4, '豆豆', { coordinate: held?.coordinate ?? { latitude: lastFix.latitude, longitude: lastFix.longitude },
     held: !!held, fixAt: lastFix.time, packetAt: latest.time, indoorState: tracker.snapshot() });
+  if (scenario.legacy) delete initial.indoorState.rawTail;
   const rows = scenario.rows.map(row => {
     tracker.push(row);
     const current = tracker.current(row.time);
@@ -257,6 +283,18 @@ test('K03: native indoor entry and every release path agree with the foreground 
   expect(results[0].rows[0].expect.held).toBe(true);
   const released = results.flatMap(value => value.rows.map(row => row.expect.why)).filter(Boolean);
   expect(new Set(released)).toEqual(new Set(['good-fixes-away', 'good-fixes-nearby', 'weak-fixes-away', 'travelling']));
+  const continuity = Object.fromEntries(results.filter(value => value.name.startsWith('continuity:')).map(value => [value.name, value.rows]));
+  const stationary = Object.fromEntries(results.filter(value => value.name.startsWith('stationary tail:')).map(value => [value.name, value.rows]));
+  expect(stationary['stationary tail: compact zero-speed offset survives handover'].every(step => step.expect.held)).toBe(true);
+  expect(stationary['stationary tail: compact offset grace expires'].at(-1).expect.held).toBe(false);
+  expect(stationary['stationary tail: zero-speed continuous walk leaves'].at(-1).expect.held).toBe(false);
+  expect(stationary['stationary tail: legacy checkpoint without raw tail still evaluates fresh packets'].every(step => step.expect.held)).toBe(true);
+  expect(continuity['continuity: opposed near-anchor good jumps stay held after handover'].every(step => step.expect.held)).toBe(true);
+  expect(continuity['continuity: a weak return interrupts separate good excursions'].every(step => step.expect.held)).toBe(true);
+  expect(continuity['continuity: old parked fixes cannot swallow a nearby release'].at(-1).expect.held).toBe(false);
+  expect(continuity['continuity: charging drive releases on consistent far good progression'][2].expect.held).toBe(false);
+  expect(continuity['continuity: window drive releases on consistent far good progression'][2].expect.held).toBe(false);
+  expect(continuity['continuity: opposed far fixes are not a charging drive'].every(step => step.expect.held)).toBe(true);
 });
 
 // Native JVM defaults and production Android resources share this generated copy.

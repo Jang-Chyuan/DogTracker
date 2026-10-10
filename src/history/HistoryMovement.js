@@ -1,4 +1,6 @@
 import { configFor, distanceMeters, atLeast, accuracyOf, measuredSpeedMps, samePlaceGap } from './HistoryConfig';
+import { rawCoordinate } from '../placement/RawObservation';
+import { hasFix } from '../placement/IndoorHold';
 
 const travelMode = subject => (subject === 'phone' ? 'driving' : 'ride');
 const footMode = subject => (subject === 'phone' ? 'walking' : 'moving');
@@ -132,12 +134,20 @@ export function countDistances(edges, config = configFor('dog'), state = countSt
 
 /** One fix-to-fix step, as historyMovement and today's distance (TodayRouteEngine) see it. */
 export function historyEdge(from, to, subject = 'dog', config = configFor(subject)) {
+  let missingReleaseFix = false;
+  // A released display hold starts at its measured raw fix, never its anchor.
+  if (from.heldReason && !to.heldReason) {
+    const raw = rawCoordinate(from);
+    if (hasFix(raw)) from = { ...from, ...raw };
+    else missingReleaseFix = true;
+  }
   const durationMs = to.time - from.time;
-  const distanceM = distanceMeters(from, to);
+  const distanceM = missingReleaseFix ? 0 : distanceMeters(from, to);
   // 067: a break at one place is part of the stay there, not a gap.
-  const bridged = samePlaceGap(from, to, config);
+  const bridged = !missingReleaseFix && samePlaceGap(from, to, config);
   return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
-    speed: distanceM / (durationMs / 1000), gap: durationMs > config.gapMs && !bridged,
+    speed: distanceM / (durationMs / 1000), gap: missingReleaseFix || (durationMs > config.gapMs && !bridged),
+    ...(missingReleaseFix ? { gapReason: 'no-gps' } : {}),
     // Into or within a hold: not movement (判定表「停在原處前後的距離」:
     // the drift drawn onto the hold spot does not count); the release edge
     // out of it is ordinary movement from the spot.
