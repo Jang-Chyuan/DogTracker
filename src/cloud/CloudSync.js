@@ -153,6 +153,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           publish({ snapshotPending: false, mapPending: false, snapshotRevision: state.snapshotRevision + 1,
             snapshotCutoff: cutoff, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(),
             lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
+          cloudSyncDiagnostic('latest-published', { attempt, elapsedMs: Math.max(0, now() - startedAt), revision: state.snapshotRevision });
           resumeCatchUp.caughtUp();
           if (failureDiagnostic) {
             cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
@@ -226,12 +227,18 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         }
         check();
         phase = 'publish';
-        if (database.publishDownload) await publishScoped(version, () => latestFirst
-          ? database.publishDownload(userId, 'auto', cutoff, () => valid(version) && !abort.signal.aborted)
-          : database.publishDownload(userId));
+        let archivePublished = false;
+        if (database.publishDownload) {
+          await publishScoped(version, () => latestFirst
+            ? database.publishDownload(userId, 'auto', cutoff, () => valid(version) && !abort.signal.aborted)
+            : database.publishDownload(userId));
+          archivePublished = true;
+        }
         check();
         if (latestFirst) publish({ archivePending: false, archiveRevision: state.archiveRevision + 1, archiveCutoff: cutoff, archiveError: '' });
         else publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
+        if (latestFirst && archivePublished)
+          cloudSyncDiagnostic('archive-published', { attempt, elapsedMs: Math.max(0, now() - startedAt), revision: state.archiveRevision });
         if (!latestFirst) resumeCatchUp.caughtUp();
         if (failureDiagnostic) {
           cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });

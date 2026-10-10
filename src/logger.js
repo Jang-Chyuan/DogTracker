@@ -27,18 +27,29 @@ const CLOUD_FAILURES = new Set(['timeout', 'auth', 'network', 'storage', 'unknow
 // Rebuild the payload rather than passing caller objects to the console;
 // generic logs, messages, account IDs, URLs and error objects remain private.
 export function cloudSyncDiagnostic(event, fields) {
-  const attempt = fields?.attempt;
-  if (!Number.isSafeInteger(attempt) || attempt < 1) return;
-  if (event === 'failure') {
-    const phase = fields?.phase;
-    const failureKind = fields?.failureKind;
-    if (!CLOUD_PHASES.has(phase) || !CLOUD_FAILURES.has(failureKind)) return;
-    const status = fields?.status;
-    console.info('[CloudSync] failure', { attempt, phase, failureKind,
-      status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null });
-  } else if (event === 'recovered') {
-    const elapsedMs = fields?.elapsedMs;
-    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return;
-    console.info('[CloudSync] recovered', { attempt, elapsedMs });
+  // Logging is observational; a refused sink must never fail a download.
+  try {
+    const attempt = fields?.attempt;
+    if (!Number.isSafeInteger(attempt) || attempt < 1) return;
+    if (event === 'failure') {
+      const phase = fields?.phase;
+      const failureKind = fields?.failureKind;
+      if (!CLOUD_PHASES.has(phase) || !CLOUD_FAILURES.has(failureKind)) return;
+      const status = fields?.status;
+      console.info('[CloudSync] failure', { attempt, phase, failureKind,
+        status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null });
+    } else if (event === 'recovered') {
+      const elapsedMs = fields?.elapsedMs;
+      if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return;
+      console.info('[CloudSync] recovered', { attempt, elapsedMs });
+    } else if (event === 'latest-published' || event === 'archive-published') {
+      const elapsedMs = fields?.elapsedMs;
+      const revision = fields?.revision;
+      if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || !Number.isSafeInteger(revision) || revision < 1) return;
+      if (event === 'latest-published') console.info('[CloudSync] latest-published', { attempt, elapsedMs, revision });
+      else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });
+    }
+  } catch {
+    // Do not retry or expose the sink's error/message in another log.
   }
 }
