@@ -342,3 +342,30 @@ test('manual history work during resume cannot claim that the live cloud downloa
   liveFinish(); await flush();
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('idle');
 });
+
+test('map publication advances only on complete successful work and resets on account switch', async () => {
+  const { changed } = fixture();
+  const current = () => changed.mock.calls.at(-1)[0];
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(current().mapSuccessRevision).toBe(1);
+  await expect(engine.runManual(async () => { throw new Error('partial page failed'); })).rejects.toThrow('partial page failed');
+  expect(current().mapSuccessRevision).toBe(1);
+  await expect(engine.runManual(async () => 'complete window')).resolves.toBe('complete window');
+  expect(current().mapSuccessRevision).toBe(2);
+  let finish;
+  const late = engine.runManual(() => new Promise(resolve => { finish = resolve; }));
+  await Promise.resolve(); await Promise.resolve();
+  engine.setSession(account('b'));
+  expect(current().mapSuccessRevision).toBe(0);
+  finish('obsolete account'); await late;
+  expect(current().mapSuccessRevision).toBe(0);
+});
+
+test('automatic failure cannot publish a complete map generation; retry success can', async () => {
+  const { database, changed } = fixture();
+  database.initialize.mockRejectedValueOnce(new Error('download failed'));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  expect(changed.mock.calls.at(-1)[0]).toMatchObject({ mapSuccessRevision: 0, error: 'download failed' });
+  engine.retry(); await flush();
+  expect(changed.mock.calls.at(-1)[0]).toMatchObject({ mapSuccessRevision: 1, error: '' });
+});

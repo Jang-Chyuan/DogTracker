@@ -10,6 +10,8 @@ import { createCloudDatabase, latestCloudStatusQuery } from '../src/cloud/CloudD
 import { POLL_MS, useCloudDogs } from '../src/cloud/useCloudDogs';
 import { MAX_AGE_MS, mergeDogMarkers } from '../src/map/DogMerge';
 import MapScreen from '../src/screens/MapScreen';
+import DogCard from '../src/map/DogCard';
+import TrackingMap from '../src/map/TrackingMap';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 import { emptyLiveRoute } from '../src/tracking/LiveRouteWindow';
@@ -147,8 +149,8 @@ test('the newest downloaded row per dog, per account, with a position', async ()
 
 // A stable clock: the hook restarts its timer when `now` changes identity.
 const clock = () => NOW;
-function Probe({ database, owner, enabled, onState, active = true, revision = 0 }) {
-  onState(useCloudDogs(database, owner, enabled, clock, null, { active, revision }));
+function Probe({ database, owner, enabled, onState, active = true, revision = 0, cloudBusy = false, cloudSuccess = null }) {
+  onState(useCloudDogs(database, owner, enabled, clock, null, { active, revision, cloudBusy, cloudSuccess }));
   return null;
 }
 
@@ -220,10 +222,10 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
     await act(async () => { renderer = Renderer.create(view()); });
     // Every dog's newest row, however old (v3 §6: kept after 24 hours).
     expect(database.latestBySlave).toHaveBeenCalledWith('account-a', 0);
-    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: true });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: true, cloudCommit: null });
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
-    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: 'locked', loaded: true });
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: 'locked', loaded: true, cloudCommit: null });
     // An unavailable database stops reads and clears cached rows.
     await act(async () => { renderer.update(view({ enabled: false })); });
     expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: false });
@@ -364,4 +366,155 @@ test('latest seeks retain first reception, no-fix packets, ties and nullable str
     expect(await cloud.latestBySlave('a',0)).toMatchObject([{ slave_id:4,master_id:6 }]);
     expect(await cloud.latestBySlave('a',3)).toEqual([]);
   } finally { db.close(); }
+});
+
+test('cloud pages stay quarantined through failure; only a complete pass publishes, while local packets continue', async () => {
+  jest.useFakeTimers();
+  let state, renderer;
+  let cloud = [row('old', 7, NOW, 5)];
+  let local = { ...row('ble', 4, NOW, 5), source: 'ble' };
+  const database = {
+    latestBySlave: jest.fn(async () => cloud),
+    latestStatusRows: jest.fn(async owner => [local, ...(owner ? cloud.map(r => ({ ...r, source: 'cloud' })) : [])]),
+  };
+  const view = props => <Probe database={database} owner="a" enabled onState={value => { state = value; }} {...props} />;
+  try {
+    await act(async () => { renderer = Renderer.create(view()); });
+    const before = state.rows;
+    await act(async () => { renderer.update(view({ cloudBusy: true, revision: 1 })); });
+    cloud = [row('partial', 7, NOW + 1000, 5, { slave_lat: 26 })];
+    await act(async () => { renderer.update(view({ cloudBusy: true, revision: 2 })); await jest.advanceTimersByTimeAsync(POLL_MS); });
+    expect(state.rows).toBe(before);
+    await act(async () => { renderer.update(view({ revision: 3 })); }); // failure/abort: no success
+    local = { ...local, received_at: NOW + 5000, slave_lat: 25.5 };
+    await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
+    expect(state.rows).toBe(before);
+    expect(state.packets.find(p => p.source === 'ble')).toBe(local);
+    expect(state.packets.find(p => p.source === 'cloud').slave_lat).toBe(25.1);
+    await act(async () => { renderer.update(view({ cloudBusy: true, revision: 4 })); });
+    cloud = [row('complete', 7, NOW + 9000, 5, { slave_lat: 27 }), row('second', 8, NOW, 5)];
+    await act(async () => { renderer.update(view({ cloudBusy: true, cloudSuccess: NOW + 10000, revision: 5 })); });
+    expect(state.rows).toBe(before);
+    await act(async () => { renderer.update(view({ cloudSuccess: NOW + 10000, revision: 5 })); });
+    expect(state.rows).toEqual(cloud);
+    expect(state.cloudCommit).toBe(NOW + 10000);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});
+
+test('a DB read spanning download start cannot publish a partial cloud snapshot', async () => {
+  jest.useFakeTimers();
+  let state, renderer, resolveRead;
+  const database = { latestBySlave: jest.fn(() => new Promise(resolve => { resolveRead = resolve; })) };
+  const view = props => <Probe database={database} owner="a" enabled onState={value => { state = value; }} {...props} />;
+  try {
+    await act(async () => { renderer = Renderer.create(view()); });
+    await act(async () => { renderer.update(view({ cloudBusy: true })); });
+    await act(async () => { resolveRead([row('partial', 7, NOW, 5)]); });
+    expect(state.rows).toEqual([]);
+    await act(async () => { renderer.update(view({ owner: 'b', cloudBusy: true })); });
+    expect(state.rows).toEqual([]);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});
+
+test('Map keeps cloud and direct receiver positions through download and deferred completed read', async () => {
+  jest.useFakeTimers();
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  jest.setSystemTime(NOW);
+  NativePlatform.isMapConfigured.mockReturnValue(true);
+  const tracking = {
+    mode: 'real', point: { ...trackingPoint, slaveId: 4 }, route: emptyLiveRoute(), positionSamples: [],
+    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
+    saveTrackingPreferences: jest.fn(),
+  };
+  const cloudDogs = { rows: [row('old', 7, NOW, 5)], packets: [], ranges: {}, loaded: true, cloudCommit: null };
+  const view = props => <MapScreen tracking={tracking} phone={{ enabled: true }} bottomInset={80}
+    mapProvider={GOOGLE_MAP_PROVIDER} cloudOwner="a" cloudDogs={cloudDogs} {...props} />;
+  let renderer;
+  const coordinates = () => Object.fromEntries(renderer.root.findAllByType(Marker)
+    .filter(n => n.props.identifier?.startsWith('real-dog-')).map(n => [n.props.identifier, n.props.coordinate]));
+  try {
+    await act(async () => { renderer = Renderer.create(view()); });
+    await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+    await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
+    const old = coordinates();
+    await act(async () => { renderer.root.findAllByType(Marker).find(n => n.props.identifier === 'real-dog-7').props.onPress(); });
+    expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
+    const local = { ...tracking, point: { ...trackingPoint, slaveId: 4, slaveLat: trackingPoint.slaveLat + 0.01, receivedAt: NOW + 100 } };
+    const partial = { ...cloudDogs, rows: [row('partial', 7, NOW + 100, 5, { slave_lat: 26 })] };
+    await act(async () => { renderer.update(view({ tracking: local, cloudDogs: partial, cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
+    expect(coordinates()).toEqual(old);
+    expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(m => m.dimmed)).toBe(true);
+    await act(async () => { renderer.update(view({ tracking: local, cloudDogs: { ...partial, rows: [] }, cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
+    expect(coordinates()).toEqual(old);
+    expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
+    await act(async () => { renderer.update(view({ cloudSync: { busy: false, catchUp: { phase: 'failed', since: NOW - 1000 } } })); });
+    expect(coordinates()).toEqual(old);
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.some(m => m.dimmed)).toBe(false);
+    expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
+    await act(async () => { renderer.update(view({ tracking: local, cloudDogs: partial,
+      history: { preferences: { dogAliases: { 7: '小七' } } },
+      cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
+    expect(renderer.root.findByType(DogCard).props.card.name).toBe('小七');
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.find(m => m.slaveId === 7).name).toBe('小七');
+    expect(coordinates()).toEqual(old);
+    await act(async () => { renderer.root.findAllByType(Marker).find(n => n.props.identifier === 'real-dog-4').props.onPress(); });
+    expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(4);
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.find(m => m.slaveId === 4).selected).toBe(true);
+    await act(async () => { renderer.root.findAllByType(Marker).find(n => n.props.identifier === 'real-dog-7').props.onPress(); });
+    await act(async () => { renderer.update(view({ tracking: local, cloudDogs: partial, cloudSync: { busy: false, lastSuccess: NOW + 1000 } })); });
+    expect(coordinates()).toEqual(old);
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(m => m.dimmed)).toBe(true);
+    const complete = { ...partial, cloudCommit: NOW + 1000 };
+    await act(async () => { renderer.update(view({ tracking: local, cloudDogs: complete, cloudSync: { busy: false, lastSuccess: NOW + 1000 } })); });
+    expect(coordinates()['real-dog-7'].latitude).toBe(26);
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.some(m => m.dimmed)).toBe(false);
+    expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
+    expect(coordinates()).not.toEqual(old);
+    await act(async () => { renderer.update(view({ cloudOwner: 'b', cloudDogs: { rows: [], packets: [] }, cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
+    expect(coordinates()).toEqual({});
+  } finally {
+    Platform.OS = originalOS;
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});
+
+test('blocked local-only hold reads retain the accepted cloud cursor for the successful complete replay', async () => {
+  jest.useFakeTimers();
+  let renderer, state;
+  const database = {
+    latestBySlave: jest.fn(async () => [row('position', 7, NOW, 5)]),
+    holdRows: jest.fn(async (owner, since, cursors) => ({ rows: [], seeds: [],
+      cursors: { dog_status: 9, supabase_dog_status: owner ? 5 : 0, repairs: 0 } })),
+  };
+  const view = props => <Probe database={database} owner="a" enabled onState={value => { state = value; }} {...props} />;
+  try {
+    await act(async () => { renderer = Renderer.create(view()); });
+    await act(async () => { renderer.update(view({ cloudBusy: true, revision: 1 })); });
+    await act(async () => { renderer.update(view({ revision: 2 })); });
+    expect(database.holdRows.mock.calls.at(-1)).toEqual([null, expect.any(Number),
+      { dog_status: 9, supabase_dog_status: 5, repairs: 0 }]);
+    await act(async () => { renderer.update(view({ cloudSuccess: 1, revision: 3 })); });
+    expect(database.holdRows.mock.calls.at(-1)).toEqual(['a', expect.any(Number),
+      { dog_status: 9, supabase_dog_status: 5, repairs: 0 }]);
+    expect(state.cloudCommit).toBe(1);
+    const before = state.rows;
+    database.holdRows.mockRejectedValueOnce(new Error('hold read failed'));
+    await act(async () => { renderer.update(view({ cloudSuccess: 2, revision: 4 })); });
+    expect(state.cloudCommit).toBe(1);
+    expect(state.rows).toBe(before);
+    expect(state.error).toBe('hold read failed');
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
 });

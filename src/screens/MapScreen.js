@@ -1,3 +1,5 @@
+import { createAtomicDogCardReader } from '../map/AtomicDogCardReader';
+import { createAtomicDogSnapshot } from '../map/AtomicDogSnapshot';
 import { combinedResumeCatchUp } from '../tracking/ResumeCatchUp';
 import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
@@ -82,7 +84,7 @@ export default function MapScreen({
   active = true,
   history,
   historical = false,
-  cloudDogs,
+  cloudDogs: incomingCloudDogs,
   cloudOwner,
   // The live cloud sync (useCloudSync): when the last download succeeded and
   // since when it has been failing, for judging cloud dogs' freshness.
@@ -151,6 +153,9 @@ export default function MapScreen({
   // ready, dogs (named, with their range judgement), receiverBattery }.
   onAlertInput,
 }) {
+  let cloudDogs = incomingCloudDogs;
+  const atomicDogs = useRef(null);
+  if (!atomicDogs.current) atomicDogs.current = createAtomicDogSnapshot();
   const styles = useStyles(getStyles);
   const insets = useSafeAreaInsets();
   // The base map's state (GoogleTrackingMap): drives the 地圖載入失敗 card.
@@ -294,8 +299,22 @@ export default function MapScreen({
       : [],
   );
   const pauses = useMemo(() => JSON.parse(pausesKey), [pausesKey]);
-  const catchUp = useMemo(() => combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
+  const currentCatchUp = useMemo(() => combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
     [tracking.catchUp, cloudSync?.catchUp]);
+  const cloudSuccess = cloudSync?.mapSuccessRevision ?? cloudSync?.lastSuccess ?? null;
+  const cloudReadPending = cloudSuccess != null && incomingCloudDogs?.cloudCommit !== cloudSuccess;
+  const catchUpMemory = useRef(null);
+  const catchUpOwner = useRef(cloudOwner);
+  if (catchUpOwner.current !== cloudOwner) {
+    catchUpOwner.current = cloudOwner;
+    catchUpMemory.current = null;
+  }
+  if (currentCatchUp.phase === 'catching-up') catchUpMemory.current = currentCatchUp;
+  else if (currentCatchUp.phase === 'failed' || incomingCloudDogs?.error || !cloudReadPending) catchUpMemory.current = null;
+  // Network success alone is not publication: keep the return shimmer until
+  // the complete map read has accepted that successful pass.
+  const catchUp = currentCatchUp.phase === 'idle' && cloudReadPending && catchUpMemory.current
+    ? catchUpMemory.current : currentCatchUp;
   const lastDownloadAt = cloudSync?.lastDownloadAt ?? null;
   const failingSince = cloudSync?.failingSince ?? null;
   const cloudClockInput = useMemo(
@@ -352,7 +371,7 @@ export default function MapScreen({
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ride = useMemo(() => currentRide, [rideKey]);
-  const dogs = useMemo(
+  const mergedDogs = useMemo(
     () =>
       mergeDogMarkers({
         point,
@@ -376,6 +395,13 @@ export default function MapScreen({
       now,
     ],
   );
+  const dogSnapshot = atomicDogs.current.select({
+    owner: cloudOwner, dogs: mergedDogs, cloudDogs,
+    busy: !!cloudSync?.busy || cloudSync?.catchUp?.phase === 'catching-up',
+    success: cloudSync?.mapSuccessRevision ?? cloudSync?.lastSuccess ?? null,
+  });
+  const dogs = dogSnapshot.dogs;
+  cloudDogs = dogSnapshot.cloudDogs;
   const noDogs =
     !historical &&
     showsNoDogs({
@@ -716,15 +742,12 @@ export default function MapScreen({
     onCardChange?.(cardOpen);
   }, [cardOpen, onCardChange]);
   const database = tracking.cloudDatabase;
-  const readCardRows = useMemo(
-    () =>
-      fixture?.readCardRows ??
-      (database?.dogCardRows
-        ? (slaveId, since) =>
-            database.dogCardRows(cloudOwner ?? null, slaveId, since)
-        : null),
-    [fixture?.readCardRows, database, cloudOwner],
-  );
+  const cardReader = useMemo(() => database?.dogCardRows
+    ? createAtomicDogCardReader(database, cloudOwner) : null, [database, cloudOwner]);
+  const cardBusy = !!cloudSync?.busy || cloudSync?.catchUp?.phase === 'catching-up' || cloudReadPending;
+  const cardSuccess = cloudSync?.mapSuccessRevision ?? cloudSync?.lastSuccess ?? null;
+  cardReader?.update(cardBusy, cardSuccess);
+  const readCardRows = fixture?.readCardRows ?? cardReader?.read ?? null;
   // The activity page (A4) reads the dog's period from the same tables.
   const readActivity = useMemo(
     () =>
@@ -747,6 +770,7 @@ export default function MapScreen({
     cardOpen ? readCardRows : null,
     cardDog?.slaveId ?? null,
     now,
+    `${cardBusy}:${cardSuccess}`,
   );
   // A7b: the held place's address under 「室內」 (none while asking/offline).
   const address = useAddress(

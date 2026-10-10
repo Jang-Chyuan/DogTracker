@@ -36,7 +36,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   // 判定表「使用中登入失效」); offline: it never reached Supabase (S3 can
   // say a switch needs the network).
   let state = { busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
-    failingSince: null, authFailed: false, offline: false, revision: 0, catchUp: CATCH_UP_IDLE };
+    failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, catchUp: CATCH_UP_IDLE };
   const publish = patch => {
     state = { ...state, ...patch };
     if (!disposed) onChange({ ...state, owner, foreground });
@@ -114,7 +114,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           }
         }
         check();
-        publish({ lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
+        publish({ mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
         resumeCatchUp.caughtUp();
       } catch (error) {
         if (valid(version) && (!abort.signal.aborted || timedOut)) {
@@ -149,7 +149,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
-        offline: false, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
+        offline: false, mapSuccessRevision: 0, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
       wake();
     },
     setForeground(active) {
@@ -188,7 +188,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           if (!valid(version) || abort.signal.aborted) throw new Error('Download cancelled');
           return work(() => valid(version) && !abort.signal.aborted);
         });
-        return await running;
+        const result = await running;
+        if (valid(version) && !abort.signal.aborted)
+          publish({ mapSuccessRevision: state.mapSuccessRevision + 1 });
+        return result;
       } finally {
         manualPending = false;
         controller = null;

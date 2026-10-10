@@ -427,6 +427,8 @@ function TrackerApp({ resume = null, onRestart }) {
     {
       active: tracking.foreground && !fixture,
       revision: cloudSync.revision,
+      cloudBusy: cloudSync.busy || cloudSync.catchUp?.phase === 'catching-up',
+      cloudSuccess: cloudSync.mapSuccessRevision ?? cloudSync.lastSuccess ?? null,
     },
   );
   const fixtureEdits = useFixtureEdits(fixture);
