@@ -19,7 +19,7 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
   const discarded = useRef(isDiscarded);
   discarded.current = isDiscarded;
   const [ownerId, setOwnerId] = useState(null);
-  const [status, setStatus] = useState({ busy: false, error: '', revision: 0 });
+  const [status, setStatus] = useState({ busy: false, error: '', revision: 0, publishedRevision: 0, publishedPending: false });
   useEffect(() => {
     if (!ready) return undefined;
     let client;

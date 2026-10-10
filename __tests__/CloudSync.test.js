@@ -367,7 +367,7 @@ test('live map publication advances only on complete automatic work and resets o
   await Promise.resolve(); await Promise.resolve();
   engine.setSession(account('b'));
   expect(current().mapSuccessRevision).toBe(0);
-  finish('obsolete account'); await late;
+  finish('obsolete account'); await expect(late).rejects.toThrow('下載已取消');
   expect(current().mapSuccessRevision).toBe(0);
 });
 

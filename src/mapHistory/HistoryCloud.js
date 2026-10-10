@@ -80,22 +80,34 @@ export function createHistoryCloud({ client, database, owner, runManual, questio
         await database.initialize();
         const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
         const day = dayKey(new Date(dayStart));
-        for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
         const abort = new AbortController();
         if (signal?.aborted) abort.abort();
         signal?.addEventListener?.('abort', () => abort.abort());
         // By upload time (received_at): rows shown on this day by their fix
         // time can arrive a little before it and up to a while after it.
-        const work = async leaseCurrent => {
+        const work = async (leaseCurrent, publishScoped) => {
           let count = 0, failure = null;
+          const markIncomplete = async () => {
+            for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
+          };
+          if (publishScoped) await publishScoped(markIncomplete);
+          else await markIncomplete();
           for (const id of ids) {
             if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
             try {
+              await database.beginManualScope?.(owner, id, day);
+              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               count += await downloadCloudHistory({ client, database, owner,
                 startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId: id,
                 signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               await database.setHistoryDownloadState?.(owner, id, day, true);
+              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
+              if (database.publishManualScope) {
+                const commit = () => database.publishManualScope(owner, id, day);
+                if (publishScoped) await publishScoped(commit);
+                else await commit();
+              }
               onDogEnd?.(id, 'done');
             } catch (error) {
               onDogEnd?.(id, abort.signal.aborted ? 'cancelled' : 'failed');

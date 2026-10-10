@@ -37,12 +37,27 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   // 判定表「使用中登入失效」); offline: it never reached Supabase (S3 can
   // say a switch needs the network).
   let state = { busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
-    failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, catchUp: CATCH_UP_IDLE };
+    failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: false, catchUp: CATCH_UP_IDLE };
   const publish = patch => {
     state = { ...state, ...patch };
     if (!disposed) onChange({ ...state, owner, foreground });
   };
   const valid = version => !disposed && foreground && !!owner && version === generation;
+  let publishedOperation = null;
+  const publishScoped = async (version, work) => {
+    if (!valid(version)) throw new Error(t("c576"));
+    const operation = {};
+    publishedOperation = operation;
+    // Fence multi-query UI reads before native commit can become visible.
+    publish({ publishedPending: true, publishedRevision: state.publishedRevision + 1 });
+    try { return await work(); }
+    finally {
+      if (publishedOperation === operation) {
+        publishedOperation = null;
+        publish({ publishedPending: false, publishedRevision: state.publishedRevision + 1 });
+      }
+    }
+  };
   const wake = () => {
     clearTimeout(immediate);
     if (!disposed && foreground && owner) immediate = setTimeout(() => { tick(); }, 0);
@@ -84,6 +99,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         check();
         await database.initialize();
         check();
+        await database.beginDownload?.(userId);
+        check();
         const masters = await listCloudMasters(client, userId, abort.signal, check);
         const cutoff = now();
         const save = async (...args) => {
@@ -116,6 +133,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           }
         }
         check();
+        if (database.publishDownload) await publishScoped(version, () => database.publishDownload(userId));
+        check();
         publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
         resumeCatchUp.caughtUp();
       } catch (error) {
@@ -145,19 +164,21 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     // aborted writes remain pending until a complete automatic pass succeeds.
     mapPublication() {
       return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending,
-        busy: state.busy, mapSuccessRevision: state.mapSuccessRevision };
+        busy: state.busy, mapSuccessRevision: state.mapSuccessRevision,
+        publishedRevision: state.publishedRevision, publishedPending: state.publishedPending };
     },
     setSession(session) {
       const next = session?.user.id || null;
       if (owner === next) return;
       cancelBackgroundSync();
       owner = next;
+      publishedOperation = null;
       sweptAt = 0;
       resetResume();
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
-        offline: false, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
+        offline: false, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: false, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
       wake();
     },
     setForeground(active) {
@@ -192,9 +213,15 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
         controller = abort;
         publish({ busy: true, mode: 'manual', mapPending: true, mapAttempt: state.mapAttempt + 1 });
-        running = withCloudSyncSlot(() => {
+        running = withCloudSyncSlot(async () => {
           if (!valid(version) || abort.signal.aborted) throw new Error('Download cancelled');
-          return work(() => valid(version) && !abort.signal.aborted);
+          if (database.beginDownload) await database.beginDownload(owner, 'manual');
+          if (!valid(version) || abort.signal.aborted) throw new Error('Download cancelled');
+          const count = await work(() => valid(version) && !abort.signal.aborted,
+            commit => publishScoped(version, commit));
+          if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
+          if (database.publishDownload) await publishScoped(version, () => database.publishDownload(owner, 'manual'));
+          return count;
         });
         // A selected history window is not a complete live all-master pass.
         // Canceled automatic pages remain quarantined until the next auto

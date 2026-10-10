@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { createStagedCloudDatabase } from './CloudStaging';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withConnectionLock } from '../database/connectionLock';
 import { cloudTrackTime } from './CloudTrackTime';
@@ -57,14 +58,19 @@ export function latestCloudStatusQuery(validFix) {
 
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
-export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
+export const CLOUD_DATABASE_METHODS = ['initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
   'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 const initialization = new WeakMap();
 
-export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
+export function createCloudDatabase(connection, options = {}) {
+  const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
+  return createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
+}
+
+function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
   const cap = Number.isInteger(maxRows) && maxRows > 0 ? maxRows : CLOUD_MAX_ROWS;
   const trimHistory = `DELETE FROM supabase_dog_status WHERE id IN (
     SELECT id FROM supabase_dog_status
@@ -78,6 +84,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     if (!owner) throw new Error(t("c572"));
   };
   return {
+    invalidatePublished() { trackRepairs++; },
     async historyDownloadStates(owner, ids) {
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
       const list = Array.isArray(ids) ? ids : [ids];
@@ -108,6 +115,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       for (const [name, type] of [
         ['owner_user_id', 'TEXT'], ['event_id', 'TEXT'],
         ['downloaded_at', 'INTEGER'], ['remote_received_at', 'TEXT'],
+        ['publication_version', 'INTEGER NOT NULL DEFAULT 0'],
         ['track_at', 'INTEGER'], ['upload_source', 'TEXT'], ['phone_received_at', 'INTEGER'],
         ['track_time_version', 'INTEGER'], ['usb_present', 'INTEGER'],
       ]) {
@@ -205,10 +213,10 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         WHERE owner_user_id=? AND track_time_version IS NULL AND event_id IS NOT NULL
         ORDER BY received_at DESC LIMIT 200`, [owner]));
     },
-    async repairTrackTimes(owner, metadata, requested) {
+    async repairTrackTimes(owner, metadata, requested, copies = []) {
       requireOwner(owner);
       return withConnectionLock(connection, async () => {
-        const commands = [];
+        const commands = [...copies];
         for (const item of metadata) {
           const time = cloudTrackTime(item);
           if (!Number.isFinite(time.track_at) || !requested.includes(item.event_id)) continue;
