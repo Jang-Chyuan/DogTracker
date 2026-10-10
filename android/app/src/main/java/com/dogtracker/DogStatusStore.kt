@@ -70,6 +70,7 @@ class DogStatusStore private constructor(private val context: Context) {
     db.execSQL("DROP TRIGGER IF EXISTS trim_dog_status_after_insert")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_received_at ON dog_status(received_at DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_id ON dog_status(slave_id, id DESC)")
     BleUploadQueue.initialize(db)
   }
 
@@ -111,7 +112,8 @@ class DogStatusStore private constructor(private val context: Context) {
     db.beginTransaction()
     try {
       db.insertOrThrow("dog_status", null, row)
-      db.execSQL("DELETE FROM dog_status WHERE slave_id = ? AND id NOT IN (SELECT id FROM dog_status WHERE slave_id = ? ORDER BY id DESC LIMIT 10000)", arrayOf(slaveId, slaveId))
+      // Inclusive cutoff keeps exactly 10000; fewer rows yield NULL and delete none.
+      db.execSQL("DELETE FROM dog_status WHERE slave_id = ? AND id <= (SELECT id FROM dog_status WHERE slave_id = ? ORDER BY id DESC LIMIT 1 OFFSET 10000)", arrayOf(slaveId, slaveId))
       db.setTransactionSuccessful()
     } finally { db.endTransaction() }
     lastSaved[slaveId] = receivedAt
