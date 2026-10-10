@@ -248,6 +248,20 @@ test('resumed cloud download stays visible after local work finishes, then clear
   expect(changed.mock.calls.every(([value]) => value.catchUp.phase === 'idle')).toBe(true);
 });
 
+test('slow resumed cloud work stays updating past 20s and clears only on complete success', async () => {
+  const { database, changed } = fixture();
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  engine.setForeground(false);
+  let finish;
+  database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  engine.setForeground(true); await flush();
+  changed.mockClear();
+  await jest.advanceTimersByTimeAsync(60000);
+  expect(changed.mock.calls.some(([state]) => state.catchUp.phase === 'failed')).toBe(false);
+  finish(); await flush();
+  expect(changed.mock.calls.at(-1)[0]).toMatchObject({ busy: false, error: '', catchUp: { phase: 'idle' } });
+});
+
 test('cloud resume timeout retries a fresh generation and late old response cannot end it', async () => {
   const { database, changed } = fixture();
   engine.setForeground(true); engine.setSession(account('a')); await flush();
@@ -256,7 +270,9 @@ test('cloud resume timeout retries a fresh generation and late old response cann
   database.initialize.mockImplementationOnce(() => new Promise(resolve => { oldFinish = resolve; }))
     .mockImplementationOnce(() => new Promise(resolve => { newFinish = resolve; }));
   engine.setForeground(true); await flush();
-  await jest.advanceTimersByTimeAsync(20000);
+  await jest.advanceTimersByTimeAsync(21000);
+  expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');
+  await jest.advanceTimersByTimeAsync(99000);
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('failed');
   engine.retry(); await flush();
   expect(changed.mock.calls.at(-1)[0].catchUp.phase).toBe('catching-up');

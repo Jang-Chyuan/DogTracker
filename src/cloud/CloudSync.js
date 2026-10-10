@@ -10,6 +10,9 @@ import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 // that are found by the count check instead. Sweeping every cycle would spend
 // one request per hour per Master on data that rarely changes.
 const SWEEP = 10 * 60 * 1000;
+// A valid cloud pass can exceed the local feed's 20s UI budget. Use the
+// existing download deadline for both its cancellation and return status.
+const CLOUD_DOWNLOAD_TIMEOUT_MS = 120000;
 
 // One scheduler for the whole App, independent of navigation. Its execution
 // gate is enabled by foreground UI; WorkManager uses the same exclusive slot.
@@ -50,6 +53,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   const resetResume = () => {
     resumeCatchUp?.close();
     resumeCatchUp = createResumeCatchUp({ now,
+      timeoutMs: CLOUD_DOWNLOAD_TIMEOUT_MS,
       onChange: catchUp => publish({ catchUp }),
       onRetry: () => {
         // A timed-out pass must drain before a replacement takes the slot.
@@ -68,7 +72,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const abort = new AbortController();
     controller = abort;
     let timedOut = false;
-    const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, 120000);
+    const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, CLOUD_DOWNLOAD_TIMEOUT_MS);
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t("c586")); };
     // Each pass reports a refusal of the sign-in on its own (authFailed).
     resumeCatchUp.started();
