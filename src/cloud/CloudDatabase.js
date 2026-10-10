@@ -479,8 +479,10 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
      */
     async usage() {
       const result = rows(await connection.executeAsync(
-        `SELECT COUNT(*) AS count, MIN(received_at) AS from_at
-         FROM supabase_dog_status`));
+        // Separate aggregate subqueries permit SQLite's fast COUNT and MIN seek,
+        // while one statement keeps both answers in the same read snapshot.
+        `SELECT (SELECT COUNT(*) FROM supabase_dog_status) AS count,
+                (SELECT MIN(received_at) FROM supabase_dog_status) AS from_at`));
       const count = Number(result[0]?.count || 0);
       return {
         rows: count,
