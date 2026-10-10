@@ -56,6 +56,51 @@ test('stationary traffic light followed by a slow car stays driving', () => {
   expect(model.vehicles).toHaveLength(1);
   expect(model.edges.every(e => e.mode === 'driving')).toBe(true);
 });
+
+test.each([20, 10, 35, 110])('a %s-second light remains inside one complete driving timeline row', seconds => {
+  const points = route([[8, 40], [0, seconds], [8, 40]]);
+  const model = timeline(points);
+  expect(model.edges.every(e => e.mode === 'driving')).toBe(true);
+  const moves = model.nodes.filter(n => n.type === 'movement');
+  expect(moves).toHaveLength(1);
+  expect(moves[0]).toMatchObject({ mode: 'driving', start: points[0].time,
+    end: points.at(-1).time, durationMs: points.at(-1).time - points[0].time });
+  expect(model.nodes.filter(n => n.type === 'stop' || n.type === 'gap')).toHaveLength(0);
+  expect(model.distanceM).toBe(0);
+});
+
+test('stationary pedestrian observations still produce no travel rows', () => {
+  const model = timeline(route([[0, 110]]));
+  expect(model.nodes.filter(n => n.type === 'movement')).toHaveLength(0);
+  expect(model.distanceM).toBe(0);
+});
+
+test('walking after a light stays a separate foot row when later speeds are missing', () => {
+  const points = route([[8, 40], [0, 20], [1.4, 150]]);
+  for (const point of points.filter(p => p.time > 100000)) {
+    point.raw_speed_kmh = null;
+  }
+  const model = timeline(points);
+  const foot = model.nodes.filter(n => n.type === 'movement' && n.mode === 'walking');
+  expect(foot).toHaveLength(1);
+  expect(foot[0].countedDistanceM).toBeGreaterThan(30);
+  expect(model.nodes.some(n => n.type === 'switch')).toBe(true);
+});
+
+test('a genuine five-second uncertainty gap separates otherwise continuous driving', () => {
+  const points = route([[8, 40], [0, 20], [8, 40]]);
+  for (const p of points) p.session_id = p.time < 75000 ? 'invented-before-gap' : 'invented-after-gap';
+  const uncertain = points.find(p => p.time === 75000);
+  uncertain.raw_speed_kmh = 28.8; uncertain.speed_accuracy_mps = 10;
+  const model = timeline(points);
+  const gap = model.nodes.find(n => n.type === 'gap');
+  expect(gap).toMatchObject({ reason: 'uncertain', start: 70000, end: 75000, durationMs: 5000 });
+  const driving = model.nodes.filter(n => n.type === 'movement' && n.mode === 'driving');
+  expect(driving).toHaveLength(2);
+  expect(driving[0].end).toBe(gap.start);
+  expect(driving[1].start).toBe(gap.end);
+  expect(model.distanceM).toBe(0);
+});
 test('a real short walk after getting out is retained, even if driving resumes', () => {
   const model = historyMovement(route([[8, 40], [0, 60], [1.4, 15], [8, 40]]), { subject: 'phone' });
   expect(model.vehicles).toHaveLength(2);

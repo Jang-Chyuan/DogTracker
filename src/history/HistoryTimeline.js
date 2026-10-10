@@ -91,9 +91,10 @@ export function historyTimeline(rows = [], options = {}) {
   for (const e of sectionEdges) {
     // Coarse fixes may sit just outside a visit's representative-position
     // quality gate. Two detector-confirmed stationary observations are still
-    // no walk; preserve actual gaps rather than dropping them here.
+    // no walk. An already classified drive includes red-light time, so keep
+    // those edges contiguous in the same driving row; preserve actual gaps.
     if (subject === 'phone' && !e.gap && !e.bridged
-      && e.from.phoneStationary && e.to.phoneStationary) continue;
+      && e.mode !== 'driving' && e.from.phoneStationary && e.to.phoneStationary) continue;
     // A brief unknown observation inside an already confirmed visit does not
     // become a new travel/interruption row. Actual recording gaps remain.
     if (e.uncertain && e.durationMs <= config.gapMs && containsStayEdge(e)) continue;
