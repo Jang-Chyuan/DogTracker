@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { activityPeriod, buildActivityView, combineYearView } from './views';
 import { activityDetail, activityViewInput } from './ActivityData';
 import { minuteOf } from './ActivityMinutes';
-import { captureMapRead, completedMapRevision } from '../cloud/CloudPublication';
+import { capturePageRead } from '../cloud/CloudPagePublication';
 
 const pause = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -30,7 +30,6 @@ export function useActivityView({ read, readEarliest, slaveId, mode, date, now, 
     sources.current = { read, readEarliest, id: sources.current.id + 1 };
   }
   const source = sources.current.id;
-  const accepted = useRef(null);
   // The dog's first reading as last read (‹ stops there; a tab switch that
   // lands before it shows the first period with data instead).
   const [first, setFirst] = useState({ key: null, time: null });
@@ -43,10 +42,7 @@ export function useActivityView({ read, readEarliest, slaveId, mode, date, now, 
     if (!active || !read) return undefined;
     let alive = true;
     (async () => {
-      const publication = publishedReads && accepted.current !== key && getPublication
-        ? () => { const value = getPublication(); return value && { ...value, pending: false }; }
-        : getPublication;
-      const fence = captureMapRead(publication, owner, completedMapRevision(publication?.()));
+      const fence = capturePageRead(getPublication, owner, publishedReads);
       try {
         if (!fence.open) return;
         setState(previous => ({ key, status: previous.key === key && previous.view ? 'ready' : 'loading', view: previous.key === key ? previous.view : null }));
@@ -85,7 +81,6 @@ export function useActivityView({ read, readEarliest, slaveId, mode, date, now, 
         }
         if (!alive || !fence.valid()) return;
         setFirst({ key: `${source}|${owner ?? ''}|${slaveId}`, time: earliest });
-        accepted.current = key;
         setState({ key, status: 'ready', view });
       } catch {
         if (alive && fence.valid()) setState(previous => ({ key, status: 'error', view: previous.key === key ? previous.view : null }));
