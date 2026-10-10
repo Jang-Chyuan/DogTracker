@@ -168,7 +168,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
         disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.chip.height) / 2}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
-          : <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
+          : <Glyph name="export" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
       </PressScale>
     </View>
   );
