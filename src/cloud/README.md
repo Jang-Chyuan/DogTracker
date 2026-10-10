@@ -119,4 +119,4 @@ App 不再把狗畫到手動設定的固定位置，也沒有設定表單；室�
 
 此 helper 的 SQL 識別只支援目前 audited writers 使用的普通未加引號 table DML；未來新增 CTE、替換語法、trigger 或另一個已發布表的 writer，必須同步擴充 material tracking 與真 SQLite 守護。未知／失敗的 readback 回到原 physical-revision 重讀；readback 若在 commit 後失敗也會讓 hold cursors 失效。單一 chunk 升級有四個 singleton setup／finish 指令，加 INSERT／UPDATE／eviction 三個 latch，staging 每筆不增加追蹤指令。
 
-這項快取調整不保證歷史頁零重算。today 的 cutoff 延伸、明確 reload、日期／帳號／範圍變更仍會重讀；coverage 的證明刷新仍可讓模型短暫不可用，完成後以保留的 rows／hold pass 重建模型。原生多狗慢窗口是否改善需要另做同情境量測，source 守護不能代替 Android 驗證。
+這項快取調整不保證歷史頁零重算。today 的 cutoff 延伸、明確 reload、日期／帳號／範圍變更仍會重讀；已有完整模型且 material／cutoff／owner／scope／generation 完全相同時，純 physical proof 刷新保留已驗模型；proof 查詢仍重新執行並由原發布閘驗證，失敗或新 proof 不完整就遮蔽。未知 material 或新的資料／範圍仍可能短暫不可用，完成後重建模型。原生多狗慢窗口是否改善需要另做同情境量測，source 守護不能代替 Android 驗證。

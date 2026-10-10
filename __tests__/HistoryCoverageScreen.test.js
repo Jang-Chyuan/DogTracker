@@ -341,14 +341,16 @@ test('unchanged material publication revalidates proof and restores the full mod
   try {
     await act(async () => { renderer = Renderer.create(<state.Probe publicationRevision={0} />); });
     expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.map).not.toBeNull();
+    const accepted = state.screen.dayModel;
     const reads = state.read.mock.calls.length, proofs = cloud.downloadStates.mock.calls.length;
     ledger.publishedPending = true; ledger.publishedRevision = 1;
     await act(async () => renderer.update(<state.Probe publicationRevision={1} />));
-    expect(state.screen.dayModel).toBeNull();
+    expect(state.screen.dayModel).toBe(accepted);
     ledger.publishedPending = false; ledger.publishedRevision = 2;
     await act(async () => renderer.update(<state.Probe publicationRevision={2} />));
     expect(cloud.downloadStates.mock.calls.length).toBeGreaterThan(proofs);
     expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.map).not.toBeNull();
+    expect(state.screen.dayModel).toBe(accepted);
     expect(state.screen.loading).toBe(false); expect(state.read).toHaveBeenCalledTimes(reads);
     expect(cloud.download).not.toHaveBeenCalled();
     await act(async () => delayedProof.resolve());
