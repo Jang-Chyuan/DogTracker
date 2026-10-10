@@ -17,6 +17,7 @@ import NativeTrackingPlatform from '../specs/NativeTrackingPlatform';
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { phoneHistoryRow } from '../src/history/HistoryRows';
 import { colors, opacity } from '../src/theme/tokens';
+import indoorAnchorGeometry from './fixtures/invented-indoor-anchor-geometry.json';
 
 const MINUTE = 60000;
 const DAY = new Date(2026, 9, 7).getTime();
@@ -32,6 +33,36 @@ describe('the route on the map', () => {
       [4, colors.phone, 3], [2, colors.phone, 2], [4, colors.phone, 2],
       [3, withAlpha(colors.phone, opacity.routeUpcoming), 2],
     ]);
+  });
+
+  test('indoor anchor relocation breaks drawn lines without hiding short walks or vehicles', () => {
+    const lines = routeLines([
+      edge(0, 1, 'walking', { countedDistanceM: 0, distanceM: 33 }),
+      edge(1, 2, 'indoor', { countedDistanceM: 0, distanceM: 302 }),
+      edge(2, 3, 'walking', { countedDistanceM: 0, distanceM: 12 }),
+      edge(3, 4, 'ride', { countedDistanceM: 0, distanceM: 20 }),
+      edge(4, 5, 'indoor', { countedDistanceM: 0, distanceM: 209 }),
+    ], { color: colors.phone });
+    expect(lines.map(line => [line.start, line.coordinates, line.vehicle])).toEqual([
+      [at(0), [edge(0, 1, 'walking').from, edge(0, 1, 'walking').to], false],
+      [at(2), [edge(2, 3, 'walking').from, edge(2, 3, 'walking').to], false],
+      [at(3), [edge(3, 4, 'ride').from, edge(3, 4, 'ride').to], true],
+    ]);
+  });
+
+  test('an independently invented edge model retains its short walk and excludes an indoor anchor jump', () => {
+    const { edges } = indoorAnchorGeometry;
+    expect(edges.length).toBeGreaterThan(2);
+    expect(edges.map(item => item.mode)).toEqual(['moving', 'indoor', 'gap']);
+    expect(edges[1].countedDistanceM).toBe(0);
+    expect(Math.max(...edges.map(item => item.distanceM))).toBeGreaterThan(200);
+    expect(indoorAnchorGeometry.rawObservations).toHaveLength(4);
+    expect(indoorAnchorGeometry.rawObservations[2]).toMatchObject({ latitude: 0, longitude: 0 });
+    const lines = routeLines(edges, { color: colors.phone });
+    expect(lines).toHaveLength(1);
+    expect(lines[0].coordinates).toEqual([edges[0].from, edges[0].to]);
+    expect(edges[0].countedDistanceM).toBeGreaterThan(20);
+    expect(edges[0].countedDistanceM).toBeLessThan(30);
   });
 
   test('outside the range: 2dp dashed routeFaded, broken where the data breaks', () => {
@@ -323,4 +354,49 @@ test('another day or range owns its markers even when stops overlap', () => {
   expect(present(day)).toBe(all);
   first.type = 'indoor'; first.number = null;
   expect(present(day)[0]).toMatchObject({ kind: 'indoor', number: null });
+});
+
+test('classified outside-range lines omit held relocation and bridges, keeping short walks and rides at observation boundaries', () => {
+  const edges = [edge(0, 1, 'moving', { countedDistanceM: 0, distanceM: 8 }),
+    edge(1, 2, 'indoor', { distanceM: 105 }),
+    edge(2, 3, 'moving', { bridged: true }), edge(3, 4, 'moving'),
+    edge(4, 5, 'moving'), edge(5, 6, 'moving'), edge(6, 7, 'ride'),
+    edge(7, 8, 'gap'), edge(8, 9, 'moving', { countedDistanceM: 0 })];
+  const before = JSON.stringify(edges);
+  const lines = outsideLines([], { start: at(4), end: at(6) }, { color: colors.routeFaded, edges });
+  expect(lines.map(line => [line.start, line.vehicle, line.coordinates.length])).toEqual([
+    [at(0), false, 2], [at(3), false, 2], [at(6), true, 2], [at(8), false, 2],
+  ]);
+  expect(lines.every(line => line.dashed && line.width === 2 && line.color === colors.routeFaded)).toBe(true);
+  expect(JSON.stringify(edges)).toBe(before);
+  // A straddling edge is not duplicated into either side; selected endpoints
+  // are observations, as in the existing range-bar/model contract.
+  const clipped = outsideLines([], { start: at(3.5), end: at(6.5) }, { color: colors.routeFaded, edges });
+  expect(clipped.map(line => line.start)).toEqual([at(0), at(8)]);
+});
+
+test('production timeline exposes existing full-day classification to a narrowed map without replaying it', () => {
+  const points = [0, 1, 2, 3, 4].map((minute, i) => ({ time: at(minute), latitude: 25,
+    longitude: 121 + i / 10000, speed_kmh: 3, satellites: 9, hdop: 1,
+    source: 'dog', heldReason: i === 1 || i === 2 ? 'weak' : null, heldSince: at(1) }));
+  const model = historyTimeline(points, { subject: 'dog', replayHolds: p => p,
+    dayStart: DAY, dayEnd: DAY + 24 * 60 * MINUTE, range: { start: at(2), end: at(3) } });
+  expect(model.dayEdges).toHaveLength(4);
+  expect(model.dayEdges.filter(e => e.mode === 'indoor')).toHaveLength(2);
+  const drawing = historyMapPresentation(model, { color: colors.dog });
+  expect(drawing.lines.filter(line => line.dashed).flatMap(line => line.coordinates)).toEqual([
+    { latitude: points[3].latitude, longitude: points[3].longitude },
+    { latitude: points[4].latitude, longitude: points[4].longitude },
+  ]);
+});
+
+test('the invented edge model cannot reappear as an outside-range indoor dashed jump', () => {
+  const { edges } = indoorAnchorGeometry;
+  const start = edges[edges.length - 1].end + 1;
+  const lines = outsideLines([], { start, end: start + MINUTE }, { color: colors.routeFaded, edges });
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toMatchObject({ dashed: true, width: 2, vehicle: false,
+    coordinates: [edges[0].from, edges[0].to] });
+  expect(edges[0].countedDistanceM).toBeGreaterThan(20);
+  expect(edges[0].countedDistanceM).toBeLessThan(30);
 });

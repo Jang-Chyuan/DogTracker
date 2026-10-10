@@ -1,0 +1,81 @@
+{
+  "source": "independently invented four-observation edge contract; relative clock, no field data",
+  "conditions": [
+    "observed short walk remains drawn even below the accumulated distance threshold",
+    "indoor display anchor relocation has zero counted distance and no route line",
+    "explicit missing raw fix on release remains a no-GPS gap"
+  ],
+  "rawObservations": [
+    {
+      "time": 0,
+      "latitude": 25,
+      "longitude": 121
+    },
+    {
+      "time": 20000,
+      "latitude": 25,
+      "longitude": 121.00025
+    },
+    {
+      "time": 40000,
+      "latitude": 0,
+      "longitude": 0
+    },
+    {
+      "time": 60000,
+      "latitude": 25.0001,
+      "longitude": 121.0003
+    }
+  ],
+  "edges": [
+    {
+      "start": 0,
+      "end": 20000,
+      "mode": "moving",
+      "gap": false,
+      "countedDistanceM": 25.1942069736374,
+      "distanceM": 25.1942069736374,
+      "from": {
+        "latitude": 25,
+        "longitude": 121
+      },
+      "to": {
+        "latitude": 25,
+        "longitude": 121.00025
+      }
+    },
+    {
+      "start": 20000,
+      "end": 40000,
+      "mode": "indoor",
+      "gap": false,
+      "countedDistanceM": 0,
+      "distanceM": 222.38985328899423,
+      "from": {
+        "latitude": 25,
+        "longitude": 121.00025
+      },
+      "to": {
+        "latitude": 25.002,
+        "longitude": 121.00025
+      }
+    },
+    {
+      "start": 40000,
+      "end": 60000,
+      "mode": "gap",
+      "gap": true,
+      "countedDistanceM": 0,
+      "distanceM": 0,
+      "from": {
+        "latitude": 25.002,
+        "longitude": 121.00025
+      },
+      "to": {
+        "latitude": 25.0001,
+        "longitude": 121.0003
+      },
+      "gapReason": "no-gps"
+    }
+  ]
+}

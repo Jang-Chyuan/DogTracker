@@ -86,7 +86,7 @@ export function historyTimeline(rows = [], options = {}) {
     // A dog's break keeps its own reason (收不到 GPS / 沒收到訊號): breaks
     // with different reasons are different rows.
     const reason = e.gap && subject === 'dog'
-      ? (stream.packets.some(p => p.time > e.start && p.time < e.end) ? 'no-gps' : 'no-signal') : undefined;
+      ? (e.gapReason ?? (stream.packets.some(p => p.time > e.start && p.time < e.end) ? 'no-gps' : 'no-signal')) : undefined;
     if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
       && !locations.some(n => n.start === e.start || n.end === e.start)) {
       prior.end = e.end; prior.durationMs += e.durationMs;
@@ -105,7 +105,19 @@ export function historyTimeline(rows = [], options = {}) {
     const row = sections[sections.length - 1];
     if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; carried = 0; }
   }
+  const noGPSGaps = new Map(sections.filter(section => section.type === 'gap'
+    && section.reason === 'no-gps').map(section => [section.start, section]));
   for (const node of movedOn) {
+    // The outgoing no-GPS release edge continues this same missing-fix
+    // interval; the display hold boundary must not create a second gap row.
+    const continuation = noGPSGaps.get(node.end);
+    if (continuation) {
+      continuation.start = node.start;
+      continuation.durationMs = continuation.end - node.start;
+      continuation.latitude = node.latitude;
+      continuation.longitude = node.longitude;
+      continue;
+    }
     sections.push({ type: 'gap', mode: 'gap', reason: 'no-gps', start: node.start, end: node.end,
       durationMs: node.end - node.start, latitude: node.latitude, longitude: node.longitude,
       endLatitude: node.latitude, endLongitude: node.longitude, distanceM: 0, countedDistanceM: 0,
@@ -152,7 +164,8 @@ export function historyTimeline(rows = [], options = {}) {
   const dayRecords = stream.packets.some(p => p.time >= dayStart && p.time < dayEnd);
   // dayPoints: the whole day's filtered fixes (the range bar snaps to them);
   // edges: the range's fix-to-fix steps (the history cursor's distance).
-  return { ...stream, dayRecords, points, dayPoints, edges: movement.edges, range, departure, nodes,
+  return { ...stream, dayRecords, points, dayPoints, dayEdges: contextMovement.edges.filter(e => e.start >= dayStart && e.end < dayEnd),
+    edges: movement.edges, range, departure, nodes,
     locations: keptLocations, sections: keptSections,
     state: stays.state, typicalMs: stays.typicalMs,
     distanceM: movement.edges.reduce((sum, e) => sum + e.countedDistanceM, 0),
