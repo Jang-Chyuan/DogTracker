@@ -1015,6 +1015,75 @@ async function tapHarness() {
   return { props, points, move, empty, start, end, press };
 }
 
+async function stopTapHarness() {
+  const h = await tapHarness();
+  const place = { key: 'stop-a', kind: 'stop', number: 1, start: 10,
+    coordinate: h.points[0] };
+  h.props = { ...h.props, onStopPress: jest.fn(stop => h.move(stop.start, 'stop')),
+    presentation: { ...h.props.presentation, historyRoute: {
+      ...h.props.presentation.historyRoute, places: [place],
+    } } };
+  await act(async () => renderer.update(<TrackingMap {...h.props} />));
+  h.marker = () => renderer.root.findAllByType(Marker).find(node =>
+    node.props.zIndex === 25).props;
+  return h;
+}
+
+test('a stop marker owns its pending quick tap and the next route tap stays usable', async () => {
+  const h = await stopTapHarness();
+  let resolve;
+  mockCamera.coordinateForPoint.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  let pending;
+  await act(async () => { h.start(); pending = h.end(); });
+  const stopPropagation = jest.fn();
+  await act(async () => h.marker().onPress({ stopPropagation, nativeEvent: { action: 'marker-press' } }));
+  await act(async () => { resolve(h.points[0]); await pending; await h.press(); });
+  expect(h.move.mock.calls).toEqual([[10, 'stop']]);
+  expect(stopPropagation).toHaveBeenCalledTimes(1);
+  mockCamera.pointForCoordinate.mockResolvedValue({ x: 200, y: 200 });
+  await act(async () => { h.start(300, 400); await h.end(); });
+  expect(h.move.mock.calls).toEqual([[10, 'stop'], [1, 'route']]);
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('a stop marker invalidates an already pending native route projection', async () => {
+  const h = await stopTapHarness();
+  let resolve;
+  mockCamera.pointForCoordinate.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  let pending;
+  await act(async () => { h.start(); pending = h.press(); });
+  await act(async () => h.marker().onPress({ nativeEvent: { action: 'marker-press' } }));
+  await act(async () => { resolve({ x: 40, y: 50 }); await pending; });
+  expect(h.move.mock.calls).toEqual([[10, 'stop']]);
+  expect(h.empty).not.toHaveBeenCalled();
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('a completed quick route selection yields to the stop and does not block another native-only tap', async () => {
+  const h = await stopTapHarness();
+  await act(async () => { h.start(); await h.end(); });
+  await act(async () => h.marker().onPress({ nativeEvent: { action: 'marker-press' } }));
+  await act(async () => { jest.advanceTimersByTime(900); await h.press(); });
+  expect(h.move.mock.calls).toEqual([[1, 'route'], [10, 'stop']]);
+  await act(async () => h.press(200, 200));
+  expect(h.empty).toHaveBeenCalledTimes(1);
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
+test('a native marker action is never treated as an ordinary route press', async () => {
+  const h = await stopTapHarness();
+  await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent: {
+    action: 'marker-press', coordinate: h.points[0], position: { x: 40, y: 50 },
+  } }));
+  expect(h.move).not.toHaveBeenCalled();
+  expect(h.empty).not.toHaveBeenCalled();
+  delete mockCamera.coordinateForPoint;
+  delete mockCamera.pointForCoordinate;
+});
+
 test('quick tap uses window origin and suppresses only its matching native press', async () => {
   const h = await tapHarness();
   await act(async () => { h.start(); await h.end(); });
