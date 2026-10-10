@@ -1003,3 +1003,10 @@ test('real map cloud failure retry goes to cloud sync without restarting an alre
   expect(cloudRetry).toHaveBeenCalledTimes(1);
   expect(localRetry).not.toHaveBeenCalled();
 });
+
+// A completed fixture must obey the same map-publication fence as a DB read.
+test('successful fixture carries its complete map read revision', () => {
+  const fixture = buildFixture('all-good');
+  expect(fixture.cloudSync.lastSuccess).toBeGreaterThan(0);
+  expect(fixture.cloudDogs.cloudCommit).toBe(fixture.cloudSync.lastSuccess);
+});
