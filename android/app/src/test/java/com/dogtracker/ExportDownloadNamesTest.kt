@@ -20,7 +20,7 @@ class ExportDownloadNamesTest {
   @Test fun filenameIsSafeAndUnicodeSurvives() {
     assertEquals("狗_路線_ (1).gpx", ExportDownloadNames.available("狗/路線?.gpx", listOf("狗_路線_.gpx")))
     val name = ExportDownloadNames.available("🐕".repeat(90) + ".gpx", emptyList())
-    assertTrue(name.toByteArray(Charsets.UTF_8).size <= 255)
+    assertTrue((".pending-${Long.MAX_VALUE}-$name").toByteArray(Charsets.UTF_8).size <= 255)
     assertTrue(name.endsWith(".gpx"))
     assertFalse(name.dropLast(4).last().isHighSurrogate())
   }

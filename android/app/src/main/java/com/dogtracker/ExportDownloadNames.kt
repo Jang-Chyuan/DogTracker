@@ -5,6 +5,9 @@ import java.util.Locale
 
 /** Pure reservation policy; MediaStore remains the final no-overwrite arbiter. */
 object ExportDownloadNames {
+  // MediaStore temporarily adds .pending-<expiry>- under the filesystem's
+  // 255-byte limit. Leave room so its reservation does not truncate our name.
+  private const val DISPLAY_NAME_BYTES = 225
   private fun safeName(requested: String): String {
     val clean = requested.map { c ->
       if (c.code < 32 || c.code == 127 || c in "<>:\"/\\|?*") '_' else c
@@ -18,7 +21,7 @@ object ExportDownloadNames {
     val extension = if (dot > 0) name.substring(dot) else ""
     var stem = if (dot > 0) name.substring(0, dot) else name
     val suffix = if (number == 0) "" else " ($number)"
-    val budget = 255 - (suffix + extension).toByteArray(Charsets.UTF_8).size
+    val budget = DISPLAY_NAME_BYTES - (suffix + extension).toByteArray(Charsets.UTF_8).size
     if (budget < 1) throw IOException("export extension is too long")
     while (stem.toByteArray(Charsets.UTF_8).size > budget)
       stem = stem.substring(0, stem.offsetByCodePoints(stem.length, -1))
