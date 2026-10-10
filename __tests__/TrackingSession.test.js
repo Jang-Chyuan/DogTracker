@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { AppState } from 'react-native';
@@ -6,7 +7,6 @@ import {
   dogStatusRow,
   trackingPoint,
 } from '../__fixtures__/TrackingPointFixtures';
-import { createDemoRow } from '../__fixtures__/DemoRowFixtures';
 
 function deferred() {
   let resolve;
@@ -33,18 +33,6 @@ function databases() {
       listLatestStatusRowsByTimeCursor: jest.fn(async () => []),
       getLatestValidStatusRows: jest.fn(async () => []),
       saveStatus: jest.fn(async () => 1),
-    },
-    demo: {
-      initialize: jest.fn(async () => {}),
-      getLatestRow: jest.fn(async () => null),
-      listRowsAfterId: jest.fn(async () => []),
-      listRowsByTimeCursor: jest.fn(async () => []),
-      listLatestRowsByTimeCursor: jest.fn(async () => []),
-      getLatestValidRows: jest.fn(async () => []),
-      insertRow: jest.fn(async () => 1),
-      ensureSeed: jest.fn(async () => {}),
-      resetToSeed: jest.fn(async () => {}),
-      getSummary: jest.fn(async () => ({ count: 3, latestPreset: 'C' })),
     },
     close: jest.fn(),
   };
@@ -89,24 +77,29 @@ describe('tracking session and connection lifetime', () => {
     jest.useRealTimers();
   });
 
-  test('no automatic Demo commands or writer remain in the session', async () => {
+  test('foreground polling never generates hardware rows', async () => {
     const db = databases();
     await mount(db);
-    expect(session).not.toHaveProperty('startDemo');
-    expect(session).not.toHaveProperty('stopDemo');
-    expect(session).not.toHaveProperty('demoRunning');
-    await act(async () => session.setDemoMode(true));
+    expect(session.mode).toBe('real');
     await tick();
     const onAppState = AppState.addEventListener.mock.calls[0][1];
     await act(async () => onAppState('background'));
     await tick();
     await act(async () => onAppState('active'));
     await tick();
-    await act(async () => session.setDemoMode(false));
     await tick();
-    expect(db.demo.insertRow).not.toHaveBeenCalled();
-    expect(db.demo.resetToSeed).not.toHaveBeenCalled();
     expect(db.real.saveStatus).not.toHaveBeenCalled();
+  });
+
+  test('legacy demo preferences start only the real feed and preserve display settings', async () => {
+    const db = databases();
+    db.settings.load.mockResolvedValue({ mode: 'demo', showSlaveMarker: false, windowMinutes: 30 });
+    db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
+    await mount(db);
+    expect(session.mode).toBe('real');
+    expect(session.point.id).toBe(dogStatusRow.id);
+    expect(session.preferences.value).toMatchObject({ mode: 'real', showSlaveMarker: false, windowMinutes: 30 });
+    expect(Object.keys(session.ready)).toEqual(['real']);
   });
 
   test('hardware diagnostics borrow the real DB and drain reads before close', async () => {
@@ -161,35 +154,7 @@ describe('tracking session and connection lifetime', () => {
       await writing;
     });
     expect(order).toEqual(['open first', 'close first', 'open second']);
-    expect(session.ready).toEqual({ real: true, demo: true });
-  });
-
-  test('effect replay also waits for an in-flight Demo reset', async () => {
-    const first = databases();
-    const second = databases();
-    const clearing = deferred();
-    first.demo.resetToSeed.mockReturnValue(clearing.promise);
-    const factory1 = () => first;
-    const factory2 = jest.fn(() => second);
-    await act(async () => {
-      renderer = ReactTestRenderer.create(<Harness factory={factory1} />);
-    });
-    let reset;
-    await act(async () => {
-      reset = session.resetDemo();
-    });
-    expect(first.demo.resetToSeed).toHaveBeenCalled();
-    await act(async () => {
-      renderer.update(<Harness factory={factory2} />);
-    });
-    expect(factory2).not.toHaveBeenCalled();
-    await act(async () => {
-      clearing.resolve();
-      await reset;
-    });
-    expect(first.close).toHaveBeenCalledTimes(1);
-    expect(factory2).toHaveBeenCalledTimes(1);
-    expect(session.mode).toBe('real');
+    expect(session.ready).toEqual({ real: true });
   });
 
   test('a full component remount waits for the old connection owner too', async () => {
@@ -248,7 +213,7 @@ describe('tracking session and connection lifetime', () => {
     );
   });
 
-  test('reports a failed native open without starting a feed or Demo', async () => {
+  test('reports a failed native open without starting a feed', async () => {
     const factory = () => {
       throw new Error('cannot open SQLite');
     };
@@ -256,8 +221,6 @@ describe('tracking session and connection lifetime', () => {
       renderer = ReactTestRenderer.create(<Harness factory={factory} />);
     });
     expect(session.errors.real).toBe('cannot open SQLite');
-    expect(session.errors.demo).toBe('cannot open SQLite');
-    expect(session.demoBusy).toBe(false);
     expect(setInterval).not.toHaveBeenCalled();
   });
 
@@ -277,25 +240,23 @@ describe('tracking session and connection lifetime', () => {
     expect(session.point.id).toBe(dogStatusRow.id);
   });
 
-  test('recovers a Demo read error while the table is empty', async () => {
+  test('recovers a read error while the hardware table is empty', async () => {
     const db = databases();
-    await mount(db);
-    db.demo.getLatestRow.mockRejectedValueOnce(
-      new Error('temporary Demo lock'),
+    db.real.getLatestStatusRow.mockRejectedValueOnce(
+      new Error('temporary hardware lock'),
     );
-    await act(async () => session.setDemoMode(true));
-    expect(session.errors.demo).toBe('temporary Demo lock');
+    await mount(db);
+    expect(session.errors.real).toBe('temporary hardware lock');
     await tick();
-    expect(session.errors.demo).toBeNull();
-    expect(session.demoPoint.id).toBeNull();
-    expect(db.demo.insertRow).not.toHaveBeenCalled();
+    expect(session.errors.real).toBeNull();
+    expect(session.point.id).toBeNull();
   });
 
   test('unknown rejections stay visible, and repeated polling errors do not flood logs', async () => {
     const db = databases();
     db.real.getLatestStatusRow.mockRejectedValue(null);
     await mount(db);
-    expect(session.errors.real).toBe('發生未知錯誤，請重試。');
+    expect(session.errors.real).toBe(i18nT("c1049"));
     const logged = console.error.mock.calls.length;
     await tick();
     expect(console.error).toHaveBeenCalledTimes(logged);
@@ -329,83 +290,33 @@ describe('tracking session and connection lifetime', () => {
     expect(session.realWriteError).toBeNull();
   });
 
-  test('synchronous schema failure is isolated and does not leak its connection', async () => {
+  test('synchronous schema failure blocks writes and does not leak its connection', async () => {
     const db = databases();
-    db.demo.initialize.mockImplementation(() => {
-      throw 'bad Demo schema';
+    db.real.initialize.mockImplementation(() => {
+      throw 'bad real schema';
     });
     await mount(db);
-    expect(session.ready).toEqual({ real: true, demo: false });
-    expect(session.errors.demo).toBe('bad Demo schema');
-    await expect(session.saveRealStatus(trackingPoint, null)).resolves.toBe(1);
+    expect(session.ready).toEqual({ real: false });
+    expect(session.errors.real).toBe('bad real schema');
+    await expect(session.saveRealStatus(trackingPoint, null)).rejects.toBe('bad real schema');
     await act(async () => renderer.unmount());
     renderer = null;
     expect(db.close).toHaveBeenCalledTimes(1);
   });
 
-  test('real schema failure blocks real writes but leaves Demo available', async () => {
+  test('real schema failure blocks hardware writes', async () => {
     const db = databases();
     db.real.initialize.mockRejectedValue(new Error('bad real schema'));
     await mount(db);
-    expect(session.ready).toEqual({ real: false, demo: true });
+    expect(session.ready).toEqual({ real: false });
     await act(async () => {
       await expect(session.saveRealStatus(trackingPoint, null)).rejects.toThrow(
         'bad real schema',
       );
-      await expect(session.setDemoMode(true)).resolves.toBe(true);
     });
     expect(db.real.saveStatus).not.toHaveBeenCalled();
-    expect(db.demo.insertRow).not.toHaveBeenCalled();
     expect(session.realWriteError).toBe('bad real schema');
     expect(session.errors.real).toBe('bad real schema');
-  });
-
-  test('reset failure preserves data, unlocks controls, and allows retry', async () => {
-    const db = databases();
-    const row = { id: 4, ...createDemoRow(3, 1000) };
-    db.demo.getLatestRow.mockResolvedValue(row);
-    await mount(db);
-    await act(async () => session.setDemoMode(true));
-    expect(session.demoPoint.id).toBe(4);
-    db.demo.resetToSeed.mockRejectedValueOnce(new Error('cannot clear'));
-    await act(async () => {
-      await expect(session.resetDemo()).resolves.toBe(false);
-    });
-    expect(session.demoError).toContain('cannot clear');
-    expect(session.demoBusy).toBe(false);
-    expect(session.demoPoint.id).toBe(4);
-    const writes = db.demo.insertRow.mock.calls.length;
-    await tick();
-    expect(session.errors.demo).toBeNull();
-    expect(session.demoError).toContain('cannot clear');
-    expect(db.demo.insertRow).toHaveBeenCalledTimes(writes);
-    db.demo.getLatestRow.mockResolvedValue(null);
-    await act(async () => {
-      await expect(session.resetDemo()).resolves.toBe(true);
-    });
-    expect(session.demoError).toBeNull();
-    expect(session.demoPoint.id).toBeNull();
-    expect(db.real.saveStatus).not.toHaveBeenCalled();
-  });
-
-  test('successful reads and source switches do not hide a reset error', async () => {
-    const db = databases();
-    await mount(db);
-    db.demo.resetToSeed.mockRejectedValueOnce(new Error('Demo disk full'));
-    await act(async () => {
-      await expect(session.resetDemo()).resolves.toBe(false);
-    });
-    expect(session.demoBusy).toBe(false);
-    await tick();
-    expect(session.errors.demo).toBeNull();
-    expect(session.demoError).toContain('Demo disk full');
-    await act(async () => session.setDemoMode(false));
-    await act(async () => session.setDemoMode(true));
-    expect(session.demoError).toContain('Demo disk full');
-    await act(async () => {
-      await expect(session.resetDemo()).resolves.toBe(true);
-    });
-    expect(session.demoError).toBeNull();
   });
 
   test('a failed old hardware write drains without leaking its error into the next session', async () => {
@@ -431,65 +342,28 @@ describe('tracking session and connection lifetime', () => {
 
   test('a failed reopen does not leave the old ready state and controls enabled', async () => {
     await mount(databases());
-    await act(async () => session.setDemoMode(true));
-    expect(session.ready.demo).toBe(true);
+    expect(session.ready.real).toBe(true);
     const factory = () => {
       throw new Error('reopen failed');
     };
     await act(async () => renderer.update(<Harness factory={factory} />));
-    expect(session.ready).toEqual({ real: false, demo: false });
-    expect(session.demoBusy).toBe(false);
-    expect(session.errors.demo).toBe('reopen failed');
+    expect(session.ready).toEqual({ real: false });
+    expect(session.errors.real).toBe('reopen failed');
     await expect(session.saveRealStatus(trackingPoint, null)).rejects.toThrow(
       'closed',
     );
   });
 
-  test('busy controls do not report a source switch as successful', async () => {
-    const db = databases();
-    const clearing = deferred();
-    db.demo.resetToSeed.mockReturnValueOnce(clearing.promise);
-    await mount(db);
-    await act(async () => session.setDemoMode(true));
-    let reset;
-    await act(async () => {
-      reset = session.resetDemo();
-    });
-    expect(session.demoBusy).toBe(true);
-    await expect(session.setDemoMode(false)).resolves.toBe(false);
-    await expect(session.setDemoMode(true)).resolves.toBe(false);
-    expect(session.mode).toBe('demo');
-    await act(async () => {
-      clearing.resolve();
-      await reset;
-    });
-    expect(session.demoBusy).toBe(false);
-    await act(async () => {
-      await expect(session.setDemoMode(false)).resolves.toBe(true);
-    });
-    expect(session.mode).toBe('real');
-  });
-  test('route backfill cannot rewind latest state, and reset clears only the Demo route', async () => {
+  test('route backfill cannot rewind latest hardware state', async () => {
     const db = databases();
     db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
     db.real.listLatestStatusRowsByTimeCursor.mockResolvedValueOnce([
       { ...dogStatusRow, id: 40 },
       { ...dogStatusRow, id: 41 },
     ]);
-    const demoRow = { id: 1, ...createDemoRow(0, 1000) };
-    db.demo.getLatestRow.mockResolvedValue(demoRow);
-    db.demo.listLatestRowsByTimeCursor.mockResolvedValueOnce([demoRow]);
     await mount(db);
     expect(session.point.id).toBe(42);
     expect(session.route.rawCount).toBe(2);
-    const realRoute = session.route;
-    await act(async () => session.setDemoMode(true));
-    expect(session.route.rawCount).toBe(1);
-    db.demo.getLatestRow.mockResolvedValue(null);
-    await act(async () => session.resetDemo());
-    expect(session.route.rawCount).toBe(0);
-    await act(async () => session.setDemoMode(false));
-    expect(session.route).toBe(realRoute);
   });
   test('live route keeps every point in the moving 24-hour window', async () => {
     const db = databases();
@@ -519,14 +393,13 @@ describe('tracking session and connection lifetime', () => {
     expect(session.ready.real).toBe(true);
     expect(session.preferences.error).toBe('settings failed');
     expect(db.real.getLatestStatusRow).not.toHaveBeenCalled();
-    expect(db.demo.getLatestRow).not.toHaveBeenCalled();
     await act(async () => session.retryTrackingPreferences());
     expect(db.real.getLatestStatusRow).toHaveBeenCalled();
     const saving = deferred();
     db.settings.save.mockReturnValue(saving.promise);
     let pending;
     await act(async () => {
-      pending = session.saveTrackingPreferences({ mode: 'demo' });
+      pending = session.saveTrackingPreferences({ showTrails: true });
     });
     await act(async () => renderer.unmount());
     renderer = null;
@@ -537,47 +410,21 @@ describe('tracking session and connection lifetime', () => {
     expect(db.close).toHaveBeenCalledTimes(1);
   });
 
-  test('manual append drains before reopening and cannot publish to the replacement owner', async () => {
-    const first = databases();
-    const second = databases();
-    const write = deferred();
-    first.demo.insertRow.mockReturnValueOnce(write.promise);
-    await mount(first);
-    let writing;
-    await act(async () => {
-      writing = session.appendDemo('B');
-    });
-    expect(session.demoBusy).toBe(true);
-    const factory = jest.fn(() => second);
-    await act(async () => renderer.update(<Harness factory={factory} />));
-    expect(first.close).not.toHaveBeenCalled();
-    expect(factory).not.toHaveBeenCalled();
-    await act(async () => {
-      write.resolve(9);
-      await writing;
-    });
-    expect(first.close).toHaveBeenCalledTimes(1);
-    expect(factory).toHaveBeenCalledTimes(1);
-    expect(session.demoBusy).toBe(false);
-    expect(session.demoError).toBeNull();
-  });
-
-  test('mode is not switched until the settings write commits', async () => {
+  test('display preferences apply only after the settings write commits', async () => {
     const db = databases();
     const write = deferred();
     db.settings.save.mockReturnValueOnce(write.promise);
     await mount(db);
     let saving;
     await act(async () => {
-      saving = session.setDemoMode(true);
+      saving = session.saveTrackingPreferences({ showTrails: true });
     });
-    expect(session.mode).toBe('real');
-    expect(db.demo.getLatestRow).not.toHaveBeenCalled();
+    expect(session.preferences.value.showTrails).toBe(false);
     await act(async () => {
       write.resolve();
       await saving;
     });
-    expect(session.mode).toBe('demo');
-    expect(db.demo.getLatestRow).toHaveBeenCalled();
+    expect(session.preferences.value.showTrails).toBe(true);
+    expect(session.mode).toBe('real');
   });
 });

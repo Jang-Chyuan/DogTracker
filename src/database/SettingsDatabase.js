@@ -24,6 +24,20 @@ export function createSettingsDatabase(connection) {
         [TRACKING_PREFERENCES_KEY, JSON.stringify(value)],
       );
     },
+    // Whether this phone used the app before (dog positions received or
+    // downloaded), for a phone that never saved preferences: such an update
+    // is not a first launch (Launch.js).
+    async usedBefore() {
+      for (const table of ['dog_status', 'supabase_dog_status']) {
+        try {
+          const result = await connection.executeAsync(`SELECT 1 AS found FROM ${table} LIMIT 1`);
+          if ((result.results || result.rows?._array || []).length) return true;
+        } catch {
+          // Not created yet: nothing there.
+        }
+      }
+      return false;
+    },
     async reset() {
       await connection.executeAsync('DELETE FROM app_settings WHERE key = ?', [
         TRACKING_PREFERENCES_KEY,

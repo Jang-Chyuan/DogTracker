@@ -1,3 +1,136 @@
+<!-- Generated from src/i18n/zh-TW.json by i18n/generate-native.cjs. -->
 <resources>
-    <string name="app_name">DogTracker</string>
+    <string name="c058" formatted="false">"接收器 {{number}} 斷線了"</string>
+    <string name="c075" formatted="false">"接收器"</string>
+    <string name="c114" formatted="false">"室內"</string>
+    <string name="c168" formatted="false">"{{dogName}} 不在接收範圍"</string>
+    <string name="c169" formatted="false">"DogTracker・{{count}} 隻狗要注意"</string>
+    <string name="c171" formatted="false">"打開地圖"</string>
+    <string name="c173" formatted="false">"DogTracker・接收器與手機要注意"</string>
+    <string name="c174" formatted="false">"接收器 {{number}} 已斷線（{{count}} 隻狗收不到）"</string>
+    <string name="c177" formatted="false">"接收器 {{number}}"</string>
+    <string name="c191" formatted="false">"提醒"</string>
+    <string name="c204" formatted="false">"中斷連線"</string>
+    <string name="c282" formatted="false">"手機空間不足，位置存不進手機"</string>
+    <string name="c287" formatted="false">"還沒設定接收器"</string>
+    <string name="c289" formatted="false">"已中斷連線"</string>
+    <string name="c304" formatted="false">"DogTracker・{{count}} 件事要注意"</string>
+    <string name="c462" formatted="false">"暫停提醒 {{PAUSE_MINUTES}} 分"</string>
+    <string name="c464" formatted="false">"{{name}} 電量低 {{percentage}}%"</string>
+    <string name="c466" formatted="false">"位置存不進手機"</string>
+    <string name="c467" formatted="false">"{{value}} 斷線了（{{count}} 隻狗收不到）"</string>
+    <string name="c468" formatted="false">"{{value}} 斷線了"</string>
+    <string name="c469" formatted="false">"{{minutes}} 分鐘"</string>
+    <string name="c477" formatted="false">"常駐"</string>
+    <string name="c731" formatted="false">"充電中"</string>
+    <string name="c783" formatted="false">"狗 {{value1}}"</string>
+    <string name="c853" formatted="false">"窗邊"</string>
+    <string name="c882" formatted="false">"GPS 沒有定位"</string>
+    <string name="c883" formatted="false">"GPS 訊號弱"</string>
+    <string name="c1050" formatted="false">"BLE 資料封包過大"</string>
+    <string name="c1051" formatted="false">"背景恢復失敗：請重新授予藍牙權限後連線"</string>
+    <string name="c1052" formatted="false">"背景恢復失敗：{{value1}}"</string>
+    <string name="c1053" formatted="false">"狗不在接收範圍、沒有新位置、電量低，接收器斷線等"</string>
+    <string name="c1054" formatted="false">"接收器、位置記錄、資料同步在背景工作時"</string>
+    <string name="c1055" formatted="false">"無法清除匯出暫存檔"</string>
+    <string name="c1056" formatted="false">"匯出資料夾無效"</string>
+    <string name="c1057" formatted="false">"匯出檔名無效"</string>
+    <string name="c1058" formatted="false">"無法量字寬"</string>
+    <string name="c1059" formatted="false">"無法建立匯出檔案"</string>
+    <string name="c1060" formatted="false">"已取消"</string>
+    <string name="c1061" formatted="false">"無法產生圖片"</string>
+    <string name="c1062" formatted="false">"請回到 App 再分享"</string>
+    <string name="c1063" formatted="false">"匯出檔案無效"</string>
+    <string name="c1064" formatted="false">"沒有匯出檔案"</string>
+    <string name="c1065" formatted="false">"分享進行中"</string>
+    <string name="c1066" formatted="false">"無法開啟分享選單"</string>
+    <string name="c1067" formatted="false">"BLE 尚未連線"</string>
+    <string name="c1068" formatted="false">"無法保存定位詢問紀錄"</string>
+    <string name="c1069" formatted="false">"無法讀取系統定位狀態"</string>
+    <string name="c1070" formatted="false">"無法讀取電池最佳化狀態"</string>
+    <string name="c1071" formatted="false">"待傳佇列已滿（20,000 筆），新轉送資料未入列；請恢復上傳。"</string>
+    <string name="c1072" formatted="false">"BLE 連線或訂閱逾時"</string>
+    <string name="c1073" formatted="false">"Wi-Fi 指令逾時"</string>
+    <string name="c1074" formatted="false">"BLE 指令逾時，重新連線"</string>
+    <string name="c1075" formatted="false">"BLE 已連線，但超過 30 秒未收到資料"</string>
+    <string name="c1076" formatted="false">"BLE 超過 90 秒無資料，重新連線"</string>
+    <string name="c1077" formatted="false">"正在準備 BLE 連線"</string>
+    <string name="c1078" formatted="false">"缺少藍牙連線權限，等待重新授權"</string>
+    <string name="c1079" formatted="false">"藍牙未開啟"</string>
+    <string name="c1080" formatted="false">"正在連線 {{value1}}"</string>
+    <string name="c1081" formatted="false">"無法建立 BLE 連線"</string>
+    <string name="c1082" formatted="false">"BLE 連線失敗：{{value1}}"</string>
+    <string name="c1083" formatted="false">"BLE 操作失敗：{{value1}}"</string>
+    <string name="c1084" formatted="false">"BLE 已斷線（{{value1}}），等待自動重連"</string>
+    <string name="c1085" formatted="false">"BLE 已連線，正在探索服務"</string>
+    <string name="c1086" formatted="false">"無法探索 BLE 服務"</string>
+    <string name="c1087" formatted="false">"BLE 服務探索失敗：{{value1}}"</string>
+    <string name="c1088" formatted="false">"BLE 通知訂閱失敗：{{value1}}"</string>
+    <string name="c1089" formatted="false">"BLE 已訂閱，等待資料"</string>
+    <string name="c1090" formatted="false">"Wi-Fi 寫入失敗：{{value1}}"</string>
+    <string name="c1091" formatted="false">"Wi-Fi 讀取啟動失敗"</string>
+    <string name="c1092" formatted="false">"找不到 BLE 資料 Characteristic"</string>
+    <string name="c1093" formatted="false">"無法啟用 BLE 通知"</string>
+    <string name="c1094" formatted="false">"BLE 資料不支援通知"</string>
+    <string name="c1095" formatted="false">"無法寫入 BLE 通知設定"</string>
+    <string name="c1096" formatted="false">"BLE 資料封包錯誤"</string>
+    <string name="c1097" formatted="false">"BLE 資料格式錯誤"</string>
+    <string name="c1098" formatted="false">"Master ID 不符合：QR={{value1}}，BLE={{value2}}"</string>
+    <string name="c1099" formatted="false">"資料存檔失敗：{{value1}}"</string>
+    <string name="c1100" formatted="false">"BLE 接收中；最後資料 {{value1}}"</string>
+    <string name="c1101" formatted="false">"另一個 Wi-Fi 指令仍在執行"</string>
+    <string name="c1102" formatted="false">"裝置不支援 Wi-Fi 設定"</string>
+    <string name="c1103" formatted="false">"Wi-Fi 指令啟動失敗"</string>
+    <string name="c1104" formatted="false">"Wi-Fi 指令失敗"</string>
+    <string name="c1105" formatted="false">"Wi-Fi 讀取失敗：{{value1}}"</string>
+    <string name="c1106" formatted="false">"等待自動重連"</string>
+    <string name="c1107" formatted="false">"{{value1}}；{{value2}} 秒後重試"</string>
+    <string name="c1108" formatted="false">"BLE 連線已關閉"</string>
+    <string name="c1109" formatted="false">"背景接收已停止"</string>
+    <string name="c1110" formatted="false">"DogTracker・接收器 {{value1}}"</string>
+    <string name="c1111" formatted="false">"DogTracker・接收器"</string>
+    <string name="c1112" formatted="false">"正在接收狗的位置"</string>
+    <string name="c1113" formatted="false">"斷線了，{{count}} 分鐘後再試著連線"</string>
+    <string name="c1114" formatted="false">"斷線了，正在自動重連"</string>
+    <string name="c1115" formatted="false">"連不上接收器，{{count}} 分鐘後再試著連線"</string>
+    <string name="c1116" formatted="false">"正在連線接收器"</string>
+    <string name="c1117" formatted="false">"等待新定位"</string>
+    <string name="c1118" formatted="false">"定位過期，等待新樣本"</string>
+    <string name="c1119" formatted="false">"略過重複或倒序定位"</string>
+    <string name="c1120" formatted="false">"定位座標無效"</string>
+    <string name="c1121" formatted="false">"等待合格定位（需 &lt; 50 公尺）"</string>
+    <string name="c1122" formatted="false">"等待合格定位（需 ≤ 30 公尺）"</string>
+    <string name="c1123" formatted="false">"略過不合理位置跳動"</string>
+    <string name="c1124" formatted="false">"接收與平滑中"</string>
+    <string name="c1125" formatted="false">"尚未開始記錄"</string>
+    <string name="c1126" formatted="false">"Timeline 寫入失敗，下一秒重試"</string>
+    <string name="c1127" formatted="false">"等待合格新定位；最後位置已過期"</string>
+    <string name="c1128" formatted="false">"DogTracker・手機位置記錄"</string>
+    <string name="c1129" formatted="false">"正在記錄我的路線"</string>
+    <string name="c1130" formatted="false">"停止記錄"</string>
+    <string name="c1131" formatted="false">"請允許精確位置"</string>
+    <string name="c1132" formatted="false">"請開啟手機定位服務"</string>
+    <string name="c1133" formatted="false">"等待合格定位：≤ 30 m；&gt; 20 km/h 時 &lt; 50 m"</string>
+    <string name="c1134" formatted="false">"無法開始記錄，請允許精確位置並開啟 GPS"</string>
+    <string name="c1135" formatted="false">"定位來源已關閉，等待恢復"</string>
+    <string name="c1136" formatted="false">"已停止記錄"</string>
+    <string name="c1137" formatted="false">"請在 App 前景開始記錄"</string>
+    <string name="c1138" formatted="false">"自動開始失敗，請至手機位置記錄頁重試"</string>
+    <string name="c1139" formatted="false">"無法刪除手機路線"</string>
+    <string name="c1140" formatted="false">"無法讀取手機定位記錄"</string>
+    <string name="c1141" formatted="false">"vibration skipped (silent mode or the 提醒 channel is blocked)"</string>
+    <string name="c1142" formatted="false">"SQLITE_FULL|disk is full|no space left|ENOSPC|空間不足"</string>
+    <string name="c1143" formatted="false">"搜尋轉送已達 Android 執行時限"</string>
+    <string name="c1144" formatted="false">"無法啟動搜尋轉送"</string>
+    <string name="c1145" formatted="false">"無法設定背景雲端同步"</string>
+    <string name="c1146" formatted="false">"無法取消背景同步"</string>
+    <string name="c1147" formatted="false">"等待下次同步，待傳資料已保留"</string>
+    <string name="c1148" formatted="false">"等待網路，待傳資料已保留"</string>
+    <string name="c1149" formatted="false">"等待同步程式，待傳資料已保留"</string>
+    <string name="c1150" formatted="false">"正在同步狗的位置"</string>
+    <string name="c1151" formatted="false">"DogTracker・資料同步"</string>
+    <string name="c1152" formatted="false">"準備同步待傳資料"</string>
+    <string name="c1153" formatted="false">"DogTracker"</string>
+    <string name="c1159" formatted="false">"{{dogName}}：{{duration}}沒有新位置"</string>
+    <string name="c1161" formatted="false">"{{dogName}}：{{duration}}沒有新資料"</string>
 </resources>

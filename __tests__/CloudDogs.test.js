@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import MapView, { Marker } from 'react-native-maps';
@@ -86,7 +87,7 @@ test('status reads retain local fixes and new no-fix packets, and use corrected 
     const dogs = mergeDogMarkers({ point: null, packetRows: packets, now: NOW, windowMs: 120000 });
     expect(dogs.find(d => d.slaveId === 4)).toMatchObject({
       stale: false, lastPositionAt: NOW - 121000, lastPacketAt: NOW,
-      communicationStatus: '有通訊／GPS 未定位',
+      communicationStatus: i18nT("c736"),
     });
     expect(dogs.find(d => d.slaveId === 6).stale).toBe(false);
     expect(dogs.find(d => d.slaveId === 8)).toMatchObject({ stale: true, lastPacketAt: NOW - 3600000 });
@@ -180,7 +181,7 @@ test('background retains cache, resume reads immediately, and download revisions
   }
 });
 
-test('account changes, logout and demo clear cache and ignore old pending results', async () => {
+test('account changes, logout and disabled reads clear cache and ignore old pending results', async () => {
   const rows = [row('cached', 4, NOW, 5)];
   const database = { latestBySlave: jest.fn(async () => rows) };
   let renderer, resolveRead;
@@ -217,14 +218,15 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
       owner="account-a" enabled {...props} />;
     let renderer;
     await act(async () => { renderer = Renderer.create(view()); });
-    expect(database.latestBySlave).toHaveBeenCalledWith('account-a', NOW - MAX_AGE_MS);
-    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], error: '' });
+    // Every dog's newest row, however old (v3 §6: kept after 24 hours).
+    expect(database.latestBySlave).toHaveBeenCalledWith('account-a', 0);
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: true });
     database.latestBySlave.mockRejectedValueOnce(new Error('locked'));
     await act(async () => { await jest.advanceTimersByTimeAsync(POLL_MS); });
-    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], error: 'locked' });
-    // Demo mode and logout stop the reads and clear the rows.
+    expect(states.at(-1)).toEqual({ rows, packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: 'locked', loaded: true });
+    // An unavailable database stops reads and clears cached rows.
     await act(async () => { renderer.update(view({ enabled: false })); });
-    expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], error: '' });
+    expect(states.at(-1)).toEqual({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: false });
     const calls = database.latestBySlave.mock.calls.length;
     await act(async () => { await jest.advanceTimersByTimeAsync(3 * POLL_MS); });
     expect(database.latestBySlave).toHaveBeenCalledTimes(calls);
@@ -232,7 +234,7 @@ test('the map reads the local copy on a timer and keeps the last rows when a rea
   } finally { jest.useRealTimers(); }
 });
 
-test('the home map draws one marker per dog and names the source', async () => {
+test('the home map draws one marker per dog, at its newest position', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -265,11 +267,101 @@ test('the home map draws one marker per dog and names the source', async () => {
     .filter(node => typeof node.props.identifier === 'string');
   const dog = markers.filter(node => node.props.identifier === 'real-dog-7');
   expect(dog).toHaveLength(1);
-  expect(dog[0].findAll(node => typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel).toContain('經 Master 5・雲端');
+  // The map says only the name; where the position came from is in the card.
+  expect(dog[0].findAll(node => typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel).toBe('狗 7');
   expect(dog[0].props.coordinate).toEqual({ latitude: 25.2, longitude: 121.7 });
   // The single-pair marker is replaced, not drawn on top of the merged one.
   expect(markers.some(node => node.props.identifier === 'real-slave')).toBe(false);
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();
+});
+
+test('K07: resume replays clearing fixes older than the hold window before recent no-fix rows', async () => {
+  let time = NOW, state, renderer;
+  const now = () => time;
+  const checkpoint = { status: 'out', lastTime: NOW, lastLocalAt: NOW, outSince: NOW, clearing: [], nearBack: 0 };
+  const fixes = [NOW + 60000, NOW + 181000].map(t => ({ slave_id: 4, time: t, source: 'ble',
+    latitude: 25, longitude: 121, master_latitude: 25, master_longitude: 121, satellites: 8, hdop: 1 }));
+  const database = { latestBySlave: async () => [], loadRangeState: async () => ({ 4: checkpoint }),
+    saveRangeState: jest.fn(), holdRows: jest.fn(async (_owner, since) => ({
+      rows: time === NOW ? [] : [...fixes, { slave_id: 4, time, source: 'ble', latitude: 0, longitude: 0 }]
+        .filter(point => point.time >= since), cursors: {} })) };
+  function RangeProbe({ active }) {
+    state = useCloudDogs(database, 'a', true, now, null, { active });
+    return null;
+  }
+  await act(async () => { renderer = Renderer.create(<RangeProbe active />); });
+  expect(state.ranges[4].status).toBe('out');
+  await act(async () => renderer.update(<RangeProbe active={false} />));
+  time += 2 * 60 * 60000;
+  await act(async () => renderer.update(<RangeProbe active />));
+  expect(database.holdRows.mock.calls.at(-1)[1]).toBe(NOW);
+  expect(state.ranges[4].status).toBe('in');
+  await act(async () => renderer.unmount());
+});
+
+test('K07: receiver range state survives database recreation and isolates accounts', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const first = createCloudDatabase(connection);
+    const range = { 4: { status: 'out', outSince: NOW, lastLocalAt: NOW, clearing: [] } };
+    await first.saveRangeState('a', range);
+    const reopened = createCloudDatabase(connection);
+    expect(await reopened.loadRangeState('a')).toEqual(range);
+    expect(await reopened.loadRangeState('b')).toEqual({});
+  } finally { connection.close(); }
+});
+
+test('K11: partial download markers survive a new database adapter and are isolated per dog/account', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const first = createCloudDatabase(connection);
+    await first.setHistoryDownloadState('a', 4, '2026-10-03', false);
+    const next = createCloudDatabase(connection);
+    expect(await next.historyDownloadStates('a', [4, 6])).toEqual([{ slave_id: 4, day: '2026-10-03', complete: 0 }]);
+    expect(await next.historyDownloadStates('b', 4)).toEqual([]);
+    await next.setHistoryDownloadState('a', 4, '2026-10-03', true);
+    expect((await first.historyDownloadStates('a', 4))[0].complete).toBe(1);
+  } finally { connection.close(); }
+});
+
+test('local waiting-source grace uses first reception without replacing the latest packet fields', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const database = createCloudDatabase(connection);
+    await database.initialize();
+    await connection.executeAsync(`INSERT INTO dog_status
+      (slave_id, master_id, received_at, slave_lat, slave_lon, battery_percentage)
+      VALUES (9, 7, ?, 0, 0, 10), (9, 7, ?, 0, 0, 70), (9, 8, ?, 0, 0, 5)`,
+    [NOW - 20000, NOW, NOW - 30000]);
+    const packets = await database.latestStatusRows(null, 0, NOW);
+    expect(packets.find(p => p.slave_id === 9)).toMatchObject({ master_id: 7,
+      received_at: NOW, first_received_at: NOW - 20000, battery_percentage: 70 });
+  } finally { connection.close(); }
+});
+
+test('latest seeks retain first reception, no-fix packets, ties and nullable streams', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db);
+    await cloud.initialize();
+    db.sqlite.exec(`INSERT INTO dog_status(received_at,master_id,slave_id,slave_lat,slave_lon)
+      VALUES (1,5,4,25,121),(2,5,4,0,0),(2,6,4,26,122),
+      (3,NULL,NULL,25,121),(4,NULL,NULL,0,0)`);
+    const local = (await cloud.latestStatusRows(null, 0, 5)).filter(r => r.source === 'ble');
+    expect(local.filter(r => r.slave_id === 4)).toHaveLength(2);
+    expect(local.filter(r => r.slave_id === 4).every(r => r.master_id === 6 && r.track_at === 2)).toBe(true);
+    expect(local.filter(r => r.slave_id === null).map(r => r.track_at)).toEqual([4,3]);
+    const first = await cloud.latestStatusRows(null, 0, 2);
+    // An old fix belongs to its own Master's stream, not the newest Master's.
+    expect(first.find(r => r.master_id === 6).first_received_at).toBe(2);
+    const cloudRows = [row('same-a',4,2,5), row('same-b',4,2,6), row('bad',6,3,5,{slave_lat:0,slave_lon:0})];
+    await cloud.savePage('a',cloudRows);
+    await cloud.savePage('b',[row('other',8,5,5)]);
+    expect(await cloud.latestBySlave('a',0)).toMatchObject([{ slave_id:4,master_id:6 }]);
+    expect(await cloud.latestBySlave('a',3)).toEqual([]);
+  } finally { db.close(); }
 });

@@ -1,3 +1,6 @@
+// Screen fixtures use Taiwan local times; keep assertions deterministic on CI.
+process.env.TZ = 'Asia/Taipei';
+
 module.exports = {
   preset: '@react-native/jest-preset',
   transformIgnorePatterns: [
@@ -12,6 +15,7 @@ module.exports = {
   moduleNameMapper: {
     '^react-native-maps$': '<rootDir>/__mocks__/react-native-maps.js',
     '^react-native-ble-plx$': '<rootDir>/__mocks__/react-native-ble-plx.js',
+    '^react-native-image-crop-picker$': '<rootDir>/__mocks__/react-native-image-crop-picker.js',
     '^react-native-nitro-sqlite$':
       '<rootDir>/__mocks__/react-native-nitro-sqlite.js',
   },

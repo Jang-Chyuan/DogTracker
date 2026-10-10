@@ -19,53 +19,75 @@ DogTracker 是 React Native Android App，透過 BLE 連接相容的 Heltec V4 `
 - 支援 Android 8.1 與 Android 12+ 所需的 BLE 權限，以及相機、通知和前景服務權限。
 - 建置不依賴 USB 或 Metro 的獨立 Release APK。
 
-## 專案結構
+## 主要模組
+
+以下列出目前的主要目錄與關鍵檔案，方便找入口；不是完整逐檔清單。
 
 ```text
-App.js                                  畫面流程、BLE 即時狀態與返回鍵行為
+App.js                                  畫面流程與根層整合
 index.js                                React Native 進入點
 src/
-├─ ble/
-│  ├─ BleService.js                     權限、掃描、連線、重連與 Wi-Fi 指令
-│  ├─ BleScanner.js                     BLE 掃描器
-│  └─ BleParser.js                      Base64／BLE payload 解析
-├─ config/
-│  └─ DeviceProfiles.js                 裝置顯示與資料保存設定
-├─ database/
-│  └─ DogDatabase.js                    SQLite schema、寫入、查詢與清理
-├─ gps/
-│  └─ LocationService.js                手機定位介面（預留）
-├─ map/
-│  └─ DogMap.js                         地圖介面（預留）
-├─ models/
-│  └─ DogStatus.js                      共用正規化資料模型
-├─ qr/
-│  └─ MasterQrParser.js                 QR 設定格式與安全驗證
-└─ screens/
-   ├─ DataTableScreen.js                SQLite 資料表檢視
-   ├─ WifiSettingsScreen.js             Master Wi-Fi 管理
-   ├─ MapScreen.js                      地圖畫面（預留）
-   └─ HistoryScreen.js                  歷史畫面（預留）
+├─ app/  Launch.js、useTrackingSession.js、handleRootBack.js  啟動、追蹤工作階段與返回鍵
+├─ auth/  AuthProvider.js  登入與 Session
+├─ ble/  BleService.js、BleScanner.js、BleParser.js  BLE 介面、掃描與解析
+├─ config/  DeviceProfiles.js  裝置設定
+├─ database/  DogDatabase.js、LocalDatabases.js、SettingsDatabase.js  共用 SQLite 與偏好
+├─ gps/  LocationService.js、usePhoneLocation.js  定位權限與系統定位狀態
+├─ locationTracker/  LocationTrackerService.js、useLiveLocation.js、LocationTrackerScreen.js  手機背景記錄、即時快照與診斷清單
+├─ map/  TrackingMap.js、GoogleTrackingMap.js、DogMerge.js  地圖介面、Google 繪圖與狗來源合併
+├─ tracking/  TrackingFeed.js、DogFreshness.js、ReceiverRange.js  路線、新鮮度與接收範圍
+├─ history/  HistorySources.js、HistoryTimeline.js、screen/  歷史去重、時間軸與日模型
+├─ mapHistory/  HistoryScreen.js、HistoryDatabase.js、HistoryCloud.js、useHistoryExport.js  第三版歷史畫面、日期下載與匯出
+├─ activity/  ActivityScreen.js、ActivityData.js、views/  活動畫面與統計
+├─ alerts/  AlertEngine.js、AlertNotifications.js、useAlertEngine.js  提醒判斷與通知
+├─ cloud/  CloudSync.js、CloudDatabase.js、CloudDataScreen.js  雲端下載、帳號快取與診斷
+├─ cloudUpload/  UploadService.js、SearchRelay.js  BLE 轉送與搜索中繼
+├─ placement/  IndoorHold.js、HoldStore.js、RideAlong.js、AddressLookup.js  室內停住、坐車與地址
+├─ settings/  SettingsHome.js、PhoneSettings.js、DiagnosticsSettings.js  設定入口、手機記錄與診斷
+├─ dogs/  DogProfile.js、DogAvatar.js  狗資料與頭像
+├─ onboarding/  PermissionsScreen.js、PairingScreen.js、PairedScreen.js  權限、配對與已連線畫面
+├─ qr/  MasterQrParser.js  QR 設定驗證
+├─ screens/  MapScreen.js、LoginScreen.js  第三版即時／歷史地圖入口與登入
+├─ theme/  tokens.js、ThemeProvider.js、exportPalette.js  共用樣式、主題與匯出色彩
+├─ dev/  ScreenFixtures.js、useScreenFixture.js  開發畫面情境
+├─ diagnostics/  DiagnosticsModel.js、useRecentRows.js  診斷資料
+├─ repositories/  RealTrackingRepository.js  實際追蹤資料介面
+├─ models/  DogStatus.js、TrackingPoint.js  正規化模型
+├─ ml/  Environment.js、inference.js  環境推論
+├─ components/  ScreenUI.js、Skeleton.js  共用畫面元件
+├─ services/  supabase.js  Supabase 共用入口
+└─ utils/  errors.js、haptics.js  錯誤與操作輔助
 
 android/app/src/main/java/com/dogtracker/
-├─ BleBackgroundModule.kt               React Native 與前景服務橋接
-├─ BleBackgroundPackage.kt              BLE 原生模組註冊
-├─ BleForegroundService.kt              GATT 復原、Notify 與原生重連
-├─ QrScannerActivity.kt                 CameraX／ML Kit 掃描畫面
-├─ QrScannerModule.kt                   QR Scanner Promise 橋接
-└─ QrScannerPackage.kt                  QR 原生模組註冊
+├─ MainActivity.kt、MainApplication.kt    Activity 與原生模組註冊
+├─ BleBackgroundModule.kt、BleBackgroundPackage.kt、BleForegroundService.kt  背景 BLE
+├─ DogStatusStore.kt、BleUploadQueue.kt   共用 SQLite owner 與待傳佇列
+├─ QrCameraViewManager.kt、QrScanLifecycle.kt、QrScannerPackage.kt  CameraX／ML Kit 掃描
+├─ TrackingPlatformModule.kt、TrackingPlatformPackage.kt  定位狀態與操作震動橋接
+├─ HistoryExportPackage.kt、ExportLifecycle.kt、ExportLabelLayout.kt、HistoryExportCleanup.kt  匯出繪圖、分享與清理
+├─ PlaceLookupModule.kt                  地址查詢
+├─ AlertNotificationsModule.kt、AlertNotificationsPackage.kt、NotificationChannels.kt  通知橋接
+├─ alerts/  BackgroundAlerts.kt、AlertRules.kt、AlertPoster.kt、IndoorHold.kt  背景提醒與停住判斷
+├─ cloud/   CloudHistoryWorker.kt、CloudSyncSchedule.kt、CloudSyncPackage.kt、SearchRelayService.kt  背景雲端工作
+└─ location/  LocationTrackerService.kt、LocationTrackerStore.kt、LocationTrackerPackage.kt、LocationPipeline.kt、DisplayLocation.kt  手機定位與記錄
 ```
 
 ## 模組責任
 
 | 模組 | 位置 | 責任 |
 | --- | --- | --- |
-| BLE | `src/ble/` | 權限、掃描、GATT 連線、Notify、Wi-Fi 指令與 JS 層重連 |
-| QR | `src/qr/`、Android 原生 Scanner | 相機辨識、QR 格式驗證與裝置設定 |
-| 資料庫 | `src/database/` | SQLite schema、狀態保存、歷史查詢與容量清理 |
-| UI | `App.js`、`src/screens/` | 畫面狀態、裝置操作、Wi-Fi 與資料表 |
-| 原生背景 BLE | Android Kotlin | 前景通知、工作階段保存、程序復原與原生 GATT 重連 |
-| GPS／Map | `src/gps/`、`src/map/` | 後續手機定位及地圖功能 |
+| 啟動與畫面 | `App.js`、`src/app/`、`src/screens/` | 根層導航、工作階段；`MapScreen` 整合第三版即時／歷史地圖 |
+| BLE／配對 | `src/ble/`、`src/onboarding/`、`src/qr/` | 掃描、配對、QR 驗證與接收器操作；原生前景服務負責 GATT、Notify、重連與保存 |
+| 資料庫／模型 | `src/database/`、`src/models/`、`src/repositories/` | 共用 SQLite、偏好保存、正規化資料與追蹤讀取介面 |
+| 手機定位 | `src/gps/`、`src/locationTracker/`、原生 `location/` | `usePhoneLocation` 管理權限／系統狀態；`LocationTrackerService` 控制原生定位服務，保存 recorded route、提供即時快照與診斷清單 |
+| 地圖／追蹤 | `src/map/`、`src/tracking/` | `TrackingMap`／`GoogleTrackingMap` 繪圖；合併每隻狗的來源、路線、新鮮度與接收範圍 |
+| 歷史／匯出 | `src/history/`、`src/mapHistory/`、原生匯出檔案 | 去重、停留／移動與日模型；`src/mapHistory/HistoryScreen.js` 提供日期、範圍、多狗游標與匯出；原生產檔與分享 |
+| 活動 | `src/activity/` | 活動統計與畫面 |
+| 提醒 | `src/alerts/`、原生 `alerts/` | 前景／背景提醒規則、通知與返回快照 |
+| 雲端／登入 | `src/cloud/`、`src/cloudUpload/`、`src/auth/`、`src/services/`、原生 `cloud/` | 帳號隔離、下載、BLE 轉送、搜索中繼與背景排程 |
+| 定位判斷 | `src/placement/`、`src/ml/` | 室內停住、坐車、環境推論與地址查詢 |
+| 設定／狗資料 | `src/settings/`、`src/dogs/` | 設定、診斷入口、名字與頭像 |
+| 共用 UI／開發 | `src/theme/`、`src/components/`、`src/utils/`、`src/dev/`、`src/diagnostics/`、`src/config/` | 主題、共用元件、操作輔助、畫面情境、診斷與裝置設定 |
 
 跨模組資料應使用 `src/models/DogStatus.js` 的格式或明確介面傳遞。新增功能邏輯應放進對應模組，避免持續擴大 `App.js`。
 
@@ -148,7 +170,7 @@ Android 的 React Native BLE 層只負責掃描。選定裝置後，Kotlin 前�
 
 首頁返回鍵規則：
 
-- 位於 Wi-Fi 或資料表畫面時返回功能選單。
+- 設定的子頁（含 進階 → 接收器 Wi-Fi、診斷 → 即時資料）按返回回到上一層。
 - 位於功能選單時返回掃描首頁。
 - 掃描首頁若 BLE 已連線或背景服務已啟動，將 App 移至背景。
 - 掃描首頁若未連線且背景服務未啟動，顯示退出確認。
@@ -242,10 +264,3 @@ git push -u origin feature/task-name
 ```
 
 合併至 `main` 前應執行 lint 與測試。變更 BLE、Android 權限、Kotlin 原生模組、CameraX 或 ML Kit 時，也應完成 Release build 並在實機驗證。
-
-## 預留功能
-
-- `src/gps/LocationService.js`：手機 GPS provider
-- `src/map/DogMap.js`：地圖元件
-- `src/screens/MapScreen.js`：地圖畫面
-- `src/screens/HistoryScreen.js`：完整歷史查詢畫面

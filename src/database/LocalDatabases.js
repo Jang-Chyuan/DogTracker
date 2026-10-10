@@ -1,20 +1,21 @@
 import { openTrackingDatabase } from './TrackingDatabaseConnection';
-import { createDemoDatabase } from '../demo/DemoDatabase';
 import { createDogDatabase } from './DogDatabase';
 import { createSettingsDatabase } from './SettingsDatabase';
 import { createCloudDatabase } from '../cloud/CloudDatabase';
 import { createHistoryDatabase } from '../mapHistory/HistoryDatabase';
+import { createDogDataStore } from './DogDataStore';
 
-// Both tables live in dogtracker.sqlite. Only this owner closes the connection;
-// the Demo adapter cannot write to or clear the hardware-owned dog_status table.
+// All local tables share dogtracker.sqlite; only this owner closes the connection.
 export function createLocalDatabases() {
   const connection = openTrackingDatabase();
-  // All three migrations must wait for this, including Demo/settings which
-  // otherwise race initialization. Android additionally serializes every SQL
-  // command/transaction with BLE writes inside its single native owner.
-  const configured = Promise.resolve().then(() =>
-    connection.executeAsync('PRAGMA busy_timeout=5000'),
-  );
+  // Migrations wait for configuration and removal of obsolete simulated rows.
+  // Android serializes SQL with BLE writes inside its single native owner.
+  const configured = Promise.resolve().then(async () => {
+    await connection.executeAsync('PRAGMA busy_timeout=5000');
+    await connection.executeAsync('DROP INDEX IF EXISTS idx_demo_dog_status_received_at');
+    await connection.executeAsync('DROP TABLE IF EXISTS demo_dog_status');
+    await connection.executeAsync('DROP TABLE IF EXISTS demo_metadata');
+  });
   const prepare = database => ({
     ...database,
     async initialize() {
@@ -24,10 +25,11 @@ export function createLocalDatabases() {
   });
   return {
     real: prepare(createDogDatabase(connection)),
-    demo: prepare(createDemoDatabase(connection)),
     settings: prepare(createSettingsDatabase(connection)),
     cloud: prepare(createCloudDatabase(connection)),
     history: createHistoryDatabase(connection),
+    // 刪除全部狗資料 (S7): this phone's dog positions and downloaded copy.
+    dogData: createDogDataStore(connection),
     close() {
       connection.close();
     },

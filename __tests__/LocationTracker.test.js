@@ -3,12 +3,12 @@ import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { readLocationPage } from '../src/locationTracker/LocationTrackerDatabase';
+import { readLocationPage, deletePhoneRoutes } from '../src/locationTracker/LocationTrackerDatabase';
 import { useLocationTracker } from '../src/locationTracker/useLocationTracker';
 import { locationTrackerNative, startLocationTracker, stopLocationTracker } from '../src/locationTracker/LocationTrackerService';
 
 jest.mock('../src/locationTracker/LocationTrackerService', () => ({
-  locationTrackerNative: { page: jest.fn() },
+  locationTrackerNative: { page: jest.fn(), deleteAll: jest.fn() },
   startLocationTracker: jest.fn(), stopLocationTracker: jest.fn(),
 }));
 
@@ -89,4 +89,30 @@ test('start failures are visible and repeated taps do not start duplicate servic
   await act(async () => { reject(new Error('請允許定位權限')); await pending; });
   expect(state.error).toBe('請允許定位權限');
   expect(state.busy).toBe(false);
+});
+
+test('phone route deletion clears native rows, remembered ranges and exports in order', async () => {
+  const { NativeModules } = require('react-native');
+  const { rememberRangeFor, rememberedRange } = require('../src/history/screen/RangeMemory');
+  rememberRangeFor('phone:today', { start: 1, end: 2 });
+  NativeModules.HistoryExport = { clearExports: jest.fn(async () => {
+    expect(locationTrackerNative.deleteAll).toHaveBeenCalled();
+    expect(rememberedRange('phone:today')).toBeNull();
+  }) };
+  await deletePhoneRoutes();
+  expect(NativeModules.HistoryExport.clearExports).toHaveBeenCalledTimes(1);
+  delete NativeModules.HistoryExport;
+});
+
+test('native phone deletion SQL preserves dog data and metadata', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt'), 'utf8');
+  const query = source.match(/fun deleteAll\(\)[\s\S]*?store.executeSql\("([^"]+)"/)[1];
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec('CREATE TABLE myLocationTracker(id INTEGER); INSERT INTO myLocationTracker VALUES(1); CREATE TABLE dog_status(id INTEGER); INSERT INTO dog_status VALUES(2); CREATE TABLE dog_avatars(name TEXT); INSERT INTO dog_avatars VALUES("Spot")'.replace('"Spot"', "'Spot'"));
+    db.exec(query);
+    expect(db.prepare('SELECT COUNT(*) n FROM myLocationTracker').get().n).toBe(0);
+    expect(db.prepare('SELECT id FROM dog_status').get().id).toBe(2);
+    expect(db.prepare('SELECT name FROM dog_avatars').get().name).toBe('Spot');
+  } finally { db.close(); }
 });

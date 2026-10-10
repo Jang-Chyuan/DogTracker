@@ -15,3 +15,4 @@ export const PROVIDER_GOOGLE = 'google';
 export const Marker = props => <View {...props} testID="map-marker" />;
 export const Polyline = props => <View {...props} testID="map-polyline" />;
 export const Circle = props => <View {...props} testID="map-circle" />;
+export const Polygon = props => <View {...props} testID="map-polygon" />;

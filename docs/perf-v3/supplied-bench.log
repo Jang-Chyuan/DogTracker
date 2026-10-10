@@ -1,0 +1,51 @@
+a feed.tick                        warm     0.099 cold     0.327 rows 1
+a feed.bleContext                  warm     0.037 cold     0.157 rows 2
+a feed.positionContext             warm    36.127 cold    31.741 rows 1
+a dogs.poll                        warm   184.885 cold   200.187 rows null
+a open.liveWindow                  warm   4170.73 cold  3412.211 rows 59995
+a open.windowPage                  warm    59.446 cold    58.384 rows 1000
+a sync.initialize                  warm   113.839 cold   247.605 rows null
+a fix.bleContext.union             warm      0.05 cold     0.671 rows 2 same=true
+a fix.liveWindow.pr26              warm   177.435 cold   211.095 rows 59995
+a fix.dogs.poll                    warm      0.85 cold     6.478 rows null
+b feed.tick                        warm       0.1 cold     0.642 rows 1
+b feed.bleContext                  warm      0.04 cold     0.123 rows 2
+b feed.positionContext             warm     64.14 cold    54.342 rows 1
+b dogs.poll                        warm   231.067 cold   267.732 rows null
+b open.liveWindow                  warm   4569.03 cold  4999.193 rows 59995
+b open.windowPage                  warm    66.545 cold    62.641 rows 1000
+b sync.initialize                  warm   137.938 cold   326.629 rows null
+b fix.bleContext.union             warm     0.051 cold     0.424 rows 2 same=true
+b fix.liveWindow.pr26              warm   160.363 cold   179.514 rows 59995
+b fix.dogs.poll                    warm     0.886 cold     6.551 rows null
+ANALYZE took 1388 ms
+c feed.tick                        warm    12.603 cold    24.519 rows 1
+c feed.bleContext                  warm    10.571 cold    24.246 rows 2
+c feed.positionContext             warm     0.069 cold      0.13 rows 1
+c dogs.poll                        warm    52.411 cold    68.502 rows null
+c open.liveWindow                  warm   3537.84 cold  3526.335 rows 59995
+c open.windowPage                  warm    59.145 cold    57.534 rows 1000
+c sync.initialize                  warm     9.191 cold    60.103 rows null
+c fix.bleContext.union             warm     0.049 cold     0.603 rows 2 same=true
+c fix.liveWindow.pr26              warm    159.46 cold    166.92 rows 59995
+c fix.dogs.poll                    warm     0.891 cold     6.563 rows null
+d feed.tick                        warm     9.611 cold     9.856 rows 1
+d feed.bleContext                  warm     8.993 cold    10.078 rows 2
+d feed.positionContext             warm     0.067 cold     0.121 rows 1
+d dogs.poll                        warm    55.197 cold    48.431 rows null
+d open.liveWindow                  warm  3960.435 cold  4154.736 rows 59995
+d open.windowPage                  warm     67.36 cold    73.199 rows 1000
+d sync.initialize                  warm     8.996 cold     8.703 rows null
+d fix.bleContext.union             warm     0.046 cold     0.117 rows 2 same=true
+d fix.liveWindow.pr26              warm    162.54 cold   166.992 rows 59995
+d fix.dogs.poll                    warm     0.849 cold     1.146 rows null
+e feed.tick                        warm     0.093 cold     0.184 rows 1
+e feed.bleContext                  warm     0.035 cold     0.054 rows 2
+e feed.positionContext             warm    33.197 cold    31.509 rows 1
+e dogs.poll                        warm   167.151 cold   189.149 rows null
+e open.liveWindow                  warm  3685.313 cold  3345.564 rows 59995
+e open.windowPage                  warm    63.403 cold    65.891 rows 1000
+e sync.initialize                  warm    11.354 cold   914.839 rows null
+e fix.bleContext.union             warm     0.052 cold     6.657 rows 2 same=true
+e fix.liveWindow.pr26              warm   169.534 cold   169.627 rows 59995
+e fix.dogs.poll                    warm     0.814 cold    94.592 rows null

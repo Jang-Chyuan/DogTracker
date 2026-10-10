@@ -1,6 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { Linking, PermissionsAndroid, Platform } from 'react-native';
+import { AppState, Linking, PermissionsAndroid, Platform } from 'react-native';
 import {
   readLocationPermission,
   requestLocationPermission,
@@ -9,7 +9,7 @@ import { usePhoneLocation } from '../src/gps/usePhoneLocation';
 
 const { ACCESS_FINE_LOCATION: fine, ACCESS_COARSE_LOCATION: coarse } =
   PermissionsAndroid.PERMISSIONS;
-let renderer, state, platform;
+let renderer, state, platform, onAppState;
 const originalOS = Platform.OS;
 function Harness({ foreground = true, promptOnFirstUse = false }) {
   state = usePhoneLocation(foreground, platform, promptOnFirstUse);
@@ -17,6 +17,10 @@ function Harness({ foreground = true, promptOnFirstUse = false }) {
 }
 beforeEach(() => {
   Platform.OS = 'android';
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((_, listener) => {
+    onAppState = listener;
+    return { remove: jest.fn() };
+  });
   platform = {
     locationServicesEnabled: jest.fn(async () => true),
     claimLocationPermissionPrompt: jest.fn(async () => false),
@@ -125,27 +129,72 @@ test('a grant before first use does not trigger another permission dialog', asyn
   expect(PermissionsAndroid.requestMultiple).not.toHaveBeenCalled();
 });
 
-test('a foreground refresh waits for the open system dialog result', async () => {
+test.each(['appState', 'foreground'])('resume via %s abandons a stuck dialog and publishes the current grant', async source => {
   let finish;
   platform.claimLocationPermissionPrompt.mockResolvedValueOnce(true);
   PermissionsAndroid.requestMultiple.mockImplementationOnce(
-    () =>
-      new Promise(resolve => {
-        finish = resolve;
-      }),
+    () => new Promise(resolve => { finish = resolve; }),
   );
   await act(async () => {
     renderer = Renderer.create(<Harness promptOnFirstUse />);
   });
-  await act(async () =>
-    renderer.update(<Harness foreground={false} promptOnFirstUse />),
+  expect(state.busy).toBe(true);
+  if (source === 'appState') {
+    await act(async () => onAppState('background'));
+  } else {
+    await act(async () => renderer.update(<Harness foreground={false} promptOnFirstUse />));
+  }
+  PermissionsAndroid.check.mockResolvedValue(true);
+  if (source === 'appState') {
+    await act(async () => onAppState('active'));
+  } else {
+    await act(async () => renderer.update(<Harness promptOnFirstUse />));
+  }
+  expect(state.permission).toBe('precise');
+  expect(state.busy).toBe(false);
+  expect(state.enabled).toBe(true);
+  expect(PermissionsAndroid.requestMultiple).toHaveBeenCalledTimes(1);
+  // A late, stale denial must not overwrite the system grant.
+  await act(async () => finish({ [fine]: 'denied', [coarse]: 'denied' }));
+  expect(state.permission).toBe('precise');
+});
+
+test('same-lifetime retries keep the open dialog guard', async () => {
+  let finish;
+  await mount();
+  PermissionsAndroid.requestMultiple.mockImplementationOnce(
+    () => new Promise(resolve => { finish = resolve; }),
   );
-  await act(async () => renderer.update(<Harness promptOnFirstUse />));
+  await act(async () => { state.requestPermission(); });
+  await act(async () => state.retry());
   expect(state.busy).toBe(true);
   expect(PermissionsAndroid.requestMultiple).toHaveBeenCalledTimes(1);
   await act(async () => finish({ [fine]: 'granted', [coarse]: 'granted' }));
   expect(state.permission).toBe('precise');
-  expect(state.enabled).toBe(true);
+});
+
+test('active events recheck services off and on without a foreground prop change or dialog', async () => {
+  PermissionsAndroid.check.mockResolvedValue(true);
+  await mount();
+  for (const services of [false, true]) {
+    await act(async () => onAppState('background'));
+    platform.locationServicesEnabled.mockResolvedValue(services);
+    await act(async () => onAppState('active'));
+    expect(state.services).toBe(services);
+    expect(state.enabled).toBe(services);
+  }
+  expect(PermissionsAndroid.requestMultiple).not.toHaveBeenCalled();
+});
+
+test('active recheck of a denied permission never starts a first-use dialog', async () => {
+  await mount();
+  platform.claimLocationPermissionPrompt.mockResolvedValue(true);
+  await act(async () => renderer.update(<Harness promptOnFirstUse />));
+  const requests = PermissionsAndroid.requestMultiple.mock.calls.length;
+  expect(requests).toBe(1);
+  await act(async () => onAppState('active'));
+  expect(state.permission).toBe('denied');
+  expect(PermissionsAndroid.requestMultiple).toHaveBeenCalledTimes(requests);
 });
 
 test('failed prompt persistence is visible and retryable without silently granting access', async () => {
@@ -174,11 +223,27 @@ test('system location disabled, service read failure and retry are visible', asy
   await act(async () => state.retry());
   expect(state.error).toBe('unavailable');
   expect(state.enabled).toBe(false);
+  // 067: a failed check keeps what was known (here: the service off).
+  expect(state.services).toBe(false);
   platform.locationServicesEnabled.mockResolvedValue(true);
   await act(async () => state.retry());
   expect(state.error).toBeNull();
   expect(state.enabled).toBe(true);
 });
+// 067: a check that fails while the Activity comes back keeps the permission
+// and the service as they were: no 「定位服務關著」 for a passing error.
+test('a failed check does not report the location service off', async () => {
+  PermissionsAndroid.check.mockResolvedValue(true);
+  platform.locationServicesEnabled.mockResolvedValue(true);
+  await mount();
+  expect(state).toMatchObject({ permission: 'precise', services: true });
+  platform.locationServicesEnabled.mockRejectedValueOnce(new Error('not attached to an Activity'));
+  await act(async () => state.retry());
+  expect(state).toMatchObject({ permission: 'precise', services: true, error: 'not attached to an Activity' });
+  await act(async () => state.retry());
+  expect(state).toMatchObject({ services: true, error: null, enabled: true });
+});
+
 test('foreground rechecks revoked permission; background disables layer immediately', async () => {
   PermissionsAndroid.check.mockResolvedValue(true);
   await mount();
@@ -220,4 +285,18 @@ test('unsupported platform never requests Android permissions', async () => {
   expect(state.permission).toBe('unsupported');
   expect(state.enabled).toBe(false);
   expect(PermissionsAndroid.check).not.toHaveBeenCalled();
+});
+
+test.each([false, true])('reads background location grant without requesting it: %s', async granted => {
+  const version = Object.getOwnPropertyDescriptor(Platform, 'Version');
+  Object.defineProperty(Platform, 'Version', { configurable: true, get: () => 34 });
+  try {
+    PermissionsAndroid.check.mockImplementation(async key => key === fine ||
+      (key === PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION && granted));
+    await mount();
+    expect(state.backgroundGranted).toBe(granted);
+    expect(PermissionsAndroid.requestMultiple).not.toHaveBeenCalled();
+  } finally {
+    if (version) Object.defineProperty(Platform, 'Version', version);
+  }
 });

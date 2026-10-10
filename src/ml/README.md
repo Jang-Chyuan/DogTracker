@@ -4,7 +4,7 @@
 
 ## 功能與用途
 
-地圖的犬隻清單及裝置詳情會顯示「目前環境」。這是環境推估，不是精確位置或活動種類辨識。QR 掃描使用的 Google ML Kit 是另一項獨立功能；活動量圖則整理硬體回報的活動值，不使用本環境模型。
+第三版即時地圖不顯示環境；設定 → 診斷（S8）的「每隻狗的判斷」顯示每隻狗的「目前環境」。這是環境推估，不是精確位置或活動種類辨識。QR 掃描使用的 Google ML Kit 是另一項獨立功能；活動量圖則整理硬體回報的活動值，不使用本環境模型。
 
 ## 資料流程
 
@@ -14,7 +14,7 @@
 4. `Environment.predictEnvironment()` 將該兩分鐘封包轉成觀測資料，交給 `inference.predictWindow()` 彙整並分類；回傳的 `samples` 就是該視窗的封包筆數。
 5. 清單與詳情顯示環境、信心及模型機率；畫面標籤會檢查資料是否過期。
 
-本機 BLE 使用 `received_at`；雲端使用 `track_at`，沒有時回退到 `received_at`。目前環境推論視窗內必須是相同 session、Master、Slave 及 UTC 兩分鐘分桶，混合視窗會拋出錯誤。分桶本身不受台灣時區顯示方式影響。歷史軌跡的固定位置回放目前仍使用既有的一分鐘視窗。
+本機 BLE 使用 `received_at`；雲端使用 `track_at`，沒有時回退到 `received_at`。目前環境推論視窗內必須是相同 session、Master、Slave 及 UTC 兩分鐘分桶，混合視窗會拋出錯誤。分桶本身不受台灣時區顯示方式影響。即時地圖與歷史的室內停留（`src/placement/IndoorHold.js`）也用同樣的兩分鐘分桶，把結果當成「在室內」的佐證之一。
 
 ## 輸入與特徵
 
@@ -73,8 +73,8 @@ USB 規則是「插 USB 視為室內」的產品假設；室外接行動電源�
 | [inference.js](inference.js) | 時間視窗彙整、缺值處理、森林推論與原始雲端資料轉換 |
 | [model.json](model.json) | 模型版本、特徵、補值參數與 300 棵樹 |
 | [CloudDatabase.js](../cloud/CloudDatabase.js) | 查詢最近已結束且有資料的兩分鐘視窗 |
-| [DogList.js](../map/DogList.js) | 清單環境標籤 |
-| [DeviceDetails.js](../map/DeviceDetails.js) | 詳情環境與模型機率 |
+| [IndoorHold.js](../placement/IndoorHold.js) | 停在原處用環境結果判斷室內（第三版即時地圖不再另外顯示環境標籤） |
+| [DiagnosticsModel.js](../diagnostics/DiagnosticsModel.js) | 設定 → 診斷（S8）每隻狗最近一個兩分鐘視窗的結果、三類機率與筆數 |
 | [Environment.test.js](../../__tests__/Environment.test.js) | USB、缺資料、過期、低信心與犬隻資料隔離測試 |
 
 ## 驗證方式

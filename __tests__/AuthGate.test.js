@@ -1,3 +1,4 @@
+import { t as i18nT } from '../src/i18n';
 import React, { useEffect } from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { NativeModules, Text } from 'react-native';
@@ -19,7 +20,7 @@ function fixture() {
   };
 }
 
-test('startup waits for auth; only login mounts tracking; logout returns to login and cancels native sync', async () => {
+test('the app starts while the sign-in is restored (under D0); logout keeps it and cancels native sync', async () => {
   const f = fixture(), mounted = jest.fn(), unmounted = jest.fn();
   const previousCloud = NativeModules.CloudBackgroundSync, previousBle = NativeModules.BleBackground;
   const cloud = { setOwner: jest.fn(async () => {}) };
@@ -34,18 +35,21 @@ test('startup waits for auth; only login mounts tracking; logout returns to logi
     await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>
       <AuthGate><Main /></AuthGate>
     </AuthProvider>); });
-    expect(mounted).not.toHaveBeenCalled();
-    expect(JSON.stringify(renderer.toJSON())).toContain('正在恢復登入狀態');
+    // No 「restoring」 page: the app (its database, the map) starts at once
+    // and decides what opens first itself (Launch.launchScreen).
+    expect(mounted).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('正在恢復登入狀態');
+    // Signing in is optional (v3 D1): no login wall in front of the map.
     await act(async () => f.restore(null));
-    expect(JSON.stringify(renderer.toJSON())).toContain('登入 DogTracker');
-    expect(mounted).not.toHaveBeenCalled();
+    expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(i18nT('c001'));
+    expect(mounted).toHaveBeenCalledTimes(1);
     await act(async () => f.notify({ user: { id: 'a', email: 'a@example.com' } }));
     expect(mounted).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
     cloud.setOwner.mockClear(); ble.executeDatabase.mockClear();
     await act(async () => f.notify(null));
-    expect(unmounted).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(renderer.toJSON())).toContain('登入 DogTracker');
+    expect(unmounted).not.toHaveBeenCalled();
+    expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
     expect(cloud.setOwner).toHaveBeenCalledWith(null);
     expect(ble.executeDatabase).toHaveBeenCalledWith(expect.stringContaining("key='owner'"), '[]');
   } finally {
@@ -61,6 +65,6 @@ test('a restored session enters home without showing the login form', async () =
   </AuthProvider>); });
   await act(async () => f.restore({ user: { id: 'a' } }));
   expect(JSON.stringify(renderer.toJSON())).toContain('Tracking home');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('登入 DogTracker');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain(i18nT('c001'));
   await act(async () => renderer.unmount());
 });

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Confirmation dialog surface (design v3 確認對話框): white, 24dp corners,
+     inset from the screen edges like the platform dialog. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="16dp"
+    android:insetRight="16dp"
+    android:insetTop="16dp"
+    android:insetBottom="16dp">
+    <shape android:shape="rectangle">
+        <corners android:radius="24dp" />
+        <solid android:color="@color/dialog_surface" />
+        <stroke android:width="@dimen/dialog_outline" android:color="@color/dialog_outline" />
+    </shape>
+</inset>

@@ -2,8 +2,10 @@ import {
   createTrackingPreferences,
   DEFAULT_TRACKING_PREFERENCES,
   validateTrackingPreferences,
+  DROPPED_PREFERENCES,
   WINDOW_PRESETS,
 } from '../src/tracking/TrackingPreferences';
+import { DEFAULT_ALERT_PREFERENCES } from '../src/alerts/AlertPreferences';
 import { createSettingsDatabase } from '../src/database/SettingsDatabase';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 
@@ -22,13 +24,13 @@ function setup() {
     state: () => changed.mock.calls.at(-1)[0],
   };
 }
-test('first use defaults to Demo, visible markers and hidden paths', async () => {
+test('first use defaults to real, visible markers and hidden paths', async () => {
   const { controller, state } = setup();
   await controller.load();
   expect(state()).toMatchObject({
     ready: true,
     value: {
-      mode: 'demo',
+      mode: 'real',
       showMasterMarker: true,
       showSlaveMarker: true,
       showTrails: false,
@@ -43,7 +45,8 @@ test('failed writes preserve every prior value and a successful retry applies th
   expect(
     await controller.save({ showSlaveMarker: false, showTrails: true }),
   ).toBe(false);
-  expect(state().value).toEqual(DEFAULT_TRACKING_PREFERENCES);
+  // Nothing saved before: the first-launch guide starts at D1.
+  expect(state().value).toEqual({ ...DEFAULT_TRACKING_PREFERENCES, onboarding: 'signIn' });
   expect(state().error).toBe('locked');
   expect(
     await controller.save({ showSlaveMarker: false, showTrails: true }),
@@ -58,7 +61,7 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
   database.load.mockRejectedValueOnce(new Error('read failed'));
   expect(await controller.load()).toBe(false);
   expect(state().ready).toBe(false);
-  expect(await controller.save({ mode: 'demo' })).toBe(false);
+  expect(await controller.save({ mode: 'real' })).toBe(false);
   expect(database.save).not.toHaveBeenCalled();
   database.load.mockResolvedValue({
     mode: 'real',
@@ -73,8 +76,12 @@ test('failed loads are not first-use defaults and cannot overwrite stored settin
     showSlaveMarker: false,
     showTrails: true,
     windowMinutes: 2,
-    focusSlaveId: null,
-    hiddenSlaveIds: [],
+    noDataCardDismissed: false, waitingLocationSources: null,
+    diagnosticsEnabled: false,
+    alerts: DEFAULT_ALERT_PREFERENCES,
+    // Saved before the first-launch guide existed: it counts as passed.
+    onboarding: 'done',
+    askedPermissions: [],
   });
 });
 test('close drains the pending write and does not publish its result to an unmounted owner', async () => {
@@ -126,8 +133,14 @@ test('every setting survives a new controller and shares no tracking-row writes'
       showSlaveMarker: true,
       showTrails: true,
       windowMinutes: 30,
-      focusSlaveId: 4,
-      hiddenSlaveIds: [6],
+      noDataCardDismissed: false, waitingLocationSources: { receiver: 'AA:7',
+        sources: { 4: { firstAt: 1000, fixed: false } }, dismissed: ['4'], paused: false, since: null },
+      diagnosticsEnabled: true,
+      // S6: 不在接收範圍 and 接收器電量低 off, 聲音 on.
+      alerts: { ...DEFAULT_ALERT_PREFERENCES, dogOutOfRange: false, receiverBattery: false, sound: true },
+      // D1 passed (「稍後再說」), D2 asked, the camera not yet.
+      onboarding: 'done',
+      askedPermissions: ['nearby', 'location', 'camera'],
     };
     await first.save(value);
     await first.close();
@@ -159,7 +172,7 @@ test('corrupt JSON reports an error and never overwrites the saved value', async
       ready: false,
       recoveryAvailable: true,
     });
-    expect(await controller.save({ mode: 'demo' })).toBe(false);
+    expect(await controller.save({ mode: 'real' })).toBe(false);
     expect(
       connection.sqlite.prepare('SELECT value FROM app_settings').get().value,
     ).toBe('{bad json');
@@ -181,12 +194,71 @@ test('the home window only accepts the confirmed presets and survives a reload',
   }
 });
 
-test('per-dog eyes are stored sorted, without repeats, and reject junk', () => {
-  expect(validateTrackingPreferences({}).hiddenSlaveIds).toEqual([]);
-  expect(validateTrackingPreferences({ hiddenSlaveIds: [6, 2, 6] }).hiddenSlaveIds)
-    .toEqual([2, 6]);
-  for (const invalid of [null, 4, ['4'], [1.5], [-1]]) {
-    expect(() => validateTrackingPreferences({ hiddenSlaveIds: invalid }))
-      .toThrow('隱藏的狗');
+test('the followed dog and hidden dogs of older versions are read and dropped (v3)', () => {
+  // v3 draws every dog and never follows one: whatever an older version
+  // stored, even a malformed value, is neither obeyed nor an error.
+  for (const stored of [{ focusSlaveId: 4, hiddenSlaveIds: [6, 2] }, { focusSlaveId: 'x', hiddenSlaveIds: null }]) {
+    const value = validateTrackingPreferences(stored);
+    expect(value).toEqual(DEFAULT_TRACKING_PREFERENCES);
+    for (const key of DROPPED_PREFERENCES) expect(value).not.toHaveProperty(key);
+  }
+});
+
+test('changes made while a write is in flight are written after it; the last choice wins', async () => {
+  const { database, controller, state } = setup();
+  await controller.load();
+  let finish;
+  database.save.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const first = controller.save({ showTrails: true });
+  await Promise.resolve();
+  // Two quick taps while the first write is still on disk.
+  const second = controller.save({ showMasterMarker: false });
+  const third = controller.save({ showTrails: false });
+  finish();
+  expect(await first).toBe(true);
+  expect(await second).toBe(true);
+  expect(await third).toBe(true);
+  expect(state().value).toMatchObject({ showMasterMarker: false, showTrails: false });
+  expect(database.save).toHaveBeenCalledTimes(2);
+});
+
+test('alert settings (S6): missing before v3 → the defaults; damaged → the defaults, nothing else lost', () => {
+  const old = { mode: 'real', showMasterMarker: true, showSlaveMarker: true, showTrails: false, windowMinutes: 10 };
+  expect(validateTrackingPreferences(old).alerts).toEqual(DEFAULT_ALERT_PREFERENCES);
+  const damaged = validateTrackingPreferences({ ...old, alerts: { sound: 'yes', dogStale: false, extra: 1 } });
+  expect(damaged.windowMinutes).toBe(10);
+  expect(damaged.alerts).toEqual({ ...DEFAULT_ALERT_PREFERENCES, dogStale: false });
+  expect(validateTrackingPreferences({ ...old, alerts: [true] }).alerts).toEqual(DEFAULT_ALERT_PREFERENCES);
+});
+
+test('the first-launch guide: nothing saved starts at D1; it is kept until passed, then stays passed', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const database = createSettingsDatabase(connection), changed = jest.fn();
+    const first = createTrackingPreferences(database, changed);
+    await first.load();
+    expect(changed.mock.calls.at(-1)[0].value.onboarding).toBe('signIn');
+    // Another setting saved before D1 is passed keeps the step.
+    await first.save({ windowMinutes: 10 });
+    await first.close();
+    const second = createTrackingPreferences(database, changed);
+    await second.load();
+    expect(changed.mock.calls.at(-1)[0].value.onboarding).toBe('signIn');
+    await second.save({ onboarding: 'done' });
+    await second.close();
+    const third = createTrackingPreferences(database, changed);
+    await third.load();
+    expect(changed.mock.calls.at(-1)[0].value).toMatchObject({ onboarding: 'done', windowMinutes: 10 });
+    // A damaged value never sends anyone back to D1.
+    expect(validateTrackingPreferences({ onboarding: 'D7' }).onboarding).toBe('done');
+    // Every step of the guide is kept as saved (中途退出下次從那步繼續).
+    for (const step of ['signIn', 'permissions', 'receiver', 'paired', 'done']) {
+      expect(validateTrackingPreferences({ onboarding: step }).onboarding).toBe(step);
+    }
+    expect(validateTrackingPreferences({ askedPermissions: ['camera', 'gps', 'nearby'] }).askedPermissions)
+      .toEqual(['nearby', 'camera']);
+    expect(validateTrackingPreferences({ askedPermissions: 'yes' }).askedPermissions).toEqual([]);
+  } finally {
+    connection.close();
   }
 });

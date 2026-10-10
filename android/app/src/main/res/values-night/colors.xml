@@ -1,0 +1,8 @@
+<resources>
+    <color name="app_background">#171211</color>
+    <color name="splash_background">#171211</color>
+    <color name="splash_icon_background">#F2867A</color>
+    <color name="ic_launcher_background">#F2867A</color>
+    <color name="dialog_surface">#302827</color>
+    <color name="dialog_outline">#887B75</color>
+</resources>

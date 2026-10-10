@@ -15,7 +15,7 @@ test('displaced markers and labels retain their dog identity and true connector 
   let renderer;
   await act(async () => {
     renderer = Renderer.create(<SeparatedDogMarkers items={items} mapRef={mapRef} revision={0}
-      ready width={600} height={600}
+      ready width={600} height={600} MarkerComponent={Marker}
       renderMarker={(item, display) => <View testID={`dog-${item.id}`} coordinate={display} onPress={item.onPress} />} />);
   });
   expect(JSON.stringify(items)).toBe(saved);

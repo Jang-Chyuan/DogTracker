@@ -24,19 +24,23 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
   }
   @ReactMethod fun live(promise: Promise) {
     promise.resolve(org.json.JSONObject(LocationTrackerService.liveJson)
-      .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status).toString())
+      .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status)
+      // The user's 位置記錄 switch (S4), on unless they switched it off.
+      .put("enabled", context.getSharedPreferences("phone_location_recording", 0).getBoolean("enabled", true))
+      .put("stoppedAt", context.getSharedPreferences("phone_location_recording", 0).getLong("stoppedAt", 0).takeIf { it > 0 } ?: org.json.JSONObject.NULL)
+      .toString())
   }
   @ReactMethod fun start(promise: Promise) {
     try {
-      check(context.lifecycleState == LifecycleState.RESUMED) { "請在 App 前景開始記錄" }
-      context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", true).apply()
+      check(context.lifecycleState == LifecycleState.RESUMED) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1137) }
+      context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", true).remove("stoppedAt").apply()
       val intent = Intent(context, LocationTrackerService::class.java)
       if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
       promise.resolve(true)
     } catch (e: Exception) { promise.reject("LOCATION_START", e.message, e) }
   }
   @ReactMethod fun stop(promise: Promise) {
-    context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", false).apply()
+    context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", false).putLong("stoppedAt", System.currentTimeMillis()).commit()
     context.stopService(Intent(context, LocationTrackerService::class.java))
     promise.resolve(true)
   }
@@ -47,15 +51,23 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
         android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
       val manager = context.getSystemService(android.location.LocationManager::class.java)
       if (!enabled || LocationTrackerService.running || context.lifecycleState != LifecycleState.RESUMED ||
-        !precise || !manager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
+        // The phone's location setting (067: fused location works without the
+        // GPS provider on its own), not the GPS provider alone.
+        !precise || !androidx.core.location.LocationManagerCompat.isLocationEnabled(manager)) {
         promise.resolve(false); return
       }
       val intent = Intent(context, LocationTrackerService::class.java)
       if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
       promise.resolve(true)
     } catch (e: Exception) {
-      LocationTrackerService.status = "自動開始失敗，請至手機位置記錄頁重試"
+      LocationTrackerService.status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1138)
       promise.reject("LOCATION_AUTO_START", e.message, e)
+    }
+  }
+  @ReactMethod fun deleteAll(promise: Promise) {
+    executor.execute {
+      try { store.deleteAll(); promise.resolve(null) }
+      catch (e: Exception) { promise.reject("LOCATION_DELETE", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1139), e) }
     }
   }
   @ReactMethod fun page(before: Double, promise: Promise) {
@@ -64,7 +76,7 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
         val result = store.page(before.toLong())
           .put("running", LocationTrackerService.running).put("status", LocationTrackerService.status)
         promise.resolve(result.toString())
-      } catch (e: Exception) { promise.reject("LOCATION_READ", "無法讀取手機定位記錄", e) }
+      } catch (e: Exception) { promise.reject("LOCATION_READ", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1140), e) }
     }
   }
   override fun invalidate() { executor.shutdown(); super.invalidate() }

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 /**
  * Nitro SQLite allows one JS connection per database name. Serialize whole App
  * sessions, including full React remounts where component refs no longer exist.
@@ -19,7 +20,7 @@ export function createDatabaseSessionQueue() {
         if (cancelled) return undefined;
         if (closeFailed) {
           throw new Error(
-            '上次 SQLite 連線未能安全關閉，請完整關閉並重新啟動 App。',
+            t("c613"),
           );
         }
         return setup();

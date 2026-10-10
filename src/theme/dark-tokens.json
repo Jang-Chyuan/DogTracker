@@ -1,0 +1,422 @@
+{
+  "_note": "DogTracker dark theme (design v3 深色模式, 2026-10-08). Same keys as src/theme/tokens.js; only colour-bearing groups. Values not listed here (type, space, radius, size, motion, haptics) are the same in both themes.",
+  "colors": {
+    "bg": "#171211",
+    "surface": "#262020",
+    "text": "#F2EBE9",
+    "textMuted": "#BAB0AD",
+    "line": "#463C3A",
+    "accent": "#F2867A",
+    "tonal": "#4F2C28",
+    "tonalText": "#FFCFC7",
+    "brandSoft": "#3A2724",
+    "ok": "#79C98F",
+    "okBg": "#1D3324",
+    "warn": "#EDB65B",
+    "warnBg": "#3A2C15",
+    "crit": "#FFB4AB",
+    "critBg": "#3A1F1D",
+    "critLine": "#F0716B",
+    "receiver": "#9DBACB",
+    "receiverRing": "#7E9DAF",
+    "phone": "#7AB1FF",
+    "phoneStale": "#79837F",
+    "iconMuted": "#8D9692",
+    "snackbar": "#302827",
+    "scrim": "rgba(0,0,0,0.60)",
+    "pressedOverlay": "rgba(255,255,255,0.10)",
+    "activityLow": "#92ACE0",
+    "activityNormal": "#7A706A",
+    "activityMissing": "#BAB0AD",
+    "activityHigh": "#F0944A",
+    "activityHighText": "#F5A86A",
+    "problemBadge": "#CF3F37",
+    "warnIcon": "#EDB65B",
+    "staleRing": "#96A09B",
+    "staleFace": "#59615E",
+    "routeFaded": "#8F9AAA",
+    "mapLabelHalo": "#171211",
+    "route1": "#FF8A78",
+    "route2": "#6FAEE0",
+    "route3": "#84C766",
+    "route4": "#C89BEA",
+    "alertBorder": "#6A3833",
+    "alertIconBg": "#4A2623",
+    "alertDetail": "#E2B9B3",
+    "rangeRing": "#93B3C6",
+    "noDataLine": "#767E7B",
+    "mapFallback": "#2A2726",
+    "skeleton": "#3D3432",
+    "skeletonHighlight": "#4A3F3D"
+  },
+  "routeColors": [
+    "#FF8A78",
+    "#6FAEE0",
+    "#84C766",
+    "#C89BEA"
+  ],
+  "settingIcon": {
+    "receiver": {
+      "bg": "#22313A",
+      "line": "#9DC3D6"
+    },
+    "phone": {
+      "bg": "#1C2B42",
+      "line": "#8AB8FF"
+    },
+    "account": {
+      "bg": "#2B2742",
+      "line": "#B9ABF2"
+    },
+    "diagnostics": {
+      "bg": "#302A29",
+      "line": "#B5BDB9"
+    },
+    "advanced": {
+      "bg": "#302A29",
+      "line": "#B5BDB9"
+    },
+    "map": {
+      "bg": "#232F1F",
+      "line": "#9CCB7A"
+    },
+    "alerts": {
+      "bg": "#3D2220",
+      "line": "#FF9C92"
+    }
+  },
+  "opacity": {
+    "mapHeaderBacking": 0.85,
+    "rangeRingStroke": 0.75,
+    "rangeRingFill": 0.1,
+    "phoneAccuracy": 0.2,
+    "cursorHalo": 0.25,
+    "routeUpcoming": 0.6,
+    "routeBeforeCursor": 0.75,
+    "routeAfterCursor": 0.6,
+    "disabled": 0.4
+  },
+  "shadow": {
+    "floating": {
+      "shadowColor": "#000000",
+      "shadowOffset": {
+        "width": 0,
+        "height": 2
+      },
+      "shadowOpacity": 0.4,
+      "shadowRadius": 8,
+      "elevation": 3
+    }
+  },
+  "darkOnly": {
+    "elevated": "#302827",
+    "mapBase": "#201C1B",
+    "grabHandle": "#8D827D",
+    "switchOff": "#5A504D",
+    "floatingOutline": "#887B75",
+    "onRoute": "#171211",
+    "onWarnIcon": "#171211",
+    "routeCasing": "#171211",
+    "staleLine": "#DCE1DE",
+    "avatarFrameMap": "#FFFFFF"
+  },
+  "dogColors": {
+    "coral": {
+      "bg": "#F2867A",
+      "line": "#FFFFFF"
+    },
+    "orange": {
+      "bg": "#E8925A",
+      "line": "#FFFFFF"
+    },
+    "green": {
+      "bg": "#4FAE8A",
+      "line": "#FFFFFF"
+    },
+    "blue": {
+      "bg": "#5E9FD3",
+      "line": "#FFFFFF"
+    },
+    "purple": {
+      "bg": "#8C7AD0",
+      "line": "#FFFFFF"
+    },
+    "cocoa": {
+      "bg": "#A47A5B",
+      "line": "#FFFFFF"
+    },
+    "blush": {
+      "bg": "#FFE4DF",
+      "line": "#3A2B2A"
+    },
+    "apricot": {
+      "bg": "#FFE9D4",
+      "line": "#3A2B2A"
+    },
+    "mint": {
+      "bg": "#DDF3EA",
+      "line": "#3A2B2A"
+    },
+    "sky": {
+      "bg": "#DCEBF7",
+      "line": "#3A2B2A"
+    },
+    "lavender": {
+      "bg": "#ECE8FA",
+      "line": "#3A2B2A"
+    },
+    "sand": {
+      "bg": "#F1E7DA",
+      "line": "#3A2B2A"
+    }
+  },
+  "dogAvatar": {
+    "staleFace": "#59615E",
+    "staleLine": "#DCE1DE",
+    "frameOnMap": "#FFFFFF",
+    "frameElsewhere": "same as the surface it sits on (surface / elevated)"
+  },
+  "mapStyle": {
+    "google": [
+      {
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "color": "#201C1B"
+          }
+        ]
+      },
+      {
+        "elementType": "labels.icon",
+        "stylers": [
+          {
+            "visibility": "off"
+          }
+        ]
+      },
+      {
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#A39A97"
+          }
+        ]
+      },
+      {
+        "elementType": "labels.text.stroke",
+        "stylers": [
+          {
+            "color": "#171211"
+          }
+        ]
+      },
+      {
+        "featureType": "administrative",
+        "elementType": "geometry.stroke",
+        "stylers": [
+          {
+            "color": "#4A403E"
+          }
+        ]
+      },
+      {
+        "featureType": "administrative.locality",
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#C9BFBC"
+          }
+        ]
+      },
+      {
+        "featureType": "poi",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "color": "#262120"
+          }
+        ]
+      },
+      {
+        "featureType": "poi",
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#8F8784"
+          }
+        ]
+      },
+      {
+        "featureType": "poi.park",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "color": "#1E2A21"
+          }
+        ]
+      },
+      {
+        "featureType": "poi.park",
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#7FA486"
+          }
+        ]
+      },
+      {
+        "featureType": "road",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "color": "#38322F"
+          }
+        ]
+      },
+      {
+        "featureType": "road",
+        "elementType": "geometry.stroke",
+        "stylers": [
+          {
+            "color": "#1A1514"
+          }
+        ]
+      },
+      {
+        "featureType": "road",
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#A39A97"
+          }
+        ]
+      },
+      {
+        "featureType": "road.highway",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "color": "#4A423E"
+          }
+        ]
+      },
+      {
+        "featureType": "road.highway",
+        "elementType": "geometry.stroke",
+        "stylers": [
+          {
+            "color": "#1A1514"
+          }
+        ]
+      },
+      {
+        "featureType": "road.highway",
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#C9BFBC"
+          }
+        ]
+      },
+      {
+        "featureType": "transit",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "color": "#2C2726"
+          }
+        ]
+      },
+      {
+        "featureType": "transit.station",
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#A39A97"
+          }
+        ]
+      },
+      {
+        "featureType": "water",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "color": "#152430"
+          }
+        ]
+      },
+      {
+        "featureType": "water",
+        "elementType": "labels.text.fill",
+        "stylers": [
+          {
+            "color": "#809BAE"
+          }
+        ]
+      },
+      {
+        "featureType": "water",
+        "elementType": "labels.text.stroke",
+        "stylers": [
+          {
+            "color": "#152430"
+          }
+        ]
+      }
+    ],
+    "noBaseMap": [
+      {
+        "stylers": [
+          {
+            "visibility": "off"
+          }
+        ]
+      },
+      {
+        "featureType": "landscape",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "visibility": "on"
+          },
+          {
+            "color": "#2A2726"
+          }
+        ]
+      },
+      {
+        "featureType": "water",
+        "elementType": "geometry",
+        "stylers": [
+          {
+            "visibility": "on"
+          },
+          {
+            "color": "#2A2726"
+          }
+        ]
+      }
+    ]
+  },
+  "android": {
+    "values-night/colors.xml": {
+      "app_background": "#171211",
+      "splash_background": "#171211",
+      "splash_icon_background": "#F2867A",
+      "ic_launcher_background": "#F2867A"
+    },
+    "AppTheme": {
+      "windowLightStatusBar": false,
+      "windowLightNavigationBar": false,
+      "forceDarkAllowed": false
+    },
+    "AppAlertDialog": {
+      "background": "#302827",
+      "colorAccent": "#FFCFC7",
+      "textColorPrimary": "#F2EBE9",
+      "textColorSecondary": "#BAB0AD"
+    },
+    "notificationColor": "#F2867A"
+  },
+  "exportPng": "always light (L16 values), whatever the phone theme"
+}

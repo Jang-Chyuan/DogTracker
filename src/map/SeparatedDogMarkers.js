@@ -1,14 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Circle, Marker, Polyline } from 'react-native-maps';
+import { Circle, Polyline } from 'react-native-maps';
 import { spreadDogIcons, placeDogLabel, labelLineEnd } from './DogLabelLayout';
 import { dogMapLabel } from '../mapHistory/DogAliases';
 
 // Native projection keeps spacing in pixels even with a rotated/tilted camera.
 // Only display coordinates change; each item retains its identity and GPS fix.
-export default function SeparatedDogMarkers({ items, mapRef, revision, width, height, ready, renderMarker }) {
+export default function SeparatedDogMarkers({ items, mapRef, revision, width, height, ready, renderMarker,
+  MarkerComponent, top = 0, bottom = 0, labelColor = '#0F172A', labelBackground = '#FFFFFF',
+  identityKey, onPlacement }) {
   const [layout, setLayout] = useState(null);
-  const key = JSON.stringify(items.map(item => [item.id, item.coordinate, item.label, item.status]));
+  const key = JSON.stringify(items.map(item => [item.id, item.coordinate, item.label, item.status, item.size]));
+  const notify = useRef(onPlacement);
+  notify.current = onPlacement;
   useEffect(() => {
     let alive = true;
     if (!ready || !width || !height || !items.length) return undefined;
@@ -16,14 +20,15 @@ export default function SeparatedDogMarkers({ items, mapRef, revision, width, he
       try {
         const map = mapRef.current;
         const origins = await Promise.all(items.map(item => map.pointForCoordinate(item.coordinate)));
-        const points = spreadDogIcons(origins);
-        const icons = points.map(p => ({ left: p.x - 24, right: p.x + 24, top: p.y - 24, bottom: p.y + 24 }));
+        const side = Math.max(48, ...items.map(item => (item.size || 40) + 8));
+        const points = spreadDogIcons(origins, side, side + 4);
+        const icons = points.map(p => ({ left: p.x - side / 2, right: p.x + side / 2, top: p.y - side / 2, bottom: p.y + side / 2 }));
         const placed = [];
         const lines = origins.map((start, i) => ({ start, end: points[i] }));
         const boxes = items.map((item, i) => {
           const labelWidth = Math.min(148, Math.max(60, dogMapLabel(item.label).length * 12 + 12));
           const box = placeDogLabel(points[i], labelWidth, item.status ? 40 : 24, placed, icons,
-            { left: 8, top: 8, right: width - 8, bottom: height - 8 }, lines);
+            { left: 8, top: top + 8, right: width - 8, bottom: height - bottom - 8 }, lines);
           placed.push(box);
           lines.push({ start: points[i], end: labelLineEnd(points[i], box) });
           return box;
@@ -35,12 +40,15 @@ export default function SeparatedDogMarkers({ items, mapRef, revision, width, he
           shifted: Math.hypot(points[i].x - origins[i].x, points[i].y - origins[i].y) > 1,
           width: boxes[i].right - boxes[i].left,
         })));
-        if (alive) setLayout({ key, result });
+        if (alive) {
+          setLayout({ key, result });
+          notify.current?.({ key: identityKey, points: Object.fromEntries(items.map((item, i) => [item.marker?.slaveId ?? item.id, points[i]])) });
+        }
       } catch { /* A pending native projection may be canceled by map teardown. */ }
     }
     arrange();
     return () => { alive = false; };
-  }, [key, mapRef, revision, width, height, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, mapRef, revision, width, height, ready, top, bottom, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return items.map((item, i) => {
     const placement = layout?.key === key ? layout.result[i] : null;
     if (!placement) return <React.Fragment key={item.id}>{renderMarker(item, item.coordinate, false)}</React.Fragment>;
@@ -54,12 +62,12 @@ export default function SeparatedDogMarkers({ items, mapRef, revision, width, he
       </React.Fragment>)}
       {placement.shifted && <Circle center={item.coordinate} radius={1} strokeColor={color} fillColor={color} zIndex={26} />}
       {renderMarker(item, placement.coordinate, true)}
-      <Marker coordinate={placement.labelCoordinate} anchor={{ x: 0.5, y: 0.5 }} zIndex={30} onPress={item.onPress}>
-        <View collapsable={false} style={[styles.label, { width: placement.width, borderColor: color }]}>
-          <Text numberOfLines={1} style={styles.text}>{dogMapLabel(item.label)}</Text>
-          {!!item.status && <Text numberOfLines={1} style={styles.text}>{item.status}</Text>}
+      <MarkerComponent coordinate={placement.labelCoordinate} anchor={{ x: 0.5, y: 0.5 }} zIndex={45} onPress={item.onPress}>
+        <View collapsable={false} style={[styles.label, { width: placement.width, borderColor: color, backgroundColor: labelBackground }]}>
+          <Text numberOfLines={1} style={[styles.text, { color: labelColor }]}>{dogMapLabel(item.label)}</Text>
+          {!!item.status && <Text numberOfLines={1} style={[styles.text, { color: labelColor }]}>{item.status}</Text>}
         </View>
-      </Marker>
+      </MarkerComponent>
     </React.Fragment>;
   });
 }

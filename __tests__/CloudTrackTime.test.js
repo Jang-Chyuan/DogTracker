@@ -3,8 +3,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
 import { cloudTrackTime, repairCloudTrackTimes } from '../src/cloud/CloudTrackTime';
-import { createHistoryDatabase, HISTORY_DEFAULTS } from '../src/mapHistory/HistoryDatabase';
-import { serializeHistory } from '../src/mapHistory/HistoryExport';
+import { createHistoryDatabase, HISTORY_DAY_AFTER_MS, HISTORY_DAY_CONTEXT_MS } from '../src/mapHistory/HistoryDatabase';
 import { downloadCloudHistory } from '../src/cloud/CloudDownload';
 
 const base = Date.parse('2026-09-23T03:00:00Z');
@@ -15,9 +14,12 @@ const event = (id, arrival, capture, latitude = 25) => ({
   upload_source: capture == null ? 'wifi' : 'phone', master_id: 5, slave_id: 8, seq: id,
   payload: { lat: latitude * 1000000, lon: 121000000, speed: 0, slaveId: 8 },
 });
-const prefs = { ...HISTORY_DEFAULTS, source: 'cloud', phone: false, masters: [5], slaves: [8] };
+// A day read whose rows cover [since, until) exactly (historyDayRows reads
+// HISTORY_DAY_CONTEXT_MS before and HISTORY_DAY_AFTER_MS after the day).
+const window = (since, until) => ({ slaveId: 8, owner: 'a',
+  start: since + HISTORY_DAY_CONTEXT_MS, end: until - HISTORY_DAY_AFTER_MS });
 
-test.each([false, true])('phone history, smoothing and export retain numeric time comparisons (Android string bindings: %s)', async androidBindings => {
+test.each([false, true])('the day read places cloud rows by track time with numeric comparisons (Android string bindings: %s)', async androidBindings => {
   const db = createMemoryConnection();
   if (androidBindings) {
     const execute = db.executeAsync;
@@ -38,25 +40,19 @@ test.each([false, true])('phone history, smoothing and export retain numeric tim
     expect(query.or).toHaveBeenCalledWith(expect.stringContaining(iso(1202)));
     expect((await cloud.loadSyncState('a', 5)).through_at).toBe(iso(1300));
     const history = createHistoryDatabase(db);
-    const bounds = { since: base, until: base + 30000 };
-    const drawn = await history.read(prefs, 'a', base + 1400000, () => true, false, bounds);
-    expect(drawn.clients[0].times).toEqual([base, base + 10000, base + 20000]);
-    expect(drawn.clients[0].latest.latitude).toBeCloseTo(25.003, 8);
-    const exported = await history.read(prefs, 'a', 0, () => true, true, bounds);
-    expect(exported.clients[0].rows[2].latitude).toBe(drawn.clients[0].latest.latitude);
-    expect(serializeHistory('gpx', exported)).toContain(`<time>${iso(20)}</time>`);
-    expect(serializeHistory('csv', exported)).toContain(iso(0));
-    expect(serializeHistory('csv', exported)).not.toContain(iso(1200));
-    expect((await history.read(prefs, 'a', 0, () => true, true,
-      { since: base + 1199000, until: base + 1300000 })).client).toHaveLength(0);
+    // Moved from the retired range read (064, audit D06/T06).
+    const day = await history.historyDayRows(window(base, base + 30000));
+    expect(day.rows.map(row => row.time).sort((x, y) => x - y)).toEqual([base, base + 10000, base + 20000]);
+    expect(day.rows.find(row => row.time === base + 20000).latitude).toBeCloseTo(25.006, 8); // the raw fix
+    expect((await history.historyDayRows(window(base + 1199000, base + 1300000))).rows).toHaveLength(0);
     expect((await cloud.listHistory('a'))[0].received_at).toBe(base + 1202000);
     await cloud.savePage('a', [mapCloudTelemetry(event(4, 25, null, 25.009))]);
-    const mixed = await history.read(prefs, 'a', 0, () => true, true, bounds);
-    expect(mixed.client[3].time).toBe(base + 25000);
+    const mixed = await history.historyDayRows(window(base, base + 30000));
+    expect(mixed.rows.map(row => row.time).sort((x, y) => x - y)).toEqual([base, base + 10000, base + 20000, base + 25000]);
   } finally { db.close(); }
 });
 
-test('legacy metadata repair preserves raw rows/checkpoints, isolates owners, invalidates smoothing and survives restart', async () => {
+test('legacy metadata repair preserves raw rows/checkpoints, isolates owners and survives restart', async () => {
   const db = createMemoryConnection();
   try {
     await createDogDatabase(db).initialize();
@@ -65,8 +61,8 @@ test('legacy metadata repair preserves raw rows/checkpoints, isolates owners, in
     await cloud.savePage('a', [original], { masterId: 5, throughAt: iso(1300) });
     await cloud.savePage('b', [original]);
     await db.executeAsync(`UPDATE supabase_dog_status SET track_at=NULL, track_time_version=NULL,
-      upload_source=NULL, phone_received_at=NULL, display_version=1, display_latitude=99`);
-    await cloud.initialize();
+      upload_source=NULL, phone_received_at=NULL`);
+    await createCloudDatabase({ ...db }).initialize();
     expect((await cloud.pendingTrackTimes('a')).map(r => r.event_id)).toEqual([original.event_id]);
     const before = (await cloud.listHistory('a'))[0];
     const query = { select: jest.fn(() => query), in: jest.fn(() => query),
@@ -74,7 +70,7 @@ test('legacy metadata repair preserves raw rows/checkpoints, isolates owners, in
     await repairCloudTrackTimes({ client: { from: () => query }, database: cloud,
       owner: 'a', check: () => {}, onChange: jest.fn() });
     const after = (await cloud.listHistory('a'))[0];
-    expect(after).toMatchObject({ track_at: base + 20000, display_version: null,
+    expect(after).toMatchObject({ track_at: base + 20000,
       raw_payload: before.raw_payload, received_at: before.received_at, slave_lat: before.slave_lat });
     expect((await cloud.loadSyncState('a', 5)).through_at).toBe(iso(1300));
     expect(await cloud.pendingTrackTimes('a')).toHaveLength(0);

@@ -15,18 +15,24 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           add(TrackingPlatformPackage())
+          add(AlertNotificationsPackage())
           // Packages that cannot be autolinked yet can be added manually here, for example:
           add(BleBackgroundPackage())
           add(HistoryExportPackage())
           add(com.dogtracker.location.LocationTrackerPackage())
           add(QrScannerPackage())
           add(com.dogtracker.cloud.CloudSyncPackage())
+          add(AppSplashPackage())
+          add(PlaceLookupPackage())
         },
     )
   }
 
   override fun onCreate() {
     super.onCreate()
+    NativeCopy.install(resources)
+    HistoryExportCleanup.start(this)
+    NotificationChannels.create(this)
     loadReactNative(this)
   }
 }

@@ -2,7 +2,7 @@ import { usbPresent } from '../models/UsbPresent';
 import { openTrackingDatabase } from './TrackingDatabaseConnection';
 import { NativeModules, Platform } from 'react-native';
 import { bleDisplayRows } from '../ble/BleDisplayCoordinates';
-import { withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
+import { withConnectionLock } from './connectionLock';
 
 const MAX_STATUS_RECORDS_PER_SLAVE = 10000;
 const CLEANUP_INTERVAL_INSERTS = 100;
@@ -47,7 +47,7 @@ export function createDogDatabase(connection) {
   return {
     displayRows: records => bleDisplayRows(db, records),
     initialize() {
-      return withCloudDisplayLock(db, async () => {
+      return withConnectionLock(db, async () => {
       // Android queries and writes share DogStatusStore's SQLite engine.
       // Other platforms retain the Nitro fallback and upstream retention.
       await db.executeAsync('PRAGMA busy_timeout=5000');
@@ -144,6 +144,18 @@ export function createDogDatabase(connection) {
         );
       }
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)');
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_dog_status_slave_latest ON dog_status(slave_id, received_at DESC, id DESC)');
+      await db.executeAsync(`CREATE INDEX IF NOT EXISTS idx_dog_status_slave_fix
+        ON dog_status(slave_id, received_at DESC, id DESC)
+        WHERE slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)`);
+      await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_ble_display_stream ON dog_status(master_id, slave_id, received_at, id)');
+      // Position context is newest insertion id, independent of reception time.
+      await db.executeAsync(`CREATE INDEX IF NOT EXISTS idx_dog_status_master_position
+        ON dog_status(master_id, id DESC)
+        WHERE master_lat BETWEEN -90 AND 90 AND master_lon BETWEEN -180 AND 180`);
+      await db.executeAsync(`CREATE INDEX IF NOT EXISTS idx_dog_status_slave_position
+        ON dog_status(slave_id, id DESC)
+        WHERE slave_lat BETWEEN -90 AND 90 AND slave_lon BETWEEN -180 AND 180`);
       if (!native?.initializeDatabase) await cleanupOldRecords();
       });
     },
@@ -283,14 +295,20 @@ export function createDogDatabase(connection) {
         ) {
           throw new RangeError('Invalid dog_status time cursor');
         }
+        // Split equal-time ties and later/earlier times into ordered range
+        // seeks. Compatible with Android 7 SQLite (no row-value comparisons).
         const result = await db.executeAsync(
-          `SELECT *
-           FROM dog_status
-           WHERE received_at <= ?
-             AND (received_at > ? OR (received_at = ? AND id > ?))
-           ORDER BY received_at ASC, id ASC
-           LIMIT ?`,
-          [end, receivedAt, receivedAt, Math.floor(id), safeLimit],
+          `SELECT * FROM (
+             SELECT * FROM dog_status
+             WHERE received_at = ? AND id > ? AND received_at <= ?
+             ORDER BY id ASC LIMIT ?
+           ) UNION ALL SELECT * FROM (
+             SELECT * FROM dog_status
+             WHERE received_at > ? AND received_at <= ?
+             ORDER BY received_at ASC, id ASC LIMIT ?
+           ) ORDER BY received_at ASC, id ASC LIMIT ?`,
+          [receivedAt, Math.floor(id), end, safeLimit,
+            receivedAt, end, safeLimit, safeLimit],
         );
         return rowsFromResult(result);
       }
@@ -338,14 +356,20 @@ export function createDogDatabase(connection) {
         ) {
           throw new RangeError('Invalid dog_status latest time cursor');
         }
+        // Split equal-time ties and later/earlier times into ordered range
+        // seeks. Compatible with Android 7 SQLite (no row-value comparisons).
         const result = await db.executeAsync(
-          `SELECT *
-           FROM dog_status
-           WHERE received_at >= ?
-             AND (received_at < ? OR (received_at = ? AND id < ?))
-           ORDER BY received_at DESC, id DESC
-           LIMIT ?`,
-          [start, receivedAt, receivedAt, Math.floor(id), safeLimit],
+          `SELECT * FROM (
+             SELECT * FROM dog_status
+             WHERE received_at = ? AND id < ? AND received_at >= ?
+             ORDER BY id DESC LIMIT ?
+           ) UNION ALL SELECT * FROM (
+             SELECT * FROM dog_status
+             WHERE received_at >= ? AND received_at < ?
+             ORDER BY received_at DESC, id DESC LIMIT ?
+           ) ORDER BY received_at DESC, id DESC LIMIT ?`,
+          [receivedAt, Math.floor(id), start, safeLimit,
+            start, receivedAt, safeLimit, safeLimit],
         );
         return rowsFromResult(result);
       }

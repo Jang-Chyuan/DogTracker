@@ -1,19 +1,20 @@
+import { t } from '../i18n';
 import { usbPresent } from '../models/UsbPresent';
 
 function number(data, key, min, max, scale = 1) {
   const value = data[key];
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`缺少或無效欄位：${key}`);
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(t("c603", { key: key }));
   const result = Math.round(value * scale);
-  if (result < min || result > max || (scale === 1 && !Number.isInteger(value))) throw new Error(`欄位超出範圍：${key}`);
+  if (result < min || result > max || (scale === 1 && !Number.isInteger(value))) throw new Error(t("c604", { key: key }));
   return result;
 }
 export function bleUploadPayload(row, phoneId) {
   const d = JSON.parse(row.payload_json);
-  if (d.type !== 3) throw new Error('只接受 Dog Status TYPE=3');
+  if (d.type !== 3) throw new Error(t("c600"));
   const master = number(d, 'mid', 1, 65535), slave = number(d, 'sid', 1, 255);
-  if (master !== row.master_id) throw new Error('Master 不一致');
+  if (master !== row.master_id) throw new Error(t("c602"));
   const signal = key => {
-    if (typeof d[key] !== 'number' || !Number.isFinite(d[key]) || Math.abs(d[key]) > 300) throw new Error(`訊號欄位無效：${key}`);
+    if (typeof d[key] !== 'number' || !Number.isFinite(d[key]) || Math.abs(d[key]) > 300) throw new Error(t("c601", { key: key }));
     return d[key];
   };
   const usb = usbPresent(d.usbPresent ?? d.usb_present);

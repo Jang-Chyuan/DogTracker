@@ -1,8 +1,13 @@
+import { t } from '../i18n';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
-import { withCloudDisplayLock } from './CloudDisplayCoordinates';
+import { withConnectionLock } from '../database/connectionLock';
 import { cloudTrackTime } from './CloudTrackTime';
-import { readActivityHistory } from './ActivityHistory';
+import { readActivityEarliest, readActivityPeriod } from '../activity/ActivityData';
+import { readDogCardRows } from '../activity/DogCardReadings';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
+import { HOLD_CONFIG } from '../placement/IndoorHold';
+import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
+import { optimizeDatabase } from '../database/DatabaseStatistics';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -28,16 +33,25 @@ const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
   WHERE id IN (SELECT id FROM supabase_dog_status
     WHERE raw_payload IS NOT NULL AND received_at < ? ORDER BY received_at LIMIT 1000)`;
 
+// Enumerate dogs by seeking to the next indexed id, then seek each newest row.
+// DISTINCT still walks the whole account even when its output has only six dogs.
 export function latestCloudStatusQuery(validFix) {
   const fix = validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : '';
   return `SELECT slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
     received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present, 'cloud' AS source
     FROM supabase_dog_status WHERE id IN (
       SELECT (SELECT id FROM supabase_dog_status AS newest
-        WHERE newest.owner_user_id=? AND newest.slave_id=devices.slave_id ${fix}
-          AND CAST(COALESCE(track_at, received_at) AS INTEGER)>=?
+        WHERE newest.owner_user_id=devices.owner AND newest.slave_id=devices.slave_id ${fix}
+          AND CAST(COALESCE(track_at, received_at) AS INTEGER)>=devices.since
         ORDER BY CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC LIMIT 1)
-      FROM (SELECT DISTINCT slave_id FROM supabase_dog_status WHERE owner_user_id=?) AS devices)
+      FROM (
+        WITH RECURSIVE dogs(slave_id, owner, since) AS (
+          SELECT MIN(slave_id), ?, ? FROM supabase_dog_status WHERE owner_user_id=?
+          UNION ALL
+          SELECT (SELECT MIN(slave_id) FROM supabase_dog_status
+            WHERE owner_user_id=dogs.owner AND slave_id>dogs.slave_id), owner, since
+          FROM dogs WHERE slave_id IS NOT NULL)
+        SELECT * FROM dogs WHERE slave_id IS NOT NULL) AS devices)
     ORDER BY slave_id`;
 }
 
@@ -45,9 +59,11 @@ export function latestCloudStatusQuery(validFix) {
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initialize', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
-  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityHistory'];
+  'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
+const initialization = new WeakMap();
+
 export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
   const cap = Number.isInteger(maxRows) && maxRows > 0 ? maxRows : CLOUD_MAX_ROWS;
   const trimHistory = `DELETE FROM supabase_dog_status WHERE id IN (
@@ -55,20 +71,43 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET ${cap}
   )`;
   let pagesSaved = 0;
+  // Bumped when stored rows move in time, so the indoor hold replays them.
+  let trackRepairs = 0;
   const rows = result => result.results || result.rows?._array || [];
   const requireOwner = owner => {
-    if (!owner) throw new Error('請先登入');
+    if (!owner) throw new Error(t("c572"));
   };
   return {
+    async historyDownloadStates(owner, ids) {
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      const list = Array.isArray(ids) ? ids : [ids];
+      if (!list.length) return [];
+      return rows(await connection.executeAsync(`SELECT slave_id,day,complete FROM history_download_state WHERE owner=? AND slave_id IN (${list.map(() => '?').join(',')})`, [owner, ...list]));
+    },
+    async setHistoryDownloadState(owner, slaveId, day, complete) {
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      await connection.executeAsync('INSERT OR REPLACE INTO history_download_state(owner,slave_id,day,complete) VALUES(?,?,?,?)', [owner, slaveId, day, complete ? 1 : 0]);
+    },
+    async loadRangeState(owner) {
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS receiver_range_state (scope TEXT PRIMARY KEY, value TEXT NOT NULL)');
+      const saved = rows(await connection.executeAsync('SELECT value FROM receiver_range_state WHERE scope=?', [owner ?? 'local']))[0]?.value;
+      return saved ? JSON.parse(saved) : {};
+    },
+    async saveRangeState(owner, ranges) {
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS receiver_range_state (scope TEXT PRIMARY KEY, value TEXT NOT NULL)');
+      await connection.executeAsync('INSERT OR REPLACE INTO receiver_range_state(scope,value) VALUES(?,?)', [owner ?? 'local', JSON.stringify(ranges)]);
+    },
     initialize() {
-      return withCloudDisplayLock(connection, async () => {
+      // Share in-flight and completed migration work among wrappers of this
+      // open connection. Failed opens remain retryable; a new handle migrates again.
+      if (initialization.has(connection)) return initialization.get(connection);
+      const ready = withConnectionLock(connection, async () => {
       const columns = new Set(rows(await connection.executeAsync(
         'PRAGMA table_info(supabase_dog_status)',
       )).map(column => column.name));
       for (const [name, type] of [
         ['owner_user_id', 'TEXT'], ['event_id', 'TEXT'],
         ['downloaded_at', 'INTEGER'], ['remote_received_at', 'TEXT'],
-        ['display_latitude', 'REAL'], ['display_longitude', 'REAL'], ['display_version', 'INTEGER'],
         ['track_at', 'INTEGER'], ['upload_source', 'TEXT'], ['phone_received_at', 'INTEGER'],
         ['track_time_version', 'INTEGER'], ['usb_present', 'INTEGER'],
       ]) {
@@ -78,8 +117,12 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       }
       // Restartable migration. Old downloads omitted phone metadata entirely;
       // fill safe fallback times now and repair metadata in bounded network pages.
-      await connection.executeAsync(`UPDATE supabase_dog_status SET track_at=received_at,
-        display_latitude=NULL, display_longitude=NULL, display_version=NULL WHERE track_at IS NULL`);
+      // The display-coordinate cache (display_latitude, display_longitude,
+      // display_version) is retired (2026-10-09): nothing read it after the
+      // range read went (064). Installs that had it keep the columns, unused;
+      // new installs never add them.
+      await connection.executeAsync(`UPDATE supabase_dog_status SET track_at=received_at
+        WHERE track_at IS NULL`);
       await connection.executeAsync('DROP INDEX IF EXISTS idx_cloud_track_stream');
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_stream_numeric
         ON supabase_dog_status(owner_user_id, master_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER), id)`);
@@ -101,6 +144,8 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         ON supabase_dog_status(owner_user_id, received_at DESC, id DESC)`);
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_master_received
         ON supabase_dog_status(owner_user_id, master_id, received_at)`);
+      // Per-stream order (owner, Master, Slave, time); its name is from the
+      // retired display cache, kept so an upgrade does not build it twice.
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_display_stream
         ON supabase_dog_status(owner_user_id, master_id, slave_id, received_at, id)`);
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_state (
@@ -118,7 +163,12 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       // Also apply retention to databases downloaded by older app versions.
       await connection.executeAsync(trimHistory);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
+      // All cloud indexes/migrations exist before statistics are collected.
+      await optimizeDatabase(connection);
       });
+      initialization.set(connection, ready);
+      ready.catch(() => initialization.delete(connection));
+      return ready;
     },
     async loadSyncState(owner, masterId) {
       requireOwner(owner);
@@ -126,6 +176,28 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         'SELECT * FROM cloud_sync_state WHERE owner_user_id = ? AND master_id = ?',
         [owner, masterId],
       ))[0] || null;
+    },
+    /**
+     * 最後上傳成功…（經 Wi-Fi） per receiver (S2/S3, 070): the newest row each
+     * Master sent to Supabase through its own Wi-Fi, as the stored copy shows
+     * it → { [masterId]: receivedAt }.
+     *
+     * Read over the whole stored table rather than over each dog's newest row:
+     * once this phone has uploaded something newer for every dog of a Master,
+     * all those newest rows are 'phone' and the receiver's own Wi-Fi history
+     * would look as if it had never uploaded at all.
+     *
+     * `upload_source` is not indexed, so this walks the account's rows. The
+     * caller refreshes after successful downloads, route changes and return
+     * to the foreground — never on the upload pass.
+     */
+    async wifiUploads(owner) {
+      requireOwner(owner);
+      return Object.fromEntries(rows(await connection.executeAsync(
+        `SELECT master_id, MAX(received_at) time FROM supabase_dog_status
+          WHERE owner_user_id=? AND upload_source='wifi' GROUP BY master_id`, [owner]))
+        .map(row => [Number(row.master_id), Number(row.time)])
+        .filter(([master, time]) => Number.isInteger(master) && Number.isFinite(time) && time > 0));
     },
     async pendingTrackTimes(owner) {
       requireOwner(owner);
@@ -135,17 +207,11 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     },
     async repairTrackTimes(owner, metadata, requested) {
       requireOwner(owner);
-      return withCloudDisplayLock(connection, async () => {
+      return withConnectionLock(connection, async () => {
         const commands = [];
         for (const item of metadata) {
           const time = cloudTrackTime(item);
           if (!Number.isFinite(time.track_at) || !requested.includes(item.event_id)) continue;
-          // Both old and new neighbours can change when a row moves in time.
-          commands.push({ query: `UPDATE supabase_dog_status SET display_latitude=NULL,
-            display_longitude=NULL, display_version=NULL WHERE owner_user_id=?
-            AND (master_id,slave_id) IN (SELECT master_id,slave_id FROM supabase_dog_status
-              WHERE owner_user_id=? AND event_id=? AND track_at IS NOT ?)`,
-          params: [owner, owner, item.event_id, time.track_at] });
           commands.push({ query: `UPDATE supabase_dog_status SET track_at=?, upload_source=?,
             phone_received_at=?, track_time_version=1 WHERE owner_user_id=? AND event_id=?`,
           params: [time.track_at, time.upload_source, time.phone_received_at, owner, item.event_id] });
@@ -156,10 +222,11 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           SET track_time_version=-1 WHERE owner_user_id=? AND event_id=? AND track_time_version IS NULL`,
         params: [owner, id] });
         await connection.executeBatchAsync(commands);
+        if (metadata.length) trackRepairs += 1;
       });
     },
     async savePage(owner, records, checkpoint = null) {
-      return withCloudDisplayLock(connection, async () => {
+      return withConnectionLock(connection, async () => {
         requireOwner(owner);
         if (!records.length && !checkpoint) return;
         const columns = [
@@ -177,23 +244,13 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
           WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status
             WHERE owner_user_id = ? AND event_id = ?)`;
         const now = Date.now();
-        const commands = records.flatMap(record => ([{
-          // A late insertion changes subsequent rolling windows. Invalidate in
-          // the same transaction; a duplicate download leaves saved coordinates alone.
-          query: `UPDATE supabase_dog_status SET display_latitude=NULL, display_longitude=NULL, display_version=NULL
-            WHERE id IN (SELECT id FROM supabase_dog_status
-              WHERE owner_user_id=? AND master_id=? AND slave_id=? AND track_at>?
-              ORDER BY track_at, id LIMIT 2)
-            AND display_version IS NOT NULL AND NOT EXISTS
-            (SELECT 1 FROM supabase_dog_status WHERE owner_user_id=? AND event_id=?)`,
-          params: [owner, record.master_id ?? null, record.slave_id ?? null, record.track_at ?? record.received_at ?? null, owner, record.event_id ?? null],
-        }, {
+        const commands = records.map(record => ({
           query,
           params: [owner, now, ...columns.map(key => key === 'track_at' ? record.track_at ?? record.received_at : record[key] ?? null), owner, record.event_id],
-        }]));
+        }));
         if (checkpoint) {
           if (!Number.isInteger(checkpoint.masterId) || !Number.isFinite(Date.parse(checkpoint.throughAt))) {
-            throw new Error('同步進度格式不正確');
+            throw new Error(t("c574"));
           }
           commands.push({
             query: `INSERT OR REPLACE INTO cloud_sync_state
@@ -221,7 +278,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
     async saveBucket(owner, masterId, bucketStart, cloudCount) {
       requireOwner(owner);
       if (![masterId, bucketStart, cloudCount].every(Number.isInteger)) {
-        throw new Error('核對紀錄格式不正確');
+        throw new Error(t("c573"));
       }
       // Keep two days so a phone that was away for a day still has the previous
       // verification to compare against; older hours are outside the window.
@@ -240,10 +297,7 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         AND received_at >= ? AND received_at < ?`, [owner, masterId, fromMs, toMs]));
       return Number(result[0]?.count || 0);
     },
-    // Newest downloaded row per dog, whichever Master reported it. Rows without
-    // a position cannot place a marker, so they are not candidates; 0,0 is what
-    // the hardware sends with no GPS fix. SQLite fills the bare columns from the
-    // row that matched MAX(received_at).
+    // Newest downloaded fix per dog, whichever Master reported it; 0,0 is no fix.
     /**
      * Every downloaded position of every dog since a moment, for the home map's
      * path: the live feed only holds the pair this phone is connected to, so
@@ -264,23 +318,37 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
       requireOwner(owner);
       return rows(await connection.executeAsync(latestCloudStatusQuery(true), [owner, sinceMs, owner]));
     },
-    activityHistory: (owner, slaveId, now) => readActivityHistory(connection, owner, slaveId, now),
+    // The activity page (A4): one dog's readings of a period, and its first.
+    activityPeriod: (owner, slaveId, period) => readActivityPeriod(connection, owner, slaveId, period),
+    activityEarliest: (owner, slaveId) => readActivityEarliest(connection, owner, slaveId),
+    // The open dog card's activity and battery readings (DogCardReadings).
+    dogCardRows: (owner, slaveId, since) => readDogCardRows(connection, owner, slaveId, since),
+    // Signed out (no owner) only this phone's own BLE rows: signing in is
+    // optional, and the receiver's dogs still need their latest packets.
     async latestStatusRows(owner, sinceMs, now = Date.now()) {
-      requireOwner(owner);
-      const cloud = rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner]));
+      const cloud = owner
+        ? rows(await connection.executeAsync(latestCloudStatusQuery(false), [owner, sinceMs, owner])) : [];
       // Read both the latest packet and last valid fix per local dog. No raw
       // history pages are retained in React, including after a restart.
-      const local = rows(await connection.executeAsync(`SELECT slave_id, master_id,
-        MAX(received_at) AS track_at, received_at, slave_lat, slave_lon,
+      const pickLocal = validFix => `SELECT slave_id, master_id,
+        received_at AS track_at, received_at, slave_lat, slave_lon,
+        (SELECT MIN(first.received_at) FROM dog_status first
+          WHERE first.master_id = dog_status.master_id AND first.slave_id = dog_status.slave_id) AS first_received_at,
         speed_kmh, battery_percentage, battery_valid, usb_present, distance_meters, 'ble' AS source
-        FROM dog_status WHERE received_at >= ? GROUP BY slave_id
-        UNION ALL
-        SELECT slave_id, master_id, MAX(received_at) AS track_at, received_at,
-        slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present,
-        distance_meters, 'ble' AS source
-        FROM dog_status WHERE received_at >= ? AND slave_lat IS NOT NULL
-          AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
-        GROUP BY slave_id`, [sinceMs, sinceMs]));
+        FROM dog_status WHERE id IN (
+          WITH RECURSIVE dogs(slave_id) AS (
+            SELECT MIN(slave_id) FROM dog_status
+            UNION ALL SELECT (SELECT MIN(slave_id) FROM dog_status WHERE slave_id>dogs.slave_id)
+              FROM dogs WHERE slave_id IS NOT NULL),
+          devices(slave_id) AS (
+            SELECT slave_id FROM dogs WHERE slave_id IS NOT NULL
+            UNION ALL SELECT NULL WHERE EXISTS (SELECT 1 FROM dog_status WHERE slave_id IS NULL))
+          SELECT (SELECT id FROM dog_status newest
+            WHERE newest.slave_id IS devices.slave_id AND received_at>=?
+              ${validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : ''}
+            ORDER BY received_at DESC, id DESC LIMIT 1) FROM devices)`;
+      const local = rows(await connection.executeAsync(
+        `${pickLocal(false)} UNION ALL ${pickLocal(true)}`, [sinceMs, sinceMs]));
       return Promise.all([...local, ...cloud].map(async row => {
         const isCloud = row.source === 'cloud';
         const table = isCloud ? 'supabase_dog_status' : 'dog_status';
@@ -302,6 +370,84 @@ export function createCloudDatabase(connection, { maxRows = CLOUD_MAX_ROWS } = {
         [...pair, windowStart, windowStart + ENVIRONMENT_WINDOW_MS, ...account]));
         return { ...row, environment: predictEnvironment(window) };
       }));
+    },
+    /**
+     * Rows for the indoor hold, from both the BLE table and this account's
+     * cloud copy. A cold start (no cursors) reads the last lookback window and
+     * each dog's last good fixes before it; later calls read only rows added
+     * since the cursors, so a poll stays small whatever the retention holds.
+     */
+    async holdRows(owner, sinceMs, cursors = null, quality = HOLD_CONFIG) {
+      // Rows already read may have moved in time: start over from the window.
+      const reset = !!cursors && cursors.repairs !== trackRepairs;
+      if (reset) cursors = null;
+      const shared = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
+        satellites, hdop, rssi, snr, usb_present`;
+      const read = async (table, clock, account) => {
+        // Only this phone's own rows know where its receiver was (the receiver
+        // range is judged against that); the cloud copy has no such column.
+        const columns = account ? shared
+          : `${shared}, master_lat AS master_latitude, master_lon AS master_longitude`;
+        // A cursor is insertion order, independent of corrected track time.
+        // Unary + keeps SQLite on the rowid seek rather than an owner/time scan.
+        const accountFilter = account ? `${cursors ? '+' : ''}owner_user_id = ? AND ` : '';
+        const params = account ? [owner] : [];
+        const fresh = rows(await connection.executeAsync(cursors
+          ? `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${accountFilter}id > ? ORDER BY id LIMIT 20000`
+          : `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${accountFilter}${clock} >= ? ORDER BY id LIMIT 20000`,
+        [...params, cursors ? cursors[table] ?? 0 : sinceMs]));
+        let seeds = [];
+        const older = [];
+        if (!cursors) {
+          // A dog silent for longer than the window (charging, out of range)
+          // replays its own last half hour instead, so it keeps its hold.
+          const heard = new Set(fresh.map(row => row.slave_id));
+          const silent = rows(await connection.executeAsync(`SELECT slave_id, MAX(${clock}) AS newest
+            FROM ${table} WHERE ${accountFilter}${clock} < ? GROUP BY slave_id`,
+          [...params, sinceMs])).filter(row => !heard.has(row.slave_id));
+          const windows = new Map();
+          for (const row of silent) {
+            const from = Number(row.newest) - HOLD_LOOKBACK_MS;
+            windows.set(row.slave_id, from);
+            older.push(...rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time FROM ${table}
+              WHERE ${accountFilter}slave_id = ? AND ${clock} >= ? AND ${clock} < ? ORDER BY ${clock}, id LIMIT 20000`,
+            [...params, row.slave_id, from, sinceMs])));
+          }
+          // Indoors for hours or days (charging in a kennel): the anchor is the
+          // last good fixes before the replayed window, however long ago.
+          for (const slave of [...heard, ...windows.keys()]) {
+            const until = windows.get(slave) ?? sinceMs;
+            seeds = seeds.concat(rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time
+              FROM ${table} WHERE ${accountFilter}slave_id = ? AND ${clock} < ?
+                AND satellites >= ? AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL
+                AND NOT (slave_lat = 0 AND slave_lon = 0)
+              ORDER BY ${clock} DESC LIMIT 40`,
+            [...params, slave, until, quality.goodMinSatellites])));
+          }
+        }
+        // Ordered by id: the last row carries the cursor (no spread over 20000 ids).
+        const last = fresh.length ? Number(fresh[fresh.length - 1].id) : cursors?.[table] ?? 0;
+        if (!cursors && !fresh.length) {
+          const top = rows(await connection.executeAsync(`SELECT MAX(id) AS id FROM ${table}
+            ${account ? 'WHERE owner_user_id = ?' : ''}`, params))[0]?.id;
+          return { fresh: older, seeds, last: Number(top) || 0 };
+        }
+        return { fresh: [...older, ...fresh], seeds, last };
+      };
+      const tag = (batch, source) => ({ ...batch, fresh: batch.fresh.map(row => ({ ...row, source })),
+        seeds: batch.seeds.map(row => ({ ...row, source })) });
+      const ble = tag(await read('dog_status', 'received_at', false), 'ble');
+      const cloud = owner
+        ? tag(await read('supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', true), 'cloud')
+        : { fresh: [], seeds: [], last: 0 };
+      return {
+        rows: [...ble.fresh, ...cloud.fresh],
+        seeds: [...ble.seeds, ...cloud.seeds],
+        cursors: { dog_status: ble.last, supabase_dog_status: cloud.last, repairs: trackRepairs },
+        reset,
+      };
     },
     async listHistory(owner, offset = 0) {
       requireOwner(owner);

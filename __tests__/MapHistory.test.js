@@ -1,12 +1,8 @@
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
-// A history read now returns one client track per selected dog.
-const trackOf = (data, source) =>
-  (source === 'phone' ? data.phone : data.clients[0]);
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createHistoryDatabase, expireHistory, HISTORY_DATABASE_METHODS, HISTORY_DEFAULTS, historyGeometry, validateHistory } from '../src/mapHistory/HistoryDatabase';
-import { historyWindow, parseHistoryRange } from '../src/mapHistory/HistoryTime';
-import { serializeHistory } from '../src/mapHistory/HistoryExport';
+import { createHistoryDatabase, HISTORY_DATABASE_METHODS, HISTORY_DAY_AFTER_MS, HISTORY_DAY_CONTEXT_MS, HISTORY_DEFAULTS, validateHistory } from '../src/mapHistory/HistoryDatabase';
+import { parseHistoryRange } from '../src/mapHistory/HistoryTime';
 import { dogHistoryLabel } from '../src/mapHistory/DogAliases';
 
 test('dog aliases persist locally and clearing one restores its device label', async () => {
@@ -24,56 +20,10 @@ test('dog aliases persist locally and clearing one restores its device label', a
   } finally { connection.close(); }
 });
 
-test('rolling cutoff preserves a straight route after its simplified start expires', () => {
-  const points = Array.from({ length: 61 }, (_, i) => ({ time: i * 1000, latitude: 25, longitude: 121 + i * 0.0001 }));
-  const track = historyGeometry(points);
-  expect(track.segments[0]).toHaveLength(2);
-  const data = { since: 0, until: 60001, phone: track, clients: [{ ...track, slaveId: 4 }] };
-  const clipped = expireHistory(data, { hours: 1, timeMode: 'recent' }, 3600001);
-  for (const source of ['phone', 'client']) {
-    expect(trackOf(clipped, source).count).toBe(60);
-    expect(trackOf(clipped, source).segments[0]).toHaveLength(2);
-    expect(trackOf(clipped, source).segments[0][0].time).toBe(1000);
-    expect(trackOf(clipped, source).segments[0][1].time).toBe(60000);
-  }
-  const again = expireHistory(clipped, { hours: 1, timeMode: 'recent' }, 3605001);
-  expect(again.phone.segments[0][0].time).toBe(6000);
-  expect(track.segments[0][0].time).toBe(0);
-});
-
-test('expiry preserves invalid-fix and session breaks before simplifying', () => {
-  const point = (time, session_id = 'a', latitude = 25) => ({ time, session_id, latitude, longitude: 121 });
-  const track = historyGeometry([point(0), point(1000), point(2000), point(3000, 'a', null),
-    point(4000), point(5000), point(6000, 'b'), point(7000, 'b')]);
-  const result = expireHistory({ since: 0, until: 8000, phone: track, clients: [{ ...track, slaveId: 4 }] },
-    { hours: 1, timeMode: 'recent' }, 3600001);
-  expect(result.phone.segments.map(segment => segment.map(p => p.time))).toEqual([[1000, 2000], [4000, 5000], [6000, 7000]]);
-});
-
-test('recent history expires cached lines and markers without new data; fixed ranges remain', () => {
-  const track = historyGeometry([1000, 6000, 11000].map(time => ({ time, latitude: 25, longitude: 121 })));
-  const data = { since: 0, until: 12000, phone: track,
-    clients: [{ slaveId: 4, ...track }] };
-  const preferences = { ...HISTORY_DEFAULTS, hours: 1 };
-  const partial = expireHistory(data, preferences, 3606000);
-  expect(partial.phone.count).toBe(2);
-  expect(partial.phone.segments.flat().every(point => point.time >= 6000)).toBe(true);
-  const empty = expireHistory(data, preferences, 3611001);
-  for (const source of ['phone', 'client']) {
-    expect(trackOf(empty, source).count).toBe(0);
-    expect(trackOf(empty, source).segments).toEqual([]);
-    expect(trackOf(empty, source).latest).toBeNull();
-  }
-  expect(expireHistory(data, { ...preferences, timeMode: 'fixed' }, 99999999)).toBe(data);
-  expect(data.phone.count).toBe(3);
-});
-
 test('a fixed range is two timestamps, and old saved queries convert to one', () => {
   const start = new Date(2026, 8, 16, 23, 30).getTime();
   const p = { ...HISTORY_DEFAULTS, timeMode: 'fixed', startAt: start, endAt: start + 7200000 };
-  const first = historyWindow(p, 1);
-  // A fixed range does not move with the clock.
-  expect(historyWindow(p, 999999999)).toEqual(first);
+  const first = parseHistoryRange(p.startAt, p.endAt);
   expect(new Date(first.until).getDate()).toBe(17);
   expect(new Date(first.until).getHours()).toBe(1);
   expect(() => parseHistoryRange(start, start)).toThrow('晚於');
@@ -88,9 +38,12 @@ test('a fixed range is two timestamps, and old saved queries convert to one', ()
   expect(validateHistory({ hours: 3 }).timeMode).toBe('recent');
   // Only the offered presets are kept, since the card no longer takes typing.
   expect(validateHistory({ hours: 7 }).hours).toBe(3);
+  expect(validateHistory({ hours: -1 }).hours).toBe(3);
+  expect(() => validateHistory({ master: 1.5 })).toThrow();
 });
 
-test('fixed SQL window includes start and excludes end, and survives saved settings reload', async () => {
+test('a day read includes its start and excludes its end, and saved settings survive a reload', async () => {
+  // Moved from the retired range read (064, audit D06/T06) to historyDayRows.
   const connection = createMemoryConnection();
   try {
     await createDogDatabase(connection).initialize();
@@ -101,46 +54,43 @@ test('fixed SQL window includes start and excludes end, and survives saved setti
       startAt: start, endAt: start + 3 * 3600000 };
     await history.save(p);
     expect(await history.load()).toEqual(p);
-    const { since, until } = historyWindow(p);
+    const since = start - HISTORY_DAY_CONTEXT_MS;
+    const until = p.endAt + HISTORY_DAY_AFTER_MS;
     const insert = connection.sqlite.prepare('INSERT INTO dog_status(received_at,master_id,slave_id,slave_lat,slave_lon) VALUES(?,7,4,25,121)');
     [since - 1, since, until - 1, until].forEach(time => insert.run(time));
-    const result = await history.read(p, null, until + 86400000);
-    expect(trackOf(result, 'client').count).toBe(2);
-    expect(result.since).toBe(since);
-    expect(result.until).toBe(until);
+    const { rows } = await history.historyDayRows({ slaveId: 4, start, end: p.endAt });
+    expect(rows.map(row => row.time)).toEqual([since, until - 1]);
   } finally { connection.close(); }
 });
 
-test('history isolates cloud owners and devices, respects time bounds and independent source switches', async () => {
+test('a day read isolates cloud owners and dogs and respects its time bounds', async () => {
+  // Moved from the retired range read (064, audit D06/T06) to historyDayRows.
   const connection = createMemoryConnection();
   try {
     await createDogDatabase(connection).initialize();
     await createCloudDatabase(connection).initialize();
     const history = createHistoryDatabase(connection);
     expect(await history.load()).toEqual(HISTORY_DEFAULTS);
-    const prefs = { ...HISTORY_DEFAULTS, source: 'cloud', hours: 1 };
-    await history.save(prefs);
-    expect(await history.load()).toEqual(prefs);
     const sql = connection.sqlite;
-    sql.exec('CREATE TABLE myLocationTracker(id INTEGER PRIMARY KEY, recorded_at INTEGER, latitude REAL, longitude REAL, speed_kmh REAL)');
-    sql.exec('INSERT INTO myLocationTracker VALUES(1, 5000000, 25, 121, 3)');
+    sql.exec('CREATE TABLE myLocationTracker(id INTEGER PRIMARY KEY, recorded_at INTEGER, latitude REAL, longitude REAL, speed_kmh REAL, accuracy_meters REAL)');
+    sql.exec('INSERT INTO myLocationTracker(id,recorded_at,latitude,longitude) VALUES(1, 5000000, 25, 121)');
     const insert = sql.prepare('INSERT INTO supabase_dog_status(received_at,owner_user_id,master_id,slave_id,slave_lat,slave_lon) VALUES(?,?,?,?,25,121)');
     insert.run(5000000, 'alice', 7, 4);
     insert.run(5000000, 'bob', 7, 4);
-    insert.run(5000000, 'alice', 5, 4);
+    insert.run(5000000, 'alice', 5, 4); // another receiver of the same dog: read too
     insert.run(5000000, 'alice', 7, 1);
     insert.run(1, 'alice', 7, 4);
     insert.run(9000000, 'alice', 7, 4);
-    const result = await history.read(prefs, 'alice', 6000000);
-    expect(trackOf(result, 'client').count).toBe(1);
-    expect(result.phone.count).toBe(1);
-    expect(trackOf(await history.read(prefs, null, 6000000), 'client').count).toBe(0);
-    const off = await history.read({ ...prefs, phone: false, client: false }, 'alice', 6000000);
-    expect(off.phone.count + trackOf(off, 'client').count).toBe(0);
+    const day = { slaveId: 4, start: 4000000, end: 6000000 };
+    const alice = await history.historyDayRows({ ...day, owner: 'alice' });
+    expect(alice.rows.map(row => [row.source, row.master_id])).toEqual([['cloud', 7], ['cloud', 5]]);
+    expect((await history.historyDayRows({ ...day, owner: null })).rows).toHaveLength(0);
+    expect((await history.historyDayRows({ subject: 'phone', start: 4000000, end: 6000000 })).rows).toHaveLength(1);
   } finally { connection.close(); }
 });
 
-test('keyset query preserves records sharing a timestamp across pages', async () => {
+test('a day read keeps every record sharing a timestamp across pages', async () => {
+  // Moved from the retired range read (064, audit D06/T06): pages go by id.
   const connection = createMemoryConnection();
   try {
     await createDogDatabase(connection).initialize();
@@ -148,43 +98,15 @@ test('keyset query preserves records sharing a timestamp across pages', async ()
     await history.load();
     const insert = connection.sqlite.prepare('INSERT INTO dog_status(received_at,master_id,slave_id,slave_lat,slave_lon) VALUES(5000000,7,4,25,121)');
     connection.sqlite.exec('BEGIN');
-    for (let i = 0; i < 1002; i += 1) insert.run();
+    for (let i = 0; i < 2002; i += 1) insert.run();
     connection.sqlite.exec('COMMIT');
-    const result = await history.read({ ...HISTORY_DEFAULTS, hours: 1, phone: false }, null, 6000000);
-    expect(trackOf(result, 'client').count).toBe(1002);
-    expect(trackOf(result, 'client').latest.id).toBe(1002);
+    const first = await history.historyDayRows({ slaveId: 4, start: 4000000, end: 6000000 });
+    expect(first.rows).toHaveLength(2002);
+    expect(first.rows[first.rows.length - 1].id).toBe(2002);
+    insert.run();
+    const next = await history.historyDayRows({ slaveId: 4, start: 4000000, end: 6000000, after: first.after });
+    expect(next.rows.map(row => row.id)).toEqual([2003]);
   } finally { connection.close(); }
-});
-
-test('route geometry breaks at missing fixes and long gaps, retains latest marker and caps drawing', () => {
-  const p = (time, latitude = 25) => ({ time, latitude, longitude: 121 });
-  const result = historyGeometry([p(0), p(10000), p(20000, null), p(30000), p(200000)]);
-  expect(result.segments).toHaveLength(3);
-  expect(result.latest.time).toBe(200000);
-  const many = historyGeometry(Array.from({ length: 5000 }, (_, i) => p(i * 130000)));
-  expect(many.limited).toBe(true);
-  expect(many.segments.flat()).toHaveLength(120);
-  expect(many.segments[0][0].time).toBe(0);
-  expect(many.latest.time).toBe(4999 * 130000);
-  expect(validateHistory({ hours: -1 }).hours).toBe(3);
-  expect(() => validateHistory({ master: 1.5 })).toThrow();
-});
-
-test('history lines and exports skip rows with no GPS fix', () => {
-  // 0,0 is what the tracker sends without a fix; drawing it stretches the line
-  // from Taoyuan to the Gulf of Guinea and puts a marker there.
-  const rows = [
-    { id: 1, time: 1000, latitude: 25.03, longitude: 121.56, speed_kmh: 1 },
-    { id: 2, time: 2000, latitude: 0, longitude: 0, speed_kmh: 0 },
-    { id: 3, time: 3000, latitude: 25.04, longitude: 121.57, speed_kmh: 2 },
-  ];
-  const geometry = historyGeometry(rows);
-  expect(geometry.count).toBe(2);
-  expect(geometry.segments.flat().every(point => point.latitude !== 0)).toBe(true);
-  expect(geometry.latest).toMatchObject({ id: 3 });
-  const gpx = serializeHistory('gpx', { phone: rows, client: [], since: 1000, until: 4000 });
-  expect(gpx).not.toContain('lat="0"');
-  expect(gpx.match(/<trkpt /g)).toHaveLength(2);
 });
 
 test('every history database method is bound by the app composition', () => {
@@ -221,5 +143,46 @@ test('the card is offered the Master/Slave pairs this phone actually holds', asy
     ]);
     // Another account's rows are never offered, and no account means no list.
     expect(await history.listDevices('cloud')).toEqual([]);
+  } finally { connection.close(); }
+});
+
+test('each dog\'s face is stored by collar number; a damaged or unknown one falls back to the default', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const db = createHistoryDatabase(connection);
+    expect(await db.loadDogAvatars()).toEqual({});
+    await db.saveDogAvatar(6, { kind: 'art', art: 'prick', color: 'mint' });
+    await connection.executeAsync('INSERT INTO dog_avatars(slave_id,value) VALUES(?,?)', [8, '{broken']);
+    await connection.executeAsync('INSERT INTO dog_avatars(slave_id,value) VALUES(?,?)', [9, '{"kind":"art","art":"wolf","color":"coral"}']);
+    expect(await createHistoryDatabase(connection).loadDogAvatars())
+      .toEqual({ 6: { kind: 'art', art: 'prick', color: 'mint' } });
+    await expect(db.saveDogAvatar(6, { kind: 'photo', uri: 'file:///x.jpg' })).rejects.toThrow('頭像格式錯誤');
+    await expect(db.saveDogAvatar(0, null)).rejects.toThrow('狗的編號格式錯誤');
+    await db.saveDogAvatar(6, null);
+    expect(await db.loadDogAvatars()).toEqual({});
+  } finally { connection.close(); }
+});
+
+test('historyDays: the local days with one dog\'s rows (local and the account\'s cloud) or my route', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const db = createHistoryDatabase(connection);
+    await connection.executeAsync(`CREATE TABLE dog_status (id INTEGER PRIMARY KEY, received_at INTEGER, master_id INTEGER,
+      slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync(`CREATE TABLE supabase_dog_status (id INTEGER PRIMARY KEY, owner_user_id TEXT,
+      received_at INTEGER, track_at INTEGER, master_id INTEGER, slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync(`CREATE TABLE myLocationTracker (id INTEGER PRIMARY KEY, recorded_at INTEGER,
+      latitude REAL, longitude REAL, accuracy_meters REAL)`);
+    const local = (y, m, d, h) => new Date(y, m - 1, d, h).getTime();
+    await connection.executeAsync('INSERT INTO dog_status(received_at,master_id,slave_id) VALUES(?,?,?),(?,?,?),(?,?,?)',
+      [local(2026, 10, 3, 8), 7, 4, local(2026, 10, 3, 23), 7, 4, local(2026, 10, 5, 0), 7, 6]);
+    await connection.executeAsync('INSERT INTO supabase_dog_status(owner_user_id,received_at,track_at,slave_id) VALUES(?,?,?,?),(?,?,?,?)',
+      ['me', local(2026, 10, 6, 9), local(2026, 10, 6, 9), 4, 'other', local(2026, 10, 7, 9), local(2026, 10, 7, 9), 4]);
+    await connection.executeAsync('INSERT INTO myLocationTracker(recorded_at,latitude,longitude) VALUES(?,?,?)',
+      [local(2026, 10, 2, 7), 25, 121]);
+    expect(await db.historyDays({ subject: 'dog', slaveId: 4, owner: 'me' })).toEqual(['2026-10-03', '2026-10-06']);
+    expect(await db.historyDays({ subject: 'dog', slaveId: 4, owner: 'me' })).toEqual(['2026-10-03', '2026-10-06']);
+    expect(await db.historyDays({ subject: 'dog', slaveId: 4 })).toEqual(['2026-10-03']);
+    expect(await db.historyDays({ subject: 'phone' })).toEqual(['2026-10-02']);
   } finally { connection.close(); }
 });

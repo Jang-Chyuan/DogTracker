@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式 S7 確認對話框: 1dp floatingOutline edge. -->
+    <dimen name="dialog_outline">1dp</dimen>
+</resources>

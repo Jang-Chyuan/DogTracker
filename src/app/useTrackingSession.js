@@ -1,11 +1,11 @@
+import { t } from '../i18n';
+import { logger } from '../logger';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
 import { CLOUD_DATABASE_METHODS } from '../cloud/CloudDatabase';
 import { HISTORY_DATABASE_METHODS } from '../mapHistory/HistoryDatabase';
 import { databaseSessions } from '../database/DatabaseSession';
-import { createDemoTrackingRepository } from '../demo/DemoTrackingRepository';
-import { createDemoPresetRow, createDemoSeed } from '../demo/DemoPresets';
 import {
   createTrackingPreferences,
   DEFAULT_TRACKING_PREFERENCES,
@@ -23,28 +23,28 @@ function isForeground(state) {
   return state === 'active' || state === 'unknown' || state == null;
 }
 
-// App composition only: data adapters and renderers do not know about mode UI,
+// App composition only: data adapters and renderers do not know about the UI,
 // BLE state, or each other's physical tables.
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
   const [historyDatabase] = useState(() => Object.fromEntries(
     HISTORY_DATABASE_METHODS.map(method => [method, (...args) =>
-      controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error('資料庫尚未就緒'))]),
+      controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error(t("c487")))]),
   ));
   const [cloudDatabase] = useState(() => Object.fromEntries(
     CLOUD_DATABASE_METHODS.map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
-        Promise.reject(new Error('資料庫尚未就緒')),
+        Promise.reject(new Error(t("c487"))),
     ]),
   ));
   // Stable diagnostics adapter; it borrows this owner's real DB and cannot
-  // open/close another Nitro connection or access Demo/settings tables.
+  // open/close another Nitro connection or access settings tables.
   const [hardwareDatabase] = useState(() => ({
     initialize: () => controlsRef.current?.initializeReal() ?? Promise.reject(new Error('Tracking session is closed')),
     listHistory: limit => controlsRef.current?.listRealHistory(limit) ?? Promise.reject(new Error('Tracking session is closed')),
     saveStatus: (status, payload) => controlsRef.current?.saveRealStatus(status, payload) ?? Promise.reject(new Error('Tracking session is closed')),
   }));
-  const [mode, setMode] = useState(DEFAULT_TRACKING_PREFERENCES.mode);
+  const mode = 'real';
   const [trackingSources, dispatchTracking] = useReducer(
     trackingSourceReducer,
     undefined,
@@ -57,13 +57,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     error: null,
     recoveryAvailable: false,
   });
-  const [errors, setErrors] = useState({ real: null, demo: null });
+  const [errors, setErrors] = useState({ real: null });
   const [realWriteError, setRealWriteError] = useState(null);
   const [nativeWriteError, setNativeWriteError] = useState(null);
-  const [demoBusy, setDemoBusy] = useState(false);
-  const [demoError, setDemoError] = useState(null);
-  const [demoSummary, setDemoSummary] = useState(null);
-  const [demoSummaryError, setDemoSummaryError] = useState(null);
   const [foreground, setForeground] = useState(() =>
     isForeground(AppState.currentState),
   );
@@ -71,7 +67,6 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   useEffect(() => {
     let disposed = false;
     // Disable old controls while waiting for the prior owner or a failed reopen.
-    setMode(DEFAULT_TRACKING_PREFERENCES.mode);
     dispatchTracking({ type: 'reset-all' });
     setPreferences({
       value: DEFAULT_TRACKING_PREFERENCES,
@@ -80,28 +75,21 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       error: null,
       recoveryAvailable: false,
     });
-    setErrors({ real: null, demo: null });
+    setErrors({ real: null });
     setRealWriteError(null);
     setNativeWriteError(null);
-    setDemoBusy(false);
-    setDemoError(null);
-    setDemoSummary(null);
-    setDemoSummaryError(null);
     // The shared owner covers full remounts as well as replays of this effect.
     const lifecycle = databaseSessions.open(() => {
       if (disposed) return;
       const databases = createDatabases();
       let active = isForeground(AppState.currentState);
       setForeground(active);
-      let selectedMode = DEFAULT_TRACKING_PREFERENCES.mode;
-      let modeLoaded = false;
-      let busy = false;
-      let resettingDemo = false;
+      let preferencesLoaded = false;
       // Writes and their error callbacks belong to this owner, never its replay.
       const realWrites = new Set();
       const commands = new Set();
-      const initialized = { real: false, demo: false };
-      const reportedReadErrors = { real: null, demo: null };
+      const initialized = { real: false };
+      const reportedReadErrors = { real: null };
       const reportError = (source, error) => {
         const message = getErrorMessage(error);
         if (!disposed)
@@ -112,7 +100,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           );
         if (reportedReadErrors[source] !== message) {
           reportedReadErrors[source] = message;
-          console.error(`${source} SQLite:`, error);
+          logger.error(`${source} SQLite:`, error);
         }
       };
       const createFeed = (source, repository) =>
@@ -172,17 +160,14 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         });
       const repositories = {
         real: createRealTrackingRepository(databases.real),
-        demo: createDemoTrackingRepository(databases.demo),
       };
       const feeds = {
         real: createFeed('real', repositories.real),
-        demo: createFeed('demo', repositories.demo),
       };
 
       function resumeFeed() {
-        if (selectedMode === 'demo' && resettingDemo) return;
-        if (!disposed && modeLoaded && active && initialized[selectedMode])
-          feeds[selectedMode].start();
+        if (!disposed && preferencesLoaded && active && initialized.real)
+          feeds.real.start();
       }
 
       const trackingPreferences = createTrackingPreferences(
@@ -190,47 +175,27 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         state => {
           if (disposed) return;
           setPreferences(state);
-          // Never read one source while asynchronously restoring another source.
-          if (
-            state.ready &&
-            (!modeLoaded || state.value.mode !== selectedMode)
-          ) {
-            modeLoaded = true;
-            selectMode(state.value.mode);
+          if (state.ready && !preferencesLoaded) {
+            preferencesLoaded = true;
+            dispatchTracking({ type: 'refreshing', source: 'real' });
+            feeds.real.stop();
+            resumeFeed();
           }
         },
       );
       trackingPreferences.load();
 
-      async function refreshDemoSummary() {
-        try {
-          const summary = await databases.demo.getSummary();
-          if (!disposed) {
-            setDemoSummary(summary);
-            setDemoSummaryError(null);
-          }
-        } catch (error) {
-          // A read error after a committed write is not a failed write. Do not
-          // invite a duplicate insert by reporting that the command failed.
-          if (!disposed) setDemoSummaryError(getErrorMessage(error));
-        }
-      }
-
       const initialization = {};
-      for (const source of ['real', 'demo']) {
+      for (const source of ['real']) {
         initialization[source] = Promise.resolve().then(async () => {
           await databases[source].initialize();
-          if (source === 'demo') {
-            await databases.demo.ensureSeed(createDemoSeed());
-            await refreshDemoSummary();
-          }
         });
         initialization[source]
           .then(() => {
             if (disposed) return;
             initialized[source] = true;
             dispatchTracking({ type: 'ready', source });
-            if (source === selectedMode) resumeFeed();
+            resumeFeed();
           })
           .catch(error => reportError(source, error));
       }
@@ -241,53 +206,18 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         else {
           if (!disposed) {
             dispatchTracking({ type: 'refreshing', source: 'real' });
-            dispatchTracking({ type: 'refreshing', source: 'demo' });
           }
           feeds.real.stop();
-          feeds.demo.stop();
         }
       });
-
-      function runCommand(label, command, requiresDemo = true) {
-        if (busy || disposed || (requiresDemo && !initialized.demo))
-          return Promise.resolve(false);
-        busy = true;
-        setDemoBusy(true);
-        const task = (async () => {
-          try {
-            const result = await command();
-            return result !== false && !disposed;
-          } catch (error) {
-            if (!disposed)
-              setDemoError(`${label}失敗：${getErrorMessage(error)}`);
-            console.error('Demo 操作失敗:', error);
-            return false;
-          } finally {
-            busy = false;
-            if (!disposed) setDemoBusy(false);
-          }
-        })();
-        commands.add(task);
-        task.finally(() => commands.delete(task));
-        return task;
-      }
-
-      function selectMode(source) {
-        dispatchTracking({ type: 'refreshing', source: 'real' });
-        dispatchTracking({ type: 'refreshing', source: 'demo' });
-        feeds.real.stop();
-        feeds.demo.stop();
-        selectedMode = source;
-        setMode(source);
-        resumeFeed();
-      }
 
       let cloudInitialization;
       controlsRef.current = {
         historyCommand(method, args) {
           const task = initialization.real.then(async () => {
-            if (disposed || !databases.history) throw new Error('歷史資料庫尚未就緒');
-            if (method === 'read' && args[0].source === 'cloud' && args[1]) {
+            if (disposed || !databases.history) throw new Error(t("c485"));
+            // A day read of an account's cloud rows waits for the cloud table's migrations.
+            if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner) {
               if (!cloudInitialization) cloudInitialization = databases.cloud.initialize().catch(error => { cloudInitialization = null; throw error; });
               await cloudInitialization;
             }
@@ -297,13 +227,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           return task.finally(() => commands.delete(task));
         },
         cloudCommand(method, args) {
-          if (!databases.cloud) return Promise.reject(new Error('雲端資料庫不可用'));
+          if (!databases.cloud) return Promise.reject(new Error(t("c486")));
           if (!cloudInitialization) {
             cloudInitialization = initialization.real.then(() => databases.cloud.initialize());
             cloudInitialization.catch(() => { cloudInitialization = null; });
           }
           const task = cloudInitialization.then(() => {
-            if (disposed) throw new Error('資料庫已關閉');
+            if (disposed) throw new Error(t("c483"));
             return method === 'initialize' ? undefined : databases.cloud[method](...args);
           });
           commands.add(task);
@@ -315,33 +245,26 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           commands.add(task);
           return task.finally(() => commands.delete(task));
         },
+        // 刪除全部狗資料 (S7): rows still to upload, and the deletion itself
+        // (DogDataStore). App starts every reader over afterwards.
+        countUnsentUploads() {
+          const task = initialization.real.then(() => databases.dogData?.unsent() ?? 0);
+          commands.add(task);
+          return task.finally(() => commands.delete(task));
+        },
+        deleteDogData(options) {
+          const task = initialization.real.then(() => {
+            if (disposed) throw new Error(t("c483"));
+            if (!databases.dogData) throw new Error(t("c484"));
+            return databases.dogData.deleteAll(options);
+          });
+          commands.add(task);
+          return task.finally(() => commands.delete(task));
+        },
         saveTrackingPreferences: trackingPreferences.save,
         retryTrackingPreferences: trackingPreferences.load,
         resetTrackingPreferences: trackingPreferences.reset,
-        setDemoMode: enabled =>
-          runCommand(
-            '切換模式',
-            () => {
-              if (typeof enabled !== 'boolean')
-                throw new TypeError('Demo 模式必須是開或關');
-              return trackingPreferences.save({
-                mode: enabled ? 'demo' : 'real',
-              });
-            },
-            false,
-          ),
-        refreshDemoSummary: () =>
-          runCommand('讀取 Demo 筆數', refreshDemoSummary),
-        appendDemo: key =>
-          runCommand('寫入 Demo', async () => {
-            await databases.demo.insertRow(createDemoPresetRow(key));
-            if (!disposed) setDemoError(null);
-            await refreshDemoSummary();
-            // Point/route updates still come from the repository feed, not rows
-            // returned by the write command. Its regular poll is the only reader.
-          }),
         saveRealStatus(status, payload) {
-          // A Demo migration/read failure must not block the hardware writer.
           const task = initialization.real
             .then(() => databases.real.saveStatus(status, payload))
             .then(
@@ -357,26 +280,6 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           realWrites.add(task);
           return task.finally(() => realWrites.delete(task));
         },
-        resetDemo: () =>
-          runCommand('重設 Demo', async () => {
-            setDemoError(null);
-            resettingDemo = true;
-            await feeds.demo.stop();
-            try {
-              await databases.demo.resetToSeed(createDemoSeed());
-              if (!disposed) {
-                setDemoError(null);
-                dispatchTracking({ type: 'reset-source', source: 'demo' });
-                // Replace this source's cursor only after the atomic reset
-                // commits. Old queries cannot repopulate pre-reset markers.
-                feeds.demo = createFeed('demo', repositories.demo);
-              }
-              await refreshDemoSummary();
-            } finally {
-              resettingDemo = false;
-              resumeFeed();
-            }
-          }),
       };
 
       return () => {
@@ -384,9 +287,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         // Never close the shared connection while an owned query/write is pending.
         return Promise.allSettled([
           initialization.real,
-          initialization.demo,
           feeds.real.stop(),
-          feeds.demo.stop(),
           trackingPreferences.close(),
           ...realWrites,
           ...commands,
@@ -395,14 +296,14 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     });
     lifecycle.ready.catch(error => {
       const message = getErrorMessage(error);
-      if (!disposed) setErrors({ real: message, demo: message });
-      console.error('SQLite 開啟失敗:', error);
+      if (!disposed) setErrors({ real: message });
+      logger.error(t("c488"), error);
     });
     return () => {
       disposed = true;
       controlsRef.current = null;
       lifecycle.close().catch(error => {
-        console.error('SQLite 關閉失敗:', error);
+        logger.error(t("c489"), error);
       });
     };
   }, [createDatabases]);
@@ -414,12 +315,15 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     mode,
     caughtUp: trackingSources[mode].caughtUp,
     point: trackingSources[mode].point,
-    demoPoint: trackingSources.demo.point,
     route: trackingSources[mode].route,
     positionSamples: trackingSources[mode].positionSamples,
     historyLoaded: trackingSources[mode].historyLoaded,
     initialSnapshotReady: trackingSources[mode].initialSnapshotReady,
     preferences,
+    countUnsentUploads: () => controlsRef.current?.countUnsentUploads()
+      ?? Promise.reject(new Error(t("c487"))),
+    deleteDogData: options => controlsRef.current?.deleteDogData(options)
+      ?? Promise.reject(new Error(t("c487"))),
     saveTrackingPreferences: patch =>
       controlsRef.current?.saveTrackingPreferences(patch),
     retryTrackingPreferences: () =>
@@ -428,27 +332,15 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       controlsRef.current?.resetTrackingPreferences(),
     ready: {
       real: trackingSources.real.ready,
-      demo: trackingSources.demo.ready,
     },
     errors,
     realWriteError: [nativeWriteError, realWriteError].filter(Boolean).join('\n') || null,
     reportNativeWriteError: setNativeWriteError,
-    demoBusy,
-    demoError,
-    demoSummary,
-    demoSummaryError,
     foreground,
     saveRealStatus(status, payload) {
       if (!controlsRef.current)
         return Promise.reject(new Error('Tracking session is closed'));
       return controlsRef.current.saveRealStatus(status, payload);
     },
-    resetDemo: () => controlsRef.current?.resetDemo(),
-    setDemoMode: enabled =>
-      controlsRef.current?.setDemoMode(enabled) ?? Promise.resolve(false),
-    appendDemo: key =>
-      controlsRef.current?.appendDemo(key) ?? Promise.resolve(false),
-    refreshDemoSummary: () =>
-      controlsRef.current?.refreshDemoSummary() ?? Promise.resolve(false),
   };
 }

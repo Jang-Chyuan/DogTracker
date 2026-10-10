@@ -1,0 +1,201 @@
+// D0 → 地圖銜接（C）: the launch screen's JavaScript copy and its handover.
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { AccessibilityInfo, Animated, NativeModules } from 'react-native';
+import { Path } from 'react-native-svg';
+import { SITTING_DOG_BODY_LINES, SITTING_DOG_TAIL_LINES, SITTING_DOG_TAIL_ROOT } from '../src/dogs/SittingDogArt';
+import { WAG_MAX_ANGLE } from '../src/app/splashTailWag';
+import SplashOverlay, {
+  flightGeometry,
+  handoverDuration,
+  HEAD,
+  SPLASH_ICON,
+  TIMING,
+} from '../src/app/SplashOverlay';
+import {
+  getSplashState,
+  launchInto,
+  reportMapFramed,
+  resetSplashGate,
+} from '../src/app/hideSplash';
+
+afterEach(() => {
+  delete NativeModules.AppSplash;
+  resetSplashGate();
+});
+
+test('the head lands on the dog: its centre on the dog, the disc at the face size', () => {
+  const box = { x: 100, y: 300 };
+  const target = { x: 120, y: 200, marker: { size: 48 } };
+  const g = flightGeometry(SPLASH_ICON, target, box);
+  const unit = SPLASH_ICON / 108;
+  const head = {
+    x: (20.258 + 0.4962 * HEAD.x) * unit,
+    y: (13.064 + 0.4962 * HEAD.y) * unit,
+  };
+  const centre = SPLASH_ICON / 2;
+  // Where the head's centre ends up after RN's scale about the box centre.
+  expect(box.x + centre + g.scale * (head.x - centre) + g.x).toBeCloseTo(120);
+  expect(box.y + centre + g.scale * (head.y - centre) + g.y).toBeCloseTo(200);
+  expect(2 * HEAD.r * 0.4962 * unit * g.scale).toBeCloseTo(48);
+});
+
+test('everything settles within 600 ms; the other dogs start popping when the background has gone', () => {
+  expect(TIMING.flight).toBeLessThanOrEqual(TIMING.settled);
+  expect(TIMING.popStart[0]).toBe(TIMING.background);
+  expect(TIMING.popStart[1] + TIMING.pop).toBeLessThanOrEqual(TIMING.settled);
+  expect(TIMING.chromeStart + TIMING.chrome).toBeLessThanOrEqual(
+    TIMING.settled,
+  );
+});
+
+beforeEach(() => jest.useFakeTimers());
+afterEach(() => jest.useRealTimers());
+
+test('covers the screen while waiting; with animations off it goes straight to the map', async () => {
+  NativeModules.AppSplash = {
+    hide: jest.fn(),
+    done: jest.fn(),
+    launchInfo: () => ({ animatorScale: 0 }),
+  };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<SplashOverlay />);
+  });
+  expect(
+    renderer.root.findAllByProps({ testID: 'splash-overlay' }).length,
+  ).toBeGreaterThan(0);
+  await act(async () => {
+    launchInto('map');
+    reportMapFramed([{ slaveId: 4, x: 100, y: 300, marker: { size: 40 } }]);
+  });
+  expect(getSplashState().phase).toBe('done');
+  expect(NativeModules.AppSplash.done).toHaveBeenCalled();
+  expect(renderer.toJSON()).toBeNull();
+  await act(async () => renderer.unmount());
+});
+
+test('a report made before the copy mounts is not missed (the state is read from the first render)', async () => {
+  NativeModules.AppSplash = {
+    hide: jest.fn(),
+    done: jest.fn(),
+    launchInfo: () => ({ animatorScale: 0 }),
+  };
+  launchInto('page');
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<SplashOverlay />);
+  });
+  expect(NativeModules.AppSplash.done).toHaveBeenCalledTimes(1);
+  expect(renderer.toJSON()).toBeNull();
+  await act(async () => renderer.unmount());
+});
+
+// O2 (lane C, 061c/061d): under load the map showed under a coral navigation
+// bar — done() waits for JavaScript's animation callback. The handover tells
+// the native side how long it runs, so the bar changes on the UI thread.
+test.each([0.5, 1, 2])('the handover tells the native side how long it runs (animator scale %s)', async scale => {
+  NativeModules.AppSplash = {
+    hide: jest.fn(),
+    done: jest.fn(),
+    handover: jest.fn(),
+    launchInfo: () => ({ animatorScale: scale }),
+  };
+  let renderer;
+  await act(async () => {
+    renderer = Renderer.create(<SplashOverlay />);
+  });
+  await act(async () => {
+    launchInto('page');
+  });
+  expect(NativeModules.AppSplash.handover).toHaveBeenCalledTimes(1);
+  expect(NativeModules.AppSplash.handover).toHaveBeenCalledWith(handoverDuration('fade'));
+  expect(handoverDuration('fly')).toBeGreaterThanOrEqual(TIMING.flight);
+  expect(handoverDuration('fly', true)).toBe(TIMING.reduced);
+  await act(async () => renderer.unmount());
+});
+
+describe('waiting tail lifecycle', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  async function mountWaiting({ reduced = false, scale = 1 } = {}) {
+    jest
+      .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+      .mockResolvedValue(reduced);
+    NativeModules.AppSplash = { launchInfo: () => ({ animatorScale: scale }) };
+    const loop = { start: jest.fn(), stop: jest.fn() };
+    jest.spyOn(Animated, 'loop').mockReturnValue(loop);
+    let renderer;
+    await act(async () => {
+      renderer = Renderer.create(<SplashOverlay />);
+    });
+    await act(async () => {
+      renderer.root.findByProps({ testID: 'splash-overlay' }).props.onLayout({
+        nativeEvent: { layout: { width: 400, height: 800 } },
+      });
+    });
+    return { renderer, loop };
+  }
+
+  test('only the separate tail rotates about its base, behind the stationary body', async () => {
+    const { renderer } = await mountWaiting();
+    const tail = renderer.root.findByProps({ testID: 'splash-tail' });
+    const body = renderer.root.findByProps({ testID: 'splash-body' });
+    expect(tail.findAllByType(Path).map(node => node.props.d)).toEqual(SITTING_DOG_TAIL_LINES);
+    expect(body.findAllByType(Path).map(node => node.props.d)).toEqual(SITTING_DOG_BODY_LINES);
+    expect(SITTING_DOG_TAIL_ROOT).toEqual({ x: 96, y: 124 });
+    const x = (20.258 + 0.4962 * 96) * SPLASH_ICON / 108 - SPLASH_ICON / 2;
+    const y = (13.064 + 0.4962 * 124) * SPLASH_ICON / 108 - SPLASH_ICON / 2;
+    const transform = tail.props.transform;
+    expect(transform).toEqual([
+      { translateX: x }, { translateY: y }, { rotate: expect.any(Object) },
+      { translateX: -x }, { translateY: -y },
+    ]);
+    expect(transform[2].rotate.__getValue()).toBe('0deg');
+    expect(transform[2].rotate._config.outputRange).toEqual([
+      `-${WAG_MAX_ANGLE}deg`, `${WAG_MAX_ANGLE}deg`,
+    ]);
+    expect((body.props.transform || [])).toEqual([]);
+    const layers = tail.parent.children;
+    expect(layers.indexOf(tail)).toBeLessThan(layers.indexOf(body));
+    // The lower haunch/foot must not be included in the rotating layer.
+    expect(SITTING_DOG_TAIL_LINES).toEqual(['M98 124h9M100 129h12']);
+    expect(SITTING_DOG_BODY_LINES).toContain('M88 82c10 12 13 30 8 42-2 5-6 7-12 7');
+    await act(async () => renderer.unmount());
+  });
+
+  test.each(['fly', 'fade'])(
+    'stops the wag when %s handover begins',
+    async mode => {
+      const { renderer, loop } = await mountWaiting();
+      await act(async () => jest.advanceTimersByTime(800));
+      expect(loop.start).toHaveBeenCalledTimes(1);
+      const angle = renderer.root.findByProps({ testID: 'splash-tail' }).props.transform[2].rotate;
+      act(() => angle._parent.setValue(WAG_MAX_ANGLE));
+      expect(angle.__getValue()).toBe(`${WAG_MAX_ANGLE}deg`);
+      await act(async () => {
+        if (mode === 'fly') {
+          launchInto('map');
+          reportMapFramed([
+            { slaveId: 4, x: 100, y: 300, marker: { size: 40 } },
+          ]);
+        } else launchInto('page');
+      });
+      expect(loop.stop).toHaveBeenCalledTimes(1);
+      expect(angle.__getValue()).toBe('0deg');
+      await act(async () => renderer.unmount());
+    },
+  );
+
+  test.each([{ reduced: true }, { scale: 0 }])(
+    'does not wag with motion disabled: %j',
+    async options => {
+      const { renderer, loop } = await mountWaiting(options);
+      await act(async () => jest.advanceTimersByTime(3000));
+      expect(Animated.loop).not.toHaveBeenCalled();
+      expect(loop.start).not.toHaveBeenCalled();
+      expect(renderer.root.findByProps({ testID: 'splash-tail' }).props.transform[2].rotate.__getValue()).toBe('0deg');
+      await act(async () => renderer.unmount());
+    },
+  );
+});

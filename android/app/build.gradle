@@ -140,9 +140,21 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // org.json is a stub in local unit tests; the real one for AlertCodec.
+    testImplementation("org.json:json:20240303")
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
+    implementation("androidx.core:core-splashscreen:1.2.0")
+    // uCrop (react-native-image-crop-picker's cropper) is published on JitPack
+    // with an empty POM, so its androidx.transition use is never pulled in:
+    // UCropActivity.setupViews -> NoClassDefFoundError AutoTransition (070).
+    implementation("androidx.transition:transition:1.5.0")
+    // The history export draws its PNG map on a lite-mode Google map (HistoryExportPackage.kt);
+    // the same Maps SDK react-native-maps already brings.
+    implementation("com.google.android.gms:play-services-maps:19.1.0")
+    // 067: fused location for the phone recorder (the version react-native-maps uses).
+    implementation("com.google.android.gms:play-services-location:21.3.0")
     def cameraxVersion = "1.5.0"
     implementation("androidx.camera:camera-camera2:${cameraxVersion}")
     implementation("androidx.camera:camera-lifecycle:${cameraxVersion}")
@@ -156,3 +168,44 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// JVM alert tests use the same XML defaults as Android. No second copy deck.
+def nativeCopyOutput = layout.buildDirectory.dir('generated/source/nativeCopy')
+def generateNativeCopy = tasks.register('generateNativeCopy') {
+    def copyXml = file('src/main/res/values/strings.xml')
+    inputs.file(copyXml)
+    outputs.dir(nativeCopyOutput)
+    doLast {
+        def entries = new groovy.xml.XmlParser().parse(copyXml).string.collect { row ->
+            def value = row.text()
+            if (value.startsWith('"') && value.endsWith('"')) value = value.substring(1, value.length() - 1)
+            value = value.replace('\\n', '\n').replace("\\'", "'").replace('\\"', '"')
+            def literal = groovy.json.JsonOutput.toJson(value)
+            "        R.string.${row.attribute('name')} to ${literal}"
+        }.join(',\n')
+        def output = nativeCopyOutput.get().file('com/dogtracker/NativeCopy.kt').asFile
+        output.parentFile.mkdirs()
+        output.text = """package com.dogtracker
+
+// Generated from values/strings.xml; Android reads resources, JVM tests use defaults.
+object NativeCopy {
+    @Volatile private var resources: android.content.res.Resources? = null
+    fun install(value: android.content.res.Resources) { resources = value }
+    private val defaults = mapOf(
+${entries}
+    )
+    fun text(id: Int, vararg params: Any?): String {
+        val template = resources?.getString(id) ?: defaults.getValue(id)
+        var at = 0
+        return Regex("\\\\{\\\\{[^{}]+\\\\}\\\\}").replace(template) {
+            params[at++].toString()
+        }
+    }
+}
+"""
+    }
+}
+android.sourceSets.main.java.srcDir(nativeCopyOutput.get().asFile)
+tasks.named('preBuild').configure { dependsOn(generateNativeCopy) }
+
+android.sourceSets.test.resources.srcDir(rootProject.file("../src/i18n"))

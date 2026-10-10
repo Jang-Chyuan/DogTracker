@@ -1,7 +1,8 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { Text, TextInput } from 'react-native';
-import CloudScreen, { formatRaw } from '../src/cloud/CloudScreen';
+import { Text } from 'react-native';
+import { AuthProvider } from '../src/auth/AuthProvider';
+import CloudDataScreen, { formatRaw } from '../src/cloud/CloudDataScreen';
 
 const RAW = JSON.stringify({
   event_id: 'e', master_id: 7, slave_id: 4, received_at: '2026-09-18T12:00:00Z',
@@ -14,19 +15,26 @@ const row = (id, extra = {}) => ({
 });
 
 let renderer;
+// Signing in happens on S3; this page follows the shared client's session.
+const withAuth = element => Renderer.create(<AuthProvider clientFactory={element.props.clientFactory}>
+  {element}
+</AuthProvider>);
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = null; });
 
+let lastClient;
 function fixtures() {
-  let listener;
+  // One client shared by AuthProvider and the page, as in the app.
+  const listeners = new Set();
+  const listener = (event, session) => listeners.forEach(callback => callback(event, session));
   const user = { id: 'account-a', email: 'user@example.test' };
-  const client = { auth: {
+  const client = lastClient = { auth: {
     onAuthStateChange: jest.fn(callback => {
-      listener = callback;
-      return { data: { subscription: { unsubscribe: jest.fn() } } };
+      listeners.add(callback);
+      return { data: { subscription: { unsubscribe: () => listeners.delete(callback) } } };
     }),
     getSession: jest.fn(async () => ({ data: { session: null } })),
     startAutoRefresh: jest.fn(), stopAutoRefresh: jest.fn(),
-    signInWithPassword: jest.fn(async () => { listener('SIGNED_IN', { user }); return {}; }),
+    signInWithPassword: jest.fn(async () => { listener('SIGNED_IN', { user }); return { data: { session: { user } } }; }),
     signOut: jest.fn(async () => { listener('SIGNED_OUT', null); return {}; }),
   } };
   const database = {
@@ -40,17 +48,7 @@ function fixtures() {
 }
 const text = () => JSON.stringify(renderer.toJSON());
 async function login() {
-  await act(async () => {
-    renderer.root.findAllByType(TextInput)
-      .find(node => node.props.accessibilityLabel === 'Email')
-      .props.onChangeText('user@example.test');
-    renderer.root.findAllByType(TextInput)
-      .find(node => node.props.accessibilityLabel === '密碼')
-      .props.onChangeText('test-only-password');
-  });
-  const button = renderer.root.findAll(node => node.props.accessibilityRole === 'button' &&
-    node.props.accessibilityLabel === '登入' && typeof node.props.onPress === 'function')[0];
-  await act(async () => { await button.props.onPress(); });
+  await act(async () => { await lastClient.auth.signInWithPassword(); });
 }
 
 test('the raw record is readable, and says so when a row has none', () => {
@@ -65,8 +63,8 @@ test('the raw record is readable, and says so when a row has none', () => {
 test('tapping a row opens its original cloud JSON, and tapping again closes it', async () => {
   const { client, database } = fixtures();
   await act(async () => {
-    renderer = Renderer.create(
-      <CloudScreen database={database} clientFactory={() => client} />);
+    renderer = withAuth(
+      <CloudDataScreen database={database} clientFactory={() => client} />);
   });
   await login();
   const open = id => renderer.root.findAll(

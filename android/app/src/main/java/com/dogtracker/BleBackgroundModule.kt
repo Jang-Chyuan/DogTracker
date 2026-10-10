@@ -61,9 +61,54 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
 
   @ReactMethod
   fun stop() {
-    context.getSharedPreferences("ble_session", android.content.Context.MODE_PRIVATE)
-      .edit().putBoolean("enabled", false).commit()
+    val prefs = context.getSharedPreferences("ble_session", android.content.Context.MODE_PRIVATE)
+    val editor = prefs.edit().putBoolean("enabled", false)
+    // The user switched an active receiver off: remembered for the map.
+    if (prefs.getBoolean("enabled", false)) {
+      editor.putString(ReceiverPauses.KEY,
+        ReceiverPauses.paused(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis()))
+    }
+    editor.commit()
     context.stopService(Intent(context, BleForegroundService::class.java))
+  }
+
+  // Settings → 接收器 (S2) 「重新連線」: the same receiver again, from what
+  // the service stored when it was chosen (its address, UUIDs, Master ID).
+  @ReactMethod
+  fun reconnect(promise: Promise) {
+    try {
+      val prefs = context.getSharedPreferences("ble_session", android.content.Context.MODE_PRIVATE)
+      require(!prefs.getString("deviceId", "").isNullOrBlank()) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c287) }
+      prefs.edit().putBoolean("enabled", true).commit()
+      val intent = Intent(context, BleForegroundService::class.java).apply {
+        action = BleForegroundService.ACTION_RESUME
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+      else context.startService(intent)
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("BLE_RECONNECT_FAILED", error)
+    }
+  }
+
+  // Changing receivers went wrong (another Master answered): put the previous
+  // receiver back as the one this phone is set up for, switched off (the
+  // user reconnects it). An empty deviceId forgets the receiver altogether.
+  @ReactMethod
+  fun restoreReceiver(deviceId: String, deviceName: String, serviceUuid: String, dataUuid: String,
+    expectedMasterId: Int, promise: Promise) {
+    try {
+      context.stopService(Intent(context, BleForegroundService::class.java))
+      context.getSharedPreferences("ble_session", android.content.Context.MODE_PRIVATE).edit()
+        .putBoolean("enabled", false).putString("deviceId", deviceId)
+        .putString("deviceName", deviceName.ifBlank { "DogGPS Master" })
+        .putString("serviceUuid", serviceUuid).putString("dataUuid", dataUuid)
+        .putInt("expectedMasterId", expectedMasterId)
+        .remove("lastPayload").remove("lastReceivedAt").commit()
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("BLE_RESTORE_FAILED", error)
+    }
   }
 
   @ReactMethod
@@ -83,11 +128,30 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
       putString("sessionId", prefs.getString("sessionId", ""))
       putString("deviceId", prefs.getString("deviceId", ""))
       putDouble("lastReceivedAt", prefs.getLong("lastReceivedAt", 0).toDouble())
+      // When the established link dropped (0 = connected or never connected
+      // in this service run): see BleForegroundService.disconnectedAt.
+      putDouble("disconnectedAt", if (BleForegroundService.isRunning) BleForegroundService.disconnectedAt.toDouble() else 0.0)
       putString("storageError", prefs.getString("storageError", ""))
       putString("resumeError", prefs.getString("resumeError", ""))
       putString("deviceName", prefs.getString("deviceName", "DogGPS Master"))
+      // What 「重新連線」 and a failed change of receiver restore.
+      putString("serviceUuid", prefs.getString("serviceUuid", ""))
+      putString("dataUuid", prefs.getString("dataUuid", ""))
+      // The Master ID from the QR code; the service stops on packets from any
+      // other Master. 0 = not set (an older pairing without a QR Master ID).
+      putInt("expectedMasterId", prefs.getInt("expectedMasterId", 0))
       putString("lastStatus", prefs.getString("lastStatus", ""))
       putString("lastPayload", prefs.getString("lastPayload", ""))
+      // When the user switched the receiver off and when it delivered again
+      // (resumedAt 0 = still off); see ReceiverPauses.
+      putArray("receiverPauses", Arguments.createArray().apply {
+        for (pause in ReceiverPauses.parse(prefs.getString(ReceiverPauses.KEY, ""))) {
+          pushMap(Arguments.createMap().apply {
+            putDouble("pausedAt", pause.pausedAt.toDouble())
+            if (pause.resumedAt > 0) putDouble("resumedAt", pause.resumedAt.toDouble()) else putNull("resumedAt")
+          })
+        }
+      })
     }
     promise.resolve(result)
   }
@@ -98,7 +162,7 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   @ReactMethod
   fun wifiCommand(json: String, read: Boolean, promise: Promise) {
     val service = BleForegroundService.instance
-    if (service == null) promise.reject("BLE_NOT_CONNECTED", "BLE 尚未連線")
+    if (service == null) promise.reject("BLE_NOT_CONNECTED", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1067))
     else service.wifiCommand(json, read) { value, error ->
       if (error != null) promise.reject("BLE_WIFI_FAILED", error) else promise.resolve(value)
     }
@@ -114,7 +178,7 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
         val elapsed = SystemClock.elapsedRealtime() - startedAt
         val queued = startedAt - queuedAt
         if (elapsed >= 250 || queued >= 250) {
-          Log.w("DogTracker-Database", "$label queueMs=$queued runMs=$elapsed")
+          com.dogtracker.AppLog.w("DogTracker-Database", "$label queueMs=$queued runMs=$elapsed")
         }
       }
     }

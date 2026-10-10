@@ -1,4 +1,5 @@
-import React from 'react';
+import { type, space, radius, border, touch, weights } from '../theme/tokens';
+import { useStyles, makeStyles } from '../theme/ThemeProvider';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 export function ActionButton({
@@ -8,6 +9,7 @@ export function ActionButton({
   secondary = false,
   destructive = false,
 }) {
+  const ui = useStyles(getUi);
   return (
     <Pressable
       accessibilityRole="button"
@@ -28,48 +30,71 @@ export function ActionButton({
   );
 }
 
-export const ui = StyleSheet.create({
-  title: { color: '#f8fafc', fontSize: 28, fontWeight: '700', marginBottom: 8 },
-  heading: {
-    color: '#f8fafc',
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  text: { color: '#e2e8f0', fontSize: 16, lineHeight: 25, marginBottom: 6 },
-  hint: { color: '#94a3b8', fontSize: 14, lineHeight: 22, marginBottom: 12 },
-  card: {
-    backgroundColor: '#111827',
-    borderColor: '#374151',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 18,
-    marginBottom: 16,
-  },
-  badge: {
-    color: '#c4b5fd',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  error: { color: '#fca5a5', fontSize: 15, lineHeight: 23, marginBottom: 12 },
-  button: {
-    minHeight: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    marginTop: 10,
-  },
-  secondaryButton: { backgroundColor: '#334155' },
-  destructiveButton: { backgroundColor: '#7f1d1d' },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  disabled: { opacity: 0.45 },
-  pressed: { opacity: 0.75 },
+export const getUi = makeStyles(theme => {
+  const { literalColors: themeLiteral } = theme;
+  return StyleSheet.create({
+    title: {
+      color: themeLiteral.diagnosticTitle,
+      fontSize: type.headline.fontSize,
+      fontWeight: type.headline.fontWeight,
+      marginBottom: space.s,
+    },
+    heading: {
+      color: themeLiteral.diagnosticHeading,
+      fontSize: type.title.fontSize,
+      fontWeight: type.title.fontWeight,
+      marginBottom: space.s,
+    },
+    text: {
+      color: themeLiteral.diagnosticText,
+      fontSize: type.body.fontSize,
+      lineHeight: type.body.lineHeight,
+      marginBottom: space.xs,
+    },
+    hint: {
+      color: themeLiteral.diagnosticHint,
+      fontSize: type.value.fontSize,
+      lineHeight: type.status.lineHeight,
+      marginBottom: space.m,
+    },
+    card: {
+      backgroundColor: themeLiteral.diagnosticSurface,
+      borderColor: themeLiteral.diagnosticBorder,
+      borderRadius: radius.card,
+      borderWidth: border.hairline,
+      padding: space.l,
+      marginBottom: space.l,
+    },
+    badge: {
+      color: themeLiteral.diagnosticBadge,
+      fontSize: type.cardTitle.fontSize,
+      fontWeight: type.cardTitle.fontWeight,
+      marginBottom: space.s,
+    },
+    error: {
+      color: themeLiteral.diagnosticError,
+      fontSize: type.cardTitle.fontSize,
+      lineHeight: type.status.lineHeight,
+      marginBottom: space.m,
+    },
+    button: {
+      minHeight: touch.min,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: space.m,
+      backgroundColor: themeLiteral.diagnosticButton,
+      borderRadius: radius.settingIcon,
+      marginTop: space.s,
+    },
+    secondaryButton: { backgroundColor: themeLiteral.diagnosticSecondary },
+    destructiveButton: { backgroundColor: themeLiteral.diagnosticDestructive },
+    buttonText: {
+      color: themeLiteral.avatarFrameMap,
+      fontSize: type.body.fontSize,
+      fontWeight: weights.medium,
+      textAlign: 'center',
+    },
+    disabled: { opacity: 0.45 },
+    pressed: { opacity: 0.75 },
+  });
 });

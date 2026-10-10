@@ -1,7 +1,7 @@
-import React from 'react';
+import { size as sizes, space, radius, type } from '../theme/tokens';
+import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { StyleSheet, Text, View } from 'react-native';
 import Glyph from './Glyph';
-import { mapColors as colors } from './MapTheme';
 
 /**
  * One reading: its icon and its value.
@@ -11,23 +11,32 @@ import { mapColors as colors } from './MapTheme';
  * faster than a word does, and leaves the number as the only text.
  */
 export default function Stat({ icon, label, value, level = null }) {
+  const { appColors: colors } = useTheme();
+  const styles = useStyles(getStyles);
   return (
-    <View accessible accessibilityLabel={`${label} ${value}`} style={styles.stat}>
-      <Glyph name={icon} color={colors.muted} size={15} level={level} />
+    <View
+      accessible
+      accessibilityLabel={`${label} ${value}`}
+      style={styles.stat}
+    >
+      <Glyph name={icon} color={colors.muted} size={sizes.icon.stat} level={level} />
       <Text style={styles.value}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  stat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 4,
-    paddingHorizontal: 9,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  value: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+const getStyles = makeStyles(theme => {
+  const { literalColors: themeLiteral, appColors: colors } = theme;
+  return StyleSheet.create({
+    stat: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.xs,
+      paddingVertical: space.xs,
+      paddingHorizontal: space.s,
+      borderRadius: radius.settingIcon,
+      backgroundColor: themeLiteral.surface,
+    },
+    value: { color: colors.ink, fontSize: type.caption.fontSize, fontWeight: type.captionBold.fontWeight },
+  });
 });

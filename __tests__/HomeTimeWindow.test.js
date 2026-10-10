@@ -104,7 +104,6 @@ test('positions older than 24 hours leave the home map entirely', () => {
     old, routeOf([old]), [], preferences(), NOW,
   );
   expect(presentation.slave).toBeNull();
-  expect(presentation.master).toBeNull();
   expect(presentation.positions).toEqual({ master: null, slave: null });
 });
 
@@ -124,49 +123,7 @@ test('the largest preset is exactly the 24-hour limit of the home map', () => {
   expect(Math.max(...WINDOW_PRESETS) * MINUTE).toBe(MAX_AGE_MS);
 });
 
-test('the live sheet hides route time presets', async () => {
-  jest.useFakeTimers();
-  jest.setSystemTime(NOW);
-  const originalOS = Platform.OS;
-  Platform.OS = 'android';
-  NativePlatform.isMapConfigured.mockReturnValue(true);
-  const saveTrackingPreferences = jest.fn();
-  const rows = [row(1, 20), row(2, 2)];
-  const tracking = {
-    mode: 'real',
-    point: rows[1],
-    route: routeOf(rows),
-    positionSamples: [],
-    ready: { real: true },
-    errors: {},
-    initialSnapshotReady: true,
-    foreground: true,
-    preferences: { ready: true, busy: false, value: preferences({ windowMinutes: 10 }) },
-    saveTrackingPreferences,
-  };
-  let renderer;
-  await act(async () => {
-    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }}
-      bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
-  });
-  // The sheet starts collapsed; its controls exist once it is expanded.
-  await act(async () => renderer.root
-    .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
-    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
-  // deep: false keeps the Pressable itself, not the View it renders with the
-  // same accessibility props.
-  const chips = renderer.root.findAll(
-    node => node.props.accessibilityLabel?.startsWith('過去 '),
-    { deep: false },
-  );
-  expect(chips).toHaveLength(0);
-  expect(saveTrackingPreferences).not.toHaveBeenCalled();
-  await act(async () => { renderer.unmount(); });
-  Platform.OS = originalOS;
-  jest.useRealTimers();
-});
-
-test('the map hides a dog seen before the selected window', async () => {
+test('a dog last seen 35 minutes ago stays on the map, grey and marked (v3)', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
   const originalOS = Platform.OS;
@@ -193,8 +150,10 @@ test('the map hides a dog seen before the selected window', async () => {
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   const dog = renderer.root.findAllByType(Marker)
     .find(node => node.props.identifier === 'real-dog-7');
-  // An expired position stays in the details list, not on the map.
-  expect(dog).toBeUndefined();
+  // v3 §6: an old position stays on the map, as 「沒有新位置」 (grey, red "!").
+  const label = dog.findAll(child => typeof child.props.accessibilityLabel === 'string')[0].props.accessibilityLabel;
+  expect(label).toMatch(/^狗 7，沒有新位置，最後 \d\d:\d\d$/);
+  expect(dog.findAll(node => node.props.testID === 'dog-badge-problem').length).toBeGreaterThan(0);
   // Nothing inside the window, so no line is drawn for it.
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   await act(async () => { renderer.unmount(); });
@@ -232,49 +191,18 @@ test('the home map keeps ageing while the collar is silent', async () => {
   const label = node => node.findAll(child => typeof child.props.accessibilityLabel === 'string')[0].props.accessibilityLabel;
   const dog = () => renderer.root.findAllByType(Marker)
     .find(node => node.props.identifier === 'real-dog-7');
-  expect(label(dog())).not.toContain('早於所選時間範圍');
-  // Even a saved ten-minute setting cannot override the three-minute packet limit.
-  await act(async () => jest.advanceTimersByTime(3 * MINUTE));
-  expect(dog()).toBeDefined();
+  expect(label(dog())).toBe('狗 7');
+  // Ten minutes without a new position is 「沒有新位置」; only the clock moved.
+  await act(async () => jest.advanceTimersByTime(10 * MINUTE));
+  expect(label(dog())).toBe('狗 7');
   await act(async () => jest.advanceTimersByTime(10000));
-  expect(dog()).toBeUndefined();
+  expect(label(dog())).toMatch(/^狗 7，沒有新位置，最後 \d\d:\d\d$/);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
-  // A day later it leaves the home map altogether.
+  // A day later it is still on the map, the time now with its date.
   await act(async () => jest.advanceTimersByTime(MAX_AGE_MS));
-  expect(dog()).toBeUndefined();
+  expect(label(dog())).toMatch(/^狗 7，沒有新位置，最後 9\/18 \d\d:\d\d$/);
   expect(renderer.root.findAllByType(Marker)
     .some(node => node.props.identifier === 'real-slave')).toBe(false);
-  await act(async () => { renderer.unmount(); });
-  Platform.OS = originalOS;
-  jest.useRealTimers();
-});
-
-test('the live sheet does not offer a path switch', async () => {
-  jest.useFakeTimers();
-  jest.setSystemTime(NOW);
-  const originalOS = Platform.OS;
-  Platform.OS = 'android';
-  NativePlatform.isMapConfigured.mockReturnValue(true);
-  const saveTrackingPreferences = jest.fn();
-  const rows = [row(1, 20), row(2, 2)];
-  const tracking = {
-    mode: 'real', point: rows[1], route: routeOf(rows), positionSamples: [],
-    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
-    preferences: { ready: true, busy: false, value: preferences({ showTrails: false }) },
-    saveTrackingPreferences,
-  };
-  let renderer;
-  await act(async () => {
-    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }}
-      bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
-  });
-  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  await act(async () => renderer.root
-    .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
-    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
-  // A real switch, not a row of text that has to be read to know its state.
-  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
-  expect(saveTrackingPreferences).not.toHaveBeenCalled();
   await act(async () => { renderer.unmount(); });
   Platform.OS = originalOS;
   jest.useRealTimers();
@@ -314,40 +242,6 @@ test('the first fit frames the pair and its path, not distant cloud dogs', async
   jest.useRealTimers();
 });
 
-test('saving a preference does not dim the card', async () => {
-  jest.useFakeTimers();
-  jest.setSystemTime(NOW);
-  const originalOS = Platform.OS;
-  Platform.OS = 'android';
-  NativePlatform.isMapConfigured.mockReturnValue(true);
-  const rows = [row(1, 20), row(2, 2)];
-  const tracking = {
-    mode: 'real', point: rows[1], route: routeOf(rows), positionSamples: [],
-    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
-    // A write is in flight: the card used to grey out until it finished, so
-    // every eye tap flashed.
-    preferences: { ready: true, busy: true, value: preferences() },
-    saveTrackingPreferences: jest.fn(),
-  };
-  let renderer;
-  await act(async () => {
-    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }}
-      bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
-  });
-  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  await act(async () => renderer.root
-    .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
-    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
-  const eye = renderer.root.findAll(
-    node => node.props.accessibilityLabel?.endsWith('位置') &&
-      typeof node.props.onPress === 'function', { deep: false })[0];
-  expect(eye.props.accessibilityState.disabled).toBe(false);
-  expect(JSON.stringify(eye.props.style)).not.toContain('0.45');
-  await act(async () => { renderer.unmount(); });
-  Platform.OS = originalOS;
-  jest.useRealTimers();
-});
-
 test('legacy path preferences cannot reveal live route controls', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(NOW);
@@ -368,9 +262,10 @@ test('legacy path preferences cannot reveal live route controls', async () => {
   let renderer;
   await act(async () => { renderer = Renderer.create(view(false)); });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
-  await act(async () => renderer.root
-    .findAllByProps({ testID: 'tracking-sheet-handle' })[0]
-    .props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+  // v3: the live map has no card of its own (a dog's card opens on a tap), so
+  // no route presets, no path switch.
+  expect(renderer.root.findAllByProps({ testID: 'tracking-sheet' })).toHaveLength(0);
+  expect(renderer.root.findAllByType(Switch)).toHaveLength(0);
   const presets = () => renderer.root.findAll(
     node => node.props.accessibilityLabel?.startsWith('過去 '), { deep: false });
   // Neither route nor live expiry controls are offered.

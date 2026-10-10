@@ -3,35 +3,30 @@ import { handleRootBack } from '../src/app/handleRootBack';
 
 afterEach(() => {
   delete NativeModules.BleBackground;
+  delete NativeModules.LocationTracker;
   jest.restoreAllMocks();
 });
 
-test('an enabled running service keeps receiving after leaving the map', async () => {
+test.each(['idle', 'receiving', 'recording', 'uploading', 'unreadable'])('%s: back backgrounds immediately, never asks or exits', async state => {
   const moveToBackground = jest.fn();
-  NativeModules.BleBackground = {
-    getState: async () => ({ enabled: true, running: true, connected: false }),
-    moveToBackground,
-  };
+  const getState = jest.fn(() => { throw Error('unreadable'); });
+  const live = jest.fn(() => { throw Error('unreadable'); });
+  NativeModules.BleBackground = { moveToBackground, getState };
+  NativeModules.LocationTracker = { live };
   const alert = jest.spyOn(Alert, 'alert');
-  await handleRootBack();
+  const exit = jest.spyOn(BackHandler, 'exitApp');
+  await handleRootBack({ uploading: state === 'uploading' });
   expect(moveToBackground).toHaveBeenCalledTimes(1);
+  expect(getState).not.toHaveBeenCalled();
+  expect(live).not.toHaveBeenCalled();
   expect(alert).not.toHaveBeenCalled();
-});
-
-test('without a background session exit requires explicit confirmation', async () => {
-  const alert = jest.spyOn(Alert, 'alert');
-  const exit = jest.spyOn(BackHandler, 'exitApp');
-  await handleRootBack();
   expect(exit).not.toHaveBeenCalled();
-  alert.mock.calls[0][2].find(button => button.text === '退出').onPress();
-  expect(exit).toHaveBeenCalledTimes(1);
 });
 
-test('a native state error does not exit or silently stop reception', async () => {
-  NativeModules.BleBackground = { getState: async () => { throw Error('unavailable'); } };
+test('missing native bridge never opens a close dialog or exits', async () => {
   const alert = jest.spyOn(Alert, 'alert');
   const exit = jest.spyOn(BackHandler, 'exitApp');
   await handleRootBack();
-  expect(alert.mock.calls[0][0]).toBe('無法確認背景連線');
+  expect(alert).not.toHaveBeenCalled();
   expect(exit).not.toHaveBeenCalled();
 });

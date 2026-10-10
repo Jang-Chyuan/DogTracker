@@ -52,15 +52,15 @@ export function linesCross(a, b, c, d) {
   return inside(a, b, c) || inside(a, b, d) || inside(c, d, a) || inside(c, d, b);
 }
 
-export function spreadDogIcons(points) {
+export function spreadDogIcons(points, gap = 44, spacing = 48) {
   const placed = [];
   const display = points.map(origin => {
     let chosen = origin;
     search: for (let ring = 0; ring <= points.length + 2; ring++) {
       for (let step = 0; step < (ring ? 32 : 1); step++) {
         const angle = -Math.PI / 2 + step * Math.PI / 16;
-        const candidate = { x: origin.x + Math.cos(angle) * ring * 48, y: origin.y + Math.sin(angle) * ring * 48 };
-        if (placed.some(other => Math.abs(other.x - candidate.x) < 44 && Math.abs(other.y - candidate.y) < 44)) continue;
+        const candidate = { x: origin.x + Math.cos(angle) * ring * spacing, y: origin.y + Math.sin(angle) * ring * spacing };
+        if (placed.some(other => Math.abs(other.x - candidate.x) < gap && Math.abs(other.y - candidate.y) < gap)) continue;
         chosen = candidate; break search;
       }
     }

@@ -1,17 +1,21 @@
-import { simplifyRoute } from '../tracking/SimplifyRoute';
-import { applyHistoryFixedPositions } from '../map/FixedPosition';
-import { safePhoneHistoryCoordinate } from './PhoneHistoryCoordinates';
-import { coordinate } from '../tracking/RouteSamples';
-import { persistCloudDisplayCoordinates, withCloudDisplayLock } from '../cloud/CloudDisplayCoordinates';
-import { historyWindow, parseHistoryRange, startOfDay } from './HistoryTime';
+import { t } from '../i18n';
+import { normalizeAvatar } from '../dogs/DogArt';
+import { HOLD_CONFIG } from '../placement/IndoorHold';
+import { parseHistoryRange } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
-import { ensureBleDisplayColumns } from '../ble/BleDisplayCoordinates';
-import { budgetHistory, budgetHistoryTracks, groupHistoryStreams } from './HistoryGeometryBudget';
+import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
+
+// The history list reads this much before the day too: a visit or a drive
+// running over midnight, a break before the first fix (判定表「跨午夜」).
+export const HISTORY_DAY_CONTEXT_MS = 30 * 60000;
+export const HISTORY_DAY_AFTER_MS = 3 * 60000;
+const DAY_PAGE = 2000;
 
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
-export const HISTORY_DATABASE_METHODS = ['load', 'save', 'read', 'listDevices', 'listDays',
-  'hasPhoneTrack'];
+export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar',
+  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
+const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
 export const HISTORY_DEFAULTS = { phone: true, client: true, source: 'ble', hours: 3,
@@ -21,7 +25,7 @@ const idList = value => (Array.isArray(value) ? value : [value])
 export function validateHistory(value) {
   const p = { ...HISTORY_DEFAULTS, ...value };
   if (p.dogAliases !== undefined) p.dogAliases = normalizeDogAliases(p.dogAliases);
-  if (!['recent', 'fixed'].includes(p.timeMode)) throw new Error('時間模式無效');
+  if (!['recent', 'fixed'].includes(p.timeMode)) throw new Error(t("c815"));
   // The tab decides whether history is shown, so a stored `enabled` from an
   // older version is dropped rather than obeyed. Single ids from an older
   // version become one-element lists.
@@ -55,11 +59,13 @@ export function validateHistory(value) {
   if (!['phone', 'client'].every(key => typeof p[key] === 'boolean') ||
       !['ble', 'cloud'].includes(p.source) || !Number.isFinite(p.hours) || p.hours <= 0 || p.hours > 240 ||
       !p.masters.length || !p.slaves.length)
-    throw new Error('請輸入有效設定：時數 0～240（不含 0），並至少選一隻狗與一台 Master');
+    throw new Error(t("c816"));
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
 export function createHistoryDatabase(db) {
+  // myLocationTracker's speed columns, read once per open database.
+  let phoneSpeedColumns = null;
   return {
     async load() {
       await db.executeAsync('CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
@@ -67,49 +73,164 @@ export function createHistoryDatabase(db) {
       const saved = rows(await db.executeAsync('SELECT value FROM map_history_settings WHERE id=1'))[0];
       return validateHistory(saved ? JSON.parse(saved.value) : {});
     },
+    /**
+     * Each dog's face, by collar number, on this phone only (like its name).
+     * Separate from the history settings so a photo is not rewritten with
+     * every change of the history query. A dog without a row has the default
+     * illustration.
+     */
+    async loadDogAvatars() {
+      await db.executeAsync(AVATAR_TABLE);
+      return Object.fromEntries(rows(await db.executeAsync('SELECT slave_id, value FROM dog_avatars'))
+        // One damaged row must not hide every other dog's face.
+        .map(row => { try { return [row.slave_id, normalizeAvatar(JSON.parse(row.value))]; } catch { return [row.slave_id, null]; } })
+        .filter(([, avatar]) => avatar));
+    },
+    // null removes the dog's own face, back to the default illustration.
+    async saveDogAvatar(slaveId, avatar) {
+      if (!Number.isInteger(slaveId) || slaveId < 1) throw new Error(t("c812"));
+      const value = normalizeAvatar(avatar);
+      if (avatar != null && !value) throw new Error(t("c813"));
+      await db.executeAsync(AVATAR_TABLE);
+      if (value) await db.executeAsync('INSERT OR REPLACE INTO dog_avatars(slave_id,value) VALUES(?,?)', [slaveId, JSON.stringify(value)]);
+      else await db.executeAsync('DELETE FROM dog_avatars WHERE slave_id=?', [slaveId]);
+      return value;
+    },
     async save(value) {
       const settings = validateHistory(value);
       await db.executeAsync('INSERT OR REPLACE INTO map_history_settings(id,value) VALUES(1,?)', [JSON.stringify(settings)]);
       return settings;
     },
     /**
-     * Which local days actually hold rows for the chosen devices, so the card
-     * can offer them instead of making the user query a day to find out it is
-     * empty. Platform date pickers cannot mark days themselves.
+     * This phone's own recorded positions from `since` on, after the cursor
+     * { time, id } (oldest first, at most `limit`): what 「今天 x km」 adds up.
+     * The pipeline's coordinates, not the display animation's.
      */
-    async listDays(value, owner) {
-      const p = validateHistory(value);
-      if (p.source === 'cloud' && !owner) return [];
-      const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
-      const time = p.source === 'ble' ? 'received_at' : 'CAST(COALESCE(track_at, received_at) AS INTEGER)';
-      const masters = p.masters.map(() => '?').join(',');
-      const slaves = p.slaves.map(() => '?').join(',');
-      const params = p.source === 'cloud'
-        ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
-      const found = rows(await db.executeAsync(
-        `SELECT MIN(${time}) AS from_at, MAX(${time}) AS to_at, COUNT(*) AS rows
-         FROM ${table}
-         WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
-         ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}
-         GROUP BY strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')
-         ORDER BY from_at DESC LIMIT 60`, params));
-      return found
-        .filter(row => Number.isFinite(row.from_at))
-        .map(row => ({
-          day: startOfDay(row.from_at),
-          rows: Number(row.rows || 0),
-          from: Number(row.from_at),
-          to: Number(row.to_at),
-        }));
-    },
-    /** Whether this phone has ever recorded its own position (GPS Timeline). */
-    async hasPhoneTrack() {
+    async phoneRouteSince(since, cursor = null, limit = 2000) {
       const exists = rows(await db.executeAsync(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
-      if (!exists.length) return false;
-      const found = rows(await db.executeAsync(
-        'SELECT id FROM myLocationTracker LIMIT 1'));
-      return found.length > 0;
+      if (!exists.length) return [];
+      const time = Math.max(Number(since) || 0, Number(cursor?.time) || 0);
+      const id = Number(cursor?.time) >= Number(since) ? Number(cursor?.id) || 0 : 0;
+      // The phone's own measured speed (067: drift it did not walk is not
+      // counted), when this install's table has the columns.
+      if (!phoneSpeedColumns) {
+        const names = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
+        phoneSpeedColumns = ['raw_speed_kmh', 'speed_accuracy_mps'].filter(name => names.has(name));
+      }
+      const optional = value => (value == null ? null : Number(value));
+      return rows(await db.executeAsync(
+        `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy${
+          phoneSpeedColumns.map(name => `, ${name}`).join('')} FROM myLocationTracker
+         WHERE recorded_at >= ? AND (recorded_at > ? OR (recorded_at = ? AND id > ?))
+         ORDER BY recorded_at, id LIMIT ?`, [Number(since) || 0, time, time, id, limit]))
+        .map(row => ({ id: Number(row.id), time: Number(row.time), latitude: Number(row.latitude),
+          longitude: Number(row.longitude), accuracy: optional(row.accuracy),
+          raw_speed_kmh: optional(row.raw_speed_kmh), speed_accuracy_mps: optional(row.speed_accuracy_mps) }));
+    },
+    /**
+     * One dog's (or this phone's) rows of one day for the history list
+     * (src/history): [start - HISTORY_DAY_CONTEXT_MS, end + HISTORY_DAY_AFTER_MS). `subject` is
+     * 'dog' (by collar number, every receiver) or 'phone'; `source` picks the
+     * tables — the history screen always reads 'all' (local and cloud merged);
+     * 'local' (dog_status) and 'cloud' (the account's supabase_dog_status;
+     * nothing signed out) remain for callers that need one side. `after` holds the
+     * last id read per table: only rows added since come back (whatever their
+     * time, so a download of older rows is seen), and polling re-reads a few
+     * rows, not the day. The dog's hold model also gets
+     * the last good fixes before the window (`seed`), like the history map.
+     * @returns {{ rows, seed, after }}
+     */
+    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {} }) {
+      const since = Number(start) - HISTORY_DAY_CONTEXT_MS;
+      // A few minutes past midnight tell whether the last stay or hold goes on
+      // the next day (「接續隔天」); they are not part of this day.
+      const until = Number(end) + HISTORY_DAY_AFTER_MS;
+      const cursors = { ...after };
+      // By id, not time: a cloud download can add rows older than the newest
+      // one read (判定表「補下載完成」), and those must be read too.
+      async function pages(key, sql, params) {
+        const found = [];
+        let cursor = cursors[key] ?? { id: -1 };
+        for (;;) {
+          const page = rows(await db.executeAsync(`${sql} AND id > ? ORDER BY id LIMIT ${DAY_PAGE}`,
+            [...params, cursor.id]));
+          if (!page.length) break;
+          found.push(...page);
+          cursor = { id: Number(page[page.length - 1].id) };
+          if (page.length < DAY_PAGE) break;
+        }
+        cursors[key] = cursor;
+        return found;
+      }
+      const table = async name => rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
+      if (subject === 'phone') {
+        if (!(await table('myLocationTracker'))) return { rows: [], seed: [], after: cursors };
+        // The CSV export's columns ride along (判定表「CSV」: 照 main 的欄位).
+        const phoneColumns = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
+        const phoneExtra = ['location_at', 'accuracy_meters', 'altitude_meters', 'speed_kmh', 'heading_degrees',
+          'raw_latitude', 'raw_longitude', 'session_id', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state',
+          'display_source', 'display_location_at'].filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
+        const found = await pages('phone', `SELECT id, recorded_at AS time, latitude, longitude,
+          accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ?`,
+        [since, until]);
+        return { rows: found.map(phoneHistoryRow), seed: [], after: cursors };
+      }
+      const out = [], seed = [];
+      const columnsOf = async name => new Set(rows(await db.executeAsync(`PRAGMA table_info(${name})`)).map(column => column.name));
+      const optional = (columns, names) => names.filter(name => columns.has(name)).map(name => `, ${name}`).join('');
+      const first = !Object.keys(after).length;
+      for (const [key, name, time, wanted] of [
+        ['local', 'dog_status', 'received_at', true],
+        ['cloud', 'supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', !!owner],
+      ]) {
+        if (!wanted || !(await table(name))) continue;
+        const columns = await columnsOf(name);
+        const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at', 'speed_kmh', 'distance_meters']);
+        const scope = `slave_id = ?${key === 'cloud' ? ' AND owner_user_id = ?' : ''}`;
+        const params = key === 'cloud' ? [slaveId, owner] : [slaveId];
+        const found = await pages(key, `SELECT id, received_at, master_id, slave_id, slave_lat, slave_lon${extra}
+          FROM ${name} WHERE ${scope} AND ${time} >= ? AND ${time} < ?`, [...params, since, until]);
+        out.push(...found.map(row => dogHistoryRow(row, key)));
+        if (first && columns.has('satellites')) {
+          seed.push(...rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude, slave_lon AS longitude,
+            master_id, satellites${columns.has('hdop') ? ', hdop' : ''} FROM ${name}
+            WHERE ${scope} AND ${time} < ? AND satellites >= ?
+              AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)
+            ORDER BY ${time} DESC LIMIT 40`, [...params, since, HOLD_CONFIG.goodMinSatellites])));
+        }
+      }
+      seed.sort((a, b) => a.time - b.time);
+      return { rows: out, seed: seed.slice(-40), after: cursors };
+    },
+    /**
+     * The local days (「YYYY-MM-DD」 in the phone's time zone) this phone holds
+     * rows of for one dog (any receiver; `source` as historyDayRows) or for
+     * my route, oldest first: the history's date row ‹ › steps between them
+     * (H3a). Days only the cloud holds come with the calendar (054b).
+     */
+    async historyDays({ subject = 'dog', slaveId = null, owner = null } = {}) {
+      const table = async name => rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
+      const dayOf = time => `strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')`;
+      const found = new Set();
+      const add = list => list.forEach(row => { if (row.day) found.add(String(row.day)); });
+      if (subject === 'phone') {
+        if (await table('myLocationTracker')) {
+          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('recorded_at')} AS day FROM myLocationTracker`)));
+        }
+      } else {
+        if (await table('dog_status')) {
+          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('received_at')} AS day FROM dog_status
+            WHERE slave_id = ?`, [slaveId])));
+        }
+        if (owner && await table('supabase_dog_status')) {
+          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('CAST(COALESCE(track_at, received_at) AS INTEGER)')} AS day
+            FROM supabase_dog_status WHERE slave_id = ? AND owner_user_id = ?`, [slaveId, owner])));
+        }
+      }
+      return [...found].sort();
     },
     /**
      * Which Master/Slave pairs this phone actually holds for a source. The card
@@ -133,144 +254,6 @@ export function createHistoryDatabase(db) {
         // queried a dog that does not exist and looked like "no data".
         .filter(pair => pair.master > 0 && pair.slave > 0);
     },
-    async read(value, owner, now = Date.now(), alive = () => true, raw = false, bounds = null, fixedLocations = []) {
-      const queuedAt = Date.now();
-      return withCloudDisplayLock(db, async () => {
-        const startedAt = Date.now();
-        if (startedAt - queuedAt >= 250) console.info(`[History timing] lockWaitMs=${startedAt - queuedAt}`);
-        if (!alive()) return null;
-        const p = validateHistory(value);
-        if (p.client && p.source === 'ble') await ensureBleDisplayColumns(db);
-        const { since, until } = bounds || historyWindow(p, now);
-        async function scan(table, time, extra, params, lat, lon) {
-          const scanStarted = Date.now();
-          const scanSince = table !== 'myLocationTracker' && !raw && fixedLocations.length
-            ? Math.floor(since / 60000) * 60000 - 120000 : since;
-          let cursor = scanSince, id = 0, all = [];
-          const columns = table === 'myLocationTracker' || raw || fixedLocations.length
-            ? new Set(rows(await db.executeAsync(`PRAGMA table_info(${table})`)).map(column => column.name)) : new Set();
-          const displayColumns = table === 'myLocationTracker' && columns.has('display_latitude') && columns.has('display_longitude');
-          const selectedLat = displayColumns ? `COALESCE(display_latitude, ${lat})` : lat;
-          const selectedLon = displayColumns ? `COALESCE(display_longitude, ${lon})` : lon;
-          const provenance = ['session_id', ...(raw ? ['raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state', 'display_source', 'display_location_at'] : [])]
-            .filter(column => columns.has(column)).map(column => ', ' + column).join('');
-          while (alive()) {
-            // `raw` requests all records for export, not unsmoothed coordinates.
-            const cloudDisplay = table === 'supabase_dog_status';
-            const bleDisplay = table === 'dog_status';
-            const quality = (raw || fixedLocations.length) && table !== 'myLocationTracker'
-              ? ['satellites', 'hdop', 'rssi', 'snr', 'usb_present'].filter(column => columns.has(column)).map(column => ', ' + column).join('') : '';
-            const extras = table !== 'myLocationTracker' ? ', master_id, slave_id' + quality + (cloudDisplay || bleDisplay
-              ? ', display_latitude, display_longitude, display_version' : '') : raw ? ', location_at, accuracy_meters, altitude_meters, heading_degrees' : '';
-            const queryStarted = Date.now();
-            const recovery = displayColumns ? `, ${lat} AS pipeline_latitude, ${lon} AS pipeline_longitude${raw ? '' : ', accuracy_meters, location_at'}` : '';
-            const page = rows(await db.executeAsync(`SELECT id, ${time} AS time, ${selectedLat} AS latitude, ${selectedLon} AS longitude, speed_kmh ${extras} ${provenance} ${recovery} FROM ${table}
-              WHERE ${time} >= ? AND ${time} < ? ${extra} AND (${time} > ? OR (${time} = ? AND id > ?))
-              ORDER BY ${time},id LIMIT 1000`, [scanSince, until, ...params, cursor, cursor, id]));
-            if (Date.now() - queryStarted >= 250) console.info(`[History timing] table=${table} pageMs=${Date.now() - queryStarted} rows=${page.length}`);
-            if (!page.length) break;
-            all.push(...(cloudDisplay || bleDisplay ? await persistCloudDisplayCoordinates(db, page, owner, bleDisplay)
-              : page.map(safePhoneHistoryCoordinate)));
-            const last = page[page.length - 1]; cursor = last.time; id = last.id;
-            if (page.length < 1000) break;
-          }
-          console.info(`[History timing] table=${table} scanMs=${Date.now() - scanStarted} rows=${all.length}`);
-          return all;
-        }
-        // Every selected dog gets an entry, with or without rows: the card lists
-        // what was asked for, and "0 筆" is an answer.
-        let phone = [], coverage = null;
-        const clients = p.slaves.map(slaveId => ({ slaveId, rows: [] }));
-        if (p.phone) {
-          const exists = rows(await db.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
-          if (exists.length) phone = await scan('myLocationTracker', 'recorded_at', '', [], 'latitude', 'longitude');
-        }
-        if (p.client && (p.source === 'ble' || owner)) {
-          const table = p.source === 'ble' ? 'dog_status' : 'supabase_dog_status';
-          const time = p.source === 'ble' ? 'received_at' : 'CAST(COALESCE(track_at, received_at) AS INTEGER)';
-          const masters = p.masters.map(() => '?').join(',');
-          const extra = `AND master_id IN (${masters}) AND slave_id=?`
-            + (p.source === 'cloud' ? ' AND owner_user_id=?' : '');
-          // One query per dog: each keeps its own line and marker on the map, so
-          // a track can never mix two dogs.
-          for (const entry of clients) {
-            const params = p.source === 'cloud'
-              ? [...p.masters, entry.slaveId, owner] : [...p.masters, entry.slaveId];
-            entry.rows = await scan(table, time, extra, params, 'slave_lat', 'slave_lon');
-            if (!raw && fixedLocations.length) {
-              entry.rows = applyHistoryFixedPositions(entry.rows, fixedLocations, now)
-                .filter(point => point.time >= since);
-            }
-          }
-          const client = clients.flatMap(entry => entry.rows);
-          // This screen only reads what the phone already stores: the cloud copy
-          // holds what was downloaded, and both tables are trimmed by retention.
-          // Without the oldest stored row the map cannot tell "nothing happened"
-          // from "never downloaded", and neither could the person reading it.
-          const slaves = p.slaves.map(() => '?').join(',');
-          const coverageParams = p.source === 'cloud'
-            ? [...p.masters, ...p.slaves, owner] : [...p.masters, ...p.slaves];
-          const stored = rows(await db.executeAsync(`SELECT MIN(${time}) AS from_at, COUNT(*) AS rows
-            FROM ${table} WHERE master_id IN (${masters}) AND slave_id IN (${slaves})
-            ${p.source === 'cloud' ? 'AND owner_user_id=?' : ''}`, coverageParams))[0];
-          coverage = { source: p.source, rows: Number(stored?.rows || 0),
-            from: Number.isFinite(stored?.from_at) ? stored.from_at : null };
-          if (raw) return { phone, client, clients, since, until, coverage, message: '' };
-        }
-        if (!alive()) return null;
-        const result = {
-          phone: raw ? phone : historyGeometry(phone),
-          clients: clients.map(entry => ({
-            slaveId: entry.slaveId,
-            ...(raw ? { rows: entry.rows } : historyGeometry(entry.rows)),
-          })),
-          since, until, coverage,
-          message: p.client && p.source === 'cloud' && !owner ? '請先登入雲端帳號，才能查看該帳號下載的定位。' : '' };
-        const output = raw ? result : budgetHistory(result);
-        console.info(`[History timing] totalMs=${Date.now() - startedAt} raw=${raw}`);
-        return output;
-      });
-    },
   };
 }
 
-export function historyGeometry(points) {
-  let segments = [], segment = [], last = null;
-  for (const stream of groupHistoryStreams(points)) {
-    segment = []; last = null;
-    for (const point of stream) {
-      // Preserve actual signal gaps within each receiver/session stream.
-      const valid = !!coordinate(point.latitude, point.longitude);
-      if (!valid || (last && (point.time - last.time > 120000 || Math.abs(point.longitude - last.longitude) > 180
-        || point.fixedReason !== last.fixedReason || point.fixedName !== last.fixedName))) {
-        if (segment.length) segments.push(segment);
-        segment = [];
-      }
-      if (valid) { segment.push(point); last = point; }
-      else last = null;
-    }
-    if (segment.length) segments.push(segment);
-  }
-  segments.sort((a, b) => a[a.length - 1].time - b[b.length - 1].time);
-  segments = segments.map(part => simplifyRoute(part, 3));
-  const validPoints = points.filter(p => coordinate(p.latitude, p.longitude));
-  return budgetHistoryTracks([{ segments, latest: validPoints[validPoints.length - 1] || null,
-    count: validPoints.length, limited: false,
-    times: validPoints.map(point => point.time), sourcePoints: points }])[0];
-}
-
-// Expire cached drawings even when the database has no new rows or a read fails.
-export function expireHistory(data, preferences, now) {
-  if (!data || preferences.timeMode === 'fixed') return data;
-  const since = Math.max(data.since, historyWindow(preferences, now).since);
-  const clip = track => {
-    // Simplified endpoints cannot be time-clipped: removing the first endpoint
-    // can erase a whole valid straight section. Always rebuild from source rows,
-    // including invalid fixes/session boundaries, before simplifying and capping.
-    const points = track.sourcePoints;
-    if (!points.length || points[0].time >= since) return track;
-    return historyGeometry(points.filter(point => point.time >= since));
-  };
-  return budgetHistory({ ...data, since, until: Math.max(data.until, since), phone: clip(data.phone),
-    clients: (data.clients || []).map(track => ({ ...clip(track), slaveId: track.slaveId })) });
-}

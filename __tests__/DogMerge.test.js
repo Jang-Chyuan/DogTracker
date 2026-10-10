@@ -1,4 +1,5 @@
-import { describeDogSource, mergeDogMarkers, MAX_AGE_MS } from '../src/map/DogMerge';
+import { t as i18nT } from '../src/i18n';
+import { mergeDogMarkers, MAX_AGE_MS } from '../src/map/DogMerge';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
 const NOW = trackingPoint.receivedAt + 60000;
@@ -15,11 +16,11 @@ test('fresh no-fix packets keep the last position visible without changing its t
   const options = { point: null, cloudRows: [old], packetRows: [packet], now: NOW, windowMs: 120000 };
   expect(mergeDogMarkers(options)[0]).toMatchObject({
     lastPacketAt: NOW, lastPositionAt: NOW - 121000, stale: false,
-    batteryPercentage: 55, distanceMeters: null, communicationStatus: '有通訊／GPS 未定位',
+    batteryPercentage: 55, distanceMeters: null, communicationStatus: i18nT("c736"),
   });
-  expect(mergeDogMarkers({ ...options, now: NOW + 121000 })[0].communicationStatus).toBe('未收到新資料');
+  expect(mergeDogMarkers({ ...options, now: NOW + 121000 })[0].communicationStatus).toBe(i18nT("c735"));
   expect(mergeDogMarkers({ ...options, packetRows: [{ ...packet, slave_lat: 25, slave_lon: 121, distance_meters: 10 }] })[0])
-    .toMatchObject({ stale: false, lastPositionAt: NOW, distanceMeters: 10, communicationStatus: '有通訊／定位正常' });
+    .toMatchObject({ stale: false, lastPositionAt: NOW, distanceMeters: 10, communicationStatus: i18nT("c737") });
 });
 
 test('default live marker expires only after three minutes without packets', () => {
@@ -45,7 +46,6 @@ test('a newer cloud row moves the same dog and records which Master reported it'
   expect(dogs).toHaveLength(1);
   expect(dogs[0]).toMatchObject({ slaveId: 7, source: 'cloud', masterId: 5 });
   expect(dogs[0].coordinate).toEqual({ latitude: 25.1, longitude: 121.6 });
-  expect(describeDogSource(dogs[0])).toBe('經 Master 5・雲端');
 });
 
 test('rows of the same second keep the BLE position, which this phone timed itself', () => {
@@ -78,9 +78,12 @@ test('without any BLE row the cloud copy is the only source', () => {
   expect(dogs.map(dog => dog.slaveId)).toEqual([4]);
 });
 
-test('positions older than 24 hours leave the home map, and broken rows are ignored', () => {
+test('positions older than 24 hours stay on the home map (v3 §6), and broken rows are ignored', () => {
   const now = trackingPoint.receivedAt + MAX_AGE_MS + 1000;
-  expect(mergeDogMarkers({ point: trackingPoint, now, cloudRows: [] })).toEqual([]);
+  const old = mergeDogMarkers({ point: trackingPoint, now, cloudRows: [] });
+  expect(old.map(dog => [dog.slaveId, dog.fixAt, dog.fixSource])).toEqual([[7, trackingPoint.receivedAt, 'ble']]);
+  // A caller may still limit what it reads.
+  expect(mergeDogMarkers({ point: trackingPoint, now, cloudRows: [], maxAgeMs: MAX_AGE_MS })).toEqual([]);
   const dogs = mergeDogMarkers({ point: null, now: NOW, cloudRows: [
     { ...cloudRow(4, NOW - 1000), slave_lat: null },
     { ...cloudRow(5, NOW - 1000), slave_lon: 'x' },
@@ -97,7 +100,6 @@ test('a retained BLE position says so, so a stale marker is not read as current'
       receivedAt: trackingPoint.receivedAt - 3000 }],
   });
   expect(dogs[0]).toMatchObject({ source: 'ble', retained: true });
-  expect(describeDogSource(dogs[0])).toBe('BLE・最後有效位置，非最新定位');
 });
 
 // Seen on hardware 2026-09-18: the collar reported 0,0 with battery and speed
@@ -148,6 +150,6 @@ test('a dog heard without a fix draws no marker, while the others still do', () 
   expect(merge({
     point: { ...trackingPoint, slaveLat: 0, slaveLon: 0 }, cloudRows: [],
   })).toEqual([expect.objectContaining({ slaveId: 7, coordinate: null, stale: true,
-    communicationStatus: '有通訊／GPS 未定位' })]);
+    communicationStatus: i18nT("c736") })]);
 });
 

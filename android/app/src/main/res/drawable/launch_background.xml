@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app window's background while the app opens: the same picture as the
+     system launch screen (D0: the whole white sitting dog, centred, 288dp like
+     the splash icon; light on accent, dark on bg). Whatever shows between the
+     system launch screen and the JavaScript copy (SplashOverlay) is therefore
+     the launch screen itself, never a black or empty window. MainActivity
+     swaps it for app_background once the handover has finished. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item android:drawable="@drawable/ic_launcher_foreground"
+        android:width="288dp" android:height="288dp" android:gravity="center" />
+</layer-list>

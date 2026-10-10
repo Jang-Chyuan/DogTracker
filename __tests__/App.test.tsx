@@ -10,7 +10,7 @@ jest.mock('../src/auth/AuthProvider', () => ({
   useAuth: () => ({ loading: false, user: { id: 'test-account' } }),
 }));
 
-test('the initial App reads its seeded Demo from SQLite, not from the writer result', async () => {
+test('a fresh App reads real SQLite and never creates simulated positions', async () => {
   Object.defineProperty(AppState, 'currentState', {
     configurable: true,
     value: 'active',
@@ -25,16 +25,17 @@ test('the initial App reads its seeded Demo from SQLite, not from the writer res
     await act(async () => {
       renderer = Renderer.create(<App />);
     });
-    expect(JSON.stringify(renderer!.toJSON())).toContain('DEMO · 模擬資料');
+    // No dog, no card: the live map shows no simulated position either.
+    expect(renderer!.root.findAllByProps({ testID: 'dog-card' })).toHaveLength(0);
     expect(
       connection.sqlite
-        .prepare('SELECT COUNT(*) AS count FROM demo_dog_status')
+        .prepare('SELECT COUNT(*) AS count FROM dog_status')
         .get().count,
-    ).toBe(3);
+    ).toBe(0);
     expect(
-      mockDatabase.executeAsync.mock.calls.map(([sql]) => sql),
+      mockDatabase.executeAsync.mock.calls.map(([sql]) => sql.replace(/\s+/g, ' ').trim()),
     ).toContainEqual(
-      expect.stringContaining('SELECT * FROM demo_dog_status ORDER BY id DESC'),
+      expect.stringContaining('SELECT * FROM dog_status ORDER BY id DESC'),
     );
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
