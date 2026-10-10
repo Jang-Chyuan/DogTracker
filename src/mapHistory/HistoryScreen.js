@@ -47,7 +47,6 @@ import { useHistoryExport } from './useHistoryExport';
 import HistoryCalendarSheet from './HistoryCalendarSheet';
 import { DogsSheet } from './HistoryPickers';
 import { historyDogsPill, routeTint } from '../history/screen/HistoryDogsPill';
-import { AlertBadge } from '../map/TopAlertCards';
 import { isReduceMotion } from '../utils/reduceMotion';
 import { behindSheet } from '../utils/a11yFocus';
 import { fontScaleAtLeast } from '../utils/textScale';
@@ -116,7 +115,7 @@ const FACE_ONLY_FONT_SCALE = fontScales.faceOnly;
 
 /** One fixed capsule, followed by a flexible spacer and the export control. */
 export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
-  onAdd, alertBadge = null, onAlertBadge, exportEnabled, exportLabel = t("c821"), exportBusy = false,
+  onAdd, exportEnabled, exportLabel = t("c821"), exportBusy = false,
   hidden = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -126,10 +125,8 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
   // from 180% it goes (the face stays, the name is in TalkBack). The row never scrolls.
   const { width, fontScale } = useWindowDimensions();
   const compact = width <= NARROW_WIDTH || fontScaleAtLeast(fontScale, COMPACT_FONT_SCALE);
-  // No room for even a cut name beside 「⚠ N」 and 匯出 in the compact row:
-  // the face alone (C16 in the E2E check: the name had shrunk to 「…」).
-  const faceOnly =
-    fontScaleAtLeast(fontScale, FACE_ONLY_FONT_SCALE) || (compact && !!alertBadge);
+  // At the largest text size, the face remains and TalkBack supplies the name.
+  const faceOnly = fontScaleAtLeast(fontScale, FACE_ONLY_FONT_SCALE);
   return (
     <View style={[styles.topRow, { top }]} pointerEvents="box-none"
       importantForAccessibility={behindSheet(hidden)}>
@@ -160,8 +157,6 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
         </Capsule>}
       </View>
       <View style={styles.spacer} />
-      {/* 「⚠ N」: 8dp left of the export icon (the row's gap is 6). */}
-      <AlertBadge badge={alertBadge} onPress={onAlertBadge} style={styles.alertBadge} />
       <PressScale testID="history-export" accessibilityRole="button"
         accessibilityLabel={exportBusy ? t("c837") : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
@@ -291,8 +286,8 @@ function FrameButton({ onPress }) {
  */
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, bottomInset,
   onBack, onFrame, closedAt = null, initialRangeOpen = false, initialCalendar = null,
-  candidates = [], initialSheet = null, exportNative = null, initialExport = null, alertBadge = null,
-  onAlertBadge, onSheetOpen, onPanelHeight },
+  candidates = [], initialSheet = null, exportNative = null, initialExport = null,
+  onSheetOpen, onPanelHeight },
 ref) {
   const styles = getStyles(useTheme());
   const panel = useRef(null);
@@ -537,8 +532,8 @@ ref) {
   }
   return (
     <>
-      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates} alertBadge={alertBadge}
-        onAlertBadge={onAlertBadge} onBack={onBack}
+      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
+        onBack={onBack}
         onAdd={pressAdd}
         exportEnabled={hasRoute} exportBusy={exporter.generating}
         onExport={() => { closeRange(); exporter.open(); }}
@@ -624,7 +619,6 @@ const getStyles = makeStyles(theme => {
     caret: { fontSize: sizes.historyTop.caretGlyph, color: colors.textMuted },
     plus: { fontSize: type.body.fontSize, fontWeight: type.status.fontWeight, color: colors.accent,
       lineHeight: sizes.historyTop.plusRing, textAlign: 'center', includeFontPadding: false },
-    alertBadge: { marginRight: space.xs },
     // A dog whose download failed (K12): the problem 「!」 on its face.
     downloadFailure: { position: 'absolute', top: -space.xs, right: -space.xs, zIndex: 1 },
     capsule: {

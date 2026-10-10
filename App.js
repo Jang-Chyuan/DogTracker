@@ -896,7 +896,6 @@ function TrackerApp({ resume = null, onRestart }) {
     setN3Shown(null);
     openAlert(card.target);
   };
-  const pressAlertBadge = badge => openAlert(badge.target);
   // A card an alert opened, closed (back, swiped down, the empty map): back
   // to the page under it (ReturnSnapshot.closeAlertCard).
   const alertCardOpen = useRef(null);
@@ -1415,7 +1414,6 @@ function TrackerApp({ resume = null, onRestart }) {
             historyBack={historyBack}
             historyRestore={isHistory ? route.restore ?? null : null}
             historySnapshot={historySnapshot}
-            alertBadge={isHistory ? { badge: offMap.badge, onPress: pressAlertBadge } : null}
             n3Bottom={isHistory && offMap.card ? n3Top + n3Height : 0}
           />
         </View>
