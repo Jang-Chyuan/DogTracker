@@ -3,13 +3,13 @@ import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useStyles } from '../theme/ThemeProvider';
-import { size, space, fontScale as fontScales } from '../theme/tokens';
+import { size, space, border, fontScale as fontScales } from '../theme/tokens';
 import { historyPanelMaxHeight } from '../map/MapPanelHeight';
 import { behindSheet } from '../utils/a11yFocus';
 import { fontScaleAtLeast } from '../utils/textScale';
 
 const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
-  bottomInset = 0, scrollRef, above = null, hidden = false, onHeightChange }, ref) {
+  bottomInset = 0, scrollRef, above = null, floating = null, hidden = false, onHeightChange }, ref) {
   const styles = useStyles(getStyles);
   const scroller = useRef(null);
   // Timeline rows report positions relative to the independently scrolling list.
@@ -39,6 +39,7 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
           </View>
         </ScrollView>
       </View>
+      {floating && <View testID="history-range-floating" style={styles.floating}>{floating}</View>}
     </View>
   );
 });
@@ -49,6 +50,11 @@ const getStyles = makeStyles(theme => ({
     borderTopLeftRadius: size.historyPanel.corner, borderTopRightRadius: size.historyPanel.corner,
     ...theme.shadow.floating, ...theme.floatingBorder, elevation: 12, overflow: 'hidden' },
   above: { position: 'absolute', right: space.l, top: -(size.floatingButton + space.m) },
+  floating: { position: 'absolute', left: space.l, right: space.l, bottom: '100%',
+    marginBottom: space.s, paddingHorizontal: space.s, paddingVertical: space.xs,
+    borderRadius: size.historyPanel.corner, backgroundColor: theme.colors.elevated,
+    ...theme.shadow.floating, ...theme.floatingBorder, borderWidth: border.regular,
+    borderColor: theme.colors.accent, elevation: 12, zIndex: 1 },
   header: { flexShrink: 0 },
   list: { flex: 1, minHeight: 0 },
 }));

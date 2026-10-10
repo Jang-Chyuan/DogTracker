@@ -17,3 +17,10 @@ export function historyPanelMinHeight(windowHeight, topInset = 0, bottomInset = 
   return Math.min(historyPanelMaxHeight(windowHeight, topInset),
     3 * touch.min + 2 * (size.timeline.sectionHeight + space.m) + bottomInset + space.l);
 }
+
+// A wide, short phone window has little vertical room in the fixed half panel.
+// Tall tablets retain the ordinary header; narrow split windows need its full width.
+export function historyUsesWideHeader({ width, height }) {
+  return Number.isFinite(width) && Number.isFinite(height)
+    && width >= 600 && height <= 500 && width > height;
+}
