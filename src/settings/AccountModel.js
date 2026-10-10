@@ -42,7 +42,15 @@ export function accountPage(input) {
 
   // ---- 下載 ----------------------------------------------------------------
   let download;
-  if (sync.busy && sync.mode === 'auto' && sync.catchUp?.phase !== 'failed' && (sync.lastSuccess == null || sync.catchUp?.phase === 'catching-up')) {
+  if (sync.latestFirst && sync.lastSuccess != null && sync.failingSince == null && (sync.archivePending || sync.contextPending)) {
+    const time = formatClock(sync.lastSuccess);
+    download = { title: t('c217'), detail: t('c1250'), right: time, problem: false, success: false, retry: false,
+      label: [t('c217'), time, t('c1250')].join(' ') };
+  } else if (sync.latestFirst && sync.lastSuccess != null && sync.failingSince == null && !sync.snapshotPending && sync.archiveError) {
+    const time = formatClock(sync.lastSuccess);
+    download = { title: t('c217'), detail: t('c1251'), right: time, problem: true, success: false, retry: true,
+      label: [t('c217'), time, t('c1251')].join(' ') };
+  } else if (sync.busy && sync.mode === 'auto' && sync.catchUp?.phase !== 'failed' && (sync.lastSuccess == null || sync.catchUp?.phase === 'catching-up')) {
     const time = sync.lastSuccess == null ? null : formatClock(sync.lastSuccess);
     // A retry is in progress, not a completed failure. Keep its last success
     // time without clearing the engine's error/failingSince before recovery.

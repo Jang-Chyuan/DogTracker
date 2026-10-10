@@ -6,6 +6,7 @@ import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { cloudSyncDiagnostic } from '../logger';
+import { downloadCloudLatest, downloadCloudLatestContext } from './CloudLatest';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
 // that are found by the count check instead. Sweeping every cycle would spend
@@ -14,11 +15,14 @@ const SWEEP = 10 * 60 * 1000;
 // A valid cloud pass can exceed the local feed's 20s UI budget. Use the
 // existing download deadline for both its cancellation and return status.
 const CLOUD_DOWNLOAD_TIMEOUT_MS = 120000;
+const CONTEXT_BUDGET_MS = 10000;
 
 // One scheduler for the whole App, independent of navigation. Its execution
 // gate is enabled by foreground UI; WorkManager uses the same exclusive slot.
 // Manual and automatic downloads share the same exclusive network/write slot.
-export function createCloudSync({ client, database, onChange = () => {}, now = Date.now }) {
+export function createCloudSync({ client, database, onChange = () => {}, now = Date.now, downloadLatest = downloadCloudLatest,
+  downloadContext = downloadCloudLatestContext }) {
+  const latestFirst = typeof database.publishLatestSnapshot === 'function';
   const mapScope = {};
   let owner = null;
   let foreground = false;
@@ -31,6 +35,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let manualPending = false;
   let initialAttemptStarted = false;
   let retryQueued = false;
+  let archiveYieldRequested = false;
   let sweptAt = 0;
   let failureDiagnostic = null;
   // lastDownloadAt: when the last successful live download started (what it
@@ -40,7 +45,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   // authFailed: the last pass was refused for the sign-in (401, expired JWT:
   // 判定表「使用中登入失效」); offline: it never reached Supabase (S3 can
   // say a switch needs the network).
-  let state = { busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
+  let state = { latestFirst, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null,
+    archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', contextPending: false, busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
     failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: false, catchUp: CATCH_UP_IDLE };
   const publish = patch => {
     state = { ...state, ...patch };
@@ -92,29 +98,95 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const startedAt = now();
     const attempt = state.mapAttempt + 1;
     let phase = 'initialize';
+    let latestAccepted = false;
+    let latestPublishedAt = null;
     const abort = new AbortController();
     controller = abort;
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, CLOUD_DOWNLOAD_TIMEOUT_MS);
-    const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t("c586")); };
+    const check = () => {
+      if (latestFirst && latestAccepted && now() - latestPublishedAt >= 30000) {
+        archiveYieldRequested = true; abort.abort();
+      }
+      if (!valid(version) || abort.signal.aborted) throw new Error(t("c586"));
+    };
     // Each pass reports a refusal of the sign-in on its own (authFailed).
     const showCatchUp = retryQueued || !initialAttemptStarted;
     retryQueued = false;
     initialAttemptStarted = true;
     resumeCatchUp.started(showCatchUp);
-    publish({ busy: true, mode: 'auto', error: '', authFailed: false,
+    archiveYieldRequested = false;
+    publish({ busy: true, mode: 'auto', error: '', authFailed: false, snapshotPending: latestFirst,
       mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
       try {
         check();
         await database.initialize();
         check();
-        phase = 'begin';
-        await database.beginDownload?.(userId);
-        check();
+        if (latestFirst) {
+          const cached = await database.readLatestSnapshot(userId);
+          check();
+          publish({ snapshotBaseRevision: cached?.revision ?? null });
+        }
+        if (!latestFirst) {
+          phase = 'begin';
+          await database.beginDownload?.(userId);
+          check();
+        }
         phase = 'masters';
         const masters = await listCloudMasters(client, userId, abort.signal, check);
         const cutoff = now();
+        if (latestFirst) {
+          phase = 'download';
+          const snapshot = await downloadLatest({ client, masterIds: masters, cutoff, signal: abort.signal, check });
+          check();
+          phase = 'publish';
+          await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
+          check();
+          latestAccepted = true;
+          latestPublishedAt = now();
+          publish({ snapshotPending: false, mapPending: false, snapshotRevision: state.snapshotRevision + 1,
+            snapshotCutoff: cutoff, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(),
+            lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
+          resumeCatchUp.caughtUp();
+          if (failureDiagnostic) {
+            cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
+            failureDiagnostic = null;
+          }
+          publish({ contextPending: true });
+          const contextAbort = new AbortController();
+          const stopContext = () => contextAbort.abort();
+          abort.signal.addEventListener('abort', stopContext);
+          const contextTimer = setTimeout(stopContext, CONTEXT_BUDGET_MS);
+          let rejectContext;
+          const canceledContext = new Promise((_, reject) => { rejectContext = () => reject(new Error(t('c576'))); });
+          contextAbort.signal.addEventListener('abort', rejectContext, { once: true });
+          try {
+            const context = await Promise.race([downloadContext({ client, masterIds: masters, snapshot,
+              signal: contextAbort.signal, check: () => { check(); if (contextAbort.signal.aborted) throw new Error(t('c576')); } }), canceledContext]);
+            check();
+            clearTimeout(contextTimer);
+            publish({ mapPending: true });
+            await database.publishLatestSnapshot(userId, { ...context, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
+            check();
+            publish({ mapPending: false, snapshotRevision: state.snapshotRevision + 1, mapSuccessRevision: state.mapSuccessRevision + 1 });
+          } catch {
+            // Latest positions remain usable. Incomplete context never reaches
+            // the hold tracker, and a failed context stage does not replace
+            // previously known context with an empty set.
+            check();
+          } finally {
+            clearTimeout(contextTimer);
+            abort.signal.removeEventListener('abort', stopContext);
+            contextAbort.signal.removeEventListener('abort', rejectContext);
+            contextAbort.abort();
+            if (valid(version)) publish({ contextPending: false, mapPending: false });
+          }
+          publish({ archivePending: true });
+          phase = 'begin';
+          await database.beginDownload?.(userId);
+          check();
+        }
         const save = async (...args) => {
           check();
           await database.savePage(...args);
@@ -151,14 +223,29 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         phase = 'publish';
         if (database.publishDownload) await publishScoped(version, () => database.publishDownload(userId));
         check();
-        publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
-        resumeCatchUp.caughtUp();
+        if (latestFirst) publish({ archivePending: false, archiveRevision: state.archiveRevision + 1, archiveCutoff: cutoff, archiveError: '' });
+        else publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
+        if (!latestFirst) resumeCatchUp.caughtUp();
         if (failureDiagnostic) {
           cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
           failureDiagnostic = null;
         }
       } catch (error) {
-        if (valid(version) && (!abort.signal.aborted || timedOut)) {
+        if (latestFirst && latestAccepted) {
+          // Archive failure/partial work cannot revoke an accepted map snapshot.
+          if (valid(version) && !archiveYieldRequested && (!abort.signal.aborted || timedOut)) {
+            const refused = !timedOut && isAuthFailure(error);
+            publish({ archiveError: t('c211'), ...(refused ? { authFailed: true } : {}) });
+            if (refused) {
+              const status = error?.status ?? error?.context?.status ?? error?.cause?.status ?? error?.cause?.context?.status;
+              const diagnostic = { attempt, phase, failureKind: 'auth',
+                status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null };
+              if (!failureDiagnostic || ['phase', 'failureKind', 'status'].some(field => diagnostic[field] !== failureDiagnostic[field]))
+                cloudSyncDiagnostic('failure', diagnostic);
+              failureDiagnostic = diagnostic;
+            }
+          }
+        } else if (valid(version) && (!abort.signal.aborted || timedOut)) {
           const status = error?.status ?? error?.context?.status ?? error?.cause?.status ?? error?.cause?.context?.status;
           const failureKind = timedOut ? 'timeout' : isAuthFailure(error) ? 'auth'
             : isNetworkFailure(error) ? 'network'
@@ -184,9 +271,9 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         clearTimeout(timeout);
         controller = null;
         running = null;
-        publish({ busy: false, mode: null });
+        publish({ busy: false, mode: null, snapshotPending: false, contextPending: false, archivePending: false });
         // A user/foreground change may arrive while a canceled request drains.
-        if ((retryQueued || generation !== version) && foreground && owner) wake();
+        if ((retryQueued || archiveYieldRequested || generation !== version) && foreground && owner) wake();
       }
     });
     return running;
@@ -196,9 +283,14 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     // Synchronous read fence: React may coalesce busy/idle updates. Failed or
     // aborted writes remain pending until a complete automatic pass succeeds.
     mapPublication() {
-      return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending || state.publishedPending,
-        busy: state.busy, mapSuccessRevision: state.mapSuccessRevision,
+      return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending || (!latestFirst && state.publishedPending),
+        busy: latestFirst ? state.snapshotPending : state.busy, snapshotBaseRevision: state.snapshotBaseRevision, mapSuccessRevision: state.mapSuccessRevision,
         publishedRevision: state.publishedRevision, publishedPending: state.publishedPending };
+    },
+    historyPublication() {
+      return { scope: mapScope, owner, generation, latestFirst, attempt: state.mapAttempt, pending: state.publishedPending,
+        busy: false, mapSuccessRevision: state.archiveRevision, publishedRevision: state.publishedRevision,
+        publishedPending: state.publishedPending, archiveRevision: state.archiveRevision, archiveCutoff: state.archiveCutoff, archiveError: state.archiveError };
     },
     setSession(session) {
       const next = session?.user.id || null;
@@ -216,7 +308,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       generation += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
-        offline: false, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: !!publishedOperation, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
+        offline: false, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null, contextPending: false, archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, publishedRevision: 0, publishedPending: !!publishedOperation, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
       wake();
     },
     setForeground(active) {
@@ -227,7 +319,11 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       if (active) {
         cancelBackgroundSync();
         resumeCatchUp.back();
-        interval = setInterval(() => { tick(); }, 30000);
+        interval = setInterval(() => {
+          if (latestFirst && running && state.mode === 'auto' && (state.archivePending || state.contextPending)
+            && now() - state.lastSuccess >= 30000) { archiveYieldRequested = true; controller?.abort(); }
+          tick();
+        }, 30000);
         wake();
       } else {
         retryQueued = false;
@@ -256,7 +352,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         await running;
         if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
         controller = abort;
-        publish({ busy: true, mode: 'manual', mapPending: true, mapAttempt: state.mapAttempt + 1 });
+        publish({ busy: true, mode: 'manual', ...(latestFirst ? { archivePending: true }
+          : { mapPending: true, mapAttempt: state.mapAttempt + 1 }) });
         running = withCloudSyncSlot(async () => {
           if (!valid(version) || abort.signal.aborted) throw new Error('Download cancelled');
           if (database.beginDownload) await database.beginDownload(owner, 'manual');
@@ -275,7 +372,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         manualPending = false;
         controller = null;
         running = null;
-        publish({ busy: false, mode: null, revision: state.revision + 1 });
+        publish({ busy: false, mode: null, archivePending: false, revision: state.revision + 1 });
         wake();
       }
     },

@@ -14,6 +14,7 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
   isDiscarded = null) {
   const engine = useRef(null);
   const getMapPublication = useCallback(() => engine.current?.mapPublication() ?? null, []);
+  const getHistoryPublication = useCallback(() => engine.current?.historyPublication() ?? null, []);
   const authFailure = useRef(onAuthFailure);
   authFailure.current = onAuthFailure;
   const discarded = useRef(isDiscarded);
@@ -71,6 +72,6 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
       sync.dispose()?.catch(() => {});
     };
   }, [database, ready, clientFactory]);
-  return { ...status, ownerId, getMapPublication, retry: () => engine.current?.retry(), runManual: (work, abort) => engine.current
+  return { ...status, ownerId, getMapPublication, getHistoryPublication, retry: () => engine.current?.retry(), runManual: (work, abort) => engine.current
     ? engine.current.runManual(work, abort) : Promise.reject(new Error(t("c599"))) };
 }

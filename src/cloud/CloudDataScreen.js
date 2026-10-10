@@ -218,6 +218,10 @@ export default function CloudDataScreen({
   const pages = Math.max(1, Math.ceil(count / PAGE));
   const syncText = !sync
     ? null
+    : sync.latestFirst && (sync.archivePending || sync.contextPending)
+    ? t('c1250')
+    : sync.latestFirst && sync.archiveError
+    ? t('c1251')
     : sync.mode === 'auto'
     ? t("c547")
     : sync.lastSuccess
@@ -273,7 +277,7 @@ export default function CloudDataScreen({
             ) : null}
           </GroupCard>
           <Text style={dataStyles.hint}>
-            {Platform.OS === 'android'
+            {sync?.latestFirst ? t('c1252') : Platform.OS === 'android'
               ? t("c569")
               : t("c570")}
           </Text>

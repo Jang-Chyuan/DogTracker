@@ -24,3 +24,12 @@ export function captureMapRead(getPublication, owner, success) {
     },
   };
 }
+
+
+// History may be downloading for minutes after the latest map is usable.
+export function mapDownloadBusy(sync) {
+  return sync?.latestFirst ? !!sync.snapshotPending : !!sync?.busy;
+}
+export function mapReadRevision(sync) {
+  return sync?.latestFirst ? (sync.snapshotRevision ?? 0) * 2 + (sync.snapshotBaseRevision != null ? 1 : 0) : sync?.revision ?? 0;
+}

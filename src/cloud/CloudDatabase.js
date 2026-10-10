@@ -38,9 +38,9 @@ const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
 
 // Enumerate dogs by seeking to the next indexed id, then seek each newest row.
 // DISTINCT still walks the whole account even when its output has only six dogs.
-export function latestCloudStatusQuery(validFix) {
+export function latestCloudStatusQuery(validFix, full = false) {
   const fix = validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : '';
-  return `SELECT slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
+  return `SELECT ${full ? '*, ' : ''}slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
     received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present, 'cloud' AS source
     FROM supabase_dog_status WHERE id IN (
       SELECT (SELECT id FROM supabase_dog_status AS newest
@@ -70,7 +70,34 @@ const initialization = new WeakMap();
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
   const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
-  return { ...database, ...createLatestSnapshotDatabase(connection, database.initialize) };
+  return { ...database, ...createLatestSnapshotDatabase(connection, database.initialize, async owner => {
+    const read = async fixed => {
+      const result = await connection.executeAsync(latestCloudStatusQuery(fixed, true), [owner, 0, owner]);
+      return result.results || result.rows?._array || [];
+    };
+    const packets = await read(false), contexts = new Map(); let contextRows = 0;
+    for (const packet of packets) {
+      if (contextRows >= 20000) break;
+      const from = Number(packet.track_at) - HOLD_LOOKBACK_MS;
+      const query = async (sql, params) => {
+        const result = await connection.executeAsync(sql, params);
+        return result.results || result.rows?._array || [];
+      };
+      const window = await query(`SELECT * FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=?
+        AND CAST(COALESCE(track_at,received_at) AS INTEGER)>=? AND CAST(COALESCE(track_at,received_at) AS INTEGER)<=?
+        ORDER BY CAST(COALESCE(track_at,received_at) AS INTEGER),id LIMIT 20001`, [owner, packet.slave_id, from, packet.track_at]);
+      // A truncated cache slice is not replayed as a complete hold context.
+      if (window.length > 20000) continue;
+      const seeds = await query(`SELECT * FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=?
+        AND CAST(COALESCE(track_at,received_at) AS INTEGER)<? AND satellites>=?
+        AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT(slave_lat=0 AND slave_lon=0)
+        ORDER BY CAST(COALESCE(track_at,received_at) AS INTEGER) DESC,id DESC LIMIT 40`, [owner, packet.slave_id, from, HOLD_CONFIG.goodMinSatellites]);
+      if (contextRows + window.length + seeds.length > 20000) continue;
+      contextRows += window.length + seeds.length;
+      contexts.set(packet.slave_id, { rows: window, seeds });
+    }
+    return { packets, fixes: await read(true), contexts };
+  }) };
 }
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {

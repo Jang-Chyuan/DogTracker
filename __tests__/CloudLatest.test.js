@@ -35,8 +35,12 @@ function rest(events) {
       }));
       found.sort((a, b) => {
         for (const [key, options] of order) {
-          const left = key.endsWith('_at') ? Date.parse(a[key]) : a[key];
-          const right = key.endsWith('_at') ? Date.parse(b[key]) : b[key];
+          const clock = value => {
+            const match = /\.(\d{1,6})/.exec(value)?.[1] || '';
+            return `${String(Date.parse(value)).padStart(16, '0')}:${match.padEnd(6, '0').slice(3)}`;
+          };
+          const left = key.endsWith('_at') ? clock(a[key]) : a[key];
+          const right = key.endsWith('_at') ? clock(b[key]) : b[key];
           const result = left < right ? -1 : left > right ? 1 : 0;
           if (result) return options?.ascending === false ? -result : result;
         }
@@ -76,7 +80,8 @@ test('late phone uploads and multiple masters use effective clocks; packet witho
 test('malformed JSON coordinate types and out-of-range coordinates cannot become a valid last fix', async () => {
   const { client } = rest([event(1, 4, 7, '2026-10-10T09:00:00Z'),
     event(2, 4, 7, '2026-10-10T10:00:00Z', { lat: 91000000, lon: 121000000 }),
-    event(3, 4, 7, '2026-10-10T11:00:00Z', { lat: 0, lon: 0 })]);
+    event(3, 4, 7, '2026-10-10T11:00:00Z', { lat: 0, lon: 0 }),
+    event(4, 4, 7, '2026-10-10T10:30:00Z', { lat: '25000000', lon: 121000000 })]);
   const result = await downloadCloudLatest({ client, masterIds: [7], cutoff: CUT });
   expect(result.dogs[0].fix.sequence).toBe(1);
   const malformed = rest([event(9, 4, 7, '2026-10-10T11:00:00Z', { lat: '25', lon: 121000000 })]);
@@ -89,4 +94,74 @@ test('empty membership yields a complete empty snapshot and canceled requests ca
   expect(client.from).not.toHaveBeenCalled();
   await expect(downloadCloudLatest({ client, masterIds: [7], cutoff: CUT,
     signal: { aborted: true } })).rejects.toThrow();
+});
+
+
+test.each([
+  ['fraction', '2026-10-10T11:00:00.123450Z', '2026-10-10T19:00:00.123451+08:00'],
+  ['event-id tie', '2026-10-10T11:00:00.123456Z', '2026-10-10T19:00:00.123456+08:00'],
+])('%s preserves six digits and equal instants with different timezone offsets', async (_kind, received, phoneTime) => {
+  const { client } = rest([event(8, 4, 7, received, undefined, { upload_source: 'wifi' }),
+    event(9, 4, 9, received, undefined, { upload_source: 'phone', phone_received_at: phoneTime })]);
+  const result = await downloadCloudLatest({ client, masterIds: [7, 9], cutoff: CUT });
+  expect(result.dogs[0].packet.sequence).toBe(9);
+});
+
+test('a repeated dog key fails the whole result instead of returning a falsely complete collection', async () => {
+  const { client } = rest([event(1, 4, 7, '2026-10-10T11:00:00Z')]);
+  const from = client.from;
+  client.from = jest.fn(table => {
+    const query = from(table);
+    query.gt = () => query;
+    return query;
+  });
+  await expect(downloadCloudLatest({ client, masterIds: [7], cutoff: CUT })).rejects.toThrow();
+});
+
+test('cancellation and owner changes during a response cannot return a publishable snapshot', async () => {
+  for (const cancel of ['signal', 'owner']) {
+    const { client } = rest([event(1, 4, 7, '2026-10-10T11:00:00Z')]);
+    const abort = new AbortController(); let current = true;
+    const from = client.from;
+    client.from = table => {
+      const query = from(table), read = query.abortSignal;
+      query.abortSignal = async signal => {
+        const value = await read(signal);
+        if (cancel === 'signal') abort.abort(); else current = false;
+        return value;
+      };
+      return query;
+    };
+    await expect(downloadCloudLatest({ client, masterIds: [7], cutoff: CUT, signal: abort.signal,
+      check: () => { if (!current) throw new Error('old owner'); } })).rejects.toThrow();
+  }
+});
+
+test('the real Supabase SDK emits numeric JSON filters, master IN, key seek and independent clock streams', async () => {
+  const { createClient } = require('@supabase/supabase-js');
+  const urls = []; let discovered = false;
+  const sdk = createClient('https://example.invalid', 'public-fixture-key', { auth: {
+    persistSession: false, autoRefreshToken: false, detectSessionInUrl: false,
+  }, global: { fetch: async url => {
+    const parsed = new URL(url); urls.push(parsed);
+    const params = parsed.searchParams;
+    let data;
+    if (params.get('select') === 'slave_id') {
+      data = discovered ? [] : [{ slave_id: 4 }]; discovered = true;
+    } else if (params.get('upload_source') === 'eq.phone') data = [];
+    else data = [event(params.has('payload->lat') ? 1 : 3, 4, 7, '2026-10-10T11:00:00Z',
+      params.has('payload->lat') ? { lat: 25000000, lon: 121000000 } : { lat: 0, lon: 0 })];
+    return { ok: true, status: 200, statusText: 'OK', headers: { get: () => null }, text: async () => JSON.stringify(data) };
+  } } });
+  const result = await downloadCloudLatest({ client: sdk, masterIds: [7, 9], cutoff: CUT });
+  expect(result.dogs[0]).toMatchObject({ packet: { sequence: 3 }, fix: { sequence: 1 } });
+  expect(urls.every(url => url.searchParams.get('master_id') === 'in.(7,9)')).toBe(true);
+  expect(urls.at(-1).searchParams.get('slave_id')).toBe('gt.4');
+  const fixed = urls.find(url => url.searchParams.has('payload->lat'));
+  expect(fixed.searchParams.getAll('payload->lat')).toEqual(['gte.-90000000', 'lte.90000000']);
+  expect(fixed.searchParams.getAll('payload->lon')).toEqual(['gte.-180000000', 'lte.180000000']);
+  expect(fixed.searchParams.get('or')).toContain('payload->lat.neq.0,payload->lon.neq.0');
+  const phone = urls.find(url => url.searchParams.get('upload_source') === 'eq.phone');
+  expect(phone.searchParams.get('phone_received_at')).toBe('not.is.null');
+  expect(phone.searchParams.get('order')).toBe('phone_received_at.desc,received_at.desc,event_id.desc');
 });

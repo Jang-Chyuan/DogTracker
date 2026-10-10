@@ -21,3 +21,13 @@ test('cold download and account switch discard old account positions even during
   expect(gate.select({ owner: 'b', dogs: [], busy: true }).dogs).toEqual([]);
   expect(gate.select({ owner: null, dogs: [], busy: true }).dogs).toEqual([]);
 });
+
+test('a cold committed cache is admitted once without claiming a fresh download or leaking across owners', () => {
+  const gate = createAtomicDogSnapshot();
+  const cached = { dogs: [{ slaveId: 4 }], cloudDogs: { loaded: true, cachedBaseline: true, cloudCommit: null } };
+  const initial = gate.select({ owner: 'a', ...cached, busy: true });
+  expect(initial.dogs).toEqual(cached.dogs);
+  expect(initial.cloudDogs.cloudCommit).toBeNull();
+  expect(gate.select({ owner: 'a', dogs: [{ slaveId: 6 }], cloudDogs: { ...cached.cloudDogs }, busy: true })).toBe(initial);
+  expect(gate.select({ owner: 'b', dogs: [], cloudDogs: { loaded: false }, busy: true }).dogs).toEqual([]);
+});

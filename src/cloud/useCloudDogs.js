@@ -16,13 +16,13 @@ export const LATEST_SINCE = 0;
 // before the stored dogs are read).
 const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: false });
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
-  { active = true, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null } = {}) {
+  { active = true, latestFirst = false, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
   // A failed/aborted download leaves partial rows in SQLite. Keep its cloud
   // side quarantined until a complete pass, while still accepting local BLE.
   const publication = useRef(null);
-  if (!publication.current || publication.current.owner !== owner || publication.current.database !== database || publication.current.enabled !== enabled)
-    publication.current = { owner, database, enabled, commit: null, busy: false, blocked: false, success: cloudSuccess, releaseSuccess: cloudSuccess, epoch: 0,
+  if (!publication.current || publication.current.owner !== owner || publication.current.database !== database || publication.current.enabled !== enabled || publication.current.latestFirst !== latestFirst)
+    publication.current = { owner, database, enabled, latestFirst, commit: null, busy: false, blocked: false, success: cloudSuccess, releaseSuccess: cloudSuccess, epoch: 0,
       rows: [], packets: [], track: [] };
   const gate = publication.current;
   if (gate.busy !== cloudBusy || gate.success !== cloudSuccess) {
@@ -78,15 +78,26 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         const blockCloud = attempt.blocked || !fence.open;
         const acceptsCloud = () => alive && publication.current === attempt
           && attempt.epoch === epoch && !attempt.blocked && fence.valid();
-        const readOwner = blockCloud ? null : owner;
-        const readRows = readOwner ? await database.latestBySlave(readOwner, LATEST_SINCE) : [];
+        const cachedFence = scheduler.current?.();
+        const readOwner = latestFirst ? owner : blockCloud ? null : owner;
+        const snapshot = latestFirst && readOwner ? await database.readLatestSnapshot(readOwner) : null;
+        const acceptsBaseline = () => {
+          const current = scheduler.current?.();
+          return latestFirst && snapshot && !attempt.baselineLoaded && alive && publication.current === attempt
+            && cachedFence?.owner === owner && current?.owner === owner && cachedFence.scope === current.scope
+            && cachedFence.generation === current.generation && cachedFence.attempt === current.attempt
+            && current.mapSuccessRevision === 0 && Number.isFinite(current.snapshotBaseRevision)
+            && snapshot.revision <= current.snapshotBaseRevision;
+        };
+        const readRows = latestFirst ? snapshot?.rows ?? []
+          : readOwner ? await database.latestBySlave(readOwner, LATEST_SINCE) : [];
         if (!alive) return;
         // Signed out, this phone's own BLE packets only (latestStatusRows).
         const packets = database.latestStatusRows
-          ? await database.latestStatusRows(readOwner, LATEST_SINCE, now()) : [];
+          ? [...await database.latestStatusRows(latestFirst ? null : readOwner, LATEST_SINCE, now()), ...(snapshot?.packets ?? [])] : snapshot?.packets ?? [];
         // The path is only read when something asks for it: it is the larger
         // query, and the card draws no line while the path switch is off.
-        const readTrack = readOwner && Number.isFinite(trackSinceMs)
+        const readTrack = !latestFirst && readOwner && Number.isFinite(trackSinceMs)
           ? await database.trackBySlave(readOwner, now() - trackSinceMs) : [];
         let holds = {}, statuses = {}, ranges = {};
         if (database.holdRows) {
@@ -104,14 +115,24 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           }
           const state = holdState.current;
           try {
-            const batch = await database.holdRows(readOwner, state.replaySince ?? now() - HOLD_LOOKBACK_MS, state.cursors);
+            const batch = await database.holdRows(latestFirst ? null : readOwner, state.replaySince ?? now() - HOLD_LOOKBACK_MS, state.cursors);
             if (!alive || holdState.current !== state) return;
             // Stored rows moved in time (cloud time repair): replay them all.
-            const accept = acceptsCloud();
-            if (batch.reset && accept) {
+            const accept = acceptsCloud() || acceptsBaseline();
+            if (batch.reset && accept && !latestFirst) {
               const judged = state.store.ranges();
               state.store = createHoldStore();
               state.store.seedRanges(judged);
+            }
+            if (latestFirst && accept && snapshot && state.snapshotRevision !== snapshot.revision) {
+              // Only independently downloaded snapshot context feeds live
+              // holds. Historical backfill and metadata repairs stay outside.
+              const context = snapshot.context || [];
+              const normalize = row => ({ ...row, source: 'cloud', time: row.track_at,
+                latitude: row.slave_lat, longitude: row.slave_lon });
+              const live = new Map([...context, ...(snapshot.packets || [])].map(row => [row.event_id, row]));
+              state.store.ingest({ rows: [...live.values()].map(normalize), seeds: (snapshot.seeds || []).map(normalize) });
+              state.snapshotRevision = snapshot.revision;
             }
             state.store.ingest(accept ? batch : {
               rows: batch.rows?.filter(row => row.source !== 'cloud'),
@@ -133,16 +154,18 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           ranges = state.store.ranges();
           await database.saveRangeState?.(owner, ranges);
         }
-        if (acceptsCloud()) {
+        const baseline = !acceptsCloud() && acceptsBaseline();
+        if (acceptsCloud() || baseline) {
           attempt.rows = readRows;
           attempt.packets = packets.filter(row => row.source === 'cloud');
           attempt.track = readTrack;
-          attempt.commit = attempt.success;
+          if (!baseline) attempt.commit = attempt.success;
+          attempt.baselineLoaded = true;
         }
         if (alive) setCache({ owner, database, value: {
           rows: attempt.rows, packets: [...packets.filter(row => row.source !== 'cloud'), ...attempt.packets],
           track: attempt.track, holds, statuses, ranges, error: '', loaded: true,
-          cloudCommit: attempt.commit,
+          cloudCommit: attempt.commit, ...(latestFirst ? { cachedBaseline: baseline } : {}),
         } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
@@ -160,7 +183,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     refresh.current = poll;
     poll();
     return () => { alive = false; clearTimeout(timer); refresh.current = null; };
-  }, [database, owner, enabled, active, now, trackSinceMs]);
+  }, [database, owner, enabled, active, now, trackSinceMs, latestFirst]);
   useEffect(() => {
     const before = lastTrigger.current;
     if (before.revision !== revision || before.cloudBusy !== cloudBusy || before.cloudSuccess !== cloudSuccess)
