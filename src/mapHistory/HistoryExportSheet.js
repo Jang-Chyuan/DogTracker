@@ -64,13 +64,17 @@ const HistoryExportSheet = forwardRef(function HistoryExportSheet({ exporter, bo
           <Pressable testID={`history-export-${format.id}`} accessibilityRole="button"
             accessibilityLabel={t('c1171', { format: format.title })}
             onPress={() => exporter.start(format.id)}
-            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-            <Glyph name="share" color={colors.tonalText} size={sizes.icon.exportAction} />
+            style={styles.iconButton}>
+            {({ pressed }) => <View style={[styles.iconDisc, pressed && styles.pressed]} pointerEvents="none">
+              <Glyph name="share" color={colors.tonalText} size={sizes.icon.exportAction} />
+            </View>}
           </Pressable>
           {exporter.canSave && <Pressable testID={`history-export-save-${format.id}`} accessibilityRole="button"
             accessibilityLabel={t('c1166', { format: format.title })} onPress={() => exporter.save(format.id)}
-            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-            <Glyph name="download" color={colors.tonalText} size={sizes.icon.exportAction} />
+            style={styles.iconButton}>
+            {({ pressed }) => <View style={[styles.iconDisc, pressed && styles.pressed]} pointerEvents="none">
+              <Glyph name="download" color={colors.tonalText} size={sizes.icon.exportAction} />
+            </View>}
           </Pressable>}
         </View>
       );
@@ -95,9 +99,10 @@ const getStyles = makeStyles(({ colors }) => StyleSheet.create({
   divided: { borderTopWidth: border.hairline, borderTopColor: colors.line },
   // Format words stay separate from the two independent actions.
   formatRow: { flexDirection: 'row', alignItems: 'center', gap: space.s },
-  iconButton: { minHeight: touch.primary, minWidth: touch.primary, alignItems: 'center',
-    justifyContent: 'center', borderRadius: radius.full, flexShrink: 0,
-    backgroundColor: colors.brandSoft },
+  iconButton: { minHeight: touch.min, minWidth: touch.min, alignItems: 'center',
+    justifyContent: 'center', flexShrink: 0 },
+  iconDisc: { height: touch.min - space.s, width: touch.min - space.s, alignItems: 'center',
+    justifyContent: 'center', borderRadius: radius.full, backgroundColor: colors.brandSoft },
   pressed: { backgroundColor: colors.pressedOverlay },
   texts: { flex: 1, minWidth: 0 },
   format: { ...type.status, color: colors.text },

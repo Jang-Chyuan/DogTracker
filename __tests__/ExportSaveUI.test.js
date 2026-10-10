@@ -2,7 +2,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { ThemeProvider, ThemeScope, lightTheme, darkTheme } from '../src/theme/ThemeProvider';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Glyph from '../src/map/Glyph';
 import HistoryExportSheet from '../src/mapHistory/HistoryExportSheet';
 import { MapTip } from '../src/map/MapControls';
@@ -29,10 +29,13 @@ test.each([lightTheme, darkTheme])('each format has independent share/download i
     const share = pressable(renderer, `history-export-${id}`);
     expect(share.props.accessibilityLabel).toMatch(/，分享$/);
     for (const [button, name] of [[share, 'share'], [save, 'download']]) {
-      const style = StyleSheet.flatten(button.props.style({ pressed: false }));
-      expect(style.minHeight).toBeGreaterThanOrEqual(48);
-      expect(style.minWidth).toBeGreaterThanOrEqual(48);
-      expect(button.findByType(Glyph).props).toMatchObject({ name, color: theme.colors.tonalText });
+      const style = StyleSheet.flatten(button.props.style);
+      expect(style.minHeight).toBe(48);
+      expect(style.minWidth).toBe(48);
+      expect(style.backgroundColor).toBeUndefined();
+      const disc = button.findAllByType(View).find(node => StyleSheet.flatten(node.props.style)?.borderRadius);
+      expect(StyleSheet.flatten(disc.props.style)).toMatchObject({ width: 40, height: 40, backgroundColor: theme.colors.brandSoft });
+      expect(button.findByType(Glyph).props).toMatchObject({ name, color: theme.colors.tonalText, size: 24 });
       expect(button.findAllByType(Text)).toHaveLength(0);
     }
     await act(async () => save.props.onPress());
