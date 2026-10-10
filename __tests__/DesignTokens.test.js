@@ -67,6 +67,10 @@ describe('text contrast', () => {
     ['phone name label', colors.phone, colors.surface, 4.5],
     ['receiver number on its tag', WHITE, colors.receiverRing, 4.5],
     ['snackbar text', colors.text, colors.snackbar, 7],
+    // The 070 success tick is information, not decoration: it has to be
+    // readable on the card and on the flat settings page behind it.
+    ['success tick on a card', colors.successIcon, colors.surface, 4.5],
+    ['success tick on the page', colors.successIcon, colors.bg, 4.5],
   ])('%s', (_, fg, bg, minimum) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(minimum);
   });
@@ -290,9 +294,20 @@ test('the original light palette is unchanged', () => {
       'utf8',
     ),
   );
+  const originalColors = { ...tokens.colors };
+  delete originalColors.activityMissing;
+  const originalOpacity = { ...tokens.opacity };
+  delete originalOpacity.mapHeaderBacking;
   Object.entries(baseline).forEach(([group, value]) =>
-    expect(tokens[group]).toEqual(value),
+    expect(group === 'opacity' ? originalOpacity : group === 'colors' ? originalColors : tokens[group]).toEqual(value),
   );
+});
+
+test('map-header backing uses the same explicit alpha in both themes', () => {
+  expect(tokens.opacity.mapHeaderBacking).toBe(0.85);
+  expect(lightTheme.opacity.mapHeaderBacking).toBe(0.85);
+  expect(darkSpec.opacity.mapHeaderBacking).toBe(0.85);
+  expect(darkTheme.opacity.mapHeaderBacking).toBe(0.85);
 });
 
 describe('dark text and graphic contrast', () => {
@@ -311,6 +326,9 @@ describe('dark text and graphic contrast', () => {
     ['indoor list pill', c.receiver, c.pillIndoor, 4.5],
     ['red action text', c.critAction, c.surface, 4.5],
     ['red action text in a dialog', c.critAction, c.elevated, 4.5],
+    ['success tick', c.successIcon, c.surface, 4.5],
+    ['success tick on the page', c.successIcon, c.bg, 4.5],
+    ['success tick in a dialog', c.successIcon, c.elevated, 4.5],
     ...darkTheme.routeColors.flatMap((color, i) => [
       [
         `route${i + 1} upcoming over land`,
@@ -344,4 +362,15 @@ test('D18 small shape tokens preserve container radii and cursor padding', () =>
     cursorLabel: 16, card: 16, sheet: 16, dialog: 24, alertCard: 14,
     input: 12, stayRow: 12, scanFrame: 16 });
   expect(tokens.size.cursor).toMatchObject({ labelPaddingV: 4, labelPaddingH: 10 });
+});
+
+
+test.each([lightTheme, darkTheme])('missing activity is neutral, distinct and readable ($isDark)', theme => {
+  const c = theme.colors;
+  expect(c.activityMissing).not.toBe(c.text);
+  expect(c.activityMissing).not.toBe(c.activityNormal);
+  expect(c.activityMissing).not.toBe(c.activityLow);
+  // Text AA is stricter than the 3:1 minimum for gaps and legend swatches.
+  expect(contrast(c.activityMissing, c.surface)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(c.activityMissing, c.bg)).toBeGreaterThanOrEqual(4.5);
 });

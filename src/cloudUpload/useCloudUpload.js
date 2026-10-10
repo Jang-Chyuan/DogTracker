@@ -18,16 +18,21 @@ export class UploadSwitchError extends Error {
 
 // `onAuthFailure`: an upload was refused for the sign-in (401); AuthProvider
 // decides whether it really ended (判定表「使用中登入失效」).
-export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
+// `cloudDatabase`: the downloaded copy, read only for 最後上傳成功…（經 Wi-Fi）
+// (S2/S3, 070); nothing here writes to it.
+export function useCloudUpload(ready, owner, foreground, onAuthFailure = null, cloudDatabase = null, cloudRevision = 0) {
   const db = useRef(null), service = useRef(null);
   const authFailure = useRef(onAuthFailure);
   authFailure.current = onAuthFailure;
+  // A ref, so a caller handing in a fresh object never restarts the passes.
+  const cloud = useRef(cloudDatabase);
+  cloud.current = cloudDatabase;
   // The account now: a switch started for another one stops (S3).
   const currentOwner = useRef(owner);
   currentOwner.current = owner;
   const [revision, refresh] = useState(0);
   const [state, setState] = useState({ settings: [], settingsOwner: null, masters: [], counts: [],
-    pendingByMaster: {}, phoneId: '', error: '' });
+    pendingByMaster: {}, blockedByMaster: {}, lastByMaster: {}, wifiByMaster: {}, wifiOwner: null, phoneId: '', error: '' });
   const supported = Platform.OS === 'android' && !!NativeModules.BleBackground?.executeDatabase;
   useEffect(() => {
     if (!ready || !supported) return undefined;
@@ -43,7 +48,8 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
     const database = db.current;
     // This update also controls native enqueue while the JS screen is suspended.
     setState(s => s.settingsOwner === owner ? s
-      : { ...s, settings: [], settingsOwner: null, counts: [], pendingByMaster: {}, last: null, error: '' });
+      : { ...s, settings: [], settingsOwner: null, counts: [], pendingByMaster: {}, blockedByMaster: {}, lastByMaster: {},
+        last: null, error: '' });
     const binding = database.owner(owner);
     async function tick() {
       try {
@@ -89,6 +95,22 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
     })();
     return () => { alive = false; };
   }, [ready, owner, foreground, supported]);
+  // Refresh the Wi-Fi evidence when a download completes as well as on route
+  // changes and foreground resumes. The upload timer does not trigger this read.
+  useEffect(() => {
+    setState(s => (s.wifiOwner === owner ? s : { ...s, wifiByMaster: {}, wifiOwner: null }));
+    if (!ready || !owner || !foreground || !supported) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const times = await cloud.current?.wifiUploads?.(owner);
+        if (alive && times) setState(s => ({ ...s, wifiByMaster: times, wifiOwner: owner }));
+      } catch {
+        // Keep the previously read evidence if the local read fails.
+      }
+    })();
+    return () => { alive = false; };
+  }, [ready, supported, owner, foreground, revision, cloudRevision, cloudDatabase]);
   const settingsReady = !!owner && state.settingsOwner === owner;
   async function setMode(master, mode) {
     await db.current.setMode(owner, master, mode);
@@ -97,7 +119,13 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null) {
       owner, (await db.current.settings(owner)).some(s => s.mode === 'phone'));
   }
   return { ...state, settings: settingsReady ? state.settings : [],
-    pendingByMaster: settingsReady ? state.pendingByMaster || {} : {}, settingsReady, owner, supported,
+    pendingByMaster: settingsReady ? state.pendingByMaster || {} : {},
+    blockedByMaster: settingsReady ? state.blockedByMaster || {} : {},
+    // Per-receiver answers are this account's: never another one's, not even
+    // for the render before the account change has been read.
+    lastByMaster: settingsReady ? state.lastByMaster || {} : {},
+    wifiByMaster: state.wifiOwner === owner ? state.wifiByMaster || {} : {},
+    settingsReady, owner, supported,
     setMode,
     /**
      * S3 切換上傳方式: what this phone still holds for that receiver is sent

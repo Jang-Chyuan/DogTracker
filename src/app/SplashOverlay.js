@@ -95,9 +95,9 @@ export function handoverDuration(mode, reduced = false) {
 const easeOut = Easing.bezier(0.2, 0, 0, 1);
 const flightEase = Easing.bezier(0.3, 0, 0.1, 1);
 
-function Layer({ children, opacity, size, transform = [] }) {
+function Layer({ children, opacity, size, transform = [], testID }) {
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity, transform }]}>
+    <Animated.View testID={testID} style={[StyleSheet.absoluteFill, { opacity, transform }]}>
       <Svg width={size} height={size} viewBox={`0 0 ${VIEW} ${VIEW}`}>
         <G transform={`translate(${GROUP.x} ${GROUP.y}) scale(${GROUP.scale})`}>
           {children}
@@ -399,16 +399,16 @@ export default function SplashOverlay() {
           <Layer size={size} opacity={values.disc}>
             <Circle cx={HEAD.x} cy={HEAD.y} r={HEAD.r} fill={colors.accent} />
           </Layer>
-          <Layer size={size} opacity={values.body}>
+          <Layer testID="splash-tail" size={size} opacity={values.body} transform={tailTransform}>
             <G {...strokeOf(colors.splashLine)}>
-              {BODY_LINES.map(d => (
+              {TAIL_LINES.map(d => (
                 <Path key={d} d={d} />
               ))}
             </G>
           </Layer>
-          <Layer size={size} opacity={values.body} transform={tailTransform}>
+          <Layer testID="splash-body" size={size} opacity={values.body}>
             <G {...strokeOf(colors.splashLine)}>
-              {TAIL_LINES.map(d => (
+              {BODY_LINES.map(d => (
                 <Path key={d} d={d} />
               ))}
             </G>

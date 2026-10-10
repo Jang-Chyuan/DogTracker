@@ -1,7 +1,8 @@
 import { size as sizes, border } from '../theme/tokens';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import Svg from 'react-native-svg';
+import ReceiverLinkPaths from './ReceiverLinkPaths';
 
 /**
  * The receiver (from PR #45): round like the dogs' avatars and as light — a
@@ -13,7 +14,7 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
  * In a list row (`ring`) the circle is exactly the dogs' avatar ring and the
  * tag may hang over its edge; otherwise the whole drawing fits `size`.
  */
-export default function ReceiverIcon({ number, size = sizes.floatingButton, ring }) {
+export default function ReceiverIcon({ number, size = sizes.floatingButton, ring, phase }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const circle = ring ?? Math.round(size * 0.82);
@@ -45,17 +46,7 @@ export default function ReceiverIcon({ number, size = sizes.floatingButton, ring
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          <Rect x={6} y={11} width={sizes.receiver.bodyWidth} height={sizes.receiver.bodyHeight} rx={2} />
-          <Path d="M12 11V6" />
-          <Path d="M8.5 6.5a5 5 0 0 1 7 0" />
-          <Path d="M6 4a8.5 8.5 0 0 1 12 0" />
-          <Circle
-            cx={12}
-            cy={15.5}
-            r={1.3}
-            fill={colors.receiver}
-            stroke="none"
-          />
+          <ReceiverLinkPaths phase={phase} />
         </Svg>
       </View>
       {number != null && (

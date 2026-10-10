@@ -45,7 +45,6 @@ import {
   TimeMarkerView,
 } from '../mapHistory/HistoryMapMarkers';
 import {
-  HISTORY_FRAME_PADDING,
   historyFramePadding,
   nearestRouteSpot,
   uncrowded,
@@ -68,6 +67,7 @@ import {
   phoneFix,
   PHONE_FIX_MAX_AGE_S,
   regionForFrame,
+  overlayFramePadding,
 } from './MapFraming';
 import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
@@ -144,7 +144,9 @@ export function pointsSettled(previous, next) {
     && Math.abs(previous[id].y - next[id].y) <= 1);
 }
 // History framing: 24dp all round, the cursor label on top, 框住全部 below.
-const HISTORY_FRAME = HISTORY_FRAME_PADDING;
+// Coordinates are marker centres: reserve the complete stop circle above the panel.
+const HISTORY_FRAME = { top: space.l, right: space.xl,
+  bottom: sizes.stopMarker.size / 2 + space.s, left: space.xl };
 // Coordinates all within about 30 m of each other.
 const tinySpan = points => {
   const lat = points.map(p => p.latitude),
@@ -594,12 +596,11 @@ function GoogleTrackingMapRenderer({
   // The history screen (presentation.historyRoute): a tap on the route or a
   // drag of the cursor (time, 'route' | 'drag'), a stop number tapped,
   // { key, coordinate } to bring the cursor into view (220 ms), { key } to
-  // frame the route (框住全部), and the panel at { level, extraBottom }.
+  // frame the route (框住全部).
   onCursorMove,
   onStopPress,
   historyFocus = null,
   historyFrame = null,
-  historyPanel = null,
   supported,
   configured,
 }) {
@@ -960,7 +961,10 @@ function GoogleTrackingMapRenderer({
         // Room for the faces' "!" and name tags; in history for the cursor's
         // label over the route's newest fix (判定表「地圖相機」).
         edgePadding: historyRoute
-          ? historyFramePadding(positions, historyRoute.cursor?.coordinate)
+          ? overlayFramePadding(historyFramePadding(positions, historyRoute.cursor?.coordinate, HISTORY_FRAME), {
+              topInset, bottomInset, overlayTop: Math.max(topInset, coverTop || 0),
+              overlayBottom: Math.max(bottomInset, coverBottom || 0),
+            })
           : {
               ...padding,
               top: padding.top + Math.max(0, (coverTop || 0) - topInset),
@@ -1071,11 +1075,7 @@ function GoogleTrackingMapRenderer({
     takeCamera();
     const points = framedCoordinates(coordinates);
     // Inside the map's own padding, and above an open card.
-    const framing = {
-      ...padding,
-      top: padding.top + overlayTop - topInset,
-      bottom: padding.bottom + overlayBottom - bottomInset,
-    };
+    const framing = overlayFramePadding(padding, { topInset, bottomInset, overlayTop, overlayBottom });
     // 300 ms (motion.camera).
     const region = regionForFrame(points, framing, {
       width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
@@ -1092,7 +1092,7 @@ function GoogleTrackingMapRenderer({
   // what the map shows above an open card (and below the top cards): the
   // camera's centre is the middle of the padded map, so it moves by how far
   // the point is from where it should be.
-  const centreInView = point => {
+  const centreInView = useCallback(point => {
     const map = mapRef.current;
     if (!map?.coordinateForPoint) return Promise.resolve(null);
     const { width, height } = cursorLayout;
@@ -1105,7 +1105,7 @@ function GoogleTrackingMapRenderer({
       x: middle.x + point.x - target.x,
       y: middle.y + point.y - target.y,
     });
-  };
+  }, [cursorLayout, overlayTop, overlayBottom, topInset, bottomInset]);
   // A dog whose card just opened: when the card (or a screen edge) covers it,
   // move the map so it shows in the middle of what is left above the card
   // (300 ms). Asked once per opening.
@@ -1206,27 +1206,26 @@ function GoogleTrackingMapRenderer({
     onMapPress?.();
   };
   const routeCamera = historyRoute?.camera;
-  const frameRoute = (extraBottom = 0, animated = true) => {
+  const frameRoute = (animated = true) => {
     if (!usable || !routeCamera?.length) return;
-    if (tinySpan(routeCamera)) {
-      mapRef.current?.animateCamera(
-        { center: routeCamera[0], zoom: 16 },
-        { duration: moveDuration(motion.camera.duration) },
-      );
-      return;
-    }
-    // At 75% little map is left: a slim frame, or the SDK refuses the fit.
-    const room = historyFramePadding(
-      routeCamera,
-      historyRoute?.cursor?.coordinate,
-      extraBottom > 0
-        ? { top: space.l, right: space.xl, bottom: space.s, left: space.xl }
-        : HISTORY_FRAME,
-    );
-    mapRef.current?.fitToCoordinates(routeCamera, {
-      animated: animated && moveDuration(motion.camera.duration) > 0,
-      edgePadding: { ...room, bottom: room.bottom + extraBottom },
+    const room = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
+    const framing = overlayFramePadding(room, { topInset, bottomInset, overlayTop, overlayBottom });
+    // Held days retain many identical fixes; framedCoordinates only expands
+    // a single point. Preserve street context for every tiny history span,
+    // while keeping the half-screen padding/centering and larger routes intact.
+    const latitudes = tinySpan(routeCamera) ? routeCamera.map(point => point.latitude) : null;
+    const longitudes = latitudes ? routeCamera.map(point => point.longitude) : null;
+    const points = framedCoordinates(latitudes ? [{
+      latitude: (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
+      longitude: (Math.min(...longitudes) + Math.max(...longitudes)) / 2,
+    }] : routeCamera);
+    const region = regionForFrame(points, framing, {
+      width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
+      height: cursorLayout.height - topInset - bottomInset,
     });
+    if (region) mapRef.current?.animateToRegion(region,
+      animated ? moveDuration(motion.camera.duration) : 0);
+    else mapRef.current?.fitToCoordinates(points, { animated, edgePadding: framing });
   };
   const historyFramed = useRef(null);
   useEffect(() => {
@@ -1234,30 +1233,10 @@ function GoogleTrackingMapRenderer({
       return;
     historyFramed.current = historyFrame.key;
     takeCamera();
-    frameRoute(historyPanel?.extraBottom || 0);
+    frameRoute();
     // Once per press of 框住全部.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyFrame?.key, usable]);
-  // 判定表「面板高度」: at 75% the route is framed again above the panel —
-  // unless the user moved the map, then only the padding changes.
-  const panelLevel = historyPanel?.level;
-  const lastLevel = useRef(panelLevel);
-  useEffect(() => {
-    if (lastLevel.current === panelLevel) return;
-    const was = lastLevel.current;
-    lastLevel.current = panelLevel;
-    if (!historyRoute || !usable) return;
-    // Moved by hand: the map stays, unless the panel now covers the cursor.
-    if (interacted.current) {
-      if (historyRoute.cursor)
-        showCursor(historyRoute.cursor.coordinate, false);
-      return;
-    }
-    if (panelLevel === 'full' || was === 'full')
-      frameRoute(historyPanel?.extraBottom || 0);
-    // On a new level only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panelLevel]);
   // A node of the list or a stop number: the cursor point comes into the
   // middle of the map above the panel (220 ms, motion.cursorJump).
   // 判定表「使用者拖過地圖之後的游標」: otherwise the map moves only when the
@@ -1279,12 +1258,19 @@ function GoogleTrackingMapRenderer({
           /* Move anyway. */
         }
       }
+      let cursorCenter = coordinate;
+      if (map.pointForCoordinate) {
+        try {
+          const point = await map.pointForCoordinate(coordinate);
+          cursorCenter = await centreInView(point) || coordinate;
+        } catch { /* Keep the requested coordinate if projection fails. */ }
+      }
       map.animateCamera(
-        { center: coordinate },
+        { center: cursorCenter },
         { duration: moveDuration(motion.cursorJump.duration) },
       );
     },
-    [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom],
+    [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom, centreInView],
   );
   const focusedHistory = useRef(null);
   useEffect(() => {

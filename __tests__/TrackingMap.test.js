@@ -875,3 +875,93 @@ test('看軌跡 whose save finishes after the card closed does not open history'
   await act(async () => finish(true));
   expect(onOpenHistory).toHaveBeenCalledWith(7);
 });
+
+test('history route fit and cursor centering use the half-screen panel coverage', async () => {
+  const { historyPanelMaxHeight } = require('../src/map/MapPanelHeight');
+  const { layout, space, size } = require('../src/theme/tokens');
+  const { regionForFrame, overlayFramePadding } = require('../src/map/MapFraming');
+  const { historyFramePadding } = require('../src/history/screen/HistoryMapModel');
+  const height = historyPanelMaxHeight(800, 24);
+  const camera = [{ latitude: 25, longitude: 121 }, { latitude: 25.01, longitude: 121.01 }];
+  const props = { ...defaults, topInset: 100, bottomInset: height, coverBottom: height,
+    source: 'history:fixed', presentation: { ...defaults.presentation, dogMarkers: [],
+      historyRoute: { color: colors.phone, lines: [], places: [], times: [], camera, points: [], cursor: null } } };
+  mockCamera.pointForCoordinate = jest.fn().mockResolvedValue({ x: 200, y: 400 });
+  mockCamera.coordinateForPoint = jest.fn().mockResolvedValue({ latitude: 25.005, longitude: 121.005 });
+  try {
+    await render(props);
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    await readyMap();
+    expect(renderer.root.findByType(MapView).props.mapPadding.bottom).toBe(height);
+    await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'frame-fixed' }} />));
+    const padding = overlayFramePadding(historyFramePadding(camera, null, {
+      top: space.l, right: space.xl, bottom: size.stopMarker.size / 2 + space.s, left: space.xl,
+    }), {
+      topInset: 100, bottomInset: height, overlayTop: 100, overlayBottom: height,
+    });
+    expect(mockCamera.animateToRegion).toHaveBeenLastCalledWith(regionForFrame(camera, padding, {
+      width: 400 - 2 * layout.floatingGap, height: 800 - 100 - height,
+    }), 300);
+    // Project the south endpoint from the actual camera request. The full
+    // 22dp stop circle must clear the panel by the ordinary 8dp gap, not
+    // merely keep its centre visible. This failed with the old 8dp padding.
+    const [fittedRegion] = mockCamera.animateToRegion.mock.calls.at(-1);
+    const visibleHeight = 800 - 100 - height;
+    const southY = visibleHeight / 2 +
+      (fittedRegion.latitude - camera[0].latitude) * visibleHeight / fittedRegion.latitudeDelta;
+    expect(southY + size.stopMarker.size / 2).toBeLessThanOrEqual(visibleHeight - space.s + 1e-6);
+    await act(async () => renderer.update(<TrackingMap {...props}
+      historyFocus={{ key: 'cursor-fixed', coordinate: camera[0], centre: true }} />));
+    // With SDK padding already applied, the requested point is moved from
+    // y=400 to the centre above the panel: (100 + 800 - height) / 2.
+    expect(mockCamera.coordinateForPoint).toHaveBeenLastCalledWith({ x: 200, y: 400 });
+    expect(mockCamera.animateCamera).toHaveBeenLastCalledWith({
+      center: { latitude: 25.005, longitude: 121.005 },
+    }, { duration: 220 });
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});
+
+test.each([
+  ['repeated indoor anchor', [{ latitude: 25, longitude: 121 }, { latitude: 25, longitude: 121 }]],
+  ['short route', [{ latitude: 25, longitude: 121 }, { latitude: 25.00001, longitude: 121.00001 }]],
+])('framing a %s preserves street context above the fixed history panel', async (_name, camera) => {
+  const props = { ...defaults, topInset: 100, bottomInset: 388, coverBottom: 388,
+    source: 'history:tiny', presentation: { ...defaults.presentation, dogMarkers: [],
+      historyRoute: { color: colors.phone, lines: [], places: [], times: [], camera, points: [], cursor: null } } };
+  await render(props);
+  await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+    .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+  await readyMap();
+  await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'tiny' }} />));
+  const [region] = mockCamera.animateToRegion.mock.calls.at(-1);
+  // A held day contains many fixes at one anchor. Its camera must retain a
+  // street-sized extent rather than collapsing to a few metres at max zoom.
+  expect(region.latitudeDelta).toBeGreaterThan(0.003);
+  const centre = (camera[0].latitude + camera[1].latitude) / 2;
+  // Region centre includes both header and complete-marker reserves inside
+  // the SDK's half-screen viewport. Larger bottom clearance can shift it
+  // south slightly; it must remain close to the street centre.
+  expect(Math.abs(region.latitude - centre)).toBeLessThan(region.latitudeDelta / 10);
+});
+
+test('history framing does not expand a real route beyond the tiny-span threshold', async () => {
+  const { regionForFrame } = require('../src/map/MapFraming');
+  const { historyFramePadding } = require('../src/history/screen/HistoryMapModel');
+  const { layout, space, size } = require('../src/theme/tokens');
+  const camera = [{ latitude: 25, longitude: 121 }, { latitude: 25.0005, longitude: 121.0005 }];
+  const props = { ...defaults, topInset: 100, bottomInset: 388, coverBottom: 388,
+    source: 'history:real-short', presentation: { ...defaults.presentation, dogMarkers: [],
+      historyRoute: { color: colors.phone, lines: [], places: [], times: [], camera, points: [], cursor: null } } };
+  await render(props);
+  await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+    .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+  await readyMap();
+  await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'real-short' }} />));
+  expect(mockCamera.animateToRegion).toHaveBeenLastCalledWith(regionForFrame(camera,
+    historyFramePadding(camera, null, { top: space.l, right: space.xl, bottom: size.stopMarker.size / 2 + space.s, left: space.xl }),
+    { width: 400 - 2 * layout.floatingGap, height: 312 }), 300);
+});

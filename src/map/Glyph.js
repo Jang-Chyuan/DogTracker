@@ -23,6 +23,12 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
   };
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
+      {name === 'person' && (
+        <>
+          <Circle cx={12} cy={7} r={3} {...stroke} />
+          <Path d="M5 21v-2a7 7 0 0 1 14 0v2" {...stroke} />
+        </>
+      )}
       {name === 'ble' && (
         // The Bluetooth rune: the same shape the platform uses.
         <Path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5" {...stroke} />
@@ -178,13 +184,33 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
           {...stroke}
         />
       )}
+      {name === 'check-circle' && (
+        // 雲端成功 (S3 下載／都已上傳／最後上傳成功, S2 最後上傳成功): a ring
+        // with a tick, drawn in successIcon where a problem draws its red 「!」.
+        <>
+          <Circle cx={12} cy={12} r={9} {...stroke} />
+          <Path d="M8 12.3l2.9 2.9L16.3 9.7" {...stroke} />
+        </>
+      )}
       {name === 'close' && <Path d="M6 6l12 12M18 6 6 18" {...stroke} />}
-      {name === 'share' && (
-        // 匯出 (history top right): an arrow up out of a tray.
+      {name === 'export' && (
+        // History's existing export entry: arrow up out of a tray.
         <Path
           d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"
           {...stroke}
         />
+      )}
+      {name === 'share' && (
+        // Sharing action inside the export options: three connected nodes.
+        <>
+          <Path d="M6 12 18 5M6 12l12 7" {...stroke} />
+          <Circle cx={6} cy={12} r={3} fill={color} />
+          <Circle cx={18} cy={5} r={3} fill={color} />
+          <Circle cx={18} cy={19} r={3} fill={color} />
+        </>
+      )}
+      {name === 'download' && (
+        <Path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 16v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" {...stroke} />
       )}
       {name === 'sliders' && (
         // 調整範圍: two sliders with their knobs.

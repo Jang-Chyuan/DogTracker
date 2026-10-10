@@ -19,9 +19,11 @@ import {
  * return here); while the restore waits for Supabase 「暫時連不上，會自動
  * 重試」. Signed in:
  * the account with 登出 (confirmed, saying what stops), 下載 (last success,
- * or failing since when + 重試 ›), 上傳 (what still waits in this phone,
- * what needs handling + 重試 ›, the last success) and each receiver's upload
- * route, switched after a confirmation that sends what waits first.
+ * or failing since when + 重試 ›), 上傳 (what still waits in this phone, or
+ * 都已上傳 — a phone that never had anything to upload says so instead — and
+ * what needs handling + 重試 ›) and each receiver's upload route with its own
+ * 最後上傳成功, switched after a confirmation that sends what waits first.
+ * A success carries the green tick where a failure carries the red 「!」.
  *
  * `page` is AccountModel.accountPage. `onSwitch(master, mode)` resolves when
  * the route changed or rejects with the reason (c256). `dialog` opens one
@@ -189,26 +191,11 @@ export default function AccountSettings({
             onRetry={onRetryUpload}
           />
         )}
-        {upload.visible && (
-          <>
-            <ListRow
-              testID="account-upload-pending"
-              title={upload.pending > 0 ? t('c215') : t('c417')}
-              right={upload.pending > 0 ? upload.pendingText : null}
-              rightTone={['mutedBold']}
-              label={upload.pending > 0 ? t("c935", { pendingText: upload.pendingText }) : t('c417')}
-            />
-            <ListRow
-              testID="account-upload-last"
-              title={t('c217')}
-              right={upload.lastText}
-              rightTone={['mutedBold']}
-              label={[t('c217'), upload.lastText].join(' ')}
-            />
-          </>
+        {upload.visible && upload.summary && (
+          <StatusRow testID="account-upload-pending" row={upload.summary} />
         )}
         <LoadingContent loading={page.routesLoading} skeletonTestID="account-loading">
-        {page.routes.map(item => (
+        {page.routes.flatMap(item => [
           <ListRow
             key={item.master}
             testID={`account-route-${item.master}`}
@@ -224,8 +211,29 @@ export default function AccountSettings({
                   }
                 : undefined
             }
-          />
-        ))}
+          />,
+          // 最後上傳成功 belongs to the receiver, so it stays through a switch
+          // and says which route it came through (070).
+          item.last ? (
+            <ListRow
+              key={`${item.master}-last`}
+              testID={`account-route-${item.master}-last`}
+              title={item.last.text}
+              titleTone={item.last.success ? undefined : 'muted'}
+              success={item.last.success}
+              label={item.last.label}
+            />
+          ) : null,
+          item.last?.previous ? (
+            <ListRow
+              key={`${item.master}-previous`}
+              testID={`account-route-${item.master}-previous`}
+              title={item.last.previous.text}
+              success={item.last.previous.success}
+              label={item.last.previous.label}
+            />
+          ) : null,
+        ])}
         </LoadingContent>
       </GroupCard>
 
@@ -255,14 +263,16 @@ export default function AccountSettings({
   );
 }
 
-// A 下載／上傳 status row: the red 「!」 and 「重試 ›」 when it has a problem.
-function StatusRow({ row, onRetry, testID }) {
+// A 下載／上傳 status row: the red 「!」 and 「重試 ›」 when it has a problem,
+// the green tick in that same place when it succeeded.
+function StatusRow({ row, onRetry = undefined, testID }) {
   return (
     <ListRow
       testID={testID}
       title={row.title}
       detail={row.detail}
       problem={row.problem}
+      success={row.success}
       right={row.right}
       rightTone={row.problem ? undefined : ['mutedBold']}
       action={row.retry ? t('c213') : null}

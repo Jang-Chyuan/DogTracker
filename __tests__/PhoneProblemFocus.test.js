@@ -11,9 +11,9 @@ const page = (enabled, permission, services) => phonePage({ recording: { enabled
 
 test('first problem follows row order, ignores non-location permissions, and clears resolved causes', () => {
   expect(firstPhoneProblem(page(false, 'denied', false))).toBe('recording');
-  expect(firstPhoneProblem(page(true, 'denied', false))).toBe('permission');
-  expect(firstPhoneProblem(page(true, 'approximate', false))).toBe('permission');
-  expect(firstPhoneProblem(page(true, 'precise', false))).toBe('services');
+  expect(firstPhoneProblem(page(true, 'denied', false))).toBe('location');
+  expect(firstPhoneProblem(page(true, 'approximate', false))).toBe('location');
+  expect(firstPhoneProblem(page(true, 'precise', false))).toBe('location');
   expect(firstPhoneProblem(phonePage({ phone: { permission: 'precise', services: true }, permissions: { notificationsDenied: true } }))).toBeNull();
 });
 
@@ -33,7 +33,7 @@ test('S4 scrolls once to the measured problem row; normal entry never focuses', 
   await act(async () => { card.props.onRowLayout(0, 0); card.props.onRowLayout(1, 92); card.props.onRowLayout(2, 180); });
   expect(scrollTo).toHaveBeenCalledTimes(1);
   expect(scrollTo).toHaveBeenCalledWith({ y: 92, animated: false });
-  expect(renderer.root.findAllByType(FocusedPhoneRow).map(row => row.props.target)).toEqual(['permission', 'permission', 'permission']);
+  expect(renderer.root.findAllByType(FocusedPhoneRow).map(row => row.props.target)).toEqual(['location', 'location']);
   await act(async () => renderer.unmount());
   await act(async () => { renderer = Renderer.create(<PhoneSettings page={page(false, 'denied', false)} />); });
   expect(renderer.root.findAllByType(FocusedPhoneRow)[0].props.target).toBeNull();

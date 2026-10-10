@@ -38,7 +38,7 @@ import AdvancedSettings from './src/settings/AdvancedSettings';
 import DiagnosticsSettings from './src/settings/DiagnosticsSettings';
 import LiveDataSettings from './src/settings/LiveDataSettings';
 import WifiSettings from './src/settings/WifiSettings';
-import { useReceiverWifi } from './src/settings/useReceiverWifi';
+import { useReceiverWifi, wifiSummary } from './src/settings/useReceiverWifi';
 import { useDeleteDogData } from './src/settings/DeleteDogData';
 import { diagnosticsPage } from './src/diagnostics/DiagnosticsModel';
 import { useRecentRows } from './src/diagnostics/useRecentRows';
@@ -74,6 +74,7 @@ import AlertPreview from './src/dev/AlertPreview';
 import {
   phonePage,
   receiverPage,
+  receiverSetUp,
   settingsHome,
   settingsInput,
 } from './src/settings/SettingsModel';
@@ -323,6 +324,9 @@ function TrackerApp({ resume = null, onRestart }) {
     cloudSync.ownerId,
     tracking.foreground,
     auth.reportAuthFailure,
+    // Read-only, for each receiver's 最後上傳成功…（經 Wi-Fi） (S2/S3).
+    tracking.cloudDatabase,
+    cloudSync.lastSuccess,
   );
   const insets = useSafeAreaInsets();
   // The pages opened from the map, newest last; back (the key or 「‹ 標題」)
@@ -935,6 +939,7 @@ function TrackerApp({ resume = null, onRestart }) {
       tracking.foreground &&
       (route.name === 'advanced' || route.name === 'wifi'),
     connected: !!receiverState?.connected,
+    receiverKey: receiverState?.deviceId ?? receiverNumber(receiverState),
   });
   const receiverName =
     receiverNumber(receiverState) != null
@@ -1157,6 +1162,10 @@ function TrackerApp({ resume = null, onRestart }) {
           wifi={wifi}
           draft={wifiDraft}
           receiver={receiverName}
+          paired={receiverSetUp(receiverState)}
+          onReconnect={() => { setWaitingSourcesPaused(false); receiverControl.reconnect(); }}
+          onChange={() => { setWaitingSourcesPaused(false); openPairing('wifi', 'change'); }}
+          onConnect={() => openPairing('wifi')}
         />
       );
       break;
@@ -1274,6 +1283,8 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <AdvancedSettings
           wifi={wifi}
+          receiver={receiverName}
+          paired={receiverSetUp(receiverState)}
           deletion={deletion}
           onWifi={() => open('wifi')}
           deletedText={deletedAt ? t("c480", { value: formatClock(deletedAt) }) : null}
@@ -1283,6 +1294,10 @@ function TrackerApp({ resume = null, onRestart }) {
     default:
       break;
   }
+  // Never paired: the page body already says 「還沒有配對接收器」, so the
+  // header keeps the page name instead of repeating it.
+  const headerTitle = route.name === 'wifi' && receiverSetUp(receiverState)
+    ? wifiSummary(wifi, receiverName, true) : pageTitle(route);
   const light = LIGHT_PAGES.has(route.name);
   const full = FULL_PAGES.has(route.name);
 
@@ -1307,7 +1322,7 @@ function TrackerApp({ resume = null, onRestart }) {
             <Pressable
               testID="page-back"
               accessibilityRole="button"
-              accessibilityLabel={t("c479", { value: pageTitle(route) })}
+              accessibilityLabel={t("c479", { value: headerTitle })}
               onPress={goBack}
               hitSlop={space.s}
               style={({ pressed }) => [styles.back, pressed && styles.pressed]}
@@ -1316,7 +1331,7 @@ function TrackerApp({ resume = null, onRestart }) {
                   hard to hit) with room before the title; the whole row is
                   the 48dp target. */}
               <Glyph name="back" color={colors.text} size={sizes.icon.navigation} />
-              <Text style={styles.brand}>{pageTitle(route)}</Text>
+              <Text style={styles.brand}>{headerTitle}</Text>
             </Pressable>
           </View>
         )}

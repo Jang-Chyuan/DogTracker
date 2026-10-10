@@ -18,6 +18,7 @@ import { gearReasons, receiverOutage, storageProblem } from '../map/TopAlerts';
 import { isOtherReceiver, receiverNumber } from '../map/ReceiverState';
 import { formatClock } from '../map/MapFormat';
 import { alertsHomeRight } from '../alerts/AlertPreferences';
+import { phoneUploadProblem, receiverUploadSuccess, uploadRouteMode } from '../cloudUpload/UploadSuccess';
 
 const MINUTE = 60 * 1000;
 
@@ -171,7 +172,7 @@ export function settingsHome(input) {
     const problem = own.length > 0;
     const why = own.map(reason => reasonText(reason, input)).filter(Boolean)
       .filter((text, index, all) => all.indexOf(text) === index).join('、');
-    return { id, title, subtitle, status: problem ? [] : status, statusTone: problem ? null : statusTone, problem,
+    return { id, title, subtitle, ...(id === 'receiver' ? { receiverPhase: phase } : {}), status: problem ? [] : status, statusTone: problem ? null : statusTone, problem,
       label: problem ? t("c1012", { title: title, why: why }) : [title, subtitle, ...status].filter(Boolean).join('，') };
   };
   return {
@@ -239,8 +240,9 @@ export function receivedSources(packets, number, aliases) {
 
 /**
  * S2. { setUp, number, title, subtitle, subtitleProblem, battery,
- * batteryProblem, lastHeard, position, connectAction: 'disconnect' |
- * 'reconnect', sources }.
+ * batteryProblem, lastHeard, position, uploadLast, connectAction:
+ * 'disconnect' | 'reconnect', sources }. `uploadLast` is this receiver's
+ * 最後上傳成功 line, the same one S3 draws next to its upload route (070).
  */
 export function receiverPage(input) {
   const reasons = settingsReasons(input);
@@ -269,6 +271,11 @@ export function receiverPage(input) {
     batteryProblem: reasons.includes('receiver-battery'),
     lastHeard: last ? t('c201', { time: formatClock(last) }) : null,
     position: (own && coordinate(point.masterLat, point.masterLon)) || t('c203'),
+    uploadLast: receiverUploadSuccess(input.upload, number),
+    uploadProblem: uploadRouteMode(input.upload, number) === 'phone'
+      || Number(input.upload?.pendingByMaster?.[number]) > 0
+      || Number(input.upload?.blockedByMaster?.[number]) > 0
+      ? phoneUploadProblem(input.upload, number) : null,
     connectAction: phase === 'off' ? 'reconnect' : 'disconnect',
     sources: phase === 'none' ? [] : receivedSources(input.packets, number, input.aliases),
   };
@@ -290,17 +297,12 @@ export function missingPermissions(phone, permissions = {}) {
   return parts.join('、');
 }
 
-/**
- * S4. { recording: { on, detail }, permission: { problem, detail, status,
- * action }, services: { problem, detail, status, action }, battery: { status,
- * action } }. Battery optimization is a recommendation: never a 「!」.
- */
+/** Phone page: location services take precedence over denied or approximate access. */
 export function phonePage(input) {
   const { phone = {}, permissions = {}, recording = {}, todayCount = null } = input;
-  const missing = missingPermissions(phone, permissions);
+
   const servicesOff = phone.permission !== 'checking' && phone.permission !== 'unsupported' && phone.services === false;
   return {
-    locationPermissionProblem: ['denied', 'blocked', 'approximate'].includes(phone.permission),
     recording: {
       on: recording.enabled !== false,
       busy: !!recording.busy,
@@ -308,12 +310,14 @@ export function phonePage(input) {
       detail: recording.error || (Number.isFinite(todayCount) ? t('c222', { count: formatCount(todayCount) }) : null),
       problem: !!recording.error,
     },
-    permission: missing
-      ? { problem: true, detail: missing, status: null, action: t('c225') }
-      : { problem: false, detail: null, status: t('c017'), action: null },
-    services: servicesOff
-      ? { problem: true, detail: t("c1006"), status: null, action: t('c228') }
-      : { problem: false, detail: null, status: t("c1013"), action: null },
+    location: servicesOff
+      ? { problem: true, detail: t('c1222'), action: t('c859'), destination: 'services' }
+      : ['denied', 'blocked'].includes(phone.permission)
+        ? { problem: true, detail: t('c1223'), action: t('c1225'), destination: 'permission' }
+        : phone.permission === 'approximate'
+          ? { problem: true, detail: t('c1224'), action: t('c1226'), destination: 'permission' }
+          : { problem: false, detail: phone.permission === 'precise'
+            ? (phone.backgroundGranted ? t('c1221') : t('c1220')) : null, action: null },
     battery: permissions.batteryIgnored === true
       ? { status: t('c017'), action: null }
       : { status: null, action: t('c225') },

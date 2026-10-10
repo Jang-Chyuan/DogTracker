@@ -5,6 +5,17 @@ import Renderer, { act } from 'react-test-renderer';
 import Svg, { Path } from 'react-native-svg';
 import SittingDogArt, { SITTING_DOG_PATHS, SITTING_DOG_VIEW_BOX } from '../src/dogs/SittingDogArt';
 
+test('native launch wag keeps the haunch and feet outside the rotating group', () => {
+  const xml = fs.readFileSync(path.join(__dirname,
+    '../android/app/src/main/res/drawable/splash_icon_animated.xml'), 'utf8');
+  const rotating = xml.match(/<group android:name="tail_group"[^>]*>([\s\S]*?)<\/group>/)[1];
+  expect(rotating).not.toContain('M88 82');
+  expect(rotating).not.toContain('leg_left');
+  expect(rotating).not.toContain('leg_right');
+  expect([...rotating.matchAll(/android:name="([^"]+)"/g)].map(match => match[1]))
+    .toEqual(['tail_mark_upper', 'tail_mark_lower']);
+});
+
 test('D4 artwork exactly matches all native icon/splash paths and stroke geometry', () => {
   const xml = fs.readFileSync(path.join(__dirname,
     '../android/app/src/main/res/drawable/ic_launcher_foreground.xml'), 'utf8');

@@ -39,6 +39,7 @@ import {
   fontScale as fontScales,
 } from '../theme/tokens';
 import HistoryPanel from './HistoryPanel';
+import MyRouteHeader from '../history/screen/MyRouteHeader';
 import HistoryRangeSummary from './HistoryRangeSummary';
 import HistoryTimelineList from './HistoryTimelineList';
 import HistoryExportSheet from './HistoryExportSheet';
@@ -138,7 +139,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
           : <Text style={styles.backText}>{t('c117')}</Text>}
       </Capsule>
       <View style={styles.pillSlot}>
-        <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
+        {subject === 'phone' ? <MyRouteHeader /> : <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
           {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
             {pill.lead.downloadFailed && <View testID="history-download-failed-lead" style={styles.downloadFailure}><BangGlyph size={sizes.badge.size} background={colors.problemBadge} color={colors.avatarFrameMap} /></View>}
             <DogAvatar avatar={pill.lead.avatar} size={sizes.historyTop.avatar} border={0} tint={routeTint(pill.lead, colors)} />
@@ -156,7 +157,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
           </View>}
           {pill.plus && <PlusRing color={colors.accent} style={styles.plus} />}
           {pill.caret && <Text style={styles.caret}>▾</Text>}
-        </Capsule>
+        </Capsule>}
       </View>
       <View style={styles.spacer} />
       {/* 「⚠ N」: 8dp left of the export icon (the row's gap is 6). */}
@@ -167,7 +168,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
         disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.chip.height) / 2}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
-          : <Glyph name="share" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
+          : <Glyph name="export" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
       </PressScale>
     </View>
   );
@@ -285,20 +286,19 @@ function FrameButton({ onPress }) {
 
 /**
  * `screen` is useHistoryScreen's. Ref: { back() } — 返回鍵 inside the screen
- * (the range bar closes, the panel comes down from 75%); false when the key
+ * (the range bar closes); false when the key
  * should leave the history. { mapPressed() } closes the range bar.
  */
-const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, levels, bottomInset,
-  onBack, onFrame, onLevel, closedAt = null, initialRangeOpen = false, initialCalendar = null,
+const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, bottomInset,
+  onBack, onFrame, closedAt = null, initialRangeOpen = false, initialCalendar = null,
   candidates = [], initialSheet = null, exportNative = null, initialExport = null, alertBadge = null,
-  onAlertBadge, onSheetOpen },
+  onAlertBadge, onSheetOpen, onPanelHeight },
 ref) {
   const styles = getStyles(useTheme());
   const panel = useRef(null);
   const list = useRef(null);
   const rows = useRef({});
   const [rangeOpen, setRangeOpen] = useState(initialRangeOpen);
-  const raised = useRef(false);
   // H9/H10: the export window and the export running from it.
   // 「存到下載」 done (067): 「已存到 下載／DogTracker／<檔名>」 with 「開啟」.
   const tipRef = useRef(null);
@@ -349,14 +349,6 @@ ref) {
     if (!isReduceMotion())
       LayoutAnimation.configureNext(next ? OPEN_MOTION : CLOSE_MOTION);
     setRangeOpen(next);
-    if (next && panel.current?.level === 'summary') {
-      // 判定表「只留摘要時點摘要」: up to half first, then the bar.
-      raised.current = true;
-      panel.current.setLevel('half');
-    } else if (!next && raised.current) {
-      raised.current = false;
-      panel.current?.setLevel('summary');
-    }
   }, []);
   const closeRange = useCallback(() => { if (rangeOpen) openRange(false); }, [rangeOpen, openRange]);
   useImperativeHandle(ref, () => ({
@@ -465,17 +457,6 @@ ref) {
     },
     [closeRange, screen],
   );
-  const dragStart = useCallback(() => {
-    raised.current = false;
-    closeRange();
-  }, [closeRange]);
-  const panelLevel = useCallback(
-    (level, height) => {
-      // Dragged by hand: the bar no longer takes it back down.
-      onLevel?.(level, height);
-    },
-    [onLevel],
-  );
   const header = (
     <View>
       <DateRow
@@ -564,9 +545,11 @@ ref) {
         exportLabel={hasRoute ? t("c821") : downloading ? t("c832")
           : empty ? t('c379') : model ? t("c833") : t("c834")}
         hidden={sheetOpen} />
-      <HistoryPanel ref={panel} levels={levels} header={header} onLevel={panelLevel} onDragStart={dragStart}
+      <HistoryPanel ref={panel} header={header}
         hidden={sheetOpen}
-        bottomInset={bottomInset} scrollRef={list} locked={empty || !model || downloading}
+        onHeightChange={onPanelHeight}
+        measureKey={`${screen.day}:${subject}:${screen.protagonist}:${(screen.dogs ?? []).map(dog => dog.id).join(',')}:${screen.range?.start}:${screen.range?.end}:${!!model}:${download?.kind ?? ''}`}
+        bottomInset={bottomInset} scrollRef={list}
         above={hasRoute ? <FrameButton onPress={onFrame} /> : null}
       >
         <Pressable

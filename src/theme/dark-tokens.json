@@ -27,6 +27,7 @@
     "pressedOverlay": "rgba(255,255,255,0.10)",
     "activityLow": "#92ACE0",
     "activityNormal": "#7A706A",
+    "activityMissing": "#BAB0AD",
     "activityHigh": "#F0944A",
     "activityHighText": "#F5A86A",
     "problemBadge": "#CF3F37",
@@ -85,6 +86,7 @@
     }
   },
   "opacity": {
+    "mapHeaderBacking": 0.85,
     "rangeRingStroke": 0.75,
     "rangeRingFill": 0.1,
     "phoneAccuracy": 0.2,

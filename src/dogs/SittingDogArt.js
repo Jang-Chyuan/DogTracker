@@ -18,12 +18,19 @@ export const SITTING_DOG_PATHS = [
   'M56.158,64.5a3.8419999999999996,2.8219999999999996 0 1,0 7.683999999999999,0a3.8419999999999996,2.8219999999999996 0 1,0 -7.683999999999999,0',
 ];
 
-// Separate groups let the splash move only the tail without changing the art.
+// The complete haunch and its lower curve stay with the body/feet.
 export const SITTING_DOG_HEAD_LINES = SITTING_DOG_PATHS.slice(0, 5);
-export const SITTING_DOG_BODY_LINES = SITTING_DOG_PATHS.slice(5, 7);
-export const SITTING_DOG_TAIL_LINES = SITTING_DOG_PATHS.slice(7, 9);
+export const SITTING_DOG_BODY_LINES = [
+  ...SITTING_DOG_PATHS.slice(5, 7),
+  SITTING_DOG_PATHS[7],
+];
+// Only the two strokes extending to the right wag. Moving the lower haunch
+// curve too makes the rear foot appear to move, even with a fixed upper body.
+export const SITTING_DOG_TAIL_LINES = [
+  SITTING_DOG_PATHS[8],
+];
 export const SITTING_DOG_FACE = SITTING_DOG_PATHS.slice(9);
-export const SITTING_DOG_TAIL_ROOT = { x: 88, y: 84 };
+export const SITTING_DOG_TAIL_ROOT = { x: 96, y: 124 };
 
 // Includes rounded stroke caps on the tail marks, with breathing room.
 export const SITTING_DOG_VIEW_BOX = '12 24 106 112';

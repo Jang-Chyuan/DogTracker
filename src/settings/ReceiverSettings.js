@@ -12,9 +12,10 @@ import {
 import { space } from '../theme/tokens';
 
 /**
- * S2 接收器: the current receiver (its link, battery, last packet, position)
- * with its connection actions right under it — 中斷連線 (red; after it the
- * same row is 重新連線), 換接收器 › — then the
+ * S2 接收器: the current receiver (its link, battery, last packet, position,
+ * 最後上傳成功 — the same line S3 draws for it) with its connection actions
+ * right under it — 中斷連線 (red; after it the same row is 重新連線),
+ * 換接收器 › — then the
  * sources it has heard. Sources are only listed: the phone cannot stop one.
  * `page` is SettingsModel.receiverPage.
  */
@@ -68,9 +69,10 @@ export default function ReceiverSettings({
           detail={page.subtitle}
           detailTone={page.subtitleProblem ? 'crit' : undefined}
           problem={page.subtitleProblem}
+          leadingWithProblem
           leading={
             <View style={{ marginRight: space.m }}>
-              <ReceiverIcon number={page.number} ring={40} />
+              <ReceiverIcon number={page.number} ring={40} phase={page.phase} />
             </View>
           }
           right={[page.battery, page.lastHeard].filter(Boolean)}
@@ -90,6 +92,34 @@ export default function ReceiverSettings({
           right={page.position}
           label={t("c993", { position: page.position })}
         />
+        {page.uploadProblem ? (
+          <ListRow
+            testID="receiver-upload-problem"
+            title={page.uploadProblem.title}
+            detail={page.uploadProblem.detail}
+            right={page.uploadProblem.right}
+            problem
+            label={[page.uploadProblem.title, page.uploadProblem.detail, page.uploadProblem.right]
+              .filter(Boolean).join('，')}
+          />
+        ) : null}
+        {page.uploadLast ? (
+          <ListRow
+            testID="receiver-upload-last"
+            title={page.uploadLast.text}
+            titleTone={page.uploadLast.success ? undefined : 'muted'}
+            success={page.uploadLast.success}
+            label={page.uploadLast.label}
+          />
+        ) : null}
+        {page.uploadLast?.previous ? (
+          <ListRow
+            testID="receiver-upload-previous"
+            title={page.uploadLast.previous.text}
+            success={page.uploadLast.previous.success}
+            label={page.uploadLast.previous.label}
+          />
+        ) : null}
         {off ? (
           <ListRow
             testID="receiver-reconnect"

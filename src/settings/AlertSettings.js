@@ -25,6 +25,8 @@ export default function AlertSettings({
   const styles = useStyles(getStyles);
   const [open, setOpen] = useState(initiallyOpen);
   const { dogs, notifications } = page;
+  const dogTypes = { dogStale: t('c1227'), dogOutOfRange: t('c1228'), dogBattery: t('c1229') };
+  const dogDetail = dogs.items.filter(item => item.on).map(item => dogTypes[item.key]).join('、') || null;
   return (
     <ScrollView
       testID="alert-settings"
@@ -56,19 +58,19 @@ export default function AlertSettings({
             testID="alerts-notifications"
             title={t('c245')}
             detail={notifications.detail}
-            problem
+            problem={notifications.denied}
             action={notifications.action}
-            onPress={onNotificationSettings}
-            label={t("c944")}
+            onPress={notifications.denied ? onNotificationSettings : undefined}
+            label={[t('c245'), notifications.detail, notifications.action].filter(Boolean).join('，')}
           />
         )}
         <ListRow
           testID="alerts-dogs"
           title={t('c233')}
-          detail={t('c234')}
+          detail={dogDetail}
           right={dogs.status}
           onPress={() => setOpen(value => !value)}
-          label={t("c941", { status: dogs.status })}
+          label={[t('c233'), dogDetail, dogs.status].filter(Boolean).join('，')}
           accessibilityState={{ expanded: open }}
         >
           <Text

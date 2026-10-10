@@ -6,7 +6,8 @@ import DogProfile from '../src/dogs/DogProfile';
 import AvatarEditor, { NEUTRAL_TINT } from '../src/dogs/AvatarEditor';
 import DogAvatar from '../src/dogs/DogAvatar';
 import { NAME_MAX, clampName, displayName, nameLength, nameToSave } from '../src/dogs/DogName';
-import { CROP_OPTIONS, PHOTO_SIZE, pickPhoto } from '../src/dogs/PhotoAvatar';
+import { CROP_OPTIONS, PHOTO_SIZE, androidColor, cropOptions, pickPhoto } from '../src/dogs/PhotoAvatar';
+import { darkTheme, lightTheme } from '../src/theme/ThemeProvider';
 import { DOG_ART_KEYS, DOG_COLOR_KEYS, DOG_COLORS } from '../src/dogs/DogArt';
 import { colors } from '../src/theme/tokens';
 
@@ -37,7 +38,7 @@ test('a dog nobody named is 「狗 4」', () => {
   expect(displayName(4, null)).toBe('狗 4');
 });
 
-// ---- the photo (256×256, nothing else kept) ---------------------------------
+// ---- the photo (512×512, nothing else kept) ---------------------------------
 
 const stubPicker = (overrides = {}) => ({
   openCamera: jest.fn(async () => ({ path: 'file:///pictures/shot.jpg' })),
@@ -48,14 +49,40 @@ const stubPicker = (overrides = {}) => ({
   ...overrides,
 });
 
-test('拍照: taken, cropped round to 256×256, and every file it made deleted', async () => {
+test('crop screen: square round crop, same for camera and library, themed light and dark', async () => {
+  const camera = stubPicker();
+  const library = stubPicker();
+  await pickPhoto('camera', camera);
+  await pickPhoto('library', library);
+  const strip = ({ path, ...rest }) => rest;
+  expect(strip(camera.openCropper.mock.calls[0][0])).toEqual(strip(library.openCropper.mock.calls[0][0]));
+  expect(CROP_OPTIONS).toMatchObject({ cropping: true, cropperCircleOverlay: true, width: PHOTO_SIZE, height: PHOTO_SIZE });
+  expect(CROP_OPTIONS.cropperToolbarTitle).toBe(i18nT('c649'));
+  expect(CROP_OPTIONS.cropperCancelText).toBe(i18nT('c046'));
+  const light = cropOptions(lightTheme);
+  const dark = cropOptions(darkTheme);
+  expect(light).toMatchObject({ cropperToolbarColor: androidColor(lightTheme.colors.surface),
+    cropperToolbarWidgetColor: androidColor(lightTheme.colors.text), cropperStatusBarLight: true });
+  expect(dark).toMatchObject({ cropperToolbarColor: androidColor(darkTheme.colors.surface),
+    cropperToolbarWidgetColor: androidColor(darkTheme.colors.text), cropperStatusBarLight: false });
+  for (const o of [light, dark]) {
+    for (const k of ['cropperToolbarColor', 'cropperToolbarWidgetColor', 'cropperActiveWidgetColor']) {
+      expect(o[k]).toMatch(/^#([0-9A-F]{6}|[0-9A-F]{8})$/);
+    }
+  }
+  expect(androidColor('#fa0')).toBe('#FFAA00');
+  expect(androidColor('#0009')).toBe('#99000000');
+  expect(androidColor('#11223344')).toBe('#44112233');
+});
+
+test('拍照: taken, cropped round to 512×512, and every file it made deleted', async () => {
   const picker = stubPicker();
   expect(await pickPhoto('camera', picker)).toEqual({ avatar: { kind: 'photo', uri: 'data:image/jpeg;base64,AAAA' } });
   expect(picker.openCamera).toHaveBeenCalledWith({ mediaType: 'photo' });
   expect(picker.openPicker).not.toHaveBeenCalled();
   expect(picker.openCropper).toHaveBeenCalledWith(expect.objectContaining({ path: 'file:///pictures/shot.jpg',
-    width: 256, height: 256, cropperCircleOverlay: true, includeBase64: true, forceJpg: true }));
-  expect(PHOTO_SIZE).toBe(256);
+    width: 512, height: 512, cropperCircleOverlay: true, hideBottomControls: true, freeStyleCropEnabled: false, includeBase64: true, forceJpg: true }));
+  expect(PHOTO_SIZE).toBe(512);
   expect(CROP_OPTIONS.cropperChooseText).toBe(i18nT("c648"));
   // Recompressing would leave the picker's first resized copy behind.
   expect(CROP_OPTIONS.compressImageQuality).toBeUndefined();

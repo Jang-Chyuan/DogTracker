@@ -138,3 +138,10 @@ export function regionForFrame(points, padding, view) {
     longitudeDelta: (view.width * scale) / cos,
   };
 }
+
+/** Padding inside the SDK map padding, clear of the card or history panel. */
+export function overlayFramePadding(padding, { topInset = 0, bottomInset = 0,
+  overlayTop = topInset, overlayBottom = bottomInset } = {}) {
+  return { ...padding, top: padding.top + overlayTop - topInset,
+    bottom: padding.bottom + overlayBottom - bottomInset };
+}

@@ -1,6 +1,30 @@
 import { t } from '../i18n';
 const rows = result => result.results || result.rows?._array || [];
 export function createUploadDatabase(db) {
+  // When this phone last uploaded for each receiver (最後上傳成功…（經手機）,
+  // S2/S3). The queue's own sent rows are the freshest answer, but only the
+  // newest 1,000 of them are kept and 刪除全部狗資料 removes them all, so the
+  // per-Master times written in `sent` are read alongside them.
+  async function lastSentByMaster(owner) {
+    const latest = {};
+    const keep = (master, time) => {
+      if (!Number.isInteger(master) || !Number.isFinite(time) || time <= 0) return;
+      if (!(latest[master] >= time)) latest[master] = time;
+    };
+    for (const row of rows(await db.executeAsync(`SELECT master_id, MAX(sent_at) time
+      FROM ble_upload_queue WHERE owner_user_id=? AND sent_at IS NOT NULL GROUP BY master_id`, [owner]))) {
+      keep(Number(row.master_id), Number(row.time));
+    }
+    // The account is part of the key, so it is matched here rather than with a
+    // LIKE pattern an account id could carry wildcards into.
+    const prefix = `last_sent_at:${owner}:`;
+    for (const row of rows(await db.executeAsync(
+      "SELECT key,value FROM ble_upload_meta WHERE key LIKE 'last_sent_at:%'"))) {
+      if (!String(row.key).startsWith(prefix)) continue;
+      keep(Number(String(row.key).slice(prefix.length)), Number(row.value));
+    }
+    return latest;
+  }
   return {
     async identity() {
       return rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='phone_id'"))[0]?.value;
@@ -58,8 +82,14 @@ export function createUploadDatabase(db) {
         [owner, master]))[0]?.count || 0);
     },
     async sent(row) {
+      const now = Date.now();
       await db.executeBatchAsync([
-        { query: "UPDATE ble_upload_queue SET status='sent',last_error='',sent_at=? WHERE event_id=? AND owner_user_id=?", params: [Date.now(), row.event_id, row.owner_user_id] },
+        { query: "UPDATE ble_upload_queue SET status='sent',last_error='',sent_at=? WHERE event_id=? AND owner_user_id=?", params: [now, row.event_id, row.owner_user_id] },
+        // 最後上傳成功 belongs to the receiver (S2/S3, 070), so its time is kept
+        // per Master in the meta table: it has to outlive both the trim of sent
+        // rows below and 刪除全部狗資料 (S7, DogDataStore.deleteAll).
+        { query: "INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('last_sent_at:' || ? || ':' || ?, ?)",
+          params: [row.owner_user_id, row.master_id, String(now)] },
         { query: "DELETE FROM ble_upload_queue WHERE status='sent' AND id NOT IN (SELECT id FROM ble_upload_queue WHERE status='sent' ORDER BY id DESC LIMIT 1000)", params: [] },
       ]);
     },
@@ -74,7 +104,7 @@ export function createUploadDatabase(db) {
     },
     async summary(owner) {
       const counts = rows(await db.executeAsync('SELECT status,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? GROUP BY status', [owner]));
-      const byMaster = rows(await db.executeAsync("SELECT master_id,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? AND status='pending' GROUP BY master_id", [owner]));
+      const byMaster = rows(await db.executeAsync("SELECT master_id,status,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? AND status IN ('pending','blocked') GROUP BY master_id,status", [owner]));
       // 刪除全部狗資料 (S7) removes the sent rows but keeps their last time.
       const last = Number(rows(await db.executeAsync(`SELECT MAX(
         COALESCE((SELECT MAX(sent_at) FROM ble_upload_queue WHERE owner_user_id=?), 0),
@@ -82,8 +112,12 @@ export function createUploadDatabase(db) {
       [owner, owner]))[0]?.time) || null;
       const error = rows(await db.executeAsync("SELECT last_error FROM ble_upload_queue WHERE owner_user_id=? AND last_error<>'' ORDER BY id DESC LIMIT 1", [owner]))[0]?.last_error;
       const queueError = rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='queue_error'"))[0]?.value;
-      const pendingByMaster = Object.fromEntries(byMaster.map(row => [row.master_id, Number(row.count)]));
-      return { counts, pendingByMaster, last, error: queueError || error || '' };
+      const byStatus = status => Object.fromEntries(byMaster.filter(row => row.status === status)
+        .map(row => [row.master_id, Number(row.count)]));
+      const pendingByMaster = byStatus('pending'), blockedByMaster = byStatus('blocked');
+      const lastByMaster = await lastSentByMaster(owner);
+      return { counts, pendingByMaster, blockedByMaster, last: Math.max(last || 0, ...Object.values(lastByMaster)) || null,
+        lastByMaster, error: queueError || error || '' };
     },
   };
 }

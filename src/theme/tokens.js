@@ -41,6 +41,8 @@ export const colors = {
   // v3 additions.
   activityLow: '#3E5A8C',
   activityNormal: '#D3CCC4',
+  // No activity evidence: neutral, readable as both text and chart graphics.
+  activityMissing: '#686868',
   // Chart fill only; the card's 劇烈活動 text uses activityHighText.
   activityHigh: '#E07A2E',
   activityHighText: '#B85A12',
@@ -88,6 +90,12 @@ export const colors = {
   critAction: '#B3261E',
   // D0's white line dog (the launch screen and its handover), both themes.
   splashLine: '#FFFFFF',
+  // 語意成功色 (070): the green ring-and-tick in front of a cloud success
+  // (S3 下載 最後成功／都已上傳, S2/S3 最後上傳成功). The design's one exception
+  // to the coral main colour. It is a line glyph read as information, so it
+  // holds text contrast on both grounds a settings row can sit on: 6.31:1 on
+  // `surface` (the card) and 5.92:1 on `bg` (the page).
+  successIcon: '#1B6E36',
 };
 
 export const routeColors = [
@@ -109,6 +117,7 @@ export const settingIcon = {
 };
 
 export const opacity = {
+  mapHeaderBacking: 0.85,
   disabled: 0.4,
   rangeRingStroke: 0.55,
   rangeRingFill: 0.06,
@@ -123,6 +132,8 @@ export const opacity = {
 
 // Text styles. Key text is at least 16sp and nothing is below 13sp, except the
 // text inside graphics and the small second lines listed in DESIGN.md §3.
+export const fontWeight = { medium: '500' };
+
 export const type = {
   headline: { fontSize: 24, lineHeight: 32, fontWeight: '700' },
   nameEdit: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
@@ -218,6 +229,8 @@ export const size = {
 
     // Icon roles used by compact actions and navigation (§5 / §15).
     inline: 16,
+    // Paired share/download actions in the history export sheet.
+    exportAction: 24,
     // The back icon of every page header (066: 22 was too small to hit).
     navigation: 28,
     smallAction: 18,
@@ -680,6 +693,7 @@ export const size = {
 
   // History top capsules: avatar sizes, overlap and text reservation (§15).
   historyTop: {
+    phoneAvatar: 32,
     capsuleTextMax: 80,
     avatar: 26,
     companionAvatar: 18,
@@ -734,7 +748,7 @@ export const size = {
     artGrid: 100,
 
     // avatar photo source in its illustration/layout specification.
-    photoSource: 256,
+    photoSource: 512,
   },
 
   signalBars: {
@@ -747,6 +761,8 @@ export const size = {
   },
 
   historyPanel: {
+    // Keep at least half the usable screen available for the history map.
+    maxRatio: 0.5,
     // historyPanel corner in its illustration/layout specification.
     corner: 24,
   },
@@ -838,6 +854,10 @@ export const darkAdditions = {
   activityLowBand: '#212B36',
   // D0's dog stays white on the dark launch screen (design 深色模式「啟動畫面」).
   splashLine: '#FFFFFF',
+  // Dark 語意成功色: the design's dark table has no success glyph. Brighter
+  // than dark `ok`, which is a mark on `okBg`, because this one sits straight
+  // on the page: 8.92:1 on surface, 10.33:1 on bg, 8.01:1 on elevated.
+  successIcon: '#7FD39A',
 };
 
 export const extras = {
