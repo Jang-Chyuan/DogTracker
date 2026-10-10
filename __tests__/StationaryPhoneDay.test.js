@@ -53,7 +53,22 @@ test('a whole day indoors: little distance, a few long stays, the overnight brea
   expect(count(after, 'stop')).toBeGreaterThanOrEqual(1);
   expect(count(after, 'stop')).toBeLessThanOrEqual(3);
   expect(after.nodes.filter(n => n.type === 'stop').every(n => n.durationMs >= 3 * 3600000)).toBe(true);
-  expect(count(after, 'gap')).toBeLessThanOrEqual(1);
+  // Preserve both actual recording gaps and uncertain boundary observations.
+  // The 18:47→19:04 bridge has no confirmed compact stationary return:
+  // it is an interruption, never a zero-distance walking section.
+  const gaps = after.nodes.filter(n => n.type === 'gap');
+  expect(gaps.map(n => ({ start: n.start - START, end: n.end - START,
+    reason: n.reason, countedDistanceM: n.countedDistanceM }))).toEqual([
+    { start: 0, end: 357051, reason: 'uncertain', countedDistanceM: 0 },
+    { start: 357051, end: 4707330, reason: undefined, countedDistanceM: 0 },
+    { start: 46046458, end: 47085377, reason: undefined, countedDistanceM: 0 },
+    { start: 47085377, end: 47091108, reason: 'uncertain', countedDistanceM: 0 },
+  ]);
+  const returnGap = gaps.find(n => n.start === START + 46046458);
+  expect(returnGap).toMatchObject({ durationMs: 1038919, line: 'long-dashed' });
+  expect(after.nodes.filter(n => n.type === 'movement'
+    && n.start < returnGap.end && n.end > returnGap.start)).toHaveLength(0);
+  expect(after.edges.filter(e => e.uncertain).every(e => e.countedDistanceM === 0)).toBe(true);
   expect(count(after, 'resume')).toBeLessThanOrEqual(1);
   // 「今天 x km」 is the same history logic.
   const today = todayRouteDistance(rows, { now: dayEnd - 1, dayStart, recording: false });

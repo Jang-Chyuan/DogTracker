@@ -66,7 +66,7 @@ class DrivingPipelineTest {
     val pipeline = LocationPipeline()
     val first = point(1, 0.0, 60.0, 20f)
     assertTrue(pipeline.accept(first, first.elapsedNanos))
-    assertEquals("unknown", pipeline.latest!!.motionState)
+    assertEquals("moving", pipeline.latest!!.motionState)
     assertEquals(first.speed, pipeline.latest!!.speed)
     pipeline.written(pipeline.candidate(first.elapsedNanos)!!, first.elapsedNanos)
     val poor = point(6, 83.3, 60.0, 50f)

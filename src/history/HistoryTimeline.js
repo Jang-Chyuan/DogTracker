@@ -4,6 +4,7 @@ import { historySourceStream, filterHistoryPoints, replayHistoryHolds } from './
 import { historyMovement } from './HistoryMovement';
 import { historyDeparture } from './HistoryDeparture';
 import { historyStops, historyIndoorNodes } from './HistoryStops';
+import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
 
 /** Pure H1/H2 list. `nodes` contains location rows AND movement/gap rows in
  * display order. No geocoding: address resolution can use location rows later.
@@ -31,7 +32,7 @@ export function historyTimeline(rows = [], options = {}) {
   const identity = JSON.stringify([subject, range.start, following ? 'following' : range.end,
     dayStart, dayEnd, timezone, !!manualRange]);
   const stays = historyStops(context, { subject, config, start: range.start, end: range.end,
-    dayStart, dayEnd: dayEnd - 1, vehicles, following, identity, state });
+    dayStart, dayEnd: dayEnd - 1, vehicles, edges: contextMovement.edges, following, identity, state });
   const held = historyIndoorNodes(context, { start: Math.max(range.start, dayStart),
     end: Math.min(range.end, dayEnd - 1), dayStart, dayEnd: dayEnd - 1, config });
   // 067: a hold the dog walked on out of (its next real fix more than
@@ -45,9 +46,20 @@ export function historyTimeline(rows = [], options = {}) {
   const locations = [...stays.stops, ...indoor,
     ...switches.filter(s => !stays.stops.some(v => s.start >= v.start && s.start <= v.end))]
     .sort((a, b) => a.start - b.start);
+  const displayLocations = [...locations, ...(stays.displayStays || [])];
+  const containsStayEdge = edge => displayLocations.some(n => n.type === 'stop'
+    && edge.start >= (n.displayRange?.start ?? n.start) && edge.end <= (n.displayRange?.end ?? n.end)
+    && ![...(n.gaps || []), ...(n.displayRange?.gaps || [])].some(g => g.start < edge.end && g.end > edge.start));
+  const sectionEdges = movement.edges.map(edge => {
+    // A same-place bridge supplies no travel evidence. If it did not belong
+    // to a confirmed stay, retain the interruption instead of inventing walking.
+    const containedBridge = edge.bridged && containsStayEdge(edge);
+    return subject === 'phone' && edge.bridged && !containedBridge
+      ? { ...edge, gap: true, mode: 'gap' } : edge;
+  });
   // 判定表「恢復記錄節點」: after a break of over 30 minutes the first fix
   // after it is a 恢復記錄 node (unless a stay or a hold already starts there).
-  for (const e of movement.edges) {
+  for (const e of sectionEdges) {
     if (e.mode !== 'gap' || e.durationMs <= config.resumeAfterMs) continue;
     if (locations.some(n => n.start === e.end)) continue;
     locations.push({ type: 'resume', start: e.end, end: e.end, latitude: e.to.latitude, longitude: e.to.longitude });
@@ -60,8 +72,11 @@ export function historyTimeline(rows = [], options = {}) {
     manual: !!manualRange && manualRange.start !== departure.automaticRange.start,
     continuesPreviousDay: context.some(p => p.time < dayStart)
       && first.time - context.filter(p => p.time < dayStart).pop().time <= config.gapMs });
+  const displayedEnd = subject === 'phone' && last ? phoneStayDisplayCoordinate(displayLocations, last.time) : null;
   if (last && last !== first && !locations.some(n => n.end === last.time && n.type === 'indoor')) locations.push({ type: 'end',
     start: last.time, end: last.time, latitude: last.latitude, longitude: last.longitude,
+    ...(displayedEnd ? { ...displayedEnd,
+      originalRepresentative: { latitude: last.latitude, longitude: last.longitude } } : {}),
     // 判定表「「現在」和「最後 12:05」」; a recording that was switched off
     // ends with 「記錄已關閉 10:20」 (closedAt, when the caller knows it).
     label: following ? now - last.time <= 120000 ? t('c130') : t("c660") : closedAt != null ? t("c656") : t('c330'),
@@ -73,9 +88,17 @@ export function historyTimeline(rows = [], options = {}) {
   // so the rows add up to the summary.
   let carried = 0;
   const isFoot = mode => mode === 'walking' || mode === 'moving';
-  for (const e of movement.edges) {
-    if (e.mode !== 'gap' && locations.some(n => ['stop', 'indoor'].includes(n.type)
-      && e.start >= n.start && e.end <= n.end)) {
+  for (const e of sectionEdges) {
+    // Coarse fixes may sit just outside a visit's representative-position
+    // quality gate. Two detector-confirmed stationary observations are still
+    // no walk; preserve actual gaps rather than dropping them here.
+    if (subject === 'phone' && !e.gap && !e.bridged
+      && e.from.phoneStationary && e.to.phoneStationary) continue;
+    // A brief unknown observation inside an already confirmed visit does not
+    // become a new travel/interruption row. Actual recording gaps remain.
+    if (e.uncertain && e.durationMs <= config.gapMs && containsStayEdge(e)) continue;
+    if (e.mode !== 'gap' && (containsStayEdge(e) || locations.some(n => n.type === 'indoor'
+      && e.start >= n.start && e.end <= n.end))) {
       const arrived = [...sections].reverse().find(row => row.type === 'movement');
       if (arrived && isFoot(arrived.mode)) arrived.countedDistanceM += e.countedDistanceM;
       else carried += e.countedDistanceM;
@@ -85,7 +108,7 @@ export function historyTimeline(rows = [], options = {}) {
     const prior = sections[sections.length - 1];
     // A dog's break keeps its own reason (收不到 GPS / 沒收到訊號): breaks
     // with different reasons are different rows.
-    const reason = e.gap && subject === 'dog'
+    const reason = e.uncertain && e.durationMs <= config.gapMs ? 'uncertain' : e.gap && subject === 'dog'
       ? (e.gapReason ?? (stream.packets.some(p => p.time > e.start && p.time < e.end) ? 'no-gps' : 'no-signal')) : undefined;
     if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
       && !locations.some(n => n.start === e.start || n.end === e.start)) {
@@ -108,8 +131,6 @@ export function historyTimeline(rows = [], options = {}) {
   const noGPSGaps = new Map(sections.filter(section => section.type === 'gap'
     && section.reason === 'no-gps').map(section => [section.start, section]));
   for (const node of movedOn) {
-    // The outgoing no-GPS release edge continues this same missing-fix
-    // interval; the display hold boundary must not create a second gap row.
     const continuation = noGPSGaps.get(node.end);
     if (continuation) {
       continuation.start = node.start;
@@ -164,11 +185,13 @@ export function historyTimeline(rows = [], options = {}) {
   const dayRecords = stream.packets.some(p => p.time >= dayStart && p.time < dayEnd);
   // dayPoints: the whole day's filtered fixes (the range bar snaps to them);
   // edges: the range's fix-to-fix steps (the history cursor's distance).
-  return { ...stream, dayRecords, points, dayPoints, dayEdges: contextMovement.edges.filter(e => e.start >= dayStart && e.end < dayEnd),
-    edges: movement.edges, range, departure, nodes,
+  return { ...stream, dayRecords, points, dayPoints,
+    ...(subject === 'dog' ? { dayEdges: contextMovement.edges.filter(e => e.start >= dayStart && e.end < dayEnd) } : {}),
+    edges: sectionEdges, range, departure, nodes,
     locations: keptLocations, sections: keptSections,
+    ...(stays.displayStays?.length ? { displayStays: stays.displayStays } : {}),
     state: stays.state, typicalMs: stays.typicalMs,
     distanceM: movement.edges.reduce((sum, e) => sum + e.countedDistanceM, 0),
     durationMs: first ? last.time - first.time : 0,
-    hasGaps: movement.edges.some(e => e.gap), rangeEnabled: !!first && last.time - first.time >= 60000 };
+    hasGaps: sectionEdges.some(e => e.gap), rangeEnabled: !!first && last.time - first.time >= 60000 };
 }

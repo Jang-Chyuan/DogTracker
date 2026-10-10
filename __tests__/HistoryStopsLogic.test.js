@@ -153,3 +153,53 @@ test('unreliable coordinates cannot break same-place gap merging', () => {
   const visits = historyVisits([point(0), point(100, 100, { accuracy: 30 }), point(300)]);
   expect(visits).toHaveLength(1); expect(visits[0].end).toBe(300000);
 });
+
+const gapPhone = (seconds, metres, extra = {}) => {
+  const p = point(seconds, metres);
+  return { ...p, raw_latitude: p.latitude, raw_longitude: p.longitude,
+    accuracy: 14, raw_speed_kmh: 0, speed_accuracy_mps: 0.5,
+    phoneMotionState: 'stationary', phoneStationary: true, phoneConfirmedMovement: false, ...extra };
+};
+const coarsePhoneGap = tail => [gapPhone(0, 0), gapPhone(600, 0),
+  gapPhone(605, 40, { accuracy: 28 }),
+  gapPhone(4200, 43, { phoneStationary: false, phoneMotionState: 'unknown', speed_accuracy_mps: 2 }),
+  ...tail];
+
+test('coarse same-place endpoints join visits only after compact confirmed stationary return', () => {
+  const visits = historyVisits(coarsePhoneGap([gapPhone(4205, 44), gapPhone(4800, 44)]), { subject: 'phone' });
+  expect(visits).toHaveLength(1);
+  expect(visits[0]).toMatchObject({ start: 0, end: 4800000, durationMs: 4800000, interruptionMs: 0 });
+  expect(visits[0].points.every(p => p.accuracy <= 25)).toBe(true);
+});
+
+test.each([
+  ['confirmed departure', [gapPhone(4205, 44, { phoneStationary: false, phoneConfirmedMovement: true }), gapPhone(4230, 90), gapPhone(4800, 90)]],
+  ['credible slow walk', [gapPhone(4205, 44, { phoneStationary: false, raw_speed_kmh: 1.44 }), gapPhone(4230, 90), gapPhone(4800, 90)]],
+  ['credible car', [gapPhone(4205, 44, { phoneStationary: false, raw_speed_kmh: 36 }), gapPhone(4230, 90), gapPhone(4800, 90)]],
+  ['no stationary within short interruption bound', [gapPhone(4205, 44, { phoneStationary: false }), gapPhone(4381, 44), gapPhone(4800, 44)]],
+  ['raw progress outside compact return', [gapPhone(4205, 75), gapPhone(4800, 75)]],
+])('same-place bridge does not merge a %s', (_, tail) => {
+  expect(historyVisits(coarsePhoneGap(tail), { subject: 'phone' }).length).toBeGreaterThan(1);
+});
+
+test('a distant recording restart is not same-place continuity', () => {
+  const points = [gapPhone(0, 0), gapPhone(600, 0), gapPhone(4200, 200), gapPhone(4800, 200)];
+  expect(historyVisits(points, { subject: 'phone' })).toHaveLength(2);
+});
+
+test('inferred bridge metadata follows actual range fixes, never external or empty gap ranges', () => {
+  const points = coarsePhoneGap([gapPhone(4205, 44), gapPhone(4800, 44)]);
+  const options = { subject: 'phone', dayStart: 0, dayEnd: 4800001 };
+  const before = historyStops(points, { ...options, start: 0, end: 605000 }).visits[0];
+  const after = historyStops(points, { ...options, start: 4200000, end: 4800000 }).visits[0];
+  const across = historyStops(points, { ...options, start: 600000, end: 4800000 }).visits[0];
+  const inside = historyStops(points, { ...options, start: 1000000, end: 2000000 });
+  expect(before.inferredContinuityGaps).toEqual([]);
+  expect(before.durationMs).toBe(600000);
+  expect(after.inferredContinuityGaps).toEqual([]);
+  expect(after.durationMs).toBe(600000);
+  expect(across.inferredContinuityGaps).toEqual([{ start: 605000, end: 4200000 }]);
+  expect(across.durationMs).toBe(4200000);
+  expect(inside.visits).toEqual([]);
+  expect(inside.stops).toEqual([]);
+});

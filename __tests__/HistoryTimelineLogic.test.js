@@ -155,3 +155,27 @@ test('an interrupted stay reads its own length, then the interruption (060 revie
   expect(placeSpeech({ type: 'stop', number: 1, start: at(9, 0), end: at(9, 30), durationMs: 25 * 60000,
     interruptionMs: 5 * 60000 }, '桃園車站')).toBe('停留 1，桃園車站，09:00 到 09:30，25 分鐘，不含中斷 5 分鐘');
 });
+
+const rawPhoneFix = (seconds, metres, extra = {}) => ({ ...point(seconds, metres),
+  accuracy: 28, raw_speed_kmh: 0, speed_accuracy_mps: 0.5, ...extra });
+
+test('an unconfirmed same-place phone bridge is an interruption, never a long walking row', () => {
+  const rows = [...[1, 6, 11, 16, 21, 26, 31].map(s => rawPhoneFix(s, 0)),
+    rawPhoneFix(1200, 3, { raw_speed_kmh: null, speed_accuracy_mps: null }),
+    rawPhoneFix(1205, 3, { raw_speed_kmh: null, speed_accuracy_mps: null })];
+  const model = historyTimeline(rows, { subject: 'phone', range: { start: 1000, end: 1205000 } });
+  expect(model.sections.some(s => s.type === 'movement' && s.durationMs > 180000)).toBe(false);
+  expect(model.sections.find(s => s.start === 31000)).toMatchObject({ type: 'gap', mode: 'gap', end: 1200000 });
+  expect(model.hasGaps).toBe(true);
+  expect(model.distanceM).toBe(0);
+});
+
+test('a phone recording gap followed by real walking retains the gap and the measured walk', () => {
+  const before = [1, 6, 11, 16, 21, 26, 31].map(s => rawPhoneFix(s, 0));
+  const walk = Array.from({ length: 61 }, (_, i) => rawPhoneFix(1200 + i * 5, 200 + i * 5,
+    { accuracy: 5, raw_speed_kmh: 3.6, speed_accuracy_mps: 0.1 }));
+  const model = historyTimeline([...before, ...walk], { subject: 'phone', range: { start: 1000, end: 1500000 } });
+  expect(model.sections.some(s => s.type === 'gap' && s.durationMs > 180000)).toBe(true);
+  expect(model.distanceM).toBeGreaterThan(280);
+  expect(model.sections.some(s => s.type === 'movement' && s.mode === 'walking')).toBe(true);
+});

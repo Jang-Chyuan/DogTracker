@@ -46,7 +46,7 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
   const ahead = base ? points.slice(base) : points;
   const edges = base ? movement.edges.slice(firstFrom(movement.edges, e => e.start, points[base].time))
     : movement.edges;
-  const candidates = ahead.filter(p => p.time >= fromTime && !p.heldReason && !isVehiclePoint(p, movement.vehicles));
+  const candidates = ahead.filter(p => p.time >= fromTime && !p.heldReason && !p.phoneStationary && !isVehiclePoint(p, movement.vehicles));
   const times = candidates.map(p => p.time);
   const indexOf = new Map(ahead.map((p, i) => [p, i]));
   const edgeStarts = edges.map(e => e.start);

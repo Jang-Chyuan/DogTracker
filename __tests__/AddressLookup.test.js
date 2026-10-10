@@ -8,6 +8,8 @@ import {
   ADDRESS_CONFIG,
   addressLookup,
   useAddress,
+  AddressLookupContext,
+  usePlaceNames,
 } from '../src/placement/AddressLookup';
 
 // Answers seen from the phone's geocoder on 2026-10-06.
@@ -103,6 +105,47 @@ test('no answer (offline) or a geocoder that never replies is asked again later'
 });
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
+
+test('same display coordinate keeps one nearest address despite overlapping cache entries and LRU touches', async () => {
+  const point = metres => ({ latitude: 25 + metres / 111320, longitude: 121 });
+  const native = {
+    reverseGeocode: jest.fn(async (latitude, longitude) => JSON.stringify([
+      { latitude, longitude, line: latitude === point(0).latitude
+        ? '桃園市桃園區示例路1號' : '桃園市桃園區示例路20號' },
+    ])),
+    isOnline: jest.fn(async () => true),
+  };
+  const lookup = createAddressLookup({ native });
+  lookup.lookup(point(0));
+  await flush();
+  lookup.lookup(point(60));
+  await flush();
+  // Both distinct cached places are within 50 m of the displayed stay/end.
+  // Reading either place changes LRU order, but cannot change the best address.
+  const shared = point(20);
+  const expected = '桃園區示例路 1 號附近';
+  expect(Array.from({ length: 4 }, () => lookup.lookup(shared))).toEqual(
+    [expected, expected, expected, expected],
+  );
+  let names;
+  let tree;
+  function Probe() { names = usePlaceNames([shared, shared]); return null; }
+  try {
+    act(() => { tree = create(<AddressLookupContext.Provider value={lookup}>
+      <Probe />
+    </AddressLookupContext.Provider>); });
+    expect(names).toEqual([
+      { state: 'found', text: expected }, { state: 'found', text: expected },
+    ]);
+    // Exact original coordinates still keep their own labels for raw exports.
+    await expect(lookup.lookupAddresses([point(60), shared, point(0)]))
+      .resolves.toEqual(['桃園區示例路 20 號附近', expected, expected]);
+    native.isOnline.mockResolvedValue(false);
+    await expect(lookup.lookupAddresses([shared, point(60), shared]))
+      .resolves.toEqual([expected, '桃園區示例路 20 號附近', expected]);
+    expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
+  } finally { act(() => tree?.unmount()); }
+});
 
 test('closest result wins; district without a street and absent coordinates are safe', () => {
   expect(describePlace(DOG_4, [{ district: '大园区' }])).toBe(

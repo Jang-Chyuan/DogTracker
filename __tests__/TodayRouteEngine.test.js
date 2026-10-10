@@ -1,4 +1,5 @@
 import { performance } from 'perf_hooks';
+import * as movement from '../src/history/HistoryMovement';
 import { createTodayRouteEngine } from '../src/tracking/TodayRouteEngine';
 import { todayRouteDistance, startOfToday, endOfDay } from '../src/tracking/TodayDistance';
 import { historyTimeline } from '../src/history/HistoryTimeline';
@@ -224,7 +225,10 @@ describe('today\'s distance, carried on row by row (068)', () => {
     const model = historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone', source: 'all',
       dayStart: DAY_START, dayEnd: endOfDay(DAY_START), today: true, now });
     expect(model.edges.length).toBeGreaterThan(20000);
-    expect(model.edges.every(e => e.mode === 'walking')).toBe(true);
+    // A run of missing measurements may be explicitly uncertain; it is not
+    // a vehicle or an invented indoor hold and never finances distance.
+    expect(model.edges.every(e => e.mode === 'walking' || (e.mode === 'gap' && e.uncertain))).toBe(true);
+    expect(model.edges.filter(e => e.uncertain).every(e => e.countedDistanceM === 0)).toBe(true);
     // A day fed in batches of 150 rows, as the live map polls: what the
     // batches cost altogether, per row.
     const perRow = fed => {
@@ -264,4 +268,80 @@ test('a sparse walk ending on a still fix keeps its distance in incremental and 
   const result = engine.sum(rows[1].time);
   expectSame(result, reference(rows, rows[1].time));
   expect(result.metres).toBeGreaterThan(50);
+});
+
+
+test('a 10k ongoing drive only steps its new suffix, retaining parking and walking backfills', () => {
+  let time = DAY_START + MINUTE, metres = 0;
+  const rows = [];
+  const push = speed => {
+    time += 2000; metres += speed * 2;
+    rows.push({ id: rows.length + 1, time, latitude: 24.989,
+      longitude: 121.313 + metres / (111320 * Math.cos(24.989 * Math.PI / 180)),
+      accuracy: 5, raw_speed_kmh: speed * 3.6, speed_accuracy_mps: 0.1 });
+  };
+  // Positive walking departure first: compare a meaningful distance, rather
+  // than accepting any optimisation merely because a car-only answer is zero.
+  for (let i = 0; i < 180; i += 1) push(1.4);
+  for (let i = 0; i < 10000; i += 1) push(10);
+  const engine = createTodayRouteEngine({ dayStart: DAY_START });
+  engine.add(rows); engine.sum(time);
+  const step = jest.spyOn(movement, 'stepVehicles');
+  const count = jest.spyOn(movement, 'countEdge');
+  const compareAppend = (speed, size, scanLimit) => {
+    const start = rows.length;
+    for (let i = 0; i < size; i += 1) push(speed);
+    step.mockClear(); count.mockClear();
+    engine.add(rows.slice(start));
+    const got = engine.sum(time);
+    if (scanLimit != null) {
+      expect(step.mock.calls.length).toBeLessThanOrEqual(scanLimit);
+      expect(count.mock.calls.length).toBeLessThanOrEqual(scanLimit);
+    }
+    expectSame(got, reference(rows, time));
+  };
+  try {
+    compareAppend(10, 3, 3);
+    // Displayed terminal parking is provisional: it must not be committed
+    // into the retained vehicle scan, or resuming would invent a new car.
+    compareAppend(0, 100, 100);
+    // A fresh geometry-confirmed departure after parking legitimately
+    // revokes the earlier stationary tail; check correctness at that event.
+    compareAppend(3.5, 20);
+    compareAppend(10, 3);
+    compareAppend(0, 30, 30);
+    compareAppend(1.4, 20); // true short walk after leaving the vehicle
+    compareAppend(10, 20);
+    compareAppend(10, 3, 3);
+    expect(engine.sum(time).metres).toBeGreaterThan(400);
+  } finally {
+    step.mockRestore(); count.mockRestore();
+  }
+});
+
+test('a retained active car across a high-speed signal gap survives clock rollback and parked backfill', () => {
+  let time = DAY_START + MINUTE, metres = 0;
+  const rows = [];
+  const push = (speed, seconds = 5) => {
+    time += seconds * SECOND; metres += speed * seconds;
+    rows.push({ id: rows.length + 1, time, latitude: 24.989,
+      longitude: 121.313 + metres / (111320 * Math.cos(24.989 * Math.PI / 180)),
+      accuracy: 5, raw_speed_kmh: speed * 3.6, speed_accuracy_mps: 0.1 });
+  };
+  for (let i = 0; i < 30; i += 1) push(10);
+  const beforeGap = time;
+  push(10, 240); // signal gap, still below the vehicle interruption limit
+  for (let i = 0; i < 20; i += 1) push(10);
+  for (let i = 0; i < 40; i += 1) push(0); // provisional terminal parking
+  for (let i = 0; i < 20; i += 1) push(10);
+  const engine = createTodayRouteEngine({ dayStart: DAY_START });
+  for (let start = 0; start < rows.length; start += 7) {
+    const prefix = rows.slice(0, start + 7);
+    engine.add(prefix.slice(start));
+    expectSame(engine.sum(prefix.at(-1).time), reference(prefix, prefix.at(-1).time));
+  }
+  // A backwards clock revokes future parking/departure evidence before
+  // reaching those rows again; it must not keep an old active checkpoint.
+  expectSame(engine.sum(beforeGap), reference(rows, beforeGap));
+  expectSame(engine.sum(rows.at(-1).time), reference(rows, rows.at(-1).time));
 });

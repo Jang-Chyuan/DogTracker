@@ -55,7 +55,7 @@ internal class LocationPipeline {
     // Three valid raw samples; a signal gap starts a new smoothing window.
     if (reset || dt > 3) {
       window.clear()
-      stationaryCoordinate = null
+      // MotionDetector owns the lock lifetime; smoothing gaps alone cannot release it.
     }
     window.addLast(sample)
     while (window.size > 3) window.removeFirst()
