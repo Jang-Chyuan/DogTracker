@@ -124,6 +124,11 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         await database.initialize();
         check();
         if (latestFirst) {
+          const archive = await database.readArchivePublication?.(userId);
+          check();
+          if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
+            && Number.isSafeInteger(archive.revision) && archive.revision > 0)
+            publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
           const cached = await database.readLatestSnapshot(userId);
           check();
           publish({ snapshotBaseRevision: cached?.revision ?? null });
@@ -221,7 +226,9 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         }
         check();
         phase = 'publish';
-        if (database.publishDownload) await publishScoped(version, () => database.publishDownload(userId));
+        if (database.publishDownload) await publishScoped(version, () => latestFirst
+          ? database.publishDownload(userId, 'auto', cutoff, () => valid(version) && !abort.signal.aborted)
+          : database.publishDownload(userId));
         check();
         if (latestFirst) publish({ archivePending: false, archiveRevision: state.archiveRevision + 1, archiveCutoff: cutoff, archiveError: '' });
         else publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });

@@ -1,4 +1,5 @@
 import { createCloudSync } from '../src/cloud/CloudSync';
+import { captureActivityRead } from '../src/cloud/CloudPagePublication';
 import { captureMapRead, completedMapRevision, mapReadRevision } from '../src/cloud/CloudPublication';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
@@ -41,7 +42,7 @@ async function fixture({ downloadContext = async () => { throw new Error('contex
   });
   engine = createCloudSync({ client, database, downloadLatest, downloadContext, onChange: state => states.push(state) });
   const start = async () => { engine.setForeground(true); engine.setSession({ user: { id: 'a' } }); await flush(); };
-  return { database, downloadLatest, states, current: () => states.at(-1), start };
+  return { client, database, downloadLatest, states, current: () => states.at(-1), start };
 }
 
 test('latest is atomically usable while archive is held; archive failure never revokes its map success', async () => {
@@ -155,4 +156,34 @@ test('archive releases the slot at its 30 second boundary and preserves checkpoi
   expect(current()).toMatchObject({ mapSuccessRevision: 2, error: '', catchUp: { phase: 'idle' } });
   expect(await database.loadSyncState('a', 7)).not.toBeNull();
   expect(saved.through_at).toBeTruthy();
+});
+
+test('a new offline engine can read a prior completed archive without claiming fresh latest positions', async () => {
+  const { client, database, start } = await fixture({ archiveEvents: true });
+  await start();
+  const completed = await database.readArchivePublication('a');
+  expect(completed).toMatchObject({ owner: 'a', cutoff: NOW, revision: 1 });
+  expect(await database.count('a')).toBe(1);
+  await engine.dispose();
+  const states = [];
+  engine = createCloudSync({ client, database, onChange: state => states.push(state),
+    downloadLatest: async () => { throw new Error('network failed'); } });
+  engine.setForeground(true); engine.setSession({ user: { id: 'a' } }); await flush();
+  expect(states.at(-1)).toMatchObject({ archiveCutoff: NOW, archiveRevision: 1,
+    mapSuccessRevision: 0, lastSuccess: null });
+  expect(captureActivityRead(() => engine.historyPublication(), 'a', true).open).toBe(true);
+  expect(await database.count('a')).toBe(1);
+});
+
+test('another owner or a manual archive slice cannot hydrate automatic activity completion', async () => {
+  const { database, start } = await fixture();
+  await database.beginDownload('b');
+  await database.publishDownload('b', 'auto', NOW);
+  await database.beginManualScope('a', 4, '2026-10-10');
+  await database.publishManualScope('a', 4, '2026-10-10');
+  database.beginDownload = async () => { throw new Error('archive failed'); };
+  await start();
+  expect(engine.historyPublication()).toMatchObject({ owner: 'a', archiveCutoff: null, archiveRevision: 0 });
+  expect(captureActivityRead(() => engine.historyPublication(), 'a', true).open).toBe(false);
+  expect(await database.readArchivePublication('a')).toBeNull();
 });
