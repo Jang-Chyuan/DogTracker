@@ -1,3 +1,4 @@
+import { initializeHistoryCoverage, invalidateEvictedCoverage } from './HistoryCoverage';
 import { t } from '../i18n';
 import { createStagedCloudDatabase } from './CloudStaging';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
@@ -86,14 +87,19 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
   return {
     invalidatePublished() { trackRepairs++; },
     async historyDownloadStates(owner, ids) {
-      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      return withConnectionLock(connection, async () => {
+      await initializeHistoryCoverage(connection);
       const list = Array.isArray(ids) ? ids : [ids];
       if (!list.length) return [];
-      return rows(await connection.executeAsync(`SELECT slave_id,day,complete FROM history_download_state WHERE owner=? AND slave_id IN (${list.map(() => '?').join(',')})`, [owner, ...list]));
+      return rows(await connection.executeAsync(`SELECT slave_id,day,complete,range_start,range_end,received_before FROM history_download_state WHERE owner=? AND slave_id IN (${list.map(() => '?').join(',')})`, [owner, ...list])).map(row => Object.fromEntries(Object.entries(row).filter(([name, value]) =>
+        !['range_start', 'range_end', 'received_before'].includes(name) || value != null)));
+      });
     },
-    async setHistoryDownloadState(owner, slaveId, day, complete) {
-      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
-      await connection.executeAsync('INSERT OR REPLACE INTO history_download_state(owner,slave_id,day,complete) VALUES(?,?,?,?)', [owner, slaveId, day, complete ? 1 : 0]);
+    async setHistoryDownloadState(owner, slaveId, day, complete, coverage = {}) {
+      return withConnectionLock(connection, async () => {
+      await initializeHistoryCoverage(connection);
+      await connection.executeAsync('INSERT OR REPLACE INTO history_download_state(owner,slave_id,day,complete,range_start,range_end,received_before) VALUES(?,?,?,?,?,?,?)', [owner, slaveId, day, complete ? 1 : 0, coverage.range_start ?? null, coverage.range_end ?? null, coverage.received_before ?? null]);
+      });
     },
     async loadRangeState(owner) {
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS receiver_range_state (scope TEXT PRIMARY KEY, value TEXT NOT NULL)');
@@ -170,7 +176,8 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
         PRIMARY KEY (owner_user_id, master_id, bucket_start)
       )`);
       // Also apply retention to databases downloaded by older app versions.
-      await connection.executeAsync(trimHistory);
+      await initializeHistoryCoverage(connection);
+      await connection.executeBatchAsync([{ query: invalidateEvictedCoverage(trimHistory), params: [] }, { query: trimHistory, params: [] }]);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
@@ -269,6 +276,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
         }
         // Global cap across accounts/Masters. Keep newest reception times, not
         // newest download order, so manual historical downloads cannot evict newer rows.
+        commands.push({ query: invalidateEvictedCoverage(trimHistory), params: [] });
         commands.push({ query: trimHistory, params: [] });
         pagesSaved += 1;
         if (pagesSaved % PAYLOAD_EVERY_PAGES === 0) {

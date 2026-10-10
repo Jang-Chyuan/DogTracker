@@ -129,3 +129,18 @@ test('K11: failed completeness reads keep local days incomplete per dog and can 
   expect(state.knowledge.incomplete).toEqual([]);
   await act(async () => renderer.unmount());
 });
+
+test('a single dog with local rows but no durable completed download remains incomplete', async () => {
+  const day = '2026-10-03';
+  const cloud = { downloadStates: async () => [] };
+  let state, renderer;
+  function Probe() {
+    state = useHistoryCloud({ cloud, slaveId: 6, scope: 'missing-coverage-single', todayKey: day,
+      local: [day], localByDog: { 6: [day] } });
+    return null;
+  }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(state.knowledge.incomplete).toContain(day);
+  } finally { await act(async () => renderer.unmount()); }
+});

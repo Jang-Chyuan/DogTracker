@@ -1,3 +1,4 @@
+import { initializeHistoryCoverage, invalidateEvictedCoverage } from './HistoryCoverage';
 import { t } from '../i18n';
 import { withConnectionLock } from '../database/connectionLock';
 
@@ -47,11 +48,12 @@ export function createStagedCloudDatabase(connection, options, createCore) {
     executeAsync: (query, params) => connection.executeAsync(rewrite(kind, query), params),
     executeBatchAsync: async commands => {
       // Retain the newest staged history within unused cache space plus the reserve.
-      const writes = commands.filter(command => !/^DELETE FROM supabase_dog_status WHERE id IN/.test(command.query));
+      const writes = commands.filter(command => !/^DELETE FROM supabase_dog_status WHERE id IN/.test(command.query)
+        && !/^UPDATE history_download_state SET complete=0 WHERE complete=1 AND EXISTS/.test(command.query));
       const stageUsed = kinds.map(value => `(SELECT COUNT(*) FROM ${tableName(value, 'supabase_dog_status')})`).join('+');
       const used = `(SELECT COUNT(*) FROM supabase_dog_status)+${stageUsed}`;
       const reclaim = [kind, ...kinds.filter(value => value !== kind)].map(value => ({
-        query: reclaimHistory(tableName(value, 'supabase_dog_status'), `(${used})-${cap + reserveRows}`, true), params: [],
+        query: value === 'manual' ? 'SELECT 1' : reclaimHistory(tableName(value, 'supabase_dog_status'), `(${used})-${cap + reserveRows}`, true), params: [],
       }));
       try {
         await connection.executeBatchAsync([
@@ -76,7 +78,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
   const initialize = () => {
     if (state.ready) return state.ready;
     state.ready = published.initialize().then(() => withConnectionLock(connection, async () => {
-      await connection.executeAsync('CREATE TABLE IF NOT EXISTS history_download_state (owner TEXT, slave_id INTEGER, day TEXT, complete INTEGER NOT NULL, PRIMARY KEY(owner,slave_id,day))');
+      await initializeHistoryCoverage(connection);
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_download_jobs (owner TEXT, kind TEXT, scope TEXT, PRIMARY KEY(owner,kind))');
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_stage_quota (used INTEGER,budget INTEGER,CHECK(used<=budget))');
       state.columns = Object.fromEntries(await Promise.all(tables.map(async ([table]) => [table,
@@ -92,6 +94,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           else continue;
           await connection.executeAsync(sql);
         }
+        if (table === 'history_download_state') await initializeHistoryCoverage(connection, tableName(kind, table));
         if (table === 'supabase_dog_status') {
           const found = new Set(rows(await connection.executeAsync(`PRAGMA table_info(${tableName(kind, table)})`)).map(column => column.name));
           for (const name of ['had_base', ...baseFields.map(value => `base_${value}`)])
@@ -171,7 +174,17 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           const namesList = names(table).join(',');
           commands.push({ query: `INSERT OR REPLACE INTO ${table} (${namesList}) SELECT ${namesList} FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         }
-        commands.push({ query: reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, false), params: [] });
+        const eviction = reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, false);
+        commands.push({ query: invalidateEvictedCoverage(eviction), params: [] });
+        if (kind === 'manual') {
+          // A completed manual scope may not lose its own rows to the cap and
+          // still publish a complete marker. Roll back instead of showing part.
+          commands.push({ query: `INSERT INTO cloud_stage_quota(used,budget)
+            SELECT 1,0 WHERE EXISTS (SELECT 1 FROM cloud_manual_history_download_state d
+              JOIN history_download_state p ON d.owner=p.owner AND d.slave_id=p.slave_id AND d.day=p.day
+              WHERE d.owner=? AND d.complete=1 AND p.complete=0)`, params: [owner] });
+        }
+        commands.push({ query: eviction, params: [] });
         commands.push({ query: 'INSERT INTO cloud_stage_quota(used,budget) SELECT COUNT(*),? FROM supabase_dog_status', params: [cap] });
         commands.push({ query: 'DELETE FROM cloud_stage_quota', params: [] });
         for (const [table, ownerColumn] of tables) commands.push({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });

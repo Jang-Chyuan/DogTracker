@@ -1,3 +1,4 @@
+import { historyCoverage } from '../cloud/HistoryCoverage';
 import { t } from '../i18n';
 // What the history's calendar asks the cloud (054b): which days hold the
 // rows of the dog (or dogs, 055b) (H3b's dots), the earliest one (how far back ‹ goes), and the
@@ -61,6 +62,7 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
   let previous = Promise.resolve();
   return {
     owner,
+    coverageRequired: true,
     getPublication,
     publishedReads: typeof database.publishManualScope === 'function',
     downloadStates: ({ slaveId }) => database.historyDownloadStates?.(owner, slaveId) ?? Promise.resolve([]),
@@ -74,7 +76,8 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
       return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
     },
     /** Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone. */
-    download({ slaveId, dayStart, dayEnd, signal, onDogEnd }) {
+    download({ slaveId, dayStart, dayEnd, cutoff = Date.now(), signal, onDogEnd }) {
+      const coverage = historyCoverage(dayStart, dayEnd, cutoff);
       const before = previous;
       const run = (async () => {
         await before.catch(() => {});
@@ -100,10 +103,10 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
               await database.beginManualScope?.(owner, id, day);
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               count += await downloadCloudHistory({ client, database, owner,
-                startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(dayEnd + DOWNLOAD_AFTER_MS), slaveId: id,
+                startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.received_before), slaveId: id,
                 signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
-              await database.setHistoryDownloadState?.(owner, id, day, true);
+              await database.setHistoryDownloadState?.(owner, id, day, true, coverage);
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               if (database.publishManualScope) {
                 const commit = () => database.publishManualScope(owner, id, day);
@@ -141,7 +144,7 @@ export function useHistoryCloudSource({ database, sync, owner, clientFactory = g
     let client;
     try { client = clientFactory(); } catch { return null; }
     return createHistoryCloud({ client, database, owner,
-      getPublication: () => syncRef.current?.getMapPublication?.() ?? null,
+      getPublication: () => syncRef.current?.getHistoryPublication?.() ?? syncRef.current?.getMapPublication?.() ?? null,
       runManual: (work, abort) => syncRef.current.runManual(work, abort) });
   }, [owner, database, clientFactory]);
   return { cloud, online: !sync?.offline };

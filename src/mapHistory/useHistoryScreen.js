@@ -85,6 +85,8 @@ export function useHistoryDayRows({
   publishedReads = false,
   // { current: ms } the last build of the day's model took (see above).
   cost = null,
+  readEnd = null,
+  requireFresh = false,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -99,7 +101,7 @@ export function useHistoryDayRows({
   // `revision`: read the day again from the start (a download ended).
   const key =
     subject && day != null
-      ? JSON.stringify([subject, slaveId, day, owner, scope])
+      ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? publicationRevision : 0, readEnd])
       : null;
   // Phone rows are local: publishing dog telemetry must not cancel their
   // in-flight read or restart the full-day cursor. Explicit reloads still do.
@@ -126,7 +128,7 @@ export function useHistoryDayRows({
       holds.keys = keys;
       return holds.pass.output;
     };
-    const dayEnd = endOfDay(day);
+    const dayEnd = Math.min(endOfDay(day), readEnd ?? Infinity);
     async function poll() {
       const fence = capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads);
       if (!fence.open) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
@@ -311,6 +313,12 @@ export function useHistoryScreen({
   );
   const dayEnd = endOfDay(day);
   const today = day === todayStart;
+  const coverageOpening = useRef({ key: null, active: false, cutoff: 0 });
+  const coverageKey = `${sessionKey}|${day}|${owner ?? ''}`;
+  if (coverageOpening.current.key !== coverageKey || (active && !coverageOpening.current.active))
+    coverageOpening.current = { key: coverageKey, active, cutoff: clock() };
+  else coverageOpening.current.active = active;
+  const coverageCutoff = coverageOpening.current.cutoff;
   // ---- who is shown (H7) --------------------------------------------------
   // { key, dogs: [{ id, slot, colour, hasData }], protagonist }:
   // the dogs in the order added, each keeping its colour slot (判定表「多隻狗
@@ -366,6 +374,8 @@ export function useHistoryScreen({
     clock,
     scope: memoryScope,
     revision: readRevision,
+    readEnd: subject === 'dog' && cloud?.coverageRequired ? Math.min(dayEnd, coverageCutoff) : null,
+    requireFresh: subject === 'dog' && !!cloud?.coverageRequired,
     publicationRevision,
     getPublication: cloud?.getPublication ?? null,
     publishedReads: !!cloud?.publishedReads,
@@ -429,6 +439,7 @@ export function useHistoryScreen({
     anyLoaded,
     readRevision,
     baseKey,
+    publicationRevision,
   ]);
   const todayKey = dayKey(new Date(todayStart));
   const shownKey = dayKey(new Date(day));
@@ -467,8 +478,11 @@ export function useHistoryScreen({
     localByDog,
     active,
     seed: cloudSeed,
+    cutoff: coverageCutoff,
+    publicationRevision,
   });
   const { knowledge } = cloudDays;
+  const coverageReady = !cloud?.coverageRequired || subject !== 'dog' || cloudDays.completeDay(shownKey);
   const navigation = useMemo(
     () => dateNavigation(shownKey, todayKey, knownDays(knowledge)),
     [shownKey, todayKey, knowledge],
@@ -516,7 +530,7 @@ export function useHistoryScreen({
     0,
     ...subjects.map(s => s.rows[s.rows.length - 1]?.time ?? 0),
   );
-  const modelNow = Math.max(now, lastRow);
+  const modelNow = cloud?.coverageRequired && subject === 'dog' ? Math.min(Math.max(now, lastRow), coverageCutoff) : Math.max(now, lastRow);
   // Keep the minute clock for date navigation, midnight and the range bar.
   // A past day or fixed manual range has no clock-driven timeline changes:
   // new row versions and range/subject changes still rebuild using modelNow.
@@ -542,7 +556,7 @@ export function useHistoryScreen({
   const diagnosticModelDay = useRef(null);
   const diagnosticCommittedDay = useRef(null);
   const dayModel = useMemo(() => {
-    if (!subject || !subjects.length || waiting) return null;
+    if (!subject || !subjects.length || waiting || !coverageReady) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
       : subjects[0].id;
@@ -579,6 +593,7 @@ export function useHistoryScreen({
     current.rangeOwner,
     current.kept,
     waiting,
+    coverageReady,
   ]);
   const model = dayModel?.main ?? null;
   useEffect(() => {
@@ -707,6 +722,18 @@ export function useHistoryScreen({
   );
   const { startDownload, cancelDownload, downloadingDay } = cloudDays;
   const reread = useCallback(() => setReadRevision(value => value + 1), []);
+  // Ensure each selected cloud day once, including a day with only a recent
+  // local slice. Failure/cancel stays actionable; it never loops retries.
+  const ensured = useRef(new Set());
+  useEffect(() => {
+    if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
+    const key = `${cloudDays.cloudScope}|${shownKey}|${coverageCutoff}|${publicationRevision}`;
+    if (cloudDays.download?.day === shownKey && cloudDays.download.status !== 'done') { ensured.current.add(key); return; }
+    if (ensured.current.has(key)) return;
+    ensured.current.add(key);
+    startDownload(shownKey, reread);
+  }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope,
+    cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);
   /** Cancel retains the last complete rows and marks the window incomplete. */
   const cancel = useCallback(() => {
     if (!cancelDownload()) return false;
@@ -728,7 +755,7 @@ export function useHistoryScreen({
       if (downloadingDay === next) return { type: 'show', day: next };
       cancel();
       if (next !== shownKey) changeDay(next);
-      if (choice.type === 'download') startDownload(next, reread);
+      if (choice.type === 'download' && !cloud?.coverageRequired) startDownload(next, reread);
       return choice;
     },
     [
@@ -740,6 +767,7 @@ export function useHistoryScreen({
       shownKey,
       changeDay,
       startDownload,
+      cloud,
       reread,
     ],
   );
@@ -763,10 +791,10 @@ export function useHistoryScreen({
     return { type: 'download', day: shownKey };
   }, [online, shownKey, startDownload, reread]);
   const dayRecords = !!dayModel?.subjects.some(s => s.dayRecords);
-  const download = downloadPanel(cloudDays.download, {
+  const download = downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
     day: shownKey,
     hasRows: dayRecords,
-    incomplete: knowledge.incomplete.includes(shownKey),
+    incomplete: knowledge.incomplete.includes(shownKey) || (!coverageReady && cloudDays.completenessLoaded),
   });
   // A screen fixture can open on another day (preset.goTo: H3c starts its
   // download), once per opening.
@@ -924,7 +952,7 @@ export function useHistoryScreen({
     [current.dogs.length, say],
   );
   useEffect(() => {
-    if (!active || !cloud || daysByDog.key !== `${baseKey}|${idsKey}` || !addedDownloads.current.size) return;
+    if (!active || !cloud || cloud.coverageRequired || daysByDog.key !== `${baseKey}|${idsKey}` || !addedDownloads.current.size) return;
     const added = [...addedDownloads.current].filter(id => dogIds.includes(id));
     addedDownloads.current.clear();
     if (added.some(id => !localByDog[id]?.includes(shownKey))) {

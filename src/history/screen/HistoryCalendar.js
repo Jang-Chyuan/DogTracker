@@ -33,7 +33,7 @@ export function calendarKnowledge(value = {}) {
     // The earliest day is itself a day the cloud holds rows on.
     local: asSet(value.local), cloud: asSet([...(value.cloud || []), ...(value.earliest ? [value.earliest] : [])]),
     checked: asSet(value.checked),
-    earliest: value.earliest ?? null, cloudEnabled: !!value.cloudEnabled, query: value.query ?? 'idle',
+    ensureUnknown: !!value.ensureUnknown, earliest: value.earliest ?? null, cloudEnabled: !!value.cloudEnabled, query: value.query ?? 'idle',
     // Days whose download was cancelled or failed: this phone holds part.
     incomplete: asSet(value.incomplete),
   };
@@ -74,7 +74,7 @@ export function dayCell(day, { today, selected, knowledge, inMonth = true }) {
   const state = dayState(day, today, k);
   const isToday = day === today;
   const records = state === 'local' || state === 'cloud' || state === 'partial';
-  const tappable = records || isToday || (state === 'unknown' && k.query === 'failed');
+  const tappable = records || isToday || (state === 'unknown' && (k.query === 'failed' || k.ensureUnknown));
   const muted = !tappable && state !== 'unknown';
   const [y, m, d] = day.split('-').map(Number);
   const date = t("c678", { m: m, d: d });
@@ -218,7 +218,7 @@ export function chooseDay(day, { today, knowledge, online = true }) {
   const cell = dayCell(day, { today, selected: null, knowledge });
   if (!cell.tappable) return { type: 'none' };
   // Today is always tappable, but its rows only in the cloud are still downloaded.
-  if (cell.state === 'local' || (cell.today && !['cloud', 'partial'].includes(cell.state))) return { type: 'show', day };
+  if (cell.state === 'local' || cell.state === 'empty' || (cell.today && !['cloud', 'partial'].includes(cell.state) && !knowledge.ensureUnknown)) return { type: 'show', day };
   if (!online) return { type: 'offline', day, message: offlineMessage(day) };
   return { type: 'download', day };
 }
