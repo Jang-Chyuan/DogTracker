@@ -302,10 +302,10 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
   private fun saveToMediaStore(file: File, mime: String): ExportDownloads.Saved = synchronized(DOWNLOAD_NAME_LOCK) {
     val resolver = context.contentResolver
     val path = ExportDownloads.RELATIVE_PATH.trimEnd('/') + "/"
-    val existing = resolver.query(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+    val existing: List<String> = resolver.query(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
       arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME),
       "${android.provider.MediaStore.MediaColumns.RELATIVE_PATH} = ?", arrayOf(path), null)?.use { cursor ->
-      buildList { while (cursor.moveToNext()) cursor.getString(0)?.let { add(it) } }
+      buildList<String> { while (cursor.moveToNext()) cursor.getString(0)?.let { add(it) } }
     } ?: error("cannot query export filenames")
     // Scoped storage cannot reveal every other app's files. MediaStore still
     // prevents overwrites; a renamed reservation is discarded and retried.
