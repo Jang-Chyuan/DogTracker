@@ -518,3 +518,57 @@ test('blocked local-only hold reads retain the accepted cloud cursor for the suc
     jest.useRealTimers();
   }
 });
+
+test('initial zero cloud generation does not hide local dogs with a disabled/empty reader or idle cached cloud rows', async () => {
+  jest.useFakeTimers();
+  const localDog = mergeDogMarkers({ point: trackingPoint, now: NOW })[0];
+  const tracking = { mode: 'real', point: trackingPoint, route: emptyLiveRoute(), positionSamples: [],
+    ready: { real: false }, errors: {}, initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES } };
+  let renderer;
+  const view = cloudDogs => <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner={null}
+    cloudSync={{ busy: false, mapSuccessRevision: 0 }} cloudDogs={cloudDogs} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  try {
+    await act(async () => { renderer = Renderer.create(view({ rows: [], loaded: false })); });
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.find(d => d.slaveId === localDog.slaveId).coordinate)
+      .toEqual(localDog.coordinate);
+    await act(async () => { renderer.update(view({ rows: [row('disk', 8, NOW, 5)], loaded: true })); });
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.some(d => d.slaveId === 8)).toBe(true);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});
+
+test('post-success DB read failure is visible with retry and retains positions until complete reread', async () => {
+  jest.useFakeTimers();
+  let renderer, revision = 0, success = null;
+  const database = { latestBySlave: jest.fn(async () => [row('accepted', 8, NOW, 5)]) };
+  const tracking = { mode: 'real', point: { ...trackingPoint, id: null, slaveId: null, slaveLat: null, slaveLon: null }, route: emptyLiveRoute(), positionSamples: [],
+    ready: { real: true }, errors: {}, initialSnapshotReady: true, foreground: true,
+    preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES } };
+  const retry = jest.fn(() => { revision++; renderer.update(<Harness />); });
+  function Harness() {
+    const cloudDogs = useCloudDogs(database, 'a', true, clock, null, { revision, cloudSuccess: success });
+    return <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner="a" cloudDogs={cloudDogs}
+      cloudSync={{ busy: false, lastSuccess: success, retry }} mapProvider={GOOGLE_MAP_PROVIDER} />;
+  }
+  try {
+    await act(async () => { renderer = Renderer.create(<Harness />); });
+    const before = renderer.root.findByType(TrackingMap).props.presentation.dogMarkers[0].coordinate;
+    database.latestBySlave.mockRejectedValueOnce(new Error('snapshot database read failed'));
+    success = NOW + 1000;
+    await act(async () => { renderer.update(<Harness />); });
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers[0].coordinate).toEqual(before);
+    expect(JSON.stringify(renderer.toJSON())).toContain('snapshot database read failed');
+    const button = renderer.root.findByProps({ testID: 'map-catch-up-retry' });
+    database.latestBySlave.mockResolvedValue([row('completed', 8, NOW + 1000, 5, { slave_lat: 26 })]);
+    await act(async () => { button.props.onPress(); });
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers[0].coordinate.latitude).toBe(26);
+    expect(renderer.root.findAllByProps({ testID: 'map-catch-up-retry' })).toHaveLength(0);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    jest.useRealTimers();
+  }
+});

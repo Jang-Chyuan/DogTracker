@@ -9,7 +9,7 @@ export function createAtomicDogSnapshot() {
         owner = nextOwner;
         snapshot = { dogs: [], cloudDogs: { rows: [], packets: [], holds: {}, statuses: {}, ranges: {}, loaded: false } };
       }
-      const waitingForRead = success != null && cloudDogs?.cloudCommit !== success;
+      const waitingForRead = success > 0 && cloudDogs?.cloudCommit !== success;
       if (!busy && !waitingForRead) snapshot = { dogs, cloudDogs };
       return snapshot;
     },
