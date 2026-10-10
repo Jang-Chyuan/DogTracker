@@ -152,7 +152,7 @@ export default function CloudDataScreen({
   }, [client]);
 
   useEffect(() => {
-    if (!session?.user.id) return;
+    if (!session?.user.id || sync?.publishedPending) return;
     let cancelled = false;
     const version = generation.current;
     const userId = session.user.id;
@@ -178,11 +178,11 @@ export default function CloudDataScreen({
     return () => {
       cancelled = true;
     };
-  }, [database, session?.user.id, sync?.revision, offset]);
+  }, [database, session?.user.id, sync?.revision, sync?.publishedRevision, sync?.publishedPending, offset]);
 
   async function loadRows(nextOffset, version = generation.current) {
     const userId = owner.current;
-    if (!userId) return;
+    if (!userId || sync?.publishedPending) return;
     await database.initialize();
     const [history, total, space] = await Promise.all([
       database.listHistory(userId, nextOffset),
