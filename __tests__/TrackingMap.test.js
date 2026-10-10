@@ -878,7 +878,7 @@ test('看軌跡 whose save finishes after the card closed does not open history'
 
 test('history route fit and cursor centering use the half-screen panel coverage', async () => {
   const { historyPanelMaxHeight } = require('../src/map/MapPanelHeight');
-  const { layout, space } = require('../src/theme/tokens');
+  const { layout, space, size } = require('../src/theme/tokens');
   const { regionForFrame, overlayFramePadding } = require('../src/map/MapFraming');
   const { historyFramePadding } = require('../src/history/screen/HistoryMapModel');
   const height = historyPanelMaxHeight(800, 24);
@@ -896,13 +896,21 @@ test('history route fit and cursor centering use the half-screen panel coverage'
     expect(renderer.root.findByType(MapView).props.mapPadding.bottom).toBe(height);
     await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'frame-fixed' }} />));
     const padding = overlayFramePadding(historyFramePadding(camera, null, {
-      top: space.l, right: space.xl, bottom: space.s, left: space.xl,
+      top: space.l, right: space.xl, bottom: size.stopMarker.size / 2 + space.s, left: space.xl,
     }), {
       topInset: 100, bottomInset: height, overlayTop: 100, overlayBottom: height,
     });
     expect(mockCamera.animateToRegion).toHaveBeenLastCalledWith(regionForFrame(camera, padding, {
       width: 400 - 2 * layout.floatingGap, height: 800 - 100 - height,
     }), 300);
+    // Project the south endpoint from the actual camera request. The full
+    // 22dp stop circle must clear the panel by the ordinary 8dp gap, not
+    // merely keep its centre visible. This failed with the old 8dp padding.
+    const [fittedRegion] = mockCamera.animateToRegion.mock.calls.at(-1);
+    const visibleHeight = 800 - 100 - height;
+    const southY = visibleHeight / 2 +
+      (fittedRegion.latitude - camera[0].latitude) * visibleHeight / fittedRegion.latitudeDelta;
+    expect(southY + size.stopMarker.size / 2).toBeLessThanOrEqual(visibleHeight - space.s + 1e-6);
     await act(async () => renderer.update(<TrackingMap {...props}
       historyFocus={{ key: 'cursor-fixed', coordinate: camera[0], centre: true }} />));
     // With SDK padding already applied, the requested point is moved from
@@ -934,16 +942,16 @@ test.each([
   // street-sized extent rather than collapsing to a few metres at max zoom.
   expect(region.latitudeDelta).toBeGreaterThan(0.003);
   const centre = (camera[0].latitude + camera[1].latitude) / 2;
-  // Region centre includes the header reserve inside the SDK's already
-  // padded half-screen map; do not regress to centering behind the panel.
-  expect(region.latitude).toBeGreaterThan(centre);
-  expect(region.latitude - centre).toBeLessThan(region.latitudeDelta / 10);
+  // Region centre includes both header and complete-marker reserves inside
+  // the SDK's half-screen viewport. Larger bottom clearance can shift it
+  // south slightly; it must remain close to the street centre.
+  expect(Math.abs(region.latitude - centre)).toBeLessThan(region.latitudeDelta / 10);
 });
 
 test('history framing does not expand a real route beyond the tiny-span threshold', async () => {
   const { regionForFrame } = require('../src/map/MapFraming');
   const { historyFramePadding } = require('../src/history/screen/HistoryMapModel');
-  const { layout, space } = require('../src/theme/tokens');
+  const { layout, space, size } = require('../src/theme/tokens');
   const camera = [{ latitude: 25, longitude: 121 }, { latitude: 25.0005, longitude: 121.0005 }];
   const props = { ...defaults, topInset: 100, bottomInset: 388, coverBottom: 388,
     source: 'history:real-short', presentation: { ...defaults.presentation, dogMarkers: [],
@@ -954,6 +962,6 @@ test('history framing does not expand a real route beyond the tiny-span threshol
   await readyMap();
   await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'real-short' }} />));
   expect(mockCamera.animateToRegion).toHaveBeenLastCalledWith(regionForFrame(camera,
-    historyFramePadding(camera, null, { top: space.l, right: space.xl, bottom: space.s, left: space.xl }),
+    historyFramePadding(camera, null, { top: space.l, right: space.xl, bottom: size.stopMarker.size / 2 + space.s, left: space.xl }),
     { width: 400 - 2 * layout.floatingGap, height: 312 }), 300);
 });

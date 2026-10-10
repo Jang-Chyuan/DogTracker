@@ -144,7 +144,9 @@ export function pointsSettled(previous, next) {
     && Math.abs(previous[id].y - next[id].y) <= 1);
 }
 // History framing: 24dp all round, the cursor label on top, 框住全部 below.
-const HISTORY_FRAME = { top: space.l, right: space.xl, bottom: space.s, left: space.xl };
+// Coordinates are marker centres: reserve the complete stop circle above the panel.
+const HISTORY_FRAME = { top: space.l, right: space.xl,
+  bottom: sizes.stopMarker.size / 2 + space.s, left: space.xl };
 // Coordinates all within about 30 m of each other.
 const tinySpan = points => {
   const lat = points.map(p => p.latitude),
