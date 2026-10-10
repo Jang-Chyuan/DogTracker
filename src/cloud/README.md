@@ -112,3 +112,11 @@ npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudDataScreen.te
 App 不再把狗畫到手動設定的固定位置，也沒有設定表單；室內防飄改由 [室內停留](../placement/README.md) 自動處理。後端的 `slave_fixed_locations` 資料表、`unlock-fixed-location` Edge Function 與兩個 migration 仍保留在 repo 和 Supabase，沒有刪除資料；確認新做法後再另行移除。`__tests__/FixedLocationUnlockBackend.test.js` 仍驗證這個函式。
 
 線上驗收須以一般使用者 JWT 驗證直接寫入被拒絕，以及 RPC 拒絕錯誤／過期／已用憑證、其他帳號或犬隻、撤銷 Master 授權。Jest 驗證畫面和實際 Edge handler 的 mock 行為，不能取代 PostgreSQL migration 與線上整合驗收。
+
+歷史發布保留兩種版本。`publishedRevision`／`publishedPending` 是原有的實體交易閘：任何發布都改變版本，讀到一半跨交易的結果仍丟棄。`dataRevision` 則只決定歷史頁的 rows／IndoorHold 快取要不要重播；完整性證明、archive cutoff、帳號與 generation 的驗證不使用它取代交易閘。
+
+`HistoryMaterialPublication` 在共享 connection lock 內，將每個已發布 `supabase_dog_status` 的 INSERT／UPDATE／DELETE 後接 `changes()`，與版本更新一起放入原 native SQLite TX。重複 INSERT、只有 checkpoint／complete-empty proof 的發布不增資料版本；新增、時間修復及 retention 刪除會增。staging 寫入不追蹤，升級時的 migration／直接 legacy 寫入仍追蹤。SQLite 對相同值的 UPDATE 也可能計數，因此這種情況保守重讀，不宣稱所有 no-op 都會略過。這不是以筆數或內容 hash 猜相同。
+
+此 helper 的 SQL 識別只支援目前 audited writers 使用的普通未加引號 table DML；未來新增 CTE、替換語法、trigger 或另一個已發布表的 writer，必須同步擴充 material tracking 與真 SQLite 守護。未知／失敗的 readback 回到原 physical-revision 重讀；readback 若在 commit 後失敗也會讓 hold cursors 失效。單一 chunk 升級有四個 singleton setup／finish 指令，加 INSERT／UPDATE／eviction 三個 latch，staging 每筆不增加追蹤指令。
+
+這項快取調整不保證歷史頁零重算。today 的 cutoff 延伸、明確 reload、日期／帳號／範圍變更仍會重讀；coverage 的證明刷新仍可讓模型短暫不可用，完成後以保留的 rows／hold pass 重建模型。原生多狗慢窗口是否改善需要另做同情境量測，source 守護不能代替 Android 驗證。

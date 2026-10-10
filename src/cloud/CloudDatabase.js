@@ -1,3 +1,4 @@
+import { executeHistoryMaterialBatch } from './HistoryMaterialPublication';
 import { initializeHistoryCoverage, invalidateEvictedCoverage, invalidateRepairedCoverage } from './HistoryCoverage';
 import { t } from '../i18n';
 import { createStagedCloudDatabase } from './CloudStaging';
@@ -100,14 +101,26 @@ export function createCloudDatabase(connection, options = {}) {
   }) };
 }
 
-function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) {
+function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, historyMaterialTracking = true } = {}) {
   const cap = Number.isInteger(maxRows) && maxRows > 0 ? maxRows : CLOUD_MAX_ROWS;
   const trimHistory = `DELETE FROM supabase_dog_status WHERE id IN (
     SELECT id FROM supabase_dog_status
     ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET ${cap}
   )`;
+  const executeBatch = async commands => {
+    if (!historyMaterialTracking) return connection.executeBatchAsync(commands);
+    try {
+      const material = await executeHistoryMaterialBatch(connection, commands);
+      if (!material || material.materialChanged) trackRepairs++;
+      return material;
+    } catch (error) {
+      // A readback can fail after the native commit has already succeeded.
+      trackRepairs++;
+      throw error;
+    }
+  };
   let pagesSaved = 0;
-  // Bumped when stored rows move in time, so the indoor hold replays them.
+  // Material writes (including retention and time repair) restart hold cursors.
   let trackRepairs = 0;
   const rows = result => result.results || result.rows?._array || [];
   const requireOwner = owner => {
@@ -165,8 +178,8 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
       // display_version) is retired (2026-10-09): nothing read it after the
       // range read went (064). Installs that had it keep the columns, unused;
       // new installs never add them.
-      await connection.executeAsync(`UPDATE supabase_dog_status SET track_at=received_at
-        WHERE track_at IS NULL`);
+      await executeBatch([{ query: `UPDATE supabase_dog_status SET track_at=received_at
+        WHERE track_at IS NULL`, params: [] }]);
       await connection.executeAsync('DROP INDEX IF EXISTS idx_cloud_track_stream');
       await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_stream_numeric
         ON supabase_dog_status(owner_user_id, master_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER), id)`);
@@ -206,7 +219,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
       )`);
       // Also apply retention to databases downloaded by older app versions.
       await initializeHistoryCoverage(connection);
-      await connection.executeBatchAsync([{ query: invalidateEvictedCoverage(trimHistory), params: [] }, { query: trimHistory, params: [] }]);
+      await executeBatch([{ query: invalidateEvictedCoverage(trimHistory), params: [] }, { query: trimHistory, params: [] }]);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
@@ -267,8 +280,8 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
         for (const id of requested) commands.push({ query: `UPDATE supabase_dog_status
           SET track_time_version=-1 WHERE owner_user_id=? AND event_id=? AND track_time_version IS NULL`,
         params: [owner, id] });
-        await connection.executeBatchAsync(commands);
-        if (metadata.length) trackRepairs += 1;
+        await executeBatch(commands);
+        if (!historyMaterialTracking && metadata.length) trackRepairs += 1;
       });
     },
     async savePage(owner, records, checkpoint = null) {
@@ -313,7 +326,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
           commands.push({ query: DROP_OLD_PAYLOAD, params: [now - CLOUD_PAYLOAD_MS] });
         }
         // Progress, retention and downloaded rows commit together.
-        await connection.executeBatchAsync(commands);
+        await executeBatch(commands);
       });
     },
     async loadBuckets(owner, masterId, fromBucket) {
