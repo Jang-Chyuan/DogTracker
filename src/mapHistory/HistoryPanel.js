@@ -3,9 +3,10 @@ import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useStyles } from '../theme/ThemeProvider';
-import { size, space } from '../theme/tokens';
+import { size, space, fontScale as fontScales } from '../theme/tokens';
 import { historyPanelMaxHeight } from '../map/MapPanelHeight';
 import { behindSheet } from '../utils/a11yFocus';
+import { fontScaleAtLeast } from '../utils/textScale';
 
 const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   bottomInset = 0, scrollRef, above = null, hidden = false, onHeightChange }, ref) {
@@ -15,7 +16,11 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   useImperativeHandle(scrollRef, () => ({
     scrollTo: options => scroller.current?.scrollTo(options),
   }), []);
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
+  // At large fonts the fixed header leaves a shorter list viewport. Avoid
+  // pushing the last row's circle above it at maximum scroll, while retaining
+  // the entire navigation inset and a small gap below the last text.
+  const tailGap = fontScaleAtLeast(fontScale, fontScales.faceOnly) ? space.s : space.l;
   const insets = useSafeAreaInsets();
   const cap = historyPanelMaxHeight(windowHeight, insets.top);
   // Report the actual fixed height immediately, including after rotation/inset changes.
@@ -28,7 +33,7 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
       <View style={styles.sheet}>
         <View testID="history-panel-header" style={styles.header}>{header}</View>
         <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
-          contentContainerStyle={{ paddingBottom: bottomInset + space.l }}>
+          contentContainerStyle={{ paddingBottom: bottomInset + tailGap }}>
           <View testID="history-panel-content">
             {children}
           </View>

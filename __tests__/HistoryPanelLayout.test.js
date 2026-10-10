@@ -34,7 +34,7 @@ test.each([lightTheme, darkTheme])('my route is a header with a person glyph and
   await act(async () => renderer.unmount());
 });
 
-test.each([1, 1.3, 2])('fixed height and framing agree at font scale %s', async fontScale => {
+test.each([1, 1.3, 1.7999, 2])('fixed height and framing agree at font scale %s', async fontScale => {
   const spy = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
     width: 400, height: 800, scale: 1, fontScale,
   });
@@ -53,7 +53,7 @@ test.each([1, 1.3, 2])('fixed height and framing agree at font scale %s', async 
     expect(ref.current.back()).toBe(false);
     expect(panel.props.onMoveShouldSetResponder).toBeUndefined();
     const scroll = renderer.root.findByType(ScrollView);
-    expect(scroll.props.contentContainerStyle.paddingBottom).toBe(20 + space.l);
+    expect(scroll.props.contentContainerStyle.paddingBottom).toBe(20 + (fontScale >= 1.79 ? space.s : space.l));
     expect(scroll.props.nestedScrollEnabled).toBe(true);
     expect(scroll.props.scrollEnabled).not.toBe(false);
     expect(scroll.findByProps({ testID: 'last-node' })).toBeTruthy();
@@ -116,7 +116,7 @@ test('only window/top inset changes update fixed height; font and bottom padding
     dimensions.mockReturnValue({ width: 400, height: 800, scale: 1, fontScale: 2 });
     await act(async () => renderer.update(render(40)));
     expect(onHeightChange).toHaveBeenCalledTimes(1);
-    expect(renderer.root.findByType(ScrollView).props.contentContainerStyle.paddingBottom).toBe(40 + space.l);
+    expect(renderer.root.findByType(ScrollView).props.contentContainerStyle.paddingBottom).toBe(40 + space.s);
     dimensions.mockReturnValue({ width: 800, height: 500, scale: 1, fontScale: 2 });
     await act(async () => renderer.update(render(40)));
     expect(onHeightChange).toHaveBeenLastCalledWith(historyPanelMaxHeight(500, 24));
