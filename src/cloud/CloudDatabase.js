@@ -1,4 +1,4 @@
-import { initializeHistoryCoverage, invalidateEvictedCoverage } from './HistoryCoverage';
+import { initializeHistoryCoverage, invalidateEvictedCoverage, invalidateRepairedCoverage } from './HistoryCoverage';
 import { t } from '../i18n';
 import { createStagedCloudDatabase } from './CloudStaging';
 import { createLatestSnapshotDatabase } from './CloudLatestSnapshot';
@@ -230,6 +230,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS } = {}) 
         for (const item of metadata) {
           const time = cloudTrackTime(item);
           if (!Number.isFinite(time.track_at) || !requested.includes(item.event_id)) continue;
+          commands.push(invalidateRepairedCoverage(owner, item.event_id, time.track_at));
           commands.push({ query: `UPDATE supabase_dog_status SET track_at=?, upload_source=?,
             phone_received_at=?, track_time_version=1 WHERE owner_user_id=? AND event_id=?`,
           params: [time.track_at, time.upload_source, time.phone_received_at, owner, item.event_id] });
