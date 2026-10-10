@@ -85,6 +85,9 @@ export function createStagedCloudDatabase(connection, options, createCore) {
       await initializeHistoryCoverage(connection);
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_download_jobs (owner TEXT, kind TEXT, scope TEXT, PRIMARY KEY(owner,kind))');
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_stage_quota (used INTEGER,budget INTEGER,CHECK(used<=budget))');
+      await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_archive_publication (
+        owner TEXT PRIMARY KEY, cutoff INTEGER NOT NULL CHECK(cutoff>=0),
+        revision INTEGER NOT NULL CHECK(revision>0))`);
       state.columns = Object.fromEntries(await Promise.all(tables.map(async ([table]) => [table,
         rows(await connection.executeAsync(`PRAGMA table_info(${table})`)).map(column => column.name)])));
       for (const kind of kinds) for (const [table] of tables) {
@@ -150,9 +153,27 @@ export function createStagedCloudDatabase(connection, options, createCore) {
     async beginManualScope(owner, slave, day) {
       await result.beginDownload(owner, 'manual', `${slave}:${day}`);
     },
-    async publishDownload(owner, kind = kindOf(owner)) {
+    async readArchivePublication(owner) {
+      if (!owner) throw new Error(t('c572'));
+      await initialize();
+      return withConnectionLock(connection, async () => {
+        const value = rows(await connection.executeAsync(
+          'SELECT cutoff,revision FROM cloud_archive_publication WHERE owner=?', [owner]))[0];
+        if (!value) return null;
+        const cutoff = Number(value.cutoff), revision = Number(value.revision);
+        if (!Number.isSafeInteger(cutoff) || cutoff < 0 || !Number.isSafeInteger(revision) || revision < 1)
+          throw new Error(t('c588'));
+        return { owner, cutoff, revision };
+      });
+    },
+    async publishDownload(owner, kind = kindOf(owner), archiveCutoff = null, isCurrent = () => true) {
+      // Only a completed automatic target supplies this proof. Legacy calls,
+      // selected history windows and latest-position snapshots cannot infer it.
+      if (kind === 'auto' && archiveCutoff != null
+        && (!Number.isSafeInteger(archiveCutoff) || archiveCutoff < 0)) throw new Error(t('c588'));
       await initialize();
       await withConnectionLock(connection, async () => {
+        if (!isCurrent()) throw new Error(t('c576'));
         if (!await job(owner, kind)) return;
         const telemetry = tableName(kind, 'supabase_dog_status');
         const fields = names('supabase_dog_status');
@@ -202,7 +223,15 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         commands.push({ query: 'DELETE FROM cloud_stage_quota', params: [] });
         for (const [table, ownerColumn] of tables) commands.push({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         commands.push({ query: 'DELETE FROM cloud_download_jobs WHERE owner=? AND kind=?', params: [owner, kind] });
+        if (kind === 'auto' && archiveCutoff != null) commands.push({
+          query: `INSERT OR REPLACE INTO cloud_archive_publication(owner,cutoff,revision)
+            VALUES(?,?,COALESCE((SELECT revision FROM cloud_archive_publication WHERE owner=?),0)+1)`,
+          params: [owner, archiveCutoff, owner],
+        });
         try {
+          // Generation may change while waiting for this connection or reads.
+          // Once sent, the native transaction itself remains atomic.
+          if (!isCurrent()) throw new Error(t('c576'));
           await connection.executeBatchAsync(commands);
         } catch (error) {
           if (String(error.message).includes('used<=budget')) throw new Error(t("c622"));

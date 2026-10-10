@@ -60,7 +60,7 @@ export function latestCloudStatusQuery(validFix, full = false) {
 
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
-export const CLOUD_DATABASE_METHODS = ['readLatestSnapshot', 'publishLatestSnapshot', 'initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
+export const CLOUD_DATABASE_METHODS = ['readArchivePublication', 'readLatestSnapshot', 'publishLatestSnapshot', 'initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
   'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
