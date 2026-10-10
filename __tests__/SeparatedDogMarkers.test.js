@@ -1,7 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Text, View } from 'react-native';
-import { Marker, Polyline } from 'react-native-maps';
+import { Circle, Marker, Polyline } from 'react-native-maps';
 import SeparatedDogMarkers from '../src/map/SeparatedDogMarkers';
 
 test('displaced markers and labels retain their dog identity and true connector origin', async () => {
@@ -15,7 +15,7 @@ test('displaced markers and labels retain their dog identity and true connector 
   let renderer;
   await act(async () => {
     renderer = Renderer.create(<SeparatedDogMarkers items={items} mapRef={mapRef} revision={0}
-      ready width={600} height={600} MarkerComponent={Marker}
+      ready width={600} height={600} MarkerComponent={Marker} CircleComponent={Circle} PolylineComponent={Polyline}
       renderMarker={(item, display) => <View testID={`dog-${item.id}`} coordinate={display} onPress={item.onPress} />} />);
   });
   expect(JSON.stringify(items)).toBe(saved);

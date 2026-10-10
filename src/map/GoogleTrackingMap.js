@@ -1620,9 +1620,9 @@ function GoogleTrackingMapRenderer({
           ))}
           <SeparatedDogMarkers mapRef={mapRef} revision={cursorRevision}
             width={cursorLayout.width} height={cursorLayout.height} ready={usable && foreground}
-            MarkerComponent={StyledMarker} top={overlayTop} bottom={overlayBottom}
+            MarkerComponent={StyledMarker} CircleComponent={Circle} PolylineComponent={Polyline}
+            top={overlayTop} bottom={overlayBottom}
             identityKey={displayKey} onPlacement={setDisplayDogPoints}
-            labelColor={tokens.text} labelBackground={tokens.surface}
             items={dogMarkers.map(marker => ({
               id: source + '-dog-' + marker.slaveId, coordinate: marker.coordinate, marker,
               size: marker.size,
