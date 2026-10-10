@@ -50,10 +50,11 @@ export function accountPage(input) {
       problem: false, success: false, retry: false,
       label: time == null ? t('c914') : [t('c217'), time, t('c319')].join(' ') };
   } else if (sync.failingSince != null) {
-    const since = t('c212', { time: formatClock(sync.failingSince) });
+    const time = formatClock(sync.failingSince);
+    const since = sync.offline ? t('c212', { time }) : t('c1246', { time });
     // Not reached Supabase once since the app started (restoring the sign-in
     // without a network): it keeps trying by itself (判定表「啟動與恢復登入」).
-    const restoring = sync.lastSuccess == null;
+    const restoring = sync.offline && sync.lastSuccess == null;
     const title = restoring ? t('c257') : t('c211');
     download = { title, detail: since, right: null, problem: true, success: false, retry: true,
       label: t("c912", { title: title, since: since }) };

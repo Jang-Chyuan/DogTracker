@@ -13,6 +13,9 @@ import { createCloudSecureStorage } from '../src/cloud/CloudSecureStorage';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
+import { accountPage } from '../src/settings/AccountModel';
+import { t } from '../src/i18n';
+import { formatClock } from '../src/map/MapFormat';
 
 const NOW = Date.parse('2026-09-17T12:00:00Z');
 const account = id => ({ user: { id } });
@@ -62,6 +65,48 @@ function fixture(cloudCounts = {}) {
   return { client, database, changed, queries, states, buckets, cloudCounts };
 }
 const flush = () => jest.advanceTimersByTimeAsync(1);
+
+describe.each([false, true])('S3 real download failure with previous success=%s', previousSuccess => {
+  test.each(['network', 'auth', 'storage', 'server'])('%s failure uses only the confirmed classification and hides raw details', async kind => {
+    const { database, client, changed } = fixture();
+    const current = () => changed.mock.calls.at(-1)[0];
+    if (previousSuccess) {
+      engine.setForeground(true); engine.setSession(account('a')); await flush();
+    }
+    const raw = 'raw-private-sentinel';
+    if (kind === 'storage') database.initialize.mockRejectedValueOnce(new Error(raw));
+    else client.from.mockImplementationOnce(() => {
+      const query = {};
+      for (const name of ['select', 'eq', 'order', 'range']) query[name] = () => query;
+      query.abortSignal = async () => ({ data: null,
+        error: { message: kind === 'network' ? `Network request failed ${raw}` : raw },
+        status: kind === 'network' ? 0 : kind === 'auth' ? 401 : 503 });
+      return query;
+    });
+    if (previousSuccess) await jest.advanceTimersByTimeAsync(30000);
+    else { engine.setForeground(true); engine.setSession(account('a')); await flush(); }
+    expect(current()).toMatchObject({ offline: kind === 'network', authFailed: kind === 'auth' });
+    const page = () => accountPage({ account: { signedIn: true }, sync: current() });
+    const time = formatClock(current().failingSince);
+    expect(page().download).toMatchObject({
+      title: t(kind === 'network' && !previousSuccess ? 'c257' : 'c211'),
+      detail: kind === 'network' ? t('c212', { time }) : t('c1246', { time }),
+      problem: true, success: false, retry: true,
+    });
+    expect(JSON.stringify(page().download)).not.toContain(raw);
+    // UI pending must not erase the engine's failure evidence before recovery.
+    const failedAt = current().failingSince;
+    let finish;
+    database.initialize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    engine.retry(); await flush();
+    expect(current()).toMatchObject({ busy: true, failingSince: failedAt });
+    expect(page().download).toMatchObject({ problem: false, success: false, retry: false });
+    expect(JSON.stringify(page().download)).not.toContain(raw);
+    finish(); await flush();
+    expect(current()).toMatchObject({ error: '', failingSince: null, offline: false, authFailed: false });
+    expect(page().download).toMatchObject({ title: t('c217'), detail: null, success: true, retry: false });
+  });
+});
 
 test.each([
   ['network', new Error('Network request failed https://private.invalid/account-secret'), null],
