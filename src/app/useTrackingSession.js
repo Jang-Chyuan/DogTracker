@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { logger } from '../logger';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
 import { CLOUD_DATABASE_METHODS } from '../cloud/CloudDatabase';
@@ -46,11 +46,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     saveStatus: (status, payload) => controlsRef.current?.saveRealStatus(status, payload) ?? Promise.reject(new Error('Tracking session is closed')),
   }));
   const mode = 'real';
-  const [trackingSources, dispatchTracking] = useReducer(
-    trackingSourceReducer,
-    undefined,
-    createTrackingSourceState,
-  );
+  const [trackingSources, setTrackingSources] = useState(createTrackingSourceState);
+  // Empty feed polls still report refreshing/caught-up/the same route. Keep
+  // every action in the pure reducer, but let useState's eager identity check
+  // skip scheduling the App when that reducer returns the current state.
+  const dispatchTracking = useCallback(action => {
+    setTrackingSources(current => trackingSourceReducer(current, action));
+  }, []);
   const [preferences, setPreferences] = useState({
     value: DEFAULT_TRACKING_PREFERENCES,
     ready: false,
@@ -339,7 +341,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         logger.error(t("c489"), error);
       });
     };
-  }, [createDatabases]);
+  }, [createDatabases, dispatchTracking]);
 
   return {
     cloudDatabase,

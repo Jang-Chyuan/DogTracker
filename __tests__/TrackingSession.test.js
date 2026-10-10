@@ -41,7 +41,9 @@ function databases() {
 describe('tracking session and connection lifetime', () => {
   let session;
   let renderer;
+  let renders;
   function Harness({ factory }) {
+    renders += 1;
     session = useTrackingSession(factory);
     return null;
   }
@@ -55,6 +57,7 @@ describe('tracking session and connection lifetime', () => {
     await act(async () => jest.advanceTimersByTimeAsync(1000));
   }
   beforeEach(() => {
+    renders = 0;
     jest.useFakeTimers();
     jest.spyOn(global, 'setInterval');
     jest.spyOn(global, 'clearInterval');
@@ -64,6 +67,7 @@ describe('tracking session and connection lifetime', () => {
     });
     jest
       .spyOn(AppState, 'addEventListener')
+      .mockClear()
       .mockReturnValue({ remove: jest.fn() });
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -128,6 +132,91 @@ describe('tracking session and connection lifetime', () => {
     expect(session.catchUp.phase).toBe('catching-up');
     await act(async () => fresh.resolve([]));
     expect(session.catchUp.phase).toBe('idle');
+  });
+
+  test('empty foreground polls read without re-running the session host', async () => {
+    const db = databases();
+    await mount(db);
+    await act(async () => jest.advanceTimersByTimeAsync(10000));
+    const before = renders;
+    const reads = db.real.listStatusRowsAfterId.mock.calls.length;
+    const route = session.route;
+    const point = session.point;
+    for (let i = 0; i < 5; i += 1) await tick();
+    expect(db.real.listStatusRowsAfterId.mock.calls.length - reads).toBe(5);
+    expect(renders).toBe(before);
+    expect(session.route).toBe(route);
+    expect(session.point).toBe(point);
+  });
+
+  test('new packets and read failures still update the session host', async () => {
+    const db = databases();
+    const row = { ...dogStatusRow, slave_lat: 24.989, slave_lon: 121.313,
+      master_lat: 24.9891, master_lon: 121.3131 };
+    db.real.getLatestStatusRow.mockResolvedValue(row);
+    await mount(db);
+    await tick();
+    const before = renders;
+    const route = session.route;
+    db.real.listStatusRowsAfterId.mockResolvedValueOnce([
+      { ...row, id: row.id + 1, received_at: row.received_at + 1000, battery_percentage: 61 },
+    ]);
+    await tick();
+    expect(renders).toBeGreaterThan(before);
+    expect(session.point).toMatchObject({ id: row.id + 1, batteryPercentage: 61 });
+    expect(session.route).not.toBe(route);
+    const updated = renders;
+    db.real.listStatusRowsAfterId.mockRejectedValueOnce(new Error('read failed'));
+    await tick();
+    expect(renders).toBeGreaterThan(updated);
+    expect(session.errors.real).toBe('read failed');
+    const failed = renders;
+    await tick();
+    expect(renders).toBeGreaterThan(failed);
+    expect(session.errors.real).toBeNull();
+    expect(session.point.id).toBe(row.id + 1);
+  });
+
+  test('foreground resume publishes lifecycle changes even with no new rows', async () => {
+    const db = databases();
+    await mount(db);
+    await tick();
+    const change = AppState.addEventListener.mock.calls[0][1];
+    await act(async () => change('background'));
+    const read = deferred();
+    db.real.listStatusRowsAfterId.mockReturnValueOnce(read.promise);
+    const before = renders;
+    await act(async () => change('active'));
+    expect(renders).toBeGreaterThan(before);
+    expect(session.foreground).toBe(true);
+    await act(async () => read.resolve([]));
+    expect(session.caughtUp).toBe(true);
+  });
+
+  test('a late packet read cannot publish into a replacement session owner', async () => {
+    const first = databases();
+    const second = databases();
+    const row = { ...dogStatusRow, slave_lat: 24.989, slave_lon: 121.313,
+      master_lat: 24.9891, master_lon: 121.3131 };
+    second.real.getLatestStatusRow.mockResolvedValue(row);
+    await mount(first);
+    const pending = deferred();
+    first.real.listStatusRowsAfterId.mockReturnValueOnce(pending.promise);
+    await tick();
+    const factory = jest.fn(() => second);
+    await act(async () => renderer.update(<Harness factory={factory} />));
+    expect(factory).not.toHaveBeenCalled();
+    await act(async () => pending.resolve([{ ...row, id: 999 }]));
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(session.point.id).toBe(row.id);
+    expect(session.errors.real).toBeNull();
+    await tick();
+    const before = renders;
+    await tick();
+    await tick();
+    expect(renders).toBe(before);
+    expect(session.point.id).toBe(row.id);
   });
 
   test('foreground polling never generates hardware rows', async () => {
