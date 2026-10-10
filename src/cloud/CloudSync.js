@@ -5,6 +5,7 @@ import { reconcileCloudWindow } from './CloudReconcile';
 import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
+import { cloudSyncDiagnostic } from '../logger';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
 // that are found by the count check instead. Sweeping every cycle would spend
@@ -148,7 +149,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         publish({ mapPending: false, mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff, failingSince: null, authFailed: false, offline: false });
         resumeCatchUp.caughtUp();
         if (failureDiagnostic) {
-          console.info('[CloudSync] recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
+          cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
           failureDiagnostic = null;
         }
       } catch (error) {
@@ -164,7 +165,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
             status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null };
           if (!failureDiagnostic || ['phase', 'failureKind', 'status']
             .some(field => diagnostic[field] !== failureDiagnostic[field]))
-            console.info('[CloudSync] failure', diagnostic);
+            cloudSyncDiagnostic('failure', diagnostic);
           failureDiagnostic = diagnostic;
           publish({ error: timedOut ? t("c587") : error.message,
             failingSince: state.failingSince ?? now(), authFailed: !timedOut && isAuthFailure(error),
