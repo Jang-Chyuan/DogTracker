@@ -186,7 +186,7 @@ test('bounded staging retention and a failed page preserve published rows and it
       { ...checkpoint, eventId: 'invalid' })).rejects.toThrow();
     expect((await database.loadSyncState(owner, 7)).event_id).toBe('page-1');
     expect((await database.latestBySlave(owner, 0))[0].track_at).toBe(NOW - 10000);
-    await expect(database.savePage(owner, [record('page-2', NOW + 1), record('page-3', NOW + 2)])).rejects.toThrow('手機空間不足');
+    await expect(database.savePage(owner, [7, 8, 9].map(slave_id => ({ ...record(`protected-${slave_id}`, NOW + 1), slave_id })))).rejects.toThrow('手機空間不足');
     expect((await connection.executeAsync('SELECT COUNT(*) n FROM cloud_auto_supabase_dog_status')).results[0].n).toBe(1);
     expect((await database.loadSyncState(owner, 7)).event_id).toBe('page-1');
     expect((await connection.executeAsync('SELECT COUNT(*) n FROM supabase_dog_status')).results[0].n).toBe(1);

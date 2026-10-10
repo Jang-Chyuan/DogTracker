@@ -16,11 +16,28 @@ const tableName = (kind, table) => `cloud_${kind}_${table}`;
 const rewrite = (kind, sql) => tables.reduce((query, [table]) =>
   query.replace(new RegExp(`\\b${table}\\b`, 'g'), tableName(kind, table)), sql);
 
+// Reclaim only oldest history. The newest packet and newest usable fix of
+// every owner/dog remain available even when another dog fills the cache.
+function reclaimHistory(table, excess, staged) {
+  const time = alias => `CAST(COALESCE(${alias}.track_at,${alias}.received_at) AS INTEGER)`;
+  const fix = alias => `${alias}.slave_lat IS NOT NULL AND ${alias}.slave_lon IS NOT NULL AND NOT (${alias}.slave_lat=0 AND ${alias}.slave_lon=0)`;
+  const newer = fixed => `EXISTS (SELECT 1 FROM ${table} n WHERE n.owner_user_id IS old.owner_user_id
+    AND n.slave_id IS old.slave_id ${fixed ? `AND ${fix('n')}` : ''}
+    AND (${time('n')}>${time('old')} OR (${time('n')}=${time('old')} AND n.id>old.id)))`;
+  return `DELETE FROM ${table} WHERE id IN (SELECT old.id FROM ${table} old
+    WHERE ${staged ? 'COALESCE(old.had_base,0)<>1 AND' : ''} ${newer(false)}
+    AND (NOT (${fix('old')}) OR ${newer(true)})
+    ORDER BY old.received_at,old.id LIMIT MAX(0,${excess}))`;
+}
+
 // UI readers retain their published-table contract. Each network job stores
 // only new events, metadata repairs and resumable progress in its own delta.
 export function createStagedCloudDatabase(connection, options, createCore) {
   const published = createCore(connection, options);
   const cap = options.maxRows;
+  // A bounded workspace, not a second complete cache. Published history keeps
+  // its existing budget; a failed/cancelled job cannot reclaim published rows.
+  const reserveRows = Math.max(1, Math.floor(cap / 8));
   const active = new Map();
   const initializationKey = connection.lockKey || connection;
   if (!initialization.has(initializationKey)) initialization.set(initializationKey, { ready: null, columns: null });
@@ -29,10 +46,13 @@ export function createStagedCloudDatabase(connection, options, createCore) {
     lockKey: connection.lockKey || connection,
     executeAsync: (query, params) => connection.executeAsync(rewrite(kind, query), params),
     executeBatchAsync: async commands => {
-      // An unfinished page must not silently lose staged events to retention.
+      // Retain the newest staged history within unused cache space plus the reserve.
       const writes = commands.filter(command => !/^DELETE FROM supabase_dog_status WHERE id IN/.test(command.query));
-      const used = ['supabase_dog_status', ...kinds.map(value => tableName(value, 'supabase_dog_status'))]
-        .map(table => `(SELECT COUNT(*) FROM ${table})`).join('+');
+      const stageUsed = kinds.map(value => `(SELECT COUNT(*) FROM ${tableName(value, 'supabase_dog_status')})`).join('+');
+      const used = `(SELECT COUNT(*) FROM supabase_dog_status)+${stageUsed}`;
+      const reclaim = [kind, ...kinds.filter(value => value !== kind)].map(value => ({
+        query: reclaimHistory(tableName(value, 'supabase_dog_status'), `(${used})-${cap + reserveRows}`, true), params: [],
+      }));
       try {
         await connection.executeBatchAsync([
           ...writes.map(command => {
@@ -43,7 +63,8 @@ export function createStagedCloudDatabase(connection, options, createCore) {
             };
             return { query, params: command.params };
           }),
-          { query: `INSERT INTO cloud_stage_quota(used,budget) SELECT ${used},?`, params: [cap] },
+          ...reclaim,
+          { query: `INSERT INTO cloud_stage_quota(used,budget) SELECT ${used},?`, params: [cap + reserveRows] },
           { query: 'DELETE FROM cloud_stage_quota', params: [] },
         ]);
       } catch (error) {
@@ -130,22 +151,37 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         const fields = names('supabase_dog_status');
         const list = fields.join(',');
         const inserted = fields.map(name => name === 'publication_version' ? 'publication_version+1' : name).join(',');
-        const commands = [{ query: `INSERT OR IGNORE INTO supabase_dog_status (${list}) SELECT ${inserted} FROM ${telemetry} WHERE owner_user_id=?`, params: [owner] }];
+        const count = Number(rows(await connection.executeAsync(`SELECT COUNT(*) n FROM ${telemetry} WHERE owner_user_id=?`, [owner]))[0].n);
+        const chunk = `SELECT id FROM ${telemetry} WHERE owner_user_id=? ORDER BY id LIMIT 1000`;
+        const commands = [];
         // COW repairs apply only if the published metadata still matches the
         // captured base. A later completed manual job must win over stale auto.
         const baseMatches = baseFields.map(name => `d.base_${name} IS supabase_dog_status.${name}`).join(' AND ');
         const match = `d.owner_user_id=supabase_dog_status.owner_user_id AND d.event_id=supabase_dog_status.event_id AND d.had_base=1 AND ${baseMatches}`;
-        commands.push({ query: `UPDATE supabase_dog_status SET ${metadata.map(name => `${name}=(SELECT d.${name} FROM ${telemetry} d WHERE ${match})`).join(',')},publication_version=publication_version+1
+        // Move bounded chunks inside one transaction. Clear each delta chunk
+        // before the next insert, rather than duplicate a whole first download.
+        for (let start = 0; start < count; start += 1000) {
+          commands.push({ query: `INSERT OR IGNORE INTO supabase_dog_status (${list}) SELECT ${inserted} FROM ${telemetry} WHERE id IN (${chunk})`, params: [owner] });
+          commands.push({ query: `UPDATE supabase_dog_status SET ${metadata.map(name => `${name}=(SELECT d.${name} FROM ${telemetry} d WHERE ${match})`).join(',')},publication_version=publication_version+1
           WHERE id IN (SELECT p.id FROM ${telemetry} d JOIN supabase_dog_status p ON d.owner_user_id=p.owner_user_id AND d.event_id=p.event_id
-            WHERE d.owner_user_id=? AND d.had_base=1 AND ${baseFields.map(name => `d.base_${name} IS p.${name}`).join(' AND ')})`, params: [owner] });
+            WHERE d.id IN (${chunk}) AND d.had_base=1 AND ${baseFields.map(name => `d.base_${name} IS p.${name}`).join(' AND ')})`, params: [owner] });
+          commands.push({ query: `DELETE FROM ${telemetry} WHERE id IN (${chunk})`, params: [owner] });
+        }
         for (const [table, ownerColumn] of tables.slice(1)) {
           const namesList = names(table).join(',');
           commands.push({ query: `INSERT OR REPLACE INTO ${table} (${namesList}) SELECT ${namesList} FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         }
-        commands.push({ query: `DELETE FROM supabase_dog_status WHERE id IN (SELECT id FROM supabase_dog_status ORDER BY received_at DESC,id DESC LIMIT -1 OFFSET ${cap})`, params: [] });
+        commands.push({ query: reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, false), params: [] });
+        commands.push({ query: 'INSERT INTO cloud_stage_quota(used,budget) SELECT COUNT(*),? FROM supabase_dog_status', params: [cap] });
+        commands.push({ query: 'DELETE FROM cloud_stage_quota', params: [] });
         for (const [table, ownerColumn] of tables) commands.push({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         commands.push({ query: 'DELETE FROM cloud_download_jobs WHERE owner=? AND kind=?', params: [owner, kind] });
-        await connection.executeBatchAsync(commands);
+        try {
+          await connection.executeBatchAsync(commands);
+        } catch (error) {
+          if (String(error.message).includes('used<=budget')) throw new Error(t("c622"));
+          throw error;
+        }
         published.invalidatePublished();
       });
       if (kind === 'manual') active.delete(owner);
