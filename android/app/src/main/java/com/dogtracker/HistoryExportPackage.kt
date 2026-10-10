@@ -310,14 +310,15 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     // Scoped storage cannot reveal every other app's files. MediaStore still
     // prevents overwrites; a renamed reservation is discarded and retried.
     ExportDownloadNames.save(file.name, existing,
-      create = { name -> createMediaStoreFile(file, mime, name) },
+      reserve = { name -> reserveMediaStoreFile(mime, name) },
+      complete = { reservation -> completeMediaStoreFile(file, reservation) },
       discard = { saved -> check(resolver.delete(Uri.parse(saved.uri), null, null) == 1) {
         "cannot remove renamed export reservation"
       } })
   }
 
   @androidx.annotation.RequiresApi(29)
-  private fun createMediaStoreFile(file: File, mime: String, name: String): ExportDownloads.Saved {
+  private fun reserveMediaStoreFile(mime: String, name: String): ExportDownloads.Saved {
     val resolver = context.contentResolver
     val values = android.content.ContentValues().apply {
       put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -328,19 +329,29 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
       ?: error("MediaStore insert failed")
     try {
-      resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: error("no output stream")
-      check(resolver.update(uri, android.content.ContentValues().apply {
-        put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
-      }, null, null) == 1) { "cannot publish export" }
-      val actual = resolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use {
-        if (it.moveToFirst()) it.getString(0) else null
-      } ?: error("cannot read saved export filename")
-      return ExportDownloads.Saved(actual, uri.toString())
+      return ExportDownloads.Saved(mediaStoreName(uri), uri.toString())
     } catch (e: Exception) {
       resolver.delete(uri, null, null)
       throw e
     }
   }
+
+  @androidx.annotation.RequiresApi(29)
+  private fun completeMediaStoreFile(file: File, reservation: ExportDownloads.Saved): ExportDownloads.Saved {
+    val resolver = context.contentResolver
+    val uri = Uri.parse(reservation.uri)
+    // ExportDownloadNames owns cleanup if copy/publication/readback fails.
+    resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: error("no output stream")
+    check(resolver.update(uri, android.content.ContentValues().apply {
+      put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+    }, null, null) == 1) { "cannot publish export" }
+    return ExportDownloads.Saved(mediaStoreName(uri), reservation.uri)
+  }
+
+  private fun mediaStoreName(uri: Uri): String = context.contentResolver.query(uri,
+    arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use {
+    if (it.moveToFirst()) it.getString(0) else null
+  } ?: error("cannot read saved export filename")
 
   private fun askCreateDocument() {
     if (downloadsDisposed) return

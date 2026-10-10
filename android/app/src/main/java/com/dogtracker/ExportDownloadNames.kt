@@ -36,19 +36,36 @@ object ExportDownloadNames {
   }
 
   fun save(requested: String, existing: Collection<String>,
-    create: (String) -> ExportDownloads.Saved,
+    reserve: (String) -> ExportDownloads.Saved,
+    complete: (ExportDownloads.Saved) -> ExportDownloads.Saved,
     discard: (ExportDownloads.Saved) -> Unit,
     maxAttempts: Int = 32): ExportDownloads.Saved {
     require(maxAttempts > 0)
     val occupied = existing.toMutableSet()
     repeat(maxAttempts) {
       val name = available(requested, occupied)
-      val saved = create(name)
+      val reservation = reserve(name)
+      if (reservation.name != name) {
+        // Reject a renamed pending reservation before any copy/publication.
+        discard(reservation)
+        occupied.add(name)
+        occupied.add(reservation.name)
+        return@repeat
+      }
+      val saved = try {
+        complete(reservation).also { check(it.uri == reservation.uri) { "export URI changed" } }
+      } catch (error: Exception) {
+        try { discard(reservation) } catch (cleanup: Exception) {
+          cleanup.addSuppressed(error)
+          throw cleanup
+        }
+        throw error
+      }
       if (saved.name == name) return saved
       // A file hidden by scoped storage, or a concurrent writer, may defeat
       // the pre-query. Never accept a provider name with a broken extension,
       // and only remove this newly created URI, never a pre-existing file.
-      discard(saved)
+      discard(reservation)
       occupied.add(name)
       occupied.add(saved.name)
     }

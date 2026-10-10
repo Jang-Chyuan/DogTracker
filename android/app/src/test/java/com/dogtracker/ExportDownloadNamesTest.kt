@@ -33,20 +33,22 @@ class ExportDownloadNamesTest {
 
   @Test fun systemSuffixAfterGpxIsDiscardedAndRetriedWithoutChangingMime() {
     val names = ArrayList<String>(); val discarded = ArrayList<ExportDownloads.Saved>()
-    val result = ExportDownloadNames.save("route.gpx", emptyList(), create = { candidate ->
+    val completed = ArrayList<String>()
+    val result = ExportDownloadNames.save("route.gpx", emptyList(), reserve = { candidate ->
       names.add(candidate)
       ExportDownloads.Saved(if (names.size == 1) "route.gpx (1)" else candidate, "content://${names.size}")
-    }, discard = { discarded.add(it) })
+    }, complete = { completed.add(it.uri); it }, discard = { discarded.add(it) })
     assertEquals(listOf("route.gpx", "route (1).gpx"), names)
     assertEquals("route (1).gpx", result.name)
     assertEquals(listOf("content://1"), discarded.map { it.uri })
+    assertEquals(listOf("content://2"), completed)
   }
 
   @Test fun visibleDuplicatesAreSkippedBeforeInsertion() {
     var created = ""
     val result = ExportDownloadNames.save("route.gpx", listOf("route.gpx", "route (1).gpx"),
-      create = { created = it; ExportDownloads.Saved(it, "content://new") },
-      discard = { fail("accepted URI must not be deleted") })
+      reserve = { created = it; ExportDownloads.Saved(it, "content://new") },
+      complete = { it }, discard = { fail("accepted URI must not be deleted") })
     assertEquals("route (2).gpx", created)
     assertEquals(created, result.name)
   }
@@ -54,20 +56,21 @@ class ExportDownloadNamesTest {
   @Test fun unseenConcurrentCollisionsAreBoundedAndOnlyOwnUrisAreDiscarded() {
     val created = ArrayList<String>(); val discarded = ArrayList<String>()
     try {
-      ExportDownloadNames.save("route.gpx", emptyList(), create = {
+      ExportDownloadNames.save("route.gpx", emptyList(), reserve = {
         created.add(it); ExportDownloads.Saved("$it (1)", "content://own-${created.size}")
-      }, discard = { discarded.add(it.uri) }, maxAttempts = 3)
+      }, complete = { fail("renamed pending URI must never copy or publish"); it },
+        discard = { discarded.add(it.uri) }, maxAttempts = 3)
       fail("unusable names cannot be accepted")
     } catch (_: IOException) { }
     assertEquals(listOf("route.gpx", "route (1).gpx", "route (2).gpx"), created)
     assertEquals(listOf("content://own-1", "content://own-2", "content://own-3"), discarded)
   }
 
-  @Test fun createFailureDoesNotDeletePreviousFiles() {
+  @Test fun reservationFailureDoesNotDeletePreviousFiles() {
     var discarded = false
     try {
       ExportDownloadNames.save("route.gpx", listOf("route.gpx"),
-        create = { throw IOException("copy failed") }, discard = { discarded = true })
+        reserve = { throw IOException("copy failed") }, complete = { it }, discard = { discarded = true })
       fail("failure must propagate")
     } catch (_: IOException) { }
     assertFalse(discarded)
@@ -77,10 +80,36 @@ class ExportDownloadNamesTest {
     var creates = 0
     try {
       ExportDownloadNames.save("route.gpx", emptyList(),
-        create = { creates++; ExportDownloads.Saved("$it (1)", "content://own") },
-        discard = { throw IOException("delete failed") })
+        reserve = { creates++; ExportDownloads.Saved("$it (1)", "content://own") },
+        complete = { it }, discard = { throw IOException("delete failed") })
       fail("cleanup failure must propagate")
     } catch (_: IOException) { }
     assertEquals(1, creates)
+  }
+
+  @Test fun completionFailureDiscardsOnlyItsOwnReservation() {
+    val discarded = ArrayList<String>(); var copies = 0
+    try {
+      ExportDownloadNames.save("route.gpx", listOf("route.gpx"),
+        reserve = { ExportDownloads.Saved(it, "content://own") },
+        complete = { copies++; throw IOException("copy failed") },
+        discard = { discarded.add(it.uri) })
+      fail("copy failure must propagate")
+    } catch (_: IOException) { }
+    assertEquals(1, copies)
+    assertEquals(listOf("content://own"), discarded)
+  }
+
+  @Test fun matchedReservationCopiesExactlyOnceAndChecksPublishedName() {
+    val discarded = ArrayList<String>(); val completed = ArrayList<String>(); var reservations = 0
+    val saved = ExportDownloadNames.save("route.gpx", emptyList(),
+      reserve = { reservations++; ExportDownloads.Saved(it, "content://own-$reservations") },
+      complete = {
+        completed.add(it.uri)
+        if (completed.size == 1) it.copy(name = "${it.name} (1)") else it
+      }, discard = { discarded.add(it.uri) })
+    assertEquals(listOf("content://own-1", "content://own-2"), completed)
+    assertEquals(listOf("content://own-1"), discarded)
+    assertEquals("route (1).gpx", saved.name)
   }
 }
