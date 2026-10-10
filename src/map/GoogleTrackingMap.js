@@ -1208,7 +1208,15 @@ function GoogleTrackingMapRenderer({
     if (!usable || !routeCamera?.length) return;
     const room = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
     const framing = overlayFramePadding(room, { topInset, bottomInset, overlayTop, overlayBottom });
-    const points = framedCoordinates(routeCamera);
+    // Held days retain many identical fixes; framedCoordinates only expands
+    // a single point. Preserve street context for every tiny history span,
+    // while keeping the half-screen padding/centering and larger routes intact.
+    const latitudes = tinySpan(routeCamera) ? routeCamera.map(point => point.latitude) : null;
+    const longitudes = latitudes ? routeCamera.map(point => point.longitude) : null;
+    const points = framedCoordinates(latitudes ? [{
+      latitude: (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
+      longitude: (Math.min(...longitudes) + Math.max(...longitudes)) / 2,
+    }] : routeCamera);
     const region = regionForFrame(points, framing, {
       width: cursorLayout.width - 2 * MAP_SIDE_PADDING,
       height: cursorLayout.height - topInset - bottomInset,

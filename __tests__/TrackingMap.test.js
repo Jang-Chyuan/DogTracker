@@ -916,3 +916,44 @@ test('history route fit and cursor centering use the half-screen panel coverage'
     delete mockCamera.coordinateForPoint;
   }
 });
+
+test.each([
+  ['repeated indoor anchor', [{ latitude: 25, longitude: 121 }, { latitude: 25, longitude: 121 }]],
+  ['short route', [{ latitude: 25, longitude: 121 }, { latitude: 25.00001, longitude: 121.00001 }]],
+])('framing a %s preserves street context above the fixed history panel', async (_name, camera) => {
+  const props = { ...defaults, topInset: 100, bottomInset: 388, coverBottom: 388,
+    source: 'history:tiny', presentation: { ...defaults.presentation, dogMarkers: [],
+      historyRoute: { color: colors.phone, lines: [], places: [], times: [], camera, points: [], cursor: null } } };
+  await render(props);
+  await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+    .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+  await readyMap();
+  await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'tiny' }} />));
+  const [region] = mockCamera.animateToRegion.mock.calls.at(-1);
+  // A held day contains many fixes at one anchor. Its camera must retain a
+  // street-sized extent rather than collapsing to a few metres at max zoom.
+  expect(region.latitudeDelta).toBeGreaterThan(0.003);
+  const centre = (camera[0].latitude + camera[1].latitude) / 2;
+  // Region centre includes the header reserve inside the SDK's already
+  // padded half-screen map; do not regress to centering behind the panel.
+  expect(region.latitude).toBeGreaterThan(centre);
+  expect(region.latitude - centre).toBeLessThan(region.latitudeDelta / 10);
+});
+
+test('history framing does not expand a real route beyond the tiny-span threshold', async () => {
+  const { regionForFrame } = require('../src/map/MapFraming');
+  const { historyFramePadding } = require('../src/history/screen/HistoryMapModel');
+  const { layout, space } = require('../src/theme/tokens');
+  const camera = [{ latitude: 25, longitude: 121 }, { latitude: 25.0005, longitude: 121.0005 }];
+  const props = { ...defaults, topInset: 100, bottomInset: 388, coverBottom: 388,
+    source: 'history:real-short', presentation: { ...defaults.presentation, dogMarkers: [],
+      historyRoute: { color: colors.phone, lines: [], places: [], times: [], camera, points: [], cursor: null } } };
+  await render(props);
+  await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+    .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+  await readyMap();
+  await act(async () => renderer.update(<TrackingMap {...props} historyFrame={{ key: 'real-short' }} />));
+  expect(mockCamera.animateToRegion).toHaveBeenLastCalledWith(regionForFrame(camera,
+    historyFramePadding(camera, null, { top: space.l, right: space.xl, bottom: space.s, left: space.xl }),
+    { width: 400 - 2 * layout.floatingGap, height: 312 }), 300);
+});
