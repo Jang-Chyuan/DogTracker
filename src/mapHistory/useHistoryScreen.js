@@ -92,6 +92,9 @@ export function useHistoryDayRows({
     subject && day != null
       ? JSON.stringify([subject, slaveId, day, owner, scope])
       : null;
+  // Phone rows are local: publishing dog telemetry must not cancel their
+  // in-flight read or restart the full-day cursor. Explicit reloads still do.
+  const readerPublicationRevision = subject === 'phone' ? 0 : publicationRevision;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
     let alive = true,
@@ -173,7 +176,7 @@ export function useHistoryDayRows({
       clearTimeout(timer);
     };
     // key stands for subject, slaveId, day and owner.
-  }, [active, read, key, revision, getPublication, publicationRevision, publishedReads]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, read, key, revision, getPublication, readerPublicationRevision, publishedReads]); // eslint-disable-line react-hooks/exhaustive-deps
   const current =
     result.key === key
       ? result

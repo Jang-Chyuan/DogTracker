@@ -12,6 +12,52 @@ const day = new Date(2026, 9, 9).getTime();
 const now = day + 12 * 60 * MINUTE;
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 
+test('cloud publication does not cancel an in-flight local phone history read', async () => {
+  let renderer, state;
+  const first = deferred();
+  const ledger = { scope: {}, generation: 1, owner: 'owner-a', publishedRevision: 0, publishedPending: false };
+  const getPublication = () => ledger;
+  const read = jest.fn(() => first.promise);
+  function Probe({ revision }) {
+    state = useHistoryDayRows({ read, subject: 'phone', day, owner: 'owner-a', clock: () => now,
+      getPublication, publishedReads: true, publicationRevision: revision });
+    return null;
+  }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe revision={0} />); });
+    ledger.publishedPending = true; ledger.publishedRevision = 1;
+    await act(async () => renderer.update(<Probe revision={1} />));
+    expect(read).toHaveBeenCalledTimes(1);
+    ledger.publishedPending = false; ledger.publishedRevision = 2;
+    await act(async () => renderer.update(<Probe revision={2} />));
+    await act(async () => first.resolve({ rows: [{ id: 1, time: now, source: 'phone' }], after: { phone: 1 } }));
+    expect(state.loaded).toBe(true);
+    expect(state.rows.map(row => row.id)).toEqual([1]);
+    expect(read).toHaveBeenCalledTimes(1);
+  } finally { if (renderer) await act(async () => renderer.unmount()); }
+});
+
+test.each(['phone', 'dog'])('%s history refreshes only for relevant publication or explicit reload', async subject => {
+  let renderer, state;
+  const ledger = { scope: {}, generation: 1, owner: 'owner-a', publishedRevision: 0, publishedPending: false };
+  const getPublication = () => ledger;
+  const read = jest.fn(async () => ({ rows: [{ id: 1, time: now, source: subject }], after: {} }));
+  function Probe({ publicationRevision, revision = 0 }) {
+    state = useHistoryDayRows({ read, subject, slaveId: subject === 'dog' ? 6 : null,
+      day, owner: 'owner-a', clock: () => now, getPublication, publishedReads: true, publicationRevision, revision });
+    return null;
+  }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe publicationRevision={0} />); });
+    ledger.publishedRevision = 2;
+    await act(async () => renderer.update(<Probe publicationRevision={2} />));
+    expect(state.loaded).toBe(true);
+    expect(read).toHaveBeenCalledTimes(subject === 'phone' ? 1 : 2);
+    await act(async () => renderer.update(<Probe publicationRevision={2} revision={1} />));
+    expect(read).toHaveBeenCalledTimes(subject === 'phone' ? 2 : 3);
+  } finally { if (renderer) await act(async () => renderer.unmount()); }
+});
+
 test.each(['busy', 'failed'])('activity retains its accepted complete values after an auto %s partial batch', async phase => {
   let state, renderer, value = 0.2;
   const time = now - 10 * MINUTE;
