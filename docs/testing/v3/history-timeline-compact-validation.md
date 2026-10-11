@@ -123,3 +123,14 @@ FontScale2的半高、展開、捲動到完整終點已實際完成，原PNG顯�
 ![返回後保留09:03](evidence/history-sheet-summary/range-back.png)
 
 ![大字完整終點](evidence/history-sheet-summary/font2-end.png)
+
+
+## 2026-10-12 接續來源：拖曳提示、裁切停留與地址狀態
+
+來源 b0834323 與 bd9ad7a5 已凍結；此節為來源／focused 結果，尚未宣稱新版原生通過。247 private APK 的固定提示留白已被使用者否決，該輪截圖不作新設計驗收。提示改為把手上方 transient HH:mm overlay，允許短暫疊到摘要；按下／拖中／放開的 bar style 一致，不新增高度，提示放開收起。原 map label 拖中隱藏仍保留 bitmap 尺寸／anchor，避免同一時間兩個重疊 label。
+
+裁切起點只有屬於已判定 visit（id）且原 fix 的時間及座標精確屬於該停留，才可合併成出發；地址相同、GPS 距離接近、弱訊號或缺口不足以證明同一停留。只合併呈現，raw fixes、model、CSV／GPX 與公里不改；地圖也移除該合併初始／末端 stay 的重複編號，中間編號不重排。map hidden 邊界按不可變 model.nodes 快取，游標 move 不重跑合併。清單、map a11y、cursor 的分鐘 copy 共用；觀測中斷仍保留原有效 duration，不把缺口補成停留。
+
+247 狗圖沒有地址的原因已查明：private fixture 共用 8 筆答覆（包含刻意 null），狗6查完再切狗4耗盡，後續 state=none 而非仍查詢中。新版 private 3a02bc71 在兩 scene 使用 64 筆明確「虛構測試地點」，仍走真正 addressLookup pipeline；第二狗每個地點都查到，不碰真 cache／SQLite。產品本身 pending 使用 inline Skeleton，none／逾時顯示 c1256「地址暫時無法取得」，found 才顯示取得地址。膠囊與 dot 用 cardTitle.lineHeight × 實際 fontScale 的共同首行 wrapper 置中；不按整個長地址段落置中，也不用固定 1／2dp 補差。
+
+Focused：8 suites／150 tests、4 suites／48 tests、private 1 suite／6 tests 全 PASS。後兩者包括正確字串 lookup contract、fontScale 1／2、pending→none→稍後找到、兩有效狗6→4查地址。ESLint 0 errors／0 warnings、diff check通過；全部有限worker已關場。新 artifact 安裝、原圖與全部影片 frame 的主視窗親看另行補證，沒有把 fixture 視覺驗證當成 Supabase／GPS／CPU 通過。
