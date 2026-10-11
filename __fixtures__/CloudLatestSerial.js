@@ -100,4 +100,3 @@ export async function downloadCloudLatestSerial({ client, masterIds, cutoff, sig
   }
   return { cutoff, dogs };
 }
-
