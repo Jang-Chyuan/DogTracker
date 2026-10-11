@@ -1,6 +1,6 @@
 import { createCloudSync } from '../src/cloud/CloudSync';
 import { captureActivityRead } from '../src/cloud/CloudPagePublication';
-import { captureMapRead, completedMapRevision, mapReadRevision } from '../src/cloud/CloudPublication';
+import { captureMapRead, completedMapRevision, latestMapApplied, mapReadRevision } from '../src/cloud/CloudPublication';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
@@ -186,4 +186,46 @@ test('another owner or a manual archive slice cannot hydrate automatic activity 
   expect(engine.historyPublication()).toMatchObject({ owner: 'a', archiveCutoff: null, archiveRevision: 0 });
   expect(captureActivityRead(() => engine.historyPublication(), 'a', true).open).toBe(false);
   expect(await database.readArchivePublication('a')).toBeNull();
+});
+
+
+test('already applied latest remains usable through real deferred context publication and read lag', async () => {
+  const context = deferred();
+  const { database, current, start } = await fixture({ downloadContext: () => context.promise });
+  const contextCommit = deferred();
+  const publish = database.publishLatestSnapshot;
+  let commits = 0;
+  database.publishLatestSnapshot = async (...args) => {
+    commits++;
+    if (commits === 2) await contextCommit.promise;
+    return publish(...args);
+  };
+  try {
+    await start();
+    const initial = engine.mapPublication();
+    const snapshot = await database.readLatestSnapshot('a');
+    const dogs = { loaded: true, rows: snapshot.rows, cloudCommit: initial.mapSuccessRevision,
+      cloudPublication: { owner: initial.owner, scope: initial.scope,
+        generation: initial.generation, revision: initial.mapSuccessRevision } };
+    const state = () => ({ ...current(), getMapPublication: () => engine.mapPublication() });
+    expect(current()).toMatchObject({ contextPending: true, snapshotPending: false });
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    context.resolve({ cutoff: NOW, dogs: [{ slaveId: 4, packet: fix(), fix: fix(), context: [fix()], seeds: [] }] });
+    await flush();
+    expect(commits).toBe(2);
+    expect(engine.mapPublication()).toMatchObject({ pending: true, busy: false, mapSuccessRevision: 1 });
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    contextCommit.resolve(); await flush();
+    expect(engine.mapPublication()).toMatchObject({ pending: false, busy: false, mapSuccessRevision: 2 });
+    // The prior applied snapshot remains valid while the new context/hold read
+    // catches up. This is not a completion certificate for history readers.
+    expect(dogs.cloudCommit).toBe(1);
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    engine.setForeground(false); engine.setForeground(true);
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(false);
+    engine.setSession({ user: { id: 'b' } });
+    expect(latestMapApplied(state(), 'b', dogs)).toBe(false);
+  } finally {
+    context.resolve({ cutoff: NOW, dogs: [] }); contextCommit.resolve(); await flush();
+  }
 });

@@ -37,6 +37,9 @@ export function mapReadRevision(sync) {
 
 // The live map can finish before local/archive route catch-up. Only an
 // atomically applied snapshot from this exact foreground/account may do so.
+// Later optional context publications may be pending or awaiting their hold
+// reread; they do not revoke that proof. snapshotPending still gates a new
+// latest fetch, and a new foreground generation never inherits the old proof.
 export function latestMapApplied(sync, owner, dogs) {
   if (!sync?.latestFirst || !owner || sync.error || sync.authFailed || dogs?.error
     || !dogs?.loaded || mapDownloadBusy(sync)) return false;
@@ -47,8 +50,9 @@ export function latestMapApplied(sync, owner, dogs) {
   return !!publication && publication.owner === owner && proof?.owner === owner
     && publication.scope != null && proof.scope === publication.scope
     && Number.isSafeInteger(publication.generation) && proof.generation === publication.generation
-    && !publication.pending && !publication.busy
+    && !publication.busy
     && Number.isSafeInteger(success) && success > 0
-    && publication.mapSuccessRevision === success && proof.revision === success
-    && dogs.cloudCommit === success;
+    && publication.mapSuccessRevision === success
+    && Number.isSafeInteger(proof.revision) && proof.revision > 0 && proof.revision <= success
+    && dogs.cloudCommit === proof.revision;
 }

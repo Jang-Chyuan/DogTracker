@@ -307,7 +307,7 @@ export default function MapScreen({
     : combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
     [latestApplied, tracking.catchUp, cloudSync?.catchUp]);
   const cloudSuccess = completedMapRevision(cloudSync);
-  const cloudReadPending = cloudSuccess != null && incomingCloudDogs?.cloudCommit !== cloudSuccess;
+  const cloudReadPending = !latestApplied && cloudSuccess != null && incomingCloudDogs?.cloudCommit !== cloudSuccess;
   const catchUpMemory = useRef(null);
   const catchUpOwner = useRef(cloudOwner);
   if (catchUpOwner.current !== cloudOwner) {
@@ -416,7 +416,9 @@ export default function MapScreen({
   const dogSnapshot = atomicDogs.current.select({
     owner: cloudOwner, dogs: mergedDogs, cloudDogs,
     busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || (!latestApplied && cloudSync?.catchUp?.phase === 'catching-up'),
-    success: completedMapRevision(cloudSync),
+    // Context can advance the engine revision before its reader returns.
+    // A same-generation applied latest remains an atomic live snapshot.
+    success: latestApplied ? cloudDogs.cloudCommit : completedMapRevision(cloudSync),
   });
   const dogs = dogSnapshot.dogs;
   cloudDogs = dogSnapshot.cloudDogs;

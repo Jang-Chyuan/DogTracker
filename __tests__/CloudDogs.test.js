@@ -625,23 +625,33 @@ test('accepted latest map stops resume dimming while local catch-up and archive 
   try {
     await act(async () => { renderer = Renderer.create(view(oldDogs)); });
     expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('catching-up');
-    publication = { ...publication, pending: false, busy: false, mapSuccessRevision: 2 };
+    publication = { ...publication, pending: false, busy: false, mapSuccessRevision: 3 };
     const fresh = { ...oldDogs, rows: [row('fresh', 7, NOW + 100, 5, { slave_lat: 26 })],
       cloudCommit: 2, cloudPublication: { owner: 'a', scope, generation: 3, revision: 2 } };
-    await act(async () => { renderer.update(view(fresh, { mapSuccessRevision: 2,
+    await act(async () => { renderer.update(view(fresh, { mapSuccessRevision: 3,
       catchUp: { phase: 'catching-up', since: NOW - 1000 } })); });
     expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('idle');
     const presentation = renderer.root.findByType(TrackingMap).props.presentation;
     expect(presentation.dogMarkers.find(marker => marker.slaveId === 7)).toMatchObject({ dimmed: false });
     expect(presentation.dogs.find(dog => dog.slaveId === 7).coordinate.latitude).toBe(26);
+    // Optional context has a separate pending native publication and then a
+    // newer revision. Retain the already applied latest while that hold read waits.
+    publication = { ...publication, pending: true };
+    await act(async () => { renderer.update(view(fresh, { mapSuccessRevision: 3, contextPending: true })); });
+    expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('idle');
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(marker => !marker.dimmed)).toBe(true);
+    publication = { ...publication, pending: false, mapSuccessRevision: 3 };
+    await act(async () => { renderer.update(view(fresh, { mapSuccessRevision: 3, contextPending: false })); });
+    expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('idle');
+    expect(renderer.root.findByType(TrackingMap).props.presentation.dogs.find(dog => dog.slaveId === 7).coordinate.latitude).toBe(26);
     // A new foreground generation must await its own atomic applied proof.
     publication = { ...publication, generation: 4, pending: true, busy: true };
-    await act(async () => { renderer.update(view(fresh, { snapshotPending: true, mapSuccessRevision: 2 })); });
+    await act(async () => { renderer.update(view(fresh, { snapshotPending: true, mapSuccessRevision: 3 })); });
     expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('catching-up');
     expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(marker => marker.dimmed)).toBe(true);
     publication = { ...publication, pending: false, busy: false };
     await act(async () => { renderer.update(view(fresh, { error: 'latest failed',
-      catchUp: { phase: 'failed', since: NOW - 1000 }, mapSuccessRevision: 2 })); });
+      catchUp: { phase: 'failed', since: NOW - 1000 }, mapSuccessRevision: 3 })); });
     expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('failed');
   } finally {
     await act(async () => renderer?.unmount());
