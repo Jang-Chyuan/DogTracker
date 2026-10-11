@@ -8,6 +8,7 @@ import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { cloudSyncDiagnostic } from '../logger';
 import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
 import { downloadCloudLatest, downloadCloudLatestContext } from './CloudLatest';
+import { createIndependentCloudSync } from './IndependentCloudSync';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
 // that are found by the count check instead. Sweeping every cycle would spend
@@ -23,6 +24,8 @@ const CONTEXT_BUDGET_MS = 10000;
 // Manual and automatic downloads share the same exclusive network/write slot.
 export function createCloudSync({ client, database, onChange = () => {}, now = Date.now, downloadLatest = downloadCloudLatest,
   downloadContext = downloadCloudLatestContext }) {
+  if (database.latestStorageIsolated)
+    return createIndependentCloudSync({ client, database, onChange, now, downloadLatest, downloadContext });
   const latestFirst = typeof database.publishLatestSnapshot === 'function';
   const mapScope = {};
   const priorityLatest = latestFirst && typeof database.initializeLatest === 'function';
