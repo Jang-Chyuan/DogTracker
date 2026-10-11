@@ -27,7 +27,7 @@ test('independent real SQLite latest schema and verified packet readback complet
       packets: [expect.objectContaining(packet)], rows: [expect.objectContaining(packet)] });
     expect(archive.sqlite.isTransaction).toBe(true);
     expect(latest.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(row => row.name))
-      .toEqual(['cloud_latest_snapshot', 'cloud_snapshot_state']);
+      .toEqual(['cloud_latest_lifecycle', 'cloud_latest_snapshot', 'cloud_snapshot_state']);
     expect(archive.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='cloud_latest_snapshot'").all()).toEqual([]);
   } finally { held.resolve(); await draining; }
 });

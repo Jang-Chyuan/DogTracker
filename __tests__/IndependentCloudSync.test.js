@@ -84,6 +84,17 @@ test('ordinary latest poll also bypasses a held archive transaction, then truthf
   expect(current.archiveCutoff).toBeGreaterThanOrEqual(NOW + 30000);
 });
 
+test('new authorized master set invalidates a held older archive pass without blocking the new empty latest ACK', async () => {
+  const retained = holdNativeRetention(); await start(); members.splice(0);
+  await act(async () => jest.advanceTimersByTimeAsync(30000));
+  expect(archive.sqlite.isTransaction).toBe(true); expect(applied()).toHaveLength(2);
+  expect(dogs).toMatchObject({ loaded: true, packets: [], rows: [] });
+  retained.held.resolve(); await flush();
+  const published = info.mock.calls.filter(([tag]) => tag === '[CloudSync] archive-published');
+  expect(published).toHaveLength(1); expect(published[0][1].attempt).toBe(2);
+  expect(current.archiveCutoff).toBeGreaterThanOrEqual(NOW + 30000);
+});
+
 test('owner replacement and empty new membership cannot receive late old archive proof or old cached dogs', async () => {
   const retained = holdNativeRetention(); await start();
   members.splice(0);

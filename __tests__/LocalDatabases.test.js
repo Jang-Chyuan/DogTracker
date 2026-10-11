@@ -36,7 +36,8 @@ test('configuration failure blocks all migrations and leaves close with the owne
   expect(mockDatabase.executeAsync).toHaveBeenCalledTimes(1);
   expect(mockDatabase.close).not.toHaveBeenCalled();
   databases.close();
-  expect(mockDatabase.close).toHaveBeenCalledTimes(1);
+  // Nitro's shared test spy now records both independent physical handles.
+  expect(mockDatabase.close).toHaveBeenCalledTimes(2);
 });
 
 test('opening drops obsolete demo objects, preserves real data and is safe to repeat', async () => {

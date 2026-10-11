@@ -21,6 +21,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   let latestAbort = null, archiveAbort = null, manualAbort = null, archiveRequest = null;
   let readback = null, readbackStartedAt = null, interval, immediate, publishedOperation = null;
   let initialStarted = false, retryQueued = false, sweptAt = 0, failureDiagnostic = null;
+  let archiveAuthority = null, archiveAuthorityVersion = 0;
+  let deleting = false;
   let state = { latestFirst: true, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null,
     archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', contextPending: false,
     busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null,
@@ -37,6 +39,11 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     readiness.notify();
     if (!disposed) onChange({ ...state, owner, foreground });
   };
+  const releaseDeletion = database.installDeletionFence?.(() => {
+    deleting = true; generation++; readback = null; archiveRequest = null;
+    latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
+    publish({ mapPending: true, snapshotPending: true });
+  });
   const updateBusy = () => publish({ busy: !!(latestRunning || archiveRunning || manualRunning),
     mode: manualRunning ? 'manual' : latestRunning || archiveRunning ? 'auto' : null });
   const wake = () => {
@@ -59,8 +66,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     }
     return accepted;
   };
-  const publishScoped = async (version, work) => {
-    if (!valid(version)) throw new Error(t('c576'));
+  const publishScoped = async (version, work, authorized = () => true) => {
+    if (!valid(version) || !authorized()) throw new Error(t('c576'));
     const operation = {}; publishedOperation = operation;
     publish({ publishedPending: true, publishedRevision: state.publishedRevision + 1 });
     let result;
@@ -69,7 +76,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       if (publishedOperation === operation) {
         publishedOperation = null;
         publish({ publishedPending: false, publishedRevision: state.publishedRevision + 1,
-          dataRevision: valid(version) && Number.isSafeInteger(result?.dataRevision) && result.dataRevision >= 0 ? result.dataRevision : null });
+          dataRevision: valid(version) && authorized() && Number.isSafeInteger(result?.dataRevision) && result.dataRevision >= 0 ? result.dataRevision : null });
       }
     }
   };
@@ -87,7 +94,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   };
 
   function tick() {
-    if (disposed || !foreground || !owner || latestRunning) return latestRunning;
+    if (disposed || deleting || !foreground || !owner || latestRunning) return latestRunning;
     const version = generation, userId = owner, startedAt = now(), attempt = state.mapAttempt + 1;
     const abort = new AbortController(); latestAbort = abort;
     let timedOut = false, phase = 'initialize', committed = false;
@@ -131,6 +138,10 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
         const revision = await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
         const value = await database.readLatestSnapshot(userId, { positionsOnly: true }); check();
         if (!value?.verified || value.revision !== revision || value.cutoff !== cutoff) throw new Error(t('c588'));
+        const authority = [...masters].sort((left, right) => left - right).join(',');
+        if (archiveAuthority !== authority) {
+          archiveAuthority = authority; archiveAuthorityVersion++; archiveAbort?.abort();
+        }
         const accepted = createMapReadback(value, { owner: userId, scope, generation: version, attempt,
           revision: state.mapSuccessRevision + 1 }, () => valid(version) && state.mapAttempt === attempt && !abort.signal.aborted);
         readback = accepted; timings.snapshotCommitMs = Math.max(0, now() - at); committed = true;
@@ -144,7 +155,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
         check(); if (readback !== accepted) throw new Error(t('c576'));
         // Transfer an immutable request. Do not return/await archiveRunning:
         // that would retain this latest slot until native archive drain.
-        archiveRequest = { version, userId, attempt, masters, cutoff, snapshot, accepted, startedAt };
+        archiveRequest = { version, userId, attempt, masters, cutoff, snapshot, accepted, startedAt,
+          authorityVersion: archiveAuthorityVersion };
         startArchive();
       } catch (error) {
         if (!committed && valid(version) && (!abort.signal.aborted || timedOut)) {
@@ -165,13 +177,14 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   }
 
   function startArchive() {
-    if (archiveRunning || manualRunning || !archiveRequest || !valid(archiveRequest.version)) return;
+    if (deleting || archiveRunning || manualRunning || !archiveRequest || !valid(archiveRequest.version)) return;
     const request = archiveRequest; archiveRequest = null;
     const { version, userId, attempt, masters, cutoff, snapshot, accepted, startedAt } = request;
     const abort = new AbortController(); archiveAbort = abort;
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, DOWNLOAD_MS);
-    const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t('c576')); };
+    const authorized = () => request.offline || request.authorityVersion === archiveAuthorityVersion;
+    const check = () => { if (!valid(version) || !authorized() || abort.signal.aborted) throw new Error(t('c576')); };
     const contextCurrent = () => valid(version) && !abort.signal.aborted && state.mapAttempt === attempt && readback === accepted;
     publish({ archivePending: true, busy: true, mode: 'auto' });
     archiveRunning = withCloudSyncSlot(async () => {
@@ -219,7 +232,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
           }
         }
         check(); const material = await publishScoped(version, () => database.publishDownload(userId, 'auto', cutoff,
-          () => valid(version) && !abort.signal.aborted)); check();
+          () => valid(version) && authorized() && !abort.signal.aborted), authorized); check();
         publish({ archiveRevision: state.archiveRevision + 1, archiveCutoff: cutoff, archiveError: '',
           ...(Number.isSafeInteger(material?.dataRevision) ? { dataRevision: material.dataRevision } : {}) });
         cloudSyncDiagnostic('archive-published', { attempt, elapsedMs: Math.max(0, now() - startedAt), revision: state.archiveRevision });
@@ -248,6 +261,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       if (next === owner) { readiness.notify(); return; }
       cancelBackgroundSync(); latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
       owner = next; generation++; readback = null; archiveRequest = null; sweptAt = 0;
+      archiveAuthority = null; archiveAuthorityVersion++;
       initialStarted = retryQueued = false; failureDiagnostic = null; resetCatchUp();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false, offline: false,
         snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null, contextPending: false,
@@ -269,6 +283,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       if (catchUp.state().phase === 'failed') catchUp.retry({ deferStart: true }); else wake();
     },
     async runManual(work, abort = new AbortController()) {
+      if (deleting) throw new Error(t('c576'));
       if (manualRunning) throw new Error(t('c585'));
       const version = generation;
       if (releaseReadiness && !readiness.ready() && !await readiness.wait(abort.signal)) throw new Error(t('c576'));
@@ -298,7 +313,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       }
     },
     dispose() {
-      disposed = true; generation++; readiness.close(); releaseReadiness?.(); catchUp.close();
+      disposed = true; generation++; readiness.close(); releaseReadiness?.(); releaseDeletion?.(); catchUp.close();
       clearInterval(interval); clearTimeout(immediate); archiveRequest = null;
       latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
       return Promise.allSettled([latestRunning, archiveRunning, manualRunning]);

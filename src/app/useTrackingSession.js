@@ -30,11 +30,13 @@ function isForeground(state) {
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
   const latestPriority = useRef(null);
+  const deletionFence = useRef(null);
   const [historyDatabase] = useState(() => Object.fromEntries(
     HISTORY_DATABASE_METHODS.map(method => [method, (...args) =>
       controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error(t("c487")))]),
   ));
-  const [cloudDatabase] = useState(() => ({ ...Object.fromEntries(
+  const [cloudDatabase] = useState(() => ({ latestStorageIsolated: createDatabases.latestStorageIsolated === true,
+    ...Object.fromEntries(
     CLOUD_DATABASE_METHODS.map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
         Promise.reject(new Error(t("c487"))),
@@ -44,6 +46,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     latestPriority.current = gate;
     if (previous !== gate) previous?.close();
     return () => { if (latestPriority.current === gate) latestPriority.current = null; };
+  }, installDeletionFence(fence) {
+    deletionFence.current = fence;
+    return () => { if (deletionFence.current === fence) deletionFence.current = null; };
   } }));
   // Stable diagnostics adapter; it borrows this owner's real DB and cannot
   // open/close another Nitro connection or access settings tables.
@@ -281,7 +286,12 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       function initializeLatest() {
         if (!databases.cloud) return Promise.reject(new Error(t("c486")));
         if (!latestInitialization) {
-          const task = initialization.real.then(() => initialLocalAttempt).then(() => {
+          // Independent latest schema must not queue behind the archive/local
+          // native worker. Map/Splash still require their existing real local,
+          // preference, receiver and framing conditions independently.
+          const local = databases.cloud.latestStorageIsolated ? Promise.resolve()
+            : initialization.real.then(() => initialLocalAttempt);
+          const task = local.then(() => {
             if (disposed) throw new Error(t("c483"));
             return (databases.cloud.initializeLatest ?? databases.cloud.initialize)();
           });
@@ -322,7 +332,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           const latest = ['initializeLatest', 'readLatestSnapshot', 'publishLatestSnapshot'].includes(method);
           const local = ['loadRangeState', 'saveRangeState'].includes(method)
             || (['latestStatusRows', 'holdRows'].includes(method) && !args[0]);
-          const readiness = latest || local ? initializeLatest : initializeCloud;
+          const readiness = latest ? initializeLatest : local
+            ? () => initialization.real.then(() => initialLocalAttempt).then(initializeLatest) : initializeCloud;
           const task = readiness().then(async () => {
             if (!latest && !local) await awaitArchivePriority(typeof args[0] === 'string' ? args[0] : undefined);
             if (disposed) throw new Error(t("c483"));
@@ -348,7 +359,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           const task = initialization.real.then(() => {
             if (disposed) throw new Error(t("c483"));
             if (!databases.dogData) throw new Error(t("c484"));
-            return databases.dogData.deleteAll(options);
+            return databases.dogData.deleteAll({ ...options, beforeDelete: () => deletionFence.current?.() });
           });
           commands.add(task);
           return task.finally(() => commands.delete(task));

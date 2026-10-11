@@ -50,8 +50,9 @@ describe('tracking session and connection lifetime', () => {
     session = useTrackingSession(factory);
     return null;
   }
-  async function mount(db) {
+  async function mount(db, isolated = false) {
     const factory = () => db;
+    factory.latestStorageIsolated = isolated;
     await act(async () => {
       renderer = ReactTestRenderer.create(<Harness factory={factory} />);
     });
@@ -73,6 +74,28 @@ describe('tracking session and connection lifetime', () => {
       .mockClear()
       .mockReturnValue({ remove: jest.fn() });
     jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  test('independent latest readiness completes behind held local initialization without fabricating local snapshot or full archive readiness', async () => {
+    const archive = createMemoryConnection(), latest = createMemoryConnection(), held = deferred();
+    const db = databases();
+    db.real.initialize.mockReturnValue(held.promise);
+    db.cloud = createCloudDatabase(archive, { latestConnection: latest });
+    try {
+      await mount(db, true);
+      await act(async () => {
+        await session.cloudDatabase.publishLatestSnapshot('owner', { cutoff: 2000, dogs: [] });
+      });
+      expect(session.cloudDatabase.latestStorageIsolated).toBe(true);
+      expect(await session.cloudDatabase.readLatestSnapshot('owner', { positionsOnly: true })).toMatchObject({ verified: true, packets: [], revision: 1 });
+      expect(session.ready.real).toBe(false); expect(session.initialSnapshotReady).toBe(false);
+      expect(archive.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual([]);
+      held.resolve(); await act(async () => jest.advanceTimersByTimeAsync(1));
+      expect(session.ready.real).toBe(true); expect(session.initialSnapshotReady).toBe(true);
+    } finally {
+      held.resolve(); await act(async () => { renderer?.unmount(); renderer = null; await jest.advanceTimersByTimeAsync(1); });
+      archive.close(); latest.close();
+    }
   });
   afterEach(async () => {
     if (renderer)

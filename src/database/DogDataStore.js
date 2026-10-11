@@ -1,5 +1,8 @@
 import { t } from '../i18n';
 import { NativeModules } from 'react-native';
+import { withCloudSyncSlot } from '../cloud/CloudSyncSlot';
+import { withConnectionLock } from './connectionLock';
+import { executeHistoryMaterialBatch } from '../cloud/HistoryMaterialPublication';
 // 設定 → 進階 → 刪除全部狗資料 (design S7; 判定表「刪除全部狗資料」): only this
 // phone's dog position records and its downloaded copy. It does not touch
 // the cloud, the phone's own route, the dogs' names and faces, or any
@@ -20,6 +23,11 @@ import { NativeModules } from 'react-native';
 //   the last 24 hours again at once, refilling what was just deleted).
 
 export const DOG_DATA_TABLES = Object.freeze(['dog_status', 'supabase_dog_status', 'receiver_range_state', 'history_download_state']);
+// Pending pages and their completion proof are also dog data. Keep published
+// sync cursors, but never let an abandoned pre-delete job resurrect positions.
+const deletedTables = [...DOG_DATA_TABLES, 'cloud_download_jobs', 'cloud_archive_publication',
+  ...['auto', 'manual'].flatMap(kind => ['supabase_dog_status', 'cloud_sync_state',
+    'cloud_sync_buckets', 'history_download_state'].map(table => `cloud_${kind}_${table}`))];
 export const UPLOAD_QUEUE = 'ble_upload_queue';
 // Rows not in the cloud yet: waiting, or refused and waiting for 重試.
 export const UNSENT = "status IN ('pending','blocked')";
@@ -34,7 +42,7 @@ export class UnsentRowsError extends Error {
   }
 }
 
-export function createDogDataStore(connection) {
+export function createDogDataStore(connection, latestSnapshots = null) {
   // The upload queue is created by the Android receiver service; a phone
   // that never ran it (or another platform) has none.
   async function hasQueue() {
@@ -43,9 +51,9 @@ export function createDogDataStore(connection) {
   }
   async function existing() {
     const names = new Set(rows(await connection.executeAsync(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${DOG_DATA_TABLES.map(() => '?').join(',')})`,
-      DOG_DATA_TABLES)).map(row => row.name));
-    return DOG_DATA_TABLES.filter(name => names.has(name));
+      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${deletedTables.map(() => '?').join(',')})`,
+      deletedTables)).map(row => row.name));
+    return deletedTables.filter(name => names.has(name));
   }
   async function unsent() {
     if (!await hasQueue()) return 0;
@@ -60,22 +68,31 @@ export function createDogDataStore(connection) {
      * `includeUnsent`, rows not uploaded yet stay (and stop it with
      * UnsentRowsError when there are any now: 「先上傳／一起刪除」 first).
      */
-    async deleteAll({ includeUnsent = false } = {}) {
+    async deleteAll({ includeUnsent = false, beforeDelete = () => {} } = {}) {
       const queue = await hasQueue();
       const waiting = queue ? await unsent() : 0;
       if (waiting > 0 && !includeUnsent) throw new UnsentRowsError(waiting);
-      const commands = (await existing()).map(table => ({ query: `DELETE FROM ${table}`, params: [] }));
-      if (queue) {
-        // S3 still says when this account last uploaded (UploadDatabase.summary).
-        commands.push({ query: `INSERT OR REPLACE INTO ble_upload_meta(key,value)
-          SELECT 'last_sent_at:' || owner_user_id, CAST(MAX(sent_at) AS TEXT) FROM ${UPLOAD_QUEUE}
-          WHERE sent_at IS NOT NULL GROUP BY owner_user_id`, params: [] });
-        // A row the receiver queues while this runs is not sent yet: it stays
-        // unless 「一起刪除」 was chosen.
-        commands.push({ query: includeUnsent ? `DELETE FROM ${UPLOAD_QUEUE}`
-          : `DELETE FROM ${UPLOAD_QUEUE} WHERE NOT (${UNSENT})`, params: [] });
-      }
-      await connection.executeBatchAsync(commands);
+      const clearArchive = () => withConnectionLock(connection, async () => {
+        // Discover schemas only after earlier archive work drained: that work
+        // may have created a stage/proof table since the user pressed delete.
+        const commands = (await existing()).map(table => ({ query: `DELETE FROM ${table}`, params: [] }));
+        if (queue) {
+          // S3 still says when this account last uploaded (UploadDatabase.summary).
+          commands.push({ query: `INSERT OR REPLACE INTO ble_upload_meta(key,value)
+            SELECT 'last_sent_at:' || owner_user_id, CAST(MAX(sent_at) AS TEXT) FROM ${UPLOAD_QUEUE}
+            WHERE sent_at IS NOT NULL GROUP BY owner_user_id`, params: [] });
+          // A row queued meanwhile stays unless 「一起刪除」 was chosen.
+          commands.push({ query: includeUnsent ? `DELETE FROM ${UPLOAD_QUEUE}`
+            : `DELETE FROM ${UPLOAD_QUEUE} WHERE NOT (${UNSENT})`, params: [] });
+        }
+        // Preserve and advance the actual durable material revision when rows
+        // are removed; deleting/resetting that counter could certify stale UI.
+        await executeHistoryMaterialBatch(connection, commands);
+      });
+      if (latestSnapshots?.clearLatestAndRun) {
+        beforeDelete();
+        await latestSnapshots.clearLatestAndRun(() => withCloudSyncSlot(clearArchive));
+      } else await clearArchive();
       await NativeModules.HistoryExport?.clearExports?.();
     },
   };

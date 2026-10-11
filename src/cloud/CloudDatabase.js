@@ -3,6 +3,7 @@ import { initializeHistoryCoverage, invalidateEvictedCoverage, invalidateRepaire
 import { t } from '../i18n';
 import { createStagedCloudDatabase } from './CloudStaging';
 import { createLatestSnapshotDatabase } from './CloudLatestSnapshot';
+import { createLatestSnapshotLifecycle } from './LatestSnapshotLifecycle';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withConnectionLock } from '../database/connectionLock';
 import { cloudTrackTime } from './CloudTrackTime';
@@ -74,8 +75,7 @@ export function createCloudDatabase(connection, options = {}) {
   const latestConnection = options.latestConnection ?? connection;
   if (latestConnection !== connection && connection.lockKey && connection.lockKey === latestConnection.lockKey)
     throw new Error('Latest snapshot storage must use an independent native lock');
-  return { ...database, latestStorageIsolated: latestConnection !== connection,
-    ...createLatestSnapshotDatabase(latestConnection, async () => {}, async owner => withConnectionLock(connection, async () => {
+  const snapshot = createLatestSnapshotDatabase(latestConnection, async () => {}, async owner => withConnectionLock(connection, async () => {
     const read = async fixed => {
       const result = await connection.executeAsync(latestCloudStatusQuery(fixed, true), [owner, 0, owner]);
       return result.results || result.rows?._array || [];
@@ -102,7 +102,9 @@ export function createCloudDatabase(connection, options = {}) {
       contexts.set(packet.slave_id, { rows: window, seeds });
     }
     return { packets, fixes: await read(true), contexts };
-  }), database.initialize) };
+  }), database.initialize);
+  return { ...database, latestStorageIsolated: latestConnection !== connection,
+    ...(latestConnection === connection ? snapshot : createLatestSnapshotLifecycle(latestConnection, snapshot)) };
 }
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, historyMaterialTracking = true } = {}) {
