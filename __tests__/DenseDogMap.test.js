@@ -147,8 +147,14 @@ test('even selected cropped labels stay below every face so capsule corners cann
   await render(20, true);
   const labels = renderer.root.findAllByType(Marker).filter(node => /-dog-label-\d+$/.test(node.props.identifier));
   expect(labels.length).toBeGreaterThan(0);
-  for (const label of labels) for (const face of faces()) expect(label.props.zIndex).toBeLessThan(face.props.zIndex);
+  for (const label of labels) for (const face of faces()) {
+    expect(label.props.zIndex).toBeLessThan(face.props.zIndex);
+    // Android MapMarkerManager rounds to an integer before Google gets it.
+    // A 30.5 label and a 31 face otherwise share the same native layer.
+    expect(Math.round(label.props.zIndex)).toBeLessThan(Math.round(face.props.zIndex));
+  }
   const selected = labels.find(label => label.props.identifier === 'live-dog-label-20');
   const other = labels.find(label => label.props.identifier !== 'live-dog-label-20');
   expect(selected.props.zIndex).toBeGreaterThan(other.props.zIndex);
+  expect(Math.round(selected.props.zIndex)).toBeGreaterThan(Math.round(other.props.zIndex));
 });

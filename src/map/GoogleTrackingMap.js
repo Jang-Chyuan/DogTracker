@@ -327,7 +327,8 @@ function DogLabelMarker({ source, marker, coordinate, tag, shownKey, onPress }) 
       tracksViewChanges={settled.tracking} tappable={!!onPress} onPress={onPress}
       // Every face stays above every label, including the transparent corners
       // of a selected capsule. Selection only orders names against names.
-      zIndex={marker.selected ? 30.5 : 30}
+      // Android rounds this prop to an integer before the SDK sees it.
+      zIndex={marker.selected ? 30 : 29}
       opacity={handover ? 0 : marker.dimmed ? opacity.catchingUp : 1}>
       <View collapsable={false} accessible={false} onLayout={settled.onLayout}>
         <MapNameTag text={tag.text} maxWidth={MARKER_WIDTH - sizes.marker.labelSafety} />
