@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { reportInitialLatest, useSplashState } from './hideSplash';
 
 export const INITIAL_LATEST_WAIT_MS = 10000;
@@ -51,6 +51,8 @@ export function useInitialLatest({ screen, owner, expired = false, fixture = fal
     const timer = setTimeout(() => { if (record.current === current) setTimedOut(current.scope); }, INITIAL_LATEST_WAIT_MS);
     return () => clearTimeout(timer);
   }, [waiting, ready, current]);
-  useEffect(() => { reportInitialLatest(scope, phase); }, [scope, phase, current]);
+  // Register this frame's scope before the child's passive framing effect.
+  // Otherwise an immediate empty/unavailable frame can be erased afterwards.
+  useLayoutEffect(() => { reportInitialLatest(scope, phase); }, [scope, phase, current]);
   return { ready, frameScope: scope, phase, mapFailure: !!current?.fallback };
 }
