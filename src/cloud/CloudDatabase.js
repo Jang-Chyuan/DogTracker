@@ -180,31 +180,45 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       // new installs never add them.
       await executeBatch([{ query: `UPDATE supabase_dog_status SET track_at=received_at
         WHERE track_at IS NULL`, params: [] }]);
-      await connection.executeAsync('DROP INDEX IF EXISTS idx_cloud_track_stream');
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_stream_numeric
-        ON supabase_dog_status(owner_user_id, master_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER), id)`);
-      // Late-insert invalidation uses raw track_at, not the expression index.
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_successors
-        ON supabase_dog_status(owner_user_id, master_id, slave_id, track_at, id)`);
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_latest_packet
-        ON supabase_dog_status(owner_user_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC)`);
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_latest_fix
+      const cloudIndexes = [
+        'DROP INDEX IF EXISTS idx_cloud_track_stream',
+        `CREATE INDEX IF NOT EXISTS idx_cloud_track_stream_numeric
+        ON supabase_dog_status(owner_user_id, master_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER), id)`,
+        // Late-insert invalidation uses raw track_at, not the expression index.
+        `CREATE INDEX IF NOT EXISTS idx_cloud_track_successors
+        ON supabase_dog_status(owner_user_id, master_id, slave_id, track_at, id)`,
+        `CREATE INDEX IF NOT EXISTS idx_cloud_latest_packet
+        ON supabase_dog_status(owner_user_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_cloud_latest_fix
         ON supabase_dog_status(owner_user_id, slave_id, CAST(COALESCE(track_at, received_at) AS INTEGER) DESC, id DESC)
-        WHERE slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)`);
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_payload_cleanup
-        ON supabase_dog_status(received_at) WHERE raw_payload IS NOT NULL`);
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_track_repair
-        ON supabase_dog_status(owner_user_id, track_time_version, received_at DESC)`);
-      await connection.executeAsync(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_owner_event
-        ON supabase_dog_status(owner_user_id, event_id)`);
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_history
-        ON supabase_dog_status(owner_user_id, received_at DESC, id DESC)`);
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_owner_master_received
-        ON supabase_dog_status(owner_user_id, master_id, received_at)`);
-      // Per-stream order (owner, Master, Slave, time); its name is from the
-      // retired display cache, kept so an upgrade does not build it twice.
-      await connection.executeAsync(`CREATE INDEX IF NOT EXISTS idx_cloud_display_stream
-        ON supabase_dog_status(owner_user_id, master_id, slave_id, received_at, id)`);
+        WHERE slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)`,
+        `CREATE INDEX IF NOT EXISTS idx_cloud_payload_cleanup
+        ON supabase_dog_status(received_at) WHERE raw_payload IS NOT NULL`,
+        `CREATE INDEX IF NOT EXISTS idx_cloud_track_repair
+        ON supabase_dog_status(owner_user_id, track_time_version, received_at DESC)`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_owner_event
+        ON supabase_dog_status(owner_user_id, event_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_cloud_owner_history
+        ON supabase_dog_status(owner_user_id, received_at DESC, id DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_cloud_owner_master_received
+        ON supabase_dog_status(owner_user_id, master_id, received_at)`,
+        // Per-stream order (owner, Master, Slave, time); its name is from the
+        // retired display cache, kept so an upgrade does not build it twice.
+        `CREATE INDEX IF NOT EXISTS idx_cloud_display_stream
+        ON supabase_dog_status(owner_user_id, master_id, slave_id, received_at, id)`,
+      ];
+      const names = cloudIndexes.slice(1).map(query => query.match(/^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS (\w+)/)[1]);
+      const existing = new Set(rows(await connection.executeAsync(
+        `SELECT name FROM sqlite_master WHERE type='index' AND name IN (${names.map(() => '?').join(',')})`, names,
+      )).map(index => index.name));
+      if (names.every(name => existing.has(name))) {
+        // Existing indexes make CREATE IF NOT EXISTS no-ops: batch these short
+        // statements, not real index builds that would hold the BLE monitor.
+        await connection.executeBatchAsync(cloudIndexes.map(query => ({ query, params: [] })));
+      } else {
+        // Upgrades retain individual statements/order and their retry boundary.
+        for (const query of cloudIndexes) await connection.executeAsync(query);
+      }
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_state (
         owner_user_id TEXT NOT NULL, master_id INTEGER NOT NULL,
         through_at TEXT NOT NULL, event_id TEXT, updated_at INTEGER NOT NULL,
