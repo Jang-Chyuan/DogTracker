@@ -1,0 +1,57 @@
+{
+  "product": "db205cda9f2d00ba2c22ba2ddea4503b9f604984",
+  "privateFixture": "d1c6a08ddaa3df2e4379fcb5651bb48aab1ad952",
+  "apkSha256": "6db96af4ba81d4c86ff0dca86f5b61bf0cfcb0f106f90261b931c33b408c03bb",
+  "scene": "獨立虛構資料，既有5562原生截圖與screenrecord",
+  "video": {
+    "durationSeconds": 14.085767,
+    "nativeFrames": 88,
+    "rootReviewedFrames": 88,
+    "secondExpandInVideo": false
+  },
+  "files": {
+    "collapsed.png": {
+      "sha256": "84509fe1da3f52d5d8ef27965d3c6d9e579d990a86b9bbc13d93cb38648a835d",
+      "bytes": 1222411
+    },
+    "dog-half.png": {
+      "sha256": "f9ea083b043d180842c5408ef02b36936409557908b9018a161d5113a0b42d9c",
+      "bytes": 882094
+    },
+    "expanded-repeat.png": {
+      "sha256": "cb8417fbcdac2edd41ade9cbb673a0d7cc5b27a5a227e6a303456bc6fbe9e4e9",
+      "bytes": 376757
+    },
+    "expanded.png": {
+      "sha256": "85a80c88a5bcc7b578051ceb794d19cb0b442e3e1e1bbe3c870e6656e2cf7935",
+      "bytes": 376647
+    },
+    "font2-end.png": {
+      "sha256": "a164d8ebb623419c597ce81cd9ad4976996ca3a4cb7855d6a13aae14474efdce",
+      "bytes": 431833
+    },
+    "half.png": {
+      "sha256": "a4914ea5419a0a0af3f8f1abb006285bd9cf88a0400e4c7aa08f4b0d787bc23c",
+      "bytes": 854843
+    },
+    "range-back.png": {
+      "sha256": "547f78b5483680d7eeaa0c824729f57307cbf9a33e500b163404fa3b5174d279",
+      "bytes": 847246
+    },
+    "range-held-back.mp4": {
+      "sha256": "3236b10607d920967bbf410d1e66b49eb43276dd3fafee8b46c2c952a01777ba",
+      "bytes": 1661686
+    },
+    "three-snap-drag.mp4": {
+      "sha256": "234403ddea55ca3d3d76c027ae09c4915c85958f558a3ca5436f05dd9197f883",
+      "bytes": 1623173
+    }
+  },
+  "rangeVideo": {
+    "durationSeconds": 9.420111,
+    "nativeFrames": 131,
+    "rootReviewedFrames": 131,
+    "retainedRangeAfterBack": "09:03",
+    "transitionMapLineMayRemain": true
+  }
+}

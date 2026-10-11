@@ -1,3 +1,11 @@
+# 最新：三段歷史面板與圖示距離摘要已完成普通字體原生驗證
+
+產品db205cda：主視窗完整225 suites／2529 tests PASS187.483秒，Release19秒成功。既有5562 exact同來源私有d1候選已完成首50%、收合日期列、兩次重新上拉展開、收合／展開兩種日曆往返、半高清單捲動、狗爪與車程摘要、範圍shimmer／放開／返回及匯出入口。Root親看原圖與两影片全部88＋131原生影格。實測展開距上方控制20dp。最新證據在本文最後的「最新三段面板原生畫面」；以下先前來源／原生失敗均保留為歷史，不替代新結果。
+
+FontScale2的半高、展開、捲動到完整終點已實際完成，原PNG顯示現在・停7分與四行地址完整在導航上方。大字收合、TalkBack及橫向尚未在本次原生驗證，不以來源檢查冒充。原163／字體／設定／授權正在收尾還原，不冒已完成。PR115未merge，等待使用者審閱。
+
+---
+
 # 最新追加：三段面板與圖示距離摘要（原生驗證中）
 
 產品候選affe69f2（b356f161＋aee159ec）已完成主視窗225 suites／2527 tests全測，186.159秒；修改檔lint 0 errors／warnings，arm64-v8a Release19秒成功。原先完整檢查的三套舊摘要／翻譯契約失敗已修正並保留紀錄，沒有放寬全域翻譯規則。
@@ -11,7 +19,7 @@
 
 ## 首次原生失敗與修正後重驗
 
-首版2f7在5562實際看到50%入場、下拉日期列及狗爪／車程距離，但下拉後再上拉失敗；面板停在中間高度，不能當展開成功。第一個move令日期responder原生節點重建，手勢失去release。產品8543bc01／db205cda保留相同日期host；量測日期／上方控制高度不取消正在拖的手勢，拖動時即顯示內容。新增實際Screen反例涵蓋首move、連續move與量測變動，59focused通過；修正後主視窗完整測試正在跑。
+首版2f7在5562實際看到50%入場、下拉日期列及狗爪／車程距離，但下拉後再上拉失敗；面板停在中間高度，不能當展開成功。第一個move令日期responder原生節點重建，手勢失去release。產品8543bc01／db205cda保留相同日期host；量測日期／上方控制高度不取消正在拖的手勢，拖動時即顯示內容。新增實際Screen反例涵蓋首move、連續move與量測變動，59focused通過；修正後主視窗完整225 suites／2529 tests通過，187.483秒。
 
 最新產品db205cda Release19秒成功，APK SHA3eaf9012e367f75dbededa62ea7d5d679f5f891e5b8e599e86e23346a1407bd8、ZIP完整。私有d1c6a08d候選Release17秒成功，APK SHA6db96af4ba81d4c86ff0dca86f5b61bf0cfcb0f106f90261b931c33b408c03bb；先前兩次ENOSPC建置失敗保留，清理未使用建置中間檔後重試同SHA。私有新增前日3筆獨立資料讓真日曆可驗，今日240筆及完整model指紋與原fixture完全相同。最新三高度反覆上拉／保日期／控制間距正重驗，未以來源檢查或舊圖列原生PASS。
 
@@ -92,3 +100,26 @@
 測後原163 APK640463a5逐SHA還原／PID11348，9設定presence與value、6permission grants/flags、viewport逐一相同；設定未登入、位置紀錄開關ON但GPS denied，最後正常Live／無ANR，全部worker關閉。沒有新AVD或清資料。
 
 使用者接著要求三段可拖面板（新開50%／縮至日期列／上展至回到現在下方留空）及圖示距離摘要（移動＋車、去掉總時間）；另在相同PR115實作中，本節四項原生證據不代替接續版驗證。
+
+## 最新三段面板原生畫面
+
+最新產品db205cda＋私有d1c6a08d（同來源UI、APK6db96af4）在既有5562實際操作。主視窗已親看以下四张原生原圖及影片全部88個影格：50%入場、下拉日期列、上拉展開、再次收合與再次上拉，兩次展開都穩定panel top334px。上方控制可見範圍底279px，實際差55px／density2.75＝20dp，保留要求的16dp以上間距。
+
+| 進入50% | 下拉只留日期 | 上拉展開 |
+| --- | --- | --- |
+| ![進入50%](evidence/history-sheet-summary/half.png) | ![只留日期](evidence/history-sheet-summary/collapsed.png) | ![展開](evidence/history-sheet-summary/expanded.png) |
+
+![第二次上拉仍正常展開](evidence/history-sheet-summary/expanded-repeat.png)
+
+[實際拖曳影片](evidence/history-sheet-summary/three-snap-drag.mp4)：原檔14.085767秒／88個原生影格；錄影要求15秒，未補幀。第一輪50%→收合→展開→再收合已入影片，第二次上拉發生在錄影結束之後，使用上圖與操作紀錄證明，未稱影片包括第二次上拉。影片只作功能證據，不作流暢度／CPU驗收。
+
+日期往返已實際用日曆：收合時10/07→10/06→10/07都維持top2131；展開時同一往返都維持top334。半高清單真捲動後日期列及panel維持原bounds，末列由nav以下移至完整可見；沒有把內容原本全fits的展開滑動冒充有效捲動。
+
+![狗摘要：爪印3.8km與坐車1.8km](evidence/history-sheet-summary/dog-half.png)
+
+狗用既有獨立虛構BLE序列，由正式reader／model得到兩個距離；fresh啟動仍半高，無總時長。最新同APK範圍影片9.420111秒／131原生影格主視窗全部親看：held時既有shimmer、放開09:03更新，第二手勢途中Back仍保留09:03。動畫接界／pending時地圖可能保留原線，未宣全pending原子清空；無spinner，不作CPU／流暢度A/B。完成後實際點原匯出入口顯示三格式與六動作，未發送／下載。
+
+[最新同APK範圍拖曳與返回](evidence/history-sheet-summary/range-held-back.mp4)
+![返回後保留09:03](evidence/history-sheet-summary/range-back.png)
+
+![大字完整終點](evidence/history-sheet-summary/font2-end.png)
