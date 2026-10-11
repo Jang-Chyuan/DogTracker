@@ -24,3 +24,19 @@ export function historyUsesWideHeader({ width, height }) {
   return Number.isFinite(width) && Number.isFinite(height)
     && width >= 600 && height <= 500 && width > height;
 }
+
+// Heights are recalculated from the current viewport, never saved as pixels.
+export function historyPanelSnapHeights({ height, topInset = 0, topControlBottom = topInset + touch.min,
+  dateHeight = touch.min + space.xs, bottomInset = 0 }) {
+  const available = Math.max(0, height - Math.max(topInset, topControlBottom) - space.l);
+  const collapsed = Math.min(available, Math.max(touch.min, dateHeight) + bottomInset);
+  const half = Math.max(collapsed, Math.min(available, historyPanelMaxHeight(height, topInset)));
+  return { collapsed, half, expanded: Math.max(half, available) };
+}
+
+export function historyPanelSnapAt(heights, height, direction = 0, current = 'half') {
+  const levels = ['collapsed', 'half', 'expanded'];
+  const closest = levels.reduce((best, level) => Math.abs(heights[level] - height) < Math.abs(heights[best] - height) ? level : best, current);
+  if (closest !== current || !direction) return closest;
+  return levels[Math.max(0, Math.min(2, levels.indexOf(current) + direction))];
+}

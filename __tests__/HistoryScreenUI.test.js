@@ -176,7 +176,7 @@ test.each([
   const summary = s.renderer.root.findByProps({ testID: 'history-summary' });
   const speech = summary.findAll(node => typeof node.type === 'string' && node.props.accessibilityLabel)
     .map(node => node.props.accessibilityLabel);
-  expect(speech).toContainEqual(expect.stringContaining(`${title.replace(' – ', i18nT("c826"))}，走了 `));
+  expect(speech).toContainEqual(expect.stringContaining(`${title.replace(' – ', i18nT("c826"))}，走路 `));
   await unmount(s);
 });
 

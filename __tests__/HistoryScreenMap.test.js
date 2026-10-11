@@ -160,9 +160,9 @@ describe('the range bar', () => {
     const model = { points: [{ time: at(0) }, { time: at(130) }], distanceM: 3100, durationMs: 130 * MINUTE,
       nodes: [], departure: { status: 'confirmed', manual: true } };
     expect(rangeSummaryLines(model, { subject: 'phone', open: true, range: { start: at(0), end: at(130), following: true } }))
-      .toEqual({ title: '08:00 – 現在', detail: '走了 3.1 km・2 小時 10 分' });
+      .toEqual({ title: '08:00 – 現在', detail: '走路 3.1 km' });
     expect(rangeSummaryLines(model, { subject: 'dog', open: true, range: { start: at(0), end: at(130), following: false } }))
-      .toEqual({ title: '08:00 – 10:10', detail: '移動 3.1 km・2 小時 10 分' });
+      .toEqual({ title: '08:00 – 10:10', detail: '移動 3.1 km' });
     expect(JSON.stringify(rangeSummaryLines(model, { subject: 'phone', open: false, range: {} }))).not.toContain('手動');
   });
 

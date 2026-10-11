@@ -1,15 +1,16 @@
-// Fixed half-screen panel: date/range stays put; only the timeline scrolls.
-import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+// Three history sheet positions. Header gestures resize; timeline gestures scroll.
+import { forwardRef, useImperativeHandle, useRef, useEffect, useState, useMemo } from 'react';
+import { PanResponder, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useStyles } from '../theme/ThemeProvider';
-import { size, space, border, fontScale as fontScales } from '../theme/tokens';
-import { historyPanelMaxHeight, historyUsesWideHeader } from '../map/MapPanelHeight';
+import { size, space, touch, border, fontScale as fontScales } from '../theme/tokens';
+import { historyPanelSnapHeights, historyPanelSnapAt, historyUsesWideHeader } from '../map/MapPanelHeight';
 import { behindSheet } from '../utils/a11yFocus';
 import { fontScaleAtLeast } from '../utils/textScale';
 
 const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
-  bottomInset = 0, scrollRef, above = null, floating = null, hidden = false, onHeightChange }, ref) {
+  bottomInset = 0, scrollRef, above = null, floating = null, hidden = false, onHeightChange,
+  collapsedHeader, dateHeight, topControlBottom, scopeKey, rangeOpen = false }, ref) {
   const styles = useStyles(getStyles);
   const scroller = useRef(null);
   // Timeline rows report positions relative to the independently scrolling list.
@@ -28,8 +29,37 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   const largeFontGap = shortWide ? 0 : space.s;
   const tailGap = largeFont ? largeFontGap : space.l;
   const insets = useSafeAreaInsets();
-  const cap = historyPanelMaxHeight(windowHeight, insets.top);
-  // Report the actual fixed height immediately, including after rotation/inset changes.
+  const [floatingHeight, setFloatingHeight] = useState(touch.min * 2);
+  const heights = historyPanelSnapHeights({ height: windowHeight, topInset: insets.top,
+    topControlBottom: (topControlBottom ?? insets.top + touch.min) + (floating ? floatingHeight + space.s : 0), dateHeight, bottomInset });
+  const [snap, setSnap] = useState('half');
+  const [dragHeight, setDragHeight] = useState(null);
+  const latest = useRef(null);
+  const cap = dragHeight == null ? heights[snap] : Math.max(heights.collapsed, Math.min(heights.expanded, dragHeight));
+  latest.current = { heights, snap, cap, hidden };
+  const origin = useRef(null);
+  // New history/subject/owner opens half; date changes retain the enum.
+  useEffect(() => { setSnap('half'); setDragHeight(null); origin.current = null; }, [scopeKey]);
+  useEffect(() => { if (hidden) { setDragHeight(null); origin.current = null; } }, [hidden]);
+  useEffect(() => { if (rangeOpen) setSnap(level => level === 'collapsed' ? 'half' : level); }, [rangeOpen]);
+  useEffect(() => { setDragHeight(null); origin.current = null; }, [windowWidth, windowHeight, fontScale, topControlBottom, dateHeight, bottomInset]);
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_, g) => !latest.current.hidden && Math.abs(g.dy) > space.s && Math.abs(g.dy) > Math.abs(g.dx),
+    onPanResponderGrant: () => { if (!latest.current.hidden) origin.current = latest.current.cap; },
+    onPanResponderMove: (_, g) => { if (origin.current != null && !latest.current.hidden) setDragHeight(origin.current - g.dy); },
+    onPanResponderRelease: (_, g) => {
+      if (origin.current == null || latest.current.hidden) return;
+      const now = latest.current;
+      const end = Math.max(now.heights.collapsed, Math.min(now.heights.expanded, origin.current - g.dy));
+      setSnap(historyPanelSnapAt(now.heights, end, Math.abs(g.dy) > space.l ? Math.sign(-g.dy) : 0, now.snap));
+      origin.current = null; setDragHeight(null);
+    },
+    onPanResponderTerminate: () => { origin.current = null; setDragHeight(null); },
+  }), []);
+  const collapsed = snap === 'collapsed' && dragHeight == null;
+  const shownHeader = collapsed && collapsedHeader ? <View {...pan.panHandlers} testID="history-panel-date-drag">{collapsedHeader}</View>
+    : typeof header === 'function' ? header(pan.panHandlers) : <View {...pan.panHandlers}>{header}</View>;
+  // Map framing follows the actual sheet position and current viewport.
   useEffect(() => { onHeightChange?.(cap); }, [cap, onHeightChange]);
   useImperativeHandle(ref, () => ({ back: () => false }), []);
   return (
@@ -37,21 +67,21 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
       {/* Keep the map control inside the screen's native bounds. A child
           placed above the panel is visible, but Android clips its accessible
           rectangle against the panel, leaving an invalid accessibility target. */}
-      {above && <View testID="history-panel-above" pointerEvents="box-none"
+      {above && windowHeight - cap - (topControlBottom ?? insets.top + touch.min) >= touch.min + space.m && <View testID="history-panel-above" pointerEvents="box-none"
         importantForAccessibility={behindSheet(hidden)}
         style={[styles.above, { bottom: cap + space.m }]}>{above}</View>}
       <View testID="history-panel" importantForAccessibility={behindSheet(hidden)}
         pointerEvents="box-none" style={[styles.panel, { height: cap }]}>
         <View style={styles.sheet}>
-          <View testID="history-panel-header" style={styles.header}>{header}</View>
-          <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
+          <View testID="history-panel-header" style={styles.header}>{shownHeader}</View>
+          {!collapsed && <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
             contentContainerStyle={{ paddingBottom: bottomInset + tailGap }}>
             <View testID="history-panel-content">
               {children}
             </View>
-          </ScrollView>
+          </ScrollView>}
         </View>
-        {floating && <View testID="history-range-floating" style={styles.floating}>{floating}</View>}
+        {!collapsed && floating && <View testID="history-range-floating" style={styles.floating} onLayout={e => setFloatingHeight(e.nativeEvent.layout.height)}>{floating}</View>}
       </View>
     </>
   );

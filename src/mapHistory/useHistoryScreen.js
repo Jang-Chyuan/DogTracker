@@ -1043,6 +1043,7 @@ export function useHistoryScreen({
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
     following, cursor, cursors, pressed, focus, map: rangePending ? null : map, color, loading: loading || rangePending,
     rangePending,
+    panelScope: `${sessionKey}|${owner ?? ''}|${cloud?.owner ?? ''}`,
     rangePreviewDelay: Math.max(120, buildCost.current * 4),
     rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
     rangeActive: active,

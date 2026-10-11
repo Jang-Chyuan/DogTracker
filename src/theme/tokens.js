@@ -770,7 +770,7 @@ export const size = {
   },
 
   historyPanel: {
-    // Keep at least half the usable screen available for the history map.
+    // Initial history position leaves half the usable screen for the map.
     maxRatio: 0.5,
     // historyPanel corner in its illustration/layout specification.
     corner: 24,

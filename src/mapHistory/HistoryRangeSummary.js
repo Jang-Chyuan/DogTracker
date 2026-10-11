@@ -11,9 +11,7 @@ import {
   clock,
   km,
   spoken,
-  movementSummary,
   summaryText,
-  vehicleExclusion,
 } from '../history/HistoryText';
 import {
   dragRangeHandle,
@@ -40,18 +38,27 @@ const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
 const TOUCH = touch.min;
 export const RANGE_PREVIEW_MIN_MS = 120;
 
-/** The summary's two lines while the bar is closed, or open (the range itself). */
+/** Read already-classified distances; never count gaps or reclassify a route. */
+export function rangeSummaryDistances(model, subject) {
+  const amount = value => Number.isFinite(value) && value >= 0 ? value : 0;
+  const sections = model.sections ?? model.nodes ?? [];
+  const vehicles = sections.filter(node => node.type === 'movement' && !node.gap && node.reason !== 'uncertain' && ['driving', 'ride'].includes(node.mode));
+  return [
+    { icon: subject === 'phone' ? 'walk' : 'paw', label: t(subject === 'phone' ? 'c134' : 'c125'), distanceM: amount(model.distanceM) },
+    ...(vehicles.length ? [{ icon: 'car', label: t(subject === 'phone' ? 'c135' : 'c128'),
+      distanceM: vehicles.reduce((sum, node) => sum + amount(node.distanceM), 0) }] : []),
+  ];
+}
+
+/** Preserve the range title, show separate movement and vehicle distances. */
 export function rangeSummaryLines(model, { subject, open, range, who = null }) {
   if (!model?.points.length) return null;
-  // Several dogs: the second line names the protagonist (c158: 「豆豆・移動 7.4 km」).
-  const moved = who
-    ? t("c828", { who: who, value: km(model.distanceM), value2: vehicleExclusion(model, subject) })
-    : movementSummary(model, subject);
-  if (!open && !who) return summaryText(model, { subject });
-  // Several dogs share one range: the title is that range, whoever leads.
+  const distances = rangeSummaryDistances(model, subject);
+  const detail = (who ? `${who}・` : '') + distances.map(item => `${item.label} ${km(item.distanceM)}`).join('・');
+  if (!open && !who) return { title: summaryText(model, { subject }).title, detail };
   return { title: range?.following
     ? t('c120', { time: clock(range.start) })
-    : t('c432', { time: clock(range.start), time2: clock(range.end) }), detail: moved };
+    : t('c432', { time: clock(range.start), time2: clock(range.end) }), detail };
 }
 
 function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
@@ -352,6 +359,7 @@ export default function HistoryRangeSummary({
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const lines = rangeSummaryLines(model, { subject, open, range, who });
+  const distances = model ? rangeSummaryDistances(model, subject) : [];
   if (!lines) return null;
   // The handles snap to every shown dog's fixes (判定表「多隻狗的共同範圍」).
   const dayPoints = shared?.length ? shared : model.dayPoints;
@@ -387,9 +395,13 @@ export default function HistoryRangeSummary({
               </Text>
             ) : null}
           </Text>
-          <Text style={styles.detail} numberOfLines={linesFor(2)}>
-            {pending ? t('c835') : lines.detail}
-          </Text>
+          {pending ? <Text style={styles.detail}>{t('c835')}</Text> : <View style={styles.distances} testID="history-summary-distances" accessible={false}>
+            {who && <Text style={styles.detail}>{who}・</Text>}
+            {distances.map(item => <View key={item.icon} style={styles.distance} testID={`history-summary-${item.icon}`}>
+              <Glyph name={item.icon} color={colors.textMuted} size={sizes.icon.adjust} />
+              <Text style={styles.detail}>{km(item.distanceM)}</Text>
+            </View>)}
+          </View>}
         </View>
         {enabled && (
           <Pressable
@@ -466,6 +478,8 @@ const getStyles = makeStyles(theme => {
     },
     titleOpen: { color: colors.tonalText },
     caret: { color: colors.textMuted, fontSize: type.value.fontSize },
+    distances: { flexDirection: 'row', flexWrap: 'wrap', gap: space.m, alignItems: 'center' },
+    distance: { flexDirection: 'row', gap: space.xs, alignItems: 'center' },
     detail: {
       color: colors.textMuted,
       fontSize: type.caption.fontSize,

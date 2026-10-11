@@ -105,7 +105,7 @@ test.each([{ width: 393, height: 851, floating: false }, { width: 800, height: 3
     const bar = one(tree, 'history-range-bar');
     const measured = bar.findAll(node => node.props.onLayout)[0];
     await act(async () => measured.props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
-    const old = handlers[0];
+    const old = handlers.find(value => value.onStartShouldSetPanResponder);
     await act(async () => {
       old.onPanResponderGrant({ nativeEvent: { locationX: 24, pageX: 100 } });
       old.onPanResponderMove({ nativeEvent: { pageX: 140 } }, { dx: 40 });
@@ -161,7 +161,7 @@ test.each([{ width: 393, height: 851 }, { width: 851, height: 393 }])('real scre
     const original = { ...state.screen.range };
     const measured = one(tree, 'history-range-bar').findAll(node => node.props.onLayout)[0];
     await act(async () => measured.props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
-    const old = handlers[0];
+    const old = handlers.find(value => value.onStartShouldSetPanResponder);
     await act(async () => {
       old.onPanResponderGrant({ nativeEvent: { locationX: 24, pageX: 100 } });
       old.onPanResponderMove({ nativeEvent: { pageX: 140 } }, { dx: 40 });
@@ -190,4 +190,36 @@ test.each([{ width: 393, height: 851 }, { width: 851, height: 393 }])('real scre
     pan.mockRestore();
     jest.useRealTimers();
   }
+});
+
+
+test('actual screen preserves collapsed date position across day/font changes, measures new date row, and reopens half for owner', async () => {
+  dimensions.mockReturnValue({ width: 393, height: 851, scale: 2.75, fontScale: 1 });
+  fonts.mockReturnValue(1);
+  const handlers = [];
+  const pan = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers.push(value); return { panHandlers: {} }; });
+  const { tree, state, fixture } = await mount('history-my-route');
+  try {
+    const sheet = handlers.find(value => value.onMoveShouldSetPanResponderCapture);
+    expect(one(tree, 'history-panel-date-drag').findAllByProps({ testID: 'history-summary' })).toHaveLength(0);
+    expect(one(tree, 'history-summary').props.onMoveShouldSetResponderCapture).toBeUndefined();
+    await act(async () => sheet.onPanResponderGrant());
+    await act(async () => sheet.onPanResponderRelease(null, { dy: 350 }));
+    expect(one(tree, 'history-summary')).toBeUndefined();
+    expect(one(tree, 'history-date')).toBeDefined();
+    expect(one(tree, 'history-timeline')).toBeUndefined();
+    const collapsed = StyleSheet.flatten(one(tree, 'history-panel').props.style).height;
+    await act(async () => state.screen.changeDay(state.screen.day - 86400000));
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(collapsed);
+    dimensions.mockReturnValue({ width: 393, height: 851, scale: 2.75, fontScale: 2 });
+    fonts.mockReturnValue(2);
+    await act(async () => tree.update(<Harness fixture={fixture} state={state} />));
+    const dateMeasure = one(tree, 'history-panel-header').findAll(node => typeof node.type === 'string' && node.props.onLayout)[0];
+    await act(async () => dateMeasure.props.onLayout({ nativeEvent: { layout: { height: 130 } } }));
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(150);
+    expect(one(tree, 'history-summary')).toBeUndefined();
+    const otherOwner = { ...fixture, cloudSync: { ...fixture.cloudSync, ownerId: 'fiction-owner-two' } };
+    await act(async () => tree.update(<Harness fixture={otherOwner} state={state} />));
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(Math.floor((851 - 24) / 2));
+  } finally { await act(async () => tree.unmount()); pan.mockRestore(); }
 });

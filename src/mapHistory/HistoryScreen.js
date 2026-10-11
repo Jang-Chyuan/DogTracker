@@ -116,7 +116,7 @@ const FACE_ONLY_FONT_SCALE = fontScales.faceOnly;
 /** One fixed capsule, followed by a flexible spacer and the export control. */
 export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
   onAdd, exportEnabled, exportLabel = t("c821"), exportBusy = false,
-  hidden = false }) {
+  hidden = false, onFootprintLayout }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const pill = historyDogsPill(dogs.map(dog => ({ ...dog, name: nameOf(dog) })), candidates, subject);
@@ -128,7 +128,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
   // At the largest text size, the face remains and TalkBack supplies the name.
   const faceOnly = fontScaleAtLeast(fontScale, FACE_ONLY_FONT_SCALE);
   return (
-    <View style={[styles.topRow, { top }]} pointerEvents="box-none"
+    <View style={[styles.topRow, { top }]} pointerEvents="box-none" onLayout={onFootprintLayout}
       importantForAccessibility={behindSheet(hidden)}>
       <Capsule testID="history-back-now" label={t("c838")} onPress={onBack}
         style={compact && styles.backRound}>
@@ -297,6 +297,10 @@ ref) {
   const panel = useRef(null);
   const list = useRef(null);
   const rows = useRef({});
+  const [dateHeight, setDateHeight] = useState(touch.min + space.xs);
+  const [topHeight, setTopHeight] = useState(touch.min);
+  const measureDate = useCallback(e => setDateHeight(e.nativeEvent.layout.height), []);
+  const measureTop = useCallback(e => setTopHeight(e.nativeEvent.layout.height), []);
   const [rangeOpen, setRangeOpen] = useState(initialRangeOpen);
   // H9/H10: the export window and the export running from it.
   // 「存到下載」 done (067): 「已存到 下載／DogTracker／<檔名>」 with 「開啟」.
@@ -457,9 +461,8 @@ ref) {
   const rowLayout = useCallback((start, y) => {
     rows.current[start] = y;
   }, []);
-  const dateHeader = (
-    <>
-      <DateRow
+  const dateOnly = (
+    <View onLayout={measureDate}><DateRow
         day={screen.day}
         todayStart={screen.todayStart}
         navigation={screen.navigation}
@@ -467,7 +470,11 @@ ref) {
         onNext={() => step(screen.nextDay)}
         onOpen={openCalendar}
         compact={wideHeader}
-      />
+      /></View>
+  );
+  const dateHeader = (
+    <>
+      {dateOnly}
       {screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
         <Text style={styles.asOfText}>{t('c1247', { time: `${String(new Date(screen.asOf).getHours()).padStart(2, '0')}:${String(new Date(screen.asOf).getMinutes()).padStart(2, '0')}` })}</Text>
         <PressScale testID="history-update-tail" accessibilityRole="button" accessibilityLabel={t('c1248')}
@@ -507,12 +514,12 @@ ref) {
       )}
     </>
   );
-  const header = wideHeader ? (
+  const header = panHandlers => wideHeader ? (
     <View testID="history-header-columns" style={styles.headerColumns}>
-      <View style={styles.dateColumn}>{dateHeader}</View>
+      <View style={styles.dateColumn} {...panHandlers}>{dateHeader}</View>
       <View style={styles.summaryColumn}>{summaryHeader}</View>
     </View>
-  ) : <View>{dateHeader}{summaryHeader}</View>;
+  ) : <View><View {...panHandlers} testID="history-panel-date-drag">{dateHeader}</View>{summaryHeader}</View>;
   const floatingRange = wideHeader && rangeOpen && hasRoute ? (
     <HistoryRangeControls {...rangeProps} model={model} />
   ) : null;
@@ -560,7 +567,7 @@ ref) {
   }
   return (
     <>
-      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
+      <TopRow top={top} onFootprintLayout={measureTop} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
         onBack={onBack}
         onAdd={pressAdd}
         exportEnabled={hasRoute && !screen.rangePending} exportBusy={exporter.generating}
@@ -568,7 +575,9 @@ ref) {
         exportLabel={screen.rangePending ? t("c834") : hasRoute ? t("c821") : downloading ? t("c832")
           : empty ? t('c379') : model ? t("c833") : t("c834")}
         hidden={sheetOpen} />
-      <HistoryPanel ref={panel} header={header}
+      <HistoryPanel key={screen.panelScope ?? `${subject}:${screen.entryId ?? ""}`} ref={panel} header={header} collapsedHeader={dateOnly} dateHeight={dateHeight}
+        topControlBottom={(top ?? 0) + Math.max(touch.min, topHeight)}
+        scopeKey={screen.panelScope ?? `${subject}:${screen.entryId ?? ""}`} rangeOpen={rangeOpen}
         hidden={sheetOpen}
         onHeightChange={onPanelHeight}
         measureKey={`${screen.day}:${subject}:${screen.protagonist}:${(screen.dogs ?? []).map(dog => dog.id).join(',')}:${screen.range?.start}:${screen.range?.end}:${!!model}:${download?.kind ?? ''}`}
