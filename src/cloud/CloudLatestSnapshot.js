@@ -100,16 +100,19 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
         const missing = await withConnectionLock(connection, async () => !rows(await connection.executeAsync(
           'SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner])).length);
         if (missing) {
-          // Archive readiness takes this same lock. Wait outside it, then
-          // recheck: a remote snapshot committed while waiting must win.
+          // Both archive readiness AND cache reads may take the archive's long
+          // lock. Never hold the latest-store lock across either operation.
+          // A remote snapshot can win during either wait; recheck before commit.
           await initializeArchive();
+          const stillMissing = await withConnectionLock(connection, async () => !rows(await connection.executeAsync(
+            'SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner])).length);
+          let cached;
+          if (stillMissing && (!options.isCurrent || options.isCurrent())) cached = await bootstrap(owner);
           await withConnectionLock(connection, async () => {
             const state = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
-            if (!state && bootstrap && options.bootstrap !== false) {
+            if (!state && cached && options.bootstrap !== false) {
               // Upgrade only once from this owner's already published archive. It
               // is an offline cache, never proof of a fresh or complete remote set.
-              if (options.isCurrent && !options.isCurrent()) return;
-              const cached = await bootstrap(owner);
               if (options.isCurrent && !options.isCurrent()) return;
               const fixes = new Map(cached.fixes.filter(validCloudFix).map(row => [row.slave_id, row]));
               const commands = cached.packets.map(packet => ({

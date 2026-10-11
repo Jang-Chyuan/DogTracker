@@ -20,6 +20,9 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   private val databaseWorker = Executors.newSingleThreadExecutor { task ->
     Thread(task, "DogTracker-Database")
   }
+  private val latestDatabaseWorker = Executors.newSingleThreadExecutor { task ->
+    Thread(task, "DogTracker-LatestDatabase")
+  }
 
   init {
     BleForegroundService.eventSink = { event, value ->
@@ -205,6 +208,24 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   fun executeDatabaseBatch(commands: String, promise: Promise) =
     databaseTask(promise) { it.executeBatch(org.json.JSONArray(commands)); true }
 
+  // App-owned latest snapshots use another framework SQLite file/monitor and
+  // executor. Neither this call nor store construction touches DogStatusStore.
+  @ReactMethod
+  fun executeLatestDatabase(sql: String, parameters: String, promise: Promise) {
+    latestDatabaseWorker.execute {
+      try { promise.resolve(CloudLatestStore.get(context).executeSql(sql, org.json.JSONArray(parameters)).toString()) }
+      catch (error: Exception) { promise.reject("LATEST_DATABASE_FAILED", error) }
+    }
+  }
+
+  @ReactMethod
+  fun executeLatestDatabaseBatch(commands: String, promise: Promise) {
+    latestDatabaseWorker.execute {
+      try { CloudLatestStore.get(context).executeBatch(org.json.JSONArray(commands)); promise.resolve(true) }
+      catch (error: Exception) { promise.reject("LATEST_DATABASE_FAILED", error) }
+    }
+  }
+
   @ReactMethod
   fun addListener(eventName: String) = Unit
 
@@ -214,6 +235,7 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   override fun invalidate() {
     BleForegroundService.eventSink = null
     databaseWorker.shutdown()
+    latestDatabaseWorker.shutdown()
     super.invalidate()
   }
 }

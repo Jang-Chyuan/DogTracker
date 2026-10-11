@@ -71,7 +71,11 @@ const initialization = new WeakMap();
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
   const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
-  return { ...database, ...createLatestSnapshotDatabase(connection, async () => {}, async owner => {
+  const latestConnection = options.latestConnection ?? connection;
+  if (latestConnection !== connection && connection.lockKey && connection.lockKey === latestConnection.lockKey)
+    throw new Error('Latest snapshot storage must use an independent native lock');
+  return { ...database, latestStorageIsolated: latestConnection !== connection,
+    ...createLatestSnapshotDatabase(latestConnection, async () => {}, async owner => withConnectionLock(connection, async () => {
     const read = async fixed => {
       const result = await connection.executeAsync(latestCloudStatusQuery(fixed, true), [owner, 0, owner]);
       return result.results || result.rows?._array || [];
@@ -98,7 +102,7 @@ export function createCloudDatabase(connection, options = {}) {
       contexts.set(packet.slave_id, { rows: window, seeds });
     }
     return { packets, fixes: await read(true), contexts };
-  }, database.initialize) };
+  }), database.initialize) };
 }
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, historyMaterialTracking = true } = {}) {
