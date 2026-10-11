@@ -86,6 +86,7 @@ export default function MapScreen({
   active = true,
   coldStartReady = true,
   coldStartScope = null,
+  initialLatestFailure = false,
   history,
   historical = false,
   cloudDogs: incomingCloudDogs,
@@ -1140,10 +1141,10 @@ export default function MapScreen({
           />
         )}
         {!historical && active && tracking.foreground && (
-          <CatchUpPill phase={catchUp.phase} top={gearTop}
+          <CatchUpPill phase={initialLatestFailure ? 'failed' : catchUp.phase} top={gearTop}
             onRetry={() => {
               if (tracking.catchUp?.phase === 'failed') tracking.retryCatchUp?.();
-              if (mapReadFailed || cloudSync?.catchUp?.phase === 'failed') cloudSync.retry?.();
+              if (initialLatestFailure || mapReadFailed || cloudSync?.catchUp?.phase === 'failed') cloudSync.retry?.();
             }} />
         )}
         <TopAlertCards

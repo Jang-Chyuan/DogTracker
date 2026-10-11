@@ -1,4 +1,4 @@
-import { giveUpWaiting, resetSplashGate } from '../src/app/hideSplash';
+import { resetSplashGate } from '../src/app/hideSplash';
 import { t as i18nT } from '../src/i18n';
 import MapScreen from '../src/screens/MapScreen';
 import { layout } from '../src/theme/tokens';
@@ -77,13 +77,9 @@ async function mount() {
   await act(async () => {
     renderer = Renderer.create(<App />);
   });
-  // This suite mocks a restored sign-in but supplies no matching cloud
-  // publisher. Continue explicitly through the new safe fallback; these
-  // cases verify local navigation, not successful cloud synchronization.
-  await act(async () => giveUpWaiting());
-  const fallback = renderer.root.findAll(node => node.props.testID === 'splash-enter-map'
-    && typeof node.props.onPress === 'function')[0];
-  if (fallback) await act(async () => fallback.props.onPress());
+  // This restored sign-in has no fresh cloud publisher. Its bounded latest
+  // fallback permits the normal map; it does not claim network success.
+  await act(async () => jest.advanceTimersByTimeAsync(10000));
 }
 async function advance(ms = 1000) {
   await act(async () => jest.advanceTimersByTimeAsync(ms));
@@ -1264,18 +1260,18 @@ test('066: the settings header back is a real icon with room before the title, t
   expect(glyph.props.size).toBeGreaterThanOrEqual(28);
 });
 
-test('restored account without fresh cloud acceptance keeps its cold map covered until an explicit fallback action', async () => {
+test('restored account without fresh acceptance opens after timeout and shows the existing failure pill on the map', async () => {
   resetSplashGate();
   await act(async () => { renderer = Renderer.create(<App />); });
   expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
-  await act(async () => giveUpWaiting());
-  const fallback = renderer.root.findAll(node => node.props.testID === 'splash-enter-map'
-    && typeof node.props.onPress === 'function')[0];
-  expect(fallback).toBeDefined();
-  // The 30-second safety exposes a choice instead of silently claiming sync.
+  await advance(9999);
   expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
-  await act(async () => fallback.props.onPress());
+  await advance(1);
   expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+  expect(renderer.root.findByType(MapScreen).props.initialLatestFailure).toBe(true);
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up' }).length).toBeGreaterThan(0);
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).some(node => typeof node.props.onPress === 'function')).toBe(true);
+  expect(renderer.root.findAllByProps({ testID: 'splash-enter-map' })).toHaveLength(0);
 });
 
 

@@ -1,6 +1,4 @@
-import { size as sizes, space, touch, radius, type } from '../theme/tokens';
-import { t } from '../i18n';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { size as sizes } from '../theme/tokens';
 // D0's JavaScript copy and its handover to the map (design 動效「啟動畫面 →
 // 地圖」, 「D0 → 地圖銜接（C）」). It draws exactly what the system launch screen
 // shows (the whole white sitting dog, finished, centred; light on accent,
@@ -26,12 +24,9 @@ import {
   Dimensions,
   Easing,
   StyleSheet,
-  Pressable,
-  Text,
-  View,
 } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
-import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
+import { useTheme } from '../theme/ThemeProvider';
 import {
   SITTING_DOG_HEAD_LINES as HEAD_LINES,
   SITTING_DOG_BODY_LINES as BODY_LINES,
@@ -44,7 +39,6 @@ import DogMarkerView, { markerFrame } from '../map/DogMarkerView';
 import {
   finishSplash,
   giveUpWaiting,
-  proceedInitialLatest,
   handoverStarted,
   hideSplash,
   launchInfo,
@@ -157,8 +151,6 @@ function MarkerCopy({ target, opacity, scale }) {
 
 export default function SplashOverlay() {
   const { colors, isDark } = useTheme();
-  const noticeStyles = useStyles(getNoticeStyles);
-  const insets = useSafeAreaInsets();
   // In step from the first render: a report made before this subscribes
   // (an early launch decision) is not missed.
   const splash = useSplashState();
@@ -218,7 +210,6 @@ export default function SplashOverlay() {
   };
 
   const { phase, mode, targets } = splash;
-  const latestNotice = phase === 'waiting' && ['waiting', 'fallback'].includes(splash.latest?.phase);
   useEffect(() => {
     if (
       !copyDrawn ||
@@ -363,8 +354,8 @@ export default function SplashOverlay() {
       pointerEvents="auto"
       onLayout={onLayout}
       style={[StyleSheet.absoluteFill, styles.layer, { opacity: values.whole }]}
-      accessibilityElementsHidden={!latestNotice}
-      importantForAccessibility={latestNotice ? 'auto' : 'no-hide-descendants'}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
     >
       <Animated.View
         style={[
@@ -375,17 +366,6 @@ export default function SplashOverlay() {
           },
         ]}
       />
-      {latestNotice && <View testID="splash-latest-notice" style={[noticeStyles.notice, { bottom: insets.bottom + space.xl }]}>
-        <Text accessibilityLiveRegion="polite" style={noticeStyles.message}>
-          {splash.latest.phase === 'fallback' ? t('c1257') : t('c1200')}
-        </Text>
-        {splash.latest.phase === 'fallback' && <Pressable testID="splash-enter-map"
-          accessibilityRole="button" accessibilityLabel={t('c1258')}
-          style={({ pressed }) => [noticeStyles.button, pressed && noticeStyles.pressed]}
-          onPress={() => proceedInitialLatest(splash.latest.scope)}>
-          <Text style={noticeStyles.buttonText}>{t('c1258')}</Text>
-        </Pressable>}
-      </View>}
       {flying &&
         targets.map((target, index) => (
           <MarkerCopy
@@ -455,12 +435,3 @@ const styles = StyleSheet.create({
   layer: { zIndex: 1000, elevation: 1000 },
   absolute: { position: 'absolute' },
 });
-
-const getNoticeStyles = makeStyles(theme => StyleSheet.create({
-  notice: { position: 'absolute', left: space.xl, right: space.xl, gap: space.m },
-  message: { ...type.status, color: theme.colors.splashLine, textAlign: 'center' },
-  button: { minHeight: touch.min, padding: space.m, borderRadius: radius.button,
-    backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' },
-  buttonText: { ...type.status, color: theme.colors.text },
-  pressed: { backgroundColor: theme.colors.pressedOverlay },
-}));

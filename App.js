@@ -1366,6 +1366,7 @@ function TrackerApp({ resume = null, onRestart }) {
           <MapScreen
             coldStartReady={splashPhase !== 'waiting' || (decided !== 'splash' && initialLatest.ready)}
             coldStartScope={initialLatest.frameScope}
+            initialLatestFailure={initialLatest.mapFailure}
             history={mapInputs.history}
             historyCloud={mapInputs.historyCloud}
             tracking={mapInputs.tracking}
