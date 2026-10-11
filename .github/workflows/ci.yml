@@ -26,6 +26,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The version CLI tests exercise the full-history default too.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
@@ -123,23 +126,7 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          base="$(node -e '
-            const version = require("./package.json").version;
-            const parsed = /^(\d+)\.(\d+)\./.exec(version);
-            if (!parsed) {
-              console.error(`package.json version is not MAJOR.MINOR.PATCH: ${version}`);
-              process.exit(1);
-            }
-            console.log(`${parsed[1]}.${parsed[2]}`);
-          ')"
-          count="$(git rev-list --count HEAD)"
-          if [ "$count" -lt 2 ]; then
-            echo "history holds only $count commit(s); the checkout needs fetch-depth: 0" >&2
-            exit 1
-          fi
-          echo "releasing $base.$count (versionCode $count)"
-          echo "name=$base.$count" >> "$GITHUB_OUTPUT"
-          echo "code=$count" >> "$GITHUB_OUTPUT"
+          node scripts/app-version.js --github-output >> "$GITHUB_OUTPUT"
 
       - name: Assemble release APK
         # Without the GOOGLE_MAPS_ANDROID_API_KEY secret the build still

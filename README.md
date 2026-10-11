@@ -99,12 +99,14 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 
 發出來的版本是 `MAJOR.MINOR.PATCH`：
 
-- **MAJOR.MINOR** 來自 `package.json` 的 `version`，由人決定。要開新的版本線（例如 0.0 之後想進 0.1）就在 PR 裡改它。
+- **MAJOR.MINOR** 來自 `package.json` 的 `version`，由人決定。目前為 **0.3.x beta**；使用者決定正式版時才改 1.0.x。
 - **PATCH** 是 `main` 上的 commit 數，每次合併自動往上走，CI 不需要把任何東西 commit 回 repo。
 
 建置時以 `APP_VERSION_NAME` 與 `APP_VERSION_CODE` 傳進 Gradle，所以 APK 的 `versionName` 和 release tag 一致，`versionCode` 就是同一個 commit 數（單調遞增，升級不會倒退）。`package.json` 裡的 PATCH 不影響發版，只有 MAJOR.MINOR 有意義。
 
-本機建置不帶這兩個環境變數，直接用 `package.json` 的版本，`versionCode` 由版本推算（`MAJOR * 1000000 + MINOR * 1000 + PATCH`）。
+本機 Gradle 與 CI 共用 `scripts/app-version.js`：以正在建置的 `HEAD` 完整歷史 commit 數產生 `0.3.<commit 數>`，`versionCode` 同樣是 commit 數，不使用 semver 公式。`node scripts/app-version.js` 可先查看版本。淺層 checkout 會拒絕推算，先執行 `git fetch --unshallow`；CI 保持 `fetch-depth: 0`。
+
+需要重建指定版本或從沒有 `.git` 的來源包建置時，必須一起提供 `APP_VERSION_NAME` 和 `APP_VERSION_CODE`；只提供一個會失敗。override 保留既有 CI 傳入已解析版本的方式，發布時仍使用完整 HEAD 歷史的數值，不可任意降低 versionCode。設定頁顯示原生 APK 的 `BuildConfig.VERSION_NAME`，不另寫固定版本文字。
 
 ## 使用流程
 
