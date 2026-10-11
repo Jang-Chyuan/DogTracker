@@ -1,3 +1,4 @@
+import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
@@ -87,6 +88,7 @@ export function useHistoryDayRows({
   cost = null,
   readEnd = null,
   requireFresh = false,
+  diagnostic = null,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -158,8 +160,15 @@ export function useHistoryDayRows({
     async function poll() {
       waitingForPublication = false;
       readPublication = getPublication?.()?.publishedRevision ?? null;
+      const publication = getPublication?.();
+      const before = publication && { ...publication };
       const fence = capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads);
-      if (!fence.open) { retryPublication(); return; }
+      const began = Date.now();
+      if (!fence.open) {
+        diagnostic?.emit('row', 'blocked', began, historyPublicationFlags(before, owner));
+        retryPublication(); return;
+      }
+      diagnostic?.emit('row', 'begin', began, historyPublicationFlags(before, owner, before, true));
       try {
         const at = now.current();
         const today = at >= day && at < dayEnd;
@@ -172,7 +181,11 @@ export function useHistoryDayRows({
           after: cache.after,
         }));
         if (!alive) return;
-        if (!fence.valid()) { retryPublication(); return; }
+        if (!fence.valid()) {
+          diagnostic?.emit('row', 'rejected', began, historyPublicationFlags(getPublication?.(), owner, before, false));
+          retryPublication(); return;
+        }
+        diagnostic?.emit('row', 'end', began, { ...historyPublicationFlags(getPublication?.(), owner, before, true), rowsLoaded: true });
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
         const added = answer.rows?.length || 0;
@@ -203,7 +216,11 @@ export function useHistoryDayRows({
           : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
-        if (!fence.valid()) { retryPublication(); return; }
+        if (!fence.valid()) {
+          diagnostic?.emit('row', 'rejected', began, historyPublicationFlags(getPublication?.(), owner, before, false));
+          retryPublication(); return;
+        }
+        diagnostic?.emit('row', 'failed', began, historyPublicationFlags(getPublication?.(), owner, before, true));
         setResult(current => ({
           ...(current.key === key ? current : { rows: [], version: 0, replayHolds: null }),
           key,
@@ -405,8 +422,15 @@ export function useHistoryScreen({
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
   const buildCost = useRef(0);
+  const readDiagnostic = useRef({ key: null, value: null });
+  const readDiagnosticKey = active && subject === 'dog' && cloud?.publishedReads
+    ? `${sessionKey}|${day}|${current.dogs.map(d => d.id).join(',')}` : null;
+  if (readDiagnostic.current.key !== readDiagnosticKey)
+    readDiagnostic.current = { key: readDiagnosticKey, value: readDiagnosticKey ? createHistoryReadDiagnostics() : null };
+  const diagnostic = readDiagnostic.current.value;
   const reader = index => ({
     cost: buildCost,
+    diagnostic,
     read,
     subject,
     day,
@@ -520,6 +544,7 @@ export function useHistoryScreen({
     seed: cloudSeed,
     cutoff: coverageCutoff,
     publicationRevision,
+    diagnostic,
   });
   const { knowledge } = cloudDays;
   const coverageReady = !cloud?.coverageRequired || subject !== 'dog' || cloudDays.completeDay(shownKey);
@@ -601,6 +626,8 @@ export function useHistoryScreen({
       ? current.protagonist
       : subjects[0].id;
     const started = Date.now();
+    diagnostic?.emit('model', 'begin', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
+      rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady });
     const firstModelOfDay = diagnosticModelDay.current !== day;
     diagnosticModelDay.current = day;
     const built = startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '', () => multiDayModel(subjects, {
@@ -616,6 +643,8 @@ export function useHistoryScreen({
       kept: current.kept ?? null,
     }));
     buildCost.current = Date.now() - started;
+    diagnostic?.emit('model', 'end', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
+      rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: true });
     return built;
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -636,6 +665,10 @@ export function useHistoryScreen({
     coverageReady,
   ]);
   const model = dayModel?.main ?? null;
+  useEffect(() => {
+    diagnostic?.emit('state', 'state', undefined, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
+      rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: !!model });
+  }, [diagnostic, cloud, owner, allLoaded, cloudDays.completenessLoaded, coverageReady, model, publicationRevision]);
   useEffect(() => {
     if (subject === 'phone' && model && diagnosticCommittedDay.current !== day) {
       diagnosticCommittedDay.current = day;

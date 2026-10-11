@@ -1,3 +1,4 @@
+import { historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
 import { capturePageRead } from '../cloud/CloudPagePublication';
 // The cloud side of the history's days (054b): what the calendar has found
 // out about one dog's days in the cloud, and the download of a day only the
@@ -25,7 +26,7 @@ const merge = (list, more) => (more.length ? [...new Set([...list, ...more])] : 
  * days this phone holds. Returns { knowledge, askMonth, askYear, retryQuery,
  * stopQuery, download, startDownload, cancelDownload }.
  */
-export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localByDog = null, active = true, seed = null, cutoff = Date.now(), publicationRevision = 0 }) {
+export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localByDog = null, active = true, seed = null, cutoff = Date.now(), publicationRevision = 0, diagnostic = null }) {
   const enabled = !!cloud && slaveId != null;
   // `seed`: what a screen fixture says was already found (its H3c starts on
   // a cloud day); never set for real.
@@ -190,24 +191,37 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   useEffect(() => {
     if (!enabled || !cloud.downloadStates) return undefined;
     let readAlive = true;
+    const began = Date.now();
     const fence = capturePageRead(cloud.getPublication, cloud.owner, cloud.publishedReads);
     // The native writer owns this interval. Pending is not a failed proof.
-    if (!fence.open) return undefined;
+    if (!fence.open) {
+      diagnostic?.emit('proof', 'blocked', began, historyPublicationFlags(cloud.getPublication?.(), cloud.owner));
+      return undefined;
+    }
     const snapshot = cloud.getPublication?.();
     const publicationProof = snapshot && { ...snapshot };
+    diagnostic?.emit('proof', 'begin', began, historyPublicationFlags(snapshot, cloud.owner, publicationProof, true));
     // Reads cannot replace completeness changed since their start, including
     // a dog finishing while a read begun during its download is still pending.
     // An active manual request owns its in-memory incomplete/complete states.
     const epoch = completenessEpoch.current;
     const current = () => readAlive && completenessEpoch.current === epoch && !downloading.current && fence.valid();
     Promise.resolve(cloud.downloadStates({ slaveId })).then(states => {
-      if (!current()) return;
+      if (!current()) {
+        diagnostic?.emit('proof', 'rejected', began, historyPublicationFlags(cloud.getPublication?.(), cloud.owner, publicationProof, false));
+        return;
+      }
+      diagnostic?.emit('proof', 'end', began, { ...historyPublicationFlags(cloud.getPublication?.(), cloud.owner, publicationProof, true), completenessLoaded: true });
       const pending = incompleteOf(scope);
       pending.clear();
       for (const row of states) if (!row.complete) pending.add(row.day);
       setDurable({ scope, revision: publicationRevision, states, publication: publicationProof, cutoff: proofCutoff });
     }).catch(() => {
-      if (!current()) return;
+      if (!current()) {
+        diagnostic?.emit('proof', 'rejected', began, historyPublicationFlags(cloud.getPublication?.(), cloud.owner, publicationProof, false));
+        return;
+      }
+      diagnostic?.emit('proof', 'failed', began, historyPublicationFlags(cloud.getPublication?.(), cloud.owner, publicationProof, true));
       const pending = incompleteOf(scope);
       local.forEach(day => pending.add(day));
       const ids = Array.isArray(slaveId) ? slaveId : [slaveId];

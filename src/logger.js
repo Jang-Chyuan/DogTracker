@@ -60,3 +60,23 @@ export function cloudSyncDiagnostic(event, fields) {
     // Do not retry or expose the sink's error/message in another log.
   }
 }
+
+const HISTORY_READ_PHASES = new Set(['row', 'proof', 'model', 'state']);
+const HISTORY_READ_EVENTS = new Set(['begin', 'end', 'rejected', 'blocked', 'failed', 'state']);
+export const HISTORY_READ_FLAGS = Object.freeze(['publicationPending', 'fenceOpen', 'materialKnown',
+  'ownerMatches', 'generationMatches', 'rowsLoaded', 'completenessLoaded', 'coverageReady', 'modelReady']);
+
+// A bounded selection's diagnostic contains no identity, route or wall-clock
+// timestamp. Callers cannot pass through messages, errors or query payloads.
+export function historyReadDiagnostic(fields) {
+  try {
+    if (!Number.isSafeInteger(fields?.sequence) || fields.sequence < 1
+      || !HISTORY_READ_PHASES.has(fields.phase) || !HISTORY_READ_EVENTS.has(fields.event)
+      || !Number.isFinite(fields.elapsedMs) || fields.elapsedMs < 0
+      || !HISTORY_READ_FLAGS.every(key => typeof fields[key] === 'boolean')) return;
+    console.info('[HistoryRead]', { sequence: fields.sequence, phase: fields.phase, event: fields.event,
+      elapsedMs: fields.elapsedMs, ...Object.fromEntries(HISTORY_READ_FLAGS.map(key => [key, fields[key]])) });
+  } catch {
+    // Diagnostics never change a query or publication outcome.
+  }
+}
