@@ -593,6 +593,7 @@ test('overlapping names are suppressed; a source switch never reuses old places'
   // One degree of latitude is 100000 dp on this pretend screen.
   mockCamera.pointForCoordinate = jest.fn(async ({ latitude, longitude }) =>
     ({ x: (longitude - 121) * 100000, y: (25.01 - latitude) * 100000 }));
+  mockCamera.coordinateForPoint = jest.fn(async point => ({ latitude: 25.01 - point.y / 100000, longitude: 121 + point.x / 100000 }));
   try {
     const markers = [at(4, 25.0010), at(6, 25.00101, { indoor: true, tag: '狗 6・室內' }), at(8, 25.005)];
     await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
@@ -607,10 +608,11 @@ test('overlapping names are suppressed; a source switch never reuses old places'
     expect(tagTexts()).toEqual([]);
   } finally {
     delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
   }
 });
 
-test('bottom tags keep the real dog coordinates through pan and zoom, without independent labels or leaders', async () => {
+test('bottom tags keep true face coordinates through pan and zoom while label hit rectangles are independent', async () => {
   let shift = 0;
   const markers = [4, 6, 8].map((slaveId, index) => ({ ...slaveMarker, slaveId,
     name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`,
@@ -633,7 +635,7 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
     await readyMap();
     const verify = () => {
-      const faces = renderer.root.findAllByType(Marker);
+      const faces = renderer.root.findAllByType(Marker).filter(node => /-dog-\d+$/.test(node.props.identifier));
       expect(faces.map(node => node.props.coordinate)).toEqual(markers.map(marker => marker.coordinate));
       expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
       expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
@@ -642,7 +644,8 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
     verify();
     await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
     for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
-    expect(verify().flatMap(face => face.findAll(node => node.props.testID === 'dog-name-tag' && typeof node.type === 'string'))).toHaveLength(1);
+    verify();
+    expect(renderer.root.findAll(node => node.props.testID === 'dog-name-tag' && typeof node.type === 'string')).toHaveLength(1);
     shift = 30;
     mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 35, zoom: 14 });
     await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
@@ -668,10 +671,11 @@ describe('off-screen hints and the overlap menu', () => {
     tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`, coordinate: { latitude, longitude }, ...extra });
   // 100000 dp per degree on this pretend 400×800 screen, (25.01, 121) top left.
   beforeEach(() => {
+    mockCamera.coordinateForPoint = jest.fn(async p => ({ latitude: 25.01 - p.y / 100000, longitude: 121 + p.x / 100000 }));
     mockCamera.pointForCoordinate = jest.fn(async ({ latitude, longitude }) =>
       ({ x: (longitude - 121) * 100000, y: (25.01 - latitude) * 100000 }));
   });
-  afterEach(() => { delete mockCamera.pointForCoordinate; });
+  afterEach(() => { delete mockCamera.pointForCoordinate; delete mockCamera.coordinateForPoint; });
   async function layout() {
     await act(async () => renderer.root.find(node => node.props.testID === 'tracking-map-container')
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
@@ -715,7 +719,7 @@ describe('off-screen hints and the overlap menu', () => {
     await render({ onDogPress, presentation: { ...defaults.presentation, dogMarkers: markers } });
     await layout();
     await readyMap();
-    const faces = renderer.root.findAllByType(Marker);
+    const faces = renderer.root.findAllByType(Marker).filter(node => /-dog-\d+$/.test(node.props.identifier));
     for (const face of faces) await act(async () => face.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[4], [6], [8]]);
     expect(renderer.root.findAllByProps({ testID: 'dense-dog-picker' })).toHaveLength(0);
@@ -811,7 +815,7 @@ test('066: a dog tapped with a card open switches the card in one tap (the map t
   const onDogPress = jest.fn();
   await render({ onMapPress, onDogPress });
   await readyMap();
-  const dog = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'))[0];
+  const dog = renderer.root.findAll(node => node.type === Marker && /^real-dog-\d+$/.test(node.props.identifier))[0];
   // Either order: the map tap first, then the marker; or the marker first.
   await act(async () => renderer.root.findByType(MapView).props.onPress());
   await act(async () => dog.props.onPress());
@@ -880,7 +884,7 @@ test('a duplicate map hit cannot overwrite the native dog marker identity', asyn
   } finally { delete mockCamera.pointForCoordinate; }
 });
 
-test('bottom dog names share their native face marker and its true-coordinate anchor', async () => {
+test('bottom dog names have cropped independent hit rectangles without moving or overriding true face identity', async () => {
   const { markerFrame } = require('../src/map/DogMarkerView');
   const onDogPress = jest.fn();
   const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId, size: 48, selected: slaveId === 6,
@@ -892,16 +896,20 @@ test('bottom dog names share their native face marker and its true-coordinate an
     await readyMap();
     await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
-    const dogs = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'));
+    const dogs = renderer.root.findAll(node => node.type === Marker && /^real-dog-\d+$/.test(node.props.identifier));
     expect(dogs).toHaveLength(2);
-    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48, dog.props.identifier === 'real-dog-5').anchor));
+    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48, true).anchor));
     const dog6 = dogs.find(dog => dog.props.identifier === 'real-dog-6');
     await act(async () => dog6.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[6]]);
     dogs.forEach(dog => expect(dog.props.coordinate).toEqual(markers[0].coordinate));
     const label6 = renderer.root.findAllByType(Marker).find(marker =>
       marker.findAllByType(require('react-native').Text).some(text => text.props.children === '狗 6'));
-    expect(label6).toBe(dog6);
+    expect(label6).not.toBe(dog6);
+    expect(label6.props.identifier).toBe('real-dog-label-6');
+    expect(label6.props.anchor).toEqual({ x: 0.5, y: 0 });
+    expect(label6.props.coordinate).toEqual({ latitude: 25.0226, longitude: 121.02 });
+    expect(label6.findAllByType(require('../src/map/DogMarkerView').default)).toHaveLength(0);
     await act(async () => label6.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[6], [6]]);
   } finally { delete mockCamera.pointForCoordinate; delete mockCamera.coordinateForPoint; }
