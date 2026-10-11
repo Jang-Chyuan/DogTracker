@@ -1,6 +1,6 @@
 # 最新位置先套用：驗證紀錄
 
-原標題：`fix(history): 下載完成後喚醒讀取，修正歷史持續載入`。前一公開 head 為 `91e7b1be`，PR 仍 Draft；本輪最新產品整合為 `60434279`（前一368b3976原生證據另列）（以下較早原生證據另列為6d47f23f）。此紀錄隨同既有 PR 114 更新。
+原標題：`fix(history): 下載完成後喚醒讀取，修正歷史持續載入`。前一公開 head 為 `91e7b1be`，PR 仍 Draft；本輪最新產品整合為 `5685afb6`（前一368b3976原生證據另列）（以下較早原生證據另列為6d47f23f）。此紀錄隨同既有 PR 114 更新。
 
 ## 目前確定的來源與程式證據
 
@@ -42,6 +42,12 @@
 真SQLite暖讀trap＋archiveproof排隊反例先RED後PASS；6個新增guards另涵蓋setup／寫入失敗、新wrapper同lockKey、held context仍阻proof、lateinsert trigger及raw／平滑資料一致。主視窗已讀全部diff及反例，另一Codex獨立review無blocker。這是同連線重複工作窄修，首次完整schema、較大未materialized頁及原生／HTTP等待尚未全解。
 
 604產品APK SHA21d2cadf1767a66159dd1ecdcb73438443cd6f517613132746c602e1e0bcafee。私有bd3e2e15只差原固定integer probes，App.js／src／android exact runtime比對已核、8focused51PASS、lint0／0；Release20秒成功、APK2b2c55beb7a847d2fa9c38ffc87036f32287d1457791202310704a2b0c790422。最新5554已更新，原生冷啟實際122.657秒仍未接受最新快照；Local initialReady12.720秒，完整cloud schema retention執行尚未在此窗閉合。長時間後原固定80筆consumer probe已用盡，不能把舊sample80當新resume成功；新原生PNG擷取20秒逾時，未取得新版畫面通過。僅從同PID未截斷的固定數值publication紀錄看到常見3–10秒、另有29.434／47.516秒慢窗，不能當特定回前景UI或CPU改善證明。前一368結果不得代替新版驗證。
+
+## 最新 HTTP 與本機就緒並行：5685afb6
+
+最新定位請求在原cloud slot內，與SQLite初始化／proof／metadata讀取同時開始；成功發布仍等待原本本機條件與owner／generation／attempt／原子寫入。若預取等待本機超過既有30秒同步週期，完整重抓會員範圍與最新封包一組，不混用舊範圍，最多兩組共用原120秒期限。替代抓取失敗不能接受第一組舊資料；背景取消與忽略abort的晚回也不能發布。舊版archive-only adapter維持串行順序。
+
+主視窗完整231 suites／2,631 tests PASS（164.994秒），產品Release24秒成功、APK SHA cf0b971abe102e9c1fa2810b4dbb7786cfc4a576875bac219ccd12c2955a5927。原scheduler held SQLite未發HTTP、沒有重新抓取時漏新封包及新授權狗的實際反例先RED後PASS；新增15案例含替代401／取消／同120秒期限／最多兩組／分段時間累計。兩組network wall時間與本機初始化重疊，不得加總成CPU或總耗時。最新候選原生冷啟／回前景速度尚未驗證，仍Draft。
 
 ## 公開原生畫面：獨立虛構九隻狗
 
