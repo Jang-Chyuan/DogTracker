@@ -142,3 +142,13 @@ test('named and unnamed dense faces cannot retain a name-width hit canvas', asyn
     expect(face.findAllByProps({ testID: 'dog-name-tag' })).toHaveLength(0);
   }
 });
+
+test('even selected cropped labels stay below every face so capsule corners cannot steal head taps', async () => {
+  await render(20, true);
+  const labels = renderer.root.findAllByType(Marker).filter(node => /-dog-label-\d+$/.test(node.props.identifier));
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) for (const face of faces()) expect(label.props.zIndex).toBeLessThan(face.props.zIndex);
+  const selected = labels.find(label => label.props.identifier === 'live-dog-label-20');
+  const other = labels.find(label => label.props.identifier !== 'live-dog-label-20');
+  expect(selected.props.zIndex).toBeGreaterThan(other.props.zIndex);
+});

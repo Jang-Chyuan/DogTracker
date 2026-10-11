@@ -325,7 +325,9 @@ function DogLabelMarker({ source, marker, coordinate, tag, shownKey, onPress }) 
     <StyledMarker ref={ref} identifier={source + '-dog-label-' + marker.slaveId}
       coordinate={coordinate} anchor={{ x: 0.5, y: 0 }}
       tracksViewChanges={settled.tracking} tappable={!!onPress} onPress={onPress}
-      zIndex={marker.selected ? 39 : 30}
+      // Every face stays above every label, including the transparent corners
+      // of a selected capsule. Selection only orders names against names.
+      zIndex={marker.selected ? 30.5 : 30}
       opacity={handover ? 0 : marker.dimmed ? opacity.catchingUp : 1}>
       <View collapsable={false} accessible={false} onLayout={settled.onLayout}>
         <MapNameTag text={tag.text} maxWidth={MARKER_WIDTH - sizes.marker.labelSafety} />
