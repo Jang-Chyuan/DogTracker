@@ -134,3 +134,20 @@ test('metadata reads remain owner-bound and cannot run through an in-flight nati
     expect(await database.readLatestSnapshot('a')).toMatchObject({ revision: 2, verified: true, cutoff: 3000, packets: [] });
   } finally { release(); await Promise.allSettled([write, read]); }
 });
+
+test('positions-only reads keep state, packet and last valid fix atomic without decoding optional context or bootstrapping', async () => {
+  await database.savePage('a', [fix('cached-position')]);
+  expect(await database.readLatestSnapshot('a', { positionsOnly: true })).toBeNull();
+  expect(connection.sqlite.prepare('SELECT * FROM cloud_snapshot_state').all()).toEqual([]);
+  const current = fix('new-current');
+  await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: current, fix: current }]));
+  await connection.executeAsync("UPDATE cloud_latest_snapshot SET context_json='{invalid-context' WHERE owner_user_id='a'");
+  const positions = await database.readLatestSnapshot('a', { positionsOnly: true });
+  expect(positions).toMatchObject({ revision: 1, verified: true, rows: [expect.objectContaining({ event_id: 'new-current' })],
+    packets: [expect.objectContaining({ event_id: 'new-current' })] });
+  expect(positions.context).toBeUndefined();
+  expect(await database.readLatestSnapshot('b', { positionsOnly: true })).toBeNull();
+  await expect(database.readLatestSnapshot('a')).rejects.toThrow(SyntaxError);
+  await database.publishLatestSnapshot('a', snapshot([]));
+  expect(await database.readLatestSnapshot('a', { positionsOnly: true })).toMatchObject({ revision: 2, verified: true, rows: [], packets: [] });
+});

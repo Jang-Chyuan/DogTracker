@@ -92,6 +92,16 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
       // The full joined read below sees the state and every dog together,
       // including the state row of a successful empty snapshot.
       return withConnectionLock(connection, async () => {
+        if (options?.positionsOnly === true) {
+          // No bootstrap or context decode: this is the small atomic map set.
+          const found = rows(await connection.executeAsync(`SELECT s.revision,s.cutoff,s.origin,d.packet_json,d.fix_json
+            FROM cloud_snapshot_state s LEFT JOIN cloud_latest_snapshot d ON d.owner_user_id=s.owner_user_id
+            WHERE s.owner_user_id=? ORDER BY d.slave_id`, [owner]));
+          if (!found.length) return null;
+          return { revision: Number(found[0].revision), cutoff: Number(found[0].cutoff), verified: found[0].origin === 'remote',
+            rows: found.filter(row => row.fix_json).map(row => exposed(JSON.parse(row.fix_json))),
+            packets: found.filter(row => row.packet_json).map(row => exposed(JSON.parse(row.packet_json))) };
+        }
         const state = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
         // The scheduler only needs the old revision bound before fresh HTTP.
         // Revision 0 permits the existing one-time offline upgrade cache, not

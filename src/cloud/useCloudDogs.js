@@ -15,6 +15,19 @@ export const LATEST_SINCE = 0;
 // loaded: the first read has finished (A6 waits for it, so it never flashes
 // before the stored dogs are read).
 const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: false });
+// Pair content includes every exposed field (time repairs, master, quality and
+// status), not just IDs. These strings stay in memory and are never logged.
+function latestPairs(snapshot) {
+  const fixes = new Map((snapshot?.rows ?? []).map(row => [row.slave_id, row]));
+  return Object.fromEntries((snapshot?.packets ?? []).map(packet => [packet.slave_id,
+    JSON.stringify([packet, fixes.get(packet.slave_id) ?? null])]));
+}
+function retainedContext(values, before, after) {
+  // IDs absent from both cloud sets belong to the independently read BLE
+  // context. New/changed cloud dogs cannot inherit another pair's anchor.
+  return Object.fromEntries(Object.entries(values ?? {}).filter(([id]) =>
+    before != null && before[id] === after[id]));
+}
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
   { active = true, latestFirst = false, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
@@ -43,6 +56,55 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
   // Indoor holds follow every row, so their trackers live across polls; a new
   // account or database starts them over.
   const holdState = useRef(null);
+  // Latest positions have their own short reader. Optional hold/context reads
+  // may still be running when a new download completes; they must not queue
+  // the map's exact-attempt acceptance behind that earlier computation.
+  useEffect(() => {
+    if (!latestFirst || !database || !enabled || !owner || !active || cloudBusy || !(cloudSuccess > 0)) return undefined;
+    let alive = true;
+    const attempt = publication.current;
+    const epoch = attempt.epoch;
+    let fence;
+    try { fence = captureMapRead(scheduler.current, owner, cloudSuccess); } catch { return undefined; }
+    const valid = () => {
+      try { return alive && publication.current === attempt && attempt.epoch === epoch
+        && !attempt.blocked && fence.open && fence.valid(); } catch { return false; }
+    };
+    async function readLatestPositions() {
+      try {
+        if (!valid()) return;
+        const snapshot = await database.readLatestSnapshot(owner, { positionsOnly: true });
+        if (!snapshot?.verified || !valid()) return;
+        const accepted = scheduler.current?.();
+        attempt.rows = snapshot.rows;
+        attempt.packets = snapshot.packets;
+        attempt.commit = cloudSuccess;
+        attempt.cloudPublication = accepted ? { owner: accepted.owner, scope: accepted.scope,
+          generation: accepted.generation, attempt: accepted.attempt, revision: cloudSuccess } : null;
+        attempt.baselineLoaded = true;
+        setCache(current => {
+          if (!valid()) return current;
+          const prior = current.owner === owner && current.database === database ? current.value : empty();
+          // Identical accepted packet+fix content keeps its known indoor
+          // anchor even when a refresh increments SQLite revision. Changed
+          // content must not borrow that anchor before context is read.
+          const pairs = latestPairs(snapshot);
+          return { owner, database, value: { ...prior, rows: snapshot.rows,
+            packets: [...prior.packets.filter(row => row.source !== 'cloud'), ...snapshot.packets],
+            holds: retainedContext(prior.holds, prior.contextPairs, pairs),
+            statuses: retainedContext(prior.statuses, prior.contextPairs, pairs),
+            ranges: retainedContext(prior.ranges, prior.contextPairs, pairs), error: '', loaded: true,
+            cloudCommit: cloudSuccess, cloudPublication: attempt.cloudPublication,
+            cachedBaseline: false } };
+        });
+      } catch (error) {
+        if (valid()) setCache(current => valid() ? ({ owner, database,
+          value: { ...(current.owner === owner && current.database === database ? current.value : empty()), error: error.message } }) : current);
+      }
+    }
+    readLatestPositions();
+    return () => { alive = false; };
+  }, [database, owner, enabled, active, latestFirst, revision, cloudBusy, cloudSuccess]);
   useEffect(() => {
     if (!database || !enabled) {
       // No database or logged out: the next start replays from scratch.
@@ -145,7 +207,8 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           } catch (error) {
             // A failed hold read must not empty the map: keep drawing the last holds.
             logger.warn('[Indoor hold] read failed', error?.message);
-            // A new committed download must publish positions and holds together.
+            // The independent latest reader publishes positions first; a hold
+            // failure still rejects the legacy combined publication.
             if (acceptsCloud() && attempt.commit !== attempt.success) throw error;
           }
           holds = state.store.holds(now());
@@ -167,15 +230,24 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           }
           attempt.baselineLoaded = true;
         }
-        if (alive) setCache({ owner, database, value: {
+        // A slow old context read cannot attach its holds to positions already
+        // accepted by the independent latest reader for a newer publication.
+        if (alive && (!latestFirst || acceptsCloud() || baseline || attempt.commit == null)) setCache({ owner, database, value: {
           rows: attempt.rows, packets: [...packets.filter(row => row.source !== 'cloud'), ...attempt.packets],
           track: attempt.track, holds, statuses, ranges, error: '', loaded: true,
-          cloudCommit: attempt.commit, ...(latestFirst ? { cachedBaseline: baseline, cloudPublication: attempt.cloudPublication ?? null } : {}),
+          cloudCommit: attempt.commit, ...(latestFirst ? { cachedBaseline: baseline, cloudPublication: attempt.cloudPublication ?? null,
+            contextPairs: acceptsCloud() || baseline ? latestPairs(snapshot) : null } : {}),
         } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
-        if (alive) setCache(current => ({ owner, database,
-          value: { ...(current.owner === owner && current.database === database ? current.value : empty()), error: error.message } }));
+        if (alive) setCache(current => {
+          // Optional context failure cannot revoke an accepted latest position
+          // proof or overwrite a newer reader's own error. Baseline/legacy
+          // reads still expose their original failure and retry contract.
+          if (latestFirst && publication.current.commit != null) return current;
+          return { owner, database,
+            value: { ...(current.owner === owner && current.database === database ? current.value : empty()), error: error.message } };
+        });
       } finally {
         running = false;
         finish();
