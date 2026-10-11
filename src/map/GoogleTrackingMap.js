@@ -631,6 +631,7 @@ function GoogleTrackingMapRenderer({
   framingReady = true,
   onNativePhone,
   phoneEnabled,
+  phoneProblem = false,
   livePhone,
   onDogPress,
   // A sheet is open over the map (history): hidden from TalkBack.
@@ -1977,6 +1978,7 @@ function GoogleTrackingMapRenderer({
               (tip ? sizes.floatingButton + layout.floatingGap : 0)
             }
             phoneAvailable={phoneAvailable}
+            phoneProblem={phoneProblem}
             onFrameAll={pressFrameAll}
             onMyLocation={pressMyLocation}
             today={today}

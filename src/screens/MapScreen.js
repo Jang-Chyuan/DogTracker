@@ -66,7 +66,7 @@ import {
   topCards,
   trackReceiverWait,
 } from '../map/TopAlerts';
-import { startOfToday, todayPill } from '../tracking/TodayDistance';
+import { phoneLocationProblem, startOfToday, todayPill } from '../tracking/TodayDistance';
 import { behindSheet } from '../utils/a11yFocus';
 
 // How long the first framing waits for the phone's first position report
@@ -873,23 +873,8 @@ export default function MapScreen({
     setSelected(null);
     onOpenHistory?.(dog.slaveId);
   };
-  // 「今天 x km」 (A1/A2): today's distance and whether the phone records
-  // and has a location.
-  // Recording that has not had a first fix yet waits 10 minutes before the
-  // slash, like a lost one (判定表「暫時沒有 GPS 訊號」).
-  const waitingSince = useRef(null);
-  const waiting = !!livePhone?.running && !livePhone?.position;
-  if (!waiting) waitingSince.current = null;
-  else if (waitingSince.current == null) waitingSince.current = now;
-  const pillKey = JSON.stringify(
-    todayPill({
-      route: todayRoute,
-      livePhone,
-      phone,
-      now,
-      waitingSince: waitingSince.current,
-    }),
-  );
+  // The route pill reflects recording/permission, not temporary GPS silence.
+  const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone }));
   const today = useMemo(() => JSON.parse(pillKey), [pillKey]);
   const [routeBusy, setRouteBusy] = useState(false);
   // Only while the live map is still in front does a finished save navigate.
@@ -1088,6 +1073,7 @@ export default function MapScreen({
           receiverState !== undefined
         }
         phoneEnabled={!!phone?.enabled}
+        phoneProblem={phoneLocationProblem(phone)}
         onDogPress={openDog}
         onMapPress={
           historical

@@ -1,6 +1,6 @@
 import { t as i18nT } from '../src/i18n';
 import {
-  formatTodayDistance, startOfToday, todayPill, todayRouteDistance,
+  formatTodayDistance, phoneLocationProblem, startOfToday, todayPill, todayRouteDistance,
 } from '../src/tracking/TodayDistance';
 import { distanceMeters } from '../src/tracking/ReceiverRange';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
@@ -105,21 +105,16 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
     expect(todayPill({ route, livePhone: recording, phone: { ...precise, services: false } }).icon).toBe('walk-off');
     expect(todayPill({ route, livePhone: recording, phone: { ...precise, permission: 'approximate' } }).icon)
       .toBe('walk-off');
-    expect(todayPill({ route, livePhone: { ...recording, ageSeconds: 11 * 60 }, phone: precise }).icon).toBe('walk-off');
+    expect(todayPill({ route, livePhone: { ...recording, ageSeconds: 11 * 60 }, phone: precise }).icon).toBe('walk');
     expect(todayPill({ route, livePhone: { running: false }, phone: precise }).icon).toBe('walk-muted');
   });
 
-  // 067 (user 2026-10-09, captured live: indoors, the GPS fix 8 minutes old
-  // at 238 m): weak indoor GPS is not 「記錄關閉」 — the walker stays as it is
-  // when the last fix was taken standing still; it is slashed after losing
-  // the fix while moving.
-  test('weak indoor GPS: the walker stays normal', () => {
-    const indoors = { running: true, ageSeconds: 30 * 60, position: { ...START, rawSpeedKmh: 0 } };
-    expect(todayPill({ route, livePhone: indoors, phone: precise })).toMatchObject({ icon: 'walk', muted: false });
-    const lostWhileWalking = { running: true, ageSeconds: 11 * 60, position: { ...START, rawSpeedKmh: 4.5 } };
-    expect(todayPill({ route, livePhone: lostWhileWalking, phone: precise }).icon).toBe('walk-off');
-    const unknownSpeed = { running: true, ageSeconds: 11 * 60, position: START };
-    expect(todayPill({ route, livePhone: unknownSpeed, phone: precise }).icon).toBe('walk-off');
+  test.each([0, 4.5, null])('an expired fix at speed %s keeps the distance and normal walker, without a passive warning', speed => {
+    const livePhone = { running: true, ageSeconds: 30 * 60, position: { ...START, rawSpeedKmh: speed } };
+    const before = JSON.stringify(livePhone);
+    expect(todayPill({ route, livePhone, phone: precise }))
+      .toMatchObject({ text: '今天 2.7 km', icon: 'walk', muted: false, label: '今天 2.7 公里', destination: 'history' });
+    expect(JSON.stringify(livePhone)).toBe(before);
   });
 
   test('recording: walker in the phone colour and today\'s distance', () => {
@@ -153,20 +148,20 @@ describe('the pill (判定表「右下『今天 x km』」)', () => {
       .toMatchObject({ text: i18nT('c309'), icon: 'walk-off' });
   });
 
-  test('no GPS for over 10 minutes while recording: slash; under 10 minutes the icon stays', () => {
-    expect(todayPill({ route, livePhone: { ...recording, ageSeconds: 9 * 60 }, phone: precise }).icon).toBe('walk');
-    expect(todayPill({ route, livePhone: { ...recording, ageSeconds: 11 * 60 }, phone: precise }))
-      .toMatchObject({ icon: 'walk-off', text: '今天 2.7 km', label: '今天 2.7 公里，手機沒有定位' });
-  });
-
-  test('recording without a first fix waits 10 minutes before the slash too', () => {
+  test('waiting for a first fix never adds a passive missing-location warning', () => {
     const now = 1000 * MINUTE;
     const waiting = { running: true, position: null, ageSeconds: null };
-    expect(todayPill({ route, livePhone: waiting, phone: precise, now, waitingSince: now - 9 * MINUTE }).icon)
-      .toBe('walk');
-    expect(todayPill({ route, livePhone: waiting, phone: precise, now, waitingSince: now - 11 * MINUTE }).icon)
-      .toBe('walk-off');
-    expect(todayPill({ route, livePhone: waiting, phone: precise }).icon).toBe('walk');
+    for (const waitingSince of [now - 9 * MINUTE, now - 30 * MINUTE, null]) {
+      expect(todayPill({ route, livePhone: waiting, phone: precise, now, waitingSince }))
+        .toMatchObject({ text: '今天 2.7 km', icon: 'walk', muted: false, label: '今天 2.7 公里' });
+    }
+  });
+
+  test('phone control problem is only a confirmed permission or service problem', () => {
+    for (const phone of [null, precise, { ...precise, busy: true }, { permission: 'checking', services: false },
+      { ...precise, services: false, error: 'check failed' }]) expect(phoneLocationProblem(phone)).toBe(false);
+    for (const phone of [{ ...precise, permission: 'denied' }, { ...precise, permission: 'blocked' },
+      { ...precise, permission: 'approximate' }, { ...precise, services: false }]) expect(phoneLocationProblem(phone)).toBe(true);
   });
 
   test('before the first reads nothing flashes: no pill until the route is read, then no grey or 未記錄', () => {
