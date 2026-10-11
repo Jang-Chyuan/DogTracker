@@ -100,3 +100,62 @@ test('Android history shares native storage and never duplicates native inserts 
   await db.deleteAll();
   expect(native.deleteHistory).toHaveBeenCalledTimes(1);
 });
+
+const deferred = () => { let resolve, reject; const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; }); return { promise, resolve, reject }; };
+test('late failure of replaced receiver cannot remove the new session fence or replay old data', async () => {
+  const old = deferred();
+  native.connect.mockReturnValueOnce(old.promise).mockResolvedValueOnce('new-session');
+  native.getState.mockResolvedValue({ sessionId: 'new-session', enabled: true, running: true, connected: true });
+  const ble = createBleService({}), oldStatus = jest.fn(), newData = jest.fn();
+  const first = ble.connect({ id: '11:22:33:44:55:66', name: 'Master1' }, oldStatus, jest.fn());
+  expect(await ble.connect({ id: '11:22:33:44:55:77', name: 'Master2' }, jest.fn(), newData)).toBe(true);
+  const previousStatusCalls = oldStatus.mock.calls.length;
+  old.reject(new Error('old native start failed'));
+  expect(await first).toBe(false);
+  native.getState.mockResolvedValue({ sessionId: 'old-session', enabled: true, running: true, connected: true,
+    lastReceivedAt: 123, lastPayload: encode('{"mid":1,"sid":6}') });
+  expect(await ble.getBackgroundState()).toBeNull();
+  expect(newData).not.toHaveBeenCalled();
+  expect(oldStatus).toHaveBeenCalledTimes(previousStatusCalls);
+});
+
+test('a state read completing after explicit disconnect cannot restore connection or replay its packet', async () => {
+  const ble = createBleService({}), onData = jest.fn();
+  expect(await ble.connect({ id: '11:22:33:44:55:66', name: 'Master3' }, jest.fn(), onData)).toBe(true);
+  const pending = deferred();
+  native.getState.mockReturnValueOnce(pending.promise);
+  const read = ble.getBackgroundState();
+  ble.disconnect();
+  pending.resolve({ sessionId: 'session', enabled: true, running: true, connected: true,
+    lastReceivedAt: 123, lastPayload: encode('{"mid":3,"sid":6}') });
+  expect(await read).toBeNull();
+  expect(ble.isConnected()).toBe(false);
+  expect(onData).not.toHaveBeenCalled();
+});
+
+test('an old receiver state completing after a new connection cannot reach the new callback', async () => {
+  const ble = createBleService({}), oldData = jest.fn(), newData = jest.fn();
+  expect(await ble.connect({ id: '11:22:33:44:55:66', name: 'Master3' }, jest.fn(), oldData)).toBe(true);
+  const delayed = deferred();
+  native.getState.mockReturnValueOnce(delayed.promise);
+  const oldRead = ble.getBackgroundState();
+  native.connect.mockResolvedValueOnce('new-session');
+  native.getState.mockResolvedValue({ sessionId: 'new-session', enabled: true, running: true, connected: true });
+  expect(await ble.connect({ id: '11:22:33:44:55:77', name: 'Master4' }, jest.fn(), newData)).toBe(true);
+  delayed.resolve({ sessionId: 'session', enabled: true, running: true, connected: true,
+    lastReceivedAt: 123, lastPayload: encode('{"mid":3,"sid":6}') });
+  expect(await oldRead).toBeNull();
+  expect(oldData).not.toHaveBeenCalled(); expect(newData).not.toHaveBeenCalled();
+  expect(ble.isConnected()).toBe(true);
+});
+
+test('current native start failure is reported and a subsequent connection can receive its own packet', async () => {
+  const ble = createBleService({}), status = jest.fn(), data = jest.fn();
+  native.connect.mockRejectedValueOnce(new Error('current start failed'));
+  expect(await ble.connect({ id: '11:22:33:44:55:66', name: 'Master3' }, status, data)).toBe(false);
+  expect(status.mock.calls.some(([value]) => value.includes('current start failed'))).toBe(true);
+  native.getState.mockResolvedValue({ sessionId: 'session', enabled: true, running: true, connected: true,
+    lastReceivedAt: 123, lastPayload: encode('{"mid":3,"sid":6}') });
+  expect(await ble.connect({ id: '11:22:33:44:55:66', name: 'Master3' }, status, data)).toBe(true);
+  expect(data).toHaveBeenCalledTimes(1);
+});

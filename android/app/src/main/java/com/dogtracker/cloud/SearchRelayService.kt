@@ -8,6 +8,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.*
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.dogtracker.BleForegroundService
 import com.dogtracker.DogStatusStore
 import com.facebook.react.ReactApplication
@@ -57,7 +58,7 @@ class SearchRelayService : Service() {
       instance?.let { it.request(owner); return }
       // Android can deny a background start; retain every row for foreground or
       // WorkManager recovery rather than disrupting the BLE writer.
-      runCatching { context.startForegroundService(Intent(context, SearchRelayService::class.java).putExtra("owner", owner)) }
+      runCatching { ContextCompat.startForegroundService(context, Intent(context, SearchRelayService::class.java).putExtra("owner", owner)) }
         .onFailure { com.dogtracker.AppLog.w("DogTracker", "Search relay start deferred", it) }
     }
   }
