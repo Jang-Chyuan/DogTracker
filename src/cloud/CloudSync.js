@@ -446,7 +446,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           bootstrapAllowed: !state.snapshotPending && !!(state.error || state.authFailed || state.offline) } : {}) };
     },
     historyPublication() {
-      return { scope: mapScope, owner, generation, latestFirst, latestReadReady: latestReadiness.ready(), attempt: state.mapAttempt, pending: state.publishedPending,
+      return { scope: mapScope, owner, generation, latestFirst,
+        ...(releaseReadiness ? { latestReadReady: latestReadiness.ready() } : {}), attempt: state.mapAttempt, pending: state.publishedPending,
         busy: false, mapSuccessRevision: state.archiveRevision, dataRevision: state.dataRevision, publishedRevision: state.publishedRevision,
         publishedPending: state.publishedPending, archiveRevision: state.archiveRevision, archiveCutoff: state.archiveCutoff, archiveError: state.archiveError };
     },
