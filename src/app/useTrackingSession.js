@@ -307,8 +307,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         historyCommand(method, args) {
           const task = startupPhase('history-real-wait', () => initialization.real).then(async () => {
             if (disposed || !databases.history) throw new Error(t("c485"));
-            // A day read of an account's cloud rows waits for the cloud table's migrations.
-            if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner) {
+            // Only dog history reads this account's cloud rows. My route keeps
+            // its account-scoped UI identity but needs local phone tables only.
+            if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner && args[0]?.subject !== 'phone') {
               await startupPhase('history-cloud-wait', initializeCloud);
               await awaitArchivePriority(args[0].owner);
             }
