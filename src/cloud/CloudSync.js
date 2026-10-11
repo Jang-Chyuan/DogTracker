@@ -384,13 +384,13 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           // polling keeps its S3 error without starting a return indicator.
           if (resumeCatchUp.state().phase === 'idle') resumeCatchUp.caughtUp();
           else resumeCatchUp.failed();
-          if (priorityLatest && !abort.signal.aborted) {
+          if (priorityLatest && valid(version) && (!abort.signal.aborted || timedOut)) {
             // A failed fresh request permits the preserved offline archive
             // fallback, but never queues its maintenance before latest reads.
             publish({ snapshotPending: false });
             try {
               const archive = await database.readArchivePublication?.(userId);
-              if (valid(version) && !abort.signal.aborted && archive?.owner === userId
+              if (valid(version) && (!abort.signal.aborted || timedOut) && archive?.owner === userId
                 && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
                 && Number.isSafeInteger(archive.revision) && archive.revision > 0)
                 publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });

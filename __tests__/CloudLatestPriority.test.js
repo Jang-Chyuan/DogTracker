@@ -218,3 +218,25 @@ test('a later context publication does not strand the already committed first AC
   expect(latestMapApplied({ ...current, getMapPublication: () => engine.mapPublication() }, 'invented-owner', dogs)).toBe(true);
   expect(first.revision).toBe(1);
 });
+
+
+test('a true HTTP deadline retains the prior durable offline proof without accepting its late packet', async () => {
+  await database.beginDownload('invented-owner');
+  await database.publishDownload('invented-owner', 'auto', NOW - 100);
+  await engine.dispose();
+  const transport = deferred(); releases.push(transport.resolve);
+  const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)], beforeRead: ({ phase }) => {
+    if (phase === 'packet') return transport.promise;
+  } });
+  engine = createCloudSync({ client: network.client, database,
+    onChange: value => { current = value; update?.(value); } });
+  await mount(); await start();
+  expect(current).toMatchObject({ mapSuccessRevision: 0, archiveRevision: 0, snapshotPending: true });
+  await act(async () => jest.advanceTimersByTimeAsync(120000));
+  expect(current).toMatchObject({ archiveCutoff: NOW - 100, archiveRevision: 1,
+    mapSuccessRevision: 0, lastSuccess: null, snapshotPending: false, offline: true, busy: false });
+  expect(current.error).toBeTruthy();
+  transport.resolve(); await act(async () => jest.advanceTimersByTimeAsync(1));
+  expect(current.mapSuccessRevision).toBe(0);
+  expect(latestMapApplied({ ...current, getMapPublication: () => engine.mapPublication() }, 'invented-owner', dogs)).toBe(false);
+});
