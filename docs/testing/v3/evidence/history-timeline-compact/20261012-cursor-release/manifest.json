@@ -1,0 +1,98 @@
+{
+  "images": [
+    {
+      "file": "address-first-line.png",
+      "sha256": "7284d857c67060cc86e0199e888359ecf3e962947d80211213a618954f31b744",
+      "nativeVersion": 264,
+      "nativeSource": "5d17bc86dd5a5b63034f54b5a5fa5c5217dc2e80",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "back-control-safe.png",
+      "sha256": "15e0cfdd08c9c4decee13a25a647c89f20136fda681dc3973ba94fe21ae6a56c",
+      "nativeVersion": 264,
+      "nativeSource": "5d17bc86dd5a5b63034f54b5a5fa5c5217dc2e80",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "expanded-gap.png",
+      "sha256": "ecae12c1fe71130709f10dbba7417e7bd9b6f2702d4ee51a6c708a84ba0d6118",
+      "nativeVersion": 264,
+      "nativeSource": "5d17bc86dd5a5b63034f54b5a5fa5c5217dc2e80",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "collapsed-date.png",
+      "sha256": "abbd6d60fedd1e66063098570c1863e50907fd87087009f32611f077fa3145c0",
+      "nativeVersion": 264,
+      "nativeSource": "5d17bc86dd5a5b63034f54b5a5fa5c5217dc2e80",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "dog-cursor-held.png",
+      "sha256": "f888e73ccc9bb3f51e2f62bb0517d7a0167bd67d40e71524b69ac93c041ef5ce",
+      "nativeVersion": 265,
+      "nativeSource": "eb7120dd341780b53a3228ce8ae5bdac4763c623",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "dog-cursor-released.png",
+      "sha256": "0570d645ef2096afd3897a5786f43b82b72d927188862d0fbc56c6a740574c7e",
+      "nativeVersion": 265,
+      "nativeSource": "eb7120dd341780b53a3228ce8ae5bdac4763c623",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "phone-cursor-held.png",
+      "sha256": "17309d222f52d70db8a11dbaf407fded27edc70eeb92ef648e7c15318fb2fe2d",
+      "nativeVersion": 265,
+      "nativeSource": "eb7120dd341780b53a3228ce8ae5bdac4763c623",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "phone-cursor-released.png",
+      "sha256": "c10622b857fabe439e652c1d697b4477a5c3a44c229a603dfc1d946c258b9aae",
+      "nativeVersion": 265,
+      "nativeSource": "eb7120dd341780b53a3228ce8ae5bdac4763c623",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    },
+    {
+      "file": "background-return.png",
+      "sha256": "c4eb530c292cc5e818affcedc1b706a799609e4ddb8358e521705913f930f35c",
+      "nativeVersion": 265,
+      "nativeSource": "eb7120dd341780b53a3228ce8ae5bdac4763c623",
+      "fictionOnly": true,
+      "originalNativeScreenshot": true,
+      "rootPersonallyViewed": true
+    }
+  ],
+  "productUIRuntime": "ab905e77088660be2ad09f33b32da05fc7150c37",
+  "fullSourceTests": {
+    "suites": 228,
+    "tests": 2585,
+    "seconds": 163.115,
+    "passed": true
+  },
+  "private265ReleaseSeconds": 18,
+  "heldXMLConfirmed": false,
+  "newVideosPublished": false,
+  "performanceVerified": false,
+  "bottomFramingButtonCornerStillTouches": true,
+  "realHomeGestureCancellationPassed": true
+}

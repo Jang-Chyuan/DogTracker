@@ -1,3 +1,39 @@
+# 2026-10-12：地址首行對齊與游標拖放新版原生驗證
+
+缺地址的舊展示圖已補足虛構地址；產品的地址載入 skeleton 與無法取得提示保留。停留膠囊、左側節點共用地址第一行中心，長地址換行時不改成整段文字中心。下圖為 5558 真正渲染的虛構場景，沒有使用個人位置。
+
+![地址、膠囊與左節點對齊第一行](evidence/history-timeline-compact/20261012-cursor-release/address-first-line.png)
+
+游標資訊卡靠近上方控制時改用螢幕內單一卡片位置，不移動真實定位、頭像或名字。下圖普通卡片避開「回到現在」並放到自己的名字下方；沒有足夠空間時隱藏卡片。手動把真實 pin pan 到控制後方時，仍可能被控制遮住，這不是「所有 pin 自動避讓」驗收。
+
+![避開上方控制與自己的頭像名字](evidence/history-timeline-compact/20261012-cursor-release/back-control-safe.png)
+
+原生 264 的拖放曾實際失敗：座標更新等待投影時，把手被卸載，放開後拖曳提示殘留。候選現在只在同一有效手勢內保留原把手；切換場景、鏡頭、尺寸或可見狀態會取消手勢，正常卡片仍等待當前投影。14 個新回歸案例在原版 12 失敗／2 通過，修正後全部通過。
+
+新版 265 用同一次連續觸控串流分別實際操作狗與手機游標。拖動截圖顯示單行時間浮層；放開與稍後穩定截圖及 XML 都確認提示消失，正常兩行資訊卡時間與把手接受時間一致。held XML 擷取完成時已放開，不能當作按住期間的 XML 證據；按住視覺只依當時獨立 PNG。
+
+| 狗：拖動中 | 狗：放開後 |
+| --- | --- |
+| ![狗拖動時間浮層](evidence/history-timeline-compact/20261012-cursor-release/dog-cursor-held.png) | ![狗放開恢復正常資訊卡](evidence/history-timeline-compact/20261012-cursor-release/dog-cursor-released.png) |
+
+| 手機：拖動中 | 手機：放開後 |
+| --- | --- |
+| ![手機拖動時間浮層](evidence/history-timeline-compact/20261012-cursor-release/phone-cursor-held.png) | ![手機放開恢復正常資訊卡](evidence/history-timeline-compact/20261012-cursor-release/phone-cursor-released.png) |
+
+另在同一連續拖動尚未結束時，真正按 HOME 進背景；串流正常結束後回前景，同 PID、版本、設定與權限保持，普通卡片恢復 09:27／已移動 4.2 km，提示沒有殘留。這是前背景手勢取消驗證，不是雲端 resume 效能驗證。正常開狗清單只列為可操作情境，不宣稱能驗 foreground hidden 取消。
+
+![拖動中進背景，再回前景沒有殘留提示](evidence/history-timeline-compact/20261012-cursor-release/background-return.png)
+
+圖上獨立終點時標 09:29 是路線時標，不是放開後殘留的游標提示。底部「框住全部」按鈕仍會碰到手機資訊卡的右下圓角，文字可讀，已列後續修正；沒有稱全部控制避讓通過。
+
+| 下收至日期列 | 上展並保留控制間距 |
+| --- | --- |
+| ![只保留日期列](evidence/history-timeline-compact/20261012-cursor-release/collapsed-date.png) | ![展開仍保留上方間距](evidence/history-timeline-compact/20261012-cursor-release/expanded-gap.png) |
+
+新公開產品 runtime `ab905e77` 全部 **228 suites／2,585 tests 通過（163.115 秒）**，相同公開 runtime 的 Android arm64 Release 18 秒建置成功（SHA `9ab7bb9efd6ae9705fcb7326bcdd0b9769eb1cf914f2caa937f7f5aabdc1473d`，未安裝或降級裝置）。私有新版只有原五個虛構 fixture 檔，focused 3 suites／27 tests 通過、Release 18 秒成功；未宣稱私有完整測試通過。APK 0.3.265／SHA `a7f3d2e45ed580599aeda90a1ea95ce814fe743778aad5581479d9ed979bbbba`。地址、上方避碰與高度圖為前一輪 264，新拖放圖為 265，逐檔來源及 SHA 見[manifest](evidence/history-timeline-compact/20261012-cursor-release/manifest.json)。新版影片尚未由主視窗全影格核完，因此只新增親看過的原生截圖。本輪不代表 CPU／雲端／GPS 效能驗收。
+
+---
+
 # 2026-10-12：地址、首行對齊與拖曳時間浮層已在 5558 重驗
 
 本輪公開產品來源 `644b1f30` 完整 **226 suites／2,556 tests 通過（166.141 秒）**。原生操作使用既有 5558、相同 UI 來源的私有展示版 `3e346357`／0.3.252；Release 21 秒成功，APK SHA 與來源紀錄見圖片 manifest。私有差異只提供獨立虛構資料與入口，未納入產品；其全測含兩套舊私有契約失敗，不將私有全測說成通過。產品全測與原生功能驗證分開記錄。
