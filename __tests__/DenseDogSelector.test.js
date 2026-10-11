@@ -27,7 +27,7 @@ test('explicit entry is one dog-list icon with a 48dp target and a complete spok
   expect(entry.findAllByType(Glyph)).toHaveLength(1);
   expect(entry.findByType(Glyph).props.name).toBe('dog-list');
   expect(entry.props.accessibilityRole).toBe('button');
-  expect(entry.props.accessibilityLabel).toBe(t('c1256', {
+  expect(entry.props.accessibilityLabel).toBe(t('c1261', {
     count: 16, problems: p.markers.filter(marker => marker.problem).length,
   }));
   await open();
