@@ -67,7 +67,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
   const endX = xOfTime(handles.end, width, track);
   const state = useRef({});
   state.current = {
-    range,
+    range: shownRange,
     track,
     dayPoints,
     today,
@@ -103,6 +103,10 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
       drag.current = { handle: null };
     };
   }, [previewScope, active, layoutKey, clearPreview]);
+  useEffect(() => {
+    if (visualRange && range.start === visualRange.start && range.end === visualRange.end
+      && range.following === visualRange.following) setVisualRange(null);
+  }, [range, visualRange]);
   const responder = useMemo(() => {
     // One step of a drag `dx` from where it began (a move, or the release
     // itself: a quick flick can end before its last moves reach JS, and the
@@ -193,14 +197,12 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
         // Refused (start not before the end): the handle springs back.
         haptic(d.rejected ? 'double' : 'tick');
         clearPreview();
-        setVisualRange(null);
         if (d.last) state.current.onCommit(d.last);
         drag.current = { handle: null };
       },
       onPanResponderTerminate: (event, gesture) => {
         follow(dxOf(event, gesture), false);
         clearPreview();
-        setVisualRange(null);
         if (drag.current.last) state.current.onCommit(drag.current.last);
         drag.current = { handle: null };
       },
@@ -219,7 +221,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
     }
     clearPreview();
     drag.current = { handle: null };
-    setVisualRange(null);
+    setVisualRange(result.range);
     onCommit(result.range);
   };
   // 判定表「範圍條把手太近」: closer than 48dp, the start's time sits left of
@@ -333,6 +335,7 @@ export default function HistoryRangeSummary({
   previewDelay,
   previewScope,
   active,
+  pending = false,
   compact = false,
   externalControls = false,
   layoutKey,
@@ -360,7 +363,7 @@ export default function HistoryRangeSummary({
           pressed && styles.pressedRow,
         ]}
         accessibilityRole="button"
-        accessibilityLabel={speech}
+        accessibilityLabel={pending ? t('c835') : speech}
         accessibilityState={{ expanded: open }}
       >
         <View style={[styles.texts, stacked && styles.textsStacked]}>
@@ -376,7 +379,7 @@ export default function HistoryRangeSummary({
             ) : null}
           </Text>
           <Text style={styles.detail} numberOfLines={linesFor(2)}>
-            {lines.detail}
+            {pending ? t('c835') : lines.detail}
           </Text>
         </View>
         {enabled && (

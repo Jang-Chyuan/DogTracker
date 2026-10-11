@@ -75,12 +75,12 @@ export function pngTitle(snapshot, subjects) {
 export function layoutRow(row, measure, { truncate = false } = {}) {
   if (row.kind === 'section') {
     const text = `${row.lead}${row.time ? ` ${row.time}` : ''}${row.rest}`;
-    const lines = wrap(text, S.detailFont, PLACE_WIDTH - S.movementIcon, measure, { bold: false });
+    const lines = wrap(text, S.detailFont, PLACE_WIDTH, measure, { bold: false });
     return { lines, height: Math.max(S.movementMin, lines.length * S.detailLine + tokenSize.export.movementInset) };
   }
   // 「PNG 一列比一頁還高」: the address is cut after 2 lines (in the PNG only).
   const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH, measure, { bold: true, maxLines: truncate ? 2 : Infinity });
-  // The second line: the pill, then the coordinates / 不含中斷, flowing.
+  // The leading block is the duration pill and interruption note, before the address.
   const items = [
     row.pill ? { kind: 'pill', text: row.pill.text, tone: row.pill.tone,
       width: measure(row.pill.text, S.detailFont, true) + S.pillPadding * 2 } : null,

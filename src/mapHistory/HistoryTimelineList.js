@@ -1,7 +1,7 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { isReduceMotion } from '../utils/reduceMotion';
 import { touch, size as sizes, space, type, border, radius, fontScale } from '../theme/tokens';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   LayoutAnimation,
   PixelRatio,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import Glyph from '../map/Glyph';
+import { timelinePresentation } from '../history/HistoryTimelinePresentation';
 
 import {
   interruptionText,
@@ -154,10 +155,11 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
   const onLayout = onRowLayout
     ? event => onRowLayout(node.start, event.nativeEvent.layout.y)
     : undefined;
-  const [start, end] = nodeTimes(node);
+  const [start] = nodeTimes(node);
   const lines = placeLines(node, place);
-  const note = lines.coordinates ? interruptionText(node) : '';
+  const note = interruptionText(node);
   const pill = nodePill(node);
+  const title = place?.state === 'found' || place?.state === 'pending' ? lines.title : '';
   return (
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
@@ -166,18 +168,14 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
       {...tap}
       onLayout={onLayout}
       accessibilityRole="button"
-      accessibilityLabel={placeSpeech(node, lines.title)}
+      accessibilityLabel={placeSpeech(node, title)}
       accessibilityState={{ selected: !!selected }}
     >
       <View style={[styles.timeColumn, timeWidth()]}>
         <Text style={styles.time} maxFontSizeMultiplier={TIME_MAX_SCALE}>
           {start}
         </Text>
-        {end ? (
-          <Text style={styles.timeEnd} maxFontSizeMultiplier={TIME_MAX_SCALE}>
-            {end}
-          </Text>
-        ) : null}
+
       </View>
       <View style={styles.trackColumn}>
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
@@ -190,20 +188,11 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
           style={[styles.place, selected && { backgroundColor: `${color}1A` }]}
           testID={selected ? 'timeline-selected' : undefined}
         >
-          {/* Two lines kept while the address is asked for (判定表「清單節點的內容」). */}
-          <Text
-            style={[styles.address, lines.titleMuted && styles.asking]}
-            testID="place-title"
-          >
-            {lines.title}
+          <Pill pill={pill} color={color} />
+          <Text style={[styles.address, lines.titleMuted && styles.asking]} testID="place-title">
+            {title}
           </Text>
-          {(pill || lines.coordinates || note) && <View style={styles.second}>
-            <Pill pill={pill} color={color} />
-            {lines.coordinates ? (
-              <Text style={styles.note}>{lines.coordinates}</Text>
-            ) : null}
-            {note ? <Text style={styles.note}>{note}</Text> : null}
-          </View>}
+          {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
       </View>
     </Pressable>
@@ -235,15 +224,16 @@ function SectionRowView({ section, color, onPress }) {
       accessibilityLabel={sectionSpeech(section)}
     >
       <View style={[styles.timeColumn, timeWidth()]} />
-      <View style={styles.trackColumn}>
+      <View style={[styles.trackColumn, styles.transportTrack]}>
         <Track kind={lineOf(section)} color={color} />
-      </View>
-      <View style={styles.sectionText}>
-        <Glyph
+        <View style={styles.transportIcon}>        <Glyph
           name={text.icon}
           color={muted ? colors.iconMuted : color}
           size={sizes.timeline.icon}
         />
+</View>
+      </View>
+      <View style={styles.sectionText}>
         <Text style={styles.movement}>
           {text.lead}
           {text.time ? ' ' : ''}
@@ -270,7 +260,7 @@ function HistoryTimelineList({
   onPressNode,
   onRowLayout,
 }) {
-  const nodes = model.nodes;
+  const nodes = useMemo(() => timelinePresentation(model.nodes), [model.nodes]);
   const places = usePlaceNames(
     nodes.map(node => (isSection(node) ? null : node)),
   );
@@ -343,12 +333,9 @@ const getStyles = makeStyles(theme => {
       fontVariant: ['tabular-nums'],
 
     },
-    timeEnd: {
-      color: colors.textMuted,
-      fontSize: type.small.fontSize,
-      fontVariant: ['tabular-nums'],
-    },
     trackColumn: { width: TRACK_WIDTH, alignItems: 'center' },
+    transportTrack: { justifyContent: 'center' },
+    transportIcon: { backgroundColor: colors.elevated, paddingVertical: space.xs },
     track: {
       position: 'absolute',
       bottom: 0,
@@ -425,20 +412,15 @@ const getStyles = makeStyles(theme => {
       overflow: 'hidden',
     },
     address: {
+      marginTop: space.xs,
       color: colors.text,
       ...type.cardTitle,
 
       fontVariant: ['tabular-nums'],
     },
     asking: { color: colors.textMuted, fontWeight: type.body.fontWeight, minHeight: sizes.timeline.sectionHeight },
-    second: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      alignItems: 'center',
-      gap: space.s,
-      marginTop: space.xs,
-    },
     pill: {
+      alignSelf: 'flex-start',
       // 18dp, taller with a large system font (膠囊可以變高、不裁字).
       minHeight: sizes.timeline.pill.height,
       borderRadius: radius.full,

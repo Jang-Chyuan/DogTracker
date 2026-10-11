@@ -35,14 +35,18 @@ export async function mountFixture(name) {
 
 const pressable = (state, testID) => state.renderer.root.findAll(node => node.props.testID === testID
   && typeof node.props.onPress === 'function')[0];
+const settleRange = state => act(async () => {
+  expect(state.screen.rangePending).toBe(true);
+  expect(state.screen.dayModel).toBeNull();
+  await new Promise(resolve => setTimeout(resolve, 40));
+});
 const unmount = state => act(async () => state.renderer.unmount());
 
-test('history-my-route (H1 我的路線): 我的路線, no ＋ 加入, the list, the summary, the map', async () => {
+test('history-my-route (H1 我的路線): no title header, no ＋ 加入, the list, the summary, the map', async () => {
   const s = await mountFixture('history-my-route');
-  expect(s.text()).toContain(i18nT('c132'));
+  expect(s.ids('history-my-route-header')).toEqual([]);
   expect(s.ids('history-add')).toEqual([]);
   expect(s.ids('history-dogs-pill')).toEqual([]);
-  expect(s.ids('history-my-route-header')).toEqual(['history-my-route-header']);
   expect(s.text()).toContain('10/07（三）今天');
   expect(s.text()).toContain(i18nT('c122'));
   expect(s.screen.navigation).toEqual({ previous: null, next: null });
@@ -87,6 +91,9 @@ test('history-range-open (H2b): the bar open in its frame, 完成, the dragged s
   const startHandle = s.renderer.root.findAll(node => node.props.testID === 'range-handle-start'
     && node.props.onAccessibilityAction)[0];
   await act(async () => startHandle.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+  expect(s.ids('history-range-loading').length).toBeGreaterThan(0);
+  expect(pressable(s, 'history-export').props.disabled).toBe(true);
+  await settleRange(s);
   expect(s.screen.range.start).toBeGreaterThanOrEqual(before + 60000);
   expect(s.screen.range.following).toBe(true);
   // Back closes the bar first, then nothing more inside the screen.
@@ -105,8 +112,10 @@ test('a dragged range is kept for the day; the list and summary follow it', asyn
   const day = s.screen.model.dayPoints;
   const start = day.find(p => p.time >= s.screen.model.points[0].time + 60 * 60000);
   await act(async () => s.screen.dragRange({ start: start.time, end: null, following: true }));
+  await settleRange(s);
   expect(s.screen.model.points[0].time).toBe(start.time);
   await act(async () => s.screen.commitRange({ start: start.time, end: null, following: true }));
+  await settleRange(s);
   expect(s.screen.manual).toBe(true);
   expect(s.text()).toContain(i18nT('c124'));
   await unmount(s);
@@ -309,6 +318,7 @@ test('range bar: a quick flick lands where the finger let go, even when its last
     // left with no move delivered in between.
     await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
     await act(async () => handlers.onPanResponderRelease(null, { dx: -20, dy: 0 }));
+    await settleRange(s);
     const flicked = s.screen.range;
     expect(flicked.start).toBe(before.start);
     expect(flicked.end).toBeLessThan(before.end);
@@ -316,15 +326,18 @@ test('range bar: a quick flick lands where the finger let go, even when its last
     // delivered: it still ends on the fix under the finger.
     await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
     await act(async () => handlers.onPanResponderRelease(null, { dx: 20, dy: 0 }));
+    await settleRange(s);
     expect(s.screen.range.end).toBe(before.end);
     await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348 } }));
     await act(async () => handlers.onPanResponderMove(null, { dx: -5, dy: 0 }));
     await act(async () => handlers.onPanResponderRelease(null, { dx: -20, dy: 0 }));
+    await settleRange(s);
     expect(s.screen.range.end).toBe(flicked.end);
     // Android's release carries the finger's own position past the last move.
     await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: 348, pageX: 900 } }));
     await act(async () => handlers.onPanResponderMove({ nativeEvent: { pageX: 895 } }, { dx: -5, dy: 0 }));
     await act(async () => handlers.onPanResponderRelease({ nativeEvent: { pageX: 920 } }, { dx: -5, dy: 0 }));
+    await settleRange(s);
     expect(s.screen.range.end).toBe(before.end);
   } finally {
     spy.mockRestore();

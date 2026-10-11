@@ -1,3 +1,4 @@
+import { useRangeRecompute } from './useRangeRecompute';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
@@ -373,6 +374,7 @@ export function useHistoryScreen({
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
   const buildCost = useRef(0);
+  const modelBuildCost = useRef(0);
   const reader = index => ({
     cost: buildCost,
     read,
@@ -530,6 +532,7 @@ export function useHistoryScreen({
   );
   // While a handle is dragged: the range being made (list and summary follow).
   const [draft, setDraft] = useState(null);
+  const { pending: rangePending, request: requestRange, cancel: cancelRange } = useRangeRecompute(`${sessionKey}|${day}|${idsKey}|${writeKey}|${readKey}|${owner ?? ''}|${cloud?.owner ?? ''}`, active);
   const manual = draft || remembered;
   // My route stops growing when recording is off (記錄已關閉).
   const growing = subject !== 'phone' || recording !== false;
@@ -563,7 +566,13 @@ export function useHistoryScreen({
     shownOnce.current !== `${sessionKey}|${day}` && !allLoaded;
   const diagnosticModelDay = useRef(null);
   const diagnosticCommittedDay = useRef(null);
+  const completedRangeModel = useRef(null);
+  const completedScope = `${sessionKey}|${subject}|${day}|${idsKey}|${readKey}|${writeKey}|${owner ?? ''}|${cloud?.owner ?? ''}`;
   const dayModel = useMemo(() => {
+    // The busy render must stay cheap: neither a range request nor rows/clock
+    // arriving during it may replay the model before the loading commit.
+    if (rangePending) return completedRangeModel.current?.scope === completedScope
+      ? completedRangeModel.current.model : null;
     if (!subject || !subjects.length || waiting || !coverageReady) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
@@ -583,11 +592,14 @@ export function useHistoryScreen({
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
     }));
-    buildCost.current = Date.now() - started;
+    modelBuildCost.current = Date.now() - started;
+    buildCost.current = modelBuildCost.current;
     return built;
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    rangePending,
+    completedScope,
     subject,
     versions,
     day,
@@ -603,6 +615,9 @@ export function useHistoryScreen({
     waiting,
     coverageReady,
   ]);
+  useEffect(() => {
+    if (!rangePending && dayModel) completedRangeModel.current = { scope: completedScope, model: dayModel };
+  }, [dayModel, rangePending, completedScope]);
   const model = dayModel?.main ?? null;
   useEffect(() => {
     if (subject === 'phone' && model && diagnosticCommittedDay.current !== day) {
@@ -837,16 +852,19 @@ export function useHistoryScreen({
     if (goToNow.current(preset.goTo)?.type !== 'none') wentTo.current = wanted;
   }, [preset?.goTo, sessionKey, knowledge, restored]);
   // ---- dragging the range -------------------------------------------------
-  const dragRange = useCallback(value => setDraft(value), []);
+  const dragRange = useCallback(value => {
+    if (!value) { cancelRange(); setDraft(null); }
+    else requestRange(() => setDraft(value));
+  }, [cancelRange, requestRange]);
   const commitRange = useCallback(
-    value => {
+    value => requestRange(() => {
       setDraft(null);
       if (!value) return;
       rememberRangeFor(writeKey, value);
       if (readKey !== writeKey) forgetRange(readKey);
       setMemoryRevision(revision => revision + 1);
-    },
-    [writeKey, readKey],
+    }),
+    [writeKey, readKey, requestRange],
   );
   // A new opening forgets the cursor and a half-dragged range (再次進入); a
   // screen fixture can open with the cursor earlier (preset.cursorAgo).
@@ -882,9 +900,14 @@ export function useHistoryScreen({
   );
   const color = look[protagonistId]?.color ?? routeColorOf(subject);
   const map = useMemo(
-    () =>
-      dayModel ? multiMapPresentation(dayModel, cursors, look, theme) : null,
-    [dayModel, cursors, look, theme],
+    () => {
+      if (rangePending || !dayModel) return null;
+      const started = Date.now();
+      const presentation = multiMapPresentation(dayModel, cursors, look, theme);
+      buildCost.current = modelBuildCost.current + Date.now() - started;
+      return presentation;
+    },
+    [dayModel, cursors, look, theme, rangePending],
   );
   const anyData = !!dayModel?.subjects.some(s => s.hasData);
   /** The chips (上方膠囊): every dog shown, the protagonist outlined. */
@@ -1015,9 +1038,10 @@ export function useHistoryScreen({
   return {
     snapshot,
     // The export (H9) captures the whole day's model and the dogs' looks.
-    dayModel, look,
+    dayModel: rangePending ? null : dayModel, look,
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
-    following, cursor, cursors, pressed, focus, map, color, loading,
+    following, cursor, cursors, pressed, focus, map: rangePending ? null : map, color, loading: loading || rangePending,
+    rangePending,
     rangePreviewDelay: Math.max(120, buildCost.current * 4),
     rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
     rangeActive: active,

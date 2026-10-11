@@ -229,7 +229,7 @@ describe('addresses (053a)', () => {
     expect(placeLines(held, { state: 'none' }).title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
   });
 
-  test('the list: 查地址中… while asking, the address when it comes, coordinates after 5 s without one', async () => {
+  test('the list: 查地址中… while asking, the address when it comes, no coordinates after 5 s without one', async () => {
     jest.useFakeTimers();
     try {
       const { model } = await fixtureList('history-today');
@@ -254,7 +254,8 @@ describe('addresses (053a)', () => {
       expect(titles().slice(1)).toEqual([i18nT('c329'), i18nT('c329'), i18nT('c329')]);
       // Five seconds on, the rest count as not found: coordinates, 查不到地址.
       await act(async () => { jest.advanceTimersByTime(5000); });
-      expect(titles()[1]).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
+      expect(titles()[1]).toBe('');
+      expect(text()).not.toMatch(/\d+\.\d{4}, \d+\.\d{4}/);
       expect(text()).not.toContain('查不到地址');
       await act(async () => renderer.unmount());
     } finally {

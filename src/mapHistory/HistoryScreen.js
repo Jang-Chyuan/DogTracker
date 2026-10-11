@@ -39,7 +39,6 @@ import {
   fontScale as fontScales,
 } from '../theme/tokens';
 import HistoryPanel from './HistoryPanel';
-import MyRouteHeader from '../history/screen/MyRouteHeader';
 import HistoryRangeSummary, { HistoryRangeControls } from './HistoryRangeSummary';
 import { historyUsesWideHeader } from '../map/MapPanelHeight';
 import HistoryTimelineList from './HistoryTimelineList';
@@ -137,7 +136,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
           : <Text style={styles.backText}>{t('c117')}</Text>}
       </Capsule>
       <View style={styles.pillSlot}>
-        {subject === 'phone' ? <MyRouteHeader /> : <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
+        {subject === 'phone' ? null : <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
           {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
             {pill.lead.downloadFailed && <View testID="history-download-failed-lead" style={styles.downloadFailure}><BangGlyph size={sizes.badge.size} background={colors.problemBadge} color={colors.avatarFrameMap} /></View>}
             <DogAvatar avatar={pill.lead.avatar} size={sizes.historyTop.avatar} border={0} tint={routeTint(pill.lead, colors)} />
@@ -290,7 +289,9 @@ const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top
   candidates = [], initialSheet = null, exportNative = null, initialExport = null,
   onSheetOpen, onPanelHeight },
 ref) {
-  const styles = getStyles(useTheme());
+  const theme = useTheme();
+  const { colors } = theme;
+  const styles = getStyles(theme);
   const window = useWindowDimensions();
   const wideHeader = historyUsesWideHeader(window);
   const rangeLayoutKey = `${window.width}:${window.height}`;
@@ -495,6 +496,7 @@ ref) {
         <HistoryRangeSummary
           {...rangeProps}
           model={model}
+          pending={screen.rangePending}
           subject={subject}
           open={rangeOpen}
           onToggle={() => openRange(!rangeOpen)}
@@ -517,7 +519,7 @@ ref) {
   ) : null;
 
   let body;
-  if (downloading) body = null;
+  if (downloading || screen.rangePending) body = null;
   else if (download?.kind === 'unfinished' && !model?.dayRecords) {
     // Not H8: the day is not known to be empty (判定表「下載取消或失敗、手機裡又完全沒有」).
     body = (
@@ -562,9 +564,9 @@ ref) {
       <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
         onBack={onBack}
         onAdd={pressAdd}
-        exportEnabled={hasRoute} exportBusy={exporter.generating}
+        exportEnabled={hasRoute && !screen.rangePending} exportBusy={exporter.generating}
         onExport={() => { closeRange(); exporter.open(); }}
-        exportLabel={hasRoute ? t("c821") : downloading ? t("c832")
+        exportLabel={screen.rangePending ? t("c834") : hasRoute ? t("c821") : downloading ? t("c832")
           : empty ? t('c379') : model ? t("c833") : t("c834")}
         hidden={sheetOpen} />
       <HistoryPanel ref={panel} header={header}
@@ -573,7 +575,7 @@ ref) {
         measureKey={`${screen.day}:${subject}:${screen.protagonist}:${(screen.dogs ?? []).map(dog => dog.id).join(',')}:${screen.range?.start}:${screen.range?.end}:${!!model}:${download?.kind ?? ''}`}
         bottomInset={bottomInset} scrollRef={list}
         floating={floatingRange}
-        above={hasRoute && !floatingRange ? <FrameButton onPress={onFrame} /> : null}
+        above={hasRoute && !screen.rangePending && !floatingRange ? <FrameButton onPress={onFrame} /> : null}
       >
         <Pressable
           onPress={closeRange}
@@ -581,10 +583,13 @@ ref) {
           accessible={false}
         >
           {!model && !downloading && !screen.error && download?.kind !== 'unfinished' && <Text style={styles.empty}>{t('c424')}</Text>}
-          <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
+          {screen.rangePending ? <View testID="history-range-loading" accessibilityLiveRegion="polite">
+            <ActivityIndicator size={sizes.spinner} color={colors.text} />
+            <Text style={styles.empty}>{t('c835')}</Text>
+          </View> : <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
             shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
             {body}
-          </LoadingContent>
+          </LoadingContent>}
         </Pressable>
       </HistoryPanel>
       {exporting && <HistoryExportSheet ref={exportSheet} exporter={exporter} bottomInset={bottomInset} />}
