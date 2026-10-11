@@ -1,6 +1,6 @@
 # 最新位置先套用：驗證紀錄
 
-原標題：`fix(history): 下載完成後喚醒讀取，修正歷史持續載入`。既有公開 head 為 `91e7b1be`，PR 仍 Draft；本輪產品整合為 `368b3976`（以下較早原生證據另列為6d47f23f）。此紀錄隨同既有 PR 114 更新。
+原標題：`fix(history): 下載完成後喚醒讀取，修正歷史持續載入`。前一公開 head 為 `91e7b1be`，PR 仍 Draft；本輪產品整合為 `368b3976`（以下較早原生證據另列為6d47f23f）。此紀錄隨同既有 PR 114 更新。
 
 ## 目前確定的來源與程式證據
 
@@ -27,7 +27,13 @@
 
 已有全部10個索引的cold open，固定schema lookup與短no-op batch讓11次native往返減至2次。任何索引缺少保留原11條個別DDL順序／retry，多1個schema lookup；真正建立索引不變成一個長BLE鎖交易。全部SQL定義逐字一致，真SQLite schema/query plan/duplicate failure/partial retry/同連線鎖反例通過。它不改善同PID已初始化的resume。
 
-私有ebc06881與產品368b3976只差原固定integer probes，exact tracked tree比對已核。私有Release19秒成功、APK a74d34967d1e765801482485e95a801cb9cd9a3dd5f774692b45de1bbc2f8b06；最新版5554原生驗收進行中，尚不能用較早6d的native結果當作新版速度或所有情境通過。
+私有ebc06881與產品368b3976只差原固定integer probes，exact tracked tree比對已核。私有Release19秒成功、APK a74d34967d1e765801482485e95a801cb9cd9a3dd5f774692b45de1bbc2f8b06；新版真5554同PID28057實測：
+
+- 冷啟動四窗實際26.457／52.855／108.884／121.627秒，最後attempt1仍未取得同次快照proof。Splash的10秒最新資料等待已逾時並依設計進地圖；這是新增等待的fallback，不表示網路已報錯或整個同步被取消。主視窗亲看fresh正常地圖、無Splash新按鈕；不能把此窗口算最新位置成功或冷啟速度通過。
+- 同PID實際Home30.620秒後返回，新attempt6在5.007與20.009秒仍等待，50.010秒取樣已同attempt6 proof6／owner／scope／generation相符、latestApplied1、contextPending1、mapBusy0。主視窗亲看fresh地圖無更新提示：最新資料套用後已解除等待，室內context繼續背景處理。完成在取樣窗口之間，不能稱精確50秒完成。
+- 此版本的實際resume速度仍不符合期望；查詢重疊不能被當作全部慢窗已修。共用資料庫必要讀取的排隊正在另查，原生長工作、HTTP／事件迴圈均可能影響，未給CPU或因果結論。
+
+本輪沒有新真實歷史全流程／離線恢復的完成證據，仍維持Draft；不得用較早6d的native結果替代新版所有情境通過。
 
 ## 需保留的限制
 
