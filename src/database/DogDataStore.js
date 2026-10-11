@@ -25,7 +25,10 @@ import { executeHistoryMaterialBatch } from '../cloud/HistoryMaterialPublication
 export const DOG_DATA_TABLES = Object.freeze(['dog_status', 'supabase_dog_status', 'receiver_range_state', 'history_download_state']);
 // Pending pages and their completion proof are also dog data. Keep published
 // sync cursors, but never let an abandoned pre-delete job resurrect positions.
-const deletedTables = [...DOG_DATA_TABLES, 'cloud_download_jobs', 'cloud_archive_publication',
+const deletedTables = [...DOG_DATA_TABLES,
+  // Before latest gained its own file, these snapshots lived in the archive.
+  // Upgrades keep the tables: clear their all-account positions/context too.
+  'cloud_latest_snapshot', 'cloud_snapshot_state', 'cloud_download_jobs', 'cloud_archive_publication',
   ...['auto', 'manual'].flatMap(kind => ['supabase_dog_status', 'cloud_sync_state',
     'cloud_sync_buckets', 'history_download_state'].map(table => `cloud_${kind}_${table}`))];
 export const UPLOAD_QUEUE = 'ble_upload_queue';

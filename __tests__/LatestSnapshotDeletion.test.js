@@ -135,6 +135,7 @@ test('schemas created by an earlier draining archive job are discovered inside t
   const entered = deferred(), held = deferred(), fenced = deferred();
   const oldArchive = withCloudSyncSlot(async () => {
     entered.resolve(); await held.promise;
+    await seedLegacyArchiveSnapshots();
     archive.sqlite.exec(`CREATE TABLE cloud_download_jobs(owner TEXT,kind TEXT,scope TEXT);
       INSERT INTO cloud_download_jobs VALUES('a','auto','old');
       CREATE TABLE cloud_auto_supabase_dog_status(id INTEGER);
@@ -146,7 +147,7 @@ test('schemas created by an earlier draining archive job are discovered inside t
   const deletion = createDogDataStore(archive, database).deleteAll({ beforeDelete: () => fenced.resolve() });
   try {
     await fenced.promise; held.resolve(); await oldArchive; await deletion;
-    for (const table of ['cloud_download_jobs','cloud_auto_supabase_dog_status','cloud_archive_publication'])
+    for (const table of ['cloud_download_jobs','cloud_auto_supabase_dog_status','cloud_archive_publication','cloud_latest_snapshot','cloud_snapshot_state'])
       expect(archive.sqlite.prepare(`SELECT * FROM ${table}`).all()).toEqual([]);
     expect(marker()).toMatchObject({ epoch: 1, deletion_pending: 0 });
   } finally { held.resolve(); await oldArchive; await deletion; }
@@ -178,4 +179,71 @@ test('real S7 flow retains the dialog after a failed archive transaction and inv
     const replacement = reopen(); await replacement.publishLatestSnapshot('a', snapshot);
     expect(await replacement.readLatestSnapshot('a', { positionsOnly: true })).toMatchObject({ verified: true });
   } finally { act(() => renderer.unmount()); }
+});
+
+
+// The pre-isolation CloudDatabase used this same connection for latest. Its
+// still-supported legacy adapter creates exactly those two old table schemas,
+// so this is an actual upgrade fixture, not a mocked delete-command list.
+async function seedLegacyArchiveSnapshots() {
+  const legacy = createCloudDatabase(archive);
+  await legacy.publishLatestSnapshot('a', { ...snapshot,
+    dogs: [{ ...snapshot.dogs[0], context: [packet], seeds: [packet] }] });
+  await legacy.publishLatestSnapshot('b', { ...snapshot, cutoff: 3000 });
+  return legacy;
+}
+
+test('upgrade clears all-account legacy archive snapshots and state along with the new latest file, preserving their schemas', async () => {
+  const legacy = await seedLegacyArchiveSnapshots();
+  const schemas = archive.sqlite.prepare("SELECT name,sql FROM sqlite_master WHERE name IN ('cloud_latest_snapshot','cloud_snapshot_state') ORDER BY name").all();
+  expect(schemas).toHaveLength(2);
+  expect(archive.sqlite.prepare('SELECT owner_user_id FROM cloud_latest_snapshot ORDER BY owner_user_id').all())
+    .toEqual([{ owner_user_id: 'a' }, { owner_user_id: 'b' }]);
+  archive.sqlite.exec(`INSERT INTO dog_status(received_at,slave_id) VALUES(1000,6);
+    CREATE TABLE myLocationTracker(id INTEGER); INSERT INTO myLocationTracker VALUES(7);
+    CREATE TABLE app_settings(key TEXT,value TEXT); INSERT INTO app_settings VALUES('recording','on');
+    CREATE TABLE dog_avatars(slave_id INTEGER); INSERT INTO dog_avatars VALUES(6)`);
+  await createDogDataStore(archive, database).deleteAll();
+  for (const table of ['cloud_latest_snapshot','cloud_snapshot_state','dog_status'])
+    expect(archive.sqlite.prepare(`SELECT * FROM ${table}`).all()).toEqual([]);
+  expect(archive.sqlite.prepare("SELECT name,sql FROM sqlite_master WHERE name IN ('cloud_latest_snapshot','cloud_snapshot_state') ORDER BY name").all()).toEqual(schemas);
+  expect(await legacy.readLatestSnapshot('a', { positionsOnly: true })).toBeNull();
+  expect(await database.readLatestSnapshot('a', { positionsOnly: true })).toBeNull();
+  expect(marker()).toMatchObject({ epoch: 1, deletion_pending: 0 });
+  expect(archive.sqlite.prepare('SELECT * FROM myLocationTracker').all()).toEqual([{ id: 7 }]);
+  expect(archive.sqlite.prepare('SELECT * FROM app_settings').all()).toEqual([{ key: 'recording', value: 'on' }]);
+  expect(archive.sqlite.prepare('SELECT * FROM dog_avatars').all()).toEqual([{ slave_id: 6 }]);
+});
+
+test('legacy snapshot delete failure rolls back archive dog rows and both old tables, leaves durable fence, and succeeds on retry', async () => {
+  await seedLegacyArchiveSnapshots();
+  archive.sqlite.exec(`INSERT INTO dog_status(received_at,slave_id) VALUES(1000,6);
+    CREATE TRIGGER refuse_legacy_state_delete BEFORE DELETE ON cloud_snapshot_state
+      BEGIN SELECT RAISE(ABORT,'invented legacy deletion failure'); END`);
+  const oldSnapshots = archive.sqlite.prepare('SELECT * FROM cloud_latest_snapshot ORDER BY owner_user_id').all();
+  const oldStates = archive.sqlite.prepare('SELECT * FROM cloud_snapshot_state ORDER BY owner_user_id').all();
+  const oldDogs = archive.sqlite.prepare('SELECT * FROM dog_status').all();
+  const store = createDogDataStore(archive, database);
+  await expect(store.deleteAll()).rejects.toThrow('invented legacy deletion failure');
+  expect(archive.sqlite.prepare('SELECT * FROM cloud_latest_snapshot ORDER BY owner_user_id').all()).toEqual(oldSnapshots);
+  expect(archive.sqlite.prepare('SELECT * FROM cloud_snapshot_state ORDER BY owner_user_id').all()).toEqual(oldStates);
+  expect(archive.sqlite.prepare('SELECT * FROM dog_status').all()).toEqual(oldDogs);
+  expect(marker()).toMatchObject({ epoch: 1, deletion_pending: 1 });
+  await expect(reopen().readLatestSnapshot('a')).rejects.toThrow(t('c1275'));
+  archive.sqlite.exec('DROP TRIGGER refuse_legacy_state_delete');
+  await store.deleteAll();
+  for (const table of ['cloud_latest_snapshot','cloud_snapshot_state','dog_status'])
+    expect(archive.sqlite.prepare(`SELECT * FROM ${table}`).all()).toEqual([]);
+  expect(marker()).toMatchObject({ epoch: 2, deletion_pending: 0 });
+  expect(await reopen().readLatestSnapshot('a', { positionsOnly: true })).toBeNull();
+});
+
+test.each(['cloud_latest_snapshot','cloud_snapshot_state'])('a partial old upgrade with missing %s remains deletable without recreating that legacy table', async missing => {
+  await seedLegacyArchiveSnapshots();
+  archive.sqlite.exec(`DROP TABLE ${missing}`);
+  const kept = missing === 'cloud_latest_snapshot' ? 'cloud_snapshot_state' : 'cloud_latest_snapshot';
+  await createDogDataStore(archive, database).deleteAll();
+  expect(archive.sqlite.prepare('SELECT name FROM sqlite_master WHERE name=?').all(missing)).toEqual([]);
+  expect(archive.sqlite.prepare(`SELECT * FROM ${kept}`).all()).toEqual([]);
+  expect(marker()).toMatchObject({ epoch: 1, deletion_pending: 0 });
 });
