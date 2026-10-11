@@ -35,6 +35,26 @@
 
 本輪沒有新真實歷史全流程／離線恢復的完成證據，仍維持Draft；不得用較早6d的native結果替代新版所有情境通過。
 
+## 公開原生畫面：獨立虛構九隻狗
+
+主視窗已親看以下五張原 PNG。來源是產品368b3976的相同CloudSync／latest query／snapshot helper／useCloudDogs／MapScreen／history流程，私有截圖版只提供獨立九狗資料與記憶體回應控制；截圖 APK 的 Release 建置19秒成功。圖內qa@example.invalid是虛構帳號，未使用使用者CSV、位移後真路線或真帳資料。控制器只釋放回應，不直接寫 latestApplied／mapBusy 或完整歷史proof。
+
+| 最新資料仍在等 | 最新快照已套用，背景仍待補 |
+| --- | --- |
+| ![最新位置等待](evidence/cloud-latest-first/latest-pending.png) | ![最新位置已套用](evidence/cloud-latest-first/latest-applied.png) |
+
+接受最新位置後，原更新提示消失、九狗恢復實色。這两張前後圖是功能路徑，不能證明逐影格原子繪製、真Supabase延遲或CPU改善；密集名字重疊仍屬PR113範圍，沒有為截图移動或隱藏狗。
+
+| 背景補齊狀態 | 未知完整歷史 |
+| --- | --- |
+| ![背景補齊歷史](evidence/cloud-latest-first/history-background.png) | ![歷史未完成時載入](evidence/cloud-latest-first/history-loading.png) |
+
+正式context budget結束後，設定顯示最後成功與「背景補齊歷史中」。實際狗7卡片進入當日軌跡，只顯下載與「正在補齊紀錄，完成後顯示路線」，地圖沒有假路線／停留清單，匯出圖示呈灰。此時UIAutomator未產生有效XML，沒有宣原生點擊匯出被拒的測試通過；disabled與coverage保護另有正式React測試。
+
+![冷啟動等待失敗後進地圖提示](evidence/cloud-latest-first/cold-fallback-map.png)
+
+同一cold process未釋放最新回應：13秒圖仍狗動畫，較晚原圖才實際正常地圖與「更新失敗／重試」，Splash沒有新增面板。10秒是新增latest條件的等待，不是從process啟動保證10秒進地圖；原資料庫／偏好／登入／地圖框選条件仍保留。這是虛构等待回應展示，不冒稱真離線、撤權或首次無快取驗證。
+
 ## 需保留的限制
 
 同連線原生交易／shared slot 仍需正確 drain，不繞過 owner fence；索引、SQL、網路等待與其他慢窗口沒有全面消除保證。068 CPU 尚未完成，wall 觀察不作 CPU／HTTP 因果。First no-cache、撤權／token 過期、多頁取消缺獨立 QA 帳號，不能冒稱實測。私有帳號、位置、CSV／GPX、原生圖像與 raw logs 不公開。
