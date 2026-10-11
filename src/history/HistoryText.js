@@ -68,6 +68,11 @@ export function sectionText(section) {
  * 'closed' (warn) or 'indoor' (receiver); null for a switch point.
  */
 export function nodePill(node) {
+  if (node.terminalStay) {
+    const endpoint = nodePill({ ...node, terminalStay: null });
+    const stay = nodePill(node.terminalStay);
+    return { ...endpoint, text: `${endpoint.text} · ${stay.text}` };
+  }
   switch (node.type) {
     case 'departure':
       return { text: t('c124'), tone: 'plain' };
@@ -107,12 +112,13 @@ export function placeLines(node, place = { state: 'none' }) {
 
 /** The left column: one time, or a stay's start and end. */
 export function nodeTimes(node) {
-  return node.type === 'stop' || node.type === 'indoor'
+  return node.terminalStay || node.type === 'stop' || node.type === 'indoor'
     ? [clock(node.start), clock(node.end)] : [clock(node.start)];
 }
 
 /** 「不含中斷 5 分」 under a stay that was interrupted (判定表「停留清單的中斷說明」). */
 export function interruptionText(node) {
+  if (node.terminalStay) return interruptionText(node.terminalStay);
   return node.type === 'stop' && node.interruptionMs > 0 ? t('c337', { duration: listDuration(node.interruptionMs) }) : '';
 }
 
@@ -196,7 +202,7 @@ export function placeSpeech(node, title) {
       : pill?.text ?? '';
   // A stay's own length, interruptions left out (as its pill 「停 25 分」).
   const length =
-    node.type === 'stop' && Number.isFinite(node.durationMs)
+    (node.type === 'stop' || node.terminalStay) && Number.isFinite(node.durationMs)
       ? node.durationMs
       : node.end - node.start;
   const minutes = end ? t("c664", { value: Math.round(length / 60000) }) : '';

@@ -160,10 +160,10 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
       <PressScale testID="history-export" accessibilityRole="button"
         accessibilityLabel={exportBusy ? t("c837") : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
-        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.chip.height) / 2}
+        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.historyTop.exportDisc) / 2}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
-          : <Glyph name="export" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
+          : <Glyph name="export" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.navigation} />}
       </PressScale>
     </View>
   );
@@ -290,7 +290,6 @@ const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top
   onSheetOpen, onPanelHeight },
 ref) {
   const theme = useTheme();
-  const { colors } = theme;
   const styles = getStyles(theme);
   const window = useWindowDimensions();
   const wideHeader = historyUsesWideHeader(window);
@@ -584,8 +583,7 @@ ref) {
         >
           {!model && !downloading && !screen.error && download?.kind !== 'unfinished' && <Text style={styles.empty}>{t('c424')}</Text>}
           {screen.rangePending ? <View testID="history-range-loading" accessibilityLiveRegion="polite">
-            <ActivityIndicator size={sizes.spinner} color={colors.text} />
-            <Text style={styles.empty}>{t('c835')}</Text>
+            <LoadingContent loading shape="timeline" label={t('c835')} skeletonTestID="history-range-skeleton" />
           </View> : <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
             shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
             {body}

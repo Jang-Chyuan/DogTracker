@@ -464,7 +464,7 @@ export const size = {
     },
 
     // History timeline section-row footprint (§13).
-    sectionHeight: 40,
+    sectionHeight: 56,
 
     // §13 timeline status pills.
     pill: {
@@ -527,7 +527,7 @@ export const size = {
     sectionHeight: 72,
     footerFont: 24,
     placeMin: 140,
-    movementMin: 96,
+    movementMin: 168,
     rowGap: 36,
     dottedLine: { diameter: 9, gap: 21 },
     driveLine: 9,
@@ -708,7 +708,7 @@ export const size = {
     companionAvatar: 18,
     avatarOverlap: 6,
     slotLimit: 240,
-    exportDisc: 36,
+    exportDisc: 44,
     caretGlyph: 10,
     // 「＋」 in a dashed accent circle, avatar-sized (user 2026-10-09, B).
     plusRing: 32,

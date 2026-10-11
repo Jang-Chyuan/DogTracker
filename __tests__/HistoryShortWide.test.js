@@ -171,6 +171,8 @@ test.each([{ width: 393, height: 851 }, { width: 851, height: 393 }])('real scre
       expect(state.screen.rangePending).toBe(true);
       expect(state.screen.map).toBeNull();
       expect(one(tree, 'history-range-loading')).toBeDefined();
+      expect(one(tree, 'history-range-skeleton')).toBeDefined();
+      expect(one(tree, 'history-range-loading').findAll(node => node.type === 'ActivityIndicator')).toEqual([]);
       expect(one(tree, 'history-timeline')).toBeUndefined();
       expect(one(tree, 'history-export').props.accessibilityState.disabled).toBe(true);
     }

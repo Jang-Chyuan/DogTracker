@@ -301,9 +301,9 @@ function HistoryTimelineList({
   );
 }
 
-// Rows are 40dp at least with 12dp between: 4dp more above and below reach
-// 48dp without overlapping the next row.
-const ROW_SLOP = { top: (touch.min - sizes.timeline.sectionHeight) / 2, bottom: (touch.min - sizes.timeline.sectionHeight) / 2 };
+// Transport rows are tall enough to expose line above and below the glyph.
+// Only shorter footprints need extra slop to reach the minimum hit target.
+const ROW_SLOP = { top: space.xs, bottom: space.xs };
 
 const isSection = node => ['movement', 'gap'].includes(node?.type);
 

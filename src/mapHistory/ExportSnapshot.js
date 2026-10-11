@@ -70,7 +70,7 @@ export function exportTimelineRows(nodes, addressOf) {
     const lines = placeLines(node, found ? { state: 'found', text: found } : { state: 'none' });
     let pill = nodePill(node);
     // 匯出的檔案一律寫實際時刻: the end is 「結束」 (its time is in the left column).
-    if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = { text: t('c330'), tone: 'plain' };
+    if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = nodePill({ ...node, label: t('c330') });
     const next = shown[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: [nodeTimes(node)[0]],
       title: found ? lines.title : '', coordinates: '', missing: lines.missing, pill,

@@ -13,5 +13,15 @@ export function timelinePresentation(nodes = []) {
         countedDistanceM: prior.countedDistanceM + node.countedDistanceM };
     } else shown.push(node);
   }
+  // A terminal stay and its same-coordinate endpoint are one visual place.
+  // Inspect the original adjacency: a hidden weak-GPS row must still veto it.
+  const end = nodes[nodes.length - 1], stay = nodes[nodes.length - 2];
+  if (end?.type === 'end' && stay?.type === 'stop' && stay.end === end.start
+    && !stay.gaps?.length && !stay.displayRange?.gaps?.length
+    && Number.isFinite(stay.latitude) && Number.isFinite(stay.longitude)
+    && stay.latitude === end.latitude && stay.longitude === end.longitude) {
+    shown.splice(shown.length - 2, 2, { ...end, start: stay.start,
+      durationMs: stay.durationMs, terminalStay: stay, number: null });
+  }
   return shown;
 }
