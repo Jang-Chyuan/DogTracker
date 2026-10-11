@@ -929,7 +929,9 @@ export function useHistoryScreen({
   const download = downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
     day: shownKey,
     hasRows: dayRecords,
-    incomplete: knowledge.incomplete.includes(shownKey) || (!coverageReady && cloudDays.completenessLoaded),
+    // Unknown durable proof is still being read, not a failed download.
+    // Explicit downloading/failed/cancelled states above retain their own UI.
+    incomplete: cloudDays.completenessLoaded && (knowledge.incomplete.includes(shownKey) || !coverageReady),
   });
   // A screen fixture can open on another day (preset.goTo: H3c starts its
   // download), once per opening.
