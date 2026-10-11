@@ -99,7 +99,9 @@ export function createBleService(manager = new BleManager()) {
 
   const getBackgroundState = async () => {
     if (!nativeBle?.getState) return null;
+    const generation = connectionGeneration;
     const state = await nativeBle.getState();
+    if (generation !== connectionGeneration) return null;
     if (nativeSessionId && state.sessionId !== nativeSessionId) return null;
     nativeConnected = Boolean(state.running && state.connected && state.enabled);
     handleNativeValue(state.lastPayload, state.lastReceivedAt);
@@ -322,6 +324,7 @@ export function createBleService(manager = new BleManager()) {
           for (let attempt = 0; attempt < 70; attempt += 1) {
             if (generation !== connectionGeneration) return false;
             const state = await getBackgroundState();
+            if (generation !== connectionGeneration) return false;
             if (state?.sessionId === sessionId) {
               onStatus(state.lastStatus);
               if (!state.enabled) return false;
@@ -331,6 +334,7 @@ export function createBleService(manager = new BleManager()) {
           }
           onStatus(t("c500"));
         } catch (error) {
+          if (generation !== connectionGeneration) return false;
           nativeSessionId = null;
           onStatus(t("c501", { message: error.message }));
         }
