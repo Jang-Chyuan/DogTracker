@@ -40,7 +40,14 @@ async function fixture({ downloadContext = async () => { throw new Error('contex
     cutoffForArchive = cutoff;
     return { cutoff, dogs: [{ slaveId: 4, packet: fix(), fix: fix() }] };
   });
-  engine = createCloudSync({ client, database, downloadLatest, downloadContext, onChange: state => states.push(state) });
+  engine = createCloudSync({ client, database, downloadLatest, downloadContext, onChange: state => {
+    states.push(state);
+    // Producer-stage tests explicitly apply its real committed SQLite
+    // readback. CloudLatestPriority separately proves React effect ACK timing.
+    const publication = engine?.mapPublication();
+    if (!publication?.pending && !publication?.busy && publication?.readback)
+      publication.acknowledgeMapRead(publication.readback);
+  } });
   const start = async () => { engine.setForeground(true); engine.setSession({ user: { id: 'a' } }); await flush(); };
   return { client, database, downloadLatest, states, current: () => states.at(-1), start };
 }
@@ -110,7 +117,7 @@ test('archive proof remains a separate acceptance wait and restores only durable
     await start();
     expect(proofEntered).toBe(true);
     expect(downloadLatest).toHaveBeenCalledTimes(1);
-    expect(current()).toMatchObject({ archiveRevision: 0, archiveCutoff: null, mapSuccessRevision: 0 });
+    expect(current()).toMatchObject({ archiveRevision: 0, archiveCutoff: null, mapSuccessRevision: 1 });
     proof.resolve(); await flush();
     expect(downloadLatest).toHaveBeenCalledTimes(1);
     expect(current().archiveRevision).toBeGreaterThanOrEqual(1);

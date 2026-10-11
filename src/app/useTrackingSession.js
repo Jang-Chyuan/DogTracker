@@ -263,7 +263,19 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         }
       });
 
-      let cloudInitialization;
+      let cloudInitialization, latestInitialization;
+      function initializeLatest() {
+        if (!databases.cloud) return Promise.reject(new Error(t("c486")));
+        if (!latestInitialization) {
+          const task = initialization.real.then(() => initialLocalAttempt).then(() => {
+            if (disposed) throw new Error(t("c483"));
+            return (databases.cloud.initializeLatest ?? databases.cloud.initialize)();
+          });
+          latestInitialization = task;
+          task.catch(() => { if (latestInitialization === task) latestInitialization = null; });
+        }
+        return latestInitialization;
+      }
       function initializeCloud() {
         if (!databases.cloud) return Promise.reject(new Error(t("c486")));
         if (!cloudInitialization) {
@@ -290,9 +302,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           return task.finally(() => commands.delete(task));
         },
         cloudCommand(method, args) {
-          const task = initializeCloud().then(() => {
+          const latest = ['initializeLatest', 'readLatestSnapshot', 'publishLatestSnapshot'].includes(method);
+          const local = ['loadRangeState', 'saveRangeState'].includes(method)
+            || (['latestStatusRows', 'holdRows'].includes(method) && !args[0]);
+          const readiness = latest || local ? initializeLatest : initializeCloud;
+          const task = readiness().then(() => {
             if (disposed) throw new Error(t("c483"));
-            return method === 'initialize' ? undefined : databases.cloud[method](...args);
+            return ['initialize', 'initializeLatest'].includes(method) ? undefined : databases.cloud[method](...args);
           });
           commands.add(task);
           return task.finally(() => commands.delete(task));

@@ -73,7 +73,12 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     async function readLatestPositions() {
       try {
         if (!valid()) return;
-        const snapshot = await database.readLatestSnapshot(owner, { positionsOnly: true });
+        const producer = scheduler.current?.();
+        const readback = producer?.readback;
+        const supplied = readback?.owner === owner && readback.scope === producer.scope
+          && readback.generation === producer.generation && readback.attempt === producer.attempt
+          && readback.revision === cloudSuccess ? readback : null;
+        const snapshot = supplied?.snapshot ?? await database.readLatestSnapshot(owner, { positionsOnly: true });
         if (!snapshot?.verified || !valid()) return;
         const accepted = scheduler.current?.();
         attempt.rows = snapshot.rows;
@@ -95,7 +100,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
             statuses: retainedContext(prior.statuses, prior.contextPairs, pairs),
             ranges: retainedContext(prior.ranges, prior.contextPairs, pairs), error: '', loaded: true,
             cloudCommit: cloudSuccess, cloudPublication: attempt.cloudPublication,
-            cachedBaseline: false } };
+            cachedBaseline: false, acceptedReadback: supplied } };
         });
       } catch (error) {
         if (valid()) setCache(current => valid() ? ({ owner, database,
@@ -142,7 +147,15 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           && attempt.epoch === epoch && !attempt.blocked && fence.valid();
         const cachedFence = scheduler.current?.();
         const readOwner = latestFirst ? owner : blockCloud ? null : owner;
-        const snapshot = latestFirst && readOwner ? await database.readLatestSnapshot(readOwner) : null;
+        const snapshot = latestFirst && readOwner ? await database.readLatestSnapshot(readOwner, {
+          bootstrap: cachedFence?.bootstrapAllowed ?? true,
+          isCurrent: () => {
+            const current = scheduler.current?.();
+            return alive && publication.current === attempt && (!cachedFence ||
+              cachedFence.owner === current?.owner && cachedFence.scope === current.scope
+              && cachedFence.generation === current.generation && cachedFence.attempt === current.attempt);
+          },
+        }) : null;
         const acceptsBaseline = () => {
           const current = scheduler.current?.();
           return latestFirst && snapshot && !attempt.baselineLoaded && alive && publication.current === attempt
@@ -267,6 +280,20 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
       refresh.current?.();
     lastTrigger.current = { revision, cloudBusy, cloudSuccess };
   }, [revision, cloudBusy, cloudSuccess]);
+  // Acknowledge only the cache that React actually committed, never from a
+  // state updater or render. The producer validates the immutable object and
+  // its complete owner/generation/attempt tuple again before archive work.
+  useEffect(() => {
+    if (!active || !enabled || cache.owner !== owner || cache.database !== database) return;
+    const value = cache.value, readback = value.acceptedReadback;
+    if (!readback || value.error || !value.loaded || value.cloudCommit !== readback.revision) return;
+    const proof = value.cloudPublication;
+    if (proof?.owner !== readback.owner || proof.scope !== readback.scope
+      || proof.generation !== readback.generation || proof.attempt !== readback.attempt || proof.revision !== readback.revision) return;
+    const current = scheduler.current?.();
+    if (current?.readback === readback && current.owner === owner && !current.pending && !current.busy)
+      current.acknowledgeMapRead?.(readback);
+  }, [cache, owner, database, active, enabled]);
   // Never expose another account's cache, even for the render before effects run.
   return enabled && cache.owner === owner && cache.database === database ? cache.value : empty();
 }

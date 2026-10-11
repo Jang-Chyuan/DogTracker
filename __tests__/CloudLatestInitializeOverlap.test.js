@@ -29,7 +29,14 @@ async function fixture({ beforeRead, downloadLatest, events = [cloudEvent(1, NOW
     ...(downloadLatest ? { downloadLatest } : {}),
     ...(now ? { now } : {}),
     downloadContext: async () => { throw new Error('optional context unavailable'); },
-    onChange: state => states.push(state) });
+    onChange: state => {
+      states.push(state);
+      // Apply the real producer readback for these network/readiness stages;
+      // actual committed React timing is guarded in CloudLatestPriority.
+      const publication = engine?.mapPublication();
+      if (!publication?.pending && !publication?.busy && publication?.readback)
+        publication.acknowledgeMapRead(publication.readback);
+    } });
   const start = async () => {
     engine.setSession({ user: { id: 'invented-owner' } }); engine.setForeground(true); await flush();
   };
@@ -47,7 +54,7 @@ function holdSql(predicate) {
 const acceptedEvents = () => info.mock.calls.filter(([name]) => name === '[CloudSync] latest-published');
 
 test('real SDK latest requests overlap real SQLite initialization but do not publish before native readiness', async () => {
-  const f = await fixture(), held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const f = await fixture(), held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); await held.entered.promise;
     expect(f.network.calls.some(call => call.phase === 'masters')).toBe(true);
@@ -80,7 +87,7 @@ test('legacy archive sync still waits for real SQLite initialization before requ
 
 test('a completed prefetch cannot replace a newer server packet after a long native initialization wait', async () => {
   const events = [cloudEvent(1, NOW - 1000)], f = await fixture({ events });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); await held.entered.promise;
     await jest.advanceTimersByTimeAsync(35000);
@@ -94,7 +101,7 @@ test('a completed prefetch cannot replace a newer server packet after a long nat
 test('expired prefetch repeats membership as well as latest and discovers a newly authorized master and dog', async () => {
   const members = [{ gateway_id: 'master_7', slave_id: 6 }], events = [cloudEvent(1, NOW - 1000)];
   const f = await fixture({ members, events });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); await held.entered.promise;
     await jest.advanceTimersByTimeAsync(35000);
@@ -113,7 +120,7 @@ test('a refused replacement rejects the attempt instead of accepting the stale p
     .mockImplementationOnce(async ({ cutoff }) => ({ cutoff, dogs: [] }))
     .mockImplementationOnce(async () => { throw failure; });
   const f = await fixture({ downloadLatest });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); await jest.advanceTimersByTimeAsync(35000);
     held.gate.resolve(); await flush();
@@ -134,7 +141,7 @@ test('the replacement remains within the original global deadline and cannot pub
       signal = current; await replacement.promise; return { cutoff, dogs: [] };
     });
   const f = await fixture({ downloadLatest });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); await jest.advanceTimersByTimeAsync(110000);
     held.gate.resolve(); await flush();
@@ -163,7 +170,7 @@ test('phase diagnostics include both request groups while overlapping native dur
       if (membershipCall === 3) await masters2.promise;
     }
   } });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start();
     clock = NOW + 5; masters1.resolve(); await flush();
@@ -188,7 +195,7 @@ test('a slow replacement does not start a third request group or reuse the first
     .mockImplementationOnce(async ({ cutoff }) => ({ cutoff, dogs: [] }))
     .mockImplementationOnce(async ({ cutoff }) => { await replacement.promise; return { cutoff, dogs: [] }; });
   const f = await fixture({ downloadLatest });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); await jest.advanceTimersByTimeAsync(35000);
     held.gate.resolve(); await flush();
@@ -201,7 +208,7 @@ test('a slow replacement does not start a third request group or reuse the first
   } finally { held.gate.resolve(); replacement.resolve(); await flush(); }
 });
 
-test.each(['archive proof', 'snapshot metadata'])('completed HTTP still waits for real %s before accepting latest', async stage => {
+test.each(['archive proof', 'snapshot metadata'])('real %s retains its own readiness boundary after HTTP completes', async stage => {
   const f = await fixture(); await f.database.initialize();
   const held = holdSql(query => stage === 'archive proof'
     ? query.includes('SELECT cutoff,revision FROM cloud_archive_publication')
@@ -209,8 +216,9 @@ test.each(['archive proof', 'snapshot metadata'])('completed HTTP still waits fo
   try {
     await f.start(); await held.entered.promise;
     expect(f.network.calls.some(call => call.phase === 'packet')).toBe(true);
-    expect(f.current().mapSuccessRevision).toBe(0);
-    expect(acceptedEvents()).toEqual([]);
+    expect(f.current().mapSuccessRevision).toBe(stage === 'archive proof' ? 1 : 0);
+    expect(acceptedEvents()).toHaveLength(stage === 'archive proof' ? 1 : 0);
+    expect(f.current().archiveCutoff).toBeNull();
     held.gate.resolve(); await flush();
     expect(acceptedEvents()).toHaveLength(1);
     expect(f.current().mapSuccessRevision).toBe(1);
@@ -224,7 +232,7 @@ test('a real initialization failure aborts a held network sibling and retries st
   } });
   const execute = db.executeAsync.getMockImplementation(), held = deferred(); let first = true;
   db.executeAsync.mockImplementation(async (query, params) => {
-    if (first && query === 'PRAGMA table_info(supabase_dog_status)') {
+    if (first && query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot')) {
       first = false; await held.promise; throw new Error('synthetic storage failure');
     }
     return execute(query, params);
@@ -247,7 +255,7 @@ test('early network rejection is handled while native work drains and reports it
   const failure = Object.assign(new Error('synthetic refused snapshot'), { status: 401 });
   const downloadLatest = jest.fn(async () => { throw failure; });
   const f = await fixture({ downloadLatest });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); expect(downloadLatest).toHaveBeenCalledTimes(1);
     expect(acceptedEvents()).toEqual([]);
@@ -260,7 +268,7 @@ test('early network rejection is handled while native work drains and reports it
 });
 
 test.each(['owner replacement', 'background'])('prefetched data cannot publish after %s while real native initialization drains', async action => {
-  const f = await fixture(), held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
+  const f = await fixture(), held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
   try {
     await f.start(); expect(f.network.calls.some(call => call.phase === 'packet')).toBe(true);
     if (action === 'owner replacement') engine.setSession({ user: { id: 'other-invented-owner' } });

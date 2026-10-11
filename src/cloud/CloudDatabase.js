@@ -61,7 +61,7 @@ export function latestCloudStatusQuery(validFix, full = false) {
 
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
-export const CLOUD_DATABASE_METHODS = ['readArchivePublication', 'readLatestSnapshot', 'publishLatestSnapshot', 'initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
+export const CLOUD_DATABASE_METHODS = ['initializeLatest', 'readArchivePublication', 'readLatestSnapshot', 'publishLatestSnapshot', 'initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
   'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
   'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
@@ -71,7 +71,7 @@ const initialization = new WeakMap();
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
   const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
-  return { ...database, ...createLatestSnapshotDatabase(connection, database.initialize, async owner => {
+  return { ...database, ...createLatestSnapshotDatabase(connection, async () => {}, async owner => {
     const read = async fixed => {
       const result = await connection.executeAsync(latestCloudStatusQuery(fixed, true), [owner, 0, owner]);
       return result.results || result.rows?._array || [];
@@ -98,7 +98,7 @@ export function createCloudDatabase(connection, options = {}) {
       contexts.set(packet.slave_id, { rows: window, seeds });
     }
     return { packets, fixes: await read(true), contexts };
-  }) };
+  }, database.initialize) };
 }
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, historyMaterialTracking = true } = {}) {

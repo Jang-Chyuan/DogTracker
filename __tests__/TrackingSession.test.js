@@ -155,6 +155,36 @@ describe('tracking session and connection lifetime', () => {
     }
   });
 
+  test('latest readiness keeps the real local-first barrier but an owned history day still waits full maintenance', async () => {
+    const connection = createMemoryConnection(); await createDogDatabase(connection).initialize();
+    const db = databases(), local = deferred(), archive = deferred();
+    db.real.getLatestStatusRow.mockReturnValueOnce(local.promise);
+    db.cloud = createCloudDatabase(connection);
+    db.history = { historyDayRows: jest.fn(async () => []) };
+    const execute = connection.executeAsync.getMockImplementation(); let archiveEntered = false;
+    connection.executeAsync.mockImplementation(async (query, params) => {
+      if (query === 'PRAGMA table_info(supabase_dog_status)') { archiveEntered = true; await archive.promise; }
+      return execute(query, params);
+    });
+    let latest, history;
+    try {
+      await mount(db);
+      await act(async () => { latest = session.cloudDatabase.initializeLatest(); });
+      expect(connection.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='cloud_snapshot_state'").all()).toEqual([]);
+      await act(async () => local.resolve(null)); await latest;
+      expect(session.initialSnapshotReady).toBe(true);
+      expect(archiveEntered).toBe(false);
+      await act(async () => { history = session.historyDatabase.historyDayRows({ owner: 'a' }); });
+      expect(archiveEntered).toBe(true);
+      expect(db.history.historyDayRows).not.toHaveBeenCalled();
+      archive.resolve(); await history;
+      expect(db.history.historyDayRows).toHaveBeenCalledTimes(1);
+    } finally {
+      local.resolve(null); archive.resolve(); await latest?.catch(() => {}); await history?.catch(() => {});
+      await act(async () => renderer?.unmount()); renderer = null; connection.close();
+    }
+  });
+
   test('a failed local snapshot releases cloud startup without fabricating readiness, then local retry succeeds', async () => {
     const db = databases();
     const latest = deferred();

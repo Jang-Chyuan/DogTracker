@@ -6,6 +6,7 @@ import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { cloudSyncDiagnostic } from '../logger';
+import { createMapReadback } from './CloudMapReadback';
 import { downloadCloudLatest, downloadCloudLatestContext } from './CloudLatest';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
@@ -24,6 +25,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   downloadContext = downloadCloudLatestContext }) {
   const latestFirst = typeof database.publishLatestSnapshot === 'function';
   const mapScope = {};
+  const priorityLatest = latestFirst && typeof database.initializeLatest === 'function';
+  let mapReadback = null;
   let owner = null;
   let foreground = false;
   let disposed = false;
@@ -126,6 +129,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     initialAttemptStarted = true;
     resumeCatchUp.started(showCatchUp);
     archiveYieldRequested = false;
+    if (priorityLatest) mapReadback = null;
     publish({ busy: true, mode: 'auto', error: '', authFailed: false, snapshotPending: latestFirst,
       mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
@@ -173,17 +177,19 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           prefetchedLatest = fetchLatest();
         }
         let phaseAt = now();
-        await database.initialize();
+        await (priorityLatest ? database.initializeLatest() : database.initialize());
         timings.initializeMs = Math.max(0, now() - phaseAt);
         check();
         if (latestFirst) {
-          phaseAt = now();
-          const archive = await database.readArchivePublication?.(userId);
-          timings.archiveProofMs = Math.max(0, now() - phaseAt);
-          check();
-          if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
-            && Number.isSafeInteger(archive.revision) && archive.revision > 0)
-            publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
+          if (!priorityLatest) {
+            phaseAt = now();
+            const archive = await database.readArchivePublication?.(userId);
+            timings.archiveProofMs = Math.max(0, now() - phaseAt);
+            check();
+            if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
+              && Number.isSafeInteger(archive.revision) && archive.revision > 0)
+              publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
+          }
           phaseAt = now();
           const cached = await database.readLatestSnapshot(userId, { metadataOnly: true });
           timings.latestCacheReadMs = Math.max(0, now() - phaseAt);
@@ -220,7 +226,14 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
         if (latestFirst) {
           phase = 'publish';
           phaseAt = now();
-          await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
+          const committedRevision = await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
+          if (priorityLatest) {
+            const committed = await database.readLatestSnapshot(userId, { positionsOnly: true });
+            check();
+            if (!committed?.verified || committed.revision !== committedRevision || committed.cutoff !== cutoff) throw new Error(t('c588'));
+            mapReadback = createMapReadback(committed, { owner: userId, scope: mapScope, generation: version,
+              attempt, revision: state.mapSuccessRevision + 1 }, () => valid(version) && state.mapAttempt === attempt && !abort.signal.aborted);
+          }
           timings.snapshotCommitMs = Math.max(0, now() - phaseAt);
           check();
           latestAccepted = true;
@@ -233,6 +246,22 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           if (failureDiagnostic) {
             cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
             failureDiagnostic = null;
+          }
+          if (priorityLatest) {
+            // A true committed React cache acknowledgement precedes any full
+            // archive initialization. No mounted reader defers this pass;
+            // the normal 30s tick/retry can try again without false completion.
+            const acceptedReadback = mapReadback;
+            if (!await acceptedReadback.wait(abort.signal, CONTEXT_BUDGET_MS)) return;
+            check();
+            if (mapReadback !== acceptedReadback) throw new Error(t('c576'));
+            phaseAt = now();
+            const archive = await database.readArchivePublication?.(userId);
+            timings.archiveProofMs = Math.max(0, now() - phaseAt);
+            check();
+            if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
+              && Number.isSafeInteger(archive.revision) && archive.revision > 0)
+              publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
           }
           publish({ contextPending: true });
           const contextAbort = new AbortController();
@@ -355,6 +384,20 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           // polling keeps its S3 error without starting a return indicator.
           if (resumeCatchUp.state().phase === 'idle') resumeCatchUp.caughtUp();
           else resumeCatchUp.failed();
+          if (priorityLatest && !abort.signal.aborted) {
+            // A failed fresh request permits the preserved offline archive
+            // fallback, but never queues its maintenance before latest reads.
+            publish({ snapshotPending: false });
+            try {
+              const archive = await database.readArchivePublication?.(userId);
+              if (valid(version) && !abort.signal.aborted && archive?.owner === userId
+                && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
+                && Number.isSafeInteger(archive.revision) && archive.revision > 0)
+                publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
+            } catch {
+              // Keep the original latest failure. Failed storage is not proof.
+            }
+          }
         }
       } finally {
         if (cancelPrefetch) {
@@ -378,7 +421,9 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     mapPublication() {
       return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending || (!latestFirst && state.publishedPending),
         busy: latestFirst ? state.snapshotPending : state.busy, snapshotBaseRevision: state.snapshotBaseRevision, mapSuccessRevision: state.mapSuccessRevision,
-        publishedRevision: state.publishedRevision, publishedPending: state.publishedPending };
+        publishedRevision: state.publishedRevision, publishedPending: state.publishedPending,
+        ...(priorityLatest ? { readback: mapReadback?.value ?? null, acknowledgeMapRead: value => mapReadback?.acknowledge(value) ?? false,
+          bootstrapAllowed: !state.snapshotPending && !!(state.error || state.authFailed || state.offline) } : {}) };
     },
     historyPublication() {
       return { scope: mapScope, owner, generation, latestFirst, attempt: state.mapAttempt, pending: state.publishedPending,
@@ -389,6 +434,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       const next = session?.user.id || null;
       if (owner === next) return;
       cancelBackgroundSync();
+      mapReadback = null;
       owner = next;
       // The old owner's already-started native transaction cannot be cancelled.
       // Keep its physical publication fence closed for the replacement owner
