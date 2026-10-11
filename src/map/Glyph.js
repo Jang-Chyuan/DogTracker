@@ -128,6 +128,20 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
         // History list: a dog's movement row (H1 狗的歷史).
         <Path d={PAW_STROKE} {...stroke} />
       )}
+      {name === 'dog-list' && (
+        // The explicit dog picker: list rows alongside a floppy-eared face.
+        // One glyph, with no visible words competing with the map's labels.
+        <>
+          <Path d="M2 6h5M2 12h5M2 18h5" {...stroke} />
+          <Path
+            d="M13 10l-1.5-2.5-2 5 3 1.5v3a4 4 0 0 0 8 0v-3l2-1.5-1.5-5L19 10a5 5 0 0 0-6 0Z"
+            {...stroke}
+          />
+          <Circle cx={14.5} cy={13} r={0.6} fill={color} />
+          <Circle cx={18.5} cy={13} r={0.6} fill={color} />
+          <Path d="M15.5 16h2l-1 1zM16.5 17v1.5" {...stroke} />
+        </>
+      )}
       {name === 'car' && (
         // History list: 開車 (my route) and 坐車 (a dog), seen from the side.
         <>

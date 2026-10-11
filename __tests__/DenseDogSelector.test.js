@@ -2,6 +2,8 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Modal, StyleSheet, Text } from 'react-native';
 import DenseDogSelector from '../src/map/DenseDogSelector';
+import Glyph from '../src/map/Glyph';
+import { t } from '../src/i18n';
 import { denseDogScene } from '../__fixtures__/DenseDogScene';
 import { touch } from '../src/theme/tokens';
 
@@ -14,6 +16,24 @@ const props = count => ({ markers: denseDogScene(count).markers, sourceKey: 'own
 beforeEach(() => jest.useFakeTimers());
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = null; jest.useRealTimers(); });
 const render = async value => act(async () => { renderer = Renderer.create(<DenseDogSelector {...value} />); });
+
+test('explicit entry is one dog-list icon with a 48dp target and a complete spoken label', async () => {
+  const p = props(16);
+  await render(p);
+  const entry = item('dense-dog-entry');
+  const style = StyleSheet.flatten(entry.props.style({ pressed: false }));
+  expect(style).toMatchObject({ width: touch.min, height: touch.min, minWidth: touch.min, minHeight: touch.min });
+  expect(entry.findAllByType(Text)).toHaveLength(0);
+  expect(entry.findAllByType(Glyph)).toHaveLength(1);
+  expect(entry.findByType(Glyph).props.name).toBe('dog-list');
+  expect(entry.props.accessibilityRole).toBe('button');
+  expect(entry.props.accessibilityLabel).toBe(t('c1256', {
+    count: 16, problems: p.markers.filter(marker => marker.problem).length,
+  }));
+  await open();
+  await act(async () => item('dense-dog-row-16').props.onPress());
+  expect(p.onSelect.mock.calls).toEqual([[16]]);
+});
 
 test.each([16, 32, 64])('%i dogs: explicit entry reveals every stable identity and selects an arbitrary last dog once', async count => {
   const p = props(count);

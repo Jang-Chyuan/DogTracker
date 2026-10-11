@@ -3,14 +3,16 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensio
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { t } from '../i18n';
 import DogAvatar from '../dogs/DogAvatar';
+import Glyph from './Glyph';
 import { useInitialFocus } from '../utils/a11yFocus';
-import { useStyles, makeStyles } from '../theme/ThemeProvider';
+import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { radius, size as sizes, space, touch, type } from '../theme/tokens';
 import { denseDogChoices } from './DenseDogNames';
 
 // Candidate explicit entry only. Marker taps never call this component's open
 // handler. Modal lives at screen level, not outside a clipped map/card parent.
 export default function DenseDogSelector({ markers, avatars = {}, sourceKey, onSelect, style }) {
+  const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -68,10 +70,7 @@ export default function DenseDogSelector({ markers, avatars = {}, sourceKey, onS
           sessionRef.current = opened;
           setSession(opened);
         }}>
-        <Text style={styles.entryText}>{t('c1255', { count: choices.length })}</Text>
-        {problems > 0 && <View style={styles.problem} accessible={false}>
-          <Text style={styles.problemText}>{problems}</Text>
-        </View>}
+        <Glyph name="dog-list" color={colors.text} size={sizes.icon.map} />
       </Pressable>
       {visible && <Modal transparent visible animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
         <View style={[styles.scrim, { paddingTop: insets.top + space.m, paddingBottom: insets.bottom + space.m }]}>
@@ -107,13 +106,10 @@ export default function DenseDogSelector({ markers, avatars = {}, sourceKey, onS
 }
 
 const getStyles = makeStyles(theme => StyleSheet.create({
-  entry: { minHeight: touch.min, minWidth: touch.min, paddingHorizontal: space.m,
-    paddingVertical: space.s, flexDirection: 'row', alignItems: 'center', gap: space.s,
-    borderRadius: radius.full, backgroundColor: theme.colors.surface, flexShrink: 1, ...theme.shadow.floating, ...theme.floatingBorder },
-  entryText: { ...type.value, flexShrink: 1, color: theme.colors.text },
+  entry: { height: touch.min, width: touch.min, minHeight: touch.min, minWidth: touch.min,
+    justifyContent: 'center', alignItems: 'center', borderRadius: radius.full,
+    backgroundColor: theme.colors.surface, flexShrink: 0, ...theme.shadow.floating, ...theme.floatingBorder },
   pressed: { backgroundColor: theme.colors.pressedOverlay },
-  problem: { paddingHorizontal: space.xs, borderRadius: radius.full, backgroundColor: theme.colors.problemBadge },
-  problemText: { ...type.caption, color: theme.literalColors.avatarFrameMap },
   scrim: { flex: 1, justifyContent: 'flex-end', padding: space.m, backgroundColor: theme.colors.scrim },
   sheet: { borderRadius: radius.menu, backgroundColor: theme.colors.surface, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', paddingLeft: space.m },
