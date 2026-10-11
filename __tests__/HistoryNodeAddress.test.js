@@ -19,14 +19,16 @@ test.each(['indoor', 'stop', 'departure', 'end', 'switch'])('%s uses identical s
   expect(missing).toEqual({ title: '24.9378, 121.2954', titleMuted: false, coordinates: '', missing: '' });
   const row = exportTimelineRows([node], () => null)[0];
   const layout = layoutRow(row, defaultMeasure);
-  expect(layout.titleLines).toEqual(['24.9378, 121.2954']);
-  expect(layout.items.map(item => item.kind)).toEqual(type === 'switch' ? [] : ['pill']);
-  expect(layout.secondLines).toBe(type === 'switch' ? 0 : 1);
+  expect(layout.titleLines).toEqual(['']);
+  expect(row.coordinates).toBe('');
+  expect(layout.items.map(item => item.kind)).toEqual(type === 'switch' ? [] : type === 'stop' ? ['pill', 'note'] : ['pill']);
+  if (type === 'stop') expect(layout.items[1].text).toBe(row.note);
+  expect(layout.secondLines).toBe(type === 'switch' ? 0 : type === 'stop' ? 2 : 1);
   const found = placeLines(node, { state: 'found', text: address });
   expect(found).toMatchObject({ title: address, coordinates: missing.title });
   const foundRow = exportTimelineRows([node], () => address)[0];
-  expect(foundRow).toMatchObject({ title: address, coordinates: missing.title });
-  expect(layoutRow(foundRow, defaultMeasure).items.some(item => item.text === missing.title)).toBe(true);
+  expect(foundRow).toMatchObject({ title: address, coordinates: '' });
+  expect(layoutRow(foundRow, defaultMeasure).items.some(item => item.text === missing.title)).toBe(false);
 });
 
 test('a switch with no address has no empty second row on screen', async () => {
@@ -68,7 +70,9 @@ test('indoor list and PNG export reuse the live card address cache', async () =>
   await act(async () => exporterState.start('png'));
   expect(exporter.renderPng).toHaveBeenCalledTimes(1);
   const pages = JSON.stringify(exporter.renderPng.mock.calls[0][2]);
-  expect(pages).toContain(address);
+  const addressLines = exporter.renderPng.mock.calls[0][2].flatMap(page => page.ops)
+    .filter(op => op.t === 'text' && op.bold && op.size === 40).map(op => op.text);
+  expect(addressLines.slice(1).join(' ')).toBe(address);
   expect(pages).toContain('室內・40 分');
   expect(native.reverseGeocode).toHaveBeenCalledTimes(cardRequests);
   await act(async () => renderer.unmount());

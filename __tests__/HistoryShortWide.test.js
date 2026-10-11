@@ -1,6 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { PanResponder, PixelRatio, ScrollView, StyleSheet } from 'react-native';
+import { RANGE_RECOMPUTE_DELAY_MS } from '../src/mapHistory/useRangeRecompute';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import { space, touch } from '../src/theme/tokens';
@@ -68,6 +69,9 @@ test('wide expanded handles live outside the clipped sheet; real accessible step
     const before = state.screen.range.start;
     const handle = tree.root.findAll(node => node.props.testID === 'range-handle-start' && node.props.onAccessibilityAction)[0];
     await act(async () => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+    expect(state.screen.rangePending).toBe(true);
+    expect(one(tree, 'history-range-loading')).toBeDefined();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, RANGE_RECOMPUTE_DELAY_MS + 8)); });
     expect(state.screen.range.start).toBeGreaterThanOrEqual(before + 60000);
     let used;
     await act(async () => { used = state.ref.current.back(); });

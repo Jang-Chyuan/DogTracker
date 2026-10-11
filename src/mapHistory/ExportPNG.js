@@ -78,25 +78,28 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
     const lines = wrap(text, S.detailFont, PLACE_WIDTH, measure, { bold: false });
     return { lines, height: Math.max(S.movementMin, lines.length * S.detailLine + tokenSize.export.movementInset) };
   }
-  // 「PNG 一列比一頁還高」: the address is cut after 2 lines (in the PNG only).
-  const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH, measure, { bold: true, maxLines: truncate ? 2 : Infinity });
-  // The leading block is the duration pill and interruption note, before the address.
-  const items = [
-    row.pill ? { kind: 'pill', text: row.pill.text, tone: row.pill.tone,
-      width: measure(row.pill.text, S.detailFont, true) + S.pillPadding * 2 } : null,
-    ...[row.coordinates, row.note].filter(Boolean).map(text => ({ kind: 'note', text,
-      width: Math.min(PLACE_WIDTH, measure(text, S.detailFont, false)) })),
-  ].filter(Boolean);
-  const placed = [];
-  let x = 0, line = 0;
-  for (const item of items) {
-    if (x > 0 && x + item.width > PLACE_WIDTH) { x = 0; line += 1; }
-    placed.push({ ...item, x, line });
-    x += item.width + tokenSize.export.itemGap;
+  const pill = row.pill ? { kind: 'pill', text: row.pill.text, tone: row.pill.tone,
+    width: measure(row.pill.text, S.detailFont, true) + S.pillPadding * 2, x: 0, line: 0, y: 0 } : null;
+  // A leading pill shares the address line. If it leaves fewer than two
+  // address glyphs, the address wraps below it rather than overflowing.
+  const leading = pill ? pill.width + tokenSize.export.itemGap : 0;
+  const inline = PLACE_WIDTH - leading >= S.addressFont * 2;
+  const titleX = inline ? leading : 0;
+  const titleY = inline ? 0 : S.secondLine;
+  const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH - titleX, measure,
+    { bold: true, maxLines: truncate ? 2 : Infinity });
+  let contentHeight = Math.max(pill ? S.pillHeight : 0, titleY + titleLines.length * S.addressLine);
+  const placed = pill ? [pill] : [];
+  for (const value of [row.coordinates, row.note].filter(Boolean)) {
+    for (const text of wrap(value, S.detailFont, PLACE_WIDTH, measure)) {
+      placed.push({ kind: 'note', text, x: 0, line: placed.length, y: contentHeight,
+        width: Math.min(PLACE_WIDTH, measure(text, S.detailFont, false)) });
+      contentHeight += S.secondLine;
+    }
   }
-  const secondLines = items.length ? line + 1 : 0;
-  const height = Math.max(S.placeMin, tokenSize.export.rowInset + titleLines.length * S.addressLine + tokenSize.export.rowInset + secondLines * S.secondLine + S.rowGap);
-  return { titleLines, items: placed, secondLines, height };
+  const secondLines = placed.length;
+  const height = Math.max(S.placeMin, tokenSize.export.rowInset * 2 + contentHeight + S.rowGap);
+  return { titleLines, titleX, titleY, items: placed, secondLines, height };
 }
 
 /**

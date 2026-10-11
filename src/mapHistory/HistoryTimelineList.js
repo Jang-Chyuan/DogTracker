@@ -188,10 +188,12 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
           style={[styles.place, selected && { backgroundColor: `${color}1A` }]}
           testID={selected ? 'timeline-selected' : undefined}
         >
-          <Pill pill={pill} color={color} />
-          <Text style={[styles.address, lines.titleMuted && styles.asking]} testID="place-title">
-            {title}
-          </Text>
+          <View style={styles.placeHeading}>
+            <Pill pill={pill} color={color} />
+            <Text style={[styles.address, lines.titleMuted && styles.asking]} testID="place-title">
+              {title}
+            </Text>
+          </View>
           {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
       </View>
@@ -411,8 +413,12 @@ const getStyles = makeStyles(theme => {
       borderRadius: radius.input,
       overflow: 'hidden',
     },
+    placeHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.xs },
     address: {
-      marginTop: space.xs,
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: 0,
+      minWidth: touch.min,
       color: colors.text,
       ...type.cardTitle,
 
@@ -420,7 +426,7 @@ const getStyles = makeStyles(theme => {
     },
     asking: { color: colors.textMuted, fontWeight: type.body.fontWeight, minHeight: sizes.timeline.sectionHeight },
     pill: {
-      alignSelf: 'flex-start',
+      maxWidth: '100%',
       // 18dp, taller with a large system font (膠囊可以變高、不裁字).
       minHeight: sizes.timeline.pill.height,
       borderRadius: radius.full,

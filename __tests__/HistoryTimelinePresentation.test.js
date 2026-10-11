@@ -40,5 +40,14 @@ test('PNG uses the same collapsed rows; places expose start only, duration befor
   const ops = pngDrawPages({ pages: [page] })[0].ops;
   const pill = ops.find(op => op.text === rows[0].pill.text);
   const address = ops.find(op => op.text?.startsWith('虛構'));
-  expect(pill.y).toBeLessThan(address.y);
+  expect(pill.y).toBe(address.y);
+  expect(pill.x).toBeLessThan(address.x);
+});
+
+test('PNG address wraps below an unusually wide leading pill without shrinking its text', () => {
+  const row = { kind: 'place', title: '虛構長地址', pill: { text: '停留', tone: 'plain' } };
+  const block = layoutRow(row, (text, size) => text === '停留' ? 800 : text.length * size);
+  expect(block.titleX).toBe(0);
+  expect(block.titleY).toBeGreaterThan(0);
+  expect(block.titleLines.join('')).toBe(row.title);
 });

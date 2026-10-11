@@ -85,12 +85,12 @@ function rowOps(block) {
   ops.push(...nodeOps(row, color, nodeY));
   // Timeline times show only the start.
   ops.push(text(row.times[0], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
-  block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X, y + tokenSize.export.rowInset + block.secondLines * S.secondLine + index * S.addressLine, S.addressLine,
+  block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X + block.titleX, y + tokenSize.export.rowInset + block.titleY + index * S.addressLine, S.addressLine,
     S.addressFont, colors.text, { bold: true })));
   const secondTop = y + tokenSize.export.rowInset;
   const tones = PILL_TONES(color);
   for (const item of block.items) {
-    const top = secondTop + item.line * S.secondLine;
+    const top = secondTop + item.y;
     if (item.kind === 'pill') {
       const [fill, ink] = tones[item.tone] || tones.plain;
       ops.push({ t: 'rect', x: PLACE_X + item.x, y: top, w: item.width, h: S.pillHeight, r: S.pillHeight / 2, fill });
