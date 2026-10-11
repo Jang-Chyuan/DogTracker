@@ -480,7 +480,7 @@ ref) {
   );
   const rangeProps = {
     range: screen.range, track: screen.track, today: screen.today,
-    onDrag: screen.dragRange, onCommit: screen.commitRange,
+    onDrag: screen.dragRange, onBegin: screen.beginRangeDrag, onCommit: screen.commitRange,
     previewDelay: screen.rangePreviewDelay, previewScope: screen.rangePreviewScope,
     active: screen.rangeActive, dayPoints: screen.dayPoints, layoutKey: rangeLayoutKey,
   };

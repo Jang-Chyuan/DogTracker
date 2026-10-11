@@ -149,3 +149,43 @@ test('wide download keeps cancel reachable and Back cancellation does not reveal
     expect(one(tree, 'history-download-retry')).toBeDefined();
   } finally { await act(async () => tree.unmount()); jest.useRealTimers(); }
 });
+
+
+test.each([{ width: 393, height: 851 }, { width: 851, height: 393 }])('real screen holds loading/list/export through the entire gesture and Back cancels it: %j', async viewport => {
+  jest.useFakeTimers();
+  dimensions.mockReturnValue({ ...viewport, scale: 2.75, fontScale: 1 });
+  const handlers = [];
+  const pan = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers.push(value); return { panHandlers: {} }; });
+  const { tree, state } = await mount('history-range-open');
+  try {
+    const original = { ...state.screen.range };
+    const measured = one(tree, 'history-range-bar').findAll(node => node.props.onLayout)[0];
+    await act(async () => measured.props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
+    const old = handlers[0];
+    await act(async () => {
+      old.onPanResponderGrant({ nativeEvent: { locationX: 24, pageX: 100 } });
+      old.onPanResponderMove({ nativeEvent: { pageX: 140 } }, { dx: 40 });
+    });
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => jest.advanceTimersByTimeAsync(500));
+      expect(state.screen.rangePending).toBe(true);
+      expect(state.screen.map).toBeNull();
+      expect(one(tree, 'history-range-loading')).toBeDefined();
+      expect(one(tree, 'history-timeline')).toBeUndefined();
+      expect(one(tree, 'history-export').props.accessibilityState.disabled).toBe(true);
+    }
+    let used;
+    await act(async () => { used = state.ref.current.back(); });
+    expect(used).toBe(true);
+    expect(state.screen.rangePending).toBe(false);
+    expect(one(tree, 'history-range-loading')).toBeUndefined();
+    await act(async () => old.onPanResponderRelease({ nativeEvent: { pageX: 160 } }, { dx: 60 }));
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(state.screen.range).toEqual(original);
+    expect(one(tree, 'history-range-bar')).toBeUndefined();
+  } finally {
+    await act(async () => tree.unmount());
+    pan.mockRestore();
+    jest.useRealTimers();
+  }
+});

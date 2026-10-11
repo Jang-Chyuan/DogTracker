@@ -530,9 +530,10 @@ export function useHistoryScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- revision invalidates external range memory
     [readKey, memoryRevision],
   );
-  // While a handle is dragged: the range being made (list and summary follow).
+  // Legacy preview callers may draft a range; on-screen gestures instead
+  // hold model/map publication until the actual release.
   const [draft, setDraft] = useState(null);
-  const { pending: rangePending, request: requestRange, cancel: cancelRange } = useRangeRecompute(`${sessionKey}|${day}|${idsKey}|${writeKey}|${readKey}|${owner ?? ''}|${cloud?.owner ?? ''}`, active);
+  const { pending: rangePending, request: requestRange, hold: beginRangeDrag, cancel: cancelRange } = useRangeRecompute(`${sessionKey}|${day}|${idsKey}|${writeKey}|${readKey}|${owner ?? ''}|${cloud?.owner ?? ''}`, active);
   const manual = draft || remembered;
   // My route stops growing when recording is off (記錄已關閉).
   const growing = subject !== 'phone' || recording !== false;
@@ -1047,7 +1048,7 @@ export function useHistoryScreen({
     rangeActive: active,
     asOf: cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
     updateHistory,
-    error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
+    error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, beginRangeDrag, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],
     // Several dogs (H7) and merged records.
     dogs,

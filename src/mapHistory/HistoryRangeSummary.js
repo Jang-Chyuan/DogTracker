@@ -54,12 +54,12 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
     : t('c432', { time: clock(range.start), time2: clock(range.end) }), detail: moved };
 }
 
-function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
+function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   previewDelay = RANGE_PREVIEW_MIN_MS, previewScope = track.start, active = true, layoutKey }) {
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
-  // Finger/time feedback stays local; the day model/list/map preview is a
-  // coalesced latest range, so every move does not replay the full day.
+  // Finger/time feedback stays local. The history screen holds model/map
+  // publication until release; callers without onBegin retain preview mode.
   const [visualRange, setVisualRange] = useState(null);
   const shownRange = visualRange ?? range;
   const handles = rangeHandles(shownRange, track);
@@ -75,6 +75,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
     startX,
     endX,
     onDrag,
+    onBegin,
     onCommit,
     previewDelay,
     active,
@@ -144,7 +145,13 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
       d.last = result.range;
       if (changed) {
         setVisualRange(result.range);
-        if (publish) {
+        if (state.current.onBegin) {
+          if (!d.held) {
+            d.held = true;
+            clearPreview();
+            state.current.onBegin();
+          }
+        } else if (publish) {
           pending.current = result.range;
           if (timer.current == null) timer.current = setTimeout(() => {
             timer.current = null;
@@ -312,7 +319,8 @@ export function HistoryRangeControls({ model, dayPoints, ...props }) {
 /**
  * `model` (historyTimeline's), `range` ({ start, end, following }), `track`
  * (rangeTrack), `open` and `onToggle` (the bar), `onDrag` (a range while a
- * handle moves) and `onCommit` (the range when it is let go). `closedAt`:
+ * handle moves), optional `onBegin` (hold publication until release), and
+ * `onCommit` (the range when it is let go). `closedAt`:
  * my route's recording was switched off then (「記錄已在 10:20 關閉」).
  */
 // The times under the 24dp handles stay within their 48dp target: they grow
@@ -328,6 +336,7 @@ export default function HistoryRangeSummary({
   open,
   onToggle,
   onDrag,
+  onBegin,
   onCommit,
   closedAt = null,
   dayPoints: shared = null,
@@ -413,6 +422,7 @@ export default function HistoryRangeSummary({
             dayPoints={dayPoints}
             today={today}
             onDrag={onDrag}
+            onBegin={onBegin}
             onCommit={onCommit}
             previewDelay={previewDelay}
             previewScope={previewScope}

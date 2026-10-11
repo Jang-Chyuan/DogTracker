@@ -50,3 +50,28 @@ test('a callback retained from the old scope cannot enqueue work against the new
   await act(async () => jest.advanceTimersByTimeAsync(1000));
   expect(publish).not.toHaveBeenCalled();
 });
+
+
+test('hold cancels queued work and stays busy until one release, without periodic publications', async () => {
+  const stale = jest.fn(), release = jest.fn();
+  await act(async () => state.request(stale));
+  await act(async () => state.hold());
+  await act(async () => jest.advanceTimersByTimeAsync(10000));
+  expect(stale).not.toHaveBeenCalled();
+  expect(state.pending).toBe(true);
+  await act(async () => state.request(release));
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
+  expect(release).toHaveBeenCalledTimes(1);
+  expect(state.pending).toBe(false);
+});
+
+test('an old-scope hold cannot cancel a new owner release', async () => {
+  const oldHold = state.hold;
+  const publish = jest.fn();
+  await act(async () => tree.update(<Probe scope="new-owner-day" />));
+  await act(async () => state.request(publish));
+  await act(async () => oldHold());
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(state.pending).toBe(false);
+});

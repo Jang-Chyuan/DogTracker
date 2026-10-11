@@ -15,6 +15,14 @@ export function useRangeRecompute(scope, active) {
     setPending(false);
   }, []);
   useEffect(() => { cancel(); return () => clearTimeout(timer.current); }, [scope, active, cancel]);
+  // A drag owns busy continuously; local handles move without publishing
+  // intermediate model/map snapshots. Release uses the same scoped queue.
+  const hold = useCallback(() => {
+    if (!owner.current.active || owner.current.scope !== scope) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+    setPending(true);
+  }, [scope]);
   const request = useCallback(work => {
     if (!owner.current.active || owner.current.scope !== scope) return;
     clearTimeout(timer.current);
@@ -28,5 +36,5 @@ export function useRangeRecompute(scope, active) {
       }
     }, RANGE_RECOMPUTE_DELAY_MS);
   }, [scope]);
-  return { pending, request, cancel };
+  return { pending, request, hold, cancel };
 }

@@ -17,7 +17,7 @@ afterEach(async () => {
   jest.useRealTimers();
 });
 
-async function open() {
+async function open({ gestureHold = false } = {}) {
   const fixture = buildFixture('history-my-route');
   const target = historyTargetOf(fixture.history.preferences);
   const state = { screen: null, handlers: null, commit: jest.fn(), preview: jest.fn(), frames: [] };
@@ -39,6 +39,7 @@ async function open() {
       dayPoints={screen.dayPoints} open active={screen.rangeActive}
       previewDelay={previewDelay ?? screen.rangePreviewDelay}
       previewScope={previewScope ?? screen.rangePreviewScope}
+      onBegin={gestureHold ? screen.beginRangeDrag : undefined}
       onDrag={value => { state.preview(value); screen.dragRange(value); }}
       onCommit={value => { state.commit(value); screen.commitRange(value); }} />;
   }
@@ -182,4 +183,79 @@ test('changing only the read owner cancels queued commit and never reuses the pr
   expect(s.screen.range.start).toBe(initial.start);
   expect(s.screen.rangePending).toBe(false);
   expect(s.screen.model).not.toBe(priorModel);
+});
+
+
+test('a held gesture keeps model/map pending through multiple preview intervals and computes only the actual release', async () => {
+  const build = jest.spyOn(models, 'multiDayModel');
+  const project = jest.spyOn(models, 'multiMapPresentation');
+  const s = await open({ gestureHold: true });
+  const initial = s.screen.range;
+  const label = s.endLabel();
+  build.mockClear(); project.mockClear(); s.frames.length = 0;
+  await act(async () => { s.grant(); s.move(-10); });
+  expect(s.screen.rangePending).toBe(true);
+  expect(s.endLabel()).not.toBe(label);
+  for (const dx of [-12, -15, -20]) {
+    await act(async () => jest.advanceTimersByTimeAsync(500));
+    await act(async () => s.move(dx));
+    expect(s.screen.rangePending).toBe(true);
+    expect(s.screen.map).toBeNull();
+    expect(s.screen.dayModel).toBeNull();
+  }
+  expect(build).not.toHaveBeenCalled();
+  expect(project).not.toHaveBeenCalled();
+  expect(s.preview).not.toHaveBeenCalled();
+  expect(s.frames.every(screen => screen.rangePending && screen.map === null)).toBe(true);
+  await act(async () => s.handlers.onPanResponderRelease({ nativeEvent: { pageX: 885 } }, { dx: -20 }));
+  expect(s.commit).toHaveBeenCalledTimes(1);
+  expect(s.screen.rangePending).toBe(true);
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
+  expect(s.screen.range).toEqual(s.commit.mock.calls[0][0]);
+  expect(s.screen.range.end).toBeLessThan(initial.end);
+  expect(build).toHaveBeenCalledTimes(1);
+  expect(project).toHaveBeenCalledTimes(1);
+  await act(async () => jest.advanceTimersByTimeAsync(2000));
+  expect(build).toHaveBeenCalledTimes(1);
+});
+
+
+test.each(['blur', 'scope', 'close', 'owner'])('held %s cancels without publishing the partial range or old release', async kind => {
+  const s = await open({ gestureHold: true });
+  const initial = s.screen.range;
+  await act(async () => { s.grant(); s.move(-10); });
+  expect(s.screen.rangePending).toBe(true);
+  const oldRelease = s.handlers.onPanResponderRelease;
+  await act(async () => s.update(kind === 'blur' ? { active: false }
+    : kind === 'scope' ? { previewScope: 'another-day' }
+      : kind === 'owner' ? { owner: 'different-owner' } : { bar: false }));
+  await act(async () => { oldRelease({ nativeEvent: { pageX: 880 } }, { dx: -20 }); });
+  await act(async () => jest.advanceTimersByTimeAsync(2000));
+  expect(s.commit).not.toHaveBeenCalled();
+  expect(s.preview.mock.calls.filter(([value]) => value != null)).toHaveLength(0);
+  expect(s.screen.range).toEqual(initial);
+  expect(s.screen.rangePending).toBe(false);
+});
+
+test('held release uses actual right edge to resume following; termination and accessibility remain independent commits', async () => {
+  const s = await open({ gestureHold: true });
+  await act(async () => { s.grant(); s.move(-10); });
+  await act(async () => jest.advanceTimersByTimeAsync(1000));
+  await act(async () => s.handlers.onPanResponderRelease({ nativeEvent: { pageX: 920 } }, { dx: -10 }));
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
+  expect(s.screen.range.following).toBe(true);
+  await act(async () => s.grant());
+  // A final finger position may arrive before any move callback.
+  await act(async () => s.handlers.onPanResponderTerminate({ nativeEvent: { pageX: 880 } }, { dx: 0 }));
+  expect(s.screen.rangePending).toBe(true);
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
+  expect(s.screen.range.following).toBe(false);
+  const end = s.screen.range.end;
+  const handle = tree.root.findAll(node => node.props.testID === 'range-handle-end')[0];
+  await act(async () => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } }));
+  expect(s.screen.rangePending).toBe(true);
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
+  expect(s.screen.range.end).toBeLessThanOrEqual(end - 60000);
+  expect(s.commit).toHaveBeenCalledTimes(3);
+  expect(s.preview).not.toHaveBeenCalled();
 });
