@@ -1,6 +1,8 @@
 import { touch } from '../theme/tokens';
 import { clock } from '../history/HistoryText';
 import HistoryDragTimeTip from './HistoryDragTimeTip';
+import { CursorLabelView } from './HistoryMapMarkers';
+import { cursorProjectionKey } from './CursorLabelPlacement';
 // The history cursor's touch handle (H1; 判定表「游標標籤」「操作與震動」): a
 // 48dp invisible target over the cursor point (the point and its label are a
 // marker of the map). Dragging it moves the cursor along the route: the
@@ -14,21 +16,27 @@ import { nearestRouteSpot } from '../history/screen/HistoryMapModel';
 const TOUCH = touch.min;
 
 export default function HistoryCursor({ mapRef, cursor, points, revision, width, height, top, bottom,
-  hidden = false, onMove, onDraggingChange }) {
-  const [place, setPlace] = useState(null);
+  hidden = false, onMove, onDraggingChange, onProjection, labelPlacement, projectionScope = '' }) {
+  const [placeSnapshot, setPlace] = useState(null);
   const [dragging, setDragging] = useState(false);
   useEffect(() => { if (hidden) setDragging(false); }, [hidden]);
   const coordinateKey = cursor ? `${cursor.coordinate.latitude},${cursor.coordinate.longitude}` : '';
+  const projectionKey = cursorProjectionKey(cursor, revision, width, height, top, bottom, projectionScope);
+  const place = placeSnapshot?.key === projectionKey ? placeSnapshot.point : null;
+  const projectionReceiver = useRef(onProjection);
+  projectionReceiver.current = onProjection;
   // Where the cursor point is on screen: after it moved, and after the map did.
   useEffect(() => {
     let alive = true;
     if (!cursor || !mapRef.current?.pointForCoordinate) { setPlace(null); return undefined; }
     mapRef.current.pointForCoordinate(cursor.coordinate)
-      .then(point => { if (alive) setPlace(point); })
+      .then(point => {
+        if (alive) { setPlace({ key: projectionKey, point }); projectionReceiver.current?.({ key: projectionKey, point }); }
+      })
       .catch(() => {});
     return () => { alive = false; };
     // coordinateKey stands for the cursor's coordinate.
-  }, [coordinateKey, revision, width, height, mapRef]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coordinateKey, revision, width, height, top, bottom, mapRef, projectionKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const live = useRef({});
   live.current = { cursor, points, onMove, place };
   // Each gesture has its own generation: a coordinate read that comes back
@@ -90,6 +98,12 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
   };
   return (
     <>
+      {!dragging && labelPlacement?.box && <View testID="history-cursor-collision-label"
+        pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+        style={[styles.label, { left: labelPlacement.box.x, top: labelPlacement.box.y,
+          width: labelPlacement.box.width }]}>
+        <CursorLabelView lines={cursor.lines} />
+      </View>}
       {dragging && <HistoryDragTimeTip testID="history-cursor-drag-time" text={clock(cursor.time)}
       x={place.x} width={width} top={place.y - TOUCH / 2} minTop={top} />}
       <View testID="history-cursor-handle" collapsable={false} {...responder.panHandlers}
@@ -102,5 +116,6 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
 }
 
 const styles = StyleSheet.create({
+  label: { position: 'absolute', zIndex: 30 },
   handle: { position: 'absolute', width: TOUCH, height: TOUCH, borderRadius: TOUCH / 2, zIndex: 30 },
 });

@@ -116,7 +116,7 @@ const FACE_ONLY_FONT_SCALE = fontScales.faceOnly;
 /** One fixed capsule, followed by a flexible spacer and the export control. */
 export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
   onAdd, exportEnabled, exportLabel = t("c821"), exportBusy = false,
-  hidden = false, onFootprintLayout }) {
+  hidden = false, onFootprintLayout, onControlRects }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const pill = historyDogsPill(dogs.map(dog => ({ ...dog, name: nameOf(dog) })), candidates, subject);
@@ -127,15 +127,39 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
   const compact = width <= NARROW_WIDTH || fontScaleAtLeast(fontScale, COMPACT_FONT_SCALE);
   // At the largest text size, the face remains and TalkBack supplies the name.
   const faceOnly = fontScaleAtLeast(fontScale, FACE_ONLY_FONT_SCALE);
+  const measured = useRef({ row: null, children: {} });
+  const reportControls = useCallback(() => {
+    const { row, children } = measured.current;
+    if (!row) return;
+    const names = subject === 'phone' ? ['back', 'export'] : ['back', 'pill', 'export'];
+    const boxes = names.filter(key => children[key]?.width > 0).map(key => {
+      const box = children[key];
+      // Clear the actual touch target as well as the painted capsule.
+      const inset = Math.max(0, (touch.min - box.height) / 2);
+      return { x: row.x + box.x - inset, y: row.y + box.y - inset,
+        width: box.width + inset * 2, height: box.height + inset * 2 };
+    });
+    onControlRects?.({ boxes, ready: names.every(key => !!children[key]) });
+  }, [onControlRects, subject]);
+  useEffect(() => { reportControls(); }, [reportControls]);
+  const measureControl = key => event => {
+    measured.current.children[key] = event.nativeEvent.layout;
+    reportControls();
+  };
+
   return (
-    <View style={[styles.topRow, { top }]} pointerEvents="box-none" onLayout={onFootprintLayout}
+    <View style={[styles.topRow, { top }]} pointerEvents="box-none" onLayout={event => {
+        measured.current.row = event.nativeEvent.layout;
+        onFootprintLayout?.(event);
+        reportControls();
+      }}
       importantForAccessibility={behindSheet(hidden)}>
       <Capsule testID="history-back-now" label={t("c838")} onPress={onBack}
-        style={compact && styles.backRound}>
+        style={compact && styles.backRound} onLayout={measureControl('back')}>
         {compact ? <Glyph name="back" color={colors.text} size={sizes.icon.row} />
           : <Text style={styles.backText}>{t('c117')}</Text>}
       </Capsule>
-      <View style={styles.pillSlot}>
+      <View style={styles.pillSlot} onLayout={measureControl('pill')}>
         {subject === 'phone' ? null : <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
           {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
             {pill.lead.downloadFailed && <View testID="history-download-failed-lead" style={styles.downloadFailure}><BangGlyph size={sizes.badge.size} background={colors.problemBadge} color={colors.avatarFrameMap} /></View>}
@@ -157,7 +181,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
         </Capsule>}
       </View>
       <View style={styles.spacer} />
-      <PressScale testID="history-export" accessibilityRole="button"
+      <PressScale testID="history-export" accessibilityRole="button" onLayout={measureControl('export')}
         accessibilityLabel={exportBusy ? t("c837") : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
         disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.historyTop.exportDisc) / 2}
@@ -292,7 +316,7 @@ function FrameButton({ onPress }) {
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, bottomInset,
   onBack, onFrame, closedAt = null, initialRangeOpen = false, initialCalendar = null,
   candidates = [], initialSheet = null, exportNative = null, initialExport = null,
-  onSheetOpen, onPanelHeight },
+  onSheetOpen, onPanelHeight, onControlRects },
 ref) {
   const theme = useTheme();
   const styles = getStyles(theme);
@@ -572,7 +596,7 @@ ref) {
   }
   return (
     <>
-      <TopRow top={top} onFootprintLayout={measureTop} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
+      <TopRow top={top} onFootprintLayout={measureTop} onControlRects={onControlRects} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
         onBack={onBack}
         onAdd={pressAdd}
         exportEnabled={hasRoute && !screen.rangePending} exportBusy={exporter.generating}

@@ -685,6 +685,8 @@ export default function MapScreen({
       && receiverState !== undefined) markStartupPhase('map-data-ready');
   }, [tracking.preferences.ready, tracking.initialSnapshotReady, tracking.errors, mode, receiverState]);
   const [historyHeight, setHistoryHeight] = useState(() => historyPanelMinHeight(window.height, insets.top, insets.bottom));
+  const [historyControls, setHistoryControls] = useState({ boxes: [], ready: false });
+
   const historyScreen = useRef(null);
   if (historyBack) historyBack.current = () => !!historyScreen.current?.back();
   const [historyFrame, setHistoryFrame] = useState(null);
@@ -1021,6 +1023,13 @@ export default function MapScreen({
           fixture?.name ?? ''
         }`
       : null;
+  const historyControlScope = `${historySource}:${screen.entryId ?? ''}`;
+  const measureHistoryControls = useCallback(geometry => setHistoryControls(previous => {
+    const next = { ...geometry, scope: historyControlScope };
+    return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+  }), [historyControlScope]);
+  const activeHistoryControls = historyControls.scope === historyControlScope
+    ? historyControls : { boxes: [], ready: false };
   // A4/A5 only cover the map while they are drawn: a page asked for before
   // its card exists (a fixture's openPage, or a card that went) must not hide
   // the map with nothing over it (a blank screen).
@@ -1056,6 +1065,7 @@ export default function MapScreen({
         retryKey={mapRetry}
         failure={fixture?.mapFailure ?? null}
         coverTop={cardsBottom}
+        historyControls={historical ? activeHistoryControls : undefined}
         compassTop={compassTop}
         livePhone={livePhone}
         onNativePhone={acceptNativePhone}
@@ -1186,6 +1196,7 @@ export default function MapScreen({
           initialSheet={fixture?.historyView?.sheet ?? null}
           bottomInset={insets.bottom}
           onPanelHeight={settleHistoryPanel}
+          onControlRects={measureHistoryControls}
           onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           exportNative={exportNative}

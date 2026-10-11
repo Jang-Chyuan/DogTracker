@@ -38,10 +38,12 @@ import {
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
+import { cursorProjectionKey, cursorLabelPlacement, cursorCameraTarget, measuredCursorFrame } from '../mapHistory/CursorLabelPlacement';
 import {
   CursorFaceView,
   CursorMarkerView,
   cursorAnchor,
+  cursorLabelFootprint,
   IndoorMarkerView,
   StopMarkerView,
   TimeMarkerView,
@@ -380,12 +382,20 @@ function RouteMarker({
 }
 const CENTER = { x: 0.5, y: 0.5 };
 
-function CursorMarker({ cursor, color, labelHidden = false }) {
+function CursorMarker({ cursor, color, labelHidden = false, measurementKey, onLabelMetrics }) {
   const { isDark } = useTheme();
   const [labelHeight, setLabelHeight] = useState(44);
+  const [labelSize, setLabelSize] = useState(null);
+  const [markerSize, setMarkerSize] = useState(null);
   const ref = useRef(null);
   const settled = useSettledMarker(ref);
   const face = cursor.face ?? null;
+  const hasFace = !!face;
+  useEffect(() => {
+    if (labelSize?.key === measurementKey && markerSize) onLabelMetrics?.({ key: measurementKey, size: cursorLabelFootprint(labelSize, hasFace, markerSize) });
+  }, [measurementKey, labelSize, markerSize, hasFace, onLabelMetrics]);
+  const labelLayout = value => setLabelSize(previous => previous?.key === measurementKey && previous?.width === value.width && previous?.height === value.height
+    ? previous : { key: measurementKey, width: value.width, height: value.height });
   const look = `${cursor.lines?.join('|')}:${
     cursor.stale
   }:${labelHeight}:${color}:${face?.name ?? ''}:${
@@ -406,7 +416,12 @@ function CursorMarker({ cursor, color, labelHidden = false }) {
       zIndex={60}
       tappable={false}
     >
-      <View collapsable={false} onLayout={settled.onLayout}>
+      <View collapsable={false} onLayout={event => {
+        settled.onLayout(event);
+        const value = event.nativeEvent.layout;
+        setMarkerSize(previous => previous?.width === value.width && previous?.height === value.height
+          ? previous : { width: value.width, height: value.height });
+      }}>
         {face ? (
           <CursorFaceView
             lines={cursor.lines}
@@ -414,6 +429,8 @@ function CursorMarker({ cursor, color, labelHidden = false }) {
             stale={cursor.stale}
             face={face}
             onLabelHeight={height}
+            onLabelLayout={labelLayout}
+            labelLayoutKey={measurementKey}
             labelHidden={labelHidden}
           />
         ) : (
@@ -422,6 +439,8 @@ function CursorMarker({ cursor, color, labelHidden = false }) {
             color={color}
             stale={cursor.stale}
             onLabelHeight={height}
+            onLabelLayout={labelLayout}
+            labelLayoutKey={measurementKey}
             labelHidden={labelHidden}
           />
         )}
@@ -473,7 +492,7 @@ const HistoryLine = React.memo(
 
 // Live snapshot age still updates the map controls. Reuse unchanged history
 // geometry until its route, stop handler, zoom or theme context changes.
-const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false }) {
+const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false, cursorLabelHidden = false, measurementKey, onLabelMetrics }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
     () => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)),
@@ -536,7 +555,8 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
         </RouteMarker>
       ))}
       {route.cursor && (
-        <CursorMarker cursor={route.cursor} color={route.color} labelHidden={cursorDragging} />
+        <CursorMarker cursor={route.cursor} color={route.color} labelHidden={cursorDragging || cursorLabelHidden}
+          measurementKey={measurementKey} onLabelMetrics={onLabelMetrics} />
       )}
     </>
   );
@@ -641,6 +661,7 @@ function GoogleTrackingMapRenderer({
   onStopPress,
   historyFocus = null,
   historyFrame = null,
+  historyControls = [],
   supported,
   configured,
 }) {
@@ -662,6 +683,9 @@ function GoogleTrackingMapRenderer({
   const [cursorRevision, setCursorRevision] = useState(0);
   const [cursorDragging, setCursorDragging] = useState(false);
   const historyRoute = presentation.historyRoute || null;
+  const [cursorMeasurement, setCursorMeasurement] = useState(null);
+  const [cursorProjection, setCursorProjection] = useState(null);
+
   const [attempt, setAttempt] = useState(0);
   const nativePhone = useRef(null);
   const phoneCentered = useRef(false);
@@ -669,6 +693,7 @@ function GoogleTrackingMapRenderer({
   const [loadedInstance, setLoadedInstance] = useState(null);
   const [timedOut, setTimedOut] = useState(false);
   const instance = String(attempt);
+  const cursorMeasurementKey = `${source}:${instance}:${historyRoute?.cursor?.lines?.[1]}:${historyRoute?.cursor?.face?.name ?? ''}:${!!historyRoute?.cursor?.face}`;
   // Where each dog is on screen, read after every camera move, so name tags
   // that would run into each other merge into one 「3 隻」 tag.
   const dogMarkers = useMemo(
@@ -1052,6 +1077,21 @@ function GoogleTrackingMapRenderer({
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const overlayTop = Math.max(topInset, coverTop || 0);
+  const controlRects = Array.isArray(historyControls) ? historyControls : historyControls.boxes;
+  const controlsReady = Array.isArray(historyControls) || historyControls.ready === true;
+  const measuredHistoryUI = !Array.isArray(historyControls);
+  const cursorView = useMemo(() => ({ left: space.s, right: cursorLayout.width - space.s,
+    top: overlayTop, bottom: cursorLayout.height - overlayBottom }), [cursorLayout, overlayTop, overlayBottom]);
+  const cursorSize = cursorMeasurement?.key === cursorMeasurementKey ? cursorMeasurement.size : null;
+  const projectedKey = cursorProjectionKey(historyRoute?.cursor, cursorRevision, cursorLayout.width,
+    cursorLayout.height, overlayTop, overlayBottom, `${source}:${instance}`);
+  const currentProjection = cursorProjection?.key === projectedKey ? cursorProjection.point : null;
+  const cursorCameraRequest = useRef(0);
+  const cameraScope = useRef(null);
+  cameraScope.current = `${source}:${instance}:${projectedKey}:${cursorMeasurementKey}:${JSON.stringify(historyControls)}`;
+  const cursorPlacement = controlsReady && cursorSize && currentProjection
+    ? cursorLabelPlacement(currentProjection, cursorSize, cursorView, controlRects)
+    : { hidden: true, box: null };
   const hints = useMemo(
     () =>
       live && screenPoints
@@ -1133,11 +1173,11 @@ function GoogleTrackingMapRenderer({
   // what the map shows above an open card (and below the top cards): the
   // camera's centre is the middle of the padded map, so it moves by how far
   // the point is from where it should be.
-  const centreInView = useCallback(point => {
+  const centreInView = useCallback((point, requestedTarget = null) => {
     const map = mapRef.current;
     if (!map?.coordinateForPoint) return Promise.resolve(null);
     const { width, height } = cursorLayout;
-    const target = { x: width / 2, y: (overlayTop + height - overlayBottom) / 2 };
+    const target = requestedTarget ?? { x: width / 2, y: (overlayTop + height - overlayBottom) / 2 };
     const middle = {
       x: width / 2,
       y: topInset + (height - topInset - bottomInset) / 2,
@@ -1238,6 +1278,7 @@ function GoogleTrackingMapRenderer({
     tapContext.current.route === gesture.route && mapRef.current === gesture.map;
   const STOP_TAP_DP = 20;
   const touchStart = event => {
+    cursorCameraRequest.current += 1;
     const finger = event.nativeEvent;
     if (!Number.isFinite(finger.pageX) || !Number.isFinite(finger.pageY)) {
       quickTap.current.start = null;
@@ -1364,7 +1405,10 @@ function GoogleTrackingMapRenderer({
   const routeCamera = historyRoute?.camera;
   const frameRoute = (animated = true) => {
     if (!usable || !routeCamera?.length) return;
-    const room = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
+    const originalRoom = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
+    const room = cursorSize ? measuredCursorFrame(originalRoom, cursorSize, cursorView, controlRects) : originalRoom;
+    // Expanded may leave less room than the pin+label. Do not force a 1dp fit.
+    if (!room) return;
     const framing = overlayFramePadding(room, { topInset, bottomInset, overlayTop, overlayBottom });
     // Held days retain many identical fixes; framedCoordinates only expands
     // a single point. Preserve street context for every tiny history span,
@@ -1385,14 +1429,15 @@ function GoogleTrackingMapRenderer({
   };
   const historyFramed = useRef(null);
   useEffect(() => {
-    if (!historyFrame || historyFramed.current === historyFrame.key || !usable)
+    if (!historyFrame || historyFramed.current === historyFrame.key || !usable
+      || (measuredHistoryUI && (!controlsReady || !cursorSize)))
       return;
     historyFramed.current = historyFrame.key;
     takeCamera();
     frameRoute();
     // Once per press of 框住全部.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyFrame?.key, usable]);
+  }, [historyFrame?.key, usable, measuredHistoryUI, controlsReady, cursorSize]);
   // A node of the list or a stop number: the cursor point comes into the
   // middle of the map above the panel (220 ms, motion.cursorJump).
   // 判定表「使用者拖過地圖之後的游標」: otherwise the map moves only when the
@@ -1401,40 +1446,48 @@ function GoogleTrackingMapRenderer({
     async (coordinate, centre) => {
       const map = mapRef.current;
       if (!map || !coordinate) return;
+      const request = ++cursorCameraRequest.current;
+      const scope = cameraScope.current;
+      const active = () => request === cursorCameraRequest.current && scope === cameraScope.current && map === mapRef.current;
       if (!centre && map.pointForCoordinate) {
         try {
           const point = await map.pointForCoordinate(coordinate);
-          const seen =
-            point.x >= 24 &&
-            point.x <= cursorLayout.width - 24 &&
-            point.y >= overlayTop + 72 &&
-            point.y <= cursorLayout.height - overlayBottom - 24;
+          if (!active()) return;
+          const seen = cursorSize
+            ? !cursorLabelPlacement(point, cursorSize, cursorView, controlRects).hidden
+            : point.x >= 24 && point.x <= cursorLayout.width - 24
+              && point.y >= overlayTop + 72 && point.y <= cursorLayout.height - overlayBottom - 24;
           if (seen) return;
         } catch {
           /* Move anyway. */
         }
       }
+      const target = cursorSize ? cursorCameraTarget(cursorSize, cursorView, controlRects) : null;
+      if (cursorSize && !target) return;
       let cursorCenter = coordinate;
       if (map.pointForCoordinate) {
         try {
           const point = await map.pointForCoordinate(coordinate);
-          cursorCenter = await centreInView(point) || coordinate;
+          if (!active()) return;
+          cursorCenter = await centreInView(point, target) || coordinate;
         } catch { /* Keep the requested coordinate if projection fails. */ }
       }
+      if (!active()) return;
       map.animateCamera(
         { center: cursorCenter },
         { duration: moveDuration(motion.cursorJump.duration) },
       );
     },
-    [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom, centreInView],
+    [cursorLayout.width, cursorLayout.height, overlayTop, overlayBottom, centreInView, cursorSize, cursorView, controlRects],
   );
   const focusedHistory = useRef(null);
   useEffect(() => {
-    if (!historyFocus || focusedHistory.current === historyFocus.key || !usable)
+    if (!historyFocus || focusedHistory.current === historyFocus.key || !usable
+      || (measuredHistoryUI && (!controlsReady || !cursorSize)))
       return;
     focusedHistory.current = historyFocus.key;
     showCursor(historyFocus.coordinate, historyFocus.centre);
-  }, [historyFocus, usable, showCursor]);
+  }, [historyFocus, usable, showCursor, measuredHistoryUI, controlsReady, cursorSize]);
   const framedRequest = useRef(null);
   useEffect(() => {
     if (!frameRequest || framedRequest.current === frameRequest.key || !usable)
@@ -1611,6 +1664,7 @@ function GoogleTrackingMapRenderer({
             if (activeInstance.current === instance) setReadyInstance(instance);
           }}
           onPanDrag={() => {
+            cursorCameraRequest.current += 1;
             interacted.current = true;
             startMoving();
           }}
@@ -1677,6 +1731,9 @@ function GoogleTrackingMapRenderer({
             <HistoryRoute
               route={historyRoute}
               cursorDragging={cursorDragging}
+              cursorLabelHidden={cursorPlacement.hidden}
+              measurementKey={cursorMeasurementKey}
+              onLabelMetrics={setCursorMeasurement}
               onStopPress={onStopPress ? pressHistoryStop : undefined}
               metresPerDp={metresPerDp}
             />
@@ -1821,10 +1878,13 @@ function GoogleTrackingMapRenderer({
           hidden={!foreground}
           onMove={onCursorMove}
           onDraggingChange={setCursorDragging}
+          onProjection={setCursorProjection}
+          projectionScope={`${source}:${instance}`}
+          labelPlacement={cursorPlacement}
           revision={cursorRevision}
           width={cursorLayout.width}
           height={cursorLayout.height}
-          top={topInset}
+          top={overlayTop}
           bottom={overlayBottom}
         />
       )}
