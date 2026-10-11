@@ -6,7 +6,7 @@
 
 較早5685私有a33真5554 cold120秒及resume仍未看到同次快照接受，主視窗親看更新中／失敗。stage14→15約209.912秒只是初始化material batch＋讀回整區wall；不能稱單DELETE或CPU根因。實際schema20k／90proof的hostSQLite undercap約0.4ms／刪1000約27ms，索引及空候選guard有效，不能當Android速度保證。
 
-新私有100b88a1只加固定數值observer，原caps／排程／交易／ready不改；剝除observer後產品與33f完全一致。私有Kotlin／arm64Release21秒成功、APK SHA daebd7a6fe00d5ada95e9dc25b1b48872b3b99f0cd158ca122c71a6611fc1c9e，已保留帳號快取install-r至5554，9設定presence／6grants flags／viewport一致。新freshPID32551 cold120秒窗口實際進行，尚未宣原生通過。數值僅可分workerqueue／monitor／action／readback wall，不當CPU；不輸出SQL、帳號或位置，不加入公開產品。
+新私有100b88a1只加固定數值observer，原caps／排程／交易／ready不改；剝除observer後產品與33f完全一致。私有Kotlin／arm64Release21秒成功、APK SHA daebd7a6fe00d5ada95e9dc25b1b48872b3b99f0cd158ca122c71a6611fc1c9e，已保留帳號快取install-r至5554，9設定presence／6grants flags／viewport一致。新freshPID32551唯一cold worker在55.010秒因ADB讀取逾時停止，沒有完成120秒窗口。後續同PID單次唯讀觀測完整16個固定數值事件：retention JS等待106099ms、native worker排隊8145ms、monitor等待1149ms、action96774ms、readback25ms。兩個native request都有resolve；主要wall落在native action，還不能稱單SQL或CPU。主視窗親看當次晚取樣地圖仍顯示更新失敗／重試，latestApplied0，不列成功。正在私有觀測各statement與實際筆數，未跳交易或改門檻；數值不輸出SQL、帳號或位置，不加入公開產品。
 
 PR114保持Draft，等待最新原生驗收與使用者批准才合併。下方歷史證據保留，不拿舊候選成功替本輪背書。
 
