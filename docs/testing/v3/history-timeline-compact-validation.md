@@ -59,3 +59,17 @@
 最後原stop/end相鄰、stop.end等於end.start、代表座標完全相同且無gap時，僅清單與PNG合成單一終點；留時長／地址／停留start及原now／last／closed／跨日label。不同位置、時間、gap（包括被隱藏的GPS弱row）、末尾真移動均不合。不改raw/model/map停留數與CSV/GPX。完全相同私人240點nativefixture實際production回放：10source nodes→7display nodes，末端原stop3／end合一，420000ms停留保留，model JSON完全不變；私人fixture程式未納公開分支。此結果不代替56dp視覺或新版native shimmer驗收。
 
 主視窗產品be1554b9已重新完整223 suites／2515 tests PASS（166.13秒），產品Release22秒成功，SHA b5dd4b5783f7cbe6398ffd46df514e11370c9cd6ec204aead24bf3935897147e。相同240点私有0e204cb8只差原四個展示入口檔，Release20秒成功、APK dc43f82029abd1ab90960f34d911d2c326c64e3332b498e95787123f054eac35。既有5562正在真正原生驗證，以下前一輪24e圖片／影片不能代替四項新尺寸及shimmer通過。
+
+## 第二輪四項新版原生證據（5562）
+
+0e204cb8／APK dc43／PID9436真正裝到既有5562，正常字體原圖證明車／走路圖示上下連線可見、原匯出圖示加大；同址末stop3/end已合成09:22一列「現在・停7分」，地址及整列完整。今日仍用「現在」，歷史結束及PNG保原「結束」語義。
+
+![第二輪排版](evidence/history-timeline-polish/after-top.png)
+![同址末停留合成終點](evidence/history-timeline-polish/after-end.png)
+![範圍重算採既有shimmer](evidence/history-timeline-polish/range-shimmer.png)
+
+[新原生操作影片](evidence/history-timeline-polish/held-range-back.mp4)：9.4243秒、115原生frame，主視窗已親看全部及原圖。長按拖動主段是既有時間軸shimmer、無轉圈／旧清單；放開後09:03範圍及匯出恢復，下一次09:05途中Back取消、最後仍09:03。初始2–3幀舊底圖線短留、清單已空，不宣全nativepaint原子更新。09:03子範圍原模型末段判為9分鐘走路，無7分鐘停留；未借全範圍圖冒充所有range的分類，GPS/model演算法未改。普通字體末列通過；font2只有中段地址換行有效，末列未證實，誤觸Home後的launcher圖已排除。
+
+測後原163 APK640463a5逐SHA還原／PID11348，9設定presence與value、6permission grants/flags、viewport逐一相同；設定未登入、位置紀錄開關ON但GPS denied，最後正常Live／無ANR，全部worker關閉。沒有新AVD或清資料。
+
+使用者接著要求三段可拖面板（新開50%／縮至日期列／上展至回到現在下方留空）及圖示距離摘要（移動＋車、去掉總時間）；另在相同PR115實作中，本節四項原生證據不代替接續版驗證。
