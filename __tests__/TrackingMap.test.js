@@ -886,10 +886,10 @@ test('a duplicate map hit cannot overwrite the native dog marker identity', asyn
   } finally { delete mockCamera.pointForCoordinate; }
 });
 
-test('separated native dog faces use compact bitmaps while labels keep their own identities', async () => {
+test('bottom dog names share their native face marker and its true-coordinate anchor', async () => {
   const { markerFrame } = require('../src/map/DogMarkerView');
   const onDogPress = jest.fn();
-  const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId, size: 48,
+  const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId, size: 48, selected: slaveId === 6,
     coordinate: { latitude: 25.02, longitude: 121.02 }, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}` }));
   mockCamera.pointForCoordinate = jest.fn(async point => ({ x: (point.longitude - 121) * 10000, y: (point.latitude - 25) * 10000 }));
   mockCamera.coordinateForPoint = jest.fn(async point => ({ latitude: 25 + point.y / 10000, longitude: 121 + point.x / 10000 }));
@@ -900,13 +900,14 @@ test('separated native dog faces use compact bitmaps while labels keep their own
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
     const dogs = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'));
     expect(dogs).toHaveLength(2);
-    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48, true).anchor));
+    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48).anchor));
     const dog6 = dogs.find(dog => dog.props.identifier === 'real-dog-6');
     await act(async () => dog6.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[6]]);
+    dogs.forEach(dog => expect(dog.props.coordinate).toEqual(markers[0].coordinate));
     const label6 = renderer.root.findAllByType(Marker).find(marker =>
-      !marker.props.identifier && marker.findAllByType(require('react-native').Text).some(text => text.props.children === '狗 6'));
-    expect(label6).toBeDefined();
+      marker.findAllByType(require('react-native').Text).some(text => text.props.children === '狗 6'));
+    expect(label6).toBe(dog6);
     await act(async () => label6.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[6], [6]]);
   } finally { delete mockCamera.pointForCoordinate; delete mockCamera.coordinateForPoint; }

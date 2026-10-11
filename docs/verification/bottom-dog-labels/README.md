@@ -1,5 +1,7 @@
 # 狗標籤回復：原生平移與縮放對照
 
+PR106 合併後保留其 Android／iOS 投影比例和 duplicate map hit 身分修正；相容測試改為下方名字與頭像共享同一原生 marker，並完成全套重跑。
+
 此 PR 只撤回 PR104 的狗頭像移位及引線標籤，恢復頭像原座標與下方名字；不是整包 revert PR104。PhoneTracker、歷史路線及後續手勢修正保留。
 
 ## 測試資料與版本
@@ -20,7 +22,7 @@ Root 檢視兩支影片全部每秒兩格的檢閱圖，以及各操作的完整
 
 ## 自動檢查
 
-- 完整 Jest：215 suites／2432 tests 全部通過。
+- 最新 main（含 PR106）完整 Jest：217 suites／2449 tests 全部通過。
 - 完整 ESLint：0 errors／8 既有 warnings。
 - 新回歸測試先於 main 出現反例，再於修正後通過：3 隻狗只產生 3 個原座標 marker；平移／縮放後沒有引線、額外 marker 或座標改寫，點選及無障礙仍對應原狗。
 - 兩個私有原生驗證版本皆完成 Android Release 編譯及 install-r。拍攝後已還原正式整合 APK，不清資料或改帳號。
@@ -39,4 +41,4 @@ Root 檢視兩支影片全部每秒兩格的檢閱圖，以及各操作的完整
 ![Before 影片預覽](before-pan-zoom.gif)
 ![After 影片預覽](after-pan-zoom.gif)
 
-**先讓使用者看過，獲准後才合併。**
+使用者已看過並於本輪批准合併；最後以最新 head 的 CI 成功為準。
