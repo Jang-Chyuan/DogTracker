@@ -2,7 +2,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createCloudSyncWithCommittedMapReader as createCloudSync } from '../__fixtures__/CommittedCloudMapReader';
 import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';

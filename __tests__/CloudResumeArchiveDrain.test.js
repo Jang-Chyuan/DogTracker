@@ -2,7 +2,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createCloudSyncWithCommittedMapReader as createCloudSync } from '../__fixtures__/CommittedCloudMapReader';
 import { downloadCloudHistory } from '../src/cloud/CloudDownload';
 import { runBackgroundCloudSync } from '../src/cloud/CloudBackgroundSync';
 

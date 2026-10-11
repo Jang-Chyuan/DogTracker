@@ -3,7 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createCloudSyncWithCommittedMapReader as createCloudSync } from '../__fixtures__/CommittedCloudMapReader';
 import { completedMapRevision } from '../src/cloud/CloudPublication';
 import { captureActivityRead, capturePageRead } from '../src/cloud/CloudPagePublication';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
