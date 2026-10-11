@@ -102,3 +102,53 @@ test.each(['walking', 'driving'])('PNG %s glyph leaves visible connecting line o
     expect(ops.some(op => op.t === 'line' && op.y1 < icon.y && op.y2 > icon.y + icon.size)).toBe(true);
   }
 });
+
+
+test('departure and its exact adjacent initial stay share one departure row without renumbering or mutating raw nodes', () => {
+  const departure = { type: 'departure', start: 59000, end: 59000, latitude: 24.9892, longitude: 121.3132 };
+  const stay = { ...terminalStay, number: 1, start: 59000, end: 120000, durationMs: 61000 };
+  const nodes = [departure, stay, walk(120000, 180000), { ...terminalStay, number: 2, start: 180000 }];
+  const original = JSON.stringify(nodes);
+  const shown = timelinePresentation(nodes);
+  expect(shown.map(node => node.type)).toEqual(['departure', 'movement', 'stop']);
+  expect(shown[0]).toMatchObject({ start: 59000, end: 120000, durationMs: 61000, departureStay: { number: 1 }, displayDurationMs: 120000 });
+  expect(shown[2].number).toBe(2);
+  const rows = exportTimelineRows(nodes, () => '虛構起點地址');
+  expect(rows[0].pill.text).toContain('出發');
+  expect(rows[0].pill.text).toContain('停 2 分');
+  expect(JSON.stringify(nodes)).toBe(original);
+});
+
+test.each(['coordinate', 'time', 'gap', 'number'])('initial departure collapse rejects a different %s boundary', reason => {
+  const departure = { type: 'departure', start: 0, end: 0, latitude: 24.9892, longitude: 121.3132 };
+  const stay = { ...terminalStay, number: 1, start: 0, end: 60000, durationMs: 60000 };
+  if (reason === 'coordinate') stay.latitude += 0.00001;
+  if (reason === 'time') stay.start = 1;
+  if (reason === 'gap') stay.gaps = [{ start: 1000, end: 2000 }];
+  if (reason === 'number') stay.number = 2;
+  expect(timelinePresentation([departure, stay]).map(node => node.type)).toEqual(['departure', 'stop']);
+});
+
+test('minute precision aligns consecutive displayed clocks without changing observed duration or counting hidden gaps', () => {
+  const a = walk(59000, 120000), b = { ...terminalStay, start: 120000, end: 179000, durationMs: 59000 };
+  const nodes = [a, b, { ...endpoint, start: 179000, end: 179000 }];
+  const rows = exportTimelineRows(nodes, () => '虛構地址');
+  expect(rows[0].time).toBe('2 分');
+  expect(rows[1].pill.text).toContain('停 0 分');
+  expect(timelinePresentation(nodes)[0].durationMs).toBe(61000);
+  // A minute-rounded clock does not turn unobserved/uncertain time into walking.
+  const missing = timelinePresentation([walk(59000, 120000), gap(120000, 180000, 'uncertain'), walk(180000, 240000)]);
+  expect(missing[0].durationMs).toBe(121000);
+  expect(missing[0].displayDurationMs).toBeUndefined();
+  const interrupted = timelinePresentation([{ ...b, durationMs: 30000, interruptionMs: 29000 }]);
+  expect(interrupted[0].displayDurationMs).toBeUndefined();
+});
+
+
+test('a single initial stay does not erase the departure when its endpoint is also present', () => {
+  const stay = { ...terminalStay, number: 1, start: 0 };
+  const first = { ...stay, type: 'departure', end: 0, durationMs: 0 };
+  const shown = timelinePresentation([first, stay, endpoint]);
+  expect(shown.map(node => node.type)).toEqual(['departure', 'end']);
+  expect(shown[0].departureStay).toEqual(stay);
+});

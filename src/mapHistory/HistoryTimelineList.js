@@ -413,7 +413,7 @@ const getStyles = makeStyles(theme => {
       borderRadius: radius.input,
       overflow: 'hidden',
     },
-    placeHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.xs },
+    placeHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.xs },
     address: {
       flexGrow: 1,
       flexShrink: 1,

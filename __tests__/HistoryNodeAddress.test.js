@@ -1,6 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { Text } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 import { placeLines } from '../src/history/HistoryText';
 import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
 import { exportPlaces, exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
@@ -75,5 +75,21 @@ test('indoor list and PNG export reuse the live card address cache', async () =>
   expect(addressLines.slice(1).join(' ')).toBe(address);
   expect(pages).toContain('室內・40 分');
   expect(native.reverseGeocode).toHaveBeenCalledTimes(cardRequests);
+  await act(async () => renderer.unmount());
+});
+
+
+test('a leading stay pill is aligned with the first line of a wrapping address', async () => {
+  const lookup = { lookup: () => ({ state: 'found', text: '虛構桃園長地址第一行第二行第三行' }), subscribe: () => () => {} };
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<AddressLookupContext.Provider value={lookup}>
+    <HistoryTimelineList model={{ nodes: [{ ...house, type: 'stop', number: 1, durationMs: house.end }] }} color={colors.route1} />
+  </AddressLookupContext.Provider>); });
+  const title = renderer.root.findAll(node => typeof node.type === 'string' && node.props.testID === 'place-title')[0];
+  let host = title.parent;
+  while (host && StyleSheet.flatten(host.props.style)?.flexDirection !== 'row') host = host.parent;
+  const heading = StyleSheet.flatten(host.props.style);
+  expect(heading).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' });
+  expect(host.children).toHaveLength(2);
   await act(async () => renderer.unmount());
 });

@@ -57,7 +57,7 @@ export function sectionText(section) {
   return {
     icon: vehicle ? 'car' : section.mode === 'walking' ? 'walk' : 'paw',
     lead: MODE_WORD[section.mode] || t('c125'),
-    time: listDuration(section.durationMs),
+    time: listDuration(section.displayDurationMs ?? section.durationMs),
     rest: vehicle ? `・${km(section.distanceM)}` : `・${km(section.countedDistanceM)}`,
   };
 }
@@ -68,6 +68,11 @@ export function sectionText(section) {
  * 'closed' (warn) or 'indoor' (receiver); null for a switch point.
  */
 export function nodePill(node) {
+  if (node.departureStay) {
+    const departure = nodePill({ ...node, departureStay: null });
+    const stay = nodePill(node.departureStay);
+    return { ...departure, text: `${departure.text} · ${stay.text}` };
+  }
   if (node.terminalStay) {
     const endpoint = nodePill({ ...node, terminalStay: null });
     const stay = nodePill(node.terminalStay);
@@ -77,12 +82,12 @@ export function nodePill(node) {
     case 'departure':
       return { text: t('c124'), tone: 'plain' };
     case 'stop': {
-      const stay = t('c127', { duration: listDuration(node.durationMs) });
+      const stay = t('c127', { duration: listDuration(node.displayDurationMs ?? node.durationMs) });
       return { text: node.continuesPreviousDay ? t('c332') : stay, tone: 'stay' };
     }
     case 'indoor': {
       // 判定表「跨午夜」 for a hold over midnight, as for a stay.
-      const inside = t('c344', { duration: listDuration(node.end - node.start) });
+      const inside = t('c344', { duration: listDuration(node.displayDurationMs ?? node.end - node.start) });
       const text = node.continuesPreviousDay ? t('c332') : node.continuesNextDay ? t('c334') : inside;
       return { text, tone: 'indoor' };
     }
