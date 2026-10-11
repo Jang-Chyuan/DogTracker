@@ -28,6 +28,11 @@ test('missing new Android methods fail closed rather than falling back to archiv
   expect(openCloudLatestDatabase).toThrow('bridge'); expect(open).not.toHaveBeenCalled();
 });
 
+test('missing Android native owner also fails closed without opening Nitro on the framework-owned latest file', () => {
+  Platform.OS = 'android'; delete NativeModules.BleBackground;
+  expect(openCloudLatestDatabase).toThrow('bridge'); expect(open).not.toHaveBeenCalled();
+});
+
 test('non-Android latest fallback opens a different physical file', () => {
   Platform.OS = 'ios'; openCloudLatestDatabase();
   expect(open).toHaveBeenCalledWith({ name: 'dogtracker-latest.sqlite', location: 'databases' });

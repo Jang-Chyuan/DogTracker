@@ -5,10 +5,10 @@ const androidLatestLockKey = {};
 // Android-framework SQLite owns this file, just as it owns dogtracker.sqlite.
 // It never borrows the archive's executor, monitor, connection or JS lock.
 export function openCloudLatestDatabase() {
-  if (Platform.OS !== 'android' || !NativeModules.BleBackground)
+  if (Platform.OS !== 'android')
     return open({ name: 'dogtracker-latest.sqlite', location: 'databases' });
   const native = NativeModules.BleBackground;
-  if (!native.executeLatestDatabase || !native.executeLatestDatabaseBatch)
+  if (!native?.executeLatestDatabase || !native?.executeLatestDatabaseBatch)
     throw new Error('Latest SQLite bridge is unavailable');
   let closed = false;
   const requireOpen = () => { if (closed) throw new Error('Latest database connection is closed'); };
