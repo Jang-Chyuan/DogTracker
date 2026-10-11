@@ -40,7 +40,8 @@ import {
 } from '../theme/tokens';
 import HistoryPanel from './HistoryPanel';
 import MyRouteHeader from '../history/screen/MyRouteHeader';
-import HistoryRangeSummary from './HistoryRangeSummary';
+import HistoryRangeSummary, { HistoryRangeControls } from './HistoryRangeSummary';
+import { historyUsesWideHeader } from '../map/MapPanelHeight';
 import HistoryTimelineList from './HistoryTimelineList';
 import HistoryExportSheet from './HistoryExportSheet';
 import { useHistoryExport } from './useHistoryExport';
@@ -170,7 +171,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
 }
 
 /** ‹ 10/03（六）今天 ▾ › (H3a); the date opens the calendar (H3b). */
-function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
+function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, compact = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const label = dateRowLabel(day, todayStart);
@@ -203,7 +204,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen }) {
         accessibilityLabel={label}
         accessibilityHint={t("c829")}
         onPress={onOpen}
-        style={styles.datePill}
+        style={[styles.datePill, compact && styles.datePillCompact]}
         hitSlop={DATE_PILL_SLOP}
       >
         <Text style={styles.dateText}>{label}</Text>
@@ -290,6 +291,9 @@ const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top
   onSheetOpen, onPanelHeight },
 ref) {
   const styles = getStyles(useTheme());
+  const window = useWindowDimensions();
+  const wideHeader = historyUsesWideHeader(window);
+  const rangeLayoutKey = `${window.width}:${window.height}`;
   const panel = useRef(null);
   const list = useRef(null);
   const rows = useRef({});
@@ -453,8 +457,8 @@ ref) {
   const rowLayout = useCallback((start, y) => {
     rows.current[start] = y;
   }, []);
-  const header = (
-    <View>
+  const dateHeader = (
+    <>
       <DateRow
         day={screen.day}
         todayStart={screen.todayStart}
@@ -462,6 +466,7 @@ ref) {
         onPrevious={() => step(screen.previousDay)}
         onNext={() => step(screen.nextDay)}
         onOpen={openCalendar}
+        compact={wideHeader}
       />
       {screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
         <Text style={styles.asOfText}>{t('c1247', { time: `${String(new Date(screen.asOf).getHours()).padStart(2, '0')}:${String(new Date(screen.asOf).getMinutes()).padStart(2, '0')}` })}</Text>
@@ -470,6 +475,16 @@ ref) {
           <Text style={styles.updateTailText}>{t('c1248')}</Text>
         </PressScale>
       </View>}
+    </>
+  );
+  const rangeProps = {
+    range: screen.range, track: screen.track, today: screen.today,
+    onDrag: screen.dragRange, onCommit: screen.commitRange,
+    previewDelay: screen.rangePreviewDelay, previewScope: screen.rangePreviewScope,
+    active: screen.rangeActive, dayPoints: screen.dayPoints, layoutKey: rangeLayoutKey,
+  };
+  const summaryHeader = (
+    <>
       {downloading && (
         <DownloadSummary panel={download} onCancel={screen.cancelDownload} />
       )}
@@ -478,25 +493,28 @@ ref) {
       )}
       {hasRoute && (
         <HistoryRangeSummary
+          {...rangeProps}
           model={model}
           subject={subject}
-          range={screen.range}
-          track={screen.track}
-          today={screen.today}
           open={rangeOpen}
           onToggle={() => openRange(!rangeOpen)}
-          onDrag={screen.dragRange}
-          onCommit={screen.commitRange}
-          previewDelay={screen.rangePreviewDelay}
-          previewScope={screen.rangePreviewScope}
-          active={screen.rangeActive}
+          compact={wideHeader}
+          externalControls={wideHeader}
           closedAt={closedAt}
-          dayPoints={screen.dayPoints}
           who={screen.multi ? leadName : null}
         />
       )}
-    </View>
+    </>
   );
+  const header = wideHeader ? (
+    <View testID="history-header-columns" style={styles.headerColumns}>
+      <View style={styles.dateColumn}>{dateHeader}</View>
+      <View style={styles.summaryColumn}>{summaryHeader}</View>
+    </View>
+  ) : <View>{dateHeader}{summaryHeader}</View>;
+  const floatingRange = wideHeader && rangeOpen && hasRoute ? (
+    <HistoryRangeControls {...rangeProps} model={model} />
+  ) : null;
 
   let body;
   if (downloading) body = null;
@@ -554,7 +572,8 @@ ref) {
         onHeightChange={onPanelHeight}
         measureKey={`${screen.day}:${subject}:${screen.protagonist}:${(screen.dogs ?? []).map(dog => dog.id).join(',')}:${screen.range?.start}:${screen.range?.end}:${!!model}:${download?.kind ?? ''}`}
         bottomInset={bottomInset} scrollRef={list}
-        above={hasRoute ? <FrameButton onPress={onFrame} /> : null}
+        floating={floatingRange}
+        above={hasRoute && !floatingRange ? <FrameButton onPress={onFrame} /> : null}
       >
         <Pressable
           onPress={closeRange}
@@ -672,6 +691,10 @@ const getStyles = makeStyles(theme => {
     asOfText: { color: colors.textMuted, fontSize: type.caption.fontSize },
     updateTail: { minHeight: touch.min, minWidth: touch.min, justifyContent: 'center', alignItems: 'center' },
     updateTailText: { color: colors.phone, fontSize: type.caption.fontSize },
+    headerColumns: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: space.s },
+    dateColumn: { flex: 0.42, minWidth: 0 },
+    summaryColumn: { flex: 0.58, minWidth: 0 },
+    datePillCompact: { marginHorizontal: space.xs, paddingHorizontal: space.s },
     dateRow: {
       flexDirection: 'row',
       alignItems: 'center',

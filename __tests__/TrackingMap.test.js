@@ -772,8 +772,9 @@ test('066: a dog tapped with a card open switches the card in one tap (the map t
   expect(onMapPress).not.toHaveBeenCalled();
 });
 
-test('066: a tap Google reports as a map tap but lands on a dog face opens that dog (one tap)', async () => {
+test.each(['android', 'ios'])('066: a %s map-only tap on a dog face opens that dog (one tap)', async platform => {
   const { PixelRatio } = require('react-native');
+  const ratioMock = jest.spyOn(PixelRatio, 'get').mockReturnValue(3);
   const onMapPress = jest.fn();
   const onDogPress = jest.fn();
   mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 150, y: 300 }));
@@ -783,7 +784,8 @@ test('066: a tap Google reports as a map tap but lands on a dog face opens that 
     await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
     await act(async () => jest.advanceTimersByTime(2000));
-    const ratio = PixelRatio.get();
+    Platform.OS = platform;
+    const ratio = platform === 'android' ? PixelRatio.get() : 1;
     // On the face (5dp off its centre), in screen pixels as Google reports it.
     await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
       { position: { x: 155 * ratio, y: 300 * ratio } } }));
@@ -797,7 +799,59 @@ test('066: a tap Google reports as a map tap but lands on a dog face opens that 
     expect(onMapPress).toHaveBeenCalledTimes(1);
   } finally {
     delete mockCamera.pointForCoordinate;
+    ratioMock.mockRestore();
   }
+});
+
+test('a duplicate map hit cannot overwrite the native dog marker identity', async () => {
+  const { PixelRatio } = require('react-native');
+  const onDogPress = jest.fn();
+  const onMapPress = jest.fn();
+  const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId,
+    coordinate: { latitude: 25, longitude: slaveId }, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}` }));
+  mockCamera.pointForCoordinate = jest.fn(async coordinate =>
+    ({ x: coordinate.longitude === 5 ? 100 : 200, y: 300 }));
+  try {
+    await render({ onDogPress, onMapPress, presentation: { ...defaults.presentation, dogMarkers: markers } });
+    await readyMap();
+    const marker = renderer.root.findAll(node => node.type === Marker && node.props.identifier === 'real-dog-6')[0];
+    const duplicateMapHit = () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 100 * PixelRatio.get(), y: 300 * PixelRatio.get() } } });
+    await act(async () => marker.props.onPress());
+    await act(async () => duplicateMapHit());
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onDogPress.mock.calls).toEqual([[6]]);
+    expect(onMapPress).not.toHaveBeenCalled();
+    // A later independent map-only hit still selects the dog under it.
+    await act(async () => duplicateMapHit());
+    expect(onDogPress.mock.calls).toEqual([[6], [5]]);
+  } finally { delete mockCamera.pointForCoordinate; }
+});
+
+test('separated native dog faces use compact bitmaps while labels keep their own identities', async () => {
+  const { markerFrame } = require('../src/map/DogMarkerView');
+  const onDogPress = jest.fn();
+  const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId, size: 48,
+    coordinate: { latitude: 25.02, longitude: 121.02 }, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}` }));
+  mockCamera.pointForCoordinate = jest.fn(async point => ({ x: (point.longitude - 121) * 10000, y: (point.latitude - 25) * 10000 }));
+  mockCamera.coordinateForPoint = jest.fn(async point => ({ latitude: 25 + point.y / 10000, longitude: 121 + point.x / 10000 }));
+  try {
+    await render({ onDogPress, presentation: { ...defaults.presentation, dogMarkers: markers } });
+    await readyMap();
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    const dogs = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'));
+    expect(dogs).toHaveLength(2);
+    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48, true).anchor));
+    const dog6 = dogs.find(dog => dog.props.identifier === 'real-dog-6');
+    await act(async () => dog6.props.onPress());
+    expect(onDogPress.mock.calls).toEqual([[6]]);
+    const label6 = renderer.root.findAllByType(Marker).find(marker =>
+      !marker.props.identifier && marker.findAllByType(require('react-native').Text).some(text => text.props.children === '狗 6'));
+    expect(label6).toBeDefined();
+    await act(async () => label6.props.onPress());
+    expect(onDogPress.mock.calls).toEqual([[6], [6]]);
+  } finally { delete mockCamera.pointForCoordinate; delete mockCamera.coordinateForPoint; }
 });
 
 test('066: 我的位置 with a card open puts the phone in the middle of the map above the card', async () => {

@@ -55,7 +55,7 @@ export function rangeSummaryLines(model, { subject, open, range, who = null }) {
 }
 
 function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
-  previewDelay = RANGE_PREVIEW_MIN_MS, previewScope = track.start, active = true }) {
+  previewDelay = RANGE_PREVIEW_MIN_MS, previewScope = track.start, active = true, layoutKey }) {
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
   // Finger/time feedback stays local; the day model/list/map preview is a
@@ -102,7 +102,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
       if (drag.current.last) state.current.onDrag(null);
       drag.current = { handle: null };
     };
-  }, [previewScope, active, clearPreview]);
+  }, [previewScope, active, layoutKey, clearPreview]);
   const responder = useMemo(() => {
     // One step of a drag `dx` from where it began (a move, or the release
     // itself: a quick flick can end before its last moves reach JS, and the
@@ -300,6 +300,13 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
   );
 }
 
+// The short-wide header keeps its summary fixed and hosts these same controls
+// above the panel, outside the sheet's clipped timeline viewport.
+export function HistoryRangeControls({ model, dayPoints, ...props }) {
+  const points = dayPoints?.length ? dayPoints : model.dayPoints;
+  return <RangeBar {...props} dayPoints={points} />;
+}
+
 /**
  * `model` (historyTimeline's), `range` ({ start, end, following }), `track`
  * (rangeTrack), `open` and `onToggle` (the bar), `onDrag` (a range while a
@@ -326,6 +333,9 @@ export default function HistoryRangeSummary({
   previewDelay,
   previewScope,
   active,
+  compact = false,
+  externalControls = false,
+  layoutKey,
 }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -339,9 +349,9 @@ export default function HistoryRangeSummary({
   // 「08:03 到現在，走了 5.2 公里，點兩下調整範圍」 (設計稿「無障礙」範圍條).
   const speech = ((enabled) ? t("c779", { value: lines.title.replace(' – ', t("c826")), value2: spoken(lines.detail.replace(/（([^）]+)）/g, '，$1')) }) : t("c780", { value: lines.title.replace(' – ', t("c826")), value2: spoken(lines.detail.replace(/（([^）]+)）/g, '，$1')) }));
   // 大字體: 「調整範圍」 goes under the times, which keep the full width.
-  const stacked = isLargeFont();
+  const stacked = isLargeFont() && !compact;
   return (
-    <View style={[styles.box, open && styles.boxOpen]} testID="history-summary">
+    <View style={[styles.box, compact && styles.boxCompact, open && !externalControls && styles.boxOpen]} testID="history-summary">
       <Pressable
         onPress={enabled ? onToggle : undefined}
         style={({ pressed }) => [
@@ -392,7 +402,7 @@ export default function HistoryRangeSummary({
       {!open && closedAt != null && (
         <Text style={styles.closed}>{t('c310', { time: clock(closedAt) })}</Text>
       )}
-      {open && (
+      {open && !externalControls && (
         <>
           <RangeBar
             range={range}
@@ -404,6 +414,7 @@ export default function HistoryRangeSummary({
             previewDelay={previewDelay}
             previewScope={previewScope}
             active={active}
+            layoutKey={layoutKey}
           />
         </>
       )}
@@ -427,6 +438,8 @@ const getStyles = makeStyles(theme => {
       borderWidth: border.regular,
       borderColor: 'transparent',
     },
+    // Preserve scaled lines and touch sizes; spend less of the half panel on empty space.
+    boxCompact: { marginHorizontal: space.xs, paddingVertical: space.xs },
     boxOpen: { borderColor: colors.accent, backgroundColor: colors.elevated },
     summary: { flexDirection: 'row', alignItems: 'center', gap: space.s, minHeight: touch.min },
     texts: { flex: 1 },

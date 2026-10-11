@@ -33,7 +33,13 @@ function tagArea() {
 }
 
 /** The marker view's height and the anchor of the face centre, for a face size. */
-export function markerFrame(faceSize) {
+export function markerFrame(faceSize, compact = false) {
+  if (compact) {
+    // External labels have their own markers. Keeping their empty canvas on
+    // the face lets the SDK's rectangular hit target cover a neighbouring dog.
+    const side = faceSize + 2 * TOP;
+    return { width: side, height: side, anchor: { x: 0.5, y: 0.5 } };
+  }
   const height = Math.ceil(TOP + faceSize + markerSize.labelGap + tagArea());
   return {
     // Long indoor group text plus its optional problem dot must fit at 200%.
@@ -110,11 +116,11 @@ function shadowFrame(size, selected, width) {
  * @param tag DogMarkers.nameTags entry: { text, group, problem } or null
  * @param avatar the dog's chosen face (useDogAvatars), or undefined for the default
  */
-export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad }) {
+export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad, compact = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const { size, problem, indoor, stale, selected, staleRing, tint } = marker;
-  const frame = markerFrame(size);
+  const frame = markerFrame(size, compact);
   return (
     <View
       collapsable={false}
