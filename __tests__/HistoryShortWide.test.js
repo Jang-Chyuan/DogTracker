@@ -271,6 +271,8 @@ test.each([{ width: 393, height: 851, fontScale: 1 }, { width: 851, height: 393,
       await act(async () => sheet.onPanResponderMove(null, { dy }));
       expect(one(tree, 'history-panel-date-drag') === dateResponder).toBe(true);
       expect(one(tree, 'history-date') === dateButton).toBe(true);
+      expect(one(tree, 'history-summary')).toBeDefined();
+      expect(one(tree, 'history-timeline')).toBeDefined();
     }
     // A newly measured header may resize bounds during this same native drag.
     const dateMeasure = one(tree, 'history-panel-header').findAll(node => typeof node.type === 'string' && node.props.onLayout)[0];
