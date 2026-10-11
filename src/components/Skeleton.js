@@ -48,9 +48,9 @@ export default function Skeleton({ shape = 'rows', reduced: override, testID = '
   }, [progress, reduced]);
   const block = (width, height, square = false) => <Block {...{ width, height, square, progress, reduced, colors }} />;
   return <Animated.View testID={testID} accessible={false} accessibilityElementsHidden
-    importantForAccessibility="no-hide-descendants" style={[styles.shape,
+    importantForAccessibility="no-hide-descendants" style={[styles.shape, shape === 'address' && styles.address,
       reduced && { opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] }) }]}>
-    {shape === 'chart' || shape === 'bars' ? <>
+    {shape === 'address' ? block('80%', 12) : shape === 'chart' || shape === 'bars' ? <>
       <View style={styles.chart}>{shape === 'chart' ? block('100%', 180, true)
         : [100, 150, 120, 170, 110, 140, 130].map((height, index) => <View key={index}>{block(24, height, true)}</View>)}</View>
       <View style={styles.row}>{block('35%')}{block('25%')}{block('25%')}</View>
@@ -94,6 +94,7 @@ export function LoadingContent({ loading, children, shape, label = t('c425'), sk
 
 const styles = StyleSheet.create({
   shape: { padding: size.skeleton.padding },
+  address: { padding: 0, width: '100%' },
   block: { overflow: 'hidden', borderRadius: radius.full },
   square: { borderRadius: 0 },
   light: { position: 'absolute', top: 0, bottom: 0 },

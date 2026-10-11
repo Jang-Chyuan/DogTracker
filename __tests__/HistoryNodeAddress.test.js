@@ -79,9 +79,11 @@ test('indoor list and PNG export reuse the live card address cache', async () =>
 });
 
 
-test('a leading stay pill is aligned with the first line of a wrapping address', async () => {
-  const lookup = { lookup: () => ({ state: 'found', text: '虛構桃園長地址第一行第二行第三行' }), subscribe: () => () => {} };
+test.each([1, 2])('a leading stay pill and marker are centered on the first wrapping address line at font scale %s', async scale => {
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 393, height: 851, fontScale: scale });
+  const lookup = { lookup: () => '虛構桃園長地址第一行第二行第三行', subscribe: () => () => {} };
   let renderer;
+  try {
   await act(async () => { renderer = Renderer.create(<AddressLookupContext.Provider value={lookup}>
     <HistoryTimelineList model={{ nodes: [{ ...house, type: 'stop', number: 1, durationMs: house.end }] }} color={colors.route1} />
   </AddressLookupContext.Provider>); });
@@ -91,5 +93,35 @@ test('a leading stay pill is aligned with the first line of a wrapping address',
   const heading = StyleSheet.flatten(host.props.style);
   expect(heading).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' });
   expect(host.children).toHaveLength(2);
-  await act(async () => renderer.unmount());
+  expect(title.props.children).toBe('虛構桃園長地址第一行第二行第三行'); // real lookup returns a string
+  const pillBox = renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-pill-first-line')[0];
+  const markerBox = renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-node-first-line')[0];
+  expect(StyleSheet.flatten(pillBox.props.style)).toMatchObject({ height: 20 * scale, justifyContent: 'center' });
+  expect(StyleSheet.flatten(markerBox.props.style)).toEqual(StyleSheet.flatten(pillBox.props.style));
+  } finally {
+    await act(async () => renderer?.unmount());
+    dimensions.mockRestore();
+  }
+});
+
+
+test('pending addresses shimmer on the normal first line, unavailable addresses show a real fallback without coordinates', async () => {
+  jest.useFakeTimers();
+  let renderer, answer, publish;
+  const lookup = { lookup: () => answer, subscribe: fn => { publish = fn; return () => {}; } };
+  const view = <AddressLookupContext.Provider value={lookup}><HistoryTimelineList
+    model={{ nodes: [{ ...house, type: 'stop', number: 1, durationMs: house.end }] }} color={colors.route1} />
+  </AddressLookupContext.Provider>;
+  try {
+    await act(async () => { renderer = Renderer.create(view); });
+    expect(renderer.root.findAllByProps({ testID: 'place-address-pending' }).length).toBeGreaterThan(0);
+    expect(renderer.root.findAllByProps({ testID: 'place-title' })).toHaveLength(0);
+    await act(async () => { answer = null; publish(); });
+    expect(renderer.root.findAllByProps({ testID: 'place-address-pending' })).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).toContain('地址暫時無法取得');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('24.9378, 121.2954');
+    await act(async () => { answer = address; publish(); });
+    expect(JSON.stringify(renderer.toJSON())).toContain(address);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('地址暫時無法取得');
+  } finally { await act(async () => renderer?.unmount()); jest.useRealTimers(); }
 });

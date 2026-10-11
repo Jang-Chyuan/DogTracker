@@ -9,8 +9,11 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Glyph from '../map/Glyph';
+import Skeleton from '../components/Skeleton';
+import { t } from '../i18n';
 import { timelinePresentation } from '../history/HistoryTimelinePresentation';
 
 import {
@@ -97,16 +100,17 @@ const lineOf = section =>
     ? 'solid'
     : 'dots';
 
-function Node({ node, color }) {
+function Node({ node, color, centered = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
+  const centeredStyle = centered ? { marginTop: 0 } : null;
   switch (node.type) {
     case 'departure':
-      return <View style={[styles.departure, { borderColor: color }]} />;
+      return <View style={[styles.departure, centeredStyle, { borderColor: color }]} />;
     case 'stop':
     case 'switch':
       return (
-        <View style={[styles.numbered, { backgroundColor: color }]}>
+        <View style={[styles.numbered, centeredStyle, { backgroundColor: color }]}>
           {/* A number in a fixed 24dp circle: it does not grow with the font. */}
           <Text style={styles.number} allowFontScaling={false}>{node.number}</Text>
         </View>
@@ -114,17 +118,17 @@ function Node({ node, color }) {
 
     case 'indoor':
       return (
-        <View style={styles.indoor}>
+        <View style={[styles.indoor, centeredStyle]}>
           <Glyph name="house" color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
         </View>
       );
     case 'resume':
-      return <View style={[styles.resume, { borderColor: color }]} />;
+      return <View style={[styles.resume, centeredStyle, { borderColor: color }]} />;
     default:
       return (
         <View
           style={[
-            styles.end,
+            styles.end, centeredStyle,
             { backgroundColor: color, borderColor: `${color}55` },
           ]}
         />
@@ -151,6 +155,8 @@ function Pill({ pill, color }) {
 
 function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout }) {
   const styles = useStyles(getStyles);
+  const { fontScale: scale = 1 } = useWindowDimensions();
+  const firstLine = { height: Math.ceil(type.cardTitle.lineHeight * scale) };
   const tap = useTap(onPress, node);
   const onLayout = onRowLayout
     ? event => onRowLayout(node.start, event.nativeEvent.layout.y)
@@ -159,7 +165,8 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
   const lines = placeLines(node, place);
   const note = interruptionText(node);
   const pill = nodePill(node);
-  const title = place?.state === 'found' || place?.state === 'pending' ? lines.title : '';
+  const pending = place?.state === 'pending';
+  const title = place?.state === 'found' || pending ? lines.title : t('c1256');
   return (
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
@@ -180,7 +187,7 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
       <View style={styles.trackColumn}>
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
         <Track kind={lineOf(next)} color={color} from={12} />
-        <Node node={node} color={color} />
+        <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line"><Node node={node} color={color} centered /></View>
       </View>
       <View style={styles.placeOuter}>
         {/* The row the cursor is on: a pale fill of the route colour (H2). */}
@@ -189,10 +196,12 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
           testID={selected ? 'timeline-selected' : undefined}
         >
           <View style={styles.placeHeading}>
-            <Pill pill={pill} color={color} />
-            <Text style={[styles.address, lines.titleMuted && styles.asking]} testID="place-title">
+            {pill && <View style={[styles.firstLineCenter, firstLine]} testID="place-pill-first-line"><Pill pill={pill} color={color} /></View>}
+            {pending ? <View style={[styles.address, styles.firstLineCenter, firstLine]}>
+              <Skeleton shape="address" testID="place-address-pending" />
+            </View> : <Text style={[styles.address, place?.state !== 'found' && styles.addressMissing]} testID="place-title">
               {title}
-            </Text>
+            </Text>}
           </View>
           {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
@@ -413,6 +422,7 @@ const getStyles = makeStyles(theme => {
       borderRadius: radius.input,
       overflow: 'hidden',
     },
+    firstLineCenter: { justifyContent: 'center', alignItems: 'center' },
     placeHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.xs },
     address: {
       flexGrow: 1,
@@ -424,7 +434,7 @@ const getStyles = makeStyles(theme => {
 
       fontVariant: ['tabular-nums'],
     },
-    asking: { color: colors.textMuted, fontWeight: type.body.fontWeight, minHeight: sizes.timeline.sectionHeight },
+    addressMissing: { color: colors.textMuted, fontWeight: type.body.fontWeight },
     pill: {
       maxWidth: '100%',
       // 18dp, taller with a large system font (膠囊可以變高、不裁字).
