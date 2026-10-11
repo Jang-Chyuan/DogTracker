@@ -103,6 +103,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const startedAt = now();
     // Observed wall time includes native bridge waits and JS continuation.
     // latestHTTPMs measures downloadLatest as a whole, not HTTP or CPU alone.
+    // Prefetched network phases overlap native readiness; timings are not additive.
     const timings = { slotWaitMs: 0, initializeMs: 0, archiveProofMs: 0,
       latestCacheReadMs: 0, mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0 };
     const attempt = state.mapAttempt + 1;
@@ -129,8 +130,48 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
       timings.slotWaitMs = Math.max(0, now() - startedAt);
+      let prefetchedLatest;
+      let fetchLatest;
+      let cancelPrefetch;
       try {
         check();
+        if (latestFirst) {
+          // Network reads do not need SQLite. Start them inside the same cloud
+          // slot, but keep all native readiness/proof checks before publication.
+          const networkAbort = new AbortController();
+          cancelPrefetch = () => networkAbort.abort();
+          abort.signal.addEventListener('abort', cancelPrefetch, { once: true });
+          const networkCheck = () => {
+            check();
+            if (networkAbort.signal.aborted) throw new Error(t('c576'));
+          };
+          let networkPhase = 'masters';
+          const canceled = new Promise(resolve => {
+            networkAbort.signal.addEventListener('abort', () =>
+              resolve({ error: new Error(t('c576')), phase: networkPhase }), { once: true });
+          });
+          // Handle rejection immediately, even while an uncancellable native
+          // operation drains. Ignored transport aborts cannot publish late.
+          fetchLatest = () => {
+            networkPhase = 'masters';
+            const network = (async () => {
+              let networkAt = now();
+              const masters = await listCloudMasters(client, userId, networkAbort.signal, networkCheck);
+              timings.mastersMs += Math.max(0, now() - networkAt);
+              networkCheck();
+              const cutoff = now();
+              networkPhase = 'download';
+              networkAt = now();
+              const snapshot = await downloadLatest({ client, masterIds: masters, cutoff,
+                signal: networkAbort.signal, check: networkCheck });
+              timings.latestHTTPMs += Math.max(0, now() - networkAt);
+              networkCheck();
+              return { masters, cutoff, snapshot };
+            })().then(value => ({ value }), error => ({ error, phase: networkPhase }));
+            return Promise.race([network, canceled]);
+          };
+          prefetchedLatest = fetchLatest();
+        }
         let phaseAt = now();
         await database.initialize();
         timings.initializeMs = Math.max(0, now() - phaseAt);
@@ -154,17 +195,29 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           await database.beginDownload?.(userId);
           check();
         }
-        phase = 'masters';
-        phaseAt = now();
-        const masters = await listCloudMasters(client, userId, abort.signal, check);
-        timings.mastersMs = Math.max(0, now() - phaseAt);
-        const cutoff = now();
+        let masters, cutoff, snapshot;
         if (latestFirst) {
-          phase = 'download';
-          phaseAt = now();
-          const snapshot = await downloadLatest({ client, masterIds: masters, cutoff, signal: abort.signal, check });
-          timings.latestHTTPMs = Math.max(0, now() - phaseAt);
+          let downloaded = await prefetchedLatest;
+          // Re-list membership as well as packets when initialization outlives
+          // the existing poll period. At most one replacement, same deadline.
+          if (downloaded.value && now() - downloaded.value.cutoff >= 30000) {
+            check();
+            downloaded = await fetchLatest();
+          }
+          if (Object.prototype.hasOwnProperty.call(downloaded, 'error')) {
+            phase = downloaded.phase;
+            throw downloaded.error;
+          }
+          ({ masters, cutoff, snapshot } = downloaded.value);
           check();
+        } else {
+          phase = 'masters';
+          phaseAt = now();
+          masters = await listCloudMasters(client, userId, abort.signal, check);
+          timings.mastersMs = Math.max(0, now() - phaseAt);
+          cutoff = now();
+        }
+        if (latestFirst) {
           phase = 'publish';
           phaseAt = now();
           await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
@@ -304,6 +357,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           else resumeCatchUp.failed();
         }
       } finally {
+        if (cancelPrefetch) {
+          abort.signal.removeEventListener('abort', cancelPrefetch);
+          cancelPrefetch();
+        }
         clearTimeout(timeout);
         controller = null;
         running = null;

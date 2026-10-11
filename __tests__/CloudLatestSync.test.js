@@ -92,7 +92,7 @@ test('prelatest revision read does not bootstrap optional archive context before
   }
 });
 
-test('archive proof remains a separate prelatest wait and restores only durable coverage', async () => {
+test('archive proof remains a separate acceptance wait and restores only durable coverage', async () => {
   const { database, downloadLatest, current, start } = await fixture();
   await database.beginDownload('a');
   await database.publishDownload('a', 'auto', NOW - 100);
@@ -109,7 +109,7 @@ test('archive proof remains a separate prelatest wait and restores only durable 
   try {
     await start();
     expect(proofEntered).toBe(true);
-    expect(downloadLatest).not.toHaveBeenCalled();
+    expect(downloadLatest).toHaveBeenCalledTimes(1);
     expect(current()).toMatchObject({ archiveRevision: 0, archiveCutoff: null, mapSuccessRevision: 0 });
     proof.resolve(); await flush();
     expect(downloadLatest).toHaveBeenCalledTimes(1);
