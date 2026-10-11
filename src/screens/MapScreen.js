@@ -1049,6 +1049,7 @@ export default function MapScreen({
         source={
           historySource ?? (fixture ? `${mode}:fixture:${fixture.name}` : mode)
         }
+        dogSelectionScope={cloudOwner ?? null}
         presentation={presentation}
         topInset={controlsTop}
         bottomInset={mapBottom}

@@ -53,6 +53,8 @@ import {
   uncrowded,
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
+import DenseDogSelector from './DenseDogSelector';
+import { denseDogNames } from './DenseDogNames';
 import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
@@ -586,6 +588,7 @@ export function splashTargets(inputs, points, fontScale = 1) {
 
 function GoogleTrackingMapRenderer({
   source,
+  dogSelectionScope = null,
   presentation,
   topInset,
   bottomInset,
@@ -791,7 +794,13 @@ function GoogleTrackingMapRenderer({
   // The history screen, also while its day is still being read (no route
   // yet): never the live phone, its dot or the live buttons in between.
   const historyMode = !!historyRoute || !!presentation.historyMode;
-  const bottomRow = historyMode ? 0 : sizes.floatingButton;
+  const [denseControlsHeight, setDenseControlsHeight] = useState(0);
+  const hasDogSelector = !historyMode && dogMarkers.length > 1;
+  // The explicit selector shares the frame-all row. Reserve both rows until
+  // native layout reports their actual height, including large-font wrapping.
+  const bottomRow = historyMode ? 0 : hasDogSelector
+    ? Math.max(2 * sizes.floatingButton + layout.floatingGap, denseControlsHeight)
+    : sizes.floatingButton;
   const padding = useMemo(() => {
     const value = framePadding(dogMarkers, fontScale);
     return {
@@ -919,10 +928,20 @@ function GoogleTrackingMapRenderer({
       );
     // Within one source a dog that moved keeps its last screen point until the
     // next read (a moment), so its tag does not blink on every new position.
-    return nameTags(dogMarkers, points || {}, PixelRatio.getFontScale?.() || 1, {
+    if (!historyMode && dogMarkers.length > 1) return denseDogNames(dogMarkers, points, {
+      fontScale,
+      view: cursorLayout.width > 0 && cursorLayout.height > 0 ? {
+        width: cursorLayout.width, height: cursorLayout.height,
+        top: Math.max(topInset, coverTop || 0),
+        bottom: Math.max(bottomInset, coverBottom || 0) + bottomRow,
+      } : null,
+    });
+    return nameTags(dogMarkers, points || {}, fontScale, {
       group: groupsAtZoom(metresPerDp),
     });
-  }, [dogMarkers, dogPoints, source, projecting, metresPerDp]);
+  }, [dogMarkers, dogPoints, source, projecting, metresPerDp, historyMode,
+    fontScale, cursorLayout.width, cursorLayout.height, topInset, coverTop,
+    bottomInset, coverBottom, bottomRow]);
   useEffect(() => {
     onReadyChange?.(configured && usable);
   }, [configured, usable, onReadyChange]);
@@ -1781,6 +1800,9 @@ function GoogleTrackingMapRenderer({
               source={source}
               marker={marker}
               tag={tags[marker.slaveId]}
+              // A suppressed name must not leave its empty, wide hit canvas
+              // over the neighbouring face. Same true coordinate and badges.
+              compact={live && dogMarkers.length > 1 && !tags[marker.slaveId]}
               avatar={presentation.dogAvatars?.[marker.slaveId]}
               shownKey={shownKey}
               // Above the phone's dot (30), whose name tag layer they carry:
@@ -1894,6 +1916,15 @@ function GoogleTrackingMapRenderer({
             onMyLocation={pressMyLocation}
             today={today}
             onToday={onToday}
+            onControlsLayout={hasDogSelector ? event => {
+              const measured = event.nativeEvent.layout.height;
+              if (Number.isFinite(measured) && measured > 0)
+                setDenseControlsHeight(previous => previous === measured ? previous : measured);
+            } : undefined}
+            dogSelector={hasDogSelector ? <DenseDogSelector
+              markers={dogMarkers} avatars={presentation.dogAvatars}
+              sourceKey={JSON.stringify([source, dogSelectionScope])} onSelect={pressDog}
+            /> : null}
           />
         )}
       </Animated.View>

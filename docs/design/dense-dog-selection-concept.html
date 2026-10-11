@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>密集狗選取概念比較</title>
+<style>
+:root{color-scheme:light dark;--ink:light-dark(#201e1c,#f6ece8);--paper:light-dark(#fff,#282321);--map:light-dark(#e5eee8,#25332f);--line:light-dark(#cad7cf,#40534a);--blue:light-dark(#1a73e8,#a8c7fa);--red:light-dark(#b3261e,#ffb4ab)}
+*{box-sizing:border-box}body{margin:0;padding:20px;font:16px/1.5 system-ui,sans-serif;color:var(--ink);background:var(--paper)}main{max-width:920px;margin:auto}h1{font-size:24px}p{margin:8px 0}button,select{font:inherit;color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:12px;min-height:48px;padding:8px 14px;cursor:pointer}button[aria-pressed=true]{outline:2px solid var(--blue)}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}.toolbar label{display:flex;align-items:center;gap:6px}.preview{position:relative;height:620px;border:1px solid var(--line);border-radius:20px;overflow:hidden;background:var(--map)}svg{display:block;width:100%;height:100%;touch-action:pan-y}.street{stroke:var(--line);stroke-width:20}.grid{stroke:var(--paper);stroke-width:2;opacity:.6}.head{cursor:pointer;stroke:var(--paper);stroke-width:3;fill:var(--paper)}.selected-head{stroke:var(--blue);stroke-width:4}.problem-head{stroke:var(--red)}.face-text{fill:var(--ink);font-size:13px;text-anchor:middle;pointer-events:none}.selected-head+.face-text{font-weight:bold}.name-bg{fill:var(--paper);stroke:var(--line)}.name{fill:var(--ink);font-size:13px;text-anchor:middle}.controls{position:absolute;right:16px;bottom:16px;display:flex;align-items:center;gap:12px}.strip{position:absolute;bottom:16px;left:16px;right:16px;display:flex;gap:8px;overflow-x:auto;padding:4px;background:var(--paper);border-radius:12px}.strip button{flex:none}.card{position:absolute;left:16px;right:16px;bottom:80px;padding:16px;border-radius:16px;background:var(--paper);box-shadow:0 2px 10px #0002}.card h2{font-size:20px;margin:0}.card button{float:right}.picker{position:absolute;inset:0;display:flex;align-items:end;padding:16px;background:#0006;z-index:4}.sheet{background:var(--paper);border-radius:16px;width:100%;max-height:80%;display:flex;flex-direction:column}.sheet header{padding:12px;display:flex;align-items:center;justify-content:space-between}.rows{overflow-y:auto;padding:0 12px 12px}.rows button{display:flex;width:100%;text-align:left;align-items:center;gap:12px;margin-top:4px}.rows .warn{color:var(--red)}.hint{position:absolute;top:16px;left:16px;padding:8px;border-radius:12px;background:var(--paper);pointer-events:none}.legend{font-size:14px}.notice{padding:12px;background:var(--map);border-radius:12px}.hidden{display:none!important}
+</style></head><body><main>
+<h1>密集狗：名字與選取方式</h1>
+<p class="notice">設計概念，非原生畫面、未通過裝置驗證。正式上游最多 20 隻；32／64 僅為介面壓力概念，不能當正式支援或原生驗證。16／32／64 個位置全部由獨立公式產生；每群直徑小於 2 公尺。圓形只代表頭像，底圖為示意。所有頭像只開該狗卡片。</p>
+<div class="toolbar"><button id="variant-a" aria-pressed="true">選中名字＋明確選狗按鈕</button><button id="variant-b" aria-pressed="false">固定狗名列</button></div>
+<div class="toolbar"><label>狗數<select id="count"><option>16</option><option>32</option><option selected>64</option></select></label><label><input id="two" type="checkbox">兩個相鄰群</label><label>縮放<input id="zoom" type="range" min="0" max="100" value="45"></label><label>平移<input id="pan" type="range" min="-1600" max="1600" value="0"></label><button id="offscreen">將選中狗移到畫面外</button></div>
+<div id="preview" class="preview"><svg id="map" viewBox="0 0 600 620" aria-label="獨立公式狗定位示意圖"></svg><div id="hint" class="hint hidden"></div><div id="card" class="card hidden" role="region" aria-live="polite"></div><div id="controls" class="controls"><button id="choose">選狗</button></div><div id="strip" class="strip hidden" aria-label="固定選狗列"></div><div id="picker" class="picker hidden" role="dialog" aria-modal="true" aria-label="選狗"><div class="sheet"><header><strong>選狗</strong><button id="close">關閉</button></header><div id="rows" class="rows"></div></div></div>
+<p id="status" class="legend" aria-live="polite"></p>
+<p id="explanation">名字不再疊成整片；選中狗優先保留自己的名字，其他名字有空間才出現。要找被遮住或在畫面外的狗，按「選狗」，再直接開該狗卡片。</p>
+</main><script>
+(() => {
+  const byId = id => document.getElementById(id), NS = 'http://www.w3.org/2000/svg';
+  let variant = 'a', selected = 64, cardOpen = false, dogs = [];
+  function svg(tag, attributes, text) {const el=document.createElementNS(NS,tag);for(const [key,value] of Object.entries(attributes))el.setAttribute(key,value);if(text!=null)el.textContent=text;return el;}
+  function scene() {const count=+byId('count').value,n=byId('two').checked?count/2:count,mpp=Math.pow(10,1-3*+byId('zoom').value/100),pan=+byId('pan').value;return Array.from({length:count},(_,i)=>{const k=i%n,a=2*Math.PI*k/n,r=.25+.7*((k*7)%n)/(n-1),east=r*Math.cos(a)+(byId('two').checked?(i<n?-6:6):0),north=r*Math.sin(a);return{id:i+1,east,north,x:300+east/mpp+pan,y:235-north/mpp,problem:(i+1)%7===0};});}
+  function openCard(id) {selected=id;cardOpen=true;closePicker();draw();}
+  function closePicker() {byId('picker').classList.add('hidden');}
+  function draw() {
+    dogs=scene();if(selected>dogs.length)selected=dogs.length;const map=byId('map');map.replaceChildren();
+    for(let x=-100;x<800;x+=120){map.append(svg('path',{d:`M${x} 0L${x+150} 620`,class:'street'}));map.append(svg('path',{d:`M0 ${x+120}L600 ${x+40}`,class:'grid'}));}
+    const placed=[],names=[];
+    for(const dog of [...dogs].sort((a,b)=>(b.id===selected)-(a.id===selected)||+b.problem-+a.problem||a.id-b.id)){
+      const box={left:dog.x-48,right:dog.x+48,top:dog.y+25,bottom:dog.y+57};
+      const inside=box.left>=0&&box.right<=600&&box.top>=64&&box.bottom<=500;
+      if(inside&&!placed.some(p=>box.left<p.right&&p.left<box.right&&box.top<p.bottom&&p.top<box.bottom)){placed.push(box);names.push(dog.id);}
+    }
+    for(const dog of [...dogs].sort((a,b)=>(a.id===selected)-(b.id===selected)||+a.problem-+b.problem)){
+      const g=svg('g',{role:'button',tabindex:0,'aria-label':`Dog ${dog.id}${dog.problem?'，有問題':''}，開啟詳細卡片`});
+      const r=dog.id===selected?24:dog.problem?24:20;
+      g.append(svg('circle',{cx:dog.x,cy:dog.y,r,class:`head ${dog.problem?'problem-head ':''}${dog.id===selected?'selected-head':''}`}));g.append(svg('text',{x:dog.x,y:dog.y+5,class:'face-text'},dog.id));
+      if(dog.problem)g.append(svg('text',{x:dog.x+r-2,y:dog.y-r+4,class:'face-text'},'!'));
+      if(names.includes(dog.id)){g.append(svg('rect',{x:dog.x-44,y:dog.y+27,width:88,height:27,rx:13,class:'name-bg'}));g.append(svg('text',{x:dog.x,y:dog.y+45,class:'name'},`Dog ${dog.id}`));}
+      g.addEventListener('click',event=>{event.stopPropagation();openCard(dog.id);});g.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openCard(dog.id);}});map.append(g);
+    }
+    const problems=dogs.filter(d=>d.problem).length;
+    byId('choose').textContent=`選狗・${dogs.length} 隻${problems?'  ⚠ '+problems:''}`;
+    byId('controls').classList.toggle('hidden',variant==='b');byId('strip').classList.toggle('hidden',variant==='a');byId('strip').replaceChildren();
+    for(const dog of dogs){const button=document.createElement('button');button.textContent=`Dog ${dog.id}${dog.problem?' !':''}`;button.setAttribute('aria-pressed',dog.id===selected);button.onclick=()=>openCard(dog.id);byId('strip').append(button);}
+    byId('card').classList.toggle('hidden',!cardOpen);byId('card').replaceChildren();
+    if(cardOpen){const close=document.createElement('button');close.textContent='關閉';close.onclick=()=>{cardOpen=false;draw();};const h=document.createElement('h2');h.textContent=`Dog ${selected}`;const p=document.createElement('p');p.textContent='此頭像只開自己的詳細卡片。';byId('card').append(close,h,p);}
+    const dog=dogs.find(d=>d.id===selected),outside=dog.x<0||dog.x>600||dog.y<0||dog.y>620;byId('hint').classList.toggle('hidden',!outside);byId('hint').textContent=`Dog ${selected} 在畫面外；選取保留`;
+    byId('status').textContent=`${dogs.length} 隻定位保持原位；顯示 ${names.length} 個名字。選中 Dog ${selected}。頭像／名字列直接開卡片，地圖不開列表。`;
+  }
+  byId('choose').onclick=()=>{byId('rows').replaceChildren();for(const dog of dogs){const row=document.createElement('button');row.textContent=`Dog ${dog.id}${dog.problem?'  !  電量偏低（示意）':''}`;row.setAttribute('aria-pressed',dog.id===selected);if(dog.problem)row.classList.add('warn');row.onclick=()=>openCard(dog.id);byId('rows').append(row);}byId('picker').classList.remove('hidden');byId('close').focus();};
+  byId('close').onclick=()=>{closePicker();byId('choose').focus();};byId('picker').onclick=event=>{if(event.target===byId('picker'))closePicker();};document.addEventListener('keydown',event=>{if(event.key==='Escape')closePicker();});
+  byId('map').onclick=()=>{cardOpen=false;draw();};
+  for(const id of ['count','two','zoom','pan'])byId(id).oninput=()=>{closePicker();draw();};
+  byId('offscreen').onclick=()=>{const dog=dogs.find(d=>d.id===selected);byId('pan').value=+byId('pan').value-dog.x-100;closePicker();draw();};
+  for(const mode of ['a','b'])byId(`variant-${mode}`).onclick=()=>{variant=mode;closePicker();for(const m of ['a','b'])byId(`variant-${m}`).setAttribute('aria-pressed',m===variant);byId('explanation').textContent=mode==='a'?'名字不再疊成整片；選中狗優先保留名字。按明確的選狗按鈕，才開清單並選擇任意狗。':'固定名字列與地圖密度無關，按名字直接開卡片。狗數多時需橫向捲動，64隻難以迅速找到；固定佔用地圖高度。';draw();};
+  draw();
+})();
+</script></body></html>

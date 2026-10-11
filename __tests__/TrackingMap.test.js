@@ -587,7 +587,7 @@ test('phone blue dot requires permission, ready map and foreground; never adds p
   expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(false);
 });
 
-test('name tags that would overlap on screen merge into 「N 隻」; a source switch never reuses old places', async () => {
+test('overlapping names are suppressed; a source switch never reuses old places', async () => {
   const at = (slaveId, latitude, extra = {}) => ({ ...slaveMarker, slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`,
     label: `狗 ${slaveId}`, coordinate: { latitude, longitude: 121.001 }, ...extra });
   // One degree of latitude is 100000 dp on this pretend screen.
@@ -599,7 +599,7 @@ test('name tags that would overlap on screen merge into 「N 隻」; a source sw
     await readyMap();
     const tagTexts = () => renderer.root.findAll(node => ['dog-name-tag', 'dog-group-tag'].includes(node.props.testID)
       && typeof node.type === 'string').map(node => node.findByType(require('react-native').Text).props.children);
-    expect(tagTexts().sort()).toEqual(['2 隻', '狗 8']);
+    expect(tagTexts().sort()).toEqual(['狗 4', '狗 8']);
     // Another source: nothing drawn from the old places until the new ones are read.
     mockCamera.pointForCoordinate.mockImplementation(() => new Promise(() => {}));
     await act(async () => renderer.update(<TrackingMap {...defaults} source="other"
@@ -627,7 +627,7 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
   }));
   mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 0, zoom: 19 });
   try {
-    await render({ onDogPress, presentation: { ...defaults.presentation, dogMarkers: markers,
+    await render({ onDogPress, bottomInset: 0, presentation: { ...defaults.presentation, dogMarkers: markers,
       slaveSegments: [], rangeRing: null } });
     await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
@@ -642,19 +642,14 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
     verify();
     await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
     for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
-    verify().forEach((face, index) => {
-      const tag = face.findAll(node => node.props.testID === 'dog-name-tag' && typeof node.type === 'string');
-      expect(tag).toHaveLength(1);
-      expect(tag[0].findByType(require('react-native').Text).props.children).toBe(markers[index].tag);
-    });
+    expect(verify().flatMap(face => face.findAll(node => node.props.testID === 'dog-name-tag' && typeof node.type === 'string'))).toHaveLength(1);
     shift = 30;
     mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 35, zoom: 14 });
     await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
     for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
     const faces = verify();
     const groups = renderer.root.findAll(node => node.props.testID === 'dog-group-tag' && typeof node.type === 'string');
-    expect(groups).toHaveLength(1);
-    expect(groups[0].findByType(require('react-native').Text).props.children).toBe('3 隻');
+    expect(groups).toHaveLength(0);
     await act(async () => faces.find(face => face.props.identifier === 'real-dog-6').props.onPress());
     expect(onDogPress).toHaveBeenLastCalledWith(6);
     const a11y = renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '')
@@ -713,30 +708,29 @@ describe('off-screen hints and the overlap menu', () => {
     expect(left()).toHaveLength(1);
   });
 
-  test('066: tapping the dog carrying 「3 隻」 opens that dog — there is no list of dogs', async () => {
+  test('tapping any dense face opens that dog, never the explicit selector', async () => {
     const onDogPress = jest.fn();
     const markers = [at(4, 25.005, 121.002), at(6, 25.00501, 121.0021, { problem: true, size: 48 }),
       at(8, 25.00499, 121.0019)];
     await render({ onDogPress, presentation: { ...defaults.presentation, dogMarkers: markers } });
     await layout();
     await readyMap();
-    const lead = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-')
-      && /^3 隻/.test(node.props.children.props.accessibilityLabel || ''));
-    expect(lead).toHaveLength(1);
-    await act(async () => lead[0].props.onPress());
-    expect(onDogPress).toHaveBeenCalledTimes(1);
+    const faces = renderer.root.findAllByType(Marker);
+    for (const face of faces) await act(async () => face.props.onPress());
+    expect(onDogPress.mock.calls).toEqual([[4], [6], [8]]);
+    expect(renderer.root.findAllByProps({ testID: 'dense-dog-picker' })).toHaveLength(0);
     expect(renderer.root.findAll(node => /^overlap-row-\d+$/.test(node.props.testID || ''))).toHaveLength(0);
     // TalkBack reaches every dog of the group on its own (no list to go through).
     const items = renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '') && typeof node.type === 'string');
     expect(items.map(node => node.props.testID).sort()).toEqual(['marker-a11y-4', 'marker-a11y-6', 'marker-a11y-8']);
   });
 
-  test('066: zoomed in, every dog keeps its own name tag (no 「N 隻」)', async () => {
+  test('zoomed in, selected name is retained and colliding names stay suppressed without grouping', async () => {
     const markers = [at(4, 25.005, 121.002, { indoor: true }), at(6, 25.00501, 121.0021, { indoor: true }),
-      at(8, 25.00499, 121.0019, { indoor: true })];
+      at(8, 25.00499, 121.0019, { indoor: true, selected: true })];
     mockCamera.getCamera.mockResolvedValue({ center: { latitude: 25, longitude: 121 }, heading: 0, zoom: 19 });
     try {
-      await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
+      await render({ bottomInset: 0, presentation: { ...defaults.presentation, dogMarkers: markers } });
       await layout();
       await readyMap();
       await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
@@ -744,7 +738,7 @@ describe('off-screen hints and the overlap menu', () => {
       const groups = renderer.root.findAll(node => node.props.testID === 'dog-group-tag' && typeof node.type === 'string');
       expect(groups).toHaveLength(0);
       expect(renderer.root.findAll(node => node.props.testID === 'dog-name-tag'
-        && typeof node.type === 'string')).toHaveLength(3);
+        && typeof node.type === 'string')).toHaveLength(1);
     } finally {
       mockCamera.getCamera.mockResolvedValue(null);
     }
@@ -900,7 +894,7 @@ test('bottom dog names share their native face marker and its true-coordinate an
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
     const dogs = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'));
     expect(dogs).toHaveLength(2);
-    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48).anchor));
+    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48, dog.props.identifier === 'real-dog-5').anchor));
     const dog6 = dogs.find(dog => dog.props.identifier === 'real-dog-6');
     await act(async () => dog6.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[6]]);

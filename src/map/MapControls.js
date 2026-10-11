@@ -93,6 +93,8 @@ export function MapButtons({
   onMyLocation,
   today = null,
   onToday,
+  dogSelector = null,
+  onControlsLayout,
 }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -112,19 +114,23 @@ export function MapButtons({
   }, [lift, bottom]);
   return (
     <Animated.View
-      style={[styles.buttons, { bottom: lift }]}
+      style={[styles.buttons, dogSelector && styles.selectorButtons, { bottom: lift }]}
+      onLayout={onControlsLayout}
       pointerEvents="box-none"
     >
-      <PressScale
-        testID="map-frame-all"
-        accessibilityRole="button"
-        accessibilityLabel={t("c758")}
-        accessibilityHint={t("c756")}
-        onPress={onFrameAll}
-        style={styles.round}
-      >
-        <Glyph name="frame" color={colors.text} size={sizes.icon.map} />
-      </PressScale>
+      <View style={styles.row} pointerEvents="box-none">
+        {dogSelector}
+        <PressScale
+          testID="map-frame-all"
+          accessibilityRole="button"
+          accessibilityLabel={t("c758")}
+          accessibilityHint={t("c756")}
+          onPress={onFrameAll}
+          style={styles.round}
+        >
+          <Glyph name="frame" color={colors.text} size={sizes.icon.map} />
+        </PressScale>
+      </View>
       <View style={styles.row} pointerEvents="box-none">
         {today && <TodayPill value={today} onPress={onToday} />}
         <PressScale
@@ -457,7 +463,9 @@ const getStyles = makeStyles(theme => {
       gap: layout.floatingGap,
       alignItems: 'flex-end',
     },
+    selectorButtons: { left: layout.screenEdge },
     row: {
+      justifyContent: 'flex-end',
       flexDirection: 'row',
       alignItems: 'center',
       gap: layout.floatingGap,
