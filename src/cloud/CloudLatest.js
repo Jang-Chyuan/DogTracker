@@ -96,28 +96,40 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     // No GPS: retain the independent old valid fix, including silent dogs.
     return { slaveId: slave, packet, fix: fixed };
   };
-  const jobs = [], active = new Set();
+  const jobs = [], active = new Set(), queued = [];
+  const prefetch = 4;
+  const dispatch = () => {
+    // Discovery can seek ahead while the two workers await packets/fixes.
+    // Queued keys do not issue dog requests; every actual read still guards
+    // owner/cancellation, and a failed sibling prevents further dispatch.
+    while (!failed && active.size < 2 && queued.length) {
+      const slave = queued.shift();
+      const job = readDog(slave).catch(error => { throw fail(error); });
+      job.catch(() => {});
+      active.add(job); jobs.push(job);
+      const finished = () => { active.delete(job); dispatch(); };
+      job.then(finished, finished);
+    }
+  };
   try {
     let after = null;
     for (;;) {
-      // One serial discovery cursor, even while two dog jobs are pending.
-      // A discovered third key waits here for a slot; it is never skipped.
+      // One serial cursor, with at most four discovered keys waiting for a
+      // worker. Backpressure bounds prefetch without limiting the dog roster.
+      while (queued.length >= prefetch) { await Promise.race([...active, stopped]); await guard(); }
       let keys = base('slave_id').order('slave_id', { ascending: true }).limit(1);
       if (after !== null) keys = keys.gt('slave_id', after);
       const key = await read(keys);
       if (!key) break;
       const slave = key.slave_id;
       if (!Number.isInteger(slave) || (after !== null && slave <= after)) throw new Error(t('c579'));
-      while (active.size >= 2) { await Promise.race(active); await guard(); }
       await guard();
-      const job = readDog(slave).catch(error => { throw fail(error); });
-      // Every job owns rejection handlers immediately, including after an
-      // earlier key failure. Abort-ignoring transports cannot publish late.
-      job.catch(() => {});
-      active.add(job); jobs.push(job);
-      job.then(() => active.delete(job), () => active.delete(job));
+      queued.push(slave); dispatch();
       after = slave;
     }
+    // Discovery finishing does not mean queued dogs have finished. Workers
+    // drain every key before the complete snapshot can be returned.
+    while (queued.length || active.size) { await Promise.race([...active, stopped]); await guard(); }
     // Promise.all preserves discovery order and never exposes partial dogs.
     const complete = await Promise.all(jobs);
     await guard();

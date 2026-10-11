@@ -312,7 +312,7 @@ async function startTwoJobs(f) {
   f.open('key:4'); await microtasks();
 }
 
-test('serial key discovery overlaps two bounded dog jobs, but returns every discovered dog in key order only after its fix completes', async () => {
+test('serial key discovery runs ahead of two bounded dog jobs, but returns all dogs only after their independent fixes complete', async () => {
   const f = heldPipeline(pipelineEvents());
   let settled = false;
   const task = downloadCloudLatest({ client: f.client, masterIds: [7, 9], cutoff: CUT });
@@ -324,12 +324,15 @@ test('serial key discovery overlaps two bounded dog jobs, but returns every disc
     expect(f.peak()).toBe(5); expect(f.keyPeak()).toBe(1);
     f.open('key:6'); await microtasks();
     expect(f.dispatched.some(id => id.startsWith('dog:8:'))).toBe(false);
+    expect(f.dispatched).toContain('key:8');
+    f.open('key:8'); await microtasks();
+    expect(settled).toBe(false);
     f.open('dog:4:packet:fallback'); f.open('dog:4:packet:phone'); await microtasks();
     expect(f.dispatched).toEqual(expect.arrayContaining(['dog:4:fix:fallback', 'dog:4:fix:phone']));
     expect(f.dispatched.some(id => id.startsWith('dog:8:'))).toBe(false);
     f.open('dog:6:packet:phone'); f.open('dog:6:packet:fallback'); await microtasks();
     expect(f.dispatched).toEqual(expect.arrayContaining(['dog:8:packet:fallback', 'dog:8:packet:phone', 'key:8']));
-    f.open('key:8'); f.open('dog:8:packet:fallback'); f.open('dog:8:packet:phone'); await microtasks();
+    f.open('dog:8:packet:fallback'); f.open('dog:8:packet:phone'); await microtasks();
     expect(settled).toBe(false);
     f.open('dog:4:fix:phone'); await microtasks(); expect(settled).toBe(false);
     f.open('dog:4:fix:fallback');
@@ -338,6 +341,68 @@ test('serial key discovery overlaps two bounded dog jobs, but returns every disc
     expect(result.dogs[0]).toMatchObject({ packet: { sequence: 2 }, fix: { sequence: 1 } });
     expect(f.dispatched.filter(id => id.startsWith('key:'))).toEqual(['key:start', 'key:4', 'key:6', 'key:8']);
     expect(f.peak()).toBeLessThanOrEqual(5); expect(f.keyPeak()).toBe(1);
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+const queuedEvents = () => Array.from({ length: 10 }, (_, index) => event(index + 1, index + 1, 7,
+  index < 2 ? '2026-10-08T11:00:00Z' : '2026-10-10T11:00:00Z'));
+async function fillPrefetch(f) {
+  await microtasks(); f.open('key:start'); await microtasks();
+  for (let key = 1; key <= 5; key++) { f.open(`key:${key}`); await microtasks(); }
+}
+test('four prefetched keys bound discovery while two workers are held; freeing a worker resumes discovery and preserves the complete roster', async () => {
+  const events = queuedEvents(), f = heldPipeline(events);
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await fillPrefetch(f);
+    expect(f.dispatched.filter(id => id.startsWith('key:'))).toEqual(['key:start', 'key:1', 'key:2', 'key:3', 'key:4', 'key:5']);
+    expect(f.dispatched.filter(id => id.startsWith('dog:'))).toEqual([
+      'dog:1:packet:fallback', 'dog:1:packet:phone', 'dog:2:packet:fallback', 'dog:2:packet:phone']);
+    f.open('dog:1:packet:fallback'); f.open('dog:1:packet:phone'); await microtasks();
+    expect(f.dispatched).toEqual(expect.arrayContaining(['dog:3:packet:fallback', 'dog:3:packet:phone', 'key:6']));
+    f.open('key:6'); await microtasks();
+    expect(f.dispatched).not.toContain('key:7');
+    f.close();
+    expect(await task).toEqual(await downloadCloudLatestSerial({ client: rest(events).client, masterIds: [7], cutoff: CUT }));
+    expect(f.peak()).toBeLessThanOrEqual(5); expect(f.keyPeak()).toBe(1);
+    expect(f.dispatched.filter(id => id.startsWith('key:'))).toHaveLength(11);
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+test.each(['dog', 'owner', 'signal'])('a %s failure releases a full prefetch queue without dispatching queued dogs or accepting late results', async failure => {
+  const f = heldPipeline(queuedEvents()), abort = new AbortController(); let current = true;
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT, signal: abort.signal,
+    check: () => { if (!current) throw Error('invented revoked owner'); } });
+  task.catch(() => {});
+  try {
+    await fillPrefetch(f);
+    const before = [...f.dispatched];
+    if (failure === 'dog') f.fail('dog:1:packet:phone', Error('invented packet failure'));
+    else if (failure === 'owner') { current = false; f.open('dog:1:packet:phone'); }
+    else abort.abort();
+    await expect(task).rejects.toThrow();
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    f.close(); await microtasks();
+    expect(f.dispatched).toEqual(before);
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+test('a dog failure settles while prefetched discovery ignores abort, and its late key cannot launch a dog', async () => {
+  const f = heldPipeline(queuedEvents());
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await microtasks(); f.open('key:start'); await microtasks(); f.open('key:1'); await microtasks();
+    f.open('key:2'); await microtasks();
+    expect(f.dispatched).toContain('key:3');
+    const before = [...f.dispatched];
+    f.fail('dog:2:packet:phone', Error('invented sibling failure'));
+    // key:3 and the other dog transports are deliberately still unresolved.
+    await expect(task).rejects.toThrow('invented sibling failure');
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    f.close(); await microtasks();
+    expect(f.dispatched).toEqual(before);
   } finally { f.close(); await task.catch(() => {}); }
 });
 
