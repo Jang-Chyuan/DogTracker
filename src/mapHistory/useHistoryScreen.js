@@ -97,7 +97,9 @@ export function useHistoryDayRows({
   });
   const now = useRef(clock);
   now.current = clock;
-  const materialRevision = publishedReads && subject !== 'phone' ? getPublication?.()?.dataRevision : null;
+  const publicationState = publishedReads && subject !== 'phone' ? getPublication?.() : null;
+  const materialRevision = publicationState?.dataRevision;
+  const publicationReader = useRef(null);
   const rowRevision = Number.isSafeInteger(materialRevision) && materialRevision >= 0
     ? `material:${materialRevision}` : `publication:${publicationRevision}`;
   // `scope`: another reader of the same day (a screen fixture) is another day's rows.
@@ -113,6 +115,7 @@ export function useHistoryDayRows({
     if (!active || !read || !key) return undefined;
     let alive = true,
       timer;
+    let waitingForPublication = false, readPublication = null, signalledPublication = null;
     const cache = { rows: [], seed: [], after: {}, first: true };
     // The hold pass (IndoorHold) is the costly part of a day: today's rows
     // only grow, so the same pass continues with the new packets.
@@ -132,9 +135,31 @@ export function useHistoryDayRows({
       return holds.pass.output;
     };
     const dayEnd = Math.min(endOfDay(day), readEnd ?? Infinity);
+    const retryPublication = () => {
+      waitingForPublication = true;
+      const current = getPublication?.();
+      const completed = signalledPublication != null && signalledPublication === current?.publishedRevision
+        && signalledPublication !== readPublication && capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads).open;
+      timer = setTimeout(poll, completed ? 0 : HISTORY_POLL_MS);
+    };
+    const wake = () => {
+      const current = getPublication?.();
+      if (!alive || !Number.isFinite(current?.publishedRevision)
+        || !capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads).open) return;
+      signalledPublication = current.publishedRevision;
+      // A completed publication does not restart a coherent cache or an
+      // in-flight query. A rejected query uses this signal after it drains.
+      if (!waitingForPublication) return;
+      clearTimeout(timer);
+      timer = setTimeout(poll, 0);
+    };
+    const reader = { key, wake };
+    publicationReader.current = reader;
     async function poll() {
+      waitingForPublication = false;
+      readPublication = getPublication?.()?.publishedRevision ?? null;
       const fence = capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads);
-      if (!fence.open) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
+      if (!fence.open) { retryPublication(); return; }
       try {
         const at = now.current();
         const today = at >= day && at < dayEnd;
@@ -147,7 +172,7 @@ export function useHistoryDayRows({
           after: cache.after,
         }));
         if (!alive) return;
-        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
+        if (!fence.valid()) { retryPublication(); return; }
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
         const added = answer.rows?.length || 0;
@@ -178,7 +203,7 @@ export function useHistoryDayRows({
           : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
-        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
+        if (!fence.valid()) { retryPublication(); return; }
         setResult(current => ({
           ...(current.key === key ? current : { rows: [], version: 0, replayHolds: null }),
           key,
@@ -191,9 +216,16 @@ export function useHistoryDayRows({
     return () => {
       alive = false;
       clearTimeout(timer);
+      if (publicationReader.current === reader) publicationReader.current = null;
     };
     // key stands for subject, slaveId, day and owner.
   }, [active, read, key, revision, getPublication, readerPublicationRevision, publishedReads]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Physical completion only wakes a reader blocked by its fence. Material
+  // changes still replace the reader above; ready rows/holds stay cached.
+  useEffect(() => {
+    if (active && publicationState?.publishedPending === false && publicationReader.current?.key === key)
+      publicationReader.current.wake();
+  }, [active, key, publicationState?.publishedRevision, publicationState?.publishedPending]);
   const current =
     result.key === key
       ? result
