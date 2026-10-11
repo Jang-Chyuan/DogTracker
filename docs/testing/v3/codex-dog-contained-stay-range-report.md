@@ -1,21 +1,25 @@
-# Dog history: a range wholly inside a confirmed stay
+# 狗歷史：裁切既有停留與地圖按鈕驗證
 
-A dog history range wholly inside a stay already confirmed by the full available day could lose the numbered stop and then show a zero-distance movement row and movement cursor. The selected interval is now retained as an unnumbered display stay. It supplies list/cursor presentation without inventing another numbered stop or moving the dog's observed coordinate.
+完整一天已確認的長停留，若使用者只選其中一段，原本會失去停留顯示，變成「移動 15 分鐘、0 公里」，游標也寫「已移動」。現在保留這段的停留顯示，游標顯示選取範圍內的停留時間；完整範圍原有的停留編號仍保留。
 
-The day-confirmed interval is presentation context only. The range must contain movement-edge evidence, and any measured travel, ride, or genuine unbridged gap vetoes the display stay. An unconfirmed short stationary interval is not promoted. Phone anchor inference is not applied to dogs.
+判斷需要既有長停留與移動邊的證據。實際移動、開車、離開後返回或真正資料缺口仍會阻止套用；沒有足夠證據的短停留不會提升成確定停留。七組獨立虛構回歸包含可能的 20 公尺短走、缺口與完整 CSV／GPX 原始觀測保留。
 
-Seven independent fictional-data regressions exercise the production history model, cursor, map presentation, CSV and GPX:
+另修正 Android「框住全部」按鈕超出父容器範圍的問題：改放在畫面同層，維持原視覺位置與面板高度。修正前原生觸控範圍為 `[904,1240][1036,1207]`，上下倒置；修正後為 `[904,1075][1036,1207]`，實際平移後可點擊回到停留點。
 
-- A shorter interior range within a day-confirmed 39-minute stay becomes an unnumbered display stay.
-- A measured 20-metre out-and-back remains possible short walking.
-- An unconfirmed short interval remains unconfirmed.
-- A real departure and return remains visible.
-- A true long recording gap remains visible.
-- Every selected raw CSV row and GPX observation remains present.
-- Calling the stop helper without movement edges cannot establish the new display stay.
+## 2026-10-11 原生前後比較
 
-Validation on main `acbe5a45` plus `e6b66d63` / `51d67022`: 220 suites / 2,465 JavaScript tests passed; changed-file lint and diff check passed. Android release assembly succeeded in 26 seconds.
+使用 43 筆獨立虛構觀測與既有公開測試地標；沒有轉換使用者軌跡，也沒有寫入資料庫。真記憶體 reader、資料 mapper、hold replay 與歷史 hook 產生畫面。Google 底圖保留標示。
 
-Root also performed a private before/after native check using retained normal history. The real range drag reproduced the misleading movement row/cursor before the fix, then removed that row and showed the selected stay duration afterward. Reversing the range restored the original numbered stay; Done and return to the live map worked. These captures contain private locations and are not public PR media. The candidate APK used the explicit paired QA version override `0.3.162` / `162`; it is not a newly merged main release.
+- 前後均有 08:48–09:27 的 39 分鐘停留，選取 09:05–09:20。
+- 修正前：清單有「移動 15 分鐘、0.0 公里」，游標有「已移動」。
+- 修正後：假移動行消失，游標顯示「停留 15 分」。
+- 真正拖動地圖後，按「框住全部」回到停留點。
+- 用正常範圍控制拉回完整 08:45–09:27，原停留 1／39 分鐘與前面的 3 分鐘移動都保留。
 
-An independent fictional native screenshot comparison still needs to be added before UI review. This PR does not solve the uncertain dog-indoor classification or claim that zero net displacement proves no short walk.
+![修正前](../assets/pr112/stay-range-before.png)
+![修正後](../assets/pr112/stay-range-after.png)
+![完整範圍保留停留](../assets/pr112/full-stay-preserved.png)
+
+產品來源 `d5d6387e`：完整 221 suites／2,475 tests 通過，lint 0 errors／8 個既有 warnings；diff check 通過。私有修正前 Android Release 25 秒、修正後 19 秒，5562 實際配對驗證完成。原權限、設定、未登入狀態與記錄開關保留，私有資料入口已關閉，root 已還原正式 main 0.3.163。
+
+公開圖已由 root 逐張檢視。私有驗證入口與資料程式不進產品 PR。此次未驗 TalkBack 焦點，也不宣稱解決狗 6 缺乏活動真值的 GPS 室內分類。PR 須使用者明確批准後才合併。
