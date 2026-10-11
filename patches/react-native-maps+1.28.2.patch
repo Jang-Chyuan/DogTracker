@@ -243,3 +243,21 @@ index def61f5..16e6c52 100644
          } else if (feature != null) {
              feature.removeFromMap(map);
          }
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java
+@@ -187,5 +187,14 @@
+     @Override
+     public void setDraggable(MapMarker view, boolean value) {
+         view.setDraggable(value);
++        view.setUpdated(true);
++    }
++
++    // DOGTRACKER_FABRIC_MARKER_ZINDEX: React's inherited view zIndex setter
++    // does not update Google's marker after its initial MarkerOptions.
++    @Override
++    public void setZIndex(MapMarker view, float zIndex) {
++        super.setZIndex(view, zIndex);
++        view.setZIndex(Math.round(zIndex));
+         view.setUpdated(true);
+     }
