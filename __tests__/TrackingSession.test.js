@@ -209,7 +209,33 @@ describe('tracking session and connection lifetime', () => {
     expect(session.initialSnapshotReady).toBe(true);
   });
 
-  test('owner history reads use the same local snapshot barrier and a preference retry can open it', async () => {
+  test('failed preferences release cloud startup without pretending the local snapshot is ready', async () => {
+    const db = databases();
+    db.settings.load.mockRejectedValueOnce(new Error('preference read failed'));
+    db.cloud = { initialize: jest.fn(async () => {}) };
+    await mount(db);
+    expect(session.preferences).toMatchObject({ ready: false, error: 'preference read failed', recoveryAvailable: true });
+    expect(session.initialSnapshotReady).toBe(false);
+    expect(db.real.getLatestStatusRow).not.toHaveBeenCalled();
+    let cloudTask;
+    await act(async () => {
+      cloudTask = session.cloudDatabase.initialize();
+      cloudTask.catch(() => {});
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
+    await cloudTask;
+    expect(session.preferences.ready).toBe(false);
+    expect(session.preferences.error).toBe('preference read failed');
+    expect(session.initialSnapshotReady).toBe(false);
+    expect(db.real.getLatestStatusRow).not.toHaveBeenCalled();
+    await act(async () => session.retryTrackingPreferences());
+    expect(session.preferences).toMatchObject({ ready: true, error: null });
+    expect(session.initialSnapshotReady).toBe(true);
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
+  });
+
+  test('owner history reads proceed after preference failure while retry recovers only local readiness', async () => {
     const db = databases();
     db.settings.load.mockRejectedValueOnce(new Error('preference read failed'));
     db.cloud = { initialize: jest.fn(async () => {}) };
@@ -217,12 +243,14 @@ describe('tracking session and connection lifetime', () => {
     await mount(db);
     let historyTask;
     await act(async () => { historyTask = session.historyDatabase.historyDays({ owner: 'synthetic-owner' }); });
-    expect(db.cloud.initialize).not.toHaveBeenCalled();
-    expect(db.history.historyDays).not.toHaveBeenCalled();
+    expect(await historyTask).toEqual(['synthetic-day']);
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
+    expect(db.history.historyDays).toHaveBeenCalledTimes(1);
+    expect(session.preferences).toMatchObject({ ready: false, error: 'preference read failed' });
     expect(session.initialSnapshotReady).toBe(false);
     await act(async () => session.retryTrackingPreferences());
-    expect(await historyTask).toEqual(['synthetic-day']);
     expect(session.initialSnapshotReady).toBe(true);
+    expect(session.preferences).toMatchObject({ ready: true, error: null });
     expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
   });
 

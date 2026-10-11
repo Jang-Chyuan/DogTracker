@@ -214,6 +214,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         state => {
           if (disposed) return;
           setPreferences(state);
+          // A failed preference load cannot start the local feed. Release the
+          // independent cloud path without inventing preference/snapshot readiness.
+          if (!state.ready && state.error != null) finishInitialLocalAttempt();
           if (state.ready && !preferencesLoaded) {
             preferencesLoaded = true;
             dispatchTracking({ type: 'refreshing', source: 'real' });
