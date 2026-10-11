@@ -83,7 +83,9 @@ test.each([16, 32, 64])('%i in two groups preserve selected name, problem identi
   await act(async () => selectedLabel.props.onPress({ nativeEvent: { action: 'marker-press' } }));
   expect(p.onDogPress.mock.calls).toEqual([[count]]);
   p.onDogPress.mockClear();
-  expect(faces().find(face => face.props.identifier === 'live-dog-7').props.zIndex).toBe(34);
+  // This problem dog's accepted name promotes its own head above other
+  // problem heads; selecting the ordinary dog still wins at layer40.
+  expect(faces().find(face => face.props.identifier === 'live-dog-7').props.zIndex).toBe(37);
   const before = JSON.stringify(p.presentation.dogMarkers), fits = mockCamera.fitToCoordinates.mock.calls.length;
   projected = { ...projected, [count]: { x: -500, y: 240 } };
   await act(async () => renderer.root.findByType(MapView).props.onPanDrag());
@@ -157,4 +159,44 @@ test('even selected cropped labels stay below every face so capsule corners cann
   const other = labels.find(label => label.props.identifier !== 'live-dog-label-20');
   expect(selected.props.zIndex).toBeGreaterThan(other.props.zIndex);
   expect(Math.round(selected.props.zIndex)).toBeGreaterThan(Math.round(other.props.zIndex));
+});
+
+test('ordinary name carrier wins native integer head ties without changing any fix or press ID', async () => {
+  await render(16);
+  p = { ...p, presentation: { ...p.presentation, dogMarkers: p.presentation.dogMarkers.map(marker => (
+    { ...marker, selected: false, problem: false }
+  )) } };
+  const coordinates = p.presentation.dogMarkers.map(marker => marker.coordinate);
+  await act(async () => renderer.update(<TrackingMap {...p} />));
+  await settle();
+  const labels = renderer.root.findAllByType(Marker).filter(node => /-dog-label-\d+$/.test(node.props.identifier));
+  expect(labels).toHaveLength(1);
+  expect(labels[0].props.identifier).toBe('live-dog-label-1');
+  const carrier = faces().find(face => face.props.identifier === 'live-dog-1');
+  for (const face of faces().filter(candidate => candidate !== carrier)) {
+    expect(Math.round(carrier.props.zIndex)).toBeGreaterThan(Math.round(face.props.zIndex));
+  }
+  expect(faces().map(face => face.props.coordinate)).toEqual(coordinates);
+  await act(async () => carrier.props.onPress({ nativeEvent: { action: 'marker-press' } }));
+  expect(p.onDogPress).toHaveBeenLastCalledWith(1);
+});
+
+test('rejected problem name leaves its visible head above the shorter unnamed ordinary dog', async () => {
+  await render(16);
+  const markers = [7, 14, 9].map(id => ({ ...p.presentation.dogMarkers[id - 1],
+    selected: false, problem: id !== 9, size: id === 9 ? 40 : 48 }));
+  projected = { 7: { x: 220, y: 240 }, 14: { x: 286, y: 240 }, 9: { x: 286, y: 240 } };
+  p = { ...p, presentation: { ...p.presentation, dogMarkers: markers } };
+  await act(async () => renderer.update(<TrackingMap {...p} />));
+  await settle();
+  const identifiers = renderer.root.findAllByType(Marker).map(node => node.props.identifier);
+  expect(identifiers).toContain('live-dog-label-7');
+  expect(identifiers).not.toContain('live-dog-label-14');
+  expect(identifiers).not.toContain('live-dog-label-9');
+  const problem = faces().find(face => face.props.identifier === 'live-dog-14');
+  const ordinary = faces().find(face => face.props.identifier === 'live-dog-9');
+  expect(Math.round(problem.props.zIndex)).toBeGreaterThan(Math.round(ordinary.props.zIndex));
+  expect(problem.props.coordinate).toBe(markers[1].coordinate);
+  await act(async () => problem.props.onPress({ nativeEvent: { action: 'marker-press' } }));
+  expect(p.onDogPress).toHaveBeenLastCalledWith(14);
 });

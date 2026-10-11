@@ -56,7 +56,7 @@ import DogMarkerView, { markerFrame, MARKER_WIDTH } from './DogMarkerView';
 import MapNameTag from './MapNameTag';
 import useDogLabelCoordinates from './useDogLabelCoordinates';
 import DenseDogSelector from './DenseDogSelector';
-import { denseDogNames } from './DenseDogNames';
+import { denseDogNames, denseDogFaceLayer } from './DenseDogNames';
 import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
@@ -1836,11 +1836,11 @@ function GoogleTrackingMapRenderer({
               compact={separateDogLabels}
               avatar={presentation.dogAvatars?.[marker.slaveId]}
               shownKey={shownKey}
-              // Above the phone's dot (30), whose name tag layer they carry:
-              // the open dog on top, then problems, then the dog carrying a
-              // group tag over the faces it covers.
+              // Dense names promote their own carrier above ordinary ties,
+              // while problem heads retain priority. History group layers
+              // keep their existing carrier rule.
               zIndex={
-                marker.selected
+                separateDogLabels ? denseDogFaceLayer(marker, tags[marker.slaveId]) : marker.selected
                   ? 40
                   : (marker.problem ? 34 : 31) +
                     (tags[marker.slaveId]?.group > 1 ? 2 : 0)

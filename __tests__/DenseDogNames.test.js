@@ -60,3 +60,26 @@ test('font2, pending projection, source removal and clipped labels fail safely',
   const clipped = { width: 600, height: 270, top: 80, bottom: 0 };
   expect(shown(denseDogNames(markers, points, { view: clipped }))).toEqual([]);
 });
+
+test('a shorter ordinary name cannot replace a rejected name under the visible problem head', () => {
+  // Independent screen geometry reproduces the native 16-dog return: Dog14's
+  // longer capsule collides with Dog7, while shorter Dog9 fits at the same
+  // head centre. The native problem head stays above ordinary heads.
+  const markers = [
+    { slaveId: 7, name: 'Dog 7', size: 48, problem: true },
+    { slaveId: 14, name: 'Dog 14', size: 48, problem: true },
+    { slaveId: 9, name: 'Dog 9', size: 40, problem: false },
+  ];
+  const points = { 7: { x: 220, y: 240 }, 14: { x: 286, y: 240 }, 9: { x: 286, y: 240 } };
+  const before = JSON.stringify({ markers, points });
+  const tags = denseDogNames(markers, points, { view });
+  expect(tags[7]?.text).toBe('Dog 7');
+  expect(tags[14]).toBeNull();
+  expect(tags[9]).toBeNull();
+  expect(JSON.stringify({ markers, points })).toBe(before);
+  // Suppression is bounded to the visible head centre, not every nearby
+  // ordinary dog: just beyond the 24dp problem head, its own name can fit.
+  expect(denseDogNames(markers, { ...points, 9: { x: 311, y: 240 } }, { view })[9]?.text).toBe('Dog 9');
+  const selected = markers.map(marker => ({ ...marker, selected: marker.slaveId === 9 }));
+  expect(denseDogNames(selected, points, { view })[9]?.text).toBe('Dog 9');
+});
