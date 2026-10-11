@@ -44,6 +44,13 @@
 
 ## 尚未延伸的結論
 
-這輪最新ba8只驗normalfont／light／portrait。較早候選的font2／wide結果不能當本版全部重驗；極端長狗名、多窗口、TalkBack真語音與焦點尚未驗。TalkBack曾被Suite權限overlay擋住，未盲點擊未知焦點或授權通知以製造成功。32／64只是source與概念壓力比較，產品20隻上限沒有改。沒有把本次結果當Supabase、GPS真值、CPU或真機BLE驗證。
+最新ba8另外在同一APK、5558 PID4018完成fontScale 2直向補驗：清單頭尾的關閉都返回地圖；第一列Dog1及最後Dog20都開自己的卡片。卡片開啟時「選狗」入口仍可見並可再開清單；一次真平移避開控制區後，Dog20頭像／名字／卡片同時一致。Root親看以下兩张原生獨立虛構圖。
+
+![2倍字體：清單最後Dog20完整可見](../testing/assets/pr113/font2-selector-bottom.png)
+![2倍字體：Dog20頭像、名字及卡片一致](../testing/assets/pr113/font2-selected20.png)
+
+字體設定變更會重建Activity，私有記憶體fixture與卡片在同PID下被重置；本輪在大字體下重新啟用獨立場景驗操作，沒有宣稱產品選取跨字體切換保留已驗。清單頭尾可見列聯集涵蓋20隻，但不是每列都點選；本輪沒有新的影片、深色、橫向或CPU量測。原9項設定存在性／數值、6項權限與旗標、尺寸、兩個紀錄ON、未登入及網路均精確還原，fixture關閉並交回Root。Root實際還原正式0.3.163，SHA640463a5…f51fa、COLD1036ms／PID5856，fresh設定与即時地圖確認。
+
+最新ba8已驗normalfont和font2／light／portrait。較早候選的wide結果不能當本版全部重驗；極端長狗名、多窗口、TalkBack真語音與焦點尚未驗。TalkBack曾被Suite權限overlay擋住，未盲點擊未知焦點或授權通知以製造成功。32／64只是source與概念壓力比較，產品20隻上限沒有改。沒有把本次結果當Supabase、GPS真值、CPU或真機BLE驗證。
 
 UI需要使用者看圖批准再merge，原自動重疊展開清單不恢復。固定狗名列仍是比較概念，尚未實作；它會長期占地圖空間，沒有混入本PR。
