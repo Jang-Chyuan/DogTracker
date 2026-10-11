@@ -1,4 +1,6 @@
 import { touch } from '../theme/tokens';
+import { clock } from '../history/HistoryText';
+import HistoryDragTimeTip from './HistoryDragTimeTip';
 // The history cursor's touch handle (H1; 判定表「游標標籤」「操作與震動」): a
 // 48dp invisible target over the cursor point (the point and its label are a
 // marker of the map). Dragging it moves the cursor along the route: the
@@ -14,6 +16,8 @@ const TOUCH = touch.min;
 export default function HistoryCursor({ mapRef, cursor, points, revision, width, height, top, bottom,
   hidden = false, onMove, onDraggingChange }) {
   const [place, setPlace] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => { if (hidden) setDragging(false); }, [hidden]);
   const coordinateKey = cursor ? `${cursor.coordinate.latitude},${cursor.coordinate.longitude}` : '';
   // Where the cursor point is on screen: after it moved, and after the map did.
   useEffect(() => {
@@ -63,6 +67,7 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
       onPanResponderGrant: () => {
         generation.current += 1;
         drag.current = { origin: live.current.place, busy: false, pending: null, generation: generation.current };
+        setDragging(true);
         notify.current?.(true);
       },
       onPanResponderMove: (_, gesture) => {
@@ -71,8 +76,8 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
         follow({ x: origin.x + gesture.dx, y: origin.y + gesture.dy });
       },
       // The last read of a released drag still lands (the finger's last place).
-      onPanResponderRelease: () => notify.current?.(false),
-      onPanResponderTerminate: () => { generation.current += 1; notify.current?.(false); },
+      onPanResponderRelease: () => { setDragging(false); notify.current?.(false); },
+      onPanResponderTerminate: () => { generation.current += 1; setDragging(false); notify.current?.(false); },
     });
   }, [mapRef]);
   if (hidden || !cursor || !place || place.x < 0 || place.x > width || place.y < top || place.y > height - bottom) {
@@ -84,11 +89,15 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
     if (next) onMove?.(next.time, 'drag');
   };
   return (
-    <View testID="history-cursor-handle" collapsable={false} {...responder.panHandlers}
+    <>
+      {dragging && <HistoryDragTimeTip testID="history-cursor-drag-time" text={clock(cursor.time)}
+      x={place.x} width={width} top={place.y - TOUCH / 2} minTop={top} />}
+      <View testID="history-cursor-handle" collapsable={false} {...responder.panHandlers}
       accessible accessibilityRole="adjustable" accessibilityLabel={(cursor.lines || []).join('，')}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={event => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)}
       style={[styles.handle, { left: place.x - TOUCH / 2, top: place.y - TOUCH / 2 }]} />
+    </>
   );
 }
 

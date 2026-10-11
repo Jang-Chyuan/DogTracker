@@ -32,6 +32,7 @@ import {
 import { haptic } from '../utils/haptics';
 import { isLargeFont, linesFor } from '../utils/textScale';
 import { useInitialFocus } from '../utils/a11yFocus';
+import HistoryDragTimeTip from './HistoryDragTimeTip';
 
 const HANDLE = sizes.rangeBar.handle;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
@@ -65,6 +66,14 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   previewDelay = RANGE_PREVIEW_MIN_MS, previewScope = track.start, active = true, layoutKey }) {
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
+  const [dragHandle, setDragHandle] = useState(null);
+  const [pageY, setPageY] = useState(null);
+  const barRef = useRef(null);
+  useEffect(() => {
+    let alive = true;
+    barRef.current?.measureInWindow?.((_x, y) => { if (alive) setPageY(y); });
+    return () => { alive = false; };
+  }, [width, layoutKey]);
   // Finger/time feedback stays local. The history screen holds model/map
   // publication until release; callers without onBegin retain preview mode.
   const [visualRange, setVisualRange] = useState(null);
@@ -104,6 +113,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   useEffect(() => {
     clearPreview();
     drag.current = { handle: null };
+    setDragHandle(null);
     setVisualRange(null);
     return () => {
       clearPreview();
@@ -132,6 +142,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
       if (!d.handle) {
         if (Math.abs(dx) < 2) return;
         d.handle = dx < 0 ? 'start' : 'end';
+        setDragHandle(d.handle);
         d.from =
           d.handle === 'start' ? state.current.startX : state.current.endX;
       }
@@ -193,6 +204,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
         // = start); right on the middle, the first direction moved decides.
         const middle = (s + e) / 2;
         const handle = x < middle ? 'start' : x > middle ? 'end' : null;
+        setDragHandle(handle ?? 'start');
         drag.current = {
           handle,
           from: x === middle ? s : handle === 'start' ? s : e,
@@ -213,12 +225,14 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
         clearPreview();
         if (d.last) state.current.onCommit(d.last);
         drag.current = { handle: null };
+        setDragHandle(null);
       },
       onPanResponderTerminate: (event, gesture) => {
         follow(dxOf(event, gesture), false);
         clearPreview();
         if (drag.current.last) state.current.onCommit(drag.current.last);
         drag.current = { handle: null };
+        setDragHandle(null);
       },
     });
   }, [clearPreview]);
@@ -235,6 +249,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
     }
     clearPreview();
     drag.current = { handle: null };
+    setDragHandle(null);
     setVisualRange(result.range);
     onCommit(result.range);
   };
@@ -248,10 +263,16 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   const endLabel = clock(handles.end);
   return (
     <View
+      ref={barRef}
+      collapsable={false}
       style={styles.bar}
       {...responder.panHandlers}
       testID="history-range-bar"
     >
+      {dragHandle && <HistoryDragTimeTip testID="history-range-drag-time"
+        text={dragHandle === 'start' ? startLabel : endLabel}
+        x={TOUCH / 2 + (dragHandle === 'start' ? startX : endX)} width={width + TOUCH}
+        minTop={pageY == null ? -Infinity : space.s - pageY} />}
       <View
         style={styles.trackArea}
         pointerEvents="none"
