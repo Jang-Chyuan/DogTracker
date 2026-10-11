@@ -1,3 +1,17 @@
+# 最新取消修正與原生等待診斷（驗證中）
+
+產品候選33f7248c（076f1255）：背景歷史的唯讀HTTP transport即使忽略AbortSignal，取消也可釋放該等待及共用cloud工作位置，讓回前景新的最新位置要求開始；真正已開始的原生頁面交易仍必須排空。晚回成功／失敗均不得寫入或覆蓋新位置，舊owner結果拒絕。
+
+真SDK＋SQLite反例在舊版先失敗；7focused／107 tests通過。主視窗隔離同來源完整掃描232 suites／2641 tests：其他231套通過，唯一版本CLI案例因source archive沒有Git metadata失敗；補上相同完整HEAD後版本4項重新通過，來源覆蓋共2641項，不放寬版本規則。初次Node V8 GC崩潰及中斷重跑紀錄保留，沒有稱它們通過。arm64-v8a產品Release19秒成功，APK SHA da0bfb923d448ec5374ac08f031c3231eb502c8e2e98057a7be5e11a1268d228。
+
+較早5685私有a33真5554 cold120秒及resume仍未看到同次快照接受，主視窗親看更新中／失敗。stage14→15約209.912秒只是初始化material batch＋讀回整區wall；不能稱單DELETE或CPU根因。實際schema20k／90proof的hostSQLite undercap約0.4ms／刪1000約27ms，索引及空候選guard有效，不能當Android速度保證。
+
+新私有100b88a1只加固定數值observer，原caps／排程／交易／ready不改；剝除observer後產品與33f完全一致。私有Kotlin／arm64Release21秒成功、APK SHA daebd7a6fe00d5ada95e9dc25b1b48872b3b99f0cd158ca122c71a6611fc1c9e，已保留帳號快取install-r至5554，9設定presence／6grants flags／viewport一致。新freshPID32551 cold120秒窗口實際進行，尚未宣原生通過。數值僅可分workerqueue／monitor／action／readback wall，不當CPU；不輸出SQL、帳號或位置，不加入公開產品。
+
+PR114保持Draft，等待最新原生驗收與使用者批准才合併。下方歷史證據保留，不拿舊候選成功替本輪背書。
+
+---
+
 # 最新位置先套用：驗證紀錄
 
 原標題：`fix(history): 下載完成後喚醒讀取，修正歷史持續載入`。前一公開 head 為 `91e7b1be`，PR 仍 Draft；本輪最新產品整合為 `5685afb6`（前一368b3976原生證據另列）（以下較早原生證據另列為6d47f23f）。此紀錄隨同既有 PR 114 更新。
