@@ -43,7 +43,7 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   useEffect(() => { setSnap('half'); setDragHeight(null); origin.current = null; }, [scopeKey]);
   useEffect(() => { if (hidden) { setDragHeight(null); origin.current = null; } }, [hidden]);
   useEffect(() => { if (rangeOpen) setSnap(level => level === 'collapsed' ? 'half' : level); }, [rangeOpen]);
-  useEffect(() => { setDragHeight(null); origin.current = null; }, [windowWidth, windowHeight, fontScale, topControlBottom, dateHeight, bottomInset]);
+  useEffect(() => { setDragHeight(null); origin.current = null; }, [windowWidth, windowHeight, fontScale, bottomInset]);
   const pan = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponderCapture: (_, g) => !latest.current.hidden && Math.abs(g.dy) > space.s && Math.abs(g.dy) > Math.abs(g.dx),
     onPanResponderGrant: () => { if (!latest.current.hidden) origin.current = latest.current.cap; },
@@ -71,8 +71,10 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
     ...(snap !== 'collapsed' ? [{ name: 'collapse', label: t('c1255') }] : []),
   ], onPanelAction: adjustSnap };
   const collapsed = snap === 'collapsed' && dragHeight == null;
-  const shownHeader = collapsed && collapsedHeader ? <View {...pan.panHandlers} testID="history-panel-date-drag">{typeof collapsedHeader === 'function' ? collapsedHeader(controls) : collapsedHeader}</View>
-    : typeof header === 'function' ? header(pan.panHandlers, controls) : <View {...pan.panHandlers}>{header}</View>;
+  // A functional header keeps its date responder host mounted across the first
+  // collapsed drag update. Replacing that host mid-touch loses native release.
+  const shownHeader = typeof header === 'function' ? header(pan.panHandlers, controls, collapsed)
+    : <View {...pan.panHandlers} testID="history-panel-date-drag">{collapsed && collapsedHeader ? collapsedHeader : header}</View>;
   // Map framing follows the actual sheet position and current viewport.
   useEffect(() => { onHeightChange?.(cap); }, [cap, onHeightChange]);
   useImperativeHandle(ref, () => ({ back: () => false }), []);

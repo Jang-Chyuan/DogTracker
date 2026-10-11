@@ -253,3 +253,31 @@ test('TalkBack date actions operate all three sheet positions while date activat
     expect(tree.root.findAll(node => node.props.testID === 'history-calendar')).not.toHaveLength(0);
   } finally { await act(async () => tree.unmount()); }
 });
+
+test.each([{ width: 393, height: 851, fontScale: 1 }, { width: 851, height: 393, fontScale: 2 }])('collapsed upward drag retains its native date responder until release at %j', async viewport => {
+  dimensions.mockReturnValue({ ...viewport, scale: 2.75 });
+  fonts.mockReturnValue(viewport.fontScale);
+  const handlers = [];
+  const pan = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers.push(value); return { panHandlers: {} }; });
+  const { tree } = await mount('history-my-route');
+  try {
+    const sheet = handlers.find(value => value.onMoveShouldSetPanResponderCapture);
+    await act(async () => sheet.onPanResponderGrant());
+    await act(async () => sheet.onPanResponderRelease(null, { dy: 500 }));
+    const dateResponder = one(tree, 'history-panel-date-drag');
+    const dateButton = one(tree, 'history-date');
+    await act(async () => sheet.onPanResponderGrant());
+    for (const dy of [-15, -100, -600]) {
+      await act(async () => sheet.onPanResponderMove(null, { dy }));
+      expect(one(tree, 'history-panel-date-drag') === dateResponder).toBe(true);
+      expect(one(tree, 'history-date') === dateButton).toBe(true);
+    }
+    // A newly measured header may resize bounds during this same native drag.
+    const dateMeasure = one(tree, 'history-panel-header').findAll(node => typeof node.type === 'string' && node.props.onLayout)[0];
+    await act(async () => dateMeasure.props.onLayout({ nativeEvent: { layout: { height: 80 } } }));
+    await act(async () => sheet.onPanResponderRelease(null, { dy: -600 }));
+    expect(one(tree, 'history-summary')).toBeDefined();
+    expect(one(tree, 'history-timeline')).toBeDefined();
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBeGreaterThan(Math.floor((viewport.height - 24) / 2));
+  } finally { await act(async () => tree.unmount()); pan.mockRestore(); }
+});

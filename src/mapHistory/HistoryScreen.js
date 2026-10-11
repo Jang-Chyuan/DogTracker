@@ -477,10 +477,10 @@ ref) {
         compact={wideHeader}
       /></View>
   );
-  const dateHeader = controls => (
+  const dateHeader = (controls, collapsed) => (
     <>
       {dateOnly(controls)}
-      {screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
+      {!collapsed && screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
         <Text style={styles.asOfText}>{t('c1247', { time: `${String(new Date(screen.asOf).getHours()).padStart(2, '0')}:${String(new Date(screen.asOf).getMinutes()).padStart(2, '0')}` })}</Text>
         <PressScale testID="history-update-tail" accessibilityRole="button" accessibilityLabel={t('c1248')}
           onPress={() => step(screen.updateHistory)} style={styles.updateTail}>
@@ -519,12 +519,12 @@ ref) {
       )}
     </>
   );
-  const header = (panHandlers, controls) => wideHeader ? (
-    <View testID="history-header-columns" style={styles.headerColumns}>
-      <View style={styles.dateColumn} {...panHandlers}>{dateHeader(controls)}</View>
-      <View style={styles.summaryColumn}>{summaryHeader}</View>
+  const header = (panHandlers, controls, collapsed) => (
+    <View testID={wideHeader ? 'history-header-columns' : undefined} style={wideHeader && styles.headerColumns}>
+      <View testID="history-panel-date-drag" style={wideHeader && styles.dateColumn} {...panHandlers}>{dateHeader(controls, collapsed)}</View>
+      {!collapsed && <View style={wideHeader && styles.summaryColumn}>{summaryHeader}</View>}
     </View>
-  ) : <View><View {...panHandlers} testID="history-panel-date-drag">{dateHeader(controls)}</View>{summaryHeader}</View>;
+  );
   const floatingRange = wideHeader && rangeOpen && hasRoute ? (
     <HistoryRangeControls {...rangeProps} model={model} />
   ) : null;

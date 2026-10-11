@@ -15,7 +15,7 @@ const panelHeight = () => StyleSheet.flatten(tree.root.findByProps({ testID: 'hi
 const render = ({ day = 'day1', scope = 'owner1:phone', open = false, hidden = false } = {}) => <HistoryPanel
   scopeKey={scope} measureKey={day} rangeOpen={open} hidden={hidden} dateHeight={60} bottomInset={20} topControlBottom={96}
   collapsedHeader={<Text testID="only-date">Date {day}</Text>}
-  header={handlers => <View testID="date-drag" {...handlers}><Text>Date {day}</Text><Text testID="summary">Summary</Text></View>}>
+  header={(handlers, controls, collapsed) => <View testID="date-drag" {...handlers}><Text testID={collapsed ? "only-date" : undefined}>Date {day}</Text>{!collapsed && <Text testID="summary">Summary</Text>}</View>}>
   <Text testID="timeline">Rows {day}</Text>
 </HistoryPanel>;
 const drag = async dy => {
