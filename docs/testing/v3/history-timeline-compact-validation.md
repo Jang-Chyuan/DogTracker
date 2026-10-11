@@ -1,3 +1,33 @@
+# 2026-10-12：地址、首行對齊與拖曳時間浮層已在 5558 重驗
+
+本輪公開產品來源 `644b1f30` 完整 **226 suites／2,556 tests 通過（166.141 秒）**。原生操作使用既有 5558、相同 UI 來源的私有展示版 `3e346357`／0.3.252；Release 21 秒成功，APK SHA 與來源紀錄見圖片 manifest。私有差異只提供獨立虛構資料與入口，未納入產品；其全測含兩套舊私有契約失敗，不將私有全測說成通過。產品全測與原生功能驗證分開記錄。
+
+上一張缺地址圖是展示用地址 dictionary 不足；另有首行中心的真實排版偏差。展示資料已補足 64 個虛構地址，產品地址載入顯示 inline skeleton，無法取得時顯示「地址暫時無法取得」。節點與停留膠囊現在按地址第一行的字體高度共用中心；來源案例另涵蓋長地址、大字與 pending／none，本輪原生為一般字體。
+
+| 狗歷史：地址與第一行對齊 | 第二隻狗：同樣對齊 |
+| --- | --- |
+| ![狗歷史地址與膠囊](evidence/history-timeline-compact/20261012-overlay-addresses/dog-first.png) | ![第二隻狗的地址与首行](evidence/history-timeline-compact/20261012-overlay-addresses/dog-four-detail.png) |
+
+拖動把手時僅疊上 HH:mm，不預留額外空白；手指放開即隱藏。實際操作前／held／UP 日期、摘要和把手 bounds 相同。首個 MOVE 便進入既有 shimmer 並隱藏舊清單／地圖路線；放開後才提交最終範圍並重算，不能把此功能驗證當 CPU 或延遲指標。
+
+| 拖曳前 | 手指拖動：時間浮層與 shimmer | 放開後 |
+| --- | --- | --- |
+| ![拖曳前](evidence/history-timeline-compact/20261012-overlay-addresses/range-open.png) | ![拖動時無額外留白](evidence/history-timeline-compact/20261012-overlay-addresses/range-start-held.png) | ![放開後恢復清單](evidence/history-timeline-compact/20261012-overlay-addresses/range-start-released.png) |
+
+範圍裁切落在同一個已確認停留內，出發／第一停留合一；同一末停留／結束合一，地圖不留兩個重複編號。原始停留身份與點 membership 才是合併依據，不用相同地址吞掉可能的短走，不改 GPS 分類、原資料或 CSV／GPX。實際 09:04–09:19 清單為出發停 5 分、開車 3 分、結束停 7 分。
+
+![裁切起點與末停留合併](evidence/history-timeline-compact/20261012-overlay-addresses/range-end-released.png)
+
+兩隻有有效軌跡的狗已實際 4→6→4 切換，選擇第二隻後仍在第二列，主角、頭像與各自距離更新，日期／範圍保持。
+
+![選第二隻狗仍保持順序](evidence/history-timeline-compact/20261012-overlay-addresses/dog-selected-four.png)
+
+面板三高度與日期往返亦已在同 APK 操作：半高、收至日期列、展開並與上方控制實測保留 20dp。切換日期維持原高度。此次未另公開影片，尚未由主視窗逐影格核完的新影片不作公開證據。所有上圖為主視窗親看過的原生原圖，SHA 列於 manifest。
+
+**仍未修復：**部分正常游標浮卡被「回到現在」遮擋，上面範圍圖如實保留此現象；全展開時小地圖也可能容不下完整浮卡。已另外完成來源查核，尚未在本 PR 改動。上述功能驗證不代表 CPU、雲端更新或所有大字／TalkBack 情境通過。PR 115 未合併，仍由使用者審閱。
+
+---
+
 # 最新：三段歷史面板與圖示距離摘要已完成普通字體原生驗證
 
 產品db205cda：主視窗完整225 suites／2529 tests PASS187.483秒，Release19秒成功。既有5562 exact同來源私有d1候選已完成首50%、收合日期列、兩次重新上拉展開、收合／展開兩種日曆往返、半高清單捲動、狗爪與車程摘要、範圍shimmer／放開／返回及匯出入口。Root親看原圖與两影片全部88＋131原生影格。實測展開距上方控制20dp。最新證據在本文最後的「最新三段面板原生畫面」；以下先前來源／原生失敗均保留為歷史，不替代新結果。
