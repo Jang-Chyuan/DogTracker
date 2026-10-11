@@ -1,10 +1,10 @@
 # 最新位置先套用：驗證紀錄
 
-原標題：`fix(history): 下載完成後喚醒讀取，修正歷史持續載入`。前一公開 head 為 `91e7b1be`，PR 仍 Draft；本輪產品整合為 `368b3976`（以下較早原生證據另列為6d47f23f）。此紀錄隨同既有 PR 114 更新。
+原標題：`fix(history): 下載完成後喚醒讀取，修正歷史持續載入`。前一公開 head 為 `91e7b1be`，PR 仍 Draft；本輪最新產品整合為 `60434279`（前一368b3976原生證據另列）（以下較早原生證據另列為6d47f23f）。此紀錄隨同既有 PR 114 更新。
 
 ## 目前確定的來源與程式證據
 
-- 最新368b3976完整 Jest：229 suites／2,610 tests PASS（163.768秒）；修改檔案lint 0 errors；產品Release 19秒成功。前一6d47f23f完整228／2,601 PASS164.906秒、Release24秒，非混用驗證結果。
+- 最新60434279完整 Jest：230 suites／2,616 tests PASS（167.989秒）；新增／修改檔案lint 0 errors／0 warnings；產品Release22秒成功。前一368b3976為229 suites／2,610 PASS163.768秒、Release19秒。前一6d47f23f完整228／2,601 PASS164.906秒、Release24秒，非混用驗證結果。
 - `CloudLatest.js`：單一serial next-key完整發現，與最多2個dog job重疊；每job兩個clock，含1個keyseek的正常單次最多5條請求。保留packet後fix的順序、silent dogs及獨立舊版54筆比對；全成功才依發現順序原子回傳，任一key／dog／owner check／cancel失敗拒整批。若 transport 忽略 AbortSignal，只能保證晚回不被接受，不能承諾實體 HTTP 立即停止。
 - `CloudLatestSnapshot.js`：metadata-only 不解碼／升級 context；positions-only 以同一 joined statement 取得版本、封包與有效定位，保留成功空快照。原完整離線讀取仍保留。
 - `useCloudDogs.js`／`CloudPublication.js`：已接受快照只對同 owner／scope／generation／attempt 有效。Optional context 不排在最新位置 consumer 之前；延後成功／失敗不能覆蓋新結果。相同完整 packet+fix 才保原錨點，修改資料重新判斷；純 BLE 資訊保留。
@@ -34,6 +34,14 @@
 - 此版本的實際resume速度仍不符合期望；查詢重疊不能被當作全部慢窗已修。共用資料庫必要讀取的排隊正在另查，原生長工作、HTTP／事件迴圈均可能影響，未給CPU或因果結論。
 
 本輪沒有新真實歷史全流程／離線恢復的完成證據，仍維持Draft；不得用較早6d的native結果替代新版所有情境通過。
+
+## BLE 重複 schema 初始化窄修：60434279
+
+同一實際開啟的 connection wrapper 完整完成PRAGMA／index／trigger後，後續BLE顯示讀取不再重做這些檢查。新wrapper、首次未成功setup仍重新確認，不能把Android共用lockKey當schema已ready；context與未快取display寫入仍留在原shared lock。寫入失敗仍重試真正寫入，不把已成功的schema setup一併重跑。
+
+真SQLite暖讀trap＋archiveproof排隊反例先RED後PASS；6個新增guards另涵蓋setup／寫入失敗、新wrapper同lockKey、held context仍阻proof、lateinsert trigger及raw／平滑資料一致。主視窗已讀全部diff及反例，另一Codex獨立review無blocker。這是同連線重複工作窄修，首次完整schema、較大未materialized頁及原生／HTTP等待尚未全解。
+
+604產品APK SHA21d2cadf1767a66159dd1ecdcb73438443cd6f517613132746c602e1e0bcafee。私有bd3e2e15只差原固定integer probes，App.js／src／android exact runtime比對已核、8focused51PASS、lint0／0；Release20秒成功、APK2b2c55beb7a847d2fa9c38ffc87036f32287d1457791202310704a2b0c790422。最新5554已更新，原生冷啟實際122.657秒仍未接受最新快照；Local initialReady12.720秒，完整cloud schema retention執行尚未在此窗閉合。長時間後原固定80筆consumer probe已用盡，不能把舊sample80當新resume成功；新原生PNG擷取20秒逾時，未取得新版畫面通過。僅從同PID未截斷的固定數值publication紀錄看到常見3–10秒、另有29.434／47.516秒慢窗，不能當特定回前景UI或CPU改善證明。前一368結果不得代替新版驗證。
 
 ## 公開原生畫面：獨立虛構九隻狗
 
