@@ -163,7 +163,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
             attempt.commit = attempt.success;
             const accepted = scheduler.current?.();
             attempt.cloudPublication = accepted ? { owner: accepted.owner, scope: accepted.scope,
-              generation: accepted.generation, revision: attempt.success } : null;
+              generation: accepted.generation, attempt: accepted.attempt, revision: attempt.success } : null;
           }
           attempt.baselineLoaded = true;
         }

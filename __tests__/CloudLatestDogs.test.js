@@ -3,6 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
+import { latestMapApplied } from '../src/cloud/CloudPublication';
 import { initialLatestAccepted } from '../src/app/useInitialLatest';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 const NOW = Date.parse('2026-10-10T12:00:00Z');
@@ -201,4 +202,44 @@ test('native publish alone cannot prove initial acceptance while its atomic hold
   await act(async () => { release(); for (let i = 0; i < 30; i++) await Promise.resolve(); });
   expect(state.current.rows).toEqual([]);
   expect(initialLatestAccepted('a', version, state.current)).toBe(true);
+});
+
+
+test('a real second-attempt hold read retains the old snapshot without claiming the new latest is applied', async () => {
+  const state = { current: null }, scope = {};
+  let version = { owner: 'a', scope, generation: 1, attempt: 1, pending: false, busy: false,
+    mapSuccessRevision: 1, snapshotBaseRevision: 0 };
+  const publication = () => version;
+  const sync = () => ({ latestFirst: true, snapshotPending: false,
+    mapSuccessRevision: version.mapSuccessRevision, getMapPublication: publication });
+  await database.publishLatestSnapshot('a', { cutoff: NOW, dogs: [{ slaveId: 4,
+    packet: fix('first'), fix: fix('first') }] });
+  await act(async () => { screen = Renderer.create(<Probe database={database} state={state}
+    publication={publication} busy={false} success={1} revision={1} />); });
+  expect(state.current.cloudPublication).toMatchObject({ attempt: 1, revision: 1 });
+  expect(latestMapApplied(sync(), 'a', state.current)).toBe(true);
+  let release, entered;
+  const holdEntered = new Promise(resolve => { entered = resolve; });
+  const held = new Promise(resolve => { release = resolve; });
+  const readHolds = database.holdRows;
+  database.holdRows = async (...args) => { entered(); await held; return readHolds(...args); };
+  try {
+    await database.publishLatestSnapshot('a', { cutoff: NOW + 1000, dogs: [{ slaveId: 6,
+      packet: fix('second', 6, 26), fix: fix('second', 6, 26) }] });
+    version = { ...version, attempt: 2, mapSuccessRevision: 2 };
+    await act(async () => { screen.update(<Probe database={database} state={state}
+      publication={publication} busy={false} success={2} revision={2} />); });
+    await holdEntered;
+    expect(state.current.rows.map(row => row.event_id)).toEqual(['first']);
+    expect(state.current.cloudPublication).toMatchObject({ attempt: 1, revision: 1 });
+    expect(latestMapApplied(sync(), 'a', state.current)).toBe(false);
+    await act(async () => { release(); for (let i = 0; i < 30; i++) await Promise.resolve(); });
+    expect(state.current.rows.map(row => row.event_id)).toEqual(['second']);
+    expect(state.current.cloudPublication).toMatchObject({ attempt: 2, revision: 2 });
+    expect(latestMapApplied(sync(), 'a', state.current)).toBe(true);
+    version = { ...version, pending: true };
+    expect(latestMapApplied(sync(), 'a', state.current)).toBe(true);
+    version = { ...version, pending: false, mapSuccessRevision: 3 };
+    expect(latestMapApplied(sync(), 'a', state.current)).toBe(true);
+  } finally { release(); }
 });

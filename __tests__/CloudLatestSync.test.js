@@ -206,7 +206,7 @@ test('already applied latest remains usable through real deferred context public
     const snapshot = await database.readLatestSnapshot('a');
     const dogs = { loaded: true, rows: snapshot.rows, cloudCommit: initial.mapSuccessRevision,
       cloudPublication: { owner: initial.owner, scope: initial.scope,
-        generation: initial.generation, revision: initial.mapSuccessRevision } };
+        generation: initial.generation, attempt: initial.attempt, revision: initial.mapSuccessRevision } };
     const state = () => ({ ...current(), getMapPublication: () => engine.mapPublication() });
     expect(current()).toMatchObject({ contextPending: true, snapshotPending: false });
     expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
@@ -227,5 +227,47 @@ test('already applied latest remains usable through real deferred context public
     expect(latestMapApplied(state(), 'b', dogs)).toBe(false);
   } finally {
     context.resolve({ cutoff: NOW, dogs: [] }); contextCommit.resolve(); await flush();
+  }
+});
+
+
+test('a second latest attempt cannot inherit a prior applied map proof during its native-reader lag', async () => {
+  const secondContext = deferred();
+  let contextCalls = 0;
+  const { database, downloadLatest, current, start } = await fixture({ downloadContext: async () => {
+    contextCalls++;
+    if (contextCalls === 1) throw new Error('optional context unavailable');
+    return secondContext.promise;
+  } });
+  try {
+    await start();
+    const first = engine.mapPublication();
+    const firstSnapshot = await database.readLatestSnapshot('a');
+    const dogs = { loaded: true, rows: firstSnapshot.rows, cloudCommit: first.mapSuccessRevision,
+      cloudPublication: { owner: first.owner, scope: first.scope, generation: first.generation,
+        attempt: first.attempt, revision: first.mapSuccessRevision } };
+    const state = () => ({ ...current(), getMapPublication: () => engine.mapPublication() });
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    downloadLatest.mockImplementation(async ({ cutoff }) => ({ cutoff, dogs: [{ slaveId: 4,
+      packet: { ...fix('second-latest'), slave_lat: 26 }, fix: { ...fix('second-latest'), slave_lat: 26 } }] }));
+    await jest.advanceTimersByTimeAsync(30000);
+    const second = engine.mapPublication();
+    const secondSnapshot = await database.readLatestSnapshot('a');
+    expect(second.generation).toBe(first.generation);
+    expect(second.attempt).toBe(first.attempt + 1);
+    expect(second.mapSuccessRevision).toBeGreaterThan(first.mapSuccessRevision);
+    expect(secondSnapshot.rows[0].slave_lat).toBe(26);
+    expect(current()).toMatchObject({ snapshotPending: false, contextPending: true });
+    // SQLite has the second complete latest, but the mounted map reader still
+    // carries the first attempt's immutable snapshot. Optional context alone
+    // may retain a proof; a newly accepted latest attempt may not inherit it.
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(false);
+    const appliedSecond = { ...dogs, rows: secondSnapshot.rows, cloudCommit: second.mapSuccessRevision,
+      cloudPublication: { owner: second.owner, scope: second.scope, generation: second.generation,
+        attempt: second.attempt, revision: second.mapSuccessRevision } };
+    expect(latestMapApplied(state(), 'a', appliedSecond)).toBe(true);
+  } finally {
+    secondContext.resolve({ cutoff: NOW + 30000, dogs: [] });
+    await flush();
   }
 });

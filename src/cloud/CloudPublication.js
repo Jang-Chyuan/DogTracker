@@ -39,7 +39,8 @@ export function mapReadRevision(sync) {
 // atomically applied snapshot from this exact foreground/account may do so.
 // Later optional context publications may be pending or awaiting their hold
 // reread; they do not revoke that proof. snapshotPending still gates a new
-// latest fetch, and a new foreground generation never inherits the old proof.
+// latest fetch. A new foreground generation or latest attempt never inherits
+// the old proof; context publications retain the same attempt.
 export function latestMapApplied(sync, owner, dogs) {
   if (!sync?.latestFirst || !owner || sync.error || sync.authFailed || dogs?.error
     || !dogs?.loaded || mapDownloadBusy(sync)) return false;
@@ -50,6 +51,8 @@ export function latestMapApplied(sync, owner, dogs) {
   return !!publication && publication.owner === owner && proof?.owner === owner
     && publication.scope != null && proof.scope === publication.scope
     && Number.isSafeInteger(publication.generation) && proof.generation === publication.generation
+    && Number.isSafeInteger(publication.attempt) && publication.attempt > 0
+    && proof.attempt === publication.attempt
     && !publication.busy
     && Number.isSafeInteger(success) && success > 0
     && publication.mapSuccessRevision === success
