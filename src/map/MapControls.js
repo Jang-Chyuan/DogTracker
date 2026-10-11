@@ -296,11 +296,11 @@ export function SettingsGear({
  * the right, at `top` (12dp under the gear, or under the top cards). The
  * needle points to north; a tap turns the map back to north.
  */
-export function CompassButton({ top, heading, onPress }) {
+export function CompassButton({ top, heading, onPress, onLayout }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
-    <View style={[styles.gear, { top }]} pointerEvents="box-none">
+    <View testID="map-compass-layout" style={[styles.gear, { top }]} pointerEvents="box-none" onLayout={onLayout}>
       <PressScale
         testID="map-compass"
         accessibilityRole="button"

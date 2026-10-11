@@ -49,6 +49,22 @@ test('requested camera target clears both actual control and pin/label and measu
   expect(view.bottom - view.top - padding.top - padding.bottom).toBeGreaterThan(0);
 });
 
+test('bottom frame control avoids the released card without becoming a top framing band', () => {
+  const frame = { x: 332, y: 330, width: 56, height: 56 };
+  const all = [back, frame];
+  const point = Object.freeze({ x: 330, y: 370 });
+  const placement = cursorLabelPlacement(point, size, view, all);
+  expect(placement.hidden).toBe(true);
+  expect(placement.box).not.toBeNull();
+  expect(overlap(placement.box, frame)).toBe(false);
+  const target = cursorCameraTarget(size, view, all);
+  expect(target).not.toBeNull();
+  expect(cursorLabelPlacement(target, size, view, all)).toEqual({ hidden: false, box: null });
+  expect(measuredCursorFrame({ top: 16, left: 24, right: 24, bottom: 20 }, size, view, all, [back]))
+    .toEqual(measuredCursorFrame({ top: 16, left: 24, right: 24, bottom: 20 }, size, view, [back]));
+  expect(point).toEqual({ x: 330, y: 370 });
+});
+
 test('measured face/name lower footprint changes candidate clearance without changing its anchor', () => {
   const face = cursorLabelFootprint({ width: 160, height: 46 }, true, { width: 200, height: 140 });
   const anchor = cursorAnchor(46, true);
@@ -228,5 +244,64 @@ describe('actual Google renderer label and requested camera boundary', () => {
     await act(async () => oldResolve({ x: 94, y: 130 }));
     expect(mockCamera.animateCamera).not.toHaveBeenCalled();
     expect(marker().props.coordinate).toBe(coordinate);
+  });
+
+  test('rotated compass waits for real root layout, clears the normal card and drops its old rect when gone', async () => {
+    mockCamera.pointForCoordinate.mockResolvedValue({ x: 312, y: 155 });
+    await mount({ compassTop: 100, historyControls: { boxes: controls, topBoxes: controls, ready: true } });
+    await measure();
+    const cursor = tree.root.findByType(HistoryCursor);
+    const anchor = marker().props.anchor;
+    mockCamera.getCamera.mockResolvedValueOnce({ center: coordinate, zoom: 15, heading: 45 });
+    await act(async () => tree.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: false }));
+    const nativeHandle = hosts('history-cursor-handle')[0];
+    const compass = hosts('map-compass-layout')[0];
+    expect(bitmap().props.hidden).toBe(true);
+    expect(hosts('history-cursor-collision-label')).toHaveLength(0);
+    const staleLayout = compass.props.onLayout;
+    await act(async () => compass.props.onLayout({ nativeEvent: { layout: { x: 336, y: 100, width: 48, height: 48 } } }));
+    expect(hosts('history-cursor-collision-label')).toHaveLength(1);
+    const box = StyleSheet.flatten(hosts('history-cursor-collision-label')[0].props.style);
+    expect(overlap({ ...box, x: box.left, y: box.top, height: 46 }, { x: 332, y: 96, width: 56, height: 56 })).toBe(false);
+    expect(tree.root.findByType(HistoryCursor)).toBe(cursor);
+    // Region completion legitimately reprojects the cursor; measurement does
+    // not introduce another scene/revision or replace its responder host.
+    expect(hosts('history-cursor-handle')[0]).toBe(nativeHandle);
+    expect(marker().props.coordinate).toBe(coordinate);
+    expect(marker().props.anchor).toEqual(anchor);
+    mockCamera.getCamera.mockResolvedValueOnce({ center: coordinate, zoom: 15, heading: 0 });
+    await act(async () => tree.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: false }));
+    expect(hosts('map-compass-layout')).toHaveLength(0);
+    await act(async () => staleLayout({ nativeEvent: { layout: { x: 300, y: 0, width: 100, height: 200 } } }));
+    expect(hosts('history-cursor-collision-label')).toHaveLength(0);
+    expect(bitmap().props.hidden).toBe(false);
+  });
+
+  test('new measured collision controls do not change an active gesture host, projection scope or native anchor', async () => {
+    let gesture;
+    const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { gesture = value; return { panHandlers: {} }; });
+    try {
+      await mount({ historyControls: { boxes: controls, topBoxes: controls, ready: true } });
+      await measure();
+      const handle = hosts('history-cursor-handle')[0];
+      const cursor = tree.root.findByType(HistoryCursor);
+      const scene = { revision: cursor.props.revision, projectionScope: cursor.props.projectionScope };
+      const anchor = marker().props.anchor;
+      const projections = mockCamera.pointForCoordinate.mock.calls.length;
+      await act(async () => gesture.onPanResponderGrant());
+      expect(hosts('history-cursor-drag-time')).toHaveLength(1);
+      await act(async () => tree.update(<TrackingMap {...defaults} historyControls={{
+        boxes: [...controls, { x: 332, y: 330, width: 56, height: 56 }], topBoxes: controls, ready: true,
+      }} />));
+      expect(hosts('history-cursor-handle')[0]).toBe(handle);
+      expect(tree.root.findByType(HistoryCursor).props).toMatchObject(scene);
+      expect(hosts('history-cursor-drag-time')).toHaveLength(1);
+      expect(mockCamera.pointForCoordinate.mock.calls.length).toBe(projections);
+      expect(marker().props.coordinate).toBe(coordinate);
+      expect(marker().props.anchor).toEqual(anchor);
+      await act(async () => gesture.onPanResponderRelease());
+      expect(hosts('history-cursor-drag-time')).toHaveLength(0);
+      expect(hosts('history-cursor-handle')[0]).toBe(handle);
+    } finally { spy.mockRestore(); }
   });
 });

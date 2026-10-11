@@ -11,7 +11,8 @@ import { fontScaleAtLeast } from '../utils/textScale';
 
 const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   bottomInset = 0, scrollRef, above = null, floating = null, hidden = false, onHeightChange,
-  collapsedHeader, dateHeight, topControlBottom, scopeKey, rangeOpen = false }, ref) {
+  collapsedHeader, dateHeight, topControlBottom, scopeKey, rangeOpen = false,
+  controlScope = scopeKey, onControlRects }, ref) {
   const styles = useStyles(getStyles);
   const scroller = useRef(null);
   // Timeline rows report positions relative to the independently scrolling list.
@@ -71,6 +72,52 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
     ...(snap !== 'collapsed' ? [{ name: 'collapse', label: t('c1255') }] : []),
   ], onPanelAction: adjustSnap };
   const collapsed = snap === 'collapsed' && dragHeight == null;
+  const aboveVisible = !!above && !hidden
+    && windowHeight - cap - (topControlBottom ?? insets.top + touch.min) >= touch.min + space.m;
+  const floatingVisible = !collapsed && !!floating && !hidden;
+  // Only overlay hosts remount on an owner/viewport/visibility change. The
+  // sheet's scroll view and the map's native cursor responder stay mounted.
+  const overlayScope = `${controlScope}:${windowWidth}:${windowHeight}:${hidden}:${aboveVisible}:${floatingVisible}`;
+  const layoutOwner = useRef({ scope: overlayScope, cap, epoch: 0 });
+  if (layoutOwner.current.scope !== overlayScope) layoutOwner.current = {
+    scope: overlayScope, cap, epoch: layoutOwner.current.epoch + 1,
+  };
+  layoutOwner.current.cap = cap;
+  const overlayEpoch = layoutOwner.current.epoch;
+  const [overlayLayouts, setOverlayLayouts] = useState({});
+  const [panelLayout, setPanelLayout] = useState(null);
+  const measureOverlay = (name, height = null) => event => {
+    if (layoutOwner.current.scope !== overlayScope || layoutOwner.current.epoch !== overlayEpoch
+      || (height != null && layoutOwner.current.cap !== height)) return;
+    const rect = event.nativeEvent.layout;
+    if (name === 'floating') setFloatingHeight(rect.height);
+    const next = { scope: overlayScope, epoch: overlayEpoch, cap: height, rect };
+    setOverlayLayouts(previous => JSON.stringify(previous[name]) === JSON.stringify(next)
+      ? previous : { ...previous, [name]: next });
+  };
+  const measurePanel = event => {
+    if (layoutOwner.current.scope !== overlayScope || layoutOwner.current.epoch !== overlayEpoch
+      || layoutOwner.current.cap !== cap) return;
+    const rect = event.nativeEvent.layout;
+    const next = { width: windowWidth, height: windowHeight, cap, rect };
+    setPanelLayout(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+  };
+  const aboveLayout = overlayLayouts.above?.scope === overlayScope && overlayLayouts.above.epoch === overlayEpoch
+    && overlayLayouts.above.cap === cap
+    ? overlayLayouts.above.rect : null;
+  const floatingLayout = overlayLayouts.floating?.scope === overlayScope && overlayLayouts.floating.epoch === overlayEpoch
+    ? overlayLayouts.floating.rect : null;
+  const currentPanel = panelLayout?.width === windowWidth && panelLayout.height === windowHeight
+    && panelLayout.cap === cap ? panelLayout.rect : null;
+  useEffect(() => {
+    const boxes = [];
+    if (aboveVisible && aboveLayout) boxes.push(aboveLayout);
+    if (floatingVisible && floatingLayout && currentPanel) boxes.push({
+      ...floatingLayout, x: currentPanel.x + floatingLayout.x, y: currentPanel.y + floatingLayout.y,
+    });
+    onControlRects?.({ boxes, ready: (!aboveVisible || !!aboveLayout)
+      && (!floatingVisible || (!!floatingLayout && !!currentPanel)) });
+  }, [aboveVisible, floatingVisible, aboveLayout, floatingLayout, currentPanel, onControlRects]);
   // A functional header keeps its date responder host mounted across the first
   // collapsed drag update. Replacing that host mid-touch loses native release.
   const shownHeader = typeof header === 'function' ? header(pan.panHandlers, controls, collapsed)
@@ -84,10 +131,11 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
           placed above the panel is visible, but Android clips its accessible
           rectangle against the panel, leaving an invalid accessibility target. */}
       {above && windowHeight - cap - (topControlBottom ?? insets.top + touch.min) >= touch.min + space.m && <View testID="history-panel-above" pointerEvents="box-none"
+        key={`above:${overlayScope}:${overlayEpoch}`} onLayout={measureOverlay('above', cap)}
         importantForAccessibility={behindSheet(hidden)}
         style={[styles.above, { bottom: cap + space.m }]}>{above}</View>}
       <View testID="history-panel" importantForAccessibility={behindSheet(hidden)}
-        pointerEvents="box-none" style={[styles.panel, { height: cap }]}>
+        pointerEvents="box-none" style={[styles.panel, { height: cap }]} onLayout={measurePanel}>
         <View style={styles.sheet}>
           <View testID="history-panel-header" style={styles.header}>{shownHeader}</View>
           {!collapsed && <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
@@ -97,7 +145,7 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
             </View>
           </ScrollView>}
         </View>
-        {!collapsed && floating && <View testID="history-range-floating" style={styles.floating} onLayout={e => setFloatingHeight(e.nativeEvent.layout.height)}>{floating}</View>}
+        {!collapsed && floating && <View key={`floating:${overlayScope}:${overlayEpoch}`} testID="history-range-floating" style={styles.floating} onLayout={measureOverlay('floating')}>{floating}</View>}
       </View>
     </>
   );

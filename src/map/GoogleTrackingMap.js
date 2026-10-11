@@ -1074,11 +1074,38 @@ function GoogleTrackingMapRenderer({
   }, [configured, loaded, positions.length, releaseSplash, framingReady]);
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !historyMode;
+  // The compass is a separate root overlay, not part of HistoryScreen's row.
+  const [heading, setHeading] = useState(0);
+  const turned = Math.abs((((heading % 360) + 540) % 360) - 180) > 1;
+  const compassVisible = usable && foreground && compassTop != null && turned;
+  const compassKey = `${source}:${instance}:${cursorLayout.width}:${cursorLayout.height}:${compassTop}:${compassVisible}`;
+  const compassGeneration = useRef({ key: compassKey, value: 0 });
+  if (compassGeneration.current.key !== compassKey) compassGeneration.current = {
+    key: compassKey, value: compassGeneration.current.value + 1,
+  };
+  const compassScope = `${compassKey}:${compassGeneration.current.value}`;
+  const compassOwner = useRef(compassScope);
+  compassOwner.current = compassScope;
+  const [compassLayout, setCompassLayout] = useState(null);
+  const measureCompass = useCallback(event => {
+    if (compassOwner.current !== compassScope) return;
+    const rect = event.nativeEvent.layout;
+    const next = { scope: compassScope, rect: {
+      x: rect.x - space.xs, y: rect.y - space.xs,
+      width: rect.width + space.xs * 2, height: rect.height + space.xs * 2,
+    } };
+    setCompassLayout(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+  }, [compassScope]);
+  const compassRect = compassVisible && compassLayout?.scope === compassScope ? compassLayout.rect : null;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
   const overlayBottom = Math.max(bottomInset, coverBottom || 0);
   const overlayTop = Math.max(topInset, coverTop || 0);
-  const controlRects = Array.isArray(historyControls) ? historyControls : historyControls.boxes;
-  const controlsReady = Array.isArray(historyControls) || historyControls.ready === true;
+  const historyControlRects = Array.isArray(historyControls) ? historyControls : historyControls.boxes;
+  const topControlRects = Array.isArray(historyControls) ? historyControls : historyControls.topBoxes ?? historyControls.boxes;
+  const controlRects = useMemo(() => [...historyControlRects, ...(!live && compassRect ? [compassRect] : [])],
+    [historyControlRects, live, compassRect]);
+  const controlsReady = (Array.isArray(historyControls) || historyControls.ready === true)
+    && (live || !compassVisible || !!compassRect);
   const measuredHistoryUI = !Array.isArray(historyControls);
   const cursorView = useMemo(() => ({ left: space.s, right: cursorLayout.width - space.s,
     top: overlayTop, bottom: cursorLayout.height - overlayBottom }), [cursorLayout, overlayTop, overlayBottom]);
@@ -1088,7 +1115,7 @@ function GoogleTrackingMapRenderer({
   const currentProjection = cursorProjection?.key === projectedKey ? cursorProjection.point : null;
   const cursorCameraRequest = useRef(0);
   const cameraScope = useRef(null);
-  cameraScope.current = `${source}:${instance}:${projectedKey}:${cursorMeasurementKey}:${JSON.stringify(historyControls)}`;
+  cameraScope.current = `${source}:${instance}:${projectedKey}:${cursorMeasurementKey}:${JSON.stringify(historyControls)}:${!live && compassScope}:${JSON.stringify(!live && compassRect)}`;
   const cursorPlacement = controlsReady && cursorSize && currentProjection
     ? cursorLabelPlacement(currentProjection, cursorSize, cursorView, controlRects)
     : { hidden: true, box: null };
@@ -1139,9 +1166,6 @@ function GoogleTrackingMapRenderer({
     (nativeFixAt != null &&
       Date.now() - nativeFixAt <= PHONE_FIX_MAX_AGE_S * 1000);
   const [tip, setTip] = useState(null);
-  // The map's rotation: the compass shows only while it is turned.
-  const [heading, setHeading] = useState(0);
-  const turned = Math.abs((((heading % 360) + 540) % 360) - 180) > 1;
   const clearTip = useCallback(() => setTip(null), []);
   const showTip = text => setTip({ text, key: Date.now() });
   // A move the user asked for: from now on nothing automatic moves the map.
@@ -1406,7 +1430,7 @@ function GoogleTrackingMapRenderer({
   const frameRoute = (animated = true) => {
     if (!usable || !routeCamera?.length) return;
     const originalRoom = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
-    const room = cursorSize ? measuredCursorFrame(originalRoom, cursorSize, cursorView, controlRects) : originalRoom;
+    const room = cursorSize ? measuredCursorFrame(originalRoom, cursorSize, cursorView, controlRects, topControlRects) : originalRoom;
     // Expanded may leave less room than the pin+label. Do not force a 1dp fit.
     if (!room) return;
     const framing = overlayFramePadding(room, { topInset, bottomInset, overlayTop, overlayBottom });
@@ -1963,8 +1987,10 @@ function GoogleTrackingMapRenderer({
       {live && (
         <MapTip message={tip} bottom={overlayBottom} onDone={clearTip} />
       )}
-      {usable && foreground && compassTop != null && turned && (
+      {compassVisible && (
         <CompassButton
+          key={compassScope}
+          onLayout={!live ? measureCompass : undefined}
           top={compassTop}
           heading={heading}
           onPress={() =>

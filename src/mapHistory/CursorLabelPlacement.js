@@ -49,9 +49,10 @@ export function cursorCameraTarget(size, view, controls = []) {
 }
 
 /** Additional padding is solely for requested framing, not SDK mapPadding. */
-export function measuredCursorFrame(base, size, view, controls = []) {
+export function measuredCursorFrame(base, size, view, controls = [], topControls = controls) {
   if (!cursorCameraTarget(size, view, controls)) return null;
-  const controlBottom = controls.reduce((bottom, box) => Math.max(bottom, box.y + box.height), view.top);
+  // Floating bottom/right controls are collision obstacles, not a top band.
+  const controlBottom = topControls.reduce((bottom, box) => Math.max(bottom, box.y + box.height), view.top);
   const padding = { ...base, top: Math.max(base.top, size.above + space.s) + controlBottom - view.top,
     bottom: Math.max(base.bottom, size.below + space.s),
     left: Math.max(base.left, size.width / 2 + space.s, size.pinHalf + space.s),

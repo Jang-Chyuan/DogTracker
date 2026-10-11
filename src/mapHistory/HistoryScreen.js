@@ -366,6 +366,48 @@ ref) {
   }, [sheetOpen, onSheetOpen]);
   const sheetRef = useRef(null);
   const { model, subject, cursor, download } = screen;
+  const downloading = download?.kind === 'downloading';
+  const empty = !!model && !model.dayRecords;
+  const hasRoute = !!model?.points.length && !downloading;
+  const panelFootprint = wideHeader && rangeOpen && hasRoute ? 'range'
+    : hasRoute && !screen.rangePending ? 'frame' : 'none';
+  const footprintOwner = useRef(panelFootprint);
+  footprintOwner.current = panelFootprint;
+  const controlKey = `${subject}:${screen.entryId ?? ''}:${screen.day}:${window.width}:${window.height}:${window.fontScale}:${top}:${sheetOpen}`;
+  const controlGeneration = useRef({ key: controlKey, value: 0 });
+  if (controlGeneration.current.key !== controlKey) controlGeneration.current = {
+    key: controlKey, value: controlGeneration.current.value + 1,
+  };
+  const controlScope = `${controlKey}:${controlGeneration.current.value}`;
+  const controlOwner = useRef(controlScope);
+  controlOwner.current = controlScope;
+  const [controlLayouts, setControlLayouts] = useState({});
+  const reportTopControls = useCallback(geometry => {
+    if (controlOwner.current !== controlScope) return;
+    const next = { ...geometry, scope: controlScope };
+    setControlLayouts(previous => JSON.stringify(previous.top) === JSON.stringify(next)
+      ? previous : { ...previous, top: next });
+  }, [controlScope]);
+  const reportPanelControls = useCallback(geometry => {
+    if (controlOwner.current !== controlScope || footprintOwner.current !== panelFootprint) return;
+    const next = { ...geometry, scope: controlScope, footprint: panelFootprint };
+    setControlLayouts(previous => JSON.stringify(previous.panel) === JSON.stringify(next)
+      ? previous : { ...previous, panel: next });
+  }, [controlScope, panelFootprint]);
+  useEffect(() => {
+    const topControls = controlLayouts.top?.scope === controlScope ? controlLayouts.top : null;
+    const panelControls = controlLayouts.panel?.scope === controlScope
+      && controlLayouts.panel.footprint === panelFootprint ? controlLayouts.panel : null;
+    const topBoxes = sheetOpen ? [] : topControls?.boxes ?? [];
+    // Leave a gap from floating borders/shadows; native root layout remains
+    // authoritative. Top framing only reserves the actual upper capsule row.
+    const floatingBoxes = sheetOpen ? [] : (panelControls?.boxes ?? []).map(box => ({
+      x: box.x - space.xs, y: box.y - space.xs,
+      width: box.width + space.xs * 2, height: box.height + space.xs * 2,
+    }));
+    onControlRects?.({ boxes: [...topBoxes, ...floatingBoxes], topBoxes,
+      ready: sheetOpen || (!!topControls?.ready && !!panelControls?.ready) });
+  }, [controlLayouts, controlScope, panelFootprint, sheetOpen, onControlRects]);
   // The entry dog's name as the caller knows it (a fixture's tests), else the hook's.
   const nameOf = useCallback(
     dog => (dog.id === screen.entryId && name) || dog.name,
@@ -373,9 +415,6 @@ ref) {
   );
   const lead = screen.dogs?.find(dog => dog.protagonist);
   const leadName = lead ? nameOf(lead) : name;
-  const downloading = download?.kind === 'downloading';
-  const empty = !!model && !model.dayRecords;
-  const hasRoute = !!model?.points.length && !downloading;
   const openRange = useCallback(next => {
     // 減少動態效果: the range bar opens and closes at once.
     if (!isReduceMotion())
@@ -596,7 +635,7 @@ ref) {
   }
   return (
     <>
-      <TopRow top={top} onFootprintLayout={measureTop} onControlRects={onControlRects} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
+      <TopRow key={controlScope} top={top} onFootprintLayout={measureTop} onControlRects={reportTopControls} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
         onBack={onBack}
         onAdd={pressAdd}
         exportEnabled={hasRoute && !screen.rangePending} exportBusy={exporter.generating}
@@ -607,6 +646,7 @@ ref) {
       <HistoryPanel key={screen.panelScope ?? `${subject}:${screen.entryId ?? ""}`} ref={panel} header={header} collapsedHeader={dateOnly} dateHeight={dateHeight}
         topControlBottom={(top ?? 0) + Math.max(touch.min, topHeight)}
         scopeKey={screen.panelScope ?? `${subject}:${screen.entryId ?? ""}`} rangeOpen={rangeOpen}
+        controlScope={controlScope} onControlRects={reportPanelControls}
         hidden={sheetOpen}
         onHeightChange={onPanelHeight}
         measureKey={`${screen.day}:${subject}:${screen.protagonist}:${(screen.dogs ?? []).map(dog => dog.id).join(',')}:${screen.range?.start}:${screen.range?.end}:${!!model}:${download?.kind ?? ''}`}
