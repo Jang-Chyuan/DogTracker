@@ -62,3 +62,16 @@ test('empty and disabled name set has no native projection work', async () => {
   props.tags = {}; await mount(); expect(map.pointForCoordinate).not.toHaveBeenCalled();
   await update({ tags: { 7: { text: 'Dog 7' } }, enabled: false }); expect(map.pointForCoordinate).not.toHaveBeenCalled();
 });
+
+test('accepted label cannot reappear on same-key resume before the fresh SDK projection resolves', async () => {
+  await mount(); expect(output).toEqual([{ slaveId: 7, coordinate: nextCoordinate }]);
+  const held = deferred(); map.coordinateForPoint.mockReturnValueOnce(held.promise);
+  await update({ enabled: false }); expect(output).toEqual([]);
+  // The SDK can change its projection while backgrounded, before a new
+  // camera revision has reached JS. Same key must still wait for this read.
+  await update({ enabled: true }); expect(output).toEqual([]);
+  expect(map.pointForCoordinate).toHaveBeenCalledTimes(2);
+  const fresh = { latitude: 3, longitude: 3 };
+  await act(async () => held.resolve(fresh));
+  expect(output).toEqual([{ slaveId: 7, coordinate: fresh }]);
+});

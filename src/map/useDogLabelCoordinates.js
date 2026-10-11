@@ -20,7 +20,12 @@ export default function useDogLabelCoordinates({ mapRef, markers, tags, enabled,
   const [published, setPublished] = useState(null);
   useEffect(() => {
     const map = mapRef.current;
-    if (!enabled || !requests.length || !map?.pointForCoordinate || !map?.coordinateForPoint) return undefined;
+    if (!enabled || !requests.length || !map?.pointForCoordinate || !map?.coordinateForPoint) {
+      // A same-key resume may precede the new camera revision. Old inverse
+      // projection is not proof of the label's current screen position.
+      setPublished(null);
+      return undefined;
+    }
     let alive = true;
     const valid = () => alive && mapRef.current === map && latest.current.enabled && latest.current.key === key;
     Promise.all(requests.map(async request => {
