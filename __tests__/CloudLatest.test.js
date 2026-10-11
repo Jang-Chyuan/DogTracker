@@ -165,3 +165,110 @@ test('the real Supabase SDK emits numeric JSON filters, master IN, key seek and 
   expect(phone.searchParams.get('phone_received_at')).toBe('not.is.null');
   expect(phone.searchParams.get('order')).toBe('phone_received_at.desc,received_at.desc,event_id.desc');
 });
+
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+};
+const microtasks = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+function heldStreams(events, gates) {
+  const { client, calls } = rest(events);
+  const original = client.from;
+  const dispatched = [], signals = [];
+  let active = 0, peak = 0;
+  client.from = table => {
+    const query = original(table), execute = query.abortSignal;
+    query.abortSignal = async signal => {
+      if (query.orders[0]?.[0] === 'slave_id') return execute(signal);
+      const phone = query.filters.some(([method, key]) => method === 'eq' && key === 'upload_source');
+      const fixed = query.filters.some(([method, key]) => method === 'gte' && key === 'payload->lat');
+      const key = `${fixed ? 'fix' : 'packet'}-${phone ? 'phone' : 'fallback'}`;
+      dispatched.push(key); signals.push(signal); peak = Math.max(peak, ++active);
+      try { await gates[key].promise; return await execute(signal); }
+      finally { active--; }
+    };
+    return query;
+  };
+  return { client, calls, dispatched, signals, peak: () => peak };
+}
+const streamGates = () => Object.fromEntries(['packet-fallback', 'packet-phone', 'fix-fallback', 'fix-phone'].map(key => [key, deferred()]));
+
+test('phone and fallback requests start together, bounded to two; silent no-GPS dog still uses the ordered valid-fix pair', async () => {
+  const gates = streamGates();
+  const f = heldStreams([
+    event(1, 4, 7, '2026-10-08T11:00:00Z'),
+    event(2, 4, 7, '2026-10-09T11:00:00Z', { lat: 0, lon: 0 }),
+    event(3, 4, 7, '2026-10-10T11:59:00Z', { lat: 25000001, lon: 121000001 },
+      { upload_source: 'phone', phone_received_at: '2026-10-08T09:00:00Z' }),
+  ], gates);
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await microtasks();
+    expect(f.dispatched).toEqual(['packet-fallback', 'packet-phone']);
+    gates['packet-fallback'].resolve(); await microtasks();
+    expect(f.dispatched).toHaveLength(2);
+    gates['packet-phone'].resolve(); await microtasks();
+    expect(f.dispatched).toEqual(['packet-fallback', 'packet-phone', 'fix-fallback', 'fix-phone']);
+    gates['fix-phone'].resolve(); await microtasks();
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(1);
+    gates['fix-fallback'].resolve();
+    expect((await task).dogs[0]).toMatchObject({ slaveId: 4, packet: { sequence: 2 }, fix: { sequence: 1 } });
+    expect(f.peak()).toBe(2);
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(2);
+  } finally { Object.values(gates).forEach(gate => gate.resolve()); await task.catch(() => {}); }
+});
+
+test('a failed clock stream aborts its paired request and cannot return a partly selected dog', async () => {
+  const gates = streamGates();
+  const f = heldStreams([event(1, 4, 7, '2026-10-10T11:00:00Z')], gates);
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await microtasks();
+    expect(f.dispatched).toHaveLength(2);
+    gates['packet-phone'].reject(new Error('synthetic stream failure'));
+    await expect(task).rejects.toThrow('synthetic stream failure');
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(1);
+  } finally { Object.values(gates).forEach(gate => gate.resolve()); await task.catch(() => {}); }
+});
+
+test.each(['signal', 'owner'])('%s cancellation rejects both late parallel responses even when transport ignores abort', async cancellation => {
+  const gates = streamGates();
+  const f = heldStreams([event(1, 4, 7, '2026-10-10T11:00:00Z')], gates);
+  const controller = new AbortController(); let currentOwner = true;
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT, signal: controller.signal,
+    check: () => { if (!currentOwner) throw new Error('old synthetic owner'); } });
+  task.catch(() => {});
+  try {
+    await microtasks(); expect(f.dispatched).toHaveLength(2);
+    if (cancellation === 'signal') { controller.abort(); expect(f.signals.every(signal => signal.aborted)).toBe(true); }
+    else currentOwner = false;
+    gates['packet-phone'].resolve(); gates['packet-fallback'].resolve();
+    await expect(task).rejects.toThrow();
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(1);
+  } finally { Object.values(gates).forEach(gate => gate.resolve()); await task.catch(() => {}); }
+});
+
+test.each(['unknown-response', 'wrong-master'])('a %s from one parallel stream rejects the complete snapshot', async invalid => {
+  const { client } = rest([event(1, 4, 7, '2026-10-10T11:00:00Z')]);
+  const from = client.from, signals = [];
+  client.from = table => {
+    const query = from(table), execute = query.abortSignal;
+    query.abortSignal = async signal => {
+      if (query.orders[0]?.[0] === 'slave_id') return execute(signal);
+      signals.push(signal);
+      if (query.filters.some(([method, key]) => method === 'eq' && key === 'upload_source'))
+        return { data: invalid === 'unknown-response' ? {} : [event(2, 4, 99, '2026-10-10T11:00:00Z', undefined,
+          { upload_source: 'phone', phone_received_at: '2026-10-10T11:00:00Z' })] };
+      return execute(signal);
+    };
+    return query;
+  };
+  await expect(downloadCloudLatest({ client, masterIds: [7], cutoff: CUT })).rejects.toThrow();
+  expect(signals).toHaveLength(2);
+  expect(signals.every(signal => signal.aborted)).toBe(true);
+});
