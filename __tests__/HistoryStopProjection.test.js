@@ -9,6 +9,7 @@ import { buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { historyTargetOf } from '../src/mapHistory/useHistoryScreen';
 import * as models from '../src/history/screen/HistoryMultiModel';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
+import { measureHistoryMap } from '../test-support/measureHistoryMap';
 
 const mockLive = jest.fn();
 jest.mock('../src/locationTracker/LocationTrackerService', () => ({
@@ -18,7 +19,7 @@ jest.mock('../src/locationTracker/LocationTrackerService', () => ({
 test('a cursor move preserves stop projections; camera changes project them again', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(FIXTURE_NOW);
-  mockCamera.pointForCoordinate = jest.fn(async () => ({x:200,y:400}));
+  mockCamera.pointForCoordinate = jest.fn(async () => ({x:200,y:240}));
   const os = Platform.OS;
   Platform.OS = 'android';
   const fixture = buildFixture('history-my-route');
@@ -41,23 +42,30 @@ test('a cursor move preserves stop projections; camera changes project them agai
     });
     await act(async () => tree.root.findByType(MapView).props.onMapReady());
     await act(async () => tree.root.findByType(MapView).props.onMapLoaded());
+    await act(async () => measureHistoryMap(tree));
     // Let cold-start framing / phone wait timers settle before counting idle work.
     await act(async () => jest.advanceTimersByTimeAsync(10000));
     const geometry = tree.root.findByType(TrackingMap).props.presentation.historyRoute;
+    expect(tree.root.findByType(TrackingMap).props.historyControls.ready).toBe(true);
+    expect(tree.root.findAll(node => typeof node.type === 'string' && node.props.testID === 'history-cursor-handle')).toHaveLength(1);
     expect(geometry.points.length).toBeGreaterThan(0);
     const beforeModels = model.mock.calls.length, beforeProjection = mockCamera.pointForCoordinate.mock.calls.length;
     const mapProps = tree.root.findByType(TrackingMap).props;
     const spot = geometry.points[Math.floor(geometry.points.length / 3)];
     await act(async () => mapProps.onCursorMove(spot.time, 'route'));
+    await act(async () => measureHistoryMap(tree, { controls: false, container: false }));
     const afterRoute = tree.root.findByType(TrackingMap).props.presentation.historyRoute;
     expect(afterRoute.places).toBe(geometry.places);
     expect(afterRoute.points).toBe(geometry.points);
     // Native calls are for the moving cursor/focus, not all four stays.
     expect(geometry.places).toHaveLength(4);
     expect(mockCamera.pointForCoordinate.mock.calls.length - beforeProjection).toBe(2);
+    for (const [coordinate] of mockCamera.pointForCoordinate.mock.calls.slice(beforeProjection))
+      expect(coordinate).toEqual({ latitude: spot.latitude, longitude: spot.longitude });
     expect(model.mock.calls.length - beforeModels).toBe(0);
     const nearby = geometry.points[Math.floor(geometry.points.length / 3) + 1];
     await act(async () => tree.root.findByType(TrackingMap).props.onCursorMove(nearby.time, 'route'));
+    await act(async () => measureHistoryMap(tree, { controls: false, container: false }));
     const nearbyRoute = tree.root.findByType(TrackingMap).props.presentation.historyRoute;
     expect(nearbyRoute.places).toBe(geometry.places);
     const beforeCamera = mockCamera.pointForCoordinate.mock.calls.length;
