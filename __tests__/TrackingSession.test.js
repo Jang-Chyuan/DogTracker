@@ -81,6 +81,29 @@ describe('tracking session and connection lifetime', () => {
     jest.useRealTimers();
   });
 
+  test('initial local snapshot waits for current context after a background read is superseded', async () => {
+    const db = databases();
+    db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);
+    const oldContext = deferred(), currentContext = deferred();
+    db.real.getLatestValidStatusRows.mockReturnValueOnce(oldContext.promise)
+      .mockReturnValueOnce(currentContext.promise);
+    await mount(db);
+    expect(session.ready.real).toBe(true);
+    expect(session.preferences.ready).toBe(true);
+    expect(session.initialSnapshotReady).toBe(false);
+    const change = AppState.addEventListener.mock.calls[0][1];
+    await act(async () => change('background'));
+    await act(async () => change('active'));
+    await act(async () => oldContext.resolve([]));
+    expect(db.real.getLatestValidStatusRows).toHaveBeenCalledTimes(2);
+    expect(session.initialSnapshotReady).toBe(false);
+    await act(async () => currentContext.resolve([]));
+    expect(session.initialSnapshotReady).toBe(true);
+    await act(async () => change('background'));
+    await act(async () => change('active'));
+    expect(session.initialSnapshotReady).toBe(true);
+  });
+
   test('resume catch-up finishes, failures retry, and a late read ends a timeout', async () => {
     const db = databases();
     db.real.getLatestStatusRow.mockResolvedValue(dogStatusRow);

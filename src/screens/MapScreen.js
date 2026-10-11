@@ -1,7 +1,7 @@
-import { completedMapRevision, mapDownloadBusy } from '../cloud/CloudPublication';
+import { completedMapRevision, latestMapApplied, mapDownloadBusy } from '../cloud/CloudPublication';
 import { createAtomicDogCardReader } from '../map/AtomicDogCardReader';
 import { createAtomicDogSnapshot } from '../map/AtomicDogSnapshot';
-import { combinedResumeCatchUp } from '../tracking/ResumeCatchUp';
+import { CATCH_UP_IDLE, combinedResumeCatchUp } from '../tracking/ResumeCatchUp';
 import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
@@ -302,8 +302,10 @@ export default function MapScreen({
       : [],
   );
   const pauses = useMemo(() => JSON.parse(pausesKey), [pausesKey]);
-  const sourceCatchUp = useMemo(() => combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
-    [tracking.catchUp, cloudSync?.catchUp]);
+  const latestApplied = latestMapApplied(cloudSync, cloudOwner, incomingCloudDogs);
+  const sourceCatchUp = useMemo(() => latestApplied ? CATCH_UP_IDLE
+    : combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
+    [latestApplied, tracking.catchUp, cloudSync?.catchUp]);
   const cloudSuccess = completedMapRevision(cloudSync);
   const cloudReadPending = cloudSuccess != null && incomingCloudDogs?.cloudCommit !== cloudSuccess;
   const catchUpMemory = useRef(null);
@@ -413,7 +415,7 @@ export default function MapScreen({
   );
   const dogSnapshot = atomicDogs.current.select({
     owner: cloudOwner, dogs: mergedDogs, cloudDogs,
-    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || cloudSync?.catchUp?.phase === 'catching-up',
+    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || (!latestApplied && cloudSync?.catchUp?.phase === 'catching-up'),
     success: completedMapRevision(cloudSync),
   });
   const dogs = dogSnapshot.dogs;

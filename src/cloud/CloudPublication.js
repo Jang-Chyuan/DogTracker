@@ -33,3 +33,22 @@ export function mapDownloadBusy(sync) {
 export function mapReadRevision(sync) {
   return sync?.latestFirst ? (sync.snapshotRevision ?? 0) * 2 + (sync.snapshotBaseRevision != null ? 1 : 0) : sync?.revision ?? 0;
 }
+
+
+// The live map can finish before local/archive route catch-up. Only an
+// atomically applied snapshot from this exact foreground/account may do so.
+export function latestMapApplied(sync, owner, dogs) {
+  if (!sync?.latestFirst || !owner || sync.error || sync.authFailed || dogs?.error
+    || !dogs?.loaded || mapDownloadBusy(sync)) return false;
+  let publication;
+  try { publication = sync.getMapPublication?.(); } catch { return false; }
+  const proof = dogs.cloudPublication;
+  const success = completedMapRevision(sync);
+  return !!publication && publication.owner === owner && proof?.owner === owner
+    && publication.scope != null && proof.scope === publication.scope
+    && Number.isSafeInteger(publication.generation) && proof.generation === publication.generation
+    && !publication.pending && !publication.busy
+    && Number.isSafeInteger(success) && success > 0
+    && publication.mapSuccessRevision === success && proof.revision === success
+    && dogs.cloudCommit === success;
+}
