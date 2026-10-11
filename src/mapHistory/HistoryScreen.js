@@ -170,7 +170,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
 }
 
 /** ‹ 10/03（六）今天 ▾ › (H3a); the date opens the calendar (H3b). */
-function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, compact = false }) {
+function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, compact = false, panelActions, onPanelAction }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const label = dateRowLabel(day, todayStart);
@@ -202,6 +202,11 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, comp
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityHint={t("c829")}
+        accessibilityActions={panelActions}
+        onAccessibilityAction={panelActions ? event => {
+          if (event.nativeEvent.actionName === 'activate') onOpen();
+          else onPanelAction?.(event);
+        } : undefined}
         onPress={onOpen}
         style={[styles.datePill, compact && styles.datePillCompact]}
         hitSlop={DATE_PILL_SLOP}
@@ -461,8 +466,8 @@ ref) {
   const rowLayout = useCallback((start, y) => {
     rows.current[start] = y;
   }, []);
-  const dateOnly = (
-    <View onLayout={measureDate}><DateRow
+  const dateOnly = controls => (
+    <View onLayout={measureDate}><DateRow {...controls}
         day={screen.day}
         todayStart={screen.todayStart}
         navigation={screen.navigation}
@@ -472,9 +477,9 @@ ref) {
         compact={wideHeader}
       /></View>
   );
-  const dateHeader = (
+  const dateHeader = controls => (
     <>
-      {dateOnly}
+      {dateOnly(controls)}
       {screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
         <Text style={styles.asOfText}>{t('c1247', { time: `${String(new Date(screen.asOf).getHours()).padStart(2, '0')}:${String(new Date(screen.asOf).getMinutes()).padStart(2, '0')}` })}</Text>
         <PressScale testID="history-update-tail" accessibilityRole="button" accessibilityLabel={t('c1248')}
@@ -514,12 +519,12 @@ ref) {
       )}
     </>
   );
-  const header = panHandlers => wideHeader ? (
+  const header = (panHandlers, controls) => wideHeader ? (
     <View testID="history-header-columns" style={styles.headerColumns}>
-      <View style={styles.dateColumn} {...panHandlers}>{dateHeader}</View>
+      <View style={styles.dateColumn} {...panHandlers}>{dateHeader(controls)}</View>
       <View style={styles.summaryColumn}>{summaryHeader}</View>
     </View>
-  ) : <View><View {...panHandlers} testID="history-panel-date-drag">{dateHeader}</View>{summaryHeader}</View>;
+  ) : <View><View {...panHandlers} testID="history-panel-date-drag">{dateHeader(controls)}</View>{summaryHeader}</View>;
   const floatingRange = wideHeader && rangeOpen && hasRoute ? (
     <HistoryRangeControls {...rangeProps} model={model} />
   ) : null;

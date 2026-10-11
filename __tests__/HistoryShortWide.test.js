@@ -223,3 +223,33 @@ test('actual screen preserves collapsed date position across day/font changes, m
     expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(Math.floor((851 - 24) / 2));
   } finally { await act(async () => tree.unmount()); pan.mockRestore(); }
 });
+
+
+test('TalkBack date actions operate all three sheet positions while date activation remains calendar', async () => {
+  dimensions.mockReturnValue({ width: 393, height: 851, scale: 2.75, fontScale: 1 });
+  fonts.mockReturnValue(1);
+  const { tree } = await mount('history-my-route');
+  try {
+    const actOnDate = async name => {
+      const date = one(tree, 'history-date');
+      expect(date.props.accessibilityActions.some(action => action.name === name)).toBe(true);
+      await act(async () => date.props.onAccessibilityAction({ nativeEvent: { actionName: name } }));
+    };
+    const half = StyleSheet.flatten(one(tree, 'history-panel').props.style).height;
+    await actOnDate('expand');
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBeGreaterThan(half);
+    expect(one(tree, 'history-date').props.accessibilityActions.map(action => action.name)).toEqual(['collapse']);
+    await actOnDate('collapse');
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(half);
+    await actOnDate('collapse');
+    expect(one(tree, 'history-summary')).toBeUndefined();
+    expect(one(tree, 'history-date').props.accessibilityActions.map(action => action.name)).toEqual(['expand']);
+    await actOnDate('expand');
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(half);
+    const before = one(tree, 'history-date').props.accessibilityLabel;
+    await act(async () => one(tree, 'history-date').props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
+    expect(one(tree, 'history-date').props.accessibilityLabel).toBe(before);
+    expect(tree.root.findAll(node => node.props.testID === 'history-date' && typeof node.props.onPress === 'function')).not.toHaveLength(0);
+    expect(tree.root.findAll(node => node.props.testID === 'history-calendar')).not.toHaveLength(0);
+  } finally { await act(async () => tree.unmount()); }
+});

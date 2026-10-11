@@ -42,7 +42,8 @@ test('history-multi-dog (H7): one capsule, 豆豆 leads, 「豆豆・移動 x km
   const s = await mount('history-multi-dog');
   expect(s.screen.dogs.map(dog => [dog.id, dog.color, dog.protagonist])).toEqual([
     [6, colors.route1, false], [4, colors.route2, true], [8, colors.route3, false]]);
-  expect(s.text()).toMatch(/豆豆・移動 \d+\.\d km/);
+  expect(s.renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.includes('，移動'))[0].props.accessibilityLabel).toMatch(/豆豆，移動 \d+\.\d 公里/);
+  expect(s.renderer.root.findAllByProps({ name: 'paw' }).length).toBeGreaterThan(0);
   expect(s.text()).not.toContain('資料來源');
   expect(s.screen.map.cursor.face.name).toBe('豆豆');
   expect(s.screen.map.faces.map(face => face.id).sort()).toEqual([6, 8]);
@@ -56,7 +57,7 @@ test('history-multi-dog (H7): one capsule, 豆豆 leads, 「豆豆・移動 x km
   expect(s.screen.range).toEqual(range);
   expect(s.screen.cursor.time).toBe(time);
   expect(s.screen.focus).toMatchObject({ action: 'protagonist', id: 8 });
-  expect(s.text()).toMatch(/阿福・移動/);
+  expect(s.renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.includes('，移動'))[0].props.accessibilityLabel).toContain('阿福，移動');
   // The protagonist is protected; switch first, then remove 阿福.
   expect(s.renderer.root.findAllByProps({ testID: 'history-remove-8' })).toHaveLength(0);
   await act(async () => s.press('history-dog-4'));

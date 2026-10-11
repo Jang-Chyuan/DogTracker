@@ -1,5 +1,6 @@
 // Three history sheet positions. Header gestures resize; timeline gestures scroll.
-import { forwardRef, useImperativeHandle, useRef, useEffect, useState, useMemo } from 'react';
+import { t } from '../i18n';
+import { forwardRef, useImperativeHandle, useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { PanResponder, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useStyles } from '../theme/ThemeProvider';
@@ -56,9 +57,22 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
     },
     onPanResponderTerminate: () => { origin.current = null; setDragHeight(null); },
   }), []);
+  const adjustSnap = useCallback(event => {
+    const action = event.nativeEvent.actionName;
+    if (latest.current.hidden || !['expand', 'collapse'].includes(action)) return;
+    origin.current = null; setDragHeight(null);
+    setSnap(level => {
+      const levels = ['collapsed', 'half', 'expanded'];
+      return levels[Math.max(0, Math.min(2, levels.indexOf(level) + (action === 'expand' ? 1 : -1)))];
+    });
+  }, []);
+  const controls = { panelActions: [
+    ...(snap !== 'expanded' ? [{ name: 'expand', label: t('c1254') }] : []),
+    ...(snap !== 'collapsed' ? [{ name: 'collapse', label: t('c1255') }] : []),
+  ], onPanelAction: adjustSnap };
   const collapsed = snap === 'collapsed' && dragHeight == null;
-  const shownHeader = collapsed && collapsedHeader ? <View {...pan.panHandlers} testID="history-panel-date-drag">{collapsedHeader}</View>
-    : typeof header === 'function' ? header(pan.panHandlers) : <View {...pan.panHandlers}>{header}</View>;
+  const shownHeader = collapsed && collapsedHeader ? <View {...pan.panHandlers} testID="history-panel-date-drag">{typeof collapsedHeader === 'function' ? collapsedHeader(controls) : collapsedHeader}</View>
+    : typeof header === 'function' ? header(pan.panHandlers, controls) : <View {...pan.panHandlers}>{header}</View>;
   // Map framing follows the actual sheet position and current viewport.
   useEffect(() => { onHeightChange?.(cap); }, [cap, onHeightChange]);
   useImperativeHandle(ref, () => ({ back: () => false }), []);

@@ -44,8 +44,8 @@ export function rangeSummaryDistances(model, subject) {
   const sections = model.sections ?? model.nodes ?? [];
   const vehicles = sections.filter(node => node.type === 'movement' && !node.gap && node.reason !== 'uncertain' && ['driving', 'ride'].includes(node.mode));
   return [
-    { icon: subject === 'phone' ? 'walk' : 'paw', label: t(subject === 'phone' ? 'c134' : 'c125'), distanceM: amount(model.distanceM) },
-    ...(vehicles.length ? [{ icon: 'car', label: t(subject === 'phone' ? 'c135' : 'c128'),
+    { icon: subject === 'phone' ? 'walk' : 'paw', label: subject === 'phone' ? t('c134') : t('c125'), distanceM: amount(model.distanceM) },
+    ...(vehicles.length ? [{ icon: 'car', label: subject === 'phone' ? t('c135') : t('c128'),
       distanceM: vehicles.reduce((sum, node) => sum + amount(node.distanceM), 0) }] : []),
   ];
 }
