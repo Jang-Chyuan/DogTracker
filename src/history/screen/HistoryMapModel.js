@@ -455,7 +455,7 @@ export function historyMapPresentation(
   const allIndoor = points.length > 0 && points.every(p => p.heldReason);
   subject = subject || (dayPoints.some(p => p.slave_id === 'phone')
     || model.edges?.some(e => ['walking', 'driving'].includes(e.mode)) ? 'phone' : 'dog');
-  const displayLocations = subject === 'phone' ? phoneDisplayLocations(model) : model.locations || emptyLocations;
+  const displayLocations = phoneDisplayLocations(model);
   const drawing = dayDrawing(dayPoints, subject);
   const rangeEdges = stayAwareModelEdges(model, { day: drawing, radiusM: configFor(subject).radiusM });
   const cursorTime = cursor?.point?.time ?? Infinity;
