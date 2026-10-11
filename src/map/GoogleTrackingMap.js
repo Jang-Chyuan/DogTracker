@@ -52,7 +52,9 @@ import {
   routeGeometryIdentity,
   uncrowded,
 } from '../history/screen/HistoryMapModel';
-import DogMarkerView, { markerFrame } from './DogMarkerView';
+import DogMarkerView, { markerFrame, MARKER_WIDTH } from './DogMarkerView';
+import MapNameTag from './MapNameTag';
+import useDogLabelCoordinates from './useDogLabelCoordinates';
 import DenseDogSelector from './DenseDogSelector';
 import { denseDogNames } from './DenseDogNames';
 import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
@@ -304,6 +306,29 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownK
           avatar={avatar}
           onAvatarLoad={photo.onLoad}
         />
+      </View>
+    </StyledMarker>
+  );
+}
+
+// A dense live name is a separate cropped bitmap. Its displayed coordinate
+// is inverse-projected from the face's true point plus the label gap; it is
+// never fed to fixes, framing, a11y face positions, or history/exports.
+function DogLabelMarker({ source, marker, coordinate, tag, shownKey, onPress }) {
+  const { isDark, opacity } = useTheme();
+  const handover = useSplashMarkersHidden();
+  const ref = useRef(null);
+  const settled = useSettledMarker(ref);
+  const fontScale = PixelRatio.getFontScale?.() || 1;
+  useEffect(() => { ref.current?.redraw?.(); }, [tag.text, isDark, shownKey, fontScale]);
+  return (
+    <StyledMarker ref={ref} identifier={source + '-dog-label-' + marker.slaveId}
+      coordinate={coordinate} anchor={{ x: 0.5, y: 0 }}
+      tracksViewChanges={settled.tracking} tappable={!!onPress} onPress={onPress}
+      zIndex={marker.selected ? 39 : 30}
+      opacity={handover ? 0 : marker.dimmed ? opacity.catchingUp : 1}>
+      <View collapsable={false} accessible={false} onLayout={settled.onLayout}>
+        <MapNameTag text={tag.text} maxWidth={MARKER_WIDTH - sizes.marker.labelSafety} />
       </View>
     </StyledMarker>
   );
@@ -942,6 +967,10 @@ function GoogleTrackingMapRenderer({
   }, [dogMarkers, dogPoints, source, projecting, metresPerDp, historyMode,
     fontScale, cursorLayout.width, cursorLayout.height, topInset, coverTop,
     bottomInset, coverBottom, bottomRow]);
+  const separateDogLabels = !historyMode && dogMarkers.length > 1;
+  const labelCoordinates = useDogLabelCoordinates({ mapRef, markers: dogMarkers, tags,
+    enabled: separateDogLabels && usable && foreground && !movingState,
+    source, scope: dogSelectionScope, instance, revision: cursorRevision, fontScale });
   useEffect(() => {
     onReadyChange?.(configured && usable);
   }, [configured, usable, onReadyChange]);
@@ -1799,10 +1828,9 @@ function GoogleTrackingMapRenderer({
               key={source + '-dog-' + marker.slaveId}
               source={source}
               marker={marker}
-              tag={tags[marker.slaveId]}
-              // A suppressed name must not leave its empty, wide hit canvas
-              // over the neighbouring face. Same true coordinate and badges.
-              compact={live && dogMarkers.length > 1 && !tags[marker.slaveId]}
+              tag={separateDogLabels ? null : tags[marker.slaveId]}
+              // Named and suppressed faces both keep compact hit rectangles.
+              compact={separateDogLabels}
               avatar={presentation.dogAvatars?.[marker.slaveId]}
               shownKey={shownKey}
               // Above the phone's dot (30), whose name tag layer they carry:
@@ -1822,6 +1850,13 @@ function GoogleTrackingMapRenderer({
               onPress={onDogPress ? () => pressDog(marker.slaveId) : undefined}
             />
           ))}
+          {labelCoordinates.map(item => {
+            const marker = dogMarkers.find(dog => dog.slaveId === item.slaveId);
+            const tag = tags[item.slaveId];
+            return marker && tag ? <DogLabelMarker key={source + '-dog-label-' + item.slaveId}
+              source={source} marker={marker} coordinate={item.coordinate} tag={tag}
+              shownKey={shownKey} onPress={onDogPress ? () => pressDog(item.slaveId) : undefined} /> : null;
+          })}
         </MapView>
       ) : component ? (
         // 地圖打不開: grey only; the top card says so (no list, no new page).

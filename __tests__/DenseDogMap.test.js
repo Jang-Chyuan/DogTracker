@@ -13,7 +13,7 @@ let renderer, p, projected;
 const item = id => renderer.root.findAllByProps({ testID: id })[0];
 const host = id => renderer.root.find(node => typeof node.type === 'string' && node.props.testID === id);
 const rows = () => renderer.root.findAll(node => typeof node.type === 'string' && /^dense-dog-row-/.test(node.props.testID || ''));
-const faces = () => renderer.root.findAllByType(Marker).filter(node => /-dog-/.test(node.props.identifier));
+const faces = () => renderer.root.findAllByType(Marker).filter(node => /-dog-\d+$/.test(node.props.identifier));
 const settle = async () => { for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400)); };
 async function render(count = 64, two = false) {
   const scene = denseDogScene(count, { two, mpp: 0.05 });
@@ -49,8 +49,7 @@ test.each([16, 32, 64])('%i dense native marker handlers always open exactly the
   // headroom and the exact underlying fix are retained.
   for (const face of faces()) {
     const marker = p.presentation.dogMarkers.find(dog => face.props.identifier === `live-dog-${dog.slaveId}`);
-    const hasName = face.findAllByProps({ testID: 'dog-name-tag' }).length > 0;
-    expect(face.props.anchor).toEqual(markerFrame(marker.size, !hasName).anchor);
+    expect(face.props.anchor).toEqual(markerFrame(marker.size, true).anchor);
   }
   for (const face of faces()) await act(async () => face.props.onPress({ stopPropagation: jest.fn(), nativeEvent: { action: 'marker-press' } }));
   expect(p.onDogPress.mock.calls).toEqual(p.presentation.dogMarkers.map(marker => [marker.slaveId]));
@@ -76,7 +75,14 @@ test.each([16, 32, 64])('%i in two groups preserve selected name, problem identi
   expect(renderer.root.findAll(node => typeof node.type === 'string' && /^marker-a11y-\d+$/.test(node.props.testID || ''))).toHaveLength(count);
   const selected = faces().find(face => face.props.identifier === `live-dog-${count}`);
   expect(selected.props.zIndex).toBe(40);
-  expect(selected.findAllByProps({ testID: 'dog-name-tag' })).not.toHaveLength(0);
+  expect(selected.findAllByProps({ testID: 'dog-name-tag' })).toHaveLength(0);
+  const selectedLabel = renderer.root.findAllByType(Marker).find(node => node.props.identifier === `live-dog-label-${count}`);
+  expect(selectedLabel.findAllByProps({ testID: 'dog-name-tag' })).not.toHaveLength(0);
+  expect(selectedLabel.props.anchor).toEqual({ x: 0.5, y: 0 });
+  p.onDogPress.mockClear();
+  await act(async () => selectedLabel.props.onPress({ nativeEvent: { action: 'marker-press' } }));
+  expect(p.onDogPress.mock.calls).toEqual([[count]]);
+  p.onDogPress.mockClear();
   expect(faces().find(face => face.props.identifier === 'live-dog-7').props.zIndex).toBe(34);
   const before = JSON.stringify(p.presentation.dogMarkers), fits = mockCamera.fitToCoordinates.mock.calls.length;
   projected = { ...projected, [count]: { x: -500, y: 240 } };
@@ -123,4 +129,16 @@ test('large-font actual controls height excludes covered names without moving th
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(fits);
   // Identity is independent from the control layout, including hidden labels.
   expect(host('marker-a11y-16').props.accessibilityLabel).toBe('Dog 16');
+});
+
+// Native two-group taps showed a neighbouring dog's broad named bitmap
+// winning above a visible Dog7 head. Assert actual bitmap geometry as well
+// as handler identity; source handlers alone missed this failure.
+test('named and unnamed dense faces cannot retain a name-width hit canvas', async () => {
+  await render(20, true);
+  for (const face of faces()) {
+    const marker = p.presentation.dogMarkers.find(dog => face.props.identifier === `live-dog-${dog.slaveId}`);
+    expect(face.props.anchor).toEqual(markerFrame(marker.size, true).anchor);
+    expect(face.findAllByProps({ testID: 'dog-name-tag' })).toHaveLength(0);
+  }
 });
