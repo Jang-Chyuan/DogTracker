@@ -242,7 +242,7 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
     .map(v => anchors.has(v.id) ? { ...v,
       originalRepresentative: { latitude: v.latitude, longitude: v.longitude },
       ...anchors.get(v.id) } : v);
-  const dayById = subject === 'phone' ? new Map(day.map(v => [v.id, v])) : null;
+  const dayById = new Map(day.map(v => [v.id, v]));
   const qualifies = (v, typical) => v.durationMs >= config.stayMs && v.durationMs >= typical * config.stayRatio;
   const marked = new Set();
   const judge = (list, typical) => { for (const v of list) if (!marked.has(v.id) && qualifies(v, typical)) marked.add(v.id); };
@@ -261,7 +261,8 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
     // long stay when its selected tail is shorter than alwaysStayMs. Actual
     // visit gaps/departures were settled above, before this presentation clip.
     for (const v of selected) {
-      const observed = dayById?.get(v.id) ?? v;
+      const original = dayById.get(v.id);
+      const observed = subject === 'phone' ? original ?? v : v;
       // The still-here exemption uses that same available visit interval:
       // coarse boundary fixes must not turn a wholly stationary range into
       // a numbered stop. A real gap cannot establish continuous still-here.
@@ -270,10 +271,14 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
           && !observed.gaps.some(g => g.start < last && g.end > first)
         : v.start <= first && v.end >= last;
       if (observed.durationMs >= config.alwaysStayMs && !coversRange) marked.add(v.id);
-      if (subject === 'phone' && observed.durationMs >= config.alwaysStayMs && coversRange
+      // A dog range wholly inside a day-confirmed visit follows the same
+      // unnumbered still-here presentation. Never promote an unconfirmed
+      // interval or hide a measured short walk, ride or actual gap.
+      const displayConfirmed = (original?.durationMs ?? 0) >= config.alwaysStayMs;
+      if (displayConfirmed && coversRange && (subject === 'phone' || edges.length > 0)
         && !inRange.some(p => p.phoneConfirmedMovement)
         && !edges.some(e => e.start >= first && e.end <= last
-          && (e.countedDistanceM > 0 || e.mode === 'driving'
+          && (e.countedDistanceM > 0 || e.mode === 'driving' || e.mode === 'ride'
             || (e.gap && !e.uncertain && !e.bridged)))) unnumbered.add(v.id);
     }
   }
@@ -282,7 +287,7 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
     if (settled != null) { typicalMs = settled; judge(selected, settled); }
   }
   const stops = selected.filter(v => marked.has(v.id)).map((v, i) => {
-    const original = dayById?.get(v.id);
+    const original = subject === 'phone' ? dayById.get(v.id) : null;
     const displayStart = original && Math.max(original.start, start);
     const displayEnd = original && Math.min(original.end, end);
     // Coarse observations within a visit confirmed by the full available day

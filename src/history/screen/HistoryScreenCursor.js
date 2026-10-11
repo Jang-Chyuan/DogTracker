@@ -8,7 +8,8 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   if (gap) return [clock(time), t('c325', { time: clock(time) })];
   const stay = subject === 'phone'
     ? phoneStayAtTime(phoneDisplayLocations(model), time) || model.locations.find(n => n.type === 'indoor' && time >= n.start && time <= n.end)
-    : model.locations.find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end);
+    : model.locations.find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end)
+      || phoneStayAtTime(model.displayStays, time);
   if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: listDuration(stay.end - stay.start) })
     : t('c136', { duration: listDuration(stay.durationMs) })];
   // At a switch boundary the outgoing segment owns the label.

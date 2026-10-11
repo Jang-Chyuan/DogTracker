@@ -33,20 +33,27 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   useEffect(() => { onHeightChange?.(cap); }, [cap, onHeightChange]);
   useImperativeHandle(ref, () => ({ back: () => false }), []);
   return (
-    <View testID="history-panel" importantForAccessibility={behindSheet(hidden)}
-      pointerEvents="box-none" style={[styles.panel, { height: cap }]}>
-      {above && <View pointerEvents="box-none" style={styles.above}>{above}</View>}
-      <View style={styles.sheet}>
-        <View testID="history-panel-header" style={styles.header}>{header}</View>
-        <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
-          contentContainerStyle={{ paddingBottom: bottomInset + tailGap }}>
-          <View testID="history-panel-content">
-            {children}
-          </View>
-        </ScrollView>
+    <>
+      {/* Keep the map control inside the screen's native bounds. A child
+          placed above the panel is visible, but Android clips its accessible
+          rectangle against the panel, leaving an invalid accessibility target. */}
+      {above && <View testID="history-panel-above" pointerEvents="box-none"
+        importantForAccessibility={behindSheet(hidden)}
+        style={[styles.above, { bottom: cap + space.m }]}>{above}</View>}
+      <View testID="history-panel" importantForAccessibility={behindSheet(hidden)}
+        pointerEvents="box-none" style={[styles.panel, { height: cap }]}>
+        <View style={styles.sheet}>
+          <View testID="history-panel-header" style={styles.header}>{header}</View>
+          <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
+            contentContainerStyle={{ paddingBottom: bottomInset + tailGap }}>
+            <View testID="history-panel-content">
+              {children}
+            </View>
+          </ScrollView>
+        </View>
+        {floating && <View testID="history-range-floating" style={styles.floating}>{floating}</View>}
       </View>
-      {floating && <View testID="history-range-floating" style={styles.floating}>{floating}</View>}
-    </View>
+    </>
   );
 });
 export default HistoryPanel;
@@ -55,7 +62,7 @@ const getStyles = makeStyles(theme => ({
   sheet: { flex: 1, backgroundColor: theme.colors.elevated,
     borderTopLeftRadius: size.historyPanel.corner, borderTopRightRadius: size.historyPanel.corner,
     ...theme.shadow.floating, ...theme.floatingBorder, elevation: 12, overflow: 'hidden' },
-  above: { position: 'absolute', right: space.l, top: -(size.floatingButton + space.m) },
+  above: { position: 'absolute', right: space.l, zIndex: 40, elevation: 12 },
   floating: { position: 'absolute', left: space.l, right: space.l, bottom: '100%',
     marginBottom: space.s, paddingHorizontal: space.s, paddingVertical: space.xs,
     borderRadius: size.historyPanel.corner, backgroundColor: theme.colors.elevated,
