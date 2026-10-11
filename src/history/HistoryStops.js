@@ -288,7 +288,7 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
       // unnumbered still-here presentation. Never promote an unconfirmed
       // interval or hide a measured short walk, ride or actual gap.
       const displayConfirmed = (original?.durationMs ?? 0) >= config.alwaysStayMs;
-      if (displayConfirmed && coversRange
+      if (displayConfirmed && coversRange && (subject === 'phone' || edges.length > 0)
         && !inRange.some(p => p.phoneConfirmedMovement)
         && !edges.some(e => e.start >= first && e.end <= last
           && (e.countedDistanceM > 0 || e.mode === 'driving' || e.mode === 'ride'

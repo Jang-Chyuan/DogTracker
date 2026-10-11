@@ -1,3 +1,4 @@
+import { historyStops } from '../src/history/HistoryStops';
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { cursorLabel } from '../src/history/screen/HistoryScreenCursor';
 import { historyMapPresentation } from '../src/history/screen/HistoryMapModel';
@@ -75,4 +76,10 @@ test('unnumbered presentation preserves every selected raw CSV and GPX observati
   expect([...gpx.matchAll(/<trkpt[^>]*>.*?<time>([^<]+)<\/time><\/trkpt>/g)].map(match => match[1]))
     .toEqual(expected.map(p => new Date(p.time).toISOString()));
   expect(snapshot.subjects[0].stays).toEqual([]);
+});
+
+test('direct stop helper without movement edges cannot prove a dog range has no short walking', () => {
+  const points = historyTimeline(rows, options).dayPoints;
+  const stays = historyStops(points, { ...options, start: range.start, end: range.end });
+  expect(stays.displayStays).toBeUndefined();
 });
