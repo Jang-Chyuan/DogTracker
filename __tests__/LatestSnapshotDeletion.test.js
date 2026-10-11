@@ -1,3 +1,6 @@
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { useDeleteDogData } from '../src/settings/DeleteDogData';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
@@ -147,4 +150,32 @@ test('schemas created by an earlier draining archive job are discovered inside t
       expect(archive.sqlite.prepare(`SELECT * FROM ${table}`).all()).toEqual([]);
     expect(marker()).toMatchObject({ epoch: 1, deletion_pending: 0 });
   } finally { held.resolve(); await oldArchive; await deletion; }
+});
+
+
+test('real S7 flow retains the dialog after a failed archive transaction and invokes restart only after successful retry', async () => {
+  archive.sqlite.exec(`INSERT INTO supabase_dog_status(received_at,slave_id) VALUES(1000,6);
+    CREATE TRIGGER refuse_delete BEFORE DELETE ON supabase_dog_status
+      BEGIN SELECT RAISE(ABORT,'invented delete I/O failure'); END`);
+  const result = {}, onDeleted = jest.fn(), beforeDelete = jest.fn();
+  const store = createDogDataStore(archive, database);
+  function Probe() {
+    Object.assign(result, useDeleteDogData({ countUnsent: store.unsent,
+      deleteAll: options => store.deleteAll({ ...options, beforeDelete }), onDeleted }));
+    return null;
+  }
+  let renderer; act(() => { renderer = Renderer.create(<Probe />); });
+  try {
+    await act(async () => result.start()); await act(async () => result.confirm());
+    expect(result.dialog).toMatchObject({ visible: true, busy: false });
+    expect(result.dialog.problem).toContain('invented delete I/O failure');
+    expect(onDeleted).not.toHaveBeenCalled(); expect(marker().deletion_pending).toBe(1);
+    archive.sqlite.exec('DROP TRIGGER refuse_delete');
+    await act(async () => result.confirm());
+    expect(result.dialog.visible).toBe(false); expect(onDeleted).toHaveBeenCalledTimes(1);
+    expect(beforeDelete).toHaveBeenCalledTimes(2); expect(marker()).toMatchObject({ epoch: 2, deletion_pending: 0 });
+    // The fresh tracking owner started by App.onDeleted is no longer blocked.
+    const replacement = reopen(); await replacement.publishLatestSnapshot('a', snapshot);
+    expect(await replacement.readLatestSnapshot('a', { positionsOnly: true })).toMatchObject({ verified: true });
+  } finally { act(() => renderer.unmount()); }
 });
