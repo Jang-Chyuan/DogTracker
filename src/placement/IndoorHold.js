@@ -263,13 +263,24 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     // before its last good fix.
     const lastGood = goods[goods.length - 1].time;
     const recent = goods.filter(good => lastGood - good.time <= config.anchorLookbackMs);
+    // Distance is symmetric. Build each group in the same chronological order,
+    // measuring a pair only once within this call, without caching across fixes.
+    const groups = recent.map(() => []);
+    for (let left = 0; left < recent.length; left += 1) {
+      for (let right = left; right < recent.length; right += 1) {
+        if (distanceMeters(recent[left], recent[right]) <= config.anchorClusterM) {
+          groups[left].push(recent[right]);
+          if (left !== right) groups[right].push(recent[left]);
+        }
+      }
+    }
     let best = null;
     for (let index = recent.length - 1; index >= 0; index -= 1) {
-      const group = near(recent[index], recent, config.anchorClusterM);
+      const group = groups[index];
       if (!best || group.length > best.length) best = group;
     }
     const latest = recent[recent.length - 1];
-    const trailing = near(latest, recent, config.anchorClusterM);
+    const trailing = groups[groups.length - 1];
     // Only a group the dog stayed in may outvote the newest fixes: points along
     // a walk are close together too, but each for a few seconds.
     // A slow walk also packs fixes together; a stay starts and ends in one spot.
@@ -467,13 +478,14 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
     held.lately = held.lately.filter(entry => time - entry.time <= retentionWindow);
     // A measured return interrupts departure evidence, even if that return's
     // GPS quality is weak. No-fix packets carry no evidence of a return.
-    if (point && distanceMeters(point, held.anchor) <= config.releaseRadiusM) held.farGood = [];
-    if (point && distanceMeters(point, held.anchor) <= config.nearbyAwayM) {
+    // These entry checks share an anchor; refinement below measures its new median separately.
+    const away = point ? distanceMeters(point, held.anchor) : null;
+    if (point && away <= config.releaseRadiusM) held.farGood = [];
+    if (point && away <= config.nearbyAwayM) {
       held.nearby = [];
       held.stationarySince = null;
     }
     if (quality === 'good') {
-      const away = distanceMeters(point, held.anchor);
       const why = evidence(point.time);
       // Searching around the house: steady good fixes settled somewhere else,
       // even if not far, mean the dog is outside again.
