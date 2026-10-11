@@ -96,6 +96,14 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       const realWrites = new Set();
       const commands = new Set();
       const initialized = { real: false };
+      // Local latest/context display takes this same connection lock. Let its
+      // first attempt finish before cloud migrations can monopolize that lock;
+      // the full route/backfill is deliberately outside this startup barrier.
+      let finishInitialLocalAttempt;
+      const initialLocalAttempt = new Promise(resolve => { finishInitialLocalAttempt = resolve; });
+      // A background-only session does not run the foreground feed. Do not
+      // make background cloud work depend on a snapshot it cannot start.
+      if (!active) finishInitialLocalAttempt();
       const reportedReadErrors = { real: null };
       const reportError = (source, error) => {
         const message = getErrorMessage(error);
@@ -144,6 +152,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
             if (!disposed) {
               dispatchTracking({ type: 'initial-snapshot-ready', source });
               markStartupPhase('initial-snapshot-publish');
+              finishInitialLocalAttempt();
             }
           },
           onRoute(route) {
@@ -183,6 +192,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           onError: error => {
             resumeCatchUp.failed();
             reportError(source, error);
+            // A real local read failure keeps the original error/ready gates.
+            // It must not prevent the independent cloud error/retry path.
+            if (!disposed) finishInitialLocalAttempt();
           },
         });
       const repositories = {
@@ -244,18 +256,30 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
             dispatchTracking({ type: 'refreshing', source: 'real' });
           }
           feeds.real.stop();
+          finishInitialLocalAttempt();
         }
       });
 
       let cloudInitialization;
+      function initializeCloud() {
+        if (!databases.cloud) return Promise.reject(new Error(t("c486")));
+        if (!cloudInitialization) {
+          const task = initialization.real.then(() => initialLocalAttempt).then(() => {
+            if (disposed) throw new Error(t("c483"));
+            return startupPhase('history-cloud-initialize', () => databases.cloud.initialize());
+          });
+          cloudInitialization = task;
+          task.catch(() => { if (cloudInitialization === task) cloudInitialization = null; });
+        }
+        return cloudInitialization;
+      }
       controlsRef.current = {
         historyCommand(method, args) {
           const task = startupPhase('history-real-wait', () => initialization.real).then(async () => {
             if (disposed || !databases.history) throw new Error(t("c485"));
             // A day read of an account's cloud rows waits for the cloud table's migrations.
             if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner) {
-              if (!cloudInitialization) cloudInitialization = startupPhase('history-cloud-initialize', () => databases.cloud.initialize()).catch(error => { cloudInitialization = null; throw error; });
-              await startupPhase('history-cloud-wait', () => cloudInitialization);
+              await startupPhase('history-cloud-wait', initializeCloud);
             }
             return databases.history[method](...args);
           });
@@ -263,12 +287,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           return task.finally(() => commands.delete(task));
         },
         cloudCommand(method, args) {
-          if (!databases.cloud) return Promise.reject(new Error(t("c486")));
-          if (!cloudInitialization) {
-            cloudInitialization = initialization.real.then(() => startupPhase('history-cloud-initialize', () => databases.cloud.initialize()));
-            cloudInitialization.catch(() => { cloudInitialization = null; });
-          }
-          const task = cloudInitialization.then(() => {
+          const task = initializeCloud().then(() => {
             if (disposed) throw new Error(t("c483"));
             return method === 'initialize' ? undefined : databases.cloud[method](...args);
           });
@@ -322,6 +341,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       return () => {
         subscription.remove();
         resumeCatchUp.close();
+        // Cancel startup waiters before draining commands. Their disposed guard
+        // rejects without launching migrations, while native reads still drain.
+        finishInitialLocalAttempt();
         // Never close the shared connection while an owned query/write is pending.
         return Promise.allSettled([
           initialization.real,

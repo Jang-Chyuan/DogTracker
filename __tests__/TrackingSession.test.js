@@ -2,6 +2,9 @@ import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { AppState } from 'react-native';
+import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+import { createDogDatabase } from '../src/database/DogDatabase';
+import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { useTrackingSession } from '../src/app/useTrackingSession';
 import {
   dogStatusRow,
@@ -102,6 +105,192 @@ describe('tracking session and connection lifetime', () => {
     await act(async () => change('background'));
     await act(async () => change('active'));
     expect(session.initialSnapshotReady).toBe(true);
+  });
+
+  test('shared SQLite publishes local latest and context before cloud migrations, without waiting for history', async () => {
+    const connection = createMemoryConnection();
+    const real = createDogDatabase(connection);
+    await real.initialize();
+    await connection.executeAsync(`INSERT INTO dog_status
+      (received_at,master_id,slave_id,slave_lat,slave_lon,satellites)
+      VALUES(1000,2,3,25,121,10)`);
+    const raw = deferred(), migration = deferred(), backfill = deferred();
+    let migrationStarted = false, realReady = false;
+    const initializeReal = real.initialize;
+    real.initialize = async () => { await initializeReal(); realReady = true; };
+    const execute = connection.executeAsync.getMockImplementation();
+    connection.executeAsync.mockImplementation(async (query, params) => {
+      if (query.replace(/\s+/g, ' ').includes('SELECT * FROM dog_status ORDER BY id DESC')) await raw.promise;
+      if (realReady && query === 'PRAGMA table_info(supabase_dog_status)') {
+        migrationStarted = true;
+        await migration.promise;
+      }
+      return execute(query, params);
+    });
+    // The startup barrier must end at latest/context, not the entire route read.
+    real.listLatestStatusRowsByTimeCursor = jest.fn(() => backfill.promise);
+    const db = { ...databases(), real, cloud: createCloudDatabase(connection) };
+    let cloudTask;
+    try {
+      await mount(db);
+      await act(async () => { cloudTask = session.cloudDatabase.initialize(); });
+      expect(session.initialSnapshotReady).toBe(false);
+      await act(async () => raw.resolve());
+      await act(async () => jest.advanceTimersByTimeAsync(0));
+      expect(session.errors.real).toBeNull();
+      expect(session.initialSnapshotReady).toBe(true);
+      expect(session.point.slaveId).toBe(3);
+      expect(session.positionSamples).toHaveLength(1);
+      expect(migrationStarted).toBe(true);
+      expect(session.historyLoaded).toBe(false);
+      await act(async () => migration.resolve());
+      await cloudTask;
+      expect(session.initialSnapshotReady).toBe(true);
+    } finally {
+      raw.resolve(); migration.resolve(); backfill.resolve([]);
+      await act(async () => { await cloudTask?.catch(() => {}); });
+      await act(async () => { renderer?.unmount(); });
+      renderer = null;
+      connection.close();
+    }
+  });
+
+  test('a failed local snapshot releases cloud startup without fabricating readiness, then local retry succeeds', async () => {
+    const db = databases();
+    const latest = deferred();
+    db.real.getLatestStatusRow.mockReturnValueOnce(latest.promise);
+    db.cloud = { initialize: jest.fn(async () => {}) };
+    await mount(db);
+    let cloudTask;
+    await act(async () => { cloudTask = session.cloudDatabase.initialize(); });
+    expect(db.cloud.initialize).not.toHaveBeenCalled();
+    await act(async () => latest.reject(new Error('local snapshot failed')));
+    await cloudTask;
+    expect(session.initialSnapshotReady).toBe(false);
+    expect(session.errors.real).toBe('local snapshot failed');
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
+    await tick();
+    expect(session.initialSnapshotReady).toBe(true);
+    expect(session.errors.real).toBeNull();
+  });
+
+  test('cloud initialization remains retryable after the initial local snapshot was accepted', async () => {
+    const db = databases();
+    db.cloud = { initialize: jest.fn().mockRejectedValueOnce(new Error('migration failed')).mockResolvedValue(undefined) };
+    await mount(db);
+    expect(session.initialSnapshotReady).toBe(true);
+    await act(async () => {
+      await expect(session.cloudDatabase.initialize()).rejects.toThrow('migration failed');
+    });
+    await act(async () => session.cloudDatabase.initialize());
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(2);
+    expect(session.initialSnapshotReady).toBe(true);
+  });
+
+  test('closing an owner waiting for a local snapshot cancels queued cloud startup and drains the native read', async () => {
+    const db = databases();
+    const latest = deferred();
+    db.real.getLatestStatusRow.mockReturnValue(latest.promise);
+    db.cloud = { initialize: jest.fn(async () => {}) };
+    await mount(db);
+    let cloudTask;
+    await act(async () => { cloudTask = session.cloudDatabase.initialize(); });
+    const rejection = cloudTask.catch(error => error);
+    await act(async () => { renderer.unmount(); });
+    renderer = null;
+    expect(db.close).not.toHaveBeenCalled();
+    expect(db.cloud.initialize).not.toHaveBeenCalled();
+    await act(async () => latest.resolve(null));
+    expect(await rejection).toBeInstanceOf(Error);
+    expect(db.cloud.initialize).not.toHaveBeenCalled();
+    expect(db.close).toHaveBeenCalledTimes(1);
+    const fresh = databases();
+    await mount(fresh);
+    expect(session.initialSnapshotReady).toBe(true);
+  });
+
+  test('owner history reads use the same local snapshot barrier and a preference retry can open it', async () => {
+    const db = databases();
+    db.settings.load.mockRejectedValueOnce(new Error('preference read failed'));
+    db.cloud = { initialize: jest.fn(async () => {}) };
+    db.history = { historyDays: jest.fn(async () => ['synthetic-day']) };
+    await mount(db);
+    let historyTask;
+    await act(async () => { historyTask = session.historyDatabase.historyDays({ owner: 'synthetic-owner' }); });
+    expect(db.cloud.initialize).not.toHaveBeenCalled();
+    expect(db.history.historyDays).not.toHaveBeenCalled();
+    expect(session.initialSnapshotReady).toBe(false);
+    await act(async () => session.retryTrackingPreferences());
+    expect(await historyTask).toEqual(['synthetic-day']);
+    expect(session.initialSnapshotReady).toBe(true);
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
+  });
+
+  test('a background-only owner can initialize cloud without claiming a local snapshot', async () => {
+    Object.defineProperty(AppState, 'currentState', { configurable: true, value: 'background' });
+    const db = databases();
+    db.cloud = { initialize: jest.fn(async () => {}) };
+    await mount(db);
+    await act(async () => session.cloudDatabase.initialize());
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
+    expect(db.real.getLatestStatusRow).not.toHaveBeenCalled();
+    expect(session.initialSnapshotReady).toBe(false);
+    const change = AppState.addEventListener.mock.calls[0][1];
+    await act(async () => change('active'));
+    expect(session.initialSnapshotReady).toBe(true);
+  });
+
+  test('going away cancels the initial foreground wait without publishing a superseded local answer', async () => {
+    const db = databases();
+    const latest = deferred();
+    db.real.getLatestStatusRow.mockReturnValueOnce(latest.promise);
+    db.cloud = { initialize: jest.fn(async () => {}) };
+    await mount(db);
+    let cloudTask;
+    await act(async () => { cloudTask = session.cloudDatabase.initialize(); });
+    expect(db.cloud.initialize).not.toHaveBeenCalled();
+    const change = AppState.addEventListener.mock.calls[0][1];
+    await act(async () => change('background'));
+    await cloudTask;
+    expect(db.cloud.initialize).toHaveBeenCalledTimes(1);
+    expect(session.initialSnapshotReady).toBe(false);
+    await act(async () => latest.resolve(dogStatusRow));
+    expect(session.initialSnapshotReady).toBe(false);
+    await act(async () => change('active'));
+    expect(session.initialSnapshotReady).toBe(true);
+  });
+
+  test('a real SQLite migration failure retries without dropping the accepted local snapshot', async () => {
+    const connection = createMemoryConnection();
+    const real = createDogDatabase(connection);
+    const initializeReal = real.initialize;
+    let realReady = false, failMigration = true;
+    real.initialize = async () => { await initializeReal(); realReady = true; };
+    const execute = connection.executeAsync.getMockImplementation();
+    connection.executeAsync.mockImplementation(async (query, params) => {
+      if (realReady && query === 'PRAGMA table_info(supabase_dog_status)' && failMigration) {
+        failMigration = false;
+        throw new Error('synthetic native migration failure');
+      }
+      return execute(query, params);
+    });
+    try {
+      await mount({ ...databases(), real, cloud: createCloudDatabase(connection) });
+      expect(session.initialSnapshotReady).toBe(true);
+      await act(async () => {
+        await expect(session.cloudDatabase.initialize()).rejects.toThrow('synthetic native migration failure');
+      });
+      expect(session.initialSnapshotReady).toBe(true);
+      await act(async () => session.cloudDatabase.initialize());
+      const schema = await connection.executeAsync('PRAGMA table_info(supabase_dog_status)');
+      expect(schema.results.some(column => column.name === 'owner_user_id')).toBe(true);
+      expect(session.errors.real).toBeNull();
+      expect(session.initialSnapshotReady).toBe(true);
+    } finally {
+      await act(async () => { renderer?.unmount(); });
+      renderer = null;
+      connection.close();
+    }
   });
 
   test('resume catch-up finishes, failures retry, and a late read ends a timeout', async () => {
