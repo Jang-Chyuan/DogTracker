@@ -49,6 +49,36 @@ test('true adapter retains already verified model across unchanged physical proo
     expect(state.database.historyDownloadStates.mock.calls.length).toBeGreaterThan(1);
   } finally { wait.resolve(); await state.close(); }
 });
+test('fresh complete selected-day input can reuse its accepted model after an unrelated material publication', async () => {
+  const state = await setup('same-selected-input'); const wait = deferred();
+  try {
+    const accepted = state.screen.dayModel, reads = state.read.mock.calls.length;
+    expect(accepted).not.toBeNull(); state.hold(wait);
+    state.ledger.dataRevision++; state.ledger.publishedRevision += 2;
+    await state.update();
+    // Unknown freshness is still hidden until the actual durable read finishes.
+    expect(state.screen.dayModel).toBeNull();
+    await act(async () => wait.resolve());
+    expect(state.database.historyDownloadStates.mock.calls.length).toBeGreaterThan(1);
+    expect(state.read.mock.calls.length).toBeGreaterThan(reads);
+    expect(state.screen.dayModel).toBe(accepted);
+  } finally { wait.resolve(); await state.close(); }
+});
+test.each(['own-undefined', 'deletion', 'seed-quality'])('fresh %s selected input must rebuild even when packet ids/times otherwise match', async change => {
+  const state = await setup(`input-${change}`);
+  try {
+    const accepted = state.screen.dayModel;
+    const original = state.fixture.history.readDay;
+    state.read.mockImplementation(async args => {
+      const answer = await original(args);
+      if (change === 'deletion') return { ...answer, rows: answer.rows.slice(1) };
+      if (change === 'own-undefined') return { ...answer, rows: answer.rows.map((row, i) => i ? row : { ...row, raw_speed_kmh: undefined }) };
+      return { ...answer, seed: [{ time: state.fixture.now - 86400001, latitude: 1, longitude: 2, satellites: 9, hdop: 1 }] };
+    });
+    state.ledger.dataRevision++; state.ledger.publishedRevision += 2; await state.update();
+    expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.dayModel).not.toBe(accepted);
+  } finally { await state.close(); }
+});
 test.each(['changed', 'unknown', 'new-generation', 'new-publication-scope', 'new-publication-owner'])('%s publication cannot retain the old complete model while fresh proof waits', async mode => {
   const state = await setup(mode); const wait = deferred();
   try {

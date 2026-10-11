@@ -1,4 +1,5 @@
 import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
+import { sameHistoryInput, copyHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
@@ -102,13 +103,18 @@ export function useHistoryDayRows({
   const publicationState = publishedReads && subject !== 'phone' ? getPublication?.() : null;
   const materialRevision = publicationState?.dataRevision;
   const publicationReader = useRef(null);
+  const acceptedInput = useRef(null);
+  const rowIdentity = useRef({ read, scope: publicationState?.scope, generation: publicationState?.generation, epoch: 0 });
+  if (rowIdentity.current.read !== read || rowIdentity.current.scope !== publicationState?.scope
+    || rowIdentity.current.generation !== publicationState?.generation)
+    rowIdentity.current = { read, scope: publicationState?.scope, generation: publicationState?.generation, epoch: rowIdentity.current.epoch + 1 };
   const rowRevision = Number.isSafeInteger(materialRevision) && materialRevision >= 0
     ? `material:${materialRevision}` : `publication:${publicationRevision}`;
   // `scope`: another reader of the same day (a screen fixture) is another day's rows.
   // `revision`: read the day again from the start (a download ended).
   const key =
     subject && day != null
-      ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? rowRevision : 0, readEnd])
+      ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? rowRevision : 0, readEnd, rowIdentity.current.epoch])
       : null;
   // Phone rows are local: publishing dog telemetry must not cancel their
   // in-flight read or restart the full-day cursor. Explicit reloads still do.
@@ -119,10 +125,12 @@ export function useHistoryDayRows({
       timer;
     let waitingForPublication = false, readPublication = null, signalledPublication = null;
     const cache = { rows: [], seed: [], after: {}, first: true };
+    const identity = [subject, slaveId, day, owner, scope, read, getPublication,
+      publicationState?.scope, publicationState?.generation];
     // The hold pass (IndoorHold) is the costly part of a day: today's rows
     // only grow, so the same pass continues with the new packets.
     const holds = { pass: null, keys: [] };
-    const replayHolds = packets => {
+    let replayHolds = packets => {
       const keys = packets.map(p => `${p.source}:${p.id}:${p.time}`);
       const same =
         holds.pass &&
@@ -194,12 +202,25 @@ export function useHistoryDayRows({
             (a, b) => a.time - b.time,
           );
         if (added || cache.first) {
+          const recyclable = subject === 'dog' && publishedReads;
+          const old = recyclable ? acceptedInput.current : null;
+          const sameIdentity = old && identity.length === old.identity.length
+            && identity.every((part, i) => Object.is(part, old.identity[i]));
+          // Only a freshly accepted complete first read can prove that another
+          // day's publication left this input untouched. Cursor always comes
+          // from the fresh answer; comparison never opens the publication fence.
+          const unchanged = cache.first && sameIdentity
+            && sameHistoryInput(cache.rows, old.rowsInput) && sameHistoryInput(cache.seed, old.seedInput);
+          if (unchanged) { cache.rows = old.rows; replayHolds = old.replayHolds; }
+          const version = unchanged ? old.version : (sameIdentity ? old.version : 0) + 1;
+          if (recyclable) acceptedInput.current = { identity, rows: cache.rows, rowsInput: copyHistoryInput(cache.rows),
+            seedInput: copyHistoryInput(cache.seed), replayHolds, version };
           if (subject === 'phone' && cache.first) markStartupPhase('phone-day-publish');
           cache.first = false;
           setResult(current => ({
             key,
             rows: cache.rows,
-            version: (current.key === key ? current.version : 0) + 1,
+            version: recyclable ? version : (current.key === key ? current.version : 0) + 1,
             error: '',
             replayHolds,
           }));
@@ -620,6 +641,8 @@ export function useHistoryScreen({
     shownOnce.current !== `${sessionKey}|${day}` && !allLoaded;
   const diagnosticModelDay = useRef(null);
   const diagnosticCommittedDay = useRef(null);
+  const exactModel = useRef(null);
+  if (!exactModel.current) exactModel.current = createExactHistoryModelCache();
   const dayModel = useMemo(() => {
     if (!subject || !subjects.length || waiting || !coverageReady) return null;
     const main = subjects.find(s => s.id === current.protagonist)
@@ -630,7 +653,7 @@ export function useHistoryScreen({
       rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady });
     const firstModelOfDay = diagnosticModelDay.current !== day;
     diagnosticModelDay.current = day;
-    const built = startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '', () => multiDayModel(subjects, {
+    const options = {
       dayStart: day,
       dayEnd,
       today,
@@ -641,7 +664,15 @@ export function useHistoryScreen({
       protagonist: main,
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
-    }));
+    };
+    const pub = cloud?.getPublication?.();
+    // The original memo deliberately ignores the clock for a past/fixed day.
+    // Changed rows/options still build using the actual current modelNow.
+    const cachedOptions = modelClock === null ? { ...options, now: null } : options;
+    const build = () => startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '', () => multiDayModel(subjects, options));
+    const built = subject === 'dog' && cloud?.publishedReads
+      ? exactModel.current([owner, pub?.scope, pub?.generation, sessionKey, memoryScope, read], subjects, cachedOptions, build)
+      : build();
     buildCost.current = Date.now() - started;
     diagnostic?.emit('model', 'end', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
       rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: true });

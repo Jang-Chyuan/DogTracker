@@ -3,6 +3,12 @@ import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createCloudSync } from '../src/cloud/CloudSync';
+import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
+import React from 'react';
+import Renderer, { act } from 'react-test-renderer';
+import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
+import { useHistoryDayRows } from '../src/mapHistory/useHistoryScreen';
+import { dayBounds, dayKey } from '../src/history/screen/HistoryScreenDates';
 const NOW = Date.parse('2026-01-02T12:00:00Z');
 let sync, connection, log;
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(NOW); log = jest.spyOn(console, 'info').mockImplementation(() => {}); });
@@ -24,6 +30,27 @@ test('real SDK overlap advances physical/archive proof but retains the material 
   events.push(cloudEvent(2, NOW + 40000));
   await jest.advanceTimersByTimeAsync(30000);
   expect(sync.historyPublication().dataRevision).toBeGreaterThan(first.dataRevision);
+});
+test('real SDK/SQLite fresh event in another day rechecks selected rows but retains its exact input and hold pass', async () => {
+  const db = await database(), history = createHistoryDatabase(connection);
+  const past = dayBounds(dayKey(new Date(NOW - 86400000)));
+  const events = [cloudEvent(1, past.dayStart + 3600000), cloudEvent(2, NOW - 1000)];
+  await db.savePage('a', [mapCloudTelemetry(events[0])]);
+  sync = createCloudSync({ database: db, client: latestArchiveRest({ events }).client }); await start();
+  const getter = () => sync.historyPublication(), read = jest.fn(args => history.historyDayRows(args));
+  let renderer, state;
+  function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: 6, day: past.dayStart, owner: 'a',
+    clock: () => NOW, getPublication: getter, publishedReads: true, publicationRevision: getter().publishedRevision, requireFresh: true }); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    const accepted = state.rows, replay = state.replayHolds, revision = getter().dataRevision;
+    expect(accepted.length).toBe(1);
+    events.push(cloudEvent(3, NOW + 40000));
+    await act(async () => { await jest.advanceTimersByTimeAsync(60000); renderer.update(<Probe />); });
+    expect(getter().dataRevision).toBeGreaterThan(revision);
+    expect(read.mock.calls.length).toBeGreaterThan(1);
+    expect(state.loaded).toBe(true); expect(state.rows).toBe(accepted); expect(state.replayHolds).toBe(replay);
+  } finally { if (renderer) await act(async () => renderer.unmount()); }
 });
 test('legacy undefined publish result keeps material revision unknown rather than certifying no change', async () => {
   const db = await database();
