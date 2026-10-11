@@ -29,16 +29,22 @@ function isForeground(state) {
 // BLE state, or each other's physical tables.
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
+  const latestPriority = useRef(null);
   const [historyDatabase] = useState(() => Object.fromEntries(
     HISTORY_DATABASE_METHODS.map(method => [method, (...args) =>
       controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error(t("c487")))]),
   ));
-  const [cloudDatabase] = useState(() => Object.fromEntries(
+  const [cloudDatabase] = useState(() => ({ ...Object.fromEntries(
     CLOUD_DATABASE_METHODS.map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
         Promise.reject(new Error(t("c487"))),
     ]),
-  ));
+  ), installLatestReadinessGate(gate) {
+    const previous = latestPriority.current;
+    latestPriority.current = gate;
+    if (previous !== gate) previous?.close();
+    return () => { if (latestPriority.current === gate) latestPriority.current = null; };
+  } }));
   // Stable diagnostics adapter; it borrows this owner's real DB and cannot
   // open/close another Nitro connection or access settings tables.
   const [hardwareDatabase] = useState(() => ({
@@ -72,6 +78,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
 
   useEffect(() => {
     let disposed = false;
+    const archiveWaiting = new AbortController();
     // Disable old controls while waiting for the prior owner or a failed reopen.
     dispatchTracking({ type: 'reset-all' });
     setPreferences({
@@ -264,6 +271,13 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       });
 
       let cloudInitialization, latestInitialization;
+      async function awaitArchivePriority(expectedOwner = undefined) {
+        if (disposed) throw new Error(t("c483"));
+        const gate = latestPriority.current;
+        if (gate && (!await gate.wait(archiveWaiting.signal, expectedOwner) || latestPriority.current !== gate || !gate.ready()))
+          throw new Error(t("c576"));
+        if (disposed) throw new Error(t("c483"));
+      }
       function initializeLatest() {
         if (!databases.cloud) return Promise.reject(new Error(t("c486")));
         if (!latestInitialization) {
@@ -279,8 +293,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       function initializeCloud() {
         if (!databases.cloud) return Promise.reject(new Error(t("c486")));
         if (!cloudInitialization) {
-          const task = initialization.real.then(() => initialLocalAttempt).then(() => {
+          const task = initialization.real.then(() => initialLocalAttempt).then(async () => {
             if (disposed) throw new Error(t("c483"));
+            await awaitArchivePriority();
             return startupPhase('history-cloud-initialize', () => databases.cloud.initialize());
           });
           cloudInitialization = task;
@@ -295,6 +310,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
             // A day read of an account's cloud rows waits for the cloud table's migrations.
             if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner) {
               await startupPhase('history-cloud-wait', initializeCloud);
+              await awaitArchivePriority(args[0].owner);
             }
             return databases.history[method](...args);
           });
@@ -306,7 +322,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           const local = ['loadRangeState', 'saveRangeState'].includes(method)
             || (['latestStatusRows', 'holdRows'].includes(method) && !args[0]);
           const readiness = latest || local ? initializeLatest : initializeCloud;
-          const task = readiness().then(() => {
+          const task = readiness().then(async () => {
+            if (!latest && !local) await awaitArchivePriority(typeof args[0] === 'string' ? args[0] : undefined);
             if (disposed) throw new Error(t("c483"));
             return ['initialize', 'initializeLatest'].includes(method) ? undefined : databases.cloud[method](...args);
           });
@@ -380,6 +397,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     });
     return () => {
       disposed = true;
+      archiveWaiting.abort();
       controlsRef.current = null;
       lifecycle.close().catch(error => {
         logger.error(t("c489"), error);

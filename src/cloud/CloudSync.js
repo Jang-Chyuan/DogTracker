@@ -6,7 +6,7 @@ import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { cloudSyncDiagnostic } from '../logger';
-import { createMapReadback } from './CloudMapReadback';
+import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
 import { downloadCloudLatest, downloadCloudLatestContext } from './CloudLatest';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
@@ -27,7 +27,9 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   const mapScope = {};
   const priorityLatest = latestFirst && typeof database.initializeLatest === 'function';
   let mapReadback = null;
+  let mapStartedAt = null;
   let owner = null;
+  let sessionKnown = false;
   let foreground = false;
   let disposed = false;
   let generation = 0;
@@ -51,8 +53,26 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let state = { latestFirst, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null,
     archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', contextPending: false, busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
     failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, dataRevision: null, publishedRevision: 0, publishedPending: false, catchUp: CATCH_UP_IDLE };
+  const latestReadiness = createLatestReadinessGate(() => ({ owner, generation,
+    ready: !priorityLatest || sessionKnown && (!owner || !disposed && foreground
+      && (!!mapReadback?.acknowledged() && mapReadback.value.owner === owner
+        && mapReadback.value.generation === generation && mapReadback.value.attempt === state.mapAttempt
+        || !state.snapshotPending && !!state.error)),
+  }));
+  const releaseReadiness = priorityLatest ? database.installLatestReadinessGate?.(latestReadiness) : null;
+  const acknowledgeMapRead = value => {
+    const before = mapReadback?.acknowledged();
+    const accepted = mapReadback?.acknowledge(value) ?? false;
+    if (accepted && !before) {
+      cloudSyncDiagnostic('latest-applied', { attempt: mapReadback.value.attempt,
+        elapsedMs: Math.max(0, now() - mapStartedAt), revision: mapReadback.value.revision });
+      publish({});
+    }
+    return accepted;
+  };
   const publish = patch => {
     state = { ...state, ...patch };
+    latestReadiness.notify();
     if (!disposed) onChange({ ...state, owner, foreground });
   };
   const valid = version => !disposed && foreground && !!owner && version === generation;
@@ -129,7 +149,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     initialAttemptStarted = true;
     resumeCatchUp.started(showCatchUp);
     archiveYieldRequested = false;
-    if (priorityLatest) mapReadback = null;
+    if (priorityLatest) { mapReadback = null; mapStartedAt = startedAt; }
     publish({ busy: true, mode: 'auto', error: '', authFailed: false, snapshotPending: latestFirst,
       mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
@@ -422,17 +442,18 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending || (!latestFirst && state.publishedPending),
         busy: latestFirst ? state.snapshotPending : state.busy, snapshotBaseRevision: state.snapshotBaseRevision, mapSuccessRevision: state.mapSuccessRevision,
         publishedRevision: state.publishedRevision, publishedPending: state.publishedPending,
-        ...(priorityLatest ? { readback: mapReadback?.value ?? null, acknowledgeMapRead: value => mapReadback?.acknowledge(value) ?? false,
+        ...(priorityLatest ? { readback: mapReadback?.value ?? null, acknowledgeMapRead,
           bootstrapAllowed: !state.snapshotPending && !!(state.error || state.authFailed || state.offline) } : {}) };
     },
     historyPublication() {
-      return { scope: mapScope, owner, generation, latestFirst, attempt: state.mapAttempt, pending: state.publishedPending,
+      return { scope: mapScope, owner, generation, latestFirst, latestReadReady: latestReadiness.ready(), attempt: state.mapAttempt, pending: state.publishedPending,
         busy: false, mapSuccessRevision: state.archiveRevision, dataRevision: state.dataRevision, publishedRevision: state.publishedRevision,
         publishedPending: state.publishedPending, archiveRevision: state.archiveRevision, archiveCutoff: state.archiveCutoff, archiveError: state.archiveError };
     },
     setSession(session) {
       const next = session?.user.id || null;
-      if (owner === next) return;
+      sessionKnown = true;
+      if (owner === next) { latestReadiness.notify(); return; }
       cancelBackgroundSync();
       mapReadback = null;
       owner = next;
@@ -485,6 +506,12 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     async runManual(work, abort = new AbortController()) {
       if (manualPending || state.mode === 'manual') throw new Error(t("c585"));
       const version = generation;
+      // Do not acquire the cloud slot while waiting for an automatic map ACK.
+      // Otherwise a manual day could prevent the very attempt opening it.
+      if (releaseReadiness && !latestReadiness.ready() && !await latestReadiness.wait(abort.signal))
+        throw new Error(t("c576"));
+      if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
+      if (manualPending || state.mode === 'manual') throw new Error(t("c585"));
       manualPending = true;
       controller?.abort();
       try {
@@ -517,6 +544,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     },
     dispose() {
       disposed = true;
+      latestReadiness.close();
+      releaseReadiness?.();
       retryQueued = false;
       resumeCatchUp.close();
       generation += 1;

@@ -231,7 +231,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   // local/slaveId changes are represented by the existing subject scope.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, cloud, scope, active, completenessRetry, publicationRevision, proofCutoff,
-    currentPublication?.scope, currentPublication?.owner, currentPublication?.generation, currentPublication?.dataRevision]);
+    currentPublication?.scope, currentPublication?.owner, currentPublication?.generation, currentPublication?.dataRevision, currentPublication?.latestReadReady]);
 
   const [incompleteRevision, setIncompleteRevision] = useState(0);
   const markIncomplete = useCallback((day, value) => {

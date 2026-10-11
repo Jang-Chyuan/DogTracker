@@ -44,7 +44,7 @@ export function cloudSyncDiagnostic(event, fields) {
       const elapsedMs = fields?.elapsedMs;
       if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return;
       console.info('[CloudSync] recovered', { attempt, elapsedMs });
-    } else if (event === 'latest-published' || event === 'archive-published') {
+    } else if (event === 'latest-published' || event === 'archive-published' || event === 'latest-applied') {
       const elapsedMs = fields?.elapsedMs;
       const revision = fields?.revision;
       if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || !Number.isSafeInteger(revision) || revision < 1) return;
@@ -54,7 +54,8 @@ export function cloudSyncDiagnostic(event, fields) {
         const timings = LATEST_TIMINGS.every(key => Number.isFinite(fields[key]) && fields[key] >= 0)
           ? Object.fromEntries(LATEST_TIMINGS.map(key => [key, fields[key]])) : {};
         console.info('[CloudSync] latest-published', { attempt, elapsedMs, revision, ...timings });
-      } else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });
+      } else if (event === 'latest-applied') console.info('[CloudSync] latest-applied', { attempt, elapsedMs, revision });
+      else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });
     }
   } catch {
     // Do not retry or expose the sink's error/message in another log.

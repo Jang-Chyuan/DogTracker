@@ -118,7 +118,7 @@ export function useHistoryDayRows({
       : null;
   // Phone rows are local: publishing dog telemetry must not cancel their
   // in-flight read or restart the full-day cursor. Explicit reloads still do.
-  const readerPublicationRevision = subject === 'phone' ? 0 : rowRevision;
+  const readerPublicationRevision = subject === 'phone' ? 0 : `${rowRevision}|${publicationState?.latestReadReady ?? true}`;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
     let alive = true,
