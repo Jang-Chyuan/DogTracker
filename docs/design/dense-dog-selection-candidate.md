@@ -1,46 +1,49 @@
-# Dense dog selection candidate — not approved or natively verified
+# PR113 密集狗設計與原生驗證
 
-This branch builds on the restored bottom names in PR108. It does not restore the automatic overlap picker removed by PR91 (`a46093a2`): every avatar's press still calls `pressDog(id)` and opens that dog's card. Density, camera zoom and pan never change that action. PR106's native-marker priority over a duplicate map event and PR107's history gesture protections remain in place.
+這個候選延續 PR108 恢復的底部名字。多隻狗貼在一起時，優先顯示選中狗的名字，其他名字遇到重疊或下方控制項便省略。使用者明確按「選狗」才開清單；點可見頭像仍直接開那隻狗的卡片，平移／縮放不會自動改成清單。狗的位置保持原座標，不為排版移動頭像。
 
-The implemented candidate gives the selected dog first choice of its own bottom name. Remaining names are admitted in stable problem-first/ID order only where conservative text boxes do not collide or cross the visible control/card boundary. All true coordinates and faces remain. A suppressed name uses the existing compact native bitmap so its invisible name area does not intercept a neighbour. Problem/indoor badges, selected size and z-index retain their existing semantics.
+## 本次實際修正
 
-An explicit **選狗** button shares the frame-all row. It states total mapped dogs and the number with problems. Only this button opens a scrollable selector. Every row is identified by dog ID, carries that dog's full accessibility sentence and current problem note, and opens its detailed card; a selection closes the selector. Ordinary polling or coordinate changes do not reorder its ID order. Owner/source, receiver identity or membership changes close it and invalidate queued callbacks. Back/outside/close, unmount and reopening also invalidate old callbacks. Dogs with no drawable coordinate retain the existing product limitation and are not included in this map-only selector.
+原生測試找到兩個不能只靠 source 測試判斷的問題：
 
-Selected dogs off screen retain selection and remain in the explicit selector. Existing edge hints and the once-per-card-open framing remain. This candidate never follows telemetry by moving the camera. Actual floating-control height is fed into name/edge-hint avoidance (including large-font wrapping); SDK map padding is unchanged.
+- 選中狗20後，卡片和名字是狗20，前方頭像仍是狗14。根因為 Android Fabric marker 沒把動態 zIndex 更新到 Google Maps SDK。現已補同一 marker 的更新，選中頭像真正到最前方。
+- 16隻場景縮放返回後，前方是綠色狗14，名字卻是後方狗9。現採名字與承載頭像的層級規則；被高優先頭像蓋住的普通狗不放名字，避免把後方名字配給前方頭像。若前方狗名字也撞到另一組，合法省略，從明確清單仍可選到。
 
-## Alternative comparison
+層級：選中40、可顯示名字的問題狗37、其他問題狗34、可顯示名字的普通狗32、其他普通狗31；名字在頭像下層。選中優先、問題狗優先均保留。這不保證每個部分重疊的頭像或角標都可直接點選；被遮住的狗透過明確選狗入口操作。
 
-| Candidate | 16 / 32 / 64 near dogs | Pan / zoom / offscreen | Trade-off |
-| --- | --- | --- | --- |
-| Selected name + suppression + explicit selector (implemented) | Keeps the map readable; every mapped ID reachable through the same labelled entry, independent of density | Face always opens own card; selector keeps offscreen dogs and selection | Finding a hidden dog takes two explicit actions; native list, font2 and real hit regions still require verification |
-| Fixed dog-name row (concept only) | Direct card access without opening a list; many horizontal chips for 32/64 dogs | Names stay reachable independent of projection | Permanently occupies map space and requires repeated horizontal scrolling; long names/font2 increase the cost |
+## 圖片怎麼讀
 
-Recommendation: the implemented first candidate. A fixed row becomes hard to scan at 64 dogs and would compete with the user's existing map/route controls. The `dense-dog-selection-concept.html` is an independently invented interactive comparison, **not** native acceptance or a replacement of the approved UI. Its typography and map geometry are schematic.
+全部圖片及影片來自現有5558的實際原生畫面。狗／手機／接收器位置由獨立公式虛構，16或20隻分兩組，每組直徑不到2m、組距12m，經原本mapper與merge。沒有讀真帳號或CSV、沒有移動真資料來匿名化、沒有灌DB或調高20隻產品上限。底圖是Google Maps真圖磚，非真正旅程；私有記憶體adapter與數值observer不進產品PR。Root親看下列每張PNG及影片每秒11張影格。
 
-## Current supported cardinality
+| 比較 | 修改前 | 最新候選 |
+|---|---|---|
+| 選中20 | 綠色14遮住20，卡片20 | 藍色捲毛20在前，自己的名字與卡片 |
+| 16隻縮放返回 | 綠色14卻顯示Dog9 | 綠色14，撞名時省略，沒有Dog9錯配 |
 
-The existing production `DogMerge.MAX_DOGS=20` keeps at most 20 unique dog IDs across the team. This candidate leaves that policy unchanged. **Native acceptance therefore uses 16 and 20 dogs, including 20 total dogs split into two groups of 10.** The 32/64 policy, renderer and interactive-concept cases are UI stress checks above the current upstream limit, not proof that production accepts 32/64 dogs. A raw 32/64 QA attempt through the unchanged mapper/merge correctly exposed the cap (four RED expected-count cases); no cap bypass or protocol widening is used.
+![修改前：選中20仍被14遮住](../testing/assets/pr113/before-selected20.png)
+![修改後：選中20頭像與卡片一致](../testing/assets/pr113/after-selected20.png)
+![中間版本錯誤：14頭像配到9名字](../testing/assets/pr113/before-name16.png)
+![最新：16隻真縮放返回後不再錯配名字](../testing/assets/pr113/after-name16.png)
 
-## Source evidence
+修改前兩張來源不同：選中20是較早 private 8b 候選；16錯名是已補Fabric的中間版本產品2cc。它們各對應真實找到的獨立缺陷，不冒稱同一舊版或正式main的兩張配對圖。最新兩張都出自產品ba8e028d的同一APK。
 
-`__fixtures__/DenseDogScene.js` independently generates 16/32/64 local-metre rings with each group under 2 m in diameter, or two groups centred 12 m apart. The latitude/longitude origin is fictional (1,1); no real row, account, translated geometry or timestamp is used. Each scene has at most 64 points. Selected/problem face sizes use the product's 40/48/+8 semantics.
+## 最新原生已驗範圍
 
-Focused tests exercise close overlap, two groups, different scale/pan, arbitrary last-dog selection, selected-offscreen, problem priority, unchanged coordinates, exact Marker → card identity, accessibility identity, blank map/zoom/pan never opening a list, scope/member/receiver/background stale events, reopen/duplicate/back cancellation, and font2 actual control-height admission. The legacy close-zoom `nameTags(..., group:false)` function substituted into the same 16/32/64 policy tests fails all three, rather than relying on a pretty but non-colliding fixture.
+產品 `ba8e028dd2af49a8671f70b8724a772c2a062aa1`；隔離私有runtime `badb5a9e910d73fa10acdd63dadd1a1c85eebdfc`；APK SHA256 `f9a2e7581ffe0eb76eee974d93586876f87b7d2008819f23314638a80ad962ff`，現有5558、PID541、install-r成功、COLD1087ms。實際新版：
 
-Existing tests that expressly required all close names or an `N 隻` label are updated to the candidate's admitted-name policy. Their real-coordinate, reverse-projection, pan/zoom, marker press, duplicate-map-event, accessibility and history gesture assertions remain. Pure legacy `DogMarkers.nameTags` remains available for history and splash framing and retains its original unit tests.
+1. 16隻原構圖真雙指縮放／返回，沒有自動開清單；狗14不再錯配狗9名字。另一次真平移／縮放有自己的不同構圖，兩種證據不混為同一操作。
+2. 點可見狗14頭像→狗14卡；明確清單選普通狗9→自己的橘色頭像／名字／卡片。
+3. 切20隻場景清掉舊狗9卡；明確清單選20→藍色捲毛20真正置前；清單真上／下捲，XML合併確認20列，最後一列可見。
+4. 名字落到下方控制項預留區時省略；真向上平移離開預留區後名字回來，狗20卡片與選取保留。取消選取後問題狗14再次在前，自己的名字一致。
 
-Focused source validation on the earlier `acbe5a45` base: **8 suites / 133 tests PASS**, 6.322 s, single worker; changed-JS lint **0 errors / 0 warnings**. Replacing only the admission policy with the legacy close-zoom function makes the same three dense-count tests **3 RED**. Native QA uses the same independent formula with 16/20 points through the unchanged mapper/merge. The existing TrackingMap suite emits its pre-existing splash reset `act` warning; Final product source on main `1dce247a`: **222 suites / 2491 tests PASS**, 175.454 s; full lint **0 errors / 8 existing warnings**. The first full run caught missing pressed feedback on the new close button; the source fix passed the existing TouchTargets audit plus the final complete suite. No native build or device acceptance was performed by this lane. Interactive concept JavaScript syntax was checked; its rendering is not native evidence.
+影片為16隻原生真縮放，實際 **10.514956秒、1080×2340、214影格**，不是請求的20秒錄影長度。輸出GIF為同一影片便於PR直接看；影片不包含後面的9／20卡片操作，這些由獨立PNG證明。
 
-## Required native acceptance — none performed for this candidate yet
+最新產品完整 **224 suites／2509 tests PASS**，169.346s；全lint0errors／8既有warnings；私有runtime focused5 suites／38 tests PASS，3.909s；真正Release建置16s。移除動態Fabric SDK更新或名字承載層級的控制反例會失敗，測試沒有用legacy setter假扮Fabric。CI以推送後同一head結果為準。
 
-Root owns builds and device assignments. Use only a guarded memory fixture with the above independent geometry, no database seeding or account mutation. Preserve installed source/hash and original ON/auth/permission/theme/radio state.
+最新候選關閉獨立場景後已回原6狗一般地圖；同PID／同SHA，9項設定、1080×2340、6項權限及flags與原值相同，signedout／兩個位置紀錄ON／radio0/1/1，所有worker結束後交回root。正式163還原另由root執行，不把候選off當正式APK。
 
-1. Capture normal/wide camera and real pan/pinch for 16/20 and two groups; names do not form a solid overlap block and face coordinates do not drift.
-2. Tap a visible avatar before/after zoom: the selected card belongs to that exact dog and no selector opens. Verify duplicate native map events do not immediately dismiss/change it.
-3. Explicitly open the selector, scroll to an arbitrary middle/last ID and open its card. Close via Back/outside/close, then select again. Verify all 20 mapped dogs, selected row and problem notes/count.
-4. Pan the selected dog off screen. Selection/card remain; the selector can reach it. An explicit new card selection may use existing once-only framing, but GPS polling must not chase it.
-5. Font2/light/dark/portrait/landscape: button and close target >=48 dp; full names/problem text readable; first/last selector rows reachable; viewport/control/card/edge hints do not intersect. The current text-size estimate is not a native measurement.
-6. TalkBack on the actual device: explicit entry count, title focus, each dog's own full sentence, selected state, 20th row and focus return. Source accessibility props are not proof of spoken output.
-7. Source/owner/member removal and live/history/background transitions: selector closes, no stale row acts on a new scope; returning remains usable.
+## 尚未延伸的結論
 
-Do not merge this UI before the user reviews its actual native screenshots/video. No performance, Supabase, GPS raw/export, protocol, private fixture activation or version/signing change is part of this candidate.
+這輪最新ba8只驗normalfont／light／portrait。較早候選的font2／wide結果不能當本版全部重驗；極端長狗名、多窗口、TalkBack真語音與焦點尚未驗。TalkBack曾被Suite權限overlay擋住，未盲點擊未知焦點或授權通知以製造成功。32／64只是source與概念壓力比較，產品20隻上限沒有改。沒有把本次結果當Supabase、GPS真值、CPU或真機BLE驗證。
+
+UI需要使用者看圖批准再merge，原自動重疊展開清單不恢復。固定狗名列仍是比較概念，尚未實作；它會長期占地圖空間，沒有混入本PR。
