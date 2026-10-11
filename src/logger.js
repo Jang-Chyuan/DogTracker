@@ -80,3 +80,21 @@ export function historyReadDiagnostic(fields) {
     // Diagnostics never change a query or publication outcome.
   }
 }
+
+export const HISTORY_MODEL_STAGES = Object.freeze(['stream', 'replay', 'filter', 'context-movement',
+  'range-movement', 'stops', 'indoor', 'cursors', 'map-presentation', 'model-to-effect']);
+
+// Model sub-stages share the selection's opaque numeric sequence. Counts are
+// aggregate input sizes, never identities, packet values or clock timestamps.
+export function historyModelDiagnostic(fields) {
+  try {
+    if (!Number.isSafeInteger(fields?.sequence) || fields.sequence < 1
+      || !HISTORY_MODEL_STAGES.includes(fields.stage)
+      || !Number.isFinite(fields.elapsedMs) || fields.elapsedMs < 0
+      || !Number.isSafeInteger(fields.inputCount) || fields.inputCount < 0) return;
+    console.info('[HistoryModel]', { sequence: fields.sequence, stage: fields.stage,
+      elapsedMs: fields.elapsedMs, inputCount: fields.inputCount });
+  } catch {
+    // A refused diagnostic sink cannot change a model or its publication.
+  }
+}

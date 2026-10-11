@@ -30,9 +30,10 @@ function dedupe(rows, field) {
 export const mergeHistoryFixes = rows => dedupe(rows, 'locationTime');
 
 /** Call hold replay on packets, then GPS dedupe: status changes must survive. */
-export function historySourceStream(rows = [], { replayHolds = p => p } = {}) {
+export function historySourceStream(rows = [], { replayHolds = p => p, measure } = {}) {
   const packets = dedupe(normalizeHistoryRows(rows), 'packetTime');
-  const replayed = replayHolds(packets.map(p => ({ ...p })));
+  const replay = () => replayHolds(packets.map(p => ({ ...p })));
+  const replayed = measure ? measure('replay', packets.length, replay) : replay();
   // Held packets are timeline observations even without a new GPS fix.
   const gps = replayed.filter(p => !p.heldReason && coordinateValid(p) && p.locationTime != null);
   const points = [...mergeHistoryFixes(gps),

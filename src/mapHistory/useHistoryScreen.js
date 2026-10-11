@@ -641,6 +641,7 @@ export function useHistoryScreen({
     shownOnce.current !== `${sessionKey}|${day}` && !allLoaded;
   const diagnosticModelDay = useRef(null);
   const diagnosticCommittedDay = useRef(null);
+  const diagnosticModelFinished = useRef(null);
   const exactModel = useRef(null);
   if (!exactModel.current) exactModel.current = createExactHistoryModelCache();
   const dayModel = useMemo(() => {
@@ -669,13 +670,18 @@ export function useHistoryScreen({
     // The original memo deliberately ignores the clock for a past/fixed day.
     // Changed rows/options still build using the actual current modelNow.
     const cachedOptions = modelClock === null ? { ...options, now: null } : options;
-    const build = () => startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '', () => multiDayModel(subjects, options));
+    // The observer is deliberately absent from the model cache's equality
+    // options. Only a real build measures its pure pipeline's sub-stages.
+    const build = () => startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '',
+      () => multiDayModel(subjects, { ...options, measure: diagnostic?.measure }));
     const built = subject === 'dog' && cloud?.publishedReads
       ? exactModel.current([owner, pub?.scope, pub?.generation, sessionKey, memoryScope, read], subjects, cachedOptions, build)
       : build();
     buildCost.current = Date.now() - started;
     diagnostic?.emit('model', 'end', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
       rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: true });
+    diagnosticModelFinished.current = { diagnostic, model: built.main, at: Date.now(),
+      count: built.main?.points.length ?? 0 };
     return built;
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -697,6 +703,11 @@ export function useHistoryScreen({
   ]);
   const model = dayModel?.main ?? null;
   useEffect(() => {
+    const finished = diagnosticModelFinished.current;
+    if (model && finished?.model === model && finished.diagnostic === diagnostic) {
+      diagnostic?.modelEnd('model-to-effect', finished.at, finished.count);
+      diagnosticModelFinished.current = null;
+    }
     diagnostic?.emit('state', 'state', undefined, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
       rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: !!model });
   }, [diagnostic, cloud, owner, allLoaded, cloudDays.completenessLoaded, coverageReady, model, publicationRevision]);
@@ -767,14 +778,15 @@ export function useHistoryScreen({
   const [focus, setFocus] = useState(null);
   const time = dayModel ? sharedCursorTime(dayModel, cursorTime) : null;
   const cursors = useMemo(
-    () =>
-      dayModel
-        ? multiCursors(dayModel, time, {
+    () => {
+      if (!dayModel) return {};
+      const build = () => multiCursors(dayModel, time, {
             inGap,
             subject: subject === 'phone' ? 'phone' : 'dog',
-          })
-        : {},
-    [dayModel, time, inGap, subject],
+          });
+      return diagnostic ? diagnostic.measure('cursors', dayModel.subjects.length, build) : build();
+    },
+    [dayModel, time, inGap, subject, diagnostic],
   );
   const cursor = cursors[protagonistId] ?? null;
   const moveCursor = useCallback(
@@ -978,9 +990,12 @@ export function useHistoryScreen({
   );
   const color = look[protagonistId]?.color ?? routeColorOf(subject);
   const map = useMemo(
-    () =>
-      dayModel ? multiMapPresentation(dayModel, cursors, look, theme) : null,
-    [dayModel, cursors, look, theme],
+    () => {
+      if (!dayModel) return null;
+      const build = () => multiMapPresentation(dayModel, cursors, look, theme);
+      return diagnostic ? diagnostic.measure('map-presentation', dayModel.main?.points.length ?? 0, build) : build();
+    },
+    [dayModel, cursors, look, theme, diagnostic],
   );
   const anyData = !!dayModel?.subjects.some(s => s.hasData);
   /** The chips (上方膠囊): every dog shown, the protagonist outlined. */

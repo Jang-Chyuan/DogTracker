@@ -59,6 +59,7 @@ export function multiDayModel(subjects, options) {
       following,
       closedAt,
       replayHolds: s.replayHolds ?? undefined,
+      measure: options.measure,
       ...extra,
     });
   const manualRange = manual
