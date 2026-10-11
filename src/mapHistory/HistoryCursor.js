@@ -19,16 +19,27 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
   hidden = false, onMove, onDraggingChange, onProjection, labelPlacement, projectionScope = '' }) {
   const [placeSnapshot, setPlace] = useState(null);
   const [dragging, setDragging] = useState(false);
-  useEffect(() => { if (hidden) setDragging(false); }, [hidden]);
+  const hasCursor = !!cursor;
   const coordinateKey = cursor ? `${cursor.coordinate.latitude},${cursor.coordinate.longitude}` : '';
   const projectionKey = cursorProjectionKey(cursor, revision, width, height, top, bottom, projectionScope);
-  const place = placeSnapshot?.key === projectionKey ? placeSnapshot.point : null;
+  const projectedPlace = placeSnapshot?.key === projectionKey ? placeSnapshot.point : null;
+  // Cursor coordinates change during a drag. Only that in-progress gesture
+  // may retain its valid start anchor while its new projection is pending.
+  // Camera/source/viewport changes never borrow an old screen coordinate.
+  const scene = `${projectionScope}:${revision}:${width}:${height}:${top}:${bottom}`;
+  const drag = useRef({ origin: null, busy: false, pending: null, generation: 0, scene, mapRef, active: false });
+  const generation = useRef(0);
+  const sameGesture = dragging && drag.current.generation === generation.current
+    && drag.current.scene === scene && drag.current.mapRef === mapRef && !hidden && !!cursor;
+  const place = projectedPlace ?? (sameGesture ? drag.current.origin : null);
+  const visible = point => point && Number.isFinite(point.x) && Number.isFinite(point.y)
+    && point.x >= 0 && point.x <= width && point.y >= top && point.y <= height - bottom;
   const projectionReceiver = useRef(onProjection);
   projectionReceiver.current = onProjection;
   // Where the cursor point is on screen: after it moved, and after the map did.
   useEffect(() => {
     let alive = true;
-    if (!cursor || !mapRef.current?.pointForCoordinate) { setPlace(null); return undefined; }
+    if (hidden || !cursor || !mapRef.current?.pointForCoordinate) { setPlace(null); return undefined; }
     mapRef.current.pointForCoordinate(cursor.coordinate)
       .then(point => {
         if (alive) { setPlace({ key: projectionKey, point }); projectionReceiver.current?.({ key: projectionKey, point }); }
@@ -36,18 +47,30 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
       .catch(() => {});
     return () => { alive = false; };
     // coordinateKey stands for the cursor's coordinate.
-  }, [coordinateKey, revision, width, height, top, bottom, mapRef, projectionKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coordinateKey, revision, width, height, top, bottom, mapRef, projectionKey, hidden]); // eslint-disable-line react-hooks/exhaustive-deps
   const live = useRef({});
-  live.current = { cursor, points, onMove, place };
-  // Each gesture has its own generation: a coordinate read that comes back
-  // after the finger lifted (or after a new gesture began) is dropped.
-  const drag = useRef({ origin: null, busy: false, pending: null, generation: 0 });
-  const generation = useRef(0);
+  live.current = { cursor, points, onMove, place, scene, mapRef, hidden, visible: visible(place) };
+  // Each gesture has its own generation. The released final read may land;
+  // cancellation or a new gesture rejects reads from the previous owner.
   useEffect(() => () => { generation.current += 1; }, []);
   const notify = useRef(onDraggingChange);
   notify.current = onDraggingChange;
   useEffect(() => () => notify.current?.(false), []);
+  useEffect(() => {
+    const d = drag.current;
+    if (d.scene !== scene || d.mapRef !== mapRef || hidden || !cursor
+      || (projectedPlace && !visible(projectedPlace))) {
+      const owned = d.active || d.origin != null;
+      generation.current += 1; d.pending = null; d.origin = null; d.active = false;
+      d.scene = scene; d.mapRef = mapRef;
+      setDragging(false);
+      if (owned) notify.current?.(false);
+    }
+  }, [scene, mapRef, hidden, hasCursor, projectedPlace]); // eslint-disable-line react-hooks/exhaustive-deps
   const responder = useMemo(() => {
+    const currentGesture = d => d.generation === generation.current
+      && d.scene === live.current.scene && d.mapRef === live.current.mapRef
+      && !live.current.hidden && !!live.current.cursor;
     // One coordinate read at a time; the newest finger position waits.
     const follow = async target => {
       const d = drag.current;
@@ -55,40 +78,43 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
       d.busy = true;
       try {
         const coordinate = await mapRef.current?.coordinateForPoint?.(target);
-        if (d.generation !== generation.current) return;
+        if (!currentGesture(d)) return;
         const { points: route, cursor: now, onMove: move } = live.current;
         const found = coordinate && nearestRouteSpot(route, coordinate, now?.time ?? null);
         if (found) move?.(found.point.time, 'drag');
       } catch { /* The map went away mid-drag. */ }
       d.busy = false;
-      if (d.pending && d.generation === generation.current) {
+      if (d.pending && currentGesture(d)) {
         const next = d.pending;
         d.pending = null;
         follow(next);
       }
     };
     return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => !!live.current.visible && !live.current.hidden,
+      onMoveShouldSetPanResponder: () => !!live.current.visible && !live.current.hidden,
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => {
+        if (!live.current.visible || live.current.hidden || !live.current.cursor) return;
         generation.current += 1;
-        drag.current = { origin: live.current.place, busy: false, pending: null, generation: generation.current };
+        drag.current = { origin: live.current.place, busy: false, pending: null, generation: generation.current,
+          scene: live.current.scene, mapRef: live.current.mapRef, active: true };
         setDragging(true);
         notify.current?.(true);
       },
       onPanResponderMove: (_, gesture) => {
-        const origin = drag.current.origin;
-        if (!origin) return;
+        const d = drag.current, origin = d.origin;
+        if (!origin || !d.active || !currentGesture(d)) return;
         follow({ x: origin.x + gesture.dx, y: origin.y + gesture.dy });
       },
       // The last read of a released drag still lands (the finger's last place).
-      onPanResponderRelease: () => { setDragging(false); notify.current?.(false); },
-      onPanResponderTerminate: () => { generation.current += 1; setDragging(false); notify.current?.(false); },
+      onPanResponderRelease: () => { drag.current.active = false; setDragging(false); notify.current?.(false); },
+      onPanResponderTerminate: () => { generation.current += 1; drag.current.active = false; drag.current.pending = null;
+        setDragging(false); notify.current?.(false); },
     });
   }, [mapRef]);
-  if (hidden || !cursor || !place || place.x < 0 || place.x > width || place.y < top || place.y > height - bottom) {
+  if (hidden || !cursor || !visible(place)) {
     return null;
   }
   const step = direction => {
