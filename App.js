@@ -88,7 +88,7 @@ import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { historyTargetOf } from './src/mapHistory/useHistoryScreen';
 import { useDogAvatars } from './src/dogs/useDogAvatars';
 import { useHistoryCloudSource } from './src/mapHistory/HistoryCloud';
-import { useCloudSync } from './src/cloud/useCloudSync';
+import { useAppCloudSync } from './src/app/useAppCloudSync';
 import { completedMapRevision, mapDownloadBusy, mapReadRevision } from './src/cloud/CloudPublication';
 import { useCloudDogs } from './src/cloud/useCloudDogs';
 import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
@@ -314,13 +314,7 @@ function TrackerApp({ resume = null, onRestart }) {
   const tracking = useTrackingSession();
   // An upload or download refused for the sign-in (401) asks AuthProvider
   // whether it ended (判定表「使用中登入失效」).
-  const cloudSync = useCloudSync(
-    tracking.cloudDatabase,
-    tracking.ready.real,
-    undefined,
-    auth.reportAuthFailure,
-    auth.isDiscarded,
-  );
+  const cloudSync = useAppCloudSync(tracking, auth);
   const upload = useCloudUpload(
     tracking.ready.real,
     cloudSync.ownerId,

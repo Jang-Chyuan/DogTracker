@@ -43,6 +43,13 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     deleting = true; generation++; readback = null; archiveRequest = null;
     latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
     publish({ mapPending: true, snapshotPending: true });
+    return { failed() {
+      // Keep deletion blocked until S7 retries; expose a truthful failure rather
+      // than an endless update indicator if the user closes the dialog.
+      catchUp.started(true); catchUp.failed();
+      publish({ mapPending: false, snapshotPending: false, error: t('c1275'),
+        failingSince: state.failingSince ?? now() });
+    } };
   });
   const updateBusy = () => publish({ busy: !!(latestRunning || archiveRunning || manualRunning),
     mode: manualRunning ? 'manual' : latestRunning || archiveRunning ? 'auto' : null });

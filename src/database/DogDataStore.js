@@ -89,11 +89,16 @@ export function createDogDataStore(connection, latestSnapshots = null) {
         // are removed; deleting/resetting that counter could certify stale UI.
         await executeHistoryMaterialBatch(connection, commands);
       });
-      if (latestSnapshots?.clearLatestAndRun) {
-        beforeDelete();
-        await latestSnapshots.clearLatestAndRun(() => withCloudSyncSlot(clearArchive));
-      } else await clearArchive();
-      await NativeModules.HistoryExport?.clearExports?.();
+      const fence = latestSnapshots?.clearLatestAndRun ? beforeDelete() : null;
+      try {
+        if (latestSnapshots?.clearLatestAndRun)
+          await latestSnapshots.clearLatestAndRun(() => withCloudSyncSlot(clearArchive));
+        else await clearArchive();
+        await NativeModules.HistoryExport?.clearExports?.();
+      } catch (error) {
+        fence?.failed?.();
+        throw error;
+      }
     },
   };
 }

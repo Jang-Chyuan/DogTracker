@@ -29,6 +29,7 @@ function isForeground(state) {
 // BLE state, or each other's physical tables.
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
+  const [cloudControlsReady, setCloudControlsReady] = useState(false);
   const latestPriority = useRef(null);
   const deletionFence = useRef(null);
   const [historyDatabase] = useState(() => Object.fromEntries(
@@ -84,6 +85,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   useEffect(() => {
     let disposed = false;
     const archiveWaiting = new AbortController();
+    setCloudControlsReady(false);
     // Disable old controls while waiting for the prior owner or a failed reopen.
     dispatchTracking({ type: 'reset-all' });
     setPreferences({
@@ -385,6 +387,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           return task.finally(() => realWrites.delete(task));
         },
       };
+      // Admit the independent latest engine only once its real command owner
+      // exists. Local migrations retain their own readiness / Splash gates.
+      setCloudControlsReady(true);
 
       return () => {
         subscription.remove();
@@ -419,6 +424,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
 
   return {
     cloudDatabase,
+    cloudReady: cloudDatabase.latestStorageIsolated ? cloudControlsReady : trackingSources.real.ready,
     historyDatabase,
     hardwareDatabase,
     mode,
