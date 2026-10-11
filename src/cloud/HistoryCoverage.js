@@ -24,7 +24,11 @@ export async function initializeHistoryCoverage(connection, table = 'history_dow
 // packets also matter to replay, so their eviction invalidates that proof.
 export function invalidateEvictedCoverage(deletion, table = 'supabase_dog_status', coverageTable = 'history_download_state') {
   const candidates = deletion.replace(new RegExp(`^DELETE FROM ${table} WHERE id IN`), '');
-  return `UPDATE ${coverageTable} SET complete=0 WHERE complete=1 AND EXISTS (
+  // Test the exact candidate set once before the correlated context scan.
+  // Below the cap it is empty; SQLite otherwise scans each proof's lost-row
+  // window even though no id can be evicted. Nonempty candidates still use
+  // the original proof predicate and the deletion's same transaction.
+  return `UPDATE ${coverageTable} SET complete=0 WHERE complete=1 AND EXISTS ${candidates} AND EXISTS (
     SELECT 1 FROM ${table} lost WHERE lost.id IN ${candidates}
     AND lost.owner_user_id=${coverageTable}.owner AND lost.slave_id=${coverageTable}.slave_id
     AND (CAST(COALESCE(lost.track_at,lost.received_at) AS INTEGER)>=range_start-${HISTORY_CONTEXT_BEFORE_MS}
