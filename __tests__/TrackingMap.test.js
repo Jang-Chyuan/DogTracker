@@ -610,6 +610,64 @@ test('name tags that would overlap on screen merge into 「N 隻」; a source sw
   }
 });
 
+test('bottom tags keep the real dog coordinates through pan and zoom, without independent labels or leaders', async () => {
+  let shift = 0;
+  const markers = [4, 6, 8].map((slaveId, index) => ({ ...slaveMarker, slaveId,
+    name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`,
+    coordinate: { latitude: 25.005, longitude: 121.002 + index * 0.00001 } }));
+  const original = JSON.stringify(markers);
+  const onDogPress = jest.fn();
+  mockCamera.pointForCoordinate = jest.fn(async p => ({
+    x: (p.longitude - 121) * 100000 + shift, y: (25.01 - p.latitude) * 100000,
+  }));
+  // A real native map has both directions. Leaving the reverse projection
+  // absent would silently fall back to old markers and miss the regression.
+  mockCamera.coordinateForPoint = jest.fn(async p => ({
+    latitude: 25.01 - p.y / 100000, longitude: 121 + (p.x - shift) / 100000,
+  }));
+  mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 0, zoom: 19 });
+  try {
+    await render({ onDogPress, presentation: { ...defaults.presentation, dogMarkers: markers,
+      slaveSegments: [], rangeRing: null } });
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    await readyMap();
+    const verify = () => {
+      const faces = renderer.root.findAllByType(Marker);
+      expect(faces.map(node => node.props.coordinate)).toEqual(markers.map(marker => marker.coordinate));
+      expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
+      expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
+      return faces;
+    };
+    verify();
+    await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
+    for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
+    verify().forEach((face, index) => {
+      const tag = face.findAll(node => node.props.testID === 'dog-name-tag' && typeof node.type === 'string');
+      expect(tag).toHaveLength(1);
+      expect(tag[0].findByType(require('react-native').Text).props.children).toBe(markers[index].tag);
+    });
+    shift = 30;
+    mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 35, zoom: 14 });
+    await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
+    for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
+    const faces = verify();
+    const groups = renderer.root.findAll(node => node.props.testID === 'dog-group-tag' && typeof node.type === 'string');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].findByType(require('react-native').Text).props.children).toBe('3 隻');
+    await act(async () => faces.find(face => face.props.identifier === 'real-dog-6').props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(6);
+    const a11y = renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '')
+      && typeof node.type === 'string');
+    expect(a11y.map(node => node.props.testID).sort()).toEqual(['marker-a11y-4', 'marker-a11y-6', 'marker-a11y-8']);
+    expect(JSON.stringify(markers)).toBe(original);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+    mockCamera.getCamera.mockResolvedValue(null);
+  }
+});
+
 describe('off-screen hints and the overlap menu', () => {
   const at = (slaveId, latitude, longitude, extra = {}) => ({ ...slaveMarker, slaveId, name: `狗 ${slaveId}`,
     tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`, coordinate: { latitude, longitude }, ...extra });
@@ -828,10 +886,10 @@ test('a duplicate map hit cannot overwrite the native dog marker identity', asyn
   } finally { delete mockCamera.pointForCoordinate; }
 });
 
-test('separated native dog faces use compact bitmaps while labels keep their own identities', async () => {
+test('bottom dog names share their native face marker and its true-coordinate anchor', async () => {
   const { markerFrame } = require('../src/map/DogMarkerView');
   const onDogPress = jest.fn();
-  const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId, size: 48,
+  const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId, size: 48, selected: slaveId === 6,
     coordinate: { latitude: 25.02, longitude: 121.02 }, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}` }));
   mockCamera.pointForCoordinate = jest.fn(async point => ({ x: (point.longitude - 121) * 10000, y: (point.latitude - 25) * 10000 }));
   mockCamera.coordinateForPoint = jest.fn(async point => ({ latitude: 25 + point.y / 10000, longitude: 121 + point.x / 10000 }));
@@ -842,13 +900,14 @@ test('separated native dog faces use compact bitmaps while labels keep their own
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
     const dogs = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'));
     expect(dogs).toHaveLength(2);
-    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48, true).anchor));
+    dogs.forEach(dog => expect(dog.props.anchor).toEqual(markerFrame(48).anchor));
     const dog6 = dogs.find(dog => dog.props.identifier === 'real-dog-6');
     await act(async () => dog6.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[6]]);
+    dogs.forEach(dog => expect(dog.props.coordinate).toEqual(markers[0].coordinate));
     const label6 = renderer.root.findAllByType(Marker).find(marker =>
-      !marker.props.identifier && marker.findAllByType(require('react-native').Text).some(text => text.props.children === '狗 6'));
-    expect(label6).toBeDefined();
+      marker.findAllByType(require('react-native').Text).some(text => text.props.children === '狗 6'));
+    expect(label6).toBe(dog6);
     await act(async () => label6.props.onPress());
     expect(onDogPress.mock.calls).toEqual([[6], [6]]);
   } finally { delete mockCamera.pointForCoordinate; delete mockCamera.coordinateForPoint; }
