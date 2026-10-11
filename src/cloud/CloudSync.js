@@ -144,7 +144,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
             && Number.isSafeInteger(archive.revision) && archive.revision > 0)
             publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
           phaseAt = now();
-          const cached = await database.readLatestSnapshot(userId);
+          const cached = await database.readLatestSnapshot(userId, { metadataOnly: true });
           timings.latestCacheReadMs = Math.max(0, now() - phaseAt);
           check();
           publish({ snapshotBaseRevision: cached?.revision ?? null });

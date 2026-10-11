@@ -86,13 +86,17 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
         return revision;
       });
     },
-    async readLatestSnapshot(owner) {
+    async readLatestSnapshot(owner, options = {}) {
       if (!owner) throw new Error(t('c572'));
       await ready();
-      // One statement sees the state and every dog from the same transaction,
+      // The full joined read below sees the state and every dog together,
       // including the state row of a successful empty snapshot.
       return withConnectionLock(connection, async () => {
         const state = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
+        // The scheduler only needs the old revision bound before fresh HTTP.
+        // Revision 0 permits the existing one-time offline upgrade cache, not
+        // a remote success; do not bootstrap, decode context or write here.
+        if (options?.metadataOnly === true) return { revision: state ? Number(state.revision) : 0 };
         if (!state && bootstrap) {
           // Upgrade only once from this owner's already published archive. It
           // is an offline cache, never proof of a fresh or complete remote set.

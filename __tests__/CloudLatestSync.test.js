@@ -67,6 +67,56 @@ test('latest is atomically usable while archive is held; archive failure never r
   database.beginDownload = begin;
 });
 
+test('prelatest revision read does not bootstrap optional archive context before fresh HTTP', async () => {
+  const context = deferred();
+  const { database, downloadLatest, current, start } = await fixture({ downloadContext: () => context.promise });
+  await database.savePage('a', [fix('upgrade-cache')]);
+  const bootstrap = deferred();
+  const execute = connection.executeAsync.getMockImplementation();
+  let bootstrapEntered = false;
+  connection.executeAsync.mockImplementation(async (query, params) => {
+    if (query.includes('WITH RECURSIVE dogs')) {
+      bootstrapEntered = true;
+      await bootstrap.promise;
+    }
+    return execute(query, params);
+  });
+  try {
+    await start();
+    expect(downloadLatest).toHaveBeenCalledTimes(1);
+    expect(bootstrapEntered).toBe(false);
+    expect(current()).toMatchObject({ snapshotBaseRevision: 0, mapSuccessRevision: 1, snapshotPending: false });
+    expect((await database.readLatestSnapshot('a')).packets[0].event_id).toBe('latest');
+  } finally {
+    bootstrap.resolve(); context.resolve({ cutoff: NOW, dogs: [] }); await flush();
+  }
+});
+
+test('archive proof remains a separate prelatest wait and restores only durable coverage', async () => {
+  const { database, downloadLatest, current, start } = await fixture();
+  await database.beginDownload('a');
+  await database.publishDownload('a', 'auto', NOW - 100);
+  const proof = deferred();
+  const execute = connection.executeAsync.getMockImplementation();
+  let proofEntered = false;
+  connection.executeAsync.mockImplementation(async (query, params) => {
+    if (query.includes('SELECT cutoff,revision FROM cloud_archive_publication')) {
+      proofEntered = true;
+      await proof.promise;
+    }
+    return execute(query, params);
+  });
+  try {
+    await start();
+    expect(proofEntered).toBe(true);
+    expect(downloadLatest).not.toHaveBeenCalled();
+    expect(current()).toMatchObject({ archiveRevision: 0, archiveCutoff: null, mapSuccessRevision: 0 });
+    proof.resolve(); await flush();
+    expect(downloadLatest).toHaveBeenCalledTimes(1);
+    expect(current().archiveRevision).toBeGreaterThanOrEqual(1);
+  } finally { proof.resolve(); await flush(); }
+});
+
 test('slow context cannot starve archive across repeated latest cycles, even if its transport ignores abort', async () => {
   const contexts = [];
   const downloadContext = jest.fn(({ signal }) => { contexts.push(signal); return new Promise(() => {}); });
