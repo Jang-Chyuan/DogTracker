@@ -14,6 +14,7 @@ import SplashOverlay, {
 } from '../src/app/SplashOverlay';
 import {
   getSplashState,
+  reportInitialLatest,
   launchInto,
   reportMapFramed,
   resetSplashGate,
@@ -198,4 +199,20 @@ describe('waiting tail lifecycle', () => {
       await act(async () => renderer.unmount());
     },
   );
+});
+
+
+test('initial network failure exposes an accessible explicit action without exposing its raw error or assuming cached dogs', async () => {
+  const scope = {};
+  let renderer;
+  await act(async () => { reportInitialLatest(scope, 'fallback', () => true); renderer = Renderer.create(<SplashOverlay />); });
+  const overlay = renderer.root.findByProps({ testID: 'splash-overlay' });
+  expect(overlay.props.importantForAccessibility).toBe('auto');
+  const button = renderer.root.findByProps({ testID: 'splash-enter-map' });
+  expect(button.props.accessibilityRole).toBe('button');
+  expect(button.props.accessibilityLabel).toBe('先進入地圖');
+  await act(async () => button.props.onPress());
+  expect(getSplashState().phase).toBe('waiting');
+  expect(getSplashState().latest.phase).toBe('proceed');
+  await act(async () => renderer.unmount());
 });

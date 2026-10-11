@@ -1,3 +1,4 @@
+import { giveUpWaiting, resetSplashGate } from '../src/app/hideSplash';
 import { t as i18nT } from '../src/i18n';
 import MapScreen from '../src/screens/MapScreen';
 import { layout } from '../src/theme/tokens';
@@ -76,6 +77,13 @@ async function mount() {
   await act(async () => {
     renderer = Renderer.create(<App />);
   });
+  // This suite mocks a restored sign-in but supplies no matching cloud
+  // publisher. Continue explicitly through the new safe fallback; these
+  // cases verify local navigation, not successful cloud synchronization.
+  await act(async () => giveUpWaiting());
+  const fallback = renderer.root.findAll(node => node.props.testID === 'splash-enter-map'
+    && typeof node.props.onPress === 'function')[0];
+  if (fallback) await act(async () => fallback.props.onPress());
 }
 async function advance(ms = 1000) {
   await act(async () => jest.advanceTimersByTimeAsync(ms));
@@ -1254,4 +1262,32 @@ test('066: the settings header back is a real icon with room before the title, t
   const glyph = back.findByType(Glyph);
   expect(glyph.props.name).toBe('back');
   expect(glyph.props.size).toBeGreaterThanOrEqual(28);
+});
+
+test('restored account without fresh cloud acceptance keeps its cold map covered until an explicit fallback action', async () => {
+  resetSplashGate();
+  await act(async () => { renderer = Renderer.create(<App />); });
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
+  await act(async () => giveUpWaiting());
+  const fallback = renderer.root.findAll(node => node.props.testID === 'splash-enter-map'
+    && typeof node.props.onPress === 'function')[0];
+  expect(fallback).toBeDefined();
+  // The 30-second safety exposes a choice instead of silently claiming sync.
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
+  await act(async () => fallback.props.onPress());
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+});
+
+
+test('cold notification page retains local/link/map framing but bypasses an unavailable latest cloud publication', async () => {
+  resetSplashGate();
+  Linking.getInitialURL.mockResolvedValue('dogtracker://notification/receiver-settings');
+  try {
+    await act(async () => { renderer = Renderer.create(<App />); });
+    await advance(100);
+    expect(title()).toBe('返回，接收器');
+    expect(renderer.root.findByType(MapScreen).props.coldStartReady).toBe(true);
+    expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ testID: 'splash-enter-map' })).toHaveLength(0);
+  } finally { Linking.getInitialURL.mockResolvedValue(null); }
 });

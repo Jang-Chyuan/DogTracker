@@ -159,13 +159,18 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           attempt.rows = readRows;
           attempt.packets = packets.filter(row => row.source === 'cloud');
           attempt.track = readTrack;
-          if (!baseline) attempt.commit = attempt.success;
+          if (!baseline) {
+            attempt.commit = attempt.success;
+            const accepted = scheduler.current?.();
+            attempt.cloudPublication = accepted ? { owner: accepted.owner, scope: accepted.scope,
+              generation: accepted.generation, revision: attempt.success } : null;
+          }
           attempt.baselineLoaded = true;
         }
         if (alive) setCache({ owner, database, value: {
           rows: attempt.rows, packets: [...packets.filter(row => row.source !== 'cloud'), ...attempt.packets],
           track: attempt.track, holds, statuses, ranges, error: '', loaded: true,
-          cloudCommit: attempt.commit, ...(latestFirst ? { cachedBaseline: baseline } : {}),
+          cloudCommit: attempt.commit, ...(latestFirst ? { cachedBaseline: baseline, cloudPublication: attempt.cloudPublication ?? null } : {}),
         } });
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.

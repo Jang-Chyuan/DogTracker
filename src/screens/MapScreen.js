@@ -84,6 +84,8 @@ export default function MapScreen({
   bottomInset,
   mapProvider,
   active = true,
+  coldStartReady = true,
+  coldStartScope = null,
   history,
   historical = false,
   cloudDogs: incomingCloudDogs,
@@ -1045,6 +1047,8 @@ export default function MapScreen({
       <TrackingMap
         a11yHidden={historical && historySheet}
         provider={mapProvider}
+        coldStartReady={coldStartReady}
+        coldStartScope={coldStartScope}
         // A screen fixture counts as a new source, so the map frames its dogs.
         source={
           historySource ?? (fixture ? `${mode}:fixture:${fixture.name}` : mode)
@@ -1068,10 +1072,10 @@ export default function MapScreen({
         framingReady={
           historical
             ? !!screen.model
-            : receiverActive && receiverState !== undefined && phoneSettled
+            : coldStartReady && receiverActive && receiverState !== undefined && phoneSettled
         }
         dataReady={
-          tracking.preferences.ready &&
+          coldStartReady && tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&
           // The first fit waits for the receiver's identity (one native read),
           // so another receiver's stored position is never framed as ours.

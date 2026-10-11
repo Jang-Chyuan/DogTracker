@@ -124,6 +124,7 @@ import {
   ONBOARDING_SIGN_IN,
   signInStack,
 } from './src/app/Launch';
+import { useInitialLatest } from './src/app/useInitialLatest';
 import { useReceiverService } from './src/ble/useReceiverService';
 import PermissionsScreen from './src/onboarding/PermissionsScreen';
 import { usePermissionsGuide } from './src/onboarding/usePermissionsGuide';
@@ -541,6 +542,12 @@ function TrackerApp({ resume = null, onRestart }) {
   const launchInput = fixture?.launch ?? liveLaunch;
   const decided = launchScreen(launchInput);
   const launchKey = fixture?.launch ? fixtureName : 'live';
+  const [notificationRequest, setNotificationRequest] = useState(null);
+  const initialLatest = useInitialLatest({ screen: decided, owner: auth.user?.id ?? null,
+    expired: !!auth.expired, fixture: !!fixture,
+    pageLaunch: !!notificationRequest && !['map', 'open-map'].includes(notificationRequest.screen),
+    supported: typeof tracking.cloudDatabase?.publishLatestSnapshot === 'function',
+    sync: cloudSync, dogs: cloudDogs });
   useEffect(() => {
     if (decided === 'splash' || launch.key === launchKey) return;
     // A fixture's start left for another state: back on the map.
@@ -587,7 +594,6 @@ function TrackerApp({ resume = null, onRestart }) {
   // .notificationDestination). At a cold start it waits for the map; the
   // first-launch guide is not interrupted. Back from a page returns to the
   // map, as from a top card.
-  const [notificationRequest, setNotificationRequest] = useState(null);
   useEffect(() => {
     const take = url => {
       const destination = notificationDestination(url);
@@ -1358,6 +1364,8 @@ function TrackerApp({ resume = null, onRestart }) {
           ]}
         >
           <MapScreen
+            coldStartReady={splashPhase !== 'waiting' || (decided !== 'splash' && initialLatest.ready)}
+            coldStartScope={initialLatest.frameScope}
             history={mapInputs.history}
             historyCloud={mapInputs.historyCloud}
             tracking={mapInputs.tracking}

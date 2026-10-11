@@ -3,6 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
+import { initialLatestAccepted } from '../src/app/useInitialLatest';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 const NOW = Date.parse('2026-10-10T12:00:00Z');
 const clock = () => NOW;
@@ -55,7 +56,7 @@ test('cold cached dogs survive initial network failure without claiming success;
     mapSuccessRevision: 0, snapshotBaseRevision: 0 });
   await act(async () => { screen = Renderer.create(<Probe database={database} state={state} publication={publication} />); });
   expect(state.current).toMatchObject({ loaded: true, cachedBaseline: true, cloudCommit: null,
-    rows: [expect.objectContaining({ event_id: 'cached' })] });
+    rows: [expect.objectContaining({ event_id: 'cached' })], cloudPublication: null });
   await database.savePage('a', [fix('archive-new', 4, 26), fix('extra-dog', 6)]);
   await act(async () => { screen.update(<Probe database={database} state={state} publication={publication} busy={false} revision={1} />); });
   expect(state.current.rows.map(row => [row.event_id, row.slave_lat])).toEqual([['cached', 25]]);
@@ -76,10 +77,13 @@ test('a complete new snapshot replaces the cache as one set and complete-empty k
   await act(async () => { screen.update(<Probe database={database} state={state} publication={publication} busy={false} success={1} revision={2} />); });
   expect(state.current.rows.map(row => row.slave_id)).toEqual([6]);
   expect(state.current.cloudCommit).toBe(1);
+  expect(initialLatestAccepted('a', version, state.current)).toBe(true);
   await database.publishLatestSnapshot('a', { cutoff: NOW + 1000, dogs: [] });
   version = { ...version, attempt: 2, mapSuccessRevision: 2 };
   await act(async () => { screen.update(<Probe database={database} state={state} publication={publication} busy={false} success={2} revision={4} />); });
   expect(state.current.rows).toEqual([]);
+  expect(initialLatestAccepted('a', version, state.current)).toBe(true);
+  expect(initialLatestAccepted('a', { ...version, scope: {} }, state.current)).toBe(false);
   expect([...new Set(state.current.packets.map(row => row.slave_id))]).toEqual([9]);
   expect(state.current.packets.every(row => row.source !== 'cloud')).toBe(true);
 });
@@ -179,4 +183,22 @@ test('charging cache also waits for three real good observations over time, with
     if (index < 2) expect(state.current.holds[4]).toBeDefined();
   }
   expect(state.current.holds[4]).toBeUndefined();
+});
+
+
+test('native publish alone cannot prove initial acceptance while its atomic hold read is deferred', async () => {
+  await database.publishLatestSnapshot('a', { cutoff: NOW, dogs: [] });
+  const state = { current: null }, scope = {};
+  const version = { owner: 'a', scope, generation: 1, attempt: 1, pending: false,
+    mapSuccessRevision: 1, snapshotBaseRevision: 0 };
+  let release;
+  const deferred = new Promise(resolve => { release = resolve; });
+  const readHolds = database.holdRows;
+  database.holdRows = async (...args) => { await deferred; return readHolds(...args); };
+  await act(async () => { screen = Renderer.create(<Probe database={database} state={state}
+    publication={() => version} busy={false} success={1} revision={1} />); });
+  expect(initialLatestAccepted('a', version, state.current)).toBe(false);
+  await act(async () => { release(); for (let i = 0; i < 30; i++) await Promise.resolve(); });
+  expect(state.current.rows).toEqual([]);
+  expect(initialLatestAccepted('a', version, state.current)).toBe(true);
 });

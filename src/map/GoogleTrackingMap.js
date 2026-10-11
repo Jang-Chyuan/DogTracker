@@ -56,6 +56,7 @@ import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
+  getSplashState,
   splashChrome,
   useSplashMarkersHidden,
 } from '../app/hideSplash';
@@ -606,6 +607,8 @@ function GoogleTrackingMapRenderer({
   onReadyChange,
   foreground,
   dataReady = true,
+  coldStartReady = true,
+  coldStartScope = null,
   framingReady = true,
   onNativePhone,
   phoneEnabled,
@@ -730,6 +733,8 @@ function GoogleTrackingMapRenderer({
   const afterFit = useRef(null);
   useEffect(() => () => clearTimeout(afterFit.current), []);
   const splashReleased = useRef(false);
+  const coldFrame = useRef({ scope: coldStartScope, ready: coldStartReady });
+  coldFrame.current = { scope: coldStartScope, ready: coldStartReady };
   // The latest the launch screen is held when there is nothing to frame.
   const splashDeadline = useRef(Date.now() + FRAMING_WAIT_MAX_MS);
   const mounted = useRef(true);
@@ -751,7 +756,8 @@ function GoogleTrackingMapRenderer({
     bottom: bottomInset,
   };
   const releaseSplash = useCallback(() => {
-    if (splashReleased.current) return;
+    if (!coldFrame.current.ready || splashReleased.current) return;
+    const scope = coldFrame.current.scope;
     splashReleased.current = true;
     const map = mapRef.current;
     const inputs = splashInputs.current;
@@ -770,6 +776,7 @@ function GoogleTrackingMapRenderer({
       .then(entries => {
         // The map was replaced or closed meanwhile (a new source, a fixture
         // switch): its next framing reports instead.
+        if (coldFrame.current.scope !== scope || !coldFrame.current.ready) return;
         if (!mounted.current || mapRef.current !== map) {
           splashReleased.current = false;
           return;
@@ -782,7 +789,7 @@ function GoogleTrackingMapRenderer({
           ),
         );
       })
-      .catch(() => reportMapFramed([]));
+      .catch(() => { if (coldFrame.current.scope === scope && coldFrame.current.ready) reportMapFramed([]); });
   }, []);
   const fontScale = PixelRatio.getFontScale?.() || 1;
   // Framing keeps clear of the bottom right buttons too (16dp + 48dp), and on
@@ -801,6 +808,17 @@ function GoogleTrackingMapRenderer({
     };
   }, [dogMarkers, fontScale, bottomRow]);
   const cameraRead = useRef(0);
+  const previousColdScope = useRef(coldStartScope);
+  useEffect(() => {
+    const changed = previousColdScope.current !== coldStartScope;
+    previousColdScope.current = coldStartScope;
+    if (getSplashState().phase !== 'waiting' || (!coldStartScope && !changed)) return;
+    splashReleased.current = false;
+    framed.current = false;
+    clearTimeout(afterFit.current);
+    splashDeadline.current = Date.now() + FRAMING_WAIT_MAX_MS;
+    if (coldStartReady) setNeedsFirstPositionFit(true);
+  }, [coldStartScope, coldStartReady]);
   // Android owns pause/resume. Replacing a healthy map on every resume retains
   // old SDK frame callbacks and duplicates all history overlays. Recentring
   // the phone only moves the camera; it never replaces the map surface.
@@ -1044,7 +1062,7 @@ function GoogleTrackingMapRenderer({
         : remaining;
     const timer = setTimeout(releaseSplash, wait);
     return () => clearTimeout(timer);
-  }, [configured, loaded, positions.length, releaseSplash, framingReady]);
+  }, [configured, loaded, positions.length, releaseSplash, framingReady, coldStartReady]);
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !historyMode;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;

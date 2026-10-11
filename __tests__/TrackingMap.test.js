@@ -1351,3 +1351,45 @@ test.each(['background', 'owner'])('automatic recovery map-read memory is cleare
   expect(renderer.root.findAllByProps({ testID: 'map-catch-up' })).toHaveLength(0);
   expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(dog => !dog.dimmed)).toBe(true);
 });
+
+
+test('initial snapshot wait retains the surface but cannot report old projected dog targets for a replacement scope', async () => {
+  const splash = require('../src/app/hideSplash');
+  await act(async () => splash.resetSplashGate());
+  const first = {}, second = {};
+  await act(async () => { splash.reportInitialLatest(first, 'waiting'); splash.launchInto('map'); });
+  await render({ coldStartReady: false, coldStartScope: first, dataReady: false });
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
+  await act(async () => jest.advanceTimersByTime(12000));
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => {
+    splash.reportInitialLatest(first, 'accepted');
+    renderer.update(<TrackingMap {...defaults} coldStartReady coldStartScope={first} />);
+  });
+  const original = renderer.root.findByType(MapView);
+  const projections = [];
+  mockCamera.pointForCoordinate = jest.fn(() => new Promise(resolve => { projections.push(resolve); }));
+  await readyMap();
+  await act(async () => original.props.onRegionChangeComplete({}, {}));
+  expect(projections.length).toBeGreaterThan(0);
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => {
+    splash.reportInitialLatest(second, 'waiting');
+    renderer.update(<TrackingMap {...defaults} coldStartReady={false} coldStartScope={second} dataReady={false} framingReady={false} />);
+  });
+  expect(renderer.root.findByType(MapView)).toBe(original);
+  await act(async () => { projections.forEach(resolve => resolve({ x: 120, y: 200 })); });
+  mockCamera.pointForCoordinate.mockImplementation(async () => ({ x: 120, y: 200 }));
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => splash.reportInitialLatest(second, 'accepted'));
+  // An old projection must not have set the new map's framing condition.
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => {
+    renderer.update(<TrackingMap {...defaults} coldStartReady coldStartScope={second} />);
+  });
+  await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
+  expect(splash.getSplashState().phase).toBe('handover');
+  delete mockCamera.pointForCoordinate;
+  await act(async () => renderer.unmount()); renderer = null;
+  splash.resetSplashGate();
+});
