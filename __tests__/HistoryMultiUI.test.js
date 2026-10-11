@@ -140,8 +140,13 @@ test('chooser stays open after immediate add, switch and remove; Back closes it 
   expect(s.screen.dogs).toHaveLength(4);
   expect(s.text()).toContain(i18nT('c403'));
   expect(s.text()).toContain(i18nT('c326', { count: 4 }));
+  const choices = () => s.renderer.root.findAll(node => typeof node.props.onPress === 'function'
+    && /^history-dog-\d+$/.test(node.props.testID ?? ''));
+  expect(choices().map(node => node.props.testID)).toEqual(['history-dog-6', 'history-dog-4', 'history-dog-8', 'history-dog-5']);
   await act(async () => s.press('history-dog-4'));
   expect(s.screen.protagonist).toBe(4);
+  expect(choices().map(node => node.props.testID)).toEqual(['history-dog-6', 'history-dog-4', 'history-dog-8', 'history-dog-5']);
+  expect(choices().filter(node => node.props.accessibilityState.checked).map(node => node.props.testID)).toEqual(['history-dog-4']);
   expect(s.renderer.root.findAllByProps({ testID: 'history-remove-4' })).toHaveLength(0);
   await act(async () => s.screen.removeDog(4));
   expect(s.screen.dogs).toHaveLength(4);
