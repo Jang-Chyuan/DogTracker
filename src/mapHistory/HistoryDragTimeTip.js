@@ -5,10 +5,12 @@ import { border, radius, space, tabularNumbers, type } from '../theme/tokens';
 
 // Keep the complete clock inside the control's visible width. The tip has no
 // touch/a11y target: the adjustable handle already speaks this same time.
+export const dragTimeTipHeight = (fontScale = 1) => Math.ceil(type.value.lineHeight * fontScale + space.s * 2);
+
 export function dragTimeTipBox(x, width, top, minTop, fontScale = 1) {
   const available = Math.max(0, width - space.s * 2);
   const tipWidth = Math.min(available, Math.ceil(type.value.fontSize * 5 * 0.75 * fontScale + space.m * 2));
-  const tipHeight = Math.ceil(type.value.lineHeight * fontScale + space.s * 2);
+  const tipHeight = dragTimeTipHeight(fontScale);
   return { left: Math.max(space.s, Math.min(width - space.s - tipWidth, x - tipWidth / 2)),
     top: Math.max(minTop, top - tipHeight - space.s), width: tipWidth, minHeight: tipHeight };
 }

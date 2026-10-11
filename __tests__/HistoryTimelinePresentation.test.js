@@ -1,3 +1,4 @@
+import { nodePill, placeSpeech } from '../src/history/HistoryText';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
 import { layoutRow } from '../src/mapHistory/ExportPNG';
@@ -151,4 +152,23 @@ test('a single initial stay does not erase the departure when its endpoint is al
   const shown = timelinePresentation([first, stay, endpoint]);
   expect(shown.map(node => node.type)).toEqual(['departure', 'end']);
   expect(shown[0].departureStay).toEqual(stay);
+});
+
+// Clipping within a displayed minute can make observed rounding differ from clock rounding.
+test.each([
+  [4 * 60000 + 49000, 9 * 60000 + 18000, '5'],
+  [12 * 60000 + 44000, 19 * 60000 + 2000, '7'],
+])('a clipped stay has identical visible and spoken minutes (%s to %s)', (start, end, minutes) => {
+  const raw = { ...terminalStay, start, end, durationMs: end - start };
+  const shown = timelinePresentation([raw])[0];
+  expect(nodePill(shown).text).toBe(`停 ${minutes} 分`);
+  expect(placeSpeech(shown, '虛構地點')).toContain(`${minutes} 分鐘`);
+  expect(raw.displayDurationMs).toBeUndefined();
+});
+
+test('a stay with an observation gap keeps actual observed minutes in both speech and visible pill', () => {
+  const raw = { ...terminalStay, start: 4 * 60000, end: 9 * 60000, durationMs: 3 * 60000, interruptionMs: 2 * 60000 };
+  const shown = timelinePresentation([raw])[0];
+  expect(nodePill(shown).text).toBe('停 3 分');
+  expect(placeSpeech(shown, '虛構地點')).toContain('3 分鐘');
 });

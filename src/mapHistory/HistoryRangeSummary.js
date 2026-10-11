@@ -5,7 +5,7 @@ import { t } from '../i18n';
 // whose two round handles move the start and the end.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Glyph from '../map/Glyph';
 import {
   clock,
@@ -32,7 +32,7 @@ import {
 import { haptic } from '../utils/haptics';
 import { isLargeFont, linesFor } from '../utils/textScale';
 import { useInitialFocus } from '../utils/a11yFocus';
-import HistoryDragTimeTip from './HistoryDragTimeTip';
+import HistoryDragTimeTip, { dragTimeTipHeight } from './HistoryDragTimeTip';
 
 const HANDLE = sizes.rangeBar.handle;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
@@ -67,13 +67,10 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
   const [dragHandle, setDragHandle] = useState(null);
-  const [pageY, setPageY] = useState(null);
-  const barRef = useRef(null);
-  useEffect(() => {
-    let alive = true;
-    barRef.current?.measureInWindow?.((_x, y) => { if (alive) setPageY(y); });
-    return () => { alive = false; };
-  }, [width, layoutKey]);
+  const { fontScale: scale = 1 } = useWindowDimensions();
+  // Reserve a lane throughout the open range, including before/after dragging.
+  // The hint cannot overlap the summary/Done row or shift handles under a finger.
+  const tipSpace = dragTimeTipHeight(scale) + space.s;
   // Finger/time feedback stays local. The history screen holds model/map
   // publication until release; callers without onBegin retain preview mode.
   const [visualRange, setVisualRange] = useState(null);
@@ -263,16 +260,15 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   const endLabel = clock(handles.end);
   return (
     <View
-      ref={barRef}
       collapsable={false}
-      style={styles.bar}
+      style={[styles.bar, { paddingTop: tipSpace }]}
       {...responder.panHandlers}
       testID="history-range-bar"
     >
       {dragHandle && <HistoryDragTimeTip testID="history-range-drag-time"
         text={dragHandle === 'start' ? startLabel : endLabel}
         x={TOUCH / 2 + (dragHandle === 'start' ? startX : endX)} width={width + TOUCH}
-        minTop={pageY == null ? -Infinity : space.s - pageY} />}
+        top={tipSpace} minTop={0} />}
       <View
         style={styles.trackArea}
         pointerEvents="none"
@@ -522,7 +518,7 @@ const getStyles = makeStyles(theme => {
     adjustText: { color: colors.text, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
     adjustTextOpen: { color: colors.tonalText },
     closed: { color: colors.textMuted, fontSize: type.caption.fontSize, marginTop: space.xs },
-    // No hint above the bar (D6): the track sits right under the summary.
+    // The open bar reserves a scaled, stable clock-hint lane above its track.
     bar: { paddingBottom: space.xs, marginTop: space.xs },
     trackArea: { height: TOUCH, justifyContent: 'center' },
     track: {

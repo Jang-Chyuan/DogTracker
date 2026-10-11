@@ -79,6 +79,7 @@ export function CursorMarkerView({
   color,
   stale = false,
   onLabelHeight,
+  labelHidden = false,
 }) {
   const { opacity, colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -86,7 +87,10 @@ export function CursorMarkerView({
   return (
     <View style={styles.cursor}>
       <View
-        style={styles.cursorLabel}
+        // Keep the measured label block so hiding it never changes the dot anchor.
+        style={[styles.cursorLabel, labelHidden && styles.hiddenLabel]}
+        accessibilityElementsHidden={labelHidden}
+        importantForAccessibility={labelHidden ? 'no-hide-descendants' : 'auto'}
         onLayout={event => onLabelHeight?.(event.nativeEvent.layout.height)}
       >
         <Text allowFontScaling={false} style={styles.cursorTime}>
@@ -154,13 +158,17 @@ export function CursorFaceView({
   stale = false,
   face,
   onLabelHeight,
+  labelHidden = false,
 }) {
   const { opacity, colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
     <View style={styles.cursor}>
       <View
-        style={styles.cursorLabel}
+        // Keep the measured label block so hiding it never changes the dot anchor.
+        style={[styles.cursorLabel, labelHidden && styles.hiddenLabel]}
+        accessibilityElementsHidden={labelHidden}
+        importantForAccessibility={labelHidden ? 'no-hide-descendants' : 'auto'}
         onLayout={event => onLabelHeight?.(event.nativeEvent.layout.height)}
       >
         <Text allowFontScaling={false} style={styles.cursorTime}>
@@ -230,6 +238,7 @@ const getStyles = makeStyles(theme => {
       textShadowOffset: { width: 0, height: 0 },
     },
     cursor: { alignItems: 'center', paddingHorizontal: space.xs, paddingBottom: 0 },
+    hiddenLabel: { opacity: 0 },
     cursorLabel: {
       backgroundColor: colors.surface,
       borderRadius: radius.cursorLabel,

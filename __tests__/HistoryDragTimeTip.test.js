@@ -3,7 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { PanResponder, StyleSheet } from 'react-native';
 import { HistoryRangeControls } from '../src/mapHistory/HistoryRangeSummary';
 import HistoryCursor from '../src/mapHistory/HistoryCursor';
-import { dragTimeTipBox } from '../src/mapHistory/HistoryDragTimeTip';
+import { dragTimeTipBox, dragTimeTipHeight } from '../src/mapHistory/HistoryDragTimeTip';
 import { clock } from '../src/history/HistoryText';
 import { space } from '../src/theme/tokens';
 
@@ -30,6 +30,9 @@ async function rangeControls() {
 
 test.each(['start', 'end'])('dragging %s immediately shows the same 24-hour time above the handle without scheduling a model preview', async handle => {
   const state = await rangeControls();
+  const bar = () => tree.root.findAll(node => node.type === 'View' && node.props.testID === 'history-range-bar')[0];
+  const lane = StyleSheet.flatten(bar().props.style).paddingTop;
+  expect(lane).toBeGreaterThanOrEqual(dragTimeTipHeight());
   expect(tip('history-range-drag-time')).toHaveLength(0);
   await act(async () => handlers.onPanResponderGrant({ nativeEvent: { locationX: handle === 'start' ? 35 : 320, pageX: 500 } }));
   expect(text('history-range-drag-time')).toBe(handle === 'start' ? '01:00' : '22:00');
@@ -38,12 +41,16 @@ test.each(['start', 'end'])('dragging %s immediately shows the same 24-hour time
   expect(spoken).toContain(text('history-range-drag-time'));
   expect(text('history-range-drag-time')).not.toBe(handle === 'start' ? '01:00' : '22:00');
   expect(tip('history-range-drag-time')[0].props).toMatchObject({ pointerEvents: 'none', accessibilityElementsHidden: true });
-  expect(StyleSheet.flatten(tip('history-range-drag-time')[0].props.style).top).toBeLessThan(0);
+  const box = StyleSheet.flatten(tip('history-range-drag-time')[0].props.style);
+  expect(box.top).toBeGreaterThanOrEqual(0); // all of the hint stays below the summary/Done row
+  expect(box.top + box.minHeight).toBeLessThanOrEqual(lane - space.s);
+  expect(StyleSheet.flatten(bar().props.style).paddingTop).toBe(lane);
   await act(async () => jest.advanceTimersByTimeAsync(1500));
   expect(state.begin).toHaveBeenCalledTimes(1);
   expect(state.preview).not.toHaveBeenCalled(); expect(state.commit).not.toHaveBeenCalled();
   await act(async () => handlers.onPanResponderRelease({ nativeEvent: { pageX: handle === 'start' ? 525 : 475 } }, {}));
   expect(state.commit).toHaveBeenCalledTimes(1); expect(tip('history-range-drag-time')).toHaveLength(0);
+  expect(StyleSheet.flatten(bar().props.style).paddingTop).toBe(lane);
 });
 
 test('scope changes and termination hide the hint; TalkBack remains adjustable without a duplicate spoken overlay', async () => {
@@ -96,4 +103,12 @@ test('map cursor hint follows accepted snapped display time and vanishes on rele
   await act(async () => resolve({ latitude: 25, longitude: route[2].longitude }));
   expect(current.time).toBe(route[2].time);
   expect(tip('history-cursor-drag-time')).toHaveLength(0);
+});
+
+// Open-range layout reserves the complete scaled tip without per-drag layout changes.
+test.each([1, 2])('reserved hint lane fits the complete clock at font scale %s', scale => {
+  const lane = dragTimeTipHeight(scale) + space.s;
+  const box = dragTimeTipBox(300, 348, lane, 0, scale);
+  expect(box.top).toBe(0);
+  expect(box.top + box.minHeight + space.s).toBe(lane);
 });

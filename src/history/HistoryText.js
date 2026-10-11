@@ -206,10 +206,10 @@ export function placeSpeech(node, title) {
       ? t('c114')
       : pill?.text ?? '';
   // A stay's own length, interruptions left out (as its pill 「停 25 分」).
-  const length =
+  const length = node.displayDurationMs ?? (
     (node.type === 'stop' || node.terminalStay) && Number.isFinite(node.durationMs)
       ? node.durationMs
-      : node.end - node.start;
+      : node.end - node.start);
   const minutes = end ? t("c664", { value: Math.round(length / 60000) }) : '';
   return spoken(
     [lead, title, end ? t("c662", { start: start, end: end }) : start, minutes, interruptionText(node)]

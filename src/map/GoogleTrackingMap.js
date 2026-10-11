@@ -380,7 +380,7 @@ function RouteMarker({
 }
 const CENTER = { x: 0.5, y: 0.5 };
 
-function CursorMarker({ cursor, color }) {
+function CursorMarker({ cursor, color, labelHidden = false }) {
   const { isDark } = useTheme();
   const [labelHeight, setLabelHeight] = useState(44);
   const ref = useRef(null);
@@ -390,7 +390,7 @@ function CursorMarker({ cursor, color }) {
     cursor.stale
   }:${labelHeight}:${color}:${face?.name ?? ''}:${
     face?.avatar?.uri?.length ?? face?.avatar?.art ?? ''
-  }`;
+  }:${labelHidden}`;
   useEffect(() => {
     ref.current?.redraw?.();
   }, [look, cursor.key, isDark]);
@@ -414,6 +414,7 @@ function CursorMarker({ cursor, color }) {
             stale={cursor.stale}
             face={face}
             onLabelHeight={height}
+            labelHidden={labelHidden}
           />
         ) : (
           <CursorMarkerView
@@ -421,6 +422,7 @@ function CursorMarker({ cursor, color }) {
             color={color}
             stale={cursor.stale}
             onLabelHeight={height}
+            labelHidden={labelHidden}
           />
         )}
       </View>
@@ -471,7 +473,7 @@ const HistoryLine = React.memo(
 
 // Live snapshot age still updates the map controls. Reuse unchanged history
 // geometry until its route, stop handler, zoom or theme context changes.
-const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0 }) {
+const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
     () => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)),
@@ -534,7 +536,7 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
         </RouteMarker>
       ))}
       {route.cursor && (
-        <CursorMarker cursor={route.cursor} color={route.color} />
+        <CursorMarker cursor={route.cursor} color={route.color} labelHidden={cursorDragging} />
       )}
     </>
   );
@@ -1674,6 +1676,7 @@ function GoogleTrackingMapRenderer({
           {historyRoute && (
             <HistoryRoute
               route={historyRoute}
+              cursorDragging={cursorDragging}
               onStopPress={onStopPress ? pressHistoryStop : undefined}
               metresPerDp={metresPerDp}
             />
