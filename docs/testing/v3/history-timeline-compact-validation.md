@@ -52,8 +52,10 @@
 既有5562已保資料還原原版0.3.163，installed APK SHA640463a5e8ff5955830e2106d3fb97d790ebd6322b24cb395ad36262238f51fa逐一核對。九項原設定（含fontScale1.0、主題、無線）、viewport與六項permission grants／flags均和測前完全一致。實際設定頁仍Supabase未登入、位置紀錄開關ON且定位權限未允許；返回正常live地圖，XML及原PNG均無ANR，單一App PID5563。沒有清資料／快取、沒有改帳號或AVD；原版恢復圖只在私人驗收目錄，不混入改版公開證據。
 
 
-## 使用者第二輪審閱修正（待新版原生圖）
+## 使用者第二輪審閱修正（新版原生驗證中）
 
 時間軸移動列最少56dp，20dp圖示及28dp遮底上下各保約14dp連線；PNG移動列最少168px。右上匯出原glyph保留，44dp圓底／28dp圖示／48dp有效點按區；通用chip仍原hitSlop，匯出選項未改。範圍載入改用既有LoadingContent時間軸shimmer（300ms後出現、reduce-motion及cleanup原樣），載入禁止匯出與舊模型的語義不變。
 
 最後原stop/end相鄰、stop.end等於end.start、代表座標完全相同且無gap時，僅清單與PNG合成單一終點；留時長／地址／停留start及原now／last／closed／跨日label。不同位置、時間、gap（包括被隱藏的GPS弱row）、末尾真移動均不合。不改raw/model/map停留數與CSV/GPX。完全相同私人240點nativefixture實際production回放：10source nodes→7display nodes，末端原stop3／end合一，420000ms停留保留，model JSON完全不變；私人fixture程式未納公開分支。此結果不代替56dp視覺或新版native shimmer驗收。
+
+主視窗產品be1554b9已重新完整223 suites／2515 tests PASS（166.13秒），產品Release22秒成功，SHA b5dd4b5783f7cbe6398ffd46df514e11370c9cd6ec204aead24bf3935897147e。相同240点私有0e204cb8只差原四個展示入口檔，Release20秒成功、APK dc43f82029abd1ab90960f34d911d2c326c64e3332b498e95787123f054eac35。既有5562正在真正原生驗證，以下前一輪24e圖片／影片不能代替四項新尺寸及shimmer通過。
