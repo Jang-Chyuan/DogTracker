@@ -28,34 +28,38 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
   const masters = [...new Set(masterIds)];
   const dogs = [];
   if (!masters.length) return { cutoff, dogs };
-  const read = async (query, requestSignal = signal) => {
-    await check();
-    if (signal?.aborted || requestSignal?.aborted) throw new Error(t('c576'));
-    const { data, error, status } = await query.abortSignal(requestSignal);
-    await check();
-    if (signal?.aborted || requestSignal?.aborted) throw new Error(t('c576'));
+  const work = new AbortController();
+  let failed = false, failure, stop;
+  const stopped = new Promise((resolve, reject) => { stop = reject; });
+  stopped.catch(() => {});
+  const fail = error => {
+    if (!failed) { failed = true; failure = error; stop(error); }
+    work.abort(); return failure;
+  };
+  const cancel = () => fail(new Error(t('c576')));
+  signal?.addEventListener?.('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
+  const guard = async () => {
+    await Promise.race([check(), stopped]);
+    if (failed) throw failure;
+    if (signal?.aborted || work.signal.aborted) throw new Error(t('c576'));
+  };
+  const read = async query => {
+    await guard();
+    // Race the shared cancellation fence as well: a transport that ignores
+    // AbortSignal may finish late, but cannot stall failure of the snapshot.
+    const { data, error, status } = await Promise.race([query.abortSignal(work.signal), stopped]);
+    await guard();
     if (error) throw cloudError(t('c577', { value: '' }), error, status);
     if (!Array.isArray(data) || data.length > 1) throw new Error(t('c578'));
     return data[0] || null;
   };
   const base = fields => client.from('dog_telemetry').select(fields).in('master_id', masters)
     .lt('received_at', new Date(cutoff).toISOString());
-  let after = null;
-  for (;;) {
-    let keys = base('slave_id').order('slave_id', { ascending: true }).limit(1);
-    if (after !== null) keys = keys.gt('slave_id', after);
-    const key = await read(keys);
-    if (!key) break;
-    const slave = key.slave_id;
-    if (!Number.isInteger(slave) || (after !== null && slave <= after)) throw new Error(t('c579'));
+  const readDog = async slave => {
     const latest = async fixed => {
-      // Only the two independent clocks of this dog run together. Key seeks,
-      // packet/fix phases and dogs remain ordered; one failed stream cancels
-      // its partner instead of selecting a partly known result.
-      const pair = new AbortController();
-      const cancelPair = () => pair.abort();
-      signal?.addEventListener?.('abort', cancelPair, { once: true });
-      if (signal?.aborted) pair.abort();
+      // Each dog has at most two clock requests; its fix phase still waits
+      // for the packet pair. All jobs share the snapshot cancellation fence.
       try {
         const candidates = (await Promise.all([false, true].map(async phone => {
           let query = base(FIELDS).eq('slave_id', slave);
@@ -70,7 +74,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
           else if (fixed) query = query.or(NONZERO);
           if (phone) query = query.order('phone_received_at', { ascending: false });
           query = query.order('received_at', { ascending: false }).order('event_id', { ascending: false }).limit(1);
-          const row = await read(query, pair.signal);
+          const row = await read(query);
           if (row) {
             const mapped = mapCloudTelemetry(row);
             if (mapped.slave_id !== slave || !masters.includes(mapped.master_id) || mapped.received_at >= cutoff
@@ -83,21 +87,46 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
         candidates.sort((a, b) => compare(b.row, a.row));
         return candidates[0]?.mapped || null;
       } catch (error) {
-        pair.abort();
-        throw error;
-      } finally {
-        signal?.removeEventListener?.('abort', cancelPair);
+        throw fail(error);
       }
     };
     const packet = await latest(false);
     if (!packet) throw new Error(t('c579'));
     const fixed = validCloudFix(packet) ? packet : await latest(true);
-    // A latest packet with a fix is necessarily the latest valid fix. Without
-    // GPS, query the independent valid-fix streams, including silent old dogs.
-    dogs.push({ slaveId: slave, packet, fix: fixed });
-    after = slave;
+    // No GPS: retain the independent old valid fix, including silent dogs.
+    return { slaveId: slave, packet, fix: fixed };
+  };
+  const jobs = [], active = new Set();
+  try {
+    let after = null;
+    for (;;) {
+      // One serial discovery cursor, even while two dog jobs are pending.
+      // A discovered third key waits here for a slot; it is never skipped.
+      let keys = base('slave_id').order('slave_id', { ascending: true }).limit(1);
+      if (after !== null) keys = keys.gt('slave_id', after);
+      const key = await read(keys);
+      if (!key) break;
+      const slave = key.slave_id;
+      if (!Number.isInteger(slave) || (after !== null && slave <= after)) throw new Error(t('c579'));
+      while (active.size >= 2) { await Promise.race(active); await guard(); }
+      await guard();
+      const job = readDog(slave).catch(error => { throw fail(error); });
+      // Every job owns rejection handlers immediately, including after an
+      // earlier key failure. Abort-ignoring transports cannot publish late.
+      job.catch(() => {});
+      active.add(job); jobs.push(job);
+      job.then(() => active.delete(job), () => active.delete(job));
+      after = slave;
+    }
+    // Promise.all preserves discovery order and never exposes partial dogs.
+    const complete = await Promise.all(jobs);
+    await guard();
+    return { cutoff, dogs: complete };
+  } catch (error) {
+    throw fail(error);
+  } finally {
+    signal?.removeEventListener?.('abort', cancel);
   }
-  return { cutoff, dogs };
 }
 
 // This second stage never reads the archive. A silent dog's own last half hour
