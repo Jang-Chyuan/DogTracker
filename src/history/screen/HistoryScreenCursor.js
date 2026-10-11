@@ -1,5 +1,6 @@
 import { t } from '../../i18n';
 import { clock, km, listDuration } from '../HistoryText';
+import { presentationDurationMs } from '../HistoryTimelinePresentation';
 import { snapToRoute } from '../../mapHistory/CursorGeometry';
 import { nearestRecord } from './HistoryScreenRange';
 import { phoneDisplayLocations, phoneStayAtTime } from '../PhoneStayDisplayAnchors';
@@ -10,8 +11,8 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
     ? phoneStayAtTime(phoneDisplayLocations(model), time) || model.locations.find(n => n.type === 'indoor' && time >= n.start && time <= n.end)
     : model.locations.find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end)
       || phoneStayAtTime(model.displayStays, time);
-  if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: listDuration(stay.end - stay.start) })
-    : t('c136', { duration: listDuration(stay.durationMs) })];
+  if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: listDuration(presentationDurationMs(stay)) })
+    : t('c136', { duration: listDuration(presentationDurationMs(stay)) })];
   // At a switch boundary the outgoing segment owns the label.
   const section = model.sections.find(n => n.start <= time && n.end > time)
     || model.sections.find(n => n.end === time);

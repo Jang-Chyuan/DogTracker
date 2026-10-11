@@ -400,3 +400,23 @@ test('the invented edge model cannot reappear as an outside-range indoor dashed 
   expect(edges[0].countedDistanceM).toBeGreaterThan(20);
   expect(edges[0].countedDistanceM).toBeLessThan(30);
 });
+
+test('confirmed initial/final stays collapsed in the list have no duplicate numbered map marker; cursor moves reuse markers', () => {
+  const first = { type: 'departure', start: at(0), end: at(0), latitude: 25, longitude: 121 };
+  const initial = { type: 'stop', id: 'visit:fixture', number: 1, start: at(0), end: at(6), durationMs: 6 * MINUTE,
+    latitude: 25.00001, longitude: 121, points: [{ ...first, time: first.start }], gaps: [] };
+  const middle = { ...initial, id: 'visit:second', number: 2, start: at(10), end: at(15) };
+  const final = { ...initial, id: 'visit:last', number: 3, start: at(20), end: at(25), durationMs: 5 * MINUTE };
+  const end = { ...final, type: 'end', start: final.end, end: final.end, number: null };
+  const model = { points: [], edges: [], locations: [first, initial, middle, final, end],
+    nodes: [first, initial, { type: 'movement', mode: 'walking', start: at(6), end: at(10) }, middle,
+      { type: 'movement', mode: 'walking', start: at(15), end: at(20) }, final, end] };
+  const before = JSON.stringify(model);
+  const presentation = () => historyMapPresentation(model, { color: colors.phone }).places;
+  const markers = presentation();
+  expect(markers.map(n => n.number)).toEqual([2]);
+  expect(presentation()).toBe(markers);
+  expect(JSON.stringify(model)).toBe(before);
+  const uncertain = { ...model, nodes: [first, { ...initial, points: [] }, ...model.nodes.slice(2)] };
+  expect(historyMapPresentation(uncertain, { color: colors.phone }).places.map(n => n.number)).toEqual([1, 2]);
+});

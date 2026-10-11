@@ -5,7 +5,7 @@ import { t } from '../i18n';
 // whose two round handles move the start and the end.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
 import {
   clock,
@@ -32,7 +32,7 @@ import {
 import { haptic } from '../utils/haptics';
 import { isLargeFont, linesFor } from '../utils/textScale';
 import { useInitialFocus } from '../utils/a11yFocus';
-import HistoryDragTimeTip, { dragTimeTipHeight } from './HistoryDragTimeTip';
+import HistoryDragTimeTip from './HistoryDragTimeTip';
 
 const HANDLE = sizes.rangeBar.handle;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
@@ -67,10 +67,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
   const [dragHandle, setDragHandle] = useState(null);
-  const { fontScale: scale = 1 } = useWindowDimensions();
-  // Reserve a lane throughout the open range, including before/after dragging.
-  // The hint cannot overlap the summary/Done row or shift handles under a finger.
-  const tipSpace = dragTimeTipHeight(scale) + space.s;
+  // A transient overlay: no extra layout space before, during or after drag.
   // Finger/time feedback stays local. The history screen holds model/map
   // publication until release; callers without onBegin retain preview mode.
   const [visualRange, setVisualRange] = useState(null);
@@ -261,14 +258,14 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   return (
     <View
       collapsable={false}
-      style={[styles.bar, { paddingTop: tipSpace }]}
+      style={styles.bar}
       {...responder.panHandlers}
       testID="history-range-bar"
     >
       {dragHandle && <HistoryDragTimeTip testID="history-range-drag-time"
         text={dragHandle === 'start' ? startLabel : endLabel}
         x={TOUCH / 2 + (dragHandle === 'start' ? startX : endX)} width={width + TOUCH}
-        top={tipSpace} minTop={0} />}
+        />}
       <View
         style={styles.trackArea}
         pointerEvents="none"
@@ -518,7 +515,7 @@ const getStyles = makeStyles(theme => {
     adjustText: { color: colors.text, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
     adjustTextOpen: { color: colors.tonalText },
     closed: { color: colors.textMuted, fontSize: type.caption.fontSize, marginTop: space.xs },
-    // The open bar reserves a scaled, stable clock-hint lane above its track.
+    // The clock floats above the track only while dragging; no reserved blank lane.
     bar: { paddingBottom: space.xs, marginTop: space.xs },
     trackArea: { height: TOUCH, justifyContent: 'center' },
     track: {

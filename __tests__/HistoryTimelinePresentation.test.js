@@ -172,3 +172,24 @@ test('a stay with an observation gap keeps actual observed minutes in both speec
   expect(nodePill(shown).text).toBe('停 3 分');
   expect(placeSpeech(shown, '虛構地點')).toContain('3 分鐘');
 });
+
+test('clipped departure uses membership of the same confirmed visit, never address proximity', () => {
+  const departure = { type: 'departure', start: 2449000, end: 2449000, latitude: 25, longitude: 121 };
+  const stay = { type: 'stop', id: 'visit:2400000', number: 1, start: departure.start, end: 2718000,
+    durationMs: 269000, latitude: 25.00002, longitude: 121.00003, gaps: [],
+    points: [{ time: departure.start, latitude: 25, longitude: 121 }, { time: 2718000, latitude: 25.00004, longitude: 121.00006 }] };
+  const nodes = [departure, stay, walk(stay.end, stay.end + 60000)];
+  const original = JSON.stringify(nodes);
+  const shown = timelinePresentation(nodes);
+  expect(shown.map(n => n.type)).toEqual(['departure', 'movement']);
+  expect(shown[0]).toMatchObject({ latitude: stay.latitude, longitude: stay.longitude, departureStay: { id: stay.id } });
+  expect(JSON.stringify(nodes)).toBe(original);
+  for (const changed of [
+    { ...stay, id: undefined },
+    { ...stay, points: [{ ...stay.points[0], time: departure.start + 1 }] },
+    { ...stay, points: [{ ...stay.points[0], latitude: 25.000001 }] },
+    { ...stay, displayRange: { gaps: [{ start: departure.start + 1000, end: departure.start + 2000 }] } },
+  ]) expect(timelinePresentation([departure, changed]).map(n => n.type)).toEqual(['departure', 'stop']);
+  expect(timelinePresentation([departure, walk(departure.start, stay.start + 1), stay])
+    .some(n => n.departureStay)).toBe(false);
+});
