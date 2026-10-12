@@ -667,7 +667,9 @@ ref) {
             accessible accessibilityLabel={t('c835')}>
             <LoadingContent loading shape="timeline" label={t('c835')} skeletonTestID="history-range-skeleton" />
           </View> : <View testID="history-loading" accessibilityLiveRegion={reading ? "polite" : "none"}
-            accessible={reading} accessibilityLabel={reading ? t('c835') : undefined}>
+            // Explicit values both ways: Android keeps a removed label, and the
+            // loaded timeline must never read as 讀取中.
+            accessible={reading} accessibilityLabel={reading ? t('c835') : ''}>
             <LoadingContent loading={downloading || reading}
               shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
               {body}

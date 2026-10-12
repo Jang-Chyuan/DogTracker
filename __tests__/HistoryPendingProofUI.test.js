@@ -63,6 +63,9 @@ test.each(['complete', 'incomplete', 'read-error'])('retained local rows with de
     expect(download).not.toHaveBeenCalled();
     await act(async () => wait.resolve());
     expect(has('history-skeleton')).toBe(false);
+    // Loaded: the container neither groups the rows nor keeps the 讀取中 label.
+    expect(renderer.root.findAll(node => node.props.testID === 'history-loading' && typeof node.type === 'string')
+      .every(node => node.props.accessibilityLabel === '' && node.props.accessible === false)).toBe(true);
     if (outcome === 'complete') {
       expect(screen.dayModel).not.toBeNull(); expect(screen.map).not.toBeNull();
       expect(has('history-unfinished')).toBe(false); expect(exportDisabled()).toBe(false);
