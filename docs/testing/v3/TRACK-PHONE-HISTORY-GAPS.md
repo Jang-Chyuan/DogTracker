@@ -2,6 +2,21 @@
 
 狀態：Draft，尚未完成。此候選新增一項純呈現窄修：承接已確認、連續靜止但沒有停留列覆蓋的時間；未修改 GPS 判定、定位寫入或資料庫。優先完成 PR [114](https://github.com/Jang-Chyuan/DogTracker/pull/114) 的雲端問題；清單與載入樣式歸 PR [115](https://github.com/Jang-Chyuan/DogTracker/pull/115)。這裡調查的是手機原始觀測與模型缺口，不把清單改名當修復。
 
+## 實機根因（10/12 唯讀取證，只記次數與時間）
+
+裝置：Samsung One UI 8（Android 16），App 0.3.277，精確位置「使用期間」，前景服務在 10/11 23:43–10/12 10:40 未中斷（usagestats FGS 事件、exit-info 無被殺紀錄；這段期間唯一的程序結束都是安裝更新或手動強制停止）。
+
+- 系統的 GNSS 需求紀錄顯示，App 一直要求 1 秒高精度，但 GPS 在 10/12 00:48–02:02、02:05–04:33、04:36–08:23 等時段被關閉，中間只開約 3 分鐘。logcat 的 Samsung NSFLP 記錄同一機制：`NewStopController_FLP: onCheckGpsStopBySensor … isStationary=TRUE … isPlugged=false` 後 `updateGpsStopBySensor, enabled : true`、`isAvailableLastLoc : false, screen : false`；偵測到動作才 `removeLastLocationUpdate` 重開 GPS，之後每 3 分鐘再檢查。這是 Samsung 的「靜止且螢幕關閉、未充電時停 GPS」，App 無 API 關閉，不在其允許清單（`shouldTrackingApp=false`）。
+- 10/12 選取範圍 00:17–16:03 的 14 個大於 3 分鐘保存空窗，14 個都落在這些 GPS 關閉時段內（每段 87–100% 重疊）；其中 2 個同時是 App 更新造成的 session 切換（10:40、11:20）。session 數 8 與 FGS 啟動次數一致。
+- GPS 停掉後 Play fused 只剩 Wi-Fi 定位；實測停 GPS 後送來的 fused 定位有約 4.4 秒舊的，原生管線依「超過 3 秒丟棄」拒收。夜間的空窗內幾乎沒有新定位被接受（只有零星幾筆），但 release 版沒有拒收原因紀錄，無法分辨「沒送來」「過期」「精度不足」。
+- 其他已匯出日（10/09、10/10、10/11）同樣以凌晨 3–9 點為主（每日 18／22／27 個空窗，合計 858／510／561 分）；這幾天在 main 的清單裡多被既有停留承接，只剩 5／1／4 列「沒有資料」。10/12 沒有既有停留承接，#101 把未被停留包含的同地橋接一律改成缺口，因此出現 13 列共 506 分的「沒有資料」。
+
+## 本次修正
+
+- 呈現：同一 session（記錄沒有關閉）、兩端同地且無確認移動的保存空窗，依 067「同地中斷＝連續停留」併入未編號停留；空窗後 3 分鐘內、0 m 的重新定位一併承接。換 session（記錄關閉、App 更新）仍是「沒有資料」。未觀測區間記在 `unobserved`，匯出 gaps 照舊。以 10/12 私有 CSV 回放：「沒有資料」13 列／506 分 → 2 列／14 分（兩次 App 更新），公里數不變；10/09–10/11 公里數不變。
+- 紅燈：走路中途短於停留門檻的靜止算該段走路的 0 m 時間，前後合為一列。
+- 診斷：原生依原因計數拒收，並記下每段超過 60 秒沒有保存的收到／接受／拒收原因、最舊過期秒數、最佳被拒精度（不含座標），release 版用 `adb shell dumpsys activity service com.dogtracker/.location.LocationTrackerService` 讀。未改變任何接受或保存條件；是否放寬 3 秒時效，等實機診斷數字決定。
+
 ## 已知證據與界線
 
 使用者 10/12 的畫面出現約 00:48–01:20、01:20–02:02 的「沒有資料」。當時匯出因日期切換取得的是 10/11，不能用它證明 10/12 的原因。
