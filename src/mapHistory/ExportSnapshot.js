@@ -141,7 +141,8 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       rows: model.packets || [],
       holds: nodes.filter(n => n.type === 'indoor').map(n => ({ start: n.start, end: n.end,
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n) })),
-      stays: nodes.filter(n => n.type === 'stop').map(n => ({ start: n.start, end: n.end, number: n.number,
+      // Display fallback is not a newly calculated GPX stay/waypoint.
+      stays: nodes.filter(n => n.type === 'stop' && !n.presentationOnly).map(n => ({ start: n.start, end: n.end, number: n.number,
         ...(n.originalRepresentative ? { gpxCoordinate: n.originalRepresentative,
           gpxAddress: addressOf(n.originalRepresentative) } : {}),
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n), excludedMs: n.interruptionMs || 0 })),

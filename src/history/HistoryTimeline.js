@@ -1,10 +1,39 @@
 import { t } from '../i18n';
-import { configFor, distanceMeters } from './HistoryConfig';
+import { configFor, coordinateValid, distanceMeters } from './HistoryConfig';
 import { historySourceStream, filterHistoryPoints, replayHistoryHolds } from './HistorySources';
 import { historyMovement } from './HistoryMovement';
 import { historyDeparture } from './HistoryDeparture';
 import { historyStops, historyIndoorNodes } from './HistoryStops';
 import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
+
+/** Display only: retain observed stationary time that has no existing place row.
+ * Never classify a gap, a red light in a drive, or uncertain fixes as a stay. */
+export function phoneStationaryPresentationStops(edges, { config = configFor('phone'), covered = () => false } = {}) {
+  const valid = p => p.phoneStationary && p.phoneMotionState === 'stationary' && !p.phoneConfirmedMovement
+    && p.motion_state != null && typeof p.session_id === 'string' && p.session_id.length > 0
+    && ('raw_speed_kmh' in p || 'speed_kmh' in p || 'speed_accuracy_mps' in p)
+    && coordinateValid(p) && Number.isFinite(p.accuracy) && p.accuracy >= 0 && p.accuracy <= config.stayAccuracyM;
+  const stops = [];
+  let run = null;
+  const finish = () => {
+    if (run && run.end - run.start >= config.stayMs) stops.push({ type: 'stop',
+      id: `phone-stationary:${run.start}`, presentationOnly: 'phone-stationary', number: null,
+      start: run.start, end: run.end, durationMs: run.end - run.start, interruptionMs: 0, gaps: [],
+      latitude: run.anchor.latitude, longitude: run.anchor.longitude });
+    run = null;
+  };
+  for (const edge of edges) {
+    const observed = !edge.gap && !edge.bridged && !edge.uncertain && edge.mode === 'walking'
+      && edge.countedDistanceM === 0 && edge.end > edge.start
+      && valid(edge.from) && valid(edge.to) && edge.from.session_id === edge.to.session_id && !covered(edge);
+    if (!observed) { finish(); continue; }
+    if (run && (run.end !== edge.start || run.session !== edge.from.session_id)) finish();
+    if (!run) run = { start: edge.start, end: edge.end, anchor: edge.from, session: edge.from.session_id };
+    else run.end = edge.end;
+  }
+  finish();
+  return stops;
+}
 
 /** Pure H1/H2 list. `nodes` contains location rows AND movement/gap rows in
  * display order. No geocoding: address resolution can use location rows later.
@@ -146,6 +175,12 @@ export function historyTimeline(rows = [], options = {}) {
       excluded: true, line: 'long-dashed' });
   }
   sections.sort((a, b) => a.start - b.start);
+  // Construct fallback only after movement, visits and gaps are settled. It
+  // cannot retroactively turn same-place interruption edges into observed time.
+  const stationary = subject === 'phone' ? phoneStationaryPresentationStops(sectionEdges, { config,
+    covered: edge => displayLocations.some(n => ['stop', 'indoor'].includes(n.type)
+      && (n.displayRange?.start ?? n.start) < edge.end && (n.displayRange?.end ?? n.end) > edge.start),
+  }) : [];
   const rank = node => node.type === 'departure' ? 0 : ['movement', 'gap'].includes(node.type) ? 2 : node.type === 'end' ? 3 : 1;
   let nodes = [...locations, ...sections].sort((a, b) => a.start - b.start || rank(a) - rank(b));
   // A switch right beside another place (a stay ends, the car starts after a
@@ -171,12 +206,14 @@ export function historyTimeline(rows = [], options = {}) {
     if (foot(n) && n.countedDistanceM === 0 && n.durationMs <= 60000
       && place(nodes[i - 1]) && place(nodes[i + 1])) drop.add(n);
   });
-  nodes = nodes.filter(n => !drop.has(n));
+  // The fallback must not affect existing short-section/switch cleanup.
+  nodes = [...nodes.filter(n => !drop.has(n)), ...stationary]
+    .sort((a, b) => a.start - b.start || rank(a) - rank(b));
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.
   let number = 0;
   for (const node of nodes) {
-    if (node.type === 'stop' || node.type === 'switch') node.number = ++number;
+    if ((node.type === 'stop' || node.type === 'switch') && !node.presentationOnly) node.number = ++number;
   }
   const keptLocations = locations.filter(n => !drop.has(n));
   const keptSections = sections.filter(n => !drop.has(n));
