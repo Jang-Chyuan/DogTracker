@@ -184,10 +184,10 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
       <PressScale testID="history-export" accessibilityRole="button" onLayout={measureControl('export')}
         accessibilityLabel={exportBusy ? t("c837") : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
-        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.historyTop.exportDisc) / 2}
+        disabled={!exportEnabled || exportBusy} onPress={onExport}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
-          : <Glyph name="export" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.navigation} />}
+          : <Glyph name="export" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
       </PressScale>
     </View>
   );
@@ -758,9 +758,9 @@ const getStyles = makeStyles(theme => {
     },
     capsuleTextWhole: { maxWidth: '100%', flexShrink: 0 },
     exportButton: {
-      width: sizes.historyTop.exportDisc,
-      height: sizes.historyTop.exportDisc,
-      borderRadius: sizes.historyTop.exportDisc / 2,
+      width: sizes.floatingButton,
+      height: sizes.floatingButton,
+      borderRadius: sizes.floatingButton / 2,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',

@@ -708,7 +708,6 @@ export const size = {
     companionAvatar: 18,
     avatarOverlap: 6,
     slotLimit: 240,
-    exportDisc: 44,
     caretGlyph: 10,
     // 「＋」 in a dashed accent circle, avatar-sized (user 2026-10-09, B).
     plusRing: 32,

@@ -3,6 +3,8 @@ import { t as i18nT } from '../src/i18n';
 // rows through useHistoryScreen, as MapScreen does.
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
+import { StyleSheet } from 'react-native';
+import Glyph from '../src/map/Glyph';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
@@ -43,27 +45,41 @@ const settleRange = state => act(async () => {
 const unmount = state => act(async () => state.renderer.unmount());
 
 test('history-my-route (H1 我的路線): no title header, no ＋ 加入, the list, the summary, the map', async () => {
-  const s = await mountFixture('history-my-route');
-  expect(s.ids('history-my-route-header')).toEqual([]);
-  expect(s.ids('history-add')).toEqual([]);
-  expect(s.ids('history-dogs-pill')).toEqual([]);
-  expect(s.text()).toContain('10/07（三）今天');
-  expect(s.text()).toContain(i18nT('c122'));
-  expect(s.screen.navigation).toEqual({ previous: null, next: null });
-  expect(s.ids('timeline-').filter(id => id !== 'timeline-selected')).toEqual(['timeline-departure',
-    'timeline-movement-walking', 'timeline-stop', 'timeline-movement-walking', 'timeline-stop',
-    'timeline-movement-driving', 'timeline-switch', 'timeline-movement-walking', 'timeline-stop',
-    'timeline-movement-walking', 'timeline-end']);
-  // The cursor on the newest fix: 「09:29」「已走 x km」, and its marker on the map.
-  expect(s.screen.cursor.label[0]).toBe('09:29');
-  expect(s.screen.cursor.label[1]).toMatch(/^已走 \d+\.\d km$/);
-  const map = s.screen.map;
-  expect(map.color).toBe('#1A73E8');
-  expect(map.places.map(place => place.number)).toEqual([1, 2, 3, 4]);
-  expect(map.lines.some(line => line.width === 2 && !line.dashed)).toBe(true);
-  expect(map.times[0]).toMatchObject({ time: s.screen.model.points[0].time, end: true });
-  expect(map.cursor.lines).toEqual(s.screen.cursor.label);
-  await unmount(s);
+  const viewport = jest.spyOn(require('react-native'), 'useWindowDimensions')
+    .mockReturnValue({ width: 400, height: 800, scale: 1, fontScale: 1 });
+  let s;
+  try {
+    s = await mountFixture('history-my-route');
+    expect(s.ids('history-my-route-header')).toEqual([]);
+    expect(s.ids('history-add')).toEqual([]);
+    expect(s.ids('history-dogs-pill')).toEqual([]);
+    expect(s.text()).toContain('10/07（三）今天');
+    expect(s.text()).toContain(i18nT('c122'));
+    expect(s.screen.navigation).toEqual({ previous: null, next: null });
+    expect(s.ids('timeline-').filter(id => id !== 'timeline-selected')).toEqual(['timeline-departure',
+      'timeline-movement-walking', 'timeline-stop', 'timeline-movement-walking', 'timeline-stop',
+      'timeline-movement-driving', 'timeline-switch', 'timeline-movement-walking', 'timeline-stop',
+      'timeline-movement-walking', 'timeline-end']);
+    // The cursor on the newest fix: 「09:29」「已走 x km」, and its marker on the map.
+    expect(s.screen.cursor.label[0]).toBe('09:29');
+    expect(s.screen.cursor.label[1]).toMatch(/^已走 \d+\.\d km$/);
+    const map = s.screen.map;
+    expect(map.color).toBe('#1A73E8');
+    expect(map.places.map(place => place.number)).toEqual([1, 2, 3, 4]);
+    expect(map.lines.some(line => line.width === 2 && !line.dashed)).toBe(true);
+    expect(map.times[0]).toMatchObject({ time: s.screen.model.points[0].time, end: true });
+    expect(map.cursor.lines).toEqual(s.screen.cursor.label);
+    const frame = s.renderer.root.findAllByProps({ testID: 'history-frame-all' })[0];
+    const frameStyle = StyleSheet.flatten(frame.props.style);
+    const enabledExport = pressable(s, 'history-export');
+    const enabledExportStyle = StyleSheet.flatten(enabledExport.props.style);
+    expect([enabledExportStyle.width, enabledExportStyle.height, enabledExportStyle.borderRadius])
+      .toEqual([frameStyle.width, frameStyle.height, frameStyle.borderRadius]);
+    expect(enabledExport.findByType(Glyph).props.size).toBe(frame.findByType(Glyph).props.size);
+  } finally {
+    if (s) await unmount(s);
+    viewport.mockRestore();
+  }
 });
 
 test('history-dog (H1 狗的歷史): the dog capsule, ＋ 加入, 移動 and 坐車', async () => {
@@ -188,9 +204,10 @@ test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a
   const exportButton = s.renderer.root.findAll(node => node.props.testID === 'history-export'
     && node.props.accessibilityState)[0];
   expect(exportButton.props.accessibilityState.disabled).toBe(true);
-  // The visible 44dp button keeps a 48dp touch target.
-  expect(s.renderer.root.findAll(node => node.props.testID === 'history-export' && node.props.hitSlop === 2).length)
-    .toBeGreaterThan(0);
+  // Export and frame keep the same visible map-control footprint and full target.
+  const exportStyle = StyleSheet.flatten(exportButton.props.style);
+  expect([exportStyle.width, exportStyle.height]).toEqual([48, 48]);
+  expect(exportButton.findByType(Glyph).props.size).toBe(22);
   expect(s.screen.navigation.previous).toBe('2026-10-06');
   expect(s.screen.navigation.next).toBeNull();
   await act(async () => pressable(s, 'history-day-previous').props.onPress());
