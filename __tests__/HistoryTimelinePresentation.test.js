@@ -84,6 +84,40 @@ test.each([
   expect(shown.filter(n => n.type === 'stop')).toHaveLength(1);
   expect(shown.filter(n => n.type === 'end')).toHaveLength(1);
 });
+test('a dog endpoint the confirmed visit recorded is that visit, though the visit coordinate is a mean', () => {
+  const last = { latitude: 24.98925, longitude: 121.31318, time: 480000 };
+  const visit = { ...terminalStay, id: 'visit:120000', points: [{ latitude: 24.9892, longitude: 121.3132, time: 120000 }, last] };
+  const end = { ...endpoint, latitude: last.latitude, longitude: last.longitude, label: '現在' };
+  const shown = timelinePresentation([walk(0, 120000), visit, end]);
+  expect(shown).toHaveLength(2);
+  expect(shown[1]).toMatchObject({ type: 'end', start: 120000, end: 480000, label: '現在', terminalStay: visit,
+    latitude: last.latitude, longitude: last.longitude });
+  // Nearby but not one of the visit's own fixes, or not a visit at all: two rows.
+  const elsewhere = { ...end, latitude: last.latitude + 0.0001 };
+  expect(timelinePresentation([walk(0, 120000), visit, elsewhere]).some(n => n.terminalStay)).toBe(false);
+  expect(timelinePresentation([walk(0, 120000), { ...visit, id: 'stop:1' }, end]).some(n => n.terminalStay)).toBe(false);
+});
+// PR 116's shape: an unnumbered stationary run anchored at its first fix,
+// possibly across a same-place save gap, ending at the endpoint's fix.
+const stationary = { type: 'stop', id: 'phone-stationary:120000', presentationOnly: 'phone-stationary', number: null,
+  start: 120000, end: 480000, durationMs: 360000, interruptionMs: 0, gaps: [], unobserved: [{ start: 200000, end: 400000 }],
+  latitude: 24.98921, longitude: 121.31321 };
+test('a phone stationary run ending at the endpoint is one end row with its minutes', () => {
+  const end = { ...endpoint, label: '現在' };
+  const shown = timelinePresentation([walk(0, 120000), stationary, end]);
+  expect(shown).toHaveLength(2);
+  expect(shown[1]).toMatchObject({ type: 'end', start: 120000, end: 480000, label: '現在', terminalStay: stationary, number: null });
+  // A run that ended before the endpoint is still its own row.
+  const earlier = { ...stationary, end: 470000 };
+  expect(timelinePresentation([walk(0, 120000), earlier, walk(470000, 480000), end]).some(n => n.terminalStay)).toBe(false);
+});
+test('a phone stationary run from the departure fix is one departure row', () => {
+  const departure = { type: 'departure', start: 0, end: 0, latitude: 24.98921, longitude: 121.31321 };
+  const run = { ...stationary, id: 'phone-stationary:0', start: 0, end: 300000, durationMs: 300000 };
+  const shown = timelinePresentation([departure, run, walk(300000, 480000), endpoint]);
+  expect(shown[0]).toMatchObject({ type: 'departure', departureStay: run, end: 300000 });
+  expect(shown.filter(n => n.type === 'stop')).toHaveLength(0);
+});
 test.each(['現在', '最後', '結束', '記錄已關閉'])('terminal presentation retains endpoint semantic label %s', label => {
   expect(timelinePresentation([terminalStay, { ...endpoint, label }])[0].label).toBe(label);
 });

@@ -24,10 +24,15 @@ export function timelinePresentation(nodes = []) {
   // nearby-coordinate threshold cannot prove that two locations are one visit.
   const firstBelongsToStay = typeof initialStay?.id === 'string' && initialStay.id.startsWith('visit:')
     && initialStay.points?.some(point => point.time === first?.start && samePlace(point, first));
+  // A phone stationary run (PR 116, presentationOnly, unnumbered) is built only
+  // from 0 m stationary edges of one recording session: its first edge starts
+  // at the departure fix, its last ends at the endpoint fix, so time alone
+  // proves the endpoint is that run.
+  const stationaryRun = node => node?.presentationOnly === 'phone-stationary';
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
-    && initialStay.number === 1 && first.start === initialStay.start
+    && (initialStay.number === 1 || stationaryRun(initialStay)) && first.start === initialStay.start
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
-    && (samePlace(first, initialStay) || firstBelongsToStay);
+    && (samePlace(first, initialStay) || firstBelongsToStay || stationaryRun(initialStay));
   const input = startsWithStay
     ? [{ ...first, latitude: initialStay.latitude, longitude: initialStay.longitude,
       end: initialStay.end, durationMs: initialStay.durationMs, departureStay: initialStay }, ...nodes.slice(2)]
@@ -44,14 +49,18 @@ export function timelinePresentation(nodes = []) {
         countedDistanceM: prior.countedDistanceM + node.countedDistanceM };
     } else shown.push(node);
   }
-  // A terminal stay and its same-coordinate endpoint are one visual place.
-  // Inspect the original adjacency: a hidden weak-GPS row must still veto it.
+  // A terminal stay and its endpoint are one visual place. Inspect the original
+  // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
+  // takes the stay's own coordinate; a dog's is its last recorded fix, which
+  // the confirmed visit itself recorded (membership and exact time prove it,
+  // as for the departure), while the visit's coordinate is a mean.
   const end = nodes[nodes.length - 1], stay = nodes[nodes.length - 2];
+  const endBelongsToStay = typeof stay?.id === 'string' && stay.id.startsWith('visit:')
+    && stay.points?.some(point => point.time === end?.start && samePlace(point, end));
   if (end?.type === 'end' && stay?.type === 'stop' && shown[shown.length - 2]?.type === 'stop'
     && stay.end === end.start
     && !stay.gaps?.length && !stay.displayRange?.gaps?.length
-    && Number.isFinite(stay.latitude) && Number.isFinite(stay.longitude)
-    && stay.latitude === end.latitude && stay.longitude === end.longitude) {
+    && (samePlace(stay, end) || endBelongsToStay || stationaryRun(stay))) {
     shown.splice(shown.length - 2, 2, { ...end, start: stay.start,
       durationMs: stay.durationMs, terminalStay: stay, number: null });
   }

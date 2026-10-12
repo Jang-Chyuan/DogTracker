@@ -408,6 +408,11 @@ const myRouteMorning = now => legsPath(now, 158 * MINUTE, at(-10, -100), [
   { stay: 20 }, { drive: 6, speed: 6, bearing: 150 }, { walk: 20, bearing: 210, speed: 0.6 }, { stay: 11 },
   { walk: 23, bearing: 280, speed: 0.6 },
 ]);
+// Out at about 07:50: a walk, a stay, a walk, then staying put until now.
+const endsInStay = now => legsPath(now, 100 * MINUTE, at(-10, -100), [
+  { stay: 10 }, { walk: 20, bearing: 35, speed: 0.6 }, { stay: 15 }, { walk: 20, bearing: 95, speed: 0.6 },
+  { stay: 35 },
+]);
 // 小黑's morning like H1 狗的歷史: out at about 07:00, stays, a ride, now.
 const dogMorning = now => legsPath(now, 158 * MINUTE, at(0, -80), [
   { stay: 12 }, { walk: 24, bearing: 30, speed: 0.7 }, { stay: 17 }, { walk: 30, bearing: 100, speed: 0.7 },
@@ -1290,6 +1295,19 @@ const FIXTURES = {
   // H1 狗的歷史 (看軌跡 on 小黑's card): stays, a ride (坐車), moving now.
   'history-dog': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: dogMorning(now) }), geocoder: { names: HISTORY_NAMES } }),
+  // The day ends where the last stay is (still there now, or the range let go
+  // inside it): one end row carrying the stay, not a numbered stay plus a
+  // second row at the same place.
+  'history-ends-in-stay': now => ({ ...FIXTURES['all-good'](now),
+    phone: routePhone(endsInStay(now), now), openRoute: 'history', history: historyPage(now),
+    geocoder: { names: HISTORY_NAMES } }),
+  'history-dog-ends-in-stay': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: endsInStay(now).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix })) }),
+    geocoder: { names: HISTORY_NAMES } }),
+  'history-ends-in-stay-finished': now => ({ ...FIXTURES['history-ends-in-stay'](now),
+    historyView: { manual: { start: now - 100 * MINUTE, end: now - MINUTE, following: false } } }),
+  'history-dog-ends-in-stay-finished': now => ({ ...FIXTURES['history-dog-ends-in-stay'](now),
+    historyView: { manual: { start: now - 100 * MINUTE, end: now - MINUTE, following: false } } }),
   // H2b: my route with the range bar open; the start dragged to the walk after
   // the first stay (出發), the end following now.
   'history-range-open': now => ({ ...FIXTURES['history-my-route'](now),
