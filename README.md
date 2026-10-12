@@ -102,16 +102,18 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 - **MAJOR.MINOR** 來自 `package.json` 的 `version`，由人決定。目前為 **0.3.x beta**；使用者決定正式版時才改 1.0.x。
 - **PATCH** 是 `main` 上的 commit 數，每次合併自動往上走，CI 不需要把任何東西 commit 回 repo。
 
-建置時以 `APP_VERSION_NAME` 與 `APP_VERSION_CODE` 傳進 Gradle，所以 APK 的 `versionName` 和 release tag 一致，`versionCode` 就是同一個 commit 數（單調遞增，升級不會倒退）。`package.json` 裡的 PATCH 不影響發版，只有 MAJOR.MINOR 有意義。
+建置時以 `APP_VERSION_NAME` 與 `APP_VERSION_CODE` 傳進 Gradle，所以 APK 的 `versionName` 和 release tag 一致，`versionCode` 則是 **1000 + 同一個 commit 數**（單調遞增，升級不會倒退）。`package.json` 裡的 PATCH 不影響發版，只有 MAJOR.MINOR 有意義。
+
+`versionCode` 的固定 offset 1000（`scripts/app-version.js` 的 `VERSION_CODE_OFFSET`）是因為測試裝置上已經裝過加 offset 前的 build（Codex branch build 與手動 override），versionCode 最高到約 280，而 main 當時只有約 172 個 commit。Android 不允許用較低的 versionCode 覆蓋安裝，release build 也不能用 `-d`，只能解除安裝，會清掉本機資料與登入。加上 offset 後 main 從約 1172 起跳，高於所有舊 build。顯示給使用者的 `versionName` 不加 offset，仍是 `0.3.<commit 數>`（本機 `0.3.<基準>+<n>`），所以 versionCode 永遠等於 1000 + 名稱中的 commit 數，例如 `0.3.172` 的 versionCode 是 1172。offset 只能加大不能減少，最大值為 Android 上限 2100000000。
 
 本機 Gradle 與 CI 共用 `scripts/app-version.js`，不使用 semver 公式。`node scripts/app-version.js` 可先查看版本。淺層 checkout 會拒絕推算，先執行 `git fetch --unshallow`；CI 保持 `fetch-depth: 0`。
 
-- **CI（環境變數 `CI=true`）**：以正在建置的 `HEAD` 完整歷史 commit 數產生 `0.3.<commit 數>`，`versionCode` 同樣是 commit 數。
-- **本機**：只數到 `HEAD` 與 `origin/main` 的 merge-base（沒有 `origin/main` 時改用本機 `main`，兩者都沒有才退回 `HEAD` 的 commit 數）。在 main 上建置與 CI 結果相同；feature branch／worktree 會得到 `0.3.<main 基準>+<本機多出的 commit 數>`，例如 `0.3.195+3`，`versionCode` 則是基準的 195。這樣 branch 的 commit 數再多也不會高過之後 main/CI 的 APK，之後 `adb install -r` 安裝 main 的 APK 不會出現 `INSTALL_FAILED_VERSION_DOWNGRADE`，也不必 `-d` 或清資料。本機 `origin/main` 太舊時基準也會偏舊，建置前先 `git fetch origin`。
+- **CI（環境變數 `CI=true`）**：以正在建置的 `HEAD` 完整歷史 commit 數產生 `0.3.<commit 數>`，`versionCode` 是 1000 + commit 數。
+- **本機**：只數到 `HEAD` 與 `origin/main` 的 merge-base（沒有 `origin/main` 時改用本機 `main`，兩者都沒有才退回 `HEAD` 的 commit 數）。在 main 上建置與 CI 結果相同；feature branch／worktree 會得到 `0.3.<main 基準>+<本機多出的 commit 數>`，例如 `0.3.195+3`，`versionCode` 則是 1000 + 基準 195 = 1195。這樣 branch 的 commit 數再多也不會高過之後 main/CI 的 APK，之後 `adb install -r` 安裝 main 的 APK 不會出現 `INSTALL_FAILED_VERSION_DOWNGRADE`，也不必 `-d` 或清資料。本機 `origin/main` 太舊時基準也會偏舊，建置前先 `git fetch origin`。
 
 Gradle 設定階段就會執行 `node scripts/app-version.js`。從 Android Studio 等 IDE 啟動時 PATH 可能沒有 nvm／Homebrew 的 node，請把 `NODE_BINARY` 設成 node 的絕對路徑（環境變數，或寫在已被 git 忽略的 `android/local.properties`：`NODE_BINARY=/path/to/node`）。
 
-需要重建指定版本或從沒有 `.git` 的來源包建置時，必須一起提供 `APP_VERSION_NAME` 和 `APP_VERSION_CODE`；只提供一個會失敗。override 保留既有 CI 傳入已解析版本的方式，發布時仍使用完整 HEAD 歷史的數值，不可任意降低 versionCode。設定頁顯示原生 APK 的 `BuildConfig.VERSION_NAME`，不另寫固定版本文字。
+需要重建指定版本或從沒有 `.git` 的來源包建置時，必須一起提供 `APP_VERSION_NAME` 和 `APP_VERSION_CODE`；只提供一個會失敗。override 保留既有 CI 傳入已解析版本的方式：`APP_VERSION_CODE` 原樣使用，不會再加 offset（CI 傳入的已經是 `scripts/app-version.js` 加過 offset 的值）。手動 override 時記得自行使用 1000 + commit 數，發布時仍使用完整 HEAD 歷史的數值，不可任意降低 versionCode。設定頁顯示原生 APK 的 `BuildConfig.VERSION_NAME`，不另寫固定版本文字。
 
 ## 使用流程
 
