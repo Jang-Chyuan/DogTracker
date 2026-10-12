@@ -88,9 +88,8 @@ import { useMapHistory } from './src/mapHistory/useMapHistory';
 import { historyTargetOf } from './src/mapHistory/useHistoryScreen';
 import { useDogAvatars } from './src/dogs/useDogAvatars';
 import { useHistoryCloudSource } from './src/mapHistory/HistoryCloud';
-import { useCloudSync } from './src/cloud/useCloudSync';
-import { completedMapRevision, mapDownloadBusy, mapReadRevision } from './src/cloud/CloudPublication';
-import { useCloudDogs } from './src/cloud/useCloudDogs';
+import { useAppCloudSync } from './src/app/useAppCloudSync';
+import { useAppCloudDogs } from './src/app/useAppCloudDogs';
 import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
@@ -124,6 +123,7 @@ import {
   ONBOARDING_SIGN_IN,
   signInStack,
 } from './src/app/Launch';
+import { useInitialLatest } from './src/app/useInitialLatest';
 import { useReceiverService } from './src/ble/useReceiverService';
 import PermissionsScreen from './src/onboarding/PermissionsScreen';
 import { usePermissionsGuide } from './src/onboarding/usePermissionsGuide';
@@ -313,13 +313,7 @@ function TrackerApp({ resume = null, onRestart }) {
   const tracking = useTrackingSession();
   // An upload or download refused for the sign-in (401) asks AuthProvider
   // whether it ended (判定表「使用中登入失效」).
-  const cloudSync = useCloudSync(
-    tracking.cloudDatabase,
-    tracking.ready.real,
-    undefined,
-    auth.reportAuthFailure,
-    auth.isDiscarded,
-  );
+  const cloudSync = useAppCloudSync(tracking, auth);
   const upload = useCloudUpload(
     tracking.ready.real,
     cloudSync.ownerId,
@@ -419,21 +413,9 @@ function TrackerApp({ resume = null, onRestart }) {
   // Debug builds only: a named screen state (dogtracker://dev/fixture?name=…)
   // replaces the live map's inputs. Always null in release builds.
   const fixture = useScreenFixture();
-  const cloudDogs = useCloudDogs(
-    tracking.cloudDatabase,
-    cloudSync.ownerId,
-    tracking.ready.real,
-    undefined,
-    null,
-    {
-      active: tracking.foreground && !fixture,
-      latestFirst: cloudSync.latestFirst,
-      revision: mapReadRevision(cloudSync),
-      cloudBusy: mapDownloadBusy(cloudSync) || cloudSync.catchUp?.phase === 'catching-up',
-      cloudSuccess: completedMapRevision(cloudSync),
-      getMapPublication: cloudSync.getMapPublication,
-    },
-  );
+  const cloudDogs = useAppCloudDogs(tracking, cloudSync, {
+    active: tracking.foreground && !fixture,
+  });
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   // The history page shows live data unless a history fixture (054a) is on.
@@ -541,6 +523,12 @@ function TrackerApp({ resume = null, onRestart }) {
   const launchInput = fixture?.launch ?? liveLaunch;
   const decided = launchScreen(launchInput);
   const launchKey = fixture?.launch ? fixtureName : 'live';
+  const [notificationRequest, setNotificationRequest] = useState(null);
+  const initialLatest = useInitialLatest({ screen: decided, owner: auth.user?.id ?? null,
+    expired: !!auth.expired, fixture: !!fixture,
+    pageLaunch: !!notificationRequest && !['map', 'open-map'].includes(notificationRequest.screen),
+    supported: typeof tracking.cloudDatabase?.publishLatestSnapshot === 'function',
+    sync: cloudSync, dogs: cloudDogs });
   useEffect(() => {
     if (decided === 'splash' || launch.key === launchKey) return;
     // A fixture's start left for another state: back on the map.
@@ -587,7 +575,6 @@ function TrackerApp({ resume = null, onRestart }) {
   // .notificationDestination). At a cold start it waits for the map; the
   // first-launch guide is not interrupted. Back from a page returns to the
   // map, as from a top card.
-  const [notificationRequest, setNotificationRequest] = useState(null);
   useEffect(() => {
     const take = url => {
       const destination = notificationDestination(url);
@@ -1358,6 +1345,9 @@ function TrackerApp({ resume = null, onRestart }) {
           ]}
         >
           <MapScreen
+            coldStartReady={splashPhase !== 'waiting' || (decided !== 'splash' && initialLatest.ready)}
+            coldStartScope={initialLatest.frameScope}
+            initialLatestFailure={initialLatest.mapFailure}
             history={mapInputs.history}
             historyCloud={mapInputs.historyCloud}
             tracking={mapInputs.tracking}

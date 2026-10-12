@@ -59,7 +59,7 @@ export function latestArchiveRest({ events = [], members = [{ gateway_id: 'maste
     const table = parsed.pathname.split('/').at(-1), select = params.get('select');
     const limit = Number(params.get('limit') || Infinity);
     const phase = table === 'device_members' ? 'masters' : options.method === 'HEAD' ? 'count'
-      : select === 'slave_id' ? 'keys' : select?.startsWith('event_id,received_at,') ? 'repair'
+      : params.get('order')?.startsWith('slave_id.asc') ? 'keys' : select?.startsWith('event_id,received_at,') ? 'repair'
         : limit === 500 ? 'context' : limit === 40 ? 'seeds' : limit === 1000 ? 'archive'
           : [...params.keys()].some(key => key.startsWith('payload->')) ? 'fix' : 'packet';
     const call = { phase, params, url: parsed, signal: options.signal }; calls.push(call);

@@ -3,6 +3,7 @@ import { configFor, coordinateValid, distanceMeters, median, above, samePlaceGap
 import { isVehiclePoint } from './HistoryMovement';
 import { phoneReliableSpeed } from '../locationTracker/PhoneMotion';
 import { phoneStayDisplayAnchors } from './PhoneStayDisplayAnchors';
+import { replayVisitDecisions } from './HistoryVisitReplay';
 
 // 判定表「停留的代表位置」: the mean of the visit's judged fixes (accuracy
 // within 25 m, both sides of a short interruption); the map number, the
@@ -244,22 +245,8 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
   const dayById = new Map(day.map(v => [v.id, v]));
   const qualifies = (v, typical) => v.durationMs >= config.stayMs && v.durationMs >= typical * config.stayRatio;
   const marked = new Set();
-  const steps = [...new Set(day.flatMap(v => [v.start, v.end]))].sort((x, y) => x - y);
-  let ready = false, fallback = null, typicalMs = null;
   const judge = (list, typical) => { for (const v of list) if (!marked.has(v.id) && qualifies(v, typical)) marked.add(v.id); };
-  for (const tick of steps) {
-    const ownStarted = selected.filter(v => v.start <= tick).length;
-    const useFallback = (!following && fallback) || ownStarted < config.minVisits;
-    const base = useFallback ? day : selected;
-    const started = base.filter(v => v.start <= tick).length;
-    const typical = median(base.filter(v => v.completed && v.end <= tick).map(v => v.durationMs));
-    if (started < config.minVisits || typical == null) continue;
-    const switched = ready && fallback !== useFallback;
-    typicalMs = typical;
-    if (!ready || switched) judge(selected.filter(v => v.end <= tick && (v.completed || v.start <= tick)), typical);
-    else judge(selected.filter(v => v.completed && v.end === tick), typical);
-    ready = true; fallback = useFallback;
-  }
+  let { ready, fallback, typicalMs } = replayVisitDecisions(day, selected, config, following, judge);
   // The ongoing visit is judged again with every append (and at the end here).
   if (ready) judge(selected.filter(v => !v.completed), typicalMs);
   // 067: a visit of alwaysStayMs or more is a stay whatever the baseline —

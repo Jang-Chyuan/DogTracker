@@ -85,3 +85,69 @@ test('latest refresh and failed context retain known context; a complete context
   await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: fix('new'), fix: fix('new'), context: [], seeds: [] }]));
   expect(await database.readLatestSnapshot('a')).toMatchObject({ context: [], seeds: [] });
 });
+
+
+test('metadata-only cache read leaves upgrade context untouched for the full offline reader', async () => {
+  await database.savePage('a', [fix('cached-position')]);
+  expect(connection.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='cloud_snapshot_state'").all()).toEqual([]);
+  const before = [];
+  expect(await database.readLatestSnapshot('a', { metadataOnly: true })).toEqual({ revision: 0 });
+  expect(connection.sqlite.prepare('SELECT * FROM cloud_snapshot_state').all()).toEqual(before);
+  const full = await database.readLatestSnapshot('a');
+  expect(full).toMatchObject({ verified: false, revision: 0, packets: [expect.objectContaining({ event_id: 'cached-position' })] });
+  expect(full.context).toHaveLength(1);
+  expect(await database.readLatestSnapshot('a', { metadataOnly: true })).toEqual({ revision: 0 });
+  expect(await database.readLatestSnapshot('a')).toEqual(full);
+  await database.publishLatestSnapshot('a', snapshot([], 4000));
+  expect(await database.readLatestSnapshot('a', { metadataOnly: true })).toEqual({ revision: 1 });
+  expect(await database.readLatestSnapshot('b', { metadataOnly: true })).toEqual({ revision: 0 });
+});
+
+test('metadata read never fetches or decodes context JSON but the ordinary offline read still does', async () => {
+  await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: fix('current'), fix: fix('current'), context: [fix('known')] }]));
+  await connection.executeAsync("UPDATE cloud_latest_snapshot SET context_json='{synthetic-invalid-context' WHERE owner_user_id='a'");
+  connection.executeAsync.mockClear();
+  const fullSnapshotReads = () => connection.executeAsync.mock.calls.filter(([query]) => query.includes('d.context_json')).length;
+  expect(await database.readLatestSnapshot('a', { metadataOnly: true })).toEqual({ revision: 1 });
+  expect(fullSnapshotReads()).toBe(0);
+  await expect(database.readLatestSnapshot('a')).rejects.toThrow(SyntaxError);
+  expect(fullSnapshotReads()).toBe(1);
+});
+
+
+test('metadata reads remain owner-bound and cannot run through an in-flight native snapshot transaction', async () => {
+  await database.publishLatestSnapshot('a', snapshot([], 2000));
+  await database.publishLatestSnapshot('b', snapshot([], 2000));
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const batch = connection.executeBatchAsync.getMockImplementation();
+  connection.executeBatchAsync.mockImplementationOnce(async commands => { await pending; return batch(commands); });
+  const write = database.publishLatestSnapshot('a', snapshot([], 3000));
+  let readFinished = false;
+  const read = database.readLatestSnapshot('a', { metadataOnly: true }).then(value => { readFinished = true; return value; });
+  try {
+    await Promise.resolve(); await Promise.resolve();
+    expect(readFinished).toBe(false);
+    release(); await write;
+    expect(await read).toEqual({ revision: 2 });
+    expect(await database.readLatestSnapshot('b', { metadataOnly: true })).toEqual({ revision: 1 });
+    expect(await database.readLatestSnapshot('a')).toMatchObject({ revision: 2, verified: true, cutoff: 3000, packets: [] });
+  } finally { release(); await Promise.allSettled([write, read]); }
+});
+
+test('positions-only reads keep state, packet and last valid fix atomic without decoding optional context or bootstrapping', async () => {
+  await database.savePage('a', [fix('cached-position')]);
+  expect(await database.readLatestSnapshot('a', { positionsOnly: true })).toBeNull();
+  expect(connection.sqlite.prepare('SELECT * FROM cloud_snapshot_state').all()).toEqual([]);
+  const current = fix('new-current');
+  await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: current, fix: current }]));
+  await connection.executeAsync("UPDATE cloud_latest_snapshot SET context_json='{invalid-context' WHERE owner_user_id='a'");
+  const positions = await database.readLatestSnapshot('a', { positionsOnly: true });
+  expect(positions).toMatchObject({ revision: 1, verified: true, rows: [expect.objectContaining({ event_id: 'new-current' })],
+    packets: [expect.objectContaining({ event_id: 'new-current' })] });
+  expect(positions.context).toBeUndefined();
+  expect(await database.readLatestSnapshot('b', { positionsOnly: true })).toBeNull();
+  await expect(database.readLatestSnapshot('a')).rejects.toThrow(SyntaxError);
+  await database.publishLatestSnapshot('a', snapshot([]));
+  expect(await database.readLatestSnapshot('a', { positionsOnly: true })).toMatchObject({ revision: 2, verified: true, rows: [], packets: [] });
+});

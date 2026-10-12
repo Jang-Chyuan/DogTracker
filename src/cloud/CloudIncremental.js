@@ -1,25 +1,46 @@
 import { t } from '../i18n';
 import { downloadCloudHistory } from './CloudDownload';
 import { cloudError } from './CloudErrors';
+import { beginCloudLogicalDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
 
 const DAY = 86400000;
 const OVERLAP = 300000;
 
 export async function listCloudMasters(client, owner, signal, check) {
   const masters = new Set();
-  for (let offset = 0; ; ) {
-    await check();
-    const { data, error, status } = await client.from('device_members').select('gateway_id,slave_id')
-      .eq('user_id', owner).order('gateway_id').order('slave_id')
-      .range(offset, offset + 499).abortSignal(signal);
-    await check();
-    if (error || !Array.isArray(data)) throw cloudError(t("c581"), error, status);
-    if (!data.length) return [...masters];
-    for (const row of data) {
-      const match = /^master_(\d+)$/.exec(row.gateway_id);
-      if (match && Number.isSafeInteger(Number(match[1]))) masters.add(Number(match[1]));
+  // The SDK awaits its auth token before fetch. AbortSignal cannot necessarily
+  // stop that await (or an old transport that ignores cancellation). Fence the
+  // logical membership pass too, so it can relinquish the cloud slot on logout,
+  // background or its existing deadline without accepting late membership.
+  let cancel;
+  const canceled = new Promise((_, reject) => { cancel = () => reject(new Error(t('c576'))); });
+  canceled.catch(() => {});
+  signal?.addEventListener?.('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
+  try {
+    for (let offset = 0; ; ) {
+      await check();
+      if (signal?.aborted) throw new Error(t('c576'));
+      const done = beginCloudLogicalDiagnostic(signal, 'masters');
+      let result;
+      try { result = await Promise.race([
+        client.from('device_members').select('gateway_id,slave_id')
+          .eq('user_id', owner).order('gateway_id').order('slave_id')
+          .range(offset, offset + 499).abortSignal(signal), canceled,
+      ]); } finally { done?.(); }
+      const { data, error, status } = result;
+      await check();
+      if (signal?.aborted) throw new Error(t('c576'));
+      if (error || !Array.isArray(data)) throw cloudError(t("c581"), error, status);
+      if (!data.length) return [...masters];
+      for (const row of data) {
+        const match = /^master_(\d+)$/.exec(row.gateway_id);
+        if (match && Number.isSafeInteger(Number(match[1]))) masters.add(Number(match[1]));
+      }
+      offset += data.length;
     }
-    offset += data.length;
+  } finally {
+    signal?.removeEventListener?.('abort', cancel);
   }
 }
 

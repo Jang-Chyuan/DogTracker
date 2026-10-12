@@ -25,11 +25,13 @@ const exposed = record => {
 
 // Latest map data is its own small committed table. Archive writers, repairs
 // and retention never write it, and a snapshot never advances archive cursors.
-export function createLatestSnapshotDatabase(connection, initialize, bootstrap = null) {
-  let readiness;
+// Successful schema readiness belongs to the actual wrapper lifetime, not a
+// process-wide native lock key that a reopened/closed wrapper may reuse.
+const latestReadiness = new WeakMap();
+export function createLatestSnapshotDatabase(connection, initialize, bootstrap = null, initializeArchive = initialize) {
   const ready = () => {
-    if (readiness) return readiness;
-    readiness = initialize().then(() => withConnectionLock(connection, async () => {
+    if (latestReadiness.has(connection)) return latestReadiness.get(connection);
+    const readiness = Promise.resolve().then(initialize).then(() => withConnectionLock(connection, async () => {
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_latest_snapshot (
         owner_user_id TEXT NOT NULL, slave_id INTEGER NOT NULL,
         packet_json TEXT NOT NULL, fix_json TEXT, context_json TEXT NOT NULL,
@@ -39,10 +41,15 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
       const columns = rows(await connection.executeAsync('PRAGMA table_info(cloud_snapshot_state)'));
       if (!columns.some(column => column.name === 'origin'))
         await connection.executeAsync("ALTER TABLE cloud_snapshot_state ADD COLUMN origin TEXT NOT NULL DEFAULT 'remote'");
-    })).catch(error => { readiness = null; throw error; });
+    })).catch(error => {
+      if (latestReadiness.get(connection) === readiness) latestReadiness.delete(connection);
+      throw error;
+    });
+    latestReadiness.set(connection, readiness);
     return readiness;
   };
   return {
+    initializeLatest: ready,
     async publishLatestSnapshot(owner, snapshot, isCurrent = () => true) {
       if (!owner || !Number.isFinite(snapshot?.cutoff) || !Array.isArray(snapshot?.dogs)) throw new Error(t('c588'));
       if (snapshot.masterIds != null && (!Array.isArray(snapshot.masterIds) || !snapshot.masterIds.every(Number.isSafeInteger))) throw new Error(t('c588'));
@@ -61,10 +68,16 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
       return withConnectionLock(connection, async () => {
         if (!isCurrent()) throw new Error(t('c576'));
         const before = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
-        const previous = new Map(rows(await connection.executeAsync('SELECT slave_id,packet_json,context_json FROM cloud_latest_snapshot WHERE owner_user_id=?', [owner]))
+        const previous = new Map(rows(await connection.executeAsync('SELECT slave_id,packet_json,fix_json,context_json FROM cloud_latest_snapshot WHERE owner_user_id=?', [owner]))
           .map(row => [row.slave_id, row]));
         const revision = Number(before?.revision || 0) + 1;
-        const commands = [{ query: 'DELETE FROM cloud_latest_snapshot WHERE owner_user_id=?', params: [owner] }];
+        const commands = [];
+        if (!snapshot.dogs.length) commands.push({ query: 'DELETE FROM cloud_latest_snapshot WHERE owner_user_id=?', params: [owner] });
+        else for (const slave of previous.keys()) {
+          if (!seen.has(slave)) commands.push({
+            query: 'DELETE FROM cloud_latest_snapshot WHERE owner_user_id=? AND slave_id=?', params: [owner, slave],
+          });
+        }
         for (const dog of snapshot.dogs) {
           const old = previous.get(dog.slaveId);
           const context = dog.context == null && old && JSON.parse(old.packet_json).master_id === dog.packet.master_id
@@ -73,10 +86,15 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
             context.rows = context.rows.filter(row => snapshot.masterIds.includes(row.master_id));
             context.seeds = context.seeds.filter(row => snapshot.masterIds.includes(row.master_id));
           }
+          const packetJSON = JSON.stringify(dog.packet), fixJSON = dog.fix ? JSON.stringify(dog.fix) : null;
+          const contextJSON = JSON.stringify(context);
+          // Compare the complete serialized values, including context order and
+          // authority filtering. Unchanged latest/context polls need not rewrite
+          // large dog rows; their atomic metadata revision/cutoff still advances.
+          if (old && old.packet_json === packetJSON && old.fix_json === fixJSON && old.context_json === contextJSON) continue;
           commands.push({
-          query: 'INSERT INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
-          params: [owner, dog.slaveId, JSON.stringify(dog.packet), dog.fix ? JSON.stringify(dog.fix) : null,
-            JSON.stringify(context)],
+          query: 'INSERT OR REPLACE INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
+          params: [owner, dog.slaveId, packetJSON, fixJSON, contextJSON],
           });
         }
         commands.push({ query: 'INSERT OR REPLACE INTO cloud_snapshot_state(owner_user_id,revision,cutoff,origin) VALUES(?,?,?,?)',
@@ -86,27 +104,58 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
         return revision;
       });
     },
-    async readLatestSnapshot(owner) {
+    async readLatestSnapshot(owner, options = {}) {
       if (!owner) throw new Error(t('c572'));
       await ready();
-      // One statement sees the state and every dog from the same transaction,
+      if (bootstrap && !options.metadataOnly && !options.positionsOnly && options.bootstrap !== false) {
+        const missing = await withConnectionLock(connection, async () => !rows(await connection.executeAsync(
+          'SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner])).length);
+        if (missing) {
+          // Both archive readiness AND cache reads may take the archive's long
+          // lock. Never hold the latest-store lock across either operation.
+          // A remote snapshot can win during either wait; recheck before commit.
+          await initializeArchive();
+          const stillMissing = await withConnectionLock(connection, async () => !rows(await connection.executeAsync(
+            'SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner])).length);
+          let cached;
+          if (stillMissing && (!options.isCurrent || options.isCurrent())) cached = await bootstrap(owner);
+          await withConnectionLock(connection, async () => {
+            const state = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
+            if (!state && cached && options.bootstrap !== false) {
+              // Upgrade only once from this owner's already published archive. It
+              // is an offline cache, never proof of a fresh or complete remote set.
+              if (options.isCurrent && !options.isCurrent()) return;
+              const fixes = new Map(cached.fixes.filter(validCloudFix).map(row => [row.slave_id, row]));
+              const commands = cached.packets.map(packet => ({
+                query: 'INSERT INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
+                params: [owner, packet.slave_id, JSON.stringify(packet), fixes.has(packet.slave_id) ? JSON.stringify(fixes.get(packet.slave_id)) : null,
+                  JSON.stringify(cached.contexts?.get(packet.slave_id) || { rows: [], seeds: [] })],
+              }));
+              commands.push({ query: 'INSERT INTO cloud_snapshot_state(owner_user_id,revision,cutoff,origin) VALUES(?,0,?,?)',
+                params: [owner, Math.max(0, ...cached.packets.map(row => Number(row.received_at) || 0)), 'cache'] });
+              await connection.executeBatchAsync(commands);
+            }
+          });
+        }
+      }
+      // The full joined read below sees the state and every dog together,
       // including the state row of a successful empty snapshot.
       return withConnectionLock(connection, async () => {
-        const state = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
-        if (!state && bootstrap) {
-          // Upgrade only once from this owner's already published archive. It
-          // is an offline cache, never proof of a fresh or complete remote set.
-          const cached = await bootstrap(owner);
-          const fixes = new Map(cached.fixes.filter(validCloudFix).map(row => [row.slave_id, row]));
-          const commands = cached.packets.map(packet => ({
-            query: 'INSERT INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
-            params: [owner, packet.slave_id, JSON.stringify(packet), fixes.has(packet.slave_id) ? JSON.stringify(fixes.get(packet.slave_id)) : null,
-              JSON.stringify(cached.contexts?.get(packet.slave_id) || { rows: [], seeds: [] })],
-          }));
-          commands.push({ query: 'INSERT INTO cloud_snapshot_state(owner_user_id,revision,cutoff,origin) VALUES(?,0,?,?)',
-            params: [owner, Math.max(0, ...cached.packets.map(row => Number(row.received_at) || 0)), 'cache'] });
-          await connection.executeBatchAsync(commands);
+        if (options?.positionsOnly === true) {
+          // No bootstrap or context decode: this is the small atomic map set.
+          const found = rows(await connection.executeAsync(`SELECT s.revision,s.cutoff,s.origin,d.packet_json,d.fix_json
+            FROM cloud_snapshot_state s LEFT JOIN cloud_latest_snapshot d ON d.owner_user_id=s.owner_user_id
+            WHERE s.owner_user_id=? ORDER BY d.slave_id`, [owner]));
+          if (!found.length) return null;
+          return { revision: Number(found[0].revision), cutoff: Number(found[0].cutoff), verified: found[0].origin === 'remote',
+            rows: found.filter(row => row.fix_json).map(row => exposed(JSON.parse(row.fix_json))),
+            packets: found.filter(row => row.packet_json).map(row => exposed(JSON.parse(row.packet_json))) };
         }
+        const state = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
+        // The scheduler only needs the old revision bound before fresh HTTP.
+        // Revision 0 permits the existing one-time offline upgrade cache, not
+        // a remote success; do not bootstrap, decode context or write here.
+        if (options?.metadataOnly === true) return { revision: state ? Number(state.revision) : 0 };
         const found = rows(await connection.executeAsync(`SELECT s.revision,s.cutoff,s.origin,d.packet_json,d.fix_json,d.context_json
           FROM cloud_snapshot_state s LEFT JOIN cloud_latest_snapshot d ON d.owner_user_id=s.owner_user_id
           WHERE s.owner_user_id=? ORDER BY d.slave_id`, [owner]));

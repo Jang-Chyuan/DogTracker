@@ -6,7 +6,9 @@ import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { cloudSyncDiagnostic } from '../logger';
+import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
 import { downloadCloudLatest, downloadCloudLatestContext } from './CloudLatest';
+import { createIndependentCloudSync } from './IndependentCloudSync';
 
 // The incremental pass only looks back OVERLAP, so rows uploaded later than
 // that are found by the count check instead. Sweeping every cycle would spend
@@ -22,9 +24,15 @@ const CONTEXT_BUDGET_MS = 10000;
 // Manual and automatic downloads share the same exclusive network/write slot.
 export function createCloudSync({ client, database, onChange = () => {}, now = Date.now, downloadLatest = downloadCloudLatest,
   downloadContext = downloadCloudLatestContext }) {
+  if (database.latestStorageIsolated)
+    return createIndependentCloudSync({ client, database, onChange, now, downloadLatest, downloadContext });
   const latestFirst = typeof database.publishLatestSnapshot === 'function';
   const mapScope = {};
+  const priorityLatest = latestFirst && typeof database.initializeLatest === 'function';
+  let mapReadback = null;
+  let mapStartedAt = null;
   let owner = null;
+  let sessionKnown = false;
   let foreground = false;
   let disposed = false;
   let generation = 0;
@@ -48,8 +56,26 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let state = { latestFirst, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null,
     archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', contextPending: false, busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null,
     failingSince: null, authFailed: false, offline: false, revision: 0, mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, dataRevision: null, publishedRevision: 0, publishedPending: false, catchUp: CATCH_UP_IDLE };
+  const latestReadiness = createLatestReadinessGate(() => ({ owner, generation,
+    ready: !priorityLatest || sessionKnown && (!owner || !disposed && foreground
+      && (!!mapReadback?.acknowledged() && mapReadback.value.owner === owner
+        && mapReadback.value.generation === generation && mapReadback.value.attempt === state.mapAttempt
+        || !state.snapshotPending && !!state.error)),
+  }));
+  const releaseReadiness = priorityLatest ? database.installLatestReadinessGate?.(latestReadiness) : null;
+  const acknowledgeMapRead = value => {
+    const before = mapReadback?.acknowledged();
+    const accepted = mapReadback?.acknowledge(value) ?? false;
+    if (accepted && !before) {
+      cloudSyncDiagnostic('latest-applied', { attempt: mapReadback.value.attempt,
+        elapsedMs: Math.max(0, now() - mapStartedAt), revision: mapReadback.value.revision });
+      publish({});
+    }
+    return accepted;
+  };
   const publish = patch => {
     state = { ...state, ...patch };
+    latestReadiness.notify();
     if (!disposed) onChange({ ...state, owner, foreground });
   };
   const valid = version => !disposed && foreground && !!owner && version === generation;
@@ -103,6 +129,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     const startedAt = now();
     // Observed wall time includes native bridge waits and JS continuation.
     // latestHTTPMs measures downloadLatest as a whole, not HTTP or CPU alone.
+    // Prefetched network phases overlap native readiness; timings are not additive.
     const timings = { slotWaitMs: 0, initializeMs: 0, archiveProofMs: 0,
       latestCacheReadMs: 0, mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0 };
     const attempt = state.mapAttempt + 1;
@@ -125,26 +152,69 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     initialAttemptStarted = true;
     resumeCatchUp.started(showCatchUp);
     archiveYieldRequested = false;
+    if (priorityLatest) { mapReadback = null; mapStartedAt = startedAt; }
     publish({ busy: true, mode: 'auto', error: '', authFailed: false, snapshotPending: latestFirst,
       mapPending: true, mapAttempt: attempt });
     running = withCloudSyncSlot(async () => {
       timings.slotWaitMs = Math.max(0, now() - startedAt);
+      let prefetchedLatest;
+      let fetchLatest;
+      let cancelPrefetch;
       try {
         check();
+        if (latestFirst) {
+          // Network reads do not need SQLite. Start them inside the same cloud
+          // slot, but keep all native readiness/proof checks before publication.
+          const networkAbort = new AbortController();
+          cancelPrefetch = () => networkAbort.abort();
+          abort.signal.addEventListener('abort', cancelPrefetch, { once: true });
+          const networkCheck = () => {
+            check();
+            if (networkAbort.signal.aborted) throw new Error(t('c576'));
+          };
+          let networkPhase = 'masters';
+          const canceled = new Promise(resolve => {
+            networkAbort.signal.addEventListener('abort', () =>
+              resolve({ error: new Error(t('c576')), phase: networkPhase }), { once: true });
+          });
+          // Handle rejection immediately, even while an uncancellable native
+          // operation drains. Ignored transport aborts cannot publish late.
+          fetchLatest = () => {
+            networkPhase = 'masters';
+            const network = (async () => {
+              let networkAt = now();
+              const masters = await listCloudMasters(client, userId, networkAbort.signal, networkCheck);
+              timings.mastersMs += Math.max(0, now() - networkAt);
+              networkCheck();
+              const cutoff = now();
+              networkPhase = 'download';
+              networkAt = now();
+              const snapshot = await downloadLatest({ client, masterIds: masters, cutoff,
+                signal: networkAbort.signal, check: networkCheck });
+              timings.latestHTTPMs += Math.max(0, now() - networkAt);
+              networkCheck();
+              return { masters, cutoff, snapshot };
+            })().then(value => ({ value }), error => ({ error, phase: networkPhase }));
+            return Promise.race([network, canceled]);
+          };
+          prefetchedLatest = fetchLatest();
+        }
         let phaseAt = now();
-        await database.initialize();
+        await (priorityLatest ? database.initializeLatest() : database.initialize());
         timings.initializeMs = Math.max(0, now() - phaseAt);
         check();
         if (latestFirst) {
+          if (!priorityLatest) {
+            phaseAt = now();
+            const archive = await database.readArchivePublication?.(userId);
+            timings.archiveProofMs = Math.max(0, now() - phaseAt);
+            check();
+            if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
+              && Number.isSafeInteger(archive.revision) && archive.revision > 0)
+              publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
+          }
           phaseAt = now();
-          const archive = await database.readArchivePublication?.(userId);
-          timings.archiveProofMs = Math.max(0, now() - phaseAt);
-          check();
-          if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
-            && Number.isSafeInteger(archive.revision) && archive.revision > 0)
-            publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
-          phaseAt = now();
-          const cached = await database.readLatestSnapshot(userId);
+          const cached = await database.readLatestSnapshot(userId, { metadataOnly: true });
           timings.latestCacheReadMs = Math.max(0, now() - phaseAt);
           check();
           publish({ snapshotBaseRevision: cached?.revision ?? null });
@@ -154,20 +224,39 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           await database.beginDownload?.(userId);
           check();
         }
-        phase = 'masters';
-        phaseAt = now();
-        const masters = await listCloudMasters(client, userId, abort.signal, check);
-        timings.mastersMs = Math.max(0, now() - phaseAt);
-        const cutoff = now();
+        let masters, cutoff, snapshot;
         if (latestFirst) {
-          phase = 'download';
-          phaseAt = now();
-          const snapshot = await downloadLatest({ client, masterIds: masters, cutoff, signal: abort.signal, check });
-          timings.latestHTTPMs = Math.max(0, now() - phaseAt);
+          let downloaded = await prefetchedLatest;
+          // Re-list membership as well as packets when initialization outlives
+          // the existing poll period. At most one replacement, same deadline.
+          if (downloaded.value && now() - downloaded.value.cutoff >= 30000) {
+            check();
+            downloaded = await fetchLatest();
+          }
+          if (Object.prototype.hasOwnProperty.call(downloaded, 'error')) {
+            phase = downloaded.phase;
+            throw downloaded.error;
+          }
+          ({ masters, cutoff, snapshot } = downloaded.value);
           check();
+        } else {
+          phase = 'masters';
+          phaseAt = now();
+          masters = await listCloudMasters(client, userId, abort.signal, check);
+          timings.mastersMs = Math.max(0, now() - phaseAt);
+          cutoff = now();
+        }
+        if (latestFirst) {
           phase = 'publish';
           phaseAt = now();
-          await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
+          const committedRevision = await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
+          if (priorityLatest) {
+            const committed = await database.readLatestSnapshot(userId, { positionsOnly: true });
+            check();
+            if (!committed?.verified || committed.revision !== committedRevision || committed.cutoff !== cutoff) throw new Error(t('c588'));
+            mapReadback = createMapReadback(committed, { owner: userId, scope: mapScope, generation: version,
+              attempt, revision: state.mapSuccessRevision + 1 }, () => valid(version) && state.mapAttempt === attempt && !abort.signal.aborted);
+          }
           timings.snapshotCommitMs = Math.max(0, now() - phaseAt);
           check();
           latestAccepted = true;
@@ -180,6 +269,22 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           if (failureDiagnostic) {
             cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) });
             failureDiagnostic = null;
+          }
+          if (priorityLatest) {
+            // A true committed React cache acknowledgement precedes any full
+            // archive initialization. No mounted reader defers this pass;
+            // the normal 30s tick/retry can try again without false completion.
+            const acceptedReadback = mapReadback;
+            if (!await acceptedReadback.wait(abort.signal, CONTEXT_BUDGET_MS)) return;
+            check();
+            if (mapReadback !== acceptedReadback) throw new Error(t('c576'));
+            phaseAt = now();
+            const archive = await database.readArchivePublication?.(userId);
+            timings.archiveProofMs = Math.max(0, now() - phaseAt);
+            check();
+            if (archive?.owner === userId && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
+              && Number.isSafeInteger(archive.revision) && archive.revision > 0)
+              publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
           }
           publish({ contextPending: true });
           const contextAbort = new AbortController();
@@ -302,8 +407,26 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           // polling keeps its S3 error without starting a return indicator.
           if (resumeCatchUp.state().phase === 'idle') resumeCatchUp.caughtUp();
           else resumeCatchUp.failed();
+          if (priorityLatest && valid(version) && (!abort.signal.aborted || timedOut)) {
+            // A failed fresh request permits the preserved offline archive
+            // fallback, but never queues its maintenance before latest reads.
+            publish({ snapshotPending: false });
+            try {
+              const archive = await database.readArchivePublication?.(userId);
+              if (valid(version) && (!abort.signal.aborted || timedOut) && archive?.owner === userId
+                && Number.isSafeInteger(archive.cutoff) && archive.cutoff >= 0
+                && Number.isSafeInteger(archive.revision) && archive.revision > 0)
+                publish({ archiveRevision: archive.revision, archiveCutoff: archive.cutoff });
+            } catch {
+              // Keep the original latest failure. Failed storage is not proof.
+            }
+          }
         }
       } finally {
+        if (cancelPrefetch) {
+          abort.signal.removeEventListener('abort', cancelPrefetch);
+          cancelPrefetch();
+        }
         clearTimeout(timeout);
         controller = null;
         running = null;
@@ -321,17 +444,22 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     mapPublication() {
       return { scope: mapScope, owner, generation, attempt: state.mapAttempt, pending: state.mapPending || (!latestFirst && state.publishedPending),
         busy: latestFirst ? state.snapshotPending : state.busy, snapshotBaseRevision: state.snapshotBaseRevision, mapSuccessRevision: state.mapSuccessRevision,
-        publishedRevision: state.publishedRevision, publishedPending: state.publishedPending };
+        publishedRevision: state.publishedRevision, publishedPending: state.publishedPending,
+        ...(priorityLatest ? { readback: mapReadback?.value ?? null, acknowledgeMapRead,
+          bootstrapAllowed: !state.snapshotPending && !!(state.error || state.authFailed || state.offline) } : {}) };
     },
     historyPublication() {
-      return { scope: mapScope, owner, generation, latestFirst, attempt: state.mapAttempt, pending: state.publishedPending,
+      return { scope: mapScope, owner, generation, latestFirst,
+        ...(releaseReadiness ? { latestReadReady: latestReadiness.ready() } : {}), attempt: state.mapAttempt, pending: state.publishedPending,
         busy: false, mapSuccessRevision: state.archiveRevision, dataRevision: state.dataRevision, publishedRevision: state.publishedRevision,
         publishedPending: state.publishedPending, archiveRevision: state.archiveRevision, archiveCutoff: state.archiveCutoff, archiveError: state.archiveError };
     },
     setSession(session) {
       const next = session?.user.id || null;
-      if (owner === next) return;
+      sessionKnown = true;
+      if (owner === next) { latestReadiness.notify(); return; }
       cancelBackgroundSync();
+      mapReadback = null;
       owner = next;
       // The old owner's already-started native transaction cannot be cancelled.
       // Keep its physical publication fence closed for the replacement owner
@@ -382,6 +510,12 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     async runManual(work, abort = new AbortController()) {
       if (manualPending || state.mode === 'manual') throw new Error(t("c585"));
       const version = generation;
+      // Do not acquire the cloud slot while waiting for an automatic map ACK.
+      // Otherwise a manual day could prevent the very attempt opening it.
+      if (releaseReadiness && !latestReadiness.ready() && !await latestReadiness.wait(abort.signal))
+        throw new Error(t("c576"));
+      if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
+      if (manualPending || state.mode === 'manual') throw new Error(t("c585"));
       manualPending = true;
       controller?.abort();
       try {
@@ -397,7 +531,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           const count = await work(() => valid(version) && !abort.signal.aborted,
             commit => publishScoped(version, commit));
           if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
-          if (database.publishDownload) await publishScoped(version, () => database.publishDownload(owner, 'manual'));
+          // The native publish re-checks this owner/generation inside its lock: an
+          // account switch while it waited cannot publish the old manual job.
+          if (database.publishDownload) await publishScoped(version, () => database.publishDownload(owner, 'manual', null,
+            () => valid(version) && !abort.signal.aborted));
           return count;
         });
         // A selected history window is not a complete live all-master pass.
@@ -414,6 +551,8 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
     },
     dispose() {
       disposed = true;
+      latestReadiness.close();
+      releaseReadiness?.();
       retryQueued = false;
       resumeCatchUp.close();
       generation += 1;

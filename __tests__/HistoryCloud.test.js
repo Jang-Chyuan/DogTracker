@@ -161,3 +161,38 @@ test.each([1, 0])('today tail uses retained completed prefix only (complete=%i)'
   expect(database.setHistoryDownloadState).toHaveBeenLastCalledWith('a', 6, '2026-10-03', true,
     { range_start: dayStart, range_end: cutoff, received_before: cutoff });
 });
+
+test('a manual day scope publishes with its lease, so a superseded download cannot publish in the native lock', async () => {
+  const dayStart = new Date(2026, 9, 3).getTime(), dayEnd = dayStart + 86400000;
+  let leased = true, isCurrent = null;
+  const database = { initialize: async () => {}, setHistoryDownloadState: async () => {}, beginManualScope: async () => {},
+    historyDownloadStates: async () => [],
+    publishManualScope: jest.fn(async (owner, id, day, current) => { isCurrent = current; return { dataRevision: 3 }; }) };
+  const runManual = (work, abort) => work(() => leased && !abort.signal.aborted, commit => commit());
+  const cloud = createHistoryCloud({ client: client(() => Promise.resolve({ data: [], error: null })), database, owner: 'a', runManual });
+  await cloud.download({ slaveId: 6, dayStart, dayEnd, cutoff: dayStart + 3600000 });
+  expect(database.publishManualScope).toHaveBeenCalledWith('a', 6, '2026-10-03', expect.any(Function));
+  expect(isCurrent()).toBe(true);
+  leased = false; expect(isCurrent()).toBe(false);
+});
+
+test('a tail refresh keeps each dog proven prefix and publishes no unknown material; a full window still marks incomplete', async () => {
+  const dayStart = new Date(2026, 9, 3).getTime(), dayEnd = dayStart + 86400000;
+  const prefix = dayStart + 3600000, cutoff = prefix + 60000;
+  const c = client(() => Promise.resolve({ data: [], error: null }));
+  const database = { initialize: async () => {}, setHistoryDownloadState: jest.fn(async () => {}),
+    historyDownloadStates: async () => [{ slave_id: 6, day: '2026-10-03', complete: 1,
+      range_start: dayStart, range_end: prefix, received_before: prefix }] };
+  const published = [];
+  const runManual = (work, abort) => work(() => !abort.signal.aborted, async commit => { const value = await commit(); published.push(value); return value; });
+  const cloud = createHistoryCloud({ client: c, database, owner: 'a', runManual });
+  await cloud.download({ slaveId: [6, 8], dayStart, dayEnd, cutoff });
+  // Dog 6 extends its prefix: never wiped mid-refresh. Dog 8 has no proof.
+  expect(database.setHistoryDownloadState.mock.calls.filter(([, id, , complete]) => id === 6 && !complete)).toEqual([]);
+  expect(database.setHistoryDownloadState.mock.calls.filter(([, id, , complete]) => id === 8 && !complete)).toHaveLength(1);
+  expect(published).toHaveLength(1);
+  published.length = 0; database.setHistoryDownloadState.mockClear();
+  await cloud.download({ slaveId: 6, dayStart, dayEnd, cutoff });
+  expect(published).toEqual([]);
+  expect(database.setHistoryDownloadState.mock.calls.map(([, , , complete]) => complete)).toEqual([true]);
+});

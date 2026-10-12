@@ -68,7 +68,10 @@ class DogStatusStore private constructor(private val context: Context) {
       if (!hasUsb) db.execSQL("ALTER TABLE $table ADD COLUMN usb_present INTEGER")
     }
     db.execSQL("DROP TRIGGER IF EXISTS trim_dog_status_after_insert")
-    db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_received_at ON dog_status(received_at DESC)")
+    // The JS reader retires the received_at-only index. Create its existing
+    // composite replacement directly so each cold open does not rebuild and
+    // immediately drop an index over all local rows.
+    db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_received_at_id ON dog_status(received_at, id)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_received ON dog_status(slave_id, received_at DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_id ON dog_status(slave_id, id DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_master ON dog_status(slave_id, master_id)")

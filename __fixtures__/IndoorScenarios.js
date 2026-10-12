@@ -38,7 +38,7 @@ const lerp = (a, b, f) => ({ latitude: a.latitude + (b.latitude - a.latitude) * 
  * dog), or a point.
  */
 // How bad indoor fixes are. 'harsh' is the stress test the rules were tuned
-// on; 'real' is fitted to 2026-10-03 dog 4 (a still collar: p95 46 m, max
+// on; 'real' is fitted to a still collar's full-day record (p95 46 m, max
 // 140 m from its centre, no jumps of hundreds of metres).
 export const DRIFT = {
   harsh: { step: 6, cap: 120, jumpChance: 0.02, jump: 220, multipath: [40, 80] },

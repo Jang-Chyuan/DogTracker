@@ -218,8 +218,9 @@ describe('today\'s distance, carried on row by row (068)', () => {
   test('a day on foot: a poll costs no more late in the day than early', () => {
     const rows = simulatedDay(11, { legs: 40, foot: true });
     const now = rows[rows.length - 1].time;
-    // Walking and standing still, recorded without a break: no car and no
-    // gap, so nothing ends the run of walking the distance is counted along.
+    // Walking and standing still, recorded without a break and with no car.
+    // The timeline may still mark runs of missing measurements as uncertain
+    // gaps (asserted below, counting no distance); the rest is walking.
     // The checkpoint can only move if it carries the run's anchor and speed
     // budget (otherwise a poll adds the whole retained route up again).
     const model = historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone', source: 'all',

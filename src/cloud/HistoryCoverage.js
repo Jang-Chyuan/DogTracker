@@ -24,8 +24,13 @@ export async function initializeHistoryCoverage(connection, table = 'history_dow
 // packets also matter to replay, so their eviction invalidates that proof.
 export function invalidateEvictedCoverage(deletion, table = 'supabase_dog_status', coverageTable = 'history_download_state') {
   const candidates = deletion.replace(new RegExp(`^DELETE FROM ${table} WHERE id IN`), '');
-  return `UPDATE ${coverageTable} SET complete=0 WHERE complete=1 AND EXISTS (
-    SELECT 1 FROM ${table} lost WHERE lost.id IN ${candidates}
+  // Keep the empty-candidate guard (also recognized by staged-write filtering),
+  // but collect affected proof rowids once instead of rescanning lost rows for
+  // each proof. CROSS JOIN visits candidate packets first; ordinary coverage
+  // tables, including upgraded/staged tables, retain rowids for null days.
+  return `UPDATE ${coverageTable} SET complete=0 WHERE complete=1 AND EXISTS ${candidates} AND rowid IN (
+    SELECT ${coverageTable}.rowid FROM ${table} lost CROSS JOIN ${coverageTable}
+    WHERE ${coverageTable}.complete=1 AND lost.id IN ${candidates}
     AND lost.owner_user_id=${coverageTable}.owner AND lost.slave_id=${coverageTable}.slave_id
     AND (CAST(COALESCE(lost.track_at,lost.received_at) AS INTEGER)>=range_start-${HISTORY_CONTEXT_BEFORE_MS}
       AND CAST(COALESCE(lost.track_at,lost.received_at) AS INTEGER)<range_end
