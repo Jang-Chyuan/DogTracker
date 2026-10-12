@@ -84,3 +84,15 @@ yarn-error.log
 
 # Claude Code worktrees (.claude/worktrees/*)
 .claude/
+
+# PR verification evidence (screenshots, recordings, device dumps).
+# Public repo: attach evidence to the PR description or comments instead. See AGENTS.md.
+artifacts/
+pr-verification/
+/docs/verification/
+/docs/testing/pr-*/
+/docs/testing/assets/
+docs/testing/**/evidence/
+*.mp4
+*.mov
+*.webm

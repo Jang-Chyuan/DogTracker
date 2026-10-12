@@ -16,9 +16,7 @@
 - 真正拖動地圖後，按「框住全部」回到停留點。
 - 用正常範圍控制拉回完整 08:45–09:27，原停留 1／39 分鐘與前面的 3 分鐘移動都保留。
 
-![修正前](../assets/pr112/stay-range-before.png)
-![修正後](../assets/pr112/stay-range-after.png)
-![完整範圍保留停留](../assets/pr112/full-stay-preserved.png)
+前後對照截圖見 PR #112 說明，不放在 repo 內。
 
 產品來源 `d5d6387e`：完整 221 suites／2,475 tests 通過，lint 0 errors／8 個既有 warnings；diff check 通過。私有修正前 Android Release 25 秒、修正後 19 秒，5562 實際配對驗證完成。原權限、設定、未登入狀態與記錄開關保留，私有資料入口已關閉，root 已還原正式 main 0.3.163。
 
