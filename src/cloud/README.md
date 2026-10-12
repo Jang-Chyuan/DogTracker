@@ -126,7 +126,7 @@ npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudDataScreen.te
 
 同步驗收：登入後前景每 30 秒；以 `adb shell dumpsys jobscheduler` 檢查 `$PACKAGE/androidx.work.impl.background.systemjob.SystemJobService`（先設 `PACKAGE=${PACKAGE:-com.antgo.dogtracker}`，若 debug 設有 applicationIdSuffix 也須包含） 的週期與網路條件。切到桌面／鎖屏後觀察工作結束（Logcat tag `CloudHistoryWorker`），本機資料增加且工作之間不持續持有喚醒鎖。斷網工作等待，恢復後續傳；回到前景即讀本機歷史並補下載；登出後排程取消。另驗收程序被系統回收後的冷啟動、帳號切換及長時間 Doze。Android 原生變更需要重新建置安裝 APK。
 
-目前兩個已知帳號皆有 Master 5／7 授權，需另外使用無授權帳號驗證拒絕讀取。不能以 postgres 或 Secret Key 測試使用者 RLS。
+驗證拒絕讀取時，要另外使用沒有任何 Master 授權的測試帳號。不能以 postgres 或 Secret Key 測試使用者 RLS。
 
 「雲端資料」頁的列表可以點任一列展開該筆的**原始雲端 JSON**（下載時就存在 `raw_payload`）。欄位表只有 App 讀得到的欄位，原始紀錄才看得出 payload 還帶了什麼——例如 Master 自己的座標（硬體問題 H2）。
 

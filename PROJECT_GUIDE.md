@@ -157,7 +157,7 @@ BLE Data Characteristic 應只有一個 publisher。Master 端由 OLED task 發�
 
 ## BLE 連線與程序復原
 
-Android 的 React Native BLE 層只負責掃描。選定裝置後，Kotlin 前景服務負責 GATT 連線、Notify、Wi-Fi 指令、重連及 SQLite 存檔，不依賴 JS 存活。畫面分別讀取服務執行、訂閱連線、最近資料狀態，並顯示實際接收時間；詳見 [背景 BLE 實作與驗證](BACKGROUND_BLE.md)。
+Android 的 React Native BLE 層只負責掃描。選定裝置後，Kotlin 前景服務負責 GATT 連線、Notify、Wi-Fi 指令、重連及 SQLite 存檔，不依賴 JS 存活。畫面分別讀取服務執行、訂閱連線、最近資料狀態，並顯示實際接收時間；詳見 [背景 BLE 實作](BACKGROUND_BLE.md)。
 
 切換接收器時，前一個接收器的原生連線或狀態查詢可能晚到。`BleService.js` 每次連線遞增連線世代，每個 await 回來後先比對：已被取代或已斷線的回覆直接忽略，不清掉新連線的 session、不回報舊接收器的錯誤，也不把舊封包交給目前的 callback；目前接收器真正的失敗照常顯示，之後可以重試。
 
