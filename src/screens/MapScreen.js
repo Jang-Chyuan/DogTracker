@@ -671,6 +671,9 @@ export default function MapScreen({
     !!phoneSpot ||
     livePhone?.running === false ||
     (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
+  useEffect(() => {
+    if (phoneSettled && !fixture) markStartupPhase('phone-settled');
+  }, [phoneSettled, fixture]);
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);

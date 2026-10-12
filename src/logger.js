@@ -47,7 +47,8 @@ const startupPhases = new Set(['preferences', 'real-initialize', 'initial-latest
   'initial-position-context', 'initial-snapshot-publish', 'receiver-native',
   'receiver-publish', 'phone-native', 'history-real-wait', 'history-cloud-initialize', 'history-cloud-wait',
   'phone-day-read', 'phone-day-publish', 'phone-model', 'phone-model-commit',
-  'map-data-ready', 'map-mounted', 'map-loaded']);
+  'map-data-ready', 'map-mounted', 'map-loaded', 'phone-settled', 'cloud-latest-settled', 'map-framed',
+  'splash-handover']);
 export const isStartupPhase = phase => typeof phase === 'string' && startupPhases.has(phase);
 export function logStartupPhase(phase, sequence, event, atMs, durationMs) {
   if (globalThis.__DOGTRACKER_STARTUP_DIAGNOSTICS__ !== true || arguments.length !== 5

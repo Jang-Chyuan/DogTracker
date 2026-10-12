@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { Animated, NativeModules } from 'react-native';
+import { markStartupPhase } from '../diagnostics/StartupPhases';
 
 // The launch screen (D0, #47; 「D0 → 地圖銜接（C）」). The system launch
 // screen shows first; as soon as JavaScript draws its exact copy
@@ -96,6 +97,7 @@ function begin(mode, targets = []) {
     splashChrome.setValue(0);
     targets = notificationTargets(targets, destination?.dogId ?? null);
   }
+  markStartupPhase('splash-handover');
   setState({
     phase: 'handover',
     mode: fly ? 'fly' : 'fade',
@@ -118,6 +120,7 @@ export function reportInitialLatest(scope, phase) {
     gate.mapFramed = false;
   }
   gate.latestSettled = ['bypass', 'accepted', 'fallback'].includes(phase);
+  if (phase === 'accepted' || phase === 'fallback') markStartupPhase('cloud-latest-settled');
   const latest = phase === 'bypass' ? null : { scope, phase };
   if (state.latest?.scope !== latest?.scope || state.latest?.phase !== latest?.phase)
     setState({ latest });
@@ -156,6 +159,7 @@ export function initialLinkRead() {
  * screen points in dp), nearest to the middle first; none → a plain fade.
  */
 export function reportMapFramed(targets = []) {
+  if (state.phase === 'waiting') markStartupPhase('map-framed');
   gate.mapFramed = true;
   gate.targets = targets;
   release();
