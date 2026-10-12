@@ -441,8 +441,9 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       // Rows already read may have moved in time: start over from the window.
       const reset = !!cursors && cursors.repairs !== trackRepairs;
       if (reset) cursors = null;
+      // speed_kmh: the stationary-tail check needs the collar's own speed.
       const shared = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
-        satellites, hdop, rssi, snr, usb_present`;
+        speed_kmh, satellites, hdop, rssi, snr, usb_present`;
       const read = async (table, clock, account) => {
         // Only this phone's own rows know where its receiver was (the receiver
         // range is judged against that); the cloud copy has no such column.
