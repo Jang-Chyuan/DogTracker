@@ -68,10 +68,16 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
       return withConnectionLock(connection, async () => {
         if (!isCurrent()) throw new Error(t('c576'));
         const before = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
-        const previous = new Map(rows(await connection.executeAsync('SELECT slave_id,packet_json,context_json FROM cloud_latest_snapshot WHERE owner_user_id=?', [owner]))
+        const previous = new Map(rows(await connection.executeAsync('SELECT slave_id,packet_json,fix_json,context_json FROM cloud_latest_snapshot WHERE owner_user_id=?', [owner]))
           .map(row => [row.slave_id, row]));
         const revision = Number(before?.revision || 0) + 1;
-        const commands = [{ query: 'DELETE FROM cloud_latest_snapshot WHERE owner_user_id=?', params: [owner] }];
+        const commands = [];
+        if (!snapshot.dogs.length) commands.push({ query: 'DELETE FROM cloud_latest_snapshot WHERE owner_user_id=?', params: [owner] });
+        else for (const slave of previous.keys()) {
+          if (!seen.has(slave)) commands.push({
+            query: 'DELETE FROM cloud_latest_snapshot WHERE owner_user_id=? AND slave_id=?', params: [owner, slave],
+          });
+        }
         for (const dog of snapshot.dogs) {
           const old = previous.get(dog.slaveId);
           const context = dog.context == null && old && JSON.parse(old.packet_json).master_id === dog.packet.master_id
@@ -80,10 +86,15 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
             context.rows = context.rows.filter(row => snapshot.masterIds.includes(row.master_id));
             context.seeds = context.seeds.filter(row => snapshot.masterIds.includes(row.master_id));
           }
+          const packetJSON = JSON.stringify(dog.packet), fixJSON = dog.fix ? JSON.stringify(dog.fix) : null;
+          const contextJSON = JSON.stringify(context);
+          // Compare the complete serialized values, including context order and
+          // authority filtering. Unchanged latest/context polls need not rewrite
+          // large dog rows; their atomic metadata revision/cutoff still advances.
+          if (old && old.packet_json === packetJSON && old.fix_json === fixJSON && old.context_json === contextJSON) continue;
           commands.push({
-          query: 'INSERT INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
-          params: [owner, dog.slaveId, JSON.stringify(dog.packet), dog.fix ? JSON.stringify(dog.fix) : null,
-            JSON.stringify(context)],
+          query: 'INSERT OR REPLACE INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
+          params: [owner, dog.slaveId, packetJSON, fixJSON, contextJSON],
           });
         }
         commands.push({ query: 'INSERT OR REPLACE INTO cloud_snapshot_state(owner_user_id,revision,cutoff,origin) VALUES(?,?,?,?)',

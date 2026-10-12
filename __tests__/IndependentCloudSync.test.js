@@ -9,7 +9,7 @@ import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { completedMapRevision, latestMapApplied, mapDownloadBusy, mapReadRevision } from '../src/cloud/CloudPublication';
 const NOW = Date.parse('2026-10-10T12:00:00Z');
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
-let archive, latest, database, engine, screen, update, dogs, current, events, members, info, release;
+let archive, latest, database, engine, screen, update, dogs, current, events, members, info, release, network;
 function Harness() {
   const [state, setState] = useState({ latestFirst: true }); update = setState;
   dogs = useCloudDogs(database, current?.owner ?? 'invented-owner', true, Date.now, null,
@@ -23,7 +23,7 @@ beforeEach(async () => {
   archive.executeAsync.mockClear();
   database = createCloudDatabase(archive, { latestConnection: latest }); events = [cloudEvent(1, NOW - 1000)];
   members = [{ gateway_id: 'master_7', slave_id: 6 }]; info = jest.spyOn(console, 'info').mockImplementation(() => {});
-  const network = latestArchiveRest({ events, members });
+  network = latestArchiveRest({ events, members });
   engine = createCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
@@ -54,6 +54,26 @@ function holdNativeRetention() {
   return { held, entered: () => entered };
 }
 const applied = () => info.mock.calls.filter(([tag]) => tag === '[CloudSync] latest-applied');
+
+test('30s unchanged real context pass still downloads and consumer ACKs while avoiding repeated latest dog row writes', async () => {
+  await engine.dispose();
+  engine = createCloudSync({ client: network.client, database, onChange: value => { current = value; update?.(value); } });
+  await start();
+  const before = await database.readLatestSnapshot('invented-owner');
+  expect(before.context.length).toBeGreaterThan(0); expect(applied()).toHaveLength(1);
+  latest.sqlite.exec(`CREATE TABLE latest_row_writes(kind TEXT);
+    CREATE TRIGGER track_latest_insert AFTER INSERT ON cloud_latest_snapshot BEGIN INSERT INTO latest_row_writes VALUES('insert'); END;
+    CREATE TRIGGER track_latest_delete AFTER DELETE ON cloud_latest_snapshot BEGIN INSERT INTO latest_row_writes VALUES('delete'); END`);
+  const requests = network.calls.length;
+  await act(async () => jest.advanceTimersByTimeAsync(30000));
+  const after = await database.readLatestSnapshot('invented-owner');
+  expect(network.calls.length).toBeGreaterThan(requests); // No unsafe context HTTP skip.
+  expect(applied()).toHaveLength(2); expect(current.snapshotPending).toBe(false);
+  expect(after.revision).toBe(before.revision + 2); expect(after.cutoff).toBeGreaterThan(before.cutoff);
+  expect(after.context).toEqual(before.context); expect(after.seeds).toEqual(before.seeds);
+  expect(latest.sqlite.prepare('SELECT * FROM latest_row_writes').all()).toEqual([]);
+  expect(latestMapApplied({ ...current, getMapPublication: () => engine.mapPublication() }, 'invented-owner', dogs)).toBe(true);
+});
 
 test('same-process quick resume commits and React ACKs new latest while prior archive native transaction is still executing', async () => {
   const retained = holdNativeRetention(); await start();
