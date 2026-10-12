@@ -34,9 +34,17 @@ test.each([[undefined], ['uncertain']])('a same-session %s break under 30 min is
   expect(long[0].unlocatedMs).toBeUndefined();
 });
 
-test('a break across a recording restart (no sameSession) is always its own row', () => {
+test('a break across a recording restart (no sameSession, or sessionChange) is always its own row', () => {
   const shown = timelinePresentation([walk(0, MIN), gap(MIN, 2 * MIN), walk(2 * MIN, 3 * MIN)]);
   expect(shown.map(n => n.type)).toEqual(['movement', 'gap', 'movement']);
+  // PR #135 marks a session change; it wins even over a stray sameSession.
+  const place = { type: 'stop', number: 1, start: 0, end: MIN, durationMs: MIN };
+  for (const flagged of [{ ...gap(MIN, 2 * MIN), sessionChange: true }, { ...same(MIN, 2 * MIN), sessionChange: true }]) {
+    const rows = timelinePresentation([place, flagged, walk(2 * MIN, 3 * MIN)]);
+    expect(rows.map(n => n.type)).toEqual(['stop', 'gap', 'movement']);
+    expect(rows[0]).toMatchObject({ end: MIN, durationMs: MIN });
+    expect(rows[0].unlocatedMs).toBeUndefined();
+  }
 });
 
 test('a folded break goes to the stay beside it before a walk, and says so under the place', () => {

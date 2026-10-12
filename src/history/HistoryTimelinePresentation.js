@@ -10,9 +10,10 @@ const walking = node => node?.type === 'movement' && node.mode === 'walking';
 const moving = node => node?.type === 'movement';
 // A row that is a stay: a stop, a hold, or a departure / end carrying one.
 const stayRow = node => ['stop', 'indoor'].includes(node?.type) || !!node?.departureStay || !!node?.terminalStay;
-// The phone's 「沒有資料」 / 「GPS 訊號弱」 inside one recording session.
+// The phone's 「沒有資料」 / 「GPS 訊號弱」 inside one recording session. A
+// recording-session change (`sessionChange`, PR #135) is always its own row.
 const foldable = node => node.type === 'gap' && (node.reason == null || node.reason === 'uncertain')
-  && node.sameSession === true && node.end - node.start < LIST_GAP_MS;
+  && node.sameSession === true && node.sessionChange !== true && node.end - node.start < LIST_GAP_MS;
 const unfolded = node => {
   const row = { ...node };
   delete row.folded;
