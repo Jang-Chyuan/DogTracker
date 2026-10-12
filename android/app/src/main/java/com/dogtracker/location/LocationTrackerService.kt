@@ -30,6 +30,8 @@ class LocationTrackerService : Service(), LocationListener {
   private val sessionId = UUID.randomUUID().toString()
   private var saved = 0
   private var writeErrors = 0
+  private val gapLog = SaveGapLog()
+  private var startedAtMs = 0L
   private val tick = object : Runnable {
     override fun run() {
       if (stopped) return
@@ -42,6 +44,7 @@ class LocationTrackerService : Service(), LocationListener {
           val display = displayLocation?.takeIf { it.usable(sessionId, sample, now) }
           database.save(sample, sessionId, display)
           pipeline.written(sample, now); saved++
+          gapLog.saved(now, System.currentTimeMillis(), pipeline, writeErrors)
         } catch (_: Exception) { writeErrors++; writeFailed = true; status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1126) }
       }
       val latest = pipeline.latest
@@ -111,6 +114,8 @@ class LocationTrackerService : Service(), LocationListener {
       }
       running = true
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
+      startedAtMs = System.currentTimeMillis()
+      handler.post { gapLog.saved(SystemClock.elapsedRealtimeNanos(), startedAtMs, pipeline, writeErrors) }
       handler.post(tick)
     } catch (_: Exception) {
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1134)
@@ -147,6 +152,31 @@ class LocationTrackerService : Service(), LocationListener {
   override fun onProviderEnabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117) }
   @Deprecated("Legacy Android callback")
   override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+  /** Counts and times only (no position): why stretches went without a saved row. */
+  override fun dump(fd: java.io.FileDescriptor?, writer: java.io.PrintWriter, args: Array<out String>?) {
+    val done = java.util.concurrent.CountDownLatch(1)
+    var text = "not running"
+    if (!stopped && running && handler.post { text = diagnostics(); done.countDown() })
+      done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+    writer.println(text)
+  }
+  private fun diagnostics(): String {
+    val now = SystemClock.elapsedRealtimeNanos(); val wall = System.currentTimeMillis()
+    val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+    val latest = pipeline.latest
+    return buildString {
+      appendLine("phone recording: started ${time.format(startedAtMs)} source=${LocationSource.label(source, null)}")
+      appendLine("received=${pipeline.received} accepted=${pipeline.accepted} rejected=${pipeline.rejectedBy} " +
+        "saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds}")
+      if (latest != null) appendLine("latest fix age=${"%.1f".format((now - latest.elapsedNanos) / 1e9)}s " +
+        "accuracy=${latest.accuracy}m motion=${latest.motionState}")
+      appendLine("stretches without a saved row (>= 60 s):")
+      for (s in gapLog.snapshot(now, wall, pipeline, writeErrors)) appendLine("  ${time.format(s.startWallMs)} -> " +
+        "${s.endWallMs?.let { time.format(it) } ?: "now"} ${s.seconds}s received=${s.received} accepted=${s.accepted} " +
+        "rejected=${s.rejectedBy} writeErrors=${s.writeErrors} maxStale=${s.maxStaleSeconds?.let { "%.1fs".format(it) } ?: "-"} " +
+        "bestRejectedAccuracy=${s.bestRejectedAccuracy?.let { "${it}m" } ?: "-"}")
+    }
+  }
   override fun onDestroy() {
     stopped = true
     handler.removeCallbacks(tick)

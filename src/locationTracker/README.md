@@ -10,6 +10,7 @@
 
 - 有可用 Google Play Services 時使用 Google Fused Location Provider；否則 Android 12+ 有 framework fused 時使用它，其餘依可用 GPS／network provider。這是來源選擇，並不保證 Google Maps 相同的室內推論。約每秒要求一次高精度定位；以 monotonic timestamp 排除重複或倒序樣本。SQLite 依原始 GPS 速度調整保存間隔：≤ 10 km/h 每 5 秒、> 10 且 ≤ 20 km/h 每 3 秒、> 20 km/h 每 1 秒；速度未知則每 5 秒。以最新速度與上次成功寫入時間判斷，不受靜止歸零影響。最多 80,000 筆，高速持續每秒保存約可保留 22.2 小時。
 - 無新定位不補空白筆數、不重複舊定位；超過 3 秒的定位丟棄。實際頻率受 Android、接收狀況及省電影響。
+- 保存空窗診斷（PR 116）：拒收依原因計數（stale／duplicate／invalid／accuracy／jump）。超過 60 秒沒有保存任何一筆時，記下該段的起訖時間、收到／接受筆數、各原因拒收數、最舊過期定位秒數與最佳被拒精度（最多 300 段，只在記憶體）。只含次數與時間，不含任何座標；正式版用 `adb shell dumpsys activity service com.dogtracker/.location.LocationTrackerService` 讀取（服務未執行時顯示 not running）。Samsung One UI 在手機靜止、螢幕關閉且未充電時會由系統停掉 GPS（NSFLP「GPS stop by sensor」），之後只剩 Wi-Fi／基地台定位，這段可能完全沒有合格新定位；這是系統行為，App 不能關閉。
 - 新定位必須具有有效、有限、非負的水平估計精度；原始速度 > 20 km/h 時要求 < 50 公尺，其餘情況要求 ≤ 30 公尺；未知或超過門檻時顯示等待提示，不寫入且不推進記錄時間限制。既有資料不刪除。
 - 最近 3 個有效樣本平均；速度 > 10 km/h 時，最新點權重為 90%。超過 3 秒的樣本間隔重設平滑視窗。平滑不代表實際精度提高；估計精度仍保留定位來源回報值。
 - 即時地圖由 `useLiveLocation` 每秒讀取原生記憶體快照；診斷記錄清單由 `useLocationTracker` 呼叫 `readPage` 讀取 SQLite，每次讀取完成後 10 秒再讀。歷史由 `HistoryDatabase.historyDayRows` 讀取 SQLite 的日期資料，不使用即時記憶體快照。

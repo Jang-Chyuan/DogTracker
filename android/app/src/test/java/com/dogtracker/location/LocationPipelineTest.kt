@@ -62,5 +62,30 @@ class LocationPipelineTest {
     // Long outages reset rather than dragging the old location forward.
     assertTrue(pipe.accept(sample(50, lat = 26.0), 50_000_000_000L))
     assertEquals(26.0, pipe.latest!!.latitude, 0.0)
+    assertEquals(mapOf("stale" to 1, "duplicate" to 0, "invalid" to 0, "accuracy" to 1, "jump" to 1), pipe.rejectedBy)
+  }
+  // PR 116: a stretch with no saved row records why, without any position.
+  @Test fun noSaveStretchRecordsRejectionCausesOnly() {
+    val pipe = LocationPipeline(); val log = SaveGapLog(minNanos = 60_000_000_000L)
+    val s = 1_000_000_000L
+    log.saved(0, 1_000L, pipe, 0)
+    assertTrue(pipe.accept(sample(1), 1 * s)); log.saved(1 * s, 2_000L, pipe, 0)
+    // Wi-Fi-only fixes that arrive late or coarse while GPS is stopped.
+    assertFalse(pipe.accept(sample(10), 14 * s + 400_000_000L))
+    assertFalse(pipe.accept(sample(20, accuracy = 42f), 20 * s))
+    assertFalse(pipe.accept(sample(30, accuracy = 35f), 30 * s))
+    assertTrue(log.snapshot(50 * s, 51_000L, pipe, 0).isEmpty()) // shorter than a minute
+    val ongoing = log.snapshot(100 * s, 101_000L, pipe, 2).single()
+    assertNull(ongoing.endWallMs)
+    assertEquals(99L, ongoing.seconds)
+    assertEquals(3, ongoing.received); assertEquals(0, ongoing.accepted); assertEquals(2, ongoing.writeErrors)
+    assertEquals(mapOf("stale" to 1, "accuracy" to 2), ongoing.rejectedBy)
+    assertEquals(4.4, ongoing.maxStaleSeconds!!, 1e-6)
+    assertEquals(35f, ongoing.bestRejectedAccuracy)
+    assertTrue(pipe.accept(sample(101), 101 * s)); log.saved(101 * s, 102_000L, pipe, 2)
+    val done = log.snapshot(102 * s, 103_000L, pipe, 2).single()
+    assertEquals(2_000L, done.startWallMs); assertEquals(102_000L, done.endWallMs)
+    assertEquals(1, done.accepted)
+    assertNull(pipe.windowMaxStaleSeconds) // the next stretch starts clean
   }
 }

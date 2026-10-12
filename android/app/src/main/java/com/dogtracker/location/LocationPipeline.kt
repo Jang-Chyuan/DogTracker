@@ -19,6 +19,12 @@ internal class LocationPipeline {
   var received = 0; private set
   var accepted = 0; private set
   var rejected = 0; private set
+  /** Rejections by cause (stale, duplicate, invalid, accuracy, jump) for diagnostics. */
+  val rejectedBy = linkedMapOf("stale" to 0, "duplicate" to 0, "invalid" to 0, "accuracy" to 0, "jump" to 0)
+  /** Since [markWindow]: the oldest stale fix (s) and best rejected accuracy (m). */
+  var windowMaxStaleSeconds: Double? = null; private set
+  var windowBestRejectedAccuracy: Float? = null; private set
+  fun markWindow() { windowMaxStaleSeconds = null; windowBestRejectedAccuracy = null }
   var reason = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117); private set
   private var lastSavedSample = 0L
   private var lastWrite = 0L
@@ -36,21 +42,29 @@ internal class LocationPipeline {
   }
   fun accept(sample: LocationSample, now: Long): Boolean {
     received++
-    fun reject(message: String): Boolean { rejected++; reason = message; return false }
-    if (sample.elapsedNanos <= 0 || sample.elapsedNanos > now || now - sample.elapsedNanos > 3_000_000_000L)
-      return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1118))
-    if (sample.elapsedNanos <= newest) return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1119))
+    fun reject(cause: String, message: () -> String): Boolean {
+      rejected++; rejectedBy[cause] = (rejectedBy[cause] ?: 0) + 1; reason = message(); return false
+    }
+    if (sample.elapsedNanos <= 0 || sample.elapsedNanos > now || now - sample.elapsedNanos > 3_000_000_000L) {
+      if (sample.elapsedNanos in 1..now) windowMaxStaleSeconds =
+        maxOf(windowMaxStaleSeconds ?: 0.0, (now - sample.elapsedNanos) / 1e9)
+      return reject("stale") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1118) }
+    }
+    if (sample.elapsedNanos <= newest) return reject("duplicate") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1119) }
     if (!sample.latitude.isFinite() || !sample.longitude.isFinite() || abs(sample.latitude) > 90 || abs(sample.longitude) > 180)
-      return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1120))
-    if (!acceptsLocationAccuracy(true, sample.accuracy, sample.rawSpeed))
-      return reject(if (isFastLocation(sample.rawSpeed)) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1121) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1122))
+      return reject("invalid") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1120) }
+    if (!acceptsLocationAccuracy(true, sample.accuracy, sample.rawSpeed)) {
+      if (sample.accuracy.isFinite() && sample.accuracy >= 0f) windowBestRejectedAccuracy =
+        minOf(windowBestRejectedAccuracy ?: Float.MAX_VALUE, sample.accuracy)
+      return reject("accuracy") { if (isFastLocation(sample.rawSpeed)) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1121) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1122) }
+    }
     val previous = latest
     val dt = if (previous == null) 0.0 else (sample.elapsedNanos - previous.elapsedNanos) / 1e9
     val reset = previous == null || dt > 30
     if (!reset) {
       val distance = distanceMeters(previous!!.rawLatitude, previous.rawLongitude, sample.latitude, sample.longitude)
       if (distance > 70 * dt + previous.accuracy + sample.accuracy)
-        return reject(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1123))
+        return reject("jump") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1123) }
     }
     // Three valid raw samples; a signal gap starts a new smoothing window.
     if (reset || dt > 3) {
