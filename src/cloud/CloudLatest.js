@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { cloudError } from './CloudErrors';
 import { mapCloudTelemetry } from './CloudTelemetry';
+import { isFinalCloudPage } from './CloudPaging';
 import { validCloudFix } from './CloudLatestSnapshot';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { inheritCloudDiagnosticSignal, beginCloudLogicalDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
@@ -8,6 +9,7 @@ import { inheritCloudDiagnosticSignal, beginCloudLogicalDiagnostic } from '../di
 const FIELDS = 'event_id,master_id,slave_id,seq,received_at,payload,rssi,snr,upload_source,phone_received_at';
 const FALLBACK = 'upload_source.neq.phone,upload_source.is.null,phone_received_at.is.null';
 const NONZERO = 'payload->lat.neq.0,payload->lon.neq.0';
+const CONTEXT_PAGE = 500;
 const stamp = text => {
   const time = Date.parse(text);
   const fraction = /\.(\d{1,6})(?:Z|[+-]\d{2}:\d{2})$/.exec(text)?.[1] || '';
@@ -201,10 +203,9 @@ export async function downloadCloudLatestContext({ client, masterIds, snapshot, 
         if (!phone) query = query.or(seek ? `and(or(${FALLBACK}),or(${seek}))` : FALLBACK);
         else if (seek) query = query.or(seek);
         if (phone) query = query.order(clock, { ascending: true });
-        query = query.order('received_at', { ascending: true }).order('event_id', { ascending: true }).limit(500);
+        query = query.order('received_at', { ascending: true }).order('event_id', { ascending: true }).limit(CONTEXT_PAGE);
         const page = await read(query);
-        if (page.length > 500) throw new Error(t('c578'));
-        if (!page.length) break;
+        if (page.length > CONTEXT_PAGE) throw new Error(t('c578'));
         for (const row of page) {
           const mapped = validate(row);
           if (mapped.track_at < from || mapped.track_at >= until || (cursor && compare(row, cursor) <= 0)) throw new Error(t('c579'));
@@ -213,6 +214,9 @@ export async function downloadCloudLatestContext({ client, masterIds, snapshot, 
           events.set(mapped.event_id, mapped);
           cursor = row;
         }
+        // A short page ends the window (CloudPaging), saving one empty request
+        // per clock stream; a full page still seeks the next one.
+        if (isFinalCloudPage(page, CONTEXT_PAGE)) break;
       }
       let query = base().lt(clock, new Date(from).toISOString())
         .gte('payload->lat', -90000000).lte('payload->lat', 90000000)

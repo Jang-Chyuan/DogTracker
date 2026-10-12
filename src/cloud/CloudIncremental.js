@@ -1,10 +1,12 @@
 import { t } from '../i18n';
 import { downloadCloudHistory } from './CloudDownload';
 import { cloudError } from './CloudErrors';
+import { isFinalCloudPage } from './CloudPaging';
 import { beginCloudLogicalDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
 
 const DAY = 86400000;
 const OVERLAP = 300000;
+const MEMBER_PAGE = 500;
 
 export async function listCloudMasters(client, owner, signal, check) {
   const masters = new Set();
@@ -26,17 +28,18 @@ export async function listCloudMasters(client, owner, signal, check) {
       try { result = await Promise.race([
         client.from('device_members').select('gateway_id,slave_id')
           .eq('user_id', owner).order('gateway_id').order('slave_id')
-          .range(offset, offset + 499).abortSignal(signal), canceled,
+          .range(offset, offset + MEMBER_PAGE - 1).abortSignal(signal), canceled,
       ]); } finally { done?.(); }
       const { data, error, status } = result;
       await check();
       if (signal?.aborted) throw new Error(t('c576'));
       if (error || !Array.isArray(data)) throw cloudError(t("c581"), error, status);
-      if (!data.length) return [...masters];
       for (const row of data) {
         const match = /^master_(\d+)$/.exec(row.gateway_id);
         if (match && Number.isSafeInteger(Number(match[1]))) masters.add(Number(match[1]));
       }
+      // A short page is the last one (CloudPaging): no extra empty request.
+      if (isFinalCloudPage(data, MEMBER_PAGE)) return [...masters];
       offset += data.length;
     }
   } finally {

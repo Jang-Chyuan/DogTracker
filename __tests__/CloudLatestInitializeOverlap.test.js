@@ -167,7 +167,8 @@ test('phase diagnostics include both request groups while overlapping native dur
     if (call.phase === 'masters') {
       membershipCall++;
       if (membershipCall === 1) await masters1.promise;
-      if (membershipCall === 3) await masters2.promise;
+      // One short membership page per group: the second group starts at call 2.
+      if (membershipCall === 2) await masters2.promise;
     }
   } });
   const held = holdSql(query => query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot'));
