@@ -199,7 +199,7 @@ export function placeSpeech(node, title) {
   const pill = nodePill(node);
   const lead =
     node.type === 'stop'
-      ? t('c136', { duration: node.number })
+      ? t('c136', { duration: node.number ?? '' })
       : node.type === 'switch'
       ? t("c663", { number: node.number })
       : node.type === 'indoor'

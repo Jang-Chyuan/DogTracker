@@ -30,6 +30,22 @@ class LocationTrackerService : Service(), LocationListener {
   private val sessionId = UUID.randomUUID().toString()
   private var saved = 0
   private var writeErrors = 0
+  private val gapLog = SaveGapLog()
+  private var startedAtMs = 0L
+  // The same counts, kept across process ends (worker thread only).
+  private val gapHistory by lazy {
+    val preferences = getSharedPreferences("phone_location_diagnostics", 0)
+    SaveGapHistory(object : SaveGapHistory.Store {
+      override fun get() = preferences.getString("history", null)
+      override fun put(value: String, now: Boolean) {
+        val edit = preferences.edit().putString("history", value)
+        if (now) edit.commit() else edit.apply()
+      }
+    })
+  }
+  private var checkpointAt = 0L
+  private fun counters() = SaveGapHistory.Counters(pipeline.received, pipeline.accepted,
+    LinkedHashMap(pipeline.rejectedBy), saved, writeErrors)
   private val tick = object : Runnable {
     override fun run() {
       if (stopped) return
@@ -42,7 +58,16 @@ class LocationTrackerService : Service(), LocationListener {
           val display = displayLocation?.takeIf { it.usable(sessionId, sample, now) }
           database.save(sample, sessionId, display)
           pipeline.written(sample, now); saved++
+          gapLog.saved(now, System.currentTimeMillis(), pipeline, writeErrors)?.let { done ->
+            runCatching { gapHistory.stretchDone(done) }
+          }
         } catch (_: Exception) { writeErrors++; writeFailed = true; status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1126) }
+      }
+      // Once a minute: survive a process end with the night's counts.
+      if (now - checkpointAt >= 60_000_000_000L) {
+        checkpointAt = now
+        val wall = System.currentTimeMillis()
+        runCatching { gapHistory.checkpoint(wall, counters(), gapLog.ongoing(now, wall, pipeline, writeErrors)) }
       }
       val latest = pipeline.latest
       val age = latest?.let { (now - it.elapsedNanos) / 1e9 }
@@ -111,6 +136,11 @@ class LocationTrackerService : Service(), LocationListener {
       }
       running = true
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
+      startedAtMs = System.currentTimeMillis()
+      handler.post {
+        gapLog.saved(SystemClock.elapsedRealtimeNanos(), startedAtMs, pipeline, writeErrors)
+        runCatching { gapHistory.begin(startedAtMs) }
+      }
       handler.post(tick)
     } catch (_: Exception) {
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1134)
@@ -147,9 +177,42 @@ class LocationTrackerService : Service(), LocationListener {
   override fun onProviderEnabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117) }
   @Deprecated("Legacy Android callback")
   override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+  /** Counts and times only (no position): why stretches went without a saved row. */
+  override fun dump(fd: java.io.FileDescriptor?, writer: java.io.PrintWriter, args: Array<out String>?) {
+    val done = java.util.concurrent.CountDownLatch(1)
+    var text: String? = null
+    if (!stopped && running && handler.post { text = diagnostics(); done.countDown() })
+      done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+    // Not recording in this process: the history kept from earlier ones.
+    writer.println(text ?: "phone recording: not running\n" + persisted())
+  }
+  private fun diagnostics(): String {
+    val now = SystemClock.elapsedRealtimeNanos(); val wall = System.currentTimeMillis()
+    val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+    val latest = pipeline.latest
+    return buildString {
+      appendLine("phone recording: started ${time.format(startedAtMs)} source=${LocationSource.label(source, null)}")
+      appendLine("received=${pipeline.received} accepted=${pipeline.accepted} rejected=${pipeline.rejectedBy} " +
+        "saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds}")
+      if (latest != null) appendLine("latest fix age=${"%.1f".format((now - latest.elapsedNanos) / 1e9)}s " +
+        "accuracy=${latest.accuracy}m motion=${latest.motionState}")
+      appendLine("stretches without a saved row (>= 60 s):")
+      for (s in gapLog.snapshot(now, wall, pipeline, writeErrors)) appendLine("  ${time.format(s.startWallMs)} -> " +
+        "${s.endWallMs?.let { time.format(it) } ?: "now"} ${s.seconds}s received=${s.received} accepted=${s.accepted} " +
+        "rejected=${s.rejectedBy} writeErrors=${s.writeErrors} maxStale=${s.maxStaleSeconds?.let { "%.1fs".format(it) } ?: "-"} " +
+        "bestRejectedAccuracy=${s.bestRejectedAccuracy?.let { "${it}m" } ?: "-"}")
+      append(persisted())
+    }
+  }
+  private fun persisted() = buildString {
+    val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+    appendLine("kept across process ends (recordings, then stretches; oldest first):")
+    runCatching { gapHistory.lines { time.format(it) } }.getOrDefault(emptyList()).forEach { appendLine(it) }
+  }
   override fun onDestroy() {
     stopped = true
     handler.removeCallbacks(tick)
+    if (running) handler.post { runCatching { gapHistory.end(System.currentTimeMillis(), counters()) } }
     liveJson = "{}"
     displayLocation = null
     manager.removeUpdates(this)

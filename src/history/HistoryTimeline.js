@@ -1,10 +1,123 @@
 import { t } from '../i18n';
-import { configFor, distanceMeters } from './HistoryConfig';
+import { configFor, coordinateValid, distanceMeters } from './HistoryConfig';
 import { historySourceStream, filterHistoryPoints, replayHistoryHolds } from './HistorySources';
 import { historyMovement } from './HistoryMovement';
 import { historyDeparture } from './HistoryDeparture';
 import { historyStops, historyIndoorNodes } from './HistoryStops';
 import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
+
+/** Display only: retain observed stationary time that has no existing place row.
+ * Never classify a gap, a red light in a drive, or uncertain fixes as a stay.
+ *
+ * PR 116 (067 「同地中斷＝連續停留」): a same-place break inside one recording
+ * session (`samePlaceBreak`: the recorder kept running, the phone saved no fix
+ * — Samsung stops GPS on a still phone with the screen off — and the fixes on
+ * both sides are in one place without confirmed movement) belongs to the same
+ * stay, together with the zero-distance re-acquisition fixes right after it
+ * (at most gapMs). A session change (recording off) stays 「沒有資料」. The
+ * unobserved ranges are kept on the stop as `unobserved`. */
+export function phoneStationaryPresentationStops(edges, { config = configFor('phone'), covered = () => false } = {}) {
+  const session = p => typeof p.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
+  const valid = p => p.phoneStationary && p.phoneMotionState === 'stationary' && !p.phoneConfirmedMovement
+    && p.motion_state != null && session(p) != null
+    && ('raw_speed_kmh' in p || 'speed_kmh' in p || 'speed_accuracy_mps' in p)
+    && coordinateValid(p) && Number.isFinite(p.accuracy) && p.accuracy >= 0 && p.accuracy <= config.stayAccuracyM;
+  const sameSession = edge => session(edge.from) != null && session(edge.from) === session(edge.to);
+  const stops = [];
+  let run = null;
+  const finish = () => {
+    if (run && run.end - run.start >= config.stayMs) stops.push({ type: 'stop',
+      id: `phone-stationary:${run.start}`, presentationOnly: 'phone-stationary', number: null,
+      start: run.start, end: run.end, durationMs: run.end - run.start, interruptionMs: 0, gaps: [],
+      ...(run.unobserved.length ? { unobserved: run.unobserved } : {}),
+      latitude: run.anchor.latitude, longitude: run.anchor.longitude });
+    run = null;
+  };
+  for (const edge of edges) {
+    const usable = edge.end > edge.start && edge.mode !== 'driving' && sameSession(edge) && !covered(edge)
+      && coordinateValid(edge.from) && coordinateValid(edge.to);
+    const observed = usable && !edge.gap && !edge.bridged && !edge.uncertain && edge.mode === 'walking'
+      && edge.countedDistanceM === 0 && valid(edge.from) && valid(edge.to);
+    const samePlaceBreak = usable && edge.samePlaceBreak === true && !(edge.countedDistanceM > 0)
+      && !edge.from.phoneConfirmedMovement && !edge.to.phoneConfirmedMovement;
+    // Re-acquisition after a break: no counted distance, no confirmed movement.
+    const settling = usable && !edge.bridged && (!edge.gap || edge.uncertain) && edge.countedDistanceM === 0
+      && !edge.from.phoneConfirmedMovement && !edge.to.phoneConfirmedMovement;
+    const reach = run && (run.pending?.end ?? run.end) === edge.start && run.session === session(edge.from);
+    if (observed || samePlaceBreak) {
+      if (run && !reach) finish();
+      if (!run) run = { start: edge.start, end: edge.end, anchor: edge.from, session: session(edge.from),
+        unobserved: [], pending: null, broke: false };
+      run.end = edge.end; run.pending = null;
+      if (samePlaceBreak) { run.unobserved.push({ start: edge.start, end: edge.end }); run.broke = true; }
+      continue;
+    }
+    // Only after a break, and only as long as a short recording gap.
+    if (settling && reach && run.broke && edge.end - (run.pending?.start ?? edge.start) <= config.gapMs) {
+      run.pending = { start: run.pending?.start ?? edge.start, end: edge.end };
+      continue;
+    }
+    finish();
+  }
+  finish();
+  return stops;
+}
+
+/** Display only (PR 116, 067): stays at one place joined by a same-session
+ * same-place break (a presentation stop carrying `unobserved`) and 0 m foot
+ * rows of at most gapMs are one stay. The first real stop keeps its identity
+ * and number; minutes are the parts' own (interruptions stay deducted).
+ * Returns the new node list and the replaced/removed source nodes. */
+export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } = {}) {
+  const stay = n => n?.type === 'stop';
+  const zeroFoot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving')
+    && n.countedDistanceM === 0 && n.end - n.start <= config.gapMs;
+  const near = (a, b) => Number.isFinite(a?.latitude) && Number.isFinite(b?.latitude)
+    && !(distanceMeters(a, b) > config.radiusM + 1e-8);
+  const out = [], replaced = new Map(), removed = new Set();
+  for (let i = 0; i < nodes.length; i++) {
+    if (!stay(nodes[i])) { out.push(nodes[i]); continue; }
+    // Grow a chain stop (0 m foot)* stop … while each part touches the last.
+    let j = i, last = i;
+    for (let k = i + 1; k < nodes.length; k++) {
+      const n = nodes[k];
+      if (n.start !== nodes[k - 1].end) break;
+      if (stay(n) && near(nodes[i], n)) { last = k; continue; }
+      if (zeroFoot(n)) continue;
+      break;
+    }
+    j = last;
+    const chain = nodes.slice(i, j + 1);
+    if (j === i || !chain.some(n => n.unobserved?.length)) { out.push(nodes[i]); continue; }
+    const stops = chain.filter(stay);
+    const base = stops.find(n => !n.presentationOnly) ?? stops[0];
+    const merged = { ...base, start: chain[0].start, end: chain[chain.length - 1].end,
+      durationMs: chain.reduce((sum, n) => sum + (n.durationMs ?? n.end - n.start), 0),
+      interruptionMs: stops.reduce((sum, n) => sum + (n.interruptionMs || 0), 0),
+      gaps: stops.flatMap(n => n.gaps || []),
+      unobserved: stops.flatMap(n => n.unobserved || []),
+      ...(base.displayRange ? { displayRange: { ...base.displayRange, start: chain[0].start, end: chain[chain.length - 1].end,
+        gaps: stops.flatMap(n => n.displayRange?.gaps || []) } } : {}),
+      mergedStays: stops };
+    for (const n of chain) if (n !== base) removed.add(n);
+    replaced.set(base, merged);
+    out.push(merged);
+    i = j;
+  }
+  return { nodes: out, replaced, removed };
+}
+
+/** PR 116: phone foot rows with nothing counted that would read
+ * 「走路 0 分 · 0.0 km」 next to a place, a break or either end: they say
+ * nothing, so the list leaves them out. */
+export function emptyPhoneFootRows(nodes) {
+  const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
+  const shownMinutes = n => Math.floor(n.end / 60000) - Math.floor(n.start / 60000);
+  const beside = n => !n || !['movement', 'switch'].includes(n.type);
+  return new Set(nodes.filter((n, i) => foot(n) && n.countedDistanceM === 0
+    && ((n.durationMs ?? n.end - n.start) < 60000 || shownMinutes(n) === 0)
+    && beside(nodes[i - 1]) && beside(nodes[i + 1])));
+}
 
 /** Pure H1/H2 list. `nodes` contains location rows AND movement/gap rows in
  * display order. No geocoding: address resolution can use location rows later.
@@ -55,13 +168,24 @@ export function historyTimeline(rows = [], options = {}) {
     // A same-place bridge supplies no travel evidence. If it did not belong
     // to a confirmed stay, retain the interruption instead of inventing walking.
     const containedBridge = edge.bridged && containsStayEdge(edge);
+    // PR 116: same recording session both sides — the recorder ran but no
+    // fix was saved (phoneStationaryPresentationStops may take it as a stay).
+    const sameSession = typeof edge.from.session_id === 'string' && edge.from.session_id.length > 0
+      && edge.from.session_id === edge.to.session_id;
     return subject === 'phone' && edge.bridged && !containedBridge
-      ? { ...edge, gap: true, mode: 'gap' } : edge;
+      ? { ...edge, gap: true, mode: 'gap', ...(sameSession ? { samePlaceBreak: true } : {}) } : edge;
   });
+  // Construct fallback only after movement, visits and gaps are settled; it
+  // feeds no detection back. Same-session same-place breaks are 067 stays.
+  const stationary = subject === 'phone' ? phoneStationaryPresentationStops(sectionEdges, { config,
+    covered: edge => displayLocations.some(n => ['stop', 'indoor'].includes(n.type)
+      && (n.displayRange?.start ?? n.start) < edge.end && (n.displayRange?.end ?? n.end) > edge.start),
+  }) : [];
+  const inStationary = e => stationary.some(s => e.start >= s.start && e.end <= s.end);
   // 判定表「恢復記錄節點」: after a break of over 30 minutes the first fix
   // after it is a 恢復記錄 node (unless a stay or a hold already starts there).
   for (const e of sectionEdges) {
-    if (e.mode !== 'gap' || e.durationMs <= config.resumeAfterMs) continue;
+    if (e.mode !== 'gap' || e.durationMs <= config.resumeAfterMs || inStationary(e)) continue;
     if (locations.some(n => n.start === e.end)) continue;
     locations.push({ type: 'resume', start: e.end, end: e.end, latitude: e.to.latitude, longitude: e.to.longitude });
   }
@@ -88,14 +212,29 @@ export function historyTimeline(rows = [], options = {}) {
   // 無關): they go to the foot row that arrived there, or else the next one,
   // so the rows add up to the summary.
   let carried = 0;
+  // Skipped stationary edges right after the last row (a pause on foot).
+  let pause = null;
   const isFoot = mode => mode === 'walking' || mode === 'moving';
   for (const e of sectionEdges) {
+    // Time a presentation stay keeps (all of it 0 m) is no travel/gap row.
+    if (inStationary(e)) { pause = null; continue; }
     // Coarse fixes may sit just outside a visit's representative-position
     // quality gate. Two detector-confirmed stationary observations are still
     // no walk. An already classified drive includes red-light time, so keep
     // those edges contiguous in the same driving row; preserve actual gaps.
     if (subject === 'phone' && !e.gap && !e.bridged
-      && e.mode !== 'driving' && e.from.phoneStationary && e.to.phoneStationary) continue;
+      && e.mode !== 'driving' && e.from.phoneStationary && e.to.phoneStationary) {
+      const row = sections[sections.length - 1];
+      if (pause && pause.end === e.start) pause.end = e.end;
+      else pause = row && row.end === e.start ? { start: e.start, end: e.end } : null;
+      continue;
+    }
+    // A pause shorter than a stay (a red light mid-walk) that no place row
+    // covers is 0 m time of that walk: the walk on either side stays one row
+    // (as phoneStationaryPresentationStops only takes runs of a stay's length).
+    const footPause = pause && pause.end === e.start && pause.end - pause.start < config.stayMs
+      && !locations.some(n => n.end >= pause.start && n.start <= pause.end) ? pause : null;
+    pause = null;
     // A brief unknown observation inside an already confirmed visit does not
     // become a new travel/interruption row. Actual recording gaps remain.
     if (e.uncertain && e.durationMs <= config.gapMs && containsStayEdge(e)) continue;
@@ -112,7 +251,11 @@ export function historyTimeline(rows = [], options = {}) {
     // with different reasons are different rows.
     const reason = e.uncertain && e.durationMs <= config.gapMs ? 'uncertain' : e.gap && subject === 'dog'
       ? (e.gapReason ?? (stream.packets.some(p => p.time > e.start && p.time < e.end) ? 'no-gps' : 'no-signal')) : undefined;
-    if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
+    if (footPause && prior?.type === 'movement' && isFoot(prior.mode) && prior.mode === e.mode
+      && prior.reason === reason && prior.end === footPause.start) {
+      prior.end = e.end; prior.durationMs += footPause.end - footPause.start + e.durationMs;
+      prior.distanceM += e.distanceM; prior.countedDistanceM += e.countedDistanceM;
+    } else if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
       && !locations.some(n => n.start === e.start || n.end === e.start)) {
       prior.end = e.end; prior.durationMs += e.durationMs;
       prior.distanceM += e.gap ? 0 : e.distanceM; prior.countedDistanceM += e.countedDistanceM;
@@ -164,6 +307,10 @@ export function historyTimeline(rows = [], options = {}) {
       }
     }
   });
+  // The fallback must not affect existing switch cleanup; it is a place for
+  // the empty-foot-row cleanup below (PR 116).
+  nodes = [...nodes.filter(n => !drop.has(n)), ...stationary]
+    .sort((a, b) => a.start - b.start || rank(a) - rank(b));
   // Likewise a few seconds on foot with nothing counted between two places
   // (a stay, then the dog goes inside; a stay that runs into the end): the
   // places are adjacent (判定表「停在原處節點的前後」: 3 分鐘以內…停在原處
@@ -173,14 +320,22 @@ export function historyTimeline(rows = [], options = {}) {
       && place(nodes[i - 1]) && place(nodes[i + 1])) drop.add(n);
   });
   nodes = nodes.filter(n => !drop.has(n));
+  // PR 116 / 067: stays at one place joined by a same-session break are one.
+  let replaced = new Map(), removed = new Set();
+  if (subject === 'phone') ({ nodes, replaced, removed } = mergePhoneSamePlaceStays(nodes, { config }));
+  if (subject === 'phone') {
+    const empty = emptyPhoneFootRows(nodes);
+    for (const n of empty) drop.add(n);
+    nodes = nodes.filter(n => !empty.has(n));
+  }
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.
   let number = 0;
   for (const node of nodes) {
-    if (node.type === 'stop' || node.type === 'switch') node.number = ++number;
+    if ((node.type === 'stop' || node.type === 'switch') && !node.presentationOnly) node.number = ++number;
   }
-  const keptLocations = locations.filter(n => !drop.has(n));
-  const keptSections = sections.filter(n => !drop.has(n));
+  const keptLocations = locations.filter(n => !drop.has(n) && !removed.has(n)).map(n => replaced.get(n) ?? n);
+  const keptSections = sections.filter(n => !drop.has(n) && !removed.has(n));
   // H8 asks whether the day itself has records; the context read before
   // midnight does not count (判定表「停住期間的封包算不算『有紀錄』」: held
   // packets do).
