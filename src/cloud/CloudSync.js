@@ -3,7 +3,7 @@ import { downloadMasterIncremental, listCloudMasters } from './CloudIncremental'
 import { withCloudSyncSlot, cancelBackgroundSync } from './CloudSyncSlot';
 import { reconcileCloudWindow } from './CloudReconcile';
 import { repairCloudTrackTimes } from './CloudTrackTime';
-import { isAuthFailure, isNetworkFailure } from './CloudErrors';
+import { contextFailureKind, isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { cloudSyncDiagnostic } from '../logger';
 import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
@@ -290,24 +290,32 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           const contextAbort = new AbortController();
           const stopContext = () => contextAbort.abort();
           abort.signal.addEventListener('abort', stopContext);
-          const contextTimer = setTimeout(stopContext, CONTEXT_BUDGET_MS);
+          let contextTimedOut = false, contextPublishing = false;
+          const contextStartedAt = now(), contextProgress = { requests: 0, completedDogs: 0 };
+          const contextDogs = Array.isArray(snapshot?.dogs) ? snapshot.dogs.length : 0;
+          const contextTimer = setTimeout(() => { contextTimedOut = true; stopContext(); }, CONTEXT_BUDGET_MS);
           let rejectContext;
           const canceledContext = new Promise((_, reject) => { rejectContext = () => reject(new Error(t('c576'))); });
           contextAbort.signal.addEventListener('abort', rejectContext, { once: true });
           try {
-            const context = await Promise.race([downloadContext({ client, masterIds: masters, snapshot,
+            const context = await Promise.race([downloadContext({ client, masterIds: masters, snapshot, progress: contextProgress,
               signal: contextAbort.signal, check: () => { check(); if (contextAbort.signal.aborted) throw new Error(t('c576')); } }), canceledContext]);
             check();
             clearTimeout(contextTimer);
             publish({ mapPending: true });
+            contextPublishing = true;
             await database.publishLatestSnapshot(userId, { ...context, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
             check();
             publish({ mapPending: false, snapshotRevision: state.snapshotRevision + 1, mapSuccessRevision: state.mapSuccessRevision + 1 });
-          } catch {
+            cloudSyncDiagnostic('context-published', { attempt, elapsedMs: Math.max(0, now() - contextStartedAt), dogs: contextDogs });
+          } catch (error) {
             // Latest positions remain usable. Incomplete context never reaches
             // the hold tracker, and a failed context stage does not replace
             // previously known context with an empty set.
             check();
+            cloudSyncDiagnostic('context-failed', { attempt, elapsedMs: Math.max(0, now() - contextStartedAt),
+              failureKind: contextFailureKind(error, contextTimedOut, contextPublishing),
+              dogs: contextDogs, completedDogs: contextProgress.completedDogs, requests: contextProgress.requests });
           } finally {
             clearTimeout(contextTimer);
             abort.signal.removeEventListener('abort', stopContext);

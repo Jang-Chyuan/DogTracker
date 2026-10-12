@@ -161,13 +161,16 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
 // This second stage never reads the archive. A silent dog's own last half hour
 // is replayed, with the same bounded 40 good-fix candidates per clock stream
 // used by the local hold reader. Partial context is never published.
-export async function downloadCloudLatestContext({ client, masterIds, snapshot, signal, check = () => {} }) {
+// `progress` (optional) receives aggregate counts only, so a caller can report
+// how far a timed-out or failed stage got: requests issued, dogs completed.
+export async function downloadCloudLatestContext({ client, masterIds, snapshot, signal, check = () => {}, progress }) {
   const { cutoff, dogs } = snapshot;
   const result = [];
   let stored = 0;
   const read = async query => {
     await check();
     if (signal?.aborted) throw new Error(t('c576'));
+    if (progress) progress.requests++;
     const { data, error, status } = await query.abortSignal(signal);
     await check();
     if (signal?.aborted) throw new Error(t('c576'));
@@ -235,6 +238,7 @@ export async function downloadCloudLatestContext({ client, masterIds, snapshot, 
     }
     result.push({ ...dog, context: [...events.values()].sort((a, b) => a.track_at - b.track_at || a.received_at - b.received_at || a.event_id.localeCompare(b.event_id)),
       seeds: [...seeds.values()].sort((a, b) => a.track_at - b.track_at || a.received_at - b.received_at || a.event_id.localeCompare(b.event_id)) });
+    if (progress) progress.completedDogs++;
   }
   return { cutoff, dogs: result };
 }

@@ -328,3 +328,44 @@ test('a second latest attempt cannot inherit a prior applied map proof during it
     await flush();
   }
 });
+
+test('legacy context timeout logs exactly one context-failed; latest and archive publication are unchanged', async () => {
+  const log = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const events = name => log.mock.calls.filter(([tag]) => tag === `[CloudSync] ${name}`);
+  try {
+    const { database, current, start } = await fixture({ downloadContext: () => new Promise(() => {}), archiveEvents: true });
+    await start();
+    expect(current()).toMatchObject({ contextPending: true, mapSuccessRevision: 1 });
+    await jest.advanceTimersByTimeAsync(10000);
+    expect(events('context-failed')).toEqual([['[CloudSync] context-failed',
+      { attempt: 1, elapsedMs: 10000, failureKind: 'timeout', dogs: 1, completedDogs: 0, requests: 0 }]]);
+    expect(events('context-published')).toEqual([]);
+    expect(events('failure')).toEqual([]);
+    expect(events('latest-published')).toHaveLength(1);
+    expect(events('archive-published')).toEqual([['[CloudSync] archive-published', { attempt: 1, elapsedMs: expect.any(Number), revision: 1 }]]);
+    expect(current()).toMatchObject({ contextPending: false, archiveRevision: 1, archiveError: '', error: '', mapSuccessRevision: 1 });
+    expect((await database.readLatestSnapshot('a')).rows[0].event_id).toBe('latest');
+  } finally { log.mockRestore(); }
+});
+
+test('legacy context error and success use the fixed context events', async () => {
+  const log = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const events = name => log.mock.calls.filter(([tag]) => tag === `[CloudSync] ${name}`);
+  try {
+    let fail = true;
+    const downloadContext = async ({ snapshot, progress }) => {
+      progress.requests += 2;
+      if (fail) throw Object.assign(new Error('private refusal'), { status: 401 });
+      return { ...snapshot, dogs: snapshot.dogs.map(dog => ({ ...dog, context: [], seeds: [] })) };
+    };
+    const { start } = await fixture({ downloadContext });
+    await start();
+    expect(events('context-failed')).toEqual([['[CloudSync] context-failed',
+      { attempt: 1, elapsedMs: 0, failureKind: 'auth', dogs: 1, completedDogs: 0, requests: 2 }]]);
+    fail = false;
+    await jest.advanceTimersByTimeAsync(30000);
+    expect(events('context-failed')).toHaveLength(1);
+    expect(events('context-published')).toEqual([['[CloudSync] context-published', { attempt: 2, elapsedMs: 0, dogs: 1 }]]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private refusal');
+  } finally { log.mockRestore(); }
+});
