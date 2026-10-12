@@ -221,6 +221,35 @@ test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a
   await unmount(s);
 });
 
+test('‹ to another day shows the skeleton at once (no blank panel while the day is read and built)', async () => {
+  const fixture = buildFixture('history-empty-day');
+  const original = fixture.history.readDay;
+  let gate = null;
+  fixture.history.readDay = async args => { if (gate) await gate; return original(args); };
+  const state = { screen: null };
+  let renderer, open;
+  await act(async () => {
+    renderer = Renderer.create(<Harness fixture={fixture} onScreen={value => { state.screen = value; }} />);
+  });
+  await act(async () => {});
+  const skeleton = () => renderer.root.findAll(node => node.props.testID === 'history-skeleton').length;
+  try {
+    expect(state.screen.model).not.toBeNull();
+    expect(skeleton()).toBe(0);
+    gate = new Promise(resolve => { open = resolve; });
+    const previous = renderer.root.findAll(node => node.props.testID === 'history-day-previous'
+      && typeof node.props.onPress === 'function')[0];
+    await act(async () => previous.props.onPress());
+    // No timer has run: a busy JavaScript thread could not fire the delay.
+    expect(state.screen.model).toBeNull();
+    expect(skeleton()).toBeGreaterThan(0);
+    await act(async () => open());
+    await act(async () => {});
+    expect(state.screen.model.points.length).toBeGreaterThan(0);
+    expect(skeleton()).toBe(0);
+  } finally { open?.(); await act(async () => renderer.unmount()); }
+});
+
 describe('the screen over time', () => {
   const { startOfToday } = require('../src/tracking/TodayDistance');
   const { useHistoryDayRows } = require('../src/mapHistory/useHistoryScreen');
