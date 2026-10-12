@@ -41,6 +41,15 @@
 
 缺口列保留前後實測時間與座標，但 `distanceM`／`countedDistanceM` 都是零；車段保留實際 `distanceM`，`countedDistanceM` 為零。合併停留保留 `interruptionMs`，供清單／PNG／GPX 顯示「不含中斷 N 分」。跨日節點使用 `continuesPreviousDay`／`continuesNextDay`；終點 `label` 為「現在」、「最後」或「結束」。
 
+## 分鐘一定有列（2026-10-13）
+
+選取範圍內，清單（`timelinePresentation`）有長度的列首尾相接：沒有空洞、沒有重疊；每列分鐘加上「不含中斷」等於它的起訖時鐘跨度。取代 #115「合併的走路不計中間未觀測時間」。
+
+- 合併的走路：分鐘＝起訖跨度；中間不到 `gapMs` 的未列時間（隱藏的 `uncertain` 列、沒有任何列的幾秒）算進走路，距離仍是各段之和。不到 `gapMs` 的未列時間在走路旁邊也一樣歸那段走路。
+- `uncertain` 列達 `gapMs` 照列出（「GPS 訊號弱」）；不到 `gapMs`、旁邊又沒有走路時，跨過一個時鐘分鐘才列出。
+- 手機精度超過 `stayAccuracyM`（25 m）但在 `accuracyM`（50 m）內、偵測為靜止的點，仍進 `phoneStationaryPresentationStops`：座標取該段第一個 25 m 內的點，沒有就取第一點，並標 `coarse`／`accuracyM`。`mergePhoneSamePlaceStays` 把貼著同地停留（距離 ≤ `radiusM` + 該段最差精度）的 `coarse` 段併入那個停留：保留編號與座標，只延長分鐘；不會因此把兩個編號停留合併。其餘 `coarse` 段是不編號停留。
+- 距離、CSV 列與 GPX 軌跡點不變；GPX 停留航點和清單同一個停留（同 #116 的同地中斷合併）。`__tests__/PhoneMinuteAccounting.test.js` 用虛構資料檢查這個不變量。
+
 ## 第二次審查（054a，Claude）補上的規則
 
 - 距離改成判定表「距離怎麼加」：每段連續步行的第一筆只當比較點，之後和上一個「有算進去」的點比（不是和前一筆比），所以慢慢走不會被一筆一筆濾掉；缺誤差值當 10 m，下限 5 m。

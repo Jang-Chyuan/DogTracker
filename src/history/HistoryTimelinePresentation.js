@@ -1,4 +1,10 @@
+import { configFor } from './HistoryConfig';
+
 const MINUTE = 60000;
+// The same gap threshold for a dog and the phone (HistoryConfig common).
+const GAP_MS = configFor('phone').gapMs;
+const last = list => list[list.length - 1];
+const walking = node => node?.type === 'movement' && node.mode === 'walking';
 const alignedDuration = node => {
   const duration = node.durationMs ?? node.end - node.start;
   // Displayed clocks have minute precision; never turn a gap into observed time.
@@ -14,7 +20,6 @@ export const presentationDurationMs = node => node.displayDurationMs ?? alignedD
 
 // Presentation only: retained gaps/stops and the source model remain untouched.
 export function timelinePresentation(nodes = []) {
-  const shown = [];
   const first = nodes[0], initialStay = nodes[1];
   const samePlace = (a, b) => Number.isFinite(a?.latitude) && Number.isFinite(a?.longitude)
     && a.latitude === b?.latitude && a.longitude === b?.longitude;
@@ -38,17 +43,60 @@ export function timelinePresentation(nodes = []) {
     ? [{ ...first, latitude: initialStay.latitude, longitude: initialStay.longitude,
       end: initialStay.end, durationMs: initialStay.durationMs, departureStay: initialStay }, ...nodes.slice(2)]
     : nodes;
+  // Every minute between two listed times belongs to a row (2026-10-13; this
+  // replaces #115's rule that a merged walk counts only its own legs). A
+  // weak-GPS row shorter than a gap is not listed: its time, and any other
+  // short unlisted time beside a walk, is that walk's (0 m) time. A longer
+  // weak-GPS row would mislead inside a walk, so it stays its own row.
+  const out = [];
   for (const node of input) {
-    if (node.type === 'gap' && node.reason === 'uncertain') { continue; }
-    const prior = shown[shown.length - 1];
-    if (node.type === 'movement' && node.mode === 'walking'
-      && prior?.type === 'movement' && prior.mode === 'walking') {
-      shown[shown.length - 1] = { ...prior, end: node.end,
+    const short = node.type === 'gap' && node.reason === 'uncertain' && node.end - node.start < GAP_MS;
+    let prior = null;
+    for (let k = out.length - 1; k >= 0 && !prior; k--) if (!out[k].unlisted) prior = out[k];
+    // Consecutive walking legs with only short unlisted time between them are
+    // one walk: its minutes are its span, its distance the legs' sum.
+    if (walking(node) && walking(prior) && node.start >= prior.end && node.start - prior.end < GAP_MS) {
+      while (out[out.length - 1] !== prior) out.pop();
+      out[out.length - 1] = { ...prior, end: node.end,
         endLatitude: node.endLatitude, endLongitude: node.endLongitude,
-        durationMs: prior.durationMs + node.durationMs,
+        durationMs: node.end - prior.start,
         distanceM: prior.distanceM + node.distanceM,
         countedDistanceM: prior.countedDistanceM + node.countedDistanceM };
-    } else shown.push(node);
+      continue;
+    }
+    out.push(short ? { ...node, unlisted: true } : node);
+  }
+  // Short unlisted time between two rows goes to the walk beside it; without a
+  // walk there, a weak-GPS row covering a clock minute is listed after all.
+  const shown = [];
+  for (let i = 0; i < out.length; i++) {
+    const node = out[i];
+    if (!node.unlisted) { shown.push(node); continue; }
+    let j = i;
+    while (out[j + 1]?.unlisted) j++;
+    const before = last(shown), after = out[j + 1];
+    const from = before ? before.end : node.start, to = after ? after.start : out[j].end;
+    if (to - from < GAP_MS && walking(before) && to >= before.end) {
+      shown[shown.length - 1] = { ...before, end: to, durationMs: before.durationMs + (to - before.end) };
+    } else if (to - from < GAP_MS && walking(after) && from <= after.start) {
+      out[j + 1] = { ...after, start: from, durationMs: after.durationMs + (after.start - from) };
+    } else {
+      for (const hidden of out.slice(i, j + 1)) {
+        if (Math.floor(hidden.end / MINUTE) > Math.floor(hidden.start / MINUTE)) {
+          const { unlisted, ...row } = hidden;
+          shown.push(row);
+        }
+      }
+    }
+    i = j;
+  }
+  // Raw holes (time no row has) of less than a gap beside a walk: the walk's.
+  for (let i = 1; i < shown.length; i++) {
+    const a = shown[i - 1], b = shown[i];
+    const hole = b.start - a.end;
+    if (!(hole > 0 && hole < GAP_MS)) continue;
+    if (walking(a)) shown[i - 1] = { ...a, end: b.start, durationMs: a.durationMs + hole };
+    else if (walking(b)) shown[i] = { ...b, start: a.end, durationMs: b.durationMs + hole };
   }
   // A terminal stay and its endpoint are one visual place. Inspect the original
   // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
