@@ -792,3 +792,16 @@ test.each(['error', 'abort'])('synchronous publication fence rejects %s pages wh
     await act(async () => { renderer?.unmount(); });
   }
 });
+
+test('manual publication receives the manual generation check', async () => {
+  const { database } = fixture();
+  database.publishDownload = jest.fn(async () => ({ dataRevision: 1, materialChanged: false }));
+  engine.setForeground(true); engine.setSession(account('a')); await flush();
+  database.publishDownload.mockClear();
+  await engine.runManual(async () => 'window');
+  const [owner, kind, cutoff, isCurrent] = database.publishDownload.mock.calls.at(-1);
+  expect([owner, kind, cutoff]).toEqual(['a', 'manual', null]);
+  expect(isCurrent()).toBe(true);
+  engine.setSession(account('b'));
+  expect(isCurrent()).toBe(false);
+});

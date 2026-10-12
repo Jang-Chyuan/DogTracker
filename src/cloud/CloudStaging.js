@@ -10,6 +10,8 @@ const tables = [
   ['history_download_state', 'owner', ['owner', 'slave_id', 'day']],
 ];
 const kinds = ['auto', 'manual'];
+// Same retention as CloudDatabase.saveBucket.
+const BUCKET_RETENTION_MS = 48 * 60 * 60 * 1000;
 const initialization = new WeakMap();
 const metadata = ['track_at', 'upload_source', 'phone_received_at', 'track_time_version'];
 const baseFields = [...metadata, 'publication_version'];
@@ -18,22 +20,48 @@ const tableName = (kind, table) => `cloud_${kind}_${table}`;
 const rewrite = (kind, sql) => tables.reduce((query, [table]) =>
   query.replace(new RegExp(`\\b${table}\\b`, 'g'), tableName(kind, table)), sql);
 
-// Reclaim only oldest history. The newest packet and newest usable fix of
-// every owner/dog remain available even when another dog fills the cache.
-function reclaimHistory(table, excess, staged, protectManual = false) {
-  const time = alias => `CAST(COALESCE(${alias}.track_at,${alias}.received_at) AS INTEGER)`;
-  const fix = alias => `${alias}.slave_lat IS NOT NULL AND ${alias}.slave_lon IS NOT NULL AND NOT (${alias}.slave_lat=0 AND ${alias}.slave_lon=0)`;
+const time = alias => `CAST(COALESCE(${alias}.track_at,${alias}.received_at) AS INTEGER)`;
+const fix = alias => `${alias}.slave_lat IS NOT NULL AND ${alias}.slave_lon IS NOT NULL AND NOT (${alias}.slave_lat=0 AND ${alias}.slave_lon=0)`;
+// The newest packet and newest usable fix of every owner/dog are never reclaimed.
+function replaceable(table) {
   const newer = fixed => `EXISTS (SELECT 1 FROM ${table} n WHERE n.owner_user_id IS old.owner_user_id
     AND n.slave_id IS old.slave_id ${fixed ? `AND ${fix('n')}` : ''}
     AND (${time('n')}>${time('old')} OR (${time('n')}=${time('old')} AND n.id>old.id)))`;
+  return `${newer(false)} AND (NOT (${fix('old')}) OR ${newer(true)})`;
+}
+
+// Reclaim only oldest history. The newest packet and newest usable fix of
+// every owner/dog remain available even when another dog fills the cache.
+function reclaimHistory(table, excess, protectManual = false) {
   return `DELETE FROM ${table} WHERE id IN (SELECT old.id FROM ${table} old
-    WHERE ${staged ? 'COALESCE(old.had_base,0)<>1 AND' : ''}
-    ${protectManual ? `NOT EXISTS (SELECT 1 FROM cloud_manual_history_download_state needed
+    WHERE ${protectManual ? `NOT EXISTS (SELECT 1 FROM cloud_manual_history_download_state needed
       WHERE needed.complete=1 AND needed.owner=old.owner_user_id AND needed.slave_id=old.slave_id
       AND (${coverageContainsTime(time('old'), 'needed')}
-        OR old.received_at>=needed.range_start-${HISTORY_CONTEXT_BEFORE_MS} AND old.received_at<needed.received_before)) AND` : ''} ${newer(false)}
-    AND (NOT (${fix('old')}) OR ${newer(true)})
+        OR old.received_at>=needed.range_start-${HISTORY_CONTEXT_BEFORE_MS} AND old.received_at<needed.received_before)) AND` : ''} ${replaceable(table)}
     ORDER BY old.received_at,old.id LIMIT MAX(0,${excess}))`;
+}
+
+// Staged rows may be dropped before publication only when the publication
+// would certainly evict them: at least `cap` newer new rows of the same owner
+// are staged with them. Anything else would leave a gap behind the staged
+// checkpoint, so it waits for the publish transaction's global eviction.
+function reclaimBeyondCap(table, cap) {
+  const fresh = alias => `COALESCE(${alias}.had_base,0)<>1`;
+  const candidates = '(SELECT id FROM cloud_stage_reclaim)';
+  return [
+    // One threshold per owner over the cap (normally none): the cap-th newest reception time.
+    { query: `INSERT INTO cloud_stage_limit(owner,threshold) SELECT over.owner_user_id,
+      (SELECT n.received_at FROM ${table} n WHERE n.owner_user_id=over.owner_user_id AND ${fresh('n')}
+        ORDER BY n.received_at DESC,n.id DESC LIMIT 1 OFFSET ?)
+      FROM (SELECT owner_user_id FROM ${table} WHERE ${fresh(table)} GROUP BY owner_user_id HAVING COUNT(*)>?) over`, params: [cap - 1, cap] },
+    { query: `INSERT INTO cloud_stage_reclaim(id) SELECT old.id FROM ${table} old JOIN cloud_stage_limit l ON old.owner_user_id=l.owner
+      WHERE ${fresh('old')} AND old.received_at<l.threshold AND ${replaceable(table)}`, params: [] },
+    // Published proof covering such a row no longer holds every cloud row.
+    { query: invalidateEvictedCoverage(`DELETE FROM ${table} WHERE id IN ${candidates}`, table), params: [] },
+    { query: `DELETE FROM ${table} WHERE id IN ${candidates}`, params: [] },
+    { query: 'DELETE FROM cloud_stage_reclaim', params: [] },
+    { query: 'DELETE FROM cloud_stage_limit', params: [] },
+  ];
 }
 
 // UI readers retain their published-table contract. Each network job stores
@@ -41,9 +69,12 @@ function reclaimHistory(table, excess, staged, protectManual = false) {
 export function createStagedCloudDatabase(connection, options, createCore) {
   const published = createCore(connection, options);
   const cap = options.maxRows;
-  // A bounded workspace, not a second complete cache. Published history keeps
-  // its existing budget; a failed/cancelled job cannot reclaim published rows.
+  // Published history keeps its existing budget; a failed/cancelled job cannot
+  // reclaim published rows. A long automatic pass may stage up to another
+  // cache of new rows (beyond that they are certainly evicted on publication),
+  // so the hard limit leaves room for that plus a bounded reserve.
   const reserveRows = Math.max(1, Math.floor(cap / 8));
+  const budgetRows = 2 * cap + reserveRows;
   const active = new Map();
   const initializationKey = connection.lockKey || connection;
   if (!initialization.has(initializationKey)) initialization.set(initializationKey, { ready: null, columns: null });
@@ -52,14 +83,12 @@ export function createStagedCloudDatabase(connection, options, createCore) {
     lockKey: connection.lockKey || connection,
     executeAsync: (query, params) => connection.executeAsync(rewrite(kind, query), params),
     executeBatchAsync: async commands => {
-      // Retain the newest staged history within unused cache space plus the reserve.
       const writes = commands.filter(command => !/^DELETE FROM supabase_dog_status WHERE id IN/.test(command.query)
         && !/^UPDATE history_download_state SET complete=0 WHERE complete=1 AND EXISTS/.test(command.query));
       const stageUsed = kinds.map(value => `(SELECT COUNT(*) FROM ${tableName(value, 'supabase_dog_status')})`).join('+');
       const used = `(SELECT COUNT(*) FROM supabase_dog_status)+${stageUsed}`;
-      const reclaim = [kind, ...kinds.filter(value => value !== kind)].map(value => ({
-        query: value === 'manual' ? 'SELECT 1' : reclaimHistory(tableName(value, 'supabase_dog_status'), `(${used})-${cap + reserveRows}`, true), params: [],
-      }));
+      // Never reclaim another job's staged rows, nor rows the publication keeps.
+      const reclaim = kind === 'auto' ? reclaimBeyondCap(tableName(kind, 'supabase_dog_status'), cap) : [];
       try {
         await connection.executeBatchAsync([
           ...writes.map(command => {
@@ -71,7 +100,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
             return { query, params: command.params };
           }),
           ...reclaim,
-          { query: `INSERT INTO cloud_stage_quota(used,budget) SELECT ${used},?`, params: [cap + reserveRows] },
+          { query: `INSERT INTO cloud_stage_quota(used,budget) SELECT ${used},?`, params: [budgetRows] },
           { query: 'DELETE FROM cloud_stage_quota', params: [] },
         ]);
       } catch (error) {
@@ -86,6 +115,8 @@ export function createStagedCloudDatabase(connection, options, createCore) {
       await initializeHistoryCoverage(connection);
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_download_jobs (owner TEXT, kind TEXT, scope TEXT, PRIMARY KEY(owner,kind))');
       await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_stage_quota (used INTEGER,budget INTEGER,CHECK(used<=budget))');
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_stage_limit (owner TEXT PRIMARY KEY,threshold INTEGER)');
+      await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_stage_reclaim (id INTEGER PRIMARY KEY)');
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_archive_publication (
         owner TEXT PRIMARY KEY, cutoff INTEGER NOT NULL CHECK(cutoff>=0),
         revision INTEGER NOT NULL CHECK(revision>0))`);
@@ -94,14 +125,16 @@ export function createStagedCloudDatabase(connection, options, createCore) {
       for (const kind of kinds) for (const [table] of tables) {
         const definitions = rows(await connection.executeAsync(
           "SELECT type,name,sql FROM sqlite_master WHERE tbl_name=? AND sql IS NOT NULL", [table]));
-        for (const definition of definitions) {
-          let sql = rewrite(kind, definition.sql);
-          if (definition.type === 'table') sql = sql.replace(/^CREATE TABLE /i, 'CREATE TABLE IF NOT EXISTS ');
-          else if (definition.type === 'index') sql = sql.replace(/^(CREATE (?:UNIQUE )?INDEX)(?: IF NOT EXISTS)? \S+/i,
-            `$1 IF NOT EXISTS cloud_${kind}_${definition.name}`);
-          else continue;
-          await connection.executeAsync(sql);
-        }
+        for (const definition of definitions.filter(value => value.type === 'table'))
+          await connection.executeAsync(rewrite(kind, definition.sql).replace(/^CREATE TABLE /i, 'CREATE TABLE IF NOT EXISTS '));
+        // A delta cloned by an older version lacks columns added to published
+        // since; overlay reads and publication select every published column.
+        const staged = new Set(rows(await connection.executeAsync(`PRAGMA table_info(${tableName(kind, table)})`)).map(column => column.name));
+        for (const column of rows(await connection.executeAsync(`PRAGMA table_info(${table})`)))
+          if (!staged.has(column.name)) await connection.executeAsync(`ALTER TABLE ${tableName(kind, table)} ADD COLUMN ${column.name} ${column.type || ''}${column.dflt_value != null ? ` DEFAULT ${column.dflt_value}` : ''}`);
+        for (const definition of definitions.filter(value => value.type === 'index'))
+          await connection.executeAsync(rewrite(kind, definition.sql).replace(/^(CREATE (?:UNIQUE )?INDEX)(?: IF NOT EXISTS)? \S+/i,
+            `$1 IF NOT EXISTS cloud_${kind}_${definition.name}`));
         if (table === 'history_download_state') await initializeHistoryCoverage(connection, tableName(kind, table));
         if (table === 'supabase_dog_status') {
           const found = new Set(rows(await connection.executeAsync(`PRAGMA table_info(${tableName(kind, table)})`)).map(column => column.name));
@@ -209,7 +242,11 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           const namesList = names(table).join(',');
           commands.push({ query: `INSERT OR REPLACE INTO ${table} (${namesList}) SELECT ${namesList} FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         }
-        const eviction = reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, false, kind === 'manual');
+        // Staged saveBucket trims only its delta; keep published buckets to the
+        // same two days before this owner's newest verified hour.
+        commands.push({ query: `DELETE FROM cloud_sync_buckets WHERE owner_user_id=?
+          AND bucket_start<(SELECT MAX(bucket_start) FROM cloud_sync_buckets WHERE owner_user_id=?)-${BUCKET_RETENTION_MS}`, params: [owner, owner] });
+        const eviction = reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, kind === 'manual');
         commands.push({ query: invalidateEvictedCoverage(eviction), params: [] });
         if (kind === 'manual') {
           // A completed manual scope may not lose its own rows to the cap and
@@ -247,9 +284,9 @@ export function createStagedCloudDatabase(connection, options, createCore) {
       if (kind === 'manual') active.delete(owner);
       return publication;
     },
-    async publishManualScope(owner, slave, day) {
+    async publishManualScope(owner, slave, day, isCurrent = () => true) {
       if ((await job(owner, 'manual'))?.scope !== `${slave}:${day}`) throw new Error(t("c576"));
-      return result.publishDownload(owner, 'manual');
+      return result.publishDownload(owner, 'manual', null, isCurrent);
     },
     async loadSyncState(owner, master) {
       if (!await hasJob(owner)) return published.loadSyncState(owner, master);

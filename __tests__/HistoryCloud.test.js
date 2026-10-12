@@ -3,7 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { useHistoryCloud } from '../src/mapHistory/useHistoryCloud';
 // 054b: what the history's calendar asks Supabase, and its downloads through
 // the sync's slot.
-import { createHistoryCloud, DOWNLOAD_AFTER_MS, DOWNLOAD_BEFORE_MS } from '../src/mapHistory/HistoryCloud';
+import { createHistoryCloud, DOWNLOAD_AFTER_MS, DOWNLOAD_BEFORE_MS, TAIL_OVERLAP_MS } from '../src/mapHistory/HistoryCloud';
 
 function client(answers) {
   const calls = [];
@@ -155,7 +155,7 @@ test.each([1, 0])('today tail uses retained completed prefix only (complete=%i)'
   const cloud = createHistoryCloud({ client: c, database, owner: 'a' });
   await cloud.download({ slaveId: 6, dayStart, dayEnd, cutoff });
   expect(c.calls[0]).toEqual(expect.arrayContaining([
-    ['gte', 'received_at', new Date(complete ? prefix : dayStart - DOWNLOAD_BEFORE_MS).toISOString()],
+    ['gte', 'received_at', new Date(complete ? prefix - TAIL_OVERLAP_MS : dayStart - DOWNLOAD_BEFORE_MS).toISOString()],
     ['lt', 'received_at', new Date(cutoff).toISOString()],
   ]));
   expect(database.setHistoryDownloadState).toHaveBeenLastCalledWith('a', 6, '2026-10-03', true,
