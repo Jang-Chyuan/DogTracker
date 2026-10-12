@@ -2,6 +2,11 @@
 // Run the application's JS database methods in-process against build.mjs's
 // retention-cap SQLite fixture. No bridge, device or emulator is involved.
 // node --experimental-sqlite scripts/perf-v3.cjs <app.db> <src-root> <output.json>
+// Build the fixture first with scripts/perf-v3-build.mjs <app.db> (TZ=Asia/Taipei).
+// Baseline: extract an older src/ to a temporary directory and pass it as
+// <src-root>; equal case hashes mean identical outputs. BENCH_CASES=a,b limits
+// the cases. Each case records a first sample and the warm median of five;
+// these are host timings, not device, battery or startup measurements.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
