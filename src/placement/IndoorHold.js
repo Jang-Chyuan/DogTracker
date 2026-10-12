@@ -767,12 +767,14 @@ export function createHistoryHolds({ seed = [], config = HOLD_CONFIG, classify }
         if (event?.type === 'end' && event.departureSince != null) {
           // The tracker confirms departure once. Restore only its observed
           // candidate, not an independently classified history movement.
+          // A packet without a fix inside that walk is let go too: kept on the
+          // anchor it would pull the walk back there between every two fixes
+          // (zero-length holds and 收不到 GPS rows). With its own missing
+          // coordinate it is no GPS point, so the walk runs fix to fix.
           for (let back = index - 1; back >= 0 && output[back].time >= event.departureSince; back -= 1) {
             const earlier = output[back];
             if (!earlier.heldReason) continue;
-            const raw = rawCoordinate(earlier);
-            if (!hasFix(raw)) continue;
-            Object.assign(earlier, raw, { speed_kmh: rawSpeedKmh(earlier) });
+            Object.assign(earlier, rawCoordinate(earlier), { speed_kmh: rawSpeedKmh(earlier) });
             delete earlier.heldReason;
             delete earlier.heldSince;
             delete earlier.heldSource;
