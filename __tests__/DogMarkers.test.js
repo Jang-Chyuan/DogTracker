@@ -95,6 +95,52 @@ describe('name tags that run into each other', () => {
     expect(Object.values(chain).filter(Boolean)).toEqual([{ text: '3 隻', group: 3, problem: false, members: [4, 6, 8] }]);
     expect(Object.values(nameTags(list, {})).every(tag => tag.group === 1)).toBe(true);
   });
+  // The phone's 「狗 6・室內」 cut off by dog 8 and 「狗 104・室內」 under dog
+  // 108 (fictional places): the other dog's face sat on the name while the two
+  // names themselves did not touch, so no 「N 隻」 was made.
+  const unnamed = (...dogs) => dogMarkers(dogs, { now: NOW, aliases: {} });
+  const held = (slaveId, extra) => dog(slaveId, { heldReason: '室內', heldSource: 'good', ...extra });
+  test('a face drawn over another dog\'s name merges the two, though the names never touch', () => {
+    const list = unnamed(held(6), dog(8));
+    // Dog 8 a little below and right of dog 6: its face covers 「狗 6・室內」,
+    // its own name is below that.
+    const points = { 6: { x: 200, y: 300 }, 8: { x: 215, y: 342 } };
+    const six = tagSize('狗 6・室內');
+    const eight = tagSize('狗 8');
+    const sixTop = 300 + 20 + 2;
+    const eightTop = 342 + 20 + 2;
+    expect(sixTop + six.height).toBeLessThan(eightTop);
+    expect(eight.width).toBeLessThan(six.width);
+    expect(nameTags(list, points)).toEqual({ 6: null, 8: { text: '2 隻', group: 2, problem: false, members: [6, 8] } });
+    // Both held: 「2 隻・室內」, under the lower face.
+    const indoor = unnamed(held(104), held(108));
+    expect(nameTags(indoor, { 104: { x: 120, y: 500 }, 108: { x: 96, y: 536 } })).toEqual({
+      104: null, 108: { text: '2 隻・室內', group: 2, problem: false, members: [104, 108] } });
+  });
+  test('faces side by side with their names clear of each other stay apart', () => {
+    const list = unnamed(dog(6), dog(8));
+    // 56dp apart: the faces (40dp) and the 46dp names do not meet.
+    expect(nameTags(list, { 6: { x: 100, y: 300 }, 8: { x: 156, y: 300 } })).toEqual({
+      6: { text: '狗 6', group: 1, problem: false }, 8: { text: '狗 8', group: 1, problem: false } });
+    // A 48dp problem face reaches further: the same places now cover a name.
+    const big = unnamed(dog(6), dog(8, { batteryPercentage: 10 }));
+    expect(nameTags(big, { 6: { x: 100, y: 300 }, 8: { x: 140, y: 318 } })[8]).toMatchObject({ group: 2, problem: true });
+  });
+  test('a group tag that runs into a third dog takes that dog in too', () => {
+    const list = unnamed(held(6), held(8), dog(10));
+    // 6 and 8 share a place; the 「2 隻・室內」 tag under them is wider than
+    // either name and reaches dog 10's face, which their own names did not.
+    const points = { 6: { x: 200, y: 300 }, 8: { x: 200, y: 301 }, 10: { x: 264, y: 350 } };
+    const alone = nameTags(unnamed(held(6), dog(10)), { 6: points[6], 10: points[10] });
+    expect(alone[6]).toEqual({ text: '狗 6・室內', group: 1, problem: false });
+    expect(Object.values(nameTags(list, points)).filter(Boolean)).toEqual([
+      { text: '3 隻', group: 3, problem: false, members: [6, 8, 10] }]);
+  });
+  test('without grouping (zoomed in) every dog keeps its own name', () => {
+    const list = unnamed(held(6), dog(8));
+    expect(nameTags(list, { 6: { x: 200, y: 300 }, 8: { x: 215, y: 342 } }, 1, { group: false })).toEqual({
+      6: { text: '狗 6・室內', group: 1, problem: false }, 8: { text: '狗 8', group: 1, problem: false } });
+  });
   test('tags grow with the font size', () => {
     expect(tagSize('小黑', 2).height).toBeGreaterThan(tagSize('小黑').height);
     expect(tagSize('小黑').width).toBeGreaterThan(tagSize('ab').width);
