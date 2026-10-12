@@ -9,28 +9,28 @@ import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryS
 import { historyCoverage } from '../src/cloud/HistoryCoverage';
 import { dayBounds, dayKey } from '../src/history/screen/HistoryScreenDates';
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
-async function setup(suffix) {
+async function setup(suffix, extra = {}) {
   const connection = createMemoryConnection(); await createDogDatabase(connection).initialize();
   const database = createCloudDatabase(connection); await database.initialize();
   const fixture = buildFixture('history-dog');
   const day = dayKey(new Date(fixture.now)), bounds = dayBounds(day);
   const dog = historyTargetOf(fixture.history.preferences).slaveId;
   await database.setHistoryDownloadState('a', dog, day, true, historyCoverage(bounds.dayStart, bounds.dayEnd, fixture.now));
-  const ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 0 };
+  const ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 0, ...extra };
   const readProof = database.historyDownloadStates;
   let hold = null;
   database.historyDownloadStates = jest.fn(async (...args) => { if (hold) await hold.promise; return readProof(...args); });
   const cloud = createHistoryCloud({ client: { from: () => { throw new Error('unexpected network'); } }, database,
     owner: 'a', getPublication: () => ledger });
   const read = jest.fn(fixture.history.readDay);
-  let screen;
+  let screen, active = true;
   const clock = () => fixture.now;
   function Probe() { screen = useHistoryScreen({ target: historyTargetOf(fixture.history.preferences), owner: 'a', cloud,
-    read, readDays: fixture.history.readDays, clock, online: false, publicationRevision: ledger.publishedRevision, memoryScope: `verified-${suffix}` }); return null; }
+    read, readDays: fixture.history.readDays, clock, online: false, active, publicationRevision: ledger.publishedRevision, memoryScope: `verified-${suffix}` }); return null; }
   let renderer; await act(async () => { renderer = Renderer.create(<Probe />); });
   const update = async () => act(async () => renderer.update(<Probe />));
   return { ledger, database, read, day, dog, fixture, get screen() { return screen; },
-    hold: value => { hold = value; }, update,
+    hold: value => { hold = value; }, update, setActive: value => { active = value; },
     close: async () => { await act(async () => renderer.unmount()); connection.close(); } };
 }
 test('true adapter retains already verified model across unchanged physical proof refresh without replay', async () => {
@@ -213,4 +213,51 @@ test('after a released range, the next archive pass keeps that range\'s model, n
     state.hold(wait); state.ledger.dataRevision++; state.ledger.publishedRevision += 2; await state.update();
     expect(state.screen.dayModel).toBe(released); expect(state.screen.loading).toBe(false);
   } finally { wait.resolve(); await state.close(); }
+});
+
+// Each return to the foreground starts a new sync generation; until its first
+// map ACK (latestReadReady) neither the proof nor the day rows can be read.
+// The same account/publisher lineage keeps today's verified view meanwhile.
+async function resume(state, { lineage = state.ledger.lineage } = {}) {
+  state.setActive(false); state.ledger.generation++; await state.update();
+  state.fixture.now += 5 * 60000;
+  state.ledger.generation++; state.ledger.lineage = lineage; state.ledger.latestReadReady = false;
+  state.setActive(true); await state.update();
+}
+test('foreground resume keeps today\'s verified model (with its as-of time) until the new generation\'s proof answers', async () => {
+  const state = await setup('resume', { lineage: 3, latestReadReady: true });
+  try {
+    const accepted = state.screen.dayModel, verifiedAt = state.fixture.now;
+    expect(accepted).not.toBeNull();
+    await resume(state);
+    expect(state.screen.dayModel).toBe(accepted); expect(state.screen.loading).toBe(false);
+    expect(state.screen.asOf).toBe(verifiedAt);
+    // The new generation's ACK opens the fence: proof and rows are read again.
+    const proofs = state.database.historyDownloadStates.mock.calls.length;
+    state.ledger.latestReadReady = true; state.ledger.publishedRevision += 2; await state.update();
+    expect(state.database.historyDownloadStates.mock.calls.length).toBeGreaterThan(proofs);
+    // The stored proof still covers only the old cutoff: the verified view stays.
+    expect(state.screen.dayModel).toBe(accepted); expect(state.screen.loading).toBe(false);
+  } finally { await state.close(); }
+});
+test('foreground resume: a withdrawn proof read by the new generation shows loading', async () => {
+  const state = await setup('resume-withdrawn', { lineage: 3, latestReadReady: true });
+  try {
+    expect(state.screen.dayModel).not.toBeNull();
+    await resume(state);
+    expect(state.screen.dayModel).not.toBeNull();
+    await state.database.setHistoryDownloadState('a', state.dog, state.day, false);
+    state.ledger.latestReadReady = true; state.ledger.publishedRevision += 2; await state.update();
+    expect(state.screen.dayModel).toBeNull(); expect(state.screen.map).toBeNull(); expect(state.screen.loading).toBe(true);
+  } finally { await state.close(); }
+});
+test.each(['new-lineage', 'no-lineage', 'new-publication-owner', 'new-publication-scope'])('a generation change with %s is not a resume: loading, not the retained model', async mode => {
+  const state = await setup(`resume-${mode}`, { lineage: 3, latestReadReady: true });
+  try {
+    expect(state.screen.dayModel).not.toBeNull();
+    if (mode === 'new-publication-owner') state.ledger.owner = 'b';
+    if (mode === 'new-publication-scope') state.ledger.scope = {};
+    await resume(state, { lineage: mode === 'new-lineage' ? 4 : mode === 'no-lineage' ? null : 3 });
+    expect(state.screen.dayModel).toBeNull(); expect(state.screen.map).toBeNull(); expect(state.screen.loading).toBe(true);
+  } finally { await state.close(); }
 });

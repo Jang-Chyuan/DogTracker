@@ -18,6 +18,10 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   if (!database.latestStorageIsolated) throw new Error('Independent latest storage is required');
   const scope = {};
   let owner = null, foreground = false, sessionKnown = false, disposed = false, generation = 0;
+  // Changes with every generation change except a foreground leave/return
+  // (setForeground): an account switch, a deletion or disposal. History may
+  // keep the same account's verified view across a resume, never across these.
+  let lineage = 0;
   let latestRunning = null, archiveRunning = null, manualRunning = null;
   let latestAbort = null, archiveAbort = null, manualAbort = null, archiveRequest = null;
   let readback = null, readbackStartedAt = null, interval, immediate, publishedOperation = null;
@@ -47,7 +51,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     if (!disposed) onChange({ ...state, owner, foreground });
   };
   const releaseDeletion = database.installDeletionFence?.(() => {
-    deleting = true; generation++; readback = null; archiveRequest = null;
+    deleting = true; generation++; lineage++; readback = null; archiveRequest = null;
     latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
     publish({ mapPending: true, snapshotPending: true });
     return { failed() {
@@ -272,7 +276,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       snapshotBaseRevision: state.snapshotBaseRevision, mapSuccessRevision: state.mapSuccessRevision,
       publishedRevision: state.publishedRevision, publishedPending: state.publishedPending,
       readback: readback?.value ?? null, acknowledgeMapRead, bootstrapAllowed: !state.snapshotPending && !!(state.error || state.authFailed || state.offline) }),
-    historyPublication: () => ({ scope, owner, generation, latestFirst: true, ...(releaseReadiness ? { latestReadReady: readiness.ready() } : {}),
+    historyPublication: () => ({ scope, owner, generation, lineage, latestFirst: true, ...(releaseReadiness ? { latestReadReady: readiness.ready() } : {}),
       attempt: state.mapAttempt, pending: state.publishedPending, busy: false, mapSuccessRevision: state.archiveRevision,
       dataRevision: state.dataRevision, publishedRevision: state.publishedRevision, publishedPending: state.publishedPending,
       archiveRevision: state.archiveRevision, archiveCutoff: state.archiveCutoff, archiveError: state.archiveError }),
@@ -280,7 +284,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       const next = session?.user.id || null; sessionKnown = true;
       if (next === owner) { readiness.notify(); return; }
       cancelBackgroundSync(); latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
-      owner = next; generation++; readback = null; archiveRequest = null; sweptAt = 0;
+      owner = next; generation++; lineage++; readback = null; archiveRequest = null; sweptAt = 0;
       archiveAuthority = null; archiveAuthorityVersion++;
       initialStarted = retryQueued = false; failureDiagnostic = null; resetCatchUp();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false, offline: false,
@@ -335,7 +339,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       }
     },
     dispose() {
-      disposed = true; generation++; readiness.close(); releaseReadiness?.(); releaseDeletion?.(); catchUp.close();
+      disposed = true; generation++; lineage++; readiness.close(); releaseReadiness?.(); releaseDeletion?.(); catchUp.close();
       clearInterval(interval); clearTimeout(immediate); archiveRequest = null;
       latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
       return Promise.allSettled([latestRunning, archiveRunning, manualRunning]);

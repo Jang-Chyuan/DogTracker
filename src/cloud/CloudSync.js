@@ -36,6 +36,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
   let foreground = false;
   let disposed = false;
   let generation = 0;
+  // Changes with every generation change except a foreground leave/return:
+  // the same account's already verified history may stay on screen across a
+  // resume (until the new generation's proof answers), never across these.
+  let lineage = 0;
   let interval;
   let immediate;
   let running = null;
@@ -449,7 +453,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           bootstrapAllowed: !state.snapshotPending && !!(state.error || state.authFailed || state.offline) } : {}) };
     },
     historyPublication() {
-      return { scope: mapScope, owner, generation, latestFirst,
+      return { scope: mapScope, owner, generation, lineage, latestFirst,
         ...(releaseReadiness ? { latestReadReady: latestReadiness.ready() } : {}), attempt: state.mapAttempt, pending: state.publishedPending,
         busy: false, mapSuccessRevision: state.archiveRevision, dataRevision: state.dataRevision, publishedRevision: state.publishedRevision,
         publishedPending: state.publishedPending, archiveRevision: state.archiveRevision, archiveCutoff: state.archiveCutoff, archiveError: state.archiveError };
@@ -470,6 +474,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       retryQueued = false;
       resetResume();
       generation += 1;
+      lineage += 1;
       controller?.abort();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false,
         offline: false, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null, contextPending: false, archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', mapSuccessRevision: 0, mapPending: false, mapAttempt: 0, dataRevision: null, publishedRevision: 0, publishedPending: !!publishedOperation, revision: state.revision + 1, catchUp: CATCH_UP_IDLE });
@@ -556,6 +561,7 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
       retryQueued = false;
       resumeCatchUp.close();
       generation += 1;
+      lineage += 1;
       clearInterval(interval);
       clearTimeout(immediate);
       controller?.abort();
