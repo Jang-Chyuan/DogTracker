@@ -4,7 +4,7 @@ import { cloudError } from './CloudErrors';
 
 export async function downloadCloudHistory({ client, database, owner, startAt, endBefore,
   masterId = null, slaveId = null, signal, isCurrent = () => true, onProgress = () => {},
-  checkpoint = false, initialCursor = null, maxPages = Infinity, checkCurrent = () => {} }) {
+  checkpoint = false, initialCursor = null, maxPages = Infinity, checkCurrent = () => {}, phoneTrack = null }) {
   if (checkpoint && !Number.isInteger(masterId)) throw new Error(t("c575"));
   const check = async () => {
     if (signal?.aborted || !isCurrent()) throw new Error(t("c576"));
@@ -24,6 +24,9 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
     // cloud holds, 054b/055b).
     if (Array.isArray(slaveId)) query = query.in('slave_id', slaveId);
     else if (slaveId !== null) query = query.eq('slave_id', slaveId);
+    // Rows the history places by phone time (CloudTrackTime), within a window.
+    if (phoneTrack) query = query.eq('upload_source', 'phone')
+      .gte('phone_received_at', phoneTrack.startAt).lt('phone_received_at', phoneTrack.endBefore);
     if (cursor) {
       // Values were validated by mapCloudTelemetry; retain microsecond precision.
       query = query.or(`received_at.gt.${cursor.time},and(received_at.eq.${cursor.time},event_id.gt.${cursor.id})`);
