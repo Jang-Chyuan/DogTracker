@@ -24,6 +24,11 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   let initialStarted = false, retryQueued = false, sweptAt = 0, failureDiagnostic = null;
   let archiveAuthority = null, archiveAuthorityVersion = 0;
   let deleting = false;
+  // The first map ACK of a foreground generation opens archive priority. A
+  // later 30-second latest attempt must not close it again: archive/manual
+  // commands and history readers already admitted would otherwise wait out
+  // (and fail on) the gate's 10-second budget behind every routine refresh.
+  let admitted = null;
   let state = { latestFirst: true, snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null,
     archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', contextPending: false,
     busy: false, mode: null, error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null,
@@ -33,6 +38,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   const readiness = createLatestReadinessGate(() => ({ owner, generation, ready: sessionKnown && (!owner ||
     !disposed && foreground && (readback?.acknowledged() && readback.value.owner === owner
       && readback.value.generation === generation && readback.value.attempt === state.mapAttempt
+      || admitted?.owner === owner && admitted.generation === generation
       || !state.snapshotPending && !!state.error)) }));
   const releaseReadiness = database.installLatestReadinessGate?.(readiness);
   const publish = patch => {
@@ -67,6 +73,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   resetCatchUp();
   const acknowledgeMapRead = value => {
     const before = readback?.acknowledged(), accepted = readback?.acknowledge(value) ?? false;
+    if (accepted) admitted = { owner: value.owner, generation: value.generation };
     if (accepted && !before) {
       cloudSyncDiagnostic('latest-applied', { attempt: value.attempt,
         elapsedMs: Math.max(0, now() - readbackStartedAt), revision: value.revision });

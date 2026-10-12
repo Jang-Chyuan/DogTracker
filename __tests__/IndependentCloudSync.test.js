@@ -147,3 +147,32 @@ test('manual archive operation remains physically serialized while latest foregr
   held.resolve(); await act(async () => { expect(await manual).toBe(7); await jest.advanceTimersByTimeAsync(1); });
   expect(current.mode).toBeNull();
 });
+
+test('a routine 30s latest attempt keeps archive priority open for this foreground after the first map ACK', async () => {
+  // Archive/manual cloud commands and dog history reads wait on this gate with
+  // a 10 s budget. Re-closing it on every refresh made them stall and fail
+  // whenever a routine latest attempt was slow.
+  await engine.dispose();
+  let gate = null;
+  const gated = { ...database, installLatestReadinessGate: value => { gate = value; return () => {}; } };
+  engine = createCloudSync({ client: network.client, database: gated,
+    downloadContext: async () => { throw new Error('optional context unavailable'); },
+    onChange: value => { current = value; update?.(value); } });
+  await start();
+  expect(applied()).toHaveLength(1); expect(gate.ready()).toBe(true);
+  const held = deferred(); release = held.resolve;
+  const publishLatest = gated.publishLatestSnapshot;
+  gated.publishLatestSnapshot = async (...args) => { await held.promise; return publishLatest(...args); };
+  await act(async () => jest.advanceTimersByTimeAsync(30000));
+  expect(current.mapAttempt).toBe(2); expect(current.snapshotPending).toBe(true);
+  expect(gate.ready()).toBe(true);
+  expect(engine.historyPublication().latestReadReady).toBe(true);
+  await expect(gate.wait(new AbortController().signal, 'invented-owner')).resolves.toBe(true);
+  held.resolve(); await flush();
+  expect(applied()).toHaveLength(2); expect(gate.ready()).toBe(true);
+  // A new foreground generation still waits for its own first ACK.
+  await act(async () => { engine.setForeground(false); engine.setForeground(true); });
+  expect(gate.ready()).toBe(false);
+  await act(async () => jest.advanceTimersByTimeAsync(1));
+  expect(applied()).toHaveLength(3); expect(gate.ready()).toBe(true);
+});
