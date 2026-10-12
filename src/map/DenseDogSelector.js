@@ -61,7 +61,7 @@ export default function DenseDogSelector({ markers, avatars = {}, sourceKey, onS
   return (
     <>
       <Pressable ref={entry} testID="dense-dog-entry" accessibilityRole="button"
-        accessibilityLabel={t('c1256', { count: choices.length, problems })}
+        accessibilityLabel={t('c1261', { count: choices.length, problems })}
         style={({ pressed }) => [styles.entry, style, pressed && styles.pressed]}
         onPress={() => {
           if (!mounted.current || !current.current || current.current.sourceKey !== sourceKey || current.current.members !== members) return;
@@ -79,7 +79,7 @@ export default function DenseDogSelector({ markers, avatars = {}, sourceKey, onS
           <View testID="dense-dog-picker" accessibilityViewIsModal
             style={[styles.sheet, { maxHeight: Math.max(touch.min, height - insets.top - insets.bottom - 2 * space.m) }]}>
             <View style={styles.header}>
-              <Text ref={title} accessibilityRole="header" style={styles.title}>{t('c1254')}</Text>
+              <Text ref={title} accessibilityRole="header" style={styles.title}>{t('c1259')}</Text>
               <Pressable testID="dense-dog-close" accessibilityRole="button"
                 accessibilityLabel={t('c765')} style={({ pressed }) => [styles.close, pressed && styles.pressed]} onPress={close}>
                 <Text style={styles.closeText}>{t('c765')}</Text>
