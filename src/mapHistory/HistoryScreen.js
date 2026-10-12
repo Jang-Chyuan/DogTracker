@@ -712,7 +712,7 @@ const getStyles = makeStyles(theme => {
     topRow: {
       position: 'absolute',
       left: space.s,
-      right: space.s,
+      right: layout.screenEdge,
       zIndex: 30,
       flexDirection: 'row',
       alignItems: 'center',
