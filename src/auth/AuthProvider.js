@@ -3,20 +3,13 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { getSupabase } from '../services/supabase';
 import { NativeModules } from 'react-native';
 import { cancelBackgroundSync } from '../cloud/CloudSyncSlot';
-import { isNetworkFailure } from '../cloud/CloudErrors';
+import { isNetworkFailure, refreshRefused } from '../cloud/CloudErrors';
 import { RESTORE_TIMEOUT_MS } from '../app/Launch';
 
 const AuthContext = createContext(null);
 
-// Supabase refused the refresh token itself (revoked, expired, unknown
-// session): 400/401/403 with an auth error, never 429 or 5xx.
-export function refreshRefused(failure) {
-  const status = Number(failure?.status);
-  const words = `${failure?.code || ''} ${failure?.message || ''}`;
-  if (status === 429 || status >= 500) return false;
-  if ([400, 401, 403].includes(status)) return true;
-  return /refresh_token_not_found|refresh_token_already_used|session_not_found|session_expired|invalid refresh token|invalid_grant|bad_jwt/i.test(words);
-}
+// Shared with the cloud passes, which re-ask the SDK once after a 401.
+export { refreshRefused };
 
 export function AuthProvider({ children, clientFactory = getSupabase, restoreTimeout = RESTORE_TIMEOUT_MS }) {
   const [connection] = useState(() => {

@@ -38,3 +38,13 @@ export function isNetworkFailure(error) {
   if (status === 0) return true;
   return texts(error).some(text => NETWORK.test(text));
 }
+
+// Supabase refused the refresh token itself (revoked, expired, unknown
+// session): 400/401/403 with an auth error, never 429 or 5xx.
+export function refreshRefused(failure) {
+  const status = Number(failure?.status);
+  const words = `${failure?.code || ''} ${failure?.message || ''}`;
+  if (status === 429 || status >= 500) return false;
+  if ([400, 401, 403].includes(status)) return true;
+  return /refresh_token_not_found|refresh_token_already_used|session_not_found|session_expired|invalid refresh token|invalid_grant|bad_jwt/i.test(words);
+}
