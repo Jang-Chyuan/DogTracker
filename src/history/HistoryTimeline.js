@@ -63,6 +63,62 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
   return stops;
 }
 
+/** Display only (PR 116, 067): stays at one place joined by a same-session
+ * same-place break (a presentation stop carrying `unobserved`) and 0 m foot
+ * rows of at most gapMs are one stay. The first real stop keeps its identity
+ * and number; minutes are the parts' own (interruptions stay deducted).
+ * Returns the new node list and the replaced/removed source nodes. */
+export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } = {}) {
+  const stay = n => n?.type === 'stop';
+  const zeroFoot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving')
+    && n.countedDistanceM === 0 && n.end - n.start <= config.gapMs;
+  const near = (a, b) => Number.isFinite(a?.latitude) && Number.isFinite(b?.latitude)
+    && !(distanceMeters(a, b) > config.radiusM + 1e-8);
+  const out = [], replaced = new Map(), removed = new Set();
+  for (let i = 0; i < nodes.length; i++) {
+    if (!stay(nodes[i])) { out.push(nodes[i]); continue; }
+    // Grow a chain stop (0 m foot)* stop … while each part touches the last.
+    let j = i, last = i;
+    for (let k = i + 1; k < nodes.length; k++) {
+      const n = nodes[k];
+      if (n.start !== nodes[k - 1].end) break;
+      if (stay(n) && near(nodes[i], n)) { last = k; continue; }
+      if (zeroFoot(n)) continue;
+      break;
+    }
+    j = last;
+    const chain = nodes.slice(i, j + 1);
+    if (j === i || !chain.some(n => n.unobserved?.length)) { out.push(nodes[i]); continue; }
+    const stops = chain.filter(stay);
+    const base = stops.find(n => !n.presentationOnly) ?? stops[0];
+    const merged = { ...base, start: chain[0].start, end: chain[chain.length - 1].end,
+      durationMs: chain.reduce((sum, n) => sum + (n.durationMs ?? n.end - n.start), 0),
+      interruptionMs: stops.reduce((sum, n) => sum + (n.interruptionMs || 0), 0),
+      gaps: stops.flatMap(n => n.gaps || []),
+      unobserved: stops.flatMap(n => n.unobserved || []),
+      ...(base.displayRange ? { displayRange: { ...base.displayRange, start: chain[0].start, end: chain[chain.length - 1].end,
+        gaps: stops.flatMap(n => n.displayRange?.gaps || []) } } : {}),
+      mergedStays: stops };
+    for (const n of chain) if (n !== base) removed.add(n);
+    replaced.set(base, merged);
+    out.push(merged);
+    i = j;
+  }
+  return { nodes: out, replaced, removed };
+}
+
+/** PR 116: phone foot rows with nothing counted that would read
+ * 「走路 0 分 · 0.0 km」 next to a place, a break or either end: they say
+ * nothing, so the list leaves them out. */
+export function emptyPhoneFootRows(nodes) {
+  const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
+  const shownMinutes = n => Math.floor(n.end / 60000) - Math.floor(n.start / 60000);
+  const beside = n => !n || !['movement', 'switch'].includes(n.type);
+  return new Set(nodes.filter((n, i) => foot(n) && n.countedDistanceM === 0
+    && ((n.durationMs ?? n.end - n.start) < 60000 || shownMinutes(n) === 0)
+    && beside(nodes[i - 1]) && beside(nodes[i + 1])));
+}
+
 /** Pure H1/H2 list. `nodes` contains location rows AND movement/gap rows in
  * display order. No geocoding: address resolution can use location rows later.
  * Supply full-day observations (and <=24h hold/visit context for midnight).
@@ -251,6 +307,10 @@ export function historyTimeline(rows = [], options = {}) {
       }
     }
   });
+  // The fallback must not affect existing switch cleanup; it is a place for
+  // the empty-foot-row cleanup below (PR 116).
+  nodes = [...nodes.filter(n => !drop.has(n)), ...stationary]
+    .sort((a, b) => a.start - b.start || rank(a) - rank(b));
   // Likewise a few seconds on foot with nothing counted between two places
   // (a stay, then the dog goes inside; a stay that runs into the end): the
   // places are adjacent (判定表「停在原處節點的前後」: 3 分鐘以內…停在原處
@@ -259,17 +319,23 @@ export function historyTimeline(rows = [], options = {}) {
     if (foot(n) && n.countedDistanceM === 0 && n.durationMs <= 60000
       && place(nodes[i - 1]) && place(nodes[i + 1])) drop.add(n);
   });
-  // The fallback must not affect existing short-section/switch cleanup.
-  nodes = [...nodes.filter(n => !drop.has(n)), ...stationary]
-    .sort((a, b) => a.start - b.start || rank(a) - rank(b));
+  nodes = nodes.filter(n => !drop.has(n));
+  // PR 116 / 067: stays at one place joined by a same-session break are one.
+  let replaced = new Map(), removed = new Set();
+  if (subject === 'phone') ({ nodes, replaced, removed } = mergePhoneSamePlaceStays(nodes, { config }));
+  if (subject === 'phone') {
+    const empty = emptyPhoneFootRows(nodes);
+    for (const n of empty) drop.add(n);
+    nodes = nodes.filter(n => !empty.has(n));
+  }
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.
   let number = 0;
   for (const node of nodes) {
     if ((node.type === 'stop' || node.type === 'switch') && !node.presentationOnly) node.number = ++number;
   }
-  const keptLocations = locations.filter(n => !drop.has(n));
-  const keptSections = sections.filter(n => !drop.has(n));
+  const keptLocations = locations.filter(n => !drop.has(n) && !removed.has(n)).map(n => replaced.get(n) ?? n);
+  const keptSections = sections.filter(n => !drop.has(n) && !removed.has(n));
   // H8 asks whether the day itself has records; the context read before
   // midnight does not count (判定表「停住期間的封包算不算『有紀錄』」: held
   // packets do).

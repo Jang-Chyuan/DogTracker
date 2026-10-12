@@ -25,9 +25,10 @@ export function timelinePresentation(nodes = []) {
   const firstBelongsToStay = typeof initialStay?.id === 'string' && initialStay.id.startsWith('visit:')
     && initialStay.points?.some(point => point.time === first?.start && samePlace(point, first));
   // A phone stationary run (PR 116, presentationOnly, unnumbered) is built only
-  // from 0 m stationary edges of one recording session: its first edge starts
-  // at the departure fix, its last ends at the endpoint fix, so time alone
-  // proves the endpoint is that run.
+  // from 0 m edges of one recording session (stationary edges, same-place
+  // breaks kept in `unobserved`, and the 0 m re-acquisition after a break):
+  // its first edge starts at the departure fix, its last ends at the endpoint
+  // fix, so time alone proves the endpoint is that run.
   const stationaryRun = node => node?.presentationOnly === 'phone-stationary';
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
     && (initialStay.number === 1 || stationaryRun(initialStay)) && first.start === initialStay.start

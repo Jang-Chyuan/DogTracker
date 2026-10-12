@@ -1,6 +1,8 @@
-import { historyTimeline, phoneStationaryPresentationStops } from '../src/history/HistoryTimeline';
+import { historyTimeline, phoneStationaryPresentationStops, mergePhoneSamePlaceStays,
+  emptyPhoneFootRows } from '../src/history/HistoryTimeline';
 import { configFor } from '../src/history/HistoryConfig';
 import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';
+import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 
 // PR 116: invented rows. Samsung stops GPS on a still phone with the screen
 // off; the recorder keeps running (same session) but saves no fix for a while.
@@ -81,4 +83,77 @@ test.each([
 ])('a break with %s is no stay', (_, extra, to) => {
   expect(phoneStationaryPresentationStops([edge(0, 4000, { gap: true, bridged: true, mode: 'gap', ...extra }, {}, to)],
     { config })).toEqual([]);
+});
+
+// Reported shape (invented times): 停 76 分 → 沒有資料 13 分 → 走路 0 分 · 0.0 km →
+// 結束 · 停 39 分, all at one place in one recording session.
+const minute = 60000;
+const stayNode = (from, to, extra = {}) => ({ type: 'stop', id: `visit:${from}`, start: base + from * minute,
+  end: base + to * minute, durationMs: (to - from) * minute, interruptionMs: 0, gaps: [], latitude: 1, longitude: 1, ...extra });
+const reported = breakNode => [
+  { type: 'departure', start: base, end: base, latitude: 1, longitude: 1.001 },
+  { type: 'movement', mode: 'walking', start: base, end: base + 5 * minute, durationMs: 5 * minute, distanceM: 110, countedDistanceM: 110 },
+  stayNode(5, 81, { number: 1 }), breakNode,
+  { type: 'movement', mode: 'walking', start: base + 94 * minute, end: base + 94 * minute + 40000, durationMs: 40000,
+    distanceM: 0, countedDistanceM: 0 },
+  stayNode(94 + 40 / 60, 134, { number: 2, id: 'visit:after' }),
+  { type: 'end', start: base + 134 * minute, end: base + 134 * minute, latitude: 1, longitude: 1 }];
+
+test('the reported stay / break / 0 m walk / stay ending shape is one stay merged into the end row', () => {
+  const brkStay = { type: 'stop', id: 'phone-stationary:x', presentationOnly: 'phone-stationary', number: null,
+    start: base + 81 * minute, end: base + 94 * minute, durationMs: 13 * minute, interruptionMs: 0, gaps: [],
+    unobserved: [{ start: base + 81 * minute, end: base + 94 * minute }], latitude: 1, longitude: 1 };
+  const nodes = reported(brkStay);
+  const { nodes: merged, removed } = mergePhoneSamePlaceStays(nodes, { config });
+  expect(merged.map(n => n.type)).toEqual(['departure', 'movement', 'stop', 'end']);
+  const [, , stay] = merged;
+  expect(stay).toMatchObject({ id: 'visit:5', start: base + 5 * minute, end: base + 134 * minute,
+    durationMs: 129 * minute, unobserved: brkStay.unobserved });
+  expect(removed.size).toBe(3);
+  const shown = timelinePresentation(merged);
+  expect(shown.map(n => n.type)).toEqual(['departure', 'movement', 'end']);
+  expect(shown[2]).toMatchObject({ start: base + 5 * minute, durationMs: 129 * minute, terminalStay: stay });
+  expect(nodes[2].end).toBe(base + 81 * minute); // the source stay is not mutated
+});
+
+test('a real 「沒有資料」 between the two stays (recording off) keeps them apart', () => {
+  const gap = { type: 'gap', mode: 'gap', start: base + 81 * minute, end: base + 94 * minute, durationMs: 13 * minute,
+    distanceM: 0, countedDistanceM: 0 };
+  const { nodes: merged } = mergePhoneSamePlaceStays(reported(gap), { config });
+  expect(merged.filter(n => n.type === 'stop')).toHaveLength(2);
+  expect(merged.some(n => n.type === 'gap')).toBe(true);
+});
+
+test('a phone list never shows 「走路 0 分 · 0.0 km」 next to a break, a place or an end', () => {
+  const gap = { type: 'gap', mode: 'gap', start: base + 81 * minute, end: base + 94 * minute, durationMs: 13 * minute,
+    distanceM: 0, countedDistanceM: 0 };
+  const nodes = reported(gap);
+  const empty = emptyPhoneFootRows(nodes);
+  expect([...empty]).toEqual([nodes[4]]);
+  // A 0 m minute that still reads 「走路 1 分」, a counted walk, or a 0 m leg
+  // between two movement rows is kept.
+  const kept = [{ ...nodes[4], end: nodes[4].start + 90000, durationMs: 90000 }, { ...nodes[4], countedDistanceM: 6 }];
+  for (const walk of kept) expect(emptyPhoneFootRows([nodes[2], walk, nodes[5]]).size).toBe(0);
+  expect(emptyPhoneFootRows([nodes[1], nodes[4], { ...nodes[1], mode: 'driving' }]).size).toBe(0);
+});
+
+// With #115: a break stay that reaches the endpoint is one 現在／結束 row.
+test('a same-place break stay ending at the last fix merges into the end row without double counting', () => {
+  // Walk 0–300 s, stay, a 70 min break, stay to the last fix at 4800 s.
+  const [stay] = phoneStationaryPresentationStops([edge(300, 600), brk(600, 4500),
+    edge(4500, 4505, {}, moving, moving), edge(4505, 4800)], { config });
+  expect(stay).toMatchObject({ start: base + 300000, end: base + 4800000, unobserved: [{ start: base + 600000, end: base + 4500000 }] });
+  const nodes = [{ type: 'departure', start: base, end: base, latitude: 1, longitude: 1 },
+    { type: 'movement', mode: 'walking', start: base, end: base + 300000, durationMs: 300000, distanceM: 400, countedDistanceM: 400 },
+    stay, { type: 'end', start: base + 4800000, end: base + 4800000, latitude: 1, longitude: 1 }];
+  const end = nodes[3];
+  const shown = timelinePresentation(nodes);
+  expect(shown.some(n => n.type === 'gap' || (n.type === 'stop' && n.id === stay.id))).toBe(false);
+  const last = shown[shown.length - 1];
+  expect(last).toMatchObject({ type: 'end', start: stay.start, end: end.start, terminalStay: stay,
+    durationMs: stay.durationMs, number: null });
+  expect(last.durationMs).toBe(last.end - last.start);
+  // Every shown minute once: no row overlaps another.
+  const spans = shown.filter(n => n.end > n.start).sort((a, b) => a.start - b.start);
+  for (let i = 1; i < spans.length; i++) expect(spans[i].start).toBeGreaterThanOrEqual(spans[i - 1].end);
 });
