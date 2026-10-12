@@ -241,3 +241,15 @@ test('a context canceled by leaving the foreground is not reported as context-fa
   expect(contextEvents('context-failed')).toEqual([]);
   expect(contextEvents('context-published')).toEqual([]);
 });
+
+test('history lineage survives a foreground leave/return but not an account switch', async () => {
+  await start(false);
+  const before = engine.historyPublication();
+  expect(Number.isSafeInteger(before.lineage)).toBe(true);
+  await act(async () => { engine.setForeground(false); engine.setForeground(true); await jest.advanceTimersByTimeAsync(1); });
+  const resumed = engine.historyPublication();
+  expect(resumed.generation).not.toBe(before.generation);
+  expect(resumed.lineage).toBe(before.lineage);
+  await act(async () => { engine.setSession({ user: { id: 'another-owner' } }); await jest.advanceTimersByTimeAsync(1); });
+  expect(engine.historyPublication().lineage).not.toBe(before.lineage);
+});
