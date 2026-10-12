@@ -297,6 +297,7 @@ const getStyles = makeStyles(theme => {
       minHeight: size.chip.height,
       justifyContent: 'center',
       paddingHorizontal: space.s,
+      borderRadius: radius.full,
     },
     link: { ...type.captionBold, color: colors.tonalText },
     crit: { color: colors.critAction },
@@ -306,7 +307,8 @@ const getStyles = makeStyles(theme => {
     textButton: {
       minHeight: touch.min,
       justifyContent: 'center',
-      paddingHorizontal: space.xs,
+      paddingHorizontal: space.s,
+      borderRadius: radius.full,
     },
     pillButton: {
       minHeight: touch.min,

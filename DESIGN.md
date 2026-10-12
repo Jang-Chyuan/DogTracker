@@ -152,7 +152,7 @@
 5. 會刪資料或改變資料流向的動作（切換上傳方式、登出、刪除資料、關閉 App）用 Material 對話框確認：圓角 24、內距 24dp、按鈕 48dp、「取消」在左、動作在右，會刪資料的動作用 `crit` 字；內文寫出影響範圍。
 6. icon 一定搭配短字或無障礙標籤；同一個意思全 App 只用同一個 icon。
 7. 日期、範圍、加入狗、資料來源選了就生效，不用「套用」；連點時以最後一次為準。
-8. 按鈕狀態：按下縮到 0.97＋疊 `pressedOverlay`（`PressScale`）；清單列按下 `brandSoft` 底；停用 40% 透明、不能按；載入中換成轉圈＋原本的字。開關列整列就是開關（48dp 以上、TalkBack 一個項目「…，開關，已開啟」）。`__tests__/TouchTargets.test.js` 檢查每個可點元件都有角色、標籤、按下狀態和 48dp（不足的用 hitSlop 補）；寬度在裝置上用 `scripts/touch-audit.js` 看 `uiautomator dump`。
+8. 按鈕狀態：按下縮到 0.97＋疊 `pressedOverlay`（`PressScale`）；疊上去的按下色和按鈕同一個形狀（`PressedOverlay`）：圓形、膠囊按鈕按下是圓的、不會出現方形灰框，浮在地圖上的元件按下時保留自己的不透明底色；清單列按下 `brandSoft` 底（只有整列的清單列、設定列按下是方的）；停用 40% 透明、不能按；載入中換成轉圈＋原本的字。開關列整列就是開關（48dp 以上、TalkBack 一個項目「…，開關，已開啟」）。`__tests__/TouchTargets.test.js` 檢查每個可點元件都有角色、標籤、按下狀態和 48dp（不足的用 hitSlop 補），以及按下色有按鈕的圓角；寬度在裝置上用 `scripts/touch-audit.js` 看 `uiautomator dump`。
 9. 返回鍵由上往下依序判斷（第一條符合的就做）：
 
 | 現在在 | 返回鍵 |
