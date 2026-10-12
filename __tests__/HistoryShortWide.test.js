@@ -64,7 +64,11 @@ test('wide expanded handles live outside the clipped sheet; real accessible step
   try {
     const floating = one(tree, 'history-range-floating');
     expect(floating).toBeDefined();
-    expect(StyleSheet.flatten(floating.props.style)).toMatchObject({ position: 'absolute', bottom: '100%' });
+    // A sibling above the panel, not a child hanging outside its bounds
+    // (Android drops touch and TalkBack for children outside their parent).
+    const panelHeight = StyleSheet.flatten(one(tree, 'history-panel').props.style).height;
+    expect(StyleSheet.flatten(floating.props.style)).toMatchObject({ position: 'absolute', bottom: panelHeight + space.s });
+    expect(one(tree, 'history-panel').findAll(node => node.props.testID === 'history-range-floating')).toHaveLength(0);
     expect(one(tree, 'history-panel-header').findAllByProps({ testID: 'history-range-bar' })).toHaveLength(0);
     const before = state.screen.range.start;
     const handle = tree.root.findAll(node => node.props.testID === 'range-handle-start' && node.props.onAccessibilityAction)[0];

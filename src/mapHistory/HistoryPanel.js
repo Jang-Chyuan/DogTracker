@@ -1,7 +1,7 @@
 // Three history sheet positions. Header gestures resize; timeline gestures scroll.
 import { t } from '../i18n';
 import { forwardRef, useImperativeHandle, useRef, useEffect, useState, useMemo, useCallback } from 'react';
-import { PanResponder, ScrollView, View, useWindowDimensions } from 'react-native';
+import { PanResponder, PixelRatio, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useStyles } from '../theme/ThemeProvider';
 import { size, space, touch, border, fontScale as fontScales } from '../theme/tokens';
@@ -37,7 +37,11 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   const [snap, setSnap] = useState('half');
   const [dragHeight, setDragHeight] = useState(null);
   const latest = useRef(null);
-  const cap = dragHeight == null ? heights[snap] : Math.max(heights.collapsed, Math.min(heights.expanded, dragHeight));
+  // On the pixel grid: measured header heights jitter in the last float bits
+  // (75.99997 vs 76). An unrounded cap then never matches the overlay layout
+  // already reported for that same pixel position, and the controls stay unready.
+  const cap = PixelRatio.roundToNearestPixel(dragHeight == null ? heights[snap]
+    : Math.max(heights.collapsed, Math.min(heights.expanded, dragHeight)));
   latest.current = { heights, snap, cap, hidden };
   const origin = useRef(null);
   // New history/subject/owner opens half; date changes retain the enum.
@@ -85,7 +89,6 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   layoutOwner.current.cap = cap;
   const overlayEpoch = layoutOwner.current.epoch;
   const [overlayLayouts, setOverlayLayouts] = useState({});
-  const [panelLayout, setPanelLayout] = useState(null);
   const measureOverlay = (name, height = null) => event => {
     if (layoutOwner.current.scope !== overlayScope || layoutOwner.current.epoch !== overlayEpoch
       || (height != null && layoutOwner.current.cap !== height)) return;
@@ -95,35 +98,36 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
     setOverlayLayouts(previous => JSON.stringify(previous[name]) === JSON.stringify(next)
       ? previous : { ...previous, [name]: next });
   };
-  const measurePanel = event => {
-    if (layoutOwner.current.scope !== overlayScope || layoutOwner.current.epoch !== overlayEpoch
-      || layoutOwner.current.cap !== cap) return;
-    const rect = event.nativeEvent.layout;
-    const next = { width: windowWidth, height: windowHeight, cap, rect };
-    setPanelLayout(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
-  };
   const aboveLayout = overlayLayouts.above?.scope === overlayScope && overlayLayouts.above.epoch === overlayEpoch
     && overlayLayouts.above.cap === cap
     ? overlayLayouts.above.rect : null;
+  // Both overlays are the panel's siblings, so their layouts are already in
+  // the screen's coordinates; each is current only for the cap it sat on.
   const floatingLayout = overlayLayouts.floating?.scope === overlayScope && overlayLayouts.floating.epoch === overlayEpoch
+    && overlayLayouts.floating.cap === cap
     ? overlayLayouts.floating.rect : null;
-  const currentPanel = panelLayout?.width === windowWidth && panelLayout.height === windowHeight
-    && panelLayout.cap === cap ? panelLayout.rect : null;
   useEffect(() => {
     const boxes = [];
     if (aboveVisible && aboveLayout) boxes.push(aboveLayout);
-    if (floatingVisible && floatingLayout && currentPanel) boxes.push({
-      ...floatingLayout, x: currentPanel.x + floatingLayout.x, y: currentPanel.y + floatingLayout.y,
-    });
+    if (floatingVisible && floatingLayout) boxes.push(floatingLayout);
     onControlRects?.({ boxes, ready: (!aboveVisible || !!aboveLayout)
-      && (!floatingVisible || (!!floatingLayout && !!currentPanel)) });
-  }, [aboveVisible, floatingVisible, aboveLayout, floatingLayout, currentPanel, onControlRects]);
+      && (!floatingVisible || !!floatingLayout) });
+  }, [aboveVisible, floatingVisible, aboveLayout, floatingLayout, onControlRects]);
   // A functional header keeps its date responder host mounted across the first
   // collapsed drag update. Replacing that host mid-touch loses native release.
   const shownHeader = typeof header === 'function' ? header(pan.panHandlers, controls, collapsed)
     : <View {...pan.panHandlers} testID="history-panel-date-drag">{collapsed && collapsedHeader ? collapsedHeader : header}</View>;
   // Map framing follows the actual sheet position and current viewport.
-  useEffect(() => { onHeightChange?.(cap); }, [cap, onHeightChange]);
+  // Only a settled position reframes the map; a finger-follow height would
+  // refit the camera on every move and drop the viewer's own pan/rotation.
+  // A drag that springs back to the same position does not reframe either.
+  const settled = dragHeight == null;
+  const reported = useRef(null);
+  useEffect(() => {
+    if (!settled || (reported.current?.cap === cap && reported.current.receiver === onHeightChange)) return;
+    reported.current = { cap, receiver: onHeightChange };
+    onHeightChange?.(cap);
+  }, [cap, settled, onHeightChange]);
   useImperativeHandle(ref, () => ({ back: () => false }), []);
   return (
     <>
@@ -134,8 +138,13 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
         key={`above:${overlayScope}:${overlayEpoch}`} onLayout={measureOverlay('above', cap)}
         importantForAccessibility={behindSheet(hidden)}
         style={[styles.above, { bottom: cap + space.m }]}>{above}</View>}
+      {/* The wide range handles sit above the panel for the same reason: a
+          child outside its parent's bounds loses touch and TalkBack on Android. */}
+      {!collapsed && floating && <View key={`floating:${overlayScope}:${overlayEpoch}`} testID="history-range-floating"
+        importantForAccessibility={behindSheet(hidden)} onLayout={measureOverlay('floating', cap)}
+        style={[styles.floating, { bottom: cap + space.s }]}>{floating}</View>}
       <View testID="history-panel" importantForAccessibility={behindSheet(hidden)}
-        pointerEvents="box-none" style={[styles.panel, { height: cap }]} onLayout={measurePanel}>
+        pointerEvents="box-none" style={[styles.panel, { height: cap }]}>
         <View style={styles.sheet}>
           <View testID="history-panel-header" style={styles.header}>{shownHeader}</View>
           {!collapsed && <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
@@ -145,7 +154,6 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
             </View>
           </ScrollView>}
         </View>
-        {!collapsed && floating && <View key={`floating:${overlayScope}:${overlayEpoch}`} testID="history-range-floating" style={styles.floating} onLayout={measureOverlay('floating')}>{floating}</View>}
       </View>
     </>
   );
@@ -157,11 +165,11 @@ const getStyles = makeStyles(theme => ({
     borderTopLeftRadius: size.historyPanel.corner, borderTopRightRadius: size.historyPanel.corner,
     ...theme.shadow.floating, ...theme.floatingBorder, elevation: 12, overflow: 'hidden' },
   above: { position: 'absolute', right: space.l, zIndex: 40, elevation: 12 },
-  floating: { position: 'absolute', left: space.l, right: space.l, bottom: '100%',
-    marginBottom: space.s, paddingHorizontal: space.s, paddingVertical: space.xs,
+  floating: { position: 'absolute', left: space.l, right: space.l,
+    paddingHorizontal: space.s, paddingVertical: space.xs,
     borderRadius: size.historyPanel.corner, backgroundColor: theme.colors.elevated,
     ...theme.shadow.floating, ...theme.floatingBorder, borderWidth: border.regular,
-    borderColor: theme.colors.accent, elevation: 12, zIndex: 1 },
+    borderColor: theme.colors.accent, elevation: 12, zIndex: 40 },
   header: { flexShrink: 0 },
   list: { flex: 1, minHeight: 0 },
 }));

@@ -107,3 +107,38 @@ test('expanded short-wide range reserves actual floating controls instead of put
   expect(393 - panelHeight() - 80 - space.s).toBe(96 + space.l);
   expect(tree.root.findByProps({ testID: 'history-range-floating' })).toBeTruthy();
 });
+
+test('a header drag reframes the map once when it settles, not on every finger move or a spring-back', async () => {
+  const heights = [];
+  const withHeight = () => <HistoryPanel {...render().props} onHeightChange={height => heights.push(height)} />;
+  await act(async () => { tree = Renderer.create(withHeight()); });
+  expect(heights).toEqual([388]);
+  const responder = responders[0];
+  await act(async () => responder.onPanResponderGrant());
+  await act(async () => responder.onPanResponderMove(null, { dy: 50 }));
+  await act(async () => responder.onPanResponderMove(null, { dy: 150 }));
+  await act(async () => responder.onPanResponderMove(null, { dy: 250 }));
+  expect(heights).toEqual([388]);
+  await act(async () => responder.onPanResponderRelease(null, { dy: 300 }));
+  expect(heights).toEqual([388, 80]);
+  // A small drag that springs back to the same level reports nothing new.
+  await act(async () => responder.onPanResponderGrant());
+  await act(async () => responder.onPanResponderMove(null, { dy: -20 }));
+  await act(async () => responder.onPanResponderTerminate());
+  expect(heights).toEqual([388, 80]);
+});
+
+test('a re-measured header that differs only in float bits keeps the measured frame control ready', async () => {
+  const reports = [];
+  const panel = dateHeight => <HistoryPanel {...render().props} dateHeight={dateHeight} controlScope="scope"
+    above={<Text>Frame</Text>} onControlRects={geometry => reports.push(geometry)} />;
+  await act(async () => { tree = Renderer.create(panel(60)); });
+  await drag(300);
+  const frame = () => tree.root.findByProps({ testID: 'history-panel-above' });
+  await act(async () => frame().props.onLayout({ nativeEvent: { layout: { x: 336, y: 680, width: 48, height: 48 } } }));
+  expect(reports[reports.length - 1]).toMatchObject({ ready: true, boxes: [{ x: 336, y: 680 }] });
+  // 59.99997 instead of 60: the same pixel position, so no new native layout.
+  await act(async () => tree.update(panel(59.99997)));
+  expect(panelHeight()).toBe(80);
+  expect(reports[reports.length - 1]).toMatchObject({ ready: true, boxes: [{ x: 336, y: 680 }] });
+});

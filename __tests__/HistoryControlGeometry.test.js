@@ -44,7 +44,7 @@ test('frame-all uses its actual root rectangle, deduplicates layout and clears a
   expect(report).toHaveBeenLastCalledWith({ boxes: [], ready: false });
 });
 
-test('wide floating range combines real panel origin with local layout; resize waits for new measurements', async () => {
+test('wide floating range is a sibling of the panel: its root layout is the rectangle; resize waits for new measurements', async () => {
   dimensions.mockReturnValue({ width: 850, height: 500, scale: 1, fontScale: 1 });
   const report = jest.fn();
   const props = { header: <Text>Date</Text>, floating: <Text>Range</Text>, controlScope: 'phone:day',
@@ -52,15 +52,16 @@ test('wide floating range combines real panel origin with local layout; resize w
   await act(async () => { tree = Renderer.create(<HistoryPanel {...props} />); });
   const panel = hosts(tree, 'history-panel')[0];
   const cap = StyleSheet.flatten(panel.props.style).height;
-  await act(async () => layout(panel, { x: 7, y: 500 - cap, width: 830, height: cap }));
+  expect(panel.findAll(node => node.props.testID === 'history-range-floating')).toHaveLength(0);
   expect(report.mock.calls.at(-1)[0].ready).toBe(false);
-  await act(async () => layout(hosts(tree, 'history-range-floating')[0], { x: 16, y: -100, width: 800, height: 92 }));
-  expect(report).toHaveBeenLastCalledWith({ boxes: [{ x: 23, y: 400 - cap, width: 800, height: 92 }], ready: true });
+  const rect = { x: 16, y: 500 - cap - 8 - 92, width: 818, height: 92 };
+  await act(async () => layout(hosts(tree, 'history-range-floating')[0], rect));
+  expect(report).toHaveBeenLastCalledWith({ boxes: [rect], ready: true });
   const stale = hosts(tree, 'history-range-floating')[0].props.onLayout;
   dimensions.mockReturnValue({ width: 820, height: 520, scale: 1, fontScale: 1 });
   await act(async () => tree.update(<HistoryPanel {...props} />));
   expect(report).toHaveBeenLastCalledWith({ boxes: [], ready: false });
-  await act(async () => stale({ nativeEvent: { layout: { x: 0, y: -300, width: 850, height: 292 } } }));
+  await act(async () => stale({ nativeEvent: { layout: { x: 0, y: 0, width: 850, height: 292 } } }));
   expect(report).toHaveBeenLastCalledWith({ boxes: [], ready: false });
   await act(async () => tree.update(<HistoryPanel {...props} floating={null} />));
   expect(report).toHaveBeenLastCalledWith({ boxes: [], ready: true });

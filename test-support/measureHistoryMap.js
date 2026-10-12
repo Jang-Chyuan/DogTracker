@@ -24,12 +24,12 @@ export function measureHistoryMap(tree, { controls = true, container = true } = 
     }
     const panel = host('history-panel');
     const cap = StyleSheet.flatten(panel.props.style).height;
-    layout(panel, { x: 0, y: height - cap, width, height: cap });
     const above = host('history-panel-above');
     if (above) layout(above, { x: width - space.l - touch.min,
       y: height - cap - space.m - touch.min, width: touch.min, height: touch.min });
     const floating = host('history-range-floating');
-    if (floating) layout(floating, { x: space.l, y: -touch.min * 2 - space.s,
+    // A sibling of the panel: its layout is already in the screen's coordinates.
+    if (floating) layout(floating, { x: space.l, y: height - cap - space.s - touch.min * 2,
       width: width - space.l * 2, height: touch.min * 2 });
     const compass = host('map-compass-layout');
     if (compass?.props.onLayout) layout(compass, { x: width - mapLayout.screenEdge - touch.min,
