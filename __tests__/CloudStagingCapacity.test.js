@@ -17,7 +17,7 @@ async function setup(cap) {
   return { connection, database };
 }
 
-test('full cache admits new pages without publishing partial and protects rare dog packet and valid fix', async () => {
+test('full cache stages every new page without publishing partial and protects rare dog packet and valid fix', async () => {
   const { connection, database } = await setup(16);
   try {
     await database.savePage(owner, [row('rare-fix', 1, 9), row('rare-no-gps', 2, 9, false),
@@ -27,25 +27,27 @@ test('full cache admits new pages without publishing partial and protects rare d
     for (let i = 0; i < 10; i++) await database.savePage(owner, [row(`new-${i}`, 100 + i)],
       { masterId: 7, throughAt: new Date(100 + i).toISOString(), eventId: `new-${i}` });
     expect(await read(connection, 'supabase_dog_status')).toEqual(before);
-    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toHaveLength(2);
+    // Dropping staged rows here would leave a gap behind the checkpoint.
+    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toHaveLength(10);
     const restart = createCloudDatabase(connection, { maxRows: 16 });
     expect(await read(connection, 'supabase_dog_status')).toEqual(before);
     expect((await restart.loadSyncState(owner, 7)).event_id).toBe('new-9');
     await restart.publishDownload(owner);
     const after = await read(connection, 'supabase_dog_status');
     expect(after).toHaveLength(16);
-    expect(after).toEqual(expect.arrayContaining(['rare-fix', 'rare-no-gps', 'new-9']));
+    expect(after).toEqual(expect.arrayContaining(['rare-fix', 'rare-no-gps', ...Array.from({ length: 10 }, (_, i) => `new-${i}`)]));
     expect(await read(connection, 'cloud_auto_supabase_dog_status')).toHaveLength(0);
   } finally { connection.close(); }
 });
 
-test('empty first download uses unused cache capacity plus bounded reserve, then returns to original cap', async () => {
+test('a first download larger than the cache stages only rows publication keeps, then returns to original cap', async () => {
   const { connection, database } = await setup(16);
   try {
     await database.beginDownload(owner);
     await database.savePage(owner, Array.from({ length: 40 }, (_, i) => row(`new-${i}`, i + 1)),
       { masterId: 7, throughAt: new Date(40).toISOString(), eventId: 'new-39' });
-    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toHaveLength(18);
+    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toEqual(
+      Array.from({ length: 16 }, (_, i) => `new-${i + 24}`).sort());
     expect(await read(connection, 'supabase_dog_status')).toHaveLength(0);
     expect((await database.loadSyncState(owner, 7)).event_id).toBe('new-39');
     await database.publishDownload(owner);
@@ -73,23 +75,22 @@ test('late chunk storage failure rolls back every earlier publish chunk and chec
   } finally { connection.close(); }
 });
 
-test('capacity pressure preserves copy-on-write repair and rolls back an irreducible protected set', async () => {
+test('capacity pressure preserves copy-on-write repair through publication', async () => {
   const { connection, database } = await setup(16);
   try {
     await database.savePage(owner, Array.from({ length: 16 }, (_, i) => row(`old-${i}`, i + 1)));
     await database.beginDownload(owner);
     await database.repairTrackTimes(owner, [{ event_id: 'old-15', received_at: new Date(50).toISOString(), upload_source: 'wifi' }], ['old-15']);
     await database.savePage(owner, Array.from({ length: 10 }, (_, i) => row(`new-${i}`, 100 + i)));
-    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toEqual(['new-9', 'old-15']);
-    await expect(database.savePage(owner, [row('protected-other-dog', 200, 8)])).rejects.toThrow('手機空間不足');
-    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toEqual(['new-9', 'old-15']);
+    await database.savePage(owner, [row('protected-other-dog', 200, 8)]);
+    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toHaveLength(12);
     await database.publishDownload(owner);
     expect((await connection.executeAsync("SELECT upload_source FROM supabase_dog_status WHERE event_id='old-15'")).results[0].upload_source).toBe('wifi');
     expect(await read(connection, 'supabase_dog_status')).toHaveLength(16);
   } finally { connection.close(); }
 });
 
-test('bounded host cost: full 20000-row cache accepts 5000 more records using 2500-row reserve', async () => {
+test('bounded host cost: full 20000-row cache stages 5000 more records until publication', async () => {
   const { connection, database } = await setup(20000);
   try {
     for (let i = 0; i < 20000; i += 1000)
@@ -104,11 +105,11 @@ test('bounded host cost: full 20000-row cache accepts 5000 more records using 25
     const stageMs = performance.now() - started;
     const stagedBytes = await bytes();
     expect(await read(connection, 'supabase_dog_status')).toHaveLength(20000);
-    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toHaveLength(2500);
+    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toHaveLength(5000);
     const publishing = performance.now(); await database.publishDownload(owner);
     const publishMs = performance.now() - publishing;
     expect(await read(connection, 'supabase_dog_status')).toHaveLength(20000);
-    console.log(JSON.stringify({ capacityRows: 20000, downloadedRows: 5000, retainedDeltaRows: 2500,
+    console.log(JSON.stringify({ capacityRows: 20000, downloadedRows: 5000, retainedDeltaRows: 5000,
       stageMs, publishMs, beforeBytes, stagedBytes, afterBytes: await bytes() }));
   } finally { connection.close(); }
 });
@@ -124,5 +125,18 @@ test('publication cannot evict the sole latest position of another dog to satisf
     expect(await read(connection, 'supabase_dog_status')).toEqual(['dog-6', 'dog-7', 'dog-8']);
     expect(await read(connection, 'cloud_auto_supabase_dog_status')).toEqual(['dog-9']);
     expect((await database.loadSyncState(owner, 7)).event_id).toBe('dog-9');
+  } finally { connection.close(); }
+});
+
+test('an irreducible protected set beyond the hard staging limit rolls back its page and checkpoint', async () => {
+  const { connection, database } = await setup(4);
+  try {
+    await database.savePage(owner, Array.from({ length: 4 }, (_, i) => row(`old-${i}`, i + 1)));
+    await database.beginDownload(owner);
+    // Each dog's only packet is protected, so 4 published + 6 staged exceed 2 * 4 + 1.
+    await expect(database.savePage(owner, Array.from({ length: 6 }, (_, i) => row(`dog-${i}`, 10 + i, 20 + i)),
+      { masterId: 7, throughAt: new Date(15).toISOString(), eventId: 'dog-5' })).rejects.toThrow('手機空間不足');
+    expect(await read(connection, 'cloud_auto_supabase_dog_status')).toEqual([]);
+    expect(await database.loadSyncState(owner, 7)).toBeNull();
   } finally { connection.close(); }
 });

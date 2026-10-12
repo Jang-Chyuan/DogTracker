@@ -94,16 +94,22 @@ test('a display-anchor seam counts only the two raw observations', () => {
   expect(movement.distanceM).toBe(0);
 });
 
-test.each([null, 0])('a no-GPS hold release (%s) breaks counting before the next observed movement', missing => {
+// A held packet without a fix was drawn at the anchor: walking out of the
+// hold starts there (as before #96) instead of a few-second 收不到 GPS row
+// that drops the distance from the spot to the first fix.
+test.each([null, 0])('a no-GPS hold release (%s) walks out from the display anchor', missing => {
   const from = { ...good(0, 0), heldReason: 'window', raw_latitude: missing, raw_longitude: missing };
-  const movement = historyMovement([from, good(20000, 300, 2), good(40000, 330, 2)], { subject: 'dog' });
-  expect(movement.edges[0]).toMatchObject({ mode: 'gap', gapReason: 'no-gps', bridged: false,
-    distanceM: 0, countedDistanceM: 0 });
+  const movement = historyMovement([from, good(30000, 40, 2), good(60000, 70, 2)], { subject: 'dog' });
+  expect(movement.edges[0]).toMatchObject({ mode: 'moving', bridged: false });
+  expect(movement.edges[0].gapReason).toBeUndefined();
+  expect(movement.edges[0].distanceM).toBeCloseTo(40, 0);
   expect(movement.edges[1].mode).toBe('moving');
-  expect(movement.distanceM).toBeCloseTo(30, 0);
+  expect(movement.distanceM).toBeCloseTo(70, 0);
 });
 
-test('confirmed raw departure around a no-GPS packet keeps a gap and subsequent genuine walking in batch and append replay', () => {
+// A no-fix packet inside the confirmed walk is released with it (not left on
+// the anchor), so the walk is one movement from fix to fix in batch and append replay.
+test('confirmed raw departure around a no-GPS packet releases that packet with the walk in batch and append replay', () => {
   const walk = Array.from({ length: 23 }, (_, i) => good(210000 + i * 10000, i * 10, 0));
   walk[4] = { ...walk[4], latitude: 0, longitude: 0, satellites: 0, hdop: 655.35 };
   const rows = [...initial, ...walk];
@@ -112,15 +118,18 @@ test('confirmed raw departure around a no-GPS packet keeps a gap and subsequent 
   incremental.append(rows.slice(0, initial.length + 8));
   incremental.append(rows.slice(initial.length + 8));
   expect(incremental.output).toEqual(batch);
-  const movement = historyMovement(batch, { subject: 'dog' });
-  expect(movement.edges.find(e => e.start === walk[4].time)).toMatchObject({ mode: 'gap', gapReason: 'no-gps',
-    distanceM: 0, countedDistanceM: 0 });
-  expect(movement.distanceM).toBeGreaterThan(170);
+  const released = batch.find(r => r.time === walk[4].time);
+  expect(released.heldReason).toBeUndefined();
+  expect(released).toMatchObject({ latitude: 0, longitude: 0 });
+  const movement = historyMovement(batch.filter(r => r.heldReason || r.latitude !== 0), { subject: 'dog' });
+  expect(movement.edges.filter(e => e.start >= walk[0].time).every(e => e.mode === 'moving')).toBe(true);
+  expect(movement.distanceM).toBeGreaterThan(200);
   expect(movement.distanceM).toBeLessThan(221);
   const timeline = historyTimeline(rows, { subject: 'dog', dayStart: 0, dayEnd: 500000,
     range: { start: 0, end: 430000 }, holdOptions: { classify } });
-  expect(timeline.sections.find(s => s.start === walk[4].time)).toMatchObject({ type: 'gap', reason: 'no-gps',
-    countedDistanceM: 0 });
+  // Out of the hold, one walk to the end: no zero-length holds or 收不到 GPS rows.
+  expect(timeline.nodes.map(n => n.type)).toEqual(['departure', 'indoor', 'movement', 'end']);
+  expect(timeline.distanceM).toBeGreaterThan(200);
   const appendedTimeline = historyTimeline(rows, { subject: 'dog', dayStart: 0, dayEnd: 500000,
     range: { start: 0, end: 430000 },
     replayHolds: packets => incremental.output.map((p, i) => ({ ...packets[i], ...p })) });

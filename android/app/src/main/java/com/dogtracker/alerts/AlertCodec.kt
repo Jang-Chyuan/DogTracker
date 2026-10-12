@@ -224,7 +224,8 @@ object AlertCodec {
       masterId = number("master_id", "mid")?.toInt(),
       satellites = satellites, hdop = hdop,
       rssi = number("rssi"), snr = number("snr"),
-      speedKmh = (if (data.has("raw_speed_kmh")) number("raw_speed_kmh") else number("speed_kmh"))?.takeIf { it >= 0 && it.isFinite() },
+      // BLE packets send the speed as "spd" (DogStatusStore stores it as speed_kmh).
+      speedKmh = (if (data.has("raw_speed_kmh")) number("raw_speed_kmh") else number("speed_kmh", "spd"))?.takeIf { it >= 0 && it.isFinite() },
     )
   }
 
