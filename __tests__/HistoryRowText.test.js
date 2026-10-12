@@ -2,7 +2,7 @@
 // short rows in metres, a row with distance never says 「0 分」, and 出發
 // names the same place as a 室內 hold that starts right after it.
 import { t as i18nT } from '../src/i18n';
-import { km, movementSummary, rowDistance, sectionSpeech, sectionText } from '../src/history/HistoryText';
+import { km, movementSummary, nodePill, placeSpeech, rowDistance, sectionSpeech, sectionText } from '../src/history/HistoryText';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { cursorLabel } from '../src/history/screen';
@@ -128,5 +128,35 @@ describe('出發 and a 室內 hold right after it name one place', () => {
     const shown = timelinePresentation(model.nodes);
     expect(shown.map(n => n.type)).toEqual(['departure', 'indoor']);
     expect(shown[0]).toMatchObject({ latitude: hold.latitude, longitude: hold.longitude });
+  });
+});
+
+describe('no 「接續隔天」 capsule', () => {
+  const stay = { type: 'stop', number: 2, start: T0, end: T0 + 25 * MINUTE, durationMs: 25 * MINUTE,
+    latitude: 24.9892, longitude: 121.3132, gaps: [] };
+  const end = { type: 'end', start: T0 + 25 * MINUTE, end: T0 + 25 * MINUTE, latitude: 24.9892,
+    longitude: 121.3132, label: i18nT('c330'), continuesNextDay: true };
+
+  test('a terminal stay running past midnight shows only its minutes', () => {
+    const shown = timelinePresentation([move('walking', T0 - 5 * MINUTE, T0, 300), stay, end]);
+    expect(shown.at(-1).terminalStay).toBeDefined();
+    expect(nodePill(shown.at(-1))).toEqual({ text: '停 25 分', tone: 'stay' });
+    // The PNG row is the same capsule.
+    const rows = exportTimelineRows([move('walking', T0 - 5 * MINUTE, T0, 300), stay, end], () => '虛構地址');
+    expect(rows.at(-1).pill).toEqual({ text: '停 25 分', tone: 'stay' });
+  });
+
+  test('a plain end has no capsule; TalkBack still reads place and time', () => {
+    expect(nodePill(end)).toBeNull();
+    expect(placeSpeech(end, '虛構地址')).toBe('虛構地址，09:25');
+  });
+
+  test('a hold running past midnight keeps 「室內・N 分」', () => {
+    expect(nodePill({ type: 'indoor', start: T0, end: T0 + 40 * MINUTE, continuesNextDay: true }))
+      .toEqual({ text: '室內・40 分', tone: 'indoor' });
+  });
+
+  test('the copy is gone from resources', () => {
+    expect(Object.values(require('../src/i18n/zh-TW.json'))).not.toContain('接續隔天');
   });
 });

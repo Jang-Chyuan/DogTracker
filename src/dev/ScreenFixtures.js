@@ -1358,7 +1358,7 @@ const FIXTURES = {
       phone: { ...phone, recording: false, stoppedAt: now }, geocoder: { names: HISTORY_NAMES } };
   },
   // 小黑 walking from 10/5 23:10 into 10/6 00:50, opened on 10/5: the last
-  // node 「接續隔天」.
+  // node continues into the next day (no capsule since 2026-10-13).
   'history-cross-midnight': now => {
     const midnight = new Date(now - 24 * 60 * MINUTE).setHours(0, 0, 0, 0);
     const late = legsPath(midnight, 50 * MINUTE, at(-20, -40), [{ walk: 25, bearing: 70, speed: 0.5 }, { stay: 15 },

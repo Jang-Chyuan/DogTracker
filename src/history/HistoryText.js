@@ -94,7 +94,8 @@ export function nodePill(node) {
   if (node.terminalStay) {
     const endpoint = nodePill({ ...node, terminalStay: null });
     const stay = nodePill(node.terminalStay);
-    return { ...endpoint, text: `${endpoint.text} · ${stay.text}` };
+    // An end that runs on past midnight has no capsule of its own: 「停 N 分」.
+    return endpoint ? { ...endpoint, text: `${endpoint.text} · ${stay.text}` } : stay;
   }
   switch (node.type) {
     case 'departure':
@@ -104,15 +105,19 @@ export function nodePill(node) {
       return { text: node.continuesPreviousDay ? t('c332') : stay, tone: 'stay' };
     }
     case 'indoor': {
-      // 判定表「跨午夜」 for a hold over midnight, as for a stay.
+      // 判定表「跨午夜」 for a hold over midnight, as for a stay. A hold that
+      // runs on into the next day keeps its minutes (2026-10-13: no 「接續隔天」).
       const inside = t('c344', { duration: listDuration(node.displayDurationMs ?? node.end - node.start) });
-      const text = node.continuesPreviousDay ? t('c332') : node.continuesNextDay ? t('c334') : inside;
+      const text = node.continuesPreviousDay ? t('c332') : inside;
       return { text, tone: 'indoor' };
     }
     case 'resume':
       return { text: t('c335'), tone: 'plain' };
     case 'end':
-      if (node.continuesNextDay) return { text: t('c334'), tone: 'plain' };
+      // 2026-10-13 (approved): no 「接續隔天」 capsule — it pushed the address
+      // onto many lines. The row's time and the next day's own 「接續前一天」
+      // already say it; the end row has no capsule.
+      if (node.continuesNextDay) return null;
       if (node.label === t("c656")) return { text: t('c331', { time: clock(node.closedAt) }), tone: 'closed' };
       if (node.label === t("c660")) return { text: t('c315', { time: clock(node.end) }), tone: 'plain' };
       return { text: node.label, tone: 'plain' };

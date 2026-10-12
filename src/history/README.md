@@ -35,7 +35,7 @@
 - `state`：上次結果的 `state`，用於保留已標停留。`timezone` 是識別的一部分；來源、開始、固定結束、時區、既有資料或相關車段改變時會重新計算。
 - `replayHolds`：可替換停住重播；預設狗使用既有 IndoorHold 純邏輯，手機不使用。`holdOptions` 可傳 `seed`、`config`、`classify`。
 
-讀取完整當天資料，並為跨午夜提供前一天的必要實測／停住脈絡（停住最多 24 小時）；可提供隔天第一筆以辨識「接續隔天」。不虛構 00:00 定位。`packets` 為篩選去重後原始列，`points` 為選定範圍的顯示／實測流；月曆使用共同來源的封包有無資料，清單與距離使用同一份整理結果，匯出保留原始座標。
+讀取完整當天資料，並為跨午夜提供前一天的必要實測／停住脈絡（停住最多 24 小時）；可提供隔天第一筆以辨識跨午夜（`continuesNextDay`）。不虛構 00:00 定位。`packets` 為篩選去重後原始列，`points` 為選定範圍的顯示／實測流；月曆使用共同來源的封包有無資料，清單與距離使用同一份整理結果，匯出保留原始座標。
 
 `nodes` 是排序後完整清單；`locations` 只有地點列，`sections` 只有交通／缺口列。型別：`departure`、`stop`、`switch`、`indoor`、`movement`、`gap`、`end`。交通方式：`walking`、`moving`、`driving`、`ride`、`gap`。停留與切換點共用 `number`；室內節點不編號。切換點沒有上下車文字與停留時間。節點座標可供後續非同步查地址。
 
@@ -66,3 +66,4 @@
 - 距離：`rowDistance` 用在移動段（`sectionText`，畫面與 PNG 清單）和游標標籤（`cursorLabel`）。不到 100 m 寫公尺、10 m 一階（`40 m`、`0 m`）；四捨五入後達 100 m 起用 `km()`（`0.1 km`）。摘要（`summaryText`／`movementSummary`／範圍摘要）、「今天 x km」與匯出的總距離仍用 `km()`；CSV／GPX 不變。
 - 分鐘：移動段顯示的距離不是 `0 m`、顯示分鐘（`displayDurationMs ?? durationMs`）四捨五入為 0 時，時間寫「不到 1 分」（c1276）。只改文字；`durationMs`／`displayDurationMs` 不變。
 - 出發：`timelinePresentation` 裡，第一列是出發、1 分鐘內接著室內節點，中間只有沒計入距離的走路／移動或 `uncertain` 列時，出發列用室內節點的座標（地址跟著座標查），兩列都保留，不設 `departureStay`。模型的 `departure` 節點、地圖起點與 CSV／GPX 仍是第一筆定位。室內節點正好從第一筆開始時，`historyTimeline` 目前不加出發節點（沿用 #64）。`__tests__/HistoryRowText.test.js` 用虛構資料檢查這三條。
+- 跨午夜的終點：`continuesNextDay` 的終點 `nodePill` 回傳 `null`（不寫「接續隔天」，c334 已移除）；併入末停留時只剩停留膠囊「停 N 分」；`continuesNextDay` 的室內節點寫「室內・N 分」。節點欄位不變，`continuesNextDay` 仍保留給其他用途。
