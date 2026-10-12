@@ -3,18 +3,29 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 
 const VERSION = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/;
-const MAX_CODE = 2147483647;
+// The largest versionCode Android / Google Play accepts.
+const MAX_CODE = 2100000000;
+// Added to every computed commit count (CI and local paths); an explicit
+// APP_VERSION_CODE override is used as-is. Test devices already carry
+// versionCodes up to ~280 from builds made before this offset (Codex branch
+// builds and manual overrides) while main itself is only ~172 commits, and
+// Android will not install a lower versionCode over a higher one without an
+// uninstall, which wipes local data and login. versionName keeps the plain
+// commit count; only versionCode carries the offset.
+const VERSION_CODE_OFFSET = 1000;
 // Outside CI the count stops where HEAD meets main, so an APK from a feature
 // branch or worktree never outranks the main/CI APK installed after it.
 const LOCAL_BASE_REFS = ['origin/main', 'main'];
 
-function versionCode(value) {
+function versionCode(value, label = 'APP_VERSION_CODE') {
   const code = Number(value);
   if (!/^\d+$/.test(String(value)) || !Number.isInteger(code) || code < 1 || code > MAX_CODE) {
-    throw new Error('APP_VERSION_CODE must be a positive signed 32-bit integer.');
+    throw new Error(`${label} must be an integer from 1 to ${MAX_CODE}.`);
   }
   return code;
 }
+
+const offsetCode = count => versionCode(VERSION_CODE_OFFSET + count, 'versionCode');
 
 const isCi = env => /^(1|true)$/i.test((env.CI || '').trim());
 
@@ -41,9 +52,9 @@ function resolveAppVersion(root, env = process.env) {
   if (git('rev-parse', '--is-shallow-repository') !== 'false') {
     throw new Error('Version needs complete Git history: use git fetch --unshallow or checkout fetch-depth: 0.');
   }
-  const count = versionCode(git('rev-list', '--count', 'HEAD'));
-  // CI and release builds: the full HEAD commit count, exactly as before.
-  if (isCi(env)) return { name: `${prefix}.${count}`, code: count };
+  const count = versionCode(git('rev-list', '--count', 'HEAD'), 'commit count');
+  // CI and release builds: the full HEAD commit count (versionCode adds the offset).
+  if (isCi(env)) return { name: `${prefix}.${count}`, code: offsetCode(count) };
 
   let mergeBase = '';
   for (const ref of LOCAL_BASE_REFS) {
@@ -55,14 +66,14 @@ function resolveAppVersion(root, env = process.env) {
     if (mergeBase) break;
   }
   // No main to compare with: keep the old HEAD count rather than failing.
-  if (!mergeBase) return { name: `${prefix}.${count}`, code: count };
-  const baseCount = versionCode(git('rev-list', '--count', mergeBase));
+  if (!mergeBase) return { name: `${prefix}.${count}`, code: offsetCode(count) };
+  const baseCount = versionCode(git('rev-list', '--count', mergeBase), 'commit count');
   const ahead = count - baseCount;
-  // e.g. 0.3.195+3: built from main's 0.3.195 plus three local commits.
-  return { name: `${prefix}.${baseCount}${ahead > 0 ? `+${ahead}` : ''}`, code: baseCount };
+  // e.g. 0.3.195+3 (versionCode 1195): main's 0.3.195 plus three local commits.
+  return { name: `${prefix}.${baseCount}${ahead > 0 ? `+${ahead}` : ''}`, code: offsetCode(baseCount) };
 }
 
-module.exports = { resolveAppVersion };
+module.exports = { resolveAppVersion, VERSION_CODE_OFFSET, MAX_CODE };
 
 if (require.main === module) {
   try {
