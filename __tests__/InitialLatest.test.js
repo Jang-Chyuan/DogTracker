@@ -144,3 +144,28 @@ test('engine stop invalidates a not-yet-framed success; completed launch never r
   await update({ owner: 'b', sync: { getMapPublication: () => null } });
   expect(value.ready).toBe(true); expect(getSplashState().phase).toBe('done');
 });
+
+test('hang safety net still fades a signed-in launch whose map never frames, after latest settles', async () => {
+  // Latest fell back (its own 10 s budget); the map never reports framing.
+  await update();
+  await act(async () => launchInto('map'));
+  await act(async () => jest.advanceTimersByTime(INITIAL_LATEST_WAIT_MS));
+  expect(value.phase).toBe('fallback');
+  expect(getSplashState().phase).toBe('waiting');
+  await act(async () => giveUpWaiting());
+  expect(getSplashState().phase).toBe('handover');
+});
+
+test('hang safety net firing before latest settles waits for latest, then fades without map framing', async () => {
+  await update();
+  await act(async () => launchInto('map'));
+  await act(async () => giveUpWaiting());
+  // The added latest condition is not skipped by the original escape.
+  expect(getSplashState().phase).toBe('waiting');
+  await act(async () => jest.advanceTimersByTime(INITIAL_LATEST_WAIT_MS - 1));
+  expect(getSplashState().phase).toBe('waiting');
+  // Settling to 'fallback' fades at once (the hook then reports a bypass).
+  await act(async () => jest.advanceTimersByTime(1));
+  expect(getSplashState().phase).toBe('handover');
+  expect(getSplashState().mode).toBe('fade');
+});
