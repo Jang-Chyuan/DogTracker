@@ -1,8 +1,10 @@
+/* global globalThis */
 import { t } from '../i18n';
 import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { cloudConfig } from './CloudConfig';
 import { createCloudSecureStorage } from './CloudSecureStorage';
+import { cloudDiagnosticFetch } from '../diagnostics/CloudAttemptDiagnostics';
 
 let client;
 export function getCloudClient() {
@@ -14,6 +16,7 @@ export function getCloudClient() {
     client = createClient(cloudConfig.url, cloudConfig.publishableKey, {
       auth: { storage: createCloudSecureStorage(), persistSession: true,
         autoRefreshToken: true, detectSessionInUrl: false },
+      global: { fetch: cloudDiagnosticFetch(globalThis.fetch) },
     });
   }
   return client;

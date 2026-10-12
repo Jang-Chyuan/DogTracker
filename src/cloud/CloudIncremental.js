@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { downloadCloudHistory } from './CloudDownload';
 import { cloudError } from './CloudErrors';
+import { beginCloudLogicalDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
 
 const DAY = 86400000;
 const OVERLAP = 300000;
@@ -20,11 +21,14 @@ export async function listCloudMasters(client, owner, signal, check) {
     for (let offset = 0; ; ) {
       await check();
       if (signal?.aborted) throw new Error(t('c576'));
-      const { data, error, status } = await Promise.race([
+      const done = beginCloudLogicalDiagnostic(signal, 'masters');
+      let result;
+      try { result = await Promise.race([
         client.from('device_members').select('gateway_id,slave_id')
           .eq('user_id', owner).order('gateway_id').order('slave_id')
           .range(offset, offset + 499).abortSignal(signal), canceled,
-      ]);
+      ]); } finally { done?.(); }
+      const { data, error, status } = result;
       await check();
       if (signal?.aborted) throw new Error(t('c576'));
       if (error || !Array.isArray(data)) throw cloudError(t("c581"), error, status);

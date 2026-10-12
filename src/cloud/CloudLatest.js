@@ -3,6 +3,7 @@ import { cloudError } from './CloudErrors';
 import { mapCloudTelemetry } from './CloudTelemetry';
 import { validCloudFix } from './CloudLatestSnapshot';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
+import { inheritCloudDiagnosticSignal, beginCloudLogicalDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
 
 const FIELDS = 'event_id,master_id,slave_id,seq,received_at,payload,rssi,snr,upload_source,phone_received_at';
 const FALLBACK = 'upload_source.neq.phone,upload_source.is.null,phone_received_at.is.null';
@@ -29,6 +30,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
   const dogs = [];
   if (!masters.length) return { cutoff, dogs };
   const work = new AbortController();
+  inheritCloudDiagnosticSignal(signal, work.signal);
   let failed = false, failure, stop;
   const stopped = new Promise((resolve, reject) => { stop = reject; });
   stopped.catch(() => {});
@@ -44,11 +46,15 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     if (failed) throw failure;
     if (signal?.aborted || work.signal.aborted) throw new Error(t('c576'));
   };
-  const read = async query => {
+  const read = async (query, stage) => {
     await guard();
     // Race the shared cancellation fence as well: a transport that ignores
     // AbortSignal may finish late, but cannot stall failure of the snapshot.
-    const { data, error, status } = await Promise.race([query.abortSignal(work.signal), stopped]);
+    const done = beginCloudLogicalDiagnostic(work.signal, stage);
+    let result;
+    try { result = await Promise.race([query.abortSignal(work.signal), stopped]); }
+    finally { done?.(); }
+    const { data, error, status } = result;
     await guard();
     if (error) throw cloudError(t('c577', { value: '' }), error, status);
     if (!Array.isArray(data) || data.length > 1) throw new Error(t('c578'));
@@ -74,7 +80,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
           else if (fixed) query = query.or(NONZERO);
           if (phone) query = query.order('phone_received_at', { ascending: false });
           query = query.order('received_at', { ascending: false }).order('event_id', { ascending: false }).limit(1);
-          const row = await read(query);
+          const row = await read(query, fixed ? 'fix' : 'packet');
           if (row) {
             const mapped = mapCloudTelemetry(row);
             if (mapped.slave_id !== slave || !masters.includes(mapped.master_id) || mapped.received_at >= cutoff
@@ -119,7 +125,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
       while (queued.length >= prefetch) { await Promise.race([...active, stopped]); await guard(); }
       let keys = base('slave_id').order('slave_id', { ascending: true }).limit(1);
       if (after !== null) keys = keys.gt('slave_id', after);
-      const key = await read(keys);
+      const key = await read(keys, 'keys');
       if (!key) break;
       const slave = key.slave_id;
       if (!Number.isInteger(slave) || (after !== null && slave <= after)) throw new Error(t('c579'));

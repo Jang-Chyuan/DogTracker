@@ -7,6 +7,7 @@ import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
+import { beginCloudAttemptDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
 
 const DOWNLOAD_MS = 120000, CONTEXT_MS = 10000, SWEEP_MS = 600000;
 
@@ -103,6 +104,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   function tick() {
     if (disposed || deleting || !foreground || !owner || latestRunning) return latestRunning;
     const version = generation, userId = owner, startedAt = now(), attempt = state.mapAttempt + 1;
+    const observation = beginCloudAttemptDiagnostic(attempt);
     const abort = new AbortController(); latestAbort = abort;
     let timedOut = false, phase = 'initialize', committed = false;
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, DOWNLOAD_MS);
@@ -116,6 +118,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     latestRunning = withLatestSyncSlot(async () => {
       timings.slotWaitMs = Math.max(0, now() - startedAt);
       const networkAbort = new AbortController(), cancel = () => networkAbort.abort();
+      observation?.bind(networkAbort.signal);
       abort.signal.addEventListener('abort', cancel, { once: true });
       let networkPhase = 'masters';
       const canceled = new Promise(resolve => networkAbort.signal.addEventListener('abort', () =>
@@ -167,6 +170,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
         startArchive();
       } catch (error) {
         if (!committed && valid(version) && (!abort.signal.aborted || timedOut)) {
+          observation?.finish(1, phase, timedOut ? 'timeout' : isAuthFailure(error) ? 'auth'
+            : isNetworkFailure(error) ? 'network' : ['initialize', 'publish'].includes(phase) ? 'storage' : 'unknown', foreground);
           reportLatestFailure(error, timedOut, attempt, phase);
           // Offline archive proof is independent work too; it must not retain
           // the latest slot while an earlier native archive transaction drains.
@@ -174,6 +179,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
           startArchive();
         }
       } finally {
+        observation?.finish(committed ? 0 : 2, phase, '', foreground);
         abort.signal.removeEventListener('abort', cancel); networkAbort.abort(); clearTimeout(timeout);
         latestAbort = null; latestRunning = null;
         publish({ snapshotPending: false, mapPending: false }); updateBusy();
