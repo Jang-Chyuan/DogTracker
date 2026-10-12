@@ -247,9 +247,9 @@ export function createStagedCloudDatabase(connection, options, createCore) {
       if (kind === 'manual') active.delete(owner);
       return publication;
     },
-    async publishManualScope(owner, slave, day) {
+    async publishManualScope(owner, slave, day, isCurrent = () => true) {
       if ((await job(owner, 'manual'))?.scope !== `${slave}:${day}`) throw new Error(t("c576"));
-      return result.publishDownload(owner, 'manual');
+      return result.publishDownload(owner, 'manual', null, isCurrent);
     },
     async loadSyncState(owner, master) {
       if (!await hasJob(owner)) return published.loadSyncState(owner, master);

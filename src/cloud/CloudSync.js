@@ -531,7 +531,10 @@ export function createCloudSync({ client, database, onChange = () => {}, now = D
           const count = await work(() => valid(version) && !abort.signal.aborted,
             commit => publishScoped(version, commit));
           if (!valid(version) || abort.signal.aborted) throw new Error(t("c576"));
-          if (database.publishDownload) await publishScoped(version, () => database.publishDownload(owner, 'manual'));
+          // The native publish re-checks this owner/generation inside its lock: an
+          // account switch while it waited cannot publish the old manual job.
+          if (database.publishDownload) await publishScoped(version, () => database.publishDownload(owner, 'manual', null,
+            () => valid(version) && !abort.signal.aborted));
           return count;
         });
         // A selected history window is not a complete live all-master pass.

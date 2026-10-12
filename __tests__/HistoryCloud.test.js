@@ -162,6 +162,20 @@ test.each([1, 0])('today tail uses retained completed prefix only (complete=%i)'
     { range_start: dayStart, range_end: cutoff, received_before: cutoff });
 });
 
+test('a manual day scope publishes with its lease, so a superseded download cannot publish in the native lock', async () => {
+  const dayStart = new Date(2026, 9, 3).getTime(), dayEnd = dayStart + 86400000;
+  let leased = true, isCurrent = null;
+  const database = { initialize: async () => {}, setHistoryDownloadState: async () => {}, beginManualScope: async () => {},
+    historyDownloadStates: async () => [],
+    publishManualScope: jest.fn(async (owner, id, day, current) => { isCurrent = current; return { dataRevision: 3 }; }) };
+  const runManual = (work, abort) => work(() => leased && !abort.signal.aborted, commit => commit());
+  const cloud = createHistoryCloud({ client: client(() => Promise.resolve({ data: [], error: null })), database, owner: 'a', runManual });
+  await cloud.download({ slaveId: 6, dayStart, dayEnd, cutoff: dayStart + 3600000 });
+  expect(database.publishManualScope).toHaveBeenCalledWith('a', 6, '2026-10-03', expect.any(Function));
+  expect(isCurrent()).toBe(true);
+  leased = false; expect(isCurrent()).toBe(false);
+});
+
 test('a tail refresh keeps each dog proven prefix and publishes no unknown material; a full window still marks incomplete', async () => {
   const dayStart = new Date(2026, 9, 3).getTime(), dayEnd = dayStart + 86400000;
   const prefix = dayStart + 3600000, cutoff = prefix + 60000;

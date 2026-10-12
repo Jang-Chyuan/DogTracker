@@ -148,6 +148,24 @@ test('manual archive operation remains physically serialized while latest foregr
   expect(current.mode).toBeNull();
 });
 
+test('manual publication re-checks its owner inside the native publish, after an account switch', async () => {
+  await start();
+  const calls = [];
+  const original = database.publishDownload;
+  database.publishDownload = async (...args) => { calls.push(args); return original(...args); };
+  try {
+    let manual;
+    await act(async () => { manual = engine.runManual(async () => 1); await jest.advanceTimersByTimeAsync(1); });
+    expect(await manual).toBe(1);
+    const [owner, kind, , isCurrent] = calls.find(([, value]) => value === 'manual');
+    expect([owner, kind, typeof isCurrent]).toEqual(['invented-owner', 'manual', 'function']);
+    expect(isCurrent()).toBe(true);
+    await act(async () => engine.setSession({ user: { id: 'replacement-owner' } }));
+    // The same closure a waiting native publish consults now refuses.
+    expect(isCurrent()).toBe(false);
+  } finally { database.publishDownload = original; }
+});
+
 test('a routine 30s latest attempt keeps archive priority open for this foreground after the first map ACK', async () => {
   // Archive/manual cloud commands and dog history reads wait on this gate with
   // a 10 s budget. Re-closing it on every refresh made them stall and fail

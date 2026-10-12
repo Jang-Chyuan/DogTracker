@@ -322,7 +322,9 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
           if (!valid(version) || abort.signal.aborted) throw new Error(t('c576'));
           const count = await work(() => valid(version) && !abort.signal.aborted, commit => publishScoped(version, commit));
           if (!valid(version) || abort.signal.aborted) throw new Error(t('c576'));
-          await publishScoped(version, () => database.publishDownload(owner, 'manual')); return count;
+          // Re-checked inside the native lock, like the automatic publication.
+          await publishScoped(version, () => database.publishDownload(owner, 'manual', null,
+            () => valid(version) && !abort.signal.aborted)); return count;
         });
       })();
       try { return await manualRunning; }

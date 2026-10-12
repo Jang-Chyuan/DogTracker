@@ -126,7 +126,7 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
               await database.setHistoryDownloadState?.(owner, id, day, true, coverage);
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               if (database.publishManualScope) {
-                const commit = () => database.publishManualScope(owner, id, day);
+                const commit = () => database.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
                 if (publishScoped) await publishScoped(commit);
                 else await commit();
               }
