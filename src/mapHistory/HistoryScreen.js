@@ -594,6 +594,14 @@ ref) {
 
   // Reading the day (not a download): the shimmer, announced as 讀取中.
   const reading = !downloading && !model && !screen.error && download?.kind !== 'unfinished';
+  // Another day or dogs after a shown list (‹ ›, the calendar, 加入): the old
+  // list is gone at once, and the new day's build may hold the JavaScript
+  // thread past the skeleton's delay, so the panel showed nothing. Show the
+  // skeleton at once then; a first opening keeps the delay.
+  const viewKey = `${screen.panelScope ?? ''}|${screen.day}|${(screen.dogs ?? []).map(dog => dog.id).join(',')}`;
+  const shownView = useRef(null);
+  if (model) shownView.current = viewKey;
+  const navigated = shownView.current != null && shownView.current !== viewKey;
   let body;
   if (downloading || screen.rangePending) body = null;
   else if (download?.kind === 'unfinished' && !model?.dayRecords) {
@@ -663,14 +671,17 @@ ref) {
         >
           {/* Loading looks like the timeline it becomes (the shimmer skeleton),
               never a bare 「讀取中…」 line; TalkBack still hears 讀取中. */}
-          {screen.rangePending ? <View testID="history-range-loading" accessibilityLiveRegion="polite"
+          {screen.rangePending ? <View key="range-loading" testID="history-range-loading" accessibilityLiveRegion="polite"
             accessible accessibilityLabel={t('c835')}>
-            <LoadingContent loading shape="timeline" label={t('c835')} skeletonTestID="history-range-skeleton" />
-          </View> : <View testID="history-loading" accessibilityLiveRegion={reading ? "polite" : "none"}
+            {/* Immediate: the released range's rebuild runs 32 ms later and
+                may hold the JavaScript thread, so a delayed skeleton would
+                never appear and the list stayed blank (PR 115 follow-up). */}
+            <LoadingContent loading immediate shape="timeline" label={t('c835')} skeletonTestID="history-range-skeleton" />
+          </View> : <View key="day-loading" testID="history-loading" accessibilityLiveRegion={reading ? "polite" : "none"}
             // Explicit values both ways: Android keeps a removed label, and the
             // loaded timeline must never read as 讀取中.
             accessible={reading} accessibilityLabel={reading ? t('c835') : ''}>
-            <LoadingContent loading={downloading || reading}
+            <LoadingContent loading={downloading || reading} immediate={navigated}
               shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
               {body}
             </LoadingContent>

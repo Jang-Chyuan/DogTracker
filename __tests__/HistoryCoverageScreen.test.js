@@ -251,6 +251,29 @@ test('foreground during an old-cutoff download ensures the new today tail after 
     expect(state.screen.dayModel).toBeNull();
   } finally { await act(async () => renderer.unmount()); }
 });
+test('an automatic tail aborted by leaving the app is started again on return, once', async () => {
+  const first = deferred(), again = deferred();
+  const cloud = { owner: 'owner-a', coverageRequired: true, downloadStates: async () => [],
+    download: jest.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => again.promise) };
+  const state = fixtureHarness(cloud, 'coverage-background-abort');
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(<state.Probe />); });
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    // Backgrounded: the sync aborts its work, so the tail fails.
+    await act(async () => renderer.update(<state.Probe active={false} />));
+    await act(async () => first.reject(new Error('foreground left')));
+    expect(state.screen.download?.kind).not.toBe('downloading');
+    state.fixture.now += 60000;
+    await act(async () => renderer.update(<state.Probe active />));
+    expect(cloud.download).toHaveBeenCalledTimes(2);
+    expect(cloud.download.mock.calls[1][0].cutoff).toBe(state.fixture.now);
+    // A failure in the front still waits for 重試: no loop.
+    await act(async () => again.reject(new Error('network')));
+    await act(async () => renderer.update(<state.Probe active />));
+    expect(cloud.download).toHaveBeenCalledTimes(2);
+  } finally { await act(async () => renderer.unmount()); }
+});
 test('explicitly reselecting a cancelled selected day retries its ensure', async () => {
   const first = deferred(), retry = deferred();
   const cloud = { owner: 'owner-a', coverageRequired: true, downloadStates: async () => [],
