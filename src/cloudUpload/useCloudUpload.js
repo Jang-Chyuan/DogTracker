@@ -45,6 +45,7 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null, c
   useEffect(() => {
     if (!db.current) return undefined;
     let alive = true, timer;
+    const abort = new AbortController();
     const database = db.current;
     // This update also controls native enqueue while the JS screen is suspended.
     setState(s => s.settingsOwner === owner ? s
@@ -68,10 +69,12 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null, c
               owner, savedSettings.some(s => s.mode === 'phone'));
           } catch (error) { searchError = t("c612", { message: error.message }); }
         }
+        if (!alive) return;
         if (foreground) {
-          const outcome = await service.current?.run(owner, () => alive);
+          const outcome = await service.current?.run(owner, () => alive, { signal: abort.signal });
           if (outcome === 'unauthorized' && alive) authFailure.current?.();
         }
+        if (!alive) return;
         const [settings, summary] = await Promise.all([database.settings(owner), database.summary(owner)]);
         if (alive) setState(s => ({ ...s, phoneId, settings, settingsOwner: owner, ...summary,
           error: searchError || summary.error || '' }));
@@ -79,21 +82,36 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null, c
       finally { if (alive && foreground) timer = setTimeout(tick, 10000); }
     }
     tick();
-    return () => { alive = false; clearTimeout(timer); };
+    return () => { alive = false; abort.abort(); clearTimeout(timer); };
   }, [ready, supported, owner, foreground, revision]);
   useEffect(() => {
     setState(s => ({ ...s, masters: [] }));
     if (!ready || !owner || !foreground || !supported) return undefined;
     let alive = true;
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 15000);
+    let cancel;
+    const canceled = new Promise((_, reject) => {
+      cancel = () => reject(new Error(t('c587')));
+      abort.signal.addEventListener('abort', cancel, { once: true });
+    });
     (async () => {
       try {
-        const { data, error } = await getCloudClient().from('device_members').select('gateway_id').eq('user_id', owner);
+        // The SDK may still be waiting for auth or an ignored-abort transport.
+        // Bound this auxiliary query without changing latest/archive requests.
+        const request = Promise.resolve().then(() => {
+          if (!alive || abort.signal.aborted) throw new Error(t('c587'));
+          return getCloudClient().from('device_members').select('gateway_id').eq('user_id', owner).abortSignal(abort.signal);
+        });
+        const { data, error } = await Promise.race([request, canceled]);
+        if (!alive || abort.signal.aborted || currentOwner.current !== owner) return;
         if (error) throw error;
         const masters = [...new Set((data || []).map(m => /^master_(\d+)$/.exec(m.gateway_id)?.[1]).filter(Boolean).map(Number))];
         if (alive) setState(s => ({ ...s, masters }));
-      } catch (error) { if (alive) setState(s => ({ ...s, error: t("c611", { message: error.message }) })); }
+      } catch (error) { if (alive && currentOwner.current === owner) setState(s => ({ ...s, error: t("c611", { message: error.message }) })); }
+      finally { clearTimeout(timeout); abort.signal.removeEventListener('abort', cancel); }
     })();
-    return () => { alive = false; };
+    return () => { alive = false; abort.abort(); clearTimeout(timeout); };
   }, [ready, owner, foreground, supported]);
   // Refresh the Wi-Fi evidence when a download completes as well as on route
   // changes and foreground resumes. The upload timer does not trigger this read.
