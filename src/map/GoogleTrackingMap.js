@@ -1480,25 +1480,41 @@ function GoogleTrackingMapRenderer({
   // (the card then closed and the dog's own card needed a second tap): a map
   // tap is held back a moment and dropped when a dog was tapped around it.
   const lastDogPress = useRef(0);
+  const lastDogId = useRef(null);
   const mapPressTimer = useRef(null);
   useEffect(() => () => clearTimeout(mapPressTimer.current), []);
   const pressDog = slaveId => {
     lastDogPress.current = Date.now();
+    lastDogId.current = slaveId;
     clearTimeout(mapPressTimer.current);
     onDogPress?.(slaveId);
   };
+  // Whether `tap` (dp) falls inside the full marker bitmap (face plus name
+  // tag canvas) of the dog last opened by a marker tap; unknown counts as inside.
+  const insidePressedMarker = tap => {
+    const marker = dogMarkers.find(dog => dog.slaveId === lastDogId.current);
+    const point = marker && screenPoints?.[marker.slaveId];
+    if (!tap || !point) return true;
+    const box = markerFrame(marker.size);
+    const left = point.x - box.width * box.anchor.x;
+    const top = point.y - box.height * box.anchor.y;
+    return tap.x >= left && tap.x <= left + box.width && tap.y >= top && tap.y <= top + box.height;
+  };
   const pressMapLive = event => {
     const at = Date.now();
-    // Native marker identity wins over the duplicate map event, even when
-    // selecting the dog has already changed its projected display positions.
-    if (at - lastDogPress.current < 2 * MAP_TAP_HOLD_MS) return;
     // Google can report a tap on a dog as a tap on the map (a card open):
     // a tap on a dog's face opens that dog.
     const position = event?.nativeEvent?.position;
     const scale = Platform.OS === 'android' ? PixelRatio.get?.() || 1 : 1;
-    const hit = position && screenPoints
-      ? dogAtPoint(dogMarkers, screenPoints, { x: position.x / scale, y: position.y / scale })
-      : null;
+    const tap = position ? { x: position.x / scale, y: position.y / scale } : null;
+    const hit = tap && screenPoints ? dogAtPoint(dogMarkers, screenPoints, tap) : null;
+    // Just after a dog tap (the marker reported first) a map tap inside that
+    // dog's marker bitmap is Google's duplicate of the same touch: dropped, so
+    // the native marker identity wins even over a face nearer the finger.
+    // A map tap on another dog's face outside it is a second tap: dog A then
+    // dog B within the hold opens B (the hit-test runs before the hold).
+    if (at - lastDogPress.current < 2 * MAP_TAP_HOLD_MS
+      && (hit == null || insidePressedMarker(tap))) return;
     if (hit != null) {
       pressDog(hit);
       return;
