@@ -19,19 +19,25 @@ internal class SaveGapLog(private val minNanos: Long = 60_000_000_000L, private 
   private val done = ArrayDeque<Stretch>()
   private var mark: Mark? = null
 
-  /** The recording started, or a row was saved: a new stretch begins now. */
-  fun saved(nowNanos: Long, wallMs: Long, pipeline: LocationPipeline, writeErrors: Int) {
-    stretch(nowNanos, wallMs, pipeline, writeErrors, ended = true)?.let {
+  /** The recording started, or a row was saved: a new stretch begins now.
+   * Returns the stretch this ended, when it was long enough to keep. */
+  fun saved(nowNanos: Long, wallMs: Long, pipeline: LocationPipeline, writeErrors: Int): Stretch? {
+    val ended = stretch(nowNanos, wallMs, pipeline, writeErrors, ended = true)?.also {
       done.addLast(it)
       while (done.size > capacity) done.removeFirst()
     }
     mark = Mark(nowNanos, wallMs, pipeline.received, pipeline.accepted, LinkedHashMap(pipeline.rejectedBy), writeErrors)
     pipeline.markWindow()
+    return ended
   }
+
+  /** The current stretch, if it is already long. */
+  fun ongoing(nowNanos: Long, wallMs: Long, pipeline: LocationPipeline, writeErrors: Int): Stretch? =
+    stretch(nowNanos, wallMs, pipeline, writeErrors, ended = false)
 
   /** Finished stretches, then the current one if it is already long. */
   fun snapshot(nowNanos: Long, wallMs: Long, pipeline: LocationPipeline, writeErrors: Int): List<Stretch> =
-    done.toList() + listOfNotNull(stretch(nowNanos, wallMs, pipeline, writeErrors, ended = false))
+    done.toList() + listOfNotNull(ongoing(nowNanos, wallMs, pipeline, writeErrors))
 
   private fun stretch(nowNanos: Long, wallMs: Long, pipeline: LocationPipeline, writeErrors: Int, ended: Boolean): Stretch? {
     val from = mark ?: return null
