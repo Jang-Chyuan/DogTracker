@@ -147,8 +147,8 @@ test('the real Supabase SDK emits numeric JSON filters, master IN, key seek and 
     const parsed = new URL(url); urls.push(parsed);
     const params = parsed.searchParams;
     let data;
-    if (params.get('select') === 'slave_id') {
-      data = discovered ? [] : [{ slave_id: 4 }]; discovered = true;
+    if (params.get('order')?.startsWith('slave_id.asc')) {
+      data = discovered ? [] : [event(3, 4, 7, '2026-10-10T11:00:00Z', { lat: 0, lon: 0 })]; discovered = true;
     } else if (params.get('upload_source') === 'eq.phone') data = [];
     else data = [event(params.has('payload->lat') ? 1 : 3, 4, 7, '2026-10-10T11:00:00Z',
       params.has('payload->lat') ? { lat: 25000000, lon: 121000000 } : { lat: 0, lon: 0 })];
@@ -157,7 +157,7 @@ test('the real Supabase SDK emits numeric JSON filters, master IN, key seek and 
   const result = await downloadCloudLatest({ client: sdk, masterIds: [7, 9], cutoff: CUT });
   expect(result.dogs[0]).toMatchObject({ packet: { sequence: 3 }, fix: { sequence: 1 } });
   expect(urls.every(url => url.searchParams.get('master_id') === 'in.(7,9)')).toBe(true);
-  expect(urls.filter(url => url.searchParams.get('select') === 'slave_id').map(url => url.searchParams.get('slave_id')))
+  expect(urls.filter(url => url.searchParams.get('order')?.startsWith('slave_id.asc')).map(url => url.searchParams.get('slave_id')))
     .toEqual([null, 'gt.4']);
   const fixed = urls.find(url => url.searchParams.has('payload->lat'));
   expect(fixed.searchParams.getAll('payload->lat')).toEqual(['gte.-90000000', 'lte.90000000']);
@@ -174,8 +174,14 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const microtasks = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+// These legacy parallel/pipeline guards deliberately make discovery's top
+// row a late old phone upload: no fallback hint is available, so both clock
+// GETs remain real and the ignored-abort sibling cases still exercise two.
+const withoutFallbackHint = events => [...events, ...[...new Set(events.map(row => row.slave_id))].map(slave =>
+  event(900 + slave, slave, events.find(row => row.slave_id === slave).master_id,
+    '2026-10-10T11:59:59Z', undefined, { upload_source: 'phone', phone_received_at: '2026-10-01T01:00:00Z' }))];
 function heldStreams(events, gates) {
-  const { client, calls } = rest(events);
+  const { client, calls } = rest(withoutFallbackHint(events));
   const original = client.from;
   const dispatched = [], signals = [];
   let active = 0, peak = 0;
@@ -256,7 +262,7 @@ test.each(['signal', 'owner'])('%s cancellation rejects both late parallel respo
 });
 
 test.each(['unknown-response', 'wrong-master'])('a %s from one parallel stream rejects the complete snapshot', async invalid => {
-  const { client } = rest([event(1, 4, 7, '2026-10-10T11:00:00Z')]);
+  const { client } = rest(withoutFallbackHint([event(1, 4, 7, '2026-10-10T11:00:00Z')]));
   const from = client.from, signals = [];
   client.from = table => {
     const query = from(table), execute = query.abortSignal;
@@ -276,7 +282,7 @@ test.each(['unknown-response', 'wrong-master'])('a %s from one parallel stream r
 });
 
 function heldPipeline(events) {
-  const f = rest(events), from = f.client.from;
+  const f = rest(withoutFallbackHint(events)), from = f.client.from;
   const gates = new Map(), opened = new Set(), signals = [], dispatched = [];
   let releaseAll = false, active = 0, peak = 0, keys = 0, keyPeak = 0;
   f.client.from = table => {

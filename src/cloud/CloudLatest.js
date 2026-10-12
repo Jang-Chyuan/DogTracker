@@ -62,25 +62,32 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
   };
   const base = fields => client.from('dog_telemetry').select(fields).in('master_id', masters)
     .lt('received_at', new Date(cutoff).toISOString());
-  const readDog = async slave => {
+  const readDog = async ({ slave, fallbackHint }) => {
     const latest = async fixed => {
       // Each dog has at most two clock requests; its fix phase still waits
       // for the packet pair. All jobs share the snapshot cancellation fence.
       try {
         const candidates = (await Promise.all([false, true].map(async phone => {
-          let query = base(FIELDS).eq('slave_id', slave);
-          if (phone) query = query.eq('upload_source', 'phone').not('phone_received_at', 'is', null);
-          if (fixed) {
-            // JSON number comparison does not cast malformed strings. These
-            // bounds match mapCloudTelemetry's 1e6 wire-coordinate units.
-            query = query.gte('payload->lat', -90000000).lte('payload->lat', 90000000)
-              .gte('payload->lon', -180000000).lte('payload->lon', 180000000);
+          // Discovery has the same received/event ordering as the fallback
+          // packet stream. Only that predicate's top row can replace its GET;
+          // phone packets and both valid-fix streams remain independent.
+          let row = !fixed && !phone ? fallbackHint : null;
+          if (row) await guard();
+          else {
+            let query = base(FIELDS).eq('slave_id', slave);
+            if (phone) query = query.eq('upload_source', 'phone').not('phone_received_at', 'is', null);
+            if (fixed) {
+              // JSON number comparison does not cast malformed strings. These
+              // bounds match mapCloudTelemetry's 1e6 wire-coordinate units.
+              query = query.gte('payload->lat', -90000000).lte('payload->lat', 90000000)
+                .gte('payload->lon', -180000000).lte('payload->lon', 180000000);
+            }
+            if (!phone) query = query.or(fixed ? `and(or(${FALLBACK}),or(${NONZERO}))` : FALLBACK);
+            else if (fixed) query = query.or(NONZERO);
+            if (phone) query = query.order('phone_received_at', { ascending: false });
+            query = query.order('received_at', { ascending: false }).order('event_id', { ascending: false }).limit(1);
+            row = await read(query, fixed ? 'fix' : 'packet');
           }
-          if (!phone) query = query.or(fixed ? `and(or(${FALLBACK}),or(${NONZERO}))` : FALLBACK);
-          else if (fixed) query = query.or(NONZERO);
-          if (phone) query = query.order('phone_received_at', { ascending: false });
-          query = query.order('received_at', { ascending: false }).order('event_id', { ascending: false }).limit(1);
-          const row = await read(query, fixed ? 'fix' : 'packet');
           if (row) {
             const mapped = mapCloudTelemetry(row);
             if (mapped.slave_id !== slave || !masters.includes(mapped.master_id) || mapped.received_at >= cutoff
@@ -109,8 +116,8 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     // Queued keys do not issue dog requests; every actual read still guards
     // owner/cancellation, and a failed sibling prevents further dispatch.
     while (!failed && active.size < 2 && queued.length) {
-      const slave = queued.shift();
-      const job = readDog(slave).catch(error => { throw fail(error); });
+      const dog = queued.shift();
+      const job = readDog(dog).catch(error => { throw fail(error); });
       job.catch(() => {});
       active.add(job); jobs.push(job);
       const finished = () => { active.delete(job); dispatch(); };
@@ -123,14 +130,16 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
       // One serial cursor, with at most four discovered keys waiting for a
       // worker. Backpressure bounds prefetch without limiting the dog roster.
       while (queued.length >= prefetch) { await Promise.race([...active, stopped]); await guard(); }
-      let keys = base('slave_id').order('slave_id', { ascending: true }).limit(1);
+      let keys = base(FIELDS).order('slave_id', { ascending: true })
+        .order('received_at', { ascending: false }).order('event_id', { ascending: false }).limit(1);
       if (after !== null) keys = keys.gt('slave_id', after);
       const key = await read(keys, 'keys');
       if (!key) break;
       const slave = key.slave_id;
       if (!Number.isInteger(slave) || (after !== null && slave <= after)) throw new Error(t('c579'));
       await guard();
-      queued.push(slave); dispatch();
+      const fallbackHint = key.upload_source !== 'phone' || key.phone_received_at == null ? key : null;
+      queued.push({ slave, fallbackHint }); dispatch();
       after = slave;
     }
     // Discovery finishing does not mean queued dogs have finished. Workers

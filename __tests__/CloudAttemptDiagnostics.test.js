@@ -98,7 +98,7 @@ test('real SDK retry and pre-fetch auth wait are distinguishable; query/response
     const p = new URL(url).searchParams;
     let data;
     if (retry) { retry = false; return { status: 503, ok: false, headers: { get: () => null }, text: async () => '{}' }; }
-    if (p.get('select') === 'slave_id') data = p.has('slave_id') ? [] : [{ slave_id: 6 }];
+    if (p.get('order')?.startsWith('slave_id.asc')) data = p.has('slave_id') ? [] : [packet];
     else if (p.get('upload_source') === 'eq.phone') data = [];
     else data = [p.has('payload->lat') ? fix : packet];
     return { status: 200, ok: true, headers: { get: () => null }, text: async () => JSON.stringify(data) };
@@ -121,8 +121,8 @@ test('real SDK retry and pre-fetch auth wait are distinguishable; query/response
     held.resolve(); await advance(1001); await task;
     expect(result.dogs[0]).toMatchObject({ slaveId: 6, packet: { event_id: packet.event_id }, fix: { event_id: fix.event_id } });
     observation.finish(0, 'publish', '', true);
-    expect(summaries[0]).toMatchObject({ keysStarted: 2, keysDone: 2, packetStarted: 2, packetDone: 2,
-      fixStarted: 2, fixDone: 2, fetchStarted: 7, fetchDone: 7, retryMax: 1, retry503: 1, storageAggregate: 1 });
+    expect(summaries[0]).toMatchObject({ keysStarted: 2, keysDone: 2, packetStarted: 1, packetDone: 1,
+      fixStarted: 2, fixDone: 2, fetchStarted: 6, fetchDone: 6, retryMax: 1, retry503: 1, storageAggregate: 1 });
     expect(summaries[0].storagegetMs).toBeGreaterThanOrEqual(5);
     expect(Object.values(summaries[0]).every(value => Number.isInteger(value))).toBe(true);
     expect(JSON.stringify(summaries)).not.toMatch(/never-log|example|event_id|master_7|latitude|longitude/);
@@ -152,7 +152,8 @@ test('real independent engine timeout emits one fixed numeric snapshot before qu
       const parsed = new URL(url), p = parsed.searchParams;
       let data;
       if (parsed.pathname.endsWith('device_members')) data = p.get('offset') === '0' ? [{ gateway_id: 'master_7', slave_id: 6 }] : [];
-      else if (p.get('select') === 'slave_id') data = p.has('slave_id') ? [] : [{ slave_id: 6 }];
+      else if (p.get('order')?.startsWith('slave_id.asc')) data = p.has('slave_id') ? []
+        : [cloudEvent(900, Date.now() - 1, { upload_source: 'phone', phone_received_at: new Date(Date.now() - 86400000).toISOString() })];
       else { await held.promise; data = []; } // ignores abort; never a fake native SQL delay
       return { status: 200, ok: true, headers: { get: () => null }, text: async () => JSON.stringify(data) };
     };

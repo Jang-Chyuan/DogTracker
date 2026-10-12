@@ -24,7 +24,11 @@ const abortError = () => Object.assign(new Error('invented request canceled'), {
 // Real installed SDK, including its DEFAULT retry=true path. No db.retry or
 // builder.retry override: only the HTTP transport is independently invented.
 function sdk(beforeFetch = async () => null) {
-  const calls = [], rows = [event(11, 6, NOW - 1000), event(12, 8, NOW - 1000)];
+  const calls = [], rows = [event(11, 6, NOW - 1000), event(12, 8, NOW - 1000),
+    ...[6, 8].map(slave => ({ ...event(900 + slave, slave, NOW - 1),
+      upload_source: 'phone', phone_received_at: new Date(NOW - 86400000).toISOString() }))];
+  // Force both actual packet clock GETs in SDK retry tests; the discovery
+  // top is a late old phone upload, so the fallback request cannot be hinted.
   const client = createClient('https://example.invalid', 'public-fixture-key', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { fetch: async (url, options = {}) => {
@@ -43,11 +47,13 @@ function sdk(beforeFetch = async () => null) {
       let data;
       if (table === 'device_members') data = Number(params.get('offset') || 0) ? []
         : [{ gateway_id: 'master_7', slave_id: 6 }, { gateway_id: 'master_7', slave_id: 8 }];
-      else if (params.get('select') === 'slave_id') {
+      else if (params.get('order')?.startsWith('slave_id.asc')) {
         const after = Number((params.get('slave_id') || 'gt.0').slice(3));
-        const next = rows.find(row => row.slave_id > after); data = next ? [{ slave_id: next.slave_id }] : [];
-      } else data = params.get('upload_source') === 'eq.phone' ? []
-        : rows.filter(row => `eq.${row.slave_id}` === params.get('slave_id'));
+        const next = rows.filter(row => row.slave_id > after).sort((a, b) => a.slave_id - b.slave_id
+          || Date.parse(b.received_at) - Date.parse(a.received_at))[0];
+        data = next ? [params.get('select') === 'slave_id' ? { slave_id: next.slave_id } : next] : [];
+      } else data = rows.filter(row => `eq.${row.slave_id}` === params.get('slave_id')
+        && (params.get('upload_source') === 'eq.phone' ? row.upload_source === 'phone' : row.upload_source !== 'phone'));
       call.returned = true; return response(data);
     } },
   });
