@@ -17,6 +17,9 @@ export const CLOUD_QUESTION_MS = 10000;
 // (the list's context) and two hours after (rows uploaded late).
 export const DOWNLOAD_BEFORE_MS = 30 * 60000;
 export const DOWNLOAD_AFTER_MS = 2 * 3600000;
+// A retained prefix may miss rows committed just before its cutoff but not yet
+// visible to that query; the tail re-reads this much (as the automatic sync).
+export const TAIL_OVERLAP_MS = 5 * 60000;
 
 const iso = value => new Date(value).toISOString();
 
@@ -100,7 +103,8 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
             if (!Number.isFinite(proof?.received_before) || proof.received_before >= coverage.received_before)
               return dayStart - DOWNLOAD_BEFORE_MS;
             const prefix = historyCoverage(dayStart, dayEnd, proof.received_before);
-            return coversHistory(proof, prefix) ? proof.received_before : dayStart - DOWNLOAD_BEFORE_MS;
+            return coversHistory(proof, prefix)
+              ? Math.max(dayStart - DOWNLOAD_BEFORE_MS, proof.received_before - TAIL_OVERLAP_MS) : dayStart - DOWNLOAD_BEFORE_MS;
           };
           const markIncomplete = async () => {
             for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
@@ -115,11 +119,18 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
               count += await downloadCloudHistory({ client, database, owner,
                 startAt: iso(tailStart(id)), endBefore: iso(coverage.received_before), slaveId: id,
                 signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+              // History is bucketed by track time: a phone packet of this day can
+              // reach the cloud after the reception window. Before proving a
+              // closed day complete, also fetch those late phone rows.
+              if (coverage.received_before < cutoff) count += await downloadCloudHistory({ client, database, owner,
+                startAt: iso(coverage.received_before), endBefore: iso(cutoff), slaveId: id,
+                phoneTrack: { startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.range_end) },
+                signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               await database.setHistoryDownloadState?.(owner, id, day, true, coverage);
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
               if (database.publishManualScope) {
-                const commit = () => database.publishManualScope(owner, id, day);
+                const commit = () => database.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
                 if (publishScoped) await publishScoped(commit);
                 else await commit();
               }

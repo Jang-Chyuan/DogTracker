@@ -205,20 +205,20 @@ export function countDistances(edges, config = configFor('dog'), state = countSt
 
 /** One fix-to-fix step, as historyMovement and today's distance (TodayRouteEngine) see it. */
 export function historyEdge(from, to, subject = 'dog', config = configFor(subject)) {
-  let missingReleaseFix = false;
-  // A released display hold starts at its measured raw fix, never its anchor.
-  if (from.heldReason && !to.heldReason) {
+  // Leaving a displayed hold (a dog's indoor hold, a phone's stationary
+  // anchor) starts where the dog or phone was shown. Its raw fix was not
+  // trusted while held: drift on the far side of the spot must not add its
+  // distance (and a missing fix must not cut the walk out of the spot). The
+  // raw fix is taken only when it already lies nearer the first released
+  // fix, as when the release confirms a compact offset the GPS had settled on.
+  if ((from.heldReason && !to.heldReason) || (from.phoneStationary && !to.phoneStationary)) {
     const raw = rawCoordinate(from);
-    if (hasFix(raw)) from = { ...from, ...raw };
-    else missingReleaseFix = true;
+    if (hasFix(raw) && distanceMeters(raw, to) < distanceMeters(from, to)) from = { ...from, ...raw };
   }
   const durationMs = to.time - from.time;
-  if (from.phoneStationary && !to.phoneStationary && Number.isFinite(from.raw_latitude)
-    && Number.isFinite(from.raw_longitude)) from = { ...from,
-      latitude: from.raw_latitude, longitude: from.raw_longitude };
-  const distanceM = missingReleaseFix ? 0 : distanceMeters(from, to);
+  const distanceM = distanceMeters(from, to);
   // 067: a break at one place is part of the stay there, not a gap.
-  const bridged = !missingReleaseFix && samePlaceGap(from, to, config);
+  const bridged = samePlaceGap(from, to, config);
   // One missed speed in an otherwise measured walk may use the immediately
   // preceding reliable speed for at most ten seconds, never across a gap.
   const modernPhone = subject === 'phone' && to.phoneMotionState != null
@@ -230,8 +230,7 @@ export function historyEdge(from, to, subject = 'dog', config = configFor(subjec
     && !to.phoneConfirmedMovement && phoneSpeedEvidence == null;
   return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
     speed: distanceM / (durationMs / 1000), uncertain, phoneSpeedEvidence,
-    gap: missingReleaseFix || uncertain || (durationMs > config.gapMs && !bridged),
-    ...(missingReleaseFix ? { gapReason: 'no-gps' } : {}),
+    gap: uncertain || (durationMs > config.gapMs && !bridged),
     // Into or within a hold: not movement (判定表「停在原處前後的距離」:
     // the drift drawn onto the hold spot does not count); the release edge
     // out of it is ordinary movement from the spot.
