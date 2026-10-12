@@ -56,8 +56,9 @@ test('fresh complete selected-day input can reuse its accepted model after an un
     expect(accepted).not.toBeNull(); state.hold(wait);
     state.ledger.dataRevision++; state.ledger.publishedRevision += 2;
     await state.update();
-    // Unknown freshness is still hidden until the actual durable read finishes.
-    expect(state.screen.dayModel).toBeNull();
+    // Rule change (PR #114): today's verified model stays while the new
+    // material's proof is re-read; nothing is built before that read finishes.
+    expect(state.screen.dayModel).toBe(accepted);
     await act(async () => wait.resolve());
     expect(state.database.historyDownloadStates.mock.calls.length).toBeGreaterThan(1);
     expect(state.read.mock.calls.length).toBeGreaterThan(reads);
@@ -79,17 +80,21 @@ test.each(['own-undefined', 'deletion', 'seed-quality'])('fresh %s selected inpu
     expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.dayModel).not.toBe(accepted);
   } finally { await state.close(); }
 });
-test.each(['changed', 'unknown', 'new-generation', 'new-publication-scope', 'new-publication-owner'])('%s publication cannot retain the old complete model while fresh proof waits', async mode => {
+test.each(['changed', 'unknown', 'new-generation', 'new-publication-scope', 'new-publication-owner'])('%s publication: only the same publisher keeps today\'s verified model while fresh proof waits', async mode => {
   const state = await setup(mode); const wait = deferred();
   try {
-    expect(state.screen.dayModel).not.toBeNull(); state.hold(wait);
+    const accepted = state.screen.dayModel;
+    expect(accepted).not.toBeNull(); state.hold(wait);
     if (['changed', 'unknown'].includes(mode)) state.ledger.publishedRevision = 2;
     if (mode === 'changed') state.ledger.dataRevision++;
     if (mode === 'unknown') state.ledger.dataRevision = null;
     if (mode === 'new-generation') state.ledger.generation++;
     if (mode === 'new-publication-scope') state.ledger.scope = {};
     if (mode === 'new-publication-owner') state.ledger.owner = 'b';
-    await state.update(); expect(state.screen.dayModel).toBeNull();
+    await state.update();
+    // Same account/publisher/generation: the verified view stays (no new build).
+    if (['changed', 'unknown'].includes(mode)) expect(state.screen.dayModel).toBe(accepted);
+    else expect(state.screen.dayModel).toBeNull();
     await act(async () => wait.resolve());
     if (mode === 'new-publication-owner') expect(state.screen.dayModel).toBeNull();
     else expect(state.screen.dayModel).not.toBeNull();

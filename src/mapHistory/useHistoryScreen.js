@@ -703,13 +703,14 @@ export function useHistoryScreen({
     waiting,
     coverageReady,
   ]);
-  // Today's open dog view: each automatic archive pass advances the coverage
-  // cutoff, so its proof is briefly short of the new cutoff while the tail
-  // downloads. Keep showing the model last verified for this exact view
-  // (account, publisher scope/generation, day, dogs and range) until the
-  // extended proof arrives, instead of blanking to loading every pass. Only
-  // a cutoff advance qualifies: any other missing/withdrawn proof, another
-  // generation or a changed range still shows loading.
+  // Today's open dog view: each automatic archive pass publishes new material
+  // (its proof is re-read) and advances the coverage cutoff (its tail is
+  // downloaded). Keep showing the model last verified for this exact view
+  // (account, publisher scope/generation, day, dogs and range) while that
+  // refresh runs, instead of blanking to loading every pass. It stays only
+  // while the last physical proof read still covers the model's own cutoff:
+  // a withdrawn/failed proof, another generation/owner/scope, a changed
+  // range or another day still shows loading.
   const verifiedModel = useRef(null);
   const shownPublication = cloud?.getPublication?.();
   const verifiedIdentity = subject === 'dog' && cloud?.coverageRequired && today
@@ -719,7 +720,7 @@ export function useHistoryScreen({
     && value.generation === shownPublication?.generation && value.manual === manual
     && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
   const retained = !builtModel && !waiting && !coverageReady && verifiedMatches(verifiedModel.current)
-    && verifiedModel.current.cutoff < coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
+    && verifiedModel.current.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
     ? verifiedModel.current : null;
   useEffect(() => {
     if (builtModel && coverageReady && verifiedIdentity) verifiedModel.current = { identity: verifiedIdentity,

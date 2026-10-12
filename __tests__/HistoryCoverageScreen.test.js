@@ -216,11 +216,14 @@ test('a new archive publication cannot expose rows before its new coverage proof
   let renderer;
   try {
     await act(async () => { renderer = Renderer.create(<state.Probe />); });
-    expect(state.screen.dayModel).not.toBeNull();
+    const verified = state.screen.dayModel;
+    expect(verified).not.toBeNull();
     await act(async () => renderer.update(<state.Probe publicationRevision={1} />));
-    expect(state.screen.dayModel).toBeNull();
-    expect(state.screen.map).toBeNull();
+    // Rule change (PR #114): the old verified model stays; no new rows are
+    // built into a model before the new proof resolves.
+    expect(state.screen.dayModel).toBe(verified);
     expect(cloud.download).not.toHaveBeenCalled();
+    // The new proof withdraws the day: loading, then its download.
     await act(async () => nextProof.resolve([{ ...proof, complete: 0 }]));
     expect(cloud.download).toHaveBeenCalledTimes(1);
     expect(state.screen.dayModel).toBeNull();
