@@ -157,3 +157,18 @@ test('latest timing extension is all-or-none fixed elapsed numbers; private fiel
     for (const entry of spy.mock.calls) expect(entry).toEqual(['[CloudSync] latest-published', base]);
   } finally { spy.mockRestore(); }
 });
+test('history read/model diagnostics stay silent unless the private flag is enabled', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const { historyReadDiagnostic, historyModelDiagnostic, HISTORY_READ_FLAGS } = require('../src/logger');
+  const read = { sequence: 1, phase: 'row', event: 'begin', elapsedMs: 1,
+    ...Object.fromEntries(HISTORY_READ_FLAGS.map(key => [key, false])) };
+  const model = { sequence: 1, stage: 'replay', elapsedMs: 1, inputCount: 2 };
+  try {
+    delete global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__;
+    historyReadDiagnostic(read); historyModelDiagnostic(model);
+    expect(spy).not.toHaveBeenCalled();
+    global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__ = true;
+    historyReadDiagnostic(read); historyModelDiagnostic(model);
+    expect(spy.mock.calls.map(([tag]) => tag)).toEqual(['[HistoryRead]', '[HistoryModel]']);
+  } finally { delete global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__; spy.mockRestore(); }
+});

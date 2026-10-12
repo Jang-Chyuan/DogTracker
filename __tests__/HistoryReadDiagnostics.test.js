@@ -11,6 +11,9 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { historyCoverage } from '../src/cloud/HistoryCoverage';
 import { dayBounds } from '../src/history/screen/HistoryScreenDates';
 const late = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+// These suites exercise the private observer; it is off unless enabled.
+beforeEach(() => { global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__ = true; });
+afterEach(() => { delete global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__; });
 const payloads = spy => spy.mock.calls.filter(args => args[0] === '[HistoryRead]').map(args => args[1]);
 
 test('release history diagnostics reconstruct only fixed enums, elapsed numbers and booleans', () => {

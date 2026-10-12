@@ -104,10 +104,15 @@ const HISTORY_READ_EVENTS = new Set(['begin', 'end', 'rejected', 'blocked', 'fai
 export const HISTORY_READ_FLAGS = Object.freeze(['publicationPending', 'fenceOpen', 'materialKnown',
   'ownerMatches', 'generationMatches', 'rowsLoaded', 'completenessLoaded', 'coverageReady', 'modelReady']);
 
+// History read/model diagnostics are private, like the cloud attempt
+// observer: off in every normal (release) build unless explicitly enabled.
+export const historyDiagnosticsEnabled = () => globalThis.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__ === true;
+
 // A bounded selection's diagnostic contains no identity, route or wall-clock
 // timestamp. Callers cannot pass through messages, errors or query payloads.
 export function historyReadDiagnostic(fields) {
   try {
+    if (!historyDiagnosticsEnabled()) return;
     if (!Number.isSafeInteger(fields?.sequence) || fields.sequence < 1
       || !HISTORY_READ_PHASES.has(fields.phase) || !HISTORY_READ_EVENTS.has(fields.event)
       || !Number.isFinite(fields.elapsedMs) || fields.elapsedMs < 0
@@ -126,6 +131,7 @@ export const HISTORY_MODEL_STAGES = Object.freeze(['stream', 'replay', 'filter',
 // aggregate input sizes, never identities, packet values or clock timestamps.
 export function historyModelDiagnostic(fields) {
   try {
+    if (!historyDiagnosticsEnabled()) return;
     if (!Number.isSafeInteger(fields?.sequence) || fields.sequence < 1
       || !HISTORY_MODEL_STAGES.includes(fields.stage)
       || !Number.isFinite(fields.elapsedMs) || fields.elapsedMs < 0

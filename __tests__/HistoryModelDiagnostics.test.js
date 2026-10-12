@@ -4,6 +4,9 @@ import { multiDayModel, multiCursors, multiMapPresentation } from '../src/histor
 import { dogHistoryRow } from '../src/history/HistoryRows';
 import { createHistoryHolds } from '../src/placement/IndoorHold';
 
+// These suites exercise the private observer; it is off unless enabled.
+beforeEach(() => { global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__ = true; });
+afterEach(() => { delete global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__; });
 const payloads = spy => spy.mock.calls.filter(args => args[0] === '[HistoryModel]').map(args => args[1]);
 
 test('model diagnostic reconstructs only a fixed stage, sequence, duration and aggregate count', () => {

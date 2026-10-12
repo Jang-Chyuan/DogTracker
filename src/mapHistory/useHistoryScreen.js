@@ -1,3 +1,4 @@
+import { historyDiagnosticsEnabled } from '../logger';
 import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
 import { sameHistoryInput, copyHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
@@ -444,7 +445,8 @@ export function useHistoryScreen({
   const [readRevision, setReadRevision] = useState(0);
   const buildCost = useRef(0);
   const readDiagnostic = useRef({ key: null, value: null });
-  const readDiagnosticKey = active && subject === 'dog' && cloud?.publishedReads
+  // Disabled builds create no observer: no per-stage timing wrappers either.
+  const readDiagnosticKey = historyDiagnosticsEnabled() && active && subject === 'dog' && cloud?.publishedReads
     ? `${sessionKey}|${day}|${current.dogs.map(d => d.id).join(',')}` : null;
   if (readDiagnostic.current.key !== readDiagnosticKey)
     readDiagnostic.current = { key: readDiagnosticKey, value: readDiagnosticKey ? createHistoryReadDiagnostics() : null };
