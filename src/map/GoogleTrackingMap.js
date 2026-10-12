@@ -636,6 +636,8 @@ function GoogleTrackingMapRenderer({
   phoneEnabled,
   phoneProblem = false,
   livePhone,
+  // Every live snapshot, for the phone's dot only (LivePhoneFeed).
+  livePhoneFeed = null,
   onDogPress,
   // A sheet is open over the map (history): hidden from TalkBack.
   a11yHidden = false,
@@ -1843,6 +1845,7 @@ function GoogleTrackingMapRenderer({
           {/* History draws no live phone (flow.txt: 只有可以拖的游標點). */}
           {!historyMode && livePhone?.running && livePhone.position && (
             <PhoneLocationOverlay
+              feed={livePhoneFeed}
               Circle={Circle}
               Marker={StyledMarker}
               location={livePhone}

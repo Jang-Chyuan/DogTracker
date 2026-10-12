@@ -10,19 +10,27 @@ import { MARKER_WIDTH } from './DogMarkerView';
 import { locationTrackerNative } from '../locationTracker/LocationTrackerService';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { stablePhoneDisplay } from './PhoneDisplayPosition';
+import { useLivePhone } from './LivePhoneFeed';
 
 // Publish only live display coordinates to native memory; the recorder owns SQLite cadence.
 export default function PhoneLocationOverlay({
-  location,
+  location: shownLocation,
   active = true,
   historical = false,
   phoneProblem = false,
   onPress,
   Circle,
   Marker,
+  // The live map's feed of every snapshot (LivePhoneFeed): the dot follows
+  // each fix without re-rendering the map around it.
+  feed = null,
 }) {
   const { colors, opacity, isDark, literalColors } = useTheme();
   const styles = useStyles(getStyles);
+  const location = useLivePhone(feed, shownLocation);
+  // The callout's fix time comes from the map's copy: the feed's would change
+  // the marker's text, and have Google redraw the map, every second.
+  const described = shownLocation?.position ?? location.position;
   const { position, ageSeconds } = location;
   // Age still fences animation/native display publication, never the dot colour.
   const stale = !historical && (ageSeconds == null || ageSeconds > 3);
@@ -205,8 +213,8 @@ export default function PhoneLocationOverlay({
             ? undefined
             : historical
             ? ((position.rawSpeedKmh == null) ? t("c723", { value: new Date(position.timestamp).toLocaleString() }) : t("c724", { value: new Date(position.timestamp).toLocaleString(), value2: position.rawSpeedKmh.toFixed(1) + ' km/h' }))
-            : t("c766", { value: position.accuracy.toFixed(1), value2: new Date(
-                position.timestamp,
+            : t("c766", { value: described.accuracy.toFixed(1), value2: new Date(
+                described.timestamp,
               ).toLocaleTimeString() })
         }
       >
