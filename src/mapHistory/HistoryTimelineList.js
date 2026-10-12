@@ -1,7 +1,7 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { isReduceMotion } from '../utils/reduceMotion';
 import { touch, size as sizes, space, type, border, radius, fontScale } from '../theme/tokens';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   LayoutAnimation,
   PixelRatio,
@@ -9,8 +9,12 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Glyph from '../map/Glyph';
+import Skeleton from '../components/Skeleton';
+import { t } from '../i18n';
+import { timelinePresentation } from '../history/HistoryTimelinePresentation';
 
 import {
   interruptionText,
@@ -96,16 +100,17 @@ const lineOf = section =>
     ? 'solid'
     : 'dots';
 
-function Node({ node, color }) {
+function Node({ node, color, centered = false }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
+  const centeredStyle = centered ? { marginTop: 0 } : null;
   switch (node.type) {
     case 'departure':
-      return <View style={[styles.departure, { borderColor: color }]} />;
+      return <View style={[styles.departure, centeredStyle, { borderColor: color }]} />;
     case 'stop':
     case 'switch':
       return (
-        <View style={[styles.numbered, { backgroundColor: color }]}>
+        <View style={[styles.numbered, centeredStyle, { backgroundColor: color }]}>
           {/* A number in a fixed 24dp circle: it does not grow with the font. */}
           <Text style={styles.number} allowFontScaling={false}>{node.number}</Text>
         </View>
@@ -113,17 +118,17 @@ function Node({ node, color }) {
 
     case 'indoor':
       return (
-        <View style={styles.indoor}>
+        <View style={[styles.indoor, centeredStyle]}>
           <Glyph name="house" color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
         </View>
       );
     case 'resume':
-      return <View style={[styles.resume, { borderColor: color }]} />;
+      return <View style={[styles.resume, centeredStyle, { borderColor: color }]} />;
     default:
       return (
         <View
           style={[
-            styles.end,
+            styles.end, centeredStyle,
             { backgroundColor: color, borderColor: `${color}55` },
           ]}
         />
@@ -150,14 +155,18 @@ function Pill({ pill, color }) {
 
 function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout }) {
   const styles = useStyles(getStyles);
+  const { fontScale: scale = 1 } = useWindowDimensions();
+  const firstLine = { height: Math.ceil(type.cardTitle.lineHeight * scale) };
   const tap = useTap(onPress, node);
   const onLayout = onRowLayout
     ? event => onRowLayout(node.start, event.nativeEvent.layout.y)
     : undefined;
-  const [start, end] = nodeTimes(node);
+  const [start] = nodeTimes(node);
   const lines = placeLines(node, place);
-  const note = lines.coordinates ? interruptionText(node) : '';
+  const note = interruptionText(node);
   const pill = nodePill(node);
+  const pending = place?.state === 'pending';
+  const title = place?.state === 'found' || pending ? lines.title : t('c1256');
   return (
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
@@ -166,23 +175,19 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
       {...tap}
       onLayout={onLayout}
       accessibilityRole="button"
-      accessibilityLabel={placeSpeech(node, lines.title)}
+      accessibilityLabel={placeSpeech(node, title)}
       accessibilityState={{ selected: !!selected }}
     >
       <View style={[styles.timeColumn, timeWidth()]}>
         <Text style={styles.time} maxFontSizeMultiplier={TIME_MAX_SCALE}>
           {start}
         </Text>
-        {end ? (
-          <Text style={styles.timeEnd} maxFontSizeMultiplier={TIME_MAX_SCALE}>
-            {end}
-          </Text>
-        ) : null}
+
       </View>
       <View style={styles.trackColumn}>
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
         <Track kind={lineOf(next)} color={color} from={12} />
-        <Node node={node} color={color} />
+        <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line"><Node node={node} color={color} centered /></View>
       </View>
       <View style={styles.placeOuter}>
         {/* The row the cursor is on: a pale fill of the route colour (H2). */}
@@ -190,20 +195,15 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
           style={[styles.place, selected && { backgroundColor: `${color}1A` }]}
           testID={selected ? 'timeline-selected' : undefined}
         >
-          {/* Two lines kept while the address is asked for (判定表「清單節點的內容」). */}
-          <Text
-            style={[styles.address, lines.titleMuted && styles.asking]}
-            testID="place-title"
-          >
-            {lines.title}
-          </Text>
-          {(pill || lines.coordinates || note) && <View style={styles.second}>
-            <Pill pill={pill} color={color} />
-            {lines.coordinates ? (
-              <Text style={styles.note}>{lines.coordinates}</Text>
-            ) : null}
-            {note ? <Text style={styles.note}>{note}</Text> : null}
-          </View>}
+          <View style={styles.placeHeading}>
+            {pill && <View style={[styles.firstLineCenter, firstLine]} testID="place-pill-first-line"><Pill pill={pill} color={color} /></View>}
+            {pending ? <View style={[styles.address, styles.firstLineCenter, firstLine]}>
+              <Skeleton shape="address" testID="place-address-pending" />
+            </View> : <Text style={[styles.address, place?.state !== 'found' && styles.addressMissing]} testID="place-title">
+              {title}
+            </Text>}
+          </View>
+          {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
       </View>
     </Pressable>
@@ -235,15 +235,17 @@ function SectionRowView({ section, color, onPress }) {
       accessibilityLabel={sectionSpeech(section)}
     >
       <View style={[styles.timeColumn, timeWidth()]} />
-      <View style={styles.trackColumn}>
+      <View style={[styles.trackColumn, styles.transportTrack]}>
         <Track kind={lineOf(section)} color={color} />
+        <View style={styles.transportIcon}>
+          <Glyph
+            name={text.icon}
+            color={muted ? colors.iconMuted : color}
+            size={sizes.timeline.icon}
+          />
+        </View>
       </View>
       <View style={styles.sectionText}>
-        <Glyph
-          name={text.icon}
-          color={muted ? colors.iconMuted : color}
-          size={sizes.timeline.icon}
-        />
         <Text style={styles.movement}>
           {text.lead}
           {text.time ? ' ' : ''}
@@ -270,7 +272,7 @@ function HistoryTimelineList({
   onPressNode,
   onRowLayout,
 }) {
-  const nodes = model.nodes;
+  const nodes = useMemo(() => timelinePresentation(model.nodes), [model.nodes]);
   const places = usePlaceNames(
     nodes.map(node => (isSection(node) ? null : node)),
   );
@@ -309,9 +311,9 @@ function HistoryTimelineList({
   );
 }
 
-// Rows are 40dp at least with 12dp between: 4dp more above and below reach
-// 48dp without overlapping the next row.
-const ROW_SLOP = { top: (touch.min - sizes.timeline.sectionHeight) / 2, bottom: (touch.min - sizes.timeline.sectionHeight) / 2 };
+// Transport rows are tall enough to expose line above and below the glyph.
+// Only shorter footprints need extra slop to reach the minimum hit target.
+const ROW_SLOP = { top: space.xs, bottom: space.xs };
 
 const isSection = node => ['movement', 'gap'].includes(node?.type);
 
@@ -343,12 +345,9 @@ const getStyles = makeStyles(theme => {
       fontVariant: ['tabular-nums'],
 
     },
-    timeEnd: {
-      color: colors.textMuted,
-      fontSize: type.small.fontSize,
-      fontVariant: ['tabular-nums'],
-    },
     trackColumn: { width: TRACK_WIDTH, alignItems: 'center' },
+    transportTrack: { justifyContent: 'center' },
+    transportIcon: { backgroundColor: colors.elevated, paddingVertical: space.xs },
     track: {
       position: 'absolute',
       bottom: 0,
@@ -424,21 +423,21 @@ const getStyles = makeStyles(theme => {
       borderRadius: radius.input,
       overflow: 'hidden',
     },
+    firstLineCenter: { justifyContent: 'center', alignItems: 'center' },
+    placeHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.xs },
     address: {
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: 0,
+      minWidth: touch.min,
       color: colors.text,
       ...type.cardTitle,
 
       fontVariant: ['tabular-nums'],
     },
-    asking: { color: colors.textMuted, fontWeight: type.body.fontWeight, minHeight: sizes.timeline.sectionHeight },
-    second: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      alignItems: 'center',
-      gap: space.s,
-      marginTop: space.xs,
-    },
+    addressMissing: { color: colors.textMuted, fontWeight: type.body.fontWeight },
     pill: {
+      maxWidth: '100%',
       // 18dp, taller with a large system font (膠囊可以變高、不裁字).
       minHeight: sizes.timeline.pill.height,
       borderRadius: radius.full,

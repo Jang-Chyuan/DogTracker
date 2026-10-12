@@ -1,6 +1,49 @@
 import fs from 'fs';
 import path from 'path';
 const files = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(path.join(directory, entry.name)) : [path.join(directory, entry.name)]);
+test('private cloud attempt logger requires opt-in and the exact integer schema, rebuilding without caller serialization', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const { privateCloudAttemptDiagnostic } = require('../src/logger');
+  const { createCloudAttemptDiagnostics } = require('../src/diagnostics/CloudAttemptDiagnostics');
+  let valid;
+  const observer = createCloudAttemptDiagnostics({ enabled: () => true, clock: () => 0, sink: value => { valid = value; } });
+  observer.begin(1).finish(1, 'download', 'timeout', true); observer.close();
+  const previous = global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__;
+  try {
+    delete global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__;
+    privateCloudAttemptDiagnostic(valid); expect(spy).not.toHaveBeenCalled();
+    global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__ = true;
+    const inherited = Object.assign(Object.create({ toJSON: () => 'private-url' }), valid);
+    privateCloudAttemptDiagnostic(inherited);
+    expect(spy.mock.calls).toEqual([['DOGTRACKER_PRIVATE_CLOUD_ATTEMPT', JSON.stringify(valid)]]);
+    spy.mockClear();
+    for (const key of Object.keys(valid)) {
+      for (const bad of ['private-url', 1.5, Infinity, NaN, new Error('private-token')])
+        privateCloudAttemptDiagnostic({ ...valid, [key]: bad });
+      const missing = { ...valid }; delete missing[key]; privateCloudAttemptDiagnostic(missing);
+    }
+    for (const [key, bad] of [['schema', 2], ['attempt', 0], ['attempt', 2147483648], ['terminal', 4],
+      ['phase', 7], ['phase', -2], ['failureKind', 5], ['foreground', 2], ['clockValid', 2],
+      ['storageAggregate', 0], ['capped', 2], ['fetchStatus', 99], ['allFetchStatus', 600], ['fetchMs', -1]])
+      privateCloudAttemptDiagnostic({ ...valid, [key]: bad });
+    for (const extra of [{ url: 'private-url' }, { auth: 'private-token' }, { toJSON: () => 'private-token' },
+      { [Symbol('private-token')]: 1 }]) privateCloudAttemptDiagnostic({ ...valid, ...extra });
+    const hidden = { ...valid }; Object.defineProperty(hidden, 'private', { value: 'private-token' });
+    privateCloudAttemptDiagnostic(hidden);
+    expect(spy).not.toHaveBeenCalled();
+    let reads = 0;
+    const once = { ...valid };
+    Object.defineProperty(once, 'fetchMs', { enumerable: true, get: () => ++reads === 1 ? 0 : 'private-token' });
+    privateCloudAttemptDiagnostic(once);
+    expect(reads).toBe(1); expect(JSON.parse(spy.mock.calls[0][1])).toEqual(valid);
+    spy.mockImplementation(() => { throw new Error('sink refused'); });
+    expect(() => privateCloudAttemptDiagnostic(valid)).not.toThrow();
+  } finally {
+    if (previous === undefined) delete global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__;
+    else global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__ = previous;
+    spy.mockRestore();
+  }
+});
 test('src has no console.log/info bypasses for sensitive fields outside logger', () => {
   for (const file of files(path.join(__dirname, '../src')).filter(name => /\.[jt]sx?$/.test(name) && !name.endsWith('/logger.js'))) {
     expect(fs.readFileSync(file, 'utf8')).not.toMatch(/console\s*\.\s*(log|info|warn|error)\s*\(/);
@@ -57,7 +100,7 @@ test('release publication events rebuild only bounded numeric fields', () => {
   const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
   try {
     const { cloudSyncDiagnostic } = require('../src/logger');
-    for (const event of ['latest-published', 'archive-published']) {
+    for (const event of ['latest-published', 'archive-published', 'latest-applied']) {
       cloudSyncDiagnostic(event, { attempt: 2, elapsedMs: 123, revision: 3,
         owner: 'private', master: 7, slave: 6, cutoff: 1791547200000, url: 'https://private.invalid',
         payload: { latitude: 25 }, error: new Error('private') });
@@ -65,14 +108,51 @@ test('release publication events rebuild only bounded numeric fields', () => {
     expect(spy.mock.calls).toEqual([
       ['[CloudSync] latest-published', { attempt: 2, elapsedMs: 123, revision: 3 }],
       ['[CloudSync] archive-published', { attempt: 2, elapsedMs: 123, revision: 3 }],
+      ['[CloudSync] latest-applied', { attempt: 2, elapsedMs: 123, revision: 3 }],
     ]);
     spy.mockClear();
-    for (const event of ['latest-published', 'archive-published']) {
+    for (const event of ['latest-published', 'archive-published', 'latest-applied']) {
       for (const revision of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1, 'private'])
         cloudSyncDiagnostic(event, { attempt: 1, elapsedMs: 0, revision });
       for (const elapsedMs of [-1, NaN, Infinity, 'private'])
         cloudSyncDiagnostic(event, { attempt: 1, elapsedMs, revision: 1 });
     }
+    expect(spy).not.toHaveBeenCalled();
+  } finally { spy.mockRestore(); }
+});
+
+test('release context events rebuild only aggregate counts and the shared failure enum', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  try {
+    const { cloudSyncDiagnostic } = require('../src/logger');
+    const privateFields = { owner: 'private-account', masterIds: [7], slaveId: 6, cutoff: 1791547200000,
+      url: 'https://private.invalid', payload: { latitude: 25 }, error: new Error('private response'), status: 503 };
+    const failed = { attempt: 2, elapsedMs: 10000, failureKind: 'timeout', dogs: 3, completedDogs: 1, requests: 5 };
+    cloudSyncDiagnostic('context-failed', { ...privateFields, ...failed });
+    cloudSyncDiagnostic('context-published', { ...privateFields, ...failed });
+    for (const failureKind of ['auth', 'network', 'storage', 'unknown'])
+      cloudSyncDiagnostic('context-failed', { ...failed, failureKind, completedDogs: 0, requests: 0, dogs: 0 });
+    expect(spy.mock.calls).toEqual([
+      ['[CloudSync] context-failed', failed],
+      ['[CloudSync] context-published', { attempt: 2, elapsedMs: 10000, dogs: 3 }],
+      ...['auth', 'network', 'storage', 'unknown'].map(failureKind => ['[CloudSync] context-failed',
+        { ...failed, failureKind, dogs: 0, completedDogs: 0, requests: 0 }]),
+    ]);
+    spy.mockClear();
+    const invalid = [
+      ['attempt', 0], ['attempt', 1.5], ['attempt', 'private-account'],
+      ['elapsedMs', -1], ['elapsedMs', NaN], ['elapsedMs', Infinity], ['elapsedMs', 'private'],
+      ['dogs', -1], ['dogs', 1.5], ['dogs', Number.MAX_SAFE_INTEGER + 1], ['dogs', '3'],
+    ];
+    for (const [key, value] of invalid) {
+      cloudSyncDiagnostic('context-failed', { ...failed, [key]: value });
+      cloudSyncDiagnostic('context-published', { ...failed, [key]: value });
+    }
+    for (const [key, value] of [['failureKind', 'server'], ['failureKind', 'https://private.invalid'],
+      ['failureKind', new Error('private')], ['failureKind', undefined],
+      ['completedDogs', -1], ['completedDogs', 4], ['completedDogs', 0.5], ['completedDogs', undefined],
+      ['requests', -1], ['requests', 2.5], ['requests', 'private'], ['requests', undefined]])
+      cloudSyncDiagnostic('context-failed', { ...failed, [key]: value });
     expect(spy).not.toHaveBeenCalled();
   } finally { spy.mockRestore(); }
 });
@@ -83,7 +163,11 @@ test('a refused logging sink cannot change cloud download outcomes', () => {
     const { cloudSyncDiagnostic } = require('../src/logger');
     expect(() => cloudSyncDiagnostic('latest-published', { attempt: 1, elapsedMs: 0, revision: 1 })).not.toThrow();
     expect(() => cloudSyncDiagnostic('archive-published', { attempt: 1, elapsedMs: 0, revision: 1 })).not.toThrow();
+    expect(() => cloudSyncDiagnostic('latest-applied', { attempt: 1, elapsedMs: 0, revision: 1 })).not.toThrow();
     expect(() => cloudSyncDiagnostic('failure', { attempt: 1, phase: 'download', failureKind: 'network' })).not.toThrow();
+    expect(() => cloudSyncDiagnostic('context-failed', { attempt: 1, elapsedMs: 0, failureKind: 'timeout',
+      dogs: 1, completedDogs: 0, requests: 1 })).not.toThrow();
+    expect(() => cloudSyncDiagnostic('context-published', { attempt: 1, elapsedMs: 0, dogs: 1 })).not.toThrow();
   } finally { spy.mockRestore(); }
 });
 
@@ -111,4 +195,19 @@ test('latest timing extension is all-or-none fixed elapsed numbers; private fiel
     expect(spy.mock.calls).toHaveLength(42);
     for (const entry of spy.mock.calls) expect(entry).toEqual(['[CloudSync] latest-published', base]);
   } finally { spy.mockRestore(); }
+});
+test('history read/model diagnostics stay silent unless the private flag is enabled', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const { historyReadDiagnostic, historyModelDiagnostic, HISTORY_READ_FLAGS } = require('../src/logger');
+  const read = { sequence: 1, phase: 'row', event: 'begin', elapsedMs: 1,
+    ...Object.fromEntries(HISTORY_READ_FLAGS.map(key => [key, false])) };
+  const model = { sequence: 1, stage: 'replay', elapsedMs: 1, inputCount: 2 };
+  try {
+    delete global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__;
+    historyReadDiagnostic(read); historyModelDiagnostic(model);
+    expect(spy).not.toHaveBeenCalled();
+    global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__ = true;
+    historyReadDiagnostic(read); historyModelDiagnostic(model);
+    expect(spy.mock.calls.map(([tag]) => tag)).toEqual(['[HistoryRead]', '[HistoryModel]']);
+  } finally { delete global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__; spy.mockRestore(); }
 });

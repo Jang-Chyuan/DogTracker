@@ -1,13 +1,49 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { useHistoryDayRows } from '../src/mapHistory/useHistoryScreen';
+import { applyHistoryHolds } from '../src/placement/IndoorHold';
 const day = new Date(2026, 0, 1).getTime();
-const late = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+const late = () => { let resolve, reject; const promise = new Promise((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
+test('expanded today cutoff still waits for fresh read, then reuses only an exactly unchanged full input', async () => {
+  let renderer, state, cutoff = day + 3600000;
+  const pending = late(), ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 1 };
+  const getter = () => ledger, answer = { rows: [{ id: 1, source: 'cloud', time: day + 1000 }], seed: [], after: { cloud: { id: 1 } } };
+  const read = jest.fn().mockResolvedValueOnce(answer).mockImplementationOnce(() => pending.promise);
+  function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: 6, day, owner: 'a', clock: () => cutoff,
+    getPublication: getter, publishedReads: true, publicationRevision: ledger.publishedRevision, requireFresh: true, readEnd: cutoff }); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); }); const rows = state.rows, replay = state.replayHolds;
+    cutoff += 1000; await act(async () => renderer.update(<Probe />));
+    expect(state.loaded).toBe(false); expect(read).toHaveBeenCalledTimes(2); expect(read.mock.calls[1][0].end).toBe(cutoff);
+    await act(async () => pending.resolve({ ...answer, rows: answer.rows.map(row => ({ ...row })) }));
+    expect(state.loaded).toBe(true); expect(state.rows).toBe(rows); expect(state.replayHolds).toBe(replay);
+  } finally { pending.resolve(answer); if (renderer) await act(async () => renderer.unmount()); }
+});
+test('exact fresh reuse keeps incremental hold output equivalent when a later cursor appends genuinely new packets', async () => {
+  jest.useFakeTimers(); let renderer, state;
+  const ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 1 };
+  const getter = () => ledger;
+  const packets = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, source: 'cloud', time: day + (i + 1) * 60000,
+    latitude: 25 + i * 0.000001, longitude: 121, satellites: i < 4 ? 9 : 0, hdop: 1 }));
+  const read = jest.fn().mockResolvedValue({ rows: packets.slice(0, 6), seed: [], after: { cloud: { id: 6 } } });
+  function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: 6, day, owner: 'a', clock: () => day + 86400000,
+    getPublication: getter, publishedReads: true, publicationRevision: ledger.publishedRevision, requireFresh: true }); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    state.replayHolds(state.rows); const replay = state.replayHolds;
+    ledger.dataRevision++; ledger.publishedRevision += 2; await act(async () => renderer.update(<Probe />));
+    expect(state.replayHolds).toBe(replay); expect(state.replayHolds(state.rows)).toEqual(applyHistoryHolds(packets.slice(0, 6)));
+    read.mockResolvedValue({ rows: packets.slice(6), after: { cloud: { id: 8 } } });
+    await act(async () => jest.advanceTimersByTimeAsync(60000));
+    expect(read.mock.calls.at(-1)[0].after).toEqual({ cloud: { id: 6 } });
+    expect(state.rows).toHaveLength(8); expect(state.replayHolds(state.rows)).toEqual(applyHistoryHolds(packets));
+  } finally { if (renderer) await act(async () => renderer.unmount()); jest.useRealTimers(); }
+});
 test('unchanged physical publication preserves rows and hold pass; material change restarts them', async () => {
   let renderer, state;
   const ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 1 };
   const getter = () => ledger;
-  const read = jest.fn(async () => ({ rows: [{ id: 1, source: 'cloud', time: day + 1000 }], after: { cloud: 1 } }));
+  const read = jest.fn(async () => ({ rows: [{ id: ledger.dataRevision, source: 'cloud', time: day + 1000 }], after: { cloud: 1 } }));
   function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: 6, day, owner: ledger.owner,
     clock: () => day + 86400000, getPublication: getter, publishedReads: true, publicationRevision: ledger.publishedRevision, requireFresh: true }); return null; }
   try {
@@ -65,4 +101,83 @@ test.each([null, undefined, NaN, -1])('unknown material token %s preserves legac
     await act(async () => renderer.update(<Probe />));
     expect(read).toHaveBeenCalledTimes(4);
   } finally { if (renderer) await act(async () => renderer.unmount()); }
+});
+
+test('a first day read blocked by native publication wakes on its completed publication signal', async () => {
+  jest.useFakeTimers(); let renderer, state;
+  const ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: true, publishedRevision: 1, dataRevision: 1 };
+  const getter = () => ledger;
+  const read = jest.fn(async () => ({ rows: [{ id: 2, time: day + 2000 }], after: {} }));
+  function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: 6, day, owner: 'a', clock: () => day + 86400000,
+    getPublication: getter, publishedReads: true, publicationRevision: ledger.publishedRevision, requireFresh: true }); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(read).not.toHaveBeenCalled(); expect(state.loaded).toBe(false);
+    ledger.publishedRevision++;
+    await act(async () => renderer.update(<Probe />));
+    await act(async () => jest.advanceTimersByTimeAsync(1));
+    expect(read).not.toHaveBeenCalled();
+    ledger.publishedPending = false; ledger.publishedRevision++;
+    await act(async () => renderer.update(<Probe />));
+    await act(async () => jest.advanceTimersByTimeAsync(1));
+    expect(read).toHaveBeenCalledTimes(1); expect(state.loaded).toBe(true);
+    expect(state.rows.map(row => row.id)).toEqual([2]);
+  } finally { if (renderer) await act(async () => renderer.unmount()); jest.useRealTimers(); }
+});
+
+test.each(['resolve', 'reject'])('completed publication signals retry an invalid in-flight %s without accepting stale rows or waiting fifteen seconds', async outcome => {
+  jest.useFakeTimers(); let renderer, state;
+  const pending = late();
+  const ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 1 };
+  const getter = () => ledger;
+  const read = jest.fn().mockImplementationOnce(() => pending.promise)
+    .mockResolvedValue({ rows: [{ id: 2, time: day + 2000 }], after: {} });
+  function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: 6, day, owner: 'a', clock: () => day + 86400000,
+    getPublication: getter, publishedReads: true, publicationRevision: ledger.publishedRevision, requireFresh: true }); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    ledger.publishedPending = true; ledger.publishedRevision++;
+    await act(async () => renderer.update(<Probe />));
+    ledger.publishedPending = false; ledger.publishedRevision++;
+    await act(async () => renderer.update(<Probe />));
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      if (outcome === 'reject') pending.reject(new Error('old read failed'));
+      else pending.resolve({ rows: [{ id: 99, time: day + 1000 }], after: { cloud: 99 } });
+    });
+    expect(state.loaded).toBe(false); expect(state.rows).toEqual([]);
+    await act(async () => jest.advanceTimersByTimeAsync(1));
+    expect(read).toHaveBeenCalledTimes(2); expect(state.loaded).toBe(true);
+    expect(state.rows.map(row => row.id)).toEqual([2]);
+    expect(read.mock.calls[1][0].after).toEqual({});
+  } finally { if (renderer) await act(async () => renderer.unmount()); jest.useRealTimers(); }
+});
+
+test('a completed publication wakes only the current owner, dog and day while the replaced reader is still pending', async () => {
+  jest.useFakeTimers(); let renderer, state;
+  const old = late();
+  const ledger = { scope: {}, owner: 'a', generation: 1, publishedPending: false, publishedRevision: 0, dataRevision: 1 };
+  const getter = () => ledger;
+  let selectedDay = day, selectedDog = 6;
+  const read = jest.fn().mockImplementationOnce(() => old.promise)
+    .mockResolvedValue({ rows: [{ id: 2, time: day + 86402000 }], after: {} });
+  function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: selectedDog, day: selectedDay, owner: ledger.owner,
+    clock: () => day + 2 * 86400000, getPublication: getter, publishedReads: true,
+    publicationRevision: ledger.publishedRevision, requireFresh: true }); return null; }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    ledger.owner = 'b'; ledger.scope = {}; ledger.generation++; ledger.publishedPending = true; ledger.publishedRevision++;
+    selectedDay += 86400000; selectedDog = 4;
+    await act(async () => renderer.update(<Probe />));
+    expect(state.loaded).toBe(false); expect(state.rows).toEqual([]);
+    ledger.publishedPending = false; ledger.publishedRevision++;
+    await act(async () => renderer.update(<Probe />));
+    await act(async () => jest.advanceTimersByTimeAsync(1));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(read.mock.calls[1][0]).toMatchObject({ owner: 'b', slaveId: 4, start: selectedDay, after: {} });
+    expect(state.rows.map(row => row.id)).toEqual([2]);
+    await act(async () => old.resolve({ rows: [{ id: 99, time: day + 1000 }], after: { cloud: 99 } }));
+    await act(async () => jest.advanceTimersByTimeAsync(1));
+    expect(read).toHaveBeenCalledTimes(2); expect(state.rows.map(row => row.id)).toEqual([2]);
+  } finally { if (renderer) await act(async () => renderer.unmount()); jest.useRealTimers(); }
 });

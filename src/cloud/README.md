@@ -91,6 +91,33 @@ WorkManager 不保存 JWT，執行時從既有安全儲存恢復並更新 Sessio
 
 BLE 是手機收到的時間、雲端是 Master 收到的時間，兩個時鐘不同；Master 時鐘來源未確認前，「哪筆最新」的判斷仍可能受時鐘誤差影響。
 
+## 最新位置先發布，完整歷史另外發布（`CloudSync.js`）
+
+每輪自動同步分成三個獨立階段，各自有版本：
+
+1. **最新位置**：先取每隻可讀取的狗的最新封包與最後有效定位，提交成 latest snapshot（`snapshotRevision`），地圖立刻可用。
+2. **停住脈絡**：再補完整的室內停住脈絡，成功時同一個 snapshot 版本再前進一次；失敗或逾時只保留已接受的最新位置，不把不完整的脈絡交給停住判斷，也不用空集合蓋掉先前的脈絡。
+3. **完整歷史（archive）**：分頁下載先寫入 staging，每頁與 `event_id` 游標同一個交易提交；只有整輪完成才一次發布 staged 資料與完整性證明（`archiveRevision`）。失敗、取消或換帳號都不改已接受的 snapshot，也不發布半套歷史；重建資料庫連線或排程後從保存的游標續傳。活動頁的「完整歷史」閘門在 archive 發布前保持關閉。
+
+雲端回應可能少於要求的 1,000 筆，下載必須讀到空頁才算結束：每頁 1,000 筆等於 Supabase 預設的 `max-rows`，沒有餘裕，而且結束點會成為 checkpoint 與完整性證明，所以完整歷史與手動下載不使用短頁停止。會員清單與停住脈絡每頁只要 500 筆，低於 `CloudPaging.js` 的 `CLOUD_SERVER_ROW_CAP`（1,000），回傳少於 500 筆就是最後一頁，不再多送一次空頁請求；整頁 500 筆仍會讀下一頁。手動下載指定日期是另一個交易：完成的狗與日期才有完整證明，不覆蓋地圖的 snapshot，也不帶出另一個未完成的自動下載。
+
+## 發布階段診斷（`logger.js` 的 `cloudSyncDiagnostic`）
+
+Release 版只輸出固定欄位的雲端同步紀錄，用來核對實際發布次序：
+
+| 事件 | 欄位 | 何時 |
+| --- | --- | --- |
+| `failure` | `attempt`、`phase`、`failureKind`、`status` | 一輪失敗 |
+| `recovered` | `attempt`、`elapsedMs` | 失敗後再次成功 |
+| `latest-published` | `attempt`、`elapsedMs`、`revision`，另可附固定的各階段耗時 | 最新位置提交並通過目前世代／取消檢查；停住脈絡完成不再送一次 |
+| `archive-published` | `attempt`、`elapsedMs`、`revision` | 自動下載的完整歷史發布完成；手動下載、部分 staging、失敗或取消都不送 |
+| `context-published` | `attempt`、`elapsedMs`、`dogs` | 停住脈絡下載並寫入 snapshot 完成 |
+| `context-failed` | `attempt`、`elapsedMs`、`failureKind`、`dogs`、`completedDogs`、`requests` | 停住脈絡逾時（10 秒預算）或失敗；最新位置與 archive 照常，不改 UI 也不另外重試。換帳號、離開前景或被新一輪最新位置取代的取消不送 |
+
+`context-*` 的 `elapsedMs` 從停住脈絡階段開始算（不是整輪），逾時約為 10,000；`dogs` 是這輪 snapshot 的狗數，`completedDogs` 是已下載完脈絡的狗數，`requests` 是已送出的脈絡請求數（含逾時當下還沒回應的那一個），三者都是總數。`failureKind` 沿用 `failure` 的列舉（`timeout`／`auth`／`network`／`storage`／`unknown`），`storage` 表示下載完成但寫入 snapshot 失敗。
+
+Logger 只重建這些數值欄位：attempt／revision 是正的安全整數，耗時是有限非負數，狗數與請求數是非負安全整數（`completedDogs` 不得大於 `dogs`）；其他事件名稱、列舉以外的 `failureKind` 與不合法的值，整筆直接丟棄。帳號、Master／Slave 編號、時間戳、URL、座標、payload 與錯誤物件都不會輸出。寫 log 失敗不影響下載結果。換帳號時，舊帳號已開始的原生交易可能仍寫完，但世代檢查讓它不會被記成成功。這些紀錄只看得到發布次序與停住脈絡的請求總數，看不到個別 HTTP 篩選、頁數或後端索引。
+
 ## 驗證
 
 ```powershell
@@ -103,7 +130,7 @@ npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudDataScreen.te
 
 同步驗收：登入後前景每 30 秒；以 `adb shell dumpsys jobscheduler` 檢查 `$PACKAGE/androidx.work.impl.background.systemjob.SystemJobService`（先設 `PACKAGE=${PACKAGE:-com.antgo.dogtracker}`，若 debug 設有 applicationIdSuffix 也須包含） 的週期與網路條件。切到桌面／鎖屏後觀察工作結束（Logcat tag `CloudHistoryWorker`），本機資料增加且工作之間不持續持有喚醒鎖。斷網工作等待，恢復後續傳；回到前景即讀本機歷史並補下載；登出後排程取消。另驗收程序被系統回收後的冷啟動、帳號切換及長時間 Doze。Android 原生變更需要重新建置安裝 APK。
 
-目前兩個已知帳號皆有 Master 5／7 授權，需另外使用無授權帳號驗證拒絕讀取。不能以 postgres 或 Secret Key 測試使用者 RLS。
+驗證拒絕讀取時，要另外使用沒有任何 Master 授權的測試帳號。不能以 postgres 或 Secret Key 測試使用者 RLS。
 
 「雲端資料」頁的列表可以點任一列展開該筆的**原始雲端 JSON**（下載時就存在 `raw_payload`）。欄位表只有 App 讀得到的欄位，原始紀錄才看得出 payload 還帶了什麼——例如 Master 自己的座標（硬體問題 H2）。
 

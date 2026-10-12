@@ -4,6 +4,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { StyleSheet, Text } from 'react-native';
 import { Circle, Marker } from 'react-native-maps';
 import PhoneLocationOverlay from '../src/map/PhoneLocationOverlay';
+import { lightTheme, darkTheme, ThemeScope } from '../src/theme/ThemeProvider';
 import { locationTrackerNative } from '../src/locationTracker/LocationTrackerService';
 
 jest.mock('../src/locationTracker/LocationTrackerService', () => ({
@@ -14,6 +15,9 @@ jest.mock('../src/locationTracker/LocationTrackerService', () => ({
 }));
 
 let renderer;
+const dotStyle = () => StyleSheet.flatten(renderer.root.find(node => typeof node.type === 'string'
+  && StyleSheet.flatten(node.props.style)?.width === lightTheme.size.phoneDot.liveDisc
+  && StyleSheet.flatten(node.props.style)?.backgroundColor).props.style);
 const position = {
   latitude: 25,
   longitude: 121,
@@ -41,7 +45,7 @@ const render = async (
       <PhoneLocationOverlay
         Circle={Circle}
         Marker={Marker}
-        location={{ position: value, ageSeconds }}
+        location={{ position: value, ageSeconds, running: true }}
         active={active}
         historical={historical}
       />
@@ -210,10 +214,8 @@ test('stationary locks immediately, stale shows last fix and inactive cancels ti
   );
   expect(renderer.root.findByType(Marker).props.title).toContain('靜止鎖定');
   await render(locked, 4);
-  expect(renderer.root.findByType(Marker).props.title).toContain('已過期');
-  expect(renderer.root.findByType(Circle).props.fillColor).toContain(
-    '100,116,139',
-  );
+  expect(renderer.root.findByType(Marker).props.title).toBe(i18nT('c055'));
+  expect(renderer.root.findByType(Circle).props.fillColor).toBe(lightTheme.literalColors.phoneAccuracyFill);
   await render({ ...position, timestamp: 12000, rawSpeedKmh: 60 });
   await act(async () => jest.advanceTimersByTime(300));
   expect(renderer.root.findByType(Marker).props.coordinate.latitude).toBe(
@@ -236,4 +238,62 @@ test('phone name is a capsule and the expanded bitmap stays anchored on the dot'
   const frame = StyleSheet.flatten(container.props.style);
   expect(marker.props.anchor.y * frame.height).toBe(15);
   expect(frame.width).toBeGreaterThan(30);
+});
+
+
+test.each([['light', lightTheme], ['dark', darkTheme]])('ordinary no-update age keeps phone colour, anchor and last fix time in %s theme', async (name, theme) => {
+  const live = Object.freeze({ running: true, sessionId: 'unchanged', ageSeconds: 0, position: Object.freeze({ ...position }) });
+  const element = location => <ThemeScope theme={theme}><PhoneLocationOverlay Circle={Circle} Marker={Marker} location={location} /></ThemeScope>;
+  await act(async () => { renderer = Renderer.create(element(live)); });
+  const marker = () => renderer.root.findByType(Marker);
+  const initialAnchor = marker().props.anchor;
+  const initialDescription = marker().props.description;
+  const initialDot = dotStyle().backgroundColor;
+  const initialCircle = renderer.root.findByType(Circle).props;
+  for (const ageSeconds of [4, 601, null]) {
+    await act(async () => renderer.update(element({ ...live, ageSeconds })));
+    locationTrackerNative.displayPosition.mockClear();
+    await act(async () => jest.advanceTimersByTime(1000));
+    expect(marker().props.coordinate).toEqual({ latitude: position.latitude, longitude: position.longitude });
+    expect(marker().props.anchor).toEqual(initialAnchor);
+    expect(marker().props.description).toBe(initialDescription);
+    expect(dotStyle().backgroundColor).toBe(initialDot);
+    expect(renderer.root.findByType(Circle).props.fillColor).toBe(initialCircle.fillColor);
+    expect(renderer.root.findByType(Circle).props.strokeColor).toBe(initialCircle.strokeColor);
+    expect(locationTrackerNative.displayPosition).not.toHaveBeenCalled();
+  }
+  expect(live.position.timestamp).toBe(10000);
+});
+
+test('age fence cancels an in-flight interpolation and native display publication without mutating the fix', async () => {
+  const live = { running: true, sessionId: 'a', ageSeconds: 0, position };
+  const element = location => <PhoneLocationOverlay Circle={Circle} Marker={Marker} location={location} />;
+  await act(async () => { renderer = Renderer.create(element(live)); });
+  const next = Object.freeze({ ...position, latitude: 25.002, timestamp: 11000 });
+  await act(async () => renderer.update(element({ ...live, position: next })));
+  await act(async () => jest.advanceTimersByTime(200));
+  expect(renderer.root.findByType(Marker).props.coordinate.latitude).toBeGreaterThan(25);
+  expect(renderer.root.findByType(Marker).props.coordinate.latitude).toBeLessThan(next.latitude);
+  await act(async () => renderer.update(element({ ...live, ageSeconds: 4, position: next })));
+  locationTrackerNative.displayPosition.mockClear();
+  expect(renderer.root.findByType(Marker).props.coordinate.latitude).toBe(next.latitude);
+  await act(async () => jest.advanceTimersByTime(2000));
+  expect(renderer.root.findByType(Marker).props.coordinate.latitude).toBe(next.latitude);
+  expect(locationTrackerNative.displayPosition).not.toHaveBeenCalled();
+  expect(locationTrackerNative.clearDisplayPosition).toHaveBeenCalledWith('a');
+  expect(next).toEqual({ ...position, latitude: 25.002, timestamp: 11000 });
+});
+
+test.each([
+  ['permission/service problem', true, true, true],
+  ['confirmed stopped', false, false, true],
+  ['unknown recording state', false, null, false],
+])('%s is distinct from ordinary age, never published as a fresh display fix', async (name, phoneProblem, running, muted) => {
+  const location = { position, ageSeconds: 0, sessionId: 'a', running };
+  await act(async () => { renderer = Renderer.create(<PhoneLocationOverlay Circle={Circle} Marker={Marker} location={location} phoneProblem={phoneProblem} />); });
+  expect(dotStyle().backgroundColor)
+    .toBe(muted ? lightTheme.literalColors.stalePhoneDot : lightTheme.literalColors.phoneDot);
+  await act(async () => jest.advanceTimersByTime(1000));
+  expect(locationTrackerNative.displayPosition).not.toHaveBeenCalled();
+  expect(renderer.root.findByType(Marker).props.description).toContain(new Date(position.timestamp).toLocaleTimeString());
 });

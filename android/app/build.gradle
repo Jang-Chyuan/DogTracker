@@ -80,8 +80,10 @@ if (localPropertiesFile.exists()) localPropertiesFile.withInputStream { localPro
 def googleMapsApiKey = (System.getenv('GOOGLE_MAPS_ANDROID_API_KEY') ?: localProperties.getProperty('GOOGLE_MAPS_ANDROID_API_KEY', '')).trim()
 
 // scripts/app-version.js: CI uses the full HEAD commit count; local builds stop
-// at the merge-base with origin/main (see README). Explicit APP_VERSION_NAME /
-// APP_VERSION_CODE overrides must be supplied together. Gradle launched from an
+// at the merge-base with origin/main (see README). versionCode is that count
+// plus VERSION_CODE_OFFSET (1000); versionName keeps the plain count. Explicit
+// APP_VERSION_NAME / APP_VERSION_CODE overrides must be supplied together and
+// are used as-is. Gradle launched from an
 // IDE may not see nvm/Homebrew node on PATH: set NODE_BINARY (environment or
 // android/local.properties) to an absolute node path then.
 def nodeBinary = (System.getenv('NODE_BINARY') ?: localProperties.getProperty('NODE_BINARY', 'node')).trim()

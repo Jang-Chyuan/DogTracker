@@ -312,9 +312,12 @@ test('history rejects a mixed published read without consuming its cursor, then 
     await act(async () => { renderer = Renderer.create(<Probe />); });
     expect(state.loaded).toBe(false);
     expect(state.rows).toEqual([]);
-    await act(async () => jest.advanceTimersByTimeAsync(15000));
+    // Completion wakes the rejected read before the ordinary polling interval.
+    await act(async () => jest.advanceTimersByTimeAsync(1));
+    expect(state.loaded).toBe(true);
     expect(state.rows.map(row => row.id)).toEqual([1]);
     expect(read).toHaveBeenCalledTimes(2);
+    expect(read.mock.calls[1][0].after).toEqual({});
   } finally { if (renderer) await act(async () => renderer.unmount()); jest.useRealTimers(); }
 });
 

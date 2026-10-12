@@ -4,13 +4,13 @@ import { rangeSummaryLines } from '../src/mapHistory/HistoryRangeSummary';
 import { pngTitle } from '../src/mapHistory/ExportPNG';
 
 test.each(['phone', 'dog'])('vehicle summary follows only the selected range for %s', subject => {
-  const vehicle = { type: 'movement', mode: subject === 'phone' ? 'driving' : 'ride', start: 10, end: 20 };
+  const vehicle = { type: 'movement', mode: subject === 'phone' ? 'driving' : 'ride', start: 10, end: 20, distanceM: 2000 };
   expect(vehicleExclusion({ nodes: [] }, subject)).toBe('');
   expect(vehicleExclusion({ nodes: [vehicle] }, subject)).toBe(subject === 'phone' ? i18nT("c673") : i18nT("c672"));
   expect(sectionText({ ...vehicle, durationMs: 60000, distanceM: 1000 }).rest).toBe('・1.0 km');
   const model = { points: [{ time: 10 }], nodes: [vehicle], distanceM: 1000, durationMs: 60000 };
   expect(rangeSummaryLines(model, { subject, open: true, range: { start: 10, end: 20 } }).detail)
-    .toContain(vehicleExclusion(model, subject));
+    .toBe(subject === 'phone' ? '走路 1.0 km・開車 2.0 km' : '移動 1.0 km・坐車 2.0 km');
 });
 
 test('PNG title carries the range-specific exclusion captured for that subject', () => {

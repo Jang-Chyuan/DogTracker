@@ -1,7 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { Platform } from 'react-native';
-import MapView from 'react-native-maps';
+import MapView, { mockCamera } from 'react-native-maps';
 import MapScreen from '../src/screens/MapScreen';
 import TrackingMap from '../src/map/TrackingMap';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
@@ -9,6 +9,7 @@ import { buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { historyTargetOf } from '../src/mapHistory/useHistoryScreen';
 import * as models from '../src/history/screen/HistoryMultiModel';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
+import { measureHistoryMap } from '../test-support/measureHistoryMap';
 
 const mockLive = jest.fn();
 jest.mock('../src/locationTracker/LocationTrackerService', () => ({
@@ -18,6 +19,7 @@ jest.mock('../src/locationTracker/LocationTrackerService', () => ({
 test('unchanged stopped live snapshots retain the historical map and day model', async () => {
   jest.useFakeTimers();
   jest.setSystemTime(FIXTURE_NOW);
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 200, y: 240 }));
   const os = Platform.OS;
   Platform.OS = 'android';
   const fixture = buildFixture('history-my-route');
@@ -40,9 +42,13 @@ test('unchanged stopped live snapshots retain the historical map and day model',
     });
     await act(async () => tree.root.findByType(MapView).props.onMapReady());
     await act(async () => tree.root.findByType(MapView).props.onMapLoaded());
+    await act(async () => measureHistoryMap(tree));
     // Let cold-start framing / phone wait timers settle before counting idle work.
     await act(async () => jest.advanceTimersByTimeAsync(10000));
+    expect(tree.root.findByType(TrackingMap).props.historyControls.ready).toBe(true);
+    expect(tree.root.findAll(node => typeof node.type === 'string' && node.props.testID === 'history-cursor-handle')).toHaveLength(1);
     const before = commits, calls = model.mock.calls.length, reads = mockLive.mock.calls.length;
+    const projections = mockCamera.pointForCoordinate.mock.calls.length;
     const geometry = tree.root.findByType(TrackingMap).props.presentation.historyRoute;
     expect(geometry.points.length).toBeGreaterThan(0);
     for (let i = 0; i < 5; i += 1)
@@ -51,9 +57,11 @@ test('unchanged stopped live snapshots retain the historical map and day model',
     expect(tree.root.findByType(TrackingMap).props.presentation.historyRoute).toBe(geometry);
     expect(mockLive.mock.calls.length - reads).toBe(5);
     expect(commits - before).toBe(0);
+    expect(mockCamera.pointForCoordinate.mock.calls.length - projections).toBe(0);
   } finally {
     await act(async () => tree?.unmount());
     model.mockRestore();
+    delete mockCamera.pointForCoordinate;
     Platform.OS = os;
     jest.useRealTimers();
   }

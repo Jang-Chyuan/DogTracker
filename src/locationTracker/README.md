@@ -13,6 +13,8 @@
 - 保存空窗診斷（PR 116）：拒收依原因計數（stale／duplicate／invalid／accuracy／jump）。超過 60 秒沒有保存任何一筆時，記下該段的起訖時間、收到／接受筆數、各原因拒收數、最舊過期定位秒數與最佳被拒精度（最多 300 段，只在記憶體）。只含次數與時間，不含任何座標；正式版用 `adb shell dumpsys activity service com.dogtracker/.location.LocationTrackerService` 讀取（服務未執行時顯示 not running）。Samsung One UI 在手機靜止、螢幕關閉且未充電時會由系統停掉 GPS（NSFLP「GPS stop by sensor」），之後只剩 Wi-Fi／基地台定位，這段可能完全沒有合格新定位；這是系統行為，App 不能關閉。
 - 新定位必須具有有效、有限、非負的水平估計精度；原始速度 > 20 km/h 時要求 < 50 公尺，其餘情況要求 ≤ 30 公尺；未知或超過門檻時顯示等待提示，不寫入且不推進記錄時間限制。既有資料不刪除。
 - 最近 3 個有效樣本平均；速度 > 10 km/h 時，最新點權重為 90%。超過 3 秒的樣本間隔重設平滑視窗。平滑不代表實際精度提高；估計精度仍保留定位來源回報值。
+- 即時藍點另有顯示用的小範圍抑制（`src/map/PhoneDisplayPosition.js`）：原始速度 < 1 km/h 且有有效精度時，離上次顯示位置 min(3 m, 精度 / 3) 以內不移動；和保持的位置比，慢慢累積離開範圍就會更新。只影響畫面，不改儲存的座標，也不是靜止判定；歷史重播不再套用。
+- 不降低原始定位請求頻率（例如靜止時拉長間隔）：少掉的樣本會改變平滑、靜止判定與解除時間，以及歷史停留的代表位置與起訖，結果無法保持一致。要省電須另做取樣設計，並用回放比對前後結果。
 - 即時地圖由 `useLiveLocation` 每秒讀取原生記憶體快照；診斷記錄清單由 `useLocationTracker` 呼叫 `readPage` 讀取 SQLite，每次讀取完成後 10 秒再讀。歷史由 `HistoryDatabase.historyDayRows` 讀取 SQLite 的日期資料，不使用即時記憶體快照。
 - `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 3 分鐘間隔時分段。
 - `LocationTrackerScreen` 是設定 → 診斷 → 記錄清單的分頁清單；日期／時間範圍與匯出在 `src/mapHistory/HistoryScreen.js`。第三版手機 CSV／GPX 以 recorded route 為主座標，CSV 另保留 raw 欄位；裁切與時間用途見 `../mapHistory/ExportBuilders.md`。每秒樣本僅用於定位管線，不全部存入資料庫。

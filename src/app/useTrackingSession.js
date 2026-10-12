@@ -29,16 +29,28 @@ function isForeground(state) {
 // BLE state, or each other's physical tables.
 export function useTrackingSession(createDatabases = createLocalDatabases) {
   const controlsRef = useRef(null);
+  const [cloudControlsReady, setCloudControlsReady] = useState(false);
+  const latestPriority = useRef(null);
+  const deletionFence = useRef(null);
   const [historyDatabase] = useState(() => Object.fromEntries(
     HISTORY_DATABASE_METHODS.map(method => [method, (...args) =>
       controlsRef.current?.historyCommand(method, args) ?? Promise.reject(new Error(t("c487")))]),
   ));
-  const [cloudDatabase] = useState(() => Object.fromEntries(
+  const [cloudDatabase] = useState(() => ({ latestStorageIsolated: createDatabases.latestStorageIsolated === true,
+    ...Object.fromEntries(
     CLOUD_DATABASE_METHODS.map(method => [method,
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
         Promise.reject(new Error(t("c487"))),
     ]),
-  ));
+  ), installLatestReadinessGate(gate) {
+    const previous = latestPriority.current;
+    latestPriority.current = gate;
+    if (previous !== gate) previous?.close();
+    return () => { if (latestPriority.current === gate) latestPriority.current = null; };
+  }, installDeletionFence(fence) {
+    deletionFence.current = fence;
+    return () => { if (deletionFence.current === fence) deletionFence.current = null; };
+  } }));
   // Stable diagnostics adapter; it borrows this owner's real DB and cannot
   // open/close another Nitro connection or access settings tables.
   const [hardwareDatabase] = useState(() => ({
@@ -72,6 +84,8 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
 
   useEffect(() => {
     let disposed = false;
+    const archiveWaiting = new AbortController();
+    setCloudControlsReady(false);
     // Disable old controls while waiting for the prior owner or a failed reopen.
     dispatchTracking({ type: 'reset-all' });
     setPreferences({
@@ -96,6 +110,14 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       const realWrites = new Set();
       const commands = new Set();
       const initialized = { real: false };
+      // Local latest/context display takes this same connection lock. Let its
+      // first attempt finish before cloud migrations can monopolize that lock;
+      // the full route/backfill is deliberately outside this startup barrier.
+      let finishInitialLocalAttempt;
+      const initialLocalAttempt = new Promise(resolve => { finishInitialLocalAttempt = resolve; });
+      // A background-only session does not run the foreground feed. Do not
+      // make background cloud work depend on a snapshot it cannot start.
+      if (!active) finishInitialLocalAttempt();
       const reportedReadErrors = { real: null };
       const reportError = (source, error) => {
         const message = getErrorMessage(error);
@@ -144,6 +166,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
             if (!disposed) {
               dispatchTracking({ type: 'initial-snapshot-ready', source });
               markStartupPhase('initial-snapshot-publish');
+              finishInitialLocalAttempt();
             }
           },
           onRoute(route) {
@@ -183,6 +206,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           onError: error => {
             resumeCatchUp.failed();
             reportError(source, error);
+            // A real local read failure keeps the original error/ready gates.
+            // It must not prevent the independent cloud error/retry path.
+            if (!disposed) finishInitialLocalAttempt();
           },
         });
       const repositories = {
@@ -202,6 +228,9 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
         state => {
           if (disposed) return;
           setPreferences(state);
+          // A failed preference load cannot start the local feed. Release the
+          // independent cloud path without inventing preference/snapshot readiness.
+          if (!state.ready && state.error != null) finishInitialLocalAttempt();
           if (state.ready && !preferencesLoaded) {
             preferencesLoaded = true;
             dispatchTracking({ type: 'refreshing', source: 'real' });
@@ -244,18 +273,57 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
             dispatchTracking({ type: 'refreshing', source: 'real' });
           }
           feeds.real.stop();
+          finishInitialLocalAttempt();
         }
       });
 
-      let cloudInitialization;
+      let cloudInitialization, latestInitialization;
+      async function awaitArchivePriority(expectedOwner = undefined) {
+        if (disposed) throw new Error(t("c483"));
+        const gate = latestPriority.current;
+        if (gate && (!await gate.wait(archiveWaiting.signal, expectedOwner) || latestPriority.current !== gate || !gate.ready()))
+          throw new Error(t("c576"));
+        if (disposed) throw new Error(t("c483"));
+      }
+      function initializeLatest() {
+        if (!databases.cloud) return Promise.reject(new Error(t("c486")));
+        if (!latestInitialization) {
+          // Independent latest schema must not queue behind the archive/local
+          // native worker. Map/Splash still require their existing real local,
+          // preference, receiver and framing conditions independently.
+          const local = databases.cloud.latestStorageIsolated ? Promise.resolve()
+            : initialization.real.then(() => initialLocalAttempt);
+          const task = local.then(() => {
+            if (disposed) throw new Error(t("c483"));
+            return (databases.cloud.initializeLatest ?? databases.cloud.initialize)();
+          });
+          latestInitialization = task;
+          task.catch(() => { if (latestInitialization === task) latestInitialization = null; });
+        }
+        return latestInitialization;
+      }
+      function initializeCloud() {
+        if (!databases.cloud) return Promise.reject(new Error(t("c486")));
+        if (!cloudInitialization) {
+          const task = initialization.real.then(() => initialLocalAttempt).then(async () => {
+            if (disposed) throw new Error(t("c483"));
+            await awaitArchivePriority();
+            return startupPhase('history-cloud-initialize', () => databases.cloud.initialize());
+          });
+          cloudInitialization = task;
+          task.catch(() => { if (cloudInitialization === task) cloudInitialization = null; });
+        }
+        return cloudInitialization;
+      }
       controlsRef.current = {
         historyCommand(method, args) {
           const task = startupPhase('history-real-wait', () => initialization.real).then(async () => {
             if (disposed || !databases.history) throw new Error(t("c485"));
-            // A day read of an account's cloud rows waits for the cloud table's migrations.
-            if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner) {
-              if (!cloudInitialization) cloudInitialization = startupPhase('history-cloud-initialize', () => databases.cloud.initialize()).catch(error => { cloudInitialization = null; throw error; });
-              await startupPhase('history-cloud-wait', () => cloudInitialization);
+            // Only dog history reads this account's cloud rows. My route keeps
+            // its account-scoped UI identity but needs local phone tables only.
+            if (['historyDayRows', 'historyDays'].includes(method) && args[0]?.owner && args[0]?.subject !== 'phone') {
+              await startupPhase('history-cloud-wait', initializeCloud);
+              await awaitArchivePriority(args[0].owner);
             }
             return databases.history[method](...args);
           });
@@ -263,14 +331,15 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           return task.finally(() => commands.delete(task));
         },
         cloudCommand(method, args) {
-          if (!databases.cloud) return Promise.reject(new Error(t("c486")));
-          if (!cloudInitialization) {
-            cloudInitialization = initialization.real.then(() => startupPhase('history-cloud-initialize', () => databases.cloud.initialize()));
-            cloudInitialization.catch(() => { cloudInitialization = null; });
-          }
-          const task = cloudInitialization.then(() => {
+          const latest = ['initializeLatest', 'readLatestSnapshot', 'publishLatestSnapshot'].includes(method);
+          const local = ['loadRangeState', 'saveRangeState'].includes(method)
+            || (['latestStatusRows', 'holdRows'].includes(method) && !args[0]);
+          const readiness = latest ? initializeLatest : local
+            ? () => initialization.real.then(() => initialLocalAttempt).then(initializeLatest) : initializeCloud;
+          const task = readiness().then(async () => {
+            if (!latest && !local) await awaitArchivePriority(typeof args[0] === 'string' ? args[0] : undefined);
             if (disposed) throw new Error(t("c483"));
-            return method === 'initialize' ? undefined : databases.cloud[method](...args);
+            return ['initialize', 'initializeLatest'].includes(method) ? undefined : databases.cloud[method](...args);
           });
           commands.add(task);
           return task.finally(() => commands.delete(task));
@@ -292,7 +361,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           const task = initialization.real.then(() => {
             if (disposed) throw new Error(t("c483"));
             if (!databases.dogData) throw new Error(t("c484"));
-            return databases.dogData.deleteAll(options);
+            return databases.dogData.deleteAll({ ...options, beforeDelete: () => deletionFence.current?.() });
           });
           commands.add(task);
           return task.finally(() => commands.delete(task));
@@ -318,10 +387,16 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           return task.finally(() => realWrites.delete(task));
         },
       };
+      // Admit the independent latest engine only once its real command owner
+      // exists. Local migrations retain their own readiness / Splash gates.
+      setCloudControlsReady(true);
 
       return () => {
         subscription.remove();
         resumeCatchUp.close();
+        // Cancel startup waiters before draining commands. Their disposed guard
+        // rejects without launching migrations, while native reads still drain.
+        finishInitialLocalAttempt();
         // Never close the shared connection while an owned query/write is pending.
         return Promise.allSettled([
           initialization.real,
@@ -339,6 +414,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
     });
     return () => {
       disposed = true;
+      archiveWaiting.abort();
       controlsRef.current = null;
       lifecycle.close().catch(error => {
         logger.error(t("c489"), error);
@@ -348,6 +424,7 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
 
   return {
     cloudDatabase,
+    cloudReady: cloudDatabase.latestStorageIsolated ? cloudControlsReady : trackingSources.real.ready,
     historyDatabase,
     hardwareDatabase,
     mode,

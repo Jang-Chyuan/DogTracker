@@ -216,11 +216,14 @@ test('a new archive publication cannot expose rows before its new coverage proof
   let renderer;
   try {
     await act(async () => { renderer = Renderer.create(<state.Probe />); });
-    expect(state.screen.dayModel).not.toBeNull();
+    const verified = state.screen.dayModel;
+    expect(verified).not.toBeNull();
     await act(async () => renderer.update(<state.Probe publicationRevision={1} />));
-    expect(state.screen.dayModel).toBeNull();
-    expect(state.screen.map).toBeNull();
+    // Rule change (PR #114): the old verified model stays; no new rows are
+    // built into a model before the new proof resolves.
+    expect(state.screen.dayModel).toBe(verified);
     expect(cloud.download).not.toHaveBeenCalled();
+    // The new proof withdraws the day: loading, then its download.
     await act(async () => nextProof.resolve([{ ...proof, complete: 0 }]));
     expect(cloud.download).toHaveBeenCalledTimes(1);
     expect(state.screen.dayModel).toBeNull();
@@ -279,11 +282,15 @@ test('automatic archive cutoff safely advances an open today view; manual public
   try {
     await act(async () => { renderer = Renderer.create(<state.Probe />); });
     expect(cloud.download).not.toHaveBeenCalled();
-    expect(state.screen.dayModel).not.toBeNull();
+    const verified = state.screen.dayModel;
+    expect(verified).not.toBeNull();
     state.fixture.now += 120000; ledger.archiveCutoff = state.fixture.now;
     await act(async () => renderer.update(<state.Probe publicationRevision={1} />));
     expect(cloud.download).toHaveBeenCalledTimes(1);
-    expect(state.screen.dayModel).toBeNull();
+    // Rule change (PR #114): the automatic tail keeps the model verified at the
+    // old cutoff on screen, without a download panel, until its proof extends.
+    expect(state.screen.dayModel).toBe(verified); expect(state.screen.loading).toBe(false);
+    expect(state.screen.download).toBeNull();
     const request = cloud.download.mock.calls[0][0];
     expect(request.cutoff).toBe(ledger.archiveCutoff);
     durable = [{ slave_id: dog, day, complete: 1, ...historyCoverage(request.dayStart, request.dayEnd, request.cutoff) }];
@@ -315,10 +322,14 @@ test('a frozen completed today view labels its as-of time and updates only on ex
       levels={{ summary: 140, half: 420, full: 620 }} bottomInset={0} name="QA" history={null} />); });
     expect(JSON.stringify(ui.toJSON())).toContain('截至');
     const update = ui.root.findAll(node => node.props.testID === 'history-update-tail' && typeof node.props.onPress === 'function')[0];
+    const verified = state.screen.dayModel;
     await act(async () => update.props.onPress());
     expect(cloud.download).toHaveBeenCalledTimes(1);
     expect(cloud.download.mock.calls[0][0].cutoff).toBe(state.fixture.now);
-    expect(state.screen.dayModel).toBeNull();
+    // The verified view stays (still labelled with its own as-of time); an
+    // explicit 更新 keeps its visible download panel.
+    expect(state.screen.dayModel).toBe(verified); expect(state.screen.asOf).toBe(cutoff);
+    expect(state.screen.download?.kind).toBe('downloading');
   } finally {
     if (ui) await act(async () => ui.unmount());
     if (renderer) await act(async () => renderer.unmount());

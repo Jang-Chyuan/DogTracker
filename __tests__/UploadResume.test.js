@@ -10,7 +10,7 @@ jest.mock('../src/database/TrackingDatabaseConnection', () => ({ openTrackingDat
 jest.mock('../src/cloudUpload/UploadDatabase', () => ({ createUploadDatabase: jest.fn() }));
 jest.mock('../src/cloudUpload/UploadService', () => ({ createUploadService: jest.fn() }));
 jest.mock('../src/cloud/CloudClient', () => ({ getCloudClient: () => ({ from: () => ({
-  select: () => ({ eq: async () => ({ data: [{ gateway_id: 'master_5' }, { gateway_id: 'master_7' }] }) }),
+  select: () => ({ eq: () => ({ abortSignal: async () => ({ data: [{ gateway_id: 'master_5' }, { gateway_id: 'master_7' }] }) }) }),
 }) }) }));
 
 test('a route switch sends what waits first, then changes; offline it does not change', async () => {

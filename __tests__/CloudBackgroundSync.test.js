@@ -195,14 +195,16 @@ test('90-second budget also bounds session restoration', async () => {
   expect(jest.getTimerCount()).toBe(0);
 });
 
-test('foreground handoff aborts background and waits for its pending work before taking the slot', async () => {
+test('foreground handoff aborts an ignored-abort HTTP read before taking the slot, without saving its late rows', async () => {
   let respond;
   const f = fixture(() => new Promise(resolve => { respond = resolve; }));
   const background = f.run(); await flush();
   cancelBackgroundSync();
   const work = jest.fn();
   const foreground = withCloudSyncSlot(work);
-  await flush(); expect(work).not.toHaveBeenCalled();
+  await flush(); expect(work).toHaveBeenCalledTimes(1);
+  expect(f.database.savePage).not.toHaveBeenCalled();
+  expect(f.native.complete).toHaveBeenCalledWith('run', 'cancelled');
   respond({ data: [row(1)] }); await background; await foreground;
   expect(work).toHaveBeenCalledTimes(1);
   expect(f.database.savePage).not.toHaveBeenCalled();

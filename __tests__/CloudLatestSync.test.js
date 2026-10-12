@@ -1,6 +1,6 @@
 import { createCloudSync } from '../src/cloud/CloudSync';
 import { captureActivityRead } from '../src/cloud/CloudPagePublication';
-import { captureMapRead, completedMapRevision, mapReadRevision } from '../src/cloud/CloudPublication';
+import { captureMapRead, completedMapRevision, latestMapApplied, mapReadRevision } from '../src/cloud/CloudPublication';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
@@ -40,7 +40,14 @@ async function fixture({ downloadContext = async () => { throw new Error('contex
     cutoffForArchive = cutoff;
     return { cutoff, dogs: [{ slaveId: 4, packet: fix(), fix: fix() }] };
   });
-  engine = createCloudSync({ client, database, downloadLatest, downloadContext, onChange: state => states.push(state) });
+  engine = createCloudSync({ client, database, downloadLatest, downloadContext, onChange: state => {
+    states.push(state);
+    // Producer-stage tests explicitly apply its real committed SQLite
+    // readback. CloudLatestPriority separately proves React effect ACK timing.
+    const publication = engine?.mapPublication();
+    if (!publication?.pending && !publication?.busy && publication?.readback)
+      publication.acknowledgeMapRead(publication.readback);
+  } });
   const start = async () => { engine.setForeground(true); engine.setSession({ user: { id: 'a' } }); await flush(); };
   return { client, database, downloadLatest, states, current: () => states.at(-1), start };
 }
@@ -65,6 +72,56 @@ test('latest is atomically usable while archive is held; archive failure never r
   expect(accountPage({ account: { signedIn: true }, sync: current() }).download).toMatchObject({ title: t('c217'), detail: t('c1251'), retry: true });
   expect(mapReadRevision(current())).toBe(readVersion);
   database.beginDownload = begin;
+});
+
+test('prelatest revision read does not bootstrap optional archive context before fresh HTTP', async () => {
+  const context = deferred();
+  const { database, downloadLatest, current, start } = await fixture({ downloadContext: () => context.promise });
+  await database.savePage('a', [fix('upgrade-cache')]);
+  const bootstrap = deferred();
+  const execute = connection.executeAsync.getMockImplementation();
+  let bootstrapEntered = false;
+  connection.executeAsync.mockImplementation(async (query, params) => {
+    if (query.includes('WITH RECURSIVE dogs')) {
+      bootstrapEntered = true;
+      await bootstrap.promise;
+    }
+    return execute(query, params);
+  });
+  try {
+    await start();
+    expect(downloadLatest).toHaveBeenCalledTimes(1);
+    expect(bootstrapEntered).toBe(false);
+    expect(current()).toMatchObject({ snapshotBaseRevision: 0, mapSuccessRevision: 1, snapshotPending: false });
+    expect((await database.readLatestSnapshot('a')).packets[0].event_id).toBe('latest');
+  } finally {
+    bootstrap.resolve(); context.resolve({ cutoff: NOW, dogs: [] }); await flush();
+  }
+});
+
+test('archive proof remains a separate acceptance wait and restores only durable coverage', async () => {
+  const { database, downloadLatest, current, start } = await fixture();
+  await database.beginDownload('a');
+  await database.publishDownload('a', 'auto', NOW - 100);
+  const proof = deferred();
+  const execute = connection.executeAsync.getMockImplementation();
+  let proofEntered = false;
+  connection.executeAsync.mockImplementation(async (query, params) => {
+    if (query.includes('SELECT cutoff,revision FROM cloud_archive_publication')) {
+      proofEntered = true;
+      await proof.promise;
+    }
+    return execute(query, params);
+  });
+  try {
+    await start();
+    expect(proofEntered).toBe(true);
+    expect(downloadLatest).toHaveBeenCalledTimes(1);
+    expect(current()).toMatchObject({ archiveRevision: 0, archiveCutoff: null, mapSuccessRevision: 1 });
+    proof.resolve(); await flush();
+    expect(downloadLatest).toHaveBeenCalledTimes(1);
+    expect(current().archiveRevision).toBeGreaterThanOrEqual(1);
+  } finally { proof.resolve(); await flush(); }
 });
 
 test('slow context cannot starve archive across repeated latest cycles, even if its transport ignores abort', async () => {
@@ -186,4 +243,129 @@ test('another owner or a manual archive slice cannot hydrate automatic activity 
   expect(engine.historyPublication()).toMatchObject({ owner: 'a', archiveCutoff: null, archiveRevision: 0 });
   expect(captureActivityRead(() => engine.historyPublication(), 'a', true).open).toBe(false);
   expect(await database.readArchivePublication('a')).toBeNull();
+});
+
+
+test('already applied latest remains usable through real deferred context publication and read lag', async () => {
+  const context = deferred();
+  const { database, current, start } = await fixture({ downloadContext: () => context.promise });
+  const contextCommit = deferred();
+  const publish = database.publishLatestSnapshot;
+  let commits = 0;
+  database.publishLatestSnapshot = async (...args) => {
+    commits++;
+    if (commits === 2) await contextCommit.promise;
+    return publish(...args);
+  };
+  try {
+    await start();
+    const initial = engine.mapPublication();
+    const snapshot = await database.readLatestSnapshot('a');
+    const dogs = { loaded: true, rows: snapshot.rows, cloudCommit: initial.mapSuccessRevision,
+      cloudPublication: { owner: initial.owner, scope: initial.scope,
+        generation: initial.generation, attempt: initial.attempt, revision: initial.mapSuccessRevision } };
+    const state = () => ({ ...current(), getMapPublication: () => engine.mapPublication() });
+    expect(current()).toMatchObject({ contextPending: true, snapshotPending: false });
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    context.resolve({ cutoff: NOW, dogs: [{ slaveId: 4, packet: fix(), fix: fix(), context: [fix()], seeds: [] }] });
+    await flush();
+    expect(commits).toBe(2);
+    expect(engine.mapPublication()).toMatchObject({ pending: true, busy: false, mapSuccessRevision: 1 });
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    contextCommit.resolve(); await flush();
+    expect(engine.mapPublication()).toMatchObject({ pending: false, busy: false, mapSuccessRevision: 2 });
+    // The prior applied snapshot remains valid while the new context/hold read
+    // catches up. This is not a completion certificate for history readers.
+    expect(dogs.cloudCommit).toBe(1);
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    engine.setForeground(false); engine.setForeground(true);
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(false);
+    engine.setSession({ user: { id: 'b' } });
+    expect(latestMapApplied(state(), 'b', dogs)).toBe(false);
+  } finally {
+    context.resolve({ cutoff: NOW, dogs: [] }); contextCommit.resolve(); await flush();
+  }
+});
+
+
+test('a second latest attempt cannot inherit a prior applied map proof during its native-reader lag', async () => {
+  const secondContext = deferred();
+  let contextCalls = 0;
+  const { database, downloadLatest, current, start } = await fixture({ downloadContext: async () => {
+    contextCalls++;
+    if (contextCalls === 1) throw new Error('optional context unavailable');
+    return secondContext.promise;
+  } });
+  try {
+    await start();
+    const first = engine.mapPublication();
+    const firstSnapshot = await database.readLatestSnapshot('a');
+    const dogs = { loaded: true, rows: firstSnapshot.rows, cloudCommit: first.mapSuccessRevision,
+      cloudPublication: { owner: first.owner, scope: first.scope, generation: first.generation,
+        attempt: first.attempt, revision: first.mapSuccessRevision } };
+    const state = () => ({ ...current(), getMapPublication: () => engine.mapPublication() });
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(true);
+    downloadLatest.mockImplementation(async ({ cutoff }) => ({ cutoff, dogs: [{ slaveId: 4,
+      packet: { ...fix('second-latest'), slave_lat: 26 }, fix: { ...fix('second-latest'), slave_lat: 26 } }] }));
+    await jest.advanceTimersByTimeAsync(30000);
+    const second = engine.mapPublication();
+    const secondSnapshot = await database.readLatestSnapshot('a');
+    expect(second.generation).toBe(first.generation);
+    expect(second.attempt).toBe(first.attempt + 1);
+    expect(second.mapSuccessRevision).toBeGreaterThan(first.mapSuccessRevision);
+    expect(secondSnapshot.rows[0].slave_lat).toBe(26);
+    expect(current()).toMatchObject({ snapshotPending: false, contextPending: true });
+    // SQLite has the second complete latest, but the mounted map reader still
+    // carries the first attempt's immutable snapshot. Optional context alone
+    // may retain a proof; a newly accepted latest attempt may not inherit it.
+    expect(latestMapApplied(state(), 'a', dogs)).toBe(false);
+    const appliedSecond = { ...dogs, rows: secondSnapshot.rows, cloudCommit: second.mapSuccessRevision,
+      cloudPublication: { owner: second.owner, scope: second.scope, generation: second.generation,
+        attempt: second.attempt, revision: second.mapSuccessRevision } };
+    expect(latestMapApplied(state(), 'a', appliedSecond)).toBe(true);
+  } finally {
+    secondContext.resolve({ cutoff: NOW + 30000, dogs: [] });
+    await flush();
+  }
+});
+
+test('legacy context timeout logs exactly one context-failed; latest and archive publication are unchanged', async () => {
+  const log = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const events = name => log.mock.calls.filter(([tag]) => tag === `[CloudSync] ${name}`);
+  try {
+    const { database, current, start } = await fixture({ downloadContext: () => new Promise(() => {}), archiveEvents: true });
+    await start();
+    expect(current()).toMatchObject({ contextPending: true, mapSuccessRevision: 1 });
+    await jest.advanceTimersByTimeAsync(10000);
+    expect(events('context-failed')).toEqual([['[CloudSync] context-failed',
+      { attempt: 1, elapsedMs: 10000, failureKind: 'timeout', dogs: 1, completedDogs: 0, requests: 0 }]]);
+    expect(events('context-published')).toEqual([]);
+    expect(events('failure')).toEqual([]);
+    expect(events('latest-published')).toHaveLength(1);
+    expect(events('archive-published')).toEqual([['[CloudSync] archive-published', { attempt: 1, elapsedMs: expect.any(Number), revision: 1 }]]);
+    expect(current()).toMatchObject({ contextPending: false, archiveRevision: 1, archiveError: '', error: '', mapSuccessRevision: 1 });
+    expect((await database.readLatestSnapshot('a')).rows[0].event_id).toBe('latest');
+  } finally { log.mockRestore(); }
+});
+
+test('legacy context error and success use the fixed context events', async () => {
+  const log = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const events = name => log.mock.calls.filter(([tag]) => tag === `[CloudSync] ${name}`);
+  try {
+    let fail = true;
+    const downloadContext = async ({ snapshot, progress }) => {
+      progress.requests += 2;
+      if (fail) throw Object.assign(new Error('private refusal'), { status: 401 });
+      return { ...snapshot, dogs: snapshot.dogs.map(dog => ({ ...dog, context: [], seeds: [] })) };
+    };
+    const { start } = await fixture({ downloadContext });
+    await start();
+    expect(events('context-failed')).toEqual([['[CloudSync] context-failed',
+      { attempt: 1, elapsedMs: 0, failureKind: 'auth', dogs: 1, completedDogs: 0, requests: 2 }]]);
+    fail = false;
+    await jest.advanceTimersByTimeAsync(30000);
+    expect(events('context-failed')).toHaveLength(1);
+    expect(events('context-published')).toEqual([['[CloudSync] context-published', { attempt: 2, elapsedMs: 0, dogs: 1 }]]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private refusal');
+  } finally { log.mockRestore(); }
 });

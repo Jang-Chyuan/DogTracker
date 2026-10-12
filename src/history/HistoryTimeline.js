@@ -72,26 +72,27 @@ export function historyTimeline(rows = [], options = {}) {
   const { subject = 'dog', dayStart = -Infinity, dayEnd = Infinity,
     today = false, now = rows[rows.length - 1]?.time ?? 0, manualRange = null, closedAt = null,
     following = today && manualRange?.end == null, state = null, timezone = '',
-    replayHolds, config = configFor(subject) } = options;
+    replayHolds, config = configFor(subject), measure } = options;
+  const measured = (stage, count, operation) => measure ? measure(stage, count, operation) : operation();
   const replay = replayHolds ?? (subject === 'dog'
     ? packets => replayHistoryHolds(packets, { since: dayStart, ...options.holdOptions }) : undefined);
-  const stream = historySourceStream(rows, { replayHolds: replay });
-  const context = filterHistoryPoints(stream.points, { subject, config });
+  const stream = measured('stream', rows.length, () => historySourceStream(rows, { replayHolds: replay, measure }));
+  const context = measured('filter', stream.points.length, () => filterHistoryPoints(stream.points, { subject, config }));
   const dayPoints = context.filter(p => p.time >= dayStart && p.time < dayEnd);
-  const contextMovement = historyMovement(context, { subject, config });
+  const contextMovement = measured('context-movement', context.length, () => historyMovement(context, { subject, config }));
   const departure = historyDeparture(dayPoints, { subject, config, today, now, movement: contextMovement, manualRange });
   const range = options.range ?? departure.range;
   const points = dayPoints.filter(p => p.time >= range.start && p.time <= range.end);
   // Classify on the full day: clipping must not erase vehicle confirmation.
   const vehicles = contextMovement.vehicles;
-  const movement = historyMovement(points, { subject, config, vehicles });
+  const movement = measured('range-movement', points.length, () => historyMovement(points, { subject, config, vehicles }));
   const switches = movement.switches.map(({ point, ...node }) => node);
   const identity = JSON.stringify([subject, range.start, following ? 'following' : range.end,
     dayStart, dayEnd, timezone, !!manualRange]);
-  const stays = historyStops(context, { subject, config, start: range.start, end: range.end,
-    dayStart, dayEnd: dayEnd - 1, vehicles, edges: contextMovement.edges, following, identity, state });
-  const held = historyIndoorNodes(context, { start: Math.max(range.start, dayStart),
-    end: Math.min(range.end, dayEnd - 1), dayStart, dayEnd: dayEnd - 1, config });
+  const stays = measured('stops', context.length, () => historyStops(context, { subject, config, start: range.start, end: range.end,
+    dayStart, dayEnd: dayEnd - 1, vehicles, edges: contextMovement.edges, following, identity, state }));
+  const held = measured('indoor', context.length, () => historyIndoorNodes(context, { start: Math.max(range.start, dayStart),
+    end: Math.min(range.end, dayEnd - 1), dayStart, dayEnd: dayEnd - 1, config }));
   // 067: a hold the dog walked on out of (its next real fix more than
   // movedOnM from the hold spot) was no stay: the collar kept reporting
   // without GPS while the dog moved — 「收不到 GPS」, not 室內.

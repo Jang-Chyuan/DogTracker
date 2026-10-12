@@ -1,6 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { PanResponder, PixelRatio, ScrollView, StyleSheet } from 'react-native';
+import { PanResponder, PixelRatio, ScrollView, StyleSheet, Text } from 'react-native';
+import { RANGE_RECOMPUTE_DELAY_MS } from '../src/mapHistory/useRangeRecompute';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import { space, touch } from '../src/theme/tokens';
@@ -63,11 +64,22 @@ test('wide expanded handles live outside the clipped sheet; real accessible step
   try {
     const floating = one(tree, 'history-range-floating');
     expect(floating).toBeDefined();
-    expect(StyleSheet.flatten(floating.props.style)).toMatchObject({ position: 'absolute', bottom: '100%' });
+    // A sibling above the panel, not a child hanging outside its bounds
+    // (Android drops touch and TalkBack for children outside their parent).
+    const panelHeight = StyleSheet.flatten(one(tree, 'history-panel').props.style).height;
+    expect(StyleSheet.flatten(floating.props.style)).toMatchObject({ position: 'absolute', bottom: panelHeight + space.s });
+    expect(one(tree, 'history-panel').findAll(node => node.props.testID === 'history-range-floating')).toHaveLength(0);
     expect(one(tree, 'history-panel-header').findAllByProps({ testID: 'history-range-bar' })).toHaveLength(0);
     const before = state.screen.range.start;
     const handle = tree.root.findAll(node => node.props.testID === 'range-handle-start' && node.props.onAccessibilityAction)[0];
     await act(async () => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+    expect(state.screen.rangePending).toBe(true);
+    expect(one(tree, 'history-range-loading')).toBeDefined();
+    // Busy shows the shimmer in the summary and list, never a bare 讀取中 line (PR 115).
+    expect(one(tree, 'history-summary-pending')).toBeDefined();
+    expect(one(tree, 'history-range-skeleton') ?? one(tree, 'history-range-loading')).toBeDefined();
+    expect(tree.root.findAll(node => node.type === Text && [].concat(node.props.children).some(c => typeof c === 'string' && c.startsWith('讀取中')))).toHaveLength(0);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, RANGE_RECOMPUTE_DELAY_MS + 8)); });
     expect(state.screen.range.start).toBeGreaterThanOrEqual(before + 60000);
     let used;
     await act(async () => { used = state.ref.current.back(); });
@@ -101,7 +113,7 @@ test.each([{ width: 393, height: 851, floating: false }, { width: 800, height: 3
     const bar = one(tree, 'history-range-bar');
     const measured = bar.findAll(node => node.props.onLayout)[0];
     await act(async () => measured.props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
-    const old = handlers[0];
+    const old = handlers.find(value => value.onStartShouldSetPanResponder);
     await act(async () => {
       old.onPanResponderGrant({ nativeEvent: { locationX: 24, pageX: 100 } });
       old.onPanResponderMove({ nativeEvent: { pageX: 140 } }, { dx: 40 });
@@ -144,4 +156,138 @@ test('wide download keeps cancel reachable and Back cancellation does not reveal
     // is fabricated to fill the newly wider timeline viewport.
     expect(one(tree, 'history-download-retry')).toBeDefined();
   } finally { await act(async () => tree.unmount()); jest.useRealTimers(); }
+});
+
+
+test.each([{ width: 393, height: 851 }, { width: 851, height: 393 }])('real screen holds loading/list/export through the entire gesture and Back cancels it: %j', async viewport => {
+  jest.useFakeTimers();
+  dimensions.mockReturnValue({ ...viewport, scale: 2.75, fontScale: 1 });
+  const handlers = [];
+  const pan = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers.push(value); return { panHandlers: {} }; });
+  const { tree, state } = await mount('history-range-open');
+  try {
+    const original = { ...state.screen.range };
+    const measured = one(tree, 'history-range-bar').findAll(node => node.props.onLayout)[0];
+    await act(async () => measured.props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
+    const old = handlers.find(value => value.onStartShouldSetPanResponder);
+    await act(async () => {
+      old.onPanResponderGrant({ nativeEvent: { locationX: 24, pageX: 100 } });
+      old.onPanResponderMove({ nativeEvent: { pageX: 140 } }, { dx: 40 });
+    });
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => jest.advanceTimersByTimeAsync(500));
+      expect(state.screen.rangePending).toBe(true);
+      expect(state.screen.map).toBeNull();
+      expect(one(tree, 'history-range-loading')).toBeDefined();
+      expect(one(tree, 'history-range-skeleton')).toBeDefined();
+      expect(one(tree, 'history-range-loading').findAll(node => node.type === 'ActivityIndicator')).toEqual([]);
+      expect(one(tree, 'history-timeline')).toBeUndefined();
+      expect(one(tree, 'history-export').props.accessibilityState.disabled).toBe(true);
+    }
+    let used;
+    await act(async () => { used = state.ref.current.back(); });
+    expect(used).toBe(true);
+    expect(state.screen.rangePending).toBe(false);
+    expect(one(tree, 'history-range-loading')).toBeUndefined();
+    await act(async () => old.onPanResponderRelease({ nativeEvent: { pageX: 160 } }, { dx: 60 }));
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(state.screen.range).toEqual(original);
+    expect(one(tree, 'history-range-bar')).toBeUndefined();
+  } finally {
+    await act(async () => tree.unmount());
+    pan.mockRestore();
+    jest.useRealTimers();
+  }
+});
+
+
+test('actual screen preserves collapsed date position across day/font changes, measures new date row, and reopens half for owner', async () => {
+  dimensions.mockReturnValue({ width: 393, height: 851, scale: 2.75, fontScale: 1 });
+  fonts.mockReturnValue(1);
+  const handlers = [];
+  const pan = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers.push(value); return { panHandlers: {} }; });
+  const { tree, state, fixture } = await mount('history-my-route');
+  try {
+    const sheet = handlers.find(value => value.onMoveShouldSetPanResponderCapture);
+    expect(one(tree, 'history-panel-date-drag').findAllByProps({ testID: 'history-summary' })).toHaveLength(0);
+    expect(one(tree, 'history-summary').props.onMoveShouldSetResponderCapture).toBeUndefined();
+    await act(async () => sheet.onPanResponderGrant());
+    await act(async () => sheet.onPanResponderRelease(null, { dy: 350 }));
+    expect(one(tree, 'history-summary')).toBeUndefined();
+    expect(one(tree, 'history-date')).toBeDefined();
+    expect(one(tree, 'history-timeline')).toBeUndefined();
+    const collapsed = StyleSheet.flatten(one(tree, 'history-panel').props.style).height;
+    await act(async () => state.screen.changeDay(state.screen.day - 86400000));
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(collapsed);
+    dimensions.mockReturnValue({ width: 393, height: 851, scale: 2.75, fontScale: 2 });
+    fonts.mockReturnValue(2);
+    await act(async () => tree.update(<Harness fixture={fixture} state={state} />));
+    const dateMeasure = one(tree, 'history-panel-header').findAll(node => typeof node.type === 'string' && node.props.onLayout)[0];
+    await act(async () => dateMeasure.props.onLayout({ nativeEvent: { layout: { height: 130 } } }));
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(150);
+    expect(one(tree, 'history-summary')).toBeUndefined();
+    const otherOwner = { ...fixture, cloudSync: { ...fixture.cloudSync, ownerId: 'fiction-owner-two' } };
+    await act(async () => tree.update(<Harness fixture={otherOwner} state={state} />));
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(Math.floor((851 - 24) / 2));
+  } finally { await act(async () => tree.unmount()); pan.mockRestore(); }
+});
+
+
+test('TalkBack date actions operate all three sheet positions while date activation remains calendar', async () => {
+  dimensions.mockReturnValue({ width: 393, height: 851, scale: 2.75, fontScale: 1 });
+  fonts.mockReturnValue(1);
+  const { tree } = await mount('history-my-route');
+  try {
+    const actOnDate = async name => {
+      const date = one(tree, 'history-date');
+      expect(date.props.accessibilityActions.some(action => action.name === name)).toBe(true);
+      await act(async () => date.props.onAccessibilityAction({ nativeEvent: { actionName: name } }));
+    };
+    const half = StyleSheet.flatten(one(tree, 'history-panel').props.style).height;
+    await actOnDate('expand');
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBeGreaterThan(half);
+    expect(one(tree, 'history-date').props.accessibilityActions.map(action => action.name)).toEqual(['collapse']);
+    await actOnDate('collapse');
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(half);
+    await actOnDate('collapse');
+    expect(one(tree, 'history-summary')).toBeUndefined();
+    expect(one(tree, 'history-date').props.accessibilityActions.map(action => action.name)).toEqual(['expand']);
+    await actOnDate('expand');
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBe(half);
+    const before = one(tree, 'history-date').props.accessibilityLabel;
+    await act(async () => one(tree, 'history-date').props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
+    expect(one(tree, 'history-date').props.accessibilityLabel).toBe(before);
+    expect(tree.root.findAll(node => node.props.testID === 'history-date' && typeof node.props.onPress === 'function')).not.toHaveLength(0);
+    expect(tree.root.findAll(node => node.props.testID === 'history-calendar')).not.toHaveLength(0);
+  } finally { await act(async () => tree.unmount()); }
+});
+
+test.each([{ width: 393, height: 851, fontScale: 1 }, { width: 851, height: 393, fontScale: 2 }])('collapsed upward drag retains its native date responder until release at %j', async viewport => {
+  dimensions.mockReturnValue({ ...viewport, scale: 2.75 });
+  fonts.mockReturnValue(viewport.fontScale);
+  const handlers = [];
+  const pan = jest.spyOn(PanResponder, 'create').mockImplementation(value => { handlers.push(value); return { panHandlers: {} }; });
+  const { tree } = await mount('history-my-route');
+  try {
+    const sheet = handlers.find(value => value.onMoveShouldSetPanResponderCapture);
+    await act(async () => sheet.onPanResponderGrant());
+    await act(async () => sheet.onPanResponderRelease(null, { dy: 500 }));
+    const dateResponder = one(tree, 'history-panel-date-drag');
+    const dateButton = one(tree, 'history-date');
+    await act(async () => sheet.onPanResponderGrant());
+    for (const dy of [-15, -100, -600]) {
+      await act(async () => sheet.onPanResponderMove(null, { dy }));
+      expect(one(tree, 'history-panel-date-drag') === dateResponder).toBe(true);
+      expect(one(tree, 'history-date') === dateButton).toBe(true);
+      expect(one(tree, 'history-summary')).toBeDefined();
+      expect(one(tree, 'history-timeline')).toBeDefined();
+    }
+    // A newly measured header may resize bounds during this same native drag.
+    const dateMeasure = one(tree, 'history-panel-header').findAll(node => typeof node.type === 'string' && node.props.onLayout)[0];
+    await act(async () => dateMeasure.props.onLayout({ nativeEvent: { layout: { height: 80 } } }));
+    await act(async () => sheet.onPanResponderRelease(null, { dy: -600 }));
+    expect(one(tree, 'history-summary')).toBeDefined();
+    expect(one(tree, 'history-timeline')).toBeDefined();
+    expect(StyleSheet.flatten(one(tree, 'history-panel').props.style).height).toBeGreaterThan(Math.floor((viewport.height - 24) / 2));
+  } finally { await act(async () => tree.unmount()); pan.mockRestore(); }
 });

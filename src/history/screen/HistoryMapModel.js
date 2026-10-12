@@ -4,6 +4,7 @@
 import { getTheme } from '../../theme/ThemeProvider';
 import { size as sizes, space, layout } from '../../theme/tokens';
 import { clock } from '../HistoryText';
+import { presentationDurationMs, timelinePresentation } from '../HistoryTimelinePresentation';
 import { configFor, coordinateValid, distanceMeters } from '../HistoryConfig';
 import { historyMovement } from '../HistoryMovement';
 import { historyStops, historyIndoorNodes } from '../HistoryStops';
@@ -390,6 +391,7 @@ export function placeMarkers(locations) {
       // the stay's own length (interruptions left out, as its pill).
       type: n.type,
       durationMs: n.durationMs ?? null,
+      displayDurationMs: presentationDurationMs(n),
       number: n.number ?? null,
       start: n.start,
       end: n.end,
@@ -402,14 +404,30 @@ export function placeMarkers(locations) {
 const markerProjections = new WeakMap();
 const markerFields = ['type', 'start', 'end', 'number', 'durationMs', 'latitude', 'longitude'];
 const emptyLocations = [];
-function stablePlaceMarkers(locations) {
+// Presentation collapses only proven endpoint stays. Cache by the immutable
+// timeline array so cursor moves never rerun list merging or point membership.
+const hiddenBoundaryStays = new WeakMap();
+function hiddenPresentationStays(nodes) {
+  if (!nodes) return null;
+  if (!hiddenBoundaryStays.has(nodes)) {
+    const shown = timelinePresentation(nodes), hidden = new Set();
+    if (shown[0]?.departureStay) hidden.add(nodes[1]);
+    if (shown[shown.length - 1]?.terminalStay) hidden.add(nodes[nodes.length - 2]);
+    hiddenBoundaryStays.set(nodes, hidden);
+  }
+  return hiddenBoundaryStays.get(nodes);
+}
+function stablePlaceMarkers(locations, nodes) {
+  const hidden = hiddenPresentationStays(nodes);
   const cached = markerProjections.get(locations);
-  if (cached && cached.snapshot.length === locations.length
+  if (cached && cached.hidden === hidden && cached.snapshot.length === locations.length
     && locations.every((node, i) => markerFields.every((key, j) =>
-      Object.is(node[key], cached.snapshot[i][j])))) return cached.places;
-  const places = placeMarkers(locations).filter(place => place.kind === 'indoor' || place.number != null);
-  markerProjections.set(locations, { places,
-    snapshot: locations.map(node => markerFields.map(key => node[key])) });
+      Object.is(node[key], cached.snapshot[i][j]))
+      && Object.is(presentationDurationMs(node), cached.snapshot[i][markerFields.length]))) return cached.places;
+  const places = placeMarkers(hidden?.size ? locations.filter(node => !hidden.has(node)) : locations)
+    .filter(place => place.kind === 'indoor' || place.number != null);
+  markerProjections.set(locations, { places, hidden,
+    snapshot: locations.map(node => [...markerFields.map(key => node[key]), presentationDurationMs(node)]) });
   return places;
 }
 
@@ -451,7 +469,7 @@ export function historyMapPresentation(
   const dayPoints = model.dayPoints || points;
   // The list numbers stays and switch points (the same node objects); a
   // switch the list dropped has no number and is not drawn.
-  const places = stablePlaceMarkers(model.locations || emptyLocations);
+  const places = stablePlaceMarkers(model.locations || emptyLocations, model.nodes);
   const allIndoor = points.length > 0 && points.every(p => p.heldReason);
   subject = subject || (dayPoints.some(p => p.slave_id === 'phone')
     || model.edges?.some(e => ['walking', 'driving'].includes(e.mode)) ? 'phone' : 'dog');

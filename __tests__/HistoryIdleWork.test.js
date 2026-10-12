@@ -2,6 +2,7 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { RANGE_RECOMPUTE_DELAY_MS } from '../src/mapHistory/useRangeRecompute';
 import * as models from '../src/history/screen/HistoryMultiModel';
 
 const MINUTE = 60000;
@@ -40,6 +41,9 @@ test.each(['past', 'fixed'])('%s history keeps its day model across unchanged mi
     const points = s.screen.dayPoints;
     await act(async () => s.screen.commitRange({ start: points[0].time,
       end: points.at(-1).time, following: false }));
+    expect(s.screen.rangePending).toBe(true);
+    expect(s.screen.dayModel).toBeNull();
+    await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
     expect(s.screen.manual).toBe(true);
   }
   const model = s.screen.dayModel;
@@ -80,6 +84,9 @@ test('a fixed range still rebuilds when a poll adds a row outside it', async () 
   const points = s.screen.dayPoints;
   await act(async () => s.screen.commitRange({ start: points[0].time,
     end: points.at(-2).time, following: false }));
+  expect(s.screen.rangePending).toBe(true);
+  expect(s.screen.dayModel).toBeNull();
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
   const before = s.screen.dayModel;
   const range = s.screen.range;
   const last = before.main.packets.at(-1);

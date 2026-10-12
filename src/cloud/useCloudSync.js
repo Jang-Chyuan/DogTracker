@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, NativeModules } from 'react-native';
 import { getCloudClient } from './CloudClient';
 import { createCloudSync } from './CloudSync';
+import { createCloudAuthRefreshLifecycle } from './CloudAuthRefreshLifecycle';
 
 // Foreground uses the existing 30-second scheduler; Android WorkManager owns
 // bounded background passes. Do not cancel durable jobs on a React unmount.
@@ -55,10 +56,10 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
     }).catch(() => { if (!disposed) setStatus(current => ({ ...current, error: t("c598") })); });
     // Continuous token refresh follows the UI. WorkManager restores/refreshes
     // the session only during its bounded task.
+    const refresh = createCloudAuthRefreshLifecycle(client.auth);
     const change = state => {
       const active = state === 'active';
-      if (active) client.auth.startAutoRefresh();
-      else client.auth.stopAutoRefresh();
+      refresh.setForeground(active);
       sync.setForeground(active);
     };
     change(AppState.currentState);
@@ -68,7 +69,7 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
       engine.current = null;
       subscription.unsubscribe();
       appSubscription.remove();
-      client.auth.stopAutoRefresh();
+      refresh.close();
       sync.dispose()?.catch(() => {});
     };
   }, [database, ready, clientFactory]);

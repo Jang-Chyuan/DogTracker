@@ -11,6 +11,7 @@ export function capturePageRead(getPublication, owner, publishedReads = false) {
   if (!versioned || !owner || !getPublication)
     return captureMapRead(getPublication, owner, completedMapRevision(before));
   const matches = value => value?.owner === owner && value.publishedPending === false
+    && value.latestReadReady !== false
     && value.scope === before.scope && value.generation === before.generation
     && value.publishedRevision === before.publishedRevision;
   // Auto attempts and live-map success may change without changing any

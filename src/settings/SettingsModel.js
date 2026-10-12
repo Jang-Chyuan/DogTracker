@@ -8,8 +8,8 @@ import { t } from '../i18n';
 //
 // A row of S1 has a red 「!」 exactly when the gear's red dot has a reason
 // that belongs to it (TopAlerts.gearReasons): the receiver row for a receiver
-// not found, disconnected or low on battery; 手機 for location permission,
-// precise location, location services, nearby devices or notifications;
+// not found, disconnected, low on battery or nearby-device access; 手機 for
+// location permission, precise location, location services or notifications;
 // Supabase 帳號 for the cloud failing or the sign-in expired; 提醒 for
 // notifications. A card on the map that was not collapsed counts too: S1
 // lists what needs handling, whatever the map shows.
@@ -137,8 +137,8 @@ function reasonText(reason, input) {
 }
 
 const ROW_REASONS = {
-  receiver: ['receiver-missing', 'receiver-disconnected', 'receiver-battery'],
-  phone: ['phone-location', 'nearby-devices', 'notifications'],
+  receiver: ['receiver-missing', 'receiver-disconnected', 'receiver-battery', 'nearby-devices'],
+  phone: ['phone-location', 'notifications'],
   account: ['cloud'],
   alerts: ['notifications'],
 };

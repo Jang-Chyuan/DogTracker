@@ -98,19 +98,29 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           // A retained completed prefix can be extended by reception-time tail.
           // Missing/evicted/legacy proof always downloads the entire window.
           const previousStates = await database.historyDownloadStates?.(owner, ids) ?? [];
-          const tailStart = id => {
+          // The dog's stored proof when it is a completed prefix of this window.
+          const prefixOf = id => {
             const proof = previousStates.find(row => row.slave_id === id && row.day === day);
-            if (!Number.isFinite(proof?.received_before) || proof.received_before >= coverage.received_before)
-              return dayStart - DOWNLOAD_BEFORE_MS;
-            const prefix = historyCoverage(dayStart, dayEnd, proof.received_before);
-            return coversHistory(proof, prefix)
-              ? Math.max(dayStart - DOWNLOAD_BEFORE_MS, proof.received_before - TAIL_OVERLAP_MS) : dayStart - DOWNLOAD_BEFORE_MS;
+            if (!Number.isFinite(proof?.received_before) || proof.received_before >= coverage.received_before) return null;
+            return coversHistory(proof, historyCoverage(dayStart, dayEnd, proof.received_before)) ? proof : null;
           };
+          const tailStart = id => {
+            const proof = prefixOf(id);
+            return proof ? Math.max(dayStart - DOWNLOAD_BEFORE_MS, proof.received_before - TAIL_OVERLAP_MS)
+              : dayStart - DOWNLOAD_BEFORE_MS;
+          };
+          // A retained completed prefix stays true while its tail downloads:
+          // rows only arrive in a staged scope, and eviction/repair already
+          // invalidate proof on their own. Wiping it would throw away the
+          // tail cursor of an interrupted refresh and publish an unknown
+          // material revision, so readers fully re-read twice per refresh.
+          // Only a dog downloading its entire window loses its old proof.
+          const restart = ids.filter(id => !prefixOf(id));
           const markIncomplete = async () => {
-            for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
+            for (const id of restart) await database.setHistoryDownloadState?.(owner, id, day, false);
           };
-          if (publishScoped) await publishScoped(markIncomplete);
-          else await markIncomplete();
+          if (restart.length && publishScoped) await publishScoped(markIncomplete);
+          else if (restart.length) await markIncomplete();
           for (const id of ids) {
             if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
             try {

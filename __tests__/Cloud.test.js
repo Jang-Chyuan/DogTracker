@@ -118,6 +118,8 @@ test('downloads beyond short pages using timestamp + event UUID, without losing 
   ]);
   const database = { savePage: jest.fn(async () => {}) };
   expect(await downloadCloudHistory({ ...options(), client, database, masterId: 7 })).toBe(2);
+  // Archive/manual pages keep reading to empty (no CloudPaging short-page stop).
+  expect(client.queries).toHaveLength(3);
   expect(database.savePage).toHaveBeenCalledTimes(2);
   expect(client.queries[1].or).toHaveBeenCalledWith(expect.stringContaining('.123456+00:00'));
   expect(client.queries[1].or).toHaveBeenCalledWith(expect.stringContaining(event().event_id));
