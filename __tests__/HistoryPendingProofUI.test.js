@@ -57,7 +57,9 @@ test.each(['complete', 'incomplete', 'read-error'])('retained local rows with de
     expect(has('history-unfinished')).toBe(false);
     expect(has('history-download-retry')).toBe(false);
     expect(has('history-skeleton')).toBe(true);
-    expect(JSON.stringify(renderer.toJSON())).toContain(t('c424'));
+    // The shimmer, not a bare 「讀取中…」 line; TalkBack hears 讀取中 (PR 115).
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(t('c424'));
+    expect(renderer.root.findAll(node => node.props.testID === 'history-loading' && node.props.accessibilityLabel === t('c835')).length).toBeGreaterThan(0);
     expect(download).not.toHaveBeenCalled();
     await act(async () => wait.resolve());
     expect(has('history-skeleton')).toBe(false);

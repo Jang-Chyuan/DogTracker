@@ -592,6 +592,8 @@ ref) {
     <HistoryRangeControls {...rangeProps} model={model} />
   ) : null;
 
+  // Reading the day (not a download): the shimmer, announced as 讀取中.
+  const reading = !downloading && !model && !screen.error && download?.kind !== 'unfinished';
   let body;
   if (downloading || screen.rangePending) body = null;
   else if (download?.kind === 'unfinished' && !model?.dayRecords) {
@@ -659,13 +661,18 @@ ref) {
           disabled={!rangeOpen}
           accessible={false}
         >
-          {!model && !downloading && !screen.error && download?.kind !== 'unfinished' && <Text style={styles.empty}>{t('c424')}</Text>}
-          {screen.rangePending ? <View testID="history-range-loading" accessibilityLiveRegion="polite">
+          {/* Loading looks like the timeline it becomes (the shimmer skeleton),
+              never a bare 「讀取中…」 line; TalkBack still hears 讀取中. */}
+          {screen.rangePending ? <View testID="history-range-loading" accessibilityLiveRegion="polite"
+            accessible accessibilityLabel={t('c835')}>
             <LoadingContent loading shape="timeline" label={t('c835')} skeletonTestID="history-range-skeleton" />
-          </View> : <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
-            shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
-            {body}
-          </LoadingContent>}
+          </View> : <View testID="history-loading" accessibilityLiveRegion={reading ? "polite" : "none"}
+            accessible={reading} accessibilityLabel={reading ? t('c835') : undefined}>
+            <LoadingContent loading={downloading || reading}
+              shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
+              {body}
+            </LoadingContent>
+          </View>}
         </Pressable>
       </HistoryPanel>
       {exporting && <HistoryExportSheet ref={exportSheet} exporter={exporter} bottomInset={bottomInset} />}

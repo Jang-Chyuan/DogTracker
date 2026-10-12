@@ -33,6 +33,7 @@ import { haptic } from '../utils/haptics';
 import { isLargeFont, linesFor } from '../utils/textScale';
 import { useInitialFocus } from '../utils/a11yFocus';
 import HistoryDragTimeTip from './HistoryDragTimeTip';
+import Skeleton from '../components/Skeleton';
 
 const HANDLE = sizes.rangeBar.handle;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
@@ -409,7 +410,7 @@ export default function HistoryRangeSummary({
               </Text>
             ) : null}
           </Text>
-          {pending ? <Text style={styles.detail}>{t('c835')}</Text> : <View style={styles.distances} testID="history-summary-distances" accessible={false}>
+          {pending ? <View style={styles.pendingDetail}><Skeleton shape="address" testID="history-summary-pending" /></View> : <View style={styles.distances} testID="history-summary-distances" accessible={false}>
             {!!who && <Text style={styles.detail}>{who}・</Text>}
             {distances.map(item => <View key={item.icon} style={styles.distance} testID={`history-summary-${item.icon}`}>
               <Glyph name={item.icon} color={colors.textMuted} size={sizes.icon.adjust} />
@@ -493,6 +494,8 @@ const getStyles = makeStyles(theme => {
     titleOpen: { color: colors.tonalText },
     caret: { color: colors.textMuted, fontSize: type.value.fontSize },
     distances: { flexDirection: 'row', flexWrap: 'wrap', gap: space.m, alignItems: 'center' },
+    // The same height as the distance line it stands in for: nothing below moves.
+    pendingDetail: { minHeight: type.caption.lineHeight, justifyContent: 'center' },
     distance: { flexDirection: 'row', gap: space.xs, alignItems: 'center' },
     detail: {
       color: colors.textMuted,
