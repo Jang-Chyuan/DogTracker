@@ -120,14 +120,39 @@ test('fresh durable incomplete proof closes a formerly complete model despite un
     expect(state.screen.dayModel).toBeNull(); expect(state.screen.map).toBeNull();
   } finally { wait.resolve(); await state.close(); }
 });
-test('today archive cutoff extension never keeps a previous proof while the new target waits', async () => {
+// Rule change (PR #114): an open today view keeps its last verified model
+// while an archive cutoff extension waits for the extended proof. The model
+// is complete as of its own cutoff; no model is built from the shorter proof.
+test('today archive cutoff extension keeps the last verified model until the extended proof arrives', async () => {
   const state = await setup('cutoff'); const wait = deferred();
   try {
-    expect(state.screen.dayModel).not.toBeNull(); state.hold(wait);
+    const accepted = state.screen.dayModel, verifiedAt = state.fixture.now;
+    expect(accepted).not.toBeNull(); state.hold(wait);
     state.fixture.now += 1000; state.ledger.archiveCutoff = state.fixture.now; state.ledger.publishedRevision = 2;
-    await state.update(); expect(state.screen.dayModel).toBeNull();
+    await state.update(); expect(state.screen.dayModel).toBe(accepted); expect(state.screen.loading).toBe(false);
     await act(async () => wait.resolve());
-    // The old proof only covers the old cutoff, even though rows did not change.
-    expect(state.screen.dayModel).toBeNull();
+    // The stored proof still only covers the old cutoff: keep, never rebuild.
+    expect(state.screen.dayModel).toBe(accepted);
+    expect(state.screen.asOf === null || state.screen.asOf === verifiedAt).toBe(true);
+    const bounds = dayBounds(state.day); state.hold(null);
+    await state.database.setHistoryDownloadState('a', state.dog, state.day, true,
+      historyCoverage(bounds.dayStart, bounds.dayEnd, state.fixture.now));
+    state.ledger.publishedRevision = 4; await state.update();
+    expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.loading).toBe(false);
+  } finally { wait.resolve(); await state.close(); }
+});
+test.each(['withdrawn', 'new-generation', 'new-publication-owner', 'new-publication-scope'])('today cutoff extension with a %s proof shows loading, not the retained model', async mode => {
+  const state = await setup(`cutoff-${mode}`); const wait = deferred();
+  try {
+    expect(state.screen.dayModel).not.toBeNull();
+    if (mode === 'withdrawn') await state.database.setHistoryDownloadState('a', state.dog, state.day, false);
+    else state.hold(wait);
+    state.fixture.now += 1000; state.ledger.archiveCutoff = state.fixture.now; state.ledger.publishedRevision = 2;
+    if (mode === 'new-generation') state.ledger.generation++;
+    if (mode === 'new-publication-owner') state.ledger.owner = 'b';
+    if (mode === 'new-publication-scope') state.ledger.scope = {};
+    await state.update(); await act(async () => wait.resolve());
+    expect(state.screen.dayModel).toBeNull(); expect(state.screen.map).toBeNull();
+    if (mode === 'withdrawn') expect(state.screen.loading).toBe(true);
   } finally { wait.resolve(); await state.close(); }
 });

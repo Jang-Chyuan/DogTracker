@@ -644,7 +644,7 @@ export function useHistoryScreen({
   const diagnosticModelFinished = useRef(null);
   const exactModel = useRef(null);
   if (!exactModel.current) exactModel.current = createExactHistoryModelCache();
-  const dayModel = useMemo(() => {
+  const builtModel = useMemo(() => {
     if (!subject || !subjects.length || waiting || !coverageReady) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
@@ -701,6 +701,32 @@ export function useHistoryScreen({
     waiting,
     coverageReady,
   ]);
+  // Today's open dog view: each automatic archive pass advances the coverage
+  // cutoff, so its proof is briefly short of the new cutoff while the tail
+  // downloads. Keep showing the model last verified for this exact view
+  // (account, publisher scope/generation, day, dogs and range) until the
+  // extended proof arrives, instead of blanking to loading every pass. Only
+  // a cutoff advance qualifies: any other missing/withdrawn proof, another
+  // generation or a changed range still shows loading.
+  const verifiedModel = useRef(null);
+  const shownPublication = cloud?.getPublication?.();
+  const verifiedIdentity = subject === 'dog' && cloud?.coverageRequired && today
+    ? `${sessionKey}|${day}|${idsKey}|${owner ?? ''}|${cloud.owner ?? ''}` : null;
+  const verifiedMatches = value => !!value && !!verifiedIdentity && value.identity === verifiedIdentity
+    && value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
+    && value.generation === shownPublication?.generation && value.manual === manual
+    && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
+  const retained = !builtModel && !waiting && !coverageReady && verifiedMatches(verifiedModel.current)
+    && verifiedModel.current.cutoff < coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
+    ? verifiedModel.current : null;
+  useEffect(() => {
+    if (builtModel && coverageReady && verifiedIdentity) verifiedModel.current = { identity: verifiedIdentity,
+      scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
+      manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
+      cutoff: coverageCutoff, model: builtModel };
+    else if (!verifiedIdentity || !verifiedMatches(verifiedModel.current)) verifiedModel.current = null;
+  });
+  const dayModel = builtModel ?? retained?.model ?? null;
   const model = dayModel?.main ?? null;
   useEffect(() => {
     const finished = diagnosticModelFinished.current;
@@ -842,6 +868,8 @@ export function useHistoryScreen({
   // local slice. Failure/cancel stays actionable; it never loops retries.
   const ensured = useRef(new Set());
   const ensureRequested = useRef(null);
+  // 更新 (updateHistory) asked for this download: it keeps its visible panel.
+  const explicitTail = useRef(false);
   useEffect(() => {
     if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
     const key = `${cloudDays.cloudScope}|${shownKey}|${coverageCutoff}|${publicationRevision}`;
@@ -856,6 +884,7 @@ export function useHistoryScreen({
     if (explicit) { ensured.current.delete(key); ensureRequested.current = null; }
     if (ensured.current.has(key)) return;
     ensured.current.add(key);
+    explicitTail.current = explicit;
     startDownload(shownKey, reread);
   }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope,
     cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);
@@ -881,7 +910,7 @@ export function useHistoryScreen({
       cancel();
       if (next !== shownKey) changeDay(next);
       if (choice.type === 'download') {
-        if (!cloud?.coverageRequired || next === shownKey) startDownload(next, reread);
+        if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, reread); }
         else ensureRequested.current = next;
       }
       return choice;
@@ -915,7 +944,7 @@ export function useHistoryScreen({
         day: shownKey,
         message: offlineMessage(shownKey),
       };
-    startDownload(shownKey, reread);
+    explicitTail.current = true; startDownload(shownKey, reread);
     return { type: 'download', day: shownKey };
   }, [online, shownKey, startDownload, reread]);
   const updateHistory = useCallback(() => {
@@ -926,7 +955,11 @@ export function useHistoryScreen({
     return { type: 'download', day: shownKey };
   }, [online, shownKey, clock, reread]);
   const dayRecords = !!dayModel?.subjects.some(s => s.dayRecords);
-  const download = downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
+  // A retained view's own background tail is not a user-visible download;
+  // its failure/cancel still shows the incomplete notice and retry.
+  const quietTail = !!retained && !explicitTail.current && cloudDays.download?.day === shownKey
+    && cloudDays.download.status === 'downloading';
+  const download = quietTail ? null : downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
     day: shownKey,
     hasRows: dayRecords,
     // Unknown durable proof is still being read, not a failed download.
@@ -1026,7 +1059,7 @@ export function useHistoryScreen({
     id => {
       const dog = dogs.find(d => d.id === id);
       if (!dog) return;
-      if (dog.downloadFailed) { cloudDays.startDownload(shownKey, reread); return; }
+      if (dog.downloadFailed) { explicitTail.current = true; cloudDays.startDownload(shownKey, reread); return; }
       haptic('tick');
       if (id === protagonistId || !dog.selectable) {
         // 點已經是主角的狗膠囊: the map moves to its cursor (if out of sight).
@@ -1096,7 +1129,7 @@ export function useHistoryScreen({
     const added = [...addedDownloads.current].filter(id => dogIds.includes(id));
     addedDownloads.current.clear();
     if (added.some(id => !localByDog[id]?.includes(shownKey))) {
-      cloudDays.startDownload(shownKey, reread);
+      explicitTail.current = true; cloudDays.startDownload(shownKey, reread);
     }
   }, [active, cloud, daysByDog, baseKey, idsKey, shownKey, localByDog]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1134,7 +1167,8 @@ export function useHistoryScreen({
     rangePreviewDelay: Math.max(120, buildCost.current * 4),
     rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
     rangeActive: active,
-    asOf: cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
+    asOf: retained ? (now - retained.cutoff >= 60000 ? retained.cutoff : null)
+      : cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
     updateHistory,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],

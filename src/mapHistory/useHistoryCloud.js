@@ -215,7 +215,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       const pending = incompleteOf(scope);
       pending.clear();
       for (const row of states) if (!row.complete) pending.add(row.day);
-      setDurable({ scope, revision: publicationRevision, states, publication: publicationProof, cutoff: proofCutoff });
+      setDurable({ scope, revision: publicationRevision, states, publication: publicationProof, cutoff: proofCutoff, read: states });
     }).catch(() => {
       if (!current()) {
         diagnostic?.emit('proof', 'rejected', began, historyPublicationFlags(cloud.getPublication?.(), cloud.owner, publicationProof, false));
@@ -250,6 +250,15 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     const bounds = dayBounds(day);
     return cloud.coverageRequired ? coversHistory(row, historyCoverage(bounds.dayStart, bounds.dayEnd, at)) : !!row?.complete;
   }, [cloud, durable, scope, localByDog, cutoff, publicationRevision, retainedProof, sameProofIdentity]); // eslint-disable-line react-hooks/exhaustive-deps
+  // What the last physical proof read says, ignoring this screen's in-memory
+  // "downloading" overrides: whether every dog's stored proof still covers
+  // `at`. A failed read or a withdrawn/evicted proof answers false.
+  const provenAt = useCallback((day, at) => {
+    if (!enabled || !cloud?.coverageRequired || durable.scope !== scope || !Array.isArray(durable.read)) return false;
+    const bounds = dayBounds(day), needed = historyCoverage(bounds.dayStart, bounds.dayEnd, at);
+    return (Array.isArray(slaveId) ? slaveId : [slaveId]).every(id =>
+      coversHistory(durable.read.find(row => row.slave_id === id && row.day === day), needed));
+  }, [enabled, cloud, durable, scope, slaveId]);
   const scopedDownload = download?.scope === scope ? download : null;
   const completeDay = useCallback(day => !enabled || (ids.every(id => completeFor(id, day))
     && !incompleteOf(scope).has(day) && !(scopedDownload?.day === day && scopedDownload.status === 'downloading')),
@@ -270,7 +279,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     const coverage = historyCoverage(dayStart, dayEnd, cutoff);
     const subjects = Array.isArray(slaveId) && localByDog ? slaveId.filter(dogId => !completeFor(dogId, day)) : slaveId;
     const requestedIds = Array.isArray(subjects) ? subjects : [subjects];
-    setDurable(current => ({ scope, revision: publication.current, states: [
+    setDurable(current => ({ scope, revision: publication.current, read: current.scope === scope ? current.read : null, states: [
       ...(current.scope === scope ? current.states.filter(row => !requestedIds.includes(row.slave_id) || row.day !== day) : []),
       ...requestedIds.map(dogId => ({ slave_id: dogId, day, complete: 0 })),
     ] }));
@@ -279,7 +288,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       setDogDownloads(current => ({ ...current, [dogId]: { scope, day, status: dogStatus } }));
       if (dogStatus === 'done') {
         completenessEpoch.current += 1;
-        setDurable(current => ({ scope, revision: publication.current, states: [
+        setDurable(current => ({ scope, revision: publication.current, read: current.scope === scope ? current.read : null, states: [
           ...(current.scope === scope ? current.states.filter(row => row.slave_id !== dogId || row.day !== day) : []),
           { slave_id: dogId, day, complete: 1, ...coverage },
         ] }));
@@ -289,7 +298,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       .then(() => {
         if (!alive.current || downloadSeq.current !== id) return;
         completenessEpoch.current += 1;
-        setDurable(current => ({ scope, revision: publication.current, states: [
+        setDurable(current => ({ scope, revision: publication.current, read: current.scope === scope ? current.read : null, states: [
           ...(current.scope === scope ? current.states.filter(row => !requestedIds.includes(row.slave_id) || row.day !== day) : []),
           ...requestedIds.map(dogId => ({ slave_id: dogId, day, complete: 1, ...coverage })),
         ] }));
@@ -326,6 +335,6 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     incomplete: enabled ? [...new Set([...incompleteOf(incompleteKey), ...partialLocal, ...(cloud?.downloadStates && durable.scope !== scope ? local : [])])] : [] }),
   // incompleteRevision stands for INCOMPLETE's contents.
   [local, known, enabled, status, incompleteKey, incompleteRevision, cloud, durable, scope, partialLocal]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { knowledge, completeDay, completenessLoaded: !cloud?.downloadStates || (durable.scope === scope && (!cloud.coverageRequired || sameProofIdentity && (durable.revision === publicationRevision || retainedProof))), retryCompleteness, dogDownloads, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download: scopedDownload, startDownload, cancelDownload,
+  return { knowledge, completeDay, provenAt, completenessLoaded: !cloud?.downloadStates || (durable.scope === scope && (!cloud.coverageRequired || sameProofIdentity && (durable.revision === publicationRevision || retainedProof))), retryCompleteness, dogDownloads, cloudScope: enabled ? scope : null, askMonth, askYear, retryQuery, stopQuery, download: scopedDownload, startDownload, cancelDownload,
     downloadingDay: scopedDownload?.status === 'downloading' ? scopedDownload.day : null };
 }
