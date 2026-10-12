@@ -67,15 +67,36 @@ export function stillFix(p, config) {
   return kmh / 3.6 < config.stillMps && spread <= config.stillSpeedAccuracyMps;
 }
 
+const recordingSession = p => (typeof p?.session_id === 'string' && p.session_id.length > 0
+  ? p.session_id : null);
+
+/**
+ * Two phone fixes from different recording sessions (session_id is a new UUID
+ * every time the recorder starts: an app update, the process killed, the
+ * recording switched off and on). Only when both ends carry a session; a fix
+ * without one (older rows, a dog) proves nothing either way.
+ */
+export function recordingSessionChanged(a, b) {
+  const from = recordingSession(a), to = recordingSession(b);
+  return from != null && to != null && from !== to;
+}
+
 /**
  * A break longer than gapMs (and at most samePlaceGapMaxMs) whose two ends are
  * at the same place (within radiusM): one continuous stay, not 「沒有資料」.
+ *
+ * Phone: never across a recording session change. The recorder was not
+ * running for (part of) that time, so the time cannot be proven a stay; the
+ * list shows it as 「沒有資料」 (PR 116) and the stay is split there or the
+ * break is deducted as an interruption. `acrossSessions` asks only whether
+ * the two ends are one place (distance counting: no walk across the break).
  */
-export function samePlaceGap(a, b, config) {
+export function samePlaceGap(a, b, config, { acrossSessions = false } = {}) {
   if (!a || !b || !config?.samePlaceGapMaxMs) return false;
   const dt = b.time - a.time;
   if (!(dt > config.gapMs && dt <= config.samePlaceGapMaxMs)) return false;
   if (config.stillMps && (a.phoneConfirmedMovement || b.phoneConfirmedMovement)) return false;
+  if (config.stillMps && !acrossSessions && recordingSessionChanged(a, b)) return false;
   // A display lock may be far behind the last fix before a recording gap.
   // Gap identity uses the observed endpoints, not a synthetic lock-to-raw jump.
   const raw = p => config.stillMps && Number.isFinite(p.raw_latitude) && Number.isFinite(p.raw_longitude)
