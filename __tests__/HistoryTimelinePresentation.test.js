@@ -1,4 +1,4 @@
-import { nodePill, placeSpeech } from '../src/history/HistoryText';
+import { interruptionText, nodePill, placeSpeech, sectionText } from '../src/history/HistoryText';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
 import { layoutRow } from '../src/mapHistory/ExportPNG';
@@ -7,39 +7,64 @@ import { pngDrawPages } from '../src/mapHistory/ExportDraw';
 const walk = (start, end, metres = 20) => ({ type: 'movement', mode: 'walking', start, end,
   durationMs: end - start, distanceM: metres, countedDistanceM: metres });
 const gap = (start, end, reason) => ({ type: 'gap', mode: 'gap', start, end, reason });
+// The phone's break inside one recording session (the timeline marks it).
+const same = (start, end, reason) => ({ ...gap(start, end, reason), sameSession: true });
+const MIN = 60000;
 
 // 2026-10-13 (replaces #115's 「不計未觀測時間」): every minute between two
-// listed times belongs to a row. Short unlisted time inside a merged walk
-// (a hidden weak-GPS row, a few seconds no row has) is that walk's 0 m time.
+// listed times belongs to a row. A walk's minutes are its span; a break inside
+// one recording session shorter than 30 min is folded into the row beside it
+// (a stay first) and noted 「含 N 分未定位」.
 test('consecutive walking legs become one presentation whose minutes are its span, distance the legs\' sum, source untouched', () => {
-  const nodes = [walk(0, 60000), walk(90000, 150000), gap(150000, 180000, 'uncertain'), walk(180000, 240000)];
+  const nodes = [walk(0, 60000), walk(90000, 150000), same(150000, 180000, 'uncertain'), walk(180000, 240000)];
   const before = JSON.stringify(nodes);
   const shown = timelinePresentation(nodes);
   expect(shown).toHaveLength(1);
-  expect(shown[0]).toMatchObject({ start: 0, end: 240000, durationMs: 240000, countedDistanceM: 60 });
+  expect(shown[0]).toMatchObject({ start: 0, end: 240000, durationMs: 240000, countedDistanceM: 60, unlocatedMs: 30000 });
   expect(JSON.stringify(nodes)).toBe(before);
 });
 
-test('unlisted time of a gap\'s length is not folded into a walk', () => {
-  // A weak-GPS stretch of 3 min or more is its own row between two walks.
-  const weak = timelinePresentation([walk(0, 60000), gap(60000, 240000, 'uncertain'), walk(240000, 300000)]);
-  expect(weak.map(n => n.type)).toEqual(['movement', 'gap', 'movement']);
-  expect(weak[0]).toMatchObject({ end: 60000, durationMs: 60000 });
-  // Two walks 3 min apart with no row between are not stretched over it.
+test.each([[undefined], ['uncertain']])('a same-session %s break under 30 min is folded into the walk; 30 min or more is a row', reason => {
+  const folded = timelinePresentation([walk(0, MIN), same(MIN, 29 * MIN, reason), walk(29 * MIN, 30 * MIN)]);
+  expect(folded).toHaveLength(1);
+  expect(folded[0]).toMatchObject({ start: 0, end: 30 * MIN, durationMs: 30 * MIN, unlocatedMs: 28 * MIN, countedDistanceM: 40 });
+  expect(sectionText(folded[0]).rest).toBe('・0.0 km・含 28 分未定位');
+  const long = timelinePresentation([walk(0, MIN), same(MIN, 31 * MIN, reason), walk(31 * MIN, 32 * MIN)]);
+  expect(long.map(n => n.type)).toEqual(['movement', 'gap', 'movement']);
+  expect(long[0].unlocatedMs).toBeUndefined();
+});
+
+test('a break across a recording restart (no sameSession) is always its own row', () => {
+  const shown = timelinePresentation([walk(0, MIN), gap(MIN, 2 * MIN), walk(2 * MIN, 3 * MIN)]);
+  expect(shown.map(n => n.type)).toEqual(['movement', 'gap', 'movement']);
+});
+
+test('a folded break goes to the stay beside it before a walk, and says so under the place', () => {
+  const place = { type: 'stop', number: 1, start: 0, end: 5 * MIN, durationMs: 5 * MIN };
+  const [stay, leaving] = timelinePresentation([place, same(5 * MIN, 12 * MIN), walk(12 * MIN, 15 * MIN)]);
+  expect(stay).toMatchObject({ number: 1, start: 0, end: 12 * MIN, durationMs: 12 * MIN, unlocatedMs: 7 * MIN });
+  expect(nodePill(stay).text).toBe('停 12 分');
+  expect(interruptionText(stay)).toBe('含 7 分未定位');
+  expect(leaving).toMatchObject({ start: 12 * MIN, durationMs: 3 * MIN });
+  // Arriving: the stay after the walk takes it.
+  const [, arrived] = timelinePresentation([walk(0, 3 * MIN), same(3 * MIN, 5 * MIN), { ...place, start: 5 * MIN, end: 9 * MIN, durationMs: 4 * MIN }]);
+  expect(arrived).toMatchObject({ start: 3 * MIN, durationMs: 6 * MIN, unlocatedMs: 2 * MIN });
+  // Under half a minute: counted, not noted.
+  const [quick] = timelinePresentation([place, same(5 * MIN, 5 * MIN + 20000, 'uncertain'), walk(5 * MIN + 20000, 6 * MIN)]);
+  expect(quick.end).toBe(5 * MIN + 20000);
+  expect(interruptionText(quick)).toBe('');
+});
+
+test('with only the departure or the end beside it, a short break is still listed', () => {
+  const departure = { type: 'departure', start: 0, end: 0 };
+  const end = { type: 'end', start: 5 * MIN, end: 5 * MIN, label: '結束' };
+  expect(timelinePresentation([departure, same(0, 5 * MIN), end]).map(n => n.type)).toEqual(['departure', 'gap', 'end']);
+});
+
+test('two walks 3 min apart with no row between are not stretched over it', () => {
   const apart = timelinePresentation([walk(0, 60000), walk(240000, 300000)]);
   expect(apart).toHaveLength(2);
   expect(apart[0].end).toBe(60000);
-});
-
-test('short weak GPS beside one walk is that walk\'s time; between places it is listed only if it spans a clock minute', () => {
-  const place = { type: 'stop', number: 1, start: 0, end: 60000, durationMs: 60000 };
-  const [, leaving] = timelinePresentation([place, gap(60000, 90000, 'uncertain'), walk(90000, 150000)]);
-  expect(leaving).toMatchObject({ start: 60000, end: 150000, durationMs: 90000 });
-  const next = { ...place, number: 2, start: 150000, end: 200000, durationMs: 50000 };
-  expect(timelinePresentation([place, gap(60000, 150000, 'uncertain'), next]).map(n => n.type))
-    .toEqual(['stop', 'gap', 'stop']);
-  expect(timelinePresentation([place, gap(60000, 61000, 'uncertain'), { ...next, start: 61000 }]).map(n => n.type))
-    .toEqual(['stop', 'stop']);
 });
 
 test.each([
@@ -101,7 +126,7 @@ test.each([
   [terminalStay, { ...endpoint, latitude: endpoint.latitude + 0.001 }],
   [terminalStay, { ...endpoint, start: endpoint.start + 1 }],
   [{ ...terminalStay, gaps: [{ start: 300000, end: 400000 }] }, endpoint],
-  [terminalStay, gap(480000, 480001, 'uncertain'), { ...endpoint, start: 480001 }],
+  [terminalStay, same(480000, 480001, 'uncertain'), { ...endpoint, start: 480001 }],
   [terminalStay, walk(480000, 540000), { ...endpoint, start: 540000 }],
 ])('different place/time, missing observation or final movement preserves distinct endpoint: %j', (...tail) => {
   const shown = timelinePresentation(tail);
@@ -198,7 +223,7 @@ test('minute precision aligns consecutive displayed clocks without changing obse
   expect(timelinePresentation(nodes)[0].durationMs).toBe(61000);
   // A merged walk's minutes are its clock span, short weak-GPS time included
   // (00:00:59–00:04:00 is listed 00:00 → 4 分).
-  const merged = timelinePresentation([walk(59000, 120000), gap(120000, 180000, 'uncertain'), walk(180000, 240000)]);
+  const merged = timelinePresentation([walk(59000, 120000), same(120000, 180000, 'uncertain'), walk(180000, 240000)]);
   expect(merged[0].durationMs).toBe(181000);
   expect(merged[0].displayDurationMs).toBe(240000);
   const interrupted = timelinePresentation([{ ...b, durationMs: 30000, interruptionMs: 29000 }]);

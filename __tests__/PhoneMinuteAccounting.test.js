@@ -1,30 +1,36 @@
 import { historyTimeline } from '../src/history/HistoryTimeline';
+import { configFor } from '../src/history/HistoryConfig';
 import { timelinePresentation, presentationDurationMs } from '../src/history/HistoryTimelinePresentation';
-import { listDuration, nodePill, sectionText } from '../src/history/HistoryText';
+import { interruptionText, listDuration, nodePill, sectionText, unlocatedText } from '../src/history/HistoryText';
+import { cursorLabel } from '../src/history/screen/HistoryScreenCursor';
 import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';
 import { buildCSV } from '../src/mapHistory/ExportCSV';
 import { buildGPX } from '../src/mapHistory/ExportGPX';
 import { t } from '../src/i18n';
 
-// Invented phone day (five-second fixes, one recording session, no real
-// place or time). A script is a list of [kind, seconds, extra]:
+// Invented phone day (five-second fixes, no real place or time). A script is
+// a list of [kind, seconds, extra]:
 // walk 5 km/h east; still (fine, 4 m); coarse (still, 28 m: over the 25 m
 // stay gate, within the 30 m stationary detector and the 50 m filter);
-// weak (speed 2 km/h with a 5 m/s spread: no reliable speed, so uncertain);
-// none (nothing saved: a real recording gap).
+// weak (speed 2 km/h with a 5 m/s spread: no reliable speed, so uncertain;
+// `drift` metres east per fix); none (nothing saved; `move` metres east over
+// it); session (recording restarted: the following fixes have a new session).
 const base = 1600000000000;
 const MINUTE = 60000;
+const config = configFor('phone');
 function day(script) {
   const rows = [];
-  let s = 0, east = 0;
+  let s = 0, east = 0, session = 'fiction-session-1';
   const fix = (extra = {}) => rows.push({ time: base + s * 1000, latitude: 1, longitude: 1 + east / 111320,
     raw_latitude: 1, raw_longitude: 1 + east / 111320, accuracy: 4, raw_speed_kmh: 0, speed_kmh: 0,
-    speed_accuracy_mps: 0.4, motion_state: 'stationary', session_id: 'fiction-session', ...extra });
+    speed_accuracy_mps: 0.4, motion_state: 'stationary', session_id: session, ...extra });
   for (const [kind, seconds, extra = {}] of script) {
+    if (kind === 'session') { session = seconds; continue; }
+    if (kind === 'none') east += extra.move ?? 0;
     for (let k = 0; k < seconds; k += 5, s += 5) {
-      if (kind === 'walk') { east += 7; fix({ raw_speed_kmh: 5.04, speed_kmh: 5.04, motion_state: 'moving', ...extra }); }
-      if (kind === 'still') fix({ motion_state: k >= 20 ? 'stationary' : 'suspected_stationary', ...extra });
-      if (kind === 'coarse') fix({ accuracy: 28, motion_state: 'stationary', ...extra });
+      if (kind === 'walk') { east += 7; fix({ raw_speed_kmh: 5.04, speed_kmh: 5.04, motion_state: 'moving' }); }
+      if (kind === 'still') fix({ motion_state: k >= 20 ? 'stationary' : 'suspected_stationary' });
+      if (kind === 'coarse') fix({ accuracy: 28, motion_state: 'stationary' });
       if (kind === 'weak') {
         east += extra.drift ?? 0;
         const jitter = (k % 10 === 0 ? 3 : -3) / 111320;
@@ -44,8 +50,8 @@ const noted = row => Math.round(((row.terminalStay ?? row.departureStay ?? row).
 
 /** The list's own minute accounting: rows with a length tile the selected
  * range (no hole, no overlap), each row's minutes plus its 「不含中斷」 note
- * are its clock span, and the only rows of unobserved time are explicit
- * 「沒有資料」 (or a listed 「GPS 訊號弱」) rows. */
+ * are its clock span (a folded 「含 N 分未定位」 is inside its minutes), and
+ * the only rows of unobserved time are explicit 「沒有資料」／「GPS 訊號弱」. */
 function accounting(model) {
   const shown = timelinePresentation(model.nodes);
   const rows = shown.filter(n => n.end > n.start);
@@ -64,7 +70,8 @@ function accounting(model) {
   const total = rows.reduce((sum, row) => sum + minutesShown(row) + noted(row), 0);
   return { shown, rows, holes, overlaps, off, total, span: minuteOf(last) - minuteOf(first),
     interrupted: rows.filter(noted).length,
-    unobserved: rows.filter(n => n.type === 'gap') };
+    unobserved: rows.filter(n => n.type === 'gap'),
+    folded: rows.filter(n => (n.unlocatedMs ?? n.terminalStay?.unlocatedMs ?? n.departureStay?.unlocatedMs) > 0) };
 }
 const expectAccounted = model => {
   const a = accounting(model);
@@ -72,7 +79,11 @@ const expectAccounted = model => {
   expect(a.overlaps).toEqual([]);
   expect(a.off).toEqual([]);
   expect(Math.abs(a.total - a.span)).toBeLessThanOrEqual(a.interrupted);
-  for (const gap of a.unobserved) expect([undefined, 'uncertain']).toContain(gap.reason);
+  for (const gap of a.unobserved) {
+    expect([undefined, 'uncertain']).toContain(gap.reason);
+    // Listed: a long break, or one across a recording restart.
+    expect(gap.end - gap.start >= config.listGapMs || !gap.sameSession).toBe(true);
+  }
   return a;
 };
 
@@ -83,15 +94,20 @@ const wholeDay = [
   ['still', 60], ['weak', 30], ['walk', 200], // a red light, then weak GPS
   ['still', 300], ['coarse', 900], ['walk', 300], // a stay, then 15 min coarse there
   ['coarse', 900], ['walk', 300], // 15 min standing still, only coarse fixes
-  ['none', 600], ['walk', 300], // a real recording gap
-  ['weak', 400, { drift: 2 }], ['walk', 300], // a long weak-GPS stretch on the move
+  ['none', 600, { move: 400 }], ['walk', 300], // 10 min nothing saved, same recording
+  ['weak', 400, { drift: 2 }], ['walk', 300], // a weak-GPS stretch on the move
+  ['none', 300, { move: 300 }], ['session', 'fiction-session-2'], ['walk', 300], // recording restarted
+  ['none', 1900, { move: 2000 }], ['walk', 300], // over 30 min nothing saved
 ];
 
 test('every minute of an invented day belongs to exactly one listed row', () => {
   const a = expectAccounted(timeline(day(wholeDay)));
   expect(a.total).toBe(a.span);
-  // The real gap is still its own 「沒有資料」 row.
-  expect(a.unobserved.some(n => n.reason === undefined && n.end - n.start >= 10 * MINUTE - 5000)).toBe(true);
+  // Rows of their own: the recording restart and the break over 30 min.
+  expect(a.unobserved.map(n => [n.sameSession === true, n.end - n.start >= config.listGapMs]))
+    .toEqual([[false, false], [true, true]]);
+  // The short breaks are inside the rows beside them, and say so.
+  expect(a.folded.length).toBeGreaterThanOrEqual(2);
 });
 
 test.each([
@@ -102,8 +118,11 @@ test.each([
   ['coarse before a stay', [['walk', 300], ['coarse', 900], ['still', 300], ['walk', 300]]],
   ['coarse only', [['walk', 300], ['coarse', 900], ['walk', 300]]],
   ['coarse to the end', [['walk', 300], ['still', 300], ['coarse', 900]]],
-  ['long weak GPS on the move', [['walk', 300], ['weak', 400, { drift: 2 }], ['walk', 300]]],
-  ['recording gap', [['walk', 300], ['none', 600], ['walk', 300]]],
+  ['weak GPS stretch on the move', [['walk', 300], ['weak', 400, { drift: 2 }], ['walk', 300]]],
+  ['short break between walks', [['walk', 300], ['none', 600, { move: 400 }], ['walk', 300]]],
+  ['short break after a stay', [['walk', 300], ['still', 400], ['none', 600, { move: 400 }], ['walk', 300]]],
+  ['long break', [['walk', 300], ['none', 1900, { move: 2000 }], ['walk', 300]]],
+  ['recording restart', [['walk', 300], ['none', 300, { move: 300 }], ['session', 'fiction-session-2'], ['walk', 300]]],
 ])('%s: rows cover the range with no hole and no double count', (_name, script) => {
   expectAccounted(timeline(day(script)));
 });
@@ -112,7 +131,7 @@ test('a merged walk counts the short weak-GPS time inside it; its distance stays
   const model = timeline(day([['walk', 300], ['weak', 40], ['walk', 300]]));
   const source = model.nodes.filter(n => n.type === 'movement');
   expect(source).toHaveLength(2);
-  expect(model.nodes.some(n => n.type === 'gap' && n.reason === 'uncertain')).toBe(true);
+  expect(model.nodes.some(n => n.type === 'gap' && n.reason === 'uncertain' && n.sameSession)).toBe(true);
   const walks = accounting(model).rows.filter(n => n.type === 'movement');
   expect(walks).toHaveLength(1);
   expect(walks[0].durationMs).toBe(walks[0].end - walks[0].start);
@@ -122,14 +141,61 @@ test('a merged walk counts the short weak-GPS time inside it; its distance stays
   expect(walks[0].countedDistanceM).toBeCloseTo(model.distanceM, 6);
 });
 
-test('a weak-GPS stretch of a gap\'s length is its own row, not walking minutes', () => {
+test('a short same-session break is no row: the walk around it carries its minutes and says 「含 N 分未定位」', () => {
+  const model = timeline(day([['walk', 300], ['none', 600, { move: 400 }], ['walk', 300]]));
+  const gap = model.nodes.find(n => n.type === 'gap');
+  expect(gap).toMatchObject({ sameSession: true });
+  const { rows } = accounting(model);
+  expect(rows.map(n => n.type)).toEqual(['movement']);
+  expect(rows[0].unlocatedMs).toBe(gap.end - gap.start);
+  expect(sectionText(rows[0]).rest).toContain(t('c1277', { duration: listDuration(gap.end - gap.start) }));
+  expect(sectionText(rows[0]).rest).toContain('含 10 分未定位');
+  // No distance across the break: the summary and the row agree.
+  expect(rows[0].countedDistanceM).toBeCloseTo(model.distanceM, 6);
+  // The map keeps the break (its edge is still a gap).
+  expect(model.edges.some(e => e.gap && e.start === gap.start)).toBe(true);
+});
+
+test('a weak-GPS stretch on the move is folded into the walk around it', () => {
   const model = timeline(day([['walk', 300], ['weak', 400, { drift: 2 }], ['walk', 300]]));
   const { rows } = accounting(model);
-  const weak = rows.find(n => n.type === 'gap');
-  expect(weak).toMatchObject({ reason: 'uncertain' });
-  expect(weak.end - weak.start).toBeGreaterThanOrEqual(3 * MINUTE);
-  expect(sectionText(weak).lead).toBe(t('c883'));
-  expect(rows.filter(n => n.type === 'movement')).toHaveLength(2);
+  expect(rows.map(n => n.type)).toEqual(['movement']);
+  expect(unlocatedText(rows[0])).toMatch(/^含 \d+ 分未定位$/);
+});
+
+test('the stay is preferred over the walk; the cursor and the list say the same minutes', () => {
+  const model = timeline(day([['walk', 300], ['still', 400], ['none', 600, { move: 400 }], ['walk', 300]]));
+  const source = model.nodes.find(n => n.type === 'stop');
+  const gap = model.nodes.find(n => n.type === 'gap');
+  expect(gap.start).toBe(source.end);
+  const { rows } = accounting(model);
+  const stay = rows.find(n => n.type === 'stop');
+  expect(stay).toMatchObject({ start: source.start, end: gap.end, number: source.number });
+  expect(interruptionText(stay)).toBe('含 10 分未定位');
+  const pill = nodePill(stay).text;
+  expect(pill).toBe(t('c127', { duration: listDuration(presentationDurationMs(stay)) }));
+  const label = cursorLabel(model, source.start + 60000, 'phone')[1];
+  expect(label).toBe(t('c136', { duration: listDuration(presentationDurationMs(stay)) }));
+  // GPX keeps the stay's own observed span.
+  const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] },
+    range: { start: model.points[0].time, end: model.points.at(-1).time }, subject: 'phone' });
+  expect(snapshot.subjects[0].stays[0]).toMatchObject({ start: source.start, end: source.end });
+});
+
+test('a break of 30 min or more stays its own 「沒有資料」 row', () => {
+  const model = timeline(day([['walk', 300], ['none', 1900, { move: 2000 }], ['walk', 300]]));
+  const { rows } = accounting(model);
+  expect(rows.map(n => n.type)).toEqual(['movement', 'gap', 'movement']);
+  expect(sectionText(rows[1]).lead).toBe(t('c089'));
+  expect(rows[0].unlocatedMs).toBeUndefined();
+});
+
+test('a recording restart stays its own 「沒有資料」 row however short', () => {
+  const model = timeline(day([['walk', 300], ['none', 300, { move: 300 }], ['session', 'fiction-session-2'], ['walk', 300]]));
+  const { rows } = accounting(model);
+  expect(rows.map(n => n.type)).toEqual(['movement', 'gap', 'movement']);
+  expect(rows[1].sameSession).toBeUndefined();
+  expect(rows[1].end - rows[1].start).toBeLessThan(config.listGapMs);
 });
 
 test('coarse stationary time after a stay is that stay\'s minutes: same number, same coordinate', () => {
@@ -179,6 +245,8 @@ test('CSV rows and GPX track points are the raw rows, whatever the list folds', 
   expect(csv).toHaveLength(rows.length + 1);
   const gpx = buildGPX(snapshot);
   expect((gpx.match(/<trkpt /g) || []).length).toBe(rows.length);
+  // Every break, folded in the list or not, still splits the GPX track.
+  expect(snapshot.subjects[0].gaps.length).toBeGreaterThanOrEqual(model.nodes.filter(n => n.type === 'gap').length);
   // The display-only coarse stay is not a GPX stay waypoint.
   expect(snapshot.subjects[0].stays.every(s => s.number != null)).toBe(true);
 });

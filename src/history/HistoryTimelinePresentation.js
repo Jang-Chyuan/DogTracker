@@ -3,8 +3,39 @@ import { configFor } from './HistoryConfig';
 const MINUTE = 60000;
 // The same gap threshold for a dog and the phone (HistoryConfig common).
 const GAP_MS = configFor('phone').gapMs;
+// 2026-10-13: a same-session break shorter than this is folded (HistoryConfig).
+const LIST_GAP_MS = configFor('phone').listGapMs;
 const last = list => list[list.length - 1];
 const walking = node => node?.type === 'movement' && node.mode === 'walking';
+const moving = node => node?.type === 'movement';
+// A row that is a stay: a stop, a hold, or a departure / end carrying one.
+const stayRow = node => ['stop', 'indoor'].includes(node?.type) || !!node?.departureStay || !!node?.terminalStay;
+// The phone's 「沒有資料」 / 「GPS 訊號弱」 inside one recording session.
+const foldable = node => node.type === 'gap' && (node.reason == null || node.reason === 'uncertain')
+  && node.sameSession === true && node.end - node.start < LIST_GAP_MS;
+const unfolded = node => {
+  const row = { ...node };
+  delete row.folded;
+  return row;
+};
+const withUnlocated = (node, ms) => {
+  const total = (node.unlocatedMs || 0) + ms;
+  return total > 0 ? { unlocatedMs: total } : {};
+};
+// Time between two rows that no row in `between` (folded breaks) has.
+const unlistedBetween = (between, a, b) => b.start - a.end
+  - between.reduce((sum, n) => sum + n.end - n.start, 0);
+/** A row stretched over the time beside it; a departure / end keeps its stay in step. */
+function stretch(node, start, end, unlocated) {
+  const extra = (node.start - start) + (end - node.end);
+  const grown = { ...node, start, end, durationMs: (node.durationMs ?? node.end - node.start) + extra,
+    ...withUnlocated(node, unlocated) };
+  if (node.departureStay) grown.departureStay = { ...node.departureStay, end,
+    durationMs: node.departureStay.durationMs + extra, ...withUnlocated(node.departureStay, unlocated) };
+  if (node.terminalStay) grown.terminalStay = { ...node.terminalStay, start,
+    durationMs: node.terminalStay.durationMs + extra, ...withUnlocated(node.terminalStay, unlocated) };
+  return grown;
+}
 const alignedDuration = node => {
   const duration = node.durationMs ?? node.end - node.start;
   // Displayed clocks have minute precision; never turn a gap into observed time.
@@ -17,6 +48,23 @@ const alignedDuration = node => {
 /** Shared display copy only: visible pills, marker speech and cursor labels. */
 export const presentationDurationMs = node => node.displayDurationMs ?? alignedDuration(node)
   ?? node.durationMs ?? node.end - node.start;
+
+// The list of a node array, once (cursor and map speech read it per move).
+const presented = new WeakMap();
+/**
+ * A source stay's minutes as the list shows them: a short same-session break
+ * folded into it counts (2026-10-13), so the cursor and the map's TalkBack say
+ * what the row says. Without the list (or no matching row) its own minutes.
+ */
+export function shownStayDurationMs(nodes, stay) {
+  if (!Array.isArray(nodes) || !stay) return presentationDurationMs(stay);
+  if (!presented.has(nodes)) presented.set(nodes, timelinePresentation(nodes));
+  const row = presented.get(nodes).map(n => n.terminalStay ?? n.departureStay ?? n)
+    .find(n => n === stay || (n.type === stay.type && (n.number ?? null) === (stay.number ?? null)
+      && (n.id ?? null) === (stay.id ?? null) && n.start <= stay.start && n.end >= stay.end
+      && n.unlocatedMs > 0));
+  return presentationDurationMs(row ?? stay);
+}
 
 // Presentation only: retained gaps/stops and the source model remain untouched.
 export function timelinePresentation(nodes = []) {
@@ -44,50 +92,49 @@ export function timelinePresentation(nodes = []) {
       end: initialStay.end, durationMs: initialStay.durationMs, departureStay: initialStay }, ...nodes.slice(2)]
     : nodes;
   // Every minute between two listed times belongs to a row (2026-10-13; this
-  // replaces #115's rule that a merged walk counts only its own legs). A
-  // weak-GPS row shorter than a gap is not listed: its time, and any other
-  // short unlisted time beside a walk, is that walk's (0 m) time. A longer
-  // weak-GPS row would mislead inside a walk, so it stays its own row.
+  // replaces #115's rule that a merged walk counts only its own legs). A break
+  // inside one recording session shorter than listGapMs (「沒有資料」 or
+  // 「GPS 訊號弱」) is no row of its own: its minutes go to the stay beside it,
+  // else the walk, else another movement, noted 「含 N 分未定位」. Longer
+  // breaks and every session change stay rows.
   const out = [];
   for (const node of input) {
-    const short = node.type === 'gap' && node.reason === 'uncertain' && node.end - node.start < GAP_MS;
-    let prior = null;
-    for (let k = out.length - 1; k >= 0 && !prior; k--) if (!out[k].unlisted) prior = out[k];
-    // Consecutive walking legs with only short unlisted time between them are
-    // one walk: its minutes are its span, its distance the legs' sum.
-    if (walking(node) && walking(prior) && node.start >= prior.end && node.start - prior.end < GAP_MS) {
-      while (out[out.length - 1] !== prior) out.pop();
-      out[out.length - 1] = { ...prior, end: node.end,
+    let at = out.length - 1;
+    while (at >= 0 && out[at].folded) at--;
+    const prior = out[at];
+    // Consecutive walking legs with only folded breaks or short unlisted time
+    // between them are one walk: its minutes are its span, its distance the
+    // legs' sum; the breaks in it are its 未定位 minutes.
+    if (walking(node) && walking(prior) && node.start >= prior.end
+      && unlistedBetween(out.slice(at + 1), prior, node) < GAP_MS) {
+      const unlocated = out.slice(at + 1).reduce((sum, n) => sum + n.end - n.start, 0);
+      out.splice(at + 1);
+      out[at] = { ...prior, end: node.end,
         endLatitude: node.endLatitude, endLongitude: node.endLongitude,
         durationMs: node.end - prior.start,
         distanceM: prior.distanceM + node.distanceM,
-        countedDistanceM: prior.countedDistanceM + node.countedDistanceM };
+        countedDistanceM: prior.countedDistanceM + node.countedDistanceM,
+        ...withUnlocated(prior, unlocated + (node.unlocatedMs || 0)) };
       continue;
     }
-    out.push(short ? { ...node, unlisted: true } : node);
+    out.push(foldable(node) ? { ...node, folded: true } : node);
   }
-  // Short unlisted time between two rows goes to the walk beside it; without a
-  // walk there, a weak-GPS row covering a clock minute is listed after all.
   const shown = [];
   for (let i = 0; i < out.length; i++) {
-    const node = out[i];
-    if (!node.unlisted) { shown.push(node); continue; }
+    if (!out[i].folded) { shown.push(out[i]); continue; }
     let j = i;
-    while (out[j + 1]?.unlisted) j++;
+    while (out[j + 1]?.folded) j++;
+    const breaks = out.slice(i, j + 1), unlocated = breaks.reduce((sum, n) => sum + n.end - n.start, 0);
     const before = last(shown), after = out[j + 1];
-    const from = before ? before.end : node.start, to = after ? after.start : out[j].end;
-    if (to - from < GAP_MS && walking(before) && to >= before.end) {
-      shown[shown.length - 1] = { ...before, end: to, durationMs: before.durationMs + (to - before.end) };
-    } else if (to - from < GAP_MS && walking(after) && from <= after.start) {
-      out[j + 1] = { ...after, start: from, durationMs: after.durationMs + (after.start - from) };
-    } else {
-      for (const hidden of out.slice(i, j + 1)) {
-        if (Math.floor(hidden.end / MINUTE) > Math.floor(hidden.start / MINUTE)) {
-          const { unlisted, ...row } = hidden;
-          shown.push(row);
-        }
-      }
+    const from = before ? before.end : breaks[0].start, to = after ? after.start : breaks[breaks.length - 1].end;
+    let host = null;
+    for (const kind of [stayRow, walking, moving]) {
+      if (!host) host = kind(before) ? 'before' : kind(after) ? 'after' : null;
     }
+    if (host === 'before') shown[shown.length - 1] = stretch(before, before.start, to, unlocated);
+    else if (host === 'after') out[j + 1] = stretch(after, from, after.end, unlocated);
+    // Nothing with a length beside it (only the departure or the end): listed.
+    else for (const row of breaks) shown.push(unfolded(row));
     i = j;
   }
   // Raw holes (time no row has) of less than a gap beside a walk: the walk's.
@@ -95,8 +142,8 @@ export function timelinePresentation(nodes = []) {
     const a = shown[i - 1], b = shown[i];
     const hole = b.start - a.end;
     if (!(hole > 0 && hole < GAP_MS)) continue;
-    if (walking(a)) shown[i - 1] = { ...a, end: b.start, durationMs: a.durationMs + hole };
-    else if (walking(b)) shown[i] = { ...b, start: a.end, durationMs: b.durationMs + hole };
+    if (walking(a)) shown[i - 1] = stretch(a, a.start, b.start, 0);
+    else if (walking(b)) shown[i] = stretch(b, a.end, b.end, 0);
   }
   // A terminal stay and its endpoint are one visual place. Inspect the original
   // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
@@ -106,12 +153,15 @@ export function timelinePresentation(nodes = []) {
   const end = nodes[nodes.length - 1], stay = nodes[nodes.length - 2];
   const endBelongsToStay = typeof stay?.id === 'string' && stay.id.startsWith('visit:')
     && stay.points?.some(point => point.time === end?.start && samePlace(point, end));
-  if (end?.type === 'end' && stay?.type === 'stop' && shown[shown.length - 2]?.type === 'stop'
+  const shownStay = shown[shown.length - 2];
+  if (end?.type === 'end' && stay?.type === 'stop' && shownStay?.type === 'stop'
     && stay.end === end.start
     && !stay.gaps?.length && !stay.displayRange?.gaps?.length
     && (samePlace(stay, end) || endBelongsToStay || stationaryRun(stay))) {
-    shown.splice(shown.length - 2, 2, { ...end, start: stay.start,
-      durationMs: stay.durationMs, terminalStay: stay, number: null });
+    // The shown stay: it may carry a folded break before it.
+    shown.splice(shown.length - 2, 2, { ...end, start: shownStay.start,
+      durationMs: shownStay.durationMs, terminalStay: shownStay, number: null,
+      ...withUnlocated(shownStay, 0) });
   }
   return shown.map(node => {
     const duration = node.durationMs ?? node.end - node.start;

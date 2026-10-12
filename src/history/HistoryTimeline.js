@@ -237,6 +237,12 @@ export function historyTimeline(rows = [], options = {}) {
   // Skipped stationary edges right after the last row (a pause on foot).
   let pause = null;
   const isFoot = mode => mode === 'walking' || mode === 'moving';
+  const sessionOf = p => typeof p.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
+  // A short weak-GPS step had fixes on both sides (the recorder ran) unless
+  // the two say otherwise; a break with no fix needs one known session.
+  const sameSessionGap = e => subject === 'phone' && !!e.gap && (e.uncertain && e.durationMs <= config.gapMs
+    ? !(sessionOf(e.from) && sessionOf(e.to) && sessionOf(e.from) !== sessionOf(e.to))
+    : sessionOf(e.from) != null && sessionOf(e.from) === sessionOf(e.to));
   for (const e of sectionEdges) {
     // Time a presentation stay keeps (all of it 0 m) is no travel/gap row.
     if (inStationary(e)) { pause = null; continue; }
@@ -281,7 +287,11 @@ export function historyTimeline(rows = [], options = {}) {
       && !locations.some(n => n.start === e.start || n.end === e.start)) {
       prior.end = e.end; prior.durationMs += e.durationMs;
       prior.distanceM += e.gap ? 0 : e.distanceM; prior.countedDistanceM += e.countedDistanceM;
+      if (prior.sameSession && !sameSessionGap(e)) delete prior.sameSession;
     } else sections.push({ type: e.gap ? 'gap' : 'movement', mode: e.mode,
+      // A phone break inside one recording session (the list folds a short
+      // one into the row beside it); a session change is always its own row.
+      ...(sameSessionGap(e) ? { sameSession: true } : {}),
       // 067: a dog's break says why — packets came without a fix
       // (「收不到 GPS」) or nothing came (「沒收到訊號」). A phone's stays
       // 「沒有資料」.
