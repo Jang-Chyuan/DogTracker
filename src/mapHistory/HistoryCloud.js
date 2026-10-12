@@ -102,11 +102,18 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
             const prefix = historyCoverage(dayStart, dayEnd, proof.received_before);
             return coversHistory(proof, prefix) ? proof.received_before : dayStart - DOWNLOAD_BEFORE_MS;
           };
+          // A retained completed prefix stays true while its tail downloads:
+          // rows only arrive in a staged scope, and eviction/repair already
+          // invalidate proof on their own. Wiping it would throw away the
+          // tail cursor of an interrupted refresh and publish an unknown
+          // material revision, so readers fully re-read twice per refresh.
+          // Only a dog downloading its entire window loses its old proof.
+          const restart = ids.filter(id => tailStart(id) === dayStart - DOWNLOAD_BEFORE_MS);
           const markIncomplete = async () => {
-            for (const id of ids) await database.setHistoryDownloadState?.(owner, id, day, false);
+            for (const id of restart) await database.setHistoryDownloadState?.(owner, id, day, false);
           };
-          if (publishScoped) await publishScoped(markIncomplete);
-          else await markIncomplete();
+          if (restart.length && publishScoped) await publishScoped(markIncomplete);
+          else if (restart.length) await markIncomplete();
           for (const id of ids) {
             if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
             try {
