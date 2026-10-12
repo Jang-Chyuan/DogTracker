@@ -49,7 +49,9 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
     await check();
     if (error) throw cloudError(t("c577", { value: error.code ? ` (${error.code})` : '' }), error, status);
     if (!Array.isArray(data)) throw new Error(t("c578"));
-    // Query to empty, not to page-size: the server may impose a smaller limit.
+    // Query to empty, not to page-size: this 1,000-row page has no margin
+    // below the server's max-rows, and the end of window becomes a checkpoint
+    // and completeness proof. Unlike CloudPaging's short-page stop, keep it.
     if (!data.length) {
       if (checkpoint) {
         await database.savePage(owner, [], { masterId, throughAt: endBefore, eventId: null });

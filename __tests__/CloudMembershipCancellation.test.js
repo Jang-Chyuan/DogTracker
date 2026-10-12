@@ -35,11 +35,28 @@ test('ignored late transport rejection has a handler after membership is cancele
   expect(f.calls).toHaveLength(1);
 });
 
-test('complete membership keeps the same serial 500-row pages and terminal empty page', async () => {
+test('complete membership keeps serial 500-row pages; a full page reads on, a short page ends it', async () => {
   const page = Array.from({ length: 500 }, (_, i) => ({ gateway_id: `master_${i % 2 ? 7 : 17}`, slave_id: i }));
   const f = membership(async n => ({ data: n === 1 ? page : n === 2 ? [{ gateway_id: 'master_27', slave_id: 999 }] : [] }));
   expect(await listCloudMasters(f.client, 'fiction-owner', undefined, () => {})).toEqual([17, 7, 27]);
-  expect(f.calls.map(call => call.range)).toEqual([[0, 499], [500, 999], [501, 1000]]);
+  // Before: a third request for the terminal empty page at [501, 1000].
+  expect(f.calls.map(call => call.range)).toEqual([[0, 499], [500, 999]]);
+});
+
+test('a typical account reads its membership in one request, and an empty list in one', async () => {
+  const f = membership(async () => ({ data: [{ gateway_id: 'master_7', slave_id: 4 }, { gateway_id: 'master_7', slave_id: 6 }] }));
+  expect(await listCloudMasters(f.client, 'fiction-owner', undefined, () => {})).toEqual([7]);
+  expect(f.calls).toHaveLength(1);
+  const none = membership(async () => ({ data: [] }));
+  expect(await listCloudMasters(none.client, 'fiction-owner', undefined, () => {})).toEqual([]);
+  expect(none.calls).toHaveLength(1);
+});
+
+test('an exactly full last membership page still needs the empty page to prove the end', async () => {
+  const page = Array.from({ length: 500 }, (_, i) => ({ gateway_id: 'master_7', slave_id: i }));
+  const f = membership(async n => ({ data: n === 1 ? page : [] }));
+  expect(await listCloudMasters(f.client, 'fiction-owner', undefined, () => {})).toEqual([7]);
+  expect(f.calls.map(call => call.range)).toEqual([[0, 499], [500, 999]]);
 });
 
 test('already canceled membership never issues an SDK query', async () => {
