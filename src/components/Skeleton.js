@@ -61,20 +61,50 @@ export default function Skeleton({ shape = 'rows', reduced: override, testID = '
   </Animated.View>;
 }
 
-/** Keep this mounted around content to fade in when a slow load finishes. */
-export function LoadingContent({ loading, children, shape, label = t('c425'), skeletonTestID, reduced }) {
-  const [visible, setVisible] = useState(false);
+/**
+ * Keep this mounted around content to fade in when a slow load finishes.
+ * `immediate`: show the skeleton on the first frame instead of after
+ * SKELETON_TIMING.delay — for a wait the user just started (a released
+ * range, another day), whose work may then keep the JavaScript timer from
+ * ever firing. A new `label` while still loading (讀取中 → 下載…) is only
+ * announced: the skeleton stays, it does not wait for the delay again.
+ */
+export function LoadingContent({ loading, children, shape, label = t('c425'), skeletonTestID, reduced, immediate = false }) {
+  const [visible, setVisible] = useState(immediate && loading);
   const wasVisible = useRef(false);
-  const opacity = useRef(new Animated.Value(1)).current;
+  // A new value for each content that follows a load: the content view
+  // unmounted for the skeleton detaches only in a microtask, and a fade
+  // started on its old value before then (an immediate skeleton can be
+  // that short) would try to drive the unmounted view.
+  const opacityNow = useRef(null);
+  const wasLoading = useRef(loading);
+  if (!opacityNow.current || (wasLoading.current && !loading)) opacityNow.current = new Animated.Value(1);
+  wasLoading.current = loading;
+  const opacity = opacityNow.current;
+  const immediateNow = useRef(immediate);
+  immediateNow.current = immediate;
+  useEffect(() => {
+    if (loading) AccessibilityInfo.announceForAccessibility?.(label);
+  }, [loading, label]);
   useEffect(() => {
     if (!loading) return undefined;
-    AccessibilityInfo.announceForAccessibility?.(label);
+    opacity.setValue(1);
+    if (immediateNow.current) {
+      wasVisible.current = true;
+      setVisible(true);
+      return undefined;
+    }
     setVisible(false);
     wasVisible.current = false;
-    opacity.setValue(1);
     const timer = setTimeout(() => { wasVisible.current = true; setVisible(true); }, SKELETON_TIMING.delay);
     return () => clearTimeout(timer);
-  }, [loading, label, opacity]);
+  }, [loading, opacity]);
+  // Asked for at once while already waiting for the delay.
+  useEffect(() => {
+    if (!loading || !immediate || wasVisible.current) return;
+    wasVisible.current = true;
+    setVisible(true);
+  }, [loading, immediate]);
   useEffect(() => {
     if (loading) return undefined;
     if (!wasVisible.current) {
@@ -88,7 +118,7 @@ export function LoadingContent({ loading, children, shape, label = t('c425'), sk
     animation.start();
     return () => animation.stop();
   }, [loading, opacity]);
-  if (loading) return visible ? <Skeleton shape={shape} testID={skeletonTestID} reduced={reduced} /> : null;
+  if (loading) return visible || immediate ? <Skeleton shape={shape} testID={skeletonTestID} reduced={reduced} /> : null;
   return <Animated.View style={{ opacity }}>{children}</Animated.View>;
 }
 
