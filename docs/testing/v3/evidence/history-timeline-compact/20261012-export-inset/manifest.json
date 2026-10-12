@@ -42,5 +42,18 @@
       "rootViewed": true
     }
   ],
-  "beforeAPK": "fd7381f76017b7794664ab123b63ea61fccb22fec69f31665d4ee673eed3974c"
+  "beforeAPK": "fd7381f76017b7794664ab123b63ea61fccb22fec69f31665d4ee673eed3974c",
+  "landscapePhone277": {
+    "file": "phone-landscape-277.png",
+    "sha256": "7ca650a7c1c4ec02a824032483d9293dd1e571b06d0dcac17d1e6252cdfa6d4a",
+    "rootViewed": true,
+    "viewport": [
+      2340,
+      1080
+    ],
+    "actualHistoryBeforeVerified": true,
+    "xmlCaptured": true,
+    "settingsRestored": true,
+    "notDogOrFont2OrMapBearingValidation": true
+  }
 }
