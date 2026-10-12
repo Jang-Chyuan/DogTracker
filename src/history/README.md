@@ -20,7 +20,7 @@
 | `historyTimeline(rows, options)` | 整合入口：共同資料流、範圍、地點列、交通／缺口列、編號、距離與追加狀態 |
 | `countDistances(edges, config)` | 判定表「距離怎麼加」：和「上一個有算進去的點」比，超過兩筆誤差較大者（至少 5 m，缺誤差值當 10 m）才算 |
 | `dogHistoryRow(row, source)`, `phoneHistoryRow(row)`（`HistoryRows.js`） | `dog_status`／`supabase_dog_status`／`myLocationTracker` 的列轉成共同格式：封包時間＝手機收到的時間（雲端用 `track_at`），定位時間＝項圈的 `gps_time` |
-| `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344）：時長、距離、膠囊、移動段、H8 |
+| `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344、c1276）：時長、距離（`km` 總數、`rowDistance` 列與游標）、膠囊、移動段、H8 |
 
 時間一律為 UTC 毫秒；公尺為 `distanceM`，持續時間為 `durationMs`。`subject` 為 `dog` 或 `phone`；`source` 為 `all`、`local`（接受 `ble` 別名）或 `cloud`。
 
@@ -60,3 +60,9 @@
 ## 已知缺口：狗在車上沒有 GPS（H2c 坐車段借用手機路線）
 
 設計稿判定表「狗在車上沒定位」要求項圈在車上沒有好定位時，沿著這支手機的路線畫坐車段。這要跨資料流（手機 30 秒速度中間值、接收器聽到這隻狗的訊號強度、項圈 1 分鐘以上沒有好定位），計畫（第 2 段「之後（不排號）」）排在坐車實測確認之後才做。目前的行為：那段項圈沒有定位就沒有實測點，清單照「在車上沒定位、歷史裡沒有手機路線」畫成「沒有資料」段，項圈恢復好定位後接上（超過 30 分鐘另加「恢復記錄」）；不會把車速的跳點當成移動距離（超過 15 m/s 的單筆照跳點丟掉）。`__tests__/HistoryReviewRules.test.js` 有一個測試鎖住這個行為。
+
+## 清單列的文字（2026-10-13）
+
+- 距離：`rowDistance` 用在移動段（`sectionText`，畫面與 PNG 清單）和游標標籤（`cursorLabel`）。不到 100 m 寫公尺、10 m 一階（`40 m`、`0 m`）；四捨五入後達 100 m 起用 `km()`（`0.1 km`）。摘要（`summaryText`／`movementSummary`／範圍摘要）、「今天 x km」與匯出的總距離仍用 `km()`；CSV／GPX 不變。
+- 分鐘：移動段顯示的距離不是 `0 m`、顯示分鐘（`displayDurationMs ?? durationMs`）四捨五入為 0 時，時間寫「不到 1 分」（c1276）。只改文字；`durationMs`／`displayDurationMs` 不變。
+- 出發：`timelinePresentation` 裡，第一列是出發、1 分鐘內接著室內節點，中間只有沒計入距離的走路／移動或 `uncertain` 列時，出發列用室內節點的座標（地址跟著座標查），兩列都保留，不設 `departureStay`。模型的 `departure` 節點、地圖起點與 CSV／GPX 仍是第一筆定位。室內節點正好從第一筆開始時，`historyTimeline` 目前不加出發節點（沿用 #64）。`__tests__/HistoryRowText.test.js` 用虛構資料檢查這三條。

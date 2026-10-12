@@ -65,7 +65,9 @@ export function timelinePresentation(nodes = []) {
     shown.splice(shown.length - 2, 2, { ...end, start: stay.start,
       durationMs: stay.durationMs, terminalStay: stay, number: null });
   }
+  const indoor = indoorAtDeparture(nodes);
   return shown.map(node => {
+    if (indoor && node === nodes[0]) return { ...node, latitude: indoor.latitude, longitude: indoor.longitude };
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
@@ -73,4 +75,29 @@ export function timelinePresentation(nodes = []) {
       ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
   });
+}
+
+/**
+ * 出發 is always the first row (2026-10-13, approved). A dog's departure is its
+ * first fix, while a 室內 hold starting right after it is placed at the hold
+ * anchor (a mean of fixes): two rows in one minute would name two addresses.
+ * When the hold starts within a minute of the departure with no counted
+ * distance between them (only 0 m foot rows or short weak-GPS time), the
+ * departure row is shown at the hold's place. Both rows stay (no 「出發 · 室內」).
+ * Display only: the model, the map's first point, CSV and GPX keep the first
+ * fix; the PNG list is this presentation, as on screen.
+ */
+function indoorAtDeparture(nodes) {
+  const departure = nodes[0];
+  if (departure?.type !== 'departure') return null;
+  for (const node of nodes.slice(1)) {
+    if (!(node.start - departure.start <= MINUTE)) return null;
+    if (node.type === 'indoor') {
+      return Number.isFinite(node.latitude) && Number.isFinite(node.longitude) ? node : null;
+    }
+    const still = node.type === 'movement' && (node.mode === 'walking' || node.mode === 'moving')
+      && !(node.countedDistanceM > 0);
+    if (!still && !(node.type === 'gap' && node.reason === 'uncertain')) return null;
+  }
+  return null;
 }

@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 // The words of the H1/H2 time-line list and its summary (copy deck c120,
 // c121, c124, c127, c130, c137, c140, c159, c306–c308, c315, c316, c331–c341,
-// c344). Pure: the list component draws them, tests read them.
+// c344, c1276). Pure: the list component draws them, tests read them.
 
 const MINUTE = 60000;
 const pad = value => String(value).padStart(2, '0');
@@ -33,6 +33,17 @@ export function km(metres) {
   return `${(Math.round(Math.max(0, metres || 0) / 100) / 10).toFixed(1)} km`;
 }
 
+/**
+ * A list row's or the cursor's distance (2026-10-13, approved): under 100 m in
+ * metres, 10 m steps (「40 m」, 「0 m」) instead of 「0.0 km」; from 100 m
+ * 「0.1 km」 as km(). The decision is made on the rounded value, so 95–99 m
+ * is 「0.1 km」, never 「100 m」. Totals (summary, 「今天 x km」, exports) stay km().
+ */
+export function rowDistance(metres) {
+  const tens = Math.round(Math.max(0, metres || 0) / 10) * 10;
+  return tens < 100 ? `${tens} m` : km(metres);
+}
+
 /** 「24.9283, 121.2846」 */
 export function coordinates(node) {
   return `${node.latitude.toFixed(4)}, ${node.longitude.toFixed(4)}`;
@@ -54,11 +65,18 @@ export function sectionText(section) {
     return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${clock(section.end)}` };
   }
   const vehicle = section.mode === 'driving' || section.mode === 'ride';
+  const metres = vehicle ? section.distanceM : section.countedDistanceM;
+  const duration = section.displayDurationMs ?? section.durationMs;
+  // A row that shows a distance never says 「0 分」 (2026-10-13, approved):
+  // its clock-aligned minutes can round to 0 while it moved — 「不到 1 分」.
+  // Only the words change; the durations stay as they are.
+  const moved = Math.round(Math.max(0, metres || 0) / 10) > 0;
+  const lessThanMinute = moved && Math.round(Math.max(0, duration || 0) / MINUTE) === 0;
   return {
     icon: vehicle ? 'car' : section.mode === 'walking' ? 'walk' : 'paw',
     lead: MODE_WORD[section.mode] || t('c125'),
-    time: listDuration(section.displayDurationMs ?? section.durationMs),
-    rest: vehicle ? `・${km(section.distanceM)}` : `・${km(section.countedDistanceM)}`,
+    time: lessThanMinute ? t('c1276') : listDuration(duration),
+    rest: `・${rowDistance(metres)}`,
   };
 }
 

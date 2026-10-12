@@ -1,5 +1,5 @@
 import { t } from '../../i18n';
-import { clock, km, listDuration } from '../HistoryText';
+import { clock, listDuration, rowDistance } from '../HistoryText';
 import { presentationDurationMs } from '../HistoryTimelinePresentation';
 import { snapToRoute } from '../../mapHistory/CursorGeometry';
 import { nearestRecord } from './HistoryScreenRange';
@@ -19,7 +19,8 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   if (['ride', 'driving'].includes(section?.mode)) return [clock(time), ((section.mode === 'ride') ? t('c342') : t('c343'))];
   const distance = (model.distanceEdges ?? model.sections).reduce((sum, n) => sum + (n.countedDistanceM || 0)
     * (time >= n.end ? 1 : time <= n.start ? 0 : (time - n.start) / (n.end - n.start)), 0);
-  return [clock(time), ((subject === 'phone') ? t('c131', { distance: km(distance) }) : t('c116', { distance: km(distance) }))];
+  // The running distance reads like a row's: 「已移動 40 m」 under 100 m.
+  return [clock(time), ((subject === 'phone') ? t('c131', { distance: rowDistance(distance) }) : t('c116', { distance: rowDistance(distance) }))];
 }
 
 export function screenCursor(model, time, { subject = 'dog', action = 'drag', previous = null } = {}) {
