@@ -12,7 +12,7 @@ const back = { x: 8, y: 60, width: 100, height: 44 };
 const overlap = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 
 test('native label stays unchanged when the whole measured label is clear', () => {
-  expect(cursorLabelPlacement({ x: 200, y: 240 }, size, view, [back])).toEqual({ hidden: false, box: null });
+  expect(cursorLabelPlacement({ x: 200, y: 240 }, size, view, [back])).toEqual({ hidden: false, box: null, pinSafe: true });
 });
 
 test('visible true dot with label under back uses one lower bubble without moving the point', () => {
@@ -33,7 +33,7 @@ test.each([8, 390])('actual width rather than longitude protects the screen edge
 });
 
 test('very long glyphs and expanded 20dp space fail closed instead of forcing a 1dp fit or new clock', () => {
-  expect(cursorLabelPlacement({ x: 100, y: 130 }, { ...size, width: 500 }, view, [back])).toEqual({ hidden: true, box: null });
+  expect(cursorLabelPlacement({ x: 100, y: 130 }, { ...size, width: 500 }, view, [back])).toMatchObject({ hidden: true, box: null });
   const narrow = { ...view, top: 104, bottom: 124 };
   expect(cursorCameraTarget(size, narrow, [back])).toBeNull();
   expect(measuredCursorFrame({ top: 16, left: 24, right: 24, bottom: 20 }, size, narrow, [back])).toBeNull();
@@ -42,7 +42,7 @@ test('very long glyphs and expanded 20dp space fail closed instead of forcing a 
 test('requested camera target clears both actual control and pin/label and measured frame has room', () => {
   const target = cursorCameraTarget(size, view, [back]);
   expect(target).not.toBeNull();
-  expect(cursorLabelPlacement(target, size, view, [back])).toEqual({ hidden: false, box: null });
+  expect(cursorLabelPlacement(target, size, view, [back])).toEqual({ hidden: false, box: null, pinSafe: true });
   const padding = measuredCursorFrame({ top: 16, left: 24, right: 24, bottom: 20 }, size, view, [back]);
   expect(padding.top).toBe(size.above + 8 + back.y + back.height - view.top);
   expect(padding.left).toBe(size.width / 2 + 8);
@@ -59,10 +59,19 @@ test('bottom frame control avoids the released card without becoming a top frami
   expect(overlap(placement.box, frame)).toBe(false);
   const target = cursorCameraTarget(size, view, all);
   expect(target).not.toBeNull();
-  expect(cursorLabelPlacement(target, size, view, all)).toEqual({ hidden: false, box: null });
+  expect(cursorLabelPlacement(target, size, view, all)).toEqual({ hidden: false, box: null, pinSafe: true });
   expect(measuredCursorFrame({ top: 16, left: 24, right: 24, bottom: 20 }, size, view, all, [back]))
     .toEqual(measuredCursorFrame({ top: 16, left: 24, right: 24, bottom: 20 }, size, view, [back]));
   expect(point).toEqual({ x: 330, y: 370 });
+});
+
+test('a face/name under the panel is reported unsafe even when the label itself finds room', () => {
+  const face = cursorLabelFootprint({ width: 140, height: 46 }, true, { width: 160, height: 120 });
+  const result = cursorLabelPlacement({ x: 200, y: view.bottom - 4 }, face, view, [back]);
+  expect(result.hidden).toBe(true);
+  expect(result.box).not.toBeNull();
+  expect(result.pinSafe).toBe(false);
+  expect(cursorLabelPlacement({ x: 200, y: 240 }, face, view, [back]).pinSafe).toBe(true);
 });
 
 test('measured face/name lower footprint changes candidate clearance without changing its anchor', () => {
@@ -275,6 +284,77 @@ describe('actual Google renderer label and requested camera boundary', () => {
     await act(async () => staleLayout({ nativeEvent: { layout: { x: 300, y: 0, width: 100, height: 200 } } }));
     expect(hosts('history-cursor-collision-label')).toHaveLength(0);
     expect(bitmap().props.hidden).toBe(false);
+  });
+
+  test('a short map whose top band leaves no strict room still frames on 框住全部; a sliver does not', async () => {
+    const tall = { x: 8, y: 60, width: 100, height: 240 };
+    const geometry = { boxes: [tall], topBoxes: [tall], ready: true };
+    await mount({ historyControls: geometry });
+    await measure();
+    mockCamera.animateToRegion.mockClear(); mockCamera.fitToCoordinates.mockClear();
+    await act(async () => tree.update(<TrackingMap {...defaults} historyControls={geometry} historyFrame={{ key: 7 }} />));
+    expect(mockCamera.animateToRegion.mock.calls.length + mockCamera.fitToCoordinates.mock.calls.length).toBe(1);
+    expect(marker().props.coordinate).toBe(coordinate);
+    mockCamera.animateToRegion.mockClear(); mockCamera.fitToCoordinates.mockClear();
+    // Landscape at half height: 120dp is too short for the pin and label, not for the route.
+    await act(async () => tree.update(<TrackingMap {...defaults} bottomInset={636} historyControls={geometry} historyFrame={{ key: 9 }} />));
+    expect(mockCamera.animateToRegion.mock.calls.length + mockCamera.fitToCoordinates.mock.calls.length).toBe(1);
+    mockCamera.animateToRegion.mockClear(); mockCamera.fitToCoordinates.mockClear();
+    // Expanded: only a sliver above the panel, not even the pin and its label fit.
+    await act(async () => tree.update(<TrackingMap {...defaults} bottomInset={700} historyControls={geometry} historyFrame={{ key: 8 }} />));
+    expect(mockCamera.animateToRegion).not.toHaveBeenCalled();
+    expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
+  });
+
+  test('a moving camera drops the collision label until idle reprojects it; the marker never moves', async () => {
+    await mount({ historyControls: { boxes: controls, ready: true } });
+    await measure();
+    expect(hosts('history-cursor-collision-label')).toHaveLength(1);
+    const anchor = marker().props.anchor;
+    // A pinch, rotation or requested move starts: the old screen point is stale.
+    await act(async () => tree.root.findByType(MapView).props.onRegionChangeStart({}, { isGesture: true }));
+    expect(hosts('history-cursor-collision-label')).toHaveLength(0);
+    expect(marker().props.coordinate).toBe(coordinate);
+    expect(marker().props.anchor).toEqual(anchor);
+    await act(async () => tree.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
+    expect(hosts('history-cursor-collision-label')).toHaveLength(1);
+    expect(marker().props.coordinate).toBe(coordinate);
+  });
+
+  test('a released drag leaving the face/name under the panel moves the camera once, never the marker', async () => {
+    let gesture;
+    const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { gesture = value; return { panHandlers: {} }; });
+    try {
+      // The point is still above the panel (bottom 400), its name tag is not.
+      mockCamera.pointForCoordinate.mockResolvedValue({ x: 200, y: 396 });
+      await mount({ historyControls: { boxes: controls, ready: true } });
+      await measure();
+      const anchor = marker().props.anchor;
+      expect(mockCamera.animateCamera).not.toHaveBeenCalled();
+      await act(async () => gesture.onPanResponderGrant());
+      expect(mockCamera.animateCamera).not.toHaveBeenCalled();
+      await act(async () => gesture.onPanResponderRelease());
+      expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
+      expect(marker().props.coordinate).toBe(coordinate);
+      expect(marker().props.anchor).toEqual(anchor);
+      // A later render with the same released state does not move it again.
+      await act(async () => tree.update(<TrackingMap {...defaults} historyControls={{ boxes: controls, ready: true }} />));
+      expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
+    } finally { spy.mockRestore(); }
+  });
+
+  test('a released drag whose point, face and label are all clear leaves the camera alone', async () => {
+    let gesture;
+    const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { gesture = value; return { panHandlers: {} }; });
+    try {
+      mockCamera.pointForCoordinate.mockResolvedValue({ x: 200, y: 240 });
+      await mount({ historyControls: { boxes: controls, ready: true } });
+      await measure();
+      await act(async () => gesture.onPanResponderGrant());
+      await act(async () => gesture.onPanResponderRelease());
+      expect(mockCamera.animateCamera).not.toHaveBeenCalled();
+      expect(mockCamera.animateToRegion).not.toHaveBeenCalled();
+    } finally { spy.mockRestore(); }
   });
 
   test('new measured collision controls do not change an active gesture host, projection scope or native anchor', async () => {

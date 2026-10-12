@@ -686,6 +686,9 @@ function GoogleTrackingMapRenderer({
   const historyRoute = presentation.historyRoute || null;
   const [cursorMeasurement, setCursorMeasurement] = useState(null);
   const [cursorProjection, setCursorProjection] = useState(null);
+  // Between a camera start and its idle, every screen point read before is
+  // stale: the collision-only label must not stay at the old place.
+  const [historyCameraMoving, setHistoryCameraMoving] = useState(false);
 
   const [attempt, setAttempt] = useState(0);
   const nativePhone = useRef(null);
@@ -694,6 +697,8 @@ function GoogleTrackingMapRenderer({
   const [loadedInstance, setLoadedInstance] = useState(null);
   const [timedOut, setTimedOut] = useState(false);
   const instance = String(attempt);
+  // A new map/source never inherits the previous map's camera motion.
+  useEffect(() => { setHistoryCameraMoving(false); }, [source, instance]);
   const cursorMeasurementKey = `${source}:${instance}:${historyRoute?.cursor?.lines?.[1]}:${historyRoute?.cursor?.face?.name ?? ''}:${!!historyRoute?.cursor?.face}`;
   // Where each dog is on screen, read after every camera move, so name tags
   // that would run into each other merge into one 「3 隻」 tag.
@@ -1119,7 +1124,9 @@ function GoogleTrackingMapRenderer({
   cameraScope.current = `${source}:${instance}:${projectedKey}:${cursorMeasurementKey}:${JSON.stringify(historyControls)}:${!live && compassScope}:${JSON.stringify(!live && compassRect)}`;
   const cursorPlacement = controlsReady && cursorSize && currentProjection
     ? cursorLabelPlacement(currentProjection, cursorSize, cursorView, controlRects)
-    : { hidden: true, box: null };
+    : { hidden: true, box: null, pinSafe: true };
+  const shownCursorPlacement = historyCameraMoving && cursorPlacement.box
+    ? { ...cursorPlacement, box: null } : cursorPlacement;
   const hints = useMemo(
     () =>
       live && screenPoints
@@ -1431,8 +1438,17 @@ function GoogleTrackingMapRenderer({
   const frameRoute = (animated = true) => {
     if (!usable || !routeCamera?.length) return;
     const originalRoom = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
-    const room = cursorSize ? measuredCursorFrame(originalRoom, cursorSize, cursorView, controlRects, topControlRects) : originalRoom;
-    // Expanded may leave less room than the pin+label. Do not force a 1dp fit.
+    // A short map (a phone in landscape at half height) may not fit the whole
+    // pin+label below the top band, or at all. 框住全部 still frames the route
+    // there, as before measured framing: the label moves aside or hides on its
+    // own. Only a sliver (expanded) is left alone instead of a 1dp fit.
+    const viewRoom = (cursorView.bottom - cursorView.top - originalRoom.top - originalRoom.bottom >= touch.min)
+      && (cursorView.right - cursorView.left - originalRoom.left - originalRoom.right >= touch.min);
+    const room = cursorSize
+      ? measuredCursorFrame(originalRoom, cursorSize, cursorView, controlRects, topControlRects)
+        ?? measuredCursorFrame(originalRoom, cursorSize, cursorView, controlRects, [])
+        ?? (viewRoom ? originalRoom : null)
+      : originalRoom;
     if (!room) return;
     const framing = overlayFramePadding(room, { topInset, bottomInset, overlayTop, overlayBottom });
     // Held days retain many identical fixes; framedCoordinates only expands
@@ -1513,6 +1529,23 @@ function GoogleTrackingMapRenderer({
     focusedHistory.current = historyFocus.key;
     showCursor(historyFocus.coordinate, historyFocus.centre);
   }, [historyFocus, usable, showCursor, measuredHistoryUI, controlsReady, cursorSize]);
+  // A released (or cancelled) cursor drag that left the point, its face/name
+  // or its label under the panel or a control moves the map, never the
+  // marker (判定表: 拖游標 is one of the history's camera exceptions).
+  const cursorWasDragged = useRef(false);
+  const revealDraggedCursor = useRef(false);
+  useEffect(() => {
+    if (cursorDragging) { cursorWasDragged.current = true; revealDraggedCursor.current = false; }
+    else if (cursorWasDragged.current) { cursorWasDragged.current = false; revealDraggedCursor.current = true; }
+  }, [cursorDragging]);
+  const draggedCoordinate = historyRoute?.cursor?.coordinate;
+  const cursorNeedsRoom = cursorPlacement.hidden && (!cursorPlacement.box || !cursorPlacement.pinSafe);
+  useEffect(() => {
+    if (!revealDraggedCursor.current || cursorDragging || !usable || !draggedCoordinate
+      || !controlsReady || !cursorSize || !currentProjection) return;
+    revealDraggedCursor.current = false;
+    if (cursorNeedsRoom) showCursor(draggedCoordinate, false);
+  }, [cursorDragging, usable, draggedCoordinate, controlsReady, cursorSize, currentProjection, cursorNeedsRoom, showCursor]);
   const framedRequest = useRef(null);
   useEffect(() => {
     if (!frameRequest || framedRequest.current === frameRequest.key || !usable)
@@ -1693,7 +1726,9 @@ function GoogleTrackingMapRenderer({
             interacted.current = true;
             startMoving();
           }}
+          onRegionChangeStart={historyMode ? () => setHistoryCameraMoving(true) : undefined}
           onRegionChangeComplete={(_, details) => {
+            setHistoryCameraMoving(false);
             if (framed.current) releaseSplash();
             if (activeInstance.current !== instance || !foreground) return;
             setCursorRevision(value => value + 1);
@@ -1906,7 +1941,7 @@ function GoogleTrackingMapRenderer({
           onDraggingChange={setCursorDragging}
           onProjection={setCursorProjection}
           projectionScope={`${source}:${instance}`}
-          labelPlacement={cursorPlacement}
+          labelPlacement={shownCursorPlacement}
           revision={cursorRevision}
           width={cursorLayout.width}
           height={cursorLayout.height}

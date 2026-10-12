@@ -15,12 +15,13 @@ const pinBox = (point, size) => ({ x: point.x - size.pinHalf, y: point.y - size.
 
 /** Screen-space only: never changes a coordinate, accepted time or marker anchor. */
 export function cursorLabelPlacement(point, size, view, controls = []) {
-  if (!point || !size?.width || !size?.height) return { hidden: false, box: null };
+  if (!point || !size?.width || !size?.height) return { hidden: false, box: null, pinSafe: true };
   if (point.x < view.left || point.x > view.right || point.y < view.top || point.y > view.bottom)
-    return { hidden: true, box: null };
+    return { hidden: true, box: null, pinSafe: false };
   const original = nativeBox(point, size);
   const pin = pinBox(point, size);
-  if (safe(original, view, controls) && safe(pin, view, controls)) return { hidden: false, box: null };
+  const pinSafe = safe(pin, view, controls);
+  if (pinSafe && safe(original, view, controls)) return { hidden: false, box: null, pinSafe };
   const clampX = x => Math.max(view.left, Math.min(view.right - size.width, x));
   const candidates = [
     { ...original, x: clampX(original.x) },
@@ -29,7 +30,9 @@ export function cursorLabelPlacement(point, size, view, controls = []) {
     { ...original, x: point.x - size.pinHalf - space.s - size.width, y: point.y - size.height / 2 },
   ];
   const box = candidates.find(candidate => safe(candidate, view, controls) && !intersects(candidate, pin));
-  return { hidden: true, box: box ?? null };
+  // pinSafe: the dot/face and its name tag are wholly visible; a moved label
+  // cannot fix a pin under the panel or a control, only a camera move can.
+  return { hidden: true, box: box ?? null, pinSafe };
 }
 
 /** A requested camera move needs room for the actual label AND its true pin. */
