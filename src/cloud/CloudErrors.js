@@ -20,6 +20,14 @@ export function cloudError(message, failure, status) {
 const texts = error => [error?.message, error?.cause?.message, error?.cause?.details, error?.cause?.hint]
   .filter(value => typeof value === 'string');
 
+/** Release diagnostic kind for a failed stop-context stage (`context-failed`). */
+export function contextFailureKind(error, timedOut, publishing) {
+  if (timedOut) return 'timeout';
+  if (isAuthFailure(error)) return 'auth';
+  if (isNetworkFailure(error)) return 'network';
+  return publishing ? 'storage' : 'unknown';
+}
+
 /** The server refused this sign-in: 401, an expired/invalid JWT. */
 export function isAuthFailure(error) {
   if (!error) return false;

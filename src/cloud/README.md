@@ -111,8 +111,12 @@ Release 版只輸出固定欄位的雲端同步紀錄，用來核對實際發布
 | `recovered` | `attempt`、`elapsedMs` | 失敗後再次成功 |
 | `latest-published` | `attempt`、`elapsedMs`、`revision`，另可附固定的各階段耗時 | 最新位置提交並通過目前世代／取消檢查；停住脈絡完成不再送一次 |
 | `archive-published` | `attempt`、`elapsedMs`、`revision` | 自動下載的完整歷史發布完成；手動下載、部分 staging、失敗或取消都不送 |
+| `context-published` | `attempt`、`elapsedMs`、`dogs` | 停住脈絡下載並寫入 snapshot 完成 |
+| `context-failed` | `attempt`、`elapsedMs`、`failureKind`、`dogs`、`completedDogs`、`requests` | 停住脈絡逾時（10 秒預算）或失敗；最新位置與 archive 照常，不改 UI 也不另外重試。換帳號、離開前景或被新一輪最新位置取代的取消不送 |
 
-Logger 只重建這些數值欄位：attempt／revision 是正的安全整數，耗時是有限非負數；其他事件名稱與不合法的值直接丟棄。帳號、Master／Slave 編號、時間戳、URL、座標、payload 與錯誤物件都不會輸出。寫 log 失敗不影響下載結果。換帳號時，舊帳號已開始的原生交易可能仍寫完，但世代檢查讓它不會被記成成功。這些紀錄只看得到發布次序，看不到個別 HTTP 篩選、頁數或後端索引。
+`context-*` 的 `elapsedMs` 從停住脈絡階段開始算（不是整輪），逾時約為 10,000；`dogs` 是這輪 snapshot 的狗數，`completedDogs` 是已下載完脈絡的狗數，`requests` 是已送出的脈絡請求數（含逾時當下還沒回應的那一個），三者都是總數。`failureKind` 沿用 `failure` 的列舉（`timeout`／`auth`／`network`／`storage`／`unknown`），`storage` 表示下載完成但寫入 snapshot 失敗。
+
+Logger 只重建這些數值欄位：attempt／revision 是正的安全整數，耗時是有限非負數，狗數與請求數是非負安全整數（`completedDogs` 不得大於 `dogs`）；其他事件名稱、列舉以外的 `failureKind` 與不合法的值，整筆直接丟棄。帳號、Master／Slave 編號、時間戳、URL、座標、payload 與錯誤物件都不會輸出。寫 log 失敗不影響下載結果。換帳號時，舊帳號已開始的原生交易可能仍寫完，但世代檢查讓它不會被記成成功。這些紀錄只看得到發布次序與停住脈絡的請求總數，看不到個別 HTTP 篩選、頁數或後端索引。
 
 ## 驗證
 

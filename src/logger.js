@@ -93,6 +93,22 @@ export function cloudSyncDiagnostic(event, fields) {
         console.info('[CloudSync] latest-published', { attempt, elapsedMs, revision, ...timings });
       } else if (event === 'latest-applied') console.info('[CloudSync] latest-applied', { attempt, elapsedMs, revision });
       else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });
+    } else if (event === 'context-failed' || event === 'context-published') {
+      // Stop-context stage: elapsed time of that stage plus aggregate counts.
+      // No dog/Master identity, cutoff, URL or error text is accepted.
+      const elapsedMs = fields?.elapsedMs;
+      const dogs = fields?.dogs;
+      if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || !Number.isSafeInteger(dogs) || dogs < 0) return;
+      if (event === 'context-published') {
+        console.info('[CloudSync] context-published', { attempt, elapsedMs, dogs });
+        return;
+      }
+      const failureKind = fields?.failureKind;
+      const completedDogs = fields?.completedDogs;
+      const requests = fields?.requests;
+      if (!CLOUD_FAILURES.has(failureKind) || !Number.isSafeInteger(completedDogs) || completedDogs < 0
+        || completedDogs > dogs || !Number.isSafeInteger(requests) || requests < 0) return;
+      console.info('[CloudSync] context-failed', { attempt, elapsedMs, failureKind, dogs, completedDogs, requests });
     }
   } catch {
     // Do not retry or expose the sink's error/message in another log.

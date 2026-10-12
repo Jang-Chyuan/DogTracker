@@ -121,6 +121,42 @@ test('release publication events rebuild only bounded numeric fields', () => {
   } finally { spy.mockRestore(); }
 });
 
+test('release context events rebuild only aggregate counts and the shared failure enum', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  try {
+    const { cloudSyncDiagnostic } = require('../src/logger');
+    const privateFields = { owner: 'private-account', masterIds: [7], slaveId: 6, cutoff: 1791547200000,
+      url: 'https://private.invalid', payload: { latitude: 25 }, error: new Error('private response'), status: 503 };
+    const failed = { attempt: 2, elapsedMs: 10000, failureKind: 'timeout', dogs: 3, completedDogs: 1, requests: 5 };
+    cloudSyncDiagnostic('context-failed', { ...privateFields, ...failed });
+    cloudSyncDiagnostic('context-published', { ...privateFields, ...failed });
+    for (const failureKind of ['auth', 'network', 'storage', 'unknown'])
+      cloudSyncDiagnostic('context-failed', { ...failed, failureKind, completedDogs: 0, requests: 0, dogs: 0 });
+    expect(spy.mock.calls).toEqual([
+      ['[CloudSync] context-failed', failed],
+      ['[CloudSync] context-published', { attempt: 2, elapsedMs: 10000, dogs: 3 }],
+      ...['auth', 'network', 'storage', 'unknown'].map(failureKind => ['[CloudSync] context-failed',
+        { ...failed, failureKind, dogs: 0, completedDogs: 0, requests: 0 }]),
+    ]);
+    spy.mockClear();
+    const invalid = [
+      ['attempt', 0], ['attempt', 1.5], ['attempt', 'private-account'],
+      ['elapsedMs', -1], ['elapsedMs', NaN], ['elapsedMs', Infinity], ['elapsedMs', 'private'],
+      ['dogs', -1], ['dogs', 1.5], ['dogs', Number.MAX_SAFE_INTEGER + 1], ['dogs', '3'],
+    ];
+    for (const [key, value] of invalid) {
+      cloudSyncDiagnostic('context-failed', { ...failed, [key]: value });
+      cloudSyncDiagnostic('context-published', { ...failed, [key]: value });
+    }
+    for (const [key, value] of [['failureKind', 'server'], ['failureKind', 'https://private.invalid'],
+      ['failureKind', new Error('private')], ['failureKind', undefined],
+      ['completedDogs', -1], ['completedDogs', 4], ['completedDogs', 0.5], ['completedDogs', undefined],
+      ['requests', -1], ['requests', 2.5], ['requests', 'private'], ['requests', undefined]])
+      cloudSyncDiagnostic('context-failed', { ...failed, [key]: value });
+    expect(spy).not.toHaveBeenCalled();
+  } finally { spy.mockRestore(); }
+});
+
 test('a refused logging sink cannot change cloud download outcomes', () => {
   const spy = jest.spyOn(console, 'info').mockImplementation(() => { throw new Error('sink refused'); });
   try {
@@ -129,6 +165,9 @@ test('a refused logging sink cannot change cloud download outcomes', () => {
     expect(() => cloudSyncDiagnostic('archive-published', { attempt: 1, elapsedMs: 0, revision: 1 })).not.toThrow();
     expect(() => cloudSyncDiagnostic('latest-applied', { attempt: 1, elapsedMs: 0, revision: 1 })).not.toThrow();
     expect(() => cloudSyncDiagnostic('failure', { attempt: 1, phase: 'download', failureKind: 'network' })).not.toThrow();
+    expect(() => cloudSyncDiagnostic('context-failed', { attempt: 1, elapsedMs: 0, failureKind: 'timeout',
+      dogs: 1, completedDogs: 0, requests: 1 })).not.toThrow();
+    expect(() => cloudSyncDiagnostic('context-published', { attempt: 1, elapsedMs: 0, dogs: 1 })).not.toThrow();
   } finally { spy.mockRestore(); }
 });
 

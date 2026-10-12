@@ -8,6 +8,7 @@ import { isAuthFailure, isNetworkFailure } from './CloudErrors';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
 import { beginCloudAttemptDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
+import { contextFailureKind } from './CloudErrors';
 
 const DOWNLOAD_MS = 120000, CONTEXT_MS = 10000, SWEEP_MS = 600000;
 
@@ -222,19 +223,31 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
         if (contextCurrent()) {
           const contextAbort = new AbortController(), cancel = () => contextAbort.abort();
           abort.signal.addEventListener('abort', cancel, { once: true });
-          const timer = setTimeout(cancel, CONTEXT_MS);
+          let contextTimedOut = false, contextPublishing = false;
+          const contextStartedAt = now(), progress = { requests: 0, completedDogs: 0 };
+          const contextDogs = Array.isArray(snapshot?.dogs) ? snapshot.dogs.length : 0;
+          const timer = setTimeout(() => { contextTimedOut = true; cancel(); }, CONTEXT_MS);
           let stop; const canceled = new Promise((_, reject) => { stop = () => reject(new Error(t('c576'))); });
           contextAbort.signal.addEventListener('abort', stop, { once: true });
           publish({ contextPending: true });
           try {
-            const context = await Promise.race([downloadContext({ client, masterIds: masters, snapshot,
+            const context = await Promise.race([downloadContext({ client, masterIds: masters, snapshot, progress,
               signal: contextAbort.signal, check: () => { if (!contextCurrent() || contextAbort.signal.aborted) throw new Error(t('c576')); } }), canceled]);
             if (contextCurrent()) {
+              contextPublishing = true;
               await database.publishLatestSnapshot(userId, { ...context, masterIds: masters }, contextCurrent);
-              if (contextCurrent()) publish({ snapshotRevision: state.snapshotRevision + 1 });
+              if (contextCurrent()) {
+                publish({ snapshotRevision: state.snapshotRevision + 1 });
+                cloudSyncDiagnostic('context-published', { attempt, elapsedMs: Math.max(0, now() - contextStartedAt), dogs: contextDogs });
+              }
             }
-          } catch { check(); }
-          finally {
+          } catch (error) {
+            check();
+            // Cancellation by a newer latest attempt is not a context failure.
+            if (contextCurrent()) cloudSyncDiagnostic('context-failed', { attempt, elapsedMs: Math.max(0, now() - contextStartedAt),
+              failureKind: contextFailureKind(error, contextTimedOut, contextPublishing),
+              dogs: contextDogs, completedDogs: progress.completedDogs, requests: progress.requests });
+          } finally {
             clearTimeout(timer); abort.signal.removeEventListener('abort', cancel);
             contextAbort.signal.removeEventListener('abort', stop); contextAbort.abort();
             if (valid(version)) publish({ contextPending: false });
