@@ -16,6 +16,7 @@ export default function PhoneLocationOverlay({
   location,
   active = true,
   historical = false,
+  phoneProblem = false,
   onPress,
   Circle,
   Marker,
@@ -23,7 +24,9 @@ export default function PhoneLocationOverlay({
   const { colors, opacity, isDark, literalColors } = useTheme();
   const styles = useStyles(getStyles);
   const { position, ageSeconds } = location;
+  // Age still fences animation/native display publication, never the dot colour.
   const stale = !historical && (ageSeconds == null || ageSeconds > 3);
+  const muted = !historical && (phoneProblem || location.running === false);
   const target = { latitude: position.latitude, longitude: position.longitude };
   const [coordinate, setCoordinate] = useState(target);
   const current = useRef(target);
@@ -35,6 +38,7 @@ export default function PhoneLocationOverlay({
       historical ||
       !active ||
       stale ||
+      phoneProblem ||
       !location.running ||
       !location.sessionId
     )
@@ -70,6 +74,7 @@ export default function PhoneLocationOverlay({
     if (
       !active ||
       stale ||
+      (!historical && (phoneProblem || location.running !== true)) ||
       sessionChanged ||
       position.motionState === 'stationary' ||
       previous == null ||
@@ -120,6 +125,8 @@ export default function PhoneLocationOverlay({
     active,
     stale,
     historical,
+    phoneProblem,
+    location.running,
     location.sessionId,
     position.latitude,
     position.longitude,
@@ -133,13 +140,14 @@ export default function PhoneLocationOverlay({
     historical,
     active,
     stale,
+    phoneProblem,
     location.running,
     location.sessionId,
     position.timestamp,
   ]);
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [stale, colors]);
+  }, [muted, colors]);
   const height =
     sizes.phoneDot.canvas +
     sizes.marker.labelGap +
@@ -149,8 +157,8 @@ export default function PhoneLocationOverlay({
     2 * (sizes.mapLabel.paddingV + sizes.mapLabel.border);
   const title = historical
     ? t("c767")
-    : stale
-    ? t("c768")
+    : stale || muted
+    ? t('c055')
     : position.motionState === 'stationary'
     ? t("c769")
     : t("c770");
@@ -165,17 +173,17 @@ export default function PhoneLocationOverlay({
             fillColor={
               isDark
                 ? withAlpha(
-                    stale ? colors.phoneStale : colors.phone,
+                    muted ? colors.phoneStale : colors.phone,
                     opacity.phoneAccuracy,
                   )
-                : stale
+                : muted
                 ? literalColors.stalePhoneAccuracyFill
                 : literalColors.phoneAccuracyFill
             }
             strokeColor={
               isDark
-                ? withAlpha(stale ? colors.phoneStale : colors.phone, 0.4)
-                : stale
+                ? withAlpha(muted ? colors.phoneStale : colors.phone, 0.4)
+                : muted
                 ? literalColors.stalePhoneAccuracyStroke
                 : literalColors.phoneAccuracyStroke
             }
@@ -208,7 +216,7 @@ export default function PhoneLocationOverlay({
           onLayout={() => marker.current?.redraw?.()}
         >
           <View style={styles.dotArea}>
-            <View style={[styles.dot, stale && styles.stale]} />
+            <View testID="phone-location-dot" style={[styles.dot, muted && styles.stale]} />
           </View>
           <MapNameTag
             text={t('c055')}

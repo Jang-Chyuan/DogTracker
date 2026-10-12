@@ -176,3 +176,41 @@ test.each(['withdrawn', 'new-generation', 'new-publication-owner', 'new-publicat
     if (mode === 'withdrawn') expect(state.screen.loading).toBe(true);
   } finally { wait.resolve(); await state.close(); }
 });
+test('a range drag while today re-reads shows the busy state, never the retained model; release shows the new range (PR 115)', async () => {
+  const state = await setup('range-drag'); const wait = deferred();
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
+  try {
+    const accepted = state.screen.dayModel, map = state.screen.map, before = state.screen.range;
+    expect(accepted).not.toBeNull();
+    state.hold(wait); state.ledger.dataRevision++; state.ledger.publishedRevision += 2; await state.update();
+    expect(state.screen.dayModel).toBe(accepted); expect(state.screen.map).toBe(map);
+    // The finger moves a handle: the busy state replaces the retained view.
+    await act(async () => state.screen.beginRangeDrag());
+    expect(state.screen.rangePending).toBe(true);
+    expect(state.screen.dayModel).toBeNull(); expect(state.screen.map).toBeNull(); expect(state.screen.loading).toBe(true);
+    const start = before.start + 10 * 60000;
+    await act(async () => state.screen.commitRange({ start, end: null, following: true }));
+    await settle();
+    // Released while the proof still re-reads: the old range's model is not shown for the new range.
+    expect(state.screen.rangePending).toBe(false);
+    expect(state.screen.dayModel).not.toBe(accepted);
+    await act(async () => wait.resolve()); await settle();
+    expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.dayModel).not.toBe(accepted);
+    expect(state.screen.range.start).toBeGreaterThanOrEqual(start - 60000);
+    expect(state.screen.loading).toBe(false);
+  } finally { wait.resolve(); await state.close(); }
+});
+test('after a released range, the next archive pass keeps that range\'s model, not the pre-drag one (PR 115)', async () => {
+  const state = await setup('range-then-pass'); const wait = deferred();
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
+  try {
+    const before = state.screen.range;
+    await act(async () => state.screen.beginRangeDrag());
+    await act(async () => state.screen.commitRange({ start: before.start + 10 * 60000, end: null, following: true }));
+    await settle();
+    const released = state.screen.dayModel;
+    expect(released).not.toBeNull();
+    state.hold(wait); state.ledger.dataRevision++; state.ledger.publishedRevision += 2; await state.update();
+    expect(state.screen.dayModel).toBe(released); expect(state.screen.loading).toBe(false);
+  } finally { wait.resolve(); await state.close(); }
+});

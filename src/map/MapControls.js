@@ -82,13 +82,13 @@ export function PressScale({ style, children, onPress, overlay = true, ...rest }
 
 /**
  * 框住全部 and 我的位置: right 16dp, `bottom` above the card (or the screen
- * bottom), 12dp apart. 我的位置 turns iconMuted without a phone fix; it can
- * still be pressed, and says why (onMyLocation decides). 「今天 x km」
+ * bottom), 12dp apart. 我的位置 stays normal while waiting for a fix. Only
+ * a confirmed permission/service problem mutes it; taps still go through. 「今天 x km」
  * (`today`, from TodayDistance.todayPill) sits left of 我的位置, 12dp apart.
  */
 export function MapButtons({
   bottom,
-  phoneAvailable,
+  phoneProblem = false,
   onFrameAll,
   onMyLocation,
   today = null,
@@ -132,14 +132,14 @@ export function MapButtons({
           accessibilityRole="button"
           accessibilityLabel={t("c759")}
           accessibilityHint={
-            phoneAvailable ? t("c757") : t("c726")
+            phoneProblem ? t("c726") : t("c757")
           }
           onPress={onMyLocation}
           style={styles.round}
         >
           <Glyph
             name="locate"
-            color={phoneAvailable ? colors.phone : colors.iconMuted}
+            color={phoneProblem ? colors.iconMuted : colors.phone}
             size={sizes.icon.map}
           />
         </PressScale>
@@ -296,11 +296,11 @@ export function SettingsGear({
  * the right, at `top` (12dp under the gear, or under the top cards). The
  * needle points to north; a tap turns the map back to north.
  */
-export function CompassButton({ top, heading, onPress }) {
+export function CompassButton({ top, heading, onPress, onLayout }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
-    <View style={[styles.gear, { top }]} pointerEvents="box-none">
+    <View testID="map-compass-layout" style={[styles.gear, { top }]} pointerEvents="box-none" onLayout={onLayout}>
       <PressScale
         testID="map-compass"
         accessibilityRole="button"

@@ -11,9 +11,7 @@ import {
   clock,
   km,
   spoken,
-  movementSummary,
   summaryText,
-  vehicleExclusion,
 } from '../history/HistoryText';
 import {
   dragRangeHandle,
@@ -34,32 +32,45 @@ import {
 import { haptic } from '../utils/haptics';
 import { isLargeFont, linesFor } from '../utils/textScale';
 import { useInitialFocus } from '../utils/a11yFocus';
+import HistoryDragTimeTip from './HistoryDragTimeTip';
+import Skeleton from '../components/Skeleton';
 
 const HANDLE = sizes.rangeBar.handle;
 const STEPS = [{ name: 'increment' }, { name: 'decrement' }];
 const TOUCH = touch.min;
 export const RANGE_PREVIEW_MIN_MS = 120;
 
-/** The summary's two lines while the bar is closed, or open (the range itself). */
-export function rangeSummaryLines(model, { subject, open, range, who = null }) {
-  if (!model?.points.length) return null;
-  // Several dogs: the second line names the protagonist (c158: 「豆豆・移動 7.4 km」).
-  const moved = who
-    ? t("c828", { who: who, value: km(model.distanceM), value2: vehicleExclusion(model, subject) })
-    : movementSummary(model, subject);
-  if (!open && !who) return summaryText(model, { subject });
-  // Several dogs share one range: the title is that range, whoever leads.
-  return { title: range?.following
-    ? t('c120', { time: clock(range.start) })
-    : t('c432', { time: clock(range.start), time2: clock(range.end) }), detail: moved };
+/** Read already-classified distances; never count gaps or reclassify a route. */
+export function rangeSummaryDistances(model, subject) {
+  const amount = value => Number.isFinite(value) && value >= 0 ? value : 0;
+  const sections = model.sections ?? model.nodes ?? [];
+  const vehicles = sections.filter(node => node.type === 'movement' && !node.gap && node.reason !== 'uncertain' && ['driving', 'ride'].includes(node.mode));
+  return [
+    { icon: subject === 'phone' ? 'walk' : 'paw', label: subject === 'phone' ? t('c134') : t('c125'), distanceM: amount(model.distanceM) },
+    ...(vehicles.length ? [{ icon: 'car', label: subject === 'phone' ? t('c135') : t('c128'),
+      distanceM: vehicles.reduce((sum, node) => sum + amount(node.distanceM), 0) }] : []),
+  ];
 }
 
-function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
+/** Preserve the range title, show separate movement and vehicle distances. */
+export function rangeSummaryLines(model, { subject, open, range, who = null }) {
+  if (!model?.points.length) return null;
+  const distances = rangeSummaryDistances(model, subject);
+  const detail = (who ? `${who}・` : '') + distances.map(item => `${item.label} ${km(item.distanceM)}`).join('・');
+  if (!open && !who) return { title: summaryText(model, { subject }).title, detail };
+  return { title: range?.following
+    ? t('c120', { time: clock(range.start) })
+    : t('c432', { time: clock(range.start), time2: clock(range.end) }), detail };
+}
+
+function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   previewDelay = RANGE_PREVIEW_MIN_MS, previewScope = track.start, active = true, layoutKey }) {
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
-  // Finger/time feedback stays local; the day model/list/map preview is a
-  // coalesced latest range, so every move does not replay the full day.
+  const [dragHandle, setDragHandle] = useState(null);
+  // A transient overlay: no extra layout space before, during or after drag.
+  // Finger/time feedback stays local. The history screen holds model/map
+  // publication until release; callers without onBegin retain preview mode.
   const [visualRange, setVisualRange] = useState(null);
   const shownRange = visualRange ?? range;
   const handles = rangeHandles(shownRange, track);
@@ -67,7 +78,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
   const endX = xOfTime(handles.end, width, track);
   const state = useRef({});
   state.current = {
-    range,
+    range: shownRange,
     track,
     dayPoints,
     today,
@@ -75,6 +86,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
     startX,
     endX,
     onDrag,
+    onBegin,
     onCommit,
     previewDelay,
     active,
@@ -96,6 +108,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
   useEffect(() => {
     clearPreview();
     drag.current = { handle: null };
+    setDragHandle(null);
     setVisualRange(null);
     return () => {
       clearPreview();
@@ -103,6 +116,10 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
       drag.current = { handle: null };
     };
   }, [previewScope, active, layoutKey, clearPreview]);
+  useEffect(() => {
+    if (visualRange && range.start === visualRange.start && range.end === visualRange.end
+      && range.following === visualRange.following) setVisualRange(null);
+  }, [range, visualRange]);
   const responder = useMemo(() => {
     // One step of a drag `dx` from where it began (a move, or the release
     // itself: a quick flick can end before its last moves reach JS, and the
@@ -120,6 +137,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
       if (!d.handle) {
         if (Math.abs(dx) < 2) return;
         d.handle = dx < 0 ? 'start' : 'end';
+        setDragHandle(d.handle);
         d.from =
           d.handle === 'start' ? state.current.startX : state.current.endX;
       }
@@ -140,7 +158,13 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
       d.last = result.range;
       if (changed) {
         setVisualRange(result.range);
-        if (publish) {
+        if (state.current.onBegin) {
+          if (!d.held) {
+            d.held = true;
+            clearPreview();
+            state.current.onBegin();
+          }
+        } else if (publish) {
           pending.current = result.range;
           if (timer.current == null) timer.current = setTimeout(() => {
             timer.current = null;
@@ -175,6 +199,7 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
         // = start); right on the middle, the first direction moved decides.
         const middle = (s + e) / 2;
         const handle = x < middle ? 'start' : x > middle ? 'end' : null;
+        setDragHandle(handle ?? 'start');
         drag.current = {
           handle,
           from: x === middle ? s : handle === 'start' ? s : e,
@@ -193,16 +218,16 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
         // Refused (start not before the end): the handle springs back.
         haptic(d.rejected ? 'double' : 'tick');
         clearPreview();
-        setVisualRange(null);
         if (d.last) state.current.onCommit(d.last);
         drag.current = { handle: null };
+        setDragHandle(null);
       },
       onPanResponderTerminate: (event, gesture) => {
         follow(dxOf(event, gesture), false);
         clearPreview();
-        setVisualRange(null);
         if (drag.current.last) state.current.onCommit(drag.current.last);
         drag.current = { handle: null };
+        setDragHandle(null);
       },
     });
   }, [clearPreview]);
@@ -219,7 +244,8 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
     }
     clearPreview();
     drag.current = { handle: null };
-    setVisualRange(null);
+    setDragHandle(null);
+    setVisualRange(result.range);
     onCommit(result.range);
   };
   // 判定表「範圍條把手太近」: closer than 48dp, the start's time sits left of
@@ -232,10 +258,15 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onCommit,
   const endLabel = clock(handles.end);
   return (
     <View
+      collapsable={false}
       style={styles.bar}
       {...responder.panHandlers}
       testID="history-range-bar"
     >
+      {dragHandle && <HistoryDragTimeTip testID="history-range-drag-time"
+        text={dragHandle === 'start' ? startLabel : endLabel}
+        x={TOUCH / 2 + (dragHandle === 'start' ? startX : endX)} width={width + TOUCH}
+        />}
       <View
         style={styles.trackArea}
         pointerEvents="none"
@@ -310,7 +341,8 @@ export function HistoryRangeControls({ model, dayPoints, ...props }) {
 /**
  * `model` (historyTimeline's), `range` ({ start, end, following }), `track`
  * (rangeTrack), `open` and `onToggle` (the bar), `onDrag` (a range while a
- * handle moves) and `onCommit` (the range when it is let go). `closedAt`:
+ * handle moves), optional `onBegin` (hold publication until release), and
+ * `onCommit` (the range when it is let go). `closedAt`:
  * my route's recording was switched off then (「記錄已在 10:20 關閉」).
  */
 // The times under the 24dp handles stay within their 48dp target: they grow
@@ -326,6 +358,7 @@ export default function HistoryRangeSummary({
   open,
   onToggle,
   onDrag,
+  onBegin,
   onCommit,
   closedAt = null,
   dayPoints: shared = null,
@@ -333,6 +366,7 @@ export default function HistoryRangeSummary({
   previewDelay,
   previewScope,
   active,
+  pending = false,
   compact = false,
   externalControls = false,
   layoutKey,
@@ -340,6 +374,7 @@ export default function HistoryRangeSummary({
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const lines = rangeSummaryLines(model, { subject, open, range, who });
+  const distances = model ? rangeSummaryDistances(model, subject) : [];
   if (!lines) return null;
   // The handles snap to every shown dog's fixes (判定表「多隻狗的共同範圍」).
   const dayPoints = shared?.length ? shared : model.dayPoints;
@@ -360,7 +395,7 @@ export default function HistoryRangeSummary({
           pressed && styles.pressedRow,
         ]}
         accessibilityRole="button"
-        accessibilityLabel={speech}
+        accessibilityLabel={pending ? t('c835') : speech}
         accessibilityState={{ expanded: open }}
       >
         <View style={[styles.texts, stacked && styles.textsStacked]}>
@@ -375,9 +410,13 @@ export default function HistoryRangeSummary({
               </Text>
             ) : null}
           </Text>
-          <Text style={styles.detail} numberOfLines={linesFor(2)}>
-            {lines.detail}
-          </Text>
+          {pending ? <View style={styles.pendingDetail}><Skeleton shape="address" testID="history-summary-pending" /></View> : <View style={styles.distances} testID="history-summary-distances" accessible={false}>
+            {!!who && <Text style={styles.detail}>{who}・</Text>}
+            {distances.map(item => <View key={item.icon} style={styles.distance} testID={`history-summary-${item.icon}`}>
+              <Glyph name={item.icon} color={colors.textMuted} size={sizes.icon.adjust} />
+              <Text style={styles.detail}>{km(item.distanceM)}</Text>
+            </View>)}
+          </View>}
         </View>
         {enabled && (
           <Pressable
@@ -410,6 +449,7 @@ export default function HistoryRangeSummary({
             dayPoints={dayPoints}
             today={today}
             onDrag={onDrag}
+            onBegin={onBegin}
             onCommit={onCommit}
             previewDelay={previewDelay}
             previewScope={previewScope}
@@ -453,6 +493,10 @@ const getStyles = makeStyles(theme => {
     },
     titleOpen: { color: colors.tonalText },
     caret: { color: colors.textMuted, fontSize: type.value.fontSize },
+    distances: { flexDirection: 'row', flexWrap: 'wrap', gap: space.m, alignItems: 'center' },
+    // The same height as the distance line it stands in for: nothing below moves.
+    pendingDetail: { minHeight: type.caption.lineHeight, justifyContent: 'center' },
+    distance: { flexDirection: 'row', gap: space.xs, alignItems: 'center' },
     detail: {
       color: colors.textMuted,
       fontSize: type.caption.fontSize,
@@ -474,7 +518,7 @@ const getStyles = makeStyles(theme => {
     adjustText: { color: colors.text, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight },
     adjustTextOpen: { color: colors.tonalText },
     closed: { color: colors.textMuted, fontSize: type.caption.fontSize, marginTop: space.xs },
-    // No hint above the bar (D6): the track sits right under the summary.
+    // The clock floats above the track only while dragging; no reserved blank lane.
     bar: { paddingBottom: space.xs, marginTop: space.xs },
     trackArea: { height: TOUCH, justifyContent: 'center' },
     track: {

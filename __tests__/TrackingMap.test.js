@@ -290,14 +290,15 @@ test('我的位置 moves to the phone in 300 ms without remounting the map', asy
   expect(renderer.root.findByType(MapView)).toBe(map);
 });
 
-test('without a phone fix 我的位置 is grey, moves nothing and says 手機沒有定位', async () => {
-  // A fix older than 10 minutes is no fix.
-  await render({ livePhone: { running: true, ageSeconds: 601, position: { latitude: 24.9, longitude: 121.2, accuracy: 5, timestamp: Date.now() - 601000 } } });
+test.each([null, { running: true, ageSeconds: 601, position: { latitude: 24.9, longitude: 121.2, accuracy: 5, timestamp: 1 } }])('without a usable phone fix %o 我的位置 stays normal; only a tap reports missing location', async livePhone => {
+  // Visual availability does not make an expired fix eligible for framing.
+  await render({ livePhone });
   await readyMap();
   mockCamera.animateCamera.mockClear();
   const glyphColor = () => renderer.root.find(node => node.props.testID === 'map-my-location')
     .findAll(node => node.props.name === 'locate')[0].props.color;
-  expect(glyphColor()).toBe(colors.iconMuted);
+  expect(glyphColor()).toBe(colors.phone);
+  expect(renderer.root.find(node => node.props.testID === 'map-my-location').props.accessibilityHint).not.toBe('手機沒有定位');
   await pressLabel('我的位置');
   expect(mockCamera.animateCamera).not.toHaveBeenCalled();
   const tips = () => renderer.root.findAll(node => node.props.testID === 'map-tip' && typeof node.type !== 'string');
@@ -306,6 +307,35 @@ test('without a phone fix 我的位置 is grey, moves nothing and says 手機沒
   // Gone after 5 seconds.
   await act(async () => jest.advanceTimersByTime(5000));
   expect(renderer.root.findAll(node => node.props.testID === 'map-tip')).toHaveLength(0);
+});
+
+test('a confirmed phone permission or service problem remains distinct and the button is still pressable', async () => {
+  const tracking = { mode: 'real', point: trackingPoint, route: emptyLiveRoute(), ready: { real: true },
+    errors: { real: null }, initialSnapshotReady: true, historyLoaded: true, foreground: true,
+    preferences: { ready: true, value: DEFAULT_TRACKING_PREFERENCES } };
+  for (const phone of [{ permission: 'denied', services: true }, { permission: 'precise', services: false }]) {
+    await act(async () => { renderer = Renderer.create(<MapScreen tracking={tracking} phone={phone}
+      bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />); });
+    await readyMap();
+    const button = renderer.root.find(node => node.props.testID === 'map-my-location');
+    expect(button.findAll(node => node.props.name === 'locate')[0].props.color).toBe(colors.iconMuted);
+    mockCamera.animateCamera.mockClear();
+    await pressLabel('我的位置');
+    expect(mockCamera.animateCamera).not.toHaveBeenCalled();
+    await act(async () => renderer.unmount());
+    renderer = null;
+  }
+});
+
+test('a confirmed phone problem reaches the live dot independently of old-fix age', async () => {
+  const livePhone = { running: true, ageSeconds: 601, sessionId: 'unit',
+    position: { latitude: 25, longitude: 121, accuracy: 5, timestamp: 1 } };
+  await render({ livePhone, phoneProblem: true });
+  const dot = () => renderer.root.findByProps({ testID: 'phone-location-dot' });
+  const muted = StyleSheet.flatten(dot().props.style).backgroundColor;
+  await act(async () => renderer.update(<TrackingMap {...defaults} livePhone={livePhone} phoneProblem={false} />));
+  expect(StyleSheet.flatten(dot().props.style).backgroundColor).not.toBe(muted);
+  expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(false);
 });
 
 test('框住全部 fits every dog, however far, and the phone, with room for the name tags', async () => {

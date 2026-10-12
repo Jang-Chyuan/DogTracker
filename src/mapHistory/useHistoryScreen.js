@@ -1,3 +1,4 @@
+import { useRangeRecompute } from './useRangeRecompute';
 import { historyDiagnosticsEnabled } from '../logger';
 import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
 import { sameHistoryInput, copyHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
@@ -444,6 +445,7 @@ export function useHistoryScreen({
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
   const buildCost = useRef(0);
+  const modelBuildCost = useRef(0);
   const readDiagnostic = useRef({ key: null, value: null });
   // Disabled builds create no observer: no per-stage timing wrappers either.
   const readDiagnosticKey = historyDiagnosticsEnabled() && active && subject === 'dog' && cloud?.publishedReads
@@ -608,8 +610,10 @@ export function useHistoryScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- revision invalidates external range memory
     [readKey, memoryRevision],
   );
-  // While a handle is dragged: the range being made (list and summary follow).
+  // Legacy preview callers may draft a range; on-screen gestures instead
+  // hold model/map publication until the actual release.
   const [draft, setDraft] = useState(null);
+  const { pending: rangePending, request: requestRange, hold: beginRangeDrag, cancel: cancelRange } = useRangeRecompute(`${sessionKey}|${day}|${idsKey}|${writeKey}|${readKey}|${owner ?? ''}|${cloud?.owner ?? ''}`, active);
   const manual = draft || remembered;
   // My route stops growing when recording is off (記錄已關閉).
   const growing = subject !== 'phone' || recording !== false;
@@ -646,7 +650,13 @@ export function useHistoryScreen({
   const diagnosticModelFinished = useRef(null);
   const exactModel = useRef(null);
   if (!exactModel.current) exactModel.current = createExactHistoryModelCache();
+  const completedRangeModel = useRef(null);
+  const completedScope = `${sessionKey}|${subject}|${day}|${idsKey}|${readKey}|${writeKey}|${owner ?? ''}|${cloud?.owner ?? ''}`;
   const builtModel = useMemo(() => {
+    // The busy render must stay cheap: neither a range request nor rows/clock
+    // arriving during it may replay the model before the loading commit.
+    if (rangePending) return completedRangeModel.current?.scope === completedScope
+      ? completedRangeModel.current.model : null;
     if (!subject || !subjects.length || waiting || !coverageReady) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
@@ -679,7 +689,8 @@ export function useHistoryScreen({
     const built = subject === 'dog' && cloud?.publishedReads
       ? exactModel.current([owner, pub?.scope, pub?.generation, sessionKey, memoryScope, read], subjects, cachedOptions, build)
       : build();
-    buildCost.current = Date.now() - started;
+    modelBuildCost.current = Date.now() - started;
+    buildCost.current = modelBuildCost.current;
     diagnostic?.emit('model', 'end', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
       rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: true });
     diagnosticModelFinished.current = { diagnostic, model: built.main, at: Date.now(),
@@ -688,6 +699,8 @@ export function useHistoryScreen({
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    rangePending,
+    completedScope,
     subject,
     versions,
     day,
@@ -721,10 +734,15 @@ export function useHistoryScreen({
     && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
   // Either blocker qualifies: the proof waiting for its re-read/tail, or the
   // day's rows re-reading for the new material/cutoff (no dog loaded yet).
-  const retained = !builtModel && !waiting && verifiedMatches(verifiedModel.current)
+  // A range drag never shows a retained model: it shows the busy state, then
+  // the released range (PR 115).
+  const retained = !rangePending && !builtModel && !waiting && verifiedMatches(verifiedModel.current)
     && verifiedModel.current.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
     ? verifiedModel.current : null;
   useEffect(() => {
+    // While a range drag holds the last completed model, its cutoff may lag
+    // the current one: neither record nor drop the verified model then.
+    if (rangePending) return;
     if (builtModel && coverageReady && verifiedIdentity) verifiedModel.current = { identity: verifiedIdentity,
       scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
       manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
@@ -732,6 +750,9 @@ export function useHistoryScreen({
     else if (!verifiedIdentity || !verifiedMatches(verifiedModel.current)) verifiedModel.current = null;
   });
   const dayModel = builtModel ?? retained?.model ?? null;
+  useEffect(() => {
+    if (!rangePending && builtModel) completedRangeModel.current = { scope: completedScope, model: builtModel };
+  }, [builtModel, rangePending, completedScope]);
   const model = dayModel?.main ?? null;
   useEffect(() => {
     const finished = diagnosticModelFinished.current;
@@ -985,16 +1006,19 @@ export function useHistoryScreen({
     if (goToNow.current(preset.goTo)?.type !== 'none') wentTo.current = wanted;
   }, [preset?.goTo, sessionKey, knowledge, restored]);
   // ---- dragging the range -------------------------------------------------
-  const dragRange = useCallback(value => setDraft(value), []);
+  const dragRange = useCallback(value => {
+    if (!value) { cancelRange(); setDraft(null); }
+    else requestRange(() => setDraft(value));
+  }, [cancelRange, requestRange]);
   const commitRange = useCallback(
-    value => {
+    value => requestRange(() => {
       setDraft(null);
       if (!value) return;
       rememberRangeFor(writeKey, value);
       if (readKey !== writeKey) forgetRange(readKey);
       setMemoryRevision(revision => revision + 1);
-    },
-    [writeKey, readKey],
+    }),
+    [writeKey, readKey, requestRange],
   );
   // A new opening forgets the cursor and a half-dragged range (再次進入); a
   // screen fixture can open with the cursor earlier (preset.cursorAgo).
@@ -1031,11 +1055,14 @@ export function useHistoryScreen({
   const color = look[protagonistId]?.color ?? routeColorOf(subject);
   const map = useMemo(
     () => {
-      if (!dayModel) return null;
+      if (rangePending || !dayModel) return null;
+      const started = Date.now();
       const build = () => multiMapPresentation(dayModel, cursors, look, theme);
-      return diagnostic ? diagnostic.measure('map-presentation', dayModel.main?.points.length ?? 0, build) : build();
+      const presentation = diagnostic ? diagnostic.measure('map-presentation', dayModel.main?.points.length ?? 0, build) : build();
+      buildCost.current = modelBuildCost.current + Date.now() - started;
+      return presentation;
     },
-    [dayModel, cursors, look, theme, diagnostic],
+    [dayModel, cursors, look, theme, diagnostic, rangePending],
   );
   const anyData = !!dayModel?.subjects.some(s => s.hasData);
   /** The chips (上方膠囊): every dog shown, the protagonist outlined. */
@@ -1166,16 +1193,18 @@ export function useHistoryScreen({
   return {
     snapshot,
     // The export (H9) captures the whole day's model and the dogs' looks.
-    dayModel, look,
+    dayModel: rangePending ? null : dayModel, look,
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
-    following, cursor, cursors, pressed, focus, map, color, loading,
+    following, cursor, cursors, pressed, focus, map: rangePending ? null : map, color, loading: loading || rangePending,
+    rangePending,
+    panelScope: `${sessionKey}|${owner ?? ''}|${cloud?.owner ?? ''}`,
     rangePreviewDelay: Math.max(120, buildCost.current * 4),
     rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
     rangeActive: active,
     asOf: retained ? (now - retained.cutoff >= 60000 ? retained.cutoff : null)
       : cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
     updateHistory,
-    error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
+    error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, beginRangeDrag, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],
     // Several dogs (H7) and merged records.
     dogs,

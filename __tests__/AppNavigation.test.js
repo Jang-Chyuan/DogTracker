@@ -565,7 +565,8 @@ test('「今天 x km」 opens my route on the same map, with its own card, and b
   expect(has('history-date')).toBe(true);
   expect(has('history-export')).toBe(true);
   expect(has('history-dogs-sheet')).toBe(false);
-  expect(text()).toContain(i18nT('c132'));
+  expect(has('history-my-route-header')).toBe(false);
+  expect(has('fullscreen-map-screen')).toBe(true);
   expect(text()).toContain(i18nT('c085'));
   expect(button('重新查詢')).toBeUndefined();
   expect(button('套用（有未套用的變更）')).toBeUndefined();

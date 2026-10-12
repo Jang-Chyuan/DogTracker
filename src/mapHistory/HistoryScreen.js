@@ -39,7 +39,6 @@ import {
   fontScale as fontScales,
 } from '../theme/tokens';
 import HistoryPanel from './HistoryPanel';
-import MyRouteHeader from '../history/screen/MyRouteHeader';
 import HistoryRangeSummary, { HistoryRangeControls } from './HistoryRangeSummary';
 import { historyUsesWideHeader } from '../map/MapPanelHeight';
 import HistoryTimelineList from './HistoryTimelineList';
@@ -117,7 +116,7 @@ const FACE_ONLY_FONT_SCALE = fontScales.faceOnly;
 /** One fixed capsule, followed by a flexible spacer and the export control. */
 export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, onExport,
   onAdd, exportEnabled, exportLabel = t("c821"), exportBusy = false,
-  hidden = false }) {
+  hidden = false, onFootprintLayout, onControlRects }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const pill = historyDogsPill(dogs.map(dog => ({ ...dog, name: nameOf(dog) })), candidates, subject);
@@ -128,16 +127,40 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
   const compact = width <= NARROW_WIDTH || fontScaleAtLeast(fontScale, COMPACT_FONT_SCALE);
   // At the largest text size, the face remains and TalkBack supplies the name.
   const faceOnly = fontScaleAtLeast(fontScale, FACE_ONLY_FONT_SCALE);
+  const measured = useRef({ row: null, children: {} });
+  const reportControls = useCallback(() => {
+    const { row, children } = measured.current;
+    if (!row) return;
+    const names = subject === 'phone' ? ['back', 'export'] : ['back', 'pill', 'export'];
+    const boxes = names.filter(key => children[key]?.width > 0).map(key => {
+      const box = children[key];
+      // Clear the actual touch target as well as the painted capsule.
+      const inset = Math.max(0, (touch.min - box.height) / 2);
+      return { x: row.x + box.x - inset, y: row.y + box.y - inset,
+        width: box.width + inset * 2, height: box.height + inset * 2 };
+    });
+    onControlRects?.({ boxes, ready: names.every(key => !!children[key]) });
+  }, [onControlRects, subject]);
+  useEffect(() => { reportControls(); }, [reportControls]);
+  const measureControl = key => event => {
+    measured.current.children[key] = event.nativeEvent.layout;
+    reportControls();
+  };
+
   return (
-    <View style={[styles.topRow, { top }]} pointerEvents="box-none"
+    <View style={[styles.topRow, { top }]} pointerEvents="box-none" onLayout={event => {
+        measured.current.row = event.nativeEvent.layout;
+        onFootprintLayout?.(event);
+        reportControls();
+      }}
       importantForAccessibility={behindSheet(hidden)}>
       <Capsule testID="history-back-now" label={t("c838")} onPress={onBack}
-        style={compact && styles.backRound}>
+        style={compact && styles.backRound} onLayout={measureControl('back')}>
         {compact ? <Glyph name="back" color={colors.text} size={sizes.icon.row} />
           : <Text style={styles.backText}>{t('c117')}</Text>}
       </Capsule>
-      <View style={styles.pillSlot}>
-        {subject === 'phone' ? <MyRouteHeader /> : <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
+      <View style={styles.pillSlot} onLayout={measureControl('pill')}>
+        {subject === 'phone' ? null : <Capsule testID="history-dogs-pill" label={pill.label} onPress={pill.tappable ? onAdd : undefined}>
           {pill.lead && <View style={[styles.hero, { borderColor: pill.lead.color }]}>
             {pill.lead.downloadFailed && <View testID="history-download-failed-lead" style={styles.downloadFailure}><BangGlyph size={sizes.badge.size} background={colors.problemBadge} color={colors.avatarFrameMap} /></View>}
             <DogAvatar avatar={pill.lead.avatar} size={sizes.historyTop.avatar} border={0} tint={routeTint(pill.lead, colors)} />
@@ -158,10 +181,10 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
         </Capsule>}
       </View>
       <View style={styles.spacer} />
-      <PressScale testID="history-export" accessibilityRole="button"
+      <PressScale testID="history-export" accessibilityRole="button" onLayout={measureControl('export')}
         accessibilityLabel={exportBusy ? t("c837") : exportLabel}
         accessibilityState={{ disabled: !exportEnabled || exportBusy, busy: exportBusy }}
-        disabled={!exportEnabled || exportBusy} onPress={onExport} hitSlop={(touch.min - sizes.chip.height) / 2}
+        disabled={!exportEnabled || exportBusy} onPress={onExport}
         style={[styles.exportButton, !exportEnabled && !exportBusy && styles.disabled]}>
         {exportBusy ? <ActivityIndicator size={sizes.spinner} color={colors.text} testID="history-export-spinner" />
           : <Glyph name="export" color={exportEnabled ? colors.text : colors.iconMuted} size={sizes.icon.map} />}
@@ -171,7 +194,7 @@ export function TopRow({ top, subject, dogs, nameOf, candidates = [], onBack, on
 }
 
 /** ‹ 10/03（六）今天 ▾ › (H3a); the date opens the calendar (H3b). */
-function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, compact = false }) {
+function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, compact = false, panelActions, onPanelAction }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const label = dateRowLabel(day, todayStart);
@@ -203,6 +226,11 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, comp
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityHint={t("c829")}
+        accessibilityActions={panelActions}
+        onAccessibilityAction={panelActions ? event => {
+          if (event.nativeEvent.actionName === 'activate') onOpen();
+          else onPanelAction?.(event);
+        } : undefined}
         onPress={onOpen}
         style={[styles.datePill, compact && styles.datePillCompact]}
         hitSlop={DATE_PILL_SLOP}
@@ -288,15 +316,20 @@ function FrameButton({ onPress }) {
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, bottomInset,
   onBack, onFrame, closedAt = null, initialRangeOpen = false, initialCalendar = null,
   candidates = [], initialSheet = null, exportNative = null, initialExport = null,
-  onSheetOpen, onPanelHeight },
+  onSheetOpen, onPanelHeight, onControlRects },
 ref) {
-  const styles = getStyles(useTheme());
+  const theme = useTheme();
+  const styles = getStyles(theme);
   const window = useWindowDimensions();
   const wideHeader = historyUsesWideHeader(window);
   const rangeLayoutKey = `${window.width}:${window.height}`;
   const panel = useRef(null);
   const list = useRef(null);
   const rows = useRef({});
+  const [dateHeight, setDateHeight] = useState(touch.min + space.xs);
+  const [topHeight, setTopHeight] = useState(touch.min);
+  const measureDate = useCallback(e => setDateHeight(e.nativeEvent.layout.height), []);
+  const measureTop = useCallback(e => setTopHeight(e.nativeEvent.layout.height), []);
   const [rangeOpen, setRangeOpen] = useState(initialRangeOpen);
   // H9/H10: the export window and the export running from it.
   // 「存到下載」 done (067): 「已存到 下載／DogTracker／<檔名>」 with 「開啟」.
@@ -333,6 +366,48 @@ ref) {
   }, [sheetOpen, onSheetOpen]);
   const sheetRef = useRef(null);
   const { model, subject, cursor, download } = screen;
+  const downloading = download?.kind === 'downloading';
+  const empty = !!model && !model.dayRecords;
+  const hasRoute = !!model?.points.length && !downloading;
+  const panelFootprint = wideHeader && rangeOpen && hasRoute ? 'range'
+    : hasRoute && !screen.rangePending ? 'frame' : 'none';
+  const footprintOwner = useRef(panelFootprint);
+  footprintOwner.current = panelFootprint;
+  const controlKey = `${subject}:${screen.entryId ?? ''}:${screen.day}:${window.width}:${window.height}:${window.fontScale}:${top}:${sheetOpen}`;
+  const controlGeneration = useRef({ key: controlKey, value: 0 });
+  if (controlGeneration.current.key !== controlKey) controlGeneration.current = {
+    key: controlKey, value: controlGeneration.current.value + 1,
+  };
+  const controlScope = `${controlKey}:${controlGeneration.current.value}`;
+  const controlOwner = useRef(controlScope);
+  controlOwner.current = controlScope;
+  const [controlLayouts, setControlLayouts] = useState({});
+  const reportTopControls = useCallback(geometry => {
+    if (controlOwner.current !== controlScope) return;
+    const next = { ...geometry, scope: controlScope };
+    setControlLayouts(previous => JSON.stringify(previous.top) === JSON.stringify(next)
+      ? previous : { ...previous, top: next });
+  }, [controlScope]);
+  const reportPanelControls = useCallback(geometry => {
+    if (controlOwner.current !== controlScope || footprintOwner.current !== panelFootprint) return;
+    const next = { ...geometry, scope: controlScope, footprint: panelFootprint };
+    setControlLayouts(previous => JSON.stringify(previous.panel) === JSON.stringify(next)
+      ? previous : { ...previous, panel: next });
+  }, [controlScope, panelFootprint]);
+  useEffect(() => {
+    const topControls = controlLayouts.top?.scope === controlScope ? controlLayouts.top : null;
+    const panelControls = controlLayouts.panel?.scope === controlScope
+      && controlLayouts.panel.footprint === panelFootprint ? controlLayouts.panel : null;
+    const topBoxes = sheetOpen ? [] : topControls?.boxes ?? [];
+    // Leave a gap from floating borders/shadows; native root layout remains
+    // authoritative. Top framing only reserves the actual upper capsule row.
+    const floatingBoxes = sheetOpen ? [] : (panelControls?.boxes ?? []).map(box => ({
+      x: box.x - space.xs, y: box.y - space.xs,
+      width: box.width + space.xs * 2, height: box.height + space.xs * 2,
+    }));
+    onControlRects?.({ boxes: [...topBoxes, ...floatingBoxes], topBoxes,
+      ready: sheetOpen || (!!topControls?.ready && !!panelControls?.ready) });
+  }, [controlLayouts, controlScope, panelFootprint, sheetOpen, onControlRects]);
   // The entry dog's name as the caller knows it (a fixture's tests), else the hook's.
   const nameOf = useCallback(
     dog => (dog.id === screen.entryId && name) || dog.name,
@@ -340,9 +415,6 @@ ref) {
   );
   const lead = screen.dogs?.find(dog => dog.protagonist);
   const leadName = lead ? nameOf(lead) : name;
-  const downloading = download?.kind === 'downloading';
-  const empty = !!model && !model.dayRecords;
-  const hasRoute = !!model?.points.length && !downloading;
   const openRange = useCallback(next => {
     // 減少動態效果: the range bar opens and closes at once.
     if (!isReduceMotion())
@@ -457,9 +529,8 @@ ref) {
   const rowLayout = useCallback((start, y) => {
     rows.current[start] = y;
   }, []);
-  const dateHeader = (
-    <>
-      <DateRow
+  const dateOnly = controls => (
+    <View onLayout={measureDate}><DateRow {...controls}
         day={screen.day}
         todayStart={screen.todayStart}
         navigation={screen.navigation}
@@ -467,8 +538,12 @@ ref) {
         onNext={() => step(screen.nextDay)}
         onOpen={openCalendar}
         compact={wideHeader}
-      />
-      {screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
+      /></View>
+  );
+  const dateHeader = (controls, collapsed) => (
+    <>
+      {dateOnly(controls)}
+      {!collapsed && screen.asOf != null && <View style={styles.asOf} testID="history-as-of">
         <Text style={styles.asOfText}>{t('c1247', { time: `${String(new Date(screen.asOf).getHours()).padStart(2, '0')}:${String(new Date(screen.asOf).getMinutes()).padStart(2, '0')}` })}</Text>
         <PressScale testID="history-update-tail" accessibilityRole="button" accessibilityLabel={t('c1248')}
           onPress={() => step(screen.updateHistory)} style={styles.updateTail}>
@@ -479,7 +554,7 @@ ref) {
   );
   const rangeProps = {
     range: screen.range, track: screen.track, today: screen.today,
-    onDrag: screen.dragRange, onCommit: screen.commitRange,
+    onDrag: screen.dragRange, onBegin: screen.beginRangeDrag, onCommit: screen.commitRange,
     previewDelay: screen.rangePreviewDelay, previewScope: screen.rangePreviewScope,
     active: screen.rangeActive, dayPoints: screen.dayPoints, layoutKey: rangeLayoutKey,
   };
@@ -495,6 +570,7 @@ ref) {
         <HistoryRangeSummary
           {...rangeProps}
           model={model}
+          pending={screen.rangePending}
           subject={subject}
           open={rangeOpen}
           onToggle={() => openRange(!rangeOpen)}
@@ -506,18 +582,20 @@ ref) {
       )}
     </>
   );
-  const header = wideHeader ? (
-    <View testID="history-header-columns" style={styles.headerColumns}>
-      <View style={styles.dateColumn}>{dateHeader}</View>
-      <View style={styles.summaryColumn}>{summaryHeader}</View>
+  const header = (panHandlers, controls, collapsed) => (
+    <View testID={wideHeader ? 'history-header-columns' : undefined} style={wideHeader && styles.headerColumns}>
+      <View testID="history-panel-date-drag" style={wideHeader && styles.dateColumn} {...panHandlers}>{dateHeader(controls, collapsed)}</View>
+      {!collapsed && <View style={wideHeader && styles.summaryColumn}>{summaryHeader}</View>}
     </View>
-  ) : <View>{dateHeader}{summaryHeader}</View>;
+  );
   const floatingRange = wideHeader && rangeOpen && hasRoute ? (
     <HistoryRangeControls {...rangeProps} model={model} />
   ) : null;
 
+  // Reading the day (not a download): the shimmer, announced as 讀取中.
+  const reading = !downloading && !model && !screen.error && download?.kind !== 'unfinished';
   let body;
-  if (downloading) body = null;
+  if (downloading || screen.rangePending) body = null;
   else if (download?.kind === 'unfinished' && !model?.dayRecords) {
     // Not H8: the day is not known to be empty (判定表「下載取消或失敗、手機裡又完全沒有」).
     body = (
@@ -559,32 +637,44 @@ ref) {
   }
   return (
     <>
-      <TopRow top={top} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
+      <TopRow key={controlScope} top={top} onFootprintLayout={measureTop} onControlRects={reportTopControls} subject={subject} dogs={screen.dogs ?? []} nameOf={nameOf} candidates={candidates}
         onBack={onBack}
         onAdd={pressAdd}
-        exportEnabled={hasRoute} exportBusy={exporter.generating}
+        exportEnabled={hasRoute && !screen.rangePending} exportBusy={exporter.generating}
         onExport={() => { closeRange(); exporter.open(); }}
-        exportLabel={hasRoute ? t("c821") : downloading ? t("c832")
+        exportLabel={screen.rangePending ? t("c834") : hasRoute ? t("c821") : downloading ? t("c832")
           : empty ? t('c379') : model ? t("c833") : t("c834")}
         hidden={sheetOpen} />
-      <HistoryPanel ref={panel} header={header}
+      <HistoryPanel key={screen.panelScope ?? `${subject}:${screen.entryId ?? ""}`} ref={panel} header={header} collapsedHeader={dateOnly} dateHeight={dateHeight}
+        topControlBottom={(top ?? 0) + Math.max(touch.min, topHeight)}
+        scopeKey={screen.panelScope ?? `${subject}:${screen.entryId ?? ""}`} rangeOpen={rangeOpen}
+        controlScope={controlScope} onControlRects={reportPanelControls}
         hidden={sheetOpen}
         onHeightChange={onPanelHeight}
         measureKey={`${screen.day}:${subject}:${screen.protagonist}:${(screen.dogs ?? []).map(dog => dog.id).join(',')}:${screen.range?.start}:${screen.range?.end}:${!!model}:${download?.kind ?? ''}`}
         bottomInset={bottomInset} scrollRef={list}
         floating={floatingRange}
-        above={hasRoute && !floatingRange ? <FrameButton onPress={onFrame} /> : null}
+        above={hasRoute && !screen.rangePending && !floatingRange ? <FrameButton onPress={onFrame} /> : null}
       >
         <Pressable
           onPress={closeRange}
           disabled={!rangeOpen}
           accessible={false}
         >
-          {!model && !downloading && !screen.error && download?.kind !== 'unfinished' && <Text style={styles.empty}>{t('c424')}</Text>}
-          <LoadingContent loading={downloading || (!model && !screen.error && download?.kind !== 'unfinished')}
-            shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
-            {body}
-          </LoadingContent>
+          {/* Loading looks like the timeline it becomes (the shimmer skeleton),
+              never a bare 「讀取中…」 line; TalkBack still hears 讀取中. */}
+          {screen.rangePending ? <View testID="history-range-loading" accessibilityLiveRegion="polite"
+            accessible accessibilityLabel={t('c835')}>
+            <LoadingContent loading shape="timeline" label={t('c835')} skeletonTestID="history-range-skeleton" />
+          </View> : <View testID="history-loading" accessibilityLiveRegion={reading ? "polite" : "none"}
+            // Explicit values both ways: Android keeps a removed label, and the
+            // loaded timeline must never read as 讀取中.
+            accessible={reading} accessibilityLabel={reading ? t('c835') : ''}>
+            <LoadingContent loading={downloading || reading}
+              shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
+              {body}
+            </LoadingContent>
+          </View>}
         </Pressable>
       </HistoryPanel>
       {exporting && <HistoryExportSheet ref={exportSheet} exporter={exporter} bottomInset={bottomInset} />}
@@ -631,7 +721,7 @@ const getStyles = makeStyles(theme => {
     topRow: {
       position: 'absolute',
       left: space.s,
-      right: space.s,
+      right: layout.screenEdge,
       zIndex: 30,
       flexDirection: 'row',
       alignItems: 'center',
@@ -677,9 +767,9 @@ const getStyles = makeStyles(theme => {
     },
     capsuleTextWhole: { maxWidth: '100%', flexShrink: 0 },
     exportButton: {
-      width: sizes.historyTop.exportDisc,
-      height: sizes.historyTop.exportDisc,
-      borderRadius: sizes.historyTop.exportDisc / 2,
+      width: sizes.floatingButton,
+      height: sizes.floatingButton,
+      borderRadius: sizes.floatingButton / 2,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',

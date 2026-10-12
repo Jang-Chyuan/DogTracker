@@ -152,6 +152,9 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-confirming` | 我的路線：原地後開始走路 → 暫定時間範圍，確認失敗回全天 |
 | `history-no-departure` | 我的路線：06:30 起一直在家附近 →「06:30 – 現在」，範圍＝今天全部記錄，沒有停留 |
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
+| `history-ends-in-stay` | 我的路線：走路、停留、走路，之後停在原地到現在 → 最後一列只有「現在 · 停 N 分」，沒有重複的編號停留列 |
+| `history-dog-ends-in-stay` | 同上，小黑的歷史（狗的終點是最後一筆定位，停留座標是平均） |
+| `history-ends-in-stay-finished`、`history-dog-ends-in-stay-finished` | 同上兩個，範圍放手在 1 分鐘前（不跟著現在）→「結束 · 停 N 分」 |
 | `history-gap` | 豆豆：中斷 12 分（「沒有資料」）和 40 分（「沒有資料」＋「恢復記錄」） |
 | `history-indoor` | 豆豆：走路、停留，進室內 25 分（小房子節點「室內・N 分」，不編號、不算距離），再走路 |
 | `history-multi-dog` | H7：小黑（看軌跡）＋豆豆、阿福，豆豆是主角（「豆豆・移動 x km」、清單和編號跟著牠），其他兩隻細線、游標處頭像；阿福是雲端的 |

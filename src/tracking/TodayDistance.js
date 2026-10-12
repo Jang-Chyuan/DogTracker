@@ -11,10 +11,6 @@ import { t } from '../i18n';
 
 import { historyTimeline } from '../history/HistoryTimeline';
 import { phoneHistoryRow } from '../history/HistoryRows';
-import { PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
-import { HISTORY_CONFIG } from '../history/HistoryConfig';
-
-const STILL_MPS = HISTORY_CONFIG.phone.stillMps;
 
 const valid = point => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude)
   && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180
@@ -59,52 +55,42 @@ export function startOfToday(now) {
   return start.getTime();
 }
 
+/** A confirmed permission/service problem, independent of GPS fix freshness. */
+export function phoneLocationProblem(phone) {
+  const permission = phone?.permission;
+  const known = permission && permission !== 'checking' && !phone?.busy && !phone?.error;
+  return !!(known && (permission !== 'precise' || !phone.services));
+}
+
 /**
  * What the pill shows.
  * - route: today's sum ({ count, metres }), or null until it was read once.
  * - livePhone: the recording service's live snapshot (running, position,
  *   ageSeconds), null before the first read.
  * - phone: usePhoneLocation's permission and location-service state.
- * - now, waitingSince: since when recording has run without any fix yet
- *   (null: it has one); the slash waits 10 minutes for a first fix too.
  *
  * @returns {null | { text, icon: 'walk'|'walk-muted'|'walk-off', muted: boolean,
  *   recorded: boolean, label: string }}  null until the route was read.
  *   walk: phone colour; walk-muted: grey (recording off); walk-off: grey with a
- *   slash (no permission, only approximate location, location service off, or
- *   recording without a fix for over 10 minutes).
+ *   slash (no permission, only approximate location, or location service off).
+ *   Fix age and first-fix waiting do not change this control's appearance.
  */
-export function todayPill({ route, livePhone, phone, now = null, waitingSince = null }) {
+export function todayPill({ route, livePhone, phone }) {
   // Not shown until today's route has been read once: no 「今天 0.0 km」
   // flashing before the real number.
   if (!route) return null;
   const permission = phone?.permission;
-  // A check still running, or one that failed (phone.error), says nothing:
-  // no slash on a passing state while the permission is fine (067).
-  const known = permission && permission !== 'checking' && !phone?.busy && !phone?.error;
-  const permissionProblem = known && (permission !== 'precise' || !phone.services);
-  const recording = !!livePhone?.running;
-  const fixAge = Number.isFinite(livePhone?.ageSeconds) ? livePhone.ageSeconds : null;
-  // Not before the first live read (livePhone null): no slash flashes at start.
-  // 067 (user 2026-10-09): indoors the GPS gets weak and the last good fix
-  // ages; that is no reason to look as if recording stopped. A last fix taken
-  // standing still (its measured speed under 0.3 m/s) keeps the walker as it
-  // is; the slash is for a phone that lost its fix while moving, or never had
-  // one.
-  const lastSpeed = Number(livePhone?.position?.rawSpeedKmh ?? livePhone?.position?.speedKmh);
-  const stillAtLastFix = livePhone?.position?.rawSpeedKmh != null || livePhone?.position?.speedKmh != null
-    ? Number.isFinite(lastSpeed) && lastSpeed / 3.6 < STILL_MPS : false;
-  const noFix = recording && (livePhone.position && fixAge != null ? fixAge > PHONE_FIX_MAX_AGE_S && !stillAtLastFix
-    : Number.isFinite(now) && Number.isFinite(waitingSince) && now - waitingSince > PHONE_FIX_MAX_AGE_S * 1000);
+  const permissionProblem = phoneLocationProblem(phone);
+  const stopped = livePhone?.running === false;
   const recorded = (route?.count || 0) > 0;
-  const icon = permissionProblem || noFix ? 'walk-off' : livePhone && !recording ? 'walk-muted' : 'walk';
+  const icon = permissionProblem ? 'walk-off' : stopped ? 'walk-muted' : 'walk';
   // Recording off (or not allowed) and nothing recorded today: 「未記錄」.
-  const unrecorded = !recorded && (permissionProblem || (!!livePhone && !recording));
+  const unrecorded = !recorded && (permissionProblem || stopped);
   const text = unrecorded ? t('c309') : formatTodayDistance(route?.metres || 0);
   const reason = permissionProblem
     ? (permission === 'approximate' ? t('c313') : !phone.services && permission === 'precise'
       ? t("c1006") : t('c311'))
-    : noFix ? t("c726") : livePhone && !recording ? t("c1043") : '';
+    : stopped ? t("c1043") : '';
   const spoken = unrecorded ? t("c1044") : text.replace(' km', t("c729"));
   return {
     text,

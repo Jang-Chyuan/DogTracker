@@ -142,3 +142,39 @@ test('memoized route still updates changed geometry, stop callbacks, camera zoom
     jest.useRealTimers();
   }
 });
+
+
+test('initial native state read failure keeps phone history following until a confirmed stop', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(FIXTURE_NOW);
+  const os = Platform.OS;
+  Platform.OS = 'android';
+  const fixture = buildFixture('history-my-route');
+  mockLive.mockRejectedValue(new Error('initial native read unavailable'));
+  let tree;
+  try {
+    await act(async () => {
+      tree = Renderer.create(<MapScreen tracking={{ ...fixture.tracking, foreground: true, ready: { real: true },
+        errors: {}, preferences: { ready: true, value: DEFAULT_TRACKING_PREFERENCES }, initialSnapshotReady: true }}
+        phone={{ enabled: true, permission: 'precise', services: true }} historical
+        historyTarget={historyTargetOf(fixture.history.preferences)} history={fixture.history}
+        bottomInset={80} mapProvider={GOOGLE_MAP_PROVIDER} />);
+    });
+    const history = () => tree.root.findByType(HistoryScreen).props;
+    expect(tree.root.findByType(TrackingMap).props.livePhone.running).toBeNull();
+    expect(history().screen.today).toBe(true);
+    expect(history().screen.following).toBe(true);
+    expect(history().closedAt).toBeNull();
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(history().screen.following).toBe(true);
+    const stoppedAt = FIXTURE_NOW;
+    mockLive.mockResolvedValue(JSON.stringify({ running: false, enabled: false, stoppedAt }));
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(history().screen.following).toBe(false);
+    expect(history().closedAt).toBe(stoppedAt);
+  } finally {
+    await act(async () => tree?.unmount());
+    Platform.OS = os;
+    jest.useRealTimers();
+  }
+});

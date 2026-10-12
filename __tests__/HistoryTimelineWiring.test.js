@@ -229,7 +229,7 @@ describe('addresses (053a)', () => {
     expect(placeLines(held, { state: 'none' }).title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
   });
 
-  test('the list: 查地址中… while asking, the address when it comes, coordinates after 5 s without one', async () => {
+  test('the list: 查地址中… while asking, the address when it comes, no coordinates after 5 s without one', async () => {
     jest.useFakeTimers();
     try {
       const { model } = await fixtureList('history-today');
@@ -245,16 +245,19 @@ describe('addresses (053a)', () => {
       const titles = () => renderer.root.findAll(node => typeof node.type === 'string'
         && node.props.testID === 'place-title').map(node => [node.props.children].flat().join(''));
       const text = () => JSON.stringify(renderer.toJSON());
-      expect(titles()).toEqual([i18nT('c329'), i18nT('c329'), i18nT('c329'), i18nT('c329')]);
+      expect(titles()).toEqual([]);
+      expect(renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-address-pending')).toHaveLength(4);
       // The first place answers: its address; the others still asking.
       const first = placesOf(model)[0];
       await act(async () => answers[0](JSON.stringify([{ line: '330台灣桃園市桃園區大興西路二段105號',
         latitude: first.latitude, longitude: first.longitude }])));
       expect(titles()[0]).toBe('桃園區大興西路二段 105 號附近');
-      expect(titles().slice(1)).toEqual([i18nT('c329'), i18nT('c329'), i18nT('c329')]);
+      expect(titles()).toEqual(['桃園區大興西路二段 105 號附近']);
+      expect(renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-address-pending')).toHaveLength(3);
       // Five seconds on, the rest count as not found: coordinates, 查不到地址.
       await act(async () => { jest.advanceTimersByTime(5000); });
-      expect(titles()[1]).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
+      expect(titles()[1]).toBe(i18nT('c1256'));
+      expect(text()).not.toMatch(/\d+\.\d{4}, \d+\.\d{4}/);
       expect(text()).not.toContain('查不到地址');
       await act(async () => renderer.unmount());
     } finally {
@@ -340,8 +343,8 @@ describe('the history screen shows the list', () => {
     const ids = renderer.root.findAll(node => typeof node.type === 'string' && /^timeline-/.test(node.props.testID || ''))
       .map(node => node.props.testID);
     expect(ids).toEqual(['timeline-departure', 'timeline-movement-walking', 'timeline-switch', 'timeline-movement-driving',
-      // The cursor opens on the newest fix, inside the last stay: that row is lit.
-      'timeline-switch', 'timeline-movement-walking', 'timeline-stop', 'timeline-selected', 'timeline-end']);
+      // The cursor opens inside the last stay, represented by the single terminal endpoint: that row is lit.
+      'timeline-switch', 'timeline-movement-walking', 'timeline-end', 'timeline-selected']);
     const text = JSON.stringify(renderer.toJSON());
     expect(text).toContain(i18nT('c135'));
     expect(text).not.toContain('不算距離');

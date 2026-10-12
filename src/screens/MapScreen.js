@@ -66,7 +66,7 @@ import {
   topCards,
   trackReceiverWait,
 } from '../map/TopAlerts';
-import { startOfToday, todayPill } from '../tracking/TodayDistance';
+import { phoneLocationProblem, startOfToday, todayPill } from '../tracking/TodayDistance';
 import { behindSheet } from '../utils/a11yFocus';
 
 // How long the first framing waits for the phone's first position report
@@ -662,14 +662,14 @@ export default function MapScreen({
   const phoneSettled =
     !!fixture ||
     !!phoneSpot ||
-    (livePhone != null && !livePhone.running) ||
+    livePhone?.running === false ||
     (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
   const screen = useHistoryScreen({ publicationRevision: fixture ? 0 : cloudSync?.publishedRevision ?? cloudSync?.mapSuccessRevision ?? 0, target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
-    recording: livePhone ? !!livePhone.running : null,
+    recording: typeof livePhone?.running === 'boolean' ? livePhone.running : null,
     recordingStoppedAt: livePhone?.stoppedAt ?? null,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '',
@@ -692,6 +692,8 @@ export default function MapScreen({
       && receiverState !== undefined) markStartupPhase('map-data-ready');
   }, [tracking.preferences.ready, tracking.initialSnapshotReady, tracking.errors, mode, receiverState]);
   const [historyHeight, setHistoryHeight] = useState(() => historyPanelMinHeight(window.height, insets.top, insets.bottom));
+  const [historyControls, setHistoryControls] = useState({ boxes: [], ready: false });
+
   const historyScreen = useRef(null);
   if (historyBack) historyBack.current = () => !!historyScreen.current?.back();
   const [historyFrame, setHistoryFrame] = useState(null);
@@ -878,23 +880,8 @@ export default function MapScreen({
     setSelected(null);
     onOpenHistory?.(dog.slaveId);
   };
-  // 「今天 x km」 (A1/A2): today's distance and whether the phone records
-  // and has a location.
-  // Recording that has not had a first fix yet waits 10 minutes before the
-  // slash, like a lost one (判定表「暫時沒有 GPS 訊號」).
-  const waitingSince = useRef(null);
-  const waiting = !!livePhone?.running && !livePhone?.position;
-  if (!waiting) waitingSince.current = null;
-  else if (waitingSince.current == null) waitingSince.current = now;
-  const pillKey = JSON.stringify(
-    todayPill({
-      route: todayRoute,
-      livePhone,
-      phone,
-      now,
-      waitingSince: waitingSince.current,
-    }),
-  );
+  // The route pill reflects recording/permission, not temporary GPS silence.
+  const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone }));
   const today = useMemo(() => JSON.parse(pillKey), [pillKey]);
   const [routeBusy, setRouteBusy] = useState(false);
   // Only while the live map is still in front does a finished save navigate.
@@ -1028,6 +1015,13 @@ export default function MapScreen({
           fixture?.name ?? ''
         }`
       : null;
+  const historyControlScope = `${historySource}:${screen.entryId ?? ''}`;
+  const measureHistoryControls = useCallback(geometry => setHistoryControls(previous => {
+    const next = { ...geometry, scope: historyControlScope };
+    return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+  }), [historyControlScope]);
+  const activeHistoryControls = historyControls.scope === historyControlScope
+    ? historyControls : { boxes: [], ready: false };
   // A4/A5 only cover the map while they are drawn: a page asked for before
   // its card exists (a fixture's openPage, or a card that went) must not hide
   // the map with nothing over it (a blank screen).
@@ -1065,6 +1059,7 @@ export default function MapScreen({
         retryKey={mapRetry}
         failure={fixture?.mapFailure ?? null}
         coverTop={cardsBottom}
+        historyControls={historical ? activeHistoryControls : undefined}
         compassTop={compassTop}
         livePhone={livePhone}
         onNativePhone={acceptNativePhone}
@@ -1087,6 +1082,7 @@ export default function MapScreen({
           receiverState !== undefined
         }
         phoneEnabled={!!phone?.enabled}
+        phoneProblem={phoneLocationProblem(phone)}
         onDogPress={openDog}
         onMapPress={
           historical
@@ -1195,6 +1191,7 @@ export default function MapScreen({
           initialSheet={fixture?.historyView?.sheet ?? null}
           bottomInset={insets.bottom}
           onPanelHeight={settleHistoryPanel}
+          onControlRects={measureHistoryControls}
           onBack={onLeaveHistory}
           onFrame={() => setHistoryFrame({ key: Date.now() })}
           exportNative={exportNative}
@@ -1204,7 +1201,7 @@ export default function MapScreen({
             target.subject === 'phone' &&
             screen.today &&
             livePhone &&
-            !livePhone.running
+            livePhone.running === false
               ? livePhone.stoppedAt ?? null
               : null
           }

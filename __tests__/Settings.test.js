@@ -94,7 +94,12 @@ test('every gear red-dot reason lands on its S1 row', () => {
   // Permissions: approximate only, nearby devices.
   expect(rows({ phone: { ...base.phone, permission: 'approximate' } }).phone.label)
     .toBe('手機，有問題：只給了大概位置');
-  expect(rows({ permissions: { nearbyDenied: true } }).phone.label).toBe('手機，有問題：附近的裝置未允許');
+  const nearby = rows({ permissions: { nearbyDenied: true } });
+  expect(nearby.phone.problem).toBe(false);
+  expect(nearby.receiver.label).toBe('接收器，有問題：附近的裝置未允許');
+  const nearbyAndLocation = rows({ phone: { ...base.phone, permission: 'approximate' }, permissions: { nearbyDenied: true } });
+  expect(nearbyAndLocation.phone.label).toBe('手機，有問題：只給了大概位置');
+  expect(nearbyAndLocation.receiver.label).toBe('接收器，有問題：附近的裝置未允許');
   // The sign-in expired.
   expect(rows({ signInExpired: true }).account.label).toBe('Supabase 帳號，有問題：需要重新登入');
   // A storage failure is the warning card above the groups, not a row.

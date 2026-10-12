@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { timelinePresentation } from '../history/HistoryTimelinePresentation';
 // The export snapshot (H9/H10, 判定表「匯出快照和停在原處」): what the
 // history screen shows at the moment a format is chosen — the range, every
 // dog shown that has data in it (or my route), local and cloud merged — as
@@ -54,11 +55,12 @@ function lastPacket(models, range) {
 
 /**
  * The PNG list rows of one model (判定表「時間軸清單（匯出 PNG）」): the same
- * words as the screen's list (HistoryText), the end written as 「結束」, an
- * address that was not found as coordinates above the pill.
+ * presentation as the screen; the end is 「結束」, missing addresses never
+ * expose coordinates. Document/map/raw exports retain their source data.
  */
 export function exportTimelineRows(nodes, addressOf) {
-  return nodes.map((node, index) => {
+  const shown = timelinePresentation(nodes);
+  return shown.map((node, index) => {
     if (isSection(node)) {
       const text = sectionText(node);
       return { kind: 'section', type: node.type, mode: node.mode, line: lineOf(node), icon: text.icon,
@@ -68,11 +70,11 @@ export function exportTimelineRows(nodes, addressOf) {
     const lines = placeLines(node, found ? { state: 'found', text: found } : { state: 'none' });
     let pill = nodePill(node);
     // 匯出的檔案一律寫實際時刻: the end is 「結束」 (its time is in the left column).
-    if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = { text: t('c330'), tone: 'plain' };
-    const next = nodes[index + 1];
-    return { kind: 'place', type: node.type, number: node.number ?? null, times: nodeTimes(node),
-      title: lines.title, coordinates: lines.coordinates, missing: lines.missing, pill,
-      note: lines.coordinates ? interruptionText(node) : '', line: isSection(next) ? lineOf(next) : null,
+    if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = nodePill({ ...node, label: t('c330') });
+    const next = shown[index + 1];
+    return { kind: 'place', type: node.type, number: node.number ?? null, times: [nodeTimes(node)[0]],
+      title: found ? lines.title : '', coordinates: '', missing: lines.missing, pill,
+      note: interruptionText(node), line: isSection(next) ? lineOf(next) : null,
       start: node.start, end: node.end, latitude: node.latitude, longitude: node.longitude };
   });
 }

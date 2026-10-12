@@ -1,7 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { StyleSheet, Text, PixelRatio } from 'react-native';
-import { CursorFaceView } from '../src/mapHistory/HistoryMapMarkers';
+import { CursorFaceView, CursorMarkerView, cursorAnchor } from '../src/mapHistory/HistoryMapMarkers';
 import MapNameTag from '../src/map/MapNameTag';
 import { markerFrame, MARKER_WIDTH } from '../src/map/DogMarkerView';
 import { tagSize } from '../src/map/DogMarkers';
@@ -60,4 +60,24 @@ test('multi-dog history cursor names use the capsule token', () => {
     borderRadius: size.mapLabel.radius,
     paddingHorizontal: size.mapLabel.paddingH,
   });
+});
+
+// Hidden bitmap labels retain their layout; removing the block would shift the dot's anchor.
+test.each([CursorMarkerView, CursorFaceView])('cursor label replacement preserves its measured anchor block (%s)', Component => {
+  let renderer;
+  const onLabelHeight = jest.fn();
+  const props = { lines: ['09:10', '移動中'], color: '#123456', face: { name: '虛構狗' }, onLabelHeight };
+  act(() => { renderer = Renderer.create(<Component {...props} />); });
+  const label = () => renderer.root.findAll(node => typeof node.type === 'string' && typeof node.props.onLayout === 'function')[0];
+  const originalStyle = StyleSheet.flatten(label().props.style);
+  const anchor = cursorAnchor(44, Component === CursorFaceView);
+  act(() => renderer.update(<Component {...props} labelHidden />));
+  expect(StyleSheet.flatten(label().props.style)).toEqual({ ...originalStyle, opacity: 0 });
+  expect(label().props).toMatchObject({ accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' });
+  act(() => label().props.onLayout({ nativeEvent: { layout: { height: 44 } } }));
+  expect(onLabelHeight).toHaveBeenCalledWith(44);
+  expect(cursorAnchor(44, Component === CursorFaceView)).toEqual(anchor);
+  act(() => renderer.update(<Component {...props} />));
+  expect(StyleSheet.flatten(label().props.style)).toEqual(originalStyle);
+  act(() => renderer.unmount());
 });

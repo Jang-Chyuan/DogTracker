@@ -1,6 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { Text } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 import { placeLines } from '../src/history/HistoryText';
 import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
 import { exportPlaces, exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
@@ -19,14 +19,16 @@ test.each(['indoor', 'stop', 'departure', 'end', 'switch'])('%s uses identical s
   expect(missing).toEqual({ title: '24.9378, 121.2954', titleMuted: false, coordinates: '', missing: '' });
   const row = exportTimelineRows([node], () => null)[0];
   const layout = layoutRow(row, defaultMeasure);
-  expect(layout.titleLines).toEqual(['24.9378, 121.2954']);
-  expect(layout.items.map(item => item.kind)).toEqual(type === 'switch' ? [] : ['pill']);
-  expect(layout.secondLines).toBe(type === 'switch' ? 0 : 1);
+  expect(layout.titleLines).toEqual(['']);
+  expect(row.coordinates).toBe('');
+  expect(layout.items.map(item => item.kind)).toEqual(type === 'switch' ? [] : type === 'stop' ? ['pill', 'note'] : ['pill']);
+  if (type === 'stop') expect(layout.items[1].text).toBe(row.note);
+  expect(layout.secondLines).toBe(type === 'switch' ? 0 : type === 'stop' ? 2 : 1);
   const found = placeLines(node, { state: 'found', text: address });
   expect(found).toMatchObject({ title: address, coordinates: missing.title });
   const foundRow = exportTimelineRows([node], () => address)[0];
-  expect(foundRow).toMatchObject({ title: address, coordinates: missing.title });
-  expect(layoutRow(foundRow, defaultMeasure).items.some(item => item.text === missing.title)).toBe(true);
+  expect(foundRow).toMatchObject({ title: address, coordinates: '' });
+  expect(layoutRow(foundRow, defaultMeasure).items.some(item => item.text === missing.title)).toBe(false);
 });
 
 test('a switch with no address has no empty second row on screen', async () => {
@@ -68,8 +70,58 @@ test('indoor list and PNG export reuse the live card address cache', async () =>
   await act(async () => exporterState.start('png'));
   expect(exporter.renderPng).toHaveBeenCalledTimes(1);
   const pages = JSON.stringify(exporter.renderPng.mock.calls[0][2]);
-  expect(pages).toContain(address);
+  const addressLines = exporter.renderPng.mock.calls[0][2].flatMap(page => page.ops)
+    .filter(op => op.t === 'text' && op.bold && op.size === 40).map(op => op.text);
+  expect(addressLines.slice(1).join(' ')).toBe(address);
   expect(pages).toContain('室內・40 分');
   expect(native.reverseGeocode).toHaveBeenCalledTimes(cardRequests);
   await act(async () => renderer.unmount());
+});
+
+
+test.each([1, 2])('a leading stay pill and marker are centered on the first wrapping address line at font scale %s', async scale => {
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 393, height: 851, fontScale: scale });
+  const lookup = { lookup: () => '虛構桃園長地址第一行第二行第三行', subscribe: () => () => {} };
+  let renderer;
+  try {
+  await act(async () => { renderer = Renderer.create(<AddressLookupContext.Provider value={lookup}>
+    <HistoryTimelineList model={{ nodes: [{ ...house, type: 'stop', number: 1, durationMs: house.end }] }} color={colors.route1} />
+  </AddressLookupContext.Provider>); });
+  const title = renderer.root.findAll(node => typeof node.type === 'string' && node.props.testID === 'place-title')[0];
+  let host = title.parent;
+  while (host && StyleSheet.flatten(host.props.style)?.flexDirection !== 'row') host = host.parent;
+  const heading = StyleSheet.flatten(host.props.style);
+  expect(heading).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' });
+  expect(host.children).toHaveLength(2);
+  expect(title.props.children).toBe('虛構桃園長地址第一行第二行第三行'); // real lookup returns a string
+  const pillBox = renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-pill-first-line')[0];
+  const markerBox = renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-node-first-line')[0];
+  expect(StyleSheet.flatten(pillBox.props.style)).toMatchObject({ height: 20 * scale, justifyContent: 'center' });
+  expect(StyleSheet.flatten(markerBox.props.style)).toEqual(StyleSheet.flatten(pillBox.props.style));
+  } finally {
+    await act(async () => renderer?.unmount());
+    dimensions.mockRestore();
+  }
+});
+
+
+test('pending addresses shimmer on the normal first line, unavailable addresses show a real fallback without coordinates', async () => {
+  jest.useFakeTimers();
+  let renderer, answer, publish;
+  const lookup = { lookup: () => answer, subscribe: fn => { publish = fn; return () => {}; } };
+  const view = <AddressLookupContext.Provider value={lookup}><HistoryTimelineList
+    model={{ nodes: [{ ...house, type: 'stop', number: 1, durationMs: house.end }] }} color={colors.route1} />
+  </AddressLookupContext.Provider>;
+  try {
+    await act(async () => { renderer = Renderer.create(view); });
+    expect(renderer.root.findAllByProps({ testID: 'place-address-pending' }).length).toBeGreaterThan(0);
+    expect(renderer.root.findAllByProps({ testID: 'place-title' })).toHaveLength(0);
+    await act(async () => { answer = null; publish(); });
+    expect(renderer.root.findAllByProps({ testID: 'place-address-pending' })).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).toContain('地址暫時無法取得');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('24.9378, 121.2954');
+    await act(async () => { answer = address; publish(); });
+    expect(JSON.stringify(renderer.toJSON())).toContain(address);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('地址暫時無法取得');
+  } finally { await act(async () => renderer?.unmount()); jest.useRealTimers(); }
 });

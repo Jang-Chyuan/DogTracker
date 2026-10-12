@@ -54,3 +54,18 @@ test('a switch of transport and an interrupted stay are read as on the list (060
   expect(stopSpeech({ kind: 'number', type: 'stop', number: 1, start: at(9, 0), end: at(9, 30),
     durationMs: 25 * 60000 })).toBe('停留 1，09:00 到 09:30，25 分鐘，點兩下跳到開始');
 });
+
+test.each([[4, 49, 9, 18, 5], [12, 44, 19, 2, 7]])('clipped stay minute copy agrees on map, list and cursor', (sm, ss, em, es, expected) => {
+  const { stopSpeech } = require('../src/map/MarkerA11yLayer');
+  const { placeMarkers } = require('../src/history/screen/HistoryMapModel');
+  const { timelinePresentation } = require('../src/history/HistoryTimelinePresentation');
+  const { nodePill } = require('../src/history/HistoryText');
+  const { cursorLabel } = require('../src/history/screen/HistoryScreenCursor');
+  const start = new Date(2026, 9, 10, 9, sm, ss).getTime(), end = new Date(2026, 9, 10, 9, em, es).getTime();
+  const stay = { type: 'stop', number: 1, start, end, durationMs: end - start, latitude: 25, longitude: 121 };
+  const original = JSON.stringify(stay);
+  expect(nodePill(timelinePresentation([stay])[0]).text).toBe(`停 ${expected} 分`);
+  expect(stopSpeech(placeMarkers([stay])[0])).toContain(`${expected} 分鐘`);
+  expect(cursorLabel({ locations: [stay], sections: [] }, start, 'phone')[1]).toBe(`停留 ${expected} 分`);
+  expect(JSON.stringify(stay)).toBe(original);
+});

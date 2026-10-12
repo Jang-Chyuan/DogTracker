@@ -1,3 +1,4 @@
+import { presentationDurationMs } from '../history/HistoryTimelinePresentation';
 import { t } from '../i18n';
 // TalkBack on the map's dogs (設計稿「無障礙」狗標記). Google draws the dog
 // markers as bitmaps, so the label on the marker's view never reaches
@@ -83,9 +84,7 @@ export function stopSpeech(place) {
     return t("c762", { number: place.number, at: at });
   }
   const lead = place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.number });
-  const length = Number.isFinite(place.durationMs)
-    ? place.durationMs
-    : place.end - place.start;
+  const length = presentationDurationMs(place);
   const span =
     Number.isFinite(place.start) && Number.isFinite(place.end)
       ? t("c763", { value: clock(place.start), value2: clock(place.end), value3: Math.round(

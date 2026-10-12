@@ -73,25 +73,24 @@ function rowOps(block) {
     ops.push(...trackOps(row.line, color, y, y + block.height));
     const muted = row.type === 'gap';
     const textTop = y + (block.height - block.lines.length * S.detailLine) / 2;
-    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: PLACE_X, y: textTop + (S.detailLine - tokenSize.export.glyphSize) / 2, size: tokenSize.export.glyphSize,
+    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - tokenSize.export.glyphSize / 2, y: y + (block.height - tokenSize.export.glyphSize) / 2, size: tokenSize.export.glyphSize,
       color: muted ? colors.iconMuted : color });
     // 「移動 28 分・1.4 km」: the duration bold and dark, the rest muted.
-    block.lines.forEach((line, index) => ops.push({ t: 'runs', x: PLACE_X + S.movementIcon - tokenSize.export.timeInset, y: textTop + index * S.detailLine,
+    block.lines.forEach((line, index) => ops.push({ t: 'runs', x: PLACE_X, y: textTop + index * S.detailLine,
       h: S.detailLine, size: S.detailFont, runs: splitRuns(line, row.time) }));
     return ops;
   }
   const nodeY = y + tokenSize.export.rowInset + S.addressLine / 2;
   ops.push(...trackOps(row.line, color, nodeY, y + block.height));
   ops.push(...nodeOps(row, color, nodeY));
-  // Times: the start bold, a stay's end under it, muted.
+  // Timeline times show only the start.
   ops.push(text(row.times[0], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
-  if (row.times[1]) ops.push(text(row.times[1], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset + S.addressLine, tokenSize.export.endTimeLine, S.endTimeFont, colors.textMuted, { align: 'right' }));
-  block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X, y + tokenSize.export.rowInset + index * S.addressLine, S.addressLine,
+  block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X + block.titleX, y + tokenSize.export.rowInset + block.titleY + index * S.addressLine, S.addressLine,
     S.addressFont, colors.text, { bold: true })));
-  const secondTop = y + tokenSize.export.rowInset + block.titleLines.length * S.addressLine + tokenSize.export.rowInset;
+  const secondTop = y + tokenSize.export.rowInset;
   const tones = PILL_TONES(color);
   for (const item of block.items) {
-    const top = secondTop + item.line * S.secondLine;
+    const top = secondTop + item.y;
     if (item.kind === 'pill') {
       const [fill, ink] = tones[item.tone] || tones.plain;
       ops.push({ t: 'rect', x: PLACE_X + item.x, y: top, w: item.width, h: S.pillHeight, r: S.pillHeight / 2, fill });

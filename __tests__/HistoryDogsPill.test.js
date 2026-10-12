@@ -35,7 +35,14 @@ test('four dogs disable the whole add section, even dogs with records', () => {
   expect(result.addable[0]).toMatchObject({ disabled: true, opacity: 0.4 });
 });
 
-test('the sheet lists the protagonist first, the others in their added order', () => {
-  const ordered = sheet([{ id: '4' }, { id: '6', protagonist: true }, { id: '8' }], []);
-  expect(ordered.shown.map(dog => dog.id)).toEqual(['6', '4', '8']);
+test('switching dogs preserves the chooser order and only updates selection/removal', () => {
+  for (const selectedId of [6, 4, 8, 5, 6]) {
+    const selected = dogs.map(dog => ({ ...dog, protagonist: dog.id === selectedId }));
+    const result = sheet(selected, dogs);
+    expect(result.shown.map(dog => dog.id)).toEqual([6, 4, 8, 5]);
+    expect(result.shown.filter(dog => dog.protagonist).map(dog => dog.id)).toEqual([selectedId]);
+    expect(result.shown.filter(dog => !dog.removable).map(dog => dog.id)).toEqual([selectedId]);
+    expect(result.shown.map(dog => dog.color)).toEqual(dogs.map(dog => dog.color));
+  }
+  expect(dogs.map(dog => dog.id)).toEqual([6, 4, 8, 5]);
 });

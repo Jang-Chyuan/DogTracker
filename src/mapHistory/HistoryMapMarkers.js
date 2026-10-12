@@ -68,6 +68,20 @@ export function TimeMarkerView({ label, end, color }) {
 /** Its height, for the marker's anchor: the label above the dot (see CursorMarkerView). */
 export const CURSOR_BELOW = sizes.cursor.halo / 2;
 
+/** The same label pixels in the native marker and a collision-only screen overlay. */
+export function CursorLabelView({ lines, hidden = false, onLabelHeight, onLabelLayout, layoutKey }) {
+  const styles = useStyles(getStyles);
+  return <View key={layoutKey} style={[styles.cursorLabel, hidden && styles.hiddenLabel]}
+    accessibilityElementsHidden={hidden} importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
+    onLayout={event => {
+      onLabelHeight?.(event.nativeEvent.layout.height);
+      onLabelLayout?.(event.nativeEvent.layout);
+    }}>
+    <Text allowFontScaling={false} style={styles.cursorTime}>{lines?.[0]}</Text>
+    <Text allowFontScaling={false} style={styles.cursorDetail}>{lines?.[1]}</Text>
+  </View>;
+}
+
 /**
  * The cursor: a 16dp dot in the route colour with a 3dp white ring and a
  * 32dp halo (18%); its two-line label 12dp above (radius 16, surface, 1dp
@@ -79,23 +93,16 @@ export function CursorMarkerView({
   color,
   stale = false,
   onLabelHeight,
+  onLabelLayout,
+  labelLayoutKey,
+  labelHidden = false,
 }) {
   const { opacity, colors } = useTheme();
   const styles = useStyles(getStyles);
   const dot = sizes.cursor.dot + sizes.cursor.border * 2;
   return (
     <View style={styles.cursor}>
-      <View
-        style={styles.cursorLabel}
-        onLayout={event => onLabelHeight?.(event.nativeEvent.layout.height)}
-      >
-        <Text allowFontScaling={false} style={styles.cursorTime}>
-          {lines?.[0]}
-        </Text>
-        <Text allowFontScaling={false} style={styles.cursorDetail}>
-          {lines?.[1]}
-        </Text>
-      </View>
+      <CursorLabelView lines={lines} hidden={labelHidden} onLabelHeight={onLabelHeight} onLabelLayout={onLabelLayout} layoutKey={labelLayoutKey} />
       <View style={{ height: CURSOR_GAP }} />
       <View
         style={[
@@ -143,6 +150,16 @@ const FACE_GAP = sizes.cursor.labelGap - (FACE_HALO - FACE) / 2;
 const FACE_TAG_GAP = sizes.marker.labelGap - (FACE_HALO - FACE) / 2;
 const FACE_TAG = sizes.historyFace.labelHeight;
 
+export function cursorLabelFootprint(label, face = false, marker = null) {
+  return { width: label.width, height: label.height,
+    above: label.height + (face ? FACE_GAP + FACE_HALO / 2 : CURSOR_GAP + CURSOR_BELOW),
+    pinAbove: face ? FACE_HALO / 2 : CURSOR_BELOW,
+    pinHalf: face ? (marker ? Math.max(FACE_HALO / 2, marker.width / 2 - space.xs) : FACE_HALO / 2) : sizes.cursor.halo / 2,
+    below: face ? Math.max(FACE_HALO / 2 + FACE_TAG_GAP + FACE_TAG,
+      marker ? marker.height - label.height - FACE_GAP - FACE_HALO / 2 : 0) : CURSOR_BELOW };
+}
+
+
 /**
  * The protagonist's cursor among several dogs: the two-line label, the face
  * (its own avatar) with a route-colour glow, and the name tag. Without data
@@ -154,22 +171,15 @@ export function CursorFaceView({
   stale = false,
   face,
   onLabelHeight,
+  onLabelLayout,
+  labelLayoutKey,
+  labelHidden = false,
 }) {
   const { opacity, colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
     <View style={styles.cursor}>
-      <View
-        style={styles.cursorLabel}
-        onLayout={event => onLabelHeight?.(event.nativeEvent.layout.height)}
-      >
-        <Text allowFontScaling={false} style={styles.cursorTime}>
-          {lines?.[0]}
-        </Text>
-        <Text allowFontScaling={false} style={styles.cursorDetail}>
-          {lines?.[1]}
-        </Text>
-      </View>
+      <CursorLabelView lines={lines} hidden={labelHidden} onLabelHeight={onLabelHeight} onLabelLayout={onLabelLayout} layoutKey={labelLayoutKey} />
       <View style={{ height: FACE_GAP }} />
       <View
         style={[
@@ -230,6 +240,7 @@ const getStyles = makeStyles(theme => {
       textShadowOffset: { width: 0, height: 0 },
     },
     cursor: { alignItems: 'center', paddingHorizontal: space.xs, paddingBottom: 0 },
+    hiddenLabel: { opacity: 0 },
     cursorLabel: {
       backgroundColor: colors.surface,
       borderRadius: radius.cursorLabel,
