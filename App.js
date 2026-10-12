@@ -89,8 +89,7 @@ import { historyTargetOf } from './src/mapHistory/useHistoryScreen';
 import { useDogAvatars } from './src/dogs/useDogAvatars';
 import { useHistoryCloudSource } from './src/mapHistory/HistoryCloud';
 import { useAppCloudSync } from './src/app/useAppCloudSync';
-import { completedMapRevision, mapDownloadBusy, mapReadRevision } from './src/cloud/CloudPublication';
-import { useCloudDogs } from './src/cloud/useCloudDogs';
+import { useAppCloudDogs } from './src/app/useAppCloudDogs';
 import { useCloudUpload } from './src/cloudUpload/useCloudUpload';
 import { usePhoneLocation } from './src/gps/usePhoneLocation';
 import { GOOGLE_MAP_PROVIDER } from './src/map/GoogleMapProvider';
@@ -414,21 +413,9 @@ function TrackerApp({ resume = null, onRestart }) {
   // Debug builds only: a named screen state (dogtracker://dev/fixture?name=…)
   // replaces the live map's inputs. Always null in release builds.
   const fixture = useScreenFixture();
-  const cloudDogs = useCloudDogs(
-    tracking.cloudDatabase,
-    cloudSync.ownerId,
-    tracking.ready.real,
-    undefined,
-    null,
-    {
-      active: tracking.foreground && !fixture,
-      latestFirst: cloudSync.latestFirst,
-      revision: mapReadRevision(cloudSync),
-      cloudBusy: mapDownloadBusy(cloudSync) || cloudSync.catchUp?.phase === 'catching-up',
-      cloudSuccess: completedMapRevision(cloudSync),
-      getMapPublication: cloudSync.getMapPublication,
-    },
-  );
+  const cloudDogs = useAppCloudDogs(tracking, cloudSync, {
+    active: tracking.foreground && !fixture,
+  });
   const fixtureEdits = useFixtureEdits(fixture);
   const permissions = usePhonePermissions(tracking.foreground);
   // The history page shows live data unless a history fixture (054a) is on.

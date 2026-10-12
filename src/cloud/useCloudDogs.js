@@ -29,7 +29,7 @@ function retainedContext(values, before, after) {
     before != null && before[id] === after[id]));
 }
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
-  { active = true, latestFirst = false, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null } = {}) {
+  { active = true, contextEnabled = enabled, latestFirst = false, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null } = {}) {
   const [cache, setCache] = useState(() => ({ owner, database, value: empty() }));
   // A failed/aborted download leaves partial rows in SQLite. Keep its cloud
   // side quarantined until a complete pass, while still accepting local BLE.
@@ -119,6 +119,9 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     }
     setCache(current => current.owner === owner && current.database === database
       ? current : { owner, database, value: empty() });
+    // Local/archive context cannot run before local migrations. Keep the
+    // independently accepted latest cache and its ACK while that owner waits.
+    if (!contextEnabled) { holdState.current = null; return undefined; }
     if (!active) return undefined;
     let alive = true;
     let timer;
@@ -273,7 +276,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
     refresh.current = poll;
     poll();
     return () => { alive = false; clearTimeout(timer); refresh.current = null; };
-  }, [database, owner, enabled, active, now, trackSinceMs, latestFirst]);
+  }, [database, owner, enabled, contextEnabled, active, now, trackSinceMs, latestFirst]);
   useEffect(() => {
     const before = lastTrigger.current;
     if (before.revision !== revision || before.cloudBusy !== cloudBusy || before.cloudSuccess !== cloudSuccess)

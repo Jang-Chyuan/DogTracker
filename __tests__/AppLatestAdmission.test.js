@@ -10,9 +10,10 @@ import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createDogDataStore } from '../src/database/DogDataStore';
 import { useTrackingSession } from '../src/app/useTrackingSession';
 import { useAppCloudSync } from '../src/app/useAppCloudSync';
-import { useCloudDogs } from '../src/cloud/useCloudDogs';
+import { useAppCloudDogs } from '../src/app/useAppCloudDogs';
 import { useDeleteDogData } from '../src/settings/DeleteDogData';
-import { completedMapRevision, latestMapApplied, mapDownloadBusy, mapReadRevision } from '../src/cloud/CloudPublication';
+import { latestMapApplied, mapDownloadBusy } from '../src/cloud/CloudPublication';
+import { launchScreen } from '../src/app/Launch';
 import { t } from '../src/i18n';
 const NOW = Date.parse('2026-10-10T12:00:00Z'), owner = 'invented-owner';
 const deferred = () => { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
@@ -23,9 +24,7 @@ function Harness() {
   // This is the actual hook binding used by TrackerApp, including its actual
   // useCloudSync scheduler, auth restore, session command facade and map ACK.
   sync = useAppCloudSync(tracking, auth, clientFactory);
-  dogs = useCloudDogs(tracking.cloudDatabase, sync.ownerId, true, Date.now, null, {
-    active: tracking.foreground, latestFirst: true, cloudBusy: mapDownloadBusy(sync),
-    cloudSuccess: completedMapRevision(sync), revision: mapReadRevision(sync), getMapPublication: sync.getMapPublication });
+  dogs = useAppCloudDogs(tracking, sync, { active: tracking.foreground });
   deletion = useDeleteDogData({ countUnsent: tracking.countUnsentUploads, deleteAll: tracking.deleteDogData,
     onDeleted: () => { restarted++; } });
   return null;
@@ -37,6 +36,7 @@ beforeEach(async () => {
   oldAppState = AppState.currentState; AppState.currentState = 'active';
   info = jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});
+  jest.spyOn(AppState, 'addEventListener').mockImplementation(() => ({ remove: jest.fn() }));
   archive = createMemoryConnection(); latest = createMemoryConnection();
   real = createDogDatabase(archive); await real.initialize(); archive.executeAsync.mockClear();
   local = deferred(); native = deferred();
@@ -69,6 +69,8 @@ test('real App binding starts latest HTTP and durable map ACK before local migra
   // must not hide the original tracking.ready.real admission in App.js.
   const app = fs.readFileSync(path.join(__dirname, '../App.js'), 'utf8');
   expect(app).toContain('const cloudSync = useAppCloudSync(tracking, auth);');
+  expect(app).toContain('const cloudDogs = useAppCloudDogs(tracking, cloudSync, {');
+  expect(app).toContain('databaseReady: tracking.ready.real,');
   await mount();
   expect(tracking.cloudReady).toBe(true); expect(tracking.ready.real).toBe(false);
   expect(tracking.initialSnapshotReady).toBe(false); expect(applied()).toEqual([]);
@@ -80,6 +82,8 @@ test('real App binding starts latest HTTP and durable map ACK before local migra
   expect(latestMapApplied(sync, owner, dogs)).toBe(true);
   expect((await database.readLatestSnapshot(owner, { positionsOnly: true })).verified).toBe(true);
   expect(tracking.ready.real).toBe(false); expect(tracking.initialSnapshotReady).toBe(false);
+  expect(archive.executeAsync.mock.calls).toEqual([]);
+  expect(launchScreen({ databaseReady: tracking.ready.real, preferencesSettled: true, authSettled: true })).toBe('splash');
   // The archive cannot initialize on the strength of cloud ACK alone.
   expect(archive.executeAsync.mock.calls.some(([sql]) => sql === 'PRAGMA table_info(supabase_dog_status)')).toBe(false);
   local.resolve(); await advance(1);
@@ -93,6 +97,27 @@ test('local initialization failure does not fabricate local readiness while the 
   expect(tracking.ready.real).toBe(false); expect(tracking.initialSnapshotReady).toBe(false);
   expect(tracking.errors.real).toContain('invented local schema failure');
   expect(tracking.cloudReady).toBe(true);
+});
+
+test('ordinary resume accepts a new independent latest while local initialization is pending and does not start BLE/hold/context reads', async () => {
+  await mount(); native.resolve(); await advance(1);
+  expect(applied()).toHaveLength(1);
+  const before = dogs.acceptedReadback;
+  const change = state => AppState.addEventListener.mock.calls.filter(([name]) => name === 'change').forEach(([, listener]) => listener(state));
+  await act(async () => { change('background'); await jest.advanceTimersByTimeAsync(5); });
+  await act(async () => { change('active'); await jest.advanceTimersByTimeAsync(1); });
+  expect(tracking.ready.real).toBe(false);
+  expect(tracking.initialSnapshotReady).toBe(false);
+  expect(applied()).toHaveLength(2);
+  expect(dogs.acceptedReadback).not.toBe(before);
+  expect(sync.getMapPublication().acknowledgeMapRead(before)).toBe(false);
+  expect(latestMapApplied(sync, owner, dogs)).toBe(true);
+  expect(archive.executeAsync.mock.calls).toEqual([]);
+  local.resolve(); await advance(1);
+  expect(tracking.ready.real).toBe(true);
+  expect(tracking.initialSnapshotReady).toBe(true);
+  expect(applied()).toHaveLength(2);
+  expect(latestMapApplied(sync, owner, dogs)).toBe(true);
 });
 
 test('real engine and S7 failure/cancel clear update indicators but keep deletion fenced; retry succeeds for App restart', async () => {
