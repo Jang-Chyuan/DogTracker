@@ -32,7 +32,7 @@ npm install
 
 安裝完會自動跑 `patch-package`，套用 `patches/` 裡的修補：
 
-- `react-native-maps+1.28.2.patch`：Android 地圖標記在還沒有自己的畫面（剛加上、或畫面先被移除）時先隱藏，不讓 Google 畫出預設紅色圖釘（上游問題 react-native-maps#5756、#5778）。升級 react-native-maps 時要重新產生這個修補（`npx patch-package react-native-maps --exclude '^package\.json$|/build/|\.cxx/|/\.gradle/'`），`__tests__/ReactNativeMapsPatch.test.js` 會檢查版本和修補是否套上。
+- `react-native-maps+1.28.2.patch`：Android 地圖標記在還沒有自己的畫面（剛加上、或畫面先被移除）時先隱藏，不讓 Google 畫出預設紅色圖釘（上游問題 react-native-maps#5756、#5778）；新架構下標記建立後再改 zIndex 也會套到 Google 標記上（選中的狗浮到最上層，`__tests__/FabricMarkerZIndex.test.js`）。升級 react-native-maps 時要重新產生這個修補（`npx patch-package react-native-maps --exclude '^package\.json$|/build/|\.cxx/|/\.gradle/'`），`__tests__/ReactNativeMapsPatch.test.js` 會檢查版本和修補是否套上。
 
 ## 開發執行
 
