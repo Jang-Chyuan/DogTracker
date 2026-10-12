@@ -1,6 +1,49 @@
 import fs from 'fs';
 import path from 'path';
 const files = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(path.join(directory, entry.name)) : [path.join(directory, entry.name)]);
+test('private cloud attempt logger requires opt-in and the exact integer schema, rebuilding without caller serialization', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const { privateCloudAttemptDiagnostic } = require('../src/logger');
+  const { createCloudAttemptDiagnostics } = require('../src/diagnostics/CloudAttemptDiagnostics');
+  let valid;
+  const observer = createCloudAttemptDiagnostics({ enabled: () => true, clock: () => 0, sink: value => { valid = value; } });
+  observer.begin(1).finish(1, 'download', 'timeout', true); observer.close();
+  const previous = global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__;
+  try {
+    delete global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__;
+    privateCloudAttemptDiagnostic(valid); expect(spy).not.toHaveBeenCalled();
+    global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__ = true;
+    const inherited = Object.assign(Object.create({ toJSON: () => 'private-url' }), valid);
+    privateCloudAttemptDiagnostic(inherited);
+    expect(spy.mock.calls).toEqual([['DOGTRACKER_PRIVATE_CLOUD_ATTEMPT', JSON.stringify(valid)]]);
+    spy.mockClear();
+    for (const key of Object.keys(valid)) {
+      for (const bad of ['private-url', 1.5, Infinity, NaN, new Error('private-token')])
+        privateCloudAttemptDiagnostic({ ...valid, [key]: bad });
+      const missing = { ...valid }; delete missing[key]; privateCloudAttemptDiagnostic(missing);
+    }
+    for (const [key, bad] of [['schema', 2], ['attempt', 0], ['attempt', 2147483648], ['terminal', 4],
+      ['phase', 7], ['phase', -2], ['failureKind', 5], ['foreground', 2], ['clockValid', 2],
+      ['storageAggregate', 0], ['capped', 2], ['fetchStatus', 99], ['allFetchStatus', 600], ['fetchMs', -1]])
+      privateCloudAttemptDiagnostic({ ...valid, [key]: bad });
+    for (const extra of [{ url: 'private-url' }, { auth: 'private-token' }, { toJSON: () => 'private-token' },
+      { [Symbol('private-token')]: 1 }]) privateCloudAttemptDiagnostic({ ...valid, ...extra });
+    const hidden = { ...valid }; Object.defineProperty(hidden, 'private', { value: 'private-token' });
+    privateCloudAttemptDiagnostic(hidden);
+    expect(spy).not.toHaveBeenCalled();
+    let reads = 0;
+    const once = { ...valid };
+    Object.defineProperty(once, 'fetchMs', { enumerable: true, get: () => ++reads === 1 ? 0 : 'private-token' });
+    privateCloudAttemptDiagnostic(once);
+    expect(reads).toBe(1); expect(JSON.parse(spy.mock.calls[0][1])).toEqual(valid);
+    spy.mockImplementation(() => { throw new Error('sink refused'); });
+    expect(() => privateCloudAttemptDiagnostic(valid)).not.toThrow();
+  } finally {
+    if (previous === undefined) delete global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__;
+    else global.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__ = previous;
+    spy.mockRestore();
+  }
+});
 test('src has no console.log/info bypasses for sensitive fields outside logger', () => {
   for (const file of files(path.join(__dirname, '../src')).filter(name => /\.[jt]sx?$/.test(name) && !name.endsWith('/logger.js'))) {
     expect(fs.readFileSync(file, 'utf8')).not.toMatch(/console\s*\.\s*(log|info|warn|error)\s*\(/);

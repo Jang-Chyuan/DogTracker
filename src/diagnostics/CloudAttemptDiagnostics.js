@@ -1,4 +1,5 @@
 /* global globalThis */
+import { privateCloudAttemptDiagnostic } from '../logger';
 // Private APK opt-in only. Never record request arguments, responses, tokens,
 // account/animal IDs, URLs or wall-clock timestamps. Counters are observational.
 const STAGES = ['masters', 'keys', 'packet', 'fix'];
@@ -140,7 +141,7 @@ export function createCloudAttemptDiagnostics({ enabled, clock, sink }) {
 const observer = createCloudAttemptDiagnostics({
   enabled: () => globalThis.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__ === true,
   clock: () => globalThis.performance?.now?.(),
-  sink: fields => console.info('DOGTRACKER_PRIVATE_CLOUD_ATTEMPT', JSON.stringify(fields)),
+  sink: privateCloudAttemptDiagnostic,
 });
 export const beginCloudAttemptDiagnostic = attempt => observer.begin(attempt);
 export const inheritCloudDiagnosticSignal = (parent, child) => observer.inherit(parent, child);

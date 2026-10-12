@@ -3,6 +3,43 @@
 const emit = (level, args) => { if (typeof __DEV__ !== 'undefined' && __DEV__) console[level](...args); };
 export const logger = Object.fromEntries(['log', 'info', 'warn', 'error'].map(level => [level, (...args) => emit(level, args)]));
 
+const PRIVATE_ATTEMPT_FIELDS = Object.freeze(['schema', 'attempt', 'terminal', 'clockValid', 'elapsedMs',
+  'phase', 'failureKind', 'foreground', 'fetchStarted', 'fetchDone', 'fetchPending', 'fetchMs',
+  'fetchStatus', 'retryMax', 'retry503', 'retry520', 'allFetchStartedDelta', 'allFetchDoneDelta',
+  'allFetchPendingAtStart', 'allFetchPending', 'allFetchRetryMax', 'allFetchStatus', 'capped', 'storageAggregate',
+  ...['masters', 'keys', 'packet', 'fix'].flatMap(stage => ['Started', 'Done', 'Pending'].map(suffix => `${stage}${suffix}`)),
+  ...['get', 'set', 'remove'].flatMap(kind => [
+    ...['Started', 'Done', 'Pending', 'Ms'].map(suffix => `storage${kind}${suffix}`),
+    `allStorage${kind}PendingAtStart`, `allStorage${kind}Pending`,
+  ])]);
+const PRIVATE_ATTEMPT_ENUMS = {
+  schema: [1], terminal: [0, 1, 2, 3], clockValid: [0, 1], phase: [-1, 0, 1, 2, 3, 4, 5, 6],
+  failureKind: [-1, 0, 1, 2, 3, 4], foreground: [-1, 0, 1], capped: [0, 1], storageAggregate: [1],
+};
+
+// The private observer stays disabled in normal builds. Accept only its exact
+// numeric schema; read each field once and rebuild to exclude caller payloads,
+// toJSON methods, messages, auth data and URLs. Observer errors remain silent.
+export function privateCloudAttemptDiagnostic(fields) {
+  try {
+    if (globalThis.__DOGTRACKER_PRIVATE_CLOUD_ATTEMPT__ !== true || !fields || typeof fields !== 'object') return;
+    const keys = Reflect.ownKeys(fields);
+    if (keys.length !== PRIVATE_ATTEMPT_FIELDS.length || !keys.every(key => PRIVATE_ATTEMPT_FIELDS.includes(key))) return;
+    const result = Object.fromEntries(PRIVATE_ATTEMPT_FIELDS.map(key => [key, fields[key]]));
+    for (const [key, value] of Object.entries(result)) {
+      if (!Number.isSafeInteger(value)) return;
+      if (Object.prototype.hasOwnProperty.call(PRIVATE_ATTEMPT_ENUMS, key)) {
+        if (!PRIVATE_ATTEMPT_ENUMS[key].includes(value)) return;
+      } else if (value < (key === 'attempt' ? 1 : 0) || value > 2147483647) return;
+    }
+    for (const key of ['fetchStatus', 'allFetchStatus'])
+      if (result[key] !== 0 && (result[key] < 100 || result[key] > 599)) return;
+    console.info('DOGTRACKER_PRIVATE_CLOUD_ATTEMPT', JSON.stringify(result));
+  } catch {
+    // A refused diagnostic sink never changes auth, queries or publication.
+  }
+}
+
 
 // An explicitly instrumented APK may emit only this bounded, fixed schema.
 // This is separate from the development logger: arbitrary payloads stay silent.
