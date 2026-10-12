@@ -1,18 +1,20 @@
 # 2026-10-12：最新地址排版與下方控制避碰
 
+> 原生截圖、影片與其 manifest 已不收進 repo（2026-10-12 使用者決定）。下文以「（截圖：…）」保留原說明；圖檔請看 PR 說明中以舊 commit 固定的連結。
+
 5558 新版一般字體畫面已親看：歷史清單每列顯示地址，停留膠囊及左側節點對齊地址第一行；走路／開車圖示仍置於左側連線中央。先前缺地址的展示字典與產品首行對齊問題均已修正，沒有移除地址欄位。
 
-![最新手機清單：地址與膠囊、節點首行對齊](evidence/history-timeline-compact/20261012-control-layout/phone-first.png)
+（截圖：最新手機清單：地址與膠囊、節點首行對齊）
 
 游標資訊卡現在參考實際量測的範圍控制、指南針和底部「框住全部」位置。下方避碰矩形與上方相機留白分開，避免底部按鈕被當成上方留白；量測更新不重建正在拖動的把手。
 
 5558 實際連續拖放至 09:09 後，普通兩行卡顯示「開車中・不算距離」，向定位點左側排列。原生卡片 bounds 為 [399,1105][748,1235]，右下按鈕為 [904,1075][1036,1207]，水平間距 156px、交集 0。放開與稍後穩定時拖曳提示均已隱藏。定位點未為避碰而移動。
 
-![手機放開後：普通資訊卡避開右下按鈕](evidence/history-timeline-compact/20261012-control-layout/phone-near-frame-released.png)
+（截圖：手機放開後：普通資訊卡避開右下按鈕）
 
 **仍有未通過的邊界：**狗的普通基線卡可讀且與右下按鈕零交集；再拖放後，真實定位點貼近半高面板邊緣，頭像部分被面板遮住、普通卡無足夠安全位置而隱藏。因此未把狗放開後可讀卡列為通過，也未宣稱所有地圖標記都會避讓。橫向與旋轉指南針尚未完成原生驗證，來源測試不能代替它們。
 
-公開 runtime `dbf46080` 完整 **229 套／2,591 項測試通過（172.396 秒）**，同來源 Android arm64 Release 建置成功（18 秒，APK SHA `7d44536d6cfdb63e09b9af2bdd684e21f72804b49074d7f94fa6a601c8032620`，未安裝）。整合產品 `69101bab` 完整 256 套／2,892 項通過；上述原生展示版 266 僅加入五個私有虛構 fixture 檔，focused 3 套／27 項及 Release 24 秒通過，不冒稱私有完整測試通過。原生操作後 fixture 關閉、返回正常地圖，登入、資料、設定及權限保留。來源與原圖 SHA 見 [manifest](evidence/history-timeline-compact/20261012-control-layout/manifest.json)。此輪未錄新影片，不代表 CPU、雲端或 GPS 通過。
+公開 runtime `dbf46080` 完整 **229 套／2,591 項測試通過（172.396 秒）**，同來源 Android arm64 Release 建置成功（18 秒，APK SHA `7d44536d6cfdb63e09b9af2bdd684e21f72804b49074d7f94fa6a601c8032620`，未安裝）。整合產品 `69101bab` 完整 256 套／2,892 項通過；上述原生展示版 266 僅加入五個私有虛構 fixture 檔，focused 3 套／27 項及 Release 24 秒通過，不冒稱私有完整測試通過。原生操作後 fixture 關閉、返回正常地圖，登入、資料、設定及權限保留。來源與原圖 SHA 見 manifest（已隨截圖移出 repo）。此輪未錄新影片，不代表 CPU、雲端或 GPS 通過。
 
 以下保留先前版本的成功與失敗紀錄；PR 115 仍待使用者批准，沒有合併。
 
@@ -22,11 +24,11 @@
 
 缺地址的舊展示圖已補足虛構地址；產品的地址載入 skeleton 與無法取得提示保留。停留膠囊、左側節點共用地址第一行中心，長地址換行時不改成整段文字中心。下圖為 5558 真正渲染的虛構場景，沒有使用個人位置。
 
-![地址、膠囊與左節點對齊第一行](evidence/history-timeline-compact/20261012-cursor-release/address-first-line.png)
+（截圖：地址、膠囊與左節點對齊第一行）
 
 游標資訊卡靠近上方控制時改用螢幕內單一卡片位置，不移動真實定位、頭像或名字。下圖普通卡片避開「回到現在」並放到自己的名字下方；沒有足夠空間時隱藏卡片。手動把真實 pin pan 到控制後方時，仍可能被控制遮住，這不是「所有 pin 自動避讓」驗收。
 
-![避開上方控制與自己的頭像名字](evidence/history-timeline-compact/20261012-cursor-release/back-control-safe.png)
+（截圖：避開上方控制與自己的頭像名字）
 
 原生 264 的拖放曾實際失敗：座標更新等待投影時，把手被卸載，放開後拖曳提示殘留。候選現在只在同一有效手勢內保留原把手；切換場景、鏡頭、尺寸或可見狀態會取消手勢，正常卡片仍等待當前投影。14 個新回歸案例在原版 12 失敗／2 通過，修正後全部通過。
 
@@ -34,23 +36,23 @@
 
 | 狗：拖動中 | 狗：放開後 |
 | --- | --- |
-| ![狗拖動時間浮層](evidence/history-timeline-compact/20261012-cursor-release/dog-cursor-held.png) | ![狗放開恢復正常資訊卡](evidence/history-timeline-compact/20261012-cursor-release/dog-cursor-released.png) |
+| （截圖：狗拖動時間浮層） | （截圖：狗放開恢復正常資訊卡） |
 
 | 手機：拖動中 | 手機：放開後 |
 | --- | --- |
-| ![手機拖動時間浮層](evidence/history-timeline-compact/20261012-cursor-release/phone-cursor-held.png) | ![手機放開恢復正常資訊卡](evidence/history-timeline-compact/20261012-cursor-release/phone-cursor-released.png) |
+| （截圖：手機拖動時間浮層） | （截圖：手機放開恢復正常資訊卡） |
 
 另在同一連續拖動尚未結束時，真正按 HOME 進背景；串流正常結束後回前景，同 PID、版本、設定與權限保持，普通卡片恢復 09:27／已移動 4.2 km，提示沒有殘留。這是前背景手勢取消驗證，不是雲端 resume 效能驗證。正常開狗清單只列為可操作情境，不宣稱能驗 foreground hidden 取消。
 
-![拖動中進背景，再回前景沒有殘留提示](evidence/history-timeline-compact/20261012-cursor-release/background-return.png)
+（截圖：拖動中進背景，再回前景沒有殘留提示）
 
 圖上獨立終點時標 09:29 是路線時標，不是放開後殘留的游標提示。底部「框住全部」按鈕仍會碰到手機資訊卡的右下圓角，文字可讀，已列後續修正；沒有稱全部控制避讓通過。
 
 | 下收至日期列 | 上展並保留控制間距 |
 | --- | --- |
-| ![只保留日期列](evidence/history-timeline-compact/20261012-cursor-release/collapsed-date.png) | ![展開仍保留上方間距](evidence/history-timeline-compact/20261012-cursor-release/expanded-gap.png) |
+| （截圖：只保留日期列） | （截圖：展開仍保留上方間距） |
 
-新公開產品 runtime `ab905e77` 全部 **228 suites／2,585 tests 通過（163.115 秒）**，相同公開 runtime 的 Android arm64 Release 18 秒建置成功（SHA `9ab7bb9efd6ae9705fcb7326bcdd0b9769eb1cf914f2caa937f7f5aabdc1473d`，未安裝或降級裝置）。私有新版只有原五個虛構 fixture 檔，focused 3 suites／27 tests 通過、Release 18 秒成功；未宣稱私有完整測試通過。APK 0.3.265／SHA `a7f3d2e45ed580599aeda90a1ea95ce814fe743778aad5581479d9ed979bbbba`。地址、上方避碰與高度圖為前一輪 264，新拖放圖為 265，逐檔來源及 SHA 見[manifest](evidence/history-timeline-compact/20261012-cursor-release/manifest.json)。新版影片尚未由主視窗全影格核完，因此只新增親看過的原生截圖。本輪不代表 CPU／雲端／GPS 效能驗收。
+新公開產品 runtime `ab905e77` 全部 **228 suites／2,585 tests 通過（163.115 秒）**，相同公開 runtime 的 Android arm64 Release 18 秒建置成功（SHA `9ab7bb9efd6ae9705fcb7326bcdd0b9769eb1cf914f2caa937f7f5aabdc1473d`，未安裝或降級裝置）。私有新版只有原五個虛構 fixture 檔，focused 3 suites／27 tests 通過、Release 18 秒成功；未宣稱私有完整測試通過。APK 0.3.265／SHA `a7f3d2e45ed580599aeda90a1ea95ce814fe743778aad5581479d9ed979bbbba`。地址、上方避碰與高度圖為前一輪 264，新拖放圖為 265，逐檔來源及 SHA 見 manifest（已隨截圖移出 repo）。新版影片尚未由主視窗全影格核完，因此只新增親看過的原生截圖。本輪不代表 CPU／雲端／GPS 效能驗收。
 
 ---
 
@@ -62,21 +64,21 @@
 
 | 狗歷史：地址與第一行對齊 | 第二隻狗：同樣對齊 |
 | --- | --- |
-| ![狗歷史地址與膠囊](evidence/history-timeline-compact/20261012-overlay-addresses/dog-first.png) | ![第二隻狗的地址与首行](evidence/history-timeline-compact/20261012-overlay-addresses/dog-four-detail.png) |
+| （截圖：狗歷史地址與膠囊） | （截圖：第二隻狗的地址与首行） |
 
 拖動把手時僅疊上 HH:mm，不預留額外空白；手指放開即隱藏。實際操作前／held／UP 日期、摘要和把手 bounds 相同。首個 MOVE 便進入既有 shimmer 並隱藏舊清單／地圖路線；放開後才提交最終範圍並重算，不能把此功能驗證當 CPU 或延遲指標。
 
 | 拖曳前 | 手指拖動：時間浮層與 shimmer | 放開後 |
 | --- | --- | --- |
-| ![拖曳前](evidence/history-timeline-compact/20261012-overlay-addresses/range-open.png) | ![拖動時無額外留白](evidence/history-timeline-compact/20261012-overlay-addresses/range-start-held.png) | ![放開後恢復清單](evidence/history-timeline-compact/20261012-overlay-addresses/range-start-released.png) |
+| （截圖：拖曳前） | （截圖：拖動時無額外留白） | （截圖：放開後恢復清單） |
 
 範圍裁切落在同一個已確認停留內，出發／第一停留合一；同一末停留／結束合一，地圖不留兩個重複編號。原始停留身份與點 membership 才是合併依據，不用相同地址吞掉可能的短走，不改 GPS 分類、原資料或 CSV／GPX。實際 09:04–09:19 清單為出發停 5 分、開車 3 分、結束停 7 分。
 
-![裁切起點與末停留合併](evidence/history-timeline-compact/20261012-overlay-addresses/range-end-released.png)
+（截圖：裁切起點與末停留合併）
 
 兩隻有有效軌跡的狗已實際 4→6→4 切換，選擇第二隻後仍在第二列，主角、頭像與各自距離更新，日期／範圍保持。
 
-![選第二隻狗仍保持順序](evidence/history-timeline-compact/20261012-overlay-addresses/dog-selected-four.png)
+（截圖：選第二隻狗仍保持順序）
 
 面板三高度與日期往返亦已在同 APK 操作：半高、收至日期列、展開並與上方控制實測保留 20dp。切換日期維持原高度。此次未另公開影片，尚未由主視窗逐影格核完的新影片不作公開證據。所有上圖為主視窗親看過的原生原圖，SHA 列於 manifest。
 
@@ -129,10 +131,10 @@ FontScale2的半高、展開、捲動到完整終點已實際完成，原PNG顯�
 
 | 改版前 | 改版後 |
 | --- | --- |
-| ![改版前三段相鄰步行](evidence/history-timeline-compact/before-top.png) | ![新版合列及同行膠囊](evidence/history-timeline-compact/after-top.png) |
+| （截圖：改版前三段相鄰步行） | （截圖：新版合列及同行膠囊） |
 
-![改版前車程與第二停留](evidence/history-timeline-compact/before-mid.png)
-![改版前最後停留與結束列](evidence/history-timeline-compact/before-end.png)
+（截圖：改版前車程與第二停留）
+（截圖：改版前最後停留與結束列）
 
 本PR未合併；使用者看圖與操作證據後才決定。
 
@@ -147,11 +149,11 @@ FontScale2的半高、展開、捲動到完整終點已實際完成，原PNG顯�
 
 既有三張before-top/mid/end仍來自5558的舊版基準APK7ec2e889…；先前after-top曾來自同台首版UI APKb16b1c0c…，這次換成最新baf643…原圖。這是相同獨立虛構資料的UI對照，**跨裝置，不能當效能A/B**。公開PNG是原screencap或原影片直接解碼frame，沒有裁切、拼接、修線或合成。manifest提供各檔SHA。
 
-![拖曳中：本地把手已移動，模型仍在載入](evidence/history-timeline-compact/after-range-pending.png)
-![放開後：最新09:03範圍，匯出恢復](evidence/history-timeline-compact/after-range-final.png)
-![下一手勢中返回：保留已完成09:03範圍，控制列关闭](evidence/history-timeline-compact/after-range-back.png)
+（截圖：拖曳中：本地把手已移動，模型仍在載入）
+（截圖：放開後：最新09:03範圍，匯出恢復）
+（截圖：下一手勢中返回：保留已完成09:03範圍，控制列关闭）
 
-[原生普通字體拖曳與返回影片](evidence/history-timeline-compact/after-held-range.mp4)
+原生普通字體拖曳與返回影片（影片）
 
 錄影指令15秒，原檔8.8383秒／112個原生frame；後段畫面靜止沒有新增frame，沒有補幀或偽填時長。第一手勢3500ms向右移動，local把手08:50逐步到09:03，長held主段維持讀取中，清單不重現且map route被清除。放開後只出現09:03結果、匯出恢復；第二手勢的local把手到09:05時按Back，未完成的範圍被取消，最後清單及摘要仍是09:03，沒有其後09:05結果回填或重新開把手。最後XML確認無loader、export enabled／clickable、rangebar不存在且無ANR。
 
@@ -177,11 +179,11 @@ FontScale2的半高、展開、捲動到完整終點已實際完成，原PNG顯�
 
 0e204cb8／APK dc43／PID9436真正裝到既有5562，正常字體原圖證明車／走路圖示上下連線可見、原匯出圖示加大；同址末stop3/end已合成09:22一列「現在・停7分」，地址及整列完整。今日仍用「現在」，歷史結束及PNG保原「結束」語義。
 
-![第二輪排版](evidence/history-timeline-polish/after-top.png)
-![同址末停留合成終點](evidence/history-timeline-polish/after-end.png)
-![範圍重算採既有shimmer](evidence/history-timeline-polish/range-shimmer.png)
+（截圖：第二輪排版）
+（截圖：同址末停留合成終點）
+（截圖：範圍重算採既有shimmer）
 
-[新原生操作影片](evidence/history-timeline-polish/held-range-back.mp4)：9.4243秒、115原生frame，主視窗已親看全部及原圖。長按拖動主段是既有時間軸shimmer、無轉圈／旧清單；放開後09:03範圍及匯出恢復，下一次09:05途中Back取消、最後仍09:03。初始2–3幀舊底圖線短留、清單已空，不宣全nativepaint原子更新。09:03子範圍原模型末段判為9分鐘走路，無7分鐘停留；未借全範圍圖冒充所有range的分類，GPS/model演算法未改。普通字體末列通過；font2只有中段地址換行有效，末列未證實，誤觸Home後的launcher圖已排除。
+新原生操作影片（影片）：9.4243秒、115原生frame，主視窗已親看全部及原圖。長按拖動主段是既有時間軸shimmer、無轉圈／旧清單；放開後09:03範圍及匯出恢復，下一次09:05途中Back取消、最後仍09:03。初始2–3幀舊底圖線短留、清單已空，不宣全nativepaint原子更新。09:03子範圍原模型末段判為9分鐘走路，無7分鐘停留；未借全範圍圖冒充所有range的分類，GPS/model演算法未改。普通字體末列通過；font2只有中段地址換行有效，末列未證實，誤觸Home後的launcher圖已排除。
 
 測後原163 APK640463a5逐SHA還原／PID11348，9設定presence與value、6permission grants/flags、viewport逐一相同；設定未登入、位置紀錄開關ON但GPS denied，最後正常Live／無ANR，全部worker關閉。沒有新AVD或清資料。
 
@@ -193,22 +195,22 @@ FontScale2的半高、展開、捲動到完整終點已實際完成，原PNG顯�
 
 | 進入50% | 下拉只留日期 | 上拉展開 |
 | --- | --- | --- |
-| ![進入50%](evidence/history-sheet-summary/half.png) | ![只留日期](evidence/history-sheet-summary/collapsed.png) | ![展開](evidence/history-sheet-summary/expanded.png) |
+| （截圖：進入50%） | （截圖：只留日期） | （截圖：展開） |
 
-![第二次上拉仍正常展開](evidence/history-sheet-summary/expanded-repeat.png)
+（截圖：第二次上拉仍正常展開）
 
-[實際拖曳影片](evidence/history-sheet-summary/three-snap-drag.mp4)：原檔14.085767秒／88個原生影格；錄影要求15秒，未補幀。第一輪50%→收合→展開→再收合已入影片，第二次上拉發生在錄影結束之後，使用上圖與操作紀錄證明，未稱影片包括第二次上拉。影片只作功能證據，不作流暢度／CPU驗收。
+實際拖曳影片（影片）：原檔14.085767秒／88個原生影格；錄影要求15秒，未補幀。第一輪50%→收合→展開→再收合已入影片，第二次上拉發生在錄影結束之後，使用上圖與操作紀錄證明，未稱影片包括第二次上拉。影片只作功能證據，不作流暢度／CPU驗收。
 
 日期往返已實際用日曆：收合時10/07→10/06→10/07都維持top2131；展開時同一往返都維持top334。半高清單真捲動後日期列及panel維持原bounds，末列由nav以下移至完整可見；沒有把內容原本全fits的展開滑動冒充有效捲動。
 
-![狗摘要：爪印3.8km與坐車1.8km](evidence/history-sheet-summary/dog-half.png)
+（截圖：狗摘要：爪印3.8km與坐車1.8km）
 
 狗用既有獨立虛構BLE序列，由正式reader／model得到兩個距離；fresh啟動仍半高，無總時長。最新同APK範圍影片9.420111秒／131原生影格主視窗全部親看：held時既有shimmer、放開09:03更新，第二手勢途中Back仍保留09:03。動畫接界／pending時地圖可能保留原線，未宣全pending原子清空；無spinner，不作CPU／流暢度A/B。完成後實際點原匯出入口顯示三格式與六動作，未發送／下載。
 
-[最新同APK範圍拖曳與返回](evidence/history-sheet-summary/range-held-back.mp4)
-![返回後保留09:03](evidence/history-sheet-summary/range-back.png)
+最新同APK範圍拖曳與返回（影片）
+（截圖：返回後保留09:03）
 
-![大字完整終點](evidence/history-sheet-summary/font2-end.png)
+（截圖：大字完整終點）
 
 
 ## 2026-10-12 接續來源：拖曳提示、裁切停留與地址狀態
