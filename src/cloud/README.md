@@ -91,6 +91,29 @@ WorkManager 不保存 JWT，執行時從既有安全儲存恢復並更新 Sessio
 
 BLE 是手機收到的時間、雲端是 Master 收到的時間，兩個時鐘不同；Master 時鐘來源未確認前，「哪筆最新」的判斷仍可能受時鐘誤差影響。
 
+## 最新位置先發布，完整歷史另外發布（`CloudSync.js`）
+
+每輪自動同步分成三個獨立階段，各自有版本：
+
+1. **最新位置**：先取每隻可讀取的狗的最新封包與最後有效定位，提交成 latest snapshot（`snapshotRevision`），地圖立刻可用。
+2. **停住脈絡**：再補完整的室內停住脈絡，成功時同一個 snapshot 版本再前進一次；失敗或逾時只保留已接受的最新位置，不把不完整的脈絡交給停住判斷，也不用空集合蓋掉先前的脈絡。
+3. **完整歷史（archive）**：分頁下載先寫入 staging，每頁與 `event_id` 游標同一個交易提交；只有整輪完成才一次發布 staged 資料與完整性證明（`archiveRevision`）。失敗、取消或換帳號都不改已接受的 snapshot，也不發布半套歷史；重建資料庫連線或排程後從保存的游標續傳。活動頁的「完整歷史」閘門在 archive 發布前保持關閉。
+
+雲端回應可能少於要求的 1,000 筆，下載必須讀到空頁才算結束。手動下載指定日期是另一個交易：完成的狗與日期才有完整證明，不覆蓋地圖的 snapshot，也不帶出另一個未完成的自動下載。
+
+## 發布階段診斷（`logger.js` 的 `cloudSyncDiagnostic`）
+
+Release 版只輸出固定欄位的雲端同步紀錄，用來核對實際發布次序：
+
+| 事件 | 欄位 | 何時 |
+| --- | --- | --- |
+| `failure` | `attempt`、`phase`、`failureKind`、`status` | 一輪失敗 |
+| `recovered` | `attempt`、`elapsedMs` | 失敗後再次成功 |
+| `latest-published` | `attempt`、`elapsedMs`、`revision`，另可附固定的各階段耗時 | 最新位置提交並通過目前世代／取消檢查；停住脈絡完成不再送一次 |
+| `archive-published` | `attempt`、`elapsedMs`、`revision` | 自動下載的完整歷史發布完成；手動下載、部分 staging、失敗或取消都不送 |
+
+Logger 只重建這些數值欄位：attempt／revision 是正的安全整數，耗時是有限非負數；其他事件名稱與不合法的值直接丟棄。帳號、Master／Slave 編號、時間戳、URL、座標、payload 與錯誤物件都不會輸出。寫 log 失敗不影響下載結果。換帳號時，舊帳號已開始的原生交易可能仍寫完，但世代檢查讓它不會被記成成功。這些紀錄只看得到發布次序，看不到個別 HTTP 篩選、頁數或後端索引。
+
 ## 驗證
 
 ```powershell
