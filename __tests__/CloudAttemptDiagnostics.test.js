@@ -165,9 +165,10 @@ test('real independent engine timeout emits one fixed numeric snapshot before qu
     await advance(120000);
     expect(state).toMatchObject({ snapshotPending: false, mapSuccessRevision: 0, offline: true });
     expect(summaries).toHaveLength(1);
+    // One short membership page ends the list: no terminal empty request.
     expect(summaries[0]).toMatchObject({ attempt: 1, terminal: 1, phase: 3, failureKind: 0, foreground: 1,
-      mastersStarted: 2, mastersDone: 2, keysStarted: 2, keysDone: 2,
-      packetStarted: 2, packetDone: 0, packetPending: 2, fetchStarted: 6, fetchDone: 4, fetchPending: 2,
+      mastersStarted: 1, mastersDone: 1, keysStarted: 2, keysDone: 2,
+      packetStarted: 2, packetDone: 0, packetPending: 2, fetchStarted: 5, fetchDone: 3, fetchPending: 2,
       allFetchPending: 2, clockValid: 1 });
     expect(await database.readLatestSnapshot('do-not-log-owner', { positionsOnly: true })).toBeNull();
     expect(Object.values(summaries[0]).every(value => Number.isInteger(value))).toBe(true);
