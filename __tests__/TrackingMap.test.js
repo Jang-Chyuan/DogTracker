@@ -326,6 +326,17 @@ test('a confirmed phone permission or service problem remains distinct and the b
   }
 });
 
+test('a confirmed phone problem reaches the live dot independently of old-fix age', async () => {
+  const livePhone = { running: true, ageSeconds: 601, sessionId: 'unit',
+    position: { latitude: 25, longitude: 121, accuracy: 5, timestamp: 1 } };
+  await render({ livePhone, phoneProblem: true });
+  const dot = () => renderer.root.findByProps({ testID: 'phone-location-dot' });
+  const muted = StyleSheet.flatten(dot().props.style).backgroundColor;
+  await act(async () => renderer.update(<TrackingMap {...defaults} livePhone={livePhone} phoneProblem={false} />));
+  expect(StyleSheet.flatten(dot().props.style).backgroundColor).not.toBe(muted);
+  expect(renderer.root.findByType(MapView).props.showsUserLocation).toBe(false);
+});
+
 test('框住全部 fits every dog, however far, and the phone, with room for the name tags', async () => {
   const far = { ...slaveMarker, slaveId: 8, tag: '阿福', name: '阿福', size: 48, problem: true, stale: true,
     coordinate: { latitude: 24.93, longitude: 121.24 } };

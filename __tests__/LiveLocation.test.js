@@ -2,6 +2,8 @@
 // turned the 「今天 x km」 walker grey as if recording had stopped).
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
+import { t } from '../src/i18n';
+import { todayPill } from '../src/tracking/TodayDistance';
 import { useLiveLocation } from '../src/locationTracker/useLiveLocation';
 
 const mockLive = jest.fn();
@@ -29,7 +31,9 @@ test('with no snapshot yet, a failed read says it cannot read the live state', a
   mockLive.mockRejectedValueOnce(new Error('busy'));
   let renderer;
   await act(async () => { renderer = Renderer.create(<Probe />); });
-  expect(value).toMatchObject({ running: false });
+  expect(value).toEqual({ running: null, status: t('c718') });
+  expect(todayPill({ route: { count: 0, metres: 0 }, livePhone: value, phone: { permission: 'precise', services: true } }))
+    .toMatchObject({ icon: 'walk', muted: false, unrecorded: false, destination: 'history' });
   await act(async () => renderer.unmount());
 });
 
@@ -105,5 +109,29 @@ test('a read from the previous active interval cannot replace the foreground sna
     await act(async () => jest.advanceTimersByTimeAsync(1000));
     expect(value).toBe(current);
     expect(mockLive).toHaveBeenCalledTimes(3);
+  } finally { await act(async () => renderer?.unmount()); }
+});
+
+
+test('repeated initial failures stay unknown and stable, then a confirmed native stop is shown', async () => {
+  mockLive.mockRejectedValue(new Error('busy'));
+  let renderer;
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    const unknown = value;
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(value).toBe(unknown);
+    expect(value.running).toBeNull();
+    const stopped = { running: false, enabled: false, stoppedAt: 123, status: 'stopped' };
+    mockLive.mockResolvedValue(JSON.stringify(stopped));
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(value).toEqual(stopped);
+    expect(todayPill({ route: { count: 0, metres: 0 }, livePhone: value, phone: { permission: 'precise', services: true } }))
+      .toMatchObject({ icon: 'walk-muted', muted: true, unrecorded: true, destination: 'phone-settings' });
+    const publishedStop = value;
+    mockLive.mockRejectedValue(new Error('later read failed'));
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(value).toBe(publishedStop);
+    expect(value).toEqual(stopped);
   } finally { await act(async () => renderer?.unmount()); }
 });

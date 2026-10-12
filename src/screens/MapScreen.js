@@ -655,14 +655,14 @@ export default function MapScreen({
   const phoneSettled =
     !!fixture ||
     !!phoneSpot ||
-    (livePhone != null && !livePhone.running) ||
+    livePhone?.running === false ||
     (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
   const screen = useHistoryScreen({ publicationRevision: fixture ? 0 : cloudSync?.publishedRevision ?? cloudSync?.mapSuccessRevision ?? 0, target, read: history?.readDay, readDays: history?.readDays, owner: cloudOwner,
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
-    recording: livePhone ? !!livePhone.running : null,
+    recording: typeof livePhone?.running === 'boolean' ? livePhone.running : null,
     recordingStoppedAt: livePhone?.stoppedAt ?? null,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '',
@@ -1192,7 +1192,7 @@ export default function MapScreen({
             target.subject === 'phone' &&
             screen.today &&
             livePhone &&
-            !livePhone.running
+            livePhone.running === false
               ? livePhone.stoppedAt ?? null
               : null
           }

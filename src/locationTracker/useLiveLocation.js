@@ -6,7 +6,7 @@ import { locationTrackerNative } from './LocationTrackerService';
 // One lightweight snapshot per second; SQLite is never polled at display rate.
 // 067: a single failed read keeps the last snapshot (the 「今天 x km」 icon
 // turned grey as if recording had stopped); only when there has never been a
-// snapshot is it 「無法讀取即時定位狀態」.
+// snapshot is it 「無法讀取即時定位狀態」, with unknown recording state.
 export function useLiveLocation(active) {
   const [state, setState] = useState(null);
   // Stopped recording returns a fresh copy of the same native snapshot every
@@ -28,7 +28,7 @@ export function useLiveLocation(active) {
           }
         }
       } catch {
-        if (alive) setState(value => value ?? { running: false, status: t("c718") });
+        if (alive) setState(value => value ?? { running: null, status: t("c718") });
       } finally { if (alive) timer = setTimeout(poll, 1000); }
     }
     poll();

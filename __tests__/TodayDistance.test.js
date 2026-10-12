@@ -287,3 +287,12 @@ test('a bottom hint sits above the bottom row (「今天 x km」 beside 我的�
   expect(raised.y + raised.height).toBeLessThanOrEqual(830 - 40 - 48 - 12);
 });
 
+
+
+test.each([null, { running: null, status: 'cannot read live state' }, { status: 'checking' }])('unknown recording state %o does not imply recording off or change the recorded distance', livePhone => {
+  const phone = { permission: 'precise', services: true };
+  const route = Object.freeze({ count: 10, metres: 2000 });
+  expect(todayPill({ route, livePhone, phone })).toMatchObject({ text: '今天 2.0 km', icon: 'walk', muted: false, unrecorded: false, destination: 'history' });
+  expect(todayPill({ route: { count: 0, metres: 0 }, livePhone, phone })).toMatchObject({ text: '今天 0.0 km', icon: 'walk', unrecorded: false });
+  expect(route).toEqual({ count: 10, metres: 2000 });
+});

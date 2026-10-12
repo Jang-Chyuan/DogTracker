@@ -81,16 +81,16 @@ export function todayPill({ route, livePhone, phone }) {
   if (!route) return null;
   const permission = phone?.permission;
   const permissionProblem = phoneLocationProblem(phone);
-  const recording = !!livePhone?.running;
+  const stopped = livePhone?.running === false;
   const recorded = (route?.count || 0) > 0;
-  const icon = permissionProblem ? 'walk-off' : livePhone && !recording ? 'walk-muted' : 'walk';
+  const icon = permissionProblem ? 'walk-off' : stopped ? 'walk-muted' : 'walk';
   // Recording off (or not allowed) and nothing recorded today: 「未記錄」.
-  const unrecorded = !recorded && (permissionProblem || (!!livePhone && !recording));
+  const unrecorded = !recorded && (permissionProblem || stopped);
   const text = unrecorded ? t('c309') : formatTodayDistance(route?.metres || 0);
   const reason = permissionProblem
     ? (permission === 'approximate' ? t('c313') : !phone.services && permission === 'precise'
       ? t("c1006") : t('c311'))
-    : livePhone && !recording ? t("c1043") : '';
+    : stopped ? t("c1043") : '';
   const spoken = unrecorded ? t("c1044") : text.replace(' km', t("c729"));
   return {
     text,

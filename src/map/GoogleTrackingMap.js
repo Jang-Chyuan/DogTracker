@@ -1749,6 +1749,7 @@ function GoogleTrackingMapRenderer({
               Circle={Circle}
               Marker={StyledMarker}
               location={livePhone}
+              phoneProblem={phoneProblem}
               active={foreground}
             />
           )}
