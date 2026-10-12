@@ -12,7 +12,7 @@ import { historyPanelMinHeight } from '../map/MapPanelHeight';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
-import { useLiveLocation } from '../locationTracker/useLiveLocation';
+import { LivePhoneReader, createLivePhoneFeed } from '../map/LivePhoneFeed';
 import { splashChrome, useSplashState } from '../app/hideSplash';
 import {
   Animated,
@@ -372,15 +372,22 @@ export default function MapScreen({
   ]);
   // One marker per dog: the newest of the BLE feed and the downloaded cloud
   // rows. The handler's phone driving tells the map which dogs ride along.
-  const realPhone = useLiveLocation(active && tracking.foreground && !fixture);
+  // The recording service's snapshot, read every second by LivePhoneReader
+  // below: the phone's dot gets every copy (livePhoneFeed), this screen only
+  // the copies that change what it shows (LivePhoneFeed.livePhoneChanged).
+  const [realPhone, setRealPhone] = useState(null);
+  const [livePhoneFeed] = useState(createLivePhoneFeed);
   const livePhone = fixture ? fixture.livePhone : realPhone;
   const rideDetector = useRef(null);
   if (!rideDetector.current) rideDetector.current = createRideDetector();
+  // Ride detection keeps every fix's speed, not only the copies shown.
+  const addRideFix = useCallback(value => {
+    if (value?.running && value.position)
+      rideDetector.current.add(value.position, Date.now());
+  }, []);
   // History stops display aging, but fresh phone/packet data must still use
   // real observation time for ride detection and the alert snapshot.
   const observationNow = fixture ? fixture.now : Date.now();
-  if (realPhone?.running && realPhone.position)
-    rideDetector.current.add(realPhone.position, observationNow);
   const currentRide = fixture ? fixture.ride : rideDetector.current.ride(observationNow);
   const rideKey = currentRide
     ? `${currentRide.coordinate.latitude},${currentRide.coordinate.longitude}`
@@ -1028,6 +1035,12 @@ export default function MapScreen({
   const coveringPage = cardModel ? cardPage : null;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
+      <LivePhoneReader
+        active={active && tracking.foreground && !fixture}
+        feed={livePhoneFeed}
+        onChange={setRealPhone}
+        onEvery={addRideFix}
+      />
       {/* Under A4/A5 the map and its card stay mounted, only out of reach of
           touch and TalkBack. Never display:none or a style that changes
           whether this view is flattened: either one detaches the native
@@ -1062,6 +1075,7 @@ export default function MapScreen({
         historyControls={historical ? activeHistoryControls : undefined}
         compassTop={compassTop}
         livePhone={livePhone}
+        livePhoneFeed={fixture ? null : livePhoneFeed}
         onNativePhone={acceptNativePhone}
         foreground={tracking.foreground && active}
         appForeground={tracking.foreground}
