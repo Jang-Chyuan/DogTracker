@@ -178,16 +178,6 @@ const collide = (a, b) => a.tags.some(tag => b.tags.some(other => intersects(tag
   || b.faces.some(face => faceTouches(face, tag)))
   || b.tags.some(tag => a.faces.some(face => faceTouches(face, tag)));
 
-// Name tags merge into 「N 隻」 only when the map is zoomed out this far or
-// more (metres per dp; about zoom 16 here, a few streets on screen). Closer
-// in, every dog keeps its own tag even when the tags overlap (066: the user
-// zoomed in on a kennel and still saw 「5 隻・室內」).
-export const GROUP_MIN_METRES_PER_DP = 2;
-
-/** Whether tags may merge at this zoom (unknown zoom: they may). */
-export const groupsAtZoom = metresPerDp =>
-  !(metresPerDp > 0) || metresPerDp >= GROUP_MIN_METRES_PER_DP;
-
 /**
  * Which name tags are drawn, given where each marker is on screen. A name tag
  * that would run into another dog's tag or face merges with that dog into one
@@ -196,16 +186,20 @@ export const groupsAtZoom = metresPerDp =>
  * The group tag itself is checked again (it is wider than one name and sits
  * lower), so it never covers a dog left outside it. The selected dog keeps
  * its own tag and is left out of groups (DESIGN.md §9.5); a group of one is
- * just that dog's own tag.
+ * just that dog's own tag. This holds at every zoom: zoomed in, dogs that
+ * are apart on screen keep their own names because their names no longer
+ * touch, while dogs in one kennel still share one group tag (066 kept every
+ * name when zoomed in, and the names piled on each other hid all but the top
+ * one).
  *
  * @param markers dogMarkers() output
  * @param points screen positions by dog, in dp: { [slaveId]: { x, y } }
  * @returns { [slaveId]: { text, group: number, problem: boolean, members?: slaveId[] } | null }
  *   A group tag's `members`: its dogs, nearest the top of the screen first
- *   (the overlap menu lists them in that order).
+ *   (TalkBack reads their names in that order).
  *   null = no tag under this face; dogs without a screen position keep their tag.
  */
-export function nameTags(markers, points = {}, fontScale = 1, { group = true } = {}) {
+export function nameTags(markers, points = {}, fontScale = 1) {
   const result = {};
   const placed = [];
   for (const marker of markers) {
@@ -215,7 +209,6 @@ export function nameTags(markers, points = {}, fontScale = 1, { group = true } =
     placed.push({ marker, point, face: { x: point.x, y: point.y, r: marker.size / 2 },
       tag: tagBox(point, marker.size, nameTagSize(marker.tag, fontScale)) });
   }
-  if (!group) return result;
   // Union-find over the names as they would be drawn: A over B and B over C
   // is one group, whatever order the dogs come in.
   const parent = placed.map((_, index) => index);
