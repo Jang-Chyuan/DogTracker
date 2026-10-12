@@ -115,7 +115,8 @@ class AlertParityTest {
       val rows = scenario.getJSONArray("rows")
       for (j in 0 until rows.length()) {
         val step = rows.getJSONObject(j); val row = step.getJSONObject("row")
-        val packetJson = JSONObject(row.toString()).put("slave_lat", row.getDouble("latitude")).put("slave_lon", row.getDouble("longitude"))
+        // A BLE case replays the collar's own short-key packet, as BleForegroundService passes it on.
+        val packetJson = step.optJSONObject("packet") ?: JSONObject(row.toString()).put("slave_lat", row.getDouble("latitude")).put("slave_lon", row.getDouble("longitude"))
           .put("master_lat", row.getDouble("master_latitude")).put("master_lon", row.getDouble("master_longitude"))
         dog = Dogs.apply(dog, AlertCodec.readPacket(packetJson, row.getLong("time"))!!)
         // Process death between packets must preserve the exact same tracker.

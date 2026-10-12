@@ -43,7 +43,8 @@ test('manual capacity failure cannot publish a truncated day or false completed 
   try {
     await database.setHistoryDownloadState('a', 6, '2026-10-03', false);
     await database.beginManualScope('a', 6, '2026-10-03');
-    await expect(database.savePage('a', [row('one', start + 1000), row('two', start + 2000), row('three', start + 3000), row('four', start + 4000)])).rejects.toThrow('手機空間不足');
+    await expect(database.savePage('a', [row('one', start + 1000), row('two', start + 2000), row('three', start + 3000), row('four', start + 4000),
+      row('five', start + 5000), row('six', start + 6000)])).rejects.toThrow('手機空間不足');
     expect((await database.historyDownloadStates('a', 6))[0].complete).toBe(0);
     expect((await connection.executeAsync('SELECT COUNT(*) n FROM supabase_dog_status')).results[0].n).toBe(0);
   } finally { connection.close(); }

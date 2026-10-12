@@ -459,10 +459,13 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
      */
     async holdRows(owner, sinceMs, cursors = null, quality = HOLD_CONFIG) {
       // Rows already read may have moved in time: start over from the window.
-      const reset = !!cursors && cursors.repairs !== trackRepairs;
+      // Only cloud rows move; a BLE-only read keeps its cursor and the counter
+      // it last saw, so a later cloud read still notices the repair.
+      const reset = !!owner && !!cursors && cursors.repairs !== trackRepairs;
       if (reset) cursors = null;
+      // speed_kmh: the stationary-tail check needs the collar's own speed.
       const shared = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
-        satellites, hdop, rssi, snr, usb_present`;
+        speed_kmh, satellites, hdop, rssi, snr, usb_present`;
       const read = async (table, clock, account) => {
         // Only this phone's own rows know where its receiver was (the receiver
         // range is judged against that); the cloud copy has no such column.
@@ -525,7 +528,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       return {
         rows: [...ble.fresh, ...cloud.fresh],
         seeds: [...ble.seeds, ...cloud.seeds],
-        cursors: { dog_status: ble.last, supabase_dog_status: cloud.last, repairs: trackRepairs },
+        cursors: { dog_status: ble.last, supabase_dog_status: cloud.last, repairs: owner || !cursors ? trackRepairs : cursors.repairs },
         reset,
       };
     },

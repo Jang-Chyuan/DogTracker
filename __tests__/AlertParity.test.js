@@ -214,6 +214,9 @@ const stableHeldRows = [...indoorRows, ...Array.from({ length: 16 }, (_, i) =>
 const packetCases = [
   { name: 'stationary tail: compact zero-speed offset survives handover', initial: stableHeldRows,
     rows: Array.from({ length: 13 }, (_, i) => holdRow(T + 4 * M + i * 10000, 65 + (i % 2), { speed_kmh: 0 })) },
+  // The background service reads the raw BLE JSON (short keys, speed as spd).
+  { name: 'stationary tail: short BLE keys keep the zero speed', initial: stableHeldRows, ble: true,
+    rows: Array.from({ length: 13 }, (_, i) => holdRow(T + 4 * M + i * 10000, 65 + (i % 2), { speed_kmh: 0 })) },
   { name: 'stationary tail: compact offset grace expires', initial: stableHeldRows,
     rows: Array.from({ length: 25 }, (_, i) => holdRow(T + 4 * M + i * 10000, 65, { speed_kmh: 0 })) },
   { name: 'stationary tail: zero-speed continuous walk leaves', initial: stableHeldRows,
@@ -255,6 +258,11 @@ const packetCases = [
     rows: [200, -200, 200].map((metres, i) => holdRow(T + 4 * M + i * 5000, metres, { usb_present: 1 })) },
 ];
 
+// A row as the collar's BLE packet carries it (DogStatusStore's short keys).
+const blePacket = row => ({ mid: row.master_id, sid: row.slave_id, slat: row.latitude, slon: row.longitude,
+  mlat: row.master_latitude, mlon: row.master_longitude, spd: row.speed_kmh, sat: row.satellites,
+  hd: row.hdop, rssi: row.rssi, snr: row.snr, usbPresent: row.usb_present });
+
 function runIndoorCase(scenario) {
   const { createHoldTracker } = require('../src/placement/IndoorHold');
   const tracker = createHoldTracker();
@@ -268,8 +276,9 @@ function runIndoorCase(scenario) {
   const rows = scenario.rows.map(row => {
     tracker.push(row);
     const current = tracker.current(row.time);
-    return { row, expect: { held: !!current, coordinate: current?.coordinate ?? (row.latitude !== 0
-      ? { latitude: row.latitude, longitude: row.longitude } : initial.coordinate),
+    return { row, ...(scenario.ble ? { packet: blePacket(row) } : {}),
+      expect: { held: !!current, coordinate: current?.coordinate ?? (row.latitude !== 0
+        ? { latitude: row.latitude, longitude: row.longitude } : initial.coordinate),
       why: tracker.snapshot().previousHold?.why ?? null } };
   });
   return { name: scenario.name, initial, rows };
@@ -286,6 +295,8 @@ test('K03: native indoor entry and every release path agree with the foreground 
   const continuity = Object.fromEntries(results.filter(value => value.name.startsWith('continuity:')).map(value => [value.name, value.rows]));
   const stationary = Object.fromEntries(results.filter(value => value.name.startsWith('stationary tail:')).map(value => [value.name, value.rows]));
   expect(stationary['stationary tail: compact zero-speed offset survives handover'].every(step => step.expect.held)).toBe(true);
+  expect(stationary['stationary tail: short BLE keys keep the zero speed'].every(step => step.expect.held
+    && step.packet.spd === 0 && !('speed_kmh' in step.packet))).toBe(true);
   expect(stationary['stationary tail: compact offset grace expires'].at(-1).expect.held).toBe(false);
   expect(stationary['stationary tail: zero-speed continuous walk leaves'].at(-1).expect.held).toBe(false);
   expect(stationary['stationary tail: legacy checkpoint without raw tail still evaluates fresh packets'].every(step => step.expect.held)).toBe(true);

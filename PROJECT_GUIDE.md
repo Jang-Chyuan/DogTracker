@@ -264,3 +264,5 @@ git push -u origin feature/task-name
 ```
 
 合併至 `main` 前應執行 lint 與測試。變更 BLE、Android 權限、Kotlin 原生模組、CameraX 或 ML Kit 時，也應完成 Release build 並在實機驗證。
+
+這是公開 repo：驗證截圖、錄影與實機資料不要 commit，放在 PR 說明或留言；截圖只能用虛構資料。完整規則見 [AGENTS.md](AGENTS.md)。
