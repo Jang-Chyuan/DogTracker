@@ -135,14 +135,22 @@ test('SQLite keeps verified counts per account and Master, and expires old hours
   } finally { connection.close(); }
 });
 
-test('the tracking session forwards every cloud database method', () => {
-  // useTrackingSession builds its adapter from this list; a method missing there
-  // only fails at runtime, when the sweep calls it on a real phone.
-  const connection = createMemoryConnection();
+test('the tracking session forwards public cloud queries and writes, while deletion lifecycle stays internal', () => {
+  // Capability metadata is not callable. Cross-store deletion belongs only to
+  // dogData.deleteAll: forwarding it as a cloud query would bypass its fence.
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   try {
-    expect([...CLOUD_DATABASE_METHODS].sort())
-      .toEqual(Object.keys(createCloudDatabase(connection)).sort());
-  } finally { connection.close(); }
+    for (const database of [createCloudDatabase(connection),
+      createCloudDatabase(connection, { latestConnection: latest })]) {
+      const methods = Object.entries(database).filter(([name, value]) =>
+        typeof value === 'function' && name !== 'clearLatestAndRun').map(([name]) => name);
+      expect([...CLOUD_DATABASE_METHODS].sort()).toEqual(methods.sort());
+      expect(typeof database.latestStorageIsolated).toBe('boolean');
+    }
+    expect(typeof createCloudDatabase(connection, { latestConnection: latest }).clearLatestAndRun).toBe('function');
+    expect(CLOUD_DATABASE_METHODS).not.toContain('clearLatestAndRun');
+    expect(CLOUD_DATABASE_METHODS).not.toContain('latestStorageIsolated');
+  } finally { connection.close(); latest.close(); }
 });
 
 test('hours the incremental pass already walked are recorded, not downloaded again', () => {

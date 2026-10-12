@@ -14,6 +14,7 @@ import SplashOverlay, {
 } from '../src/app/SplashOverlay';
 import {
   getSplashState,
+  reportInitialLatest,
   launchInto,
   reportMapFramed,
   resetSplashGate,
@@ -198,4 +199,19 @@ describe('waiting tail lifecycle', () => {
       await act(async () => renderer.unmount());
     },
   );
+});
+
+
+test('latest waiting and fallback retain only the original dog artwork, without notice text or a manual action', async () => {
+  const scope = {};
+  let renderer;
+  await act(async () => { reportInitialLatest(scope, 'waiting'); renderer = Renderer.create(<SplashOverlay />); });
+  expect(renderer.root.findAllByProps({ testID: 'splash-latest-notice' })).toHaveLength(0);
+  await act(async () => reportInitialLatest(scope, 'fallback'));
+  const overlay = renderer.root.findByProps({ testID: 'splash-overlay' });
+  expect(overlay.props.importantForAccessibility).toBe('no-hide-descendants');
+  expect(renderer.root.findAllByProps({ testID: 'splash-enter-map' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'splash-latest-notice' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'splash-dog' }).length).toBeGreaterThan(0);
+  await act(async () => renderer.unmount());
 });

@@ -1,3 +1,6 @@
+import { historyDiagnosticsEnabled } from '../logger';
+import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
+import { sameHistoryInput, copyHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
@@ -87,6 +90,7 @@ export function useHistoryDayRows({
   cost = null,
   readEnd = null,
   requireFresh = false,
+  diagnostic = null,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -97,27 +101,37 @@ export function useHistoryDayRows({
   });
   const now = useRef(clock);
   now.current = clock;
-  const materialRevision = publishedReads && subject !== 'phone' ? getPublication?.()?.dataRevision : null;
+  const publicationState = publishedReads && subject !== 'phone' ? getPublication?.() : null;
+  const materialRevision = publicationState?.dataRevision;
+  const publicationReader = useRef(null);
+  const acceptedInput = useRef(null);
+  const rowIdentity = useRef({ read, scope: publicationState?.scope, generation: publicationState?.generation, epoch: 0 });
+  if (rowIdentity.current.read !== read || rowIdentity.current.scope !== publicationState?.scope
+    || rowIdentity.current.generation !== publicationState?.generation)
+    rowIdentity.current = { read, scope: publicationState?.scope, generation: publicationState?.generation, epoch: rowIdentity.current.epoch + 1 };
   const rowRevision = Number.isSafeInteger(materialRevision) && materialRevision >= 0
     ? `material:${materialRevision}` : `publication:${publicationRevision}`;
   // `scope`: another reader of the same day (a screen fixture) is another day's rows.
   // `revision`: read the day again from the start (a download ended).
   const key =
     subject && day != null
-      ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? rowRevision : 0, readEnd])
+      ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? rowRevision : 0, readEnd, rowIdentity.current.epoch])
       : null;
   // Phone rows are local: publishing dog telemetry must not cancel their
   // in-flight read or restart the full-day cursor. Explicit reloads still do.
-  const readerPublicationRevision = subject === 'phone' ? 0 : rowRevision;
+  const readerPublicationRevision = subject === 'phone' ? 0 : `${rowRevision}|${publicationState?.latestReadReady ?? true}`;
   useEffect(() => {
     if (!active || !read || !key) return undefined;
     let alive = true,
       timer;
+    let waitingForPublication = false, readPublication = null, signalledPublication = null;
     const cache = { rows: [], seed: [], after: {}, first: true };
+    const identity = [subject, slaveId, day, owner, scope, read, getPublication,
+      publicationState?.scope, publicationState?.generation];
     // The hold pass (IndoorHold) is the costly part of a day: today's rows
     // only grow, so the same pass continues with the new packets.
     const holds = { pass: null, keys: [] };
-    const replayHolds = packets => {
+    let replayHolds = packets => {
       const keys = packets.map(p => `${p.source}:${p.id}:${p.time}`);
       const same =
         holds.pass &&
@@ -132,9 +146,38 @@ export function useHistoryDayRows({
       return holds.pass.output;
     };
     const dayEnd = Math.min(endOfDay(day), readEnd ?? Infinity);
+    const retryPublication = () => {
+      waitingForPublication = true;
+      const current = getPublication?.();
+      const completed = signalledPublication != null && signalledPublication === current?.publishedRevision
+        && signalledPublication !== readPublication && capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads).open;
+      timer = setTimeout(poll, completed ? 0 : HISTORY_POLL_MS);
+    };
+    const wake = () => {
+      const current = getPublication?.();
+      if (!alive || !Number.isFinite(current?.publishedRevision)
+        || !capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads).open) return;
+      signalledPublication = current.publishedRevision;
+      // A completed publication does not restart a coherent cache or an
+      // in-flight query. A rejected query uses this signal after it drains.
+      if (!waitingForPublication) return;
+      clearTimeout(timer);
+      timer = setTimeout(poll, 0);
+    };
+    const reader = { key, wake };
+    publicationReader.current = reader;
     async function poll() {
+      waitingForPublication = false;
+      readPublication = getPublication?.()?.publishedRevision ?? null;
+      const publication = getPublication?.();
+      const before = publication && { ...publication };
       const fence = capturePageRead(getPublication, subject === 'phone' ? null : owner, publishedReads);
-      if (!fence.open) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
+      const began = Date.now();
+      if (!fence.open) {
+        diagnostic?.emit('row', 'blocked', began, historyPublicationFlags(before, owner));
+        retryPublication(); return;
+      }
+      diagnostic?.emit('row', 'begin', began, historyPublicationFlags(before, owner, before, true));
       try {
         const at = now.current();
         const today = at >= day && at < dayEnd;
@@ -147,7 +190,11 @@ export function useHistoryDayRows({
           after: cache.after,
         }));
         if (!alive) return;
-        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
+        if (!fence.valid()) {
+          diagnostic?.emit('row', 'rejected', began, historyPublicationFlags(getPublication?.(), owner, before, false));
+          retryPublication(); return;
+        }
+        diagnostic?.emit('row', 'end', began, { ...historyPublicationFlags(getPublication?.(), owner, before, true), rowsLoaded: true });
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
         const added = answer.rows?.length || 0;
@@ -156,12 +203,25 @@ export function useHistoryDayRows({
             (a, b) => a.time - b.time,
           );
         if (added || cache.first) {
+          const recyclable = subject === 'dog' && publishedReads;
+          const old = recyclable ? acceptedInput.current : null;
+          const sameIdentity = old && identity.length === old.identity.length
+            && identity.every((part, i) => Object.is(part, old.identity[i]));
+          // Only a freshly accepted complete first read can prove that another
+          // day's publication left this input untouched. Cursor always comes
+          // from the fresh answer; comparison never opens the publication fence.
+          const unchanged = cache.first && sameIdentity
+            && sameHistoryInput(cache.rows, old.rowsInput) && sameHistoryInput(cache.seed, old.seedInput);
+          if (unchanged) { cache.rows = old.rows; replayHolds = old.replayHolds; }
+          const version = unchanged ? old.version : (sameIdentity ? old.version : 0) + 1;
+          if (recyclable) acceptedInput.current = { identity, rows: cache.rows, rowsInput: copyHistoryInput(cache.rows),
+            seedInput: copyHistoryInput(cache.seed), replayHolds, version };
           if (subject === 'phone' && cache.first) markStartupPhase('phone-day-publish');
           cache.first = false;
           setResult(current => ({
             key,
             rows: cache.rows,
-            version: (current.key === key ? current.version : 0) + 1,
+            version: recyclable ? version : (current.key === key ? current.version : 0) + 1,
             error: '',
             replayHolds,
           }));
@@ -178,7 +238,11 @@ export function useHistoryDayRows({
           : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
-        if (!fence.valid()) { timer = setTimeout(poll, HISTORY_POLL_MS); return; }
+        if (!fence.valid()) {
+          diagnostic?.emit('row', 'rejected', began, historyPublicationFlags(getPublication?.(), owner, before, false));
+          retryPublication(); return;
+        }
+        diagnostic?.emit('row', 'failed', began, historyPublicationFlags(getPublication?.(), owner, before, true));
         setResult(current => ({
           ...(current.key === key ? current : { rows: [], version: 0, replayHolds: null }),
           key,
@@ -191,9 +255,16 @@ export function useHistoryDayRows({
     return () => {
       alive = false;
       clearTimeout(timer);
+      if (publicationReader.current === reader) publicationReader.current = null;
     };
     // key stands for subject, slaveId, day and owner.
   }, [active, read, key, revision, getPublication, readerPublicationRevision, publishedReads]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Physical completion only wakes a reader blocked by its fence. Material
+  // changes still replace the reader above; ready rows/holds stay cached.
+  useEffect(() => {
+    if (active && publicationState?.publishedPending === false && publicationReader.current?.key === key)
+      publicationReader.current.wake();
+  }, [active, key, publicationState?.publishedRevision, publicationState?.publishedPending]);
   const current =
     result.key === key
       ? result
@@ -373,8 +444,16 @@ export function useHistoryScreen({
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
   const buildCost = useRef(0);
+  const readDiagnostic = useRef({ key: null, value: null });
+  // Disabled builds create no observer: no per-stage timing wrappers either.
+  const readDiagnosticKey = historyDiagnosticsEnabled() && active && subject === 'dog' && cloud?.publishedReads
+    ? `${sessionKey}|${day}|${current.dogs.map(d => d.id).join(',')}` : null;
+  if (readDiagnostic.current.key !== readDiagnosticKey)
+    readDiagnostic.current = { key: readDiagnosticKey, value: readDiagnosticKey ? createHistoryReadDiagnostics() : null };
+  const diagnostic = readDiagnostic.current.value;
   const reader = index => ({
     cost: buildCost,
+    diagnostic,
     read,
     subject,
     day,
@@ -488,6 +567,7 @@ export function useHistoryScreen({
     seed: cloudSeed,
     cutoff: coverageCutoff,
     publicationRevision,
+    diagnostic,
   });
   const { knowledge } = cloudDays;
   const coverageReady = !cloud?.coverageRequired || subject !== 'dog' || cloudDays.completeDay(shownKey);
@@ -563,15 +643,20 @@ export function useHistoryScreen({
     shownOnce.current !== `${sessionKey}|${day}` && !allLoaded;
   const diagnosticModelDay = useRef(null);
   const diagnosticCommittedDay = useRef(null);
-  const dayModel = useMemo(() => {
+  const diagnosticModelFinished = useRef(null);
+  const exactModel = useRef(null);
+  if (!exactModel.current) exactModel.current = createExactHistoryModelCache();
+  const builtModel = useMemo(() => {
     if (!subject || !subjects.length || waiting || !coverageReady) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
       : subjects[0].id;
     const started = Date.now();
+    diagnostic?.emit('model', 'begin', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
+      rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady });
     const firstModelOfDay = diagnosticModelDay.current !== day;
     diagnosticModelDay.current = day;
-    const built = startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '', () => multiDayModel(subjects, {
+    const options = {
       dayStart: day,
       dayEnd,
       today,
@@ -582,8 +667,23 @@ export function useHistoryScreen({
       protagonist: main,
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
-    }));
+    };
+    const pub = cloud?.getPublication?.();
+    // The original memo deliberately ignores the clock for a past/fixed day.
+    // Changed rows/options still build using the actual current modelNow.
+    const cachedOptions = modelClock === null ? { ...options, now: null } : options;
+    // The observer is deliberately absent from the model cache's equality
+    // options. Only a real build measures its pure pipeline's sub-stages.
+    const build = () => startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '',
+      () => multiDayModel(subjects, { ...options, measure: diagnostic?.measure }));
+    const built = subject === 'dog' && cloud?.publishedReads
+      ? exactModel.current([owner, pub?.scope, pub?.generation, sessionKey, memoryScope, read], subjects, cachedOptions, build)
+      : build();
     buildCost.current = Date.now() - started;
+    diagnostic?.emit('model', 'end', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
+      rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: true });
+    diagnosticModelFinished.current = { diagnostic, model: built.main, at: Date.now(),
+      count: built.main?.points.length ?? 0 };
     return built;
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -603,7 +703,45 @@ export function useHistoryScreen({
     waiting,
     coverageReady,
   ]);
+  // Today's open dog view: each automatic archive pass publishes new material
+  // (its proof is re-read) and advances the coverage cutoff (its tail is
+  // downloaded). Keep showing the model last verified for this exact view
+  // (account, publisher scope/generation, day, dogs and range) while that
+  // refresh runs, instead of blanking to loading every pass. It stays only
+  // while the last physical proof read still covers the model's own cutoff:
+  // a withdrawn/failed proof, another generation/owner/scope, a changed
+  // range or another day still shows loading.
+  const verifiedModel = useRef(null);
+  const shownPublication = cloud?.getPublication?.();
+  const verifiedIdentity = subject === 'dog' && cloud?.coverageRequired && today
+    ? `${sessionKey}|${day}|${idsKey}|${owner ?? ''}|${cloud.owner ?? ''}` : null;
+  const verifiedMatches = value => !!value && !!verifiedIdentity && value.identity === verifiedIdentity
+    && value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
+    && value.generation === shownPublication?.generation && value.manual === manual
+    && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
+  // Either blocker qualifies: the proof waiting for its re-read/tail, or the
+  // day's rows re-reading for the new material/cutoff (no dog loaded yet).
+  const retained = !builtModel && !waiting && verifiedMatches(verifiedModel.current)
+    && verifiedModel.current.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
+    ? verifiedModel.current : null;
+  useEffect(() => {
+    if (builtModel && coverageReady && verifiedIdentity) verifiedModel.current = { identity: verifiedIdentity,
+      scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
+      manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
+      cutoff: coverageCutoff, model: builtModel };
+    else if (!verifiedIdentity || !verifiedMatches(verifiedModel.current)) verifiedModel.current = null;
+  });
+  const dayModel = builtModel ?? retained?.model ?? null;
   const model = dayModel?.main ?? null;
+  useEffect(() => {
+    const finished = diagnosticModelFinished.current;
+    if (model && finished?.model === model && finished.diagnostic === diagnostic) {
+      diagnostic?.modelEnd('model-to-effect', finished.at, finished.count);
+      diagnosticModelFinished.current = null;
+    }
+    diagnostic?.emit('state', 'state', undefined, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
+      rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: !!model });
+  }, [diagnostic, cloud, owner, allLoaded, cloudDays.completenessLoaded, coverageReady, model, publicationRevision]);
   useEffect(() => {
     if (subject === 'phone' && model && diagnosticCommittedDay.current !== day) {
       diagnosticCommittedDay.current = day;
@@ -671,14 +809,15 @@ export function useHistoryScreen({
   const [focus, setFocus] = useState(null);
   const time = dayModel ? sharedCursorTime(dayModel, cursorTime) : null;
   const cursors = useMemo(
-    () =>
-      dayModel
-        ? multiCursors(dayModel, time, {
+    () => {
+      if (!dayModel) return {};
+      const build = () => multiCursors(dayModel, time, {
             inGap,
             subject: subject === 'phone' ? 'phone' : 'dog',
-          })
-        : {},
-    [dayModel, time, inGap, subject],
+          });
+      return diagnostic ? diagnostic.measure('cursors', dayModel.subjects.length, build) : build();
+    },
+    [dayModel, time, inGap, subject, diagnostic],
   );
   const cursor = cursors[protagonistId] ?? null;
   const moveCursor = useCallback(
@@ -734,6 +873,8 @@ export function useHistoryScreen({
   // local slice. Failure/cancel stays actionable; it never loops retries.
   const ensured = useRef(new Set());
   const ensureRequested = useRef(null);
+  // 更新 (updateHistory) asked for this download: it keeps its visible panel.
+  const explicitTail = useRef(false);
   useEffect(() => {
     if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
     const key = `${cloudDays.cloudScope}|${shownKey}|${coverageCutoff}|${publicationRevision}`;
@@ -748,6 +889,7 @@ export function useHistoryScreen({
     if (explicit) { ensured.current.delete(key); ensureRequested.current = null; }
     if (ensured.current.has(key)) return;
     ensured.current.add(key);
+    explicitTail.current = explicit;
     startDownload(shownKey, reread);
   }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope,
     cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);
@@ -773,7 +915,7 @@ export function useHistoryScreen({
       cancel();
       if (next !== shownKey) changeDay(next);
       if (choice.type === 'download') {
-        if (!cloud?.coverageRequired || next === shownKey) startDownload(next, reread);
+        if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, reread); }
         else ensureRequested.current = next;
       }
       return choice;
@@ -807,7 +949,7 @@ export function useHistoryScreen({
         day: shownKey,
         message: offlineMessage(shownKey),
       };
-    startDownload(shownKey, reread);
+    explicitTail.current = true; startDownload(shownKey, reread);
     return { type: 'download', day: shownKey };
   }, [online, shownKey, startDownload, reread]);
   const updateHistory = useCallback(() => {
@@ -818,10 +960,16 @@ export function useHistoryScreen({
     return { type: 'download', day: shownKey };
   }, [online, shownKey, clock, reread]);
   const dayRecords = !!dayModel?.subjects.some(s => s.dayRecords);
-  const download = downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
+  // A retained view's own background tail is not a user-visible download;
+  // its failure/cancel still shows the incomplete notice and retry.
+  const quietTail = !!retained && !explicitTail.current && cloudDays.download?.day === shownKey
+    && cloudDays.download.status === 'downloading';
+  const download = quietTail ? null : downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
     day: shownKey,
     hasRows: dayRecords,
-    incomplete: knowledge.incomplete.includes(shownKey) || (!coverageReady && cloudDays.completenessLoaded),
+    // Unknown durable proof is still being read, not a failed download.
+    // Explicit downloading/failed/cancelled states above retain their own UI.
+    incomplete: cloudDays.completenessLoaded && (knowledge.incomplete.includes(shownKey) || !coverageReady),
   });
   // A screen fixture can open on another day (preset.goTo: H3c starts its
   // download), once per opening.
@@ -882,9 +1030,12 @@ export function useHistoryScreen({
   );
   const color = look[protagonistId]?.color ?? routeColorOf(subject);
   const map = useMemo(
-    () =>
-      dayModel ? multiMapPresentation(dayModel, cursors, look, theme) : null,
-    [dayModel, cursors, look, theme],
+    () => {
+      if (!dayModel) return null;
+      const build = () => multiMapPresentation(dayModel, cursors, look, theme);
+      return diagnostic ? diagnostic.measure('map-presentation', dayModel.main?.points.length ?? 0, build) : build();
+    },
+    [dayModel, cursors, look, theme, diagnostic],
   );
   const anyData = !!dayModel?.subjects.some(s => s.hasData);
   /** The chips (上方膠囊): every dog shown, the protagonist outlined. */
@@ -913,7 +1064,7 @@ export function useHistoryScreen({
     id => {
       const dog = dogs.find(d => d.id === id);
       if (!dog) return;
-      if (dog.downloadFailed) { cloudDays.startDownload(shownKey, reread); return; }
+      if (dog.downloadFailed) { explicitTail.current = true; cloudDays.startDownload(shownKey, reread); return; }
       haptic('tick');
       if (id === protagonistId || !dog.selectable) {
         // 點已經是主角的狗膠囊: the map moves to its cursor (if out of sight).
@@ -983,7 +1134,7 @@ export function useHistoryScreen({
     const added = [...addedDownloads.current].filter(id => dogIds.includes(id));
     addedDownloads.current.clear();
     if (added.some(id => !localByDog[id]?.includes(shownKey))) {
-      cloudDays.startDownload(shownKey, reread);
+      explicitTail.current = true; cloudDays.startDownload(shownKey, reread);
     }
   }, [active, cloud, daysByDog, baseKey, idsKey, shownKey, localByDog]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1021,7 +1172,8 @@ export function useHistoryScreen({
     rangePreviewDelay: Math.max(120, buildCost.current * 4),
     rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
     rangeActive: active,
-    asOf: cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
+    asOf: retained ? (now - retained.cutoff >= 60000 ? retained.cutoff : null)
+      : cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
     updateHistory,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, dragRange,
     commitRange, draft, dayPoints: dayModel?.dayPoints ?? [],

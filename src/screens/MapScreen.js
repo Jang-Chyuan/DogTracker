@@ -1,7 +1,7 @@
-import { completedMapRevision, mapDownloadBusy } from '../cloud/CloudPublication';
+import { completedMapRevision, latestMapApplied, mapDownloadBusy } from '../cloud/CloudPublication';
 import { createAtomicDogCardReader } from '../map/AtomicDogCardReader';
 import { createAtomicDogSnapshot } from '../map/AtomicDogSnapshot';
-import { combinedResumeCatchUp } from '../tracking/ResumeCatchUp';
+import { CATCH_UP_IDLE, combinedResumeCatchUp } from '../tracking/ResumeCatchUp';
 import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
@@ -84,6 +84,9 @@ export default function MapScreen({
   bottomInset,
   mapProvider,
   active = true,
+  coldStartReady = true,
+  coldStartScope = null,
+  initialLatestFailure = false,
   history,
   historical = false,
   cloudDogs: incomingCloudDogs,
@@ -299,10 +302,12 @@ export default function MapScreen({
       : [],
   );
   const pauses = useMemo(() => JSON.parse(pausesKey), [pausesKey]);
-  const sourceCatchUp = useMemo(() => combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
-    [tracking.catchUp, cloudSync?.catchUp]);
+  const latestApplied = latestMapApplied(cloudSync, cloudOwner, incomingCloudDogs);
+  const sourceCatchUp = useMemo(() => latestApplied ? CATCH_UP_IDLE
+    : combinedResumeCatchUp(tracking.catchUp, cloudSync?.catchUp),
+    [latestApplied, tracking.catchUp, cloudSync?.catchUp]);
   const cloudSuccess = completedMapRevision(cloudSync);
-  const cloudReadPending = cloudSuccess != null && incomingCloudDogs?.cloudCommit !== cloudSuccess;
+  const cloudReadPending = !latestApplied && cloudSuccess != null && incomingCloudDogs?.cloudCommit !== cloudSuccess;
   const catchUpMemory = useRef(null);
   const catchUpOwner = useRef(cloudOwner);
   if (catchUpOwner.current !== cloudOwner) {
@@ -410,8 +415,10 @@ export default function MapScreen({
   );
   const dogSnapshot = atomicDogs.current.select({
     owner: cloudOwner, dogs: mergedDogs, cloudDogs,
-    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || cloudSync?.catchUp?.phase === 'catching-up',
-    success: completedMapRevision(cloudSync),
+    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || (!latestApplied && cloudSync?.catchUp?.phase === 'catching-up'),
+    // Context can advance the engine revision before its reader returns.
+    // A same-generation applied latest remains an atomic live snapshot.
+    success: latestApplied ? cloudDogs.cloudCommit : completedMapRevision(cloudSync),
   });
   const dogs = dogSnapshot.dogs;
   cloudDogs = dogSnapshot.cloudDogs;
@@ -1045,6 +1052,8 @@ export default function MapScreen({
       <TrackingMap
         a11yHidden={historical && historySheet}
         provider={mapProvider}
+        coldStartReady={coldStartReady}
+        coldStartScope={coldStartScope}
         // A screen fixture counts as a new source, so the map frames its dogs.
         source={
           historySource ?? (fixture ? `${mode}:fixture:${fixture.name}` : mode)
@@ -1068,10 +1077,10 @@ export default function MapScreen({
         framingReady={
           historical
             ? !!screen.model
-            : receiverActive && receiverState !== undefined && phoneSettled
+            : coldStartReady && receiverActive && receiverState !== undefined && phoneSettled
         }
         dataReady={
-          tracking.preferences.ready &&
+          coldStartReady && tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&
           // The first fit waits for the receiver's identity (one native read),
           // so another receiver's stored position is never framed as ours.
@@ -1136,10 +1145,10 @@ export default function MapScreen({
           />
         )}
         {!historical && active && tracking.foreground && (
-          <CatchUpPill phase={catchUp.phase} top={gearTop}
+          <CatchUpPill phase={initialLatestFailure ? 'failed' : catchUp.phase} top={gearTop}
             onRetry={() => {
               if (tracking.catchUp?.phase === 'failed') tracking.retryCatchUp?.();
-              if (mapReadFailed || cloudSync?.catchUp?.phase === 'failed') cloudSync.retry?.();
+              if (initialLatestFailure || mapReadFailed || cloudSync?.catchUp?.phase === 'failed') cloudSync.retry?.();
             }} />
         )}
         <TopAlertCards

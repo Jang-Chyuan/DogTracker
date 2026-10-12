@@ -1,3 +1,4 @@
+import { resetSplashGate } from '../src/app/hideSplash';
 import { t as i18nT } from '../src/i18n';
 import MapScreen from '../src/screens/MapScreen';
 import { layout } from '../src/theme/tokens';
@@ -14,13 +15,28 @@ import {
   StyleSheet,
 } from 'react-native';
 import MapView, { Circle, Marker, Polygon, Polyline } from 'react-native-maps';
-import { mockDatabase, open } from 'react-native-nitro-sqlite';
+import { open } from 'react-native-nitro-sqlite';
 import App from '../App';
 import { createBleService } from '../src/ble/BleService';
 import NativeTrackingPlatform from '../specs/NativeTrackingPlatform';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
+
+
+// Each case owns new physical test SQLite stores. Scope the real adapter's
+// native-file keys to those stores; remounts within one case keep the keys.
+// The actual open functions still enforce native bridge availability and use
+// their original JSON SQL / batch / closed-wrapper behavior.
+let mockArchiveLockKey, mockLatestLockKey;
+jest.mock('../src/database/TrackingDatabaseConnection', () => {
+  const actual = jest.requireActual('../src/database/TrackingDatabaseConnection');
+  return { ...actual, openTrackingDatabase: () => ({ ...actual.openTrackingDatabase(), lockKey: mockArchiveLockKey }) };
+});
+jest.mock('../src/database/CloudLatestConnection', () => {
+  const actual = jest.requireActual('../src/database/CloudLatestConnection');
+  return { ...actual, openCloudLatestDatabase: () => ({ ...actual.openCloudLatestDatabase(), lockKey: mockLatestLockKey }) };
+});
 
 // Signed in unless a test signs out (mockAuth is read on every render).
 let mockAuth;
@@ -42,8 +58,9 @@ jest.mock('../src/ble/BleService', () => ({
     getBackgroundState: jest.fn(async () => null),
   })),
 }));
-let connection, renderer, ble, onAppState, onBack;
+let connection, latestConnection, renderer, ble, onAppState, onBack;
 const originalOS = Platform.OS;
+const originalBackground = NativeModules.BleBackground;
 const text = () => JSON.stringify(renderer.toJSON());
 const rows = table =>
   connection.sqlite.prepare('SELECT * FROM ' + table + ' ORDER BY id').all();
@@ -76,6 +93,9 @@ async function mount() {
   await act(async () => {
     renderer = Renderer.create(<App />);
   });
+  // This restored sign-in has no fresh cloud publisher. Its bounded latest
+  // fallback permits the normal map; it does not claim network success.
+  await act(async () => jest.advanceTimersByTimeAsync(10000));
 }
 async function advance(ms = 1000) {
   await act(async () => jest.advanceTimersByTimeAsync(ms));
@@ -93,17 +113,25 @@ beforeEach(async () => {
   const real = createDogDatabase(connection);
   await real.initialize();
   await real.saveStatus(trackingPoint, 'original-hardware');
-  mockDatabase.executeAsync
-    .mockReset()
-    .mockImplementation(connection.executeAsync);
-  mockDatabase.executeBatchAsync
-    .mockReset()
-    .mockImplementation(connection.executeBatchAsync);
-  mockDatabase.close.mockClear();
-  // Closing a connection owner leaves the simulated disk contents available to
-  // the next mount; the SQLite test engine itself closes in afterEach.
+  latestConnection = createMemoryConnection();
+  mockArchiveLockKey = connection; mockLatestLockKey = latestConnection;
+  // Follow Android's real SQL bridge contract with two independent SQLite
+  // stores. No ready-state shortcut or fallback around the latest guard.
+  NativeModules.BleBackground = {
+    executeDatabase: jest.fn(async (query, params) =>
+      JSON.stringify(await connection.executeAsync(query, JSON.parse(params)))),
+    executeDatabaseBatch: jest.fn(async commands => {
+      await connection.executeBatchAsync(JSON.parse(commands)); return true;
+    }),
+    executeLatestDatabase: jest.fn(async (query, params) =>
+      JSON.stringify(await latestConnection.executeAsync(query, JSON.parse(params)))),
+    executeLatestDatabaseBatch: jest.fn(async commands => {
+      await latestConnection.executeBatchAsync(JSON.parse(commands)); return true;
+    }),
+  };
+  // JS wrapper disposal keeps the native owner's disk contents for remounts;
+  // the two actual test engines close only in afterEach.
   open.mockClear();
-  open.mockImplementation(() => mockDatabase);
   ble = createBleService.mock.results[0].value;
   ble.disconnect.mockClear();
   ble.connect.mockClear();
@@ -130,6 +158,9 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
   renderer = null;
   connection.close();
+  latestConnection.close();
+  if (originalBackground === undefined) delete NativeModules.BleBackground;
+  else NativeModules.BleBackground = originalBackground;
   jest.restoreAllMocks();
   jest.useRealTimers();
   Platform.OS = originalOS;
@@ -137,8 +168,10 @@ afterEach(async () => {
 
 test('first use shows the stored dog, no receiver marker, no ring without a connected receiver, no routes or automatic writer', async () => {
   await mount();
-  expect(open).toHaveBeenCalledTimes(1);
+  expect(open).not.toHaveBeenCalled();
   expect(rows('dog_status')).toHaveLength(1);
+  expect(latestConnection.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='cloud_latest_snapshot'").all()).toHaveLength(1);
+  expect(connection.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='cloud_latest_snapshot'").all()).toEqual([]);
   // The receiver (25.0325, 121.5648) is not drawn (v3); the dog is.
   expect(
     renderer.root.findAllByType(Marker).map(node => node.props.coordinate),
@@ -652,7 +685,8 @@ test('all display values survive a cold remount without duplicating hardware row
   const hardwareRows = rows('dog_status');
   await act(async () => renderer.unmount());
   renderer = null;
-  expect(mockDatabase.close).toHaveBeenCalledTimes(1);
+  expect(connection.close).not.toHaveBeenCalled();
+  expect(latestConnection.close).not.toHaveBeenCalled();
   await mount();
   expect(preferences()).toEqual(saved);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
@@ -754,6 +788,7 @@ test('Android map uses the native SQL adapter without opening Nitro', async () =
     JSON.stringify(await connection.executeAsync(sql, JSON.parse(params))),
   );
   NativeModules.BleBackground = {
+    ...NativeModules.BleBackground,
     initializeDatabase: async () => true,
     executeDatabase: execute,
     executeDatabaseBatch: commands => connection.executeBatchAsync(JSON.parse(commands)),
@@ -1000,7 +1035,8 @@ test('登入失效 found by the restore: D1 with 需要重新登入; 稍後再�
 
 test('the database cannot be opened: 手機裡的資料打不開; 診斷 says why; 重試 opens it again', async () => {
   usedBefore();
-  open.mockImplementationOnce(() => { throw new Error('SQLITE_CANTOPEN: unable to open database file'); });
+  NativeModules.BleBackground.executeDatabase.mockRejectedValueOnce(
+    new Error('SQLITE_CANTOPEN: unable to open database file'));
   const exit = jest.spyOn(BackHandler, 'exitApp').mockImplementation(() => {});
   await mount();
   await advance(100);
@@ -1015,10 +1051,14 @@ test('the database cannot be opened: 手機裡的資料打不開; 診斷 says wh
   // Nothing under it: back leaves the app.
   await act(async () => expect(onBack()).toBe(true));
   expect(exit).toHaveBeenCalledTimes(1);
+  const configurationPassesBeforeRetry = NativeModules.BleBackground.executeDatabase.mock.calls.filter(([query]) =>
+    query === 'DROP INDEX IF EXISTS idx_demo_dog_status_received_at').length;
   await press('重試');
   await advance(100);
   expect(renderer.root.findAllByProps({ testID: 'start-failed' })).toHaveLength(0);
-  expect(open).toHaveBeenCalledTimes(2);
+  expect(open).not.toHaveBeenCalled();
+  expect(NativeModules.BleBackground.executeDatabase.mock.calls.filter(([query]) =>
+    query === 'DROP INDEX IF EXISTS idx_demo_dog_status_received_at')).toHaveLength(configurationPassesBeforeRetry + 1);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(1);
 });
 
@@ -1254,4 +1294,32 @@ test('066: the settings header back is a real icon with room before the title, t
   const glyph = back.findByType(Glyph);
   expect(glyph.props.name).toBe('back');
   expect(glyph.props.size).toBeGreaterThanOrEqual(28);
+});
+
+test('restored account without fresh acceptance opens after timeout and shows the existing failure pill on the map', async () => {
+  resetSplashGate();
+  await act(async () => { renderer = Renderer.create(<App />); });
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
+  await advance(9999);
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
+  await advance(1);
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+  expect(renderer.root.findByType(MapScreen).props.initialLatestFailure).toBe(true);
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up' }).length).toBeGreaterThan(0);
+  expect(renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).some(node => typeof node.props.onPress === 'function')).toBe(true);
+  expect(renderer.root.findAllByProps({ testID: 'splash-enter-map' })).toHaveLength(0);
+});
+
+
+test('cold notification page retains local/link/map framing but bypasses an unavailable latest cloud publication', async () => {
+  resetSplashGate();
+  Linking.getInitialURL.mockResolvedValue('dogtracker://notification/receiver-settings');
+  try {
+    await act(async () => { renderer = Renderer.create(<App />); });
+    await advance(100);
+    expect(title()).toBe('返回，接收器');
+    expect(renderer.root.findByType(MapScreen).props.coldStartReady).toBe(true);
+    expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ testID: 'splash-enter-map' })).toHaveLength(0);
+  } finally { Linking.getInitialURL.mockResolvedValue(null); }
 });

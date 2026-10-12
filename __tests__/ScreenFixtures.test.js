@@ -537,7 +537,7 @@ const findAncestor = (node, test) => {
 };
 
 // The real MapScreen, given what App hands it for a fixture.
-async function renderFixture(name, { edits = null, inspect = null, resume = null } = {}) {
+async function renderFixture(name, { edits = null, inspect = null, resume = null, initialLatestFailure = false } = {}) {
   const MapView = require('react-native-maps').default;
   const { Marker } = require('react-native-maps');
   const { Platform } = require('react-native');
@@ -568,7 +568,7 @@ async function renderFixture(name, { edits = null, inspect = null, resume = null
     renderer = Renderer.create(<MapScreen tracking={inputs.tracking} phone={inputs.phone} history={inputs.history}
       cloudDogs={inputs.cloudDogs} cloudOwner={inputs.cloudSync.ownerId} cloudSync={inputs.cloudSync} bottomInset={80}
       dogAvatars={inputs.dogAvatars} mapProvider={GOOGLE_MAP_PROVIDER} fixture={fixture}
-      todayRoute={inputs.todayRoute} />);
+      todayRoute={inputs.todayRoute} initialLatestFailure={initialLatestFailure} />);
   });
   await act(async () => renderer.root.findByType(MapView).props.onMapReady());
   await act(async () => renderer.root.findByType(MapView).props.onMapLoaded());
@@ -1009,4 +1009,22 @@ test('successful fixture carries its complete map read revision', () => {
   const fixture = buildFixture('all-good');
   expect(fixture.cloudSync.lastSuccess).toBeGreaterThan(0);
   expect(fixture.cloudDogs.cloudCommit).toBe(fixture.cloudSync.lastSuccess);
+});
+
+// Initial latest timeout may precede sync.error/catchUp.failed; its scoped
+// fallback still needs a visible map error and the existing background retry.
+test('cold latest timeout uses the real map failure pill even when ordinary catch-up is idle', async () => {
+  const localRetry = jest.fn(), cloudRetry = jest.fn();
+  const result = await renderFixture('all-good', { initialLatestFailure: true, resume: {
+    local: { phase: 'idle', since: null }, localRetry,
+    cloud: { phase: 'idle', since: null }, cloudRetry,
+  }, inspect: async ({ renderer }) => {
+    const { CatchUpPill } = require('../src/map/MapControls');
+    expect(renderer.root.findByType(CatchUpPill).props.phase).toBe('failed');
+    const button = renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).find(node => node.props.onPress);
+    await act(async () => button.props.onPress());
+  } });
+  expect(result.text).toContain(i18nT('c1201'));
+  expect(cloudRetry).toHaveBeenCalledTimes(1);
+  expect(localRetry).not.toHaveBeenCalled();
 });

@@ -56,6 +56,7 @@ import DogMarkerView, { markerFrame } from './DogMarkerView';
 import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
+  getSplashState,
   splashChrome,
   useSplashMarkersHidden,
 } from '../app/hideSplash';
@@ -606,6 +607,8 @@ function GoogleTrackingMapRenderer({
   onReadyChange,
   foreground,
   dataReady = true,
+  coldStartReady = true,
+  coldStartScope = null,
   framingReady = true,
   onNativePhone,
   phoneEnabled,
@@ -665,6 +668,7 @@ function GoogleTrackingMapRenderer({
   const phoneCentered = useRef(false);
   const [readyInstance, setReadyInstance] = useState(null);
   const [loadedInstance, setLoadedInstance] = useState(null);
+  const [nativeLayout, setNativeLayout] = useState(null);
   const [timedOut, setTimedOut] = useState(false);
   const instance = String(attempt);
   // Where each dog is on screen, read after every camera move, so name tags
@@ -722,14 +726,28 @@ function GoogleTrackingMapRenderer({
   // onMapReady can precede native layout under Fabric. onMapLoaded is the first
   // callback after which bounds-based camera commands are safe on Android.
   const usable = ready && loaded;
+  // An offline SDK may never report tiles loaded. After its existing failure
+  // deadline a genuinely ready, laid-out instance can still frame the grey map.
+  // Keep all ordinary projection/render paths on the stronger loaded fence.
+  const coldFitUsable = usable || (coldStartScope != null && coldStartReady && ready && timedOut
+    && nativeLayout?.instance === instance && Number.isFinite(nativeLayout.width) && nativeLayout.width > 0
+    && Number.isFinite(nativeLayout.height) && nativeLayout.height > 0);
   const [mountedMap, setMountedMap] = useState(false);
   const [needsFirstPositionFit, setNeedsFirstPositionFit] = useState(false);
   const interacted = useRef(false);
   const savedView = useRef(null);
   const framed = useRef(false);
   const afterFit = useRef(null);
-  useEffect(() => () => clearTimeout(afterFit.current), []);
+  const projectionTimer = useRef(null);
+  const projectionRequest = useRef(null);
+  useEffect(() => () => {
+    clearTimeout(afterFit.current);
+    clearTimeout(projectionTimer.current);
+    projectionRequest.current = null;
+  }, []);
   const splashReleased = useRef(false);
+  const coldFrame = useRef({ scope: coldStartScope, ready: coldStartReady });
+  coldFrame.current = { scope: coldStartScope, ready: coldStartReady };
   // The latest the launch screen is held when there is nothing to frame.
   const splashDeadline = useRef(Date.now() + FRAMING_WAIT_MAX_MS);
   const mounted = useRef(true);
@@ -751,7 +769,8 @@ function GoogleTrackingMapRenderer({
     bottom: bottomInset,
   };
   const releaseSplash = useCallback(() => {
-    if (splashReleased.current) return;
+    if (!coldFrame.current.ready || splashReleased.current) return;
+    const scope = coldFrame.current.scope;
     splashReleased.current = true;
     const map = mapRef.current;
     const inputs = splashInputs.current;
@@ -759,22 +778,31 @@ function GoogleTrackingMapRenderer({
       reportMapFramed([]);
       return;
     }
+    const request = {};
+    projectionRequest.current = request;
+    const finish = targets => {
+      if (projectionRequest.current !== request) return;
+      projectionRequest.current = null;
+      clearTimeout(projectionTimer.current);
+      if (coldFrame.current.scope !== scope || !coldFrame.current.ready) return;
+      if (!mounted.current || mapRef.current !== map) {
+        splashReleased.current = false;
+        return;
+      }
+      reportMapFramed(targets);
+    };
+    // The camera has already framed; projection is only the optional flying
+    // artwork's target. A stalled bridge must not keep that real frame covered.
+    projectionTimer.current = setTimeout(() => finish([]), FIRST_FRAME_WAIT_MS);
     Promise.all(
       inputs.dogMarkers.map(marker =>
-        map
-          .pointForCoordinate(marker.coordinate)
+        Promise.resolve().then(() => map.pointForCoordinate(marker.coordinate))
           .then(point => [marker.slaveId, point])
           .catch(() => null),
       ),
     )
       .then(entries => {
-        // The map was replaced or closed meanwhile (a new source, a fixture
-        // switch): its next framing reports instead.
-        if (!mounted.current || mapRef.current !== map) {
-          splashReleased.current = false;
-          return;
-        }
-        reportMapFramed(
+        finish(
           splashTargets(
             inputs,
             Object.fromEntries(entries.filter(Boolean)),
@@ -782,7 +810,7 @@ function GoogleTrackingMapRenderer({
           ),
         );
       })
-      .catch(() => reportMapFramed([]));
+      .catch(() => finish([]));
   }, []);
   const fontScale = PixelRatio.getFontScale?.() || 1;
   // Framing keeps clear of the bottom right buttons too (16dp + 48dp), and on
@@ -801,6 +829,19 @@ function GoogleTrackingMapRenderer({
     };
   }, [dogMarkers, fontScale, bottomRow]);
   const cameraRead = useRef(0);
+  const previousColdScope = useRef(coldStartScope);
+  useEffect(() => {
+    const changed = previousColdScope.current !== coldStartScope;
+    previousColdScope.current = coldStartScope;
+    if (getSplashState().phase !== 'waiting' || (!coldStartScope && !changed)) return;
+    splashReleased.current = false;
+    framed.current = false;
+    clearTimeout(afterFit.current);
+    clearTimeout(projectionTimer.current);
+    projectionRequest.current = null;
+    splashDeadline.current = Date.now() + FRAMING_WAIT_MAX_MS;
+    if (coldStartReady) setNeedsFirstPositionFit(true);
+  }, [coldStartScope, coldStartReady]);
   // Android owns pause/resume. Replacing a healthy map on every resume retains
   // old SDK frame callbacks and duplicates all history overlays. Recentring
   // the phone only moves the camera; it never replaces the map surface.
@@ -980,7 +1021,7 @@ function GoogleTrackingMapRenderer({
     // A switched source frames once what it will keep drawing: wait until
     // whatever decides that (the receiver's link, for the range ring) is known.
     if (
-      !usable ||
+      !coldFitUsable ||
       !shouldFit ||
       !framingReady ||
       interacted.current ||
@@ -1022,7 +1063,7 @@ function GoogleTrackingMapRenderer({
     // padding follows dogMarkers, which change with every position; only a
     // new reason to fit (positions, source, readiness) refits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usable, positions, source, needsFirstPositionFit, framingReady]);
+  }, [coldFitUsable, positions, source, needsFirstPositionFit, framingReady]);
   // Nothing to frame yet (no dog, no phone fix): let the app through after a
   // short wait rather than holding the launch screen.
   useEffect(() => {
@@ -1044,7 +1085,7 @@ function GoogleTrackingMapRenderer({
         : remaining;
     const timer = setTimeout(releaseSplash, wait);
     return () => clearTimeout(timer);
-  }, [configured, loaded, positions.length, releaseSplash, framingReady]);
+  }, [configured, loaded, positions.length, releaseSplash, framingReady, coldStartReady]);
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !historyMode;
   const screenPoints = dogPoints.source === source ? dogPoints.points : null;
@@ -1623,6 +1664,11 @@ function GoogleTrackingMapRenderer({
           }
           onMapReady={() => {
             if (activeInstance.current === instance) setReadyInstance(instance);
+          }}
+          onLayout={event => {
+            if (activeInstance.current !== instance) return;
+            const { width, height } = event.nativeEvent.layout;
+            setNativeLayout({ instance, width, height });
           }}
           onPanDrag={() => {
             interacted.current = true;

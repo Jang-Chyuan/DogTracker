@@ -16,7 +16,7 @@ import { Animated, NativeModules } from 'react-native';
 // (AlertNotifications.notificationDestination), once JavaScript has read it.
 // `linkRead`: the launch link has been read (App: initialLinkRead); the map's
 // handover waits for it, so it knows whether a notification opened the app.
-const gate = { mapFramed: false, launch: null, targets: [], notification: null, linkRead: true };
+const gate = { mapFramed: false, launch: null, targets: [], notification: null, linkRead: true, latestScope: null, latestSettled: true, gaveUp: false };
 let linkTimer = null;
 // 'waiting' (the copy covers the screen) → 'handover' (mode 'fly' | 'fade')
 // → 'done'. The map's controls fade in through `chrome`; the real dog
@@ -106,7 +106,25 @@ function begin(mode, targets = []) {
 
 function release() {
   if (gate.launch === 'page') begin('fade');
-  else if (gate.launch === 'map' && gate.mapFramed && gate.linkRead) begin('fly', gate.targets);
+  else if (gate.launch === 'map' && gate.mapFramed && gate.linkRead && gate.latestSettled) begin('fly', gate.targets);
+}
+
+// Only the cold map needs this additional condition; page/guide launches
+// retain their original escape. Scope is an opaque per-account/publisher token.
+export function reportInitialLatest(scope, phase) {
+  if (state.phase !== 'waiting') return;
+  if (scope !== gate.latestScope) {
+    gate.latestScope = scope;
+    gate.mapFramed = false;
+  }
+  gate.latestSettled = ['bypass', 'accepted', 'fallback'].includes(phase);
+  const latest = phase === 'bypass' ? null : { scope, phase };
+  if (state.latest?.scope !== latest?.scope || state.latest?.phase !== latest?.phase)
+    setState({ latest });
+  // The hang safety net fired while latest was still inside its own bounded
+  // wait: fade once that wait settles, exactly as the original escape would.
+  if (gate.gaveUp && gate.latestSettled) begin('fade');
+  else release();
 }
 
 // The longest the map's handover waits for the launch link.
@@ -199,6 +217,13 @@ export function setReducedMotion(value) {
 
 /** Safety: nothing reported (a hang somewhere) — fade to whatever is there. */
 export function giveUpWaiting() {
+  if (gate.latestScope && !gate.latestSettled) {
+    // The latest hook has its own bounded fallback (accepted or 'fallback').
+    // Only that added condition defers the escape; a map that never frames,
+    // a launch never decided or an unread link still cannot hold the splash.
+    gate.gaveUp = true;
+    return;
+  }
   begin('fade');
 }
 
@@ -209,6 +234,9 @@ export function resetSplashGate() {
   gate.targets = [];
   gate.notification = null;
   gate.linkRead = true;
+  gate.latestScope = null;
+  gate.latestSettled = true;
+  gate.gaveUp = false;
   clearTimeout(linkTimer);
   linkTimer = null;
   splashChrome.setValue(1);

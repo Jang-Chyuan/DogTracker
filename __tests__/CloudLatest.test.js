@@ -1,4 +1,5 @@
 import { downloadCloudLatest } from '../src/cloud/CloudLatest';
+import { downloadCloudLatestSerial } from '../__fixtures__/CloudLatestSerial';
 
 const CUT = Date.parse('2026-10-10T12:00:00Z');
 const event = (id, slave, master, received, payload = { lat: 25000000, lon: 121000000 }, extra = {}) => ({
@@ -146,8 +147,8 @@ test('the real Supabase SDK emits numeric JSON filters, master IN, key seek and 
     const parsed = new URL(url); urls.push(parsed);
     const params = parsed.searchParams;
     let data;
-    if (params.get('select') === 'slave_id') {
-      data = discovered ? [] : [{ slave_id: 4 }]; discovered = true;
+    if (params.get('order')?.startsWith('slave_id.asc')) {
+      data = discovered ? [] : [event(3, 4, 7, '2026-10-10T11:00:00Z', { lat: 0, lon: 0 })]; discovered = true;
     } else if (params.get('upload_source') === 'eq.phone') data = [];
     else data = [event(params.has('payload->lat') ? 1 : 3, 4, 7, '2026-10-10T11:00:00Z',
       params.has('payload->lat') ? { lat: 25000000, lon: 121000000 } : { lat: 0, lon: 0 })];
@@ -156,7 +157,8 @@ test('the real Supabase SDK emits numeric JSON filters, master IN, key seek and 
   const result = await downloadCloudLatest({ client: sdk, masterIds: [7, 9], cutoff: CUT });
   expect(result.dogs[0]).toMatchObject({ packet: { sequence: 3 }, fix: { sequence: 1 } });
   expect(urls.every(url => url.searchParams.get('master_id') === 'in.(7,9)')).toBe(true);
-  expect(urls.at(-1).searchParams.get('slave_id')).toBe('gt.4');
+  expect(urls.filter(url => url.searchParams.get('order')?.startsWith('slave_id.asc')).map(url => url.searchParams.get('slave_id')))
+    .toEqual([null, 'gt.4']);
   const fixed = urls.find(url => url.searchParams.has('payload->lat'));
   expect(fixed.searchParams.getAll('payload->lat')).toEqual(['gte.-90000000', 'lte.90000000']);
   expect(fixed.searchParams.getAll('payload->lon')).toEqual(['gte.-180000000', 'lte.180000000']);
@@ -164,4 +166,286 @@ test('the real Supabase SDK emits numeric JSON filters, master IN, key seek and 
   const phone = urls.find(url => url.searchParams.get('upload_source') === 'eq.phone');
   expect(phone.searchParams.get('phone_received_at')).toBe('not.is.null');
   expect(phone.searchParams.get('order')).toBe('phone_received_at.desc,received_at.desc,event_id.desc');
+});
+
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+};
+const microtasks = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+// These legacy parallel/pipeline guards deliberately make discovery's top
+// row a late old phone upload: no fallback hint is available, so both clock
+// GETs remain real and the ignored-abort sibling cases still exercise two.
+const withoutFallbackHint = events => [...events, ...[...new Set(events.map(row => row.slave_id))].map(slave =>
+  event(900 + slave, slave, events.find(row => row.slave_id === slave).master_id,
+    '2026-10-10T11:59:59Z', undefined, { upload_source: 'phone', phone_received_at: '2026-10-01T01:00:00Z' }))];
+function heldStreams(events, gates) {
+  const { client, calls } = rest(withoutFallbackHint(events));
+  const original = client.from;
+  const dispatched = [], signals = [];
+  let active = 0, peak = 0;
+  client.from = table => {
+    const query = original(table), execute = query.abortSignal;
+    query.abortSignal = async signal => {
+      if (query.orders[0]?.[0] === 'slave_id') return execute(signal);
+      const phone = query.filters.some(([method, key]) => method === 'eq' && key === 'upload_source');
+      const fixed = query.filters.some(([method, key]) => method === 'gte' && key === 'payload->lat');
+      const key = `${fixed ? 'fix' : 'packet'}-${phone ? 'phone' : 'fallback'}`;
+      dispatched.push(key); signals.push(signal); peak = Math.max(peak, ++active);
+      try { await gates[key].promise; return await execute(signal); }
+      finally { active--; }
+    };
+    return query;
+  };
+  return { client, calls, dispatched, signals, peak: () => peak };
+}
+const streamGates = () => Object.fromEntries(['packet-fallback', 'packet-phone', 'fix-fallback', 'fix-phone'].map(key => [key, deferred()]));
+
+test('phone and fallback requests start together, bounded to two; silent no-GPS dog still uses the ordered valid-fix pair', async () => {
+  const gates = streamGates();
+  const f = heldStreams([
+    event(1, 4, 7, '2026-10-08T11:00:00Z'),
+    event(2, 4, 7, '2026-10-09T11:00:00Z', { lat: 0, lon: 0 }),
+    event(3, 4, 7, '2026-10-10T11:59:00Z', { lat: 25000001, lon: 121000001 },
+      { upload_source: 'phone', phone_received_at: '2026-10-08T09:00:00Z' }),
+  ], gates);
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await microtasks();
+    expect(f.dispatched).toEqual(['packet-fallback', 'packet-phone']);
+    gates['packet-fallback'].resolve(); await microtasks();
+    expect(f.dispatched).toHaveLength(2);
+    gates['packet-phone'].resolve(); await microtasks();
+    expect(f.dispatched).toEqual(['packet-fallback', 'packet-phone', 'fix-fallback', 'fix-phone']);
+    gates['fix-phone'].resolve(); await microtasks();
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(2);
+    gates['fix-fallback'].resolve();
+    expect((await task).dogs[0]).toMatchObject({ slaveId: 4, packet: { sequence: 2 }, fix: { sequence: 1 } });
+    expect(f.peak()).toBe(2);
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(2);
+  } finally { Object.values(gates).forEach(gate => gate.resolve()); await task.catch(() => {}); }
+});
+
+test('a failed clock stream aborts its paired request and cannot return a partly selected dog', async () => {
+  const gates = streamGates();
+  const f = heldStreams([event(1, 4, 7, '2026-10-10T11:00:00Z')], gates);
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await microtasks();
+    expect(f.dispatched).toHaveLength(2);
+    gates['packet-phone'].reject(new Error('synthetic stream failure'));
+    await expect(task).rejects.toThrow('synthetic stream failure');
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(2);
+  } finally { Object.values(gates).forEach(gate => gate.resolve()); await task.catch(() => {}); }
+});
+
+test.each(['signal', 'owner'])('%s cancellation rejects both late parallel responses even when transport ignores abort', async cancellation => {
+  const gates = streamGates();
+  const f = heldStreams([event(1, 4, 7, '2026-10-10T11:00:00Z')], gates);
+  const controller = new AbortController(); let currentOwner = true;
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT, signal: controller.signal,
+    check: () => { if (!currentOwner) throw new Error('old synthetic owner'); } });
+  task.catch(() => {});
+  try {
+    await microtasks(); expect(f.dispatched).toHaveLength(2);
+    if (cancellation === 'signal') { controller.abort(); expect(f.signals.every(signal => signal.aborted)).toBe(true); }
+    else currentOwner = false;
+    gates['packet-phone'].resolve(); gates['packet-fallback'].resolve();
+    await expect(task).rejects.toThrow();
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    expect(f.calls.filter(q => q.orders[0]?.[0] === 'slave_id')).toHaveLength(2);
+  } finally { Object.values(gates).forEach(gate => gate.resolve()); await task.catch(() => {}); }
+});
+
+test.each(['unknown-response', 'wrong-master'])('a %s from one parallel stream rejects the complete snapshot', async invalid => {
+  const { client } = rest(withoutFallbackHint([event(1, 4, 7, '2026-10-10T11:00:00Z')]));
+  const from = client.from, signals = [];
+  client.from = table => {
+    const query = from(table), execute = query.abortSignal;
+    query.abortSignal = async signal => {
+      if (query.orders[0]?.[0] === 'slave_id') return execute(signal);
+      signals.push(signal);
+      if (query.filters.some(([method, key]) => method === 'eq' && key === 'upload_source'))
+        return { data: invalid === 'unknown-response' ? {} : [event(2, 4, 99, '2026-10-10T11:00:00Z', undefined,
+          { upload_source: 'phone', phone_received_at: '2026-10-10T11:00:00Z' })] };
+      return execute(signal);
+    };
+    return query;
+  };
+  await expect(downloadCloudLatest({ client, masterIds: [7], cutoff: CUT })).rejects.toThrow();
+  expect(signals).toHaveLength(2);
+  expect(signals.every(signal => signal.aborted)).toBe(true);
+});
+
+function heldPipeline(events) {
+  const f = rest(withoutFallbackHint(events)), from = f.client.from;
+  const gates = new Map(), opened = new Set(), signals = [], dispatched = [];
+  let releaseAll = false, active = 0, peak = 0, keys = 0, keyPeak = 0;
+  f.client.from = table => {
+    const query = from(table), execute = query.abortSignal;
+    query.abortSignal = async signal => {
+      const isKey = query.orders[0]?.[0] === 'slave_id';
+      const slave = query.filters.find(([method, field]) => method === 'eq' && field === 'slave_id')?.[2];
+      const after = query.filters.find(([method, field]) => method === 'gt' && field === 'slave_id')?.[2];
+      const phone = query.filters.some(([method, field]) => method === 'eq' && field === 'upload_source');
+      const fixed = query.filters.some(([method, field]) => method === 'gte' && field === 'payload->lat');
+      const id = isKey ? `key:${after ?? 'start'}` : `dog:${slave}:${fixed ? 'fix' : 'packet'}:${phone ? 'phone' : 'fallback'}`;
+      const gate = deferred(); gates.set(id, gate); signals.push(signal); dispatched.push(id);
+      peak = Math.max(peak, ++active);
+      if (isKey) keyPeak = Math.max(keyPeak, ++keys);
+      try {
+        if (!releaseAll && !opened.has(id)) await gate.promise;
+        return await execute(signal);
+      } finally { active--; if (isKey) keys--; }
+    };
+    return query;
+  };
+  return { ...f, dispatched, signals, peak: () => peak, keyPeak: () => keyPeak,
+    open(id) { opened.add(id); gates.get(id)?.resolve(); },
+    fail(id, error) { gates.get(id).reject(error); },
+    close() { releaseAll = true; gates.forEach(gate => gate.resolve()); } };
+}
+const pipelineEvents = () => [event(1, 4, 7, '2026-10-08T11:00:00Z'),
+  event(2, 4, 7, '2026-10-10T11:00:00Z', { lat: 0, lon: 0 }),
+  event(3, 6, 7, '2026-10-10T11:00:00Z'), event(4, 8, 9, '2026-10-10T11:00:00Z'),
+  event(5, 99, 10, '2026-10-10T11:00:00Z')];
+async function startTwoJobs(f) {
+  await microtasks(); f.open('key:start'); await microtasks();
+  f.open('key:4'); await microtasks();
+}
+
+test('serial key discovery runs ahead of two bounded dog jobs, but returns all dogs only after their independent fixes complete', async () => {
+  const f = heldPipeline(pipelineEvents());
+  let settled = false;
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7, 9], cutoff: CUT });
+  task.then(() => { settled = true; }, () => { settled = true; });
+  try {
+    await startTwoJobs(f);
+    expect(f.dispatched).toEqual(['key:start', 'dog:4:packet:fallback', 'dog:4:packet:phone', 'key:4',
+      'dog:6:packet:fallback', 'dog:6:packet:phone', 'key:6']);
+    expect(f.peak()).toBe(5); expect(f.keyPeak()).toBe(1);
+    f.open('key:6'); await microtasks();
+    expect(f.dispatched.some(id => id.startsWith('dog:8:'))).toBe(false);
+    expect(f.dispatched).toContain('key:8');
+    f.open('key:8'); await microtasks();
+    expect(settled).toBe(false);
+    f.open('dog:4:packet:fallback'); f.open('dog:4:packet:phone'); await microtasks();
+    expect(f.dispatched).toEqual(expect.arrayContaining(['dog:4:fix:fallback', 'dog:4:fix:phone']));
+    expect(f.dispatched.some(id => id.startsWith('dog:8:'))).toBe(false);
+    f.open('dog:6:packet:phone'); f.open('dog:6:packet:fallback'); await microtasks();
+    expect(f.dispatched).toEqual(expect.arrayContaining(['dog:8:packet:fallback', 'dog:8:packet:phone', 'key:8']));
+    f.open('dog:8:packet:fallback'); f.open('dog:8:packet:phone'); await microtasks();
+    expect(settled).toBe(false);
+    f.open('dog:4:fix:phone'); await microtasks(); expect(settled).toBe(false);
+    f.open('dog:4:fix:fallback');
+    const result = await task;
+    expect(result.dogs.map(dog => dog.slaveId)).toEqual([4, 6, 8]);
+    expect(result.dogs[0]).toMatchObject({ packet: { sequence: 2 }, fix: { sequence: 1 } });
+    expect(f.dispatched.filter(id => id.startsWith('key:'))).toEqual(['key:start', 'key:4', 'key:6', 'key:8']);
+    expect(f.peak()).toBeLessThanOrEqual(5); expect(f.keyPeak()).toBe(1);
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+const queuedEvents = () => Array.from({ length: 10 }, (_, index) => event(index + 1, index + 1, 7,
+  index < 2 ? '2026-10-08T11:00:00Z' : '2026-10-10T11:00:00Z'));
+async function fillPrefetch(f) {
+  await microtasks(); f.open('key:start'); await microtasks();
+  for (let key = 1; key <= 5; key++) { f.open(`key:${key}`); await microtasks(); }
+}
+test('four prefetched keys bound discovery while two workers are held; freeing a worker resumes discovery and preserves the complete roster', async () => {
+  const events = queuedEvents(), f = heldPipeline(events);
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await fillPrefetch(f);
+    expect(f.dispatched.filter(id => id.startsWith('key:'))).toEqual(['key:start', 'key:1', 'key:2', 'key:3', 'key:4', 'key:5']);
+    expect(f.dispatched.filter(id => id.startsWith('dog:'))).toEqual([
+      'dog:1:packet:fallback', 'dog:1:packet:phone', 'dog:2:packet:fallback', 'dog:2:packet:phone']);
+    f.open('dog:1:packet:fallback'); f.open('dog:1:packet:phone'); await microtasks();
+    expect(f.dispatched).toEqual(expect.arrayContaining(['dog:3:packet:fallback', 'dog:3:packet:phone', 'key:6']));
+    f.open('key:6'); await microtasks();
+    expect(f.dispatched).not.toContain('key:7');
+    f.close();
+    expect(await task).toEqual(await downloadCloudLatestSerial({ client: rest(events).client, masterIds: [7], cutoff: CUT }));
+    expect(f.peak()).toBeLessThanOrEqual(5); expect(f.keyPeak()).toBe(1);
+    expect(f.dispatched.filter(id => id.startsWith('key:'))).toHaveLength(11);
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+test.each(['dog', 'owner', 'signal'])('a %s failure releases a full prefetch queue without dispatching queued dogs or accepting late results', async failure => {
+  const f = heldPipeline(queuedEvents()), abort = new AbortController(); let current = true;
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT, signal: abort.signal,
+    check: () => { if (!current) throw Error('invented revoked owner'); } });
+  task.catch(() => {});
+  try {
+    await fillPrefetch(f);
+    const before = [...f.dispatched];
+    if (failure === 'dog') f.fail('dog:1:packet:phone', Error('invented packet failure'));
+    else if (failure === 'owner') { current = false; f.open('dog:1:packet:phone'); }
+    else abort.abort();
+    await expect(task).rejects.toThrow();
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    f.close(); await microtasks();
+    expect(f.dispatched).toEqual(before);
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+test('a dog failure settles while prefetched discovery ignores abort, and its late key cannot launch a dog', async () => {
+  const f = heldPipeline(queuedEvents());
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7], cutoff: CUT });
+  task.catch(() => {});
+  try {
+    await microtasks(); f.open('key:start'); await microtasks(); f.open('key:1'); await microtasks();
+    f.open('key:2'); await microtasks();
+    expect(f.dispatched).toContain('key:3');
+    const before = [...f.dispatched];
+    f.fail('dog:2:packet:phone', Error('invented sibling failure'));
+    // key:3 and the other dog transports are deliberately still unresolved.
+    await expect(task).rejects.toThrow('invented sibling failure');
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    f.close(); await microtasks();
+    expect(f.dispatched).toEqual(before);
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+test.each(['key', 'dog', 'owner', 'signal'])('a %s failure cancels the entire discovery pipeline, including late sibling results', async failure => {
+  const f = heldPipeline(pipelineEvents()), abort = new AbortController(); let current = true;
+  const task = downloadCloudLatest({ client: f.client, masterIds: [7, 9], cutoff: CUT, signal: abort.signal,
+    check: () => { if (!current) throw Error('invented old owner'); } });
+  task.catch(() => {});
+  try {
+    await startTwoJobs(f);
+    expect(f.dispatched).toContain('key:6');
+    if (failure === 'key') f.fail('key:6', Error('invented key failure'));
+    else if (failure === 'dog') f.fail('dog:6:packet:phone', Error('invented dog failure'));
+    else if (failure === 'owner') { current = false; f.open('key:6'); }
+    else { abort.abort(); f.open('key:6'); }
+    await expect(task).rejects.toThrow();
+    expect(f.signals.every(signal => signal.aborted)).toBe(true);
+    f.close(); await microtasks();
+    expect(f.dispatched.some(id => id.startsWith('dog:8:'))).toBe(false);
+    expect(f.dispatched).not.toContain('key:8');
+  } finally { f.close(); await task.catch(() => {}); }
+});
+
+test('the pipelined snapshot exactly matches the independent committed serial oracle across clocks, gaps and silent discovered dogs', async () => {
+  // Independent invented regular samples, not translated real telemetry.
+  const many = Array.from({ length: 18 }, (_, index) => {
+    const slave = index * 3 + 1, seq = index * 3 + 10;
+    return [event(seq, slave, index % 2 ? 9 : 7, '2026-10-08T09:00:00Z'),
+      event(seq + 1, slave, 7, '2026-10-10T11:00:00Z', index % 3 ? { lat: 0, lon: 0 } : undefined),
+      event(seq + 2, slave, 9, '2026-10-10T11:59:00Z', undefined,
+        { upload_source: 'phone', phone_received_at: '2026-10-08T08:00:00Z' })];
+  }).flat();
+  const tied = [event(8, 4, 7, '2026-10-10T11:00:00.123450Z', undefined, { upload_source: 'wifi' }),
+    event(9, 4, 9, '2026-10-10T11:00:00.123450Z', undefined,
+      { upload_source: 'phone', phone_received_at: '2026-10-10T19:00:00.123451+08:00' })];
+  for (const events of [[], pipelineEvents(), tied, many]) {
+    const expected = await downloadCloudLatestSerial({ client: rest(events).client, masterIds: [7, 9], cutoff: CUT });
+    expect(await downloadCloudLatest({ client: rest(events).client, masterIds: [7, 9], cutoff: CUT })).toEqual(expected);
+  }
 });

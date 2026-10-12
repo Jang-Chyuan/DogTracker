@@ -2,6 +2,9 @@ import { smoothCloudHistory } from '../mapHistory/SmoothCloudHistory';
 import { withConnectionLock } from '../database/connectionLock';
 
 const rows = result => result.results || result.rows?._array || [];
+// Readiness is tied to this open connection, not Android's shared lock key.
+// A new wrapper must verify its schema; a failed setup remains retryable.
+const displaySchemaReady = new WeakSet();
 
 // Lazy migration and three-point smoothing (SmoothCloudHistory) of the live
 // rows; the cloud copy keeps no display cache (retired 2026-10-09). Native BLE writes
@@ -26,7 +29,10 @@ export async function ensureBleDisplayColumns(db) {
 export async function bleDisplayRows(db, records) {
   if (!records.length) return records;
   return withConnectionLock(db, async () => {
-    await ensureBleDisplayColumns(db);
+    if (!displaySchemaReady.has(db)) {
+      await ensureBleDisplayColumns(db);
+      displaySchemaReady.add(db);
+    }
     const page = [...records].sort((a, b) => a.received_at - b.received_at || a.id - b.id)
       .map(row => ({ ...row, time: row.received_at, latitude: row.slave_lat, longitude: row.slave_lon }));
     const saved = await persistBleDisplayCoordinates(db, page);
