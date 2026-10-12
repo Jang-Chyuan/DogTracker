@@ -719,7 +719,9 @@ export function useHistoryScreen({
     && value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
     && value.generation === shownPublication?.generation && value.manual === manual
     && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
-  const retained = !builtModel && !waiting && !coverageReady && verifiedMatches(verifiedModel.current)
+  // Either blocker qualifies: the proof waiting for its re-read/tail, or the
+  // day's rows re-reading for the new material/cutoff (no dog loaded yet).
+  const retained = !builtModel && !waiting && verifiedMatches(verifiedModel.current)
     && verifiedModel.current.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
     ? verifiedModel.current : null;
   useEffect(() => {

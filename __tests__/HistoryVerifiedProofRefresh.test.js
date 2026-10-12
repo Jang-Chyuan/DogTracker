@@ -65,6 +65,21 @@ test('fresh complete selected-day input can reuse its accepted model after an un
     expect(state.screen.dayModel).toBe(accepted);
   } finally { wait.resolve(); await state.close(); }
 });
+test('today keeps its verified model while the day rows re-read for new material', async () => {
+  const state = await setup('rows-reread'); const rows = deferred();
+  try {
+    const accepted = state.screen.dayModel;
+    expect(accepted).not.toBeNull();
+    const original = state.fixture.history.readDay;
+    state.read.mockImplementation(async args => { await rows.promise; return original(args); });
+    state.ledger.dataRevision++; state.ledger.publishedRevision += 2; await state.update();
+    // The proof re-read finished; the rows have not. Still the verified view.
+    expect(state.database.historyDownloadStates.mock.calls.length).toBeGreaterThan(1);
+    expect(state.screen.dayModel).toBe(accepted); expect(state.screen.loading).toBe(false);
+    await act(async () => rows.resolve());
+    expect(state.screen.dayModel).not.toBeNull(); expect(state.screen.loading).toBe(false);
+  } finally { rows.resolve(); await state.close(); }
+});
 test.each(['own-undefined', 'deletion', 'seed-quality'])('fresh %s selected input must rebuild even when packet ids/times otherwise match', async change => {
   const state = await setup(`input-${change}`);
   try {
