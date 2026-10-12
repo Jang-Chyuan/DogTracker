@@ -194,3 +194,50 @@ test('a routine 30s latest attempt keeps archive priority open for this foregrou
   await act(async () => jest.advanceTimersByTimeAsync(1));
   expect(applied()).toHaveLength(3); expect(gate.ready()).toBe(true);
 });
+
+const contextEvents = name => info.mock.calls.filter(([tag]) => tag === `[CloudSync] ${name}`);
+
+test('real context success logs one fixed context-published per accepted pass', async () => {
+  await engine.dispose();
+  engine = createCloudSync({ client: network.client, database, onChange: value => { current = value; update?.(value); } });
+  await start();
+  expect(contextEvents('context-published')).toEqual([['[CloudSync] context-published', { attempt: 1, elapsedMs: expect.any(Number), dogs: 1 }]]);
+  expect(contextEvents('context-failed')).toEqual([]);
+});
+
+test('production context timeout logs exactly one context-failed without disturbing latest-applied or archive', async () => {
+  await engine.dispose();
+  events.push(cloudEvent(2, NOW - 900, { slave: 5 }));
+  let contextReads = 0;
+  // Dog 1 completes all four stop-context requests; dog 2's first one stalls
+  // past the 10 s budget with a transport that ignores AbortSignal.
+  const stalled = latestArchiveRest({ events, members, beforeRead: async call => {
+    if (['context', 'seeds'].includes(call.phase) && ++contextReads === 5) await new Promise(() => {});
+  } });
+  engine = createCloudSync({ client: stalled.client, database, onChange: value => { current = value; update?.(value); } });
+  await start();
+  expect(current).toMatchObject({ contextPending: true, mapSuccessRevision: 1 });
+  expect(applied()).toHaveLength(1);
+  await act(async () => jest.advanceTimersByTimeAsync(10000));
+  expect(contextEvents('context-failed')).toEqual([['[CloudSync] context-failed',
+    { attempt: 1, elapsedMs: 10000, failureKind: 'timeout', dogs: 2, completedDogs: 1, requests: 5 }]]);
+  expect(contextEvents('context-published')).toEqual([]);
+  expect(contextEvents('failure')).toEqual([]);
+  expect(applied()).toHaveLength(1);
+  expect(contextEvents('archive-published')).toEqual([['[CloudSync] archive-published', { attempt: 1, elapsedMs: expect.any(Number), revision: 1 }]]);
+  expect(current).toMatchObject({ contextPending: false, archiveRevision: 1, archiveError: '', error: '', mapSuccessRevision: 1 });
+  expect((await database.readLatestSnapshot('invented-owner', { positionsOnly: true })).packets).toHaveLength(2);
+});
+
+test('a context canceled by leaving the foreground is not reported as context-failed', async () => {
+  await engine.dispose();
+  const stalled = latestArchiveRest({ events, members, beforeRead: async call => {
+    if (call.phase === 'context') await new Promise(() => {});
+  } });
+  engine = createCloudSync({ client: stalled.client, database, onChange: value => { current = value; update?.(value); } });
+  await start();
+  expect(current.contextPending).toBe(true);
+  await act(async () => { engine.setForeground(false); await jest.advanceTimersByTimeAsync(10000); });
+  expect(contextEvents('context-failed')).toEqual([]);
+  expect(contextEvents('context-published')).toEqual([]);
+});
