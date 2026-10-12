@@ -95,13 +95,17 @@ test('a sub-threshold pause does not manufacture a newly qualified stay', () => 
 });
 
 
-test('manual clipping retains only the actually observed stationary portion', () => {
+test('manual clipping keeps the stay from the clip start; the same-session same-place break stays unobserved', () => {
   const rows = [...firstRun, ...shortWalk];
   const start = point(600).time, end = rows.at(-1).time;
   const model = historyTimeline(rows, { subject: 'phone', dayStart: base, dayEnd: base + 86400000,
     manualRange: { start, end } });
   const pause = model.nodes.find(n => n.presentationOnly);
-  expect(pause).toMatchObject({ start, end: point(1900).time, durationMs: 1300000, number: null });
+  // PR 116 / 067: the 35 min break at the same place, same session, is part
+  // of the stay, and is kept as unobserved time (export gaps).
+  expect(pause).toMatchObject({ start, end: point(4000).time, durationMs: 3400000, number: null,
+    unobserved: [{ start: point(1900).time, end: point(4000).time }] });
+  expect(model.nodes.some(n => n.type === 'gap' || n.type === 'resume')).toBe(false);
   expect(model.nodes.filter(n => n.type === 'stop')).toHaveLength(1);
   expect(model.points.every(p => p.time >= start && p.time <= end)).toBe(true);
   expect(model.edges.every(e => e.start >= start && e.end <= end)).toBe(true);

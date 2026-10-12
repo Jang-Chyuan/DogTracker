@@ -147,7 +147,9 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
           gpxAddress: addressOf(n.originalRepresentative) } : {}),
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n), excludedMs: n.interruptionMs || 0 })),
       rides: vehicleTrips(nodes, last?.time),
-      gaps: nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
+      // A presentation stay over a same-place break is still unobserved time.
+      gaps: [...nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
+        ...nodes.flatMap(n => n.unobserved || [])].sort((a, b) => a.start - b.start),
       distanceKm: km(model.distanceM),
       distanceExclusion: vehicleExclusion(model, subject),
       distanceWord: phone ? t("c671") : t('c125'),

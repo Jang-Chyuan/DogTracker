@@ -7,29 +7,57 @@ import { historyStops, historyIndoorNodes } from './HistoryStops';
 import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
 
 /** Display only: retain observed stationary time that has no existing place row.
- * Never classify a gap, a red light in a drive, or uncertain fixes as a stay. */
+ * Never classify a gap, a red light in a drive, or uncertain fixes as a stay.
+ *
+ * PR 116 (067 「同地中斷＝連續停留」): a same-place break inside one recording
+ * session (`samePlaceBreak`: the recorder kept running, the phone saved no fix
+ * — Samsung stops GPS on a still phone with the screen off — and the fixes on
+ * both sides are in one place without confirmed movement) belongs to the same
+ * stay, together with the zero-distance re-acquisition fixes right after it
+ * (at most gapMs). A session change (recording off) stays 「沒有資料」. The
+ * unobserved ranges are kept on the stop as `unobserved`. */
 export function phoneStationaryPresentationStops(edges, { config = configFor('phone'), covered = () => false } = {}) {
+  const session = p => typeof p.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
   const valid = p => p.phoneStationary && p.phoneMotionState === 'stationary' && !p.phoneConfirmedMovement
-    && p.motion_state != null && typeof p.session_id === 'string' && p.session_id.length > 0
+    && p.motion_state != null && session(p) != null
     && ('raw_speed_kmh' in p || 'speed_kmh' in p || 'speed_accuracy_mps' in p)
     && coordinateValid(p) && Number.isFinite(p.accuracy) && p.accuracy >= 0 && p.accuracy <= config.stayAccuracyM;
+  const sameSession = edge => session(edge.from) != null && session(edge.from) === session(edge.to);
   const stops = [];
   let run = null;
   const finish = () => {
     if (run && run.end - run.start >= config.stayMs) stops.push({ type: 'stop',
       id: `phone-stationary:${run.start}`, presentationOnly: 'phone-stationary', number: null,
       start: run.start, end: run.end, durationMs: run.end - run.start, interruptionMs: 0, gaps: [],
+      ...(run.unobserved.length ? { unobserved: run.unobserved } : {}),
       latitude: run.anchor.latitude, longitude: run.anchor.longitude });
     run = null;
   };
   for (const edge of edges) {
-    const observed = !edge.gap && !edge.bridged && !edge.uncertain && edge.mode === 'walking'
-      && edge.countedDistanceM === 0 && edge.end > edge.start
-      && valid(edge.from) && valid(edge.to) && edge.from.session_id === edge.to.session_id && !covered(edge);
-    if (!observed) { finish(); continue; }
-    if (run && (run.end !== edge.start || run.session !== edge.from.session_id)) finish();
-    if (!run) run = { start: edge.start, end: edge.end, anchor: edge.from, session: edge.from.session_id };
-    else run.end = edge.end;
+    const usable = edge.end > edge.start && edge.mode !== 'driving' && sameSession(edge) && !covered(edge)
+      && coordinateValid(edge.from) && coordinateValid(edge.to);
+    const observed = usable && !edge.gap && !edge.bridged && !edge.uncertain && edge.mode === 'walking'
+      && edge.countedDistanceM === 0 && valid(edge.from) && valid(edge.to);
+    const samePlaceBreak = usable && edge.samePlaceBreak === true && !(edge.countedDistanceM > 0)
+      && !edge.from.phoneConfirmedMovement && !edge.to.phoneConfirmedMovement;
+    // Re-acquisition after a break: no counted distance, no confirmed movement.
+    const settling = usable && !edge.bridged && (!edge.gap || edge.uncertain) && edge.countedDistanceM === 0
+      && !edge.from.phoneConfirmedMovement && !edge.to.phoneConfirmedMovement;
+    const reach = run && (run.pending?.end ?? run.end) === edge.start && run.session === session(edge.from);
+    if (observed || samePlaceBreak) {
+      if (run && !reach) finish();
+      if (!run) run = { start: edge.start, end: edge.end, anchor: edge.from, session: session(edge.from),
+        unobserved: [], pending: null, broke: false };
+      run.end = edge.end; run.pending = null;
+      if (samePlaceBreak) { run.unobserved.push({ start: edge.start, end: edge.end }); run.broke = true; }
+      continue;
+    }
+    // Only after a break, and only as long as a short recording gap.
+    if (settling && reach && run.broke && edge.end - (run.pending?.start ?? edge.start) <= config.gapMs) {
+      run.pending = { start: run.pending?.start ?? edge.start, end: edge.end };
+      continue;
+    }
+    finish();
   }
   finish();
   return stops;
@@ -83,13 +111,24 @@ export function historyTimeline(rows = [], options = {}) {
     // A same-place bridge supplies no travel evidence. If it did not belong
     // to a confirmed stay, retain the interruption instead of inventing walking.
     const containedBridge = edge.bridged && containsStayEdge(edge);
+    // PR 116: same recording session both sides — the recorder ran but no
+    // fix was saved (phoneStationaryPresentationStops may take it as a stay).
+    const sameSession = typeof edge.from.session_id === 'string' && edge.from.session_id.length > 0
+      && edge.from.session_id === edge.to.session_id;
     return subject === 'phone' && edge.bridged && !containedBridge
-      ? { ...edge, gap: true, mode: 'gap' } : edge;
+      ? { ...edge, gap: true, mode: 'gap', ...(sameSession ? { samePlaceBreak: true } : {}) } : edge;
   });
+  // Construct fallback only after movement, visits and gaps are settled; it
+  // feeds no detection back. Same-session same-place breaks are 067 stays.
+  const stationary = subject === 'phone' ? phoneStationaryPresentationStops(sectionEdges, { config,
+    covered: edge => displayLocations.some(n => ['stop', 'indoor'].includes(n.type)
+      && (n.displayRange?.start ?? n.start) < edge.end && (n.displayRange?.end ?? n.end) > edge.start),
+  }) : [];
+  const inStationary = e => stationary.some(s => e.start >= s.start && e.end <= s.end);
   // 判定表「恢復記錄節點」: after a break of over 30 minutes the first fix
   // after it is a 恢復記錄 node (unless a stay or a hold already starts there).
   for (const e of sectionEdges) {
-    if (e.mode !== 'gap' || e.durationMs <= config.resumeAfterMs) continue;
+    if (e.mode !== 'gap' || e.durationMs <= config.resumeAfterMs || inStationary(e)) continue;
     if (locations.some(n => n.start === e.end)) continue;
     locations.push({ type: 'resume', start: e.end, end: e.end, latitude: e.to.latitude, longitude: e.to.longitude });
   }
@@ -116,14 +155,29 @@ export function historyTimeline(rows = [], options = {}) {
   // 無關): they go to the foot row that arrived there, or else the next one,
   // so the rows add up to the summary.
   let carried = 0;
+  // Skipped stationary edges right after the last row (a pause on foot).
+  let pause = null;
   const isFoot = mode => mode === 'walking' || mode === 'moving';
   for (const e of sectionEdges) {
+    // Time a presentation stay keeps (all of it 0 m) is no travel/gap row.
+    if (inStationary(e)) { pause = null; continue; }
     // Coarse fixes may sit just outside a visit's representative-position
     // quality gate. Two detector-confirmed stationary observations are still
     // no walk. An already classified drive includes red-light time, so keep
     // those edges contiguous in the same driving row; preserve actual gaps.
     if (subject === 'phone' && !e.gap && !e.bridged
-      && e.mode !== 'driving' && e.from.phoneStationary && e.to.phoneStationary) continue;
+      && e.mode !== 'driving' && e.from.phoneStationary && e.to.phoneStationary) {
+      const row = sections[sections.length - 1];
+      if (pause && pause.end === e.start) pause.end = e.end;
+      else pause = row && row.end === e.start ? { start: e.start, end: e.end } : null;
+      continue;
+    }
+    // A pause shorter than a stay (a red light mid-walk) that no place row
+    // covers is 0 m time of that walk: the walk on either side stays one row
+    // (as phoneStationaryPresentationStops only takes runs of a stay's length).
+    const footPause = pause && pause.end === e.start && pause.end - pause.start < config.stayMs
+      && !locations.some(n => n.end >= pause.start && n.start <= pause.end) ? pause : null;
+    pause = null;
     // A brief unknown observation inside an already confirmed visit does not
     // become a new travel/interruption row. Actual recording gaps remain.
     if (e.uncertain && e.durationMs <= config.gapMs && containsStayEdge(e)) continue;
@@ -140,7 +194,11 @@ export function historyTimeline(rows = [], options = {}) {
     // with different reasons are different rows.
     const reason = e.uncertain && e.durationMs <= config.gapMs ? 'uncertain' : e.gap && subject === 'dog'
       ? (e.gapReason ?? (stream.packets.some(p => p.time > e.start && p.time < e.end) ? 'no-gps' : 'no-signal')) : undefined;
-    if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
+    if (footPause && prior?.type === 'movement' && isFoot(prior.mode) && prior.mode === e.mode
+      && prior.reason === reason && prior.end === footPause.start) {
+      prior.end = e.end; prior.durationMs += footPause.end - footPause.start + e.durationMs;
+      prior.distanceM += e.distanceM; prior.countedDistanceM += e.countedDistanceM;
+    } else if (prior && prior.mode === e.mode && prior.reason === reason && prior.end === e.start
       && !locations.some(n => n.start === e.start || n.end === e.start)) {
       prior.end = e.end; prior.durationMs += e.durationMs;
       prior.distanceM += e.gap ? 0 : e.distanceM; prior.countedDistanceM += e.countedDistanceM;
@@ -175,12 +233,6 @@ export function historyTimeline(rows = [], options = {}) {
       excluded: true, line: 'long-dashed' });
   }
   sections.sort((a, b) => a.start - b.start);
-  // Construct fallback only after movement, visits and gaps are settled. It
-  // cannot retroactively turn same-place interruption edges into observed time.
-  const stationary = subject === 'phone' ? phoneStationaryPresentationStops(sectionEdges, { config,
-    covered: edge => displayLocations.some(n => ['stop', 'indoor'].includes(n.type)
-      && (n.displayRange?.start ?? n.start) < edge.end && (n.displayRange?.end ?? n.end) > edge.start),
-  }) : [];
   const rank = node => node.type === 'departure' ? 0 : ['movement', 'gap'].includes(node.type) ? 2 : node.type === 'end' ? 3 : 1;
   let nodes = [...locations, ...sections].sort((a, b) => a.start - b.start || rank(a) - rank(b));
   // A switch right beside another place (a stay ends, the car starts after a
