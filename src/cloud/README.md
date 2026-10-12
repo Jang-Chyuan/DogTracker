@@ -40,6 +40,8 @@ GPS、速度、HDOP、活動值依韌體比例換算。`received_at` 存 Unix �
 
 Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，包含更新登入所需的 Token，不保存 Email 登入密碼。SDK 自動更新 Token。重啟 App 會恢复 Session；Session 被撤銷或失效仍需重新登入。升級前的版本只存記憶體，因此本次升級需重新登入一次。
 
+Token 更新失敗但伺服器沒有拒絕登入時（剛回前景網路未通、5xx，或 SDK 在背景更新失敗後 60 秒內不再重試），SDK 的 `getSession()` 回報沒有 Session，請求會改用 publishable key 匿名送出並得到 401。所以前景每輪最新位置先等 SDK 拿到同一帳號的 Session（最多 65 秒，期間仍顯示「正在更新」）再送第一個請求；遇到 401 時強制更新 Token 一次並重送一次（`CloudSession.js`）。伺服器拒絕 Refresh Token 時照舊回報登入失效，不重試。
+
 `cloud_sync_state` 以 `(owner_user_id, master_id)` 為主鍵，儲存 `through_at`、`event_id`、`updated_at`。每批事件與對應進度在同一個 SQLite transaction 提交；若該範圍已讀完，進度移至本輪查詢上限，事件 ID 為空。首次即使尚無資料也會記錄起始範圍。
 
 每輪重新讀取 `device_members`，新獲授權的 Master 首次抓最近 24 小時。已完成的下載範圍從上次進度前 5 分鐘補查，利用事件唯一鍵去重；未完成的範圍用最後提交的微秒 `received_at` 加 `event_id` 精確續傳，避免有限批次一直停在同一頁。增量游標不使用 `phone_received_at`；歷史顯示維持修正後的 `track_at`。

@@ -5,6 +5,7 @@ import { withCloudSyncSlot, withLatestSyncSlot, cancelBackgroundSync } from './C
 import { reconcileCloudWindow } from './CloudReconcile';
 import { repairCloudTrackTimes } from './CloudTrackTime';
 import { isAuthFailure, isNetworkFailure } from './CloudErrors';
+import { createCloudSessionGate } from './CloudSession';
 import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
 import { beginCloudAttemptDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
@@ -132,13 +133,19 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       const canceled = new Promise(resolve => networkAbort.signal.addEventListener('abort', () =>
         resolve({ error: new Error(t('c576')), phase: networkPhase }), { once: true }));
       const networkCheck = () => { check(); if (networkAbort.signal.aborted) throw new Error(t('c576')); };
+      // A resume after the access token expired must not send its first
+      // request before the SDK holds a session again (CloudSession.js).
+      const session = createCloudSessionGate({ auth: client.auth, owner: userId,
+        signal: networkAbort.signal, check: networkCheck, now });
       const fetchLatest = () => {
         networkPhase = 'masters';
         const network = (async () => {
-          let at = now(); const masters = await listCloudMasters(client, userId, networkAbort.signal, networkCheck);
+          let at = now(); await session.ready();
+          const masters = await session.retryRefused(() => listCloudMasters(client, userId, networkAbort.signal, networkCheck));
           timings.mastersMs += Math.max(0, now() - at); networkCheck();
           const cutoff = now(); networkPhase = 'download'; at = now();
-          const snapshot = await downloadLatest({ client, masterIds: masters, cutoff, signal: networkAbort.signal, check: networkCheck });
+          const snapshot = await session.retryRefused(() => downloadLatest({ client, masterIds: masters, cutoff,
+            signal: networkAbort.signal, check: networkCheck }));
           timings.latestHTTPMs += Math.max(0, now() - at); networkCheck(); return { masters, cutoff, snapshot };
         })().then(value => ({ value }), error => ({ error, phase: networkPhase }));
         return Promise.race([network, canceled]);
