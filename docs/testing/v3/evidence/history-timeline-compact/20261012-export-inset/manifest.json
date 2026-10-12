@@ -1,0 +1,46 @@
+{
+  "fictionOnly": true,
+  "device": "emulator-5558",
+  "viewport": [
+    1080,
+    2340
+  ],
+  "density": 440,
+  "beforeVersion": 266,
+  "afterProductSource": "ff020465ca396fa34af40bb79e7a3e6e683550d3",
+  "afterPrivateSource": "c5365d61f69e4786b1f8293c776f507f9bac72c3",
+  "afterAPK": "dfb600a5be7b90c44bf757bcc00f3bbbaa2b181c2c60065f382f0915b53b9ba6",
+  "afterVersion": 277,
+  "afterExportBounds": [
+    904,
+    158,
+    1036,
+    290
+  ],
+  "afterFrameBounds": [
+    904,
+    1075,
+    1036,
+    1207
+  ],
+  "afterRightInsetDP": 16,
+  "afterCircleDP": 48,
+  "afterGlyphDP": 22,
+  "pngXMLDistinctInstants": true,
+  "focused57Passed": true,
+  "nativePortraitExportInsetPassed": true,
+  "landscapeAndDogEdgePassed": false,
+  "images": [
+    {
+      "file": "before-266.png",
+      "sha256": "de8ea4013bf391b23de93d91f6eb66374ded21e5f2f96f42f2eab6569102eaf7",
+      "rootViewed": true
+    },
+    {
+      "file": "after-277.png",
+      "sha256": "2f809b2f26d7a0ac5caaa420c0bd934dbbcdd636f85a16c2d7c263888a8fb14a",
+      "rootViewed": true
+    }
+  ],
+  "beforeAPK": "fd7381f76017b7794664ab123b63ea61fccb22fec69f31665d4ee673eed3974c"
+}
