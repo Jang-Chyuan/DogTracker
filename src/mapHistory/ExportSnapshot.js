@@ -143,12 +143,15 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       rows: model.packets || [],
       holds: nodes.filter(n => n.type === 'indoor').map(n => ({ start: n.start, end: n.end,
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n) })),
-      stays: nodes.filter(n => n.type === 'stop').map(n => ({ start: n.start, end: n.end, number: n.number,
+      // Display fallback is not a newly calculated GPX stay/waypoint.
+      stays: nodes.filter(n => n.type === 'stop' && !n.presentationOnly).map(n => ({ start: n.start, end: n.end, number: n.number,
         ...(n.originalRepresentative ? { gpxCoordinate: n.originalRepresentative,
           gpxAddress: addressOf(n.originalRepresentative) } : {}),
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n), excludedMs: n.interruptionMs || 0 })),
       rides: vehicleTrips(nodes, last?.time),
-      gaps: nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
+      // A presentation stay over a same-place break is still unobserved time.
+      gaps: [...nodes.filter(n => n.type === 'gap').map(n => ({ start: n.start, end: n.end })),
+        ...nodes.flatMap(n => n.unobserved || [])].sort((a, b) => a.start - b.start),
       distanceKm: km(model.distanceM),
       distanceExclusion: vehicleExclusion(model, subject),
       distanceWord: phone ? t("c671") : t('c125'),
