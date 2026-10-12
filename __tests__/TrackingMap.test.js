@@ -938,6 +938,56 @@ test('066: 我的位置 with a card open puts the phone in the middle of the map
   }
 });
 
+test('dog A then dog B within the hold: a map-only tap on B outside A\'s marker opens B', async () => {
+  const { PixelRatio } = require('react-native');
+  const { markerFrame } = require('../src/map/DogMarkerView');
+  const onDogPress = jest.fn();
+  const onMapPress = jest.fn();
+  const frame = markerFrame(slaveMarker.size);
+  // Dog 5 sits straight above dog 6, just clear of the top of 6's bitmap.
+  const sixY = 300;
+  const fiveY = sixY - frame.height * frame.anchor.y - slaveMarker.size / 2;
+  const markers = [5, 6].map(slaveId => ({ ...slaveMarker, slaveId,
+    coordinate: { latitude: 25, longitude: slaveId }, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}` }));
+  mockCamera.pointForCoordinate = jest.fn(async coordinate =>
+    ({ x: 200, y: coordinate.longitude === 5 ? fiveY : sixY }));
+  try {
+    await render({ onDogPress, onMapPress, presentation: { ...defaults.presentation, dogMarkers: markers } });
+    await readyMap();
+    const six = renderer.root.findAll(node => node.type === Marker && node.props.identifier === 'real-dog-6')[0];
+    const mapHit = y => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 200 * PixelRatio.get(), y: y * PixelRatio.get() } } });
+    await act(async () => six.props.onPress());
+    // Google's duplicate of the same touch is still dropped.
+    await act(async () => mapHit(sixY));
+    expect(onDogPress.mock.calls).toEqual([[6]]);
+    // 100 ms later, well inside 2 × MAP_TAP_HOLD_MS, dog 5 reported only as a map tap.
+    await act(async () => jest.advanceTimersByTime(100));
+    await act(async () => mapHit(fiveY));
+    expect(onDogPress.mock.calls).toEqual([[6], [5]]);
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onMapPress).not.toHaveBeenCalled();
+  } finally { delete mockCamera.pointForCoordinate; }
+});
+
+test('a map tap off every dog just after a dog tap is still dropped', async () => {
+  const { PixelRatio } = require('react-native');
+  const onDogPress = jest.fn();
+  const onMapPress = jest.fn();
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 150, y: 300 }));
+  try {
+    await render({ onDogPress, onMapPress });
+    await readyMap();
+    const dog = renderer.root.findAll(node => node.type === Marker && node.props.identifier?.startsWith('real-dog-'))[0];
+    await act(async () => dog.props.onPress());
+    await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 300 * PixelRatio.get(), y: 600 * PixelRatio.get() } } }));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onDogPress).toHaveBeenCalledTimes(1);
+    expect(onMapPress).not.toHaveBeenCalled();
+  } finally { delete mockCamera.pointForCoordinate; }
+});
+
 test('a tap on the map reaches onMapPress, and the camera heading is reported', async () => {
   const onMapPress = jest.fn();
   const onHeading = jest.fn();

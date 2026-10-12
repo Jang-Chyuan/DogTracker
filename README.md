@@ -104,7 +104,12 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 
 建置時以 `APP_VERSION_NAME` 與 `APP_VERSION_CODE` 傳進 Gradle，所以 APK 的 `versionName` 和 release tag 一致，`versionCode` 就是同一個 commit 數（單調遞增，升級不會倒退）。`package.json` 裡的 PATCH 不影響發版，只有 MAJOR.MINOR 有意義。
 
-本機 Gradle 與 CI 共用 `scripts/app-version.js`：以正在建置的 `HEAD` 完整歷史 commit 數產生 `0.3.<commit 數>`，`versionCode` 同樣是 commit 數，不使用 semver 公式。`node scripts/app-version.js` 可先查看版本。淺層 checkout 會拒絕推算，先執行 `git fetch --unshallow`；CI 保持 `fetch-depth: 0`。
+本機 Gradle 與 CI 共用 `scripts/app-version.js`，不使用 semver 公式。`node scripts/app-version.js` 可先查看版本。淺層 checkout 會拒絕推算，先執行 `git fetch --unshallow`；CI 保持 `fetch-depth: 0`。
+
+- **CI（環境變數 `CI=true`）**：以正在建置的 `HEAD` 完整歷史 commit 數產生 `0.3.<commit 數>`，`versionCode` 同樣是 commit 數。
+- **本機**：只數到 `HEAD` 與 `origin/main` 的 merge-base（沒有 `origin/main` 時改用本機 `main`，兩者都沒有才退回 `HEAD` 的 commit 數）。在 main 上建置與 CI 結果相同；feature branch／worktree 會得到 `0.3.<main 基準>+<本機多出的 commit 數>`，例如 `0.3.195+3`，`versionCode` 則是基準的 195。這樣 branch 的 commit 數再多也不會高過之後 main/CI 的 APK，之後 `adb install -r` 安裝 main 的 APK 不會出現 `INSTALL_FAILED_VERSION_DOWNGRADE`，也不必 `-d` 或清資料。本機 `origin/main` 太舊時基準也會偏舊，建置前先 `git fetch origin`。
+
+Gradle 設定階段就會執行 `node scripts/app-version.js`。從 Android Studio 等 IDE 啟動時 PATH 可能沒有 nvm／Homebrew 的 node，請把 `NODE_BINARY` 設成 node 的絕對路徑（環境變數，或寫在已被 git 忽略的 `android/local.properties`：`NODE_BINARY=/path/to/node`）。
 
 需要重建指定版本或從沒有 `.git` 的來源包建置時，必須一起提供 `APP_VERSION_NAME` 和 `APP_VERSION_CODE`；只提供一個會失敗。override 保留既有 CI 傳入已解析版本的方式，發布時仍使用完整 HEAD 歷史的數值，不可任意降低 versionCode。設定頁顯示原生 APK 的 `BuildConfig.VERSION_NAME`，不另寫固定版本文字。
 
