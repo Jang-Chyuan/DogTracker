@@ -237,12 +237,13 @@ function SectionRowView({ section, color, onPress }) {
       <View style={[styles.timeColumn, timeWidth()]} />
       <View style={[styles.trackColumn, styles.transportTrack]}>
         <Track kind={lineOf(section)} color={color} />
-        <View style={styles.transportIcon}>        <Glyph
-          name={text.icon}
-          color={muted ? colors.iconMuted : color}
-          size={sizes.timeline.icon}
-        />
-</View>
+        <View style={styles.transportIcon}>
+          <Glyph
+            name={text.icon}
+            color={muted ? colors.iconMuted : color}
+            size={sizes.timeline.icon}
+          />
+        </View>
       </View>
       <View style={styles.sectionText}>
         <Text style={styles.movement}>

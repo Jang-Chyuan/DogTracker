@@ -410,7 +410,7 @@ export default function HistoryRangeSummary({
             ) : null}
           </Text>
           {pending ? <Text style={styles.detail}>{t('c835')}</Text> : <View style={styles.distances} testID="history-summary-distances" accessible={false}>
-            {who && <Text style={styles.detail}>{who}・</Text>}
+            {!!who && <Text style={styles.detail}>{who}・</Text>}
             {distances.map(item => <View key={item.icon} style={styles.distance} testID={`history-summary-${item.icon}`}>
               <Glyph name={item.icon} color={colors.textMuted} size={sizes.icon.adjust} />
               <Text style={styles.detail}>{km(item.distanceM)}</Text>
