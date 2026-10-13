@@ -95,5 +95,5 @@
 ## 手機靜止時的粗定位（2026-10-13）
 
 - 手機偵測器鎖定為靜止、精度超過 `stayAccuracyM`（25 m）但在 `accuracyM`（50 m）內的點，在造訪已有 25 m 內的靜止點、離造訪中心不超過 `stillPlaceM`、且之前沒有已判定的離開點時，算進該造訪的時間（不切開、不算中斷），但**不參與**代表位置的平均（只有 25 m 內的點投票；沒有其他點時才用全部）。只有粗定位、沒有 25 m 內靜止點的時段不在這裡變成停留。
-- 偵測器判為 `unknown`、但自己量到的可信速度低於 `stillMps` 的點，不是走路：那段邊是 `uncertain`（「GPS 訊號弱」），不會變成 0 km 的走路分鐘。量到 ≥ `stillMps` 的可信速度仍照走路計算。
+- 偵測器判為 `unknown`、但自己量到的可信速度低於 `stillMps` 的點，不是走路：那段邊是 `uncertain`（「GPS 訊號弱」），不會變成 0 km 的走路分鐘。這種邊帶 `stillUnplaced`；同一次記錄裡連續這種邊、原始位置都在起點 `radiusM` + 該點精度內、達 `stayMs` 時，`phoneStationaryPresentationStops` 把它當成 `coarse` 的靜止段：貼著同地停留就併進那個停留，否則是不編號停留。所以清單「不到 30 分的中斷併入旁邊」不會把它併成 0 m 的走路。量到 ≥ `stillMps` 的可信速度仍照走路計算。
 - `__tests__/PhoneCoarseStationary.test.js` 用虛構資料鎖住這些行為。

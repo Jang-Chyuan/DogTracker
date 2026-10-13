@@ -1,5 +1,5 @@
 import { PhoneMotion, replayPhoneMotion } from '../src/locationTracker/PhoneMotion';
-import { historyTimeline } from '../src/history/HistoryTimeline';
+import { historyTimeline, phoneStationaryPresentationStops } from '../src/history/HistoryTimeline';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { todayRouteDistance } from '../src/tracking/TodayDistance';
 import { historyVisits } from '../src/history/HistoryStops';
@@ -114,12 +114,50 @@ describe('history of a phone standing still on coarse fixes', () => {
     const still = model.edges.filter(e => e.start >= base + 305000 && e.end <= base + 1315000);
     expect(still.length).toBeGreaterThan(150);
     expect(still.every(e => e.mode === 'gap' && e.uncertain && e.stillUnplaced && e.countedDistanceM === 0)).toBe(true);
-    expect(model.nodes.some(n => n.type === 'gap' && n.reason === 'uncertain'
-      && n.end - n.start >= 15 * 60000)).toBe(true);
-    // The rows on either side are the two walks only.
-    const foot = model.nodes.filter(n => n.type === 'movement' && n.mode === 'walking');
+    // The <30-minute fold must not make it 「走路 27 分」: it is an unnumbered stay.
+    const rowsShown = timelinePresentation(model.nodes);
+    const stay = rowsShown.find(n => n.type === 'stop');
+    expect(stay).toMatchObject({ presentationOnly: 'phone-stationary', number: null, coarse: true });
+    expect(stay.end - stay.start).toBeGreaterThanOrEqual(16 * 60000);
+    const foot = rowsShown.filter(n => n.type === 'movement' && n.mode === 'walking');
     expect(foot).toHaveLength(2);
-    for (const walk of foot) expect(walk.durationMs).toBeLessThanOrEqual(5 * 60000 + 5000);
+    for (const walk of foot) expect(walk.end - walk.start).toBeLessThanOrEqual(5 * 60000 + 5000);
+    expect(model.distanceM).toBeGreaterThan(650);
+  });
+
+  test('weak GPS of a still phone right after a stay is that stay\'s time', () => {
+    // Stay 5 min on good fixes, 60 s without a saved row (the detector
+    // restarts), then 15 min of coarse still fixes there, then walk on.
+    const rows = [];
+    for (let s = 0; s < 300; s += 5) rows.push(fix(s, s * 1.2, 0, { raw_speed_kmh: 4.32, speed_kmh: 4.32 }));
+    for (let s = 300; s < 600; s += 5) rows.push(fix(s, 360 + (s % 2)));
+    for (let s = 660; s < 1560; s += 5) rows.push(fix(s, 360 + wobble(s / 5, 18)[0], wobble(s / 5, 18)[1],
+      { accuracy: coarse(s / 5) }));
+    for (let s = 1560; s < 1860; s += 5) rows.push(fix(s, 360 + (s - 1560) * 1.2, 0,
+      { raw_speed_kmh: 4.32, speed_kmh: 4.32 }));
+    const model = timeline(rows);
+    expect(model.edges.filter(e => e.stillUnplaced).length).toBeGreaterThan(150);
+    const shown = timelinePresentation(model.nodes);
+    const stays = shown.filter(n => n.type === 'stop');
+    expect(stays).toHaveLength(1);
+    expect(stays[0].number).toBe(1);
+    expect(stays[0].end).toBeGreaterThanOrEqual(base + 1555000);
+    expect(shown.filter(n => n.type === 'movement' && n.mode === 'walking')
+      .every(n => n.end - n.start <= 5 * 60000 + 5000)).toBe(true);
+  });
+
+  test.each([[0.02, 1], [0.5, 0]])('still weak GPS drifting %s m/s gives %i unnumbered stay', (speed, count) => {
+    // Synthetic edges: weak GPS of a phone measuring itself still, 40 m fixes.
+    const p = (s, extra = {}) => ({ ...fix(s, s * speed, 0, { accuracy: 40 }), raw_latitude: 25 + s * speed / 111195,
+      raw_longitude: 121, phoneMotionState: 'unknown', phoneStationary: false, phoneConfirmedMovement: false, ...extra });
+    const edges = Array.from({ length: 120 }, (_, i) => ({ from: p(i * 5), to: p(i * 5 + 5),
+      start: base + i * 5000, end: base + i * 5000 + 5000, durationMs: 5000, gap: true, uncertain: true,
+      stillUnplaced: true, bridged: false, mode: 'gap', countedDistanceM: 0 }));
+    const stops = phoneStationaryPresentationStops(edges);
+    expect(stops).toHaveLength(count);
+    if (count) expect(stops[0]).toMatchObject({ number: null, coarse: true, accuracyM: 40 });
+    // Without stillUnplaced the same weak GPS proves nothing.
+    expect(phoneStationaryPresentationStops(edges.map(e => ({ ...e, stillUnplaced: false })))).toEqual([]);
   });
 
   test('today\'s distance agrees with the history for both', () => {
