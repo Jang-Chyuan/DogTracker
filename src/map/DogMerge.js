@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { coordinate as toCoordinate } from '../tracking/RouteSamples';
 import { ridesAlong } from '../placement/RideAlong';
+import { advanceBattery, batteryReading, plausibleBattery } from '../tracking/BatteryPlausibility';
 
 // A slave_id identifies the same dog across the whole team, whichever Master
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
@@ -30,7 +31,7 @@ function bleCandidate(point, samples) {
   const distanceMeters = Number.isFinite(point.distanceMeters) ? point.distanceMeters : null;
   const readings = {
     speedKmh: Number.isFinite(point.speedKmh) ? point.speedKmh : null,
-    batteryPercentage: point.batteryValid && Number.isFinite(point.batteryPercentage)
+    batteryPercentage: point.batteryValid && plausibleBattery(point.batteryPercentage, point.batteryMillivolts)
       ? point.batteryPercentage : null,
     distanceMeters,
   };
@@ -65,7 +66,7 @@ function bleCandidate(point, samples) {
 // A dog stays on the map however old its last position is (v3 §6: older than
 // 24 hours it is kept, grey); pass `maxAgeMs` only to limit what is read.
 export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
-  now = Date.now(), maxAgeMs = Infinity, windowMs = null, holds = {}, statuses = {}, ride = null }) {
+  now = Date.now(), maxAgeMs = Infinity, windowMs = null, holds = {}, statuses = {}, ride = null, batteries = {} }) {
   const local = bleCandidate(point, samples);
   const dogs = new Map();
   if (local) dogs.set(local.slaveId, local);
@@ -84,8 +85,8 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       // The downloaded row carries these too, so a cloud dog reads the same as
       // a BLE one instead of being a thinner row.
       speedKmh: Number.isFinite(row.speed_kmh) ? row.speed_kmh : null,
-      batteryPercentage: Number.isFinite(row.battery_percentage)
-        ? row.battery_percentage : null,
+      batteryPercentage: plausibleBattery(row.battery_percentage, row.battery_mv)
+        && row.battery_valid !== 0 && row.battery_valid !== false ? row.battery_percentage : null,
     });
   }
   const packets = new Map();
@@ -103,6 +104,7 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
     slave_id: point.slaveId, master_id: point.masterId, source: 'ble',
     received_at: point.receivedAt, slave_lat: point.slaveLat, slave_lon: point.slaveLon,
     battery_percentage: point.batteryPercentage, battery_valid: point.batteryValid,
+    battery_mv: point.batteryMillivolts,
     speed_kmh: point.speedKmh, distance_meters: point.distanceMeters,
     satellites: point.satellites, hdop: point.hdop, rssi: point.rssi, snr: point.snr,
     usb_present: point.usbPresent,
@@ -157,8 +159,17 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const positionAt = held ? held.anchorAt ?? lastPacketAt : dog.receivedAt;
       const stale = !(held || dog.coordinate) || (!communicating && !charging);
       const noFix = packet && !packet.position;
+      // The newest packet's battery, judged with the dog's earlier readings
+      // (HoldStore over the same rows; BatteryPlausibility): a bad packet
+      // (0% without an empty cell, a sudden unconfirmed drop) keeps the last
+      // believed reading and its time. None when the packet has no valid one.
+      const reading = packet ? batteryReading(packet.row, packet.time) : null;
+      const batteryState = reading ? advanceBattery(batteries?.[dog.slaveId] ?? null, reading) : null;
       return { ...dog, ...(held ? { coordinate: held.coordinate, heldReason: held.reason,
         heldSince: held.since, heldSource: held.source,
+        // Where the history's 室內 node of this hold starts (HoldStore.step);
+        // the card's 「室內・N 分」 counts from it.
+        heldFrom: Number.isFinite(held.from) ? held.from : held.since,
         receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
         // For DogFreshness: the newest valid position and the newest packet,
@@ -172,10 +183,11 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
         retained: held ? false : dog.retained || !!noFix,
         communicationStatus: !communicating ? t("c735")
           : noFix ? t("c736") : t("c737"),
-        batteryPercentage: packet
-          ? (packet.row.battery_valid !== 0 && packet.row.battery_valid !== false
-            && Number.isFinite(packet.row.battery_percentage) ? packet.row.battery_percentage : null)
-          : dog.batteryPercentage,
+        batteryPercentage: packet ? batteryState?.accepted?.percentage ?? null : dog.batteryPercentage,
+        // When that reading came (older than the packet when this one was not believed).
+        batteryAt: packet ? batteryState?.accepted?.at ?? null
+          : Number.isFinite(dog.batteryPercentage) ? dog.receivedAt : null,
+        batteryState,
         speedKmh: held || noFix ? null : packet?.row.speed_kmh ?? dog.speedKmh,
         distanceMeters: held || stale || noFix || packet?.source !== 'ble' ? null
           : packet.row.distance_meters ?? null,

@@ -14,7 +14,7 @@ export const LATEST_SINCE = 0;
  */
 // loaded: the first read has finished (A6 waits for it, so it never flashes
 // before the stored dogs are read).
-const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, error: '', loaded: false });
+const empty = () => ({ rows: [], packets: [], track: [], holds: {}, statuses: {}, ranges: {}, batteries: {}, error: '', loaded: false });
 // Pair content includes every exposed field (time repairs, master, quality and
 // status), not just IDs. These strings stay in memory and are never logged.
 function latestPairs(snapshot) {
@@ -177,7 +177,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         // query, and the card draws no line while the path switch is off.
         const readTrack = !latestFirst && readOwner && Number.isFinite(trackSinceMs)
           ? await database.trackBySlave(readOwner, now() - trackSinceMs) : [];
-        let holds = {}, statuses = {}, ranges = {};
+        let holds = {}, statuses = {}, ranges = {}, batteries = {};
         if (database.holdRows) {
           // A long pause rebuilds the hold trackers and replays range changes
           // since their checkpoints, including fixes outside the hold window.
@@ -231,6 +231,8 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           statuses = state.store.statuses();
           // Each dog's receiver-range judgement, fed by the same rows.
           ranges = state.store.ranges();
+          // Each dog's battery judged over the same rows (BatteryPlausibility).
+          batteries = state.store.batteries();
           await database.saveRangeState?.(owner, ranges);
         }
         const baseline = !acceptsCloud() && acceptsBaseline();
@@ -250,7 +252,7 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         // accepted by the independent latest reader for a newer publication.
         if (alive && (!latestFirst || acceptsCloud() || baseline || attempt.commit == null)) setCache({ owner, database, value: {
           rows: attempt.rows, packets: [...packets.filter(row => row.source !== 'cloud'), ...attempt.packets],
-          track: attempt.track, holds, statuses, ranges, error: '', loaded: true,
+          track: attempt.track, holds, statuses, ranges, batteries, error: '', loaded: true,
           cloudCommit: attempt.commit, ...(latestFirst ? { cachedBaseline: baseline, cloudPublication: attempt.cloudPublication ?? null,
             contextPairs: acceptsCloud() || baseline ? latestPairs(snapshot) : null } : {}),
         } });

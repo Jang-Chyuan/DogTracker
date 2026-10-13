@@ -18,7 +18,10 @@ import { t } from '../i18n';
 //   at most 0.05. 劇烈: the last 2 minutes both have data and both are at least
 //   0.8. Once either holds, it holds from the first minute of the first window
 //   that qualified (rest fills back 10 minutes, vigorous 2) until a window no
-//   longer qualifies.
+//   longer qualifies. Going back, a rest is broken only by a minute above 0.05:
+//   minutes without data (a window with fewer than 8 of 10) do not end it, so
+//   a few lost packets do not restart 「已 N 分鐘」. Its first minute is the
+//   first one with data after the last active minute.
 // - Otherwise 一般 when the last 10 minutes have enough data (8 of 10), and
 //   nothing ("—") when they do not.
 // The thresholds are provisional (design: 暫定 0.05／10 分鐘、0.8／2 分鐘,
@@ -115,12 +118,14 @@ function windowHolds(values, end, length, minData, test) {
 
 // From which minute the run that is going on at `end` started: the first
 // minute with data in the first of the consecutive qualifying windows ending
-// at `end` (a run never starts before there was data).
-function runStart(values, end, length, minData, test, earliest) {
+// at `end` (a run never starts before there was data). `extendNeeds` is how
+// many minutes with data an earlier window needs to carry the run back (0 for
+// a rest: only a minute failing `test` breaks it, missing data does not).
+function runStart(values, end, length, extendNeeds, test, earliest) {
   let last = end;
-  while (last - MINUTE >= earliest && windowHolds(values, last - MINUTE, length, minData, test)) last -= MINUTE;
+  while (last - MINUTE >= earliest && windowHolds(values, last - MINUTE, length, extendNeeds, test)) last -= MINUTE;
   let start = last - (length - 1) * MINUTE;
-  while (start < last && !values.has(start)) start += MINUTE;
+  while (start < end && !values.has(start)) start += MINUTE;
   return start;
 }
 
@@ -152,7 +157,8 @@ export function activityState(minutes = [], { end, config = ACTIVITY } = {}) {
     return run(config.vigorousMinutes, vigorousNeeds, vigorous, ACTIVITY_STATE.VIGOROUS);
   }
   if (windowHolds(values, end, config.restMinutes, restNeeds, rest)) {
-    return run(config.restMinutes, restNeeds, rest, ACTIVITY_STATE.REST);
+    // Now needs 8 of 10 minutes; going back, only an active minute ends it.
+    return run(config.restMinutes, 0, rest, ACTIVITY_STATE.REST);
   }
   if (windowHolds(values, end, config.restMinutes, restNeeds, () => true)) {
     return { state: ACTIVITY_STATE.NORMAL, since: null, durationMinutes: null };
@@ -171,16 +177,23 @@ export function durationText(minutes) {
 }
 
 /**
- * The card's 活動量 row: { word, detail, tone } — 「休息中」+「已 18 分鐘」
- * (tone 'rest'), 「劇烈活動」+「已 3 分鐘」 ('vigorous'), 「一般」 ('normal'),
- * 「—」 (null) when there is not enough data or the dog has no new position.
+ * The card's 活動量 row: { word, detail, speechDetail, tone } —
+ * 「休息中」+「已 18 分鐘」 (tone 'rest'), 「劇烈活動」+「已 3 分鐘」
+ * ('vigorous'), 「一般」 ('normal'), 「—」 (null) when there is not enough data
+ * or the dog has no new position. `speechDetail` is what TalkBack says for the
+ * minutes (「活動量低已 18 分鐘」): they are the collar's motion, not the
+ * 室內 minutes of the 位置 row.
  */
 export function activityWords(result) {
   switch (result?.state) {
-    case ACTIVITY_STATE.REST:
-      return { word: t('c069'), detail: t('c070', { duration: durationText(result.durationMinutes) }), tone: 'rest' };
-    case ACTIVITY_STATE.VIGOROUS:
-      return { word: t('c350'), detail: t('c070', { duration: durationText(result.durationMinutes) }), tone: 'vigorous' };
+    case ACTIVITY_STATE.REST: {
+      const duration = durationText(result.durationMinutes);
+      return { word: t('c069'), detail: t('c070', { duration }), speechDetail: t('c1280', { duration }), tone: 'rest' };
+    }
+    case ACTIVITY_STATE.VIGOROUS: {
+      const duration = durationText(result.durationMinutes);
+      return { word: t('c350'), detail: t('c070', { duration }), speechDetail: t('c1281', { duration }), tone: 'vigorous' };
+    }
     case ACTIVITY_STATE.NORMAL:
       return { word: t("c434"), detail: null, tone: 'normal' };
     default:

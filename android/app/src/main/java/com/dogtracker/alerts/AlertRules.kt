@@ -136,6 +136,9 @@ data class AlertDog(
   val charging: Boolean = false,
   val range: RangeState = RangeState(),
   val indoorState: String? = null,
+  // The battery judgement behind batteryPercentage (BatteryPlausibility):
+  // handed over by the app, moved on by every packet.
+  val battery: BatteryState? = null,
 )
 
 data class Packet(
@@ -154,6 +157,7 @@ data class Packet(
   val rssi: Double? = null,
   val snr: Double? = null,
   val speedKmh: Double? = null,
+  val batteryMillivolts: Double? = null,
 )
 
 object Dogs {
@@ -180,13 +184,21 @@ object Dogs {
     val anchor = tracker.coordinate()
     val held = anchor != null
     val range = Range.advance(dog.range, RangeRow(packet.time, packet.dog, packet.receiver, held))
+    // As DogMerge: the newest packet's reading judged with the earlier ones
+    // (a bad packet keeps the last believed reading), none when not valid.
+    val reading = packet.batteryPercentage?.let { BatteryReading(it.toDouble(), packet.batteryMillivolts, packet.time) }
+    val known = dog.battery ?: dog.batteryPercentage?.let {
+      // Handed over without a judgement: the app's reading is the believed one.
+      BatteryState(AcceptedBattery(it.toDouble(), dog.packetAt ?: 0L), null, dog.packetAt)
+    }
+    val battery = if (reading == null) known else BatteryPlausibility.advance(known, reading)
     return dog.copy(
       packetAt = packet.time,
       fixAt = if (packet.dog != null) packet.time else dog.fixAt,
       coordinate = anchor ?: packet.dog ?: dog.coordinate,
       held = held, farFixes = 0, indoorState = tracker.write(),
-      // As DogMerge: the newest packet's reading, none when it is not valid.
-      batteryPercentage = packet.batteryPercentage,
+      batteryPercentage = if (reading == null) null else battery?.accepted?.let { Math.round(it.percentage).toInt() },
+      battery = battery,
       charging = packet.usb ?: dog.charging,
       range = range,
     )
