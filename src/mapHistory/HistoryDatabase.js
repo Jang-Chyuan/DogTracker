@@ -144,7 +144,7 @@ export function createHistoryDatabase(db) {
     async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {} }) {
       const since = Number(start) - HISTORY_DAY_CONTEXT_MS;
       // A few minutes past midnight tell whether the last stay or hold goes on
-      // the next day (「接續隔天」); they are not part of this day.
+      // the next day (`continuesNextDay`); they are not part of this day.
       const until = Number(end) + HISTORY_DAY_AFTER_MS;
       const cursors = { ...after };
       // By id, not time: a cloud download can add rows older than the newest

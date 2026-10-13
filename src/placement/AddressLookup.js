@@ -171,6 +171,20 @@ Object.assign(TRADITIONAL, {
 const traditional = text =>
   text.replace(/./gu, char => TRADITIONAL[char] ?? char);
 
+// 2026-10-13: the geocoder's own line can put a 號 after a part that already
+// ends the house number (「中正路100號十三樓號」, 「21號之3號」, 「21號號」).
+// Drop that last 號, at the end of a line or before 「附近」 in a saved label;
+// a plain 「21號」「21之3號」 stays.
+const EXTRA_MARK = [
+  [/(樓|層|\dF)\s*號(?=$|附近)/giu, '$1'],
+  [/(號\s*之\s*[0-9一二三四五六七八九十]+)\s*號(?=$|附近)/gu, '$1'],
+  [/號\s*號(?=$|附近)/gu, '號'],
+];
+export function withoutExtraNumberMark(text) {
+  if (typeof text !== 'string') return text;
+  return EXTRA_MARK.reduce((value, [pattern, keep]) => value.replace(pattern, keep), text);
+}
+
 /** "338台灣桃園市蘆竹區大華里大竹北路630巷21號" → "蘆竹區大竹北路630巷21號" */
 export function shortAddress(line) {
   if (!line) return null;
@@ -179,6 +193,7 @@ export function shortAddress(line) {
     .replace(/^\d{3,6}\s*/, '')
     .replace(/^(台灣|臺灣)/, '')
     .trim();
+  text = withoutExtraNumberMark(text);
   // "3樓, No. 20號中正路…" and other address formats are left whole.
   if (/^\d/.test(text) || /No\./.test(text)) return text;
   text = text.replace(/^[^市縣]{2,3}[市縣]/, '');
@@ -351,7 +366,7 @@ export function createAddressLookup({
             (saved.value ||
               (!retry && now() - saved.failedAt < config.retryAfterMs))
           ) {
-            put(name, saved);
+            put(name, { ...saved, value: withoutExtraNumberMark(saved.value) });
             for (const listener of listeners) listener(name);
             return;
           }
@@ -383,7 +398,7 @@ export function createAddressLookup({
                   if (!valid(point)) return null;
                   return (
                     cached(point) ||
-                    (await store?.find(point).catch(() => null))?.value ||
+                    withoutExtraNumberMark((await store?.find(point).catch(() => null))?.value) ||
                     null
                   );
                 }),

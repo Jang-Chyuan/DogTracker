@@ -1,6 +1,6 @@
 import { t as i18nT } from '../src/i18n';
 // 057a: how each day's time-line list ends (判定表「清單節點的內容」「「現在」和
-// 「最後 12:05」」「記錄被迫中止的終點膠囊」, 接續隔天), through useHistoryScreen
+// 「最後 12:05」」「記錄被迫中止的終點膠囊」, past midnight), through useHistoryScreen
 // as MapScreen drives it (recording from the phone's live state).
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
@@ -70,11 +70,12 @@ test('a past day this phone holds opens (preset goTo) and ends on 「結束」',
   expect(last).toMatchObject({ type: 'end', label: i18nT('c330') });
 });
 
-test('a day whose walk runs past midnight ends 「接續隔天」', async () => {
+// 2026-10-13 (approved): no 「接續隔天」 capsule on the end row.
+test('a day whose walk runs past midnight ends without a capsule', async () => {
   const { screen, last } = await open('history-cross-midnight');
   expect(screen.today).toBe(false);
   expect(last.continuesNextDay).toBe(true);
-  expect(nodePill(last)).toEqual({ text: i18nT('c334'), tone: 'plain' });
+  expect(nodePill(last)).toBeNull();
 });
 
 test('indoors until now: the list ends on the house node 「室內・N 分」', async () => {

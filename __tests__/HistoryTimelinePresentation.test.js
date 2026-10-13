@@ -29,7 +29,8 @@ test.each([[undefined], ['uncertain']])('a same-session %s break under 30 min is
   const folded = timelinePresentation([walk(0, MIN), same(MIN, 29 * MIN, reason), walk(29 * MIN, 30 * MIN)]);
   expect(folded).toHaveLength(1);
   expect(folded[0]).toMatchObject({ start: 0, end: 30 * MIN, durationMs: 30 * MIN, unlocatedMs: 28 * MIN, countedDistanceM: 40 });
-  expect(sectionText(folded[0]).rest).toBe('・0.0 km');
+  // One distance formatter (utils/distanceText): 40 m.
+  expect(sectionText(folded[0]).rest).toBe('・40 m');
   const long = timelinePresentation([walk(0, MIN), same(MIN, 31 * MIN, reason), walk(31 * MIN, 32 * MIN)]);
   expect(long.map(n => n.type)).toEqual(['movement', 'gap', 'movement']);
   expect(long[0].unlocatedMs).toBeUndefined();

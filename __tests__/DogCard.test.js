@@ -65,7 +65,7 @@ test('A3b on screen: name, 訊號源, headline, rows in order, red and amber 「
   const text = flatten(renderer.toJSON());
   expect(text).toContain('豆豆');
   expect(text).toContain('訊號源 4');
-  expect(text).toContain('845 m');
+  expect(text).toContain('850 m');
   expect(text).toContain('離手機・最後位置');
   const order = ['位置', '電量', '接收範圍', '活動量'].map(label => text.indexOf(label));
   expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -99,7 +99,7 @@ test('only 活動量, the pencil and 看軌跡 can be pressed; each reads out wh
   expect(onTrack).toHaveBeenCalledTimes(1);
   // The headline is a heading TalkBack reads as one.
   expect(renderer.root.findAll(node => node.props.accessibilityRole === 'header')[0].props.accessibilityLabel)
-    .toBe('豆豆，東北方 845 公尺，離手機，最後位置');
+    .toBe('豆豆，東北方 850 公尺，離手機，最後位置');
 });
 
 test('the arrow points at the dog on the map as drawn (turned by the map heading)', async () => {

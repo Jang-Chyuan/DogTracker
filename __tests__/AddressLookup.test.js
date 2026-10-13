@@ -3,6 +3,7 @@ import { act, create } from 'react-test-renderer';
 import { distanceMeters } from '../src/placement/IndoorHold';
 import {
   shortAddress,
+  withoutExtraNumberMark,
   describePlace,
   createAddressLookup,
   ADDRESS_CONFIG,
@@ -31,6 +32,42 @@ test('addresses are shortened and written in traditional characters', () => {
   expect(
     shortAddress('3樓, No. 20號中正路武陵里桃園區桃園市台灣 330'),
   ).toContain('No. 20');
+});
+
+// 2026-10-13, invented addresses: a geocoder line with a 號 after the floor
+// (or after 之N, or doubled) reads 「…十三樓附近」, never 「十三樓號附近」.
+test.each([
+  ['330台灣桃園市桃園區中正路100號十三樓號', '桃園區中正路 100 號十三樓'],
+  ['330台灣桃園市桃園區民生路8號二樓號', '桃園區民生路 8 號二樓'],
+  ['330台灣桃園市桃園區復興路20巷5號七樓號', '桃園區復興路 20 巷 5 號七樓'],
+  ['330台灣桃園市桃園區莒光街7號3樓號', '桃園區莒光街 7 號 3 樓'],
+  ['330台灣桃園市桃園區成功路21號之3號', '桃園區成功路 21 號之 3'],
+  ['330台灣桃園市桃園區大興路32號號', '桃園區大興路 32 號'],
+])('no extra 號: %s', (line, short) => {
+  expect(shortAddress(line)).toBe(short);
+  expect(describePlace(DOG_4, [{ line, ...DOG_4 }])).toBe(`${short}附近`);
+});
+
+test.each([
+  ['330台灣桃園市桃園區中正路100號', '桃園區中正路 100 號'],
+  ['330台灣桃園市桃園區成功路21之3號', '桃園區成功路 21 之 3 號'],
+  ['330台灣桃園市桃園區民生路8號二樓', '桃園區民生路 8 號二樓'],
+])('a proper house number keeps its 號: %s', (line, short) => {
+  expect(shortAddress(line)).toBe(short);
+});
+
+test('labels saved before the fix read without the extra 號 (online and offline)', async () => {
+  expect(withoutExtraNumberMark('桃園區中正路 100 號十三樓號附近')).toBe('桃園區中正路 100 號十三樓附近');
+  expect(withoutExtraNumberMark('桃園區成功路 21 號之 3 號附近（約 120 m）')).toBe('桃園區成功路 21 號之 3附近（約 120 m）');
+  expect(withoutExtraNumberMark('桃園區大興路 32 號附近')).toBe('桃園區大興路 32 號附近');
+  expect(withoutExtraNumberMark(null)).toBeNull();
+  const saved = { find: async () => ({ value: '桃園區民生路 8 號二樓號附近' }), save: async () => {} };
+  const offline = createAddressLookup({ native: { reverseGeocode: jest.fn(), isOnline: jest.fn(async () => false) }, store: saved });
+  await expect(offline.lookupAddresses([DOG_4])).resolves.toEqual(['桃園區民生路 8 號二樓附近']);
+  const online = createAddressLookup({ native: { reverseGeocode: jest.fn() }, store: saved });
+  online.lookup(DOG_4);
+  await flush();
+  expect(online.lookup(DOG_4)).toBe('桃園區民生路 8 號二樓附近');
 });
 
 test('a near address reads "附近"; a far one says how far, or only the district', () => {
