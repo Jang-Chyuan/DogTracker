@@ -313,6 +313,34 @@ describe('the history screen shows the list', () => {
     jest.useRealTimers();
   });
 
+  test('useHistoryDayRows keeps my route\'s fixes stamped in the future out until their time comes', async () => {
+    jest.useFakeTimers();
+    let time = DAY + 9 * 60 * MINUTE;
+    const path = [1, 2, 3].map(i => phoneHistoryRow({ id: i, time: DAY + 8 * 60 * MINUTE + i * 10000,
+      latitude: 24.98, longitude: 121.31, accuracy: 5 }));
+    // Recorded while the clock was set 20 minutes ahead.
+    const ahead = phoneHistoryRow({ id: 4, time: time + 20 * MINUTE, latitude: 24.99, longitude: 121.31, accuracy: 5 });
+    let first = true;
+    const read = jest.fn(async () => {
+      const rows = first ? [...path, ahead] : [];
+      first = false;
+      return { rows, seed: [], after: { done: true } };
+    });
+    let result;
+    function Probe() {
+      result = useHistoryDayRows({ read, subject: 'phone', slaveId: null, day: DAY, clock: () => time });
+      return null;
+    }
+    let renderer;
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(result.rows.map(row => row.id)).toEqual([1, 2, 3]);
+    time += 21 * MINUTE;
+    await act(async () => jest.advanceTimersByTimeAsync(15000));
+    expect(result.rows.map(row => row.id)).toEqual([1, 2, 3, 4]);
+    await act(async () => renderer.unmount());
+    jest.useRealTimers();
+  });
+
   test('history-mode-switch on the history screen: summary, two numbered switch points, the car row', async () => {
     const MapView = require('react-native-maps').default;
     const { Platform } = require('react-native');

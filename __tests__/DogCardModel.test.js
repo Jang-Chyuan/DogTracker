@@ -181,6 +181,16 @@ test('活動量: judged at now; 「—」 when stale; old readings judged when t
   expect(row(model, 'activity').speech).toBe('活動量，休息中，活動量低已 20 分鐘，09:09');
 });
 
+test('活動量: readings a few minutes behind the position are judged up to their newest minute, not 「—」', () => {
+  // 2026-10-13: the downloaded archive the card reads trailed the latest
+  // positions after a cold start; four minutes behind read 「沒有資料」.
+  const rows = [];
+  for (let time = NOW - 40 * MINUTE; time < NOW - 4 * MINUTE; time += 10000) rows.push({ time, activity: 0.02, slave_id: 6 });
+  const activity = { minutes: activityMinutes(activityReadings(rows, 'ble'), { now: NOW }), newestAt: rows.at(-1).time };
+  expect(activityRow(activity, { reference: NOW, positionAt: NOW - 5000, stale: false }))
+    .toMatchObject({ word: i18nT('c069'), detail: '已 36 分鐘', at: null });
+});
+
 test('the card falls back to the map blue dot when the recording service has no fix', () => {
   const { nativePhoneReading } = require('../src/map/DogCardModel');
   const now = 1_000_000;
