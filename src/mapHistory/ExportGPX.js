@@ -14,7 +14,7 @@ function waypoint(subject, item, piece, hold, gaps) {
   const prefix = subject.kind === 'phone' ? '' : `${subjectName(subject)} `;
   // A stay the list shows inside 出發 or the end has no number (#154): 「停留・N 分」.
   const value = minutes(piece.end - piece.start - excluded);
-  const name = hold ? t("c792", { prefix, value }) : item.number == null ? t("c1291", { prefix, value })
+  const name = hold ? t("c792", { prefix, value }) : item.number == null ? t("c1310", { prefix, value })
     : t("c793", { prefix, number: item.number, value });
   const address = item.gpxCoordinate ? item.gpxAddress : item.address;
   const desc = [address, excluded ? t('c337', { duration: t('c653', { minutes: minutes(excluded) }) }) : null].filter(Boolean).join('・');

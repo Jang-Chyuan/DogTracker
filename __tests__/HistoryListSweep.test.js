@@ -141,7 +141,7 @@ test('stays shown inside 出發 and the end take no number; the others count fro
   const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] },
     range: { start: rows[0].time, end: rows.at(-1).time }, subject: 'phone' });
   const names = [...buildGPX(snapshot).matchAll(/<wpt[^>]*><time>[^<]*<\/time><name>([^<]*)<\/name>/g)].map(m => m[1]);
-  const unnumbered = new RegExp(`^${t('c1291', { prefix: '', value: '\\d+' })}$`);
+  const unnumbered = new RegExp(`^${t('c1310', { prefix: '', value: '\\d+' })}$`);
   const numbered = new RegExp(`^${t('c793', { prefix: '', number: 1, value: '\\d+' })}$`);
   expect(names).toHaveLength(3);
   expect(names[0]).toMatch(unnumbered);
