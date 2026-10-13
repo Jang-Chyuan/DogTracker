@@ -20,6 +20,26 @@ index 555ab38..5c86c9a 100644
                  markerView.update(true);
              });
          }
+diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java
+index c2ea41f..fbfe947 100644
+--- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java
++++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/fabric/MarkerManager.java
+@@ -190,6 +190,15 @@ public class MarkerManager extends ViewGroupManager<MapMarker> implements RNMaps
+         view.setUpdated(true);
+     }
+ 
++    // DOGTRACKER_FABRIC_MARKER_ZINDEX: React's inherited view zIndex setter
++    // does not update Google's marker after its initial MarkerOptions.
++    @Override
++    public void setZIndex(MapMarker view, float zIndex) {
++        super.setZIndex(view, zIndex);
++        view.setZIndex(Math.round(zIndex));
++        view.setUpdated(true);
++    }
++
+     @Override
+     public void setTitle(MapMarker view, @Nullable String value) {
+         view.setTitle(value);
 diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java
 index 3e0250f..95cc196 100644
 --- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapMarker.java
