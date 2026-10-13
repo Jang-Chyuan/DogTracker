@@ -108,8 +108,8 @@ describe('off-screen hints', () => {
   });
 
   test('a dog under the card is off screen; the hint stays clear of the buttons', () => {
-    // Below the visible map (y > 600), to the right: bottom hint left of the buttons.
-    const [bottom] = edgeHints([marker(1, 0, 0)], { 1: { x: 390, y: 700 } }, view);
+    // Below the visible map (y > 600), a little right: bottom hint left of the buttons.
+    const [bottom] = edgeHints([marker(1, 0, 0)], { 1: { x: 250, y: 700 } }, view);
     expect(bottom.side).toBe('bottom');
     expect(bottom.y).toBe(600 - 8 - 36);
     expect(bottom.x + bottom.width).toBeLessThanOrEqual(400 - 16 - 48 - 12);
@@ -120,6 +120,13 @@ describe('off-screen hints', () => {
     // Above the visible map: top hint under the top controls.
     const [top] = edgeHints([marker(1, 0, 0)], { 1: { x: 200, y: -300 } }, view);
     expect(top).toMatchObject({ side: 'top', y: 108 });
+    // Down and to the right (61° below the right): a corner hint, beside the
+    // buttons rather than on them.
+    const [corner] = edgeHints([marker(1, 0, 0)], { 1: { x: 390, y: 700 } }, view);
+    expect(corner.side).toBe('bottomRight');
+    // The nearest free place: along the bottom, left of the buttons.
+    expect(corner).toMatchObject({ y: 600 - 8 - 36 });
+    expect(corner.x + corner.width).toBe(400 - 16 - 48 - 12);
   });
 
   test('TalkBack reads the side, the dogs and which have problems', () => {

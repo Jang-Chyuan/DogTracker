@@ -25,7 +25,7 @@ import { dogMarkers } from '../src/map/DogMarkers';
 import { lastTimeText } from '../src/tracking/DogFreshness';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
 import { coldStartCoordinates, frameAllCoordinates, framePadding, phoneFix } from '../src/map/MapFraming';
-import { edgeHints } from '../src/map/EdgeHints';
+import { boxesOverlap, edgeHints, hintBox } from '../src/map/EdgeHints';
 import { CARD_ACTIVITY_LOOKBACK_MS, dogCardReadings } from '../src/activity/DogCardReadings';
 import { dogCard, phoneReading } from '../src/map/DogCardModel';
 import { cloudClock, dogFreshness, isIndoorHold } from '../src/tracking/DogFreshness';
@@ -348,6 +348,24 @@ test('dogs-offscreen: the first view frames 豆豆 and the phone; five dogs off 
   expect(left.slaveIds.sort()).toEqual([2, 3, 5, 6, 8]);
   expect(right.slaveIds).toEqual([9]);
   expect(left.label).toMatch(/^左邊畫面外有 5 隻狗：阿福、.*，其中阿福有問題，點兩下移過去$/);
+});
+
+test('dogs-offscreen-8way: a hint for each of the eight directions, corners with their own word', async () => {
+  const state = await screen('dogs-offscreen-8way');
+  const phone = phoneFix(state.fixture.livePhone);
+  const first = coldStartCoordinates(state.markers, phone);
+  expect(first).toEqual([state.marker(4).coordinate, phone]);
+  const { points, view } = fitProjection(first, state.markers);
+  const hints = edgeHints(state.markers, points, view);
+  const bySide = Object.fromEntries(hints.map(hint => [hint.side, hint.slaveIds]));
+  expect(bySide).toEqual({ top: [6], topRight: [8, 12], right: [9], bottomRight: [5], bottom: [3],
+    bottomLeft: [2], left: [10], topLeft: [11, 13] });
+  expect(hints.find(hint => hint.side === 'topRight').label)
+    .toBe('右上方畫面外有 2 隻狗：阿福、狗 12，其中阿福有問題，點兩下移過去');
+  // No two hints overlap.
+  for (const one of hints) for (const other of hints) {
+    if (one !== other) expect(boxesOverlap(hintBox(one), hintBox(other))).toBe(false);
+  }
 });
 
 test('cold-start-far-cloud: 阿福 (26 h, ~10 km) is left out of the first view; 框住全部 frames it', async () => {
