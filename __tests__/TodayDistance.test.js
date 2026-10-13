@@ -325,7 +325,7 @@ describe('useTodayRoute', () => {
 
 test('a bottom hint sits above the bottom row (「今天 x km」 beside 我的位置)', () => {
   const { edgeHints } = require('../src/map/EdgeHints');
-  const marker = { slaveId: 4, coordinate: START, problem: false, stale: false, tag: { text: '豆豆' } };
+  const marker = { slaveId: 4, coordinate: START, problem: true, stale: true, tag: { text: '豆豆' } };
   const view = { width: 392, height: 830, top: 100, bottom: 40 };
   const [plain] = edgeHints([marker], { 4: { x: 150, y: 1200 } }, view);
   const [raised] = edgeHints([marker], { 4: { x: 150, y: 1200 } }, { ...view, bottomRow: 48 });

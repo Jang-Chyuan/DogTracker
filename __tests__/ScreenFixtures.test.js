@@ -332,25 +332,26 @@ test('dogs-overlap: tapping 「3 隻」 lists the three dogs, 阿福 with its lo
   expect(state.marker(4).note).toBeNull();
 });
 
-test('dogs-offscreen: the first view frames 豆豆 and the phone; five dogs off the left (3 faces + 「+2」, 阿福 first), one off the right', async () => {
+test('dogs-offscreen: the first view frames 豆豆 and the phone; the four dogs with a problem off the left share one hint (3 faces + 「+1」), healthy ones get none', async () => {
   const state = await screen('dogs-offscreen');
   const phone = phoneFix(state.fixture.livePhone);
   const first = coldStartCoordinates(state.markers, phone);
   expect(first).toEqual([state.marker(4).coordinate, phone]);
   expect(state.marker(8)).toMatchObject({ problem: true, stale: true, source: 'cloud' });
+  expect([2, 3, 5].map(id => state.marker(id).problem)).toEqual([true, true, true]);
+  expect([6, 9].map(id => state.marker(id).problem)).toEqual([false, false]);
   const { points, view } = fitProjection(first, state.markers);
   const hints = edgeHints(state.markers, points, view);
-  expect(hints.map(hint => hint.side)).toEqual(['left', 'right']);
-  const [left, right] = hints;
-  expect(left.faces.map(face => face.slaveId)[0]).toBe(8);
-  expect(left.faces).toHaveLength(3);
-  expect(left.extra).toBe(2);
-  expect(left.slaveIds.sort()).toEqual([2, 3, 5, 6, 8]);
-  expect(right.slaveIds).toEqual([9]);
-  expect(left.label).toMatch(/^左邊畫面外有 5 隻狗：阿福、.*，其中阿福有問題，點兩下移過去$/);
+  expect(hints.map(hint => hint.side)).toEqual(['left']);
+  const [left] = hints;
+  expect(left.faces.map(face => face.slaveId)).toEqual([2, 3, 5]);
+  expect(left.faces.every(face => face.problem)).toBe(true);
+  expect(left.extra).toBe(1);
+  expect(left.slaveIds).toEqual([2, 3, 5, 8]);
+  expect(left.label).toBe('左邊畫面外有 4 隻狗有問題：狗 2、狗 3、狗 5、阿福，點兩下移過去');
 });
 
-test('dogs-offscreen-8way: a hint for each of the eight directions, corners with their own word', async () => {
+test('dogs-offscreen-8way: only the directions with a problem dog get a hint, corners with their own word', async () => {
   const state = await screen('dogs-offscreen-8way');
   const phone = phoneFix(state.fixture.livePhone);
   const first = coldStartCoordinates(state.markers, phone);
@@ -358,14 +359,27 @@ test('dogs-offscreen-8way: a hint for each of the eight directions, corners with
   const { points, view } = fitProjection(first, state.markers);
   const hints = edgeHints(state.markers, points, view);
   const bySide = Object.fromEntries(hints.map(hint => [hint.side, hint.slaveIds]));
-  expect(bySide).toEqual({ top: [6], topRight: [8, 12], right: [9], bottomRight: [5], bottom: [3],
-    bottomLeft: [2], left: [10], topLeft: [11, 13] });
+  expect(bySide).toEqual({ topRight: [8], bottomRight: [5], bottom: [3], left: [10], topLeft: [11, 13] });
+  // Reading order for TalkBack.
+  expect(hints.map(hint => hint.side)).toEqual(['topLeft', 'topRight', 'left', 'bottom', 'bottomRight']);
   expect(hints.find(hint => hint.side === 'topRight').label)
-    .toBe('右上方畫面外有 2 隻狗：阿福、狗 12，其中阿福有問題，點兩下移過去');
+    .toBe('右上方畫面外有 1 隻狗有問題：阿福，點兩下移過去');
+  expect(hints.find(hint => hint.side === 'topLeft').label)
+    .toBe('左上方畫面外有 2 隻狗有問題：狗 11、狗 13，點兩下移過去');
   // No two hints overlap.
   for (const one of hints) for (const other of hints) {
     if (one !== other) expect(boxesOverlap(hintBox(one), hintBox(other))).toBe(false);
   }
+});
+
+test('dogs-offscreen-healthy: the same eight dogs, none with a problem — no off-screen hint at all', async () => {
+  const state = await screen('dogs-offscreen-healthy');
+  expect(state.markers.filter(marker => marker.problem)).toEqual([]);
+  const phone = phoneFix(state.fixture.livePhone);
+  const { points, view } = fitProjection(coldStartCoordinates(state.markers, phone), state.markers);
+  expect(Object.values(points).filter(point => point.x < 0 || point.x > view.width
+    || point.y < view.top || point.y > view.height - view.bottom)).toHaveLength(10);
+  expect(edgeHints(state.markers, points, view)).toEqual([]);
 });
 
 test('cold-start-far-cloud: 阿福 (26 h, ~10 km) is left out of the first view; 框住全部 frames it', async () => {
@@ -377,7 +391,7 @@ test('cold-start-far-cloud: 阿福 (26 h, ~10 km) is left out of the first view;
   const first = coldStartCoordinates(state.markers, phone);
   expect(first).toEqual([state.marker(4).coordinate, state.marker(5).coordinate, phone]);
   const { points, view } = fitProjection(first, state.markers);
-  // Off the first view: an edge hint points at it.
+  // Off the first view, with a problem (no new position): a hint points at it.
   expect(edgeHints(state.markers, points, view).flatMap(hint => hint.slaveIds)).toEqual([8]);
   const all = frameAllCoordinates(state.markers, phone);
   expect(all).toContainEqual(far.coordinate);

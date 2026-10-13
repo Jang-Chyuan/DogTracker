@@ -1,10 +1,13 @@
 import { t } from '../i18n';
-// Dogs outside the visible map (design v3 A1「畫面外的狗用小頭像提示」, 判定表
-// 「畫面邊緣的提示」「畫面外提示：左右兩邊都有狗在畫面外」, DESIGN.md §9.6 and
-// §15「畫面外提示」). Pure: given where each dog is on screen, which hints to
-// draw where. The renderer draws them (EdgeHintView) and frames a hint's dogs
-// when it is tapped.
+// Dogs with a problem outside the visible map (design v3 A1「畫面外的狗用小頭像
+// 提示」, DESIGN.md §9.6 and §15「畫面外提示」). Pure: given where each dog is on
+// screen, which hints to draw where. The renderer draws them (EdgeHintView)
+// and frames a hint's dogs when it is tapped.
 //
+// - Only dogs with a problem (the red 「!」 on the map: not in receiver range,
+//   battery low, no new position) get a hint; a healthy dog off screen shows
+//   nothing (2026-10-13: hints for every dog cluttered the map; a problem must
+//   stay findable when the dog is off screen). 框住全部 shows every dog.
 // - Eight directions, by the dog's bearing from the middle of the visible map
 //   on screen (screen space: a turned map turns the hints with it): the four
 //   sides, and the four corners for dogs within 22.5° of a diagonal. One hint
@@ -13,12 +16,14 @@ import { t } from '../i18n';
 //   visible map; a corner hint sits in its corner, or next to it along either
 //   edge when a fixed control is there (the compass under the gear, the
 //   bottom right buttons).
-// - Up to 3 small faces (dogs with a problem first, so their red frame shows,
-//   then by signal-source number: a stable order), then 「+N」 for the rest.
+// - Up to 3 small faces, all with the red frame, in DogOrder's stable order
+//   (the open dog first, then by signal-source number), then 「+N」 for the
+//   rest.
 // - The visible map is the screen minus the top controls and the bottom card;
 //   a dog under the card counts as off screen.
 import { layout, size as sizes, space } from '../theme/tokens';
 import { tagSize } from './DogMarkers';
+import { compareDogOrder } from './DogOrder';
 
 const hint = sizes.edgeHint;
 export const EDGE_HINT_MARGIN = space.s;
@@ -30,16 +35,6 @@ const GAP = space.xs;
 const plusWidth = extra => (extra > 0 ? GAP + 9 * String(`+${extra}`).length : 0);
 
 const SIDE_WORD = { left: t("c749"), right: t("c750"), top: t("c751"), bottom: t("c746") };
-
-/**
- * The one stable order of dogs (§9.6, #139): the open dog first, then dogs
- * with a problem (their faces carry the red frame), then by signal-source
- * number. Not by distance or screen position, which change with every camera
- * move. The card's ‹ › switch uses it too (DogSwitch.switchOrder).
- */
-export const compareDogOrder = (left, right) => Number(!!right.selected) - Number(!!left.selected)
-  || Number(!!right.problem) - Number(!!left.problem)
-  || left.slaveId - right.slaveId;
 
 /** The hint's width for `count` faces and `extra` more dogs. */
 export function edgeHintWidth(count, extra = 0) {
@@ -68,14 +63,12 @@ export function edgeDirection(angle) {
 export const directionAngle = direction => EDGE_DIRECTIONS.indexOf(direction) * 45;
 
 /**
- * TalkBack: 「左邊畫面外有 2 隻狗：小黑、豆豆，其中豆豆有問題，點兩下移過去」,
- * 「右上方畫面外有 1 隻狗：阿福，點兩下移過去」.
+ * TalkBack: 「右上方畫面外有 1 隻狗有問題：小黑，點兩下移過去」,
+ * 「左邊畫面外有 2 隻狗有問題：小黑、豆豆，點兩下移過去」.
  */
 export function edgeHintSpeech(direction, markers) {
   const names = markers.map(marker => marker.name).join('、');
-  const problems = markers.filter(marker => marker.problem).map(marker => marker.name);
-  const problemPart = problems.length ? t("c748", { value: problems.join('、') }) : '';
-  return t("c747", { value: DIRECTION_WORD[direction], length: markers.length, names: names, problemPart: problemPart });
+  return t('c1320', { value: DIRECTION_WORD[direction], length: markers.length, names });
 }
 
 const clamp = (value, low, high) => (high < low ? low : Math.min(high, Math.max(low, value)));
@@ -148,6 +141,8 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
   const off = [];
   for (const marker of markers) {
     const point = points[marker.slaveId];
+    // A healthy dog off screen gets no hint (§9.6).
+    if (!marker.problem) continue;
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
     if (seen(marker, point)) continue;
     const dx = point.x - center.x;

@@ -8,8 +8,9 @@ import {
 // A phone (411×891dp): the gear row on top, a 48dp bottom row above the tabs.
 const view = { width: 411, height: 891, top: 76, bottom: 80, bottomRow: 48 };
 const centre = { x: 205.5, y: (76 + 811) / 2 };
-const dog = (slaveId, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, size: 40,
-  problem: false, selected: false, ...extra });
+// Off-screen hints are only for dogs with a problem (§9.6).
+const dog = (slaveId, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, size: 48,
+  problem: true, selected: false, ...extra });
 // `screen` degrees on screen: 0 = right, 90 = down; 2 km off at zoom 16.
 const towards = (screen, distance = 2000) => ({
   x: centre.x + distance * Math.cos((screen * Math.PI) / 180),
@@ -42,8 +43,8 @@ test('one hint per direction with dogs off it; corner hints sit in their corner 
   expect(hint('topRight').x + hint('topRight').width).toBe(411 - 8);
   // Bottom left: above the bottom row, 8dp from the left.
   expect(hint('bottomLeft')).toMatchObject({ x: 8, y: 811 - 48 - 12 - 36 });
-  expect(hint('topRight').label).toBe('右上方畫面外有 2 隻狗：狗 2、狗 3，點兩下移過去');
-  expect(hint('bottomLeft').label).toBe('左下方畫面外有 1 隻狗：狗 7，點兩下移過去');
+  expect(hint('topRight').label).toBe('右上方畫面外有 2 隻狗有問題：狗 2、狗 3，點兩下移過去');
+  expect(hint('bottomLeft').label).toBe('左下方畫面外有 1 隻狗有問題：狗 7，點兩下移過去');
   for (const one of hints) for (const other of hints) {
     if (one !== other) expect(boxesOverlap(hintBox(one), hintBox(other))).toBe(false);
   }
@@ -81,16 +82,16 @@ test('a turned map: the direction is where the dog is on screen, not on the comp
   const points = { 1: project(0), 2: project(45), 3: project(90) };
   const hints = edgeHints(markers, points, view);
   expect(sides(hints)).toEqual({ left: [1], topLeft: [2], top: [3] });
-  expect(hints.find(item => item.side === 'topLeft').label).toBe('左上方畫面外有 1 隻狗：狗 2，點兩下移過去');
+  expect(hints.find(item => item.side === 'topLeft').label).toBe('左上方畫面外有 1 隻狗有問題：狗 2，點兩下移過去');
 });
 
 test('the faces of a corner hint keep their order while the map moves (#139)', () => {
-  const markers = [dog(8), dog(4), dog(12, { problem: true }), dog(6), dog(9, { selected: true })];
+  const markers = [dog(8), dog(4), dog(12), dog(6), dog(9, { selected: true }), dog(3, { problem: false })];
   const faces = order => {
     const points = Object.fromEntries(order.map((slaveId, index) => [slaveId, towards(225 + index * 3, 600 + index * 400)]));
     const hint = edgeHints(markers, points, view).find(item => item.side === 'topLeft');
     return [hint.faces.map(marker => marker.slaveId), hint.extra, hint.slaveIds];
   };
-  expect(faces([4, 6, 8, 9, 12])).toEqual([[9, 12, 4], 2, [9, 12, 4, 6, 8]]);
-  expect(faces([12, 9, 8, 6, 4])).toEqual([[9, 12, 4], 2, [9, 12, 4, 6, 8]]);
+  expect(faces([4, 6, 8, 9, 12, 3])).toEqual([[9, 4, 6], 2, [9, 4, 6, 8, 12]]);
+  expect(faces([12, 3, 9, 8, 6, 4])).toEqual([[9, 4, 6], 2, [9, 4, 6, 8, 12]]);
 });
