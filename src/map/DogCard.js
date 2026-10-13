@@ -3,8 +3,8 @@ import { t } from '../i18n';
 // 狀態列」): it rises from the bottom when a dog is tapped and replaces the old
 // dog list, follow button and dog panel. No ✕: it closes by swiping it down,
 // tapping empty map, or the back key. With more than one dog on the map, ‹ ›
-// in the grab handle's row, a sideways swipe and TalkBack's 下一隻／上一隻
-// switch to the next or previous dog (DogSwitch). It only draws DogCardModel.dogCard().
+// at the ends of the title row, a sideways swipe and TalkBack's 下一隻／上一隻
+// switch to the next or previous dog (DogSwitch). The face opens A5. It only draws DogCardModel.dogCard().
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import {
   forwardRef,
@@ -187,8 +187,8 @@ const clock = at => {
 };
 
 /**
- * ‹ or › (DESIGN.md「摘要卡片」換狗): a 48dp target at either end of the grab
- * handle's row, labelled with the dog it goes to (「下一隻：小黑」).
+ * ‹ or › (DESIGN.md「摘要卡片」換狗): a 48dp target at either end of the title
+ * row, labelled with the dog it goes to (「下一隻：小黑」).
  */
 function SwitchButton({ step, target, onStep }) {
   const { colors } = useTheme();
@@ -433,58 +433,58 @@ const DogCard = forwardRef(function DogCard(
         !height && styles.unmeasured,
       ]}
     >
-      {switcher ? (
-        // ‹ ━ ›: the card's own chrome, where its gestures (down: close,
-        // sideways: switch) are; clear of the pencil's row below.
-        <View style={styles.handleRow}>
-          <SwitchButton step={-1} target={switcher.previous} onStep={switcher.onStep} />
-          <View style={[styles.handle, styles.handleInRow]} accessible={false} />
-          <SwitchButton step={1} target={switcher.next} onStep={switcher.onStep} />
-        </View>
-      ) : (
-        <View style={styles.handle} accessible={false} />
-      )}
+      <View style={styles.handle} accessible={false} />
+      {/* 「‹（頭像✏️）名字 ›」: the face, with a pencil badge, opens the dog's
+          page (A5); ‹ › only with another dog on the map. */}
       <View style={styles.header}>
-        {/* One TalkBack item for who this is, carrying 下一隻／上一隻. */}
-        <View
-          style={styles.identity}
-          testID="dog-card-identity"
-          accessible
-          accessibilityLabel={identitySpeech(card)}
-          accessibilityActions={switcher ? SWITCH_ACTIONS : undefined}
-          onAccessibilityAction={
-            switcher
-              ? event =>
-                  switcher.onStep(event.nativeEvent.actionName === 'next' ? 1 : -1)
-              : undefined
-          }
-        >
-          <DogAvatar
-            avatar={avatar}
-            size={sizes.card.avatar}
-            stale={card.stale}
-            border={0}
-          />
-          <Text style={styles.name} numberOfLines={linesFor(1)}>
-            {card.name}
-          </Text>
-          <Text style={styles.source}>{card.sourceLabel}</Text>
+        {switcher && (
+          <SwitchButton step={-1} target={switcher.previous} onStep={switcher.onStep} />
+        )}
+        <View style={styles.identity}>
+          <Pressable
+            testID="dog-card-edit"
+            accessibilityRole="button"
+            accessibilityLabel={t('c378', { dogName: card.name })}
+            onPress={onEdit}
+            style={({ pressed }) => [styles.edit, pressed && styles.pressed]}
+          >
+            <DogAvatar
+              avatar={avatar}
+              size={sizes.card.avatar}
+              stale={card.stale}
+              border={0}
+            />
+            <View style={styles.editBadge} testID="dog-card-edit-badge">
+              <Glyph
+                name="pencil"
+                color={colors.textMuted}
+                size={sizes.card.editBadgeIcon}
+              />
+            </View>
+          </Pressable>
+          {/* One TalkBack item for who this is, carrying 下一隻／上一隻. */}
+          <View
+            style={styles.names}
+            testID="dog-card-identity"
+            accessible
+            accessibilityLabel={identitySpeech(card)}
+            accessibilityActions={switcher ? SWITCH_ACTIONS : undefined}
+            onAccessibilityAction={
+              switcher
+                ? event =>
+                    switcher.onStep(event.nativeEvent.actionName === 'next' ? 1 : -1)
+                : undefined
+            }
+          >
+            <Text style={styles.name} numberOfLines={linesFor(1)}>
+              {card.name}
+            </Text>
+            <Text style={styles.source}>{card.sourceLabel}</Text>
+          </View>
         </View>
-        <View style={styles.spacer} />
-        <Pressable
-          testID="dog-card-edit"
-          accessibilityRole="button"
-          accessibilityLabel={t('c378', { dogName: card.name })}
-          onPress={onEdit}
-          hitSlop={space.xs}
-          style={({ pressed }) => [styles.pencil, pressed && styles.pressed]}
-        >
-          <Glyph
-            name="pencil"
-            color={colors.textMuted}
-            size={sizes.icon.pencil}
-          />
-        </Pressable>
+        {switcher && (
+          <SwitchButton step={1} target={switcher.next} onStep={switcher.onStep} />
+        )}
       </View>
       <ScrollView
         style={styles.scroll}
@@ -569,25 +569,46 @@ const getStyles = makeStyles(theme => {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: touch.min,
+      // ‹ › reach into the card's side padding: their icons line up with
+      // the content's edges.
+      marginHorizontal: -space.m,
+      // At least 12dp between ‹ › and the face (the edit button).
       gap: space.m,
     },
+    // The face and the name block, centred between ‹ and ›.
     identity: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: space.m,
-      flexShrink: 1,
+      justifyContent: 'center',
+      gap: space.s,
+    },
+    names: { flexShrink: 1 },
+    // The face is the edit button: 48dp, the 40dp face in the middle and a
+    // 20dp neutral pencil badge at its bottom right (A5's camera badge look;
+    // the red 「!」 is top right on the map, never here).
+    edit: {
+      width: touch.min,
+      height: touch.min,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    editBadge: {
+      position: 'absolute',
+      right: 0,
+      bottom: 0,
+      width: sizes.card.editBadge,
+      height: sizes.card.editBadge,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      borderWidth: border.hairline,
+      borderColor: colors.line,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     name: { ...type.title, color: colors.text, flexShrink: 1 },
     source: { ...type.caption, color: colors.textMuted },
-    spacer: { flex: 1 },
-    pencil: {
-      width: touch.min,
-      height: touch.min,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: -space.m,
-      borderRadius: radius.full,
-    },
     scroll: { flexGrow: 0, flexShrink: 1 },
     headline: {
       flexDirection: 'row',
@@ -647,7 +668,7 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // ‹ › in the grab handle's row: 48dp, the icon level with the content's edge.
+    // ‹ › at the header's two ends: 48dp, the icon level with the content's edge.
     switchButton: {
       width: touch.min,
       height: touch.min,
@@ -655,14 +676,6 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    handleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      minHeight: touch.min,
-      marginHorizontal: -space.m,
-    },
-    handleInRow: { marginTop: 0, marginBottom: 0 },
     trackText: { ...type.status, color: colors.tonalText },
     pressed: { backgroundColor: colors.pressedOverlay },
   });

@@ -313,8 +313,11 @@ export const size = {
     warnIcon: 18,
     // A3 direction arrow accompanying the headline distance.
     directionIcon: 26,
-    // ‹ › that switch to the previous／next dog (in the grab handle's row).
+    // ‹ › that switch to the previous／next dog (the title row's two ends).
     switchIcon: 24,
+    // The pencil badge on the card's face (the face opens A5).
+    editBadge: 20,
+    editBadgeIcon: 12,
     maxRatio: 0.75,
   },
   activity: {

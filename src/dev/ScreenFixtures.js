@@ -918,6 +918,11 @@ const FIXTURES = {
     ]),
     cloudRows: [],
   }),
+  // card-switch with 豆豆 renamed to a fictional 15-character name: the
+  // title row 「‹（頭像✏️）名字 ›」 cuts it with 「…」 at the normal font and
+  // wraps it at 200%.
+  'card-long-name': now => ({ ...FIXTURES['card-switch'](now),
+    aliases: { ...ALIASES, 4: '紅火蟻偵測隊第一小隊的豆豆隊長' } }),
   // ---- the activity page (057, design A4) ------------------------------
   // 小黑's card only (A3): tap 活動量 to open A4 on 今天 with the same reads.
   'activity-card': now => ({ ...activityPage(now, null, {}), openPage: null }),
@@ -1664,6 +1669,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   if (!make) return null;
   nextId = 1;
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
+    aliases = ALIASES,
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
@@ -1786,7 +1792,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       return { count, metres, status };
     })(),
     ride: rides.ride(now),
-    dogAliases: ALIASES,
+    dogAliases: aliases,
     // card-* states open this dog's card; dog-edit its page (A5) too.
     openDog,
     openPage,

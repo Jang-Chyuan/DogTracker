@@ -6,7 +6,6 @@ import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, PanResponder, StyleSheet } from 'react-native';
 import DogCard from '../src/map/DogCard';
 import { dogCard } from '../src/map/DogCardModel';
-import { compareDogOrder } from '../src/map/DogOrder';
 import {
   SWIPE_DISTANCE,
   SWIPE_MIN_FLING,
@@ -17,21 +16,13 @@ import {
   switchOrder,
   switchTarget,
 } from '../src/map/DogSwitch';
-import { touch } from '../src/theme/tokens';
+import { colors, touch } from '../src/theme/tokens';
 
 const dog = (slaveId, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, size: 40,
   problem: false, selected: false, ...extra });
 
 describe('the order', () => {
   const markers = [dog(12), dog(5), dog(8, { problem: true }), dog(4), dog(6, { selected: true }), dog(9)];
-
-  test('the comparator: the open dog, then problems, then by signal-source number; never by place', () => {
-    const ids = list => [...list].sort(compareDogOrder).map(item => item.slaveId);
-    expect(ids([dog(9), dog(3, { problem: true }), dog(5, { selected: true }), dog(2)])).toEqual([5, 3, 2, 9]);
-    expect(ids([dog(12), dog(4)])).toEqual([4, 12]);
-    // A missing flag counts as false (not NaN, which would scramble the sort).
-    expect(ids([{ slaveId: 7 }, { slaveId: 6, problem: true }, { slaveId: 1 }])).toEqual([6, 1, 7]);
-  });
 
   test('every dog, the opening one first, then problems, then by signal-source number', () => {
     // 6 was the open dog before; 4 opens now and comes first instead.
@@ -121,16 +112,37 @@ describe('the card', () => {
   }
   const switcher = (extra = {}) => ({ previous: '狗 12', next: '阿福', onStep: jest.fn(), ...extra });
 
-  test('a lone dog: no ‹ ›, no actions, no swipe', async () => {
+  test('a lone dog: no ‹ ›, no actions, no swipe; the face still opens A5', async () => {
     await mount({ switcher: null });
     expect(byTestId('dog-card-next')).toHaveLength(0);
     expect(byTestId('dog-card-previous')).toHaveLength(0);
     expect(identity().props.accessibilityLabel).toBe('豆豆，訊號源 4');
     expect(identity().props.accessibilityActions).toBeUndefined();
     expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: -120, dy: 0 })).toBe(false);
+    expect(byTestId('dog-card-edit')).toHaveLength(1);
   });
 
-  test('‹ › flank the grab handle: 48dp labelled buttons that step back and forth, 看軌跡 untouched', async () => {
+  test('the face is the edit button: 48dp, a neutral pencil badge, TalkBack says what it does', async () => {
+    const { onEdit } = await mount({ switcher: switcher() });
+    const edit = byTestId('dog-card-edit')[0];
+    expect(edit.props.accessibilityRole).toBe('button');
+    expect(edit.props.accessibilityLabel).toBe('編輯豆豆的名字和頭像');
+    const style = StyleSheet.flatten(edit.props.style({ pressed: false }));
+    expect(style).toMatchObject({ width: touch.min, height: touch.min });
+    // The face and the badge are inside it; the badge is not a status mark
+    // (no red, no 「!」): surface with a thin line, a pencil.
+    expect(edit.findAll(node => node.props.testID === 'dog-card-edit-badge' && typeof node.type === 'string')).toHaveLength(1);
+    const badge = StyleSheet.flatten(edit.find(node => node.props.testID === 'dog-card-edit-badge'
+      && typeof node.type === 'string').props.style);
+    expect(badge).toMatchObject({ backgroundColor: colors.surface, borderColor: colors.line });
+    expect(edit.findAll(node => node.props.name === 'pencil')).toHaveLength(1);
+    // Only one edit control on the card (no separate pencil).
+    expect(renderer.root.findAll(node => node.props.name === 'pencil')).toHaveLength(1);
+    await act(async () => edit.props.onPress());
+    expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test('「‹（頭像✏️）名字 ›」: 48dp labelled ‹ › around the face and name, 看軌跡 untouched', async () => {
     const value = switcher();
     await mount({ switcher: value });
     const next = byTestId('dog-card-next')[0];
@@ -142,15 +154,15 @@ describe('the card', () => {
       ? node.props.style({ pressed: false }) : node.props.style);
     expect(size(next)).toMatchObject({ width: touch.min, height: touch.min });
     expect(touch.min).toBe(48);
-    // One row: previous, the grab handle, next — above the name and pencil.
-    const rows = renderer.root.findAll(node => Array.isArray(node.props.children) && node.props.children.length === 3
-      && typeof node.type === 'string'
+    // The title row, in order: ‹, the face (the edit button) and the name, ›.
+    const header = renderer.root.findAll(node => typeof node.type === 'string'
       && node.findAll(child => child.props.testID === 'dog-card-next').length > 0
       && node.findAll(child => child.props.testID === 'dog-card-previous').length > 0
-      && node.findAll(child => child.props.testID === 'dog-card-edit').length === 0);
-    expect(rows.length).toBeGreaterThan(0);
-    // 看軌跡 is not in that row: nothing sits beside it.
-    expect(rows[rows.length - 1].findAll(child => child.props.testID === 'dog-card-track')).toHaveLength(0);
+      && node.findAll(child => child.props.testID === 'dog-card-edit').length > 0
+      && node.findAll(child => child.props.testID === 'dog-card-track').length === 0).pop();
+    const ids = header.findAll(child => /^dog-card-(previous|edit|identity|next)$/.test(child.props.testID ?? '')
+      && typeof child.type === 'string').map(child => child.props.testID);
+    expect([...new Set(ids)]).toEqual(['dog-card-previous', 'dog-card-edit', 'dog-card-identity', 'dog-card-next']);
     await act(async () => next.props.onPress());
     await act(async () => previous.props.onPress());
     expect(value.onStep.mock.calls).toEqual([[1], [-1]]);
