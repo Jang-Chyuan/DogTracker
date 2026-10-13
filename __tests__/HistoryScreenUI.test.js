@@ -7,7 +7,7 @@ import { StyleSheet } from 'react-native';
 import Glyph from '../src/map/Glyph';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
-import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { DAY_STEP_SETTLE_MAX_MS, historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import { RANGE_RECOMPUTE_DELAY_MS } from '../src/mapHistory/useRangeRecompute';
 
 const LEVELS = { summary: 140, half: 420, full: 620 };
@@ -226,7 +226,8 @@ test('history-empty-day (H8): one line, export faded, ‹ goes to the day with a
   expect(s.screen.navigation.previous).toBe('2026-10-06');
   expect(s.screen.navigation.next).toBeNull();
   await act(async () => pressable(s, 'history-day-previous').props.onPress());
-  await act(async () => {});
+  // The day is built once the taps settle on it (no next tap came).
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, DAY_STEP_SETTLE_MAX_MS + 20)); });
   expect(s.text()).toContain('10/06（二）');
   expect(s.text()).not.toContain(i18nT('c159'));
   expect(s.screen.model.points.length).toBeGreaterThan(0);
@@ -259,7 +260,10 @@ test('‹ to another day shows the skeleton at once (no blank panel while the da
     expect(state.screen.model).toBeNull();
     expect(skeleton()).toBeGreaterThan(0);
     await act(async () => open());
-    await act(async () => {});
+    // Still the skeleton until the taps settle on this day.
+    expect(state.screen.model).toBeNull();
+    expect(skeleton()).toBeGreaterThan(0);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, DAY_STEP_SETTLE_MAX_MS + 20)); });
     expect(state.screen.model.points.length).toBeGreaterThan(0);
     expect(skeleton()).toBe(0);
   } finally { open?.(); await act(async () => renderer.unmount()); }

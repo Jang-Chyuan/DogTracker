@@ -143,7 +143,15 @@ export function createHistoryDatabase(db) {
      * the last good fixes before the window (`seed`), like the history map.
      * @returns {{ rows, seed, after }}
      */
-    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {} }) {
+    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {}, signal = null }) {
+      // A read the screen no longer wants (‹ › moved on) stops before its
+      // next query instead of reading the rest of the day.
+      const stopped = () => {
+        if (!signal?.aborted) return;
+        const error = new Error('history read superseded');
+        error.name = 'AbortError';
+        throw error;
+      };
       const since = Number(start) - HISTORY_DAY_CONTEXT_MS;
       // A few minutes past midnight tell whether the last stay or hold goes on
       // the next day (`continuesNextDay`); they are not part of this day.
@@ -155,6 +163,7 @@ export function createHistoryDatabase(db) {
         const found = [];
         let cursor = cursors[key] ?? { id: -1 };
         for (;;) {
+          stopped();
           const page = rows(await db.executeAsync(`${sql} AND id > ? ORDER BY id LIMIT ${DAY_PAGE}`,
             [...params, cursor.id]));
           if (!page.length) break;
@@ -182,6 +191,7 @@ export function createHistoryDatabase(db) {
         // found, the first one after it — so the list can show the time
         // between them and midnight as 「沒有資料」 (historyTimeline).
         const before = [], next = [];
+        stopped();
         if (!cursors.phoneBefore) {
           before.push(...rows(await db.executeAsync(`${select} WHERE recorded_at < ?
             ORDER BY recorded_at DESC, id DESC LIMIT 1`, [since])));
@@ -214,6 +224,7 @@ export function createHistoryDatabase(db) {
           FROM ${name} WHERE ${scope} AND ${time} >= ? AND ${time} < ?`, [...params, since, until]);
         out.push(...found.map(row => dogHistoryRow(row, key)));
         if (first && columns.has('satellites')) {
+          stopped();
           seed.push(...rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude, slave_lon AS longitude,
             master_id, satellites${columns.has('hdop') ? ', hdop' : ''} FROM ${name}
             WHERE ${scope} AND ${time} < ? AND satellites >= ?
