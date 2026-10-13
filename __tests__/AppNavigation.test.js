@@ -614,6 +614,59 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
   expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
 });
+test('the card switches dogs: a 「3 隻」 group first, then the rest, wrapping; each step brings the map to that dog', async () => {
+  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=card-switch-group');
+  let emit;
+  Linking.addEventListener.mockImplementationOnce((_, handler) => {
+    emit = handler;
+    return { remove: jest.fn() };
+  });
+  await mount();
+  await advance(1000);
+  const identity = () => renderer.root.find(node => node.props.testID === 'dog-card-identity' && node.props.accessible)
+    .props.accessibilityLabel;
+  const card = () => renderer.root.findAll(node => node.props.testID === 'dog-card' && node.props.onLayout)[0];
+  const map = () => renderer.root.findAll(node => node.props.focusDog !== undefined && node.props.presentation, { deep: true })[0];
+  // The card has its height (the map is asked to move once it has).
+  await act(async () => card().props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
+  await advance(100);
+  expect(identity()).toBe('阿福，訊號源 8，第 1 隻，共 6 隻');
+  const step = async id => {
+    await act(async () => row(id).props.onPress());
+    await advance(100);
+  };
+  // 阿福 carries the tag: 豆豆 and 小黑 come next, then 狗 5, 9, 12.
+  const seen = [];
+  for (let index = 0; index < 6; index += 1) {
+    await step('dog-card-next');
+    seen.push(identity().split('，')[0]);
+    const shown = map().props;
+    const selected = shown.presentation.dogMarkers.find(marker => marker.selected);
+    // On top of the others, and the map asked (once) to bring it into view.
+    expect(selected.name).toBe(seen[index]);
+    expect(shown.focusDog.coordinate).toEqual(selected.coordinate);
+  }
+  expect(seen).toEqual(['豆豆', '小黑', '狗 5', '狗 9', '狗 12', '阿福']);
+  const keys = new Set();
+  await step('dog-card-previous');
+  keys.add(map().props.focusDog.key);
+  expect(identity()).toBe('狗 12，訊號源 12，第 6 隻，共 6 隻');
+  // TalkBack's 上一隻 on the name goes the same way; the card stays (no new rise).
+  await act(async () => renderer.root.find(node => node.props.testID === 'dog-card-identity' && node.props.accessible)
+    .props.onAccessibilityAction({ nativeEvent: { actionName: 'previous' } }));
+  await advance(100);
+  keys.add(map().props.focusDog.key);
+  expect(identity()).toBe('狗 9，訊號源 9，第 5 隻，共 6 隻');
+  expect(keys.size).toBe(2);
+  // Opened from the dog itself (not the tag), all six in the plain order.
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=card-switch' }));
+  await advance(1000);
+  expect(identity()).toBe('豆豆，訊號源 4，第 1 隻，共 6 隻');
+  await step('dog-card-next');
+  expect(identity()).toBe('阿福，訊號源 8，第 2 隻，共 6 隻');
+  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
+});
+
 test('a history map never carries the receiver range ring', async () => {
   await mount();
   await advance();

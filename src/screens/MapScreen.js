@@ -49,6 +49,7 @@ import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
 import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
+import { liveSwitchOrder, switchOrder, switchPosition, switchTarget } from '../map/DogSwitch';
 import { useDogCardReadings } from '../map/useDogCardReadings';
 import {
   cloudClock,
@@ -196,13 +197,17 @@ export default function MapScreen({
   const selectHistoryDog = useRef(null);
   const cardClosing = useRef(false);
   const [cardKey, setCardKey] = useState(0);
+  // The card's ‹ › order (DogSwitch): taken once per opening, from the dogs
+  // drawn then; { openId, group } says how it was opened (a 「N 隻」 tag:
+  // that group first).
+  const [switchBase, setSwitchBase] = useState(null);
   const cardHeightChanged = useCallback(value => {
     if (!value) cardGeneration.current += 1;
     cardClosing.current = !value;
     setCardHeight(value);
   }, []);
   const openDog = useCallback(
-    slaveId => {
+    (slaveId, { group = null } = {}) => {
       // In history a face is another dog shown: it becomes the protagonist.
       if (historical) {
         selectHistoryDog.current?.(slaveId);
@@ -218,6 +223,7 @@ export default function MapScreen({
           ? current
           : { kind: 'dog', slaveId },
       );
+      setSwitchBase({ openId: slaveId, group });
       setCardPage(null);
       setFocusRequest({ slaveId, key: Date.now() });
     },
@@ -261,9 +267,10 @@ export default function MapScreen({
   const fixtureName = fixture?.name ?? null;
   const fixturePage = fixture?.openPage ?? null;
   const pendingPage = useRef(null);
+  const fixtureGroup = fixture?.openGroup ?? null;
   useEffect(() => {
     if (fixtureDog != null) {
-      openDog(fixtureDog);
+      openDog(fixtureDog, { group: fixtureGroup });
       // dog-edit opens the dog's page (A5) over its card, once the card is.
       pendingPage.current = fixturePage;
       if (fixturePage) setCardPage(fixturePage);
@@ -273,6 +280,8 @@ export default function MapScreen({
       setCardPage(null);
       setSelected(null);
     }
+    // A fixture's group is fixed with its name.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fixtureName, fixtureDog, fixturePage, openDog]);
   useEffect(() => {
     if (openDogRequest?.slaveId != null) openDog(openDogRequest.slaveId);
@@ -892,6 +901,47 @@ export default function MapScreen({
     () => setSelected(current => (current?.kind === 'dog' ? null : current)),
     [],
   );
+  // ---- switching dogs from the card (‹ ›, swipe, 下一隻／上一隻) -------------
+  // The order is taken from the dogs drawn when the card opened (or as soon
+  // as there are any: a fixture or notification can open it first) and kept
+  // while stepping; dogs gone since drop out, new ones come last.
+  const anyDrawn = livePresentation.dogMarkers.length > 0;
+  const takenOrder = useMemo(
+    () => (switchBase ? switchOrder(livePresentation.dogMarkers, switchBase.openId, switchBase.group) : []),
+    // Taken once per opening; `anyDrawn` retakes it when the dogs first appear.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [switchBase, anyDrawn],
+  );
+  const switchDogs = useMemo(
+    () => liveSwitchOrder(takenOrder, livePresentation.dogMarkers),
+    [takenOrder, livePresentation.dogMarkers],
+  );
+  const cardDogId = cardDog?.slaveId ?? null;
+  // A step goes like a tap on that dog: on top of the others (selected), the
+  // map moved to it only when the card, a control or the screen edge hides it
+  // (the user's zoom kept), but the order and the card itself stay.
+  const stepDog = useCallback(
+    step => {
+      const to = switchTarget(switchDogs, cardDogId, step);
+      if (to == null || to === cardDogId) return;
+      cardGeneration.current += 1;
+      setSelected({ kind: 'dog', slaveId: to });
+      setFocusRequest({ slaveId: to, key: Date.now() });
+    },
+    [switchDogs, cardDogId],
+  );
+  const switcher = useMemo(() => {
+    if (cardDogId == null || switchDogs.length < 2) return null;
+    const { index, count } = switchPosition(switchDogs, cardDogId);
+    if (!index) return null;
+    return {
+      index,
+      count,
+      previous: dogName(switchTarget(switchDogs, cardDogId, -1), dogAliases),
+      next: dogName(switchTarget(switchDogs, cardDogId, 1), dogAliases),
+      onStep: stepDog,
+    };
+  }, [cardDogId, switchDogs, dogAliases, stepDog]);
   const [trackBusy, setTrackBusy] = useState(false);
   // 看軌跡: today's path of this dog. The query is stored first, so the
   // history page never opens on the previous one.
@@ -1277,6 +1327,7 @@ export default function MapScreen({
           onActivity={() => setCardPage('activity')}
           onTrack={openTrackHistory}
           trackBusy={trackBusy}
+          switcher={switcher}
         />
       )}
       </View>

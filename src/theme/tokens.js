@@ -312,6 +312,8 @@ export const size = {
     warnIcon: 18,
     // A3 direction arrow accompanying the headline distance.
     directionIcon: 26,
+    // ‹ › that switch to the previous／next dog (beside 看軌跡).
+    switchIcon: 24,
     maxRatio: 0.75,
   },
   activity: {

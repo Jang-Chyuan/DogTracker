@@ -718,6 +718,15 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
     const groups = renderer.root.findAll(node => node.props.testID === 'dog-group-tag' && typeof node.type === 'string');
     expect(groups).toHaveLength(1);
     expect(groups[0].findByType(require('react-native').Text).props.children).toBe('3 隻');
+    // The face carrying 「3 隻」 opens its card with the group, so ‹ › go
+    // through those three first (DogSwitch); any other face opens alone.
+    const carrier = faces.find(face => face.findAll(node => node.props.testID === 'dog-group-tag'
+      && typeof node.type === 'string').length);
+    const carrierId = Number(carrier.props.identifier.replace('real-dog-', ''));
+    await act(async () => carrier.props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(carrierId, { group: expect.arrayContaining([4, 6, 8]) });
+    expect(onDogPress.mock.lastCall[1].group).toHaveLength(3);
+    expect(carrierId).not.toBe(6);
     await act(async () => faces.find(face => face.props.identifier === 'real-dog-6').props.onPress());
     expect(onDogPress).toHaveBeenLastCalledWith(6);
     const a11y = renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '')
@@ -1022,11 +1031,12 @@ test('dog A then dog B within the hold: a map-only tap on B outside A\'s marker 
     await act(async () => six.props.onPress());
     // Google's duplicate of the same touch is still dropped.
     await act(async () => mapHit(sixY));
-    expect(onDogPress.mock.calls).toEqual([[6]]);
+    // 6 is the lower face, carrying the 「2 隻」 tag: its card gets the group.
+    expect(onDogPress.mock.calls).toEqual([[6, { group: [5, 6] }]]);
     // 100 ms later, well inside 2 × MAP_TAP_HOLD_MS, dog 5 reported only as a map tap.
     await act(async () => jest.advanceTimersByTime(100));
     await act(async () => mapHit(fiveY));
-    expect(onDogPress.mock.calls).toEqual([[6], [5]]);
+    expect(onDogPress.mock.calls).toEqual([[6, { group: [5, 6] }], [5]]);
     await act(async () => jest.advanceTimersByTime(600));
     expect(onMapPress).not.toHaveBeenCalled();
   } finally { delete mockCamera.pointForCoordinate; }

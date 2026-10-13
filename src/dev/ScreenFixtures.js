@@ -860,6 +860,27 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // ---- switching dogs from the card (2026-10-13, ‹ › and swipe) ----------
+  // Six dogs on receiver 7: 豆豆, 小黑 and 阿福 walking together (one 「3 隻」
+  // tag, 阿福 at 12% so it has the red 「!」), 狗 5, 狗 9 and 狗 12 on their own.
+  // 豆豆's card is open: ‹ › step through all six (豆豆, 阿福 (problem), then
+  // 5, 6, 9, 12), 「第 1 隻，共 6 隻」 for TalkBack.
+  'card-switch': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [14, 9], step: [0.05, 0.08], battery: 62 }),
+      ...series(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND, start: [14.4, 9.5], step: [0.05, 0.08] }),
+      ...series(bleRow, now, { slave: 8, from: 10 * MINUTE, to: 11 * SECOND, start: [13.6, 9.6], step: [0.05, 0.08],
+        battery: 12 }),
+      ...series(bleRow, now, { slave: 5, from: 10 * MINUTE, start: [-20, 30], step: [0.04, 0.02] }),
+      ...series(bleRow, now, { slave: 9, from: 10 * MINUTE, to: 7 * SECOND, start: [30, -25], step: [0.02, 0.04] }),
+      ...series(bleRow, now, { slave: 12, from: 10 * MINUTE, to: 9 * SECOND, start: [-30, -20], step: [0.03, -0.02] }),
+    ]),
+    cloudRows: [],
+  }),
+  // The same six dogs, the card opened from the 「3 隻」 tag (on 阿福, the
+  // lowest face): the group first (阿福, 豆豆, 小黑), then 5, 9, 12.
+  'card-switch-group': now => ({ ...FIXTURES['card-switch'](now), openDog: 8, openGroup: [4, 6, 8] }),
   // ---- the activity page (057, design A4) ------------------------------
   // 小黑's card only (A3): tap 活動量 to open A4 on 今天 with the same reads.
   'activity-card': now => ({ ...activityPage(now, null, {}), openPage: null }),
@@ -1591,7 +1612,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const make = FIXTURES[name];
   if (!make) return null;
   nextId = 1;
-  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
+  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openGroup = null, openPage = null, avatars = {},
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
@@ -1717,6 +1738,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     dogAliases: ALIASES,
     // card-* states open this dog's card; dog-edit its page (A5) too.
     openDog,
+    // card-switch-group: opened from the 「N 隻」 tag of these dogs.
+    openGroup,
     openPage,
     // Faces by collar number (useDogAvatars' avatars); the default otherwise.
     avatars,

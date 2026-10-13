@@ -1666,7 +1666,11 @@ function GoogleTrackingMapRenderer({
     lastDogPress.current = Date.now();
     lastDogId.current = slaveId;
     clearTimeout(mapPressTimer.current);
-    onDogPress?.(slaveId);
+    // The dog carrying a 「N 隻」 tag: its card switches through that group's
+    // dogs first (DogSwitch.switchOrder).
+    const tag = tags[slaveId];
+    if (tag?.group > 1) onDogPress?.(slaveId, { group: tag.members });
+    else onDogPress?.(slaveId);
   };
   // Whether `tap` (dp) falls inside the full marker bitmap (face plus name
   // tag canvas) of the dog last opened by a marker tap; unknown counts as inside.

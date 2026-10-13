@@ -2,7 +2,9 @@ import { t } from '../i18n';
 // A dog's summary card (design v3 A3/A3b/A7b; DESIGN.md「摘要卡片」「卡片的
 // 狀態列」): it rises from the bottom when a dog is tapped and replaces the old
 // dog list, follow button and dog panel. No ✕: it closes by swiping it down,
-// tapping empty map, or the back key. It only draws DogCardModel.dogCard().
+// tapping empty map, or the back key. With more than one dog on the map, ‹ ›
+// beside 看軌跡, a sideways swipe and TalkBack's 下一隻／上一隻 switch to the
+// next or previous dog (DogSwitch). It only draws DogCardModel.dogCard().
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import {
   forwardRef,
@@ -13,6 +15,7 @@ import {
   useState,
 } from 'react';
 import {
+  AccessibilityInfo,
   Animated,
   BackHandler,
   Easing,
@@ -31,7 +34,8 @@ import Glyph from './Glyph';
 import { dogCardMaxHeight } from './MapPanelHeight';
 import { PressScale } from './MapControls';
 import BangGlyph from '../components/BangGlyph';
-import { slideOrFade } from '../utils/reduceMotion';
+import { isReduceMotion, slideOrFade } from '../utils/reduceMotion';
+import { isSwitchSwipe, swipeStep } from './DogSwitch';
 import { linesFor } from '../utils/textScale';
 import {
   layout,
@@ -182,6 +186,27 @@ const clock = at => {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
+/**
+ * ‹ or › (DESIGN.md「摘要卡片」換狗): a 56dp outlined circle level with 看軌跡,
+ * labelled with the dog it goes to (「下一隻：小黑」).
+ */
+function SwitchButton({ step, target, onStep }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  const next = step > 0;
+  return (
+    <PressScale
+      testID={next ? 'dog-card-next' : 'dog-card-previous'}
+      accessibilityRole="button"
+      accessibilityLabel={next ? t('c1293', { name: target }) : t('c1294', { name: target })}
+      onPress={() => onStep(step)}
+      style={styles.switchButton}
+    >
+      <Glyph name={next ? 'chevron' : 'back'} color={colors.text} size={sizes.card.switchIcon} />
+    </PressScale>
+  );
+}
+
 function Headline({ headline, speech, heading }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -237,6 +262,7 @@ const DogCard = forwardRef(function DogCard(
     onActivity,
     onTrack,
     trackBusy = false,
+    switcher = null,
   },
   ref,
 ) {
@@ -253,7 +279,25 @@ const DogCard = forwardRef(function DogCard(
   const closing = useRef(false);
   const scrollTop = useRef(0);
   const callbacks = useRef({});
-  callbacks.current = { onClosed, onHeight };
+  callbacks.current = { onClosed, onHeight, switcher };
+  // A sideways drag moves the card across (DogSwitch); `dragging` is which
+  // gesture this drag is: 'close' (down) or 'switch' (sideways).
+  const slide = useRef(new Animated.Value(0)).current;
+  const dragging = useRef(null);
+  const settleSlide = useCallback(() => {
+    if (isReduceMotion()) slide.setValue(0);
+    else Animated.spring(slide, { toValue: 0, ...motion.sheetSpring, useNativeDriver: true }).start();
+  }, [slide]);
+  // TalkBack keeps its focus where it was when the dog changes: say which dog
+  // the card now shows.
+  const shownDog = useRef(card.slaveId);
+  useEffect(() => {
+    if (shownDog.current === card.slaveId) return;
+    shownDog.current = card.slaveId;
+    AccessibilityInfo.announceForAccessibility?.(identitySpeech(card, switcher));
+    // Only a new dog is announced, not every reading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.slaveId]);
   // The close that is running (a slide, or the reduced-motion fade).
   const closingRun = useRef(null);
   const mounted = useRef(true);
@@ -315,16 +359,38 @@ const DogCard = forwardRef(function DogCard(
   };
   const pan = useRef(
     PanResponder.create({
-      // Only a clear downward drag, and only while the rows are scrolled to the
-      // top: a drag inside the rows scrolls them.
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        !closing.current &&
-        gesture.dy > 8 &&
-        Math.abs(gesture.dy) > Math.abs(gesture.dx) &&
-        scrollTop.current <= 0,
-      onPanResponderMove: (_, gesture) =>
-        offset.setValue(Math.max(0, gesture.dy)),
+      // A clearly sideways drag switches the dog (when there is another one);
+      // a clear downward drag closes the card, only while the rows are
+      // scrolled to the top: a drag inside the rows scrolls them.
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        if (closing.current) return false;
+        if (callbacks.current.switcher && isSwitchSwipe(gesture)) {
+          dragging.current = 'switch';
+          return true;
+        }
+        if (
+          gesture.dy > 8 &&
+          Math.abs(gesture.dy) > Math.abs(gesture.dx) &&
+          scrollTop.current <= 0
+        ) {
+          dragging.current = 'close';
+          return true;
+        }
+        return false;
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (dragging.current === 'switch') slide.setValue(gesture.dx);
+        else offset.setValue(Math.max(0, gesture.dy));
+      },
       onPanResponderRelease: (_, gesture) => {
+        if (dragging.current === 'switch') {
+          dragging.current = null;
+          const step = swipeStep(gesture);
+          if (step) callbacks.current.switcher?.onStep(step);
+          settleSlide();
+          return;
+        }
+        dragging.current = null;
         if (
           gesture.dy > measured.current * CLOSE_SHARE ||
           gesture.vy > CLOSE_VELOCITY
@@ -337,12 +403,15 @@ const DogCard = forwardRef(function DogCard(
             useNativeDriver: true,
           }).start();
       },
-      onPanResponderTerminate: () =>
+      onPanResponderTerminate: () => {
+        dragging.current = null;
+        settleSlide();
         Animated.spring(offset, {
           toValue: 0,
           ...motion.sheetSpring,
           useNativeDriver: true,
-        }).start(),
+        }).start();
+      },
     }),
   ).current;
   // At most 75% of the screen below the status bar; the header and 看軌跡
@@ -358,7 +427,7 @@ const DogCard = forwardRef(function DogCard(
         {
           maxHeight,
           bottom: CARD_INSET + insets.bottom,
-          transform: [{ translateY: offset }],
+          transform: [{ translateY: offset }, { translateX: slide }],
           opacity: fade,
         },
         !height && styles.unmeasured,
@@ -366,16 +435,31 @@ const DogCard = forwardRef(function DogCard(
     >
       <View style={styles.handle} accessible={false} />
       <View style={styles.header}>
-        <DogAvatar
-          avatar={avatar}
-          size={sizes.card.avatar}
-          stale={card.stale}
-          border={0}
-        />
-        <Text style={styles.name} numberOfLines={linesFor(1)}>
-          {card.name}
-        </Text>
-        <Text style={styles.source}>{card.sourceLabel}</Text>
+        {/* One TalkBack item for who this is, carrying 下一隻／上一隻. */}
+        <View
+          style={styles.identity}
+          testID="dog-card-identity"
+          accessible
+          accessibilityLabel={identitySpeech(card, switcher)}
+          accessibilityActions={switcher ? SWITCH_ACTIONS : undefined}
+          onAccessibilityAction={
+            switcher
+              ? event =>
+                  switcher.onStep(event.nativeEvent.actionName === 'next' ? 1 : -1)
+              : undefined
+          }
+        >
+          <DogAvatar
+            avatar={avatar}
+            size={sizes.card.avatar}
+            stale={card.stale}
+            border={0}
+          />
+          <Text style={styles.name} numberOfLines={linesFor(1)}>
+            {card.name}
+          </Text>
+          <Text style={styles.source}>{card.sourceLabel}</Text>
+        </View>
         <View style={styles.spacer} />
         <Pressable
           testID="dog-card-edit"
@@ -416,22 +500,45 @@ const DogCard = forwardRef(function DogCard(
           ))}
         </View>
       </ScrollView>
-      <PressScale
-        testID="dog-card-track"
-        accessibilityRole="button"
-        accessibilityLabel={t('c071')}
-        accessibilityState={{ disabled: trackBusy }}
-        disabled={trackBusy}
-        onPress={onTrack}
-        style={styles.track}
-      >
-        <Text style={styles.trackText}>{t('c071')}</Text>
-      </PressScale>
+      <View style={styles.bottom}>
+        {switcher && (
+          <SwitchButton step={-1} target={switcher.previous} onStep={switcher.onStep} />
+        )}
+        <View style={styles.trackSlot}>
+          <PressScale
+            testID="dog-card-track"
+            accessibilityRole="button"
+            accessibilityLabel={t('c071')}
+            accessibilityState={{ disabled: trackBusy }}
+            disabled={trackBusy}
+            onPress={onTrack}
+            style={styles.track}
+          >
+            <Text style={styles.trackText}>{t('c071')}</Text>
+          </PressScale>
+        </View>
+        {switcher && (
+          <SwitchButton step={1} target={switcher.next} onStep={switcher.onStep} />
+        )}
+      </View>
     </Animated.View>
   );
 });
 
 export default DogCard;
+
+// TalkBack's custom actions on the card's name (下一隻／上一隻).
+const SWITCH_ACTIONS = [
+  { name: 'next', label: t('c1291') },
+  { name: 'previous', label: t('c1292') },
+];
+
+/** 「豆豆，訊號源 4，第 1 隻，共 3 隻」 (just 「豆豆，訊號源 4」 for a lone dog). */
+function identitySpeech(card, switcher) {
+  return switcher
+    ? t('c1295', { name: card.name, source: card.sourceLabel, index: switcher.index, count: switcher.count })
+    : t('c1296', { name: card.name, source: card.sourceLabel });
+}
 
 const getStyles = makeStyles(theme => {
   const { colors, shadow } = theme;
@@ -465,6 +572,12 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       minHeight: touch.min,
       gap: space.m,
+    },
+    identity: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.m,
+      flexShrink: 1,
     },
     name: { ...type.title, color: colors.text, flexShrink: 1 },
     source: { ...type.caption, color: colors.textMuted },
@@ -527,6 +640,13 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
       marginTop: space.xs,
     },
+    bottom: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.s,
+      marginTop: space.m,
+    },
+    trackSlot: { flex: 1 },
     track: {
       minHeight: touch.primary,
       paddingVertical: space.s,
@@ -534,7 +654,16 @@ const getStyles = makeStyles(theme => {
       backgroundColor: colors.tonal,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: space.m,
+    },
+    switchButton: {
+      width: touch.primary,
+      height: touch.primary,
+      borderRadius: radius.full,
+      borderWidth: border.regular,
+      borderColor: colors.line,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     trackText: { ...type.status, color: colors.tonalText },
     pressed: { backgroundColor: colors.pressedOverlay },
