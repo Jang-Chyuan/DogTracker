@@ -75,7 +75,7 @@ import {
   regionForFrame,
   overlayFramePadding,
 } from './MapFraming';
-import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox } from './EdgeHints';
+import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox, compassBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
@@ -1214,6 +1214,9 @@ function GoogleTrackingMapRenderer({
             bottomRow,
             fontScale,
             shownTop: coverTop || 0,
+            // The turned map's compass sits under the gear, where a top
+            // right hint would go.
+            obstacles: compassVisible ? [compassBox(cursorLayout.width, compassTop)] : [],
           })
         : [],
     [
@@ -1227,6 +1230,8 @@ function GoogleTrackingMapRenderer({
       bottomRow,
       fontScale,
       coverTop,
+      compassVisible,
+      compassTop,
     ],
   );
   // When the map's own blue dot last reported (kept coarse: one update a
@@ -2122,7 +2127,7 @@ function GoogleTrackingMapRenderer({
           !movingState &&
           hints.map(value => (
             <EdgeHintView
-              key={value.side}
+              key={value.key}
               value={value}
               avatars={presentation.dogAvatars || {}}
               onPress={() => frame(value.coordinates)}

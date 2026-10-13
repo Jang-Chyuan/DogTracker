@@ -745,17 +745,23 @@ describe('off-screen hints and the overlap menu', () => {
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
   }
 
-  test('dogs off the left get one hint; tapping it frames them', async () => {
+  test('dogs with a problem off the left get one hint (healthy ones none); tapping it frames them', async () => {
     const markers = [at(4, 25.005, 121.002), at(6, 25.005, 120.99, { problem: true, size: 48 }),
-      at(8, 25.004, 120.98)];
+      at(8, 25.004, 120.98, { problem: true, size: 48 }), at(5, 25.006, 120.985),
+      at(9, 25.005, 121.02)];
     await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
     await layout();
     await readyMap();
     const hints = renderer.root.findAll(node => node.props.testID === 'edge-hint-left' && node.props.onPress);
     expect(hints).toHaveLength(1);
-    expect(hints[0].props.accessibilityLabel).toBe('左邊畫面外有 2 隻狗：狗 6、狗 8，其中狗 6有問題，點兩下移過去');
+    expect(hints[0].props.accessibilityLabel).toBe('左邊畫面外有 2 隻狗有問題：狗 6、狗 8，點兩下移過去');
     expect(renderer.root.findAll(node => node.props.testID === 'edge-hint-face-problem'
-      && typeof node.type === 'string')).toHaveLength(1);
+      && typeof node.type === 'string')).toHaveLength(2);
+    expect(renderer.root.findAll(node => node.props.testID === 'edge-hint-face'
+      && typeof node.type === 'string')).toHaveLength(0);
+    // Dog 9 (healthy, off the right) has no hint.
+    expect(renderer.root.findAll(node => /^edge-hint-(?!left|face|arrow)/.test(node.props.testID || '')
+      && node.props.onPress)).toHaveLength(0);
     mockCamera.fitToCoordinates.mockClear();
     await act(async () => hints[0].props.onPress());
     // Framed in 300 ms (motion.camera): a region holding both dogs.
@@ -814,7 +820,7 @@ describe('off-screen hints and the overlap menu', () => {
   });
 
   test('066: a camera move whose end is never reported still refreshes the hints', async () => {
-    const markers = [at(4, 25.005, 121.002), at(6, 25.005, 120.99)];
+    const markers = [at(4, 25.005, 121.002), at(6, 25.005, 120.99, { problem: true, size: 48 })];
     await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
     await layout();
     await readyMap();

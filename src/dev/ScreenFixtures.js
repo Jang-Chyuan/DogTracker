@@ -550,6 +550,33 @@ const activityPage = (now, view, data) => {
 };
 const day = (month, date, hour, minute = 0) => localDate(2026, month, date, hour, minute);
 
+// dogs-offscreen-8way and dogs-offscreen-healthy: a cloud dog about 2 km off
+// in each of the eight directions; `problems` gives five of them a problem.
+function offscreenEightWays(now, problems) {
+  const away = (slave, north, east, battery) => series(cloudRow, now, { slave, from: 10 * MINUTE,
+    to: 20 * SECOND, every: 15 * SECOND, start: [north, east], step: [0.02, 0.02],
+    ...(problems && battery ? { battery } : {}) });
+  return {
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: dog4Ble(now),
+    cloudRows: [
+      ...away(6, 185, 5),
+      ...(problems
+        ? series(cloudRow, now, { slave: 8, from: 50 * MINUTE, to: 40 * MINUTE, every: 15 * SECOND,
+          start: [170, 185], step: [0.02, 0] })
+        : away(8, 170, 185)),
+      ...away(12, 100, 185),
+      ...away(9, 5, 195),
+      ...away(5, -170, 185, 15),
+      ...away(3, -190, 0, 12),
+      ...away(2, -170, -185),
+      ...away(10, 0, -195, 18),
+      ...away(11, 170, -185, 14),
+      ...away(13, 160, -195, 16),
+    ],
+  };
+}
+
 const FIXTURES = {
   // Receiver connected, cloud synced, three fresh dogs, phone recording.
   'all-good': now => ({
@@ -779,9 +806,10 @@ const FIXTURES = {
   }),
   // Only 豆豆 is on receiver 7, walking near the handler: the first view
   // frames the two of them. Five cloud dogs are 2–3 km west, off the left of
-  // that view: one hint with three faces (阿福 first, red frame: no new
-  // position for 40 minutes) and 「+2」. Dog 9 is 2.5 km east: its own hint
-  // on the right.
+  // that view; four of them have a problem (阿福 no new position for 40
+  // minutes, dogs 5, 3 and 2 battery low): one hint on the left with three
+  // faces (by signal-source number: 2, 3, 5) and 「+1」 for 阿福. 小黑 (west)
+  // and dog 9 (2.5 km east) are healthy: no hint (§9.6).
   'dogs-offscreen': now => {
     const west = (slave, north, east, rest = {}) => series(cloudRow, now, { slave, from: 10 * MINUTE,
       to: 20 * SECOND, every: 15 * SECOND, start: [north, east], step: [0.02, 0.02], ...rest });
@@ -792,17 +820,29 @@ const FIXTURES = {
         ...west(6, 20, -220),
         ...series(cloudRow, now, { slave: 8, from: 50 * MINUTE, to: 40 * MINUTE, every: 15 * SECOND,
           start: [-15, -260], step: [0.02, 0] }),
-        ...west(5, 5, -240),
-        ...west(3, 35, -280),
-        ...west(2, -25, -300),
+        ...west(5, 5, -240, { battery: 15 }),
+        ...west(3, 35, -280, { battery: 12 }),
+        ...west(2, -25, -300, { battery: 18 }),
         ...west(9, 10, 250),
       ],
     };
   },
+  // Like dogs-offscreen, but a cloud dog about 2 km off in each of the eight
+  // directions (north at the top): 小黑 north, 阿福 north-east (no new
+  // position for 40 minutes), dog 12 east-north-east (30° above east), dog 9
+  // east, dog 5 south-east (battery 15%), dog 3 south (12%), dog 2 south-west,
+  // dog 10 west (18%), dogs 11 (14%) and 13 (16%) north-west. 豆豆 walks
+  // beside the phone, which the first view frames. Hints only for the dogs
+  // with a problem: top left (11, 13), top right (阿福), left (10), bottom (3),
+  // bottom right (5); none north, east or south-west.
+  'dogs-offscreen-8way': now => offscreenEightWays(now, true),
+  // The same eight dogs, all healthy (阿福 current, every battery fine): no
+  // off-screen hint at all; 框住全部 shows them.
+  'dogs-offscreen-healthy': now => offscreenEightWays(now, false),
   // 豆豆 and dog 5 on receiver 7 near the handler; 阿福's last position came
   // from the cloud 26 hours ago, about 10 km south-west. The first view frames
-  // the local dogs and the phone only (阿福 shows as an edge hint); 框住全部
-  // frames 阿福 too.
+  // the local dogs and the phone only (阿福, no new position, shows as an
+  // off-screen hint); 框住全部 frames 阿福 too.
   'cold-start-far-cloud': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: inTimeOrder([
