@@ -286,3 +286,64 @@ export function dogAtPoint(markers, points = {}, tap, slack = 8) {
   }
   return best ? best.slaveId : null;
 }
+
+// ---- the order the faces are drawn in, and which one a tap is on ----------
+
+// Dog markers sit above every other marker (the phone's dot is 30, stops
+// 20–26) and below the history cursor (GoogleTrackingMap CURSOR_Z_INDEX).
+export const DOG_Z_BASE = 100;
+
+// The layer a face belongs to, bottom to top: plain, carrying a group tag
+// (over the faces it covers), with a problem, a problem and a group tag, and
+// the open dog on top of everything.
+function dogLayer(marker, tag) {
+  if (marker.selected) return 4;
+  return (marker.problem ? 2 : 0) + (tag?.group > 1 ? 1 : 0);
+}
+
+/**
+ * Every dog's marker zIndex, all different. Google draws markers of one
+ * zIndex in an order of its own and hit-tests them in another (a tap on the
+ * face drawn on top opened the dog above it, whose name tag canvas reached
+ * under that face), so no two dogs share one. Within a layer the face lower
+ * on the screen is drawn over the one above it: it covers that dog's name tag
+ * hanging below, never the other way round. Without a screen point for every
+ * dog, the southern one counts as lower.
+ *
+ * @returns { [slaveId]: zIndex }, DOG_Z_BASE and up, in drawing order
+ */
+export function dogZIndexes(markers = [], points = {}, tags = {}) {
+  const screen = markers.every(marker => Number.isFinite(points?.[marker.slaveId]?.y));
+  const height = marker => (screen ? points[marker.slaveId].y : -(marker.coordinate?.latitude ?? 0));
+  const ordered = markers
+    .map(marker => ({ marker, layer: dogLayer(marker, tags?.[marker.slaveId]), y: height(marker) }))
+    .sort((a, b) => a.layer - b.layer || a.y - b.y || a.marker.slaveId - b.marker.slaveId);
+  return Object.fromEntries(ordered.map((item, index) => [item.marker.slaveId, DOG_Z_BASE + index]));
+}
+
+/**
+ * The dog whose drawn face or name tag is under a tap at `tap` (dp), looking
+ * from the top of the drawing order down: what the finger lands on is what
+ * the eye sees there (a face drawn over another dog's tag wins; a tag showing
+ * over the empty canvas of a marker drawn above it wins too). null when the
+ * tap is on nothing drawn (only some marker's transparent canvas).
+ *
+ * @param tags nameTags() output; zIndexes dogZIndexes() output
+ */
+export function dogUnderTouch(markers = [], points = {}, tags = {}, tap, zIndexes = {}, fontScale = 1) {
+  if (!tap || !Number.isFinite(tap.x) || !Number.isFinite(tap.y)) return null;
+  const ordered = markers
+    .filter(marker => Number.isFinite(points?.[marker.slaveId]?.x) && Number.isFinite(points[marker.slaveId].y))
+    .sort((a, b) => (zIndexes[b.slaveId] ?? 0) - (zIndexes[a.slaveId] ?? 0));
+  for (const marker of ordered) {
+    const point = points[marker.slaveId];
+    // The face, with the "!" and house badges reaching a little out of it.
+    if (Math.hypot(point.x - tap.x, point.y - tap.y) <= (marker.size || 0) / 2 + 2) return marker.slaveId;
+    const tag = tags?.[marker.slaveId];
+    if (!tag?.text) continue;
+    const size = tag.group > 1 ? groupTagSize(tag.text, tag.problem, fontScale) : nameTagSize(tag.text, fontScale);
+    const box = tagBox(point, marker.size, size);
+    if (tap.x >= box.left && tap.x <= box.right && tap.y >= box.top && tap.y <= box.bottom) return marker.slaveId;
+  }
+  return null;
+}

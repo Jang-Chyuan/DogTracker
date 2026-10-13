@@ -4,7 +4,8 @@ import { createHoldStore } from '../src/placement/HoldStore';
 import { HOLD_CONFIG } from '../src/placement/IndoorHold';
 import { mergeDogMarkers } from '../src/map/DogMerge';
 import { dogCard } from '../src/map/DogCardModel';
-import { CARD_INDOOR_LOOKBACK_MS, CARD_INDOOR_RETRY_MS, indoorStayStart, useCardIndoorStay } from '../src/map/CardIndoorStay';
+import { CARD_INDOOR_LOOKBACK_MS, CARD_INDOOR_RETRY_MS, historyHoldCandidates, indoorStayStart, useCardIndoorStay,
+  useHistoryHolds } from '../src/map/CardIndoorStay';
 import { createHistoryDatabase, HISTORY_DAY_CONTEXT_MS } from '../src/mapHistory/HistoryDatabase';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
@@ -223,5 +224,76 @@ describe('useCardIndoorStay', () => {
     clock += CARD_INDOOR_RETRY_MS;
     await act(async () => renderer.update(<Probe read={read} value={dog} options={options(3)} sink={[]} />));
     expect(read).toHaveBeenCalledTimes(2);
+  });
+});
+
+// 2026-10-13 (dog 8 on the emulator): indoors 12+ hours by the history, but no
+// 位置 row on the card and no 「室內」 on the map. Its drift settled about
+// 120 m from the last good fix: the history, holding it since the evening,
+// keeps the hold (it lets go beyond 150 m); a cold start sees only the last
+// half hour and cannot start one (the weak fixes must lie within 100 m of the
+// good ones). All data made up.
+describe('a hold the live rows cannot start', () => {
+  async function drifting() {
+    const db = createMemoryConnection();
+    await createDogDatabase(db).initialize();
+    const insert = (time, lat, lon, sats, hdop) => db.executeAsync(`INSERT INTO dog_status(master_id,slave_id,
+      received_at,slave_lat,slave_lon,satellites,hdop,battery_percentage,battery_valid) VALUES(7,8,?,?,?,?,?,80,1)`,
+    [time, lat, lon, sats, hdop]);
+    for (let time = INSIDE - 10 * MINUTE; time <= INSIDE; time += 30000) await insert(time, HOME.latitude, HOME.longitude, 9, 0.9);
+    let i = 0;
+    for (let time = INSIDE + 30000; time <= NOW; time += 30000, i += 1) {
+      const jitter = ((i * 37) % 11 - 5) * 0.00002;
+      const north = time < INSIDE + 30 * MINUTE ? 0.0002 : 0.0011;
+      await insert(time, HOME.latitude + north + jitter, HOME.longitude + jitter, 3, 4.5);
+    }
+    return db;
+  }
+  let renderer;
+  afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = null; });
+
+  test('the map and the card hold the dog where and since the history does', async () => {
+    const db = await drifting();
+    try {
+      const cloud = createCloudDatabase(db);
+      await cloud.initialize();
+      const store = createHoldStore();
+      store.ingest(await cloud.holdRows(null, NOW - HOLD_LOOKBACK_MS, null));
+      const holds = store.holds(NOW);
+      // The live tracker alone: not held.
+      expect(holds[8]).toBeUndefined();
+      const candidates = historyHoldCandidates(store.statuses(), holds);
+      expect(candidates).toEqual([{ slaveId: 8, at: NOW }]);
+      const history = createHistoryDatabase(db);
+      const read = jest.fn(request => history.historyDayRows(request));
+      const seen = [];
+      function Probe({ list }) { seen.push(useHistoryHolds(read, list, { owner: null })); return null; }
+      await act(async () => { renderer = Renderer.create(<Probe list={candidates} />); });
+      await act(async () => {});
+      const found = seen.at(-1)[8];
+      expect(found).toMatchObject({ coordinate: HOME, source: 'good', from: INSIDE + 30000 });
+      expect(found.fromClipped).toBeUndefined();
+      // A newer packet a moment later does not read the day again.
+      await act(async () => renderer.update(<Probe list={[{ slaveId: 8, at: NOW + 30000 }]} />));
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(seen.at(-1)[8]).toBe(found);
+      const packet = { slave_id: 8, master_id: 7, received_at: NOW, slave_lat: HOME.latitude + 0.0011,
+        slave_lon: HOME.longitude, satellites: 3, hdop: 4.5, battery_percentage: 80, battery_valid: 1, source: 'ble' };
+      const dog = mergeDogMarkers({ packetRows: [packet], holds: { ...seen.at(-1), ...holds }, now: NOW, windowMs: 180000 })[0];
+      expect(dog).toMatchObject({ coordinate: HOME, heldFrom: INSIDE + 30000 });
+      expect(position(dog, null)).toBe('室內・12 時 30 分');
+    } finally { db.close(); }
+  });
+
+  test('only a dog not held with no trusted good fix in its rows is asked about', () => {
+    const statuses = {
+      4: { lastGoodAt: NOW - 60 * MINUTE, rowsFrom: NOW - 30 * MINUTE, newestAt: NOW },
+      6: { lastGoodAt: NOW - 5 * MINUTE, rowsFrom: NOW - 30 * MINUTE, newestAt: NOW },
+      8: { lastGoodAt: null, rowsFrom: NOW - 30 * MINUTE, newestAt: NOW - MINUTE },
+      9: { lastGoodAt: NOW - 60 * MINUTE, rowsFrom: NOW - 30 * MINUTE, newestAt: NOW },
+      10: { lastGoodAt: null, rowsFrom: null, newestAt: null },
+    };
+    expect(historyHoldCandidates(statuses, { 9: { coordinate: HOME } }))
+      .toEqual([{ slaveId: 4, at: NOW }, { slaveId: 8, at: NOW - MINUTE }]);
   });
 });
