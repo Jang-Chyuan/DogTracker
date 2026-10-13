@@ -27,7 +27,7 @@ test('adapter is safe with empty data and midnight freezes old selected day', ()
 test('cursor cumulative distance uses measured edges, not proportional list distance', () => {
   const model = { locations: [], sections: [{ start: 0, end: 120000, countedDistanceM: 1000 }],
     distanceEdges: [{ start: 0, end: 60000, countedDistanceM: 900 }, { start: 60000, end: 120000, countedDistanceM: 100 }] };
-  expect(cursorLabel(model, 60000)[1]).toBe('已移動 0.9 km');
+  expect(cursorLabel(model, 60000)[1]).toBe('已移動 900 m');
 });
 test('date changes resolve eligible protagonist, memory priority, then latest cursor', () => {
   const state = { entryId: 'a', protagonist: 'a', dogs: [{ id: 'a' }, { id: 'b' }] };
