@@ -4,6 +4,7 @@ import kotlin.math.*
 
 /** Raw phone evidence; PhoneMotion.js replays the same decisions for old rows. */
 internal class MotionDetector {
+  private companion object { const val FINE_WIDTH_NANOS = 20_000_000_000L }
   private val tail = mutableListOf<LocationSample>()
   private val entry = mutableListOf<LocationSample>()
   private var state = "moving"
@@ -109,13 +110,26 @@ internal class MotionDetector {
   // Reliable speed exits in 3 seconds. Geometry alone, with contradictory low
   // speed, must progress through independent time slices beyond the location
   // uncertainty. A relocation to another compact cluster is not progress.
+  //
+  // The fine (≤ 10 m) window is the last 20 s and needs 19 s of fixes. When
+  // it holds less (history replays the saved rows, 5 s apart below 10 km/h),
+  // it reaches back to the newest fix older than 20 s, at most 30 s old, and
+  // that sparser window must also measure walking (0.5–3 m/s) on more than
+  // half of its fixes (PhoneMotion.js fineDepartureWidth / walkingSpeeds).
   private fun departure(point: LocationSample): Boolean {
-    val fine = tail.filter { point.elapsedNanos - it.elapsedNanos <= 20_000_000_000L }.all { it.accuracy <= 10 }
-    val windows = if (fine) listOf(20_000L) else listOf(120_000L, 180_000L, 240_000L, 300_000L, 600_000L)
+    val recent = tail.filter { point.elapsedNanos - it.elapsedNanos <= FINE_WIDTH_NANOS }
+    val fine = recent.all { it.accuracy <= 10 }
+    var fineWidth = FINE_WIDTH_NANOS
+    if (!(recent.isNotEmpty() && point.elapsedNanos - recent.first().elapsedNanos >= 19_000_000_000L)) {
+      val age = tail.map { point.elapsedNanos - it.elapsedNanos }.filter { it > FINE_WIDTH_NANOS }.minOrNull()
+      if (age != null && age <= 30_000_000_000L) fineWidth = age
+    }
+    val windows = if (fine) listOf(fineWidth)
+      else listOf(120_000L, 180_000L, 240_000L, 300_000L, 600_000L).map { it * 1_000_000L }
     for (width in windows) {
-      val points = tail.filter { point.elapsedNanos - it.elapsedNanos <= width * 1_000_000L }
+      val points = tail.filter { point.elapsedNanos - it.elapsedNanos <= width }
       if (points.size < 3 || point.elapsedNanos - points.first().elapsedNanos <
-        (width - if (fine) 1000 else 20000) * 1_000_000L) continue
+        (if (fine) 19_000_000_000L else width - 20_000_000_000L)) continue
       val first = points.first()
       val net = distance(first, point)
       val threshold = max(if (fine) 3.0 else 12.0, (if (fine) 2 else 4) * points.maxOf { it.accuracy }.toDouble())
@@ -125,9 +139,10 @@ internal class MotionDetector {
         abs(it.rawLongitude) > 180 || (it.rawLatitude == 0.0 && it.rawLongitude == 0.0) }) continue
       val steps = points.zipWithNext().map { (a, b) -> distance(a, b) }
       if (net / steps.sum() < 0.85 || steps.max() >= net * 0.5) continue
-      if (fine) return true
+      if (fine) return width == FINE_WIDTH_NANOS ||
+        2 * points.count { val v = it.rawSpeed; v != null && v >= 0.5f && v <= 3f } > points.size
       var progress = true
-      for (slice in 0 until (width / 30000).toInt()) {
+      for (slice in 0 until (width / 30_000_000_000L).toInt()) {
         val part = points.filter { it.elapsedNanos >= first.elapsedNanos + slice * 30_000_000_000L &&
           it.elapsedNanos <= first.elapsedNanos + (slice + 1) * 30_000_000_000L }
         if (part.size < 3) { progress = false; break }

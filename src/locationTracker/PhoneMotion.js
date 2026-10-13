@@ -20,6 +20,43 @@ const unusable = q => !Number.isFinite(q.accuracy) || q.accuracy < 0 || q.accura
 // steps[i] is dist(list[i - 1], list[i]); steps[0] is never read.
 const stepsOf = list => list.map((q, i) => (i ? dist(list[i - 1], q) : 0));
 const increasing = list => list.every((q, i) => Number.isFinite(q.time) && (!i || q.time > list[i - 1].time));
+// The fine (≤ 10 m) geometric departure judges the last 20 s, which must hold
+// at least 19 s of fixes. The live detector sees about one fix a second, but
+// history replays the saved rows, 5 s apart below 10 km/h
+// (LocationPipeline.intervalSeconds): their newest 20 s span only 15–18 s, so
+// a slow walk whose speed sits inside its uncertainty (1.1 m/s ± 0.7) never
+// left a stop. When the 20 s fall short, the window reaches back to the
+// newest fix older than 20 s, if it is at most 30 s old (the detector resets
+// after a 30 s gap). Distance, straightness and largest-step tests are
+// unchanged, and a once-a-second tail always has its 19 s.
+// That longer, sparser window must also measure walking: more than half of
+// its fixes read 0.5–3 m/s. Indoor drift at the same accuracy reads a
+// confident zero (0 ± 0.1 m/s) while its fixes wander 5 m a row, and stays;
+// a car slowing down (its fixes still at 20–30 km/h) does not turn its
+// drive into confirmed (walking) movement.
+const FINE_WIDTH = 20000, FINE_SPAN = 19000, FINE_LOOKBACK = 30000;
+const WALKING_MIN_MPS = 0.5, WALKING_MAX_MPS = 3;
+function fineDepartureWidth(tail, p, recent) {
+  const { list, lo } = recent;
+  if (lo < list.length && p.time - list[lo].time >= FINE_SPAN) return FINE_WIDTH;
+  let age = Infinity;
+  if (recent.ordered && list === tail) {
+    if (lo > 0) age = p.time - tail[lo - 1].time;
+  } else for (const q of tail) {
+    const a = p.time - q.time;
+    if (a > FINE_WIDTH && a < age) age = a;
+  }
+  return age <= FINE_LOOKBACK ? age : FINE_WIDTH;
+}
+function walkingSpeeds(list, lo) {
+  let walking = 0;
+  for (let i = lo; i < list.length; i += 1) {
+    const kmh = rawPhoneSpeed(list[i]);
+    const speed = kmh == null ? NaN : kmh / 3.6;
+    if (speed >= WALKING_MIN_MPS && speed <= WALKING_MAX_MPS) walking += 1;
+  }
+  return 2 * walking > list.length - lo;
+}
 
 // Performance contract (decisions are those of the plain filter/map/reduce
 // version, test-support/PhoneMotionReference.js, bit for bit):
@@ -298,10 +335,10 @@ export class PhoneMotion {
     // extended downwards from the last window instead of rescanned.
     let scanned = this.tail.length, accuracy = -Infinity, checked = scanned, usable = true;
     for (const width of fine
-      ? [20000]
+      ? [fineDepartureWidth(this.tail, p, recent)]
       : [120000, 180000, 240000, 300000, 600000]) {
       const { list: t, steps, lo, ordered } = this.window(p, width), end = t.length;
-      if (end - lo < 3 || p.time - t[lo].time < width - (fine ? 1000 : 20000))
+      if (end - lo < 3 || p.time - t[lo].time < (fine ? 19000 : width - 20000))
         continue;
       const first = t[lo],
         net = dist(first, p);
@@ -326,7 +363,7 @@ export class PhoneMotion {
         longest = Math.max(longest, steps[i]);
       }
       if (net / path < 0.85 || longest >= net * 0.5) continue;
-      if (fine) return true;
+      if (fine) return width === FINE_WIDTH || walkingSpeeds(t, lo);
       let valid = true;
       for (let k = 0, from = lo; k < width / 30000; k++) {
         // The fixes of slice k: from first.time + k·30 s to + (k + 1)·30 s,
