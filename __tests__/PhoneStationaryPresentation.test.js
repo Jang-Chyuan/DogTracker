@@ -4,6 +4,7 @@ import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';
 import { buildCSV } from '../src/mapHistory/ExportCSV';
 import { buildGPX } from '../src/mapHistory/ExportGPX';
 import { nodePill, placeSpeech } from '../src/history/HistoryText';
+import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 
 const base = 1600000000000;
 const config = configFor('phone');
@@ -135,8 +136,11 @@ test('an existing qualified stop retains its number without a duplicate presenta
   const model = timeline([...firstRun, ...walkAway]);
   const stop = model.locations.find(n => n.type === 'stop');
   expect(stop).toBeDefined();
-  // #154: it is the 出發 row's stay (「出發 · 停 N 分」): no number of its own.
-  expect(stop).toMatchObject({ number: null, listedWith: 'departure' });
+  // 2026-10-14 (user): the range begins with it: it is the first row, 停留 1
+  // (no 出發, #154 numbers from 1).
+  expect(stop).toMatchObject({ number: 1 });
+  expect(stop.listedWith).toBeUndefined();
+  expect(timelinePresentation(model.nodes)[0]).toMatchObject({ type: 'stop', number: 1 });
   expect(model.nodes.filter(n => n.type === 'stop')).toHaveLength(1);
   expect(model.nodes.some(n => n.presentationOnly)).toBe(false);
 });

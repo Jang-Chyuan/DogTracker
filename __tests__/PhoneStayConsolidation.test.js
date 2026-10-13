@@ -81,9 +81,9 @@ describe('1. drift without a measured speed is no departure', () => {
 
   test('the stay is one numbered stay; the speedless minutes are its time', () => {
     const model = timeline(rows(script));
-    // #154: shown inside 出發 (「出發 · 停 N 分」), so no number of its own.
-    expect(stays(model).map(n => n.number)).toEqual([null]);
-    expect(shownTypes(model)).toEqual(['departure+stay', 'movement', 'end']);
+    // 2026-10-14 (user): the range begins with it: the first row, 停留 1, no 出發.
+    expect(stays(model).map(n => n.number)).toEqual([1]);
+    expect(shownTypes(model)).toEqual(['stop', 'movement', 'end']);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
   });
 
@@ -136,7 +136,7 @@ describe('2. drift inside a stay is no walk', () => {
     const input = rows([['still', 1020], ['none', 100], ['still', 20, { accuracy: 30 }], ['still', 60], ['none', 300],
       ['session', 'fiction-session-2'], ['still', 2400], ['walk', 300]], { from: dayStart - 10 * MINUTE });
     const model = timeline(input);
-    expect(shownTypes(model)).toEqual(['departure+stay', 'gap', 'stop', 'movement', 'end']);
+    expect(shownTypes(model)).toEqual(['stop', 'gap', 'stop', 'movement', 'end']);
     expect(listed(model)[1]).toMatchObject({ sessionChange: true });
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
@@ -186,7 +186,7 @@ describe('3. the hours around midnight are rows too', () => {
     const shown = listed(model);
     expect(shown[0]).toMatchObject({ type: 'gap', start: dayStart, end: today[0].time, sessionChange: true });
     expect(sectionText(shown[0]).rest).toBe(' 00:00–00:40');
-    expect(shown[1].departureStay).toBeTruthy();
+    expect(shown[1]).toMatchObject({ type: 'stop', number: 1, start: today[0].time });
     expectTiled(model, dayStart, model.points.at(-1).time);
   });
 
@@ -197,8 +197,8 @@ describe('3. the hours around midnight are rows too', () => {
       .map(r => ({ ...r, longitude: r.longitude + 200 * METRE, raw_longitude: r.raw_longitude + 200 * METRE })), ...today]);
     const shown = listed(model);
     expect(shown.some(n => n.type === 'gap')).toBe(false);
-    expect(shown[0]).toMatchObject({ type: 'departure', start: dayStart });
-    expect(shown[0].departureStay).toBeTruthy();
+    expect(shown[0]).toMatchObject({ type: 'stop', number: 1, start: dayStart });
+    expect(shown.some(n => n.type === 'departure')).toBe(false);
     expectTiled(model, dayStart, model.points.at(-1).time);
   });
 
@@ -291,14 +291,16 @@ describe('3. the hours around midnight are rows too', () => {
 });
 
 describe('4. a still-here stay is in the list too', () => {
-  test('a range wholly inside a long stay: 出發 carries the stay, as the map label says', () => {
+  test('a range wholly inside a long stay: the stay is the first row (no 出發), as the map label says', () => {
     const input = rows([['still', 2400]]);
     const now = input.at(-1).time;
     const model = historyTimeline(input, { subject: 'phone', dayStart, dayEnd, today: true, now });
     expect(model.displayStays).toHaveLength(1);
-    const [first] = listed(model);
-    expect(first.departureStay).toBeTruthy();
-    const minutes = listDuration(presentationDurationMs(first.departureStay));
+    const [first, last] = listed(model);
+    expect(first).toMatchObject({ type: 'stop', presentationOnly: 'still-here', number: null });
+    expect(last).toMatchObject({ type: 'end' });
+    expect(last.terminalStay).toBeUndefined();
+    const minutes = listDuration(presentationDurationMs(first));
     expect(nodePill(first).text).toContain(minutes);
     // The map's stay label and the cursor read the same minutes.
     expect(listDuration(shownStayDurationMs(model.nodes, model.displayStays[0]))).toBe(minutes);
@@ -321,9 +323,9 @@ describe('5. a short real walk between two stays at one place', () => {
 
   test('is one stay; its metres stay in the list and the summary', () => {
     const model = timeline(excursion());
-    // #154: shown inside 出發 (「出發 · 停 N 分」), so no number of its own.
-    expect(stays(model).map(n => n.number)).toEqual([null]);
-    expect(shownTypes(model)).toEqual(['departure+stay', 'movement', 'end']);
+    // 2026-10-14 (user): the range begins with it: the first row, 停留 1, no 出發.
+    expect(stays(model).map(n => n.number)).toEqual([1]);
+    expect(shownTypes(model)).toEqual(['stop', 'movement', 'end']);
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
   });

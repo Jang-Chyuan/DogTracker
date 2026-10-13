@@ -467,6 +467,9 @@ export function historyTimeline(rows = [], options = {}) {
     && (n.type === 'indoor' || (n.type === 'stop' && n.continuesPreviousDay)))) locations.unshift({ type: 'departure',
     start: first.time, end: first.time, latitude: first.latitude, longitude: first.longitude,
     manual: !!manualRange && manualRange.start !== departure.automaticRange.start,
+    // The range starts at the detected departure (a walk or a drive set off
+    // there): the list keeps 出發 even when a stay's last fix is that point.
+    detected: ['confirmed', 'confirming'].includes(departure.status) && range.start === departure.automaticRange.start,
     continuesPreviousDay: context.some(p => p.time < dayStart)
       && first.time - context.filter(p => p.time < dayStart).pop().time <= config.gapMs });
   const displayedEnd = subject === 'phone' && last ? phoneStayDisplayCoordinate(displayLocations, last.time) : null;

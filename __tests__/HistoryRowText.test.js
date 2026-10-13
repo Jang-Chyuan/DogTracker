@@ -108,10 +108,18 @@ describe('在室內就不要出發了: a day that begins indoors has no 出發 r
     ['a vehicle before it', [departure, move('ride', T0, T0 + 30000, 300), indoor(T0 + 30000)]],
     ['a signal break before it', [departure, { type: 'gap', mode: 'gap', reason: 'no-signal', start: T0, end: T0 + 30000 },
       indoor(T0 + 30000)]],
-    ['a stay first', [departure, { type: 'stop', number: 1, start: T0 + 30000, end: T0 + 10 * MINUTE,
-      latitude: 24.98922, longitude: 121.3132 }, indoor(T0 + 10 * MINUTE)]],
   ])('other days still start with 出發: %s', (_, nodes) => {
     expect(timelinePresentation(nodes)[0]).toMatchObject({ type: 'departure', latitude: departure.latitude });
+  });
+
+  // 2026-10-14 (user): a day that begins with a stay starts with that stay,
+  // 停留 1, not 出發 (the seconds before it are its time).
+  test('a stay first: no 出發, the stay is the first row', () => {
+    const nodes = [departure, { type: 'stop', number: 1, start: T0 + 30000, end: T0 + 10 * MINUTE,
+      durationMs: 10 * MINUTE - 30000, latitude: 24.98922, longitude: 121.3132 }, indoor(T0 + 10 * MINUTE)];
+    const shown = timelinePresentation(nodes);
+    expect(shown.map(n => n.type)).toEqual(['stop', 'indoor']);
+    expect(shown[0]).toMatchObject({ number: 1, start: T0, end: T0 + 10 * MINUTE, latitude: 24.98922 });
   });
 
   test('a dog history: first fix 4 m off, then a hold — the model keeps its departure, the list starts indoors', () => {

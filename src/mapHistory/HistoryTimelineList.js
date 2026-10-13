@@ -26,6 +26,7 @@ import {
   sectionText,
 } from '../history/HistoryText';
 import { usePlaceNames } from '../placement/AddressLookup';
+import { withAlpha } from '../history/screen/HistoryMapModel';
 
 // 判定表「時間軸清單」: time column 54dp, track 36dp, then the place.
 const TIME_WIDTH = sizes.timeline.timeColumn;
@@ -101,7 +102,7 @@ const lineOf = section =>
     : 'dots';
 
 function Node({ node, color, centered = false }) {
-  const { colors } = useTheme();
+  const { colors, opacity } = useTheme();
   const styles = useStyles(getStyles);
   const centeredStyle = centered ? { marginTop: 0 } : null;
   switch (node.type) {
@@ -125,13 +126,15 @@ function Node({ node, color, centered = false }) {
     case 'resume':
       return <View style={[styles.resume, centeredStyle, { borderColor: color }]} />;
     default:
+      // 18dp solid with a ring of the route colour (opacity.endRing) around
+      // it, as the PNG's: two views, since a translucent border would only
+      // show the fill under it (2026-10-14: the ring never showed).
       return (
-        <View
-          style={[
-            styles.end, centeredStyle,
-            { backgroundColor: color, borderColor: `${color}55` },
-          ]}
-        />
+        <View style={[styles.end, centeredStyle]}>
+          <View style={[styles.endRing, { backgroundColor: withAlpha(color, opacity.endRing) }]}>
+            <View style={[styles.endCore, { backgroundColor: color }]} />
+          </View>
+        </View>
       );
   }
 }
@@ -408,9 +411,21 @@ const getStyles = makeStyles(theme => {
     end: {
       width: sizes.timeline.node.end,
       height: sizes.timeline.node.end,
-      borderRadius: sizes.timeline.node.end / 2,
-      borderWidth: border.emphasis,
       marginTop: sizes.timeline.node.endDrop,
+    },
+    // The ring reaches border.strong past the 18dp node: the layout keeps 18dp.
+    endRing: {
+      width: sizes.timeline.node.end + border.strong * 2,
+      height: sizes.timeline.node.end + border.strong * 2,
+      margin: -border.strong,
+      borderRadius: sizes.timeline.node.end / 2 + border.strong,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    endCore: {
+      width: sizes.timeline.node.end,
+      height: sizes.timeline.node.end,
+      borderRadius: sizes.timeline.node.end / 2,
     },
     // 12dp between rows, outside the selected fill (radius.stayRow 12).
     placeOuter: { flex: 1, paddingBottom: space.xs },

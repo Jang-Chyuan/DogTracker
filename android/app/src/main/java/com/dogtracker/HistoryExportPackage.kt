@@ -9,6 +9,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
@@ -728,9 +729,17 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         val (px, py) = projector.toPixel(marker.getDouble("latitude"), marker.getDouble("longitude"))
         val end = marker.optBoolean("end")
         val r = if (end) 20f else 15f
-        canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
-        canvas.drawCircle(px, py, r - (if (end) 3.6f else 2.4f), Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.STROKE; strokeWidth = if (end) 7.2f else 4.8f; color = colour })
+        if (marker.optBoolean("last")) {
+          // The end: solid in the route colour inside a ring of it at
+          // opacity.endRing (0.33), as the list's end node and the map's.
+          canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(84, Color.red(colour), Color.green(colour), Color.blue(colour)) })
+          canvas.drawCircle(px, py, r - 7.2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colour })
+        } else {
+          canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
+          canvas.drawCircle(px, py, r - (if (end) 3.6f else 2.4f), Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = if (end) 7.2f else 4.8f; color = colour })
+        }
         // A thinned time (several dogs' crowded ends, ExportSnapshot) keeps its ring only.
         val label = marker.optString("label")
         if (label.isNotEmpty()) labels.add(Triple(label, px to py, r))

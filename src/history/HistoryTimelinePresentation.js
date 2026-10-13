@@ -154,10 +154,18 @@ function presentationOf(all) {
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
     && (samePlace(first, initialStay) || firstBelongsToStay || stationaryRun(initialStay));
   const departureStay = startsWithStay && settlingRun ? stretch(initialStay, first.start, initialStay.end, 0) : initialStay;
-  const input = startsWithStay
+  // 2026-10-14 (user): a day (or range) that begins with a stay has no 出發:
+  // that stay is the first row, numbered like any other (startingStay
+  // below). A range that begins moving keeps 出發, and the end of a stay
+  // clipped into it is that row's time, unnumbered (「出發」 only): the
+  // detected departure (`detected`: the range starts where the walk or the
+  // drive set off, often at the stay's last fix), or a stay clipped to
+  // seconds (a manual range from its last fix).
+  const sliver = startsWithStay && (first.detected === true || noMinutes(departureStay));
+  const input = sliver
     ? [{ ...first, latitude: departureStay.latitude, longitude: departureStay.longitude,
       end: departureStay.end, durationMs: departureStay.durationMs, departureStay }, ...nodes.slice(2)]
-    : nodes;
+    : startsWithStay ? [departureStay, ...nodes.slice(2)] : nodes;
   // Every minute between two listed times belongs to a row (2026-10-13; this
   // replaces #115's rule that a merged walk counts only its own legs). A break
   // inside one recording session shorter than listGapMs (「沒有資料」 or
@@ -209,6 +217,7 @@ function presentationOf(all) {
     i = j;
   }
   closeHoles(shown);
+  startingStay(shown);
   // A terminal stay and its endpoint are one visual place. Inspect the original
   // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
   // takes the stay's own coordinate; a dog's is its last recorded fix, which
@@ -219,7 +228,9 @@ function presentationOf(all) {
   const endBelongsToStay = typeof stay?.id === 'string' && stay.id.startsWith('visit:')
     && stay.points?.some(point => point.time === end?.start && samePlace(point, end));
   const shownStay = shown[shown.length - 2];
-  if (end?.type === 'end' && stay?.type === 'stop' && shownStay?.type === 'stop'
+  // The day's first row is its own stay, never the end's (a day of one stay:
+  // 「停留 1」 then the end; 2026-10-14).
+  if (shown.length > 2 && end?.type === 'end' && stay?.type === 'stop' && shownStay?.type === 'stop'
     && stay.end === end.start
     && !stay.gaps?.length && !stay.displayRange?.gaps?.length
     && (samePlace(stay, end) || endBelongsToStay || stationaryRun(stay))) {
@@ -242,7 +253,7 @@ function presentationOf(all) {
     shown[from].end, 0), ...shown.slice(from + 1)] : shown;
   const listed = withDayBoundaries(indoorFirst, lead, tail);
   if (listed.length) listed[0] = fromMidnight(listed[0]);
-  return { departureSource: startsWithStay ? source[1] : null, endStay, listed: listed.map(node => {
+  return { departureSource: sliver ? source[1] : null, endStay, listed: listed.map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
@@ -250,6 +261,24 @@ function presentationOf(all) {
       ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
   }) };
+}
+
+// A stay whose shown minutes round to none (a range clipping it to seconds).
+const noMinutes = stay => Math.round(Math.max(0, presentationDurationMs(stay)) / MINUTE) === 0;
+
+/**
+ * 2026-10-14 (user decision, replaces merging the initial stay into 出發): a
+ * range that begins with a stay has no 出發 row. A bare 出發 with a stay
+ * starting at its very time next (the rows above already gave that stay the
+ * seconds before it) goes: the stay is the first row, with its own number,
+ * minutes and address. A stay of no shown minutes is no start (出發 stays).
+ * 出發 is the start of a range that begins moving. Display only: the model's
+ * departure node, the map's first time marker, CSV and GPX rows are kept.
+ */
+function startingStay(shown) {
+  const [first, next] = shown;
+  if (first?.type === 'departure' && pointRow(first) && !first.departureStay && first.detected !== true
+    && next?.type === 'stop' && next.start === first.start && !noMinutes(next)) shown.shift();
 }
 
 const gapRow = node => node?.type === 'gap';
@@ -301,13 +330,12 @@ function closeHoles(shown) {
       const stay = { type: 'stop', presentationOnly: 'between-breaks', number: null,
         id: `between-breaks:${a.end}`, start: a.end, end: node.start, durationMs: hole,
         interruptionMs: 0, gaps: [], latitude: from.latitude ?? node.latitude, longitude: from.longitude ?? node.longitude };
-      if (a.type === 'departure' && pointRow(a)) {
-        out[out.length - 1] = { ...a, end: stay.end, durationMs: hole, departureStay: stay };
-        out.push(node);
-      } else if (node.type === 'end' && pointRow(node)) {
+      if (node.type === 'end' && pointRow(node) && !(a.type === 'departure' && pointRow(a))) {
         out.push({ ...node, start: stay.start, durationMs: hole, terminalStay: stay, number: null });
       } else {
-        if (a.type === 'resume' && pointRow(a)) out.pop();
+        // A 恢復記錄 there is that stay's start; a 出發 there goes too (a
+        // range that begins with a stay has no 出發: startingStay).
+        if (['resume', 'departure'].includes(a.type) && pointRow(a)) out.pop();
         out.push(stay, node);
       }
     }

@@ -86,7 +86,9 @@ const noMinutes = stay => stay.type === 'stop' && !stay.continuesPreviousDay
 export function nodePill(node) {
   if (node.departureStay) {
     const departure = nodePill({ ...node, departureStay: null });
-    if (noMinutes(node.departureStay)) return departure;
+    // A range that begins moving says only 「出發」 (its stay is the
+    // seconds before setting off, 2026-10-14).
+    if (node.detected === true || noMinutes(node.departureStay)) return departure;
     const stay = nodePill(node.departureStay);
     return { ...departure, text: `${departure.text} · ${stay.text}` };
   }

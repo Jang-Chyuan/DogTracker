@@ -6,7 +6,7 @@ import { PAW_STROKE } from '../map/PawGeometry';
 // icons and the map block. Pure: everything is placed here so the Kotlin side
 // only paints, and a test can read what each page holds. Colours come from
 // the theme tokens only.
-import { exportColors as colors } from '../theme/exportPalette';
+import { exportColors as colors, exportLightTheme } from '../theme/exportPalette';
 import lightMapStyle from '../theme/light-map-style.json';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { PLACE_X, PNG_STYLE as S } from './ExportPNG';
@@ -62,7 +62,7 @@ function nodeOps(row, color, cy) {
     case 'resume':
       return [{ t: 'circle', cx, cy, r: tokenSize.export.resumeRadius, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.nodeBorder }];
     default:
-      return [{ t: 'circle', cx, cy, r: tokenSize.export.endRadius, fill: color, stroke: withAlpha(color, 0.33), strokeWidth: tokenSize.export.endBorder }];
+      return [{ t: 'circle', cx, cy, r: tokenSize.export.endRadius, fill: color, stroke: withAlpha(color, exportLightTheme.opacity.endRing), strokeWidth: tokenSize.export.endBorder }];
   }
 }
 
@@ -79,11 +79,12 @@ function rowOps(block) {
   if (row.kind === 'section') {
     const muted = row.type === 'gap';
     const textTop = y + (block.height - block.lines.length * S.detailLine) / 2;
-    const iconTop = y + (block.height - tokenSize.export.glyphSize) / 2;
+    const glyph = tokenSize.export.transportGlyph;
+    const iconTop = y + (block.height - glyph) / 2;
     const pad = tokenSize.export.transportIconPadding;
     ops.push(...trackOps(row.line, color, y, y + block.height,
-      { top: iconTop - pad, bottom: iconTop + tokenSize.export.glyphSize + pad }));
-    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - tokenSize.export.glyphSize / 2, y: iconTop, size: tokenSize.export.glyphSize,
+      { top: iconTop - pad, bottom: iconTop + glyph + pad }));
+    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - glyph / 2, y: iconTop, size: glyph,
       color: muted ? colors.iconMuted : color });
     // 「移動 28 分・1.4 km」: the duration bold and dark, the rest muted.
     block.lines.forEach((line, index) => ops.push({ t: 'runs', x: PLACE_X, y: textTop + index * S.detailLine,

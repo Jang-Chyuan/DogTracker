@@ -317,7 +317,9 @@ export function outsideLines(dayPoints, range, { color, subject = 'dog',
 }
 
 /**
- * Time markers: the range's first and last fix always (9dp), and in between
+ * Time markers: the range's first and last fix always (9dp; the last one,
+ * the end, `last`: solid in the route colour with an outer ring, as the
+ * list's end node), and in between
  * on round times at a step that keeps them few (7dp). None inside a break,
  * none in a stay, none on a route that is one indoor hold all day (判定表「整天都停在原處的地圖」).
  */
@@ -371,6 +373,7 @@ export function timeMarkers(
       time: last.time,
       label: clock(last.time),
       end: true,
+      last: true,
       coordinate: (subject === 'phone' ? phoneStayDisplayCoordinate(stays, last.time) : null) || coordinateOf(last),
     });
   return markers;

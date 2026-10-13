@@ -103,7 +103,7 @@ export function exportMapLayer(model, color, { multi = false, subject = 'dog' } 
       coordinates: line.coordinates.map(p => [p.latitude, p.longitude]) })),
     places: places.map(place => ({ kind: place.kind, number: place.number,
       latitude: place.coordinate.latitude, longitude: place.coordinate.longitude })),
-    times: times.map(marker => ({ label: marker.label, end: marker.end, time: marker.time,
+    times: times.map(marker => ({ label: marker.label, end: marker.end, last: !!marker.last, time: marker.time,
       latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude })),
     points: single.map(p => [p.latitude, p.longitude]),
   };

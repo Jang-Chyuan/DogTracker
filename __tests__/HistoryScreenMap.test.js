@@ -80,7 +80,30 @@ describe('the route on the map', () => {
       .filter(p => p.time <= at(60) || p.time >= at(85));
     const markers = timeMarkers(points, { stays: [{ start: at(25), end: at(35) }] });
     expect(markers.map(m => [m.label, m.end])).toEqual([['08:03', true], ['09:30', false], ['10:03', true]]);
+    // 2026-10-14: only the last (the end) is drawn solid, as the list's end node.
+    expect(markers.map(m => !!m.last)).toEqual([false, false, true]);
     expect(timeMarkers(points, { allIndoor: true })).toEqual([]);
+  });
+
+  test('the end time marker is solid in the route colour with an outer ring; the start stays a hollow ring', () => {
+    const React = require('react');
+    const Renderer = require('react-test-renderer');
+    const { StyleSheet } = require('react-native');
+    const { TimeMarkerView } = require('../src/mapHistory/HistoryMapMarkers');
+    const { size, opacity: alpha } = require('../src/theme/tokens');
+    const outer = size.timeMarker.endSize + size.timeMarker.endBorder * 2;
+    let end, start;
+    Renderer.act(() => { end = Renderer.create(<TimeMarkerView label="10:03" end last color="#1A73E8" />); });
+    const ring = end.root.findAll(n => n.props.testID === 'time-marker-end' && typeof n.type === 'string')[0];
+    expect(StyleSheet.flatten(ring.props.style)).toMatchObject({ width: outer, height: outer,
+      backgroundColor: `rgba(26,115,232,${alpha.endRing})` });
+    expect(StyleSheet.flatten(ring.children[0].props.style)).toMatchObject({ width: size.timeMarker.endSize,
+      backgroundColor: '#1A73E8' });
+    Renderer.act(() => { start = Renderer.create(<TimeMarkerView label="08:03" end color="#1A73E8" />); });
+    expect(start.root.findAll(n => n.props.testID === 'time-marker-end')).toHaveLength(0);
+    const hollow = start.root.findAll(n => typeof n.type === 'string'
+      && StyleSheet.flatten(n.props.style)?.borderColor === '#1A73E8');
+    expect(hollow).toHaveLength(1);
   });
 
   test('the presentation: numbered places as in the list, the cursor, no end marker under it', () => {
@@ -401,7 +424,9 @@ test('the invented edge model cannot reappear as an outside-range indoor dashed 
   expect(edges[0].countedDistanceM).toBeLessThan(30);
 });
 
-test('confirmed initial/final stays collapsed in the list have no duplicate numbered map marker; cursor moves reuse markers', () => {
+// 2026-10-14 (user): the initial stay is the list's first row (停留 1, no
+// 出發), so the map draws its number; the final stay merged into the end has none.
+test('a final stay collapsed in the list has no duplicate numbered map marker, the initial stay keeps its own; cursor moves reuse markers', () => {
   const first = { type: 'departure', start: at(0), end: at(0), latitude: 25, longitude: 121 };
   const initial = { type: 'stop', id: 'visit:fixture', number: 1, start: at(0), end: at(6), durationMs: 6 * MINUTE,
     latitude: 25.00001, longitude: 121, points: [{ ...first, time: first.start }], gaps: [] };
@@ -414,7 +439,7 @@ test('confirmed initial/final stays collapsed in the list have no duplicate numb
   const before = JSON.stringify(model);
   const presentation = () => historyMapPresentation(model, { color: colors.phone }).places;
   const markers = presentation();
-  expect(markers.map(n => n.number)).toEqual([2]);
+  expect(markers.map(n => n.number)).toEqual([1, 2]);
   expect(presentation()).toBe(markers);
   expect(JSON.stringify(model)).toBe(before);
   const uncertain = { ...model, nodes: [first, { ...initial, points: [] }, ...model.nodes.slice(2)] };

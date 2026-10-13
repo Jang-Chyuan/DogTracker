@@ -194,15 +194,28 @@ test('a phone stationary run ending at the endpoint is one end row with its minu
   const earlier = { ...stationary, end: 470000 };
   expect(timelinePresentation([walk(0, 120000), earlier, walk(470000, 480000), end]).some(n => n.terminalStay)).toBe(false);
 });
-test('a phone stationary run from the departure fix is one departure row', () => {
+// 2026-10-14 (user): a range that begins with a stay has no 出發 row.
+test('a phone stationary run from the departure fix is the first row, with no 出發', () => {
   const departure = { type: 'departure', start: 0, end: 0, latitude: 24.98921, longitude: 121.31321 };
   const run = { ...stationary, id: 'phone-stationary:0', start: 0, end: 300000, durationMs: 300000 };
   const shown = timelinePresentation([departure, run, walk(300000, 480000), endpoint]);
-  expect(shown[0]).toMatchObject({ type: 'departure', departureStay: run, end: 300000 });
-  expect(shown.filter(n => n.type === 'stop')).toHaveLength(0);
+  expect(shown.map(n => n.type)).toEqual(['stop', 'movement', 'end']);
+  expect(shown[0]).toMatchObject({ id: run.id, start: 0, end: 300000, number: null });
+  expect(shown.some(n => n.departureStay)).toBe(false);
 });
 test.each(['現在', '最後', '結束', '記錄已關閉'])('terminal presentation retains endpoint semantic label %s', label => {
-  expect(timelinePresentation([terminalStay, { ...endpoint, label }])[0].label).toBe(label);
+  expect(timelinePresentation([walk(0, 120000), terminalStay, { ...endpoint, label }])[1].label).toBe(label);
+});
+// The range's first row is its own stay, never the end's (a day of one stay).
+test('a stay that is both the first and the last row stays a row of its own, then the end', () => {
+  const only = { ...terminalStay, number: 1, start: 0 };
+  expect(timelinePresentation([only, endpoint]).map(n => n.type)).toEqual(['stop', 'end']);
+  const departure = { type: 'departure', start: 0, end: 0, latitude: only.latitude, longitude: only.longitude };
+  const shown = timelinePresentation([departure, only, endpoint]);
+  expect(shown.map(n => n.type)).toEqual(['stop', 'end']);
+  expect(shown[0]).toMatchObject({ number: 1, start: 0, end: 480000 });
+  expect(shown[1].terminalStay).toBeUndefined();
+  expect(nodePill(shown[1]).text).toBe('結束');
 });
 
 test.each(['walking', 'driving'])('PNG %s glyph leaves visible connecting line on both sides', mode => {
@@ -228,29 +241,47 @@ test.each(['walking', 'driving'])('PNG %s glyph leaves visible connecting line o
 });
 
 
-test('departure and its exact adjacent initial stay share one departure row without renumbering or mutating raw nodes', () => {
+test('a range that begins with a stay lists that stay first, numbered, with no 出發 and raw nodes untouched', () => {
   const departure = { type: 'departure', start: 59000, end: 59000, latitude: 24.9892, longitude: 121.3132 };
   const stay = { ...terminalStay, number: 1, start: 59000, end: 120000, durationMs: 61000 };
   const nodes = [departure, stay, walk(120000, 180000), { ...terminalStay, number: 2, start: 180000 }];
   const original = JSON.stringify(nodes);
   const shown = timelinePresentation(nodes);
-  expect(shown.map(node => node.type)).toEqual(['departure', 'movement', 'stop']);
-  expect(shown[0]).toMatchObject({ start: 59000, end: 120000, durationMs: 61000, departureStay: { number: 1 }, displayDurationMs: 120000 });
+  expect(shown.map(node => node.type)).toEqual(['stop', 'movement', 'stop']);
+  expect(shown[0]).toMatchObject({ number: 1, start: 59000, end: 120000, durationMs: 61000, displayDurationMs: 120000 });
   expect(shown[2].number).toBe(2);
   const rows = exportTimelineRows(nodes, () => '虛構起點地址');
-  expect(rows[0].pill.text).toContain('出發');
-  expect(rows[0].pill.text).toContain('停 2 分');
+  expect(rows[0]).toMatchObject({ type: 'stop', number: 1, title: '虛構起點地址' });
+  expect(rows[0].pill.text).toBe('停 2 分');
+  expect(rows.some(row => row.pill?.text?.includes('出發'))).toBe(false);
+  expect(placeSpeech(shown[0], '虛構起點地址')).toMatch(/^停留 1，/u);
   expect(JSON.stringify(nodes)).toBe(original);
 });
 
-test.each(['coordinate', 'time', 'gap', 'number'])('initial departure collapse rejects a different %s boundary', reason => {
+// The stay a range begins with is its first row whatever its own coordinate,
+// a few ms' offset, an interruption inside it or its number (2026-10-14:
+// nothing is merged any more, the bare 出發 point just goes).
+test.each(['coordinate', 'time', 'gap', 'number'])('a range that begins with a stay of a different %s has no 出發 either', reason => {
   const departure = { type: 'departure', start: 0, end: 0, latitude: 24.9892, longitude: 121.3132 };
   const stay = { ...terminalStay, number: 1, start: 0, end: 60000, durationMs: 60000 };
   if (reason === 'coordinate') stay.latitude += 0.00001;
   if (reason === 'time') stay.start = 1;
-  if (reason === 'gap') stay.gaps = [{ start: 1000, end: 2000 }];
+  if (reason === 'gap') Object.assign(stay, { gaps: [{ start: 1000, end: 2000 }], durationMs: 59000, interruptionMs: 1000 });
   if (reason === 'number') stay.number = 2;
-  expect(timelinePresentation([departure, stay]).map(node => node.type)).toEqual(['departure', 'stop']);
+  const shown = timelinePresentation([departure, stay]);
+  expect(shown.map(node => node.type)).toEqual(['stop']);
+  expect(shown[0]).toMatchObject({ start: 0, latitude: stay.latitude, number: stay.number });
+});
+
+test('a range that begins moving keeps 出發; a detected departure takes the seconds of the stay it set off from', () => {
+  const departure = { type: 'departure', start: 0, end: 0, latitude: 24.9892, longitude: 121.3132 };
+  expect(timelinePresentation([departure, walk(0, 120000), { ...terminalStay, number: 1 }])[0].type).toBe('departure');
+  // The detected departure is the stay's last fix (the fix before the walk).
+  const stay = { ...terminalStay, number: 1, start: 0, end: 50000, durationMs: 50000 };
+  const shown = timelinePresentation([{ ...departure, detected: true }, stay, walk(50000, 400000)]);
+  expect(shown.map(node => node.type)).toEqual(['departure', 'movement']);
+  expect(shown[0]).toMatchObject({ start: 0, end: 50000, departureStay: stay });
+  expect(nodePill(shown[0]).text).toBe('出發');
 });
 
 test('minute precision aligns consecutive displayed clocks without changing observed duration or a stay\'s interruptions', () => {
@@ -271,12 +302,12 @@ test('minute precision aligns consecutive displayed clocks without changing obse
 });
 
 
-test('a single initial stay does not erase the departure when its endpoint is also present', () => {
+test('a single initial stay with its endpoint: the stay, then the end (no 出發, nothing merged)', () => {
   const stay = { ...terminalStay, number: 1, start: 0 };
   const first = { ...stay, type: 'departure', end: 0, durationMs: 0 };
   const shown = timelinePresentation([first, stay, endpoint]);
-  expect(shown.map(node => node.type)).toEqual(['departure', 'end']);
-  expect(shown[0].departureStay).toEqual(stay);
+  expect(shown.map(node => node.type)).toEqual(['stop', 'end']);
+  expect(shown[0]).toEqual(stay);
 });
 
 // Clipping within a displayed minute can make observed rounding differ from clock rounding.
@@ -306,15 +337,21 @@ test('clipped departure uses membership of the same confirmed visit, never addre
   const nodes = [departure, stay, walk(stay.end, stay.end + 60000)];
   const original = JSON.stringify(nodes);
   const shown = timelinePresentation(nodes);
-  expect(shown.map(n => n.type)).toEqual(['departure', 'movement']);
-  expect(shown[0]).toMatchObject({ latitude: stay.latitude, longitude: stay.longitude, departureStay: { id: stay.id } });
+  // 2026-10-14: the stay is the first row, at its own (mean) coordinate.
+  expect(shown.map(n => n.type)).toEqual(['stop', 'movement']);
+  expect(shown[0]).toMatchObject({ id: stay.id, number: 1, latitude: stay.latitude, longitude: stay.longitude });
   expect(JSON.stringify(nodes)).toBe(original);
+  // A detected departure from that stay's fix keeps 出發 and takes the
+  // clipped stay only when the same visit proves that point is the stay's.
+  const detected = { ...departure, detected: true };
+  expect(timelinePresentation([detected, stay, walk(stay.end, stay.end + 60000)])[0])
+    .toMatchObject({ type: 'departure', latitude: stay.latitude, departureStay: { id: stay.id } });
   for (const changed of [
     { ...stay, id: undefined },
     { ...stay, points: [{ ...stay.points[0], time: departure.start + 1 }] },
     { ...stay, points: [{ ...stay.points[0], latitude: 25.000001 }] },
     { ...stay, displayRange: { gaps: [{ start: departure.start + 1000, end: departure.start + 2000 }] } },
-  ]) expect(timelinePresentation([departure, changed]).map(n => n.type)).toEqual(['departure', 'stop']);
+  ]) expect(timelinePresentation([detected, changed]).map(n => n.type)).toEqual(['departure', 'stop']);
   expect(timelinePresentation([departure, walk(departure.start, stay.start + 1), stay])
     .some(n => n.departureStay)).toBe(false);
 });

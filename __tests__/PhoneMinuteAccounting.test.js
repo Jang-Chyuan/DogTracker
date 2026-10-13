@@ -344,11 +344,15 @@ test('a 0 m 「走路」 with no stay beside it is an unnumbered stay', () => {
     ['none', 400], ['session', 'fiction-session-3'], ['walk', 300]]));
   const { rows } = expectAccounted(model);
   expect(rows.some(n => n.type === 'movement' && Math.round(n.countedDistanceM) === 0)).toBe(false);
-  expect(rows.filter(n => n.type === 'stop' && n.presentationOnly === 'phone-stationary')).toHaveLength(1);
-  // Before driving off: 「出發 · 停 N 分」, no switch point beside it.
+  // The first is the range's first row (2026-10-14: no 出發 before a stay).
+  expect(rows.filter(n => n.type === 'stop' && n.presentationOnly === 'phone-stationary')).toHaveLength(2);
+  expect(rows[0]).toMatchObject({ type: 'stop', presentationOnly: 'phone-stationary', start: model.points[0].time });
+  expect(rows.some(n => n.type === 'departure')).toBe(false);
+  // Before driving off: the stay is the first row (no 出發), no switch point beside it.
   const off = timeline(day([['jiggle', 300], ['drive', 600], ['walk', 300]]));
   const listed = expectAccounted(off).shown;
-  expect(listed[0].departureStay).toBeTruthy();
+  expect(listed[0]).toMatchObject({ type: 'stop', start: off.points[0].time });
+  expect(listed.some(n => n.type === 'departure' || n.departureStay)).toBe(false);
   expect(listed[1]).toMatchObject({ type: 'movement', mode: 'driving' });
   // A recorder without speed or motion columns keeps its row (geometry
   // alone): HistoryReviewRules 「a long slow stretch before the car」.
