@@ -1,5 +1,5 @@
 import { Animated } from 'react-native';
-import { startTailWag, WAG_MAX_ANGLE, WAG_TIMING } from '../src/app/splashTailWag';
+import { startTailWag, WAG_CYCLE_MS, WAG_MAX_ANGLE, WAG_TIMING } from '../src/app/splashTailWag';
 
 beforeEach(() => jest.useFakeTimers());
 afterEach(() => {
@@ -16,7 +16,7 @@ function setup() {
   return { loop, timing, value, stop };
 }
 
-test('neutral at hand-off, starts after drawing, two 900 ms wags then a 400 ms pause', () => {
+test('neutral at hand-off, starts after drawing, a burst of four quick swings then a short pause', () => {
   const { loop, timing, value, stop } = setup();
   expect(value.__getValue()).toBe(0);
   jest.advanceTimersByTime(799);
@@ -26,14 +26,15 @@ test('neutral at hand-off, starts after drawing, two 900 ms wags then a 400 ms p
   expect(
     timing.mock.calls.map(([, config]) => [config.toValue, config.duration]),
   ).toEqual([
-    [-12, 225],
-    [12, 450],
-    [0, 225],
-    [-12, 225],
-    [12, 450],
-    [0, 225],
-    [0, 400],
+    [20, 55],
+    [-20, 110],
+    [20, 110],
+    [-20, 110],
+    [0, 55],
+    [0, 380],
   ]);
+  // Fast swings (about 9 a second), then a still tail for most of a burst's length.
+  expect(WAG_CYCLE_MS).toBe(820);
   timing.mock.calls.forEach(([, config]) => {
     expect(config.useNativeDriver).toBe(true);
     expect(config.isInteraction).toBe(false);
@@ -53,6 +54,6 @@ test('handover before drawing completes cancels the pending wag', () => {
 });
 
 test('the exported maximum angle defines both wag endpoints', () => {
-  expect(WAG_MAX_ANGLE).toBe(12);
+  expect(WAG_MAX_ANGLE).toBe(20);
   expect(WAG_TIMING.angle).toBe(WAG_MAX_ANGLE);
 });
