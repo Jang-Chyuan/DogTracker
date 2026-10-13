@@ -10,7 +10,9 @@ internal data class LocationSample(
   val speedAccuracy: Float? = null, val rawSpeed: Float? = speed,
   val motionState: String = "moving",
   // Where the fix came from (LocationSource.label; 067).
-  val provider: String? = null
+  val provider: String? = null,
+  // This recording's running distance up to the fix (LocationPipeline.odometerMeters).
+  val odometer: Double? = null
 )
 
 /** Acquisition, display and persistence have separate clocks. Never replay old fixes. */
@@ -51,7 +53,22 @@ internal class LocationPipeline {
      * departure window it falls into.
      */
     const val MOTION_ONLY_MAX_ACCURACY = 50f
+    /**
+     * The odometer (2026-10-13, user): the distance between two accepted fixes
+     * in a row — about a second apart while walking, where the saved rows are
+     * 5 s apart and their chords cut every curve — is added only when both
+     * are in the moving state, both are finer than this (history's
+     * coarseConfirmedAccuracyM) and the newer one measures at least
+     * [ODOMETER_MIN_SPEED_MPS] (history's stillMps), at most
+     * [ODOMETER_MAX_STEP_SECONDS] apart. History still decides what counts
+     * (src/history countEdge); the odometer only measures how far.
+     */
+    const val ODOMETER_MAX_ACCURACY = 20f
+    const val ODOMETER_MIN_SPEED_MPS = 0.3f
+    const val ODOMETER_MAX_STEP_SECONDS = 10.0
   }
+  /** This recording's running distance (m) over its accepted fixes (see ODOMETER_MAX_ACCURACY). */
+  var odometerMeters = 0.0; private set
   var latest: LocationSample? = null; private set
   var received = 0; private set
   var accepted = 0; private set
@@ -132,9 +149,15 @@ internal class LocationPipeline {
     if (state == "stationary") {
       if (stationaryCoordinate == null) stationaryCoordinate = latitude to longitude
     } else stationaryCoordinate = null
-    latest = sample.copy(latitude = stationaryCoordinate?.first ?: latitude,
-      longitude = stationaryCoordinate?.second ?: longitude,
-      speed = if (state == "stationary") 0f else sample.speed, motionState = state)
+    val shownLatitude = stationaryCoordinate?.first ?: latitude
+    val shownLongitude = stationaryCoordinate?.second ?: longitude
+    if (previous != null && dt > 0 && dt <= ODOMETER_MAX_STEP_SECONDS && state == "moving" &&
+      previous.motionState == "moving" && sample.accuracy <= ODOMETER_MAX_ACCURACY &&
+      previous.accuracy <= ODOMETER_MAX_ACCURACY &&
+      (sample.rawSpeed?.takeIf { it.isFinite() } ?: 0f) >= ODOMETER_MIN_SPEED_MPS)
+      odometerMeters += distanceMeters(previous.latitude, previous.longitude, shownLatitude, shownLongitude)
+    latest = sample.copy(latitude = shownLatitude, longitude = shownLongitude,
+      speed = if (state == "stationary") 0f else sample.speed, motionState = state, odometer = odometerMeters)
     newest = sample.elapsedNanos
     accepted++; reason = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1124)
     return true

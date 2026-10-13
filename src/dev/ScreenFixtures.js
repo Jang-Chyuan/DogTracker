@@ -1763,7 +1763,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // 「今天 x km」: today's recorded route (myLocationTracker rows), summed
     // by the same code as the live one (useTodayRoute).
     todayRoute: (() => {
-      const { count, metres, status } = todayRouteDistance(phone?.today || [], { now,
+      // The same made-up recorder columns as the history's rows (phoneRouteSince
+      // reads them too): one route, one distance.
+      const { count, metres, status } = todayRouteDistance((phone?.today || [])
+        .map(row => ({ ...FIXTURE_RECORDER, ...row })), { now,
         recording: phone?.recording !== false });
       return { count, metres, status };
     })(),
@@ -1815,6 +1818,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   };
 }
 
+// The recorder's columns of a fixture's myLocationTracker rows that both the
+// history (historyDayRows) and 「今天 x km」 (phoneRouteSince) read (made up).
+const FIXTURE_RECORDER = Object.freeze({ session_id: 'fixture-walk', raw_speed_kmh: 3.8, speed_accuracy_mps: 0.4 });
+
 // What the history screen reads for a history fixture: the query and
 // historyDayRows / historyDays over the fixture's rows.
 function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
@@ -1822,8 +1829,8 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
   const phoneRows = today.map((point, index) => ({ id: index + 1, time: point.time, latitude: point.latitude,
     longitude: point.longitude, accuracy: point.accuracy ?? 6, location_at: point.time - 400,
     accuracy_meters: point.accuracy ?? 6, altitude_meters: 112, speed_kmh: 3.6, heading_degrees: 40,
-    raw_latitude: point.latitude, raw_longitude: point.longitude, session_id: 'fixture-walk', raw_speed_kmh: 3.8,
-    speed_accuracy_mps: 0.4, motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
+    raw_latitude: point.latitude, raw_longitude: point.longitude, ...FIXTURE_RECORDER,
+    motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
   const readDay = async ({ subject, slaveId, start, end, owner = null, after = {} }) => {
     if (after.fixture) return { rows: [], seed: [], after };
     // As HistoryDatabase.historyDayRows: half an hour before, and 3 minutes
