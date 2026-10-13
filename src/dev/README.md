@@ -29,8 +29,8 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）、`calendar`（`'month'` 月曆／`'months'` 選月份打開）、`goTo`（開在別天，只在雲端的日子會開始下載）、`dogs`（再加哪幾隻狗，055b）、`protagonist`、`sheet`（`'dogs'` 選狗小視窗開著）、`cursorAgo`（游標在多久以前）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
 | 雲端的日子、下載（054b） | `historyCloud`：`fixtureHistoryCloud` 照 `HistoryCloud` 的介面回答（`newestBefore`、`earliest`、`download`），資料是情境自己的「雲端」列；下載把那天的列放進情境的 `supabase_dog_status`；`online: false` 沒網路；`seed` 是開頭就知道的雲端日子 | `useHistoryCloud` → 月曆的點、‹ ›、H3c／H3d；情境從不連 Supabase |
 | 匯出（056） | `historyExport`：`'hang'`（產生中一直不結束）、`'fail'`、`'fail-once'`（第一次失敗、重試成功）；沒給就是真的原生匯出（檔案寫進這支手機的 cache、打開 Android 分享）。`historyView.export`：`{ phase: 'choose' \| 'generating' \| 'failed', format }` 開著匯出小視窗 | `useHistoryExport` → `HistoryExportSheet`、`HistoryExportPackage.kt` |
-| 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
-| 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
+| 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、編輯小視窗（A5） |
+| 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、編輯小視窗 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
 | 提醒（058a） | 情境自己的提醒引擎（`useAlertEngine`，不存進手機）跑在情境的假時鐘上；`alertPause: { since, until }` 開的時候已經暫停；`&page=alertPreview` 的「+N 分」把假時鐘往前移、「App 在背景」模擬背景，看合併通知的內容、`notify`／`update`／收起、震動節奏和 N3 卡片；「App 在背景」時情境的假問題會發出真的系統通知（058b），可以拉下通知欄看、按按鈕 | `AlertEvents` → `AlertScheduler` → `AlertContent`、`AlertEffects` → `AlertNotifications`（原生） |
 | 背景提醒（058b） | 沒有接收器時用 `DebugAlertFeed`（debug 版才有的廣播）餵假封包給原生的背景提醒判斷：`. scripts/app-package.sh; adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_PACKET --ei sid 4 --ef lat … --ef lon … --ef mlat … --ef mlon … [--ei bp 15] [--el at <ms>]`，再 `-a com.dogtracker.debug.ALERT_STEP [--ez connected false --el disconnectedAt <ms>] [--el at <ms>]` 跑一步（App 在畫面上時不跑，輪到 App 自己判斷）；`ALERT_RESET` 全部清掉。座標只用桃園站附近的假位置 | `BackgroundAlerts.evaluate`（和 App 同一份規則的 Kotlin 版，`AlertParityTest`）→ `AlertPoster` |
@@ -39,13 +39,13 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 接收器 Wi-Fi | `wifi`（接收器存的網路，預設「家裡、辦公室」、使用中「家裡」）；新增、刪除只改記憶體 | `useReceiverWifi` → S7 第二行、Wi-Fi 頁 |
 | 刪除全部狗資料 | `deletion: { unsent, open }`：還沒上傳的筆數、確認框一打開就出現；情境裡「先上傳」一律沒網路、「一起刪除」不刪任何東西 | `useDeleteDogData` → S7 確認框 |
 | 啟動 | `launch`：冷啟動時 `Launch.launchScreen` 讀的輸入（資料庫打開了沒／錯誤、設定讀完沒、引導走到哪一步、恢復登入結束或超過 10 秒、登入了沒、恢復時登入已失效）；`restoring`：恢復登入還在等 Supabase | `launchScreen` → App 開在地圖、D1（第一次／登入失效）或 D0 啟動失敗；S3「暫時連不上，會自動重試」 |
-| 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
+| 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的編輯小視窗（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
 | 初次使用 D2–D4 | `permissionsGuide`（D2 每列的允許狀態 `grants`、問過了沒 `asked`）、`pairing`（D3 的畫面：`view`、`camera`、`dialog`、`target`、`nearby`、`input`）；開在引導的那一頁（有進度條）。情境不問任何權限、不掃描、不連線，掃描框裡不開相機 | `permissionsPage` → D2；`usePairing` → D3；D4 用 `pairedPage` 讀同一批本機列 |
 | 地址 | `geocoder`：沒給＝每個地方都查不到；`{ names: [...] }` 照畫面問的順序給假答案（`{ line, awayM }`、`{ district }` 或 `null`）；`{ offline: true }` 沒網路；`'real'` 用這支手機的 Geocoder。情境用自己的 lookup，不寫進手機的地址快取 | `AddressLookup`（`describePlace` 的 50 m／300 m／區規則）→ 卡片「位置」第二行、歷史清單的節點 |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`／`battery_mv`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新可信電量 `BatteryPlausibility`）→ `DogCardModel` |
 | 活動量頁（A4） | `activityView`（開在哪個分頁、哪一天 `{ mode, date }`）、`readActivity`／`readActivityEarliest` 照 `CloudDatabase.activityPeriod`／`activityEarliest` 的介面回答小黑（6）的讀數（日：每分鐘兩筆原始讀數；週／月／年：每分鐘平均）；`activityNow`：只給 A4 的時鐘（`activity-today` 在 09:30:40，還沒結束的那一分鐘讀數 0.95） | `useActivityView` → `buildActivityView`／`combineYearView` → `ActivityScreen` |
 
-第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的個人頁（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
+第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的編輯小視窗（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
 
 ## 現有情境
 
@@ -91,7 +91,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-cloud-dog` | 小黑只從雲端來：沒有「接收範圍」列；劇烈活動 |
 | `card-phone-no-fix` | 手機最後定位 15 分鐘前：方向距離改寫「手機沒有定位」 |
 | `card-readings-old` | 豆豆位置是新的，但電量、活動量 09:11 之後沒有讀數：「62%（09:11）」「休息中・已 12 分鐘（09:11）」 |
-| `dog-edit` | `card-ok` 再按鉛筆：豆豆的個人頁（A5）蓋在卡片上 |
+| `dog-edit` | `card-ok` 再按鉛筆：豆豆的編輯小視窗（A5：名字＋頭像）蓋在卡片上 |
 | `activity-card` | 小黑的卡片（A3）；點「活動量」進 A4（今天），讀數和下面的情境同一套 |
 | `activity-day` | A4 日：10/6（二）整天有資料：夜裡休息、早上跑步（劇烈）、午睡、下午玩 |
 | `activity-day-gap` | 同一天四段沒有資料：列出三段＋「另外 1 段」＋「合計 1 小時 12 分」，曲線在缺口斷開 |

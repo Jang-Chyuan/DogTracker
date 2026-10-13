@@ -1,35 +1,39 @@
 import { t } from '../i18n';
-// A5: a dog's own page, opened by the pencil on its card (design v3 A5/A5a/
-// A5c; DESIGN.md §12). The face with a camera button (A5c), the name with a
-// pencil, 「訊號源 4」 under it. The title bar has only ‹.
-//
-// The name is edited in place (A5a): tapping it turns it into an input with
-// the keyboard up; the keyboard's 完成, tapping anywhere else, or the keyboard
-// going away stores it. Empty or only spaces is not an error: the dog keeps
-// the name it had. ‹ and the back key store a name being edited, then return
-// to the card; with A5c open they cancel A5c instead.
+// A5: a dog's edit sheet, opened from its card (DESIGN.md §12「狗的名稱與頭像」).
+// One sheet rises from the bottom over the dimmed card: 「取消 名字和頭像 完成」,
+// the name input at the top with 「訊號源 4」 under it (read only), the face
+// picker below (拍照／相簿／插圖, 樣子, 底色). Nothing is stored until 完成,
+// which stores the name and the face together; 取消, the dimmed card and the
+// back key store nothing (with something changed they ask first). The sheet
+// rides on top of the keyboard and scrolls, so the keyboard never covers the
+// picker.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
   BackHandler,
+  Easing,
   Keyboard,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AvatarEditor from './AvatarEditor';
-import DogAvatar from './DogAvatar';
+import AvatarPicker, { faceOf, sameAvatar } from './AvatarPicker';
 import { NAME_MAX, clampName, nameLength, nameToSave } from './DogName';
-import Glyph from '../map/Glyph';
-import { PressScale } from '../map/MapControls';
-import { radius, size as sizes, space, touch, type, border } from '../theme/tokens';
-import { linesFor } from '../utils/textScale';
+import ConfirmDialog from '../settings/ConfirmDialog';
+import { isReduceMotion, REDUCED_FADE_MS } from '../utils/reduceMotion';
+import { useInitialFocus } from '../utils/a11yFocus';
+import { useKeyboardHeight } from '../utils/keyboard';
+import { motion, radius, size as sizes, space, touch, type, border } from '../theme/tokens';
 
-const AVATAR = sizes.edit.avatar;
-const CAMERA = sizes.edit.camera;
+const ease = Easing.bezier(...motion.easeOut);
+const CLOSE_MS = 180;
 
 /**
  * @param slaveId the dog's collar number (訊號源)
@@ -37,7 +41,8 @@ const CAMERA = sizes.edit.camera;
  * @param alias the name stored for it ('' when none)
  * @param avatar its stored face, or null for the default
  * @param onSaveName(name) / onSaveAvatar(avatar) resolve true once stored
- * @param onBack back to the card
+ * @param onBack back to the card (called once the sheet has slid away)
+ * @param picker react-native-image-crop-picker (tests pass a stub)
  */
 export default function DogProfile({
   slaveId,
@@ -52,16 +57,28 @@ export default function DogProfile({
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const insets = useSafeAreaInsets();
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState('');
-  const [avatarOpen, setAvatarOpen] = useState(false);
-  const [failed, setFailed] = useState(false);
-  // While a name is being stored the input is read-only, so nothing typed
-  // meanwhile is dropped when it closes.
+  const { height: windowHeight } = useWindowDimensions();
+  const keyboard = useKeyboardHeight();
+  // React Native's keyboard height leaves out the navigation bar under it;
+  // drawn edge to edge, the keyboard covers that too.
+  const covered = keyboard ? keyboard + insets.bottom : 0;
+  const [text, setText] = useState(alias || '');
+  const [face, setFace] = useState(() => faceOf(avatar));
+  const [focused, setFocused] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  // While storing, nothing can be typed or chosen, so nothing is lost.
   const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const input = useRef(null);
-  // One finish per edit: 完成 blurs the input too, and blur finishes again.
-  const finishing = useRef(null);
+  const progress = useRef(new Animated.Value(0)).current;
+  // 減少動態效果: no slide, the sheet fades with its scrim (DESIGN.md §8).
+  const reduced = useRef(isReduceMotion()).current;
+  // TalkBack starts on the sheet's title (設計稿「無障礙」).
+  const titleRef = useRef(null);
+  useInitialFocus(titleRef);
+  const [sheetHeight, setSheetHeight] = useState(0);
+  const closing = useRef(false);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -69,276 +86,306 @@ export default function DogProfile({
       alive.current = false;
     };
   }, []);
-  const startEditing = () => {
-    if (editing) return;
-    finishing.current = null;
-    setFailed(false);
-    setText(alias || '');
-    setEditing(true);
-  };
-  // Stores the typed name (if there is one to store) and leaves the input.
-  // Resolves false only when storing failed (the input stays open).
-  const finish = useCallback(() => {
-    if (!editing) return Promise.resolve(true);
-    if (finishing.current) return finishing.current;
-    const next = nameToSave(text, alias);
-    finishing.current = (async () => {
-      let ok = true;
-      if (next != null) {
-        setSaving(true);
-        try {
-          ok = await onSaveName(next);
-        } catch {
-          ok = false;
-        }
-      }
-      if (!alive.current) return ok;
-      setSaving(false);
-      finishing.current = null;
-      if (ok) setEditing(false);
-      else setFailed(true);
-      return ok;
-    })();
-    return finishing.current;
-  }, [editing, text, alias, onSaveName]);
-  // The keyboard going away (Android's back key closes it first) ends the edit.
-  useEffect(() => {
-    if (!editing) return undefined;
-    const subscription = Keyboard.addListener('keyboardDidHide', () => {
-      finish();
-    });
-    return () => subscription.remove();
-  }, [editing, finish]);
-  const back = useCallback(async () => {
-    if (await finish()) onBack?.();
-  }, [finish, onBack]);
-  // Registered once, so A5c's own listener (added when it opens) always comes
-  // first; with A5c open this one passes the key on to it.
-  const backRef = useRef(back);
-  backRef.current = back;
-  const avatarOpenRef = useRef(false);
-  avatarOpenRef.current = avatarOpen;
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener(
-      'hardwareBackPress',
-      () => {
-        if (avatarOpenRef.current) return false;
-        backRef.current();
-        return true;
-      },
-    );
-    return () => subscription.remove();
-  }, []);
-  const tapOutside = () => {
-    if (!editing) return;
+  // What 完成 would store: a trimmed new name (null: empty, spaces or the
+  // same — the dog keeps its name) and the face, if it is a different one.
+  const newName = nameToSave(text, alias);
+  const faceChanged = !sameAvatar(face, avatar);
+  const changed = newName != null || faceChanged;
+  const busy = saving || photoBusy;
+  const close = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
     input.current?.blur();
     Keyboard.dismiss();
-    finish();
+    Animated.timing(progress, {
+      toValue: 0,
+      duration: reduced ? REDUCED_FADE_MS : CLOSE_MS,
+      easing: ease,
+      useNativeDriver: true,
+    }).start(() => onBack?.());
+  }, [onBack, progress, reduced]);
+  // 取消, the dimmed card and the back key: nothing is stored; with a change
+  // made, the discard dialog asks first.
+  const cancel = useCallback(() => {
+    if (busy || closing.current) return;
+    if (!changed) {
+      close();
+      return;
+    }
+    input.current?.blur();
+    Keyboard.dismiss();
+    setConfirming(true);
+  }, [busy, changed, close]);
+  const done = async () => {
+    if (busy || closing.current) return;
+    input.current?.blur();
+    Keyboard.dismiss();
+    if (!changed) {
+      close();
+      return;
+    }
+    setFailed(false);
+    setSaving(true);
+    const store = async (save, value) => {
+      try {
+        return !!(await save(value));
+      } catch {
+        return false;
+      }
+    };
+    // Each is stored once: after a partial failure the stored one matches
+    // its new props and only the other is tried again.
+    const results = [
+      faceChanged ? await store(onSaveAvatar, face) : true,
+      newName != null ? await store(onSaveName, newName) : true,
+    ];
+    if (!alive.current) return;
+    setSaving(false);
+    if (results.every(Boolean)) close();
+    else setFailed(true);
   };
+  // Registered once; the newest state is read through refs.
+  const backRef = useRef(cancel);
+  backRef.current = cancel;
+  const confirmingRef = useRef(false);
+  confirmingRef.current = confirming;
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      // The dialog's own back (Modal) keeps editing.
+      if (confirmingRef.current) setConfirming(false);
+      else backRef.current();
+      return true;
+    });
+    return () => subscription.remove();
+  }, []);
+  // The keyboard going away (Android's back key closes it first) ends typing.
+  useEffect(() => {
+    if (!keyboard) input.current?.blur();
+  }, [keyboard]);
+  const onLayout = event => {
+    const value = Math.round(event.nativeEvent.layout.height);
+    if (!value || sheetHeight) return;
+    setSheetHeight(value);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: reduced ? REDUCED_FADE_MS : motion.cardRise.duration,
+      easing: ease,
+      useNativeDriver: true,
+    }).start();
+  };
+  // A choice in the picker puts the keyboard away, so the picker is in full view.
+  const leaveName = () => {
+    input.current?.blur();
+    Keyboard.dismiss();
+  };
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [reduced ? 0 : sheetHeight || windowHeight, 0],
+  });
+  const sheetOpacity = reduced ? progress : 1;
+  const count = nameLength(text);
   return (
-    <View style={[StyleSheet.absoluteFill, styles.page]} testID="dog-profile">
-      {/* Behind the content: a tap anywhere else ends a name edit. Not a
-             control for TalkBack (the keyboard's 完成 and ‹ are). */}
-      <Pressable
-        style={StyleSheet.absoluteFill}
-        onPress={tapOutside}
-        accessible={false}
-        importantForAccessibility="no-hide-descendants"
-        testID="dog-profile-outside"
-      />
-      {/* With A5c open, TalkBack stays in the sheet. */}
-      <View
-        style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}
-        pointerEvents="box-none"
-        importantForAccessibility={avatarOpen ? 'no-hide-descendants' : 'auto'}
+    <View style={[StyleSheet.absoluteFill, styles.layer]} testID="dog-profile">
+      <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          accessibilityRole="button"
+          accessibilityLabel={t('c046')}
+          testID="dog-profile-scrim"
+          onPress={cancel}
+        />
+      </Animated.View>
+      <Animated.View
+        onLayout={onLayout}
+        accessibilityViewIsModal
+        importantForAccessibility={confirming ? 'no-hide-descendants' : 'auto'}
+        testID="dog-profile-sheet"
+        style={[
+          styles.sheet,
+          {
+            // On top of the keyboard (the window does not shrink for it).
+            bottom: covered,
+            paddingBottom: space.l + (keyboard ? 0 : insets.bottom),
+            maxHeight: windowHeight - insets.top - covered,
+            transform: [{ translateY }],
+            opacity: sheetOpacity,
+          },
+          !sheetHeight && styles.unmeasured,
+        ]}
       >
-        <View style={styles.header} pointerEvents="box-none">
+        <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("c438")}
-            onPress={back}
-            testID="dog-profile-back"
-            style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+            accessibilityLabel={t('c046')}
+            disabled={busy}
+            accessibilityState={{ disabled: busy }}
+            onPress={cancel}
+            testID="dog-profile-cancel"
+            style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
           >
-            <Glyph name="back" color={colors.text} size={sizes.icon.navigation} />
+            <Text style={styles.cancel}>{t('c046')}</Text>
+          </Pressable>
+          <Text ref={titleRef} style={styles.title} accessibilityRole="header">
+            {t('c1330')}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('c101')}
+            disabled={busy}
+            accessibilityState={{ disabled: busy, busy: saving }}
+            onPress={done}
+            testID="dog-profile-done"
+            style={({ pressed }) => [styles.headerButton, styles.headerEnd, pressed && styles.pressed]}
+          >
+            <View style={styles.doneRow}>
+              {saving && <ActivityIndicator size="small" color={colors.tonalText} />}
+              <Text style={styles.done}>{t('c101')}</Text>
+            </View>
           </Pressable>
         </View>
-        <View style={styles.profile} pointerEvents="box-none">
-          <View style={styles.avatarWrap}>
-            <PressScale
-              accessibilityRole="button"
-              accessibilityLabel={t("c645", { name: name })}
-              testID="dog-profile-avatar"
-              onPress={() => {
-                tapOutside();
-                setAvatarOpen(true);
-              }}
-              style={styles.avatarPress}
-            >
-              <DogAvatar avatar={avatar} size={AVATAR} border={0} />
-            </PressScale>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("c645", { name: name })}
-              testID="dog-profile-camera"
-              hitSlop={(touch.min - CAMERA) / 2}
-              onPress={() => {
-                tapOutside();
-                setAvatarOpen(true);
-              }}
-              style={({ pressed }) => [
-                styles.camera,
-                pressed && styles.cameraPressed,
-              ]}
-            >
-              <Glyph name="camera" color={colors.text} size={sizes.icon.smallAction} />
-            </Pressable>
-          </View>
-          {editing ? (
-            <View style={styles.nameEdit} testID="dog-profile-name-input">
-              <TextInput
-                cursorColor={colors.accent}
-                selectionColor={`${colors.accent}66`}
-                selectionHandleColor={colors.accent}
-                ref={input}
-                value={text}
-                autoFocus
-                accessibilityLabel={t('c347')}
-                onChangeText={value => {
-                  setFailed(false);
-                  setText(clampName(value));
-                }}
-                editable={!saving}
-                maxLength={NAME_MAX * 2}
-                placeholder={t('c347')}
-                placeholderTextColor={colors.textMuted}
-                returnKeyType="done"
-                submitBehavior="blurAndSubmit"
-                onSubmitEditing={() => finish()}
-                onBlur={() => finish()}
-                style={styles.input}
-              />
-              {nameLength(text) >= NAME_MAX - 4 && (
-                <Text testID="dog-name-count" style={styles.count}>{`${nameLength(text)}/${NAME_MAX}`}</Text>
-              )}
-            </View>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("c646", { name: name })}
-              onPress={startEditing}
-              testID="dog-profile-name"
-              style={({ pressed }) => [styles.nameRow, pressed && styles.pressed]}
-            >
-              <Text style={styles.name} numberOfLines={linesFor(1)}>
-                {name}
-              </Text>
-              <Glyph
-                name="pencil"
-                color={colors.textMuted}
-                size={sizes.edit.pencil}
-              />
-            </Pressable>
-          )}
-          <Text style={styles.source}>{t('c052', { number: slaveId })}</Text>
+        <ScrollView
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.body}
+        >
           {failed && (
-            <Text style={styles.error} accessibilityRole="alert">{t("c627")}</Text>
+            <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">
+              {t('c627')}
+            </Text>
           )}
-        </View>
-      </View>
-      {avatarOpen && (
-        <AvatarEditor
-          avatar={avatar}
-          name={name}
-          picker={picker}
-          onSave={onSaveAvatar}
-          onClose={() => setAvatarOpen(false)}
-        />
-      )}
+          <Text style={[styles.section, styles.firstSection]}>{t('c1331')}</Text>
+          <View
+            style={[styles.field, focused && styles.fieldFocused]}
+            testID="dog-profile-name-field"
+          >
+            <TextInput
+              ref={input}
+              cursorColor={colors.accent}
+              selectionColor={`${colors.accent}66`}
+              selectionHandleColor={colors.accent}
+              value={text}
+              accessibilityLabel={t('c347')}
+              onChangeText={value => {
+                setFailed(false);
+                setText(clampName(value));
+              }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              editable={!saving}
+              maxLength={NAME_MAX * 2}
+              placeholder={t('c347')}
+              placeholderTextColor={colors.textMuted}
+              returnKeyType="done"
+              submitBehavior="blurAndSubmit"
+              testID="dog-profile-name-input"
+              style={styles.input}
+            />
+            {count >= NAME_MAX - 4 && (
+              <Text testID="dog-name-count" style={styles.count}>{`${count}/${NAME_MAX}`}</Text>
+            )}
+          </View>
+          <Text style={styles.signal} testID="dog-profile-source">
+            {t('c052', { number: slaveId })}
+          </Text>
+          <Text style={styles.section}>{t('c100')}</Text>
+          <AvatarPicker
+            value={face}
+            name={name}
+            picker={picker}
+            disabled={saving}
+            onInteract={leaveName}
+            onBusy={setPhotoBusy}
+            onChange={next => {
+              setFailed(false);
+              setFace(next);
+            }}
+          />
+        </ScrollView>
+      </Animated.View>
+      <ConfirmDialog
+        visible={confirming}
+        testID="dog-profile-discard"
+        title={t('c1332')}
+        body={t('c1333')}
+        cancelLabel={t('c1334')}
+        confirm={t('c1335')}
+        destructive
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          close();
+        }}
+      />
     </View>
   );
 }
 
 const getStyles = makeStyles(theme => {
-  const { colors, shadow } = theme;
+  const { colors } = theme;
   return StyleSheet.create({
-    page: {
-      zIndex: 40,
-      elevation: 12,
-      backgroundColor: theme.isDark ? colors.bg : colors.surface,
+    // Over the card, the map's gear and its top cards.
+    layer: { zIndex: 80, elevation: 40 },
+    scrim: { backgroundColor: colors.scrim },
+    sheet: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      backgroundColor: colors.elevated,
+      ...theme.floatingBorder,
+      borderTopLeftRadius: radius.sheet,
+      borderTopRightRadius: radius.sheet,
+      paddingHorizontal: space.l,
+      paddingTop: space.s,
+      elevation: 16,
     },
+    unmeasured: { opacity: 0 },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      minHeight: touch.subpageHeader,
+      minHeight: touch.min,
+    },
+    headerButton: {
+      minWidth: touch.min,
+      minHeight: touch.min,
+      justifyContent: 'center',
+      borderRadius: radius.button,
       paddingHorizontal: space.xs,
     },
-    back: {
-      width: touch.min,
-      height: touch.min,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: radius.full,
+    headerEnd: { alignItems: 'flex-end' },
+    doneRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+    cancel: { ...type.status, color: colors.textMuted },
+    done: { ...type.status, color: colors.tonalText },
+    title: { ...type.status, color: colors.text, flex: 1, textAlign: 'center' },
+    body: { paddingTop: space.s },
+    error: { ...type.caption, color: colors.crit, textAlign: 'center' },
+    section: {
+      ...type.captionBold,
+      color: colors.textMuted,
+      marginTop: space.l,
+      marginBottom: space.xs,
     },
-    profile: {
+    firstSection: { marginTop: space.s },
+    // DESIGN.md 文字輸入欄: 56dp, radius 12, 1.5dp line; focused 2dp accent.
+    field: {
+      flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: space.l,
-      paddingTop: space.s,
-    },
-    avatarWrap: { width: AVATAR, height: AVATAR },
-    camera: {
-      position: 'absolute',
-      right: -sizes.edit.cameraOverhang,
-      bottom: 0,
-      width: CAMERA,
-      height: CAMERA,
-      borderRadius: CAMERA / 2,
-      backgroundColor: colors.surface,
-      borderWidth: border.hairline,
-      // floatingOutline is line in light, the visible dark outline in dark.
+      minHeight: sizes.input.height,
+      borderRadius: radius.input,
+      borderWidth: border.regular,
       borderColor: colors.floatingOutline,
-      alignItems: 'center',
-      justifyContent: 'center',
-      ...shadow.floating,
-      elevation: 4,
+      paddingHorizontal: space.l,
+      backgroundColor: colors.surface,
     },
-    cameraPressed: { backgroundColor: colors.bg },
-    nameRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.xs,
-      minHeight: touch.min,
-      marginTop: space.s,
-      paddingHorizontal: space.s,
-      maxWidth: '100%',
-      // Name and pencil press as one capsule.
-      borderRadius: radius.full,
-    },
-    name: { ...type.nameEdit, color: colors.text, flexShrink: 1 },
-    // In place of the name: a 2dp accent underline, 「N/20」 on the same line.
-    nameEdit: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      minHeight: touch.min,
-      marginTop: space.s,
-      maxWidth: '100%',
-    },
+    fieldFocused: { borderWidth: border.strong, borderColor: colors.accent },
     input: {
-      ...type.nameEdit,
+      ...type.body,
       color: colors.text,
-      minWidth: sizes.edit.nameMinimum,
-      flexShrink: 1,
-      paddingVertical: space.xs,
-      paddingHorizontal: space.xs,
-      textAlign: 'center',
-      borderBottomWidth: border.strong,
-      borderBottomColor: colors.accent,
+      flex: 1,
+      paddingVertical: space.s,
+      paddingHorizontal: 0,
     },
     count: { ...type.caption, color: colors.textMuted, marginLeft: space.s },
-    source: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
-    error: { ...type.caption, color: colors.crit, marginTop: space.s },
+    signal: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
     pressed: { backgroundColor: colors.pressedOverlay },
-    // The round avatar: its pressed overlay is round too.
-    avatarPress: { borderRadius: radius.full, minHeight: touch.min },
   });
 });

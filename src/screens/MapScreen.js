@@ -265,7 +265,7 @@ export default function MapScreen({
   useEffect(() => {
     if (fixtureDog != null) {
       openDog(fixtureDog);
-      // dog-edit opens the dog's page (A5) over its card, once the card is.
+      // dog-edit opens the dog's edit sheet (A5) over its card, once the card is.
       pendingPage.current = fixturePage;
       if (fixturePage) setCardPage(fixturePage);
     } else {
@@ -1013,7 +1013,8 @@ export default function MapScreen({
       ? notificationFrame
       : frameRequest;
   // A5: the name is stored with the history preferences' names (dogAliases),
-  // the face in dog_avatars; both by collar number, on this phone only.
+  // the face in dog_avatars; both by collar number, on this phone only. The
+  // sheet's 完成 calls both (only for what changed).
   const saveName = async name => {
     if (!cardDog || !history?.save) return false;
     const aliases = {
@@ -1093,10 +1094,13 @@ export default function MapScreen({
   }), [historyControlScope]);
   const activeHistoryControls = historyControls.scope === historyControlScope
     ? historyControls : { boxes: [], ready: false };
-  // A4/A5 only cover the map while they are drawn: a page asked for before
-  // its card exists (a fixture's openPage, or a card that went) must not hide
-  // the map with nothing over it (a blank screen).
-  const coveringPage = cardModel ? cardPage : null;
+  // A4 only covers the map while it is drawn: a page asked for before its
+  // card exists (a fixture's openPage, or a card that went) must not hide the
+  // map with nothing over it (a blank screen). A5 is a sheet over the dimmed
+  // card: the map stays in place, only out of reach of touch and TalkBack.
+  const coveringPage = cardModel && cardPage === 'activity' ? cardPage : null;
+  const editSheet = !!cardModel && cardPage === 'edit';
+  const behindPage = !!coveringPage || editSheet;
   return (
     <View style={styles.root} testID="fullscreen-map-screen">
       <LivePhoneReader
@@ -1105,21 +1109,21 @@ export default function MapScreen({
         onChange={setRealPhone}
         onEvery={addRideFix}
       />
-      {/* Under A4/A5 the map and its card stay mounted, only out of reach of
+      {/* Under A4 and A5 the map and its card stay mounted, only out of reach of
           touch and TalkBack. Never display:none or a style that changes
           whether this view is flattened: either one detaches the native
           MapView, and react-native-maps re-creates its GoogleMap on every
           re-attach without destroying the old one (a leak per opening).
-          collapsable={false} keeps this one native view for good. Under a
-          page the layer is moved off screen (a transform, which keeps it
+          collapsable={false} keeps this one native view for good. Under an
+          opaque page (A4) the layer is moved off screen (a transform, which keeps it
           attached): the native map draws into its own surface under the
           window, and an opaque page alone left it showing in the status-bar
           inset. */}
       <View testID="map-background-layer" style={[StyleSheet.absoluteFill, coveringPage && styles.coveredMap]}
         collapsable={false}
-        pointerEvents={coveringPage ? 'none' : 'auto'}
-        accessibilityElementsHidden={!!coveringPage}
-        importantForAccessibility={coveringPage ? 'no-hide-descendants' : 'auto'}>
+        pointerEvents={behindPage ? 'none' : 'auto'}
+        accessibilityElementsHidden={behindPage}
+        importantForAccessibility={behindPage ? 'no-hide-descendants' : 'auto'}>
       <TrackingMap
         a11yHidden={historical && historySheet}
         provider={mapProvider}
@@ -1204,11 +1208,12 @@ export default function MapScreen({
       {/* The launch screen's handover fades these in (splashChrome). */}
       <Animated.View
         pointerEvents="box-none"
-        importantForAccessibility={behindSheet(historical && historySheet)}
+        importantForAccessibility={behindSheet((historical && historySheet) || editSheet)}
         style={[
           StyleSheet.absoluteFill,
           styles.chrome,
-          // The gear and top cards go under A4/A5 (not an ancestor of the map).
+          // The gear and top cards go under A4 (not an ancestor of the map);
+          // under A5's scrim they stay, dimmed and out of TalkBack.
           coveringPage && styles.hiddenChrome,
           { opacity: splashChrome },
         ]}

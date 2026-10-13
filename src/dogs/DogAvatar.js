@@ -30,7 +30,7 @@ export const getSTALE_LINE = makeStyles(theme => {
  * greyscale — never the white border or the badges drawn over it (v3: no
  * transparency, no status ring). `border` is the white frame's width.
  * `onLoad` lets a map marker redraw once a photo is decoded. `tint`
- * ({ bg, line }) draws an illustration in other colours (A5c's unselected
+ * ({ bg, line }) draws an illustration in other colours (the edit sheet's unselected
  * 樣子 choices are neutral). `snapshot` is for map markers, which are drawn
  * into a bitmap off screen: there a photo is drawn by the SVG surface (it
  * loads while being drawn), because an Image view never loads unattached.

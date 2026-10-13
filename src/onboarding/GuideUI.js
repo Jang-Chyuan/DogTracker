@@ -1,9 +1,7 @@
 import { t } from '../i18n';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -41,22 +39,8 @@ export function GuideProgress({ step }) {
   );
 }
 
-// The keyboard's height: the buttons ride on top of it (the window is drawn
-// edge to edge, so it does not shrink for the keyboard).
-export function useKeyboardHeight() {
-  const [height, setHeight] = useState(0);
-  useEffect(() => {
-    const onShow = Keyboard.addListener('keyboardDidShow', event =>
-      setHeight(event?.endCoordinates?.height || 0),
-    );
-    const onHide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, []);
-  return height;
-}
+// The keyboard's height: the buttons ride on top of it (shared with A5).
+export { useKeyboardHeight } from '../utils/keyboard';
 
 /**
  * A guide page: progress (`step`, only in the first-launch guide), `top`
