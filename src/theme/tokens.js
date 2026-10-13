@@ -296,6 +296,16 @@ export const size = {
   // shimmer band that sweeps across it is this wide.
   catchUpPill: { height: 36, paddingH: 12, gap: 8, shimmer: 64 },
   groupTag: { height: 32, paddingH: 8, problemDot: 8, dotGap: 6, safety: 8 },
+  edgeHint: {
+    height: 36,
+    avatar: 24,
+    overlap: 6,
+    maxAvatars: 3,
+    problemBorder: border.strong,
+
+    // Width of the outward-pointing edge-hint arrow (§15).
+    arrow: 10,
+  },
   card: {
     avatar: 40,
     labelWidth: 72,

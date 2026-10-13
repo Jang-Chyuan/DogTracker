@@ -75,8 +75,8 @@ import {
   regionForFrame,
   overlayFramePadding,
 } from './MapFraming';
-import { markerBox, boxesOverlap, mapControlBoxes } from './MapBoxes';
-import { CompassButton, MapButtons, MapTip } from './MapControls';
+import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox } from './EdgeHints';
+import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
 const withOpacity = (hex, alpha) =>
@@ -638,7 +638,7 @@ function GoogleTrackingMapRenderer({
   // (as when it cannot load), 'component' as if the map could not open.
   failure = null,
   // How far down the top cards reach (0: none). Like coverBottom the map's
-  // own padding stays put; framing and the compass keep clear of them.
+  // own padding stays put; hints, framing and the compass keep clear of them.
   coverTop = 0,
   // Where the compass sits (12dp under the gear or under the top cards).
   compassTop = null,
@@ -669,8 +669,8 @@ function GoogleTrackingMapRenderer({
   frameRequest = null,
   // How much of the bottom an open card covers (0: none). The map's own
   // padding stays at bottomInset — changing it would shift the whole map each
-  // time a card opens — so only what is drawn over the map (the buttons) and
-  // the moves the user asks for keep clear of the card.
+  // time a card opens — so only what is drawn over the map (buttons, hints,
+  // the overlap menu) and the moves the user asks for keep clear of the card.
   coverBottom = 0,
   // 「今天 x km」 (TodayDistance.todayPill) beside 我的位置, and its tap.
   today = null,
@@ -737,7 +737,7 @@ function GoogleTrackingMapRenderer({
   const settleTimer = useRef(null);
   useEffect(() => () => clearTimeout(settleTimer.current), []);
   // While the camera moves (a drag, or a move the user asked for) the screen
-  // points are out of date: the dogs' TalkBack items wait for the next read.
+  // points are out of date: the off-screen hints wait for the next read.
   const moving = useRef(false);
   const [movingState, setMovingState] = useState(false);
   const movingTimer = useRef(null);
@@ -749,7 +749,7 @@ function GoogleTrackingMapRenderer({
     moving.current = true;
     setMovingState(true);
     // A move to where the camera already is reports no change: read again
-    // after a moment anyway, so the TalkBack items never stay hidden.
+    // after a moment anyway, so the hints never stay hidden.
     clearTimeout(movingTimer.current);
     movingTimer.current = setTimeout(() => {
       if (moving.current) setCursorRevision(value => value + 1);
@@ -912,7 +912,7 @@ function GoogleTrackingMapRenderer({
   }, [dataReady, mountedMap]);
   useEffect(() => {
     const map = mapRef.current;
-    // Read for one dog too: its TalkBack item and taps need to know where it is.
+    // Read for one dog too: the off-screen hints need to know where it is.
     if (!usable || dogMarkers.length < 1 || !map?.pointForCoordinate)
       return undefined;
     let alive = true;
@@ -929,7 +929,8 @@ function GoogleTrackingMapRenderer({
       setDogPoints({ source, points });
       // A camera move does not always report its end (a move the app asked
       // for, on a busy phone): read again until two reads agree, so the
-      // TalkBack items and taps never use the places from before the move.
+      // off-screen hints never use the places from before the move (066:
+      // hints for dogs that were on screen after a card opened).
       // During a move, places read before the camera can have got going
       // (a busy phone) do not count as settled.
       const settled = pointsSettled(lastRead.current, points)
@@ -937,7 +938,7 @@ function GoogleTrackingMapRenderer({
       lastRead.current = points;
       clearTimeout(settleTimer.current);
       if (!settled && settleReads.current < POINTS_SETTLE_READS + POINTS_SLOW_READS) {
-        // Quick re-reads first, then slower ones; the TalkBack items stay hidden
+        // Quick re-reads first, then slower ones; the hints stay hidden
         // until two reads agree (or, at the very end, the last read is used).
         const delay = settleReads.current < POINTS_SETTLE_READS ? POINTS_SETTLE_MS : POINTS_SLOW_MS;
         settleReads.current += 1;
@@ -948,7 +949,7 @@ function GoogleTrackingMapRenderer({
         return;
       }
       settleReads.current = 0;
-      // Read after the camera stopped: the TalkBack items are right again.
+      // Read after the camera stopped: the off-screen hints are right again.
       if (moving.current) {
         moving.current = false;
         setMovingState(false);
@@ -1202,6 +1203,32 @@ function GoogleTrackingMapRenderer({
     : { hidden: true, box: null, pinSafe: true };
   const shownCursorPlacement = historyCameraMoving && cursorPlacement.box
     ? { ...cursorPlacement, box: null } : cursorPlacement;
+  const hints = useMemo(
+    () =>
+      live && screenPoints
+        ? edgeHints(dogMarkers, screenPoints, {
+            width: cursorLayout.width,
+            height: cursorLayout.height,
+            top: overlayTop,
+            bottom: overlayBottom,
+            bottomRow,
+            fontScale,
+            shownTop: coverTop || 0,
+          })
+        : [],
+    [
+      live,
+      screenPoints,
+      dogMarkers,
+      cursorLayout.width,
+      cursorLayout.height,
+      overlayTop,
+      overlayBottom,
+      bottomRow,
+      fontScale,
+      coverTop,
+    ],
+  );
   // When the map's own blue dot last reported (kept coarse: one update a
   // minute is enough to know whether there is a fix).
   const [nativeFixAt, setNativeFixAt] = useState(null);
@@ -1306,7 +1333,7 @@ function GoogleTrackingMapRenderer({
         const selected = dogMarkers.find(marker => marker.slaveId === focusDog.slaveId)
           || dogMarkers.find(marker => marker.selected);
         const box = point && markerBox(selected || { name: '', size: sizes.marker.attention }, point, fontScale);
-        const occluded = box && mapControlBoxes({ width, height, bottom: overlayBottom, bottomRow })
+        const occluded = box && [...mapControlBoxes({ width, height, bottom: overlayBottom, bottomRow }), ...hints.map(hintBox)]
           .some(other => boxesOverlap(box, other));
         const hidden =
           !point || occluded ||
@@ -2089,6 +2116,18 @@ function GoogleTrackingMapRenderer({
             onActivate={pressDog}
           />
         )}
+        {live &&
+          usable &&
+          foreground &&
+          !movingState &&
+          hints.map(value => (
+            <EdgeHintView
+              key={value.side}
+              value={value}
+              avatars={presentation.dogAvatars || {}}
+              onPress={() => frame(value.coordinates)}
+            />
+          ))}
         {live && !component && foreground && (loaded || timedOut) && (
           // 框住全部, 我的位置 and 「今天 x km」 (A1), 12dp above the card; above the tip
           // while it shows.

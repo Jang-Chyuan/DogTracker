@@ -1,8 +1,8 @@
 import { t } from '../i18n';
 // The live map's floating controls (design v3 A1, DESIGN.md §15「浮動按鈕與上方
 // 卡片」): the two 48dp round buttons bottom right (框住全部 above 我的位置),
-// and the bottom tip that says why a grey button did nothing. Provider-neutral
-// views: the renderer decides what they do.
+// the off-screen dog hints (EdgeHints) and the bottom tip that says why a grey
+// button did nothing. Provider-neutral views: the renderer decides what they do.
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -16,6 +16,7 @@ import {
 import Glyph from './Glyph';
 import { useReduceMotion, moveDuration } from '../utils/reduceMotion';
 import { linesFor } from '../utils/textScale';
+import DogAvatar from '../dogs/DogAvatar';
 import PressedOverlay from '../components/PressedOverlay';
 import {
   layout,
@@ -313,6 +314,87 @@ export function CompassButton({ top, heading, onPress, onLayout }) {
   );
 }
 
+const hint = sizes.edgeHint;
+const ARROW = { left: '‹', right: '›', top: '‹', bottom: '‹' };
+const ARROW_TURN = {
+  left: '0deg',
+  right: '0deg',
+  top: '90deg',
+  bottom: '-90deg',
+};
+
+function HintFace({ marker, avatar, first }) {
+  const styles = useStyles(getStyles);
+  const face = (
+    <DogAvatar
+      avatar={avatar}
+      size={hint.avatar}
+      stale={marker.stale}
+      border={border.regular}
+    />
+  );
+  return (
+    <View
+      style={[styles.hintFace, !first && { marginLeft: -hint.overlap }]}
+      testID={marker.problem ? 'edge-hint-face-problem' : 'edge-hint-face'}
+    >
+      {marker.problem ? <View style={styles.problemRing}>{face}</View> : face}
+    </View>
+  );
+}
+
+/** One off-screen hint: faces, 「+N」 and the arrow pointing out of the screen. */
+export function EdgeHintView({ value, avatars = {}, onPress }) {
+  const styles = useStyles(getStyles);
+  const arrow = (
+    <Text
+      style={[
+        styles.arrow,
+        { transform: [{ rotate: ARROW_TURN[value.side] }] },
+      ]}
+      allowFontScaling={false}
+    >
+      {ARROW[value.side]}
+    </Text>
+  );
+
+  return (
+    <Pressable
+      testID={`edge-hint-${value.side}`}
+      accessibilityRole="button"
+      accessibilityLabel={value.label}
+      onPress={onPress}
+      hitSlop={(sizes.floatingButton - hint.height) / 2}
+      // Floating over the map: the white pill stays opaque while pressed,
+      // with the round pressed overlay on top (DESIGN.md §2.5, §5.8).
+      style={[styles.hint, { left: value.x, top: value.y, width: value.width }]}
+    >
+      {({ pressed }) => (
+        <>
+          {value.side !== 'right' && arrow}
+          <View style={styles.faces}>
+            {value.faces.map((marker, index) => (
+              <HintFace
+                key={marker.slaveId}
+                marker={marker}
+                avatar={avatars[marker.slaveId]}
+                first={index === 0}
+              />
+            ))}
+          </View>
+          {value.extra > 0 && (
+            <Text style={styles.extra} allowFontScaling={false}>
+              +{value.extra}
+            </Text>
+          )}
+          {value.side === 'right' && arrow}
+          <PressedOverlay visible={pressed} />
+        </>
+      )}
+    </Pressable>
+  );
+}
+
 /**
  * The bottom tip (下方提示): 48dp high, 16dp from the sides, white with a 1dp
  * line, for 5 seconds. `message` { text, key, action? { label, onPress } }:
@@ -452,6 +534,37 @@ const getStyles = makeStyles(theme => {
       ...shadow.floating,
       ...theme.floatingBorder,
     },
+    hint: {
+      position: 'absolute',
+      height: hint.height,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: space.s,
+      gap: space.xs,
+      ...shadow.floating,
+      ...theme.floatingBorder,
+    },
+    faces: { flexDirection: 'row', alignItems: 'center' },
+    hintFace: {
+      width: hint.avatar,
+      height: hint.avatar,
+      borderRadius: hint.avatar / 2,
+    },
+    problemRing: {
+      margin: -hint.problemBorder,
+      borderRadius: hint.avatar / 2 + hint.problemBorder,
+      borderWidth: border.strong,
+      borderColor: colors.problemBadge,
+    },
+    arrow: {
+      ...type.value,
+      width: sizes.edgeHint.arrow,
+      textAlign: 'center',
+      color: colors.text,
+    },
+    extra: { ...type.value, color: colors.text },
     tip: {
       position: 'absolute',
       left: layout.screenEdge,

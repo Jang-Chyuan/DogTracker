@@ -731,7 +731,7 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
   }
 });
 
-describe('dogs off screen and 「N 隻」', () => {
+describe('off-screen hints and the overlap menu', () => {
   const at = (slaveId, latitude, longitude, extra = {}) => ({ ...slaveMarker, slaveId, name: `狗 ${slaveId}`,
     tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`, coordinate: { latitude, longitude }, ...extra });
   // 100000 dp per degree on this pretend 400×800 screen, (25.01, 121) top left.
@@ -745,25 +745,35 @@ describe('dogs off screen and 「N 隻」', () => {
       .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
   }
 
-  test('dogs off screen get nothing on the map (no off-screen hint); TalkBack waits while 框住全部 moves the camera', async () => {
+  test('dogs off the left get one hint; tapping it frames them', async () => {
     const markers = [at(4, 25.005, 121.002), at(6, 25.005, 120.99, { problem: true, size: 48 }),
       at(8, 25.004, 120.98)];
-    await render({ onDogPress: jest.fn(), presentation: { ...defaults.presentation, dogMarkers: markers } });
+    await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
     await layout();
     await readyMap();
-    expect(renderer.root.findAll(node => /^edge-hint/.test(node.props.testID || ''))).toHaveLength(0);
-    const items = () => renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '')
-      && typeof node.type === 'string').map(node => node.props.testID);
-    // Only the dog on screen is a TalkBack item; 6 and 8 are reached by 框住全部.
-    expect(items()).toEqual(['marker-a11y-4']);
-    await pressLabel('框住全部');
-    // While the camera moves the items wait; the camera stopping reads the
+    const hints = renderer.root.findAll(node => node.props.testID === 'edge-hint-left' && node.props.onPress);
+    expect(hints).toHaveLength(1);
+    expect(hints[0].props.accessibilityLabel).toBe('左邊畫面外有 2 隻狗：狗 6、狗 8，其中狗 6有問題，點兩下移過去');
+    expect(renderer.root.findAll(node => node.props.testID === 'edge-hint-face-problem'
+      && typeof node.type === 'string')).toHaveLength(1);
+    mockCamera.fitToCoordinates.mockClear();
+    await act(async () => hints[0].props.onPress());
+    // Framed in 300 ms (motion.camera): a region holding both dogs.
+    const [region, duration] = mockCamera.animateToRegion.mock.calls[0];
+    expect(duration).toBe(300);
+    for (const dog of [markers[1], markers[2]]) {
+      expect(Math.abs(dog.coordinate.latitude - region.latitude)).toBeLessThan(region.latitudeDelta / 2);
+      expect(Math.abs(dog.coordinate.longitude - region.longitude)).toBeLessThan(region.longitudeDelta / 2);
+    }
+    expect(Math.abs(markers[0].coordinate.longitude - region.longitude)).toBeGreaterThan(region.longitudeDelta / 2);
+    // While the camera moves the hints wait; the camera stopping reads the
     // dogs' places again and brings them back.
-    expect(items()).toEqual([]);
+    const left = () => renderer.root.findAll(node => node.props.testID === 'edge-hint-left' && node.props.onPress);
+    expect(left()).toHaveLength(0);
     await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
     // Once two reads agree (066: a move's end is not always reported).
     for (let i = 0; i < 4; i += 1) await act(async () => jest.advanceTimersByTime(400));
-    expect(items()).toEqual(['marker-a11y-4']);
+    expect(left()).toHaveLength(1);
   });
 
   test('066: tapping the dog carrying 「3 隻」 opens that dog — there is no list of dogs', async () => {
@@ -803,14 +813,13 @@ describe('dogs off screen and 「N 隻」', () => {
     }
   });
 
-  test('066: a camera move whose end is never reported still refreshes the dogs\' screen places', async () => {
+  test('066: a camera move whose end is never reported still refreshes the hints', async () => {
     const markers = [at(4, 25.005, 121.002), at(6, 25.005, 120.99)];
-    await render({ onDogPress: jest.fn(), presentation: { ...defaults.presentation, dogMarkers: markers } });
+    await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
     await layout();
     await readyMap();
-    const items = () => renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '')
-      && typeof node.type === 'string').map(node => node.props.testID).sort();
-    expect(items()).toEqual(['marker-a11y-4']);
+    const left = () => renderer.root.findAll(node => node.props.testID === 'edge-hint-left' && node.props.onPress);
+    expect(left()).toHaveLength(1);
     // The camera moves so that dog 6 is on screen, slowly (a busy phone): the
     // first read after the move still finds the old places; its end is never
     // reported (no onRegionChangeComplete).
@@ -821,9 +830,9 @@ describe('dogs off screen and 「N 隻」', () => {
       if (calls <= 4) return before(coordinate);
       return { x: (coordinate.longitude - 120.985) * 20000, y: (25.01 - coordinate.latitude) * 100000 };
     });
-    await pressLabel('框住全部');
+    await act(async () => left()[0].props.onPress());
     for (let i = 0; i < 12; i += 1) await act(async () => jest.advanceTimersByTime(400));
-    expect(items()).toEqual(['marker-a11y-4', 'marker-a11y-6']);
+    expect(left()).toHaveLength(0);
   });
 });
 

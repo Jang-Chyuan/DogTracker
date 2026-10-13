@@ -323,6 +323,18 @@ describe('useTodayRoute', () => {
   });
 });
 
+test('a bottom hint sits above the bottom row (「今天 x km」 beside 我的位置)', () => {
+  const { edgeHints } = require('../src/map/EdgeHints');
+  const marker = { slaveId: 4, coordinate: START, problem: false, stale: false, tag: { text: '豆豆' } };
+  const view = { width: 392, height: 830, top: 100, bottom: 40 };
+  const [plain] = edgeHints([marker], { 4: { x: 150, y: 1200 } }, view);
+  const [raised] = edgeHints([marker], { 4: { x: 150, y: 1200 } }, { ...view, bottomRow: 48 });
+  expect(plain.side).toBe('bottom');
+  expect(raised.y + raised.height).toBeLessThanOrEqual(830 - 40 - 48 - 12);
+});
+
+
+
 test.each([null, { running: null, status: 'cannot read live state' }, { status: 'checking' }])('unknown recording state %o does not imply recording off or change the recorded distance', livePhone => {
   const phone = { permission: 'precise', services: true };
   const route = Object.freeze({ count: 10, metres: 2000 });
