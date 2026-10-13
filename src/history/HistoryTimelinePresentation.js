@@ -98,7 +98,13 @@ export function shownRowAt(nodes, time) {
 }
 
 // Presentation only: retained gaps/stops and the source model remain untouched.
-export function timelinePresentation(source = []) {
+export function timelinePresentation(all = []) {
+  // 2026-10-13: the rows of no data before the day's first fix and after its
+  // last (`dayBoundary`, phone) are set aside: the departure and the end keep
+  // their places in the rules below, and they join the list at the end.
+  const lead = all[0]?.dayBoundary === 'start' ? all[0] : null;
+  const tail = all.length > 1 && all[all.length - 1]?.dayBoundary === 'end' ? all[all.length - 1] : null;
+  const source = lead || tail ? all.slice(lead ? 1 : 0, tail ? -1 : all.length) : all;
   // A short same-session interruption inside a stay is the stay's time too.
   const nodes = source.some(n => n.type === 'stop' && n.gaps?.some(foldableInside)) ? source.map(foldInterior) : source;
   const first = nodes[0], initialStay = nodes[1];
@@ -115,7 +121,10 @@ export function timelinePresentation(source = []) {
   // breaks kept in `unobserved`, and the 0 m re-acquisition after a break):
   // its first edge starts at the departure fix, its last ends at the endpoint
   // fix, so time alone proves the endpoint is that run.
-  const stationaryRun = node => node?.presentationOnly === 'phone-stationary';
+  // A still-here stay (2026-10-13) is the range itself: it starts at the
+  // departure fix and ends at the endpoint fix by construction.
+  const stationaryRun = node => node?.presentationOnly === 'phone-stationary'
+    || node?.presentationOnly === 'still-here';
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
     && (initialStay.number === 1 || stationaryRun(initialStay)) && first.start === initialStay.start
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
@@ -175,12 +184,16 @@ export function timelinePresentation(source = []) {
     i = j;
   }
   // Raw holes (time no row has) of less than a gap beside a walk: the walk's.
+  // 2026-10-13: beside no walk, the stay's (a short stationary pause right
+  // after a stay that took the 0 m walk before it).
   for (let i = 1; i < shown.length; i++) {
     const a = shown[i - 1], b = shown[i];
     const hole = b.start - a.end;
     if (!(hole > 0 && hole < GAP_MS)) continue;
     if (walking(a)) shown[i - 1] = stretch(a, a.start, b.start, 0);
     else if (walking(b)) shown[i] = stretch(b, a.end, b.end, 0);
+    else if (stayRow(a)) shown[i - 1] = stretch(a, a.start, b.start, 0);
+    else if (stayRow(b)) shown[i] = stretch(b, a.end, b.end, 0);
   }
   // A terminal stay and its endpoint are one visual place. Inspect the original
   // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
@@ -204,7 +217,7 @@ export function timelinePresentation(source = []) {
   // The first 室內 row is that hold (only 0 m rows come before it), even when
   // a folded short break gave it a new object.
   const from = indoor ? shown.findIndex(n => n.type === 'indoor') : -1;
-  return (from > 0 ? shown.slice(from) : shown).map(node => {
+  return withDayBoundaries(from > 0 ? shown.slice(from) : shown, lead, tail).map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
@@ -212,6 +225,27 @@ export function timelinePresentation(source = []) {
       ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
   });
+}
+
+/** The day-boundary rows (timelinePresentation): a same-session break at
+ * one place (`samePlace`: the stay goes on over midnight, 067) or a foldable
+ * short one goes, silently, to the stay row beside it; otherwise it is a row
+ * of its own (a session change always). */
+function withDayBoundaries(rows, lead, tail) {
+  if (!lead && !tail) return rows;
+  const out = [...rows];
+  const takes = gap => (gap.samePlace === true && gap.sameSession === true && gap.sessionChange !== true) || foldable(gap);
+  if (lead) {
+    const host = out[0];
+    if (takes(lead) && stayRow(host) && host.start === lead.end) out[0] = stretch(host, lead.start, host.end, lead.end - lead.start);
+    else out.unshift(lead);
+  }
+  if (tail) {
+    const host = out[out.length - 1];
+    if (takes(tail) && stayRow(host) && host.end === tail.start) out[out.length - 1] = stretch(host, host.start, tail.end, tail.end - tail.start);
+    else out.push(tail);
+  }
+  return out;
 }
 
 /**

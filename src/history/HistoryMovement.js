@@ -168,8 +168,14 @@ export function countEdge(state, edge, config) {
   if (edge.to.phoneStationary) {
     edge.countedDistanceM = 0; state.anchor = edge.to; state.budget = 0; return;
   }
-  // A break at one place (samePlaceGap) is no walk.
-  if (edge.bridged) { edge.countedDistanceM = 0; return; }
+  // A break at one place (samePlaceGap) is no walk. Phone (2026-10-13): the
+  // run goes on from where the phone was seen again (the place may span
+  // stillPlaceM), so the drift across the break never counts later either.
+  if (edge.bridged) {
+    edge.countedDistanceM = 0;
+    if (config.stillMps) { state.anchor = edge.to; state.budget = 0; }
+    return;
+  }
   const speed = config.speedBudget && !edge.to.phoneConfirmedMovement ? stepSpeed(edge) : null;
   // A geometry-confirmed step cannot leave unlimited credit for later phone
   // observations whose own speed contradicts travel. Fresh proof is required.
