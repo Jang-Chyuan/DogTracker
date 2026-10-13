@@ -823,6 +823,8 @@ export const motion = {
   easeOut: [0.23, 1, 0.32, 1],
   press: { scale: 0.97, duration: 120 },
   cardRise: { duration: 220 },
+  // The rest of a card switch slide after the finger lets go (or ‹ ›).
+  cardSwitch: { duration: 240 },
   rangeExpand: { duration: 220 },
   rangeCollapse: { duration: 180 },
   cursorJump: { duration: 220 },

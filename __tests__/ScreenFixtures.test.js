@@ -612,6 +612,13 @@ async function renderFixture(name, { edits = null, inspect = null, resume = null
   const redLines = renderer.root.findAllByType(Polyline)
     .filter(node => node.props.strokeColor === colors.critLine).length;
   const text = JSON.stringify(renderer.toJSON());
+  // The open card's own words (its neighbours, drawn beside it for the
+  // swipe, are other dogs' cards).
+  const liveCard = renderer.root.findAll(node => node.props.testID === 'dog-card' && typeof node.type === 'string')[0];
+  const words = children => [].concat(children ?? []).flat(Infinity)
+    .filter(item => typeof item === 'string' || typeof item === 'number').join('');
+  const cardText = liveCard ? JSON.stringify(liveCard.findAll(node => typeof node.type === 'string')
+    .map(node => words(node.props.children)).filter(Boolean)) : '';
   // Every photo face drawn, where, and whether it is greyscale.
   const photos = renderer.root.findAll(node => node.props.testID === 'dog-avatar-photo' && typeof node.type === 'string')
     .map(node => {
@@ -626,7 +633,7 @@ async function renderFixture(name, { edits = null, inspect = null, resume = null
       const style = [image.props.style].flat(3).filter(Boolean);
       return { inCard, grey: style.some(item => item.filter?.[0]?.grayscale === 1), uri: image.props.source.uri };
     });
-  const result = { markers, rings, redLines, text, photos, saved: live.tracking.saveTrackingPreferences, live,
+  const result = { markers, rings, redLines, text, cardText, photos, saved: live.tracking.saveTrackingPreferences, live,
     renderer, inputs };
   if (inspect) await inspect(result);
   await act(async () => { renderer.unmount(); });
@@ -818,8 +825,8 @@ test('the real map opens a card fixture\'s card with its rows', async () => {
   // No receiver row on a dog's card.
   expect(problems.text).not.toContain(i18nT('c075'));
   const indoor = await renderFixture('card-indoor');
-  expect(indoor.text).toContain('充電中 62%');
-  expect(indoor.text).not.toContain(i18nT('c066'));
+  expect(indoor.cardText).toContain('充電中 62%');
+  expect(indoor.cardText).not.toContain(i18nT('c066'));
 });
 
 // ---- the dog's page and faces (047) ----------------------------------------

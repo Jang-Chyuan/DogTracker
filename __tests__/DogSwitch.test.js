@@ -110,9 +110,17 @@ describe('the card', () => {
       .props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
     return handlers;
   }
-  const switcher = (extra = {}) => ({ previous: '狗 12', next: '阿福', onStep: jest.fn(), ...extra });
+  const switcher = (extra = {}) => ({ previous: '狗 12', next: '阿福', previousCard: model(12, '狗 12'),
+    nextCard: model(8, '阿福'), previousAvatar: null, nextAvatar: null, onStep: jest.fn(), ...extra });
+  // The slide finishes on its own (Animated on fake timers).
+  const settle = async (ms = 1000) => {
+    for (let at = 0; at < ms; at += 50) await act(async () => jest.advanceTimersByTime(50));
+  };
+  const page = id => renderer.root.findAll(node => node.props.testID === id && typeof node.props.onLayout === 'function')[0];
+  const shift = id => StyleSheet.flatten(page(id).props.style).transform.find(item => 'translateX' in item)
+    .translateX.__getValue();
 
-  test('a lone dog: no ‹ ›, no actions, no swipe; the face still opens A5', async () => {
+  test('a lone dog: no ‹ ›, no neighbours, no actions, no swipe; the face still opens A5', async () => {
     await mount({ switcher: null });
     expect(byTestId('dog-card-next')).toHaveLength(0);
     expect(byTestId('dog-card-previous')).toHaveLength(0);
@@ -120,6 +128,7 @@ describe('the card', () => {
     expect(identity().props.accessibilityActions).toBeUndefined();
     expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: -120, dy: 0 })).toBe(false);
     expect(byTestId('dog-card-edit')).toHaveLength(1);
+    expect(renderer.root.findAll(node => /^dog-card-page-/.test(node.props.testID ?? ''))).toHaveLength(0);
   });
 
   test('the face is the edit button: 48dp, a neutral pencil badge, TalkBack says what it does', async () => {
@@ -137,7 +146,7 @@ describe('the card', () => {
     expect(badge).toMatchObject({ backgroundColor: colors.surface, borderColor: colors.line });
     expect(edit.findAll(node => node.props.name === 'pencil')).toHaveLength(1);
     // Only one edit control on the card (no separate pencil).
-    expect(renderer.root.findAll(node => node.props.name === 'pencil')).toHaveLength(1);
+    expect(page('dog-card').findAll(node => node.props.name === 'pencil')).toHaveLength(1);
     await act(async () => edit.props.onPress());
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
@@ -163,9 +172,46 @@ describe('the card', () => {
     const ids = header.findAll(child => /^dog-card-(previous|edit|identity|next)$/.test(child.props.testID ?? '')
       && typeof child.type === 'string').map(child => child.props.testID);
     expect([...new Set(ids)]).toEqual(['dog-card-previous', 'dog-card-edit', 'dog-card-identity', 'dog-card-next']);
+    // ‹ › slide like a swipe: the switch lands once the slide has finished.
     await act(async () => next.props.onPress());
-    await act(async () => previous.props.onPress());
+    expect(value.onStep).not.toHaveBeenCalled();
+    await settle();
+    expect(value.onStep.mock.calls).toEqual([[1]]);
+    await act(async () => byTestId('dog-card-previous')[0].props.onPress());
+    await settle();
     expect(value.onStep.mock.calls).toEqual([[1], [-1]]);
+  });
+
+  test('a tap during a slide is ignored: one tap, one slide, no double switch', async () => {
+    const value = switcher();
+    await mount({ switcher: value });
+    await act(async () => byTestId('dog-card-next')[0].props.onPress());
+    await act(async () => byTestId('dog-card-next')[0].props.onPress());
+    await act(async () => byTestId('dog-card-previous')[0].props.onPress());
+    // A swipe cannot start mid-slide either.
+    expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: -60, dy: 0 })).toBe(false);
+    await settle();
+    expect(value.onStep.mock.calls).toEqual([[1]]);
+  });
+
+  test('the neighbours wait one page to each side, drawn but out of reach of touch and TalkBack', async () => {
+    await mount({ switcher: switcher() });
+    const width = require('react-native').Dimensions.get('window').width;
+    const pageWidth = width - 8;
+    expect(shift('dog-card')).toBe(0);
+    expect(shift('dog-card-page-next')).toBe(pageWidth);
+    expect(shift('dog-card-page-previous')).toBe(-pageWidth);
+    for (const id of ['dog-card-page-next', 'dog-card-page-previous']) {
+      expect(page(id).props.pointerEvents).toBe('none');
+      expect(page(id).props.importantForAccessibility).toBe('no-hide-descendants');
+    }
+    const text = node => JSON.stringify(node.findAll(child => typeof child.props.children === 'string')
+      .map(child => child.props.children));
+    expect(text(page('dog-card-page-next'))).toContain('阿福');
+    expect(text(page('dog-card-page-previous'))).toContain('狗 12');
+    // Only the open card has the controls' test ids (and takes taps).
+    expect(byTestId('dog-card-next')).toHaveLength(1);
+    expect(byTestId('dog-card-edit')).toHaveLength(1);
   });
 
   test('TalkBack: the name carries 下一隻／上一隻 and no place in the order', async () => {
@@ -192,24 +238,70 @@ describe('the card', () => {
     expect(announce.mock.calls).toEqual([['阿福，訊號源 8']]);
   });
 
-  test('a sideways swipe steps; a pull-down still closes; neither fights the other', async () => {
+  test('the whole card follows the finger and the next one slides in; let go and it finishes the slide', async () => {
     const value = switcher();
     const { onHeight } = await mount({ switcher: value });
-    // Sideways: next when the finger goes left, previous to the right.
+    const pageWidth = require('react-native').Dimensions.get('window').width - 8;
+    // The next card waited while it was measured (taller: two-line 位置 row).
+    await act(async () => page('dog-card-page-next').props.onLayout({ nativeEvent: { layout: { height: 500 } } }));
+    expect(onHeight).toHaveBeenLastCalledWith(428);
     expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: -30, dy: 4 })).toBe(true);
-    pan.onPanResponderMove(null, { dx: -90, dy: 6 });
+    await act(async () => pan.onPanResponderMove(null, { dx: -90, dy: 6 }));
+    // 1:1: the open card 90dp left, the next one 90dp in from the right.
+    expect(shift('dog-card')).toBe(-90);
+    expect(shift('dog-card-page-next')).toBe(pageWidth - 90);
     await act(async () => pan.onPanResponderRelease(null, { dx: -90, dy: 6, vx: -0.2, vy: 0 }));
-    expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: 30, dy: 4 })).toBe(true);
-    await act(async () => pan.onPanResponderRelease(null, { dx: 30, dy: 4, vx: 0.9, vy: 0 }));
-    // Too short and slow: springs back, no step.
+    expect(value.onStep).not.toHaveBeenCalled();
+    await settle();
+    // Landed: the switch is committed, the card that slid in sits where the
+    // open one was, and the map keeps clear of its own height.
+    expect(value.onStep.mock.calls).toEqual([[1]]);
+    expect(shift('dog-card-page-previous')).toBe(-pageWidth);
+    expect(onHeight).toHaveBeenLastCalledWith(508);
+  });
+
+  test('a short slow drag springs back; a fling goes; a slanted pull-down still closes', async () => {
+    const value = switcher();
+    const { onHeight } = await mount({ switcher: value });
     expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: -30, dy: 0 })).toBe(true);
+    await act(async () => pan.onPanResponderMove(null, { dx: -40, dy: 0 }));
     await act(async () => pan.onPanResponderRelease(null, { dx: -40, dy: 0, vx: -0.1, vy: 0 }));
-    expect(value.onStep.mock.calls).toEqual([[1], [-1]]);
+    await settle();
+    expect(value.onStep).not.toHaveBeenCalled();
+    expect(Math.abs(shift('dog-card'))).toBeLessThan(1);
+    // A fling to the right: the previous dog, after its slide.
+    expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: 30, dy: 4 })).toBe(true);
+    await act(async () => pan.onPanResponderMove(null, { dx: 30, dy: 4 }));
+    await act(async () => pan.onPanResponderRelease(null, { dx: 30, dy: 4, vx: 0.9, vy: 0 }));
+    await settle();
+    expect(value.onStep.mock.calls).toEqual([[-1]]);
     // A slanted drag is neither; a downward one is the close, never a step.
     expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: 20, dy: 18 })).toBe(false);
     expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: 10, dy: 40 })).toBe(true);
     await act(async () => pan.onPanResponderRelease(null, { dx: 10, dy: 300, vx: 0, vy: 1 }));
-    expect(value.onStep).toHaveBeenCalledTimes(2);
+    expect(value.onStep).toHaveBeenCalledTimes(1);
     expect(onHeight).toHaveBeenLastCalledWith(0);
+  });
+
+  test('減少動態效果: the card stays put while dragged and crossfades to the next one', async () => {
+    const { setReduceMotion } = require('../src/utils/reduceMotion');
+    setReduceMotion(true);
+    try {
+      const value = switcher();
+      await mount({ switcher: value });
+      expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: -30, dy: 0 })).toBe(true);
+      await act(async () => pan.onPanResponderMove(null, { dx: -120, dy: 0 }));
+      expect(shift('dog-card')).toBe(0);
+      await act(async () => pan.onPanResponderRelease(null, { dx: -120, dy: 0, vx: -0.3, vy: 0 }));
+      // The switch's own fade (the card's opacity is the rise fade × this).
+      const opacity = () => StyleSheet.flatten(page('dog-card').props.style).opacity._b.__getValue();
+      // The switch lands once the card has faded out, then the next fades in.
+      expect(value.onStep).not.toHaveBeenCalled();
+      await settle();
+      expect(value.onStep.mock.calls).toEqual([[1]]);
+      expect(opacity()).toBe(1);
+    } finally {
+      setReduceMotion(false);
+    }
   });
 });
