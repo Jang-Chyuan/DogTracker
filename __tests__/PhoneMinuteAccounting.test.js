@@ -8,6 +8,7 @@ import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';
 import { buildCSV } from '../src/mapHistory/ExportCSV';
 import { buildGPX } from '../src/mapHistory/ExportGPX';
 import { t } from '../src/i18n';
+import { point } from '../__fixtures__/HistoryLogicFixtures';
 
 // Invented phone day (five-second fixes, no real place or time). A script is
 // a list of [kind, seconds, extra]:
@@ -30,6 +31,14 @@ function day(script) {
     if (kind === 'none') east += extra.move ?? 0;
     for (let k = 0; k < seconds; k += 5, s += 5) {
       if (kind === 'walk') { east += 7; fix({ raw_speed_kmh: 5.04, speed_kmh: 5.04, motion_state: 'moving' }); }
+      // drive: 50 km/h east; jiggle: standing still with a slow reading that is
+      // no stillness (0.55 m/s ± 0.5): 「走路」 of 0 m.
+      if (kind === 'drive') { east += 70; fix({ raw_speed_kmh: 50.4, speed_kmh: 50.4, motion_state: 'moving' }); }
+      if (kind === 'jiggle') {
+        const jitter = (k % 10 === 0 ? 2 : -2) / 111320;
+        fix({ latitude: 1 + jitter, raw_latitude: 1 + jitter, accuracy: 8, raw_speed_kmh: 2, speed_kmh: 2,
+          speed_accuracy_mps: 0.5, motion_state: 'moving' });
+      }
       if (kind === 'still') fix({ motion_state: k >= 20 ? 'stationary' : 'suspected_stationary' });
       if (kind === 'coarse') fix({ accuracy: 28, motion_state: 'stationary' });
       if (kind === 'weak') {
@@ -124,6 +133,22 @@ test.each([
   ['short break after a stay', [['walk', 300], ['still', 400], ['none', 600, { move: 400 }], ['walk', 300]]],
   ['long break', [['walk', 300], ['none', 1900, { move: 2000 }], ['walk', 300]]],
   ['recording restart', [['walk', 300], ['none', 300, { move: 300 }], ['session', 'fiction-session-2'], ['walk', 300]]],
+  // 2026-10-13 sweep: a few still fixes between two recording restarts, a
+  // 恢復記錄 followed by still fixes no stay took, weak GPS split by a moment
+  // of walking, a 0 m walk between restarts, a 0 m walk before driving off,
+  // parking after a drive.
+  ['still fixes between restarts', [['walk', 300], ['none', 400], ['session', 'fiction-session-2'], ['still', 40],
+    ['none', 200], ['session', 'fiction-session-3'], ['still', 70], ['none', 300], ['session', 'fiction-session-4'],
+    ['walk', 300]]],
+  ['恢復記錄 then still fixes, then a restart', [['still', 600], ['none', 2400, { move: 500 }], ['still', 100],
+    ['none', 5], ['session', 'fiction-session-2'], ['none', 240], ['still', 40], ['session', 'fiction-session-3'],
+    ['none', 240], ['still', 300], ['walk', 300]]],
+  ['weak GPS split by a moment of walking', [['still', 300], ['none', 2400, { move: 500 }], ['weak', 200],
+    ['jiggle', 5], ['weak', 100], ['jiggle', 5], ['weak', 120]]],
+  ['a 0 m walk between restarts', [['still', 300], ['none', 400], ['session', 'fiction-session-2'], ['jiggle', 300],
+    ['none', 400], ['session', 'fiction-session-3'], ['walk', 300]]],
+  ['a 0 m walk before driving off', [['jiggle', 300], ['drive', 600], ['walk', 300]]],
+  ['parked after a drive', [['walk', 300], ['drive', 600], ['still', 720], ['walk', 200]]],
 ])('%s: rows cover the range with no hole and no double count', (_name, script) => {
   expectAccounted(timeline(day(script)));
 });
@@ -268,4 +293,124 @@ test('CSV rows and GPX track points are the raw rows, whatever the list folds', 
   expect(snapshot.subjects[0].gaps.length).toBeGreaterThanOrEqual(model.nodes.filter(n => n.type === 'gap').length);
   // The display-only coarse stay is not a GPX stay waypoint.
   expect(snapshot.subjects[0].stays.every(s => s.number != null)).toBe(true);
+});
+
+// ---- 2026-10-13: the shapes the device sweep found -------------------------
+
+test('a few still fixes between two recording restarts are a stay of their own, or under a minute the break\'s', () => {
+  const model = timeline(day([['walk', 300], ['none', 400], ['session', 'fiction-session-2'], ['still', 40],
+    ['none', 200], ['session', 'fiction-session-3'], ['still', 70], ['none', 300], ['session', 'fiction-session-4'],
+    ['walk', 300]]));
+  const { rows } = expectAccounted(model);
+  // 40 s between two restarts: one 「沒有資料」 over both; 70 s: 「停 1 分」.
+  expect(rows.map(n => n.type)).toEqual(['movement', 'gap', 'stop', 'gap', 'movement']);
+  expect(rows[1]).toMatchObject({ sessionChange: true });
+  expect(rows[2]).toMatchObject({ presentationOnly: 'between-breaks', number: null });
+  expect(nodePill(rows[2]).text).toBe(t('c127', { duration: listDuration(MINUTE) }));
+  // The model (map, GPX) keeps every break.
+  expect(model.nodes.filter(n => n.type === 'gap')).toHaveLength(3);
+});
+
+test('a 恢復記錄 followed by still fixes is that stay\'s start, not a point with minutes after it in no row', () => {
+  const model = timeline(day([['still', 600], ['none', 2400, { move: 500 }], ['still', 100], ['none', 5],
+    ['session', 'fiction-session-2'], ['none', 240], ['still', 300], ['walk', 300]]));
+  const { shown, rows } = expectAccounted(model);
+  const after = rows.find(n => n.type === 'gap' && n.end - n.start > config.resumeAfterMs);
+  const next = rows[rows.indexOf(after) + 1];
+  expect(next).toMatchObject({ type: 'stop', start: after.end, number: null });
+  expect(shown.some(n => n.type === 'resume' && n.start === after.end)).toBe(false);
+});
+
+test('weak GPS split by a moment of 0 m walking is one 「GPS 訊號弱」 row', () => {
+  const model = timeline(day([['still', 300], ['none', 2400, { move: 500 }], ['weak', 200], ['jiggle', 5],
+    ['weak', 100], ['jiggle', 5], ['weak', 120]]));
+  const { rows } = expectAccounted(model);
+  // (Here the walk at the end takes the short weak-GPS time, #132; with only
+  // the 恢復記錄 and the end beside them they are one listed row.)
+  expect(rows.filter(n => n.type === 'gap' && n.reason === 'uncertain').length).toBeLessThanOrEqual(1);
+  const alone = timelinePresentation([
+    { type: 'resume', start: 0, end: 0 },
+    { type: 'gap', mode: 'gap', reason: 'uncertain', sameSession: true, start: 0, end: 200000 },
+    { type: 'gap', mode: 'gap', reason: 'uncertain', sameSession: true, start: 205000, end: 300000 },
+    { type: 'end', start: 300000, end: 300000, label: t('c330') }]);
+  expect(alone.map(n => n.type)).toEqual(['resume', 'gap', 'end']);
+  expect(alone[1]).toMatchObject({ start: 0, end: 300000, reason: 'uncertain' });
+});
+
+test('a 0 m 「走路」 with no stay beside it is an unnumbered stay', () => {
+  const model = timeline(day([['still', 300], ['none', 400], ['session', 'fiction-session-2'], ['jiggle', 300],
+    ['none', 400], ['session', 'fiction-session-3'], ['walk', 300]]));
+  const { rows } = expectAccounted(model);
+  expect(rows.some(n => n.type === 'movement' && Math.round(n.countedDistanceM) === 0)).toBe(false);
+  expect(rows.filter(n => n.type === 'stop' && n.presentationOnly === 'phone-stationary')).toHaveLength(1);
+  // Before driving off: 「出發 · 停 N 分」, no switch point beside it.
+  const off = timeline(day([['jiggle', 300], ['drive', 600], ['walk', 300]]));
+  const listed = expectAccounted(off).shown;
+  expect(listed[0].departureStay).toBeTruthy();
+  expect(listed[1]).toMatchObject({ type: 'movement', mode: 'driving' });
+  // A recorder without speed or motion columns keeps its row (geometry
+  // alone): HistoryReviewRules 「a long slow stretch before the car」.
+});
+
+test('a drive does not go on over the time after parking: the parked minutes are a stay', () => {
+  const model = timeline(day([['walk', 300], ['drive', 600], ['still', 720], ['walk', 200]]));
+  const { rows } = expectAccounted(model);
+  const drive = rows.find(n => n.mode === 'driving');
+  expect(drive.end - drive.start).toBeLessThan(11 * MINUTE);
+  const parked = rows[rows.indexOf(drive) + 1];
+  expect(parked).toMatchObject({ type: 'stop', presentationOnly: 'phone-stationary', number: null });
+  expect(parked.end - parked.start).toBeGreaterThanOrEqual(11 * MINUTE);
+  // The drive keeps its metres; the map keeps its line to where it was left.
+  expect(drive.distanceM).toBeGreaterThan(8000);
+  expect(model.sections.find(n => n.mode === 'driving').end).toBe(parked.end);
+  // A red light the drive went on from stays in the drive.
+  const light = timeline(day([['walk', 300], ['drive', 300], ['still', 200], ['drive', 300], ['walk', 200]]));
+  expect(expectAccounted(light).rows.filter(n => n.mode === 'driving')).toHaveLength(1);
+});
+
+test('a stay\'s 0 m tail before a recording restart is the stay\'s, even with the phone in hand', () => {
+  const rows = day([['walk', 300], ['still', 900], ['jiggle', 60], ['session', 'fiction-session-2'], ['none', 400],
+    ['still', 600], ['walk', 300]]);
+  // Picking the phone up to restart the recorder reads as movement.
+  const tail = new Set(rows.filter(r => r.accuracy === 8).map(r => r.time));
+  const handled = rows.map(r => (tail.has(r.time) ? { ...r, raw_speed_kmh: 4, speed_kmh: 4, speed_accuracy_mps: 0.3 } : r));
+  for (const input of [rows, handled]) {
+    const { rows: listed } = expectAccounted(timeline(input));
+    expect(listed.map(n => n.type)).toEqual(['movement', 'stop', 'gap', 'stop', 'movement']);
+  }
+});
+
+// A dog: fixes every 10 s; holds (室內) replayed as given; packets without a
+// fix while it walks on (收不到 GPS).
+function dogDay(script) {
+  const out = [];
+  let s = 0, north = 0, held = null;
+  for (const [kind, seconds] of script) {
+    if (kind !== 'held') held = null;
+    for (let k = 0; k < seconds; k += 10, s += 10) {
+      if (kind === 'walk') { north += 10; out.push(point(s, north)); }
+      if (kind === 'still') out.push(point(s, north + (k % 20 ? 2 : -2)));
+      if (kind === 'held') { held ??= s * 1000; out.push(point(s, north, { heldReason: 'indoor', heldSince: held, locationTime: null })); }
+      if (kind === 'nofix') { north += 10; out.push({ time: s * 1000, latitude: null, longitude: null }); }
+    }
+  }
+  return out;
+}
+const dogTimeline = rows => historyTimeline(rows, { subject: 'dog', replayHolds: packets => packets,
+  manualRange: { start: rows[0].time, end: rows.at(-1).time } });
+
+test.each([
+  ['walk into a hold and out', [['walk', 300], ['held', 1800], ['walk', 120], ['still', 600], ['walk', 300]]],
+  ['two holds one after the other', [['walk', 300], ['held', 1200], ['walk', 60], ['held', 900], ['walk', 300]]],
+  ['a stay then a hold', [['walk', 300], ['still', 600], ['held', 1200], ['walk', 300]]],
+  ['收不到 GPS on the move', [['walk', 300], ['nofix', 400], ['walk', 300], ['still', 600], ['walk', 200]]],
+])('dog: %s — every minute of the range is in one row', (_name, script) => {
+  const model = dogTimeline(dogDay(script));
+  const shown = timelinePresentation(model.nodes).filter(n => n.end > n.start);
+  const first = model.points[0].time, last = model.points.at(-1).time;
+  expect(shown[0].start).toBe(first);
+  expect(shown.at(-1).end).toBe(last);
+  for (let i = 1; i < shown.length; i++) expect(shown[i].start).toBe(shown[i - 1].end);
+  const minutes = shown.reduce((sum, n) => sum + minutesShown(n) + noted(n), 0);
+  expect(Math.abs(minutes - (minuteOf(last) - minuteOf(first)))).toBeLessThanOrEqual(shown.filter(noted).length);
 });

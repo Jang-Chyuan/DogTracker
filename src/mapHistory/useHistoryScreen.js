@@ -92,6 +92,10 @@ export function useHistoryDayRows({
   readEnd = null,
   requireFresh = false,
   diagnostic = null,
+  // { current: n }: shared by a screen's readers; each read from the start
+  // takes the next number (`pass`), so the screen can tell rows read after a
+  // moment (a download ending) from rows read before it.
+  passes = null,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -199,6 +203,7 @@ export function useHistoryDayRows({
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
         const added = answer.rows?.length || 0;
+        const pass = cache.first && passes ? ++passes.current : null;
         if (added)
           cache.rows = [...cache.rows, ...answer.rows].sort(
             (a, b) => a.time - b.time,
@@ -225,6 +230,7 @@ export function useHistoryDayRows({
             version: recyclable ? version : (current.key === key ? current.version : 0) + 1,
             error: '',
             replayHolds,
+            pass: pass ?? (current.key === key ? current.pass ?? 0 : 0),
           }));
         } else {
           // A read that works again clears an earlier failure.
@@ -444,6 +450,7 @@ export function useHistoryScreen({
   // Each colour slot reads its own dog's day (hooks cannot be in a loop of
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
+  const readPasses = useRef(0);
   const buildCost = useRef(0);
   const modelBuildCost = useRef(0);
   const readDiagnostic = useRef({ key: null, value: null });
@@ -463,6 +470,7 @@ export function useHistoryScreen({
     clock,
     scope: memoryScope,
     revision: readRevision,
+    passes: readPasses,
     readEnd: subject === 'dog' && cloud?.coverageRequired ? Math.min(dayEnd, coverageCutoff) : null,
     requireFresh: subject === 'dog' && !!cloud?.coverageRequired,
     publicationRevision,
@@ -907,6 +915,15 @@ export function useHistoryScreen({
   );
   const { startDownload, cancelDownload, downloadingDay } = cloudDays;
   const reread = useCallback(() => setReadRevision(value => value + 1), []);
+  // A download's end reads the day again; until every dog shown has been
+  // read from the start after it, the old (empty) rows are no answer: the
+  // screen keeps 「下載 … 的紀錄」 (2026-10-13: one frame of 「這天沒有…的紀錄」
+  // flashed between the download and the rows).
+  const downloadRead = useRef(null);
+  const rereadDownloaded = useCallback(status => {
+    if (status === 'done') downloadRead.current = readPasses.current;
+    reread();
+  }, [reread]);
   // Ensure each selected cloud day once, including a day with only a recent
   // local slice. Failure/cancel stays actionable; it never loops retries.
   const ensured = useRef(new Set());
@@ -952,9 +969,9 @@ export function useHistoryScreen({
     ensured.current.add(due.key);
     explicitTail.current = due.explicit;
     autoTailResume.current = due.explicit ? null : resumes.current.count;
-    startDownload(shownKey, reread);
+    startDownload(shownKey, rereadDownloaded);
   }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope, // eslint-disable-line react-hooks/exhaustive-deps
-    cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);
+    cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, rereadDownloaded]);
   /** Cancel retains the last complete rows and marks the window incomplete. */
   const cancel = useCallback(() => {
     if (!cancelDownload()) return false;
@@ -977,7 +994,7 @@ export function useHistoryScreen({
       cancel();
       if (next !== shownKey) changeDay(next);
       if (choice.type === 'download') {
-        if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, reread); }
+        if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, rereadDownloaded); }
         else if (cloudDays.completenessLoaded) {
           // The proof just read already says this day needs a download (a
           // day only the cloud holds, or 「部分」): show 「下載 … 的紀錄」 at
@@ -986,7 +1003,7 @@ export function useHistoryScreen({
           // download and the day's proof check agree on it.
           const at = clock();
           coverageOpening.current = { key: `${sessionKey}|${dayBounds(next).dayStart}|${owner ?? ''}`, active, cutoff: at };
-          explicitTail.current = true; startDownload(next, reread, at);
+          explicitTail.current = true; startDownload(next, rereadDownloaded, at);
         } else ensureRequested.current = next;
       }
       return choice;
@@ -1001,7 +1018,7 @@ export function useHistoryScreen({
       changeDay,
       startDownload,
       cloud,
-      reread,
+      rereadDownloaded,
       cloudDays.completenessLoaded,
       clock,
       sessionKey,
@@ -1025,9 +1042,9 @@ export function useHistoryScreen({
         day: shownKey,
         message: offlineMessage(shownKey),
       };
-    explicitTail.current = true; startDownload(shownKey, reread);
+    explicitTail.current = true; startDownload(shownKey, rereadDownloaded);
     return { type: 'download', day: shownKey };
-  }, [online, shownKey, startDownload, reread]);
+  }, [online, shownKey, startDownload, rereadDownloaded]);
   const updateHistory = useCallback(() => {
     if (!online) return { type: 'offline', day: shownKey, message: offlineMessage(shownKey) };
     coverageOpening.current.cutoff = clock();
@@ -1045,9 +1062,12 @@ export function useHistoryScreen({
   // Only until that first showing: a later re-read is not this download.
   const finishedShown = useRef(null);
   const finished = cloudDays.download?.day === shownKey && cloudDays.download.status === 'done' ? cloudDays.download : null;
-  if (finished && dayModel) finishedShown.current = finished;
+  const readPending = downloadRead.current != null
+    && !(allLoaded && current.dogs.every(d => (rowsOf(d.id).pass ?? 0) > downloadRead.current));
+  if (!readPending) downloadRead.current = null;
+  if (finished && dayModel && !readPending) finishedShown.current = finished;
   const finishing = !!finished && finishedShown.current !== finished
-    && coverageReady && !dayModel && !slots.some(slot => slot.error);
+    && coverageReady && (!dayModel || readPending) && !slots.some(slot => slot.error);
   const shownDownload = tailDue || finishing ? { day: shownKey, status: 'downloading' } : cloudDays.download;
   const quietTail = !!retained && !(tailDue ? tailDue.explicit : explicitTail.current) && shownDownload?.day === shownKey
     && shownDownload.status === 'downloading';
@@ -1157,7 +1177,7 @@ export function useHistoryScreen({
     id => {
       const dog = dogs.find(d => d.id === id);
       if (!dog) return;
-      if (dog.downloadFailed) { explicitTail.current = true; cloudDays.startDownload(shownKey, reread); return; }
+      if (dog.downloadFailed) { explicitTail.current = true; cloudDays.startDownload(shownKey, rereadDownloaded); return; }
       haptic('tick');
       if (id === protagonistId || !dog.selectable) {
         // 點已經是主角的狗膠囊: the map moves to its cursor (if out of sight).
@@ -1177,7 +1197,7 @@ export function useHistoryScreen({
       // 換主角時的地圖: always to the new protagonist's cursor (a chosen move).
       setFocus({ key: Date.now(), time: null, action: 'protagonist', id });
     },
-    [dogs, protagonistId, cursor, cursorTime, time, cloudDays, shownKey, reread],
+    [dogs, protagonistId, cursor, cursorTime, time, cloudDays, shownKey, rereadDownloaded],
   );
   /** ✕ on a chip (not on the last one). */
   const shownRange = dayModel?.range ?? null;
@@ -1227,7 +1247,7 @@ export function useHistoryScreen({
     const added = [...addedDownloads.current].filter(id => dogIds.includes(id));
     addedDownloads.current.clear();
     if (added.some(id => !localByDog[id]?.includes(shownKey))) {
-      explicitTail.current = true; cloudDays.startDownload(shownKey, reread);
+      explicitTail.current = true; cloudDays.startDownload(shownKey, rereadDownloaded);
     }
   }, [active, cloud, daysByDog, baseKey, idsKey, shownKey, localByDog]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -99,7 +99,10 @@ test('existing list/address/PNG contracts accept the unnumbered stop while CSV a
   expect(buildCSV(after)).toBe(buildCSV(before));
   expect(buildGPX(after)).toBe(buildGPX(before));
   expect(after.subjects[0].stays).toEqual(before.subjects[0].stays);
-  expect(after.subjects[0].timeline.some(n => n.kind === 'place' && n.type === 'stop' && n.number === null)).toBe(true);
+  // 2026-10-13: the run starts once the detector settled, seconds after the
+  // first fix: it is the 出發's stay (「出發 · 停 N 分」), unnumbered.
+  expect(after.subjects[0].timeline.some(n => n.kind === 'place' && n.number === null
+    && (n.type === 'stop' || (n.type === 'departure' && n.pill.text.includes('停'))))).toBe(true);
   expect(after.subjects[0].map.lines).toEqual(before.subjects[0].map.lines);
   expect(after.subjects[0].map.places).toEqual(before.subjects[0].map.places);
 });
