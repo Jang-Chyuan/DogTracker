@@ -230,7 +230,7 @@ class LocationTrackerService : Service(), LocationListener {
     return buildString {
       appendLine("phone recording: started ${time.format(startedAtMs)} source=${LocationSource.label(source, null)}")
       appendLine("received=${pipeline.received} accepted=${pipeline.accepted} rejected=${pipeline.rejectedBy} " +
-        "saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds} " +
+        "motionOnly=${pipeline.motionOnly} saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds} " +
         "resubscribed=${resubscribe?.total ?: 0}")
       if (latest != null) appendLine("latest fix age=${"%.1f".format((now - latest.elapsedNanos) / 1e9)}s " +
         "accuracy=${latest.accuracy}m motion=${latest.motionState}")
@@ -238,7 +238,7 @@ class LocationTrackerService : Service(), LocationListener {
       for (s in gapLog.snapshot(now, wall, pipeline, writeErrors)) appendLine("  ${time.format(s.startWallMs)} -> " +
         "${s.endWallMs?.let { time.format(it) } ?: "now"} ${s.seconds}s received=${s.received} accepted=${s.accepted} " +
         "rejected=${s.rejectedBy} writeErrors=${s.writeErrors} maxStale=${s.maxStaleSeconds?.let { "%.1fs".format(it) } ?: "-"} " +
-        "bestRejectedAccuracy=${s.bestRejectedAccuracy?.let { "${it}m" } ?: "-"}")
+        "bestRejectedAccuracy=${s.bestRejectedAccuracy?.let { "${it}m" } ?: "-"} motionOnly=${s.motionOnly}")
       append(persisted())
     }
   }

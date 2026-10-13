@@ -735,6 +735,22 @@ const FIXTURES = {
     ]),
     cloudRows: [],
   }),
+  // A face on another dog's name (fictional places): 狗 18 walks just below
+  // and right of 狗 16, held indoors, so its face sits on 「狗 16・室內」
+  // while the two names do not touch; 狗 108 does the same to 「狗 104・室內」,
+  // both held. Each pair merges into one 「2 隻」／「2 隻・室內」. 豆豆 far
+  // away keeps the map zoomed out.
+  'dogs-labels-touching': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...indoorBle(now, 16, [-20, 25]),
+      ...series(bleRow, now, { slave: 18, from: 10 * MINUTE, start: [-36, 31.5], step: [0, 0.001] }),
+      ...indoorBle(now, 104, [10, -30]),
+      ...indoorBle(now, 108, [-6, -37], { inside: 14 * MINUTE }),
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [35, 40], step: [0.01, 0.01] }),
+    ]),
+    cloudRows: [],
+  }),
   // Collar 9 talks to receiver 7 but has never had a fix: not drawn, no
   // marker (S2 lists it as 「還沒定位」). 豆豆 is drawn as usual.
   'dog-never-fixed': now => ({
@@ -909,6 +925,20 @@ const FIXTURES = {
         slave_lat: row.slave_lat + (index % 5) * 0.00001, slave_lon: row.slave_lon - (index % 5) * 0.00001 })),
       ...series(bleRow, now, { slave: 6, from: 12 * MINUTE, to: 8 * SECOND, rssi: -96, snr: -4, battery: 62, usb: 1,
         activity: 0.02 }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 小黑 indoors since 21:09 last night (clear fixes, then a packet without a
+  // fix every 30 s), opened after a cold start: the live hold replays only
+  // the last half hour, so the card asks the history's rows where the stay
+  // began (CardIndoorStay): 「室內・12 時 20 分」, the whole stay over midnight.
+  'card-indoor-overnight': now => ({
+    geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...indoorBle(now, 6, [-18, 24], { inside: 12 * 60 * MINUTE + 21 * MINUTE, every: 30 * SECOND,
+        battery: 62, activity: 0.02 }),
     ]),
     cloudRows: dog8Cloud(now),
   }),

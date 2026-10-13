@@ -12,14 +12,14 @@ class SaveGapHistoryTest {
   }
   private fun counters(received: Int) = SaveGapHistory.Counters(received, received - 2,
     mapOf("stale" to 2, "accuracy" to 0), received / 5, 0)
-  private fun stretch(start: Long, end: Long?) = SaveGapLog.Stretch(start, end, 300, 4, 0,
-    mapOf("stale" to 3, "accuracy" to 1), 0, 4.4, 35f)
+  private fun stretch(start: Long, end: Long?, motionOnly: Int = 0) = SaveGapLog.Stretch(start, end, 300, 4, 0,
+    mapOf("stale" to 3, "accuracy" to 1), 0, 4.4, 35f, motionOnly)
 
   @Test fun aRecordingEndedWithItsProcessIsClosedAtItsLastCheckpointOnTheNextStart() {
     val memory = Memory()
     SaveGapHistory(memory).apply {
       begin(1_000L)
-      stretchDone(stretch(2_000L, 302_000L))
+      stretchDone(stretch(2_000L, 302_000L, motionOnly = 1))
       checkpoint(400_000L, counters(100), stretch(320_000L, null))
     } // the process ends here: no end()
     val next = SaveGapHistory(memory)
@@ -30,6 +30,9 @@ class SaveGapHistoryTest {
     assertTrue(lines[1], lines[1].startsWith("  run (this one) t900000"))
     assertTrue(lines[2], lines[2].contains("t2000 -> t302000 300s received=4 accepted=0"))
     assertTrue(lines[2].contains("maxStale=4.4s") && lines[2].contains("bestRejectedAccuracy=35.0m"))
+    // Accuracy rejections that still reached the motion detector; shown only when there were any.
+    assertTrue(lines[2], lines[2].endsWith("motionOnly=1"))
+    assertFalse(lines[3], lines[3].contains("motionOnly"))
     // The stretch still going when the process ended is kept, marked as cut.
     assertTrue(lines[3], lines[3].contains("t320000 -> t400000+") && lines[3].endsWith("(process ended)"))
     assertEquals(4, lines.size)

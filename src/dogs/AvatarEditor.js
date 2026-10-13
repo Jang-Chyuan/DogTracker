@@ -449,9 +449,11 @@ const getStyles = makeStyles(theme => {
     artSelected: { borderColor: colors.accent },
     colors: { flexDirection: 'row', justifyContent: 'space-between' },
     // 32dp dots, 48dp to the finger.
+    // The 48dp target around a colour swatch presses as a circle.
     colorTarget: {
       width: touch.min,
       height: touch.min,
+      borderRadius: radius.full,
       alignItems: 'center',
       justifyContent: 'center',
     },

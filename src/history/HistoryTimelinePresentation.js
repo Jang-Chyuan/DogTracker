@@ -217,7 +217,12 @@ export function timelinePresentation(all = []) {
   // The first 室內 row is that hold (only 0 m rows come before it), even when
   // a folded short break gave it a new object.
   const from = indoor ? shown.findIndex(n => n.type === 'indoor') : -1;
-  return withDayBoundaries(from > 0 ? shown.slice(from) : shown, lead, tail).map(node => {
+  // The day-boundary rows first: a carry-over they already start at 00:00
+  // (withDayBoundaries) leaves fromMidnight nothing to do; a 「沒有資料」 row
+  // before the first row (a session change) keeps it from reaching back.
+  const listed = withDayBoundaries(from > 0 ? shown.slice(from) : shown, lead, tail);
+  if (listed.length) listed[0] = fromMidnight(listed[0]);
+  return listed.map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
@@ -263,6 +268,24 @@ function withDayBoundaries(rows, lead, tail) {
     } else out.push(carried(tail) ? stayOf(tail, 'end') : tail);
   }
   return out;
+}
+
+/**
+ * 2026-10-13: a stay going on from the day before (「接續前一天」, a stop or a
+ * 室內 hold) begins its row at midnight, not at the day's first packet a
+ * minute or two later (「00:01 接續前一天」): the dog was already there. Its
+ * minutes count from midnight too, as the row's clocks say (every minute
+ * between two listed times belongs to a row). Only within a packet gap
+ * (GAP_MS) of midnight: a first packet long after it (the collar was off) is
+ * where the day's data begins, and the row keeps it. Presentation only: the
+ * model, the map, CSV and GPX keep the first packet.
+ */
+function fromMidnight(node) {
+  if (!['stop', 'indoor'].includes(node?.type) || !node.continuesPreviousDay) return node;
+  const midnight = new Date(node.start);
+  midnight.setHours(0, 0, 0, 0);
+  const early = node.start - midnight.getTime();
+  return early > 0 && early < GAP_MS ? stretch(node, midnight.getTime(), node.end, early) : node;
 }
 
 /**

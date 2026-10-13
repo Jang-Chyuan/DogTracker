@@ -235,6 +235,13 @@ describe('3. the hours around midnight are rows too', () => {
     expect(first).toMatchObject({ type: 'stop', start: dayEnd, continuesPreviousDay: true, number: null });
     expect(nodePill(first).text).toBe(t('c332'));
     expectTiled(next, dayEnd, next.points.at(-1).time);
+    // Back within gapMs of midnight there is no row of no data, and the
+    // carried-over stay starts at 00:00 all the same (#146).
+    const early = rows([['still', 600], ['walk', 300]], { from: dayEnd + 2 * MINUTE })
+      .map(r => ({ ...r, longitude: r.longitude - 1 + home.longitude, raw_longitude: r.raw_longitude - 1 + home.raw_longitude }));
+    const close = historyTimeline([...rows([['walk', 300], ['still', 3540]], { from: dayEnd - 64 * MINUTE }), ...early],
+      { subject: 'phone', dayStart: dayEnd, dayEnd: dayEnd + 86400000, range: { start: early[0].time, end: early.at(-1).time } });
+    expect(listed(close)[0]).toMatchObject({ start: dayEnd, continuesPreviousDay: true });
     // The cursor in that time says a stay, not 「這段沒資料」.
     expect(cursorLabel(before, home.time, 'phone')[1]).toMatch(/^停留 /);
     // The same night across a recording restart stays 「沒有資料」 on both sides (#135).

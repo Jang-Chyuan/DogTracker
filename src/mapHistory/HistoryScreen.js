@@ -85,13 +85,14 @@ const styles2 = StyleSheet.create({
 
 function Capsule({ children, onPress, testID, label, style, disabled, onLayout }) {
   const styles = useStyles(getStyles);
-  const body = <View style={[styles.capsule, style]}>{children}</View>;
   if (!onPress)
     return (
       <View testID={testID} accessible accessibilityLabel={label} onLayout={onLayout}>
-        {body}
+        <View style={[styles.capsule, style]}>{children}</View>
       </View>
     );
+  // The capsule is PressScale's own style, so the pressed overlay is the
+  // capsule's shape (a square grey box before).
   return (
     <PressScale
       testID={testID}
@@ -101,8 +102,9 @@ function Capsule({ children, onPress, testID, label, style, disabled, onLayout }
       onPress={onPress}
       disabled={disabled}
       hitSlop={(touch.min - sizes.chip.height) / 2}
+      style={[styles.capsule, style]}
     >
-      {body}
+      {children}
     </PressScale>
   );
 }
@@ -198,6 +200,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, comp
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const label = dateRowLabel(day, todayStart);
+  // A 48dp circle: it darkens in its own round shape when pressed.
   const arrow = (side, enabled, onPress) => (
     <Pressable
       testID={`history-day-${side}`}
@@ -795,7 +798,8 @@ const getStyles = makeStyles(theme => {
     disabled: { opacity: opacity.disabled },
     asOf: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.s },
     asOfText: { color: colors.textMuted, fontSize: type.caption.fontSize },
-    updateTail: { minHeight: touch.min, minWidth: touch.min, justifyContent: 'center', alignItems: 'center' },
+    updateTail: { minHeight: touch.min, minWidth: touch.min, paddingHorizontal: space.s, borderRadius: radius.full,
+      justifyContent: 'center', alignItems: 'center' },
     updateTailText: { color: colors.phone, fontSize: type.caption.fontSize },
     headerColumns: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: space.s },
     dateColumn: { flex: 0.42, minWidth: 0 },
@@ -810,6 +814,7 @@ const getStyles = makeStyles(theme => {
     dayArrow: {
       width: touch.min,
       height: touch.min,
+      borderRadius: radius.full,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -853,10 +858,13 @@ const getStyles = makeStyles(theme => {
       color: colors.textMuted,
       marginTop: space.xs,
     },
+    // A text button presses as a capsule around its words.
     textButton: {
       minHeight: touch.min,
       minWidth: touch.min,
-      alignItems: 'flex-end',
+      paddingHorizontal: space.s,
+      borderRadius: radius.full,
+      alignItems: 'center',
       justifyContent: 'center',
     },
     textButtonText: { ...type.status, color: colors.tonalText },

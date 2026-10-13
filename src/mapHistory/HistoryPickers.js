@@ -89,7 +89,9 @@ const getStyles = makeStyles(theme => {
     tagText: { fontSize: type.micro.fontSize, color: colors.tonalText },
     radio: { width: sizes.historyPicker.radio, height: sizes.historyPicker.radio, borderRadius: sizes.historyPicker.radio / 2, borderWidth: border.strong, borderColor: colors.textMuted },
     radioOn: { borderWidth: sizes.historyPicker.radioFillRing, borderColor: colors.accent },
-    remove: { width: touch.min, height: touch.min, alignItems: 'center', justifyContent: 'center' },
+    // ✕ presses as a circle.
+    remove: { width: touch.min, height: touch.min, borderRadius: radius.full, alignItems: 'center',
+      justifyContent: 'center' },
     faded: { opacity: 0.4 },
     pressed: { backgroundColor: colors.pressedOverlay },
   });

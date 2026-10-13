@@ -311,6 +311,8 @@ const getStyles = makeStyles(theme => {
       marginTop: space.s,
       paddingHorizontal: space.s,
       maxWidth: '100%',
+      // Name and pencil press as one capsule.
+      borderRadius: radius.full,
     },
     name: { ...type.nameEdit, color: colors.text, flexShrink: 1 },
     // In place of the name: a 2dp accent underline, 「N/20」 on the same line.

@@ -7,8 +7,8 @@ import { t } from '../i18n';
 //
 // - One hint per side that has dogs off it, at the edge where the line from
 //   the middle of the visible map to the dogs leaves it, pointing outwards.
-// - Up to 3 small faces (dogs with a problem first, so their red frame shows),
-//   then 「+N」 for the rest.
+// - Up to 3 small faces (dogs with a problem first, so their red frame shows,
+//   then by signal-source number: a stable order), then 「+N」 for the rest.
 // - The visible map is the screen minus the top controls and the bottom card;
 //   a dog under the card counts as off screen. Hints keep clear of the bottom
 //   right buttons.
@@ -111,7 +111,7 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
     const scale = horizontal ? halfWidth / Math.abs(dx) : halfHeight / Math.abs(dy);
     const exit = { x: center.x + dx * scale, y: center.y + dy * scale };
     if (!sides.has(side)) sides.set(side, []);
-    sides.get(side).push({ marker, exit, distance: Math.hypot(dx, dy) });
+    sides.get(side).push({ marker, exit });
   }
   const result = [];
   const occupied = markers.flatMap(marker => {
@@ -126,9 +126,12 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
   for (const side of ['left', 'right', 'top', 'bottom']) {
     const items = sides.get(side);
     if (!items) continue;
-    // Problems first (their faces carry the red frame), then the nearest.
-    const ordered = [...items].sort((left, right) => Number(right.marker.problem) - Number(left.marker.problem)
-      || left.distance - right.distance || left.marker.slaveId - right.marker.slaveId);
+    // The open dog first, then problems (their faces carry the red frame),
+    // then by signal-source number. Not by distance: that changes with every
+    // camera move, and the faces swapped places between renders.
+    const ordered = [...items].sort((left, right) => Number(!!right.marker.selected) - Number(!!left.marker.selected)
+      || Number(right.marker.problem) - Number(left.marker.problem)
+      || left.marker.slaveId - right.marker.slaveId);
     const faces = ordered.slice(0, hint.maxAvatars).map(item => item.marker);
     const extra = ordered.length - faces.length;
     const hintWidth = edgeHintWidth(faces.length, extra);
