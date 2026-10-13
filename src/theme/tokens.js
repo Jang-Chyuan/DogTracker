@@ -518,7 +518,9 @@ export const size = {
     pillPadding: 20,
     secondLine: 64,
     nodeSize: 64,
-    movementIcon: 72,
+    // The empty track above and below the 走路／開車／沒有資料 icon (the screen's
+    // transportIcon padding, 4dp, at the track's 3× export scale).
+    transportIconPadding: 12,
     legendFont: 28,
     legendWeight: 'bold',
     legendHeight: 56,
