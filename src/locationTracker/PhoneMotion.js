@@ -10,6 +10,9 @@ const dist = (a, b) => {
 };
 // An explicit missing raw speed must survive a pipeline's display speed zero.
 const rawPhoneSpeed = p => p.raw_speed_kmh === undefined ? p.speed_kmh : p.raw_speed_kmh;
+// How far a still-speed fix may sit from the locked anchor and still keep the
+// stop: half again the larger accuracy, at least the 25 m place radius.
+const coarseHoldRadius = (anchor, p) => Math.max(25, 1.5 * Math.max(anchor.accuracy, p.accuracy));
 export class PhoneMotion {
   constructor() {
     this.tail = [];
@@ -117,6 +120,12 @@ export class PhoneMotion {
         ? sacc <= 1.5 && speed - sacc <= 0.500001
         : p.accuracy <= 10 && speed <= 0.3);
     const high = valid && (spread ? speed - sacc > 0.500001 : speed > 1);
+    // Coarse (30–50 m) fixes cannot confirm a stop, but one measuring the
+    // phone still (≤ 0.3 m/s) near the locked anchor keeps it: indoors a still
+    // phone often has only Wi-Fi fixes. Leaving needs sustained distance
+    // beyond this radius (the 3-minute expiry below), speed evidence, or the
+    // geometric departure. A slow walk's 0.5–1 m/s reading never keeps it.
+    const still = valid && speed <= 0.3 && (!spread || sacc <= 1.5);
     // Reliable measured walking already has finite speed credit. Reserve the
     // extra geometry pass for absent/contradictory/uncertain speed evidence.
     if (this.strictReentry && (!valid || speed < 0.3 || (spread && sacc > 1.5 && !high)
@@ -135,6 +144,8 @@ export class PhoneMotion {
         p.time - this.lastGeometryAt >= 5000 && this.departure(p);
       if (p.time - this.lastGeometryAt >= 5000) this.lastGeometryAt = p.time;
       if (geometric) return this.confirmDeparture(this.movementStart());
+      if (!speedGood && still && this.anchor && dist(this.anchor, p) <= coarseHoldRadius(this.anchor, p))
+        this.lowAt = p.time;
       if (!speedGood && p.time - this.lowAt > 180000) {
         this.reset();
         return 'unknown';

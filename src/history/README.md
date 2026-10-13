@@ -20,7 +20,7 @@
 | `historyTimeline(rows, options)` | 整合入口：共同資料流、範圍、地點列、交通／缺口列、編號、距離與追加狀態 |
 | `countDistances(edges, config)` | 判定表「距離怎麼加」：和「上一個有算進去的點」比，超過兩筆誤差較大者（至少 5 m，缺誤差值當 10 m）才算 |
 | `dogHistoryRow(row, source)`, `phoneHistoryRow(row)`（`HistoryRows.js`） | `dog_status`／`supabase_dog_status`／`myLocationTracker` 的列轉成共同格式：封包時間＝手機收到的時間（雲端用 `track_at`），定位時間＝項圈的 `gps_time` |
-| `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344）：時長、距離、膠囊、移動段、H8 |
+| `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344、c1276）：時長、距離（`km` 總數；列與游標用 `utils/distanceText`）、膠囊、移動段、H8 |
 
 時間一律為 UTC 毫秒；公尺為 `distanceM`，持續時間為 `durationMs`。`subject` 為 `dog` 或 `phone`；`source` 為 `all`、`local`（接受 `ble` 別名）或 `cloud`。
 
@@ -35,7 +35,7 @@
 - `state`：上次結果的 `state`，用於保留已標停留。`timezone` 是識別的一部分；來源、開始、固定結束、時區、既有資料或相關車段改變時會重新計算。
 - `replayHolds`：可替換停住重播；預設狗使用既有 IndoorHold 純邏輯，手機不使用。`holdOptions` 可傳 `seed`、`config`、`classify`。
 
-讀取完整當天資料，並為跨午夜提供前一天的必要實測／停住脈絡（停住最多 24 小時）；可提供隔天第一筆以辨識「接續隔天」。不虛構 00:00 定位。`packets` 為篩選去重後原始列，`points` 為選定範圍的顯示／實測流；月曆使用共同來源的封包有無資料，清單與距離使用同一份整理結果，匯出保留原始座標。
+讀取完整當天資料，並為跨午夜提供前一天的必要實測／停住脈絡（停住最多 24 小時）；可提供隔天第一筆以辨識跨午夜（`continuesNextDay`）。不虛構 00:00 定位。`packets` 為篩選去重後原始列，`points` 為選定範圍的顯示／實測流；月曆使用共同來源的封包有無資料，清單與距離使用同一份整理結果，匯出保留原始座標。
 
 `nodes` 是排序後完整清單；`locations` 只有地點列，`sections` 只有交通／缺口列。型別：`departure`、`stop`、`switch`、`indoor`、`movement`、`gap`、`end`。交通方式：`walking`、`moving`、`driving`、`ride`、`gap`。停留與切換點共用 `number`；室內節點不編號。切換點沒有上下車文字與停留時間。節點座標可供後續非同步查地址。
 
@@ -91,3 +91,16 @@
 `__tests__/PhoneSessionBreakStay.test.js` 鎖住：長／短的切換都是兩段停留＋「沒有資料」、同一工作階段仍是一段、距離不變、狗不受影響。
 
 長期想法：讓原生端明確記下「記錄關閉」的區間（服務停止、使用者關掉、程序被殺後下次啟動補記），歷史只把真正關閉的時間當中斷；工作階段換了但服務其實沒停（例如 App 更新後立即重啟）的同地中斷，就能像同一工作階段一樣算進停留。
+
+## 清單列的文字（2026-10-13）
+
+- 距離：移動段（`sectionText`，畫面與 PNG 清單）和游標標籤（`cursorLabel`）用全 App 共用的 `distanceText`（`src/utils/distanceText.js`，狗卡片的 `formatDistance` 是同一個函式）：不到 100 m 為 5 m 一階（`0 m`、`45 m`），100 m–1 km 為 10 m 一階（`340 m`），1 km 起一位小數的 km（`1.4 km`）；每一階用四捨五入後的值判斷。摘要（`summaryText`／`movementSummary`／範圍摘要）、「今天 x km」與匯出的總距離仍用 `km()`；CSV／GPX 不變。
+- 分鐘：移動段顯示的距離不是 `0 m`、顯示分鐘（`displayDurationMs ?? durationMs`）四捨五入為 0 時，時間寫「不到 1 分」（c1276）。只改文字；`durationMs`／`displayDurationMs` 不變。
+- 出發（在室內就不要出發了）：室內節點正好從第一筆開始時，`historyTimeline` 本來就不加出發節點（#64）；`timelinePresentation` 另外在第一列是出發、1 分鐘內接著室內節點、中間只有沒計入距離的走路／移動或 `uncertain` 列時，拿掉出發和中間那幾列，清單從室內開始。模型的 `departure` 節點、地圖起點與 CSV／GPX 不變。`__tests__/HistoryRowText.test.js` 用虛構資料檢查這三條。
+- 跨午夜的終點：`continuesNextDay` 的終點 `nodePill` 回傳 `null`（不寫「接續隔天」，c334 已移除）；併入末停留時只剩停留膠囊「停 N 分」；`continuesNextDay` 的室內節點寫「室內・N 分」。節點欄位不變，`continuesNextDay` 仍保留給其他用途。
+
+## 手機靜止時的粗定位（2026-10-13）
+
+- 手機偵測器鎖定為靜止、精度超過 `stayAccuracyM`（25 m）但在 `accuracyM`（50 m）內的點，在造訪已有 25 m 內的靜止點、離造訪中心不超過 `stillPlaceM`、且之前沒有已判定的離開點時，算進該造訪的時間（不切開、不算中斷），但**不參與**代表位置的平均（只有 25 m 內的點投票；沒有其他點時才用全部）。只有粗定位、沒有 25 m 內靜止點的時段不在這裡變成停留。
+- 偵測器判為 `unknown`、但自己量到的可信速度低於 `stillMps` 的點，不是走路：那段邊是 `uncertain`（「GPS 訊號弱」），不會變成 0 km 的走路分鐘。這種邊帶 `stillUnplaced`；同一次記錄裡連續這種邊、原始位置都在起點 `radiusM` + 該點精度內、達 `stayMs` 時，`phoneStationaryPresentationStops` 把它當成 `coarse` 的靜止段：貼著同地停留就併進那個停留，否則是不編號停留。所以清單「不到 30 分的中斷併入旁邊」不會把它併成 0 m 的走路。量到 ≥ `stillMps` 的可信速度仍照走路計算。
+- `__tests__/PhoneCoarseStationary.test.js` 用虛構資料鎖住這些行為。

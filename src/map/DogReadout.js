@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { distanceText } from '../utils/distanceText';
 // Which way and how far a dog is from the phone, as plain values. Pure: no
 // React, no clock of its own. (From PR #40's dog rows; the card A3 uses it.)
 
@@ -19,19 +20,8 @@ export function bearingAndDistance(from, to) {
   return { metres, bearing };
 }
 
-/**
- * 「8 m」「120 m」「1.2 km」. Five-metre steps under a kilometre: GPS cannot do
- * better, and a number that flickers by one metre every second only
- * distracts.
- */
-export function formatDistance(metres) {
-  if (metres < 10) return `${Math.max(0, Math.round(metres))} m`;
-  if (metres < 1000) {
-    const rounded = Math.round(metres / 5) * 5;
-    return rounded >= 1000 ? '1.0 km' : `${rounded} m`;
-  }
-  return `${(metres / 1000).toFixed(metres < 9950 ? 1 : 0)} km`;
-}
+/** 「10 m」「120 m」「1.2 km」: the app's one distance formatter (utils/distanceText). */
+export const formatDistance = distanceText;
 
 // Eight compass words for TalkBack, which cannot see the arrow.
 const COMPASS = [t("c738"), t("c739"), t("c740"), t("c741"), t("c742"), t("c743"), t("c744"), t("c745")];
