@@ -133,20 +133,51 @@ export function tagSize(text, fontScale = 1) {
 
 const intersects = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
-/**
- * Which name tags are drawn, given where each marker is on screen. Tags that
- * would overlap merge into one group tag 「3 隻」 (「3 隻・室內」 when every dog
- * in it is held indoors), drawn under the lowest of their faces; the others
- * in the group draw no tag. The selected dog keeps its own tag and is left out
- * of groups (DESIGN.md §9.5); a group of one is just that dog's own tag.
- *
- * @param markers dogMarkers() output
- * @param points screen positions by dog, in dp: { [slaveId]: { x, y } }
- * @returns { [slaveId]: { text, group: number, problem: boolean, members?: slaveId[] } | null }
- *   A group tag's `members`: its dogs, nearest the top of the screen first
- *   (the overlap menu lists them in that order).
- *   null = no tag under this face; dogs without a screen position keep their tag.
- */
+// A face is a circle: does it reach into this box?
+const faceTouches = (face, box) => {
+  const dx = Math.max(box.left - face.x, 0, face.x - box.right);
+  const dy = Math.max(box.top - face.y, 0, face.y - box.bottom);
+  return dx * dx + dy * dy < face.r * face.r;
+};
+
+// The 「3 隻」 group tag's size: 14sp bold on a 32dp capsule (DESIGN.md §15),
+// with the 8dp red dot when a dog in it has a problem.
+function groupTagSize(text, problem, fontScale = 1) {
+  const { width } = tagSize(text, fontScale * type.value.fontSize / type.mapLabel.fontSize);
+  const dot = problem ? sizes.groupTag.problemDot + sizes.groupTag.dotGap : 0;
+  return { width: width + dot, height: sizes.groupTag.height * Math.max(1, fontScale) };
+}
+
+// The widest a name tag gets before it wraps to its second line (D14).
+const TAG_MAX_WIDTH = sizes.marker.textWidth + 2 * (sizes.mapLabel.paddingH + sizes.mapLabel.border)
+  - sizes.marker.labelSafety;
+
+// The box a tag of this size covers right under a face at `point`.
+function tagBox(point, faceSize, { width, height }) {
+  const top = point.y + faceSize / 2 + sizes.marker.labelGap;
+  return { left: point.x - width / 2, right: point.x + width / 2, top, bottom: top + height };
+}
+
+function nameTagSize(text, fontScale) {
+  const size = tagSize(text, fontScale);
+  if (size.width <= TAG_MAX_WIDTH) return size;
+  // Too wide for one line: two lines (DESIGN.md §3.4), as wide as allowed.
+  return { width: TAG_MAX_WIDTH, height: size.height + type.mapLabel.lineHeight * fontScale };
+}
+
+const groupText = members => t("c733", { length: members.length,
+  value: members.every(item => item.marker.indoor) ? `・${INDOOR_WORD}` : '' });
+
+// The tag sits under the lowest face, so it covers none of the others.
+const lowest = members => members.reduce((low, item) => (item.point.y > low.point.y
+  || (item.point.y === low.point.y && item.marker.slaveId < low.marker.slaveId) ? item : low));
+
+// Two sets of dogs collide when a tag of one covers a tag or a face of the
+// other (a face drawn over a tag hides the name as surely as another tag).
+const collide = (a, b) => a.tags.some(tag => b.tags.some(other => intersects(tag, other))
+  || b.faces.some(face => faceTouches(face, tag)))
+  || b.tags.some(tag => a.faces.some(face => faceTouches(face, tag)));
+
 // Name tags merge into 「N 隻」 only when the map is zoomed out this far or
 // more (metres per dp; about zoom 16 here, a few streets on screen). Closer
 // in, every dog keeps its own tag even when the tags overlap (066: the user
@@ -157,6 +188,23 @@ export const GROUP_MIN_METRES_PER_DP = 2;
 export const groupsAtZoom = metresPerDp =>
   !(metresPerDp > 0) || metresPerDp >= GROUP_MIN_METRES_PER_DP;
 
+/**
+ * Which name tags are drawn, given where each marker is on screen. A name tag
+ * that would run into another dog's tag or face merges with that dog into one
+ * group tag 「3 隻」 (「3 隻・室內」 when every dog in it is held indoors),
+ * drawn under the lowest of their faces; the others in the group draw no tag.
+ * The group tag itself is checked again (it is wider than one name and sits
+ * lower), so it never covers a dog left outside it. The selected dog keeps
+ * its own tag and is left out of groups (DESIGN.md §9.5); a group of one is
+ * just that dog's own tag.
+ *
+ * @param markers dogMarkers() output
+ * @param points screen positions by dog, in dp: { [slaveId]: { x, y } }
+ * @returns { [slaveId]: { text, group: number, problem: boolean, members?: slaveId[] } | null }
+ *   A group tag's `members`: its dogs, nearest the top of the screen first
+ *   (the overlap menu lists them in that order).
+ *   null = no tag under this face; dogs without a screen position keep their tag.
+ */
 export function nameTags(markers, points = {}, fontScale = 1, { group = true } = {}) {
   const result = {};
   const placed = [];
@@ -164,37 +212,56 @@ export function nameTags(markers, points = {}, fontScale = 1, { group = true } =
     result[marker.slaveId] = { text: marker.tag, group: 1, problem: false };
     const point = points[marker.slaveId];
     if (marker.selected || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
-    const { width, height } = tagSize(marker.tag, fontScale);
-    const top = point.y + marker.size / 2 + sizes.marker.labelGap;
-    placed.push({ marker, y: point.y,
-      box: { left: point.x - width / 2, right: point.x + width / 2, top, bottom: top + height } });
+    placed.push({ marker, point, face: { x: point.x, y: point.y, r: marker.size / 2 },
+      tag: tagBox(point, marker.size, nameTagSize(marker.tag, fontScale)) });
   }
-  // Union-find over overlapping tags: A over B and B over C is one group.
+  if (!group) return result;
+  // Union-find over the names as they would be drawn: A over B and B over C
+  // is one group, whatever order the dogs come in.
   const parent = placed.map((_, index) => index);
   const find = index => (parent[index] === index ? index : (parent[index] = find(parent[index])));
+  const alone = item => ({ members: [item], tags: [item.tag], faces: [item.face] });
   for (let i = 0; i < placed.length; i += 1) {
     for (let j = i + 1; j < placed.length; j += 1) {
-      if (intersects(placed[i].box, placed[j].box)) parent[find(i)] = find(j);
+      if (collide(alone(placed[i]), alone(placed[j]))) parent[find(i)] = find(j);
     }
   }
-  const groups = new Map();
+  const roots = new Map();
   placed.forEach((item, index) => {
     const root = find(index);
-    if (!groups.has(root)) groups.set(root, []);
-    groups.get(root).push(item);
+    if (!roots.has(root)) roots.set(root, []);
+    roots.get(root).push(item);
   });
-  for (const members of groups.values()) {
-    if (!group || members.length < 2) continue;
-    // The tag sits under the lowest face, so it covers none of the others.
-    const lead = members.reduce((low, item) => (item.y > low.y
-      || (item.y === low.y && item.marker.slaveId < low.marker.slaveId) ? item : low));
-    const indoor = members.every(item => item.marker.indoor);
+  // Each set as drawn: every face, and one tag (the group tag under the
+  // lowest face). A group tag that now runs into another set merges that
+  // set in too, until nothing drawn covers another dog's name.
+  const drawn = members => {
+    if (members.length < 2) return alone(members[0]);
+    const lead = lowest(members);
+    const size = groupTagSize(groupText(members), members.some(item => item.marker.problem), fontScale);
+    return { members, faces: members.map(item => item.face), tags: [tagBox(lead.point, lead.marker.size, size)] };
+  };
+  let sets = [...roots.values()].map(drawn);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let i = 0; i < sets.length && !changed; i += 1) {
+      for (let j = i + 1; j < sets.length && !changed; j += 1) {
+        if (!collide(sets[i], sets[j])) continue;
+        const merged = drawn([...sets[i].members, ...sets[j].members]);
+        sets = [...sets.slice(0, i), merged, ...sets.slice(i + 1, j), ...sets.slice(j + 1)];
+        changed = true;
+      }
+    }
+  }
+  for (const { members } of sets) {
+    if (members.length < 2) continue;
+    const lead = lowest(members);
     for (const item of members) result[item.marker.slaveId] = null;
     result[lead.marker.slaveId] = {
-      text: t("c733", { length: members.length, value: indoor ? `・${INDOOR_WORD}` : '' }),
+      text: groupText(members),
       group: members.length,
       problem: members.some(item => item.marker.problem),
-      members: [...members].sort((left, right) => left.y - right.y
+      members: [...members].sort((left, right) => left.point.y - right.point.y
         || left.marker.slaveId - right.marker.slaveId).map(item => item.marker.slaveId),
     };
   }

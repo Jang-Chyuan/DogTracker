@@ -111,6 +111,8 @@ const getStyles = makeStyles(({ colors }) => StyleSheet.create({
   status: { minHeight: touch.min, flexDirection: 'row', alignItems: 'center', gap: space.m, marginVertical: space.s },
   statusText: { ...type.body, color: colors.text, flex: 1 },
   failed: { fontWeight: type.status.fontWeight },
-  textButton: { minHeight: touch.min, minWidth: touch.min, alignItems: 'flex-end', justifyContent: 'center' },
+  // 取消／重試 press as a capsule around their words, not a square.
+  textButton: { minHeight: touch.min, minWidth: touch.min, paddingHorizontal: space.s, borderRadius: radius.full,
+    alignItems: 'center', justifyContent: 'center' },
   textButtonText: { ...type.status, color: colors.tonalText },
 }));

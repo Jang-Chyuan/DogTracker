@@ -87,7 +87,9 @@ function Arrow({ side, enabled, onPress, label, testID }) {
       accessibilityState={{ disabled: !enabled }}
       disabled={!enabled}
       onPress={onPress}
-      // The chevron sits at the sheet's edge, its 48dp target reaching inwards.
+      // The chevron sits at the sheet's edge, in the middle of its 48dp
+      // circle, which reaches out into the sheet's padding; pressed, the
+      // circle darkens (never a square).
       style={({ pressed }) => [styles.arrow,
         side === 'previous' ? styles.arrowStart : styles.arrowEnd, pressed && styles.pressed]}
       hitSlop={space.xs}
@@ -164,12 +166,17 @@ function DayCell({ cell, onPress }) {
       accessibilityState={{ disabled: !cell.tappable, selected: cell.selected }}
       // A day that cannot be chosen does nothing at all (判定表「沒紀錄的日子被點」).
       onPress={cell.tappable ? () => onPress(cell.day) : undefined}
-      style={({ pressed }) => [styles.dayCell, pressed && styles.pressedRow]}
+      style={styles.dayCell}
     >
-      <View style={[styles.dayInner, frame]} collapsable={false}>
-        <Text style={text}>{cell.date}</Text>
-        <View style={[styles.dot, cell.dot ? styles.shown : styles.hidden]} />
-      </View>
+      {/* Pressed, the day's circle fills (not the square cell around it);
+          a day that cannot be chosen shows no press at all. */}
+      {({ pressed }) => (
+        <View style={[styles.dayInner, frame, pressed && cell.tappable && !cell.selected && styles.pressedRow]}
+          collapsable={false}>
+          <Text style={text}>{cell.date}</Text>
+          <View style={[styles.dot, cell.dot ? styles.shown : styles.hidden]} />
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -599,7 +606,8 @@ const getStyles = makeStyles(theme => {
     },
     // 標題 16sp 粗體 (DESIGN.md「底部小視窗」).
     title: { ...type.status, color: colors.text },
-    backTitle: { minHeight: touch.min, justifyContent: 'center' },
+    backTitle: { minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space.s,
+      marginLeft: -space.s, borderRadius: radius.full },
     statusRow: {
       flex: 1,
       flexDirection: 'row',
@@ -612,7 +620,8 @@ const getStyles = makeStyles(theme => {
     statusRetry: {
       minHeight: touch.min,
       justifyContent: 'center',
-      paddingHorizontal: space.xs,
+      paddingHorizontal: space.s,
+      borderRadius: radius.full,
     },
     retryText: { ...type.value, color: colors.tonalText },
     // 回到今天: 32dp high (48dp to the finger), outlined; faded on today.
@@ -633,9 +642,10 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'space-between',
       marginTop: space.xs,
     },
-    arrow: { width: touch.min, height: touch.min, justifyContent: 'center' },
-    arrowStart: { alignItems: 'flex-start' },
-    arrowEnd: { alignItems: 'flex-end' },
+    arrow: { width: touch.min, height: touch.min, borderRadius: radius.full, alignItems: 'center',
+      justifyContent: 'center' },
+    arrowStart: { marginLeft: -(touch.min - sizes.icon.row) / 2 },
+    arrowEnd: { marginRight: -(touch.min - sizes.icon.row) / 2 },
     monthPill: {
       flexDirection: 'row',
       alignItems: 'center',
