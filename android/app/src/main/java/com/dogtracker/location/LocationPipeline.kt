@@ -15,6 +15,31 @@ internal data class LocationSample(
 
 /** Acquisition, display and persistence have separate clocks. Never replay old fixes. */
 internal class LocationPipeline {
+  companion object {
+    /**
+     * Oldest fix (by its own elapsedRealtimeNanos) that is accepted and saved.
+     * It was 3 s when only the GPS provider was used, once a second, and every
+     * fix arrived fresh. With fused location and the phone still, Samsung stops
+     * GPS and the Wi-Fi fixes come seconds to minutes apart, about 4.5–5 s old
+     * on arrival (PR 116 diagnostics, one night: 1004 dropped as stale, the
+     * oldest 5.1 s; stretches of 80–133 min saved nothing). Older, cached fixes are still dropped; one
+     * older than the last accepted fix is a duplicate. Rows carry the fix's own
+     * time ([fixWallTime]), not the time they were written.
+     */
+    const val MAX_FIX_AGE_NANOS = 15_000_000_000L
+    /** The fix's time on the system clock: wall time now, less the fix's monotonic age. */
+    fun fixWallTime(sample: LocationSample, nowNanos: Long, wallMs: Long): Long =
+      wallMs - (nowNanos - sample.elapsedNanos) / 1_000_000L
+    /**
+     * A fix the location service hands a new recording (its cached last fix)
+     * that is not newer than the newest row already saved: `lastLocationAt` is
+     * that row's location_at. Only a recent repeat counts, so a clock that was
+     * set back does not stop recording.
+     */
+    fun repeatsSavedRow(sample: LocationSample, lastLocationAt: Long?): Boolean =
+      lastLocationAt != null && sample.timestamp <= lastLocationAt &&
+        lastLocationAt - sample.timestamp <= MAX_FIX_AGE_NANOS / 1_000_000L
+  }
   var latest: LocationSample? = null; private set
   var received = 0; private set
   var accepted = 0; private set
@@ -45,7 +70,7 @@ internal class LocationPipeline {
     fun reject(cause: String, message: () -> String): Boolean {
       rejected++; rejectedBy[cause] = (rejectedBy[cause] ?: 0) + 1; reason = message(); return false
     }
-    if (sample.elapsedNanos <= 0 || sample.elapsedNanos > now || now - sample.elapsedNanos > 3_000_000_000L) {
+    if (sample.elapsedNanos <= 0 || sample.elapsedNanos > now || now - sample.elapsedNanos > MAX_FIX_AGE_NANOS) {
       if (sample.elapsedNanos in 1..now) windowMaxStaleSeconds =
         maxOf(windowMaxStaleSeconds ?: 0.0, (now - sample.elapsedNanos) / 1e9)
       return reject("stale") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1118) }
@@ -95,11 +120,13 @@ internal class LocationPipeline {
   }
   fun candidate(now: Long): LocationSample? {
     val value = latest ?: return null
-    if (now - value.elapsedNanos > 3_000_000_000L || value.elapsedNanos <= lastSavedSample) return null
+    if (now - value.elapsedNanos > MAX_FIX_AGE_NANOS || value.elapsedNanos <= lastSavedSample) return null
     if (lastWrite > 0 && now - lastWrite < intervalSeconds * 1_000_000_000L) return null
     return value
   }
   fun written(sample: LocationSample, now: Long) { lastSavedSample = sample.elapsedNanos; lastWrite = now }
+  /** Not saved (it repeats a saved row); does not use the write slot. */
+  fun skipped(sample: LocationSample) { lastSavedSample = maxOf(lastSavedSample, sample.elapsedNanos) }
   private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
     val dlat = Math.toRadians(lat2 - lat1); val dlon = Math.toRadians(lon2 - lon1)
     val a = sin(dlat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dlon / 2).pow(2)
