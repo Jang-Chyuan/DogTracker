@@ -1,0 +1,1057 @@
+{
+ "constants": {
+  "maxPercent": 100,
+  "emptyMaxMillivolts": 3500,
+  "dropPoints": 30,
+  "dropPackets": 2,
+  "agreePoints": 5
+ },
+ "cases": [
+  {
+   "name": "0% blip then 43%",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 43,
+      "bv": 1,
+      "bmv": 3800
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 43,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 43
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 0,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 43,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 43
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 43,
+      "bv": 1,
+      "bmv": 3800
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 43,
+        "at": 1760000010000
+       },
+       "pending": null,
+       "judgedAt": 1760000010000
+      },
+      "batteryPercentage": 43
+     }
+    },
+    {
+     "time": 1760000015000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 43,
+      "bv": 1,
+      "bmv": 3790
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 43,
+        "at": 1760000015000
+       },
+       "pending": null,
+       "judgedAt": 1760000015000
+      },
+      "batteryPercentage": 43
+     }
+    }
+   ]
+  },
+  {
+   "name": "0% with 0 mV and with a full cell",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 43,
+      "bv": 1,
+      "bmv": 3800
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 43,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 43
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 0,
+      "bv": 1,
+      "bmv": 0
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 43,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 43
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 0,
+      "bv": 1,
+      "bmv": 4100
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 43,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000010000
+      },
+      "batteryPercentage": 43
+     }
+    },
+    {
+     "time": 1760000015000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 42,
+      "bv": 1,
+      "bmv": 3795
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 42,
+        "at": 1760000015000
+       },
+       "pending": null,
+       "judgedAt": 1760000015000
+      },
+      "batteryPercentage": 42
+     }
+    }
+   ]
+  },
+  {
+   "name": "real gradual drain to an empty cell",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 25,
+      "bv": 1,
+      "bmv": 3700
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 25,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 25
+     }
+    },
+    {
+     "time": 1760000060000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 21,
+      "bv": 1,
+      "bmv": 3660
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 21,
+        "at": 1760000060000
+       },
+       "pending": null,
+       "judgedAt": 1760000060000
+      },
+      "batteryPercentage": 21
+     }
+    },
+    {
+     "time": 1760000120000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 20,
+      "bv": 1,
+      "bmv": 3650
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 20,
+        "at": 1760000120000
+       },
+       "pending": null,
+       "judgedAt": 1760000120000
+      },
+      "batteryPercentage": 20
+     }
+    },
+    {
+     "time": 1760000180000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 12,
+      "bv": 1,
+      "bmv": 3580
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 12,
+        "at": 1760000180000
+       },
+       "pending": null,
+       "judgedAt": 1760000180000
+      },
+      "batteryPercentage": 12
+     }
+    },
+    {
+     "time": 1760000240000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 3,
+      "bv": 1,
+      "bmv": 3520
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 3,
+        "at": 1760000240000
+       },
+       "pending": null,
+       "judgedAt": 1760000240000
+      },
+      "batteryPercentage": 3
+     }
+    },
+    {
+     "time": 1760000300000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 0,
+      "bv": 1,
+      "bmv": 3400
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 0,
+        "at": 1760000300000
+       },
+       "pending": null,
+       "judgedAt": 1760000300000
+      },
+      "batteryPercentage": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "real drop confirmed by 2 packets",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 80,
+      "bv": 1,
+      "bmv": 3950
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 40,
+      "bv": 1,
+      "bmv": 3720
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 41,
+      "bv": 1,
+      "bmv": 3725
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 41,
+        "at": 1760000010000
+       },
+       "pending": null,
+       "judgedAt": 1760000010000
+      },
+      "batteryPercentage": 41
+     }
+    },
+    {
+     "time": 1760000015000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 39,
+      "bv": 1,
+      "bmv": 3718
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 39,
+        "at": 1760000015000
+       },
+       "pending": null,
+       "judgedAt": 1760000015000
+      },
+      "batteryPercentage": 39
+     }
+    }
+   ]
+  },
+  {
+   "name": "lone drop between normal packets",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 80,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 10,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 10,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 80,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000010000
+       },
+       "pending": null,
+       "judgedAt": 1760000010000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000015000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 79,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 79,
+        "at": 1760000015000
+       },
+       "pending": null,
+       "judgedAt": 1760000015000
+      },
+      "batteryPercentage": 79
+     }
+    }
+   ]
+  },
+  {
+   "name": "drop packets that disagree restart the count",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 80,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 40,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 20,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 20,
+        "at": 1760000010000,
+        "count": 1
+       },
+       "judgedAt": 1760000010000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000015000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 21,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 21,
+        "at": 1760000015000
+       },
+       "pending": null,
+       "judgedAt": 1760000015000
+      },
+      "batteryPercentage": 21
+     }
+    }
+   ]
+  },
+  {
+   "name": "exactly 30 points needs no confirming; a rise never does",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 70,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 70,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 70
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 40,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 40,
+        "at": 1760000005000
+       },
+       "pending": null,
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 40
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 95,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 95,
+        "at": 1760000010000
+       },
+       "pending": null,
+       "judgedAt": 1760000010000
+      },
+      "batteryPercentage": 95
+     }
+    }
+   ]
+  },
+  {
+   "name": "bad packets neither confirm nor break a pending drop",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 80,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 40,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 0,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000010000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000015000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 255,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000015000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000020000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 42,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 42,
+        "at": 1760000020000
+       },
+       "pending": null,
+       "judgedAt": 1760000020000
+      },
+      "batteryPercentage": 42
+     }
+    }
+   ]
+  },
+  {
+   "name": "out of range and invalid readings are no reading",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 255,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": null,
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": null
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 101,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": null,
+       "pending": null,
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": null
+     }
+    },
+    {
+     "time": 1760000010000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 50,
+      "bv": 0,
+      "bmv": 3800
+     },
+     "expect": {
+      "state": {
+       "accepted": null,
+       "pending": null,
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": null
+     }
+    },
+    {
+     "time": 1760000015000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 50,
+      "bv": 1,
+      "bmv": 3800
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 50,
+        "at": 1760000015000
+       },
+       "pending": null,
+       "judgedAt": 1760000015000
+      },
+      "batteryPercentage": 50
+     }
+    }
+   ]
+  },
+  {
+   "name": "a repeated or older packet changes nothing",
+   "steps": [
+    {
+     "time": 1760000000000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 80,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": null,
+       "judgedAt": 1760000000000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 40,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000005000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 40,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000003000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 41,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 80,
+        "at": 1760000000000
+       },
+       "pending": {
+        "percentage": 40,
+        "at": 1760000005000,
+        "count": 1
+       },
+       "judgedAt": 1760000005000
+      },
+      "batteryPercentage": 80
+     }
+    },
+    {
+     "time": 1760000008000,
+     "packet": {
+      "sid": 4,
+      "mid": 7,
+      "slat": 24.99,
+      "slon": 121.31,
+      "bp": 39,
+      "bv": 1
+     },
+     "expect": {
+      "state": {
+       "accepted": {
+        "percentage": 39,
+        "at": 1760000008000
+       },
+       "pending": null,
+       "judgedAt": 1760000008000
+      },
+      "batteryPercentage": 39
+     }
+    }
+   ]
+  }
+ ]
+}

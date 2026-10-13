@@ -188,12 +188,15 @@ test('a true gap inside the available visit cannot establish continuous still-he
     range: { start: rows[10].time, end: rows[39].time } });
   const stop = model.locations.find(n => n.type === 'stop');
   const gap = { start: rows[14].time, end: rows[25].time };
-  expect(stop.gaps).toContainEqual(gap);
+  expect(stop.gaps).toContainEqual(expect.objectContaining(gap));
   expect(model.sections.find(n => n.type === 'gap')).toMatchObject(gap);
   expect(model.displayStays).toBeUndefined();
   const middle = (gap.start + gap.end) / 2;
   expect(phoneStayDisplayCoordinate(model.locations, middle)).toBeNull();
-  expect(cursorLabel(model, middle, 'phone')[1]).not.toMatch(/^停留 /);
+  // 2026-10-13 (user): a same-session break under 30 min inside a stay is the
+  // stay's time in the list and on the cursor label (no 「這段沒資料」, no
+  // 「不含中斷」); it still places nothing (above) and the map draws the break.
+  expect(cursorLabel(model, middle, 'phone')[1]).toMatch(/^停留 /);
 });
 
 

@@ -40,7 +40,7 @@ const edge = (start = 0, end = 200, extra = {}) => ({ from: { ...point(start), p
   mode: 'walking', countedDistanceM: 0, ...extra });
 
 test.each(['driving', 'gap', 'bridge', 'uncertain', 'counted travel', 'confirmed walk', 'unknown',
-  'coarse', 'session change', 'legacy', 'covered'])('presentation fallback cannot claim %s as stationary', reason => {
+  'beyond the accuracy filter', 'session change', 'legacy', 'covered'])('presentation fallback cannot claim %s as stationary', reason => {
   const e = edge(); let covered = () => false;
   if (reason === 'driving') e.mode = 'driving';
   if (reason === 'gap') e.gap = true;
@@ -49,11 +49,25 @@ test.each(['driving', 'gap', 'bridge', 'uncertain', 'counted travel', 'confirmed
   if (reason === 'counted travel') e.countedDistanceM = 1;
   if (reason === 'confirmed walk') e.to.phoneConfirmedMovement = true;
   if (reason === 'unknown') e.to.phoneMotionState = 'unknown';
-  if (reason === 'coarse') e.to.accuracy = 26;
+  if (reason === 'beyond the accuracy filter') e.to.accuracy = config.accuracyM + 1;
   if (reason === 'session change') e.to.session_id = 'another-fiction-session';
   if (reason === 'legacy') delete e.to.motion_state;
   if (reason === 'covered') covered = () => true;
   expect(phoneStationaryPresentationStops([e], { config, covered })).toEqual([]);
+});
+
+// 2026-10-13: a stationary fix coarser than the 25 m stay gate is still
+// observed stationary time; it never places the run (the first fix within
+// 25 m does) and marks it `coarse`.
+test('coarse stationary fixes keep their time in the run without placing it', () => {
+  const e = edge(0, 200);
+  e.from.latitude += 0.00001;
+  e.to.accuracy = config.stayAccuracyM + 1;
+  const [run] = phoneStationaryPresentationStops([e], { config });
+  expect(run).toMatchObject({ number: null, coarse: true, accuracyM: config.stayAccuracyM + 1,
+    latitude: e.from.latitude, longitude: e.from.longitude, durationMs: 200000 });
+  const fine = phoneStationaryPresentationStops([edge(0, 200)], { config });
+  expect(fine[0].coarse).toBeUndefined();
 });
 
 test('fallback uses the existing anchor, keeps raw edges untouched and breaks at an uncovered sampling interval', () => {
