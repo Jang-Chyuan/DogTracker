@@ -1714,3 +1714,61 @@ test('a native tap on overlapping dog markers opens the dog drawn under the fing
     mockCamera.getCamera.mockResolvedValue(null);
   }
 });
+
+test('a tap on a marker\'s empty canvas beside a dog is an empty-map tap: it closes the card, opens no dog', async () => {
+  const onDogPress = jest.fn();
+  const onMapPress = jest.fn();
+  // Two dogs far apart; Google's marker canvas is 174dp wide, so a finger
+  // 60dp beside dog 4's face (on bare map) is still reported as its marker.
+  const markers = [[4, 121], [9, 121.01]].map(([slaveId, longitude]) => ({ ...slaveMarker, slaveId,
+    name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`, coordinate: { latitude: 25, longitude } }));
+  mockCamera.pointForCoordinate = jest.fn(async p => ({ x: p.longitude > 121.005 ? 300 : 100, y: 200 }));
+  mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 0, zoom: 17 });
+  try {
+    await act(async () => {
+      renderer = Renderer.create(<TrackingMap {...defaults} onDogPress={onDogPress} onMapPress={onMapPress}
+        presentation={{ ...defaults.presentation, dogMarkers: markers, slaveSegments: [], rangeRing: null }} />, {
+        createNodeMock: () => ({ measure: callback => callback(0, 0, 400, 800, 10, 20) }),
+      });
+    });
+    await readyMap();
+    await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
+    for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
+    const face = id => renderer.root.findAll(node => node.type === Marker && node.props.identifier === `real-dog-${id}`)[0];
+    const surface = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onTouchStart)[0];
+    renderer.root.findAll(node => node.props.onTouchStart && node.props.ref?.current)[0]
+      .props.ref.current.measure = callback => callback(0, 0, 400, 800, 10, 20);
+    const touch = (x, y) => surface.props.onTouchStart({ nativeEvent: { pageX: x + 10, pageY: y + 20, touches: [{}] } });
+    // Beside the face, on bare map: the card closes, no dog opens.
+    const ratio = require('react-native').PixelRatio.get();
+    await act(async () => touch(160, 200));
+    await act(async () => face(4).props.onPress());
+    // Android's own map event for the same marker click comes at the
+    // marker's anchor (dog 4's face): it must not open dog 4 again.
+    await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { action: 'marker-press', position: { x: 100 * ratio, y: 200 * ratio } } }));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onDogPress).not.toHaveBeenCalled();
+    expect(onMapPress).toHaveBeenCalledTimes(1);
+    // On the face itself it is that dog (with a card open: the card switches).
+    await act(async () => jest.advanceTimersByTime(2000));
+    await act(async () => touch(100, 200));
+    await act(async () => face(4).props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(4);
+    // Another dog's face: that dog.
+    await act(async () => jest.advanceTimersByTime(2000));
+    await act(async () => touch(300, 200));
+    await act(async () => face(9).props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(9);
+    // A plain map tap far from every dog still closes it (after the hold).
+    await act(async () => jest.advanceTimersByTime(2000));
+    await act(async () => renderer.root.findByType(MapView).props.onPress({ nativeEvent:
+      { position: { x: 200 * require('react-native').PixelRatio.get(), y: 600 * require('react-native').PixelRatio.get() } } }));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(onMapPress).toHaveBeenCalledTimes(2);
+    expect(onDogPress).toHaveBeenCalledTimes(2);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    mockCamera.getCamera.mockResolvedValue(null);
+  }
+});
