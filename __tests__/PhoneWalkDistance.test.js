@@ -172,4 +172,20 @@ describe('my route with the odometer, end to end', () => {
     expect(day[0]).toMatchObject({ session_id: 'fiction-walk', odometer_m: 12.5 });
     connection.close();
   });
+
+  test('a column the recorder adds after the first read (an app update) is read from then on', async () => {
+    const connection = createMemoryConnection();
+    const database = createHistoryDatabase(connection);
+    connection.sqlite.exec(`CREATE TABLE myLocationTracker(id INTEGER PRIMARY KEY, recorded_at INTEGER,
+      location_at INTEGER, latitude REAL, longitude REAL, accuracy_meters REAL, speed_kmh REAL,
+      raw_speed_kmh REAL, speed_accuracy_mps REAL, session_id TEXT)`);
+    connection.sqlite.prepare('INSERT INTO myLocationTracker VALUES(?,?,?,?,?,?,?,?,?,?)')
+      .run(1, base, base, ORIGIN.latitude, ORIGIN.longitude, 4, 4.3, 4.3, 0.2, 'fiction-walk');
+    expect((await database.phoneRouteSince(base - 1000))[0]).not.toHaveProperty('odometer_m');
+    connection.sqlite.exec('ALTER TABLE myLocationTracker ADD COLUMN odometer_m REAL');
+    connection.sqlite.prepare('INSERT INTO myLocationTracker VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+      .run(2, base + 5000, base + 5000, ORIGIN.latitude, ORIGIN.longitude, 4, 4.3, 4.3, 0.2, 'fiction-walk', 6.5);
+    expect((await database.phoneRouteSince(base - 1000))[1]).toMatchObject({ odometer_m: 6.5 });
+    connection.close();
+  });
 });
