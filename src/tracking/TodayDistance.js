@@ -102,3 +102,18 @@ export function todayPill({ route, livePhone, phone }) {
     label: [spoken, reason, unrecorded ? t("c1042") : null].filter(Boolean).join('，'),
   };
 }
+
+// A row stamped more than this past the phone's clock is not shown yet: it
+// was recorded while the clock was set wrong (「現在」 in the future, a cursor
+// past now, a drive made of minutes that have not happened). It stays in the
+// database and joins the day once its time comes.
+export const FUTURE_ROW_TOLERANCE_MS = 2 * 60000;
+
+/** Rows split into those shown now and those stamped in the future. */
+export function splitFutureRows(rows, now, tolerance = FUTURE_ROW_TOLERANCE_MS) {
+  if (!Number.isFinite(now)) return { shown: rows, future: [] };
+  const limit = now + tolerance;
+  const shown = [], future = [];
+  for (const row of rows) (Number(row?.time) > limit ? future : shown).push(row);
+  return { shown, future };
+}

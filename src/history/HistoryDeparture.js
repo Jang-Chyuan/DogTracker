@@ -1,4 +1,4 @@
-import { configFor, distanceMeters, atLeast, above } from './HistoryConfig';
+import { accuracyOf, configFor, distanceMeters, atLeast, above } from './HistoryConfig';
 import { historyMovement, isVehiclePoint } from './HistoryMovement';
 
 // First index in `sorted` (ascending numbers) at or after `value`.
@@ -93,12 +93,27 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
     }
     const previous = ahead[indexOf.get(candidate) - 1];
     const adjacentVehicle = movement.vehicles.some(v => v.end === t);
-    const start = !previous || adjacentVehicle || t - previous.time > config.gapMs || previous.heldReason ? t : previous.time;
     const elapsed = today ? now - t : Infinity;
     // Still waiting for the 3-minute point: nothing is announced yet.
     if (elapsed < 210000) continue;
     const three = nearest(candidates, times, t + 180000, t + 150000, t + 210000);
     if (!three) continue;
+    // 2026-10-13: the three-minute window lets a brisk walk qualify a
+    // candidate still standing at the stay up to three minutes before it set
+    // off (stay from 07:00, walk 07:12, 出發 07:09). When the fixes after the
+    // candidate stay on its spot for a minute or more, the departure is the
+    // last of them: where the walk began (DESIGN 出發在走路的起點).
+    // Standing: within the GPS jitter of a still fix (twice minMoveM, or the
+    // fixes' accuracy); the walk began at the last of them within minMoveM.
+    const first = indexOf.get(candidate);
+    let stood = first;
+    while (ahead[stood + 1] && ahead[stood + 1].time < three.time && !ahead[stood + 1].heldReason
+      && !above(distanceMeters(candidate, ahead[stood + 1]), Math.max(2 * config.minMoveM,
+        accuracyOf(candidate, config), accuracyOf(ahead[stood + 1], config)))) stood += 1;
+    while (stood > first && above(distanceMeters(candidate, ahead[stood]), config.minMoveM)) stood -= 1;
+    const setOff = ahead[stood].time - t >= 60000 ? ahead[stood].time : null;
+    const start = setOff ?? (!previous || adjacentVehicle || t - previous.time > config.gapMs || previous.heldReason
+      ? t : previous.time);
     const distance = distanceMeters(candidate, three), speed = distance / ((three.time - t) / 1000);
     if (!above(distance, 40) || !atLeast(speed, config.departureMinSpeed) || above(speed, config.departureMaxSpeed)) continue;
     let decisionTime = t + 480000;

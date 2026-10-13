@@ -169,7 +169,8 @@ describe('fixtures', () => {
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');
     expect(kinds).toEqual(['departure', 'walking', 'switch', 'driving', 'switch', 'walking', 'stop', 'end']);
-    expect(model.nodes.filter(n => n.number).map(n => n.number)).toEqual([1, 2, 3]);
+    // The last stay is the end row's (「結束 · 停 N 分」, #154): no number.
+    expect(model.nodes.filter(n => n.number).map(n => n.number)).toEqual([1, 2]);
     expect(model.sections.find(s => s.mode === 'driving').countedDistanceM).toBe(0);
   });
   test('history-gap: 沒有資料 twice, 恢復記錄 only after the 40-minute break', async () => {
@@ -309,6 +310,34 @@ describe('the history screen shows the list', () => {
     expect(read).toHaveBeenCalledTimes(1);
     await act(async () => jest.advanceTimersByTimeAsync(30000));
     expect(read).toHaveBeenCalledTimes(2);
+    await act(async () => renderer.unmount());
+    jest.useRealTimers();
+  });
+
+  test('useHistoryDayRows keeps my route\'s fixes stamped in the future out until their time comes', async () => {
+    jest.useFakeTimers();
+    let time = DAY + 9 * 60 * MINUTE;
+    const path = [1, 2, 3].map(i => phoneHistoryRow({ id: i, time: DAY + 8 * 60 * MINUTE + i * 10000,
+      latitude: 24.98, longitude: 121.31, accuracy: 5 }));
+    // Recorded while the clock was set 20 minutes ahead.
+    const ahead = phoneHistoryRow({ id: 4, time: time + 20 * MINUTE, latitude: 24.99, longitude: 121.31, accuracy: 5 });
+    let first = true;
+    const read = jest.fn(async () => {
+      const rows = first ? [...path, ahead] : [];
+      first = false;
+      return { rows, seed: [], after: { done: true } };
+    });
+    let result;
+    function Probe() {
+      result = useHistoryDayRows({ read, subject: 'phone', slaveId: null, day: DAY, clock: () => time });
+      return null;
+    }
+    let renderer;
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(result.rows.map(row => row.id)).toEqual([1, 2, 3]);
+    time += 21 * MINUTE;
+    await act(async () => jest.advanceTimersByTimeAsync(15000));
+    expect(result.rows.map(row => row.id)).toEqual([1, 2, 3, 4]);
     await act(async () => renderer.unmount());
     jest.useRealTimers();
   });

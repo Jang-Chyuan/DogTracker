@@ -132,7 +132,11 @@ export function activityRow(activity, { reference, positionAt, stale }) {
   // Readings older than the position by 10 minutes or more: say what they
   // said then, with their time, rather than 「—」 or a guess about now.
   const old = Number.isFinite(positionAt) && positionAt - newestAt >= READING_OLD_AFTER_MS;
-  const end = old ? minuteOf(newestAt) : minuteOf(reference) - MINUTE;
+  // Readings a few minutes behind (the downloaded archive the card reads
+  // trails the latest positions, most of all while a cold start catches up):
+  // judged up to their newest minute, not up to now, or the minutes still to
+  // come make the window look empty (「—」, 沒有資料).
+  const end = old ? minuteOf(newestAt) : Math.min(minuteOf(reference) - MINUTE, minuteOf(newestAt));
   const words = activityWords(activityState(minutes, { end }));
   return { ...words, at: old && words.tone ? newestAt : null };
 }

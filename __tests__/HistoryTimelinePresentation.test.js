@@ -252,7 +252,8 @@ test('minute precision aligns consecutive displayed clocks without changing obse
   const nodes = [a, b, { ...endpoint, start: 179000, end: 179000 }];
   const rows = exportTimelineRows(nodes, () => '虛構地址');
   expect(rows[0].time).toBe('2 分');
-  expect(rows[1].pill.text).toContain('停 0 分');
+  // 2026-10-13: a merged stay whose minutes round to none says no 「停 0 分」.
+  expect(rows[1].pill.text).toBe('結束');
   expect(timelinePresentation(nodes)[0].durationMs).toBe(61000);
   // A merged walk's minutes are its clock span, short weak-GPS time included
   // (00:00:59–00:04:00 is listed 00:00 → 4 分).

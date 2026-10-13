@@ -200,7 +200,14 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
     },
     statuses() {
       const result = {};
-      for (const [slaveId, state] of dogs) result[slaveId] = { ...state.tracker.status(), indoorState: state.tracker.snapshot() };
+      // `rowsFrom`/`newestAt`: the first and newest row this tracker was fed.
+      // A dog not held whose last good fix is older than `rowsFrom` may be
+      // inside a hold the rows begin in the middle of (useHistoryHolds).
+      for (const [slaveId, state] of dogs) {
+        const newestAt = state.tracker.lastTime();
+        result[slaveId] = { ...state.tracker.status(), rowsFrom: state.firstAt,
+          newestAt: Number.isFinite(newestAt) ? newestAt : null, indoorState: state.tracker.snapshot() };
+      }
       return result;
     },
   };

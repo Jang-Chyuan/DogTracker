@@ -293,6 +293,34 @@ describe('useTodayRoute', () => {
     await act(async () => renderer.unmount());
     jest.useRealTimers();
   });
+
+  // 2026-10-13: fixes stamped 13:14–13:18 while it was earlier (left over from
+  // a clock change) made a drive that had not happened yet.
+  test('fixes stamped in the future wait for their time; the rows stay', async () => {
+    jest.useFakeTimers();
+    const { splitFutureRows, FUTURE_ROW_TOLERANCE_MS } = require('../src/tracking/TodayDistance');
+    expect(splitFutureRows([{ time: 10 }, { time: 10 + FUTURE_ROW_TOLERANCE_MS + 1 }], 10))
+      .toEqual({ shown: [{ time: 10 }], future: [{ time: 10 + FUTURE_ROW_TOLERANCE_MS + 1 }] });
+    let clock = new Date(2026, 9, 7, 9, 30).getTime();
+    const day = new Date(2026, 9, 7).getTime();
+    const rows = [{ id: 1, ...north(0, 0), time: day + 1000 }, { id: 2, ...north(100, 0), time: day + 61000 },
+      { id: 3, ...north(5000, 0), time: clock + 30 * 60000 }];
+    const database = {
+      phoneRouteSince: jest.fn(async (since, cursor) => rows.filter(row => row.time >= since
+        && (!cursor || row.time > cursor.time || (row.time === cursor.time && row.id > cursor.id)))),
+    };
+    let route;
+    function Probe() { route = useTodayRoute(database, true, true, () => clock); return null; }
+    let renderer;
+    await act(async () => { renderer = Renderer.create(React.createElement(Probe)); });
+    expect(route.count).toBe(2);
+    expect(route.metres).toBeCloseTo(100, 0);
+    clock += 31 * 60000;
+    await act(async () => jest.advanceTimersByTimeAsync(TODAY_ROUTE_POLL_MS));
+    expect(route.count).toBe(3);
+    await act(async () => renderer.unmount());
+    jest.useRealTimers();
+  });
 });
 
 test.each([null, { running: null, status: 'cannot read live state' }, { status: 'checking' }])('unknown recording state %o does not imply recording off or change the recorded distance', livePhone => {

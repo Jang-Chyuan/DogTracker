@@ -55,7 +55,7 @@ import {
   uncrowded,
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
-import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
+import { dogAtPoint, dogUnderTouch, dogZIndexes, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
   getSplashState,
@@ -101,6 +101,8 @@ const dash = () =>
   [6, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length));
 // Drawing order: base map, ring, red lines, routes, dogs and phone.
 const Z = { ring: 1, rangeLine: 2, route: 3 };
+// The history cursor's marker, above every dog face (DogMarkers.DOG_Z_BASE and up).
+const CURSOR_Z_INDEX = 1000;
 // A base map that draws nothing but grey (design #ECEEEC): what a map without
 // tiles looks like, for the 地圖載入失敗 fixture.
 const getNO_BASE_MAP = makeStyles(theme => {
@@ -123,6 +125,9 @@ const getNO_BASE_MAP = makeStyles(theme => {
 // The longest the handover waits for the dogs' screen places (the flying
 // artwork's targets) once the first framing is drawn; then a plain fade.
 export const FIRST_FRAME_WAIT_MS = 3000;
+// How long after the finger came down a native marker tap still counts as
+// that touch (a long press is not a tap; a busy bridge can be slow).
+const MARKER_TOUCH_MAX_MS = 1500;
 // When there is nothing to frame, the most the launch screen is held from the
 // map's mount, whatever is still loading (the phone's first fix, tiles).
 export const FRAMING_WAIT_MAX_MS = 9000;
@@ -425,7 +430,7 @@ function CursorMarker({ cursor, color, labelHidden = false, measurementKey, onLa
       coordinate={cursor.coordinate}
       anchor={cursorAnchor(labelHeight, !!face)}
       tracksViewChanges={settled.tracking}
-      zIndex={60}
+      zIndex={CURSOR_Z_INDEX}
       tappable={false}
     >
       <View collapsable={false} onLayout={event => {
@@ -1015,6 +1020,11 @@ function GoogleTrackingMapRenderer({
       group: groupsAtZoom(metresPerDp),
     });
   }, [dogMarkers, dogPoints, source, projecting, metresPerDp]);
+  // Each dog's own zIndex, in the order the faces are drawn (DogMarkers).
+  const dogZ = useMemo(
+    () => dogZIndexes(dogMarkers, dogPoints.source === source ? dogPoints.points : {}, tags),
+    [dogMarkers, dogPoints, source, tags],
+  );
   useEffect(() => {
     onReadyChange?.(configured && usable);
   }, [configured, usable, onReadyChange]);
@@ -1343,12 +1353,30 @@ function GoogleTrackingMapRenderer({
     onStopPress?.(place);
   }, [onStopPress]);
   const touchSurface = useRef(null);
+  // Where the last finger came down on the map (page dp) and the map's page
+  // origin: Google's marker tap does not say where it was, and its pick among
+  // overlapping marker canvases is not the face drawn on top (pressDogMarker).
+  const lastTouch = useRef(null);
+  const surfaceOrigin = useRef(null);
+  const recordTouch = event => {
+    const finger = event?.nativeEvent;
+    if (!finger || !Number.isFinite(finger.pageX) || !Number.isFinite(finger.pageY)
+      || finger.touches?.length > 1) {
+      lastTouch.current = null;
+      return;
+    }
+    lastTouch.current = { x: finger.pageX, y: finger.pageY, at: Date.now() };
+    touchSurface.current?.measure?.((_x, _y, _width, _height, x, y) => {
+      if (Number.isFinite(x) && Number.isFinite(y)) surfaceOrigin.current = { x, y };
+    });
+  };
   const tapContext = useRef(null);
   tapContext.current = { route: routeGeometryIdentity(historyRoute?.points) };
   const validTap = gesture => quickTap.current.gesture === gesture &&
     tapContext.current.route === gesture.route && mapRef.current === gesture.map;
   const STOP_TAP_DP = 20;
   const touchStart = event => {
+    recordTouch(event);
     cursorCameraRequest.current += 1;
     const finger = event.nativeEvent;
     if (!Number.isFinite(finger.pageX) || !Number.isFinite(finger.pageY)) {
@@ -1641,6 +1669,19 @@ function GoogleTrackingMapRenderer({
     clearTimeout(mapPressTimer.current);
     onDogPress?.(slaveId);
   };
+  // A native tap on a dog's marker opens the dog drawn where the finger was:
+  // a face drawn over another dog's name tag canvas is that face's dog, and a
+  // name tag showing over the empty canvas of a marker drawn above it is the
+  // tag's dog. Without a recent touch or screen points, Google's pick stands.
+  const pressDogMarker = slaveId => {
+    const finger = lastTouch.current;
+    const origin = surfaceOrigin.current;
+    const tap = finger && origin && Date.now() - finger.at <= MARKER_TOUCH_MAX_MS
+      ? { x: finger.x - origin.x, y: finger.y - origin.y } : null;
+    const drawn = tap && screenPoints
+      ? dogUnderTouch(dogMarkers, screenPoints, tags, tap, dogZ, fontScale) : null;
+    pressDog(drawn ?? slaveId);
+  };
   // Whether `tap` (dp) falls inside the full marker bitmap (face plus name
   // tag canvas) of the dog last opened by a marker tap; unknown counts as inside.
   const insidePressedMarker = tap => {
@@ -1691,7 +1732,7 @@ function GoogleTrackingMapRenderer({
         collapsable={false}
         pointerEvents="box-none"
         importantForAccessibility={behindSheet(a11yHidden)}
-        onTouchStart={historyRoute ? touchStart : undefined}
+        onTouchStart={historyRoute ? touchStart : recordTouch}
         onTouchMove={historyRoute ? touchMove : undefined}
         onTouchEnd={historyRoute ? touchEnd : undefined}
       >
@@ -1964,19 +2005,16 @@ function GoogleTrackingMapRenderer({
               shownKey={shownKey}
               // Above the phone's dot (30), whose name tag layer they carry:
               // the open dog on top, then problems, then the dog carrying a
-              // group tag over the faces it covers.
-              zIndex={
-                marker.selected
-                  ? 40
-                  : (marker.problem ? 34 : 31) +
-                    (tags[marker.slaveId]?.group > 1 ? 2 : 0)
-              }
+              // group tag over the faces it covers; each dog its own zIndex
+              // (DogMarkers.dogZIndexes), so what is drawn on top is what a
+              // tap opens.
+              zIndex={dogZ[marker.slaveId]}
               label={
                 tags[marker.slaveId]?.group > 1
                   ? groupSpeech(tags[marker.slaveId], dogMarkers, marker.slaveId)
                   : undefined
               }
-              onPress={onDogPress ? () => pressDog(marker.slaveId) : undefined}
+              onPress={onDogPress ? () => pressDogMarker(marker.slaveId) : undefined}
             />
           ))}
         </MapView>

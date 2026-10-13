@@ -3,7 +3,8 @@ import Renderer, { act } from 'react-test-renderer';
 import { useInitialLatest, INITIAL_LATEST_WAIT_MS } from '../src/app/useInitialLatest';
 import { launchScreen } from '../src/app/Launch';
 import { resetSplashGate, getSplashState, reportMapFramed, launchInto,
-  awaitInitialLink, initialLinkRead, giveUpWaiting, finishSplash } from '../src/app/hideSplash';
+  awaitInitialLink, initialLinkRead, giveUpWaiting, finishSplash,
+  HANDOVER_GRACE_MS, LAUNCH_HANDOVER_CAP_MS } from '../src/app/hideSplash';
 let renderer, value, props;
 function Probe(input) { value = useInitialLatest(input); return null; }
 const accepted = publication => ({ loaded: true, rows: [], cloudCommit: 1,
@@ -109,10 +110,14 @@ test('actual failure automatically permits framing but cannot bypass undecided l
 test.each(['scope', 'generation'])('timeout failure is reset on publisher %s replacement and stale acceptance cannot clear its new failure', async field => {
   await update();
   await act(async () => jest.advanceTimersByTime(INITIAL_LATEST_WAIT_MS));
+  const frameScope = value.frameScope;
   const old = props.sync.getMapPublication();
   const next = { ...old, [field]: field === 'scope' ? {} : 2 };
   await update({ sync: { getMapPublication: () => next }, dogs: accepted(old) });
-  expect(value.ready).toBe(false); expect(value.mapFailure).toBe(false);
+  // Past the launch's wait the gate stays open (no second 10 s wait) and the
+  // frame keeps its scope; the new publisher has no failure of its own yet.
+  expect(value.ready).toBe(true); expect(value.mapFailure).toBe(false);
+  expect(value.frameScope).toBe(frameScope);
   await update({ sync: { getMapPublication: () => next, error: 'opaque' } });
   expect(value.ready).toBe(true); expect(value.mapFailure).toBe(true);
   await update({ sync: { getMapPublication: () => ({ ...next, mapSuccessRevision: 1 }) }, dogs: accepted(old) });
@@ -168,4 +173,66 @@ test('hang safety net firing before latest settles waits for latest, then fades 
   await act(async () => jest.advanceTimersByTime(1));
   expect(getSplashState().phase).toBe('handover');
   expect(getSplashState().mode).toBe('fade');
+});
+
+test.each(['generation', 'scope', 'owner-arrives'])('a publisher %s change during the wait does not start the 10 s again', async change => {
+  const first = props.sync.getMapPublication();
+  if (change === 'owner-arrives') await update({ sync: { getMapPublication: () => ({ ...first, owner: null }) } });
+  else await update();
+  await act(async () => launchInto('map'));
+  await act(async () => jest.advanceTimersByTime(6000));
+  // The session arrives / the engine goes foreground: a new generation.
+  const next = change === 'scope' ? { ...first, scope: {} } : { ...first, generation: 2 };
+  await update({ sync: { getMapPublication: () => next } });
+  expect(value.ready).toBe(false);
+  await act(async () => jest.advanceTimersByTime(INITIAL_LATEST_WAIT_MS - 6000 - 1));
+  expect(value.ready).toBe(false);
+  await act(async () => jest.advanceTimersByTime(1));
+  expect(value.ready).toBe(true); expect(value.phase).toBe('fallback'); expect(value.mapFailure).toBe(true);
+  await act(async () => reportMapFramed([]));
+  expect(getSplashState().phase).toBe('handover');
+});
+
+test('the launch screen hands over at the cap although the map never frames (tiles still loading)', async () => {
+  await update();
+  await act(async () => launchInto('map'));
+  await act(async () => jest.advanceTimersByTime(INITIAL_LATEST_WAIT_MS));
+  expect(value.phase).toBe('fallback');
+  // The map now frames; a slow one gets the grace, no more.
+  await act(async () => jest.advanceTimersByTime(HANDOVER_GRACE_MS - 1));
+  expect(getSplashState().phase).toBe('waiting');
+  await act(async () => jest.advanceTimersByTime(1));
+  expect(getSplashState()).toMatchObject({ phase: 'handover', mode: 'fade' });
+  // The update hint is the map's own: the latest is still a failure to show.
+  expect(value.mapFailure).toBe(true);
+});
+
+test('the cap hands over even while an unread launch link or a replaced publisher still waits', async () => {
+  await update();
+  await act(async () => { awaitInitialLink(); launchInto('map'); });
+  await act(async () => jest.advanceTimersByTime(9000));
+  // A retry replaces the publisher just before the wait would end.
+  await update({ sync: { getMapPublication: () => ({ ...props.sync.getMapPublication(), generation: 5 }) } });
+  await act(async () => jest.advanceTimersByTime(LAUNCH_HANDOVER_CAP_MS - 9000 - 1));
+  expect(getSplashState().phase).toBe('waiting');
+  await act(async () => jest.advanceTimersByTime(1));
+  expect(getSplashState().phase).toBe('handover');
+});
+
+test('a fresh publication accepted in time still flies once the map frames, before the cap', async () => {
+  await update();
+  await act(async () => launchInto('map'));
+  await act(async () => jest.advanceTimersByTime(4000));
+  const publication = { ...props.sync.getMapPublication(), mapSuccessRevision: 1 };
+  await update({ sync: { getMapPublication: () => publication }, dogs: accepted(publication) });
+  expect(value.phase).toBe('accepted');
+  await act(async () => reportMapFramed([{ slaveId: 1, x: 1, y: 1 }]));
+  expect(getSplashState()).toMatchObject({ phase: 'handover', mode: 'fly' });
+});
+
+test('a local launch (no account) has no cap of its own', async () => {
+  await update({ owner: null });
+  await act(async () => launchInto('map'));
+  await act(async () => jest.advanceTimersByTime(LAUNCH_HANDOVER_CAP_MS * 2));
+  expect(getSplashState().phase).toBe('waiting');
 });
