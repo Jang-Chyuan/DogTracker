@@ -141,6 +141,8 @@ export function emptyPhoneFootRows(nodes) {
     && beside(nodes[i - 1]) && beside(nodes[i + 1])));
 }
 
+const sessionOf = p => typeof p?.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
+
 /** Pure H1/H2 list. `nodes` contains location rows AND movement/gap rows in
  * display order. No geocoding: address resolution can use location rows later.
  * Supply full-day observations (and <=24h hold/visit context for midnight).
@@ -307,7 +309,6 @@ export function historyTimeline(rows = [], options = {}) {
   // row. A short weak-GPS step had fixes on both sides (the recorder ran)
   // unless the two say otherwise; a break with no fix needs one known session.
   if (subject === 'phone') {
-    const sessionOf = p => typeof p.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
     const sameSessionGap = e => e.uncertain && e.durationMs <= config.gapMs
       ? !(sessionOf(e.from) && sessionOf(e.to) && sessionOf(e.from) !== sessionOf(e.to))
       : sessionOf(e.from) != null && sessionOf(e.from) === sessionOf(e.to);
@@ -371,6 +372,17 @@ export function historyTimeline(rows = [], options = {}) {
     const empty = emptyPhoneFootRows(nodes);
     for (const n of empty) drop.add(n);
     nodes = nodes.filter(n => !empty.has(n));
+    // 2026-10-13: an interruption inside a stay whose two fixes are of one
+    // recording session is marked `sameSession` (the list counts a short one
+    // in the stay's minutes). New gap objects: the visit's own stay as it is.
+    const at = new Map(context.map(p => [p.time, p]));
+    for (const node of nodes) {
+      if (node.type !== 'stop' || !node.gaps?.length) continue;
+      node.gaps = node.gaps.map(g => {
+        const a = sessionOf(at.get(g.start)), b = sessionOf(at.get(g.end));
+        return a != null && a === b ? { ...g, sameSession: true } : g;
+      });
+    }
   }
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.

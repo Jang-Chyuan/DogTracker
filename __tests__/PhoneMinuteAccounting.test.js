@@ -1,8 +1,8 @@
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { configFor } from '../src/history/HistoryConfig';
 import { timelinePresentation, presentationDurationMs } from '../src/history/HistoryTimelinePresentation';
-import { interruptionText, listDuration, nodePill, sectionText, unlocatedText } from '../src/history/HistoryText';
-import { cursorLabel } from '../src/history/screen/HistoryScreenCursor';
+import { interruptionText, listDuration, nodePill, sectionText } from '../src/history/HistoryText';
+import { cursorLabel, screenCursor } from '../src/history/screen/HistoryScreenCursor';
 import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';
 import { buildCSV } from '../src/mapHistory/ExportCSV';
 import { buildGPX } from '../src/mapHistory/ExportGPX';
@@ -50,7 +50,7 @@ const noted = row => Math.round(((row.terminalStay ?? row.departureStay ?? row).
 
 /** The list's own minute accounting: rows with a length tile the selected
  * range (no hole, no overlap), each row's minutes plus its 「不含中斷」 note
- * are its clock span (a folded 「含 N 分未定位」 is inside its minutes), and
+ * are its clock span (a folded short break is inside its minutes), and
  * the only rows of unobserved time are explicit 「沒有資料」／「GPS 訊號弱」. */
 function accounting(model) {
   const shown = timelinePresentation(model.nodes);
@@ -141,15 +141,22 @@ test('a merged walk counts the short weak-GPS time inside it; its distance stays
   expect(walks[0].countedDistanceM).toBeCloseTo(model.distanceM, 6);
 });
 
-test('a short same-session break is no row: the walk around it carries its minutes and says 「含 N 分未定位」', () => {
+test('a short same-session break is no row: the walk around it silently carries its minutes', () => {
   const model = timeline(day([['walk', 300], ['none', 600, { move: 400 }], ['walk', 300]]));
   const gap = model.nodes.find(n => n.type === 'gap');
   expect(gap).toMatchObject({ sameSession: true });
   const { rows } = accounting(model);
   expect(rows.map(n => n.type)).toEqual(['movement']);
   expect(rows[0].unlocatedMs).toBe(gap.end - gap.start);
-  expect(sectionText(rows[0]).rest).toContain(t('c1277', { duration: listDuration(gap.end - gap.start) }));
-  expect(sectionText(rows[0]).rest).toContain('含 10 分未定位');
+  // No note: the row reads like any walk (2026-10-13, user).
+  expect(sectionText(rows[0]).rest).toBe(`・${(Math.round(rows[0].countedDistanceM / 100) / 10).toFixed(1)} km`);
+  // The cursor in the break says the walk, not 「這段沒資料」.
+  const inside = gap.start + 60000;
+  for (const action of ['drag', 'shared']) {
+    const cursor = screenCursor(model, inside, { subject: 'phone', action });
+    expect(cursor.stale).toBe(false);
+    expect(cursor.label[1]).not.toBe(t('c325', { time: cursor.label[0] }));
+  }
   // No distance across the break: the summary and the row agree.
   expect(rows[0].countedDistanceM).toBeCloseTo(model.distanceM, 6);
   // The map keeps the break (its edge is still a gap).
@@ -160,7 +167,7 @@ test('a weak-GPS stretch on the move is folded into the walk around it', () => {
   const model = timeline(day([['walk', 300], ['weak', 400, { drift: 2 }], ['walk', 300]]));
   const { rows } = accounting(model);
   expect(rows.map(n => n.type)).toEqual(['movement']);
-  expect(unlocatedText(rows[0])).toMatch(/^含 \d+ 分未定位$/);
+  expect(sectionText(rows[0]).rest).not.toContain('未定位');
 });
 
 test('the stay is preferred over the walk; the cursor and the list say the same minutes', () => {
@@ -171,7 +178,7 @@ test('the stay is preferred over the walk; the cursor and the list say the same 
   const { rows } = accounting(model);
   const stay = rows.find(n => n.type === 'stop');
   expect(stay).toMatchObject({ start: source.start, end: gap.end, number: source.number });
-  expect(interruptionText(stay)).toBe('含 10 分未定位');
+  expect(interruptionText(stay)).toBe('');
   const pill = nodePill(stay).text;
   expect(pill).toBe(t('c127', { duration: listDuration(presentationDurationMs(stay)) }));
   const label = cursorLabel(model, source.start + 60000, 'phone')[1];
@@ -180,6 +187,17 @@ test('the stay is preferred over the walk; the cursor and the list say the same 
   const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] },
     range: { start: model.points[0].time, end: model.points.at(-1).time }, subject: 'phone' });
   expect(snapshot.subjects[0].stays[0]).toMatchObject({ start: source.start, end: source.end });
+});
+
+test('a recording restart beside a stay is a row and the cursor there still says 「這段沒資料」', () => {
+  const model = timeline(day([['walk', 300], ['still', 400], ['none', 400], ['session', 'fiction-session-2'],
+    ['still', 400], ['walk', 300]]));
+  const { rows } = expectAccounted(model);
+  const gap = rows.find(n => n.type === 'gap');
+  expect(gap.sameSession).toBeUndefined();
+  const cursor = screenCursor(model, gap.start + 60000, { subject: 'phone', action: 'shared' });
+  expect(cursor.stale).toBe(true);
+  expect(cursor.label[1]).toBe(t('c325', { time: cursor.label[0] }));
 });
 
 test('a break of 30 min or more stays its own 「沒有資料」 row', () => {

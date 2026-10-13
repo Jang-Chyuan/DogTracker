@@ -54,24 +54,12 @@ export function sectionText(section) {
     return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${clock(section.end)}` };
   }
   const vehicle = section.mode === 'driving' || section.mode === 'ride';
-  const unlocated = unlocatedText(section);
   return {
     icon: vehicle ? 'car' : section.mode === 'walking' ? 'walk' : 'paw',
     lead: MODE_WORD[section.mode] || t('c125'),
     time: listDuration(section.displayDurationMs ?? section.durationMs),
-    rest: (vehicle ? `・${km(section.distanceM)}` : `・${km(section.countedDistanceM)}`)
-      + (unlocated ? `・${unlocated}` : ''),
+    rest: vehicle ? `・${km(section.distanceM)}` : `・${km(section.countedDistanceM)}`,
   };
-}
-
-/**
- * 「含 12 分未定位」 (2026-10-13): a short break inside one recording session
- * (沒有資料 / GPS 訊號弱) that the list folded into this row; its minutes are
- * in the row's. Nothing under half a minute.
- */
-export function unlocatedText(node) {
-  const ms = node?.unlocatedMs ?? node?.terminalStay?.unlocatedMs ?? node?.departureStay?.unlocatedMs ?? 0;
-  return Math.round(ms / MINUTE) >= 1 ? t('c1277', { duration: listDuration(ms) }) : '';
 }
 
 /**
@@ -133,14 +121,10 @@ export function nodeTimes(node) {
     ? [clock(node.start), clock(node.end)] : [clock(node.start)];
 }
 
-/** 「不含中斷 5 分」 under a stay that was interrupted (判定表「停留清單的中斷說明」),
- * and 「含 N 分未定位」 under a place row that folded a short break in. */
+/** 「不含中斷 5 分」 under a stay that was interrupted (判定表「停留清單的中斷說明」). */
 export function interruptionText(node) {
-  const stay = node.terminalStay ?? node;
-  const excluded = stay.type === 'stop' && stay.interruptionMs > 0
-    ? t('c337', { duration: listDuration(stay.interruptionMs) }) : '';
-  // A place row also says what short break it folded in (「含 N 分未定位」).
-  return [excluded, unlocatedText(node)].filter(Boolean).join('・');
+  if (node.terminalStay) return interruptionText(node.terminalStay);
+  return node.type === 'stop' && node.interruptionMs > 0 ? t('c337', { duration: listDuration(node.interruptionMs) }) : '';
 }
 
 export function vehicleExclusion(model, subject) {

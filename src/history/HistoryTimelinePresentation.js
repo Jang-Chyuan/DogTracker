@@ -14,6 +14,21 @@ const stayRow = node => ['stop', 'indoor'].includes(node?.type) || !!node?.depar
 // recording-session change (`sessionChange`, PR #135) is always its own row.
 const foldable = node => node.type === 'gap' && (node.reason == null || node.reason === 'uncertain')
   && node.sameSession === true && node.sessionChange !== true && node.end - node.start < LIST_GAP_MS;
+// 2026-10-13: an interruption inside a stay (its `gaps`) between two fixes of
+// one recording session, shorter than listGapMs, is counted in the stay's
+// minutes with no 「不含中斷」 note; longer ones, or across a session change,
+// stay deducted and noted. The timeline marks `sameSession` (phone only).
+const foldableInside = gap => gap.sameSession === true && gap.sessionChange !== true
+  && gap.end - gap.start < LIST_GAP_MS;
+function foldInterior(node) {
+  if (node.type !== 'stop' || !node.gaps?.length) return node;
+  const folded = node.gaps.filter(g => foldableInside(g) && g.start >= node.start && g.end <= node.end);
+  if (!folded.length) return node;
+  const ms = folded.reduce((sum, g) => sum + g.end - g.start, 0);
+  return { ...node, gaps: node.gaps.filter(g => !folded.includes(g)),
+    durationMs: (node.durationMs ?? node.end - node.start) + ms,
+    interruptionMs: Math.max(0, (node.interruptionMs || 0) - ms), ...withUnlocated(node, ms) };
+}
 const unfolded = node => {
   const row = { ...node };
   delete row.folded;
@@ -52,23 +67,40 @@ export const presentationDurationMs = node => node.displayDurationMs ?? alignedD
 
 // The list of a node array, once (cursor and map speech read it per move).
 const presented = new WeakMap();
+const presentedOf = nodes => {
+  if (!presented.has(nodes)) presented.set(nodes, timelinePresentation(nodes));
+  return presented.get(nodes);
+};
+const sameStay = (n, stay) => n === stay || (n.type === stay.type && (n.number ?? null) === (stay.number ?? null)
+  && (n.id ?? null) === (stay.id ?? null) && n.start <= stay.start && n.end >= stay.end);
 /**
  * A source stay's minutes as the list shows them: a short same-session break
- * folded into it counts (2026-10-13), so the cursor and the map's TalkBack say
- * what the row says. Without the list (or no matching row) its own minutes.
+ * beside or inside it counts (2026-10-13), so the cursor and the map's
+ * TalkBack say what the row says. Without the list (or no matching row) its
+ * own minutes.
  */
 export function shownStayDurationMs(nodes, stay) {
   if (!Array.isArray(nodes) || !stay) return presentationDurationMs(stay);
-  if (!presented.has(nodes)) presented.set(nodes, timelinePresentation(nodes));
-  const row = presented.get(nodes).map(n => n.terminalStay ?? n.departureStay ?? n)
-    .find(n => n === stay || (n.type === stay.type && (n.number ?? null) === (stay.number ?? null)
-      && (n.id ?? null) === (stay.id ?? null) && n.start <= stay.start && n.end >= stay.end
-      && n.unlocatedMs > 0));
+  const row = presentedOf(nodes).map(n => n.terminalStay ?? n.departureStay ?? n).find(n => sameStay(n, stay));
   return presentationDurationMs(row ?? stay);
 }
 
+/**
+ * The listed row a moment belongs to (a row with a length; a boundary goes to
+ * the later row, the last moment to the last row), or null. A folded break
+ * belongs to the row that took it, so the cursor says that row, not 「這段沒資料」.
+ */
+export function shownRowAt(nodes, time) {
+  if (!Array.isArray(nodes)) return null;
+  const rows = presentedOf(nodes).filter(n => n.end > n.start);
+  return rows.find(n => n.start <= time && time < n.end)
+    ?? (rows.length && time === rows[rows.length - 1].end ? rows[rows.length - 1] : null);
+}
+
 // Presentation only: retained gaps/stops and the source model remain untouched.
-export function timelinePresentation(nodes = []) {
+export function timelinePresentation(source = []) {
+  // A short same-session interruption inside a stay is the stay's time too.
+  const nodes = source.some(n => n.type === 'stop' && n.gaps?.some(foldableInside)) ? source.map(foldInterior) : source;
   const first = nodes[0], initialStay = nodes[1];
   const samePlace = (a, b) => Number.isFinite(a?.latitude) && Number.isFinite(a?.longitude)
     && a.latitude === b?.latitude && a.longitude === b?.longitude;
@@ -95,9 +127,10 @@ export function timelinePresentation(nodes = []) {
   // Every minute between two listed times belongs to a row (2026-10-13; this
   // replaces #115's rule that a merged walk counts only its own legs). A break
   // inside one recording session shorter than listGapMs (「沒有資料」 or
-  // 「GPS 訊號弱」) is no row of its own: its minutes go to the stay beside it,
-  // else the walk, else another movement, noted 「含 N 分未定位」. Longer
-  // breaks and every session change stay rows.
+  // 「GPS 訊號弱」) is no row of its own: its minutes go, silently, to the
+  // stay beside it, else the walk, else another movement (`unlocatedMs` keeps
+  // how much; nothing is shown). Longer breaks and every session change stay
+  // rows; the map still draws the break.
   const out = [];
   for (const node of input) {
     let at = out.length - 1;
@@ -105,7 +138,7 @@ export function timelinePresentation(nodes = []) {
     const prior = out[at];
     // Consecutive walking legs with only folded breaks or short unlisted time
     // between them are one walk: its minutes are its span, its distance the
-    // legs' sum; the breaks in it are its 未定位 minutes.
+    // legs' sum; the breaks in it are counted in it.
     if (walking(node) && walking(prior) && node.start >= prior.end
       && unlistedBetween(out.slice(at + 1), prior, node) < GAP_MS) {
       const unlocated = out.slice(at + 1).reduce((sum, n) => sum + n.end - n.start, 0);
@@ -127,7 +160,10 @@ export function timelinePresentation(nodes = []) {
     while (out[j + 1]?.folded) j++;
     const breaks = out.slice(i, j + 1), unlocated = breaks.reduce((sum, n) => sum + n.end - n.start, 0);
     const before = last(shown), after = out[j + 1];
-    const from = before ? before.end : breaks[0].start, to = after ? after.start : breaks[breaks.length - 1].end;
+    // A break already inside the row beside it (a stay's own interruption
+    // listed as well) adds no time to it.
+    const from = Math.min(before ? before.end : breaks[0].start, after ? after.start : Infinity);
+    const to = Math.max(after ? after.start : breaks[breaks.length - 1].end, before ? before.end : -Infinity);
     let host = null;
     for (const kind of [stayRow, walking, moving]) {
       if (!host) host = kind(before) ? 'before' : kind(after) ? 'after' : null;

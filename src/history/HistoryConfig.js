@@ -11,8 +11,8 @@ const common = { radiusM: 25, leaveMs: 20000, stayMs: 180000, stayRatio: 3,
   resumeAfterMs: 1800000,
   // 2026-10-13 (user): in the list, a break inside one recording session
   // shorter than this is no row of its own — its minutes go to the stay or
-  // walk beside it (「含 12 分未定位」). Longer ones, and every session
-  // change, stay 「沒有資料」／「GPS 訊號弱」 rows.
+  // walk beside it, with no note (inside a stay: no 「不含中斷」). Longer
+  // ones, and every session change, stay 「沒有資料」／「GPS 訊號弱」 rows.
   listGapMs: 30 * 60000,
   // 067 (user 2026-10-09): a break whose two ends are at the same place
   // (within radiusM) is one continuous stay, up to this long — no 「沒有資料」
