@@ -101,11 +101,20 @@ test('a genuine five-second uncertainty gap separates otherwise continuous drivi
   expect(driving[1].start).toBe(gap.end);
   expect(model.distanceM).toBe(0);
 });
-test('a real short walk after getting out is retained, even if driving resumes', () => {
+// 2026-10-14 (user): within vehicleMergeMs, steps shorter than vehicleFootMs
+// between two drives are one trip (a creep in a jam reads the same as 15 s on
+// foot); a walk of vehicleFootMs or more, away from the car, stays a walk.
+test('15 s on foot at a stop is part of the trip when driving resumes', () => {
   const model = historyMovement(route([[8, 40], [0, 60], [1.4, 15], [8, 40]]), { subject: 'phone' });
+  expect(model.vehicles).toHaveLength(1);
+  expect(model.edges.every(e => e.mode === 'driving')).toBe(true);
+  expect(model.distanceM).toBe(0);
+});
+test('a real walk after getting out is retained, even if driving resumes', () => {
+  const model = historyMovement(route([[8, 40], [0, 60], [1.4, 100], [8, 40]]), { subject: 'phone' });
   expect(model.vehicles).toHaveLength(2);
   expect(model.edges.some(e => e.mode === 'walking' && e.countedDistanceM > 0)).toBe(true);
-  expect(model.distanceM).toBeGreaterThan(10);
+  expect(model.distanceM).toBeGreaterThan(100);
 });
 test('confirmed stationary parking ends vehicle context instead of swallowing an indoor day', () => {
   const model = historyMovement(route([[8, 40], [0, 600]]), { subject: 'phone' });

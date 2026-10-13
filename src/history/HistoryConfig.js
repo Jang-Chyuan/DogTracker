@@ -63,7 +63,21 @@ export const HISTORY_CONFIG = Object.freeze({
     // A walk step uses the recorder's per-second odometer (odometer_m, same
     // session) instead of the chord when it is longer, up to this many times
     // the chord plus minMoveM (and the speed budget).
-    odometerMaxRatio: 1.5 }),
+    odometerMaxRatio: 1.5,
+    // 2026-10-14 (user, stays between drives): stop-and-go traffic is one
+    // drive. While no vehicle is going, a run of fast edges of at least
+    // vehicleBurstMs is a burst; a vehicle that just ended, or bursts, go on
+    // as the same trip when another burst comes within vehicleMergeMs of the
+    // last one and the phone walked less than vehicleFootMs in between
+    // (steps measured stillMps to vehicleFootMaxMps, counted once it is
+    // vehicleFootM from where the last piece ended). Bursts adding up to
+    // enterMs are a vehicle. A stay between two such pieces is shorter than
+    // vehicleMergeMs: it is part of the drive (a red light, a jam). On real
+    // days: a scooter in town (bursts of 11–32 s between lights) and a jam
+    // whose 10 s creep ended the drive; an errand of 12.8 min between two
+    // drives stays a stay.
+    vehicleMergeMs: 10 * 60000, vehicleBurstMs: 10000, vehicleFootMs: 90000,
+    vehicleFootMaxMps: 2, vehicleFootM: 30 }),
   dog: Object.freeze({ ...common, maxSpeed: 15, vehicleSpeed: 9,
     enterMs: 60000, exitMs: 60000, departureMaxSpeed: 15, backtrackSpeed: null }),
 });
