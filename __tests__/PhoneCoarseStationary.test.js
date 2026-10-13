@@ -2,6 +2,7 @@ import { PhoneMotion, replayPhoneMotion } from '../src/locationTracker/PhoneMoti
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { todayRouteDistance } from '../src/tracking/TodayDistance';
+import { historyVisits } from '../src/history/HistoryStops';
 
 // Fictional phone fixes: x metres north, y metres east of an invented origin.
 // A phone standing indoors with only Wi-Fi-like 30–50 m fixes (as when the
@@ -112,7 +113,7 @@ describe('history of a phone standing still on coarse fixes', () => {
     const model = timeline(rows);
     const still = model.edges.filter(e => e.start >= base + 305000 && e.end <= base + 1315000);
     expect(still.length).toBeGreaterThan(150);
-    expect(still.every(e => e.mode === 'gap' && e.uncertain && e.countedDistanceM === 0)).toBe(true);
+    expect(still.every(e => e.mode === 'gap' && e.uncertain && e.stillUnplaced && e.countedDistanceM === 0)).toBe(true);
     expect(model.nodes.some(n => n.type === 'gap' && n.reason === 'uncertain'
       && n.end - n.start >= 15 * 60000)).toBe(true);
     // The rows on either side are the two walks only.
@@ -141,4 +142,17 @@ describe('history of a phone standing still on coarse fixes', () => {
     expect(model.edges.filter(e => e.start >= base + 400000).every(e => !e.uncertain)).toBe(true);
     expect(model.distanceM).toBeGreaterThan(300);
   });
+});
+
+test('a coarse locked fix never extends a visit across a recording session change', () => {
+  const locked = (seconds, extra = {}) => ({ ...fix(seconds, 0, 0, extra), raw_latitude: 25, raw_longitude: 121,
+    phoneMotionState: 'stationary', phoneStationary: true, phoneConfirmedMovement: false });
+  const points = session => [...Array.from({ length: 13 }, (_, i) => locked(i * 5)),
+    ...Array.from({ length: 30 }, (_, i) => locked(65 + i * 5, { accuracy: 40,
+      session_id: i < 10 ? 'fiction-session' : session }))];
+  const same = historyVisits(points('fiction-session'), { subject: 'phone' });
+  expect(same).toHaveLength(1);
+  expect(same[0].end).toBe(base + 210000);
+  const changed = historyVisits(points('another-fiction-session'), { subject: 'phone' });
+  expect(changed[0].end).toBe(base + 110000);
 });

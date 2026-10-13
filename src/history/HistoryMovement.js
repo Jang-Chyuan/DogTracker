@@ -239,6 +239,8 @@ export function historyEdge(from, to, subject = 'dog', config = configFor(subjec
     && !to.phoneConfirmedMovement && (phoneSpeedEvidence == null || stillUnplaced);
   return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
     speed: distanceM / (durationMs / 1000), uncertain, phoneSpeedEvidence,
+    // Weak GPS of a phone measuring itself still (not a walk, not placed).
+    ...(modernPhone && uncertain && stillUnplaced ? { stillUnplaced: true } : {}),
     gap: uncertain || (durationMs > config.gapMs && !bridged),
     // Into or within a hold: not movement (判定表「停在原處前後的距離」:
     // the drift drawn onto the hold spot does not count); the release edge
