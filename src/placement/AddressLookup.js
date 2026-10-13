@@ -19,8 +19,8 @@ export const ADDRESS_CONFIG = Object.freeze({
   // place gets at most this long, and when it runs out the places still
   // waiting behind it fall back too (asked again later).
   timeoutMs: 15000,
-  // Places asked at once. One at a time, a busy day's 16 stays took 70 s on
-  // the emulator (0.4–8 s each, 2026-10-14).
+  // Places asked at once. One at a time, a busy day's 16 stays took 73 s on
+  // the emulator (1.4–17 s each, 2026-10-14).
   parallel: 3,
   // The export waits this long in all for the places still being asked.
   exportWaitMs: 20000,

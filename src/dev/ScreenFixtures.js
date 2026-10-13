@@ -1515,7 +1515,7 @@ const FIXTURES = {
     history: historyPage(now, { slave: 6, ble: exportDay(now) }), geocoder: { names: HISTORY_NAMES },
     historyView: { export: { phase: 'choose' } } }),
   // A busy day (16 stays): each address takes the made-up geocoder 1.5 s
-  // (the emulator's own Geocoder took 0.4–8 s), so the last rows wait about
+  // (the emulator's own Geocoder took 1.4–17 s), so the last rows wait about
   // 25 s; two places have none (coordinates).
   'history-busy-day': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: busyDay(now) }), geocoder: { names: BUSY_NAMES, delayMs: 1500 } }),
