@@ -1473,7 +1473,8 @@ test('initial snapshot wait retains the surface but cannot report old projected 
   await act(async () => { splash.reportInitialLatest(first, 'waiting'); splash.launchInto('map'); });
   await render({ coldStartReady: false, coldStartScope: first, dataReady: false });
   expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
-  await act(async () => jest.advanceTimersByTime(12000));
+  // Past the map's own framing deadline, short of the launch's cap.
+  await act(async () => jest.advanceTimersByTime(splash.LAUNCH_HANDOVER_CAP_MS - 1500));
   expect(splash.getSplashState().phase).toBe('waiting');
   await act(async () => {
     splash.reportInitialLatest(first, 'accepted');
@@ -1659,4 +1660,49 @@ test('cold start: mounted on earlier positions, latest accepted with nothing to 
   await act(async () => jest.advanceTimersByTime(250));
   expect(splash.getSplashState()).toMatchObject({ phase: 'handover', mode: 'fade' });
   await act(async () => renderer.unmount()); renderer = null; splash.resetSplashGate();
+});
+
+test('a native tap on overlapping dog markers opens the dog drawn under the finger', async () => {
+  const onDogPress = jest.fn();
+  // Zoomed in: dog 108 right under dog 104, its face over 104's name tag.
+  const markers = [[104, 25.0002], [108, 25.0001]].map(([slaveId, latitude]) => ({ ...slaveMarker, slaveId,
+    name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`, coordinate: { latitude, longitude: 121 } }));
+  mockCamera.pointForCoordinate = jest.fn(async p => ({ x: 100, y: p.latitude > 25.00015 ? 100 : 140 }));
+  mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 0, zoom: 19 });
+  try {
+    await act(async () => {
+      renderer = Renderer.create(<TrackingMap {...defaults} onDogPress={onDogPress}
+        presentation={{ ...defaults.presentation, dogMarkers: markers, slaveSegments: [], rangeRing: null }} />, {
+        createNodeMock: () => ({ measure: callback => callback(0, 0, 400, 800, 10, 20) }),
+      });
+    });
+    await readyMap();
+    await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
+    for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
+    const face = id => renderer.root.findAll(node => node.type === Marker && node.props.identifier === `real-dog-${id}`)[0];
+    // Every dog its own zIndex; the lower one drawn on top.
+    expect(face(108).props.zIndex).toBeGreaterThan(face(104).props.zIndex);
+    const surface = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onTouchStart)[0];
+    renderer.root.findAll(node => node.props.onTouchStart && node.props.ref?.current)[0]
+      .props.ref.current.measure = callback => callback(0, 0, 400, 800, 10, 20);
+    const touch = (x, y) => surface.props.onTouchStart({ nativeEvent: { pageX: x + 10, pageY: y + 20, touches: [{}] } });
+    // Google picked 104 (its tag canvas) for a finger on 108's face.
+    await act(async () => touch(100, 140));
+    await act(async () => face(104).props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(108);
+    // Google picked 108 (its empty canvas) for a finger on 104's name tag.
+    await act(async () => jest.advanceTimersByTime(2000));
+    await act(async () => touch(75, 125));
+    await act(async () => face(108).props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(104);
+    // No recent touch (TalkBack, a stale finger): Google's pick stands.
+    await act(async () => jest.advanceTimersByTime(2000));
+    await act(async () => face(104).props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(104);
+    await act(async () => face(108).props.onPress());
+    expect(onDogPress).toHaveBeenLastCalledWith(108);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    mockCamera.getCamera.mockResolvedValue(null);
+  }
 });

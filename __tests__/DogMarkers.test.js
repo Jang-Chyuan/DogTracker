@@ -203,3 +203,44 @@ test('066: dogAtPoint picks the dog under a tap, the nearest when faces overlap,
   expect(dogAtPoint(markers, points, { x: 95, y: 100 })).toBe(4);
   expect(dogAtPoint(markers, points, { x: 200, y: 300 })).toBeNull();
 });
+
+describe('stacking order and taps on overlapping dogs', () => {
+  const { dogZIndexes, dogUnderTouch, DOG_Z_BASE } = require('../src/map/DogMarkers');
+  const face = (slaveId, latitude, extra = {}) => ({ slaveId, size: 40, tag: `狗 ${slaveId}`, problem: false,
+    selected: false, coordinate: { latitude, longitude: 121 }, ...extra });
+  // Zoomed in: dog 108 sits right under dog 104, its face over 104's name tag.
+  const markers = [face(104, 25.0002), face(108, 25.0001)];
+  const points = { 104: { x: 100, y: 100 }, 108: { x: 100, y: 140 } };
+  const tags = nameTags(markers, points, 1, { group: false });
+
+  test('every dog has its own zIndex: the lower face is drawn over the one above, layers first', () => {
+    expect(dogZIndexes(markers, points, tags)).toEqual({ 104: DOG_Z_BASE, 108: DOG_Z_BASE + 1 });
+    // Without screen points the southern dog counts as lower.
+    expect(dogZIndexes(markers, {}, tags)).toEqual({ 104: DOG_Z_BASE, 108: DOG_Z_BASE + 1 });
+    expect(dogZIndexes([markers[0], face(108, 25.0003)], {}, tags))
+      .toEqual({ 104: DOG_Z_BASE + 1, 108: DOG_Z_BASE });
+    // A problem, a group tag and the open card still lift a dog over the others.
+    expect(dogZIndexes([{ ...markers[0], problem: true }, markers[1]], points, tags)[104]).toBe(DOG_Z_BASE + 1);
+    expect(dogZIndexes([{ ...markers[0], selected: true }, { ...markers[1], problem: true }], points, tags))
+      .toEqual({ 104: DOG_Z_BASE + 1, 108: DOG_Z_BASE });
+    expect(dogZIndexes(markers, points, { 104: { text: '2 隻', group: 2 }, 108: null })[104]).toBe(DOG_Z_BASE + 1);
+  });
+
+  test('a tap opens the dog drawn under the finger, from the top of the drawing order down', () => {
+    const z = dogZIndexes(markers, points, tags);
+    // On 108's face, which covers 104's name tag: 108.
+    expect(dogUnderTouch(markers, points, tags, { x: 100, y: 140 }, z)).toBe(108);
+    // On 104's name tag where 108's face does not reach: 104.
+    expect(tags[104]).toMatchObject({ text: '狗 104' });
+    expect(dogUnderTouch(markers, points, tags, { x: 75, y: 125 }, z)).toBe(104);
+    // On 104's face, over the empty canvas above 108's face: 104.
+    expect(dogUnderTouch(markers, points, tags, { x: 100, y: 95 }, z)).toBe(104);
+    // 108's own tag.
+    expect(dogUnderTouch(markers, points, tags, { x: 100, y: 170 }, z)).toBe(108);
+    // Only transparent canvas: nothing drawn there.
+    expect(dogUnderTouch(markers, points, tags, { x: 160, y: 100 }, z)).toBeNull();
+    // With 104 on top (its card open) its tag wins over 108's face.
+    const open = [{ ...markers[0], selected: true }, markers[1]];
+    expect(dogUnderTouch(open, points, tags, { x: 100, y: 130 }, dogZIndexes(open, points, tags))).toBe(104);
+  });
+});

@@ -12,7 +12,7 @@ import { t } from '../i18n';
 import { useTheme, getTheme, resolveStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createHistoryHolds } from '../placement/IndoorHold';
-import { endOfDay, startOfToday } from '../tracking/TodayDistance';
+import { endOfDay, splitFutureRows, startOfToday } from '../tracking/TodayDistance';
 import { cursorHaptic } from '../history/screen/HistoryScreenCursor';
 import { nearestRecord } from '../history/screen/HistoryScreenRange';
 import {
@@ -126,7 +126,10 @@ export function useHistoryDayRows({
     let alive = true,
       timer;
     let waitingForPublication = false, readPublication = null, signalledPublication = null;
-    const cache = { rows: [], seed: [], after: {}, first: true };
+    // `future`: my route's fixes stamped later than now (the phone's clock
+    // was set wrong when they were recorded), kept out of the day until their
+    // time comes (TodayDistance.splitFutureRows).
+    const cache = { rows: [], seed: [], after: {}, first: true, future: [] };
     const identity = [subject, slaveId, day, owner, scope, read, getPublication,
       publicationState?.scope, publicationState?.generation];
     // The hold pass (IndoorHold) is the costly part of a day: today's rows
@@ -198,9 +201,16 @@ export function useHistoryDayRows({
         diagnostic?.emit('row', 'end', began, { ...historyPublicationFlags(getPublication?.(), owner, before, true), rowsLoaded: true });
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
-        const added = answer.rows?.length || 0;
+        // This phone's own fixes carry its own clock; a dog's rows carry the
+        // collars' and the server's, which a phone clock running behind must
+        // not hide.
+        const { shown, future } = subject === 'phone'
+          ? splitFutureRows([...cache.future, ...(answer.rows || [])], now.current())
+          : { shown: answer.rows || [], future: [] };
+        cache.future = future;
+        const added = shown.length;
         if (added)
-          cache.rows = [...cache.rows, ...answer.rows].sort(
+          cache.rows = [...cache.rows, ...shown].sort(
             (a, b) => a.time - b.time,
           );
         if (added || cache.first) {

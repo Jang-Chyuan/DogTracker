@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { startOfToday } from '../tracking/TodayDistance';
+import { splitFutureRows, startOfToday } from '../tracking/TodayDistance';
 import { createTodayRouteEngine } from '../tracking/TodayRouteEngine';
 
 // How often the live map adds newly recorded positions to today's distance.
@@ -42,8 +42,11 @@ export function useTodayRoute(database, ready, active, clock = Date.now, pollMs 
         }
         const current = rows.current;
         for (;;) {
-          const page = await database.phoneRouteSince(day, current.cursor, PAGE);
+          const read = await database.phoneRouteSince(day, current.cursor, PAGE);
           if (!alive || rows.current !== current) return;
+          // Rows stamped in the future (recorded while the clock was set
+          // wrong) wait until their time comes: the cursor stops before them.
+          const { shown: page, future } = splitFutureRows(read, at);
           if (!page.length) break;
           if (!current.engine.add(page)) {
             // Out of order (a clock change): read the day again from the start.
@@ -54,7 +57,7 @@ export function useTodayRoute(database, ready, active, clock = Date.now, pollMs 
           const last = page[page.length - 1];
           current.last = last.time;
           current.cursor = { time: last.time, id: last.id };
-          if (page.length < PAGE) break;
+          if (future.length || read.length < PAGE) break;
         }
         // New rows change the answer; without them only the clock can, while
         // a departure is being confirmed (it settles at minute 8 by the

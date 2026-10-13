@@ -8,6 +8,7 @@ import Glyph from '../src/map/Glyph';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { RANGE_RECOMPUTE_DELAY_MS } from '../src/mapHistory/useRangeRecompute';
 
 const LEVELS = { summary: 140, half: 420, full: 620 };
 
@@ -37,10 +38,19 @@ export async function mountFixture(name) {
 
 const pressable = (state, testID) => state.renderer.root.findAll(node => node.props.testID === testID
   && typeof node.props.onPress === 'function')[0];
+// A range change shows its skeleton, then recomputes RANGE_RECOMPUTE_DELAY_MS
+// after the busy render commits. On the wall clock that wait raced the
+// assertions: act resolves on a later turn of the event loop, after a timers
+// phase, so a runner stalled past 32 ms right after the commit (a loaded CI
+// host) ran the recompute before the test could see the skeleton. The tests
+// that change the range own that clock (the hook's own timing is covered by
+// HistoryRangeRecompute.test.js).
+const rangeClock = () => jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+afterEach(() => jest.useRealTimers());
 const settleRange = state => act(async () => {
   expect(state.screen.rangePending).toBe(true);
   expect(state.screen.dayModel).toBeNull();
-  await new Promise(resolve => setTimeout(resolve, 40));
+  await jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS + 8);
 });
 const unmount = state => act(async () => state.renderer.unmount());
 
@@ -94,6 +104,7 @@ test('history-dog (H1 狗的歷史): the dog capsule, ＋ 加入, 移動 and 坐
 
 test('history-range-open (H2b): the bar open in its frame, 完成, the dragged start; no 「已手動調整」', async () => {
   const s = await mountFixture('history-range-open');
+  rangeClock();
   expect(s.ids('history-range-bar')).toEqual(['history-range-bar']);
   expect(s.text()).not.toContain('拖兩端的圓點改開始、結束');
   expect(s.text()).toContain(i18nT('c101'));
@@ -125,6 +136,7 @@ test('history-range-open (H2b): the bar open in its frame, 完成, the dragged s
 
 test('a dragged range is kept for the day; the list and summary follow it', async () => {
   const s = await mountFixture('history-my-route');
+  rangeClock();
   const day = s.screen.model.dayPoints;
   const start = day.find(p => p.time >= s.screen.model.points[0].time + 60 * 60000);
   await act(async () => s.screen.dragRange({ start: start.time, end: null, following: true }));
@@ -351,6 +363,7 @@ test.each(['history-export', 'history-export-hang', 'history-export-fail-once',
 test('range bar: a quick flick lands where the finger let go, even when its last moves never reached JS', async () => {
   const { PanResponder } = require('react-native');
   const s = await mountFixture('history-manual-end');
+  rangeClock();
   const created = [];
   const spy = jest.spyOn(PanResponder, 'create').mockImplementation(value => { created.push(value); return { panHandlers: {} }; });
   try {
