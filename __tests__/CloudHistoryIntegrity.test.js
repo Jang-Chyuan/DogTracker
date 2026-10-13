@@ -108,7 +108,60 @@ describe('manual day download proof', () => {
       await again.download({ slaveId: 6, dayStart, dayEnd, cutoff: first + 10 * 60000 });
       expect(await ids(connection)).toEqual([uuid(1), uuid(2)]);
       // Still a tail, not a full day download.
-      expect(client.calls[0]).toEqual(expect.arrayContaining([['gte', 'received_at', iso(first - 5 * 60000)]]));
+      expect(client.calls).toEqual(expect.arrayContaining([expect.arrayContaining([['gte', 'received_at', iso(first - 5 * 60000)]])]));
+      expect(client.calls.some(log => log.some(([op, column, value]) => op === 'gte' && column === 'received_at'
+        && value === iso(dayStart - 30 * 60000)))).toBe(false);
+    } finally { connection.close(); }
+  });
+});
+
+// The day's rows start half an hour before midnight and its hold pass is
+// seeded with the good fixes before that: a stay carried over from the night
+// before needs what was received then, which the archive may not have yet
+// (device 0.3.179: 「01:21 出發」 instead of 「00:00 接續前一天」 on first open).
+describe('the night before a day download', () => {
+  const dayStart = new Date(2026, 9, 3).getTime(), dayEnd = dayStart + DAY;
+  const windowStart = dayStart - 30 * 60000;
+  const night = n => telemetry(n, dayStart - 3 * HOUR);
+  const carryCalls = client => client.calls.filter(log => log.some(([op, column, value]) => op === 'lt'
+    && column === 'received_at' && value === iso(windowStart)));
+
+  test('an archive that has not reached the window: the night before is fetched once, before the window', async () => {
+    const { connection, database } = await setup();
+    try {
+      await database.beginDownload(owner);
+      await database.publishDownload(owner, 'auto', dayStart - 6 * HOUR);
+      const client = remote([night(1), telemetry(2, dayStart + HOUR)]);
+      const cloud = createHistoryCloud({ client, database, owner });
+      await cloud.download({ slaveId: 6, dayStart, dayEnd, cutoff: dayStart + 2 * HOUR });
+      expect(await ids(connection)).toEqual([uuid(1), uuid(2)]);
+      // From the archive's cutoff (less the overlap), not a whole day back.
+      expect(carryCalls(client)[0]).toEqual(expect.arrayContaining([['gte', 'received_at', iso(dayStart - 6 * HOUR - 5 * 60000)]]));
+      const before = carryCalls(client).length;
+      await cloud.download({ slaveId: 6, dayStart, dayEnd, cutoff: dayStart + 3 * HOUR });
+      expect(carryCalls(client).length).toBe(before);
+    } finally { connection.close(); }
+  });
+
+  test('an archive published past the window start: no extra request', async () => {
+    const { connection, database } = await setup();
+    try {
+      await database.beginDownload(owner);
+      await database.publishDownload(owner, 'auto', dayStart + HOUR);
+      const client = remote([night(1), telemetry(2, dayStart + HOUR)]);
+      await createHistoryCloud({ client, database, owner }).download({ slaveId: 6, dayStart, dayEnd, cutoff: dayStart + 2 * HOUR });
+      expect(carryCalls(client)).toEqual([]);
+      expect(await ids(connection)).toEqual([uuid(2)]);
+    } finally { connection.close(); }
+  });
+
+  test('no archive publication yet: at most CARRY_OVER_MS before the window', async () => {
+    const { connection, database } = await setup();
+    try {
+      const client = remote([telemetry(1, windowStart - 25 * HOUR), night(2)]);
+      await createHistoryCloud({ client, database, owner }).download({ slaveId: 6, dayStart, dayEnd, cutoff: dayStart + 2 * HOUR });
+      expect(carryCalls(client)[0]).toEqual(expect.arrayContaining([['gte', 'received_at', iso(windowStart - DAY)]]));
+      expect(await ids(connection)).toEqual([uuid(2)]);
     } finally { connection.close(); }
   });
 });
