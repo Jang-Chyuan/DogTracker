@@ -31,8 +31,11 @@ function nearest(candidates, times, target, lo, hi) {
 }
 
 /** Replays the full day's filtered observations: late-confirmed vehicles therefore
- * revoke overlapping confirmations without retaining a stale lock. Later trips
- * outside the first confirmation interval do not alter departure. */
+ * revoke overlapping confirmations without retaining a stale lock — except a
+ * walk that led into the vehicle, which the vehicle confirms (leaving by car
+ * is the departure). The day's first vehicle no walking departure came
+ * before is itself the departure. Later trips outside the first confirmation
+ * interval do not alter departure. */
 export function historyDeparture(points, { subject = 'dog', config = configFor(subject),
   today = false, now = points[points.length - 1]?.time ?? 0,
   movement = historyMovement(points, { subject, config }), manualRange = null,
@@ -59,8 +62,35 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
         end: manualRange.end ?? automaticRange.end } : automaticRange,
       manual: !!manualRange };
   };
+  // 判定表「出發偵測怎麼找」(2026-10 user): leaving by car (a dog by ride)
+  // is a departure too. Like a walk's minute-eight fix, the ride's last fix
+  // within its first eight minutes (or its end) must be over 80 m from
+  // `from`: a real trip keeps going, a "ride" made of GPS drift jumping
+  // about one place comes back. A ride that is not that far proves nothing.
+  const carriedAway = (from, ride) => {
+    const last = ahead[firstFrom(ahead, p => p.time, Math.min(ride.end, ride.start + 480000) + 1) - 1];
+    return last && last.time >= ride.start && above(distanceMeters(from, last), 80) ? last : null;
+  };
+  const rides = movement.vehicles.filter(v => v.end >= (ahead[0]?.time ?? Infinity) && v.start >= fromTime);
+  let nextRide = 0;
+  // A ride no walking departure came before: the departure is where it set
+  // off (its first fix in the day; the fix before, as for a candidate).
+  const rideDeparture = ride => {
+    const at = firstFrom(ahead, p => p.time, ride.start);
+    const first = ahead[at];
+    if (!first || first.time > ride.end) return null;
+    const previous = ahead[at - 1];
+    const start = !previous || first.time - previous.time > config.gapMs || previous.heldReason ? first.time : previous.time;
+    const away = carriedAway(first, ride);
+    return away ? finish('confirmed', first, start, away.time) : null;
+  };
   for (const candidate of candidates) {
     const t = candidate.time;
+    while (nextRide < rides.length && rides[nextRide].start < t) {
+      const found = rideDeparture(rides[nextRide]);
+      nextRide += 1;
+      if (found) return found;
+    }
     const previous = ahead[indexOf.get(candidate) - 1];
     const adjacentVehicle = movement.vehicles.some(v => v.end === t);
     const start = !previous || adjacentVehicle || t - previous.time > config.gapMs || previous.heldReason ? t : previous.time;
@@ -84,6 +114,15 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
       decisionTime = Math.min(t + 510000, slowdown?.end ?? Infinity);
       if (!today) decisionTime = Math.min(decisionTime, Math.max(t + 480000, now));
     }
+    // The walk (three minutes on foot) led into a ride before the decision:
+    // that is the departure, not the walk after the ride. Nothing may break
+    // the walk before the ride starts.
+    const ride = movement.vehicles.find(v => v.start > t && v.start <= decisionTime);
+    if (ride && !gaps.some(e => e.start < ride.start && e.end > t)) {
+      const heldAt = lowerBound(heldTimes, t);
+      const away = !(heldAt < heldTimes.length && heldTimes[heldAt] <= ride.start) && carriedAway(candidate, ride);
+      if (away) return finish('confirmed', candidate, start, Math.max(t + 210000, away.time));
+    }
     if (elapsed < decisionTime - t) return finish('confirming', candidate, start, decisionTime);
     const eight = nearest(candidates, times, t + 480000, t + 420000, t + 480000);
     const interrupted = gaps.some(e => e.start < t + 480000 && e.end > t);
@@ -92,6 +131,10 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
     const indoor = heldAt < heldTimes.length && heldTimes[heldAt] <= t + 480000;
     if (!eight || !above(distanceMeters(candidate, eight), 80) || interrupted || transported || indoor) continue;
     return finish('confirmed', candidate, start, decisionTime);
+  }
+  for (; nextRide < rides.length; nextRide += 1) {
+    const found = rideDeparture(rides[nextRide]);
+    if (found) return found;
   }
   return finish(today ? 'not-departed' : 'undetermined');
 }

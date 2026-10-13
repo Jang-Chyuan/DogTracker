@@ -724,13 +724,19 @@ export function useHistoryScreen({
   // while the last physical proof read still covers the model's own cutoff:
   // a withdrawn/failed proof, another generation/owner/scope, a changed
   // range or another day still shows loading.
+  // A foreground return starts a new sync generation whose fence stays shut
+  // until its first map ACK (often 10–20 s). The publisher's `lineage` only
+  // changes with an account switch, a deletion or a new engine, so the same
+  // lineage may keep this view across that resume until the new proof
+  // answers. Without a lineage, any generation change still shows loading.
   const verifiedModel = useRef(null);
   const shownPublication = cloud?.getPublication?.();
   const verifiedIdentity = subject === 'dog' && cloud?.coverageRequired && today
     ? `${sessionKey}|${day}|${idsKey}|${owner ?? ''}|${cloud.owner ?? ''}` : null;
   const verifiedMatches = value => !!value && !!verifiedIdentity && value.identity === verifiedIdentity
     && value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
-    && value.generation === shownPublication?.generation && value.manual === manual
+    && (Number.isSafeInteger(value.lineage) && value.lineage === shownPublication?.lineage
+      || value.generation === shownPublication?.generation) && value.manual === manual
     && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
   // Either blocker qualifies: the proof waiting for its re-read/tail, or the
   // day's rows re-reading for the new material/cutoff (no dog loaded yet).
@@ -745,7 +751,7 @@ export function useHistoryScreen({
     if (rangePending) return;
     if (builtModel && coverageReady && verifiedIdentity) verifiedModel.current = { identity: verifiedIdentity,
       scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
-      manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
+      lineage: shownPublication?.lineage, manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
       cutoff: coverageCutoff, model: builtModel };
     else if (!verifiedIdentity || !verifiedMatches(verifiedModel.current)) verifiedModel.current = null;
   });
@@ -896,6 +902,13 @@ export function useHistoryScreen({
   const ensureRequested = useRef(null);
   // 更新 (updateHistory) asked for this download: it keeps its visible panel.
   const explicitTail = useRef(false);
+  // Leaving the app aborts the sync's work, including an automatic tail in
+  // flight: that end is not the user's failure. Each return to the front may
+  // start one new automatic attempt for a tail that ended before it.
+  const resumes = useRef({ active, count: 0 });
+  if (active && !resumes.current.active) resumes.current = { active, count: resumes.current.count + 1 };
+  else resumes.current.active = active;
+  const autoTailResume = useRef(null);
   useEffect(() => {
     if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
     const key = `${cloudDays.cloudScope}|${shownKey}|${coverageCutoff}|${publicationRevision}`;
@@ -905,12 +918,15 @@ export function useHistoryScreen({
         if (cloudDays.download.cutoff === coverageCutoff) ensured.current.add(key);
         return;
       }
-      if (!explicit) { ensured.current.add(key); return; }
+      const interrupted = !explicitTail.current && autoTailResume.current != null
+        && autoTailResume.current < resumes.current.count;
+      if (!explicit && !interrupted) { ensured.current.add(key); return; }
     }
     if (explicit) { ensured.current.delete(key); ensureRequested.current = null; }
     if (ensured.current.has(key)) return;
     ensured.current.add(key);
     explicitTail.current = explicit;
+    autoTailResume.current = explicit ? null : resumes.current.count;
     startDownload(shownKey, reread);
   }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope,
     cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);

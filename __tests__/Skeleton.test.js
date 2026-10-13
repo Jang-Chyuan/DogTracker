@@ -64,3 +64,41 @@ test('D8: a short reload after an interrupted fade restores full content opacity
   expect(fadeValue.__getValue()).toBe(1);
   await act(async () => renderer.unmount());
 });
+
+test('a new label while loading is announced but never hides the visible skeleton', async () => {
+  const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+  let renderer;
+  const view = label => <LoadingContent loading label={label} skeletonTestID="bones"><Text>content</Text></LoadingContent>;
+  await act(async () => { renderer = Renderer.create(view('讀取中')); });
+  await act(async () => jest.advanceTimersByTime(SKELETON_TIMING.delay));
+  expect(renderer.root.findAllByProps({ testID: 'bones' }).length).toBeGreaterThan(0);
+  // 讀取中 → 下載… → 讀取中 (a cloud day): no frame without the skeleton.
+  await act(async () => renderer.update(view('下載 10/13 的紀錄')));
+  expect(renderer.root.findAllByProps({ testID: 'bones' }).length).toBeGreaterThan(0);
+  expect(announce).toHaveBeenLastCalledWith('下載 10/13 的紀錄');
+  await act(async () => renderer.update(view('讀取中')));
+  expect(renderer.root.findAllByProps({ testID: 'bones' }).length).toBeGreaterThan(0);
+  expect(announce).toHaveBeenLastCalledWith('讀取中');
+  await act(async () => renderer.unmount());
+});
+
+test('immediate requested while waiting for the delay shows the skeleton at once', async () => {
+  let renderer;
+  const view = immediate => <LoadingContent loading immediate={immediate} skeletonTestID="bones"><Text>content</Text></LoadingContent>;
+  await act(async () => { renderer = Renderer.create(view(false)); });
+  expect(renderer.root.findAllByProps({ testID: 'bones' })).toHaveLength(0);
+  await act(async () => renderer.update(view(true)));
+  await act(async () => renderer.update(view(false)));
+  expect(renderer.root.findAllByProps({ testID: 'bones' }).length).toBeGreaterThan(0);
+  await act(async () => renderer.unmount());
+});
+
+test('immediate skeleton is on the first frame, without waiting for the delay timer', async () => {
+  const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+  let renderer;
+  // No timer advances: a busy JavaScript thread could not fire one either.
+  await act(async () => { renderer = Renderer.create(<LoadingContent loading immediate label="讀取中" skeletonTestID="bones" shape="timeline" />); });
+  expect(renderer.root.findAllByProps({ testID: 'bones' }).length).toBeGreaterThan(0);
+  expect(announce).toHaveBeenCalledWith('讀取中');
+  await act(async () => renderer.unmount());
+});

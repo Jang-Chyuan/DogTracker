@@ -46,11 +46,29 @@ describe('today\'s distance', () => {
   });
 
   test('a drive (5 m/s for 30 s) is not counted; the walk on both sides is', () => {
-    const walk = Array.from({ length: 4 }, (_, index) => north(index * 10, index * 10));
+    // A 4-minute walk to the car: the departure (判定表「出發偵測怎麼找」: a
+    // walk that leads into a drive departs where the walk began).
+    const walk = Array.from({ length: 25 }, (_, index) => north(index * 10, index * 10));
     // 2 km by car at 12.5 m/s, then walking again.
-    const drive = Array.from({ length: 16 }, (_, index) => north(30 + (index + 1) * 125, 30 + (index + 1) * 10));
-    const after = Array.from({ length: 3 }, (_, index) => north(2030 + (index + 1) * 10, 190 + (index + 1) * 10));
-    expect(sumOf([...walk, ...drive, ...after]).metres).toBeCloseTo(60, 0);
+    const drive = Array.from({ length: 16 }, (_, index) => north(240 + (index + 1) * 125, 240 + (index + 1) * 10));
+    const after = Array.from({ length: 3 }, (_, index) => north(2240 + (index + 1) * 10, 400 + (index + 1) * 10));
+    const sum = sumOf([...walk, ...drive, ...after]);
+    expect(sum.status).toBe('confirmed');
+    expect(sum.range.start).toBe(0);
+    expect(sum.metres).toBeCloseTo(270, 0);
+  });
+
+  test('a day that leaves by car: from the drive on, not the whole day and not the walk after it', () => {
+    // An hour at home with 3 m jitter, a drive of 2 km, then a walk.
+    const home = Array.from({ length: 360 }, (_, index) => north(index % 2 ? 3 : 0, index * 10));
+    const drive = Array.from({ length: 16 }, (_, index) => north((index + 1) * 125, 3600 + (index + 1) * 10));
+    const walk = Array.from({ length: 60 }, (_, index) => north(2000 + (index + 1) * 10, 3760 + (index + 1) * 10));
+    const out = sumOf([...home, ...drive, ...walk]);
+    expect(out.status).toBe('confirmed');
+    // The drive's first fix is the last one at home; as for a walk, the
+    // departure is the fix before it (still at home, never the morning).
+    expect(out.range.start).toBe(3580 * SECOND);
+    expect(out.metres).toBeCloseTo(600, -1);
   });
 
   test('before departure the whole day counts; after it, from the departure on', () => {

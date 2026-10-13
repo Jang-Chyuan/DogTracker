@@ -23,8 +23,9 @@ class LocationTrackerStore(context: Context) {
     }
   }
   private fun command(sql: String, values: JSONArray = JSONArray()) = JSONObject().put("query", sql).put("params", values)
-  internal fun save(location: LocationSample, session: String, display: DisplayLocation? = null) {
-    val values = JSONArray().put(System.currentTimeMillis()).put(location.timestamp)
+  /** recorded_at is the fix's own time on the system clock (LocationPipeline.fixWallTime), not the write time. */
+  internal fun save(location: LocationSample, session: String, display: DisplayLocation?, recordedAt: Long) {
+    val values = JSONArray().put(recordedAt).put(location.timestamp)
       .put(location.latitude).put(location.longitude)
       .put(location.accuracy).put(location.altitude ?: JSONObject.NULL)
       .put(location.speed?.times(3.6) ?: JSONObject.NULL).put(location.bearing ?: JSONObject.NULL)
@@ -38,6 +39,12 @@ class LocationTrackerStore(context: Context) {
         JSONArray().put(display?.latitude ?: location.latitude).put(display?.longitude ?: location.longitude)
           .put(if (display == null) "pipeline" else "animated").put(display?.fixTime ?: location.timestamp)))
       .put(command(trim)))
+  }
+  /** location_at of the newest row (any recording), or null when there is none. */
+  fun newestLocationAt(): Long? {
+    val rows = store.executeSql("SELECT location_at FROM myLocationTracker ORDER BY recorded_at DESC, id DESC LIMIT 1",
+      JSONArray()).getJSONArray("results")
+    return if (rows.length() == 0) null else rows.getJSONObject(0).optLong("location_at", 0L).takeIf { it > 0 }
   }
   fun deleteAll() {
     store.executeSql("DELETE FROM myLocationTracker", JSONArray())

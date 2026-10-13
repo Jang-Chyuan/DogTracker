@@ -77,7 +77,8 @@ test('wide expanded handles live outside the clipped sheet; real accessible step
     expect(one(tree, 'history-range-loading')).toBeDefined();
     // Busy shows the shimmer in the summary and list, never a bare 讀取中 line (PR 115).
     expect(one(tree, 'history-summary-pending')).toBeDefined();
-    expect(one(tree, 'history-range-skeleton') ?? one(tree, 'history-range-loading')).toBeDefined();
+    // Painted at once, before the recompute can hold the JavaScript thread.
+    expect(one(tree, 'history-range-skeleton')).toBeDefined();
     expect(tree.root.findAll(node => node.type === Text && [].concat(node.props.children).some(c => typeof c === 'string' && c.startsWith('讀取中')))).toHaveLength(0);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, RANGE_RECOMPUTE_DELAY_MS + 8)); });
     expect(state.screen.range.start).toBeGreaterThanOrEqual(before + 60000);
