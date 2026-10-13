@@ -178,7 +178,8 @@ test('history-single-point (只有一筆): one point, no distance, no range bar'
   expect(s.text()).toContain('09:10 – 09:10');
   expect(s.ids('history-adjust')).toEqual([]);
   expect(s.screen.map.lines).toEqual([]);
-  expect(s.screen.cursor.label[1]).toBe('已移動 0.0 km');
+  // 2026-10-13: the cursor's running distance under 100 m is in metres.
+  expect(s.screen.cursor.label[1]).toBe('已移動 0 m');
   await unmount(s);
 });
 

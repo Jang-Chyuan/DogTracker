@@ -1,7 +1,8 @@
 import { t } from '../i18n';
+import { distanceText } from '../utils/distanceText';
 // The words of the H1/H2 time-line list and its summary (copy deck c120,
 // c121, c124, c127, c130, c137, c140, c159, c306–c308, c315, c316, c331–c341,
-// c344). Pure: the list component draws them, tests read them.
+// c344, c1276). Pure: the list component draws them, tests read them.
 
 const MINUTE = 60000;
 const pad = value => String(value).padStart(2, '0');
@@ -54,11 +55,19 @@ export function sectionText(section) {
     return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${clock(section.end)}` };
   }
   const vehicle = section.mode === 'driving' || section.mode === 'ride';
+  const metres = vehicle ? section.distanceM : section.countedDistanceM;
+  const duration = section.displayDurationMs ?? section.durationMs;
+  // A row that shows a distance never says 「0 分」 (2026-10-13, approved):
+  // its clock-aligned minutes can round to 0 while it moved — 「不到 1 分」.
+  // Only the words change; the durations stay as they are.
+  const distance = distanceText(metres);
+  const moved = distance !== distanceText(0);
+  const lessThanMinute = moved && Math.round(Math.max(0, duration || 0) / MINUTE) === 0;
   return {
     icon: vehicle ? 'car' : section.mode === 'walking' ? 'walk' : 'paw',
     lead: MODE_WORD[section.mode] || t('c125'),
-    time: listDuration(section.displayDurationMs ?? section.durationMs),
-    rest: vehicle ? `・${km(section.distanceM)}` : `・${km(section.countedDistanceM)}`,
+    time: lessThanMinute ? t('c1276') : listDuration(duration),
+    rest: `・${distance}`,
   };
 }
 
@@ -76,7 +85,8 @@ export function nodePill(node) {
   if (node.terminalStay) {
     const endpoint = nodePill({ ...node, terminalStay: null });
     const stay = nodePill(node.terminalStay);
-    return { ...endpoint, text: `${endpoint.text} · ${stay.text}` };
+    // An end that runs on past midnight has no capsule of its own: 「停 N 分」.
+    return endpoint ? { ...endpoint, text: `${endpoint.text} · ${stay.text}` } : stay;
   }
   switch (node.type) {
     case 'departure':
@@ -86,15 +96,19 @@ export function nodePill(node) {
       return { text: node.continuesPreviousDay ? t('c332') : stay, tone: 'stay' };
     }
     case 'indoor': {
-      // 判定表「跨午夜」 for a hold over midnight, as for a stay.
+      // 判定表「跨午夜」 for a hold over midnight, as for a stay. A hold that
+      // runs on into the next day keeps its minutes (2026-10-13: no 「接續隔天」).
       const inside = t('c344', { duration: listDuration(node.displayDurationMs ?? node.end - node.start) });
-      const text = node.continuesPreviousDay ? t('c332') : node.continuesNextDay ? t('c334') : inside;
+      const text = node.continuesPreviousDay ? t('c332') : inside;
       return { text, tone: 'indoor' };
     }
     case 'resume':
       return { text: t('c335'), tone: 'plain' };
     case 'end':
-      if (node.continuesNextDay) return { text: t('c334'), tone: 'plain' };
+      // 2026-10-13 (approved): no 「接續隔天」 capsule — it pushed the address
+      // onto many lines. The row's time and the next day's own 「接續前一天」
+      // already say it; the end row has no capsule.
+      if (node.continuesNextDay) return null;
       if (node.label === t("c656")) return { text: t('c331', { time: clock(node.closedAt) }), tone: 'closed' };
       if (node.label === t("c660")) return { text: t('c315', { time: clock(node.end) }), tone: 'plain' };
       return { text: node.label, tone: 'plain' };

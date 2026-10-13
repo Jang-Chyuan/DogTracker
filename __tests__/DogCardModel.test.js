@@ -19,18 +19,20 @@ const card = (d, options = {}) => dogCard(d, { freshness: fresh, phone: phoneRea
   name: '小黑', ...options });
 const row = (model, key) => model.rows.find(item => item.key === key);
 
-test('distance and bearing, five-metre steps, compass words', () => {
+test('distance and bearing, the shared distance steps, compass words', () => {
   const { metres, bearing } = bearingAndDistance(HOME, NE);
   expect(metres).toBeGreaterThan(800);
   expect(metres).toBeLessThan(900);
   expect(bearing).toBeGreaterThan(30);
   expect(bearing).toBeLessThan(60);
   expect(compassWord(bearing)).toBe(i18nT("c739"));
-  expect(formatDistance(7.4)).toBe('7 m');
-  expect(formatDistance(847)).toBe('845 m');
+  // 2026-10-13: one formatter with the history list (utils/distanceText):
+  // 5 m steps under 100 m, 10 m steps to 1 km, then km with one decimal.
+  expect(formatDistance(7.4)).toBe('5 m');
+  expect(formatDistance(847)).toBe('850 m');
   expect(formatDistance(998)).toBe('1.0 km');
   expect(formatDistance(1420)).toBe('1.4 km');
-  expect(formatDistance(12400)).toBe('12 km');
+  expect(formatDistance(12400)).toBe('12.4 km');
 });
 
 test('A3: a fresh dog in range — 電量, 接收範圍, 活動量, no 位置 row', () => {
@@ -40,8 +42,8 @@ test('A3: a fresh dog in range — 電量, 接收範圍, 活動量, no 位置 ro
   expect(row(model, 'battery')).toMatchObject({ value: '62%', tone: null });
   expect(row(model, 'range')).toMatchObject({ value: i18nT('c348'), tone: null });
   expect(row(model, 'activity')).toMatchObject({ value: '—', pressable: true });
-  expect(model.headline).toMatchObject({ kind: 'distance', distance: '845 m', suffix: i18nT('c064') });
-  expect(model.headlineSpeech).toBe('小黑，東北方 845 公尺，離手機');
+  expect(model.headline).toMatchObject({ kind: 'distance', distance: '850 m', suffix: i18nT('c064') });
+  expect(model.headlineSpeech).toBe('小黑，東北方 850 公尺，離手機');
   // No receiver row, ever.
   expect(model.rows.some(item => item.label === i18nT('c075'))).toBe(false);
 });
