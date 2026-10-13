@@ -688,16 +688,20 @@ export default function MapScreen({
       clearTimeout(alone);
     };
   }, []);
-  // Settled once the phone has a fix, or says it is not recording, or the
-  // wait is over; a report without a position yet keeps waiting — longer
-  // when there is no local dog to frame without it.
+  // Settled once the phone has a fix, or will not get one (位置記錄 switched
+  // off, or no location permission/service), or the wait is over; a report
+  // without a position yet keeps waiting — longer when there is no local dog
+  // to frame without it. At a cold start the recorder is not running yet
+  // when first read (App starts it a moment later): with 位置記錄 on that is
+  // not 「not recording」.
   const localToFrame =
     coldStartCoordinates(livePresentation.dogMarkers, null, receiverId)
       .length > 0;
+  const phoneOff = livePhone?.running === false && (livePhone.enabled === false || !phoneUsable);
   const phoneSettled =
     !!fixture ||
     !!phoneSpot ||
-    livePhone?.running === false ||
+    phoneOff ||
     (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
   useEffect(() => {
     if (phoneSettled && !fixture) markStartupPhase('phone-settled');

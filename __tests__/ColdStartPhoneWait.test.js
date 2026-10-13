@@ -84,3 +84,20 @@ test('an old or coarse last known position does not count; nor is it read withou
   await start({ enabled: false });
   expect(mockLastKnown).not.toHaveBeenCalled();
 });
+
+test('a recorder not started yet (位置記錄 on) still waits; 位置記錄 off or no location does not', async () => {
+  mockLastKnown.mockResolvedValue(null);
+  mockLive.mockImplementation(async () => JSON.stringify({ running: false, enabled: true, status: 'idle' }));
+  await start();
+  expect(map().framingReady).toBe(false);
+  await act(async () => jest.advanceTimersByTimeAsync(PHONE_ALONE_WAIT_MS));
+  expect(map().framingReady).toBe(true);
+  await act(async () => tree.unmount());
+  mockLive.mockImplementation(async () => JSON.stringify({ running: false, enabled: false, status: 'off' }));
+  await start();
+  expect(map().framingReady).toBe(true);
+  await act(async () => tree.unmount());
+  mockLive.mockImplementation(async () => JSON.stringify({ running: false, enabled: true, status: 'idle' }));
+  await start({ enabled: false });
+  expect(map().framingReady).toBe(true);
+});
