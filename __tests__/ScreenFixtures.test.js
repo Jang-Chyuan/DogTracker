@@ -649,7 +649,7 @@ async function addressOf(lookup, point) {
   return value;
 }
 
-async function card(name) {
+async function card(name, { indoorStay = null } = {}) {
   const state = await screen(name);
   const { fixture } = state;
   const dog = state.dog(fixture.openDog);
@@ -660,9 +660,20 @@ async function card(name) {
     battery: readings.battery, activity: readings.activity, phone: phoneReading(fixture.livePhone, now), now,
     reference: freshness.source === 'cloud' ? cloudClock(fixture.cloudSync, now) : now,
     name: state.label(dog),
-    address: isIndoorHold(dog) ? await addressOf(fixture.addressLookup, dog.coordinate) : null });
+    address: isIndoorHold(dog) ? await addressOf(fixture.addressLookup, dog.coordinate) : null,
+    indoorStay: indoorStay ? await indoorStay(fixture, dog) : null });
   const rows = Object.fromEntries(model.rows.map(row => [row.key, row]));
-  return { model, rows, keys: model.rows.map(row => row.key), state };
+  return { model, rows, keys: model.rows.map(row => row.key), state, dog };
+}
+
+// What useCardIndoorStay asks the history for (the fixture's readDay).
+async function askHistory(fixture, dog) {
+  const { CARD_INDOOR_LOOKBACK_MS, indoorStayStart } = require('../src/map/CardIndoorStay');
+  const { HISTORY_DAY_CONTEXT_MS } = require('../src/mapHistory/HistoryDatabase');
+  const start = dog.heldFrom - CARD_INDOOR_LOOKBACK_MS;
+  const answer = await fixture.history.readDay({ subject: 'dog', slaveId: dog.slaveId, start, end: dog.heldFrom });
+  const stay = indoorStayStart(answer, { at: dog.heldFrom, readFrom: start - HISTORY_DAY_CONTEXT_MS });
+  return stay ? { state: 'found', ...stay } : { state: 'unknown' };
 }
 
 test('card-ok: in range, 62%, resting 18 minutes; no 位置 row', async () => {
@@ -710,6 +721,18 @@ test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging
   expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 40 分鐘',
     speech: '活動量，休息中，活動量低已 40 分鐘' });
   expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・室內' });
+});
+
+// 2026-10-13: a stay begun last night, opened after a cold start (the live
+// hold replays half an hour): the whole stay, from where the history begins it.
+test('card-indoor-overnight: 「室內・12 時 20 分」, not the live half hour', async () => {
+  const { rows, dog } = await card('card-indoor-overnight', { indoorStay: askHistory });
+  expect(dog.heldFromClipped).toBe(true);
+  expect(rows.position).toMatchObject({ value: '室內・12 時 20 分', detail: '桃園區中正路 1 號附近',
+    speech: '位置，室內，12 時 20 分，桃園區中正路 1 號附近' });
+  // Without the history's answer it says only what it knows.
+  const live = await card('card-indoor-overnight');
+  expect(live.rows.position.value).toBe('室內・超過 29 分');
 });
 
 test('card-battery-blip: one 0% packet without a voltage keeps 43%, no red 「!」', async () => {

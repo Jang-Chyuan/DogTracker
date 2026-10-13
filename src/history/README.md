@@ -97,6 +97,7 @@
 - 距離：移動段（`sectionText`，畫面與 PNG 清單）和游標標籤（`cursorLabel`）用全 App 共用的 `distanceText`（`src/utils/distanceText.js`，狗卡片的 `formatDistance` 是同一個函式）：不到 100 m 為 5 m 一階（`0 m`、`45 m`），100 m–1 km 為 10 m 一階（`340 m`），1 km 起一位小數的 km（`1.4 km`）；每一階用四捨五入後的值判斷。摘要（`summaryText`／`movementSummary`／範圍摘要）、「今天 x km」與匯出的總距離仍用 `km()`；CSV／GPX 不變。
 - 分鐘：移動段顯示的距離不是 `0 m`、顯示分鐘（`displayDurationMs ?? durationMs`）四捨五入為 0 時，時間寫「不到 1 分」（c1276）。只改文字；`durationMs`／`displayDurationMs` 不變。
 - 出發（在室內就不要出發了）：室內節點正好從第一筆開始時，`historyTimeline` 本來就不加出發節點（#64）；`timelinePresentation` 另外在第一列是出發、1 分鐘內接著室內節點、中間只有沒計入距離的走路／移動或 `uncertain` 列時，拿掉出發和中間那幾列，清單從室內開始。模型的 `departure` 節點、地圖起點與 CSV／GPX 不變。`__tests__/HistoryRowText.test.js` 用虛構資料檢查這三條。
+- 跨午夜的起點：清單第一列是 `continuesPreviousDay` 的停留或室內、而且開始時刻在當地午夜後 3 分鐘（`gapMs`）內時，`timelinePresentation` 把那列的開始拉到 00:00，分鐘也從 00:00 算（「00:01 接續前一天」→「00:00 接續前一天」）；更晚才有第一筆就照第一筆。模型節點不變。
 - 跨午夜的終點：`continuesNextDay` 的終點 `nodePill` 回傳 `null`（不寫「接續隔天」，c334 已移除）；併入末停留時只剩停留膠囊「停 N 分」；`continuesNextDay` 的室內節點寫「室內・N 分」。節點欄位不變，`continuesNextDay` 仍保留給其他用途。
 
 ## 手機靜止時的粗定位（2026-10-13）

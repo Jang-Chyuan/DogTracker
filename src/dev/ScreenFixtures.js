@@ -912,6 +912,20 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // 小黑 indoors since 21:09 last night (clear fixes, then a packet without a
+  // fix every 30 s), opened after a cold start: the live hold replays only
+  // the last half hour, so the card asks the history's rows where the stay
+  // began (CardIndoorStay): 「室內・12 時 20 分」, the whole stay over midnight.
+  'card-indoor-overnight': now => ({
+    geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...indoorBle(now, 6, [-18, 24], { inside: 12 * 60 * MINUTE + 21 * MINUTE, every: 30 * SECOND,
+        battery: 62, activity: 0.02 }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
   // 小黑 held indoors with no network: no address is asked, the 位置 row is
   // 「室內」 alone (still 64dp), no spinner (edges「沒網路時查地址」).
   'dog-indoor-no-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: { offline: true } }),

@@ -311,3 +311,50 @@ test('clipped departure uses membership of the same confirmed visit, never addre
   expect(timelinePresentation([departure, walk(departure.start, stay.start + 1), stay])
     .some(n => n.departureStay)).toBe(false);
 });
+
+// 2026-10-13 (dog 108's 10/12 on the emulator began 「00:01 接續前一天」): a
+// stay going on from the day before begins its row at midnight, its minutes
+// from there too, when the day's first packet is within a packet gap of it.
+describe('a stay going on from the day before begins its row at midnight', () => {
+  const { nodeTimes, listDuration } = require('../src/history/HistoryText');
+  const { presentationDurationMs } = require('../src/history/HistoryTimelinePresentation');
+  // Made-up times: 2026-10-12, Taiwan.
+  const MIDNIGHT = new Date('2026-10-12T00:00:00+08:00').getTime();
+  const indoor = (start, end, extra = {}) => ({ type: 'indoor', start, end, durationMs: end - start,
+    latitude: 24.99, longitude: 121.31, continuesPreviousDay: true, ...extra });
+  const stop = (start, end, extra = {}) => ({ type: 'stop', number: 1, id: 'visit:1', start, end,
+    durationMs: end - start, latitude: 24.99, longitude: 121.31, continuesPreviousDay: true, ...extra });
+  const end = at => ({ type: 'end', start: at, end: at, latitude: 24.99, longitude: 121.32, label: '最後' });
+  const HOUR = 60 * MIN;
+
+  test('室內 from the night before: 00:00, minutes from midnight; the model is untouched', () => {
+    const nodes = [indoor(MIDNIGHT + 70 * 1000, MIDNIGHT + 7 * HOUR + 20 * 1000),
+      walk(MIDNIGHT + 7 * HOUR + 20 * 1000, MIDNIGHT + 7 * HOUR + 30 * MIN), end(MIDNIGHT + 7 * HOUR + 30 * MIN)];
+    const before = JSON.stringify(nodes);
+    const [row] = timelinePresentation(nodes);
+    expect(nodeTimes(row)).toEqual(['00:00', '07:00']);
+    expect(nodePill(row).text).toBe('接續前一天');
+    expect(row.start).toBe(MIDNIGHT);
+    expect(listDuration(presentationDurationMs(row))).toBe('7 時');
+    // The cursor and TalkBack say the row's minutes.
+    expect(shownStayDurationMs(nodes, nodes[0])).toBe(7 * HOUR);
+    expect(shownRowAt(nodes, MIDNIGHT + 30 * 1000)).toMatchObject({ type: 'indoor', start: MIDNIGHT });
+    expect(placeSpeech(row, '虛構地點')).toContain('00:00 到 07:00');
+    expect(JSON.stringify(nodes)).toBe(before);
+  });
+
+  test('a stop from the night before, the same', () => {
+    const [row] = timelinePresentation([stop(MIDNIGHT + 2 * MIN, MIDNIGHT + 40 * MIN),
+      walk(MIDNIGHT + 40 * MIN, MIDNIGHT + 50 * MIN), end(MIDNIGHT + 50 * MIN)]);
+    expect(nodeTimes(row)).toEqual(['00:00', '00:40']);
+    expect(nodePill(row).text).toBe('接續前一天');
+  });
+
+  test('a first packet long after midnight, or a stay that did not go on, keeps its own time', () => {
+    const late = timelinePresentation([indoor(MIDNIGHT + 3 * HOUR, MIDNIGHT + 5 * HOUR), end(MIDNIGHT + 5 * HOUR + MIN)]);
+    expect(nodeTimes(late[0])[0]).toBe('03:00');
+    const own = timelinePresentation([indoor(MIDNIGHT + MIN, MIDNIGHT + HOUR, { continuesPreviousDay: false }),
+      end(MIDNIGHT + HOUR + MIN)]);
+    expect(nodeTimes(own[0])[0]).toBe('00:01');
+  });
+});

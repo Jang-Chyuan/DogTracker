@@ -170,6 +170,9 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
         // Where the history's 室內 node of this hold starts (HoldStore.step);
         // the card's 「室內・N 分」 counts from it.
         heldFrom: Number.isFinite(held.from) ? held.from : held.since,
+        // The live rows begin inside the hold (a cold start sees half an
+        // hour): it may have begun before heldFrom (useCardIndoorStay).
+        ...(held.fromClipped && Number.isFinite(held.from) ? { heldFromClipped: true } : {}),
         receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
         // For DogFreshness: the newest valid position and the newest packet,
