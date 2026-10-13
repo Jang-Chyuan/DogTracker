@@ -222,6 +222,15 @@ describe('the files', () => {
       }));
     expect(checked).toBeGreaterThan(3);
     expect([...kinds]).toEqual(expect.arrayContaining(['paw', 'car', 'dots']));
+    // No dot peeks out half hidden under a node (出發, 停留, 室內, 結束).
+    let nodeCount = 0;
+    pages.forEach(({ ops }) => {
+      const dots = ops.filter(op => op.t === 'circle' && op.r < 10);
+      const nodes = ops.filter(op => op.t === 'circle' && op.r >= 10 && dots.some(dot => dot.cx === op.cx));
+      nodeCount += nodes.length;
+      dots.forEach(dot => nodes.forEach(node => expect(Math.abs(dot.cy - node.cy) >= node.r + dot.r).toBe(true)));
+    });
+    expect(nodeCount).toBeGreaterThan(3);
   });
 
   test('a very long address is cut after 2 lines only when the row would not fit a page', () => {

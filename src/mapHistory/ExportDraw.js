@@ -91,7 +91,9 @@ function rowOps(block) {
     return ops;
   }
   const nodeY = y + tokenSize.export.rowInset + S.addressLine / 2;
-  ops.push(...trackOps(row.line, color, nodeY, y + block.height));
+  // The line under a node starts below it: no dot half hidden by the node's edge.
+  const nodeRadius = Math.max(...nodeOps(row, color, nodeY).filter(op => op.t === 'circle').map(op => op.r));
+  ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: nodeY + nodeRadius }));
   ops.push(...nodeOps(row, color, nodeY));
   // Timeline times show only the start.
   ops.push(text(row.times[0], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
