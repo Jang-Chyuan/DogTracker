@@ -778,10 +778,9 @@ const FIXTURES = {
     ble: [], cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
   }),
   // Only 豆豆 is on receiver 7, walking near the handler: the first view
-  // frames the two of them. Five cloud dogs are 2–3 km west, off the left of
-  // that view: one hint with three faces (阿福 first, red frame: no new
-  // position for 40 minutes) and 「+2」. Dog 9 is 2.5 km east: its own hint
-  // on the right.
+  // frames the two of them. Five cloud dogs are 2–3 km west (阿福 with no new
+  // position for 40 minutes) and dog 9 is 2.5 km east, all off that view:
+  // nothing on the map points at them; 框住全部 frames every one.
   'dogs-offscreen': now => {
     const west = (slave, north, east, rest = {}) => series(cloudRow, now, { slave, from: 10 * MINUTE,
       to: 20 * SECOND, every: 15 * SECOND, start: [north, east], step: [0.02, 0.02], ...rest });
@@ -801,8 +800,7 @@ const FIXTURES = {
   },
   // 豆豆 and dog 5 on receiver 7 near the handler; 阿福's last position came
   // from the cloud 26 hours ago, about 10 km south-west. The first view frames
-  // the local dogs and the phone only (阿福 shows as an edge hint); 框住全部
-  // frames 阿福 too.
+  // the local dogs and the phone only; 框住全部 frames 阿福 too.
   'cold-start-far-cloud': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: inTimeOrder([

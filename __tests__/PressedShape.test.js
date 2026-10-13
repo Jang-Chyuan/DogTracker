@@ -8,7 +8,7 @@ import { StyleSheet, Text } from 'react-native';
 import { ThemeProvider, lightTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import PressedOverlay from '../src/components/PressedOverlay';
-import { EdgeHintView, PressScale } from '../src/map/MapControls';
+import { PressScale } from '../src/map/MapControls';
 import { TopRow } from '../src/mapHistory/HistoryScreen';
 
 const flat = node => StyleSheet.flatten(node.props.style) || {};
@@ -70,14 +70,3 @@ test('history 「‹ 回到現在」 presses as its capsule, not a square box', 
   await act(async () => tree.unmount());
 });
 
-test('an off-screen hint stays opaque white while pressed, with the round overlay on top', async () => {
-  let tree;
-  const value = { side: 'left', x: 0, y: 0, width: 80, faces: [{ slaveId: 4, problem: false, stale: false }],
-    extra: 0, label: '左邊畫面外有 1 隻狗' };
-  await act(async () => { tree = Renderer.create(<ThemeProvider><EdgeHintView value={value} /></ThemeProvider>); });
-  const [hint] = pressables(tree, 'edge-hint-left');
-  expect(typeof hint.props.style).not.toBe('function');
-  expect(flat(hint)).toMatchObject({ backgroundColor: lightTheme.colors.surface, borderRadius: radius.full });
-  expect(overlayOf(await pressedTree(hint)).map(node => flat(node).borderRadius)).toEqual([radius.full]);
-  await act(async () => tree.unmount());
-});

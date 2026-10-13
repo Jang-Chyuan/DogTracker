@@ -158,7 +158,9 @@ test('strings.xml and native parity are generated from the single canonical JSON
 
 test('copy removed by D15 and the design decisions stays out of production resources', () => {
   // 2026-10-13: the history list no longer writes 「接續隔天」 (c334).
-  const retired = /上次用|出發（手動）|還沒出發|確認出發中…|沒辦法自動判斷出發|主角|資料來源|接續隔天/;
+  // 2026-10-13: the live map has no off-screen dog hints (c746–c751,
+  // 「左邊畫面外有 2 隻狗：…，點兩下移過去」).
+  const retired = /上次用|出發（手動）|還沒出發|確認出發中…|沒辦法自動判斷出發|主角|資料來源|接續隔天|畫面外有/;
   expect(Object.entries(resources).filter(([key, value]) => !key.startsWith('dev.') && retired.test(value))).toEqual([]);
   // The cursor retains the expressly specified c342/c343; no movement-row exclusion badge.
   expect(Object.keys(resources).filter(key => resources[key].includes('不算距離') && !['c342', 'c343'].includes(key))).toEqual([]);
