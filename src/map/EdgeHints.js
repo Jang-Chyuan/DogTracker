@@ -115,10 +115,6 @@ const overlapArea = (box, other) => (boxesOverlap(box, other)
   ? (Math.min(box.right, other.right) - Math.max(box.left, other.left))
     * (Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top)) : 0);
 
-// Prototype B (bearing): a side's dogs share a hint while their bearings stay
-// within this many degrees of the first; past it they get a hint of their own.
-const SPLIT_DEGREES = 40;
-
 /**
  * @param markers DogMarkers.dogMarkers output
  * @param points screen positions by dog, in dp: { [slaveId]: { x, y } } (from
@@ -133,7 +129,7 @@ const SPLIT_DEGREES = 40;
  *   the arrow points (degrees, screen space); x/y: the hint's top-left corner
  */
 export function edgeHints(markers = [], points = {}, { width, height, top = 0, bottom = 0, bottomRow = 0, fontScale = 1,
-  shownTop = top, obstacles = [], grouping = 'sectors' } = {}) {
+  shownTop = top, obstacles = [] } = {}) {
   if (!(width > 0 && height > 0)) return [];
   const visibleTop = top;
   const visibleBottom = height - bottom;
@@ -163,13 +159,12 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
     off.push({
       marker,
       angle: normalAngle((Math.atan2(dy, dx) * 180) / Math.PI),
-      edge: horizontal ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'top' : 'bottom'),
       exit: { x: center.x + dx * scale, y: center.y + dy * scale },
     });
   }
   if (!off.length) return [];
 
-  const groups = grouping === 'bearing' ? bearingGroups(off) : sectorGroups(off);
+  const groups = sectorGroups(off);
 
   const occupied = markers.flatMap(marker => {
     const point = points[marker.slaveId];
@@ -201,14 +196,14 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
     const extra = ordered.length - faces.length;
     const hintWidth = edgeHintWidth(faces.length, extra);
     const edgeTracks = tracks(hintWidth);
-    const corner = CORNER_EDGES[group.direction] && !group.edge;
-    const usable = corner ? CORNER_EDGES[group.direction] : [group.edge || group.direction];
+    const corner = !!CORNER_EDGES[group.direction];
+    const usable = corner ? CORNER_EDGES[group.direction] : [group.direction];
     // Where the hint would like to be (its top-left corner): in its corner, or
     // centred where the line to its dogs leaves the visible map.
     let preferred;
     if (corner) {
-      const [across, down] = CORNER_EDGES[group.direction];
-      preferred = { x: edgeTracks[down].fixed, y: edgeTracks[across].fixed };
+      const [horizontal, vertical] = CORNER_EDGES[group.direction];
+      preferred = { x: edgeTracks[vertical].fixed, y: edgeTracks[horizontal].fixed };
     } else {
       const exit = group.items.reduce((sum, item) => ({ x: sum.x + item.exit.x, y: sum.y + item.exit.y }),
         { x: 0, y: 0 });
@@ -245,11 +240,15 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
       label: edgeHintSpeech(group.direction, all),
     });
   }
-  return result;
+  // Reading order for TalkBack: top row left to right, then the sides, then
+  // the bottom row.
+  return result.sort((a, b) => READING_ORDER.indexOf(a.side) - READING_ORDER.indexOf(b.side));
 }
 
-// Prototype A (sectors): one hint per eight-way direction; the arrow points
-// exactly that way. Corners first: they have the least room.
+const READING_ORDER = ['topLeft', 'top', 'topRight', 'left', 'right', 'bottomLeft', 'bottom', 'bottomRight'];
+
+// One hint per eight-way direction; the arrow points exactly that way.
+// Corners first: they have the least room.
 function sectorGroups(off) {
   const byDirection = new Map();
   for (const item of off) {
@@ -261,32 +260,4 @@ function sectorGroups(off) {
   return order.filter(direction => byDirection.has(direction)).map(direction => ({
     direction, key: direction, angle: directionAngle(direction), items: byDirection.get(direction),
   }));
-}
-
-// Prototype B (bearing): one hint per side as before, slid to where the line
-// to its dogs leaves the map; the arrow turns to their mean bearing; a side
-// whose dogs point far apart gets more than one hint.
-function bearingGroups(off) {
-  const groups = [];
-  for (const edge of ['left', 'right', 'top', 'bottom']) {
-    const items = off.filter(item => item.edge === edge)
-      .map(item => ({ ...item, relative: normalAngle(item.angle - directionAngle(edge) + 180) - 180 }))
-      .sort((a, b) => a.relative - b.relative || a.marker.slaveId - b.marker.slaveId);
-    let current = null;
-    for (const item of items) {
-      if (!current || item.relative - current.start > SPLIT_DEGREES) {
-        current = { start: item.relative, items: [] };
-        groups.push({ edge, current });
-      }
-      current.items.push(item);
-    }
-  }
-  return groups.map(({ edge, current }) => {
-    const sum = current.items.reduce((total, item) => ({
-      x: total.x + Math.cos((item.angle * Math.PI) / 180), y: total.y + Math.sin((item.angle * Math.PI) / 180),
-    }), { x: 0, y: 0 });
-    const angle = normalAngle((Math.atan2(sum.y, sum.x) * 180) / Math.PI);
-    const first = Math.min(...current.items.map(item => item.marker.slaveId));
-    return { edge, direction: edgeDirection(angle), key: `${edge}:${first}`, angle, items: current.items };
-  });
 }
