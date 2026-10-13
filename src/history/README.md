@@ -20,7 +20,7 @@
 | `historyTimeline(rows, options)` | 整合入口：共同資料流、範圍、地點列、交通／缺口列、編號、距離與追加狀態 |
 | `countDistances(edges, config)` | 判定表「距離怎麼加」：和「上一個有算進去的點」比，超過兩筆誤差較大者（至少 5 m，缺誤差值當 10 m）才算 |
 | `dogHistoryRow(row, source)`, `phoneHistoryRow(row)`（`HistoryRows.js`） | `dog_status`／`supabase_dog_status`／`myLocationTracker` 的列轉成共同格式：封包時間＝手機收到的時間（雲端用 `track_at`），定位時間＝項圈的 `gps_time` |
-| `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344、c1276）：時長、距離（`km` 總數、`rowDistance` 列與游標）、膠囊、移動段、H8 |
+| `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344、c1276）：時長、距離（`km` 總數；列與游標用 `utils/distanceText`）、膠囊、移動段、H8 |
 
 時間一律為 UTC 毫秒；公尺為 `distanceM`，持續時間為 `durationMs`。`subject` 為 `dog` 或 `phone`；`source` 為 `all`、`local`（接受 `ble` 別名）或 `cloud`。
 
@@ -63,7 +63,7 @@
 
 ## 清單列的文字（2026-10-13）
 
-- 距離：`rowDistance` 用在移動段（`sectionText`，畫面與 PNG 清單）和游標標籤（`cursorLabel`）。不到 100 m 寫公尺、10 m 一階（`40 m`、`0 m`）；四捨五入後達 100 m 起用 `km()`（`0.1 km`）。摘要（`summaryText`／`movementSummary`／範圍摘要）、「今天 x km」與匯出的總距離仍用 `km()`；CSV／GPX 不變。
+- 距離：移動段（`sectionText`，畫面與 PNG 清單）和游標標籤（`cursorLabel`）用全 App 共用的 `distanceText`（`src/utils/distanceText.js`，狗卡片的 `formatDistance` 是同一個函式）：不到 100 m 為 5 m 一階（`0 m`、`45 m`），100 m–1 km 為 10 m 一階（`340 m`），1 km 起一位小數的 km（`1.4 km`）；每一階用四捨五入後的值判斷。摘要（`summaryText`／`movementSummary`／範圍摘要）、「今天 x km」與匯出的總距離仍用 `km()`；CSV／GPX 不變。
 - 分鐘：移動段顯示的距離不是 `0 m`、顯示分鐘（`displayDurationMs ?? durationMs`）四捨五入為 0 時，時間寫「不到 1 分」（c1276）。只改文字；`durationMs`／`displayDurationMs` 不變。
-- 出發：`timelinePresentation` 裡，第一列是出發、1 分鐘內接著室內節點，中間只有沒計入距離的走路／移動或 `uncertain` 列時，出發列用室內節點的座標（地址跟著座標查），兩列都保留，不設 `departureStay`。模型的 `departure` 節點、地圖起點與 CSV／GPX 仍是第一筆定位。室內節點正好從第一筆開始時，`historyTimeline` 目前不加出發節點（沿用 #64）。`__tests__/HistoryRowText.test.js` 用虛構資料檢查這三條。
+- 出發（在室內就不要出發了）：室內節點正好從第一筆開始時，`historyTimeline` 本來就不加出發節點（#64）；`timelinePresentation` 另外在第一列是出發、1 分鐘內接著室內節點、中間只有沒計入距離的走路／移動或 `uncertain` 列時，拿掉出發和中間那幾列，清單從室內開始。模型的 `departure` 節點、地圖起點與 CSV／GPX 不變。`__tests__/HistoryRowText.test.js` 用虛構資料檢查這三條。
 - 跨午夜的終點：`continuesNextDay` 的終點 `nodePill` 回傳 `null`（不寫「接續隔天」，c334 已移除）；併入末停留時只剩停留膠囊「停 N 分」；`continuesNextDay` 的室內節點寫「室內・N 分」。節點欄位不變，`continuesNextDay` 仍保留給其他用途。

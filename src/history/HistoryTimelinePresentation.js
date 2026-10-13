@@ -66,8 +66,8 @@ export function timelinePresentation(nodes = []) {
       durationMs: stay.durationMs, terminalStay: stay, number: null });
   }
   const indoor = indoorAtDeparture(nodes);
-  return shown.map(node => {
-    if (indoor && node === nodes[0]) return { ...node, latitude: indoor.latitude, longitude: indoor.longitude };
+  const from = indoor ? shown.indexOf(indoor) : -1;
+  return (from > 0 ? shown.slice(from) : shown).map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
@@ -78,23 +78,20 @@ export function timelinePresentation(nodes = []) {
 }
 
 /**
- * 出發 is always the first row (2026-10-13, approved). A dog's departure is its
- * first fix, while a 室內 hold starting right after it is placed at the hold
- * anchor (a mean of fixes): two rows in one minute would name two addresses.
- * When the hold starts within a minute of the departure with no counted
- * distance between them (only 0 m foot rows or short weak-GPS time), the
- * departure row is shown at the hold's place. Both rows stay (no 「出發 · 室內」).
- * Display only: the model, the map's first point, CSV and GPX keep the first
- * fix; the PNG list is this presentation, as on screen.
+ * 在室內就不要出發了 (2026-10-13, user decision): a day that begins indoors —
+ * a 室內 hold starting within a minute of the first fix, with no counted
+ * distance before it (only 0 m foot rows or short weak-GPS time) — has no
+ * 出發 row: the list starts with the hold. (A hold starting at the first fix
+ * already has no departure node in the model.) Display only: the model, the
+ * map's first point, CSV and GPX are unchanged; the PNG list is this
+ * presentation, as on screen. Every other day starts with 出發.
  */
 function indoorAtDeparture(nodes) {
   const departure = nodes[0];
   if (departure?.type !== 'departure') return null;
   for (const node of nodes.slice(1)) {
     if (!(node.start - departure.start <= MINUTE)) return null;
-    if (node.type === 'indoor') {
-      return Number.isFinite(node.latitude) && Number.isFinite(node.longitude) ? node : null;
-    }
+    if (node.type === 'indoor') return node;
     const still = node.type === 'movement' && (node.mode === 'walking' || node.mode === 'moving')
       && !(node.countedDistanceM > 0);
     if (!still && !(node.type === 'gap' && node.reason === 'uncertain')) return null;

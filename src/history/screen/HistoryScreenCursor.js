@@ -1,5 +1,6 @@
 import { t } from '../../i18n';
-import { clock, listDuration, rowDistance } from '../HistoryText';
+import { clock, listDuration } from '../HistoryText';
+import { distanceText } from '../../utils/distanceText';
 import { presentationDurationMs } from '../HistoryTimelinePresentation';
 import { snapToRoute } from '../../mapHistory/CursorGeometry';
 import { nearestRecord } from './HistoryScreenRange';
@@ -19,8 +20,8 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   if (['ride', 'driving'].includes(section?.mode)) return [clock(time), ((section.mode === 'ride') ? t('c342') : t('c343'))];
   const distance = (model.distanceEdges ?? model.sections).reduce((sum, n) => sum + (n.countedDistanceM || 0)
     * (time >= n.end ? 1 : time <= n.start ? 0 : (time - n.start) / (n.end - n.start)), 0);
-  // The running distance reads like a row's: 「已移動 40 m」 under 100 m.
-  return [clock(time), ((subject === 'phone') ? t('c131', { distance: rowDistance(distance) }) : t('c116', { distance: rowDistance(distance) }))];
+  // One distance as everywhere (utils/distanceText): 「已移動 40 m」.
+  return [clock(time), ((subject === 'phone') ? t('c131', { distance: distanceText(distance) }) : t('c116', { distance: distanceText(distance) }))];
 }
 
 export function screenCursor(model, time, { subject = 'dog', action = 'drag', previous = null } = {}) {

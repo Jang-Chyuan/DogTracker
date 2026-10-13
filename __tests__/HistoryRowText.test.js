@@ -1,12 +1,15 @@
-// 2026-10-13 approved list wording (invented places and times only):
-// short rows in metres, a row with distance never says 「0 分」, and 出發
-// names the same place as a 室內 hold that starts right after it.
+// 2026-10-13 approved list wording (invented places and times only): one
+// distance formatter for the card and the history list, a row with distance
+// never says 「0 分」, a day that begins indoors has no 出發 row, and no
+// 「接續隔天」 capsule.
 import { t as i18nT } from '../src/i18n';
-import { km, movementSummary, nodePill, placeSpeech, rowDistance, sectionSpeech, sectionText } from '../src/history/HistoryText';
+import { km, movementSummary, nodePill, placeSpeech, sectionSpeech, sectionText } from '../src/history/HistoryText';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { cursorLabel } from '../src/history/screen';
 import { exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
+import { distanceText } from '../src/utils/distanceText';
+import { formatDistance } from '../src/map/DogReadout';
 import { offset } from '../__fixtures__/IndoorScenarios';
 
 const MINUTE = 60000;
@@ -14,17 +17,23 @@ const T0 = new Date(2026, 0, 5, 9, 0).getTime();
 const move = (mode, start, end, metres) => ({ type: 'movement', mode, start, end, durationMs: end - start,
   distanceM: metres, countedDistanceM: ['driving', 'ride'].includes(mode) ? 0 : metres });
 
-describe('short distances in metres', () => {
+describe('one distance formatter', () => {
   test.each([
-    [0, '0 m'], [4, '0 m'], [5, '10 m'], [40, '40 m'], [44, '40 m'], [94, '90 m'],
-    // The rounded value decides: never 「100 m」.
-    [95, '0.1 km'], [100, '0.1 km'], [149, '0.1 km'], [1449, '1.4 km'], [null, '0 m'], [-3, '0 m'],
-  ])('%p m → %s', (metres, text) => expect(rowDistance(metres)).toBe(text));
+    [0, '0 m'], [2, '0 m'], [3, '5 m'], [7.4, '5 m'], [8, '10 m'], [40, '40 m'], [44, '45 m'], [97, '95 m'],
+    // Each step is decided on the rounded value.
+    [98, '100 m'], [104, '100 m'], [126, '130 m'], [847, '850 m'], [994, '990 m'], [996, '1.0 km'],
+    [1000, '1.0 km'], [1449, '1.4 km'], [12400, '12.4 km'], [null, '0 m'], [-3, '0 m'], [NaN, '0 m'],
+  ])('%p m → %s', (metres, text) => expect(distanceText(metres)).toBe(text));
 
-  test('walking, moving and vehicle rows; ≥ 100 m keep km', () => {
+  test('the dog card uses the same formatter', () => {
+    expect(formatDistance).toBe(distanceText);
+  });
+
+  test('walking, moving and vehicle rows', () => {
     expect(sectionText(move('walking', T0, T0 + 2 * MINUTE, 40))).toMatchObject({ time: '2 分', rest: '・40 m' });
     expect(sectionText(move('moving', T0, T0 + 3 * MINUTE, 0))).toMatchObject({ time: '3 分', rest: '・0 m' });
     expect(sectionText(move('driving', T0, T0 + 2 * MINUTE, 80))).toMatchObject({ rest: '・80 m' });
+    expect(sectionText(move('walking', T0, T0 + 6 * MINUTE, 340))).toMatchObject({ rest: '・340 m' });
     expect(sectionText(move('ride', T0, T0 + 9 * MINUTE, 4100))).toMatchObject({ rest: '・4.1 km' });
     expect(sectionText(move('walking', T0, T0 + 28 * MINUTE, 1400)).rest).toBe('・1.4 km');
   });
@@ -50,8 +59,8 @@ describe('a row with distance never shows 0 minutes', () => {
     const row = move('moving', T0 + 10000, T0 + 50000, 200);
     const [shown] = timelinePresentation([row]);
     expect(shown.durationMs).toBe(40000);
-    expect(sectionText(shown)).toMatchObject({ lead: i18nT('c125'), time: '不到 1 分', rest: '・0.2 km' });
-    expect(sectionSpeech(shown)).toBe('移動 不到 1 分鐘，0.2 公里');
+    expect(sectionText(shown)).toMatchObject({ lead: i18nT('c125'), time: '不到 1 分', rest: '・200 m' });
+    expect(sectionSpeech(shown)).toBe('移動 不到 1 分鐘，200 公尺');
     expect(row.durationMs).toBe(40000);
   });
 
@@ -68,49 +77,44 @@ describe('a row with distance never shows 0 minutes', () => {
 
   test('a row showing 「0 m」 still says 「0 分」', () => {
     expect(sectionText(move('walking', T0, T0 + 20000, 0))).toMatchObject({ time: '0 分', rest: '・0 m' });
-    expect(sectionText(move('walking', T0, T0 + 20000, 4))).toMatchObject({ time: '0 分', rest: '・0 m' });
+    expect(sectionText(move('walking', T0, T0 + 20000, 2))).toMatchObject({ time: '0 分', rest: '・0 m' });
+    expect(sectionText(move('walking', T0, T0 + 20000, 4))).toMatchObject({ time: '不到 1 分', rest: '・5 m' });
   });
 });
 
-describe('出發 and a 室內 hold right after it name one place', () => {
-  const raw = { latitude: 24.98931, longitude: 121.31321 };
-  const anchor = { latitude: 24.98922, longitude: 121.31320 };
-  const departure = { type: 'departure', start: T0, end: T0, ...raw };
-  const indoor = (start, place = anchor) => ({ type: 'indoor', start, end: start + 40 * MINUTE, ...place });
+describe('在室內就不要出發了: a day that begins indoors has no 出發 row', () => {
+  const departure = { type: 'departure', start: T0, end: T0, latitude: 24.98931, longitude: 121.31321 };
+  const indoor = start => ({ type: 'indoor', start, end: start + 40 * MINUTE, latitude: 24.98922, longitude: 121.3132 });
 
-  test('within a minute, nothing counted: the departure is shown at the hold; both rows stay', () => {
-    const nodes = [departure, move('walking', T0, T0 + 30000, 0), indoor(T0 + 30000)];
+  test('a hold within a minute, nothing counted before it: the list starts with 室內', () => {
+    const nodes = [departure, move('walking', T0, T0 + 30000, 0), indoor(T0 + 30000), move('walking', T0 + 40 * MINUTE + 30000, T0 + 50 * MINUTE, 600)];
     const before = JSON.stringify(nodes);
     const shown = timelinePresentation(nodes);
-    expect(shown.map(n => n.type)).toEqual(['departure', 'movement', 'indoor']);
-    expect(shown[0]).toMatchObject({ type: 'departure', start: T0, ...anchor });
-    expect(shown[0].departureStay).toBeUndefined();
+    expect(shown.map(n => n.type)).toEqual(['indoor', 'movement']);
     expect(JSON.stringify(nodes)).toBe(before);
-    // The PNG list shows the screen's rows: one address for both.
-    const rows = exportTimelineRows(nodes, node => `虛構地址 ${node.latitude}`);
-    expect(rows[0].title).toBe(rows[2].title);
+    // The PNG list is the screen's list.
+    expect(exportTimelineRows(nodes, () => '虛構地址').map(row => row.type)).toEqual(['indoor', 'movement']);
   });
 
   test('directly adjacent and across a short weak-GPS row', () => {
-    expect(timelinePresentation([departure, indoor(T0 + 20000)])[0]).toMatchObject(anchor);
+    expect(timelinePresentation([departure, indoor(T0 + 20000)]).map(n => n.type)).toEqual(['indoor']);
     expect(timelinePresentation([departure, { type: 'gap', mode: 'gap', reason: 'uncertain', start: T0, end: T0 + 20000 },
-      indoor(T0 + 20000)])[0]).toMatchObject(anchor);
+      indoor(T0 + 20000)]).map(n => n.type)).toEqual(['indoor']);
   });
 
   test.each([
-    ['counted distance between', [departure, move('moving', T0, T0 + 30000, 12), indoor(T0 + 30000)]],
+    ['counted distance before it', [departure, move('moving', T0, T0 + 30000, 12), indoor(T0 + 30000)]],
     ['more than a minute later', [departure, move('walking', T0, T0 + 90000, 0), indoor(T0 + 90000)]],
-    ['a vehicle between', [departure, move('ride', T0, T0 + 30000, 300), indoor(T0 + 30000)]],
-    ['a signal break between', [departure, { type: 'gap', mode: 'gap', reason: 'no-signal', start: T0, end: T0 + 30000 },
+    ['a vehicle before it', [departure, move('ride', T0, T0 + 30000, 300), indoor(T0 + 30000)]],
+    ['a signal break before it', [departure, { type: 'gap', mode: 'gap', reason: 'no-signal', start: T0, end: T0 + 30000 },
       indoor(T0 + 30000)]],
-    ['a stay first', [departure, { type: 'stop', number: 1, start: T0 + 30000, end: T0 + 10 * MINUTE, ...anchor },
-      indoor(T0 + 10 * MINUTE)]],
-    ['a hold without coordinates', [departure, indoor(T0 + 30000, { latitude: null, longitude: null })]],
-  ])('unchanged: %s', (_, nodes) => {
-    expect(timelinePresentation(nodes)[0]).toMatchObject(raw);
+    ['a stay first', [departure, { type: 'stop', number: 1, start: T0 + 30000, end: T0 + 10 * MINUTE,
+      latitude: 24.98922, longitude: 121.3132 }, indoor(T0 + 10 * MINUTE)]],
+  ])('other days still start with 出發: %s', (_, nodes) => {
+    expect(timelinePresentation(nodes)[0]).toMatchObject({ type: 'departure', latitude: departure.latitude });
   });
 
-  test('a dog history: first fix 4 m off, then a hold — model keeps the fix, the list the hold', () => {
+  test('a dog history: first fix 4 m off, then a hold — the model keeps its departure, the list starts indoors', () => {
     const origin = { latitude: 24.9892, longitude: 121.3132 };
     const good = (time, metres, speed = null) => ({ time, ...offset(origin, metres, 0),
       satellites: 9, hdop: 1, speed_kmh: speed, master_id: 1, slave_id: 6 });
@@ -122,12 +126,8 @@ describe('出發 and a 室內 hold right after it name one place', () => {
     const model = historyTimeline(rows, { subject: 'dog', dayStart: 0, dayEnd: 500000,
       range: { start: 0, end: 300000 }, holdOptions: { classify } });
     expect(model.nodes.map(n => n.type)).toEqual(['departure', 'indoor']);
-    const [start, hold] = model.nodes;
-    expect(start.latitude).toBe(model.points[0].latitude);
-    expect(start.latitude).not.toBe(hold.latitude);
-    const shown = timelinePresentation(model.nodes);
-    expect(shown.map(n => n.type)).toEqual(['departure', 'indoor']);
-    expect(shown[0]).toMatchObject({ latitude: hold.latitude, longitude: hold.longitude });
+    expect(model.nodes[0].latitude).toBe(model.points[0].latitude);
+    expect(timelinePresentation(model.nodes).map(n => n.type)).toEqual(['indoor']);
   });
 });
 
