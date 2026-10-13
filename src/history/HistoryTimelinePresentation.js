@@ -227,23 +227,40 @@ export function timelinePresentation(all = []) {
   });
 }
 
-/** The day-boundary rows (timelinePresentation): a same-session break at
- * one place (`samePlace`: the stay goes on over midnight, 067) or a foldable
- * short one goes, silently, to the stay row beside it; otherwise it is a row
- * of its own (a session change always). */
+/** The day-boundary rows (timelinePresentation). A same-session break at one
+ * place (`samePlace`: the stay goes on over midnight, 067) is always stay time,
+ * as the other day shows it (2026-10-13, user: the two days agree): the stay
+ * row beside it grows over it; with none there it is the stay itself — the
+ * day's first row 「接續前一天」 instead of a bare 出發, or the end row's
+ * 「停 N 分」 running on to midnight. A foldable short break goes, silently,
+ * to the stay row beside it. Otherwise it is a row of its own (a session
+ * change always, #135). */
 function withDayBoundaries(rows, lead, tail) {
   if (!lead && !tail) return rows;
   const out = [...rows];
-  const takes = gap => (gap.samePlace === true && gap.sameSession === true && gap.sessionChange !== true) || foldable(gap);
+  const carried = gap => gap.samePlace === true && gap.sameSession === true && gap.sessionChange !== true;
+  const takes = gap => carried(gap) || foldable(gap);
+  // The stay over midnight on this side: unnumbered, display only.
+  const stayOf = (gap, side) => ({ type: 'stop', presentationOnly: 'carried-over', number: null,
+    id: `carried-over:${gap.start}`, start: gap.start, end: gap.end, durationMs: gap.end - gap.start,
+    interruptionMs: 0, gaps: [], latitude: gap.latitude, longitude: gap.longitude,
+    ...(side === 'start' ? { continuesPreviousDay: true } : { continuesNextDay: true }) });
   if (lead) {
     const host = out[0];
-    if (takes(lead) && stayRow(host) && host.start === lead.end) out[0] = stretch(host, lead.start, host.end, lead.end - lead.start);
-    else out.unshift(lead);
+    const beside = host && host.start === lead.end;
+    if (takes(lead) && stayRow(host) && beside) out[0] = stretch(host, lead.start, host.end, lead.end - lead.start);
+    else if (carried(lead) && beside && host.type === 'departure') out[0] = stayOf(lead, 'start');
+    else out.unshift(carried(lead) ? stayOf(lead, 'start') : lead);
   }
   if (tail) {
     const host = out[out.length - 1];
-    if (takes(tail) && stayRow(host) && host.end === tail.start) out[out.length - 1] = stretch(host, host.start, tail.end, tail.end - tail.start);
-    else out.push(tail);
+    const beside = host && host.end === tail.start;
+    if (takes(tail) && stayRow(host) && beside) out[out.length - 1] = stretch(host, host.start, tail.end, tail.end - tail.start);
+    else if (carried(tail) && beside && host.type === 'end') {
+      const stay = stayOf(tail, 'end');
+      out[out.length - 1] = { ...host, start: stay.start, end: stay.end, durationMs: stay.durationMs,
+        continuesNextDay: true, terminalStay: stay };
+    } else out.push(carried(tail) ? stayOf(tail, 'end') : tail);
   }
   return out;
 }

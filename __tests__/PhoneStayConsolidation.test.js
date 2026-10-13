@@ -212,6 +212,38 @@ describe('3. the hours around midnight are rows too', () => {
     expectTiled(model, model.points[0].time, dayEnd);
   });
 
+  test('a stay over midnight at one place, one recording: both days show it as stay time, not 「沒有資料」', () => {
+    // Back home late, a few fixes, the phone saves nothing overnight (same
+    // recording, same place), a few fixes in the morning, then out again.
+    const evening = rows([['walk', 300], ['still', 60]], { from: dayEnd - 3600000 });
+    const home = evening.at(-1);
+    const morning = rows([['still', 60], ['walk', 300]], { from: dayEnd + 6 * 3600000 })
+      .map(r => ({ ...r, longitude: r.longitude - 1 + home.longitude, raw_longitude: r.raw_longitude - 1 + home.raw_longitude }));
+    // The evening's day ends with the stay running on to midnight (「停 N 分」).
+    const before = timeline([...evening, ...morning]);
+    const last = listed(before).at(-1);
+    expect(listed(before).some(n => n.type === 'gap')).toBe(false);
+    expect(last).toMatchObject({ type: 'end', end: dayEnd, continuesNextDay: true });
+    expect(last.terminalStay).toMatchObject({ type: 'stop', start: home.time, end: dayEnd });
+    expect(nodePill(last).text).toBe(t('c127', { duration: listDuration(presentationDurationMs(last.terminalStay)) }));
+    expectTiled(before, before.points[0].time, dayEnd);
+    // The next day begins with that stay, 「接續前一天」, from 00:00.
+    const next = historyTimeline([...evening, ...morning], { subject: 'phone', dayStart: dayEnd, dayEnd: dayEnd + 86400000,
+      range: { start: morning[0].time, end: morning.at(-1).time } });
+    const first = listed(next)[0];
+    expect(listed(next).some(n => n.type === 'gap')).toBe(false);
+    expect(first).toMatchObject({ type: 'stop', start: dayEnd, continuesPreviousDay: true, number: null });
+    expect(nodePill(first).text).toBe(t('c332'));
+    expectTiled(next, dayEnd, next.points.at(-1).time);
+    // The cursor in that time says a stay, not 「這段沒資料」.
+    expect(cursorLabel(before, home.time, 'phone')[1]).toMatch(/^停留 /);
+    // The same night across a recording restart stays 「沒有資料」 on both sides (#135).
+    const restarted = morning.map(r => ({ ...r, session_id: 'fiction-session-2' }));
+    expect(listed(timeline([...evening, ...restarted])).at(-1)).toMatchObject({ type: 'gap', sessionChange: true });
+    expect(listed(historyTimeline([...evening, ...restarted], { subject: 'phone', dayStart: dayEnd, dayEnd: dayEnd + 86400000,
+      range: { start: morning[0].time, end: morning.at(-1).time } }))[0]).toMatchObject({ type: 'gap', sessionChange: true });
+  });
+
   test('no row of no data without a fix on the other side, nor while today goes on', () => {
     const day = rows([['walk', 300], ['still', 2400]], { from: dayEnd - 3 * 3600000 });
     expect(listed(timeline(day)).some(n => n.type === 'gap')).toBe(false);
