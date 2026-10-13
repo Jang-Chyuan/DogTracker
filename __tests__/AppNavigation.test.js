@@ -1,4 +1,4 @@
-import { resetSplashGate } from '../src/app/hideSplash';
+import { getSplashState, resetSplashGate } from '../src/app/hideSplash';
 import { t as i18nT } from '../src/i18n';
 import MapScreen from '../src/screens/MapScreen';
 import { layout } from '../src/theme/tokens';
@@ -1300,11 +1300,15 @@ test('066: the settings header back is a real icon with room before the title, t
 test('restored account without fresh acceptance opens after timeout and shows the existing failure pill on the map', async () => {
   resetSplashGate();
   await act(async () => { renderer = Renderer.create(<App />); });
-  expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
+  // The map loads under the launch screen meanwhile, but is not framed and
+  // the launch screen stays until latest settles (here: its 10 s fallback).
   await advance(9999);
-  expect(renderer.root.findAllByType(MapView)).toHaveLength(0);
+  expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+  expect(renderer.root.findByType(MapScreen).props.coldStartReady).toBe(false);
+  expect(getSplashState().phase).toBe('waiting');
   await advance(1);
   expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+  expect(renderer.root.findByType(MapScreen).props.coldStartReady).toBe(true);
   expect(renderer.root.findByType(MapScreen).props.initialLatestFailure).toBe(true);
   expect(renderer.root.findAllByProps({ testID: 'map-catch-up' }).length).toBeGreaterThan(0);
   expect(renderer.root.findAllByProps({ testID: 'map-catch-up-retry' }).some(node => typeof node.props.onPress === 'function')).toBe(true);

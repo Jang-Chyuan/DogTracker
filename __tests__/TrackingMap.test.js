@@ -1581,3 +1581,50 @@ test('old cold projection timeout cannot frame a replacement scope; its new fram
   delete mockCamera.pointForCoordinate;
   await act(async () => renderer.unmount()); renderer = null; splash.resetSplashGate();
 });
+
+test('cold start: the map mounts and loads under the launch screen while latest is still coming, and frames only once it is accepted', async () => {
+  const splash = require('../src/app/hideSplash');
+  splash.resetSplashGate(); const scope = {};
+  splash.reportInitialLatest(scope, 'waiting'); splash.launchInto('map');
+  await render({ coldStartReady: false, coldStartScope: scope, framingReady: false });
+  // Mounted at once (no longer after latest): tiles load in the meantime.
+  const map = renderer.root.findByType(MapView);
+  await readyMap();
+  await act(async () => map.props.onRegionChangeComplete({}, {}));
+  await act(async () => jest.advanceTimersByTime(9000));
+  // Nothing framed or released on the positions from before latest.
+  expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => {
+    splash.reportInitialLatest(scope, 'accepted');
+    renderer.update(<TrackingMap {...defaults} coldStartReady coldStartScope={scope} />);
+  });
+  expect(renderer.root.findByType(MapView)).toBe(map);
+  expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
+  expect(mockCamera.fitToCoordinates.mock.calls[0][0]).toEqual(defaults.presentation.cameraPositions);
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => jest.advanceTimersByTime(250));
+  expect(splash.getSplashState().phase).toBe('handover');
+  await act(async () => renderer.unmount()); renderer = null; splash.resetSplashGate();
+});
+
+test('cold start: mounted on earlier positions, latest accepted with nothing to frame opens on the default view', async () => {
+  const splash = require('../src/app/hideSplash');
+  splash.resetSplashGate(); const scope = {};
+  splash.reportInitialLatest(scope, 'waiting'); splash.launchInto('map');
+  await render({ coldStartReady: false, coldStartScope: scope, framingReady: false });
+  expect(renderer.root.findByType(MapView).props.initialRegion).toMatchObject(master.coordinate);
+  await readyMap();
+  const empty = { ...defaults.presentation, cameraPositions: [], dogMarkers: [] };
+  await act(async () => {
+    splash.reportInitialLatest(scope, 'accepted');
+    renderer.update(<TrackingMap {...defaults} presentation={empty} coldStartReady coldStartScope={scope} />);
+  });
+  expect(mockCamera.animateToRegion).toHaveBeenCalledWith(
+    expect.objectContaining({ latitude: 23.7, longitude: 121, latitudeDelta: 4 }), 0);
+  expect(splash.getSplashState().phase).toBe('waiting');
+  // Everything it waits for is known: released once the view is drawn.
+  await act(async () => jest.advanceTimersByTime(250));
+  expect(splash.getSplashState()).toMatchObject({ phase: 'handover', mode: 'fade' });
+  await act(async () => renderer.unmount()); renderer = null; splash.resetSplashGate();
+});
