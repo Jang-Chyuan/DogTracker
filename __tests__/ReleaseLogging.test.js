@@ -196,6 +196,25 @@ test('latest timing extension is all-or-none fixed elapsed numbers; private fiel
     for (const entry of spy.mock.calls) expect(entry).toEqual(['[CloudSync] latest-published', base]);
   } finally { spy.mockRestore(); }
 });
+test('the optional session wait passes only as a fixed number beside the complete latest timings', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  try {
+    const { cloudSyncDiagnostic } = require('../src/logger');
+    const base = { attempt: 2, elapsedMs: 140, revision: 3 };
+    const timings = { slotWaitMs: 10, initializeMs: 20, archiveProofMs: 0,
+      latestCacheReadMs: 30, mastersMs: 40, latestHTTPMs: 20, snapshotCommitMs: 10 };
+    cloudSyncDiagnostic('latest-published', { ...base, ...timings, sessionMs: 5 });
+    for (const invalid of [undefined, -1, NaN, Infinity, 'private-account'])
+      cloudSyncDiagnostic('latest-published', { ...base, ...timings, sessionMs: invalid });
+    // Without the complete timings it is not logged alone.
+    cloudSyncDiagnostic('latest-published', { ...base, sessionMs: 5 });
+    expect(spy.mock.calls).toEqual([
+      ['[CloudSync] latest-published', { ...base, ...timings, sessionMs: 5 }],
+      ...Array.from({ length: 5 }, () => ['[CloudSync] latest-published', { ...base, ...timings }]),
+      ['[CloudSync] latest-published', base],
+    ]);
+  } finally { spy.mockRestore(); }
+});
 test('history read/model diagnostics stay silent unless the private flag is enabled', () => {
   const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
   const { historyReadDiagnostic, historyModelDiagnostic, HISTORY_READ_FLAGS } = require('../src/logger');

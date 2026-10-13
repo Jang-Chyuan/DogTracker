@@ -90,6 +90,10 @@ export function cloudSyncDiagnostic(event, fields) {
         // success event. Copy only these fixed nonnegative elapsed numbers.
         const timings = LATEST_TIMINGS.every(key => Number.isFinite(fields[key]) && fields[key] >= 0)
           ? Object.fromEntries(LATEST_TIMINGS.map(key => [key, fields[key]])) : {};
+        // The session gate's wait, kept apart from mastersMs (optional: the
+        // legacy engine has no gate); only alongside the complete timings.
+        if (Object.keys(timings).length && Number.isFinite(fields.sessionMs) && fields.sessionMs >= 0)
+          timings.sessionMs = fields.sessionMs;
         console.info('[CloudSync] latest-published', { attempt, elapsedMs, revision, ...timings });
       } else if (event === 'latest-applied') console.info('[CloudSync] latest-applied', { attempt, elapsedMs, revision });
       else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });
