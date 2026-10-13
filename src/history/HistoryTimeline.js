@@ -15,13 +15,21 @@ import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
  * both sides are in one place without confirmed movement) belongs to the same
  * stay, together with the zero-distance re-acquisition fixes right after it
  * (at most gapMs). A session change (recording off) stays 「沒有資料」. The
- * unobserved ranges are kept on the stop as `unobserved`. */
+ * unobserved ranges are kept on the stop as `unobserved`.
+ *
+ * 2026-10-13: stationary fixes coarser than stayAccuracyM (25 m, the stay
+ * position gate) but within the history accuracy filter are still observed
+ * stationary time: they join the run instead of leaving it without a row.
+ * They never place it — the anchor is the run's first fix within 25 m when it
+ * has one — and such a run is `coarse` (with its worst `accuracyM`), so
+ * mergePhoneSamePlaceStays may give its minutes to the stay it touches. */
 export function phoneStationaryPresentationStops(edges, { config = configFor('phone'), covered = () => false } = {}) {
   const session = p => typeof p.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
   const valid = p => p.phoneStationary && p.phoneMotionState === 'stationary' && !p.phoneConfirmedMovement
     && p.motion_state != null && session(p) != null
     && ('raw_speed_kmh' in p || 'speed_kmh' in p || 'speed_accuracy_mps' in p)
-    && coordinateValid(p) && Number.isFinite(p.accuracy) && p.accuracy >= 0 && p.accuracy <= config.stayAccuracyM;
+    && coordinateValid(p) && Number.isFinite(p.accuracy) && p.accuracy >= 0 && p.accuracy <= config.accuracyM;
+  const fine = p => p.accuracy <= config.stayAccuracyM;
   const sameSession = edge => session(edge.from) != null && session(edge.from) === session(edge.to);
   const stops = [];
   let run = null;
@@ -30,7 +38,8 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
       id: `phone-stationary:${run.start}`, presentationOnly: 'phone-stationary', number: null,
       start: run.start, end: run.end, durationMs: run.end - run.start, interruptionMs: 0, gaps: [],
       ...(run.unobserved.length ? { unobserved: run.unobserved } : {}),
-      latitude: run.anchor.latitude, longitude: run.anchor.longitude });
+      ...(run.coarseM ? { coarse: true, accuracyM: run.coarseM } : {}),
+      latitude: (run.fine ?? run.anchor).latitude, longitude: (run.fine ?? run.anchor).longitude });
     run = null;
   };
   for (const edge of edges) {
@@ -47,8 +56,12 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
     if (observed || samePlaceBreak) {
       if (run && !reach) finish();
       if (!run) run = { start: edge.start, end: edge.end, anchor: edge.from, session: session(edge.from),
-        unobserved: [], pending: null, broke: false };
+        unobserved: [], pending: null, broke: false, fine: null, coarseM: 0 };
       run.end = edge.end; run.pending = null;
+      for (const p of observed ? [edge.from, edge.to] : []) {
+        if (fine(p)) run.fine ??= p;
+        else run.coarseM = Math.max(run.coarseM, p.accuracy);
+      }
       if (samePlaceBreak) { run.unobserved.push({ start: edge.start, end: edge.end }); run.broke = true; }
       continue;
     }
@@ -67,28 +80,37 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
  * same-place break (a presentation stop carrying `unobserved`) and 0 m foot
  * rows of at most gapMs are one stay. The first real stop keeps its identity
  * and number; minutes are the parts' own (interruptions stay deducted).
+ * 2026-10-13: likewise a `coarse` stationary run (fixes over 25 m) touching
+ * a stay within the run's own accuracy of it: its minutes are the stay's, the
+ * stay keeps its coordinate, and no second numbered stay is absorbed for it.
  * Returns the new node list and the replaced/removed source nodes. */
 export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } = {}) {
   const stay = n => n?.type === 'stop';
   const zeroFoot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving')
     && n.countedDistanceM === 0 && n.end - n.start <= config.gapMs;
+  // A coarse run's footprint (its worst accuracy) must reach the stay.
   const near = (a, b) => Number.isFinite(a?.latitude) && Number.isFinite(b?.latitude)
-    && !(distanceMeters(a, b) > config.radiusM + 1e-8);
+    && !(distanceMeters(a, b) > config.radiusM + Math.max(a.accuracyM || 0, b.accuracyM || 0) + 1e-8);
+  const joins = n => n.unobserved?.length || n.coarse;
   const out = [], replaced = new Map(), removed = new Set();
   for (let i = 0; i < nodes.length; i++) {
     if (!stay(nodes[i])) { out.push(nodes[i]); continue; }
     // Grow a chain stop (0 m foot)* stop … while each part touches the last.
     let j = i, last = i;
+    let real = nodes[i].presentationOnly ? 0 : 1;
     for (let k = i + 1; k < nodes.length; k++) {
       const n = nodes[k];
       if (n.start !== nodes[k - 1].end) break;
-      if (stay(n) && near(nodes[i], n)) { last = k; continue; }
+      // Coarse fixes alone never join two numbered stays (their numbers stay).
+      if (stay(n) && !n.presentationOnly && real
+        && !nodes.slice(i, k + 1).some(m => m.unobserved?.length)) break;
+      if (stay(n) && near(nodes[i], n)) { last = k; real += n.presentationOnly ? 0 : 1; continue; }
       if (zeroFoot(n)) continue;
       break;
     }
     j = last;
     const chain = nodes.slice(i, j + 1);
-    if (j === i || !chain.some(n => n.unobserved?.length)) { out.push(nodes[i]); continue; }
+    if (j === i || !chain.some(joins)) { out.push(nodes[i]); continue; }
     const stops = chain.filter(stay);
     const base = stops.find(n => !n.presentationOnly) ?? stops[0];
     const merged = { ...base, start: chain[0].start, end: chain[chain.length - 1].end,
@@ -118,6 +140,8 @@ export function emptyPhoneFootRows(nodes) {
     && ((n.durationMs ?? n.end - n.start) < 60000 || shownMinutes(n) === 0)
     && beside(nodes[i - 1]) && beside(nodes[i + 1])));
 }
+
+const sessionOf = p => typeof p?.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
 
 /** Pure H1/H2 list. `nodes` contains location rows AND movement/gap rows in
  * display order. No geocoding: address resolution can use location rows later.
@@ -280,6 +304,20 @@ export function historyTimeline(rows = [], options = {}) {
     const row = sections[sections.length - 1];
     if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; carried = 0; }
   }
+  // A phone break inside one recording session (the list folds a short one
+  // into the row beside it, 2026-10-13); a session change is always its own
+  // row. A short weak-GPS step had fixes on both sides (the recorder ran)
+  // unless the two say otherwise; a break with no fix needs one known session.
+  if (subject === 'phone') {
+    const sameSessionGap = e => e.uncertain && e.durationMs <= config.gapMs
+      ? !(sessionOf(e.from) && sessionOf(e.to) && sessionOf(e.from) !== sessionOf(e.to))
+      : sessionOf(e.from) != null && sessionOf(e.from) === sessionOf(e.to);
+    for (const section of sections) {
+      if (section.type !== 'gap') continue;
+      const inside = sectionEdges.filter(e => e.gap && e.start >= section.start && e.end <= section.end);
+      if (inside.length && inside.every(sameSessionGap)) section.sameSession = true;
+    }
+  }
   const noGPSGaps = new Map(sections.filter(section => section.type === 'gap'
     && section.reason === 'no-gps').map(section => [section.start, section]));
   for (const node of movedOn) {
@@ -334,6 +372,17 @@ export function historyTimeline(rows = [], options = {}) {
     const empty = emptyPhoneFootRows(nodes);
     for (const n of empty) drop.add(n);
     nodes = nodes.filter(n => !empty.has(n));
+    // 2026-10-13: an interruption inside a stay whose two fixes are of one
+    // recording session is marked `sameSession` (the list counts a short one
+    // in the stay's minutes). New gap objects: the visit's own stay as it is.
+    const at = new Map(context.map(p => [p.time, p]));
+    for (const node of nodes) {
+      if (node.type !== 'stop' || !node.gaps?.length) continue;
+      node.gaps = node.gaps.map(g => {
+        const a = sessionOf(at.get(g.start)), b = sessionOf(at.get(g.end));
+        return a != null && a === b ? { ...g, sameSession: true } : g;
+      });
+    }
   }
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.

@@ -41,6 +41,20 @@
 
 缺口列保留前後實測時間與座標，但 `distanceM`／`countedDistanceM` 都是零；車段保留實際 `distanceM`，`countedDistanceM` 為零。合併停留保留 `interruptionMs`，供清單／PNG／GPX 顯示「不含中斷 N 分」。跨日節點使用 `continuesPreviousDay`／`continuesNextDay`；終點 `label` 為「現在」、「最後」或「結束」。
 
+## 分鐘一定有列（2026-10-13）
+
+選取範圍內，清單（`timelinePresentation`）有長度的列首尾相接：沒有空洞、沒有重疊；每列分鐘加上「不含中斷」等於它的起訖時鐘跨度。取代 #115「合併的走路不計中間未觀測時間」。
+
+- 合併的走路：分鐘＝起訖跨度，距離仍是各段之和。
+- 手機的缺口列（`沒有資料`，或 `reason: 'uncertain'` 的「GPS 訊號弱」）帶 `sameSession: true` 時是同一次記錄裡的中斷：短於 `listGapMs`（`HistoryConfig`，30 分）就不列出，時間直接併入旁邊有長度的列——先找停留（停留、停在原處、帶停留的出發／終點），再找走路，再找其他移動；不加任何註記（`unlocatedMs` 只在資料上記下併入多少，不顯示）。兩邊只有出發／終點這種點時照列出。兩段走路之間只有這種中斷時合為一段走路。
+- 停留裡面的中斷（`stop.gaps`）同理：時間軸在兩端定位屬於同一個 session 時標 `sameSession`；短於 `listGapMs` 的算進停留分鐘，`interruptionMs` 減掉，不再顯示「不含中斷」。30 分以上、換 session（`sessionChange`）、或沒有 session 可證明（舊資料、狗）的中斷照樣扣掉並顯示「不含中斷 N 分」。
+- `sameSession`：「GPS 訊號弱」單步兩端都有定位，除非兩端 session 明確不同；沒有定位的缺口要兩端是同一個已知 session。帶 `sessionChange: true`（#135）的列一律自成一列。狗的缺口列都有原因（收不到 GPS／沒收到訊號），沒有這兩種列，也沒有 session，所以不受影響。
+- 游標：`shownRowAt` 找出那一刻所屬的清單列；併入的中斷裡，游標不說「這段沒資料」，停留裡就說那個停留（`shownStayDurationMs`，和清單同一個分鐘），走路裡就說已走距離。
+- 不到 `gapMs`、沒有任何列的幾秒時間，在走路旁邊時歸那段走路。
+- 地圖、`model.sections`、`model.edges`、匯出的 gaps 都不變：地圖照畫中斷，GPX 照在中斷處分段。地圖停留的 TalkBack 也用 `shownStayDurationMs`；GPX 停留航點不含併入的缺口（`excludedMs` 照舊）（下面併入的粗精度靜止時間則算進停留，和 #116 的同地中斷合併一樣）。
+- 手機精度超過 `stayAccuracyM`（25 m）但在 `accuracyM`（50 m）內、偵測為靜止的點，仍進 `phoneStationaryPresentationStops`：座標取該段第一個 25 m 內的點，沒有就取第一點，並標 `coarse`／`accuracyM`。`mergePhoneSamePlaceStays` 把貼著同地停留（距離 ≤ `radiusM` + 該段最差精度）的 `coarse` 段併入那個停留：保留編號與座標，只延長分鐘；不會因此把兩個編號停留合併。其餘 `coarse` 段是不編號停留。
+- 距離、CSV 列與 GPX 軌跡點不變。`__tests__/PhoneMinuteAccounting.test.js` 用虛構資料檢查這個不變量。
+
 ## 第二次審查（054a，Claude）補上的規則
 
 - 距離改成判定表「距離怎麼加」：每段連續步行的第一筆只當比較點，之後和上一個「有算進去」的點比（不是和前一筆比），所以慢慢走不會被一筆一筆濾掉；缺誤差值當 10 m，下限 5 m。

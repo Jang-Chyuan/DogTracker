@@ -13,6 +13,7 @@ import { LOW_BATTERY_PERCENT } from '../tracking/DogProblems';
 import { PHONE_FIX_MAX_AGE_S } from './MapFraming';
 import { bearingAndDistance, compassWord, formatDistance } from './DogReadout';
 import { activityState, activityWords, minuteOf } from '../activity/ActivityMinutes';
+import { listDuration } from '../history/HistoryText';
 
 // The phone's position is written as old (「手機位置 3 分鐘前」) after this.
 export const PHONE_OLD_AFTER_MS = 30 * 1000;
@@ -76,6 +77,19 @@ export function cardHeadline({ dog, phone, indoor, stale }) {
 }
 
 /**
+ * How long the dog has been held indoors, as the history's time line says it
+ * (「室內・26 分」, HistoryTimelinePresentation): from the first row the
+ * hold covers (`heldFrom`, HoldStore) to its newest packet, in whole clock
+ * minutes. null when the times are not known.
+ */
+export function indoorDurationMs(dog) {
+  const from = Number.isFinite(dog?.heldFrom) ? dog.heldFrom : dog?.heldSince;
+  const until = Number.isFinite(dog?.packetAt) ? dog.packetAt : dog?.lastPacketAt;
+  if (!Number.isFinite(from) || !Number.isFinite(until)) return null;
+  return Math.max(0, Math.floor(until / MINUTE) - Math.floor(from / MINUTE)) * MINUTE;
+}
+
+/**
  * The 活動量 row's words for the dog's activity minutes.
  * @param activity { minutes: ActivityMinutes.activityMinutes(), newestAt }
  * @param options.reference the clock the dog is judged by (now, or the cloud
@@ -118,10 +132,15 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
     rows.push({ key: 'position', label: t('c073'), value: staleText(freshness, now), tone: 'crit',
       detail: indoor ? address : null, twoLine: indoor });
   } else if (indoor) {
-    // Two lines (64dp) held indoors: 「室內」 and the address under it (A7b).
+    // Two lines (64dp) held indoors: 「室內・26 分」 and the address under it
+    // (A7b). The minutes are the history's for the same hold (GPS: since the
+    // hold began), not the 活動量 row's rest (the collar's motion).
     // No address yet, none found or offline: no second line and no spinner
     // (edges「沒網路時查地址」), the row keeps its 64dp so nothing jumps.
-    rows.push({ key: 'position', label: t('c073'), value: t('c114'), tone: null, detail: address, twoLine: true });
+    const held = indoorDurationMs(dog);
+    rows.push({ key: 'position', label: t('c073'),
+      value: held == null ? t('c114') : t('c344', { duration: listDuration(held) }),
+      tone: null, detail: address, twoLine: true });
   }
   rows.push(batteryRow(dog, battery, positionAt, now));
   const view = rangeView(range, { held: indoor });
@@ -131,7 +150,7 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
   }
   const words = activityRow(activity, { reference, positionAt, stale });
   rows.push({ key: 'activity', label: t('c068'), value: words.word, detail: words.detail,
-    at: words.at, tone: null, activityTone: words.tone, pressable: true });
+    speechDetail: words.speechDetail ?? null, at: words.at, tone: null, activityTone: words.tone, pressable: true });
   for (const row of rows) row.speech = rowSpeech(row);
   const headline = cardHeadline({ dog, phone, indoor, stale });
   return {
@@ -147,10 +166,11 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
 }
 
 function batteryRow(dog, battery, positionAt, now) {
-  // The newer of the card's own read (the newest valid reading) and the
-  // dog's newest packet; equal times take the packet.
+  // The newer of the card's own read (the newest believed reading) and the
+  // dog's (DogMerge: its newest packet's, or the last believed one when that
+  // packet's could not be believed); equal times take the dog's.
   const packet = Number.isFinite(dog.batteryPercentage)
-    ? { percentage: dog.batteryPercentage, at: dog.packetAt } : null;
+    ? { percentage: dog.batteryPercentage, at: Number.isFinite(dog.batteryAt) ? dog.batteryAt : dog.packetAt } : null;
   const read = Number.isFinite(battery?.percentage) ? battery : null;
   const reading = !read ? packet : !packet ? read
     : (Number(read.at) > Number(packet.at) ? read : packet);
@@ -170,7 +190,10 @@ function batteryRow(dog, battery, positionAt, now) {
 export function rowSpeech(row) {
   const value = row.value === '—' ? t('c089') : row.value.replace(/・/g, '，');
   const at = row.at ? `，${clock(row.at)}` : '';
-  const detail = row.detail ? `，${row.detail}` : '';
+  // 活動量: the minutes are how long the collar's motion has been low (or
+  // vigorous), said as such so they are not taken for the 室內 minutes.
+  const spoken = row.key === 'activity' && row.speechDetail ? row.speechDetail : row.detail;
+  const detail = spoken ? `，${spoken}` : '';
   // 「電量 15%，偏低」 reads without a pause after the label.
   if (row.key === 'battery') return t('c179', { percentage: value });
   return `${row.label}，${value}${detail}${at}`;

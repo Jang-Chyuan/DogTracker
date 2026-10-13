@@ -698,26 +698,35 @@ test('card-problems (A3b): every problem row red, 活動量 「—」, the dista
     .toBe('位置，沒有新位置，最後 09:05；電量 15%，偏低；接收範圍，不在接收範圍；活動量，沒有資料');
 });
 
-test('card-indoor (A7b): 位置 「室內」 over its address, charging 62%, resting 40 minutes, no 接收範圍 row', async () => {
+// 2026-10-13: 室內・11 分 is the hold (GPS, as the history's node); 休息中・已
+// 40 分鐘 is the collar's motion (it rested outside before going in).
+test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging 62%, resting 40 minutes, no 接收範圍 row', async () => {
   const { model, rows, keys, state } = await card('card-indoor');
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(keys).toEqual(['position', 'battery', 'activity']);
-  expect(rows.position).toMatchObject({ value: i18nT('c114'), tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
-    speech: '位置，室內，桃園區中正路 1 號附近' });
+  expect(rows.position).toMatchObject({ value: '室內・11 分', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: '位置，室內，11 分，桃園區中正路 1 號附近' });
   expect(rows.battery).toMatchObject({ value: '充電中 62%', tone: null });
-  expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 40 分鐘' });
+  expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 40 分鐘',
+    speech: '活動量，休息中，活動量低已 40 分鐘' });
   expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・室內' });
 });
 
-test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內」 alone, no second line', async () => {
+test('card-battery-blip: one 0% packet without a voltage keeps 43%, no red 「!」', async () => {
+  const { rows, state } = await card('card-battery-blip');
+  expect(rows.battery).toMatchObject({ value: '43%', tone: null });
+  expect(state.marker(4)).toMatchObject({ problem: false });
+});
+
+test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內・11 分」 alone, no second line', async () => {
   const { rows, state } = await card('dog-indoor-no-address');
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
-  expect(rows.position).toMatchObject({ value: i18nT('c114'), detail: null, twoLine: true });
+  expect(rows.position).toMatchObject({ value: '室內・11 分', detail: null, twoLine: true });
 });
 
 test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: no address)', async () => {
   const { rows } = await card('card-indoor-geocoder');
-  expect(rows.position).toMatchObject({ value: i18nT('c114'), detail: null });
+  expect(rows.position).toMatchObject({ value: '室內・11 分', detail: null });
 });
 
 test('card-cloud-dog: a cloud dog has no 接收範圍 row; running hard (劇烈活動)', async () => {

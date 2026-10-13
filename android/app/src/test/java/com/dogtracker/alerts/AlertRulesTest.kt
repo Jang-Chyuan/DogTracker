@@ -114,6 +114,36 @@ class AlertRulesTest {
     assertEquals("5:1", next.seen.getValue("dog-stale:9").token)
   }
 
+  // BatteryPlausibility: one bad packet (bp=0 without an empty cell's voltage,
+  // or a lone sudden drop) does not start a low-battery alert in the
+  // background; two agreeing packets do. Fictional packets.
+  @Test fun aSingleBadBatteryPacketDoesNotAlert() {
+    fun read(json: String, time: Long) = AlertCodec.readPacket(JSONObject(json), time)!!
+    var dog = Dogs.apply(null, read("""{"sid":4,"slat":24.99,"slon":121.31,"bp":43,"bmv":3800,"bv":1}""", 1000))
+    dog = Dogs.apply(dog, read("""{"sid":4,"slat":24.99,"slon":121.31,"bp":0,"bv":1}""", 6000))
+    assertEquals(43, dog.batteryPercentage)
+    assertTrue(Events.update(AlertState(), listOf(dog.copy(name = "豆豆")), receiver, 6000).active.keys.none { it.startsWith("dog-battery") })
+    dog = Dogs.apply(dog, read("""{"sid":4,"slat":24.99,"slon":121.31,"bp":9,"bmv":3560,"bv":1}""", 11000))
+    assertEquals("a lone drop waits", 43, dog.batteryPercentage)
+    dog = Dogs.apply(dog, read("""{"sid":4,"slat":24.99,"slon":121.31,"bp":8,"bmv":3555,"bv":1}""", 16000))
+    assertEquals(8, dog.batteryPercentage)
+    assertTrue(Events.update(AlertState(), listOf(dog.copy(name = "豆豆")), receiver, 16000).active.containsKey("dog-battery:4"))
+  }
+
+  // The app hands over its judgement (a pending drop included); without one,
+  // its reading is taken as the believed one.
+  @Test fun theHandedOverBatteryJudgementCarriesOn() {
+    val handed = AlertCodec.readDog(JSONObject().put("slaveId", 4).put("packetAt", 1000).put("batteryPercentage", 80)
+      .put("battery", JSONObject().put("accepted", JSONObject().put("percentage", 80).put("at", 500))
+        .put("pending", JSONObject().put("percentage", 40).put("at", 1000).put("count", 1)).put("judgedAt", 1000)))!!
+    assertEquals(BatteryState(AcceptedBattery(80.0, 500), PendingBattery(40.0, 1000, 1), 1000), handed.battery)
+    val confirmed = Dogs.apply(handed, packet(2000, north(10.0), battery = 41))
+    assertEquals(41, confirmed.batteryPercentage)
+    val plain = AlertCodec.readDog(JSONObject().put("slaveId", 4).put("packetAt", 1000).put("batteryPercentage", 80))!!
+    assertNull(plain.battery)
+    assertEquals("a lone drop after a plain hand-over waits", 80, Dogs.apply(plain, packet(2000, north(10.0), battery = 41)).batteryPercentage)
+  }
+
   @Test fun packetsInTheStoresLongAndShortKeys() {
     val short = AlertCodec.readPacket(JSONObject("""{"sid":4,"slat":24.99,"slon":121.31,"mlat":24.98,"mlon":121.31,"bp":18,"bv":1,"usbPresent":0}"""), 1000)!!
     assertEquals(4, short.slaveId)
