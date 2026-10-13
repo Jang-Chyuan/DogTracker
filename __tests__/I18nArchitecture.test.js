@@ -158,7 +158,9 @@ test('strings.xml and native parity are generated from the single canonical JSON
 
 test('copy removed by D15 and the design decisions stays out of production resources', () => {
   // 2026-10-13: the history list no longer writes 「接續隔天」 (c334).
-  const retired = /上次用|出發（手動）|還沒出發|確認出發中…|沒辦法自動判斷出發|主角|資料來源|接續隔天/;
+  // 2026-10-14: a place without an address shows its coordinates, never
+  // 「地址暫時無法取得」 (c1256).
+  const retired = /上次用|出發（手動）|還沒出發|確認出發中…|沒辦法自動判斷出發|主角|資料來源|接續隔天|地址暫時無法取得/;
   expect(Object.entries(resources).filter(([key, value]) => !key.startsWith('dev.') && retired.test(value))).toEqual([]);
   // The cursor retains the expressly specified c342/c343; no movement-row exclusion badge.
   expect(Object.keys(resources).filter(key => resources[key].includes('不算距離') && !['c342', 'c343'].includes(key))).toEqual([]);
@@ -178,6 +180,9 @@ test('deck example mappings preserve wording and retired ids stay unused', () =>
   }
   for (const row of additions.filter(item => item.retired)) {
     expect(resources[row.id]).toBeUndefined();
-    expect(resources[row.replaced_by]).toBeDefined();
+    // A retired row names its replacement, or says why none is needed
+    // (c1256: the coordinates replace 「地址暫時無法取得」).
+    if (row.replaced_by) expect(resources[row.replaced_by]).toBeDefined();
+    else expect(row.retired_note).toEqual(expect.any(String));
   }
 });

@@ -152,7 +152,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-range-open` | H2b：同 `history-my-route`，範圍條打開、開始已拖到 07:50（「出發」），結束跟著現在（`historyView`） |
 | `history-single-point` | 只有一筆：豆豆今天只有 09:10 一筆 → 一個點、距離 0、沒有「調整範圍」 |
 | `history-empty-day` | H8：我的路線今天沒有紀錄（昨天有）→「今天還沒有路線」、右上匯出變淡、‹ 跳到昨天 |
-| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（第一行座標、第二行膠囊）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
+| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（膠囊後面寫座標）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
 | `history-confirming` | 我的路線：原地後開始走路 → 暫定時間範圍，確認失敗回全天 |
 | `history-no-departure` | 我的路線：06:30 起一直在家附近 →「06:30 – 現在」，範圍＝今天全部記錄，沒有停留 |
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
@@ -182,6 +182,9 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-export-fail-once` | 第一次匯出失敗、重試成功（同一份快照） |
 | `history-export-multi` | H10b：小黑＋豆豆＋阿福（雲端）＋狗 5，匯出小視窗打開（多隻狗 PNG） |
 | `history-export-day` | H10a：小黑一天有停留、坐車、沒有資料、室內，匯出小視窗打開 |
+| `history-busy-day` | 小黑很忙的一天：約 06:25 出發、16 個停留（相隔約 200 m）；捏造的地址（示範路）每筆要 1.5 秒，後面的列 shimmer 久一點，第 6、13 個地方查不到（寫座標） |
+| `history-busy-day-geocoder` | 同上，地址用這支手機自己的 Geocoder 查（要網路＋Play services；看真的查詢時間） |
+| `history-busy-day-export`、`history-busy-day-geocoder-export` | 同上兩個，匯出小視窗打開（清單還沒查完就匯出 PNG） |
 | `db-open-failed` | 手機裡的資料庫打不開 → D0 啟動失敗「手機裡的資料打不開」＋「重試」「診斷」；「診斷」最上面寫原因 |
 
 ## 新增情境（之後每個 PR）

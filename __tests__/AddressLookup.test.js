@@ -95,7 +95,7 @@ test('a near address reads "附近"; a far one says how far, or only the distric
   expect(describePlace(terminal, [])).toBeNull();
 });
 
-test('lookups run one at a time and cache the shared address', async () => {
+test('one place is asked once and its address cached', async () => {
   const native = {
     reverseGeocode: jest.fn(async () => JSON.stringify(nearDog4)),
   };
@@ -224,7 +224,7 @@ test('invalid points never reach native; movement within 50 m reuses the anchore
   expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
 });
 
-test('queue serializes distinct points; export preserves order and duplicate points', async () => {
+test('with one at a time the queue serializes distinct points; export preserves order and duplicate points', async () => {
   let finish;
   const native = {
     reverseGeocode: jest
@@ -237,7 +237,7 @@ test('queue serializes distinct points; export preserves order and duplicate poi
       )
       .mockResolvedValue('[]'),
   };
-  const lookup = createAddressLookup({ native });
+  const lookup = createAddressLookup({ native, config: { ...ADDRESS_CONFIG, parallel: 1 } });
   const far = { latitude: 24, longitude: 120 };
   const exported = lookup.lookupAddresses([DOG_4, far, DOG_4]);
   await flush();
@@ -251,25 +251,92 @@ test('queue serializes distinct points; export preserves order and duplicate poi
   expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
 });
 
-test('export caps waiting at five seconds, including connectivity checks', async () => {
+// 2026-10-14: one at a time, a busy day's 16 stays took 70 s on the emulator.
+test('three places are asked at once; the fourth waits its turn (still pending)', async () => {
+  const answers = [];
+  const native = { reverseGeocode: jest.fn((latitude, longitude) => new Promise(resolve =>
+    answers.push(() => resolve(JSON.stringify([{ latitude, longitude, line: '桃園市桃園區示範路1號' }]))))) };
+  const lookup = createAddressLookup({ native });
+  const places = [0, 1, 2, 3].map(index => ({ latitude: 25 + index * 0.01, longitude: 121 }));
+  places.forEach(place => expect(lookup.lookup(place)).toBeUndefined());
+  await flush();
+  expect(native.reverseGeocode).toHaveBeenCalledTimes(3);
+  answers[1]();
+  await flush();
+  expect(lookup.lookup(places[1])).toBe('桃園區示範路 1 號附近');
+  expect(lookup.lookup(places[3])).toBeUndefined();
+  expect(native.reverseGeocode).toHaveBeenCalledTimes(4);
+});
+
+test('a place that times out takes the places still waiting with it; asked again, a place stays null', async () => {
   jest.useFakeTimers();
   try {
     const native = { reverseGeocode: jest.fn(() => new Promise(() => {})) };
-    const lookup = createAddressLookup({ native });
-    const exported = lookup.lookupAddresses([DOG_4], { timeoutMs: 20000 });
-    await jest.advanceTimersByTimeAsync(5000);
-    await expect(exported).resolves.toEqual([null]);
-    await jest.advanceTimersByTimeAsync(10000);
+    const lookup = createAddressLookup({ native, config: { ...ADDRESS_CONFIG, parallel: 1 } });
+    const OTHER = { latitude: 25.1, longitude: 121.3 };
+    expect(lookup.lookup(DOG_4)).toBeUndefined();
+    expect(lookup.lookup(OTHER)).toBeUndefined();
+    await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.timeoutMs - 1);
+    expect(lookup.lookup(OTHER)).toBeUndefined();
+    await jest.advanceTimersByTimeAsync(1);
+    // Only DOG_4 was asked; OTHER, still waiting, falls back at the same time.
+    expect(native.reverseGeocode).toHaveBeenCalledTimes(1);
+    expect([lookup.lookup(DOG_4), lookup.lookup(OTHER)]).toEqual([null, null]);
+    // A minute on it is asked again, and reads null (not 'still asking') meanwhile.
+    await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.retryAfterMs);
     expect(lookup.lookup(DOG_4)).toBeNull();
+    await jest.advanceTimersByTimeAsync(1);
+    expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
+    expect(lookup.lookup(DOG_4)).toBeNull();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('export waits past 5 s for places still being asked, and ends with a geocoder that never answers', async () => {
+  jest.useFakeTimers();
+  try {
+    // A slow geocoder (8 s): the export still gets the address.
+    let answer;
+    const slow = createAddressLookup({ native: { reverseGeocode: jest.fn(() => new Promise(resolve => {
+      answer = resolve;
+    })) } });
+    let done = null;
+    slow.lookupAddresses([DOG_4]).then(result => { done = result; });
+    await jest.advanceTimersByTimeAsync(8000);
+    expect(done).toBeNull();
+    answer(JSON.stringify(nearDog4));
+    await jest.advanceTimersByTimeAsync(1);
+    expect(done).toEqual(['蘆竹區大竹北路 630 巷 21 號附近']);
+    // Never answers: the place times out (15 s), the export ends with null.
+    const native = { reverseGeocode: jest.fn(() => new Promise(() => {})) };
+    const lookup = createAddressLookup({ native });
+    const exported = lookup.lookupAddresses([DOG_4]);
+    await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.timeoutMs);
+    await expect(exported).resolves.toEqual([null]);
+    // A connectivity check that never answers: at most exportWaitMs (20 s).
     const stuck = createAddressLookup({
       native: { ...native, isOnline: () => new Promise(() => {}) },
     });
     const pending = stuck.lookupAddresses([DOG_4]);
-    await jest.advanceTimersByTimeAsync(5000);
+    await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.exportWaitMs);
     await expect(pending).resolves.toEqual([null]);
   } finally {
     jest.useRealTimers();
   }
+});
+
+test('export reads a place the list already named from the cache, and a recent miss without asking', async () => {
+  const native = { reverseGeocode: jest.fn().mockResolvedValueOnce(JSON.stringify(nearDog4)).mockResolvedValue('[]') };
+  const lookup = createAddressLookup({ native });
+  const far = { latitude: 24, longitude: 120 };
+  lookup.lookup(DOG_4);
+  lookup.lookup(far);
+  await flush();
+  await flush();
+  expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
+  await expect(lookup.lookupAddresses([DOG_4, far])).resolves.toEqual(['蘆竹區大竹北路 630 巷 21 號附近', null]);
+  expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
 });
 
 test('offline export uses persistent labels immediately and never geocodes', async () => {
@@ -429,9 +496,10 @@ test('offline the geocoder is not asked; reopening the card asks again at once (
   expect(native.reverseGeocode).not.toHaveBeenCalled();
   expect(lookup.lookup(DOG_4)).toBeNull();
   online = true;
-  // Within the minute a plain look keeps the miss; the card opening retries.
+  // Within the minute a plain look keeps the miss; the card opening retries
+  // (still null while it is asked again).
   expect(lookup.lookup(DOG_4)).toBeNull();
-  expect(lookup.lookup(DOG_4, { retry: true })).toBeUndefined();
+  expect(lookup.lookup(DOG_4, { retry: true })).toBeNull();
   await flush();
   await flush();
   expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
