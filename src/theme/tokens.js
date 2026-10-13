@@ -303,8 +303,9 @@ export const size = {
     maxAvatars: 3,
     problemBorder: border.strong,
 
-    // Width of the outward-pointing edge-hint arrow (§15).
-    arrow: 10,
+    // The arrow pointing at the hint's dogs (the card's direction arrow,
+    // turned to one of eight directions; §9.6, §15).
+    arrow: 16,
   },
   card: {
     avatar: 40,

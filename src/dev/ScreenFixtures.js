@@ -799,6 +799,32 @@ const FIXTURES = {
       ],
     };
   },
+  // Like dogs-offscreen, but a cloud dog about 2 km off in each of the eight
+  // directions (north at the top): 小黑 north, 阿福 north-east (40 minutes
+  // old: red frame), dog 12 east-north-east (30° above east), dog 9 east, dog
+  // 5 south-east, dog 3 south, dog 2 south-west, dog 10 west, dogs 11 and 13
+  // north-west. 豆豆 walks beside the phone, which the first view frames.
+  'dogs-offscreen-8way': now => {
+    const away = (slave, north, east) => series(cloudRow, now, { slave, from: 10 * MINUTE,
+      to: 20 * SECOND, every: 15 * SECOND, start: [north, east], step: [0.02, 0.02] });
+    return {
+      receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+      ble: dog4Ble(now),
+      cloudRows: [
+        ...away(6, 185, 5),
+        ...series(cloudRow, now, { slave: 8, from: 50 * MINUTE, to: 40 * MINUTE, every: 15 * SECOND,
+          start: [170, 185], step: [0.02, 0] }),
+        ...away(12, 100, 185),
+        ...away(9, 5, 195),
+        ...away(5, -170, 185),
+        ...away(3, -190, 0),
+        ...away(2, -170, -185),
+        ...away(10, 0, -195),
+        ...away(11, 170, -185),
+        ...away(13, 160, -195),
+      ],
+    };
+  },
   // 豆豆 and dog 5 on receiver 7 near the handler; 阿福's last position came
   // from the cloud 26 hours ago, about 10 km south-west. The first view frames
   // the local dogs and the phone only (阿福 shows as an edge hint); 框住全部
