@@ -8,6 +8,8 @@ import { buildFixture } from '../src/dev/ScreenFixtures';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import { historyCoverage } from '../src/cloud/HistoryCoverage';
 import { dayBounds, dayKey } from '../src/history/screen/HistoryScreenDates';
+import { ScrollView } from 'react-native';
+import HistoryScreen from '../src/mapHistory/HistoryScreen';
 
 // Another day than today, as opened with ‹ › or the calendar: an archive
 // publish only moves the global data revision (it added today's rows), the
@@ -210,4 +212,67 @@ test('opening a day the proof leaves incomplete goes from reading straight to th
     expect(kinds.slice(0, kinds.indexOf('downloading')).every(kind => kind === 'reading')).toBe(true);
     expect(kinds).not.toContain('unfinished');
   } finally { await act(async () => renderer.unmount()); }
+});
+
+// Device 0.3.179: blank → 「下載 10/13 的紀錄…」 → skeleton alone → content
+// read as three loading screens. Now: the skeleton from the first frame, the
+// download line on it until the downloaded day is shown, then the content.
+test('a dog day download: skeleton from the first frame, the download line stays until the content', async () => {
+  const fixture = buildFixture('history-dog');
+  const day = dayKey(new Date(fixture.now)), bounds = dayBounds(day);
+  const dog = historyTargetOf(fixture.history.preferences).slaveId;
+  let proof = [];
+  const finish = deferred();
+  const cloud = { owner: 'owner-a', coverageRequired: true, downloadStates: async () => proof,
+    download: jest.fn(async () => { await finish.promise;
+      proof = [{ slave_id: dog, day, complete: 1, ...historyCoverage(bounds.dayStart, bounds.dayEnd, fixture.now) }]; }) };
+  const frames = [];
+  let screen, renderer;
+  const has = id => renderer.root.findAll(node => node.props.testID === id).length > 0;
+  function Probe() {
+    screen = useHistoryScreen({ target: historyTargetOf(fixture.history.preferences), owner: 'owner-a', cloud,
+      read: fixture.history.readDay, readDays: fixture.history.readDays, clock: () => fixture.now, memoryScope: 'three-screens' });
+    return <HistoryScreen screen={screen} top={24} bottomInset={0} name="QA" />;
+  }
+  const record = () => frames.push(has('history-skeleton') ? (has('history-downloading') ? 'download' : 'skeleton')
+    : screen.model ? 'content' : 'blank');
+  try {
+    act(() => { renderer = Renderer.create(<Probe />); });
+    // The very first commit, before any read or timer.
+    record();
+    await act(async () => { await Promise.resolve(); });
+    record();
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    record();
+    await act(async () => finish.resolve());
+    for (let i = 0; i < 5 && !screen.model; i++) { record(); await act(async () => { await Promise.resolve(); }); }
+    record();
+    expect(screen.model).not.toBeNull();
+    const seen = frames.filter((frame, i) => frame !== frames[i - 1]);
+    expect(seen[0]).toBe('skeleton');
+    expect(seen).not.toContain('blank');
+    // Once the line is shown it stays until the content.
+    expect(seen.slice(seen.indexOf('download'))).toEqual(['download', 'content']);
+  } finally { finish.resolve(); await act(async () => renderer.unmount()); }
+});
+
+test('another day starts its list at the top', async () => {
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => {});
+  const fixture = buildFixture('history-dog');
+  let screen, renderer;
+  function Probe() {
+    screen = useHistoryScreen({ target: historyTargetOf(fixture.history.preferences), read: fixture.history.readDay,
+      readDays: fixture.history.readDays, clock: () => fixture.now, memoryScope: 'scroll-top' });
+    return <HistoryScreen screen={screen} top={24} bottomInset={0} name="QA" />;
+  }
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    expect(screen.model).not.toBeNull();
+    scrollTo.mockClear();
+    await act(async () => screen.changeDay(screen.day - DAY_MS));
+    expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: false });
+    scrollTo.mockClear();
+    await act(async () => renderer.update(<Probe />));
+    expect(scrollTo).not.toHaveBeenCalled();
+  } finally { scrollTo.mockRestore(); await act(async () => renderer.unmount()); }
 });

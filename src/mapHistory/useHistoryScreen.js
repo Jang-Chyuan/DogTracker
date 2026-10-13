@@ -1039,7 +1039,16 @@ export function useHistoryScreen({
   // A retained view's own background tail is not a user-visible download;
   // its failure/cancel still shows the incomplete notice and retry.
   // The download the effect is about to start counts as started.
-  const shownDownload = tailDue ? { day: shownKey, status: 'downloading' } : cloudDays.download;
+  // A finished download stays 「下載 … 的紀錄」 until the day it downloaded is
+  // shown: its rows are read again, and a skeleton without the line in
+  // between read as one more loading screen (device, 0.3.179).
+  // Only until that first showing: a later re-read is not this download.
+  const finishedShown = useRef(null);
+  const finished = cloudDays.download?.day === shownKey && cloudDays.download.status === 'done' ? cloudDays.download : null;
+  if (finished && dayModel) finishedShown.current = finished;
+  const finishing = !!finished && finishedShown.current !== finished
+    && coverageReady && !dayModel && !slots.some(slot => slot.error);
+  const shownDownload = tailDue || finishing ? { day: shownKey, status: 'downloading' } : cloudDays.download;
   const quietTail = !!retained && !(tailDue ? tailDue.explicit : explicitTail.current) && shownDownload?.day === shownKey
     && shownDownload.status === 'downloading';
   const download = quietTail ? null : downloadPanel(shownDownload?.status === 'done' && !coverageReady ? null : shownDownload, {
