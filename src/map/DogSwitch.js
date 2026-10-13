@@ -1,32 +1,28 @@
 // Switching dogs from the open card (DESIGN.md「摘要卡片」「換狗」, 2026-10-13
-// option B): ‹ › beside 看軌跡, a horizontal swipe on the card, and TalkBack's
-// 下一隻／上一隻 actions all step through one order. Pure: MapScreen keeps the
-// order taken when the card opened and DogCard reads the gestures.
+// option B): the card's ‹ ›, a horizontal swipe on the card, and TalkBack's
+// 下一隻／上一隻 actions all step through one order of every dog on the map.
+// Pure: MapScreen keeps the order taken when the card opened and DogCard
+// reads the gestures.
 //
-// - The order is the edge hints' stable one (EdgeHints.compareDogOrder: the
-//   open dog, dogs with a problem, then by signal-source number), taken once
+// - The order is DogOrder.compareDogOrder (the open dog, dogs with a
+//   problem, then by signal-source number), taken once
 //   when a card opens, so stepping never reshuffles it (a dog getting a
 //   problem meanwhile does not jump the queue).
-// - Opened from a 「N 隻」 tag: that group's dogs first, then the rest.
 // - It wraps around: › on the last dog goes to the first.
-import { compareDogOrder } from './EdgeHints';
+import { compareDogOrder } from './DogOrder';
 
 /**
- * The dogs in switching order.
+ * Every drawn dog in switching order (however the card was opened: a dog, a
+ * 「N 隻」 tag, a notification).
  * @param markers the drawn dogs (DogMarkers.dogMarkers: slaveId, problem)
  * @param openId the dog whose card is opening
- * @param group the slaveIds of the 「N 隻」 tag it was opened from, or null
  * @returns slaveIds, `openId` first
  */
-export function switchOrder(markers = [], openId, group = null) {
-  const inGroup = new Set(group?.length > 1 ? group : []);
-  const sorted = markers
+export function switchOrder(markers = [], openId) {
+  return markers
     .map(marker => ({ slaveId: marker.slaveId, problem: !!marker.problem, selected: marker.slaveId === openId }))
-    .sort(compareDogOrder);
-  return [
-    ...sorted.filter(item => inGroup.has(item.slaveId)),
-    ...sorted.filter(item => !inGroup.has(item.slaveId)),
-  ].map(item => item.slaveId);
+    .sort(compareDogOrder)
+    .map(item => item.slaveId);
 }
 
 /**
@@ -47,12 +43,6 @@ export function switchTarget(order = [], currentId, step) {
   const index = order.indexOf(currentId);
   if (index < 0) return order[step > 0 ? 0 : order.length - 1];
   return order[(((index + Math.sign(step)) % order.length) + order.length) % order.length];
-}
-
-/** Where `currentId` is in the order: { index (1-based), count }. */
-export function switchPosition(order = [], currentId) {
-  const index = order.indexOf(currentId);
-  return { index: index < 0 ? 0 : index + 1, count: order.length };
 }
 
 // ---- the swipe on the card ---------------------------------------------

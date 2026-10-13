@@ -864,7 +864,7 @@ const FIXTURES = {
   // Six dogs on receiver 7: 豆豆, 小黑 and 阿福 walking together (one 「3 隻」
   // tag, 阿福 at 12% so it has the red 「!」), 狗 5, 狗 9 and 狗 12 on their own.
   // 豆豆's card is open: ‹ › step through all six (豆豆, 阿福 (problem), then
-  // 5, 6, 9, 12), 「第 1 隻，共 6 隻」 for TalkBack.
+  // 5, 6, 9, 12, then 豆豆 again).
   'card-switch': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
@@ -878,9 +878,6 @@ const FIXTURES = {
     ]),
     cloudRows: [],
   }),
-  // The same six dogs, the card opened from the 「3 隻」 tag (on 阿福, the
-  // lowest face): the group first (阿福, 豆豆, 小黑), then 5, 9, 12.
-  'card-switch-group': now => ({ ...FIXTURES['card-switch'](now), openDog: 8, openGroup: [4, 6, 8] }),
   // ---- the activity page (057, design A4) ------------------------------
   // 小黑's card only (A3): tap 活動量 to open A4 on 今天 with the same reads.
   'activity-card': now => ({ ...activityPage(now, null, {}), openPage: null }),
@@ -1626,7 +1623,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   const make = FIXTURES[name];
   if (!make) return null;
   nextId = 1;
-  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openGroup = null, openPage = null, avatars = {},
+  const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
@@ -1752,8 +1749,6 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     dogAliases: ALIASES,
     // card-* states open this dog's card; dog-edit its page (A5) too.
     openDog,
-    // card-switch-group: opened from the 「N 隻」 tag of these dogs.
-    openGroup,
     openPage,
     // Faces by collar number (useDogAvatars' avatars); the default otherwise.
     avatars,

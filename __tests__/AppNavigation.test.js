@@ -614,8 +614,8 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
   expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
 });
-test('the card switches dogs: a 「3 隻」 group first, then the rest, wrapping; each step brings the map to that dog', async () => {
-  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=card-switch-group');
+test('the card switches through every dog, wrapping; each step centres the map on that dog', async () => {
+  Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=card-switch');
   let emit;
   Linking.addEventListener.mockImplementationOnce((_, handler) => {
     emit = handler;
@@ -623,47 +623,41 @@ test('the card switches dogs: a 「3 隻」 group first, then the rest, wrapping
   });
   await mount();
   await advance(1000);
-  const identity = () => renderer.root.find(node => node.props.testID === 'dog-card-identity' && node.props.accessible)
-    .props.accessibilityLabel;
+  const identityNode = () => renderer.root.find(node => node.props.testID === 'dog-card-identity' && node.props.accessible);
+  const identity = () => identityNode().props.accessibilityLabel;
   const card = () => renderer.root.findAll(node => node.props.testID === 'dog-card' && node.props.onLayout)[0];
   const map = () => renderer.root.findAll(node => node.props.focusDog !== undefined && node.props.presentation, { deep: true })[0];
   // The card has its height (the map is asked to move once it has).
   await act(async () => card().props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
   await advance(100);
-  expect(identity()).toBe('阿福，訊號源 8，第 1 隻，共 6 隻');
+  // Name and 訊號源 only: no place in the order.
+  expect(identity()).toBe('豆豆，訊號源 4');
   const step = async id => {
     await act(async () => row(id).props.onPress());
     await advance(100);
   };
-  // 阿福 carries the tag: 豆豆 and 小黑 come next, then 狗 5, 9, 12.
+  // 豆豆 is open, 阿福 has a problem, then by number; all six, then round.
   const seen = [];
+  const keys = new Set();
   for (let index = 0; index < 6; index += 1) {
     await step('dog-card-next');
     seen.push(identity().split('，')[0]);
     const shown = map().props;
     const selected = shown.presentation.dogMarkers.find(marker => marker.selected);
-    // On top of the others, and the map asked (once) to bring it into view.
+    // On top of the others, and the map always asked to centre it.
     expect(selected.name).toBe(seen[index]);
-    expect(shown.focusDog.coordinate).toEqual(selected.coordinate);
+    expect(shown.focusDog).toMatchObject({ coordinate: selected.coordinate, always: true });
+    keys.add(shown.focusDog.key);
   }
-  expect(seen).toEqual(['豆豆', '小黑', '狗 5', '狗 9', '狗 12', '阿福']);
-  const keys = new Set();
+  expect(seen).toEqual(['阿福', '狗 5', '小黑', '狗 9', '狗 12', '豆豆']);
+  expect(keys.size).toBe(6);
   await step('dog-card-previous');
-  keys.add(map().props.focusDog.key);
-  expect(identity()).toBe('狗 12，訊號源 12，第 6 隻，共 6 隻');
+  expect(identity()).toBe('狗 12，訊號源 12');
   // TalkBack's 上一隻 on the name goes the same way; the card stays (no new rise).
-  await act(async () => renderer.root.find(node => node.props.testID === 'dog-card-identity' && node.props.accessible)
-    .props.onAccessibilityAction({ nativeEvent: { actionName: 'previous' } }));
+  await act(async () => identityNode().props.onAccessibilityAction({ nativeEvent: { actionName: 'previous' } }));
   await advance(100);
-  keys.add(map().props.focusDog.key);
-  expect(identity()).toBe('狗 9，訊號源 9，第 5 隻，共 6 隻');
-  expect(keys.size).toBe(2);
-  // Opened from the dog itself (not the tag), all six in the plain order.
-  await act(async () => emit({ url: 'dogtracker://dev/fixture?name=card-switch' }));
-  await advance(1000);
-  expect(identity()).toBe('豆豆，訊號源 4，第 1 隻，共 6 隻');
-  await step('dog-card-next');
-  expect(identity()).toBe('阿福，訊號源 8，第 2 隻，共 6 隻');
+  expect(identity()).toBe('狗 9，訊號源 9');
+  expect(map().props.focusDog.always).toBe(true);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 

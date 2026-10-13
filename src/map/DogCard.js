@@ -3,8 +3,8 @@ import { t } from '../i18n';
 // 狀態列」): it rises from the bottom when a dog is tapped and replaces the old
 // dog list, follow button and dog panel. No ✕: it closes by swiping it down,
 // tapping empty map, or the back key. With more than one dog on the map, ‹ ›
-// beside 看軌跡, a sideways swipe and TalkBack's 下一隻／上一隻 switch to the
-// next or previous dog (DogSwitch). It only draws DogCardModel.dogCard().
+// in the grab handle's row, a sideways swipe and TalkBack's 下一隻／上一隻
+// switch to the next or previous dog (DogSwitch). It only draws DogCardModel.dogCard().
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import {
   forwardRef,
@@ -187,23 +187,23 @@ const clock = at => {
 };
 
 /**
- * ‹ or › (DESIGN.md「摘要卡片」換狗): a 56dp outlined circle level with 看軌跡,
- * labelled with the dog it goes to (「下一隻：小黑」).
+ * ‹ or › (DESIGN.md「摘要卡片」換狗): a 48dp target at either end of the grab
+ * handle's row, labelled with the dog it goes to (「下一隻：小黑」).
  */
 function SwitchButton({ step, target, onStep }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const next = step > 0;
   return (
-    <PressScale
+    <Pressable
       testID={next ? 'dog-card-next' : 'dog-card-previous'}
       accessibilityRole="button"
       accessibilityLabel={next ? t('c1293', { name: target }) : t('c1294', { name: target })}
       onPress={() => onStep(step)}
-      style={styles.switchButton}
+      style={({ pressed }) => [styles.switchButton, pressed && styles.pressed]}
     >
       <Glyph name={next ? 'chevron' : 'back'} color={colors.text} size={sizes.card.switchIcon} />
-    </PressScale>
+    </Pressable>
   );
 }
 
@@ -294,7 +294,7 @@ const DogCard = forwardRef(function DogCard(
   useEffect(() => {
     if (shownDog.current === card.slaveId) return;
     shownDog.current = card.slaveId;
-    AccessibilityInfo.announceForAccessibility?.(identitySpeech(card, switcher));
+    AccessibilityInfo.announceForAccessibility?.(identitySpeech(card));
     // Only a new dog is announced, not every reading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.slaveId]);
@@ -433,14 +433,24 @@ const DogCard = forwardRef(function DogCard(
         !height && styles.unmeasured,
       ]}
     >
-      <View style={styles.handle} accessible={false} />
+      {switcher ? (
+        // ‹ ━ ›: the card's own chrome, where its gestures (down: close,
+        // sideways: switch) are; clear of the pencil's row below.
+        <View style={styles.handleRow}>
+          <SwitchButton step={-1} target={switcher.previous} onStep={switcher.onStep} />
+          <View style={[styles.handle, styles.handleInRow]} accessible={false} />
+          <SwitchButton step={1} target={switcher.next} onStep={switcher.onStep} />
+        </View>
+      ) : (
+        <View style={styles.handle} accessible={false} />
+      )}
       <View style={styles.header}>
         {/* One TalkBack item for who this is, carrying 下一隻／上一隻. */}
         <View
           style={styles.identity}
           testID="dog-card-identity"
           accessible
-          accessibilityLabel={identitySpeech(card, switcher)}
+          accessibilityLabel={identitySpeech(card)}
           accessibilityActions={switcher ? SWITCH_ACTIONS : undefined}
           onAccessibilityAction={
             switcher
@@ -500,27 +510,17 @@ const DogCard = forwardRef(function DogCard(
           ))}
         </View>
       </ScrollView>
-      <View style={styles.bottom}>
-        {switcher && (
-          <SwitchButton step={-1} target={switcher.previous} onStep={switcher.onStep} />
-        )}
-        <View style={styles.trackSlot}>
-          <PressScale
-            testID="dog-card-track"
-            accessibilityRole="button"
-            accessibilityLabel={t('c071')}
-            accessibilityState={{ disabled: trackBusy }}
-            disabled={trackBusy}
-            onPress={onTrack}
-            style={styles.track}
-          >
-            <Text style={styles.trackText}>{t('c071')}</Text>
-          </PressScale>
-        </View>
-        {switcher && (
-          <SwitchButton step={1} target={switcher.next} onStep={switcher.onStep} />
-        )}
-      </View>
+      <PressScale
+        testID="dog-card-track"
+        accessibilityRole="button"
+        accessibilityLabel={t('c071')}
+        accessibilityState={{ disabled: trackBusy }}
+        disabled={trackBusy}
+        onPress={onTrack}
+        style={styles.track}
+      >
+        <Text style={styles.trackText}>{t('c071')}</Text>
+      </PressScale>
     </Animated.View>
   );
 });
@@ -533,11 +533,9 @@ const SWITCH_ACTIONS = [
   { name: 'previous', label: t('c1292') },
 ];
 
-/** 「豆豆，訊號源 4，第 1 隻，共 3 隻」 (just 「豆豆，訊號源 4」 for a lone dog). */
-function identitySpeech(card, switcher) {
-  return switcher
-    ? t('c1295', { name: card.name, source: card.sourceLabel, index: switcher.index, count: switcher.count })
-    : t('c1296', { name: card.name, source: card.sourceLabel });
+/** 「豆豆，訊號源 4」: who the card is about (no place in the order). */
+function identitySpeech(card) {
+  return t('c1296', { name: card.name, source: card.sourceLabel });
 }
 
 const getStyles = makeStyles(theme => {
@@ -640,14 +638,8 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
       marginTop: space.xs,
     },
-    bottom: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.s,
-      marginTop: space.m,
-    },
-    trackSlot: { flex: 1 },
     track: {
+      marginTop: space.m,
       minHeight: touch.primary,
       paddingVertical: space.s,
       borderRadius: radius.button,
@@ -655,16 +647,22 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // ‹ › in the grab handle's row: 48dp, the icon level with the content's edge.
     switchButton: {
-      width: touch.primary,
-      height: touch.primary,
+      width: touch.min,
+      height: touch.min,
       borderRadius: radius.full,
-      borderWidth: border.regular,
-      borderColor: colors.line,
-      backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',
     },
+    handleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      minHeight: touch.min,
+      marginHorizontal: -space.m,
+    },
+    handleInRow: { marginTop: 0, marginBottom: 0 },
     trackText: { ...type.status, color: colors.tonalText },
     pressed: { backgroundColor: colors.pressedOverlay },
   });

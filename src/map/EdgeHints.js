@@ -26,16 +26,6 @@ const plusWidth = extra => (extra > 0 ? GAP + 9 * String(`+${extra}`).length : 0
 
 const SIDE_WORD = { left: t("c749"), right: t("c750"), top: t("c751"), bottom: t("c746") };
 
-/**
- * The one stable order of dogs (§9.6, #139): the open dog first, then dogs
- * with a problem (their faces carry the red frame), then by signal-source
- * number. Not by distance or screen position, which change with every camera
- * move. The card's ‹ › switch uses it too (DogSwitch.switchOrder).
- */
-export const compareDogOrder = (left, right) => Number(!!right.selected) - Number(!!left.selected)
-  || Number(!!right.problem) - Number(!!left.problem)
-  || left.slaveId - right.slaveId;
-
 /** The hint's width for `count` faces and `extra` more dogs. */
 export function edgeHintWidth(count, extra = 0) {
   const faces = count > 0 ? hint.avatar + (count - 1) * (hint.avatar - hint.overlap) : 0;
@@ -139,7 +129,9 @@ export function edgeHints(markers = [], points = {}, { width, height, top = 0, b
     // The open dog first, then problems (their faces carry the red frame),
     // then by signal-source number. Not by distance: that changes with every
     // camera move, and the faces swapped places between renders.
-    const ordered = [...items].sort((left, right) => compareDogOrder(left.marker, right.marker));
+    const ordered = [...items].sort((left, right) => Number(!!right.marker.selected) - Number(!!left.marker.selected)
+      || Number(right.marker.problem) - Number(left.marker.problem)
+      || left.marker.slaveId - right.marker.slaveId);
     const faces = ordered.slice(0, hint.maxAvatars).map(item => item.marker);
     const extra = ordered.length - faces.length;
     const hintWidth = edgeHintWidth(faces.length, extra);

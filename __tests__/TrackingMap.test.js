@@ -718,15 +718,6 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
     const groups = renderer.root.findAll(node => node.props.testID === 'dog-group-tag' && typeof node.type === 'string');
     expect(groups).toHaveLength(1);
     expect(groups[0].findByType(require('react-native').Text).props.children).toBe('3 隻');
-    // The face carrying 「3 隻」 opens its card with the group, so ‹ › go
-    // through those three first (DogSwitch); any other face opens alone.
-    const carrier = faces.find(face => face.findAll(node => node.props.testID === 'dog-group-tag'
-      && typeof node.type === 'string').length);
-    const carrierId = Number(carrier.props.identifier.replace('real-dog-', ''));
-    await act(async () => carrier.props.onPress());
-    expect(onDogPress).toHaveBeenLastCalledWith(carrierId, { group: expect.arrayContaining([4, 6, 8]) });
-    expect(onDogPress.mock.lastCall[1].group).toHaveLength(3);
-    expect(carrierId).not.toBe(6);
     await act(async () => faces.find(face => face.props.identifier === 'real-dog-6').props.onPress());
     expect(onDogPress).toHaveBeenLastCalledWith(6);
     const a11y = renderer.root.findAll(node => /^marker-a11y-\d+$/.test(node.props.testID || '')
@@ -876,6 +867,14 @@ test('a dog whose card opens is moved into view once, only when the card or an e
     point = { x: 200, y: 250 };
     await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 2, coordinate }} />));
     expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
+    // A dog switched to from the card (‹ ›, swipe) always comes to the middle
+    // of what the card leaves (y 300), even in view; only the centre is set,
+    // so the zoom stays the user's.
+    await act(async () => renderer.update(<TrackingMap {...defaults} {...props}
+      focusDog={{ key: 3, coordinate, always: true }} />));
+    expect(mockCamera.animateCamera).toHaveBeenCalledTimes(2);
+    expect(mockCamera.coordinateForPoint).toHaveBeenLastCalledWith({ x: 200, y: 360 });
+    expect(Object.keys(mockCamera.animateCamera.mock.calls[1][0])).toEqual(['center']);
     // The buttons sit above the card.
     expect(renderer.root.findByProps({ testID: 'map-frame-all' })).toBeDefined();
   } finally {
@@ -1031,12 +1030,11 @@ test('dog A then dog B within the hold: a map-only tap on B outside A\'s marker 
     await act(async () => six.props.onPress());
     // Google's duplicate of the same touch is still dropped.
     await act(async () => mapHit(sixY));
-    // 6 is the lower face, carrying the 「2 隻」 tag: its card gets the group.
-    expect(onDogPress.mock.calls).toEqual([[6, { group: [5, 6] }]]);
+    expect(onDogPress.mock.calls).toEqual([[6]]);
     // 100 ms later, well inside 2 × MAP_TAP_HOLD_MS, dog 5 reported only as a map tap.
     await act(async () => jest.advanceTimersByTime(100));
     await act(async () => mapHit(fiveY));
-    expect(onDogPress.mock.calls).toEqual([[6, { group: [5, 6] }], [5]]);
+    expect(onDogPress.mock.calls).toEqual([[6], [5]]);
     await act(async () => jest.advanceTimersByTime(600));
     expect(onMapPress).not.toHaveBeenCalled();
   } finally { delete mockCamera.pointForCoordinate; }

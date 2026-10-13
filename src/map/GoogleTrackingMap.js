@@ -1325,8 +1325,9 @@ function GoogleTrackingMapRenderer({
         const box = point && markerBox(selected || { name: '', size: sizes.marker.attention }, point, fontScale);
         const occluded = box && [...mapControlBoxes({ width, height, bottom: overlayBottom, bottomRow }), ...hints.map(hintBox)]
           .some(other => boxesOverlap(box, other));
+        // A dog switched to from the card always comes to the middle.
         const hidden =
-          !point || occluded ||
+          focusDog.always || !point || occluded ||
           point.x < margin ||
           point.x > width - margin ||
           point.y < overlayTop + margin ||
@@ -1666,11 +1667,7 @@ function GoogleTrackingMapRenderer({
     lastDogPress.current = Date.now();
     lastDogId.current = slaveId;
     clearTimeout(mapPressTimer.current);
-    // The dog carrying a 「N 隻」 tag: its card switches through that group's
-    // dogs first (DogSwitch.switchOrder).
-    const tag = tags[slaveId];
-    if (tag?.group > 1) onDogPress?.(slaveId, { group: tag.members });
-    else onDogPress?.(slaveId);
+    onDogPress?.(slaveId);
   };
   // Whether `tap` (dp) falls inside the full marker bitmap (face plus name
   // tag canvas) of the dog last opened by a marker tap; unknown counts as inside.

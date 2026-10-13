@@ -1,11 +1,12 @@
 // Switching dogs from the open card (DESIGN.md「摘要卡片」換狗, 2026-10-13
-// option B): ‹ › beside 看軌跡, a sideways swipe, TalkBack's 下一隻／上一隻.
+// option B): ‹ › in the grab handle's row, a sideways swipe, TalkBack's
+// 下一隻／上一隻; every dog on the map, in one stable order.
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, PanResponder, StyleSheet } from 'react-native';
 import DogCard from '../src/map/DogCard';
 import { dogCard } from '../src/map/DogCardModel';
-import { compareDogOrder, edgeHints } from '../src/map/EdgeHints';
+import { compareDogOrder } from '../src/map/DogOrder';
 import {
   SWIPE_DISTANCE,
   SWIPE_MIN_FLING,
@@ -14,7 +15,6 @@ import {
   liveSwitchOrder,
   swipeStep,
   switchOrder,
-  switchPosition,
   switchTarget,
 } from '../src/map/DogSwitch';
 import { touch } from '../src/theme/tokens';
@@ -25,23 +25,21 @@ const dog = (slaveId, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `�
 describe('the order', () => {
   const markers = [dog(12), dog(5), dog(8, { problem: true }), dog(4), dog(6, { selected: true }), dog(9)];
 
-  test('is the edge hints\' stable order: the opening dog, problems, then by signal-source number', () => {
+  test('the comparator: the open dog, then problems, then by signal-source number; never by place', () => {
+    const ids = list => [...list].sort(compareDogOrder).map(item => item.slaveId);
+    expect(ids([dog(9), dog(3, { problem: true }), dog(5, { selected: true }), dog(2)])).toEqual([5, 3, 2, 9]);
+    expect(ids([dog(12), dog(4)])).toEqual([4, 12]);
+    // A missing flag counts as false (not NaN, which would scramble the sort).
+    expect(ids([{ slaveId: 7 }, { slaveId: 6, problem: true }, { slaveId: 1 }])).toEqual([6, 1, 7]);
+  });
+
+  test('every dog, the opening one first, then problems, then by signal-source number', () => {
     // 6 was the open dog before; 4 opens now and comes first instead.
     expect(switchOrder(markers, 4)).toEqual([4, 8, 5, 6, 9, 12]);
     expect(switchOrder([...markers].reverse(), 4)).toEqual([4, 8, 5, 6, 9, 12]);
-    // The same comparator the off-screen hints sort their faces with (#139).
-    const hint = edgeHints(markers.map(marker => ({ ...marker, selected: marker.slaveId === 4 })),
-      Object.fromEntries(markers.map((marker, index) => [marker.slaveId, { x: -60 - index * 50, y: 400 }])),
-      { width: 400, height: 800, top: 80 }).find(item => item.side === 'left');
-    expect(hint.slaveIds).toEqual(switchOrder(markers, 4));
-    expect([dog(9), dog(3, { problem: true })].sort(compareDogOrder).map(item => item.slaveId)).toEqual([3, 9]);
-  });
-
-  test('opened from a 「N 隻」 tag: that group first (opening dog, then its problems, then by number), then the rest', () => {
-    expect(switchOrder(markers, 9, [12, 9, 4])).toEqual([9, 4, 12, 8, 5, 6]);
-    expect(switchOrder(markers, 6, [4, 6, 8])).toEqual([6, 8, 4, 5, 9, 12]);
-    // A 「1 隻」 group is no group.
-    expect(switchOrder(markers, 9, [9])).toEqual([9, 8, 4, 5, 6, 12]);
+    // However the card was opened (a dog, a 「N 隻」 tag, a notification):
+    // all of them, no group first.
+    expect(switchOrder(markers, 9)).toEqual([9, 8, 4, 5, 6, 12]);
   });
 
   test('steps wrap around both ways; one dog has nothing to switch to', () => {
@@ -52,8 +50,9 @@ describe('the order', () => {
     expect(switchTarget(order, 5, -1)).toBe(8);
     expect(switchTarget([4], 4, 1)).toBeNull();
     expect(switchTarget(order, 4, 0)).toBeNull();
-    expect(switchPosition(order, 5)).toEqual({ index: 3, count: 4 });
-    expect(switchPosition(order, 7)).toEqual({ index: 0, count: 4 });
+    // A dog not in the order (just drawn): next is the first, previous the last.
+    expect(switchTarget(order, 7, 1)).toBe(4);
+    expect(switchTarget(order, 7, -1)).toBe(6);
   });
 
   test('kept while stepping: a dog gone drops out, a new dog comes last, a new problem does not jump the queue', () => {
@@ -120,7 +119,7 @@ describe('the card', () => {
       .props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
     return handlers;
   }
-  const switcher = (extra = {}) => ({ index: 1, count: 6, previous: '狗 12', next: '阿福', onStep: jest.fn(), ...extra });
+  const switcher = (extra = {}) => ({ previous: '狗 12', next: '阿福', onStep: jest.fn(), ...extra });
 
   test('a lone dog: no ‹ ›, no actions, no swipe', async () => {
     await mount({ switcher: null });
@@ -131,7 +130,7 @@ describe('the card', () => {
     expect(pan.onMoveShouldSetPanResponderCapture(null, { dx: -120, dy: 0 })).toBe(false);
   });
 
-  test('‹ › flank 看軌跡: 56dp labelled buttons that step back and forth', async () => {
+  test('‹ › flank the grab handle: 48dp labelled buttons that step back and forth, 看軌跡 untouched', async () => {
     const value = switcher();
     await mount({ switcher: value });
     const next = byTestId('dog-card-next')[0];
@@ -139,24 +138,29 @@ describe('the card', () => {
     expect(next.props.accessibilityRole).toBe('button');
     expect(next.props.accessibilityLabel).toBe('下一隻：阿福');
     expect(previous.props.accessibilityLabel).toBe('上一隻：狗 12');
-    const size = node => StyleSheet.flatten(node.props.style);
-    expect(size(next)).toMatchObject({ width: touch.primary, height: touch.primary });
-    expect(touch.primary).toBeGreaterThanOrEqual(48);
-    // In the bottom row: previous, 看軌跡, next.
-    const row = renderer.root.find(node => Array.isArray(node.props.children) && node.props.children.length === 3
-      && node.findAll(child => child.props.testID === 'dog-card-track').length > 0
+    const size = node => StyleSheet.flatten(typeof node.props.style === 'function'
+      ? node.props.style({ pressed: false }) : node.props.style);
+    expect(size(next)).toMatchObject({ width: touch.min, height: touch.min });
+    expect(touch.min).toBe(48);
+    // One row: previous, the grab handle, next — above the name and pencil.
+    const rows = renderer.root.findAll(node => Array.isArray(node.props.children) && node.props.children.length === 3
+      && typeof node.type === 'string'
       && node.findAll(child => child.props.testID === 'dog-card-next').length > 0
-      && node.findAll(child => child.props.testID === 'dog-card-previous').length > 0, { deep: true });
-    expect(row).toBeTruthy();
+      && node.findAll(child => child.props.testID === 'dog-card-previous').length > 0
+      && node.findAll(child => child.props.testID === 'dog-card-edit').length === 0);
+    expect(rows.length).toBeGreaterThan(0);
+    // 看軌跡 is not in that row: nothing sits beside it.
+    expect(rows[rows.length - 1].findAll(child => child.props.testID === 'dog-card-track')).toHaveLength(0);
     await act(async () => next.props.onPress());
     await act(async () => previous.props.onPress());
     expect(value.onStep.mock.calls).toEqual([[1], [-1]]);
   });
 
-  test('TalkBack: the name carries 下一隻／上一隻 and says where in the order it is', async () => {
+  test('TalkBack: the name carries 下一隻／上一隻 and no place in the order', async () => {
     const value = switcher();
     await mount({ switcher: value });
-    expect(identity().props.accessibilityLabel).toBe('豆豆，訊號源 4，第 1 隻，共 6 隻');
+    expect(identity().props.accessibilityLabel).toBe('豆豆，訊號源 4');
+    expect(JSON.stringify(renderer.toJSON())).not.toMatch(/第 \d+ 隻|共 \d+ 隻|\d+ \/ \d+/);
     expect(identity().props.accessibilityActions).toEqual([
       { name: 'next', label: '下一隻' }, { name: 'previous', label: '上一隻' }]);
     await act(async () => identity().props.onAccessibilityAction({ nativeEvent: { actionName: 'next' } }));
@@ -170,10 +174,10 @@ describe('the card', () => {
     const handlers = await mount({ switcher: switcher() });
     expect(announce).not.toHaveBeenCalled();
     await act(async () => renderer.update(<DogCard card={model(8, '阿福')} {...handlers}
-      switcher={switcher({ index: 2, previous: '豆豆', next: '狗 5' })} />));
+      switcher={switcher({ previous: '豆豆', next: '狗 5' })} />));
     await act(async () => renderer.update(<DogCard card={model(8, '阿福')} {...handlers}
-      switcher={switcher({ index: 2, previous: '豆豆', next: '狗 5' })} />));
-    expect(announce.mock.calls).toEqual([['阿福，訊號源 8，第 2 隻，共 6 隻']]);
+      switcher={switcher({ previous: '豆豆', next: '狗 5' })} />));
+    expect(announce.mock.calls).toEqual([['阿福，訊號源 8']]);
   });
 
   test('a sideways swipe steps; a pull-down still closes; neither fights the other', async () => {
