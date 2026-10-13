@@ -18,7 +18,7 @@
 | `historyIndoorNodes(points, options)` | 室內小房子節點；使用重算後封包，不用 GPS 去重結果判斷封包缺口 |
 | `historyDeparture(points, options)` | 確認狀態、自動範圍與手動範圍；輸入完整當天過濾後點，可提供完整交通分類 |
 | `historyTimeline(rows, options)` | 整合入口：共同資料流、範圍、地點列、交通／缺口列、編號、距離與追加狀態 |
-| `countDistances(edges, config)` | 判定表「距離怎麼加」：和「上一個有算進去的點」比，超過兩筆誤差較大者（至少 5 m，缺誤差值當 10 m）才算 |
+| `countDistances(edges, config)` | 判定表「距離怎麼加」：和「上一個有算進去的點」比，超過兩筆誤差較大者（至少 5 m，缺誤差值當 10 m）才算。手機（2026-10-13）：上一個算進去的點是走路中（moving、誤差 ≤ 10 m、速度扣掉速度誤差仍 ≥ 0.5 m/s）、這一點也是 moving 且誤差 ≤ 10 m、而且這段至少走到速度加總的 0.75 時，從 2 m 起算；誤差超過 20 m 又沒有走路速度（沒有或超過 3 m/s）的「確認移動」點（室內 Wi-Fi／電梯定位），和其後同樣粗的點，在更準的一點或停住之前都不算、不移動起點；兩點都有同一次記錄的 `odometer_m`（原生每秒定位累積的路程）時，算進去的距離改用兩點的路程差，不少於直線、不多於直線 × 1.5 + 5 m 與速度預算；沒有這欄（舊資料、雲端、狗）照舊用直線 |
 | `dogHistoryRow(row, source)`, `phoneHistoryRow(row)`（`HistoryRows.js`） | `dog_status`／`supabase_dog_status`／`myLocationTracker` 的列轉成共同格式：封包時間＝手機收到的時間（雲端用 `track_at`），定位時間＝項圈的 `gps_time` |
 | `HistoryText.js` | 清單與摘要的文字（文案表 c120–c344、c1276）：時長、距離（`km` 總數；列與游標用 `utils/distanceText`）、膠囊、移動段、H8 |
 

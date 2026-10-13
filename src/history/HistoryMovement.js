@@ -128,7 +128,7 @@ export function vehiclesSettledAt(scan, edges, i, config) {
  * keeps one at the last edge that can no longer change, so a day of
  * uninterrupted walking is not added up again every poll.
  */
-export const countState = () => ({ anchor: null, budget: 0 });
+export const countState = () => ({ anchor: null, budget: 0, unproven: false });
 
 // The step's speed for the budget: the speed measured at the fix it
 // reaches; a long step (over 10 s, sparse fixes) also takes the speed it
@@ -159,22 +159,34 @@ export function countEdge(state, edge, config) {
   if (edge.mode !== 'walking' && edge.mode !== 'moving') {
     edge.countedDistanceM = 0; state.anchor = null; return;
   }
-  if (!state.anchor) { state.anchor = edge.from; state.budget = 0; }
+  if (!state.anchor) { state.anchor = edge.from; state.budget = 0; state.unproven = false; }
   if (edge.from.phoneStationary && !edge.to.phoneStationary) {
     state.anchor = edge.from; state.budget = 0;
   }
   // Confirmed phone stationarity spends no old speed budget. A missing speed
   // earlier in the run must not turn a later stationary fix into movement.
   if (edge.to.phoneStationary) {
-    edge.countedDistanceM = 0; state.anchor = edge.to; state.budget = 0; return;
+    edge.countedDistanceM = 0; state.anchor = edge.to; state.budget = 0; state.unproven = false; return;
   }
   // A break at one place (samePlaceGap) is no walk. Phone (2026-10-13): the
   // run goes on from where the phone was seen again (the place may span
   // stillPlaceM), so the drift across the break never counts later either.
   if (edge.bridged) {
     edge.countedDistanceM = 0;
-    if (config.stillMps) { state.anchor = edge.to; state.budget = 0; }
+    if (config.stillMps) { state.anchor = edge.to; state.budget = 0; state.unproven = false; }
     return;
+  }
+  // 2026-10-13: confirmed movement on a coarse fix claiming no walking
+  // speed (indoors: Wi-Fi or elevator fixes of 20–40 m at 15–27 km/h, in
+  // walking mode) is no evidence of distance. It counts nothing, spends the
+  // speed budget and leaves the anchor where it was, and so do the coarse
+  // fixes after it until a finer fix or a stop proves where the phone is. A
+  // coarse walk measuring a walking speed of its own counts as before.
+  if (state.unproven || junkDeparture(edge.to, config)) {
+    if (coarseFix(edge.to, config)) {
+      edge.countedDistanceM = 0; state.budget = 0; state.unproven = true; return;
+    }
+    state.unproven = false;
   }
   const speed = config.speedBudget && !edge.to.phoneConfirmedMovement ? stepSpeed(edge) : null;
   // A geometry-confirmed step cannot leave unlimited credit for later phone
@@ -184,14 +196,76 @@ export function countEdge(state, edge, config) {
   // Speeds under stillMps are a phone standing still (measurement noise).
   state.budget += speed == null ? Infinity : speed < config.stillMps ? 0 : speed * (edge.durationMs / 1000);
   const moved = distanceMeters(state.anchor, edge.to);
-  const threshold = Math.max(config.minMoveM, accuracyOf(state.anchor, config), accuracyOf(edge.to, config));
+  // 2026-10-13: on a walk the detector confirms — the last counted fix fine
+  // and measuring walking speed, the fix reached fine and still moving, and
+  // the move at least fineMoveProgress of what the measured speeds add up
+  // to since (a walk gets where its speed says; a phone wobbling in place
+  // does not) — a move counts from fineMoveM. Only the anchor needs the
+  // speed: the step into a stop still counts what the walk added since.
+  const fine = fineWalk(state.anchor, config) && fineFix(edge.to, config)
+    && Number.isFinite(state.budget) && moved >= state.budget * config.fineMoveProgress;
+  const threshold = fine ? config.fineMoveM
+    : Math.max(config.minMoveM, accuracyOf(state.anchor, config), accuracyOf(edge.to, config));
   // 067: indoors all day the position drifts 50–110 m for minutes while the
   // phone measures 0–1 km/h. A move the measured speeds cannot cover (half
   // again what they add up to, plus minMoveM) is drift: it neither counts
   // nor becomes the anchor.
-  if (moved > threshold && moved <= state.budget * 1.5 + config.minMoveM) {
-    edge.countedDistanceM = moved; state.anchor = edge.to; state.budget = 0;
+  const limit = state.budget * 1.5 + config.minMoveM;
+  if (moved > threshold && moved <= limit) {
+    edge.countedDistanceM = odometerStep(state.anchor, edge.to, moved, limit, config);
+    state.anchor = edge.to; state.budget = 0;
   } else edge.countedDistanceM = 0;
+}
+
+// A fix coarser than config.coarseConfirmedAccuracyM (phone only), and
+// confirmed movement on one whose own speed is none or faster than walking.
+const coarseFix = (point, config) => config.coarseConfirmedAccuracyM != null
+  && accuracyOf(point, config) > config.coarseConfirmedAccuracyM;
+function junkDeparture(point, config) {
+  if (!point.phoneConfirmedMovement || !coarseFix(point, config)) return false;
+  const speed = phoneReliableSpeed(point);
+  return speed == null || speed > config.departureMaxSpeed;
+}
+
+// A fix of a walk the phone's detector confirms (moving state) within
+// fineMoveAccuracyM (fineFix); fineWalk also measuring at least
+// fineMoveSpeedMps beyond its speed accuracy. Phone only (config.fineMoveM).
+const fineFix = (point, config) => config.fineMoveM != null && point?.phoneMotionState === 'moving'
+  && Number.isFinite(point.accuracy) && point.accuracy >= 0 && point.accuracy <= config.fineMoveAccuracyM;
+function fineWalk(point, config) {
+  if (!fineFix(point, config)) return false;
+  // The speed proven: less its own spread, when the phone gave one (a phone
+  // jiggling in a hand reads 0.55 ± 0.5 m/s).
+  const speed = phoneReliableSpeed(point), spread = point.speed_accuracy_mps;
+  const proven = speed == null ? null : Number.isFinite(spread) && spread >= 0 ? speed - spread : speed;
+  return proven != null && proven >= config.fineMoveSpeedMps;
+}
+
+/**
+ * The recorder's running distance (odometer_m: the per-second fused fixes
+ * of one recording, LocationPipeline) at a fix, or null without one.
+ */
+export function odometerAt(point) {
+  const value = point?.odometer_m;
+  if (value == null || value === '') return null;
+  const metres = Number(value);
+  return Number.isFinite(metres) && metres >= 0 ? metres : null;
+}
+
+// 2026-10-13 (user, distance): the distance a counted step adds. The chord
+// from the last counted fix (`moved`) cuts every curve and corner between
+// two saved fixes; when both carry the recorder's odometer of one session,
+// the path it measured on the per-second fixes counts instead — never less
+// than the chord, at most odometerMaxRatio times it plus minMoveM, and never
+// more than the speed budget allows (`limit`). Rows without it (older rows,
+// a dog, another session) keep the chord.
+function odometerStep(anchor, to, moved, limit, config) {
+  if (config.odometerMaxRatio == null) return moved;
+  const a = odometerAt(anchor), b = odometerAt(to);
+  if (a == null || b == null || !(b > a)) return moved;
+  if (typeof anchor.session_id !== 'string' || anchor.session_id !== to.session_id) return moved;
+  const path = Math.min(b - a, moved * config.odometerMaxRatio + config.minMoveM, limit);
+  return path > moved ? path : moved;
 }
 
 /**

@@ -231,7 +231,7 @@ class LocationTrackerService : Service(), LocationListener {
       appendLine("phone recording: started ${time.format(startedAtMs)} source=${LocationSource.label(source, null)}")
       appendLine("received=${pipeline.received} accepted=${pipeline.accepted} rejected=${pipeline.rejectedBy} " +
         "motionOnly=${pipeline.motionOnly} saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds} " +
-        "resubscribed=${resubscribe?.total ?: 0}")
+        "resubscribed=${resubscribe?.total ?: 0} odometer=${"%.1f".format(pipeline.odometerMeters)}m")
       if (latest != null) appendLine("latest fix age=${"%.1f".format((now - latest.elapsedNanos) / 1e9)}s " +
         "accuracy=${latest.accuracy}m motion=${latest.motionState}")
       appendLine("stretches without a saved row (>= 60 s):")
