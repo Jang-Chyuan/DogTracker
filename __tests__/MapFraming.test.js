@@ -1,6 +1,6 @@
 import {
-  coldStartCoordinates, frameAllCoordinates, framedCoordinates, framePadding, phoneFix, regionForFrame,
-  SINGLE_POINT_DEGREES,
+  coldStartCoordinates, frameAllCoordinates, framedCoordinates, framePadding, lastKnownPhoneFix, phoneFix,
+  regionForFrame, SINGLE_POINT_DEGREES,
 } from '../src/map/MapFraming';
 import { edgeHints, edgeHintSpeech, edgeHintWidth } from '../src/map/EdgeHints';
 
@@ -156,4 +156,20 @@ test('066: no hint for a dog the user can see (under the gear row, or half at an
   };
   const hints = edgeHints(dogs, points, view);
   expect(hints.flatMap(hint => hint.slaveIds)).toEqual([3]);
+});
+
+test('the last known phone position frames the cold start only when precise and within the same 10 minutes', () => {
+  const at = 1_000_000;
+  const known = { latitude: 24.99, longitude: 121.31, accuracy: 12, ageSeconds: 30, receivedAt: at };
+  expect(lastKnownPhoneFix(known, at)).toEqual({ latitude: 24.99, longitude: 121.31 });
+  // Age keeps counting from when it was read.
+  expect(lastKnownPhoneFix(known, at + 570_000)).toEqual({ latitude: 24.99, longitude: 121.31 });
+  expect(lastKnownPhoneFix(known, at + 571_000)).toBeNull();
+  expect(lastKnownPhoneFix({ ...known, ageSeconds: 601 }, at)).toBeNull();
+  // A coarse network guess, no accuracy, or no position: not framed.
+  expect(lastKnownPhoneFix({ ...known, accuracy: 101 }, at)).toBeNull();
+  expect(lastKnownPhoneFix({ ...known, accuracy: null }, at)).toBeNull();
+  expect(lastKnownPhoneFix({ ...known, latitude: 91 }, at)).toBeNull();
+  expect(lastKnownPhoneFix({ ...known, ageSeconds: -1 }, at)).toBeNull();
+  expect(lastKnownPhoneFix(null, at)).toBeNull();
 });
