@@ -1,9 +1,10 @@
 import { t as i18nT } from '../src/i18n';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { BackHandler, Keyboard, TextInput } from 'react-native';
+import { BackHandler, Keyboard, ScrollView, TextInput } from 'react-native';
 import DogProfile from '../src/dogs/DogProfile';
-import AvatarEditor, { NEUTRAL_TINT } from '../src/dogs/AvatarEditor';
+import AvatarPicker, { NEUTRAL_TINT } from '../src/dogs/AvatarPicker';
+import ConfirmDialog from '../src/settings/ConfirmDialog';
 import DogAvatar from '../src/dogs/DogAvatar';
 import { NAME_MAX, clampName, displayName, nameLength, nameToSave } from '../src/dogs/DogName';
 import { CROP_OPTIONS, PHOTO_SIZE, androidColor, cropOptions, pickPhoto } from '../src/dogs/PhotoAvatar';
@@ -111,7 +112,7 @@ test('no camera permission and other failures are told apart', async () => {
   expect((await pickPhoto('library', picker)).avatar.kind).toBe('photo');
 });
 
-// ---- the page (A5, A5a) -----------------------------------------------------
+// ---- the edit sheet (A5: name and face in one sheet) ------------------------
 
 let renderer, backHandlers, keyboardListeners;
 beforeEach(() => {
@@ -126,6 +127,7 @@ beforeEach(() => {
     keyboardListeners[name] = callback;
     return { remove: () => { delete keyboardListeners[name]; } };
   });
+  jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {});
 });
 afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
@@ -150,6 +152,12 @@ const byTestId = id => renderer.root.findAll(node => node.props.testID === id &&
 const hostCount = id => renderer.root.findAll(node => node.props.testID === id && typeof node.type === 'string').length;
 const press = async id => act(async () => byTestId(id)[0].props.onPress());
 const input = () => renderer.root.findAllByType(TextInput)[0];
+const type = async value => act(async () => input().props.onChangeText(value));
+const settle = async () => act(async () => { jest.runAllTimers(); });
+const sheet = () => byTestId('dog-profile-sheet')[0];
+const sheetStyle = () => Object.assign({}, ...[sheet().props.style].flat(3).filter(Boolean));
+const discardOpen = () => renderer.root.findByType(ConfirmDialog).props.visible;
+const previewFace = () => renderer.root.findByType(AvatarPicker).findAllByType(DogAvatar)[0].props.avatar;
 
 async function mount(props = {}) {
   const handlers = { onSaveName: jest.fn(async () => true), onSaveAvatar: jest.fn(async () => true), onBack: jest.fn() };
@@ -157,125 +165,31 @@ async function mount(props = {}) {
     renderer = Renderer.create(<DogProfile slaveId={4} name="豆豆" alias="豆豆" avatar={null} picker={stubPicker()}
       {...handlers} {...props} />);
   });
+  await act(async () => sheet().props.onLayout({ nativeEvent: { layout: { height: 640 } } }));
+  await settle();
   return handlers;
 }
-
-test('A5: the face with a camera button, the name with a pencil, 訊號源 4; no title', async () => {
-  await mount();
-  const text = flatten(renderer.toJSON());
-  expect(text).toBe('豆豆訊號源 4');
-  expect(byTestId('dog-profile-camera')[0].props.accessibilityLabel).toBe('改豆豆的頭像');
-  expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
-  // 96dp face, 36dp camera with a 48dp target.
-  expect(renderer.root.findAllByType(DogAvatar)[0].props.size).toBe(96);
-  expect(byTestId('dog-profile-camera')[0].props.hitSlop).toBe(6);
+// The parent stores what the sheet saved and hands it back as props.
+const rerender = async props => act(async () => {
+  renderer.update(<DogProfile {...renderer.root.findByType(DogProfile).props} {...props} />);
 });
 
-test('A5a: tapping the name edits it in place; 完成 stores the trimmed name', async () => {
-  const { onSaveName, onBack } = await mount();
-  await press('dog-profile-name');
-  expect(input().props.value).toBe('豆豆');
-  expect(input().props.autoFocus).toBe(true);
-  expect(input().props.placeholder).toBe(i18nT('c347'));
-  expect(input().props.returnKeyType).toBe('done');
-  expect(flatten(renderer.toJSON())).not.toContain('2/20');
-  await act(async () => input().props.onChangeText(' 豆豆二號 '));
-  expect(flatten(renderer.toJSON())).not.toContain('6/20');
-  await act(async () => input().props.onSubmitEditing());
-  // 完成 also blurs: stored once.
-  await act(async () => input()?.props.onBlur());
-  expect(onSaveName).toHaveBeenCalledTimes(1);
-  expect(onSaveName).toHaveBeenCalledWith('豆豆二號');
-  expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
-  expect(onBack).not.toHaveBeenCalled();
-});
-
-test('A5a: more than 20 characters cannot be typed', async () => {
-  await mount();
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText('一二三四五六七八九十一二三四五六七八九十一二'));
-  expect(input().props.value).toBe('一二三四五六七八九十一二三四五六七八九十');
-  expect(flatten(renderer.toJSON())).toContain('20/20');
-});
-
-test('A5a: emptied or only spaces — no error, the dog keeps its name', async () => {
-  const { onSaveName } = await mount();
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText(''));
-  expect(input().props.placeholder).toBe(i18nT('c347'));
-  expect(flatten(renderer.toJSON())).not.toContain('0/20');
-  await act(async () => input().props.onSubmitEditing());
-  expect(onSaveName).not.toHaveBeenCalled();
-  expect(flatten(renderer.toJSON())).toBe('豆豆訊號源 4');
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText('   '));
-  await act(async () => input().props.onBlur());
-  expect(onSaveName).not.toHaveBeenCalled();
-  expect(flatten(renderer.toJSON())).not.toContain('沒有存成功');
-});
-
-test('A5a: tapping elsewhere or the keyboard going away stores it too', async () => {
-  const { onSaveName } = await mount();
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText('小白'));
-  // The page itself is the "elsewhere".
-  await press('dog-profile-outside');
-  expect(onSaveName).toHaveBeenLastCalledWith('小白');
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText('小灰'));
-  await act(async () => keyboardListeners.keyboardDidHide());
-  expect(onSaveName).toHaveBeenLastCalledWith('小灰');
-  expect(onSaveName).toHaveBeenCalledTimes(2);
-});
-
-test('a dog never named starts with an empty input, 「狗的名字」 in grey', async () => {
-  const { onSaveName } = await mount({ name: '狗 5', alias: '', slaveId: 5 });
-  expect(flatten(renderer.toJSON())).toBe('狗 5訊號源 5');
-  await press('dog-profile-name');
-  expect(input().props.value).toBe('');
-  expect(input().props.placeholderTextColor).toBe(colors.textMuted);
-  await act(async () => input().props.onChangeText('阿福'));
-  await act(async () => input().props.onSubmitEditing());
-  expect(onSaveName).toHaveBeenCalledWith('阿福');
-});
-
-test('back while editing stores the name first, then returns to the card', async () => {
-  const { onSaveName, onBack } = await mount();
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText('小白'));
-  await pressBack();
-  expect(onSaveName).toHaveBeenCalledWith('小白');
-  expect(onBack).toHaveBeenCalledTimes(1);
-  // ‹ does the same.
-  await press('dog-profile-back');
-  expect(onBack).toHaveBeenCalledTimes(2);
-});
-
-test('a name that could not be stored keeps the page and says so', async () => {
-  const { onBack } = await mount({ onSaveName: jest.fn(async () => false) });
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText('小白'));
-  await pressBack();
-  expect(onBack).not.toHaveBeenCalled();
-  expect(flatten(renderer.toJSON())).toContain(i18nT("c627"));
-  expect(input().props.value).toBe('小白');
-});
-
-// ---- the face (A5c) ---------------------------------------------------------
-
-const openAvatar = async () => {
-  await press('dog-profile-camera');
-  const sheet = renderer.root.findAll(node => node.props.accessibilityViewIsModal)[0];
-  await act(async () => sheet.props.onLayout({ nativeEvent: { layout: { height: 520 } } }));
-  await act(async () => { jest.runAllTimers(); });
-};
-const editorAvatar = () => renderer.root.findByType(AvatarEditor).findAllByType(DogAvatar)[0].props.avatar;
-
-test('A5c: 取消 頭像 完成, 拍照 相簿 插圖, five 樣子 and twelve 底色 in two rows', async () => {
+test('A5: one sheet — 取消 名字和頭像 完成, the name input, 訊號源 4 read only, then the face picker', async () => {
   await mount({ avatar: { kind: 'art', art: 'prick', color: 'blue' } });
-  await openAvatar();
   const text = flatten(renderer.toJSON());
-  expect(text).toContain('取消頭像完成拍照相簿插圖樣子底色');
+  expect(text).toContain(`${i18nT('c046')}${i18nT('c1330')}${i18nT('c101')}`);
+  // Name first, the face below it.
+  expect(text).toContain(`${i18nT('c1331')}訊號源 4${i18nT('c100')}拍照相簿插圖樣子底色`);
+  expect(input().props.value).toBe('豆豆');
+  expect(input().props.placeholder).toBe(i18nT('c347'));
+  expect(input().props.accessibilityLabel).toBe(i18nT('c347'));
+  expect(input().props.returnKeyType).toBe('done');
+  // The keyboard does not come up on its own: changing only the face needs none.
+  expect(input().props.autoFocus).toBeFalsy();
+  // 訊號源 is text, not a control.
+  expect(byTestId('dog-profile-source')[0].props.onPress).toBeUndefined();
+  // No separate A5c step: the picker is part of the sheet from the start.
+  expect(renderer.root.findAllByType(AvatarPicker)).toHaveLength(1);
   expect(DOG_ART_KEYS.map(key => hostCount(`avatar-art-${key}`))).toEqual([1, 1, 1, 1, 1]);
   expect(DOG_COLOR_KEYS).toHaveLength(12);
   expect(DOG_COLOR_KEYS.every(key => hostCount(`avatar-color-${key}`) === 1)).toBe(true);
@@ -288,130 +202,262 @@ test('A5c: 取消 頭像 完成, 拍照 相簿 插圖, five 樣子 and twelve �
   expect(faces.find(face => face.avatar.art === 'prick').tint).toBeNull();
   expect(faces.filter(face => face.avatar.art !== 'prick').every(face => face.tint === NEUTRAL_TINT)).toBe(true);
   expect(faces.every(face => face.size === 48)).toBe(true);
+  expect(renderer.root.findAllByType(DogAvatar)[0].props.size).toBe(80);
 });
 
-test('A5c: choosing changes only the preview; 完成 stores it, 取消 and back do not', async () => {
-  const { onSaveAvatar } = await mount();
-  await openAvatar();
+test('A5: 完成 stores the trimmed name and the face together, then goes back to the card', async () => {
+  const { onSaveName, onSaveAvatar, onBack } = await mount();
+  await type(' 豆豆二號 ');
   await press('avatar-art-curly');
   await press('avatar-color-mint');
-  expect(editorAvatar()).toEqual({ kind: 'art', art: 'curly', color: 'mint' });
+  expect(previewFace()).toEqual({ kind: 'art', art: 'curly', color: 'mint' });
   expect(DOG_COLORS.mint).toBeDefined();
-  // The page behind still shows the stored face.
-  expect(renderer.root.findAllByType(DogAvatar)[0].props.avatar).toBeNull();
-  await press('avatar-cancel');
-  await act(async () => { jest.runAllTimers(); });
-  expect(renderer.root.findAllByType(AvatarEditor)).toHaveLength(0);
+  expect(onSaveName).not.toHaveBeenCalled();
   expect(onSaveAvatar).not.toHaveBeenCalled();
-  // Back = 取消, and does not leave the page.
-  const { onBack } = renderer.root.findByType(DogProfile).props;
-  await openAvatar();
-  await press('avatar-art-floppy');
-  await pressBack();
-  await act(async () => { jest.runAllTimers(); });
-  expect(renderer.root.findAllByType(AvatarEditor)).toHaveLength(0);
-  expect(onSaveAvatar).not.toHaveBeenCalled();
+  await press('dog-profile-done');
+  expect(onSaveName).toHaveBeenCalledTimes(1);
+  expect(onSaveName).toHaveBeenCalledWith('豆豆二號');
+  expect(onSaveAvatar).toHaveBeenCalledTimes(1);
+  expect(onSaveAvatar).toHaveBeenCalledWith({ kind: 'art', art: 'curly', color: 'mint' });
+  // It slides away first (180 ms).
   expect(onBack).not.toHaveBeenCalled();
-  await openAvatar();
-  await press('avatar-art-short');
-  await press('avatar-done');
-  await act(async () => { jest.runAllTimers(); });
-  expect(onSaveAvatar).toHaveBeenCalledWith({ kind: 'art', art: 'short', color: 'coral' });
-  expect(renderer.root.findAllByType(AvatarEditor)).toHaveLength(0);
-  // Back on the page now leaves it.
-  await pressBack();
+  await settle();
   expect(onBack).toHaveBeenCalledTimes(1);
 });
 
-test('A5c: 拍照 puts the cropped photo in the preview; 完成 stores it; 插圖 brings the drawing back', async () => {
+test('A5: 完成 stores only what changed; nothing changed stores nothing', async () => {
+  let handlers = await mount();
+  await type('小白');
+  await press('dog-profile-done');
+  expect(handlers.onSaveName).toHaveBeenCalledWith('小白');
+  expect(handlers.onSaveAvatar).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+  handlers = await mount();
+  await press('avatar-art-short');
+  await press('dog-profile-done');
+  expect(handlers.onSaveName).not.toHaveBeenCalled();
+  expect(handlers.onSaveAvatar).toHaveBeenCalledWith({ kind: 'art', art: 'short', color: 'coral' });
+  await act(async () => renderer.unmount());
+  handlers = await mount();
+  // Chosen and chosen back: the same face as stored.
+  await press('avatar-art-short');
+  await press('avatar-art-classic');
+  await press('dog-profile-done');
+  await settle();
+  expect(handlers.onSaveName).not.toHaveBeenCalled();
+  expect(handlers.onSaveAvatar).not.toHaveBeenCalled();
+  expect(handlers.onBack).toHaveBeenCalledTimes(1);
+});
+
+test('A5a: emptied or only spaces — no error, the dog keeps its name', async () => {
+  const { onSaveName, onBack } = await mount();
+  await type('');
+  expect(flatten(renderer.toJSON())).not.toContain('0/20');
+  // Nothing to store: 完成 just closes, and 取消 does not ask.
+  await press('dog-profile-cancel');
+  expect(discardOpen()).toBe(false);
+  await settle();
+  expect(onBack).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+  const second = await mount();
+  await type('   ');
+  await press('dog-profile-done');
+  await settle();
+  expect(second.onSaveName).not.toHaveBeenCalled();
+  expect(onSaveName).not.toHaveBeenCalled();
+  expect(flatten(renderer.toJSON())).not.toContain(i18nT('c627'));
+  expect(second.onBack).toHaveBeenCalledTimes(1);
+});
+
+test('A5a: more than 20 characters cannot be typed; the count shows only near the limit', async () => {
+  await mount();
+  await type('一二三四五六七八九十一二三四五六七八九十一二');
+  expect(input().props.value).toBe('一二三四五六七八九十一二三四五六七八九十');
+  expect(flatten(renderer.toJSON())).toContain('20/20');
+  for (const [length, visible] of [[15, false], [16, true], [20, true], [5, false]]) {
+    await type('一'.repeat(length));
+    expect(hostCount('dog-name-count') > 0).toBe(visible);
+  }
+});
+
+test('a dog never named starts with an empty input, 「狗的名字」 in grey', async () => {
+  const { onSaveName } = await mount({ name: '狗 5', alias: '', slaveId: 5 });
+  expect(flatten(renderer.toJSON())).toContain('訊號源 5');
+  expect(input().props.value).toBe('');
+  expect(input().props.placeholderTextColor).toBe(colors.textMuted);
+  await type('阿福');
+  await press('dog-profile-done');
+  expect(onSaveName).toHaveBeenCalledWith('阿福');
+});
+
+test('A5: 取消, back and the dimmed card store nothing; with nothing changed they just close', async () => {
+  let handlers = await mount();
+  await press('dog-profile-cancel');
+  await settle();
+  expect(handlers.onBack).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+  handlers = await mount();
+  await pressBack();
+  await settle();
+  expect(handlers.onBack).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+  handlers = await mount();
+  // The dimmed card above the sheet is a 取消 too.
+  expect(byTestId('dog-profile-scrim')[0].props.accessibilityLabel).toBe(i18nT('c046'));
+  await press('dog-profile-scrim');
+  await settle();
+  expect(handlers.onBack).toHaveBeenCalledTimes(1);
+  expect(handlers.onSaveName).not.toHaveBeenCalled();
+  expect(handlers.onSaveAvatar).not.toHaveBeenCalled();
+});
+
+test('A5: with a change made, 取消 asks first — 繼續編輯 keeps it, 放棄修改 drops it', async () => {
+  const { onSaveName, onSaveAvatar, onBack } = await mount();
+  await type('小白');
+  await press('avatar-color-mint');
+  await press('dog-profile-cancel');
+  expect(discardOpen()).toBe(true);
+  const dialog = renderer.root.findByType(ConfirmDialog).props;
+  expect(dialog).toMatchObject({ title: i18nT('c1332'), body: i18nT('c1333'), cancelLabel: i18nT('c1334'),
+    confirm: i18nT('c1335'), destructive: true });
+  expect(flatten(renderer.toJSON())).toContain(`${i18nT('c1334')}${i18nT('c1335')}`);
+  // The keyboard is put away for the dialog.
+  expect(Keyboard.dismiss).toHaveBeenCalled();
+  await press('dog-profile-discard-cancel');
+  expect(discardOpen()).toBe(false);
+  expect(input().props.value).toBe('小白');
+  expect(previewFace().color).toBe('mint');
+  // Back asks too; back again (the dialog's own back) keeps editing.
+  await pressBack();
+  expect(discardOpen()).toBe(true);
+  await pressBack();
+  expect(discardOpen()).toBe(false);
+  expect(onBack).not.toHaveBeenCalled();
+  await press('dog-profile-scrim');
+  expect(discardOpen()).toBe(true);
+  await press('dog-profile-discard-confirm');
+  await settle();
+  expect(onBack).toHaveBeenCalledTimes(1);
+  expect(onSaveName).not.toHaveBeenCalled();
+  expect(onSaveAvatar).not.toHaveBeenCalled();
+});
+
+test('A5: what could not be stored keeps the sheet and says so; trying again stores only that', async () => {
+  const onSaveName = jest.fn(async () => false);
+  const { onSaveAvatar, onBack } = await mount({ onSaveName });
+  await type('小白');
+  await press('avatar-color-purple');
+  await press('dog-profile-done');
+  await settle();
+  expect(onBack).not.toHaveBeenCalled();
+  expect(flatten(renderer.toJSON())).toContain(i18nT('c627'));
+  expect(input().props.value).toBe('小白');
+  expect(onSaveAvatar).toHaveBeenCalledTimes(1);
+  // The face is stored: the map hands it back.
+  await rerender({ avatar: onSaveAvatar.mock.calls[0][0] });
+  onSaveName.mockImplementation(async () => true);
+  await press('dog-profile-done');
+  await settle();
+  expect(onSaveAvatar).toHaveBeenCalledTimes(1);
+  expect(onSaveName).toHaveBeenCalledTimes(2);
+  expect(onBack).toHaveBeenCalledTimes(1);
+});
+
+test('while storing, nothing can be typed, chosen or cancelled', async () => {
+  let resolve;
+  const onSaveName = jest.fn(() => new Promise(done => { resolve = done; }));
+  const { onBack, onSaveAvatar } = await mount({ onSaveName });
+  await type('小白');
+  await act(async () => { byTestId('dog-profile-done')[0].props.onPress(); });
+  expect(input().props.editable).toBe(false);
+  expect(byTestId('dog-profile-done')[0].props.accessibilityState).toEqual({ disabled: true, busy: true });
+  expect(byTestId('dog-profile-cancel')[0].props.disabled).toBe(true);
+  await press('avatar-color-mint');
+  expect(previewFace().color).toBe('coral');
+  await pressBack();
+  expect(discardOpen()).toBe(false);
+  await act(async () => resolve(true));
+  await settle();
+  expect(onBack).toHaveBeenCalledTimes(1);
+  expect(onSaveAvatar).not.toHaveBeenCalled();
+});
+
+test('A5: 拍照 puts the cropped photo in the preview; 完成 stores it; 插圖 brings the drawing back', async () => {
   const picker = stubPicker();
   const { onSaveAvatar } = await mount({ picker, avatar: { kind: 'art', art: 'floppy', color: 'sand' } });
-  await openAvatar();
   await press('avatar-source-拍照');
   expect(picker.openCamera).toHaveBeenCalled();
-  expect(editorAvatar()).toEqual({ kind: 'photo', uri: 'data:image/jpeg;base64,AAAA' });
+  expect(previewFace()).toEqual({ kind: 'photo', uri: 'data:image/jpeg;base64,AAAA' });
   // With a photo, 插圖 is not chosen and the drawings are put away.
   expect(byTestId('avatar-source-插圖')[0].props.accessibilityState.selected).toBe(false);
   expect(hostCount('avatar-art-classic')).toBe(0);
   await press('avatar-source-插圖');
-  expect(editorAvatar()).toEqual({ kind: 'art', art: 'floppy', color: 'sand' });
+  expect(previewFace()).toEqual({ kind: 'art', art: 'floppy', color: 'sand' });
   await press('avatar-source-相簿');
   expect(picker.openPicker).toHaveBeenCalled();
-  await press('avatar-done');
+  await press('dog-profile-done');
   expect(onSaveAvatar).toHaveBeenCalledWith({ kind: 'photo', uri: 'data:image/jpeg;base64,AAAA' });
 });
 
-test('A5c: no camera permission is said in the sheet; 完成 without a change stores nothing', async () => {
+test('A5: no camera permission is said in the sheet; nothing else changes', async () => {
   const denied = Object.assign(new Error('denied'), { code: 'E_NO_CAMERA_PERMISSION' });
-  const { onSaveAvatar } = await mount({ picker: stubPicker({ openCamera: jest.fn(async () => { throw denied; }) }) });
-  await openAvatar();
+  const { onSaveAvatar, onBack } = await mount({ picker: stubPicker({ openCamera: jest.fn(async () => { throw denied; }) }) });
   await press('avatar-source-拍照');
-  expect(flatten(renderer.toJSON())).toContain(i18nT("c647"));
-  await press('avatar-done');
-  await act(async () => { jest.runAllTimers(); });
+  expect(flatten(renderer.toJSON())).toContain(i18nT('c647'));
+  await press('dog-profile-cancel');
+  expect(discardOpen()).toBe(false);
+  await settle();
   expect(onSaveAvatar).not.toHaveBeenCalled();
-  expect(renderer.root.findAllByType(AvatarEditor)).toHaveLength(0);
+  expect(onBack).toHaveBeenCalledTimes(1);
 });
 
-test('A5c: a face that could not be stored keeps the sheet open', async () => {
-  await mount({ onSaveAvatar: jest.fn(async () => false) });
-  await openAvatar();
-  await press('avatar-color-purple');
-  await press('avatar-done');
-  await act(async () => { jest.runAllTimers(); });
-  expect(renderer.root.findAllByType(AvatarEditor)).toHaveLength(1);
-  expect(flatten(renderer.toJSON())).toContain(i18nT("c627"));
-});
-
-test('A5c rises from the bottom over a dimmed page (220 ms)', async () => {
+test('A5: the sheet rides on top of the keyboard, and a choice in the picker puts the keyboard away', async () => {
+  const safeArea = require('react-native-safe-area-context');
+  jest.spyOn(safeArea, 'useSafeAreaInsets').mockReturnValue({ top: 24, bottom: 48, left: 0, right: 0 });
   await mount();
-  await press('dog-profile-camera');
-  const sheet = renderer.root.findAll(node => node.props.accessibilityViewIsModal)[0];
-  // Invisible until measured, so it never flashes in place before rising.
-  expect([sheet.props.style].flat(3).some(item => item?.opacity === 0)).toBe(true);
-  await act(async () => sheet.props.onLayout({ nativeEvent: { layout: { height: 520 } } }));
-  expect([sheet.props.style].flat(3).some(item => item?.opacity === 0)).toBe(false);
-  // The dimmed page is a 取消 too.
-  const scrim = renderer.root.findAll(node => node.props.accessibilityLabel === '取消'
-    && node.props.testID !== 'avatar-cancel' && typeof node.props.onPress === 'function')[0];
-  expect(scrim).toBeDefined();
-});
-
-test('while a name is being stored the input is read-only, so nothing typed is lost', async () => {
-  let resolve;
-  const onSaveName = jest.fn(() => new Promise(done => { resolve = done; }));
-  await mount({ onSaveName });
-  await press('dog-profile-name');
-  await act(async () => input().props.onChangeText('小白'));
-  await act(async () => { input().props.onSubmitEditing(); });
-  expect(input().props.editable).toBe(false);
-  await act(async () => resolve(true));
-  expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
-});
-
-test('A5c: after 取消 starts closing, 完成 and the choices do nothing', async () => {
-  const { onSaveAvatar } = await mount();
-  await openAvatar();
+  expect(sheetStyle().bottom).toBe(0);
+  expect(sheetStyle().paddingBottom).toBe(16 + 48);
+  await act(async () => input().props.onFocus());
+  await act(async () => keyboardListeners.keyboardDidShow({ endCoordinates: { height: 320 } }));
+  // React Native's height leaves out the navigation bar the keyboard also covers.
+  expect(sheetStyle().bottom).toBe(320 + 48);
+  expect(sheetStyle().paddingBottom).toBe(16);
+  // Scrolls inside what is left above the keyboard (the test window is 1334 tall).
+  expect(sheetStyle().maxHeight).toBe(1334 - 24 - 320 - 48);
+  // A tap in the picker works while the keyboard is up.
+  const scroll = renderer.root.findByType(ScrollView);
+  expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
   await press('avatar-art-curly');
-  await press('avatar-cancel');
+  expect(Keyboard.dismiss).toHaveBeenCalled();
+  expect(previewFace().art).toBe('curly');
+  await act(async () => keyboardListeners.keyboardDidHide());
+  expect(sheetStyle().bottom).toBe(0);
+});
+
+test('A5 rises from the bottom over the dimmed card (220 ms), invisible until measured', async () => {
+  await act(async () => {
+    renderer = Renderer.create(<DogProfile slaveId={4} name="豆豆" alias="豆豆" avatar={null} picker={stubPicker()}
+      onSaveName={jest.fn()} onSaveAvatar={jest.fn()} onBack={jest.fn()} />);
+  });
+  expect(sheetStyle().opacity).toBe(0);
+  await act(async () => sheet().props.onLayout({ nativeEvent: { layout: { height: 640 } } }));
+  expect([sheet().props.style].flat(3).some(item => item?.opacity === 0)).toBe(false);
+  expect(sheet().props.accessibilityViewIsModal).toBe(true);
+});
+
+test('after 取消 starts closing, 完成 and the choices do nothing', async () => {
+  const { onSaveAvatar, onBack } = await mount();
+  await press('dog-profile-cancel');
   // Still sliding away (180 ms).
   await press('avatar-color-mint');
-  await press('avatar-done');
-  await act(async () => { jest.runAllTimers(); });
+  await press('dog-profile-done');
+  await settle();
   expect(onSaveAvatar).not.toHaveBeenCalled();
+  expect(onBack).toHaveBeenCalledTimes(1);
 });
 
 test('stored names keep 20 characters as the user sees them', () => {
   const { normalizeDogAliases } = require('../src/mapHistory/DogAliases');
   expect(normalizeDogAliases({ 4: '🐶'.repeat(20) })[4]).toBe('🐶'.repeat(20));
   expect(normalizeDogAliases({ 4: ` ${i18nT("c687").repeat(25)} ` })[4]).toBe(i18nT("c687").repeat(20));
-});
-
-test('E25: name count appears only near the limit', async () => {
-  await mount();
-  await press('dog-profile-name');
-  for (const [length, visible] of [[15, false], [16, true], [20, true], [5, false]]) {
-    await act(async () => input().props.onChangeText('一'.repeat(length)));
-    expect(hostCount('dog-name-count') > 0).toBe(visible);
-  }
 });

@@ -1213,8 +1213,20 @@ test('E01/E16: A4 and A5 isolate background controls and accessibility', async (
     // native MapView, which leaks a GoogleMap per opening).
     expect(layer.props.collapsable).toBe(false);
     expect(StyleSheet.flatten(layer.props.style).display).toBeUndefined();
-    // Off screen, so its surface cannot show in the status-bar inset.
-    expect(StyleSheet.flatten(layer.props.style).transform).toEqual([{ translateX: layout.offscreen }]);
+    if (action === 'onActivity') {
+      // Off screen under the opaque A4, so its surface cannot show in the
+      // status-bar inset.
+      expect(StyleSheet.flatten(layer.props.style).transform).toEqual([{ translateX: layout.offscreen }]);
+    } else {
+      // A5 is a sheet over the dimmed card: the map stays in place behind
+      // the scrim, and so do the gear and the top cards (out of TalkBack).
+      expect(StyleSheet.flatten(layer.props.style).transform).toBeUndefined();
+      const { SettingsGear } = require('../src/map/MapControls');
+      let chrome = renderer.root.findByType(SettingsGear).parent;
+      while (chrome && chrome.props.importantForAccessibility === undefined) chrome = chrome.parent;
+      expect(chrome.props.importantForAccessibility).toBe('no-hide-descendants');
+      expect(renderer.root.findAllByProps({ testID: 'dog-profile-sheet' })).not.toHaveLength(0);
+    }
   }
 });
 

@@ -19,7 +19,8 @@ import { radius, space, touch, type, size as sizes } from '../theme/tokens';
  * action is still a way out, as 「一起刪除」). `busy` turns the action into a
  * spinner; `secondary` ({ label, onPress, busy }) is a second action between
  * 「取消」 and the main one (S7 「先上傳」). `note` is a bold line under the body
- * (S7 「還有 120 筆沒上傳：先上傳／一起刪除」).
+ * (S7 「還有 120 筆沒上傳：先上傳／一起刪除」). `cancelLabel` replaces 「取消」
+ * where 「取消」 would read as the very thing being confirmed (A5 「繼續編輯」).
  */
 export default function ConfirmDialog({
   visible,
@@ -28,6 +29,7 @@ export default function ConfirmDialog({
   note = null,
   problem = null,
   confirm,
+  cancelLabel = null,
   onConfirm,
   onCancel,
   busy = false,
@@ -40,6 +42,7 @@ export default function ConfirmDialog({
   const styles = useStyles(getStyles);
   const working = busy || !!secondary?.busy;
   const disabled = working || (problemBlocks && !!problem);
+  const cancel = cancelLabel || t('c046');
   return (
     <Modal
       visible={visible}
@@ -72,14 +75,15 @@ export default function ConfirmDialog({
           <View style={styles.buttons}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t('c046')}
+              accessibilityLabel={cancel}
+              testID={testID && `${testID}-cancel`}
               onPress={onCancel}
               style={({ pressed }) => [
                 styles.button,
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.cancel}>{t('c046')}</Text>
+              <Text style={styles.cancel}>{cancel}</Text>
             </Pressable>
             {secondary ? (
               <Pressable

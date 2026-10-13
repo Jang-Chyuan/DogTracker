@@ -927,8 +927,8 @@ const FIXTURES = {
   // The page still reading (never answers) and a read that fails.
   'activity-loading': now => activityPage(now, { mode: 'week', date: now }, { answer: 'hang' }),
   'activity-error': now => activityPage(now, { mode: 'day', date: now }, { answer: 'fail' }),
-  // ---- a dog's page (047, design A5/A5a/A5c) ------------------------------
-  // card-ok with the pencil pressed: 豆豆's own page (A5) over its card.
+  // ---- a dog's edit sheet (047, A5: name and face in one sheet) ----------
+  // card-ok with the pencil pressed: 豆豆's edit sheet (A5) over its card.
   'dog-edit': now => ({ ...FIXTURES['card-ok'](now), openPage: 'edit' }),
   // 小黑 has a photo for a face: on the map and on its card (current, so in
   // colour); 豆豆 and 阿福 keep the default illustration.
@@ -1772,7 +1772,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     })(),
     ride: rides.ride(now),
     dogAliases: ALIASES,
-    // card-* states open this dog's card; dog-edit its page (A5) too.
+    // card-* states open this dog's card; dog-edit its edit sheet (A5) too.
     openDog,
     openPage,
     // Faces by collar number (useDogAvatars' avatars); the default otherwise.

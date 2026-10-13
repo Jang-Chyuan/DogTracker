@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { getTheme } from '../theme/ThemeProvider';
 import { size as sizes } from '../theme/tokens';
-// A photo for a dog's face (design v3 A5c 拍照／相簿; DESIGN.md §12): taken
+// A photo for a dog's face (A5 拍照／相簿; DESIGN.md §12): taken
 // with the camera or picked with the Android photo picker, then cropped to a
 // circle and shrunk to a 512×512 JPEG. Only that small picture is kept (in
 // dog_avatars, as a data URI); the camera's full-size shot and the picker's
