@@ -1,6 +1,7 @@
 import { t as i18nT } from '../src/i18n';
 import {
   ACTIVITY, activityMinutes, activityReadings, activityState, activityWords, durationText, readingKey,
+  REST_MAX_MISSING_MINUTES,
 } from '../src/activity/ActivityMinutes';
 
 const MINUTE = 60000;
@@ -108,6 +109,26 @@ test('rest: minutes without data do not restart the run; an active minute does',
   // Vigorous is unchanged: a minute without data still breaks it.
   const vigorous = activityMinutes([...readings(20, 3, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
   expect(activityState(vigorous, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(2) });
+});
+
+// 2026-10-13 (#137): more than REST_MAX_MISSING_MINUTES (30) in a row without
+// any data (collar off, out of range) does end the rest; 30 or fewer do not.
+test('rest: a stretch without data longer than 30 minutes ends the run', () => {
+  expect(REST_MAX_MISSING_MINUTES).toBe(30);
+  expect(ACTIVITY.restMaxMissingMinutes).toBe(REST_MAX_MISSING_MINUTES);
+  // Calm 90–61 minutes ago, nothing for 31 minutes (60..30 ago), calm since.
+  const long = activityMinutes([...readings(90, 61, 0.02), ...readings(30, 0, 0.02)], { now: NOW });
+  expect(activityState(long, { end: lastFinished })).toEqual({ state: 'rest', since: at(30), durationMinutes: 30 });
+  // Exactly 30 minutes without data (60..31 ago): carried across.
+  const thirty = activityMinutes([...readings(90, 60, 0.02), ...readings(30, 0, 0.02)], { now: NOW });
+  expect(activityState(thirty, { end: lastFinished })).toEqual({ state: 'rest', since: at(90), durationMinutes: 90 });
+  // Two shorter silences add up to more than 30 but each is carried across.
+  const twice = activityMinutes([...readings(90, 70, 0.02), ...readings(50, 40, 0.02), ...readings(20, 0, 0.02)],
+    { now: NOW });
+  expect(activityState(twice, { end: lastFinished }).since).toBe(at(90));
+  // The cap is configurable (config.restMaxMissingMinutes).
+  expect(activityState(thirty, { end: lastFinished, config: { ...ACTIVITY, restMaxMissingMinutes: 10 } }).since)
+    .toBe(at(30));
 });
 
 test('rest ends at the first minute that is not calm', () => {
