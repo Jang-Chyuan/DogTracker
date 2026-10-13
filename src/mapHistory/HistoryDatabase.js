@@ -130,7 +130,9 @@ export function createHistoryDatabase(db) {
     },
     /**
      * One dog's (or this phone's) rows of one day for the history list
-     * (src/history): [start - HISTORY_DAY_CONTEXT_MS, end + HISTORY_DAY_AFTER_MS). `subject` is
+     * (src/history): [start - HISTORY_DAY_CONTEXT_MS, end + HISTORY_DAY_AFTER_MS) — for my route
+     * also the last row before that window and the first row after it, however far
+     * (the list's 「沒有資料」 between them and midnight). `subject` is
      * 'dog' (by collar number, every receiver) or 'phone'; `source` picks the
      * tables — the history screen always reads 'all' (local and cloud merged);
      * 'local' (dog_status) and 'cloud' (the account's supabase_dog_status;
@@ -172,10 +174,28 @@ export function createHistoryDatabase(db) {
         const phoneExtra = ['location_at', 'accuracy_meters', 'altitude_meters', 'speed_kmh', 'heading_degrees',
           'raw_latitude', 'raw_longitude', 'session_id', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state',
           'display_source', 'display_location_at'].filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
-        const found = await pages('phone', `SELECT id, recorded_at AS time, latitude, longitude,
-          accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ?`,
-        [since, until]);
-        return { rows: found.map(phoneHistoryRow), seed: [], after: cursors };
+        const select = `SELECT id, recorded_at AS time, latitude, longitude,
+          accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker`;
+        const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until]);
+        // 2026-10-13: the fixes on the other side of the day, however far —
+        // the last one before the context window (once) and, until one is
+        // found, the first one after it — so the list can show the time
+        // between them and midnight as 「沒有資料」 (historyTimeline).
+        const before = [], next = [];
+        if (!cursors.phoneBefore) {
+          before.push(...rows(await db.executeAsync(`${select} WHERE recorded_at < ?
+            ORDER BY recorded_at DESC, id DESC LIMIT 1`, [since])));
+          cursors.phoneBefore = true;
+        }
+        if (!cursors.phoneAfter) {
+          if (found.some(row => Number(row.time) >= Number(end))) cursors.phoneAfter = true;
+          else {
+            next.push(...rows(await db.executeAsync(`${select} WHERE recorded_at >= ?
+              ORDER BY recorded_at, id LIMIT 1`, [until])));
+            if (next.length) cursors.phoneAfter = true;
+          }
+        }
+        return { rows: [...before, ...found, ...next].map(phoneHistoryRow), seed: [], after: cursors };
       }
       const out = [], seed = [];
       const columnsOf = async name => new Set(rows(await db.executeAsync(`PRAGMA table_info(${name})`)).map(column => column.name));

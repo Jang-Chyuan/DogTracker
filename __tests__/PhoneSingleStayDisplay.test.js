@@ -183,10 +183,12 @@ test('a true gap inside the available visit cannot establish continuous still-he
     const i = rows.findIndex(r => r.time === p.time);
     if (i !== 14 && i !== 25) return p;
     // Both endpoints fit the visit circle, but their raw separation is 40m
-    // with no measured stationary speed: this is not a same-place bridge.
+    // and the far end measured a walking speed: this is not a same-place
+    // bridge. (2026-10-13: without any speed at either end, nothing says the
+    // phone moved, and within stillPlaceM it would be one — PhoneStayConsolidation.)
     const latitude = rows[4].latitude + (i === 14 ? -20 : 20) / 111195;
-    return { ...p, latitude, raw_latitude: latitude, raw_speed_kmh: null,
-      speed_kmh: null, motion_state: 'unknown' };
+    return { ...p, latitude, raw_latitude: latitude, raw_speed_kmh: i === 14 ? null : 3.6,
+      speed_kmh: i === 14 ? null : 3.6, speed_accuracy_mps: i === 14 ? null : 0.3, motion_state: 'unknown' };
   });
   const model = historyTimeline(input, { ...options, following: false,
     range: { start: rows[10].time, end: rows[39].time } });

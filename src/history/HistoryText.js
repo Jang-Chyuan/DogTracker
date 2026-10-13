@@ -52,7 +52,9 @@ export function sectionText(section) {
     // 「沒收到訊號」 (no packet); otherwise 「沒有資料」.
     const lead = section.reason === 'uncertain' ? t('c883') : section.reason === 'no-gps'
       ? t('c1169') : section.reason === 'no-signal' ? t('c1170') : t('c089');
-    return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${clock(section.end)}` };
+    // A day's trailing 「沒有資料」 (2026-10-13) ends at midnight: 24:00.
+    const end = section.dayBoundary === 'end' ? '24:00' : clock(section.end);
+    return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${end}` };
   }
   const vehicle = section.mode === 'driving' || section.mode === 'ride';
   const metres = vehicle ? section.distanceM : section.countedDistanceM;

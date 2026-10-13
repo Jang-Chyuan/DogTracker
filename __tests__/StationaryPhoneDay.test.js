@@ -34,9 +34,9 @@ const dayEnd = dayStart + 86400000;
 const timeline = (rows, config) => historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone', dayStart, dayEnd,
   now: dayEnd, config, range: { start: dayStart, end: dayEnd - 1 } });
 // The rules as they were: no measured-speed check, no same-place breaks, no
-// long-visit stays.
+// long-visit stays, no short excursions inside a stay (2026-10-13).
 const BEFORE = { ...HISTORY_CONFIG.phone, speedBudget: false, stillMps: 0, stillPlaceM: 0,
-  samePlaceGapMaxMs: 0, alwaysStayMs: 0 };
+  samePlaceGapMaxMs: 0, alwaysStayMs: 0, excursionMs: 0 };
 
 test('a whole day indoors: little distance, a few long stays, the overnight breaks inside them', () => {
   const rows = stationaryDay();

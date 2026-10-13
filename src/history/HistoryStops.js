@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { configFor, coordinateValid, distanceMeters, median, above, samePlaceGap, measuredSpeedMps,
-  recordingSessionChanged } from './HistoryConfig';
+  quietFix, recordingSessionChanged } from './HistoryConfig';
 import { isVehiclePoint } from './HistoryMovement';
 import { phoneReliableSpeed } from '../locationTracker/PhoneMotion';
 import { phoneStayDisplayAnchors } from './PhoneStayDisplayAnchors';
@@ -191,8 +191,13 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
     }
     // Measured standing still (the phone's own speed under stillMps, within
     // stillPlaceM): the position drifted out of the circle, the phone stayed
-    // (067) — it counts as inside.
-    const still = config.stillMps && (p.phoneStationary || (measuredSpeedMps(p) != null && measuredSpeedMps(p) < config.stillMps))
+    // (067) — it counts as inside. 2026-10-13: so does a fix without a
+    // usable measured speed and without confirmed movement (quietFix):
+    // indoors such fixes drift tens of metres, and nothing in them says the
+    // phone left.
+    const speed = measuredSpeedMps(p);
+    const still = config.stillMps && (p.phoneStationary || (speed != null && speed < config.stillMps)
+      || quietFix(p, config))
       && !(distanceMeters(current.center, p) > (config.stillPlaceM || config.radiusM));
     // Back after a break at the same place as the last judged fix: still the
     // same stay, wherever the circle's centre is (Codex review, 067).
