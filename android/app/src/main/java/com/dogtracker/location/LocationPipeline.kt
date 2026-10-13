@@ -39,11 +39,25 @@ internal class LocationPipeline {
     fun repeatsSavedRow(sample: LocationSample, lastLocationAt: Long?): Boolean =
       lastLocationAt != null && sample.timestamp <= lastLocationAt &&
         lastLocationAt - sample.timestamp <= MAX_FIX_AGE_NANOS / 1_000_000L
+    /**
+     * A fix rejected only for its accuracy, finer than this, still goes to the
+     * motion detector while it holds a confirmed stop ([holdStop]); it is
+     * never saved. With the phone still, Samsung stops GPS and the fused fixes
+     * are Wi-Fi ones of about 30–50 m: without them the detector saw nothing
+     * for minutes, reset after 30 s and the locked dot jumped at the next
+     * GPS fix. 50 m is where MotionDetector stops taking a fix as evidence
+     * (`valid`, PhoneMotion.js the same): a coarser fix would only keep its
+     * clock running and, sitting in the tail, switch off every geometric
+     * departure window it falls into.
+     */
+    const val MOTION_ONLY_MAX_ACCURACY = 50f
   }
   var latest: LocationSample? = null; private set
   var received = 0; private set
   var accepted = 0; private set
   var rejected = 0; private set
+  /** Accuracy rejections that still went to the motion detector (never saved; also counted in rejectedBy). */
+  var motionOnly = 0; private set
   /** Rejections by cause (stale, duplicate, invalid, accuracy, jump) for diagnostics. */
   val rejectedBy = linkedMapOf("stale" to 0, "duplicate" to 0, "invalid" to 0, "accuracy" to 0, "jump" to 0)
   /** Since [markWindow]: the oldest stale fix (s) and best rejected accuracy (m). */
@@ -57,6 +71,9 @@ internal class LocationPipeline {
   private val window = java.util.ArrayDeque<LocationSample>()
   private val motion = MotionDetector()
   private var stationaryCoordinate: Pair<Double, Double>? = null
+  // The newest fix the motion detector has seen (saved or motion-only) and its answer.
+  private var motionSample: LocationSample? = null
+  private var motionState = "moving"
   val intervalSeconds: Int get() {
     val speed = latest?.rawSpeed?.takeIf { it.isFinite() && it >= 0 } ?: return 5
     return when {
@@ -81,6 +98,7 @@ internal class LocationPipeline {
     if (!acceptsLocationAccuracy(true, sample.accuracy, sample.rawSpeed)) {
       if (sample.accuracy.isFinite() && sample.accuracy >= 0f) windowBestRejectedAccuracy =
         minOf(windowBestRejectedAccuracy ?: Float.MAX_VALUE, sample.accuracy)
+      holdStop(sample)
       return reject("accuracy") { if (isFastLocation(sample.rawSpeed)) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1121) else com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1122) }
     }
     val previous = latest
@@ -105,7 +123,10 @@ internal class LocationPipeline {
       else points.map { 1.0 / points.size }
     val latitude = points.indices.sumOf { points[it].latitude * weights[it] }
     val offset = points.indices.sumOf { (((points[it].longitude - sample.longitude + 540) % 360) - 180) * weights[it] }
-    val state = motion.accept(sample)
+    // A motion-only fix newer than this one was already judged (separate
+    // providers can deliver out of order): keep its answer, as the detector
+    // would reset on time going backwards.
+    val state = if (sample.elapsedNanos > (motionSample?.elapsedNanos ?: 0L)) judge(sample) else motionState
     val longitude = ((sample.longitude + offset + 540) % 360) - 180
     // Lock the smoothed position at confirmation, while continuing to judge raw fixes.
     if (state == "stationary") {
@@ -117,6 +138,32 @@ internal class LocationPipeline {
     newest = sample.elapsedNanos
     accepted++; reason = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1124)
     return true
+  }
+  private fun judge(sample: LocationSample): String {
+    motionSample = sample
+    return motion.accept(sample).also { motionState = it }
+  }
+  /**
+   * A fresh, valid fix that failed only the accuracy gate. While the detector
+   * holds a confirmed stop it still sees the fix (PR 140: a coarse still fix
+   * near the anchor keeps the stop; real speed or geometry still ends it), so
+   * a coarse-only stretch neither resets the detector nor releases the lock.
+   * Before a stop is confirmed it sees nothing new: a coarse fix cannot
+   * confirm one, and would only clear the evidence being gathered. Neither
+   * [latest] nor the write slot changes, so nothing here is ever saved.
+   */
+  private fun holdStop(sample: LocationSample) {
+    if (motionState != "stationary" || !(sample.accuracy >= 0f && sample.accuracy < MOTION_ONLY_MAX_ACCURACY)) return
+    val previous = motionSample
+    if (previous != null) {
+      if (sample.elapsedNanos <= previous.elapsedNanos) return
+      // The same jump test a saved fix passes, against the last fix judged.
+      val dt = (sample.elapsedNanos - previous.elapsedNanos) / 1e9
+      if (dt <= 30 && distanceMeters(previous.rawLatitude, previous.rawLongitude, sample.latitude, sample.longitude) >
+        70 * dt + previous.accuracy + sample.accuracy) return
+    }
+    motionOnly++
+    if (judge(sample) != "stationary") stationaryCoordinate = null
   }
   fun candidate(now: Long): LocationSample? {
     val value = latest ?: return null
