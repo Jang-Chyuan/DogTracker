@@ -41,7 +41,29 @@ export const HISTORY_CONFIG = Object.freeze({
     // both its farthest fix and the second stay lie within the first stay's
     // radius: excursionAccuracyFactor × its accuracy, clamped to
     // [excursionMinM, excursionMaxM] (never the 100 m of stillPlaceM).
-    excursionMs: 5 * 60000, excursionAccuracyFactor: 2, excursionMinM: 30, excursionMaxM: 50 }),
+    excursionMs: 5 * 60000, excursionAccuracyFactor: 2, excursionMinM: 30, excursionMaxM: 50,
+    // 2026-10-13 (user, distance): 「距離怎麼加」 on a walk the detector
+    // confirms. Between two fixes both in the moving state, both within
+    // fineMoveAccuracyM and both measuring at least fineMoveSpeedMps, a move
+    // counts from fineMoveM (instead of minMoveM and the accuracy) when it is
+    // at least fineMoveProgress of the distance the measured speeds add up to
+    // since the last counted fix: the 5 m chord from the last counted fix cut
+    // about 0.5 % off a 4.4 km walk at 4 m accuracy. Drift never meets these
+    // (it is stationary, coarse, slow, or gets nowhere for its speed).
+    fineMoveM: 2, fineMoveAccuracyM: 10, fineMoveSpeedMps: 0.5, fineMoveProgress: 0.75,
+    // Confirmed movement (phoneConfirmedMovement: no speed budget) on a fix
+    // coarser than this, claiming no walking speed of its own (none, or over
+    // departureMaxSpeed), is no evidence of distance: indoors the phone
+    // confirms "movement" on Wi-Fi/elevator fixes of 20–40 m at 15–27 km/h
+    // (one day: 30 m + 47 m at home). It, and the coarser-than-this fixes
+    // after it until a finer fix or a stop, count nothing and do not move the
+    // anchor. 20 m: on three days of real walks it removed every such count
+    // and no walk changed; 25 m kept the 47 m, 10 m dropped two short walks.
+    coarseConfirmedAccuracyM: 20,
+    // A walk step uses the recorder's per-second odometer (odometer_m, same
+    // session) instead of the chord when it is longer, up to this many times
+    // the chord plus minMoveM (and the speed budget).
+    odometerMaxRatio: 1.5 }),
   dog: Object.freeze({ ...common, maxSpeed: 15, vehicleSpeed: 9,
     enterMs: 60000, exitMs: 60000, departureMaxSpeed: 15, backtrackSpeed: null }),
 });

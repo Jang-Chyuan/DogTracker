@@ -63,6 +63,8 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
+// myLocationTracker's optional columns 「今天 x km」 reads (phoneRouteSince).
+const PHONE_ROUTE_COLUMNS = ['raw_speed_kmh', 'speed_accuracy_mps', 'session_id', 'odometer_m'];
 export function createHistoryDatabase(db) {
   // myLocationTracker's speed columns, read once per open database.
   let phoneSpeedColumns = null;
@@ -113,20 +115,28 @@ export function createHistoryDatabase(db) {
       const time = Math.max(Number(since) || 0, Number(cursor?.time) || 0);
       const id = Number(cursor?.time) >= Number(since) ? Number(cursor?.id) || 0 : 0;
       // The phone's own measured speed (067: drift it did not walk is not
-      // counted), when this install's table has the columns.
-      if (!phoneSpeedColumns) {
+      // counted) and the recorder's odometer with its recording session
+      // (2026-10-13: the per-second path of a walk), when this install's
+      // table has the columns.
+      // Kept once every column is there: the recorder adds a missing one when
+      // it opens the table (an app update), possibly after the first read.
+      let columns = phoneSpeedColumns;
+      if (!columns) {
         const names = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
-        phoneSpeedColumns = ['raw_speed_kmh', 'speed_accuracy_mps'].filter(name => names.has(name));
+        columns = PHONE_ROUTE_COLUMNS.filter(name => names.has(name));
+        if (columns.length === PHONE_ROUTE_COLUMNS.length) phoneSpeedColumns = columns;
       }
       const optional = value => (value == null ? null : Number(value));
       return rows(await db.executeAsync(
         `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy${
-          phoneSpeedColumns.map(name => `, ${name}`).join('')} FROM myLocationTracker
+          columns.map(name => `, ${name}`).join('')} FROM myLocationTracker
          WHERE recorded_at >= ? AND (recorded_at > ? OR (recorded_at = ? AND id > ?))
          ORDER BY recorded_at, id LIMIT ?`, [Number(since) || 0, time, time, id, limit]))
         .map(row => ({ id: Number(row.id), time: Number(row.time), latitude: Number(row.latitude),
           longitude: Number(row.longitude), accuracy: optional(row.accuracy),
-          raw_speed_kmh: optional(row.raw_speed_kmh), speed_accuracy_mps: optional(row.speed_accuracy_mps) }));
+          raw_speed_kmh: optional(row.raw_speed_kmh), speed_accuracy_mps: optional(row.speed_accuracy_mps),
+          ...(row.session_id != null ? { session_id: String(row.session_id) } : {}),
+          ...(row.odometer_m != null ? { odometer_m: Number(row.odometer_m) } : {}) }));
     },
     /**
      * One dog's (or this phone's) rows of one day for the history list
@@ -182,7 +192,7 @@ export function createHistoryDatabase(db) {
         const phoneColumns = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
         const phoneExtra = ['location_at', 'accuracy_meters', 'altitude_meters', 'speed_kmh', 'heading_degrees',
           'raw_latitude', 'raw_longitude', 'session_id', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state',
-          'display_source', 'display_location_at'].filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
+          'display_source', 'display_location_at', 'odometer_m'].filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
         const select = `SELECT id, recorded_at AS time, latitude, longitude,
           accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker`;
         const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until]);

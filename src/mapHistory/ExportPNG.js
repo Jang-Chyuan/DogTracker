@@ -17,7 +17,7 @@ export const PNG_STYLE = {
   width: tokenSize.export.width, maxHeight: tokenSize.export.maxHeight, mapHeight: tokenSize.export.mapHeight, footerHeight: tokenSize.export.footerHeight, side: tokenSize.export.side,
   timeColumn: tokenSize.export.timeColumn, trackColumn: tokenSize.export.trackColumn, titleFont: tokenSize.export.titleFont, titleWeight: tokenSize.export.titleWeight, subtitleFont: tokenSize.export.subtitleFont, fontFamily: tokenSize.export.fontFamily,
   addressWeight: tokenSize.export.addressWeight, addressFont: tokenSize.export.addressFont, addressLine: tokenSize.export.addressLine, timeFont: tokenSize.export.timeFont, endTimeFont: tokenSize.export.endTimeFont, detailFont: tokenSize.export.detailFont,
-  detailLine: tokenSize.export.detailLine, pillHeight: tokenSize.export.pillHeight, pillPadding: tokenSize.export.pillPadding, secondLine: tokenSize.export.secondLine, nodeSize: tokenSize.export.nodeSize, movementIcon: tokenSize.export.movementIcon,
+  detailLine: tokenSize.export.detailLine, pillHeight: tokenSize.export.pillHeight, pillPadding: tokenSize.export.pillPadding, secondLine: tokenSize.export.secondLine, nodeSize: tokenSize.export.nodeSize,
   legendFont: tokenSize.export.legendFont, legendWeight: tokenSize.export.legendWeight, legendHeight: tokenSize.export.legendHeight, sectionFont: tokenSize.export.sectionFont, sectionDetailFont: tokenSize.export.sectionDetailFont,
   sectionWeight: tokenSize.export.sectionWeight, sectionHeight: tokenSize.export.sectionHeight, footerFont: tokenSize.export.footerFont, placeMin: tokenSize.export.placeMin, movementMin: tokenSize.export.movementMin, rowGap: tokenSize.export.rowGap,
   text: colors.text, textMuted: colors.textMuted, background: colors.surface,
