@@ -200,7 +200,11 @@ export function timelinePresentation(source = []) {
       durationMs: shownStay.durationMs, terminalStay: shownStay, number: null,
       ...withUnlocated(shownStay, 0) });
   }
-  return shown.map(node => {
+  const indoor = indoorAtDeparture(nodes);
+  // The first 室內 row is that hold (only 0 m rows come before it), even when
+  // a folded short break gave it a new object.
+  const from = indoor ? shown.findIndex(n => n.type === 'indoor') : -1;
+  return (from > 0 ? shown.slice(from) : shown).map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
@@ -208,4 +212,26 @@ export function timelinePresentation(source = []) {
       ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
   });
+}
+
+/**
+ * 在室內就不要出發了 (2026-10-13, user decision): a day that begins indoors —
+ * a 室內 hold starting within a minute of the first fix, with no counted
+ * distance before it (only 0 m foot rows or short weak-GPS time) — has no
+ * 出發 row: the list starts with the hold. (A hold starting at the first fix
+ * already has no departure node in the model.) Display only: the model, the
+ * map's first point, CSV and GPX are unchanged; the PNG list is this
+ * presentation, as on screen. Every other day starts with 出發.
+ */
+function indoorAtDeparture(nodes) {
+  const departure = nodes[0];
+  if (departure?.type !== 'departure') return null;
+  for (const node of nodes.slice(1)) {
+    if (!(node.start - departure.start <= MINUTE)) return null;
+    if (node.type === 'indoor') return node;
+    const still = node.type === 'movement' && (node.mode === 'walking' || node.mode === 'moving')
+      && !(node.countedDistanceM > 0);
+    if (!still && !(node.type === 'gap' && node.reason === 'uncertain')) return null;
+  }
+  return null;
 }

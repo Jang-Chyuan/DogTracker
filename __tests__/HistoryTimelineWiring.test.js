@@ -83,7 +83,7 @@ describe('rows', () => {
     cloud.run(3, 'me', DAY + 30 * MINUTE, DAY - 5 * MINUTE, 9, 4, 24.98, 121.31, 9, 1, 0, -80, 5, '0');
     const next = await database.historyDayRows({ ...day, owner: 'me', after: all.after });
     expect(next.rows.map(row => [row.source, row.id])).toEqual([['local', 6], ['cloud', 3]]); expect(next.seed).toEqual([]);
-    // A few minutes past midnight are read for 「接續隔天」.
+    // A few minutes past midnight are read for `continuesNextDay`.
     local.run(7, endOfDay(DAY) + 2 * MINUTE, 7, 4, 24.984, 121.31, 9, 0.9, 0, -70, 5, '7');
     expect((await database.historyDayRows({ ...day, owner: 'me', after: next.after })).rows.map(row => row.id)).toEqual([7]);
     connection.close();
@@ -134,7 +134,8 @@ describe('words (copy deck)', () => {
     expect(nodePill({ type: 'end', label: i18nT("c660"), end: new Date(2026, 9, 3, 12, 5).getTime() }).text).toBe('最後 12:05');
     expect(nodePill({ type: 'end', label: i18nT("c656"), closedAt: new Date(2026, 9, 3, 10, 20).getTime() }))
       .toEqual({ text: '記錄已關閉 10:20', tone: 'closed' });
-    expect(nodePill({ type: 'end', label: i18nT('c330'), continuesNextDay: true }).text).toBe(i18nT('c334'));
+    // 2026-10-13: an end running on past midnight has no capsule (no 「接續隔天」).
+    expect(nodePill({ type: 'end', label: i18nT('c330'), continuesNextDay: true })).toBeNull();
   });
   test('H8 lines', () => {
     expect(emptyText({ subject: 'phone', today: true })).toBe(i18nT('c159'));

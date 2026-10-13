@@ -2,6 +2,7 @@ import { historyTimeline } from '../src/history/HistoryTimeline';
 import { configFor } from '../src/history/HistoryConfig';
 import { timelinePresentation, presentationDurationMs } from '../src/history/HistoryTimelinePresentation';
 import { interruptionText, listDuration, nodePill, sectionText } from '../src/history/HistoryText';
+import { distanceText } from '../src/utils/distanceText';
 import { cursorLabel, screenCursor } from '../src/history/screen/HistoryScreenCursor';
 import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';
 import { buildCSV } from '../src/mapHistory/ExportCSV';
@@ -149,7 +150,7 @@ test('a short same-session break is no row: the walk around it silently carries 
   expect(rows.map(n => n.type)).toEqual(['movement']);
   expect(rows[0].unlocatedMs).toBe(gap.end - gap.start);
   // No note: the row reads like any walk (2026-10-13, user).
-  expect(sectionText(rows[0]).rest).toBe(`・${(Math.round(rows[0].countedDistanceM / 100) / 10).toFixed(1)} km`);
+  expect(sectionText(rows[0]).rest).toBe(`・${distanceText(rows[0].countedDistanceM)}`);
   // The cursor in the break says the walk, not 「這段沒資料」.
   const inside = gap.start + 60000;
   for (const action of ['drag', 'shared']) {
