@@ -6,6 +6,7 @@ import { historyMovement } from './HistoryMovement';
 import { historyDeparture } from './HistoryDeparture';
 import { historyStops, historyIndoorNodes } from './HistoryStops';
 import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
+import { endpointStays } from './HistoryTimelinePresentation';
 
 /** Display only: retain observed stationary time that has no existing place row.
  * Never classify a gap, a red light in a drive, or uncertain fixes as a stay.
@@ -670,9 +671,19 @@ export function historyTimeline(rows = [], options = {}) {
   }
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.
+  // 2026-10-13 (user, #154): the numbers shown start at 1 and skip none. A
+  // stay the list shows inside 出發 or the end (「出發 · 停 N 分」「結束 ·
+  // 停 N 分」) has no number of its own (`listedWith`), and the map draws no
+  // marker for it; the stays and switch points after it count from 1.
+  const numbered = node => (node.type === 'stop' || node.type === 'switch') && !node.presentationOnly;
   let number = 0;
-  for (const node of nodes) {
-    if ((node.type === 'stop' || node.type === 'switch') && !node.presentationOnly) node.number = ++number;
+  for (const node of nodes) if (numbered(node)) node.number = ++number;
+  const merged = endpointStays(nodes);
+  if ((merged.departure && numbered(merged.departure)) || (merged.end && numbered(merged.end))) {
+    if (merged.departure && numbered(merged.departure)) merged.departure.listedWith = 'departure';
+    if (merged.end && numbered(merged.end)) merged.end.listedWith = 'end';
+    number = 0;
+    for (const node of nodes) if (numbered(node)) node.number = node.listedWith ? null : ++number;
   }
   const keptLocations = locations.filter(n => !drop.has(n) && !removed.has(n)).map(n => replaced.get(n) ?? n);
   const keptSections = sections.filter(n => !drop.has(n) && !removed.has(n));

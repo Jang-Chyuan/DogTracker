@@ -135,7 +135,8 @@ test('an existing qualified stop retains its number without a duplicate presenta
   const model = timeline([...firstRun, ...walkAway]);
   const stop = model.locations.find(n => n.type === 'stop');
   expect(stop).toBeDefined();
-  expect(stop.number).toBe(1);
+  // #154: it is the 出發 row's stay (「出發 · 停 N 分」): no number of its own.
+  expect(stop).toMatchObject({ number: null, listedWith: 'departure' });
   expect(model.nodes.filter(n => n.type === 'stop')).toHaveLength(1);
   expect(model.nodes.some(n => n.presentationOnly)).toBe(false);
 });

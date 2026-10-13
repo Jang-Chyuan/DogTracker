@@ -81,7 +81,8 @@ describe('1. drift without a measured speed is no departure', () => {
 
   test('the stay is one numbered stay; the speedless minutes are its time', () => {
     const model = timeline(rows(script));
-    expect(stays(model).map(n => n.number)).toEqual([1]);
+    // #154: shown inside 出發 (「出發 · 停 N 分」), so no number of its own.
+    expect(stays(model).map(n => n.number)).toEqual([null]);
     expect(shownTypes(model)).toEqual(['departure+stay', 'movement', 'end']);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
   });
@@ -320,7 +321,8 @@ describe('5. a short real walk between two stays at one place', () => {
 
   test('is one stay; its metres stay in the list and the summary', () => {
     const model = timeline(excursion());
-    expect(stays(model).map(n => n.number)).toEqual([1]);
+    // #154: shown inside 出發 (「出發 · 停 N 分」), so no number of its own.
+    expect(stays(model).map(n => n.number)).toEqual([null]);
     expect(shownTypes(model)).toEqual(['departure+stay', 'movement', 'end']);
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);

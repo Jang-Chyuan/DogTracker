@@ -291,8 +291,10 @@ test('CSV rows and GPX track points are the raw rows, whatever the list folds', 
   expect((gpx.match(/<trkpt /g) || []).length).toBe(rows.length);
   // Every break, folded in the list or not, still splits the GPX track.
   expect(snapshot.subjects[0].gaps.length).toBeGreaterThanOrEqual(model.nodes.filter(n => n.type === 'gap').length);
-  // The display-only coarse stay is not a GPX stay waypoint.
-  expect(snapshot.subjects[0].stays.every(s => s.number != null)).toBe(true);
+  // The display-only coarse stay is not a GPX stay waypoint; every waypoint
+  // has a name (a stay shown inside 出發 or the end has no number, #154).
+  expect(snapshot.subjects[0].stays).toHaveLength(model.nodes.filter(n => n.type === 'stop' && !n.presentationOnly).length);
+  expect(gpx).not.toMatch(/null|undefined/);
 });
 
 // ---- 2026-10-13: the shapes the device sweep found -------------------------

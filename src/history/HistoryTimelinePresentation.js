@@ -99,6 +99,21 @@ export function shownRowAt(nodes, time) {
 
 // Presentation only: retained gaps/stops and the source model remain untouched.
 export function timelinePresentation(all = []) {
+  return presentationOf(all).listed;
+}
+
+/**
+ * The source stays the list shows inside 出發 (「出發 · 停 N 分」) and inside
+ * the end (「結束 · 停 N 分」, also 現在／最後), as the input's own objects,
+ * or null. historyTimeline numbers the stays without them (2026-10-13, #154:
+ * the numbers shown start at 1 and skip none).
+ */
+export function endpointStays(all = []) {
+  const { departureSource, endStay } = presentationOf(all);
+  return { departure: departureSource, end: endStay };
+}
+
+function presentationOf(all) {
   // 2026-10-13: the rows of no data before the day's first fix and after its
   // last (`dayBoundary`, phone) are set aside: the departure and the end keep
   // their places in the rules below, and they join the list at the end.
@@ -132,7 +147,10 @@ export function timelinePresentation(all = []) {
   const settlingRun = stationaryRun(initialStay) && initialStay.start > first?.start
     && initialStay.start - first.start < GAP_MS;
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
-    && (initialStay.number === 1 || stationaryRun(initialStay)) && (first.start === initialStay.start || settlingRun)
+    // The model's first stay: numbered 1, or (#154) left unnumbered because
+    // this row shows it.
+    && (initialStay.number === 1 || initialStay.listedWith === 'departure' || stationaryRun(initialStay))
+    && (first.start === initialStay.start || settlingRun)
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
     && (samePlace(first, initialStay) || firstBelongsToStay || stationaryRun(initialStay));
   const departureStay = startsWithStay && settlingRun ? stretch(initialStay, first.start, initialStay.end, 0) : initialStay;
@@ -196,6 +214,7 @@ export function timelinePresentation(all = []) {
   // takes the stay's own coordinate; a dog's is its last recorded fix, which
   // the confirmed visit itself recorded (membership and exact time prove it,
   // as for the departure), while the visit's coordinate is a mean.
+  let endStay = null;
   const end = nodes[nodes.length - 1], stay = nodes[nodes.length - 2];
   const endBelongsToStay = typeof stay?.id === 'string' && stay.id.startsWith('visit:')
     && stay.points?.some(point => point.time === end?.start && samePlace(point, end));
@@ -205,6 +224,7 @@ export function timelinePresentation(all = []) {
     && !stay.gaps?.length && !stay.displayRange?.gaps?.length
     && (samePlace(stay, end) || endBelongsToStay || stationaryRun(stay))) {
     // The shown stay: it may carry a folded break before it.
+    endStay = source[source.length - 2];
     shown.splice(shown.length - 2, 2, { ...end, start: shownStay.start,
       durationMs: shownStay.durationMs, terminalStay: shownStay, number: null,
       ...withUnlocated(shownStay, 0) });
@@ -222,14 +242,14 @@ export function timelinePresentation(all = []) {
     shown[from].end, 0), ...shown.slice(from + 1)] : shown;
   const listed = withDayBoundaries(indoorFirst, lead, tail);
   if (listed.length) listed[0] = fromMidnight(listed[0]);
-  return listed.map(node => {
+  return { departureSource: startsWithStay ? source[1] : null, endStay, listed: listed.map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
     return { ...node, displayDurationMs,
       ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
-  });
+  }) };
 }
 
 const gapRow = node => node?.type === 'gap';

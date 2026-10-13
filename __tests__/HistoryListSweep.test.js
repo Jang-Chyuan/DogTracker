@@ -7,6 +7,9 @@ import { historyTimeline } from '../src/history/HistoryTimeline';
 import { historyIndoorNodes } from '../src/history/HistoryStops';
 import { historyDeparture } from '../src/history/HistoryDeparture';
 import { point } from '../__fixtures__/HistoryLogicFixtures';
+import { historyMapPresentation } from '../src/history/screen/HistoryMapModel';
+import { buildExportSnapshot, exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
+import { buildGPX } from '../src/mapHistory/ExportGPX';
 
 const MINUTE = 60000;
 const T0 = new Date(2026, 0, 5, 7, 0).getTime();
@@ -101,4 +104,47 @@ test('a stationary run that settles a few seconds after the first fix is the 出
   // (The still minute before the end is that stay's too: every minute has a row.)
   expect(shown[0]).toMatchObject({ type: 'departure', start: T0, end: T0 + 31 * MINUTE });
   expect(nodePill(shown[0]).text).toBe(`${t('c124')} · ${t('c127', { duration: listDuration(31 * MINUTE) })}`);
+});
+
+// 2026-10-13 (user, #154): when 出發 or the end takes a stay, the numbers
+// shown start at 1 and skip none — list, map markers, PNG list, GPX names.
+test('stays shown inside 出發 and the end take no number; the others count from 1', () => {
+  // A phone at home (5 s fixes), a walk, a stay elsewhere, a walk, a stay to the end.
+  const base = new Date(2026, 0, 5, 8, 0).getTime();
+  const rows = [];
+  let s = 0, east = 0;
+  const fix = extra => rows.push({ time: base + s * 1000, latitude: 1, longitude: 1 + east / 111320, raw_latitude: 1,
+    raw_longitude: 1 + east / 111320, accuracy: 4, raw_speed_kmh: 0, speed_kmh: 0, speed_accuracy_mps: 0.4,
+    motion_state: 'stationary', session_id: 'fiction-session', ...extra });
+  for (const [kind, seconds] of [['still', 1200], ['walk', 300], ['still', 900], ['walk', 300], ['still', 1200]]) {
+    for (let k = 0; k < seconds; k += 5, s += 5) {
+      if (kind === 'walk') { east += 7; fix({ raw_speed_kmh: 5.04, speed_kmh: 5.04, motion_state: 'moving' }); }
+      else fix({});
+    }
+  }
+  const dayStart = new Date(2026, 0, 5).getTime();
+  const model = historyTimeline(rows, { subject: 'phone', dayStart, dayEnd: dayStart + 86400000,
+    manualRange: { start: rows[0].time, end: rows.at(-1).time } });
+  const shown = timelinePresentation(model.nodes);
+  expect(shown[0].departureStay).toBeTruthy();
+  expect(shown.at(-1).terminalStay).toBeTruthy();
+  // The list: one numbered stay, 1.
+  expect(shown.filter(n => n.number != null).map(n => n.number)).toEqual([1]);
+  expect(model.locations.filter(n => n.type === 'stop').map(n => [n.number, n.listedWith ?? null]))
+    .toEqual([[null, 'departure'], [1, null], [null, 'end']]);
+  // The map draws the same numbers.
+  const map = historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' });
+  expect(map.places.filter(p => p.kind === 'number').map(p => p.number)).toEqual([1]);
+  // The PNG list is the screen's list.
+  expect(exportTimelineRows(model.nodes, () => '虛構地址').filter(r => r.number != null).map(r => r.number)).toEqual([1]);
+  // GPX: every stay is still a waypoint; the merged ones are named without a number.
+  const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] },
+    range: { start: rows[0].time, end: rows.at(-1).time }, subject: 'phone' });
+  const names = [...buildGPX(snapshot).matchAll(/<wpt[^>]*><time>[^<]*<\/time><name>([^<]*)<\/name>/g)].map(m => m[1]);
+  const unnumbered = new RegExp(`^${t('c1291', { prefix: '', value: '\\d+' })}$`);
+  const numbered = new RegExp(`^${t('c793', { prefix: '', number: 1, value: '\\d+' })}$`);
+  expect(names).toHaveLength(3);
+  expect(names[0]).toMatch(unnumbered);
+  expect(names[1]).toMatch(numbered);
+  expect(names[2]).toMatch(unnumbered);
 });
