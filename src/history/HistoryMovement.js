@@ -226,8 +226,13 @@ export function historyEdge(from, to, subject = 'dog', config = configFor(subjec
   const phoneSpeedEvidence = modernPhone ? phoneReliableSpeed(to) ??
     ((to.raw_speed_kmh === undefined ? to.speed_kmh : to.raw_speed_kmh) == null && durationMs <= 10000
       ? phoneReliableSpeed(from) : null) : null;
+  // A coarse fix the detector could not place (unknown) whose own speed says
+  // standing still is no walk either: 0 m of 「走路」 must not absorb minutes
+  // of a phone standing indoors on Wi-Fi fixes.
+  const stillUnplaced = to.phoneMotionState === 'unknown' && phoneSpeedEvidence != null
+    && phoneSpeedEvidence < config.stillMps;
   const uncertain = modernPhone && !bridged && !to.phoneStationary
-    && !to.phoneConfirmedMovement && phoneSpeedEvidence == null;
+    && !to.phoneConfirmedMovement && (phoneSpeedEvidence == null || stillUnplaced);
   return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
     speed: distanceM / (durationMs / 1000), uncertain, phoneSpeedEvidence,
     gap: uncertain || (durationMs > config.gapMs && !bridged),

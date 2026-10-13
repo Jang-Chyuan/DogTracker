@@ -13,6 +13,7 @@ internal class MotionDetector {
   private var strictReentry = false
   private var lastGeometryAt = 0L
   private var origin: Long? = null
+  private var anchor: LocationSample? = null
 
   private fun pushSample(list: MutableList<LocationSample>, point: LocationSample) {
     val start = origin ?: point.elapsedNanos.also { origin = it }
@@ -35,6 +36,9 @@ internal class MotionDetector {
     val low = valid && point.accuracy <= 30 && speed!! <= 1f &&
       (if (spreadValid) spread!! <= 1.5f && speed - spread <= 0.500001f else point.accuracy <= 10 && speed <= 0.3f)
     val high = valid && (if (spreadValid) speed!! - spread!! > 0.500001f else speed!! > 1f)
+    // Coarse (30–50 m) fixes cannot confirm a stop, but one measuring the
+    // phone still near the locked anchor keeps it (PhoneMotion.js `still`).
+    val still = valid && speed!! <= 0.3f && (!spreadValid || spread!! <= 1.5f)
     val geometryNeeded = !valid || speed!! < 0.3f || (spreadValid && spread!! > 1.5f && !high) ||
       (!spreadValid && point.accuracy > 10 && speed <= 1f)
     if (low) lowAt = time
@@ -47,6 +51,8 @@ internal class MotionDetector {
       val checkGeometry = time - lastGeometryAt >= 5_000_000_000L
       if (checkGeometry) lastGeometryAt = time
       if (checkGeometry && departure(point)) { reset(); strictReentry = true; return "moving" }
+      val held = anchor
+      if (!low && still && held != null && distance(held, point) <= coarseHoldRadius(held, point)) lowAt = time
       if (!low && time - lowAt > 180_000_000_000L) { reset(); return "unknown" }
       return state
     }
@@ -85,7 +91,7 @@ internal class MotionDetector {
       time - first.elapsedNanos >= 15_000_000_000L -> "suspected_stationary"
       else -> "moving"
     }
-    if (state == "stationary") { strictReentry = false; tail.clear(); tail.addAll(entry) }
+    if (state == "stationary") { anchor = point; strictReentry = false; tail.clear(); tail.addAll(entry) }
     else if (!strictReentry) { tail.clear(); tail.addAll(entry) }
     return state
   }
@@ -142,8 +148,11 @@ internal class MotionDetector {
 
   private fun reset() {
     tail.clear(); entry.clear(); state = "moving"; highAt = null; lowAt = 0; strictReentry = false
-    origin = null; lastGeometryAt = 0
+    origin = null; lastGeometryAt = 0; anchor = null
   }
+  // Half again the larger accuracy, at least the 25 m place radius.
+  private fun coarseHoldRadius(anchor: LocationSample, point: LocationSample) =
+    max(25.0, 1.5 * max(anchor.accuracy, point.accuracy).toDouble())
   private fun distance(a: LocationSample, b: LocationSample): Double {
     val lat = Math.toRadians(b.rawLatitude - a.rawLatitude)
     val lon = Math.toRadians(b.rawLongitude - a.rawLongitude)

@@ -16,7 +16,9 @@ class PhoneMotionParityTest {
         val t = Math.round(row.getDouble("t") * 1000)
         val speed = if (row.isNull("speed")) null else (row.getDouble("speed") / 3.6).toFloat()
         val spread = if (row.isNull("sacc")) null else row.getDouble("sacc").toFloat()
-        val point = LocationSample(25 + row.getDouble("x") / 111195, 121.0, row.getDouble("accuracy").toFloat(),
+        // x metres north, optional y metres east (generate-phone-motion-parity.cjs).
+        val east = if (row.has("y")) row.getDouble("y") else 0.0
+        val point = LocationSample(25 + row.getDouble("x") / 111195, 121 + east / 100777, row.getDouble("accuracy").toFloat(),
           t * 1_000_000, t, speed, speedAccuracy = spread)
         assertEquals("${case.getString("name")} t=$t", row.getString("state"), detector.accept(point))
       }

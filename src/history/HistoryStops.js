@@ -10,12 +10,15 @@ import { replayVisitDecisions } from './HistoryVisitReplay';
 // address and the coordinates all use it. A proven phone return may reuse a
 // completed representative for display only, after visit judgement. The centre
 // (first fix) still decides who is inside.
-function mean(points) {
+// A phone visit may also hold coarse detector-locked fixes (historyVisits):
+// they are its observed time, never a vote, unless nothing else is left.
+function mean(all, limit = Infinity) {
+  const judged = all.filter(p => !(p.accuracy > limit)), points = judged.length ? judged : all;
   const n = points.length;
   return { latitude: points.reduce((sum, p) => sum + p.latitude, 0) / n,
     longitude: points.reduce((sum, p) => sum + p.longitude, 0) / n };
 }
-const settle = (visit, completed) => ({ ...visit, ...mean(visit.points), completed });
+const settle = (visit, completed, limit) => ({ ...visit, ...mean(visit.points, limit), completed });
 
 // A coarse gap endpoint can establish continuity without voting for the
 // representative position. Require the existing motion detector to confirm
@@ -50,7 +53,7 @@ function phoneGapContinuity(points, visits, config, vehicles) {
     if (!bridge) { merged.push(visit); continue; }
     const pointsTogether = [...prior.points, ...visit.points];
     const interruptionMs = prior.interruptionMs + visit.interruptionMs;
-    merged[merged.length - 1] = { ...prior, ...mean(pointsTogether), end: visit.end,
+    merged[merged.length - 1] = { ...prior, ...mean(pointsTogether, config.stayAccuracyM), end: visit.end,
       completed: visit.completed, points: pointsTogether, gaps: [...prior.gaps, ...visit.gaps],
       inferredContinuityGaps: [...(prior.inferredContinuityGaps || []),
         { start: candidate.start, end: candidate.end }, ...(visit.inferredContinuityGaps || [])],
@@ -116,7 +119,7 @@ function phoneQualityContinuity(points, visits, config, vehicles) {
     if (!interval) { merged.push(visits[i]); continue; }
     const parts = [prior, ...visits.slice(i, last + 1)], allPoints = parts.flatMap(v => v.points);
     const interruptionMs = parts.reduce((sum, v) => sum + v.interruptionMs, 0);
-    merged[merged.length - 1] = { ...prior, ...mean(allPoints), end: next.end,
+    merged[merged.length - 1] = { ...prior, ...mean(allPoints, config.stayAccuracyM), end: next.end,
       completed: next.completed, points: allPoints, gaps: parts.flatMap(v => v.gaps), interruptionMs,
       inferredContinuityGaps: parts.flatMap(v => v.inferredContinuityGaps || []),
       inferredQualityIntervals: [...parts.flatMap(v => v.inferredQualityIntervals || []), interval],
@@ -131,26 +134,48 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
   vehicles = [], following = false } = {}) {
   const visits = [];
   // The last fix that took part in the judgement: fixes over 25 m are not
-  // judged at all, so they neither bridge nor break an interruption.
-  let current = null, outside = [], insideIndex = 0, judged = null;
+  // judged at all, so they neither bridge nor break an interruption (except
+  // the detector-locked ones below, `seen`, which only extend the visit).
+  let current = null, outside = [], insideIndex = 0, judged = null, seen = null, stillHere = false;
+  // A coarse fix the phone's detector keeps locked stationary near a visit
+  // that judged fixes already showed standing still (stillHere) is observed
+  // time of it (no break, no interruption) but never a vote for the
+  // representative position: indoors a still phone may get only Wi-Fi fixes
+  // over 25 m for many minutes. Coarse fixes alone never make a stay here.
+  const lockedStill = q => !!config.stillMps && !!current && stillHere && q.phoneStationary
+    && q.phoneMotionState === 'stationary' && !q.phoneConfirmedMovement
+    && Number.isFinite(q.accuracy) && q.accuracy <= config.accuracyM
+    && !(distanceMeters(current.center, q) > (config.stillPlaceM || config.radiusM));
+  const observed = q => !(q.accuracy > config.stayAccuracyM) || lockedStill(q);
   const finish = () => {
     if (!current) return;
-    visits.push(settle(current, true)); current = null; outside = [];
+    visits.push(settle(current, true, config.stayAccuracyM)); current = null; outside = [];
   };
   for (let i = 0; i < points.length; i += 1) {
     const p = points[i];
-    if (p.heldReason || isVehiclePoint(p, vehicles)) { finish(); judged = null; continue; }
-    if (p.accuracy > config.stayAccuracyM) continue;
+    if (p.heldReason || isVehiclePoint(p, vehicles)) { finish(); judged = null; seen = null; continue; }
+    if (p.accuracy > config.stayAccuracyM) {
+      if (!lockedStill(p) || !seen || p.time - seen.time > config.gapMs) continue;
+      seen = p;
+      // Inside only while no judged fix has been seen leaving: coarse fixes
+      // never cancel an exit, and never move the centre.
+      if (outside.length) continue;
+      const last = current.points[current.points.length - 1];
+      current.durationMs += p.time - last.time; current.end = p.time;
+      current.points.push(p); insideIndex = i;
+      continue;
+    }
     if (current && judged) {
-      const dt = p.time - judged.time;
+      const dt = p.time - Math.max(judged.time, seen?.time ?? -Infinity);
       // 067: a break whose two ends are at the same place stays one visit.
       if (dt > config.gapMs && !samePlaceGap(judged, p, config)
         && (dt >= config.mergeGapMs || above(distanceMeters(judged, p), config.radiusM))) finish();
     }
     const judgedBefore = judged;
-    judged = p;
+    judged = p; seen = p;
     if (!current) {
       insideIndex = i;
+      stillHere = !!p.phoneStationary;
       current = { id: `visit:${p.time}`, type: 'stop', start: p.time, end: p.time,
         center: { latitude: p.latitude, longitude: p.longitude },
         latitude: p.latitude, longitude: p.longitude, points: [p], gaps: [], durationMs: 0, interruptionMs: 0 };
@@ -167,7 +192,7 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
     if (still || resumed || !above(distanceMeters(current.center, p), config.radiusM)) {
       const last = current.points[current.points.length - 1];
       // All signal gaps are deducted, including gaps inside an unconfirmed exit.
-      const gaps = points.slice(insideIndex + 1, i + 1).filter(q => !(q.accuracy > config.stayAccuracyM));
+      const gaps = points.slice(insideIndex + 1, i + 1).filter(observed);
       let previous = last, interrupted = 0;
       for (const q of gaps) {
         if (q.time - previous.time > config.gapMs && !samePlaceGap(previous, q, config)) {
@@ -179,6 +204,7 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
       current.durationMs += p.time - last.time - interrupted;
       current.interruptionMs += interrupted;
       current.end = p.time; current.points.push(p); outside = []; insideIndex = i;
+      if (p.phoneStationary) stillHere = true;
       // The stay goes on around where it resumed (the circle follows).
       if (resumed && above(distanceMeters(current.center, p), config.radiusM)) {
         current.center = { latitude: p.latitude, longitude: p.longitude };
@@ -191,15 +217,15 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
       }
     }
   }
-  if (current) visits.push(settle(current, !following));
+  if (current) visits.push(settle(current, !following, config.stayAccuracyM));
   return phoneQualityContinuity(points, phoneGapContinuity(points, visits, config, vehicles), config, vehicles);
 }
-function clippedVisit(visit, start, end, dayBoundary = false) {
+function clippedVisit(visit, start, end, dayBoundary = false, limit = Infinity) {
   const inside = visit.points.filter(p => p.time >= start && p.time <= end);
   if (!inside.length) return null;
   const interruptionMs = visit.gaps.filter(g => g.start >= inside[0].time
     && g.end <= inside[inside.length - 1].time).reduce((sum, g) => sum + g.end - g.start, 0);
-  return { ...visit, ...mean(inside), start: inside[0].time, end: inside[inside.length - 1].time,
+  return { ...visit, ...mean(inside, limit), start: inside[0].time, end: inside[inside.length - 1].time,
     ...(visit.inferredContinuityGaps ? { inferredContinuityGaps: visit.inferredContinuityGaps.filter(g =>
       g.start >= inside[0].time && g.end <= inside[inside.length - 1].time) } : {}),
     ...(visit.inferredQualityIntervals ? { inferredQualityIntervals: visit.inferredQualityIntervals.filter(g =>
@@ -235,10 +261,10 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
   dayStart = start, dayEnd = end, subject = 'dog', config = configFor(subject),
   vehicles = [], edges = [], following = false, identity = '' } = {}) {
   const visits = historyVisits(points, { subject, config, vehicles, following });
-  const day = visits.map(v => clippedVisit(v, dayStart, dayEnd, true)).filter(Boolean);
+  const day = visits.map(v => clippedVisit(v, dayStart, dayEnd, true, config.stayAccuracyM)).filter(Boolean);
   const anchors = subject === 'phone' && edges.length
     ? phoneStayDisplayAnchors(day, points, edges, config) : new Map();
-  const selected = day.map(v => clippedVisit(v, start, end)).filter(Boolean)
+  const selected = day.map(v => clippedVisit(v, start, end, false, config.stayAccuracyM)).filter(Boolean)
     .map(v => anchors.has(v.id) ? { ...v,
       originalRepresentative: { latitude: v.latitude, longitude: v.longitude },
       ...anchors.get(v.id) } : v);
