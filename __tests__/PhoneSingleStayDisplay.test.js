@@ -129,8 +129,12 @@ test('coarse range-tail fixes inside a day-confirmed visit share its display int
     range: { start: input[0].time, end: input[39].time } });
   const stop = model.locations.find(n => n.type === 'stop'), point = model.points.at(-1);
   expect(stop).toBeDefined();
-  expect(point.time).toBeGreaterThan(stop.end);
-  expect(stop.points.every(p => p.accuracy <= 25)).toBe(true);
+  // The detector keeps the stop on the coarse tail: it is the stay's own
+  // observed time, while only the fixes within 25 m place it.
+  expect(point.time).toBe(stop.end);
+  const judged = stop.points.filter(p => p.accuracy <= 25);
+  expect(stop.points.length - judged.length).toBe(5);
+  expect(stop.latitude).toBeCloseTo(judged.reduce((sum, p) => sum + p.latitude, 0) / judged.length, 12);
   expect(position(model.nodes.find(n => n.type === 'end'))).toEqual(position(stop));
   expect(historyMapPresentation(model, { subject: 'phone', color: '#123456', cursor: { point } }).cursor.coordinate)
     .toEqual(position(stop));

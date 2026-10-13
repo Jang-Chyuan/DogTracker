@@ -22,7 +22,13 @@ import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
  * stationary time: they join the run instead of leaving it without a row.
  * They never place it — the anchor is the run's first fix within 25 m when it
  * has one — and such a run is `coarse` (with its worst `accuracyM`), so
- * mergePhoneSamePlaceStays may give its minutes to the stay it touches. */
+ * mergePhoneSamePlaceStays may give its minutes to the stay it touches.
+ *
+ * Weak GPS of a phone that measured itself still (`stillUnplaced` edges: the
+ * detector could not place coarse fixes, but their own speed says standing
+ * still) is coarse stationary time too, while its raw fixes stay within
+ * radiusM + their accuracy of where the run began: the <30-minute fold must
+ * never turn it into a 0 m walk (「走路 27 分」 standing in a shop). */
 export function phoneStationaryPresentationStops(edges, { config = configFor('phone'), covered = () => false } = {}) {
   const session = p => typeof p.session_id === 'string' && p.session_id.length > 0 ? p.session_id : null;
   const valid = p => p.phoneStationary && p.phoneMotionState === 'stationary' && !p.phoneConfirmedMovement
@@ -31,6 +37,11 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
     && coordinateValid(p) && Number.isFinite(p.accuracy) && p.accuracy >= 0 && p.accuracy <= config.accuracyM;
   const fine = p => p.accuracy <= config.stayAccuracyM;
   const sameSession = edge => session(edge.from) != null && session(edge.from) === session(edge.to);
+  const raw = p => (Number.isFinite(p.raw_latitude) && Number.isFinite(p.raw_longitude)
+    ? { latitude: p.raw_latitude, longitude: p.raw_longitude } : p);
+  const unplaced = p => p.phoneMotionState === 'unknown' && !p.phoneStationary && !p.phoneConfirmedMovement
+    && p.motion_state != null && session(p) != null && coordinateValid(p)
+    && Number.isFinite(p.accuracy) && p.accuracy >= 0 && p.accuracy <= config.accuracyM;
   const stops = [];
   let run = null;
   const finish = () => {
@@ -47,17 +58,24 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
       && coordinateValid(edge.from) && coordinateValid(edge.to);
     const observed = usable && !edge.gap && !edge.bridged && !edge.uncertain && edge.mode === 'walking'
       && edge.countedDistanceM === 0 && valid(edge.from) && valid(edge.to);
+    const origin = run && (run.pending?.end ?? run.end) === edge.start && run.session === session(edge.from)
+      ? run.origin : raw(edge.from);
+    const stillWeak = usable && edge.stillUnplaced === true && !edge.bridged && !(edge.countedDistanceM > 0)
+      && (valid(edge.from) || unplaced(edge.from)) && unplaced(edge.to)
+      && [edge.from, edge.to].every(p => !(distanceMeters(origin, raw(p)) > config.radiusM + p.accuracy + 1e-8));
     const samePlaceBreak = usable && edge.samePlaceBreak === true && !(edge.countedDistanceM > 0)
       && !edge.from.phoneConfirmedMovement && !edge.to.phoneConfirmedMovement;
     // Re-acquisition after a break: no counted distance, no confirmed movement.
     const settling = usable && !edge.bridged && (!edge.gap || edge.uncertain) && edge.countedDistanceM === 0
       && !edge.from.phoneConfirmedMovement && !edge.to.phoneConfirmedMovement;
     const reach = run && (run.pending?.end ?? run.end) === edge.start && run.session === session(edge.from);
-    if (observed || samePlaceBreak) {
+    if (observed || samePlaceBreak || stillWeak) {
       if (run && !reach) finish();
       if (!run) run = { start: edge.start, end: edge.end, anchor: edge.from, session: session(edge.from),
-        unobserved: [], pending: null, broke: false, fine: null, coarseM: 0 };
+        unobserved: [], pending: null, broke: false, fine: null, coarseM: 0, origin: raw(edge.from) };
       run.end = edge.end; run.pending = null;
+      // Weak GPS never places the run, but makes it coarse (its footprint).
+      if (stillWeak) run.coarseM = Math.max(run.coarseM, edge.from.accuracy, edge.to.accuracy);
       for (const p of observed ? [edge.from, edge.to] : []) {
         if (fine(p)) run.fine ??= p;
         else run.coarseM = Math.max(run.coarseM, p.accuracy);

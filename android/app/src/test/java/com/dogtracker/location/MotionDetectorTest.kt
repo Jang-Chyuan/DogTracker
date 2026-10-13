@@ -13,6 +13,15 @@ class MotionDetectorTest {
       for (t in 1L..360L) assertEquals("unknown", detector.accept(point(t, t.toDouble(), null).copy(accuracy = accuracy)))
     }
   }
+  @Test fun coarseStillFixesKeepALockedStopButNotOneFarAway() {
+    for ((offset, kept) in listOf(20.0 to true, 90.0 to false)) {
+      val detector = MotionDetector()
+      for (t in 1L..21L) detector.accept(point(t, 0.0, 0f).copy(accuracy = 20f))
+      var state = ""
+      for (t in 22L..600L) state = detector.accept(point(t, offset + (t % 3), 0f).copy(accuracy = 40f))
+      assertEquals(if (kept) "stationary" else "unknown", state)
+    }
+  }
   @Test fun backwardElapsedTimeDiscardsStationaryAndTail() {
     val detector = MotionDetector()
     for (t in 1L..21L) detector.accept(point(t, 0.0, 0f))

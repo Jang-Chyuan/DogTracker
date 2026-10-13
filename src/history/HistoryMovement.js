@@ -230,10 +230,17 @@ export function historyEdge(from, to, subject = 'dog', config = configFor(subjec
   const phoneSpeedEvidence = modernPhone ? phoneReliableSpeed(to) ??
     ((to.raw_speed_kmh === undefined ? to.speed_kmh : to.raw_speed_kmh) == null && durationMs <= 10000
       ? phoneReliableSpeed(from) : null) : null;
+  // A coarse fix the detector could not place (unknown) whose own speed says
+  // standing still is no walk either: 0 m of 「走路」 must not absorb minutes
+  // of a phone standing indoors on Wi-Fi fixes.
+  const stillUnplaced = to.phoneMotionState === 'unknown' && phoneSpeedEvidence != null
+    && phoneSpeedEvidence < config.stillMps;
   const uncertain = modernPhone && !bridged && !to.phoneStationary
-    && !to.phoneConfirmedMovement && phoneSpeedEvidence == null;
+    && !to.phoneConfirmedMovement && (phoneSpeedEvidence == null || stillUnplaced);
   return { from, to, start: from.time, end: to.time, durationMs, distanceM, bridged,
     speed: distanceM / (durationMs / 1000), uncertain, phoneSpeedEvidence,
+    // Weak GPS of a phone measuring itself still (not a walk, not placed).
+    ...(modernPhone && uncertain && stillUnplaced ? { stillUnplaced: true } : {}),
     gap: uncertain || (durationMs > config.gapMs && !bridged),
     // Into or within a hold: not movement (判定表「停在原處前後的距離」:
     // the drift drawn onto the hold spot does not count); the release edge

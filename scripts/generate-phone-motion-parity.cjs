@@ -1,4 +1,7 @@
 // Generate synthetic phone-motion parity; no private recordings are included.
+// `node scripts/generate-phone-motion-parity.cjs` rewrites the fixture;
+// `--stdout` prints it instead (__tests__/PhoneMotionParityFixture.test.js
+// checks the committed fixture is what this script generates).
 const fs = require('fs'),
   path = require('path'),
   vm = require('vm');
@@ -50,10 +53,12 @@ const { PhoneMotion } = load(
   path.join(root, 'src/locationTracker/PhoneMotion')
 );
 const cases = [];
-const point = (t, x, accuracy = 14, speed = 0, sacc = 0.3) => ({
+// x metres north, y metres east of a fictional origin (PhoneMotionParityTest
+// rebuilds the same coordinates).
+const point = (t, x, accuracy = 14, speed = 0, sacc = 0.3, y = 0) => ({
   time: Math.round(t * 1000),
   latitude: 25 + x / 111195,
-  longitude: 121,
+  longitude: 121 + y / 100777,
   accuracy,
   raw_speed_kmh: speed,
   speed_accuracy_mps: sacc,
@@ -128,9 +133,63 @@ for (const name of ['after-walk-jitter', 'after-walk-small-drift', 'after-walk-w
   }
   cases.push({ name, samples });
 }
-fs.writeFileSync(
-  path.join(root, 'android/app/src/test/resources/phone-motion-parity.json'),
-  '[\n' +
+// 2-D fixes at ≤ 10 m, 30–50 m (Wi-Fi-like) and mixed accuracy. Rows are
+// [t, x, y, accuracy, speed km/h, speed accuracy m/s].
+const jitter = (t, metres, a = 0.37, b = 0.23) => [
+  Math.round(metres * Math.sin(t * a) * 100) / 100,
+  Math.round(metres * Math.cos(t * b) * 100) / 100,
+];
+const coarse = t => [35, 40, 45, 48][t % 4];
+function run(name, rows) {
+  const tracker = new PhoneMotion();
+  cases.push({ name, samples: rows.map(([t, x, y, accuracy, speed, sacc]) => {
+    // y only when east of the origin, so 1-D rows keep their old shape.
+    const row = y ? { t, x, y } : { t, x };
+    return Object.assign(row, { accuracy, speed, sacc,
+      state: tracker.accept(point(t, x, accuracy, speed, sacc, y)) });
+  }) });
+}
+const series = (from, to, step, row) => {
+  const rows = [];
+  for (let t = from; t <= to; t += step) rows.push([t, ...row(t)]);
+  return rows;
+};
+// Fine (5 m): still, a measured diagonal walk, still again, then a wrong-zero
+// diagonal walk that only geometry can release.
+run('fine-2d', [
+  ...series(1, 40, 1, t => [...jitter(t, 0.8), 5, 0, 0.3]),
+  ...series(41, 140, 1, t => [(t - 40) * 0.85, (t - 40) * 0.85, 5, 4.32, 0.2]),
+  ...series(141, 200, 1, t => [85 + jitter(t, 0.8)[0], 85 + jitter(t, 0.8)[1], 5, 0, 0.3]),
+  ...series(201, 400, 1, t => [85 + (t - 200) * 0.5, 85 + (t - 200) * 0.5, 5, 0, 0.3]),
+]);
+// Locked at 20 m, then 30–50 m fixes standing still (some without a speed
+// accuracy) keep the stop; a wrong-zero diagonal walk then leaves it.
+for (const [name, step] of [['coarse-hold-2d', 1], ['coarse-hold-2d-sparse', 5]]) {
+  run(name, [
+    ...series(1, 30, 1, t => [...jitter(t, 2), 20, 0, 0.3]),
+    ...series(31, 700, step, t => [...jitter(t, 18), coarse(t), 0, t % 7 ? 0.3 : null]),
+    ...series(700 + step, 1300, step, t => [(t - 700) * 0.5, (t - 700) * 0.5, 40, 0, 0.3]),
+  ]);
+}
+// Coarse fixes settled 78 m away (beyond the hold radius): no longer kept.
+run('coarse-drift-out', [
+  ...series(1, 30, 1, t => [...jitter(t, 1), 14, 0, 0.3]),
+  ...series(31, 400, 1, t => [60 + jitter(t, 3)[0], 50 + jitter(t, 3)[1], 45, 0, 0.3]),
+]);
+// A measured 1.2 m/s diagonal walk on coarse fixes leaves within seconds.
+run('coarse-measured-walk-2d', [
+  ...series(1, 30, 1, t => [...jitter(t, 1), 14, 0, 0.3]),
+  ...series(31, 300, 1, t => [(t - 30) * 0.96, (t - 30) * 0.72, 40, 4.32, 0.3]),
+]);
+// A slow 0.7 m/s walk whose speed reads as still: kept only near the anchor.
+run('coarse-slow-walk-2d', [
+  ...series(1, 30, 1, t => [...jitter(t, 1), 14, 0, 0.3]),
+  ...series(31, 700, 1, t => [(t - 30) * 0.42, (t - 30) * 0.56, 45, 2.52, 0.3]),
+]);
+// Coarse fixes from the start never confirm a stop.
+run('coarse-from-start', series(1, 400, 1, t => [...jitter(t, 15), coarse(t), 0, 0.3]));
+
+const fixture = '[\n' +
     cases
       .map(
         c =>
@@ -141,5 +200,7 @@ fs.writeFileSync(
           '\n]}'
       )
       .join(',\n') +
-    '\n]\n'
-);
+    '\n]\n';
+if (process.argv.includes('--stdout')) process.stdout.write(fixture);
+else fs.writeFileSync(
+  path.join(root, 'android/app/src/test/resources/phone-motion-parity.json'), fixture);
