@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { configFor, coordinateValid, distanceMeters } from './HistoryConfig';
+import { configFor, coordinateValid, distanceMeters, recordingSessionChanged } from './HistoryConfig';
 import { historySourceStream, filterHistoryPoints, replayHistoryHolds } from './HistorySources';
 import { historyMovement } from './HistoryMovement';
 import { historyDeparture } from './HistoryDeparture';
@@ -172,8 +172,13 @@ export function historyTimeline(rows = [], options = {}) {
     // fix was saved (phoneStationaryPresentationStops may take it as a stay).
     const sameSession = typeof edge.from.session_id === 'string' && edge.from.session_id.length > 0
       && edge.from.session_id === edge.to.session_id;
-    return subject === 'phone' && edge.bridged && !containedBridge
+    const shown = subject === 'phone' && edge.bridged && !containedBridge
       ? { ...edge, gap: true, mode: 'gap', ...(sameSession ? { samePlaceBreak: true } : {}) } : edge;
+    // A break across a recording session change (the recorder was off: app
+    // updated or killed, recording switched off) is never stay time and is
+    // always its own 「沒有資料」 row (`sessionChange`), however short.
+    return subject === 'phone' && shown.gap && !shown.uncertain && recordingSessionChanged(edge.from, edge.to)
+      ? { ...shown, sessionChange: true } : shown;
   });
   // Construct fallback only after movement, visits and gaps are settled; it
   // feeds no detection back. Same-session same-place breaks are 067 stays.
@@ -259,11 +264,13 @@ export function historyTimeline(rows = [], options = {}) {
       && !locations.some(n => n.start === e.start || n.end === e.start)) {
       prior.end = e.end; prior.durationMs += e.durationMs;
       prior.distanceM += e.gap ? 0 : e.distanceM; prior.countedDistanceM += e.countedDistanceM;
+      if (e.sessionChange) prior.sessionChange = true;
     } else sections.push({ type: e.gap ? 'gap' : 'movement', mode: e.mode,
       // 067: a dog's break says why — packets came without a fix
       // (「收不到 GPS」) or nothing came (「沒收到訊號」). A phone's stays
       // 「沒有資料」.
       ...(reason ? { reason } : {}),
+      ...(e.sessionChange ? { sessionChange: true } : {}),
       start: e.start, end: e.end, durationMs: e.durationMs,
       latitude: e.from.latitude, longitude: e.from.longitude,
       endLatitude: e.to.latitude, endLongitude: e.to.longitude,

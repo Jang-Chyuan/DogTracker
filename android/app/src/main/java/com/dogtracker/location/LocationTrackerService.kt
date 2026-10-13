@@ -21,6 +21,7 @@ class LocationTrackerService : Service(), LocationListener {
     @Volatile internal var displayLocation: DisplayLocation? = null
     const val CHANNEL = com.dogtracker.NotificationChannels.TRACKING
     const val ID = 3105
+    private const val UNREAD = Long.MIN_VALUE
   }
   private lateinit var manager: LocationManager
   private val worker = HandlerThread("PhoneLocationWriter")
@@ -44,6 +45,8 @@ class LocationTrackerService : Service(), LocationListener {
     })
   }
   private var checkpointAt = 0L
+  // location_at of the newest row saved before this recording (read on the first write).
+  private var earlierLocationAt: Long? = UNREAD
   private fun counters() = SaveGapHistory.Counters(pipeline.received, pipeline.accepted,
     LinkedHashMap(pipeline.rejectedBy), saved, writeErrors)
   private val tick = object : Runnable {
@@ -55,11 +58,18 @@ class LocationTrackerService : Service(), LocationListener {
       if (sample != null) {
         try {
           val database = store ?: LocationTrackerStore(this@LocationTrackerService).also { store = it }
-          val display = displayLocation?.takeIf { it.usable(sessionId, sample, now) }
-          database.save(sample, sessionId, display)
-          pipeline.written(sample, now); saved++
-          gapLog.saved(now, System.currentTimeMillis(), pipeline, writeErrors)?.let { done ->
-            runCatching { gapHistory.stretchDone(done) }
+          // A new recording's first fix may be the cached one an earlier recording already saved.
+          if (earlierLocationAt == UNREAD) earlierLocationAt = database.newestLocationAt()
+          if (LocationPipeline.repeatsSavedRow(sample, earlierLocationAt)) pipeline.skipped(sample)
+          else {
+            val display = displayLocation?.takeIf { it.usable(sessionId, sample, now) }
+            // The fix's own time: an accepted fix can be up to MAX_FIX_AGE_NANOS old.
+            database.save(sample, sessionId, display, LocationPipeline.fixWallTime(sample, now, System.currentTimeMillis()))
+            earlierLocationAt = null // later fixes are ordered by the pipeline
+            pipeline.written(sample, now); saved++
+            gapLog.saved(now, System.currentTimeMillis(), pipeline, writeErrors)?.let { done ->
+              runCatching { gapHistory.stretchDone(done) }
+            }
           }
         } catch (_: Exception) { writeErrors++; writeFailed = true; status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1126) }
       }
@@ -71,7 +81,9 @@ class LocationTrackerService : Service(), LocationListener {
       }
       val latest = pipeline.latest
       val age = latest?.let { (now - it.elapsedNanos) / 1e9 }
-      if (!writeFailed) status = if (age != null && age > 3) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1127) else pipeline.reason
+      // Expired once the pipeline would no longer save it (the map keeps its own display fence).
+      val expired = age != null && age > LocationPipeline.MAX_FIX_AGE_NANOS / 1e9
+      if (!writeFailed) status = if (expired) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1127) else pipeline.reason
       liveJson = JSONObject().put("running", running).put("status", status)
         .put("received", pipeline.received).put("accepted", pipeline.accepted).put("rejected", pipeline.rejected)
         .put("saved", saved).put("writeErrors", writeErrors).put("ageSeconds", age ?: JSONObject.NULL)
@@ -82,7 +94,7 @@ class LocationTrackerService : Service(), LocationListener {
             .put("speedKmh", latest.speed?.times(3.6) ?: JSONObject.NULL)
             .put("rawSpeedKmh", latest.rawSpeed?.times(3.6) ?: JSONObject.NULL)
             .put("speedAccuracyMps", latest.speedAccuracy ?: JSONObject.NULL)
-            .put("motionState", if (age != null && age > 3) "unknown" else latest.motionState)
+            .put("motionState", if (expired) "unknown" else latest.motionState)
             .put("bearing", latest.bearing ?: JSONObject.NULL))
         }.toString()
       handler.postDelayed(this, 1000)

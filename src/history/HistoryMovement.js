@@ -217,8 +217,12 @@ export function historyEdge(from, to, subject = 'dog', config = configFor(subjec
   }
   const durationMs = to.time - from.time;
   const distanceM = distanceMeters(from, to);
-  // 067: a break at one place is part of the stay there, not a gap.
-  const bridged = samePlaceGap(from, to, config);
+  // 067: a break at one place is no walk and no gap of the route (distance,
+  // vehicles, today's distance). Across a recording session change too: the
+  // ends are one place either way. Whether the break is stay time is decided
+  // by the visits (samePlaceGap without acrossSessions); the phone list shows
+  // a bridge outside a stay as 「沒有資料」 (historyTimeline).
+  const bridged = samePlaceGap(from, to, config, { acrossSessions: true });
   // One missed speed in an otherwise measured walk may use the immediately
   // preceding reliable speed for at most ten seconds, never across a gap.
   const modernPhone = subject === 'phone' && to.phoneMotionState != null
