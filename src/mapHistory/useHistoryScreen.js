@@ -12,7 +12,7 @@ import { t } from '../i18n';
 import { useTheme, getTheme, resolveStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createHistoryHolds } from '../placement/IndoorHold';
-import { endOfDay, startOfToday } from '../tracking/TodayDistance';
+import { endOfDay, splitFutureRows, startOfToday } from '../tracking/TodayDistance';
 import { cursorHaptic } from '../history/screen/HistoryScreenCursor';
 import { nearestRecord } from '../history/screen/HistoryScreenRange';
 import {
@@ -130,7 +130,10 @@ export function useHistoryDayRows({
     let alive = true,
       timer;
     let waitingForPublication = false, readPublication = null, signalledPublication = null;
-    const cache = { rows: [], seed: [], after: {}, first: true };
+    // `future`: my route's fixes stamped later than now (the phone's clock
+    // was set wrong when they were recorded), kept out of the day until their
+    // time comes (TodayDistance.splitFutureRows).
+    const cache = { rows: [], seed: [], after: {}, first: true, future: [] };
     const identity = [subject, slaveId, day, owner, scope, read, getPublication,
       publicationState?.scope, publicationState?.generation];
     // The hold pass (IndoorHold) is the costly part of a day: today's rows
@@ -202,10 +205,17 @@ export function useHistoryDayRows({
         diagnostic?.emit('row', 'end', began, { ...historyPublicationFlags(getPublication?.(), owner, before, true), rowsLoaded: true });
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
-        const added = answer.rows?.length || 0;
+        // This phone's own fixes carry its own clock; a dog's rows carry the
+        // collars' and the server's, which a phone clock running behind must
+        // not hide.
+        const { shown, future } = subject === 'phone'
+          ? splitFutureRows([...cache.future, ...(answer.rows || [])], now.current())
+          : { shown: answer.rows || [], future: [] };
+        cache.future = future;
+        const added = shown.length;
         const pass = cache.first && passes ? ++passes.current : null;
         if (added)
-          cache.rows = [...cache.rows, ...answer.rows].sort(
+          cache.rows = [...cache.rows, ...shown].sort(
             (a, b) => a.time - b.time,
           );
         if (added || cache.first) {
@@ -914,16 +924,15 @@ export function useHistoryScreen({
     [onDayChange, setDay],
   );
   const { startDownload, cancelDownload, downloadingDay } = cloudDays;
-  const reread = useCallback(() => setReadRevision(value => value + 1), []);
-  // A download's end reads the day again; until every dog shown has been
-  // read from the start after it, the old (empty) rows are no answer: the
-  // screen keeps 「下載 … 的紀錄」 (2026-10-13: one frame of 「這天沒有…的紀錄」
-  // flashed between the download and the rows).
+  // A download's end ('done') reads the day again; until every dog shown has
+  // been read from the start after it, the old (empty) rows are no answer:
+  // the screen keeps 「下載 … 的紀錄」 (2026-10-13: one frame of 「這天沒有…的
+  // 紀錄」 flashed between the download and the rows).
   const downloadRead = useRef(null);
-  const rereadDownloaded = useCallback(status => {
+  const reread = useCallback(status => {
     if (status === 'done') downloadRead.current = readPasses.current;
-    reread();
-  }, [reread]);
+    setReadRevision(value => value + 1);
+  }, []);
   // Ensure each selected cloud day once, including a day with only a recent
   // local slice. Failure/cancel stays actionable; it never loops retries.
   const ensured = useRef(new Set());
@@ -969,9 +978,9 @@ export function useHistoryScreen({
     ensured.current.add(due.key);
     explicitTail.current = due.explicit;
     autoTailResume.current = due.explicit ? null : resumes.current.count;
-    startDownload(shownKey, rereadDownloaded);
+    startDownload(shownKey, reread);
   }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope, // eslint-disable-line react-hooks/exhaustive-deps
-    cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, rereadDownloaded]);
+    cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);
   /** Cancel retains the last complete rows and marks the window incomplete. */
   const cancel = useCallback(() => {
     if (!cancelDownload()) return false;
@@ -994,7 +1003,7 @@ export function useHistoryScreen({
       cancel();
       if (next !== shownKey) changeDay(next);
       if (choice.type === 'download') {
-        if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, rereadDownloaded); }
+        if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, reread); }
         else if (cloudDays.completenessLoaded) {
           // The proof just read already says this day needs a download (a
           // day only the cloud holds, or 「部分」): show 「下載 … 的紀錄」 at
@@ -1003,7 +1012,7 @@ export function useHistoryScreen({
           // download and the day's proof check agree on it.
           const at = clock();
           coverageOpening.current = { key: `${sessionKey}|${dayBounds(next).dayStart}|${owner ?? ''}`, active, cutoff: at };
-          explicitTail.current = true; startDownload(next, rereadDownloaded, at);
+          explicitTail.current = true; startDownload(next, reread, at);
         } else ensureRequested.current = next;
       }
       return choice;
@@ -1018,7 +1027,7 @@ export function useHistoryScreen({
       changeDay,
       startDownload,
       cloud,
-      rereadDownloaded,
+      reread,
       cloudDays.completenessLoaded,
       clock,
       sessionKey,
@@ -1042,9 +1051,9 @@ export function useHistoryScreen({
         day: shownKey,
         message: offlineMessage(shownKey),
       };
-    explicitTail.current = true; startDownload(shownKey, rereadDownloaded);
+    explicitTail.current = true; startDownload(shownKey, reread);
     return { type: 'download', day: shownKey };
-  }, [online, shownKey, startDownload, rereadDownloaded]);
+  }, [online, shownKey, startDownload, reread]);
   const updateHistory = useCallback(() => {
     if (!online) return { type: 'offline', day: shownKey, message: offlineMessage(shownKey) };
     coverageOpening.current.cutoff = clock();
@@ -1177,7 +1186,7 @@ export function useHistoryScreen({
     id => {
       const dog = dogs.find(d => d.id === id);
       if (!dog) return;
-      if (dog.downloadFailed) { explicitTail.current = true; cloudDays.startDownload(shownKey, rereadDownloaded); return; }
+      if (dog.downloadFailed) { explicitTail.current = true; cloudDays.startDownload(shownKey, reread); return; }
       haptic('tick');
       if (id === protagonistId || !dog.selectable) {
         // 點已經是主角的狗膠囊: the map moves to its cursor (if out of sight).
@@ -1197,7 +1206,7 @@ export function useHistoryScreen({
       // 換主角時的地圖: always to the new protagonist's cursor (a chosen move).
       setFocus({ key: Date.now(), time: null, action: 'protagonist', id });
     },
-    [dogs, protagonistId, cursor, cursorTime, time, cloudDays, shownKey, rereadDownloaded],
+    [dogs, protagonistId, cursor, cursorTime, time, cloudDays, shownKey, reread],
   );
   /** ✕ on a chip (not on the last one). */
   const shownRange = dayModel?.range ?? null;
@@ -1247,7 +1256,7 @@ export function useHistoryScreen({
     const added = [...addedDownloads.current].filter(id => dogIds.includes(id));
     addedDownloads.current.clear();
     if (added.some(id => !localByDog[id]?.includes(shownKey))) {
-      explicitTail.current = true; cloudDays.startDownload(shownKey, rereadDownloaded);
+      explicitTail.current = true; cloudDays.startDownload(shownKey, reread);
     }
   }, [active, cloud, daysByDog, baseKey, idsKey, shownKey, localByDog]); // eslint-disable-line react-hooks/exhaustive-deps
 

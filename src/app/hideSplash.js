@@ -17,8 +17,20 @@ import { markStartupPhase } from '../diagnostics/StartupPhases';
 // (AlertNotifications.notificationDestination), once JavaScript has read it.
 // `linkRead`: the launch link has been read (App: initialLinkRead); the map's
 // handover waits for it, so it knows whether a notification opened the app.
-const gate = { mapFramed: false, launch: null, targets: [], notification: null, linkRead: true, latestScope: null, latestSettled: true, gaveUp: false };
+const gate = { mapFramed: false, launch: null, targets: [], notification: null, linkRead: true, latestScope: null, latestSettled: true, gaveUp: false, capped: false };
 let linkTimer = null;
+let capTimer = null;
+
+// The longest a signed-in cold start waits for this launch's latest positions
+// (useInitialLatest), counted once from the first moment it waits: a new
+// sync generation, publisher or retry does not start it again.
+export const INITIAL_LATEST_WAIT_MS = 10000;
+// Once that wait is over the map gets this long to frame what it has; then
+// the copy hands over whatever is drawn (unframed, or still loading its
+// tiles), with the map's own update hint, instead of holding the launch
+// screen for the map's 15 s tile timeout or the 30 s hang safety net.
+export const HANDOVER_GRACE_MS = 1500;
+export const LAUNCH_HANDOVER_CAP_MS = INITIAL_LATEST_WAIT_MS + HANDOVER_GRACE_MS;
 // 'waiting' (the copy covers the screen) → 'handover' (mode 'fly' | 'fade')
 // → 'done'. The map's controls fade in through `chrome`; the real dog
 // markers stay hidden while the copy draws them (markersHidden).
@@ -82,6 +94,8 @@ export function notificationTargets(targets, dogId) {
 
 function begin(mode, targets = []) {
   if (state.phase !== 'waiting') return;
+  clearTimeout(capTimer);
+  capTimer = null;
   const destination = gate.notification;
   // Opened from a notification that opens a page (or one not read yet while
   // the system says so): no map to land on.
@@ -109,6 +123,18 @@ function begin(mode, targets = []) {
 function release() {
   if (gate.launch === 'page') begin('fade');
   else if (gate.launch === 'map' && gate.mapFramed && gate.linkRead && gate.latestSettled) begin('fly', gate.targets);
+  // The launch's cap is over: what still holds the copy (the first framing,
+  // the latest positions, the launch link) no longer does.
+  else if (gate.launch === 'map' && gate.capped) begin('fade');
+}
+
+function armLaunchCap() {
+  if (capTimer || gate.capped || state.phase !== 'waiting') return;
+  capTimer = setTimeout(() => {
+    capTimer = null;
+    gate.capped = true;
+    release();
+  }, LAUNCH_HANDOVER_CAP_MS);
 }
 
 // Only the cold map needs this additional condition; page/guide launches
@@ -120,6 +146,7 @@ export function reportInitialLatest(scope, phase) {
     gate.mapFramed = false;
   }
   gate.latestSettled = ['bypass', 'accepted', 'fallback'].includes(phase);
+  if (phase === 'waiting') armLaunchCap();
   if (phase === 'accepted' || phase === 'fallback') markStartupPhase('cloud-latest-settled');
   const latest = phase === 'bypass' ? null : { scope, phase };
   if (state.latest?.scope !== latest?.scope || state.latest?.phase !== latest?.phase)
@@ -241,8 +268,11 @@ export function resetSplashGate() {
   gate.latestScope = null;
   gate.latestSettled = true;
   gate.gaveUp = false;
+  gate.capped = false;
   clearTimeout(linkTimer);
   linkTimer = null;
+  clearTimeout(capTimer);
+  capTimer = null;
   splashChrome.setValue(1);
   reducedMotion = false;
   state = { phase: 'waiting', mode: null, targets: [], markersHidden: false };
