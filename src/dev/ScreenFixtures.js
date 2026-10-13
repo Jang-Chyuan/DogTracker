@@ -32,6 +32,8 @@ import { fixtureExporter } from './fixtureExporter';
 import { dayKey } from '../history/screen/HistoryScreenDates';
 import { activityMinutes, activityReadings } from '../activity/ActivityMinutes';
 import { ACTIVITY_CONTEXT_MS } from '../activity/ActivityData';
+import { CARD_BATTERY_ROWS } from '../activity/DogCardReadings';
+import { plausibleBattery } from '../tracking/BatteryPlausibility';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
 export const FIXTURE_NOW = Date.parse('2026-10-07T01:30:00Z');
@@ -823,7 +825,7 @@ const FIXTURES = {
   }),
   // ---- a dog's card open (046, design A3/A3b/A7b) ------------------------
   // 豆豆 on receiver 7, in range, battery 62%, resting for the last 18
-  // minutes: 位置 has no row, 接收範圍 「在範圍內」, 活動量 「休息中 已 18 分鐘」.
+  // minutes: 位置 has no row, 接收範圍 「在範圍內」, 活動量 「休息中・已 18 分鐘」.
   'card-ok': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
@@ -834,6 +836,19 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // 豆豆 at 43% whose newest packet says 0% with no voltage (a bad packet,
+  // BatteryPlausibility): the card keeps 「43%」, no red 「!」, no alert.
+  'card-battery-blip': now => {
+    const rows = track(bleRow, now, { slave: 4, from: 30 * MINUTE, battery: 43, activity: 0.3,
+      dog: (progress, where) => northEastOf(where, 420 + 30 * progress, progress) });
+    rows[rows.length - 1] = { ...rows[rows.length - 1], battery_percentage: 0 };
+    return {
+      receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+      ble: inTimeOrder([...rows, ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) })]),
+      cloudRows: dog8Cloud(now),
+    };
+  },
   // A3 itself: 豆豆 880 m from receiver 7 (快離開, amber), resting 18 minutes.
   'card-near-edge': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
@@ -938,7 +953,7 @@ const FIXTURES = {
   }),
   // 豆豆's position is current but its collar stopped sending battery and
   // activity readings at 09:11: both rows say what they last said, with the
-  // time — 「62%（09:11）」, 「休息中 已 12 分鐘（09:11）」.
+  // time — 「62%（09:11）」, 「休息中・已 12 分鐘（09:11）」.
   // 「今天 x km」 (A1): recording, today's route so far 2.7 km; the walker in
   // the phone colour.
   'phone-recording': now => ({ ...FIXTURES['all-good'](now) }),
@@ -1374,7 +1389,7 @@ const FIXTURES = {
       phone: { ...phone, recording: false, stoppedAt: now }, geocoder: { names: HISTORY_NAMES } };
   },
   // 小黑 walking from 10/5 23:10 into 10/6 00:50, opened on 10/5: the last
-  // node 「接續隔天」.
+  // node continues into the next day (no capsule since 2026-10-13).
   'history-cross-midnight': now => {
     const midnight = new Date(now - 24 * 60 * MINUTE).setHours(0, 0, 0, 0);
     const late = legsPath(midnight, 50 * MINUTE, at(-20, -40), [{ walk: 25, bearing: 70, speed: 0.5 }, { stay: 15 },
@@ -1520,7 +1535,7 @@ function withEnvironment(row, table, now) {
 const packet = (row, source) => ({
   slave_id: row.slave_id, master_id: row.master_id, track_at: timeOf(row), received_at: row.received_at,
   slave_lat: row.slave_lat, slave_lon: row.slave_lon, speed_kmh: row.speed_kmh,
-  battery_percentage: row.battery_percentage, battery_valid: row.battery_valid,
+  battery_percentage: row.battery_percentage, battery_valid: row.battery_valid, battery_mv: row.battery_mv ?? null,
   usb_present: row.usb_present, ...(source === 'ble' ? { distance_meters: row.distance_meters } : {}), source,
 });
 
@@ -1535,6 +1550,7 @@ function holdBatch(ble, cloud, now) {
     id: row.id, master_id: row.master_id, slave_id: row.slave_id,
     latitude: row.slave_lat, longitude: row.slave_lon, satellites: row.satellites, hdop: row.hdop,
     rssi: row.rssi, snr: row.snr, usb_present: row.usb_present, time: timeOf(row), source,
+    battery_percentage: row.battery_percentage, battery_valid: row.battery_valid, battery_mv: row.battery_mv ?? null,
     // Only dog_status knows where this phone's receiver was.
     ...(source === 'ble' ? { master_latitude: row.master_lat, master_longitude: row.master_lon } : {}),
   });
@@ -1650,6 +1666,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       holds: holds.holds(now),
       statuses: holds.statuses(),
       ranges: holds.ranges(),
+      batteries: holds.batteries(),
       error: '',
       loaded: true,
     },
@@ -1847,9 +1864,11 @@ function cardRows(ble, cloud, slaveId, since) {
     .sort((left, right) => left.time - right.time)
     .map(row => ({ time: row.time, activity: row.activity, activity_valid: 1, activity_time: row.activity_time ?? null,
       master_id: row.master_id, slave_id: row.slave_id }));
-  const newestBattery = (rows, source) => rows.filter(row => row.battery_valid === 1)
-    .sort((left, right) => right.time - left.time).slice(0, 1)
-    .map(row => ({ time: row.time, battery_percentage: row.battery_percentage, usb_present: row.usb_present, source }));
+  const newestBattery = (rows, source) => rows.filter(row => row.battery_valid === 1
+    && plausibleBattery(row.battery_percentage, row.battery_mv))
+    .sort((left, right) => right.time - left.time).slice(0, CARD_BATTERY_ROWS)
+    .map(row => ({ time: row.time, battery_percentage: row.battery_percentage, battery_mv: row.battery_mv ?? null,
+      usb_present: row.usb_present, source }));
   const local = mine(ble, row => row.received_at);
   const remote = mine(cloud, timeOf);
   return { local: activity(local), cloud: activity(remote),

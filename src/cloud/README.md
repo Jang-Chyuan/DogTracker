@@ -116,6 +116,8 @@ Release 版只輸出固定欄位的雲端同步紀錄，用來核對實際發布
 | `context-published` | `attempt`、`elapsedMs`、`dogs` | 停住脈絡下載並寫入 snapshot 完成 |
 | `context-failed` | `attempt`、`elapsedMs`、`failureKind`、`dogs`、`completedDogs`、`requests` | 停住脈絡逾時（10 秒預算）或失敗；最新位置與 archive 照常，不改 UI 也不另外重試。換帳號、離開前景或被新一輪最新位置取代的取消不送 |
 
+`latest-published` 的 `mastersMs` 只算成員清單請求本身；前面等 Session（`CloudSession` 的閘，長時間背景後可能等到 65 秒）另記為 `sessionMs`（只有獨立最新位置引擎有，舊引擎沒有這欄）。兩者都包含 JavaScript 執行緒忙碌時回應等著被處理的時間，所以某一階段很慢時，先看是不是 `sessionMs`，再看同時段 JS 執行緒有沒有被其他工作佔住。
+
 `context-*` 的 `elapsedMs` 從停住脈絡階段開始算（不是整輪），逾時約為 10,000；`dogs` 是這輪 snapshot 的狗數，`completedDogs` 是已下載完脈絡的狗數，`requests` 是已送出的脈絡請求數（含逾時當下還沒回應的那一個），三者都是總數。`failureKind` 沿用 `failure` 的列舉（`timeout`／`auth`／`network`／`storage`／`unknown`），`storage` 表示下載完成但寫入 snapshot 失敗。
 
 Logger 只重建這些數值欄位：attempt／revision 是正的安全整數，耗時是有限非負數，狗數與請求數是非負安全整數（`completedDogs` 不得大於 `dogs`）；其他事件名稱、列舉以外的 `failureKind` 與不合法的值，整筆直接丟棄。帳號、Master／Slave 編號、時間戳、URL、座標、payload 與錯誤物件都不會輸出。寫 log 失敗不影響下載結果。換帳號時，舊帳號已開始的原生交易可能仍寫完，但世代檢查讓它不會被記成成功。這些紀錄只看得到發布次序與停住脈絡的請求總數，看不到個別 HTTP 篩選、頁數或後端索引。

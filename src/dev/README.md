@@ -42,7 +42,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3） |
 | 初次使用 D2–D4 | `permissionsGuide`（D2 每列的允許狀態 `grants`、問過了沒 `asked`）、`pairing`（D3 的畫面：`view`、`camera`、`dialog`、`target`、`nearby`、`input`）；開在引導的那一頁（有進度條）。情境不問任何權限、不掃描、不連線，掃描框裡不開相機 | `permissionsPage` → D2；`usePairing` → D3；D4 用 `pairedPage` 讀同一批本機列 |
 | 地址 | `geocoder`：沒給＝每個地方都查不到；`{ names: [...] }` 照畫面問的順序給假答案（`{ line, awayM }`、`{ district }` 或 `null`）；`{ offline: true }` 沒網路；`'real'` 用這支手機的 Geocoder。情境用自己的 lookup，不寫進手機的地址快取 | `AddressLookup`（`describePlace` 的 50 m／300 m／區規則）→ 卡片「位置」第二行、歷史清單的節點 |
-| 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新有效電量）→ `DogCardModel` |
+| 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`／`battery_mv`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新可信電量 `BatteryPlausibility`）→ `DogCardModel` |
 | 活動量頁（A4） | `activityView`（開在哪個分頁、哪一天 `{ mode, date }`）、`readActivity`／`readActivityEarliest` 照 `CloudDatabase.activityPeriod`／`activityEarliest` 的介面回答小黑（6）的讀數（日：每分鐘兩筆原始讀數；週／月／年：每分鐘平均）；`activityNow`：只給 A4 的時鐘（`activity-today` 在 09:30:40，還沒結束的那一分鐘讀數 0.95） | `useActivityView` → `buildActivityView`／`combineYearView` → `ActivityScreen` |
 
 第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的個人頁（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
@@ -78,15 +78,16 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `dogs-offscreen` | 只有豆豆在接收器 7、走在手機旁邊（第一個畫面框住牠和手機）；五隻雲端狗在西邊 2–3 公里：左邊一個提示，三個小頭像（阿福 40 分鐘沒有新位置，排第一、紅框）＋「+2」；狗 9 在東邊 2.5 公里：右邊一個提示 |
 | `cold-start-far-cloud` | 豆豆、狗 5 在接收器 7、手機旁邊；阿福的最後位置是 26 小時前、約 10 公里外（雲端）：第一個畫面只框本機的狗和手機（阿福用邊緣提示），按「框住全部」才把阿福框進來 |
 | `cloud-only` | 沒設定接收器，小黑、阿福只從雲端來：不畫範圍圈、沒有接收範圍判定 |
-| `card-ok` | 豆豆的卡片：在範圍內、62%、休息中 已 18 分鐘（沒有「位置」列） |
+| `card-ok` | 豆豆的卡片：在範圍內、62%、休息中・已 18 分鐘（沒有「位置」列） |
+| `card-battery-blip` | 豆豆一直是 43%，最新一筆封包寫 0%、沒有電壓（壞封包）：卡片照樣「43%」，沒有紅色「!」、不提醒（`BatteryPlausibility`） |
 | `card-near-edge` | A3：豆豆 880 m，「接收範圍」琥珀「快離開接收範圍」 |
 | `card-problems` | A3b：豆豆 09:05 之後沒有新位置、15%、不在接收範圍，活動量「—」 |
-| `card-indoor` | A7b：小黑停在原處（室內）、充電中 62%、休息中 已 40 分鐘，沒有「接收範圍」列；「位置」第二行「桃園區中正路 1 號附近」 |
-| `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」只寫「室內」、沒有第二行（列高照樣 64dp），不轉圈 |
+| `card-indoor` | A7b：小黑停在原處（室內・11 分，和歷史同一段的分鐘相同）、充電中 62%、休息中・已 40 分鐘（進門前就在外面休息），沒有「接收範圍」列；「位置」第二行「桃園區中正路 1 號附近」 |
+| `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」只寫「室內・11 分」、沒有第二行（列高照樣 64dp），不轉圈 |
 | `card-indoor-geocoder` | 同 `card-indoor`，地址用這支手機自己的 Geocoder 查（要網路＋Play services） |
 | `card-cloud-dog` | 小黑只從雲端來：沒有「接收範圍」列；劇烈活動 |
 | `card-phone-no-fix` | 手機最後定位 15 分鐘前：方向距離改寫「手機沒有定位」 |
-| `card-readings-old` | 豆豆位置是新的，但電量、活動量 09:11 之後沒有讀數：「62%（09:11）」「休息中 已 12 分鐘（09:11）」 |
+| `card-readings-old` | 豆豆位置是新的，但電量、活動量 09:11 之後沒有讀數：「62%（09:11）」「休息中・已 12 分鐘（09:11）」 |
 | `dog-edit` | `card-ok` 再按鉛筆：豆豆的個人頁（A5）蓋在卡片上 |
 | `activity-card` | 小黑的卡片（A3）；點「活動量」進 A4（今天），讀數和下面的情境同一套 |
 | `activity-day` | A4 日：10/6（二）整天有資料：夜裡休息、早上跑步（劇烈）、午睡、下午玩 |

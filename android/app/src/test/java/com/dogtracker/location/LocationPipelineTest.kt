@@ -54,13 +54,13 @@ class LocationPipelineTest {
   @Test fun rejectsBadAccuracyStaleAndJumpingFixesWithoutConsumingWriteSlot() {
     val pipe = LocationPipeline()
     assertFalse(pipe.accept(sample(1, accuracy = 31f), 1_000_000_000L))
-    assertFalse(pipe.accept(sample(1), 5_000_000_000L))
-    assertTrue(pipe.accept(sample(6, accuracy = 30f), 6_000_000_000L))
-    assertFalse(pipe.accept(sample(7, lat = 26.0), 7_000_000_000L))
-    assertNotNull(pipe.candidate(7_000_000_000L))
+    assertFalse(pipe.accept(sample(1), 17_000_000_000L)) // 16 s old
+    assertTrue(pipe.accept(sample(18, accuracy = 30f), 18_000_000_000L))
+    assertFalse(pipe.accept(sample(19, lat = 26.0), 19_000_000_000L))
+    assertNotNull(pipe.candidate(19_000_000_000L))
     assertEquals(3, pipe.rejected)
     // Long outages reset rather than dragging the old location forward.
-    assertTrue(pipe.accept(sample(50, lat = 26.0), 50_000_000_000L))
+    assertTrue(pipe.accept(sample(60, lat = 26.0), 60_000_000_000L))
     assertEquals(26.0, pipe.latest!!.latitude, 0.0)
     assertEquals(mapOf("stale" to 1, "duplicate" to 0, "invalid" to 0, "accuracy" to 1, "jump" to 1), pipe.rejectedBy)
   }
@@ -71,7 +71,7 @@ class LocationPipelineTest {
     log.saved(0, 1_000L, pipe, 0)
     assertTrue(pipe.accept(sample(1), 1 * s)); log.saved(1 * s, 2_000L, pipe, 0)
     // Wi-Fi-only fixes that arrive late or coarse while GPS is stopped.
-    assertFalse(pipe.accept(sample(10), 14 * s + 400_000_000L))
+    assertFalse(pipe.accept(sample(2), 18 * s + 400_000_000L))
     assertFalse(pipe.accept(sample(20, accuracy = 42f), 20 * s))
     assertFalse(pipe.accept(sample(30, accuracy = 35f), 30 * s))
     assertTrue(log.snapshot(50 * s, 51_000L, pipe, 0).isEmpty()) // shorter than a minute
@@ -80,7 +80,7 @@ class LocationPipelineTest {
     assertEquals(99L, ongoing.seconds)
     assertEquals(3, ongoing.received); assertEquals(0, ongoing.accepted); assertEquals(2, ongoing.writeErrors)
     assertEquals(mapOf("stale" to 1, "accuracy" to 2), ongoing.rejectedBy)
-    assertEquals(4.4, ongoing.maxStaleSeconds!!, 1e-6)
+    assertEquals(16.4, ongoing.maxStaleSeconds!!, 1e-6)
     assertEquals(35f, ongoing.bestRejectedAccuracy)
     assertTrue(pipe.accept(sample(101), 101 * s)); log.saved(101 * s, 102_000L, pipe, 2)
     val done = log.snapshot(102 * s, 103_000L, pipe, 2).single()

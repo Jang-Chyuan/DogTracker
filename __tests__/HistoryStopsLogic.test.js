@@ -169,7 +169,10 @@ test('coarse same-place endpoints join visits only after compact confirmed stati
   const visits = historyVisits(coarsePhoneGap([gapPhone(4205, 44), gapPhone(4800, 44)]), { subject: 'phone' });
   expect(visits).toHaveLength(1);
   expect(visits[0]).toMatchObject({ start: 0, end: 4800000, durationMs: 4800000, interruptionMs: 0 });
-  expect(visits[0].points.every(p => p.accuracy <= 25)).toBe(true);
+  // The 28 m fix is locked stationary: observed stay time, never a vote.
+  const judged = visits[0].points.filter(p => p.accuracy <= 25);
+  expect(judged.length).toBe(visits[0].points.length - 1);
+  expect(visits[0].latitude).toBeCloseTo(judged.reduce((sum, p) => sum + p.latitude, 0) / judged.length, 12);
 });
 
 test.each([
@@ -195,7 +198,8 @@ test('inferred bridge metadata follows actual range fixes, never external or emp
   const across = historyStops(points, { ...options, start: 600000, end: 4800000 }).visits[0];
   const inside = historyStops(points, { ...options, start: 1000000, end: 2000000 });
   expect(before.inferredContinuityGaps).toEqual([]);
-  expect(before.durationMs).toBe(600000);
+  // The locked 28 m fix at 605 s is the visit's own observed time.
+  expect(before.durationMs).toBe(605000);
   expect(after.inferredContinuityGaps).toEqual([]);
   expect(after.durationMs).toBe(600000);
   expect(across.inferredContinuityGaps).toEqual([{ start: 605000, end: 4200000 }]);

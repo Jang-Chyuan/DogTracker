@@ -19,18 +19,20 @@ const card = (d, options = {}) => dogCard(d, { freshness: fresh, phone: phoneRea
   name: '小黑', ...options });
 const row = (model, key) => model.rows.find(item => item.key === key);
 
-test('distance and bearing, five-metre steps, compass words', () => {
+test('distance and bearing, the shared distance steps, compass words', () => {
   const { metres, bearing } = bearingAndDistance(HOME, NE);
   expect(metres).toBeGreaterThan(800);
   expect(metres).toBeLessThan(900);
   expect(bearing).toBeGreaterThan(30);
   expect(bearing).toBeLessThan(60);
   expect(compassWord(bearing)).toBe(i18nT("c739"));
-  expect(formatDistance(7.4)).toBe('7 m');
-  expect(formatDistance(847)).toBe('845 m');
+  // 2026-10-13: one formatter with the history list (utils/distanceText):
+  // 5 m steps under 100 m, 10 m steps to 1 km, then km with one decimal.
+  expect(formatDistance(7.4)).toBe('5 m');
+  expect(formatDistance(847)).toBe('850 m');
   expect(formatDistance(998)).toBe('1.0 km');
   expect(formatDistance(1420)).toBe('1.4 km');
-  expect(formatDistance(12400)).toBe('12 km');
+  expect(formatDistance(12400)).toBe('12.4 km');
 });
 
 test('A3: a fresh dog in range — 電量, 接收範圍, 活動量, no 位置 row', () => {
@@ -40,8 +42,8 @@ test('A3: a fresh dog in range — 電量, 接收範圍, 活動量, no 位置 ro
   expect(row(model, 'battery')).toMatchObject({ value: '62%', tone: null });
   expect(row(model, 'range')).toMatchObject({ value: i18nT('c348'), tone: null });
   expect(row(model, 'activity')).toMatchObject({ value: '—', pressable: true });
-  expect(model.headline).toMatchObject({ kind: 'distance', distance: '845 m', suffix: i18nT('c064') });
-  expect(model.headlineSpeech).toBe('小黑，東北方 845 公尺，離手機');
+  expect(model.headline).toMatchObject({ kind: 'distance', distance: '850 m', suffix: i18nT('c064') });
+  expect(model.headlineSpeech).toBe('小黑，東北方 850 公尺，離手機');
   // No receiver row, ever.
   expect(model.rows.some(item => item.label === i18nT('c075'))).toBe(false);
 });
@@ -109,6 +111,46 @@ test('A7b: held indoors — 位置 「室內」 (address line when known), 離�
   expect(silent.headline.suffix).toBe('離手機・室內・最後資料');
 });
 
+// 2026-10-13: the card's 室內 minutes are the history's for the same hold
+// (HistoryStops.historyIndoorNodes, HistoryTimelinePresentation): from the first
+// row the hold covers (heldFrom, HoldStore) to its newest packet, in whole clock
+// minutes — not the 活動量 row's rest, which is the collar's motion.
+test('A7b: 室內・N 分 counts as the history does, apart from the 活動量 rest', () => {
+  const from = new Date(2026, 9, 7, 9, 3, 50).getTime();
+  const held = dog({ heldReason: '室內', heldSource: 'good', heldSince: from - 4 * MINUTE, heldFrom: from,
+    packetAt: new Date(2026, 9, 7, 9, 29, 10).getTime() });
+  const freshness = { ...fresh, basis: 'packet' };
+  // Calm only for the last 12 minutes (the dog moved about inside before).
+  const rows = [];
+  for (let time = NOW - 40 * MINUTE; time < NOW; time += 10000) {
+    rows.push({ time, activity: time < NOW - 12 * MINUTE ? 0.3 : 0.02, slave_id: 6 });
+  }
+  const activity = { minutes: activityMinutes(activityReadings(rows, 'ble'), { now: NOW }), newestAt: NOW - 10000 };
+  const model = card(held, { freshness, address: '桃園區中正路 1 號附近', activity });
+  // 09:03 → 09:29 on the clock: 26 minutes, as the history's 「室內・26 分」.
+  expect(row(model, 'position')).toMatchObject({ value: '室內・26 分', detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: '位置，室內，26 分，桃園區中正路 1 號附近' });
+  expect(row(model, 'activity')).toMatchObject({ value: i18nT('c069'), detail: '已 12 分鐘',
+    speech: '活動量，休息中，活動量低已 12 分鐘' });
+  // Without heldFrom (an older merged dog) it counts from heldSince; past an
+  // hour it reads as the history's list (「1 時 13 分」).
+  const { heldFrom, ...older } = held;
+  expect(heldFrom).toBe(from);
+  expect(row(card({ ...older, heldSince: from - 47 * MINUTE }, { freshness }), 'position').value).toBe('室內・1 時 13 分');
+  // No times at all: 「室內」 alone, as before.
+  expect(row(card({ ...older, heldSince: undefined }, { freshness }), 'position').value).toBe(i18nT('c114'));
+  // Stale indoors: the row still says 沒有新資料, no minutes.
+  expect(row(card(held, { freshness: { ...stale, basis: 'packet' } }), 'position').value).toBe('沒有新資料・最後 09:05');
+});
+
+test('battery: a reading kept from an earlier packet (DogMerge batteryAt) carries its time when old', () => {
+  // The newest packet said 0% without an empty cell's voltage: DogMerge kept
+  // 43% from 09:12 (BatteryPlausibility), so that is what the card shows.
+  const at = new Date(2026, 9, 7, 9, 12).getTime();
+  expect(row(card(dog({ batteryPercentage: 43, batteryAt: at })), 'battery')).toMatchObject({ value: '43%（09:12）', tone: null });
+  expect(row(card(dog({ batteryPercentage: 43, batteryAt: NOW - 6000 })), 'battery').value).toBe('43%');
+});
+
 test('the phone: none or over 10 minutes old is 手機沒有定位; 30 s to 10 minutes says how old', () => {
   expect(phoneReading({ running: false, position: phone.position }, NOW)).toBeNull();
   expect(phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 11 * MINUTE } }, NOW)).toBeNull();
@@ -135,7 +177,8 @@ test('活動量: judged at now; 「—」 when stale; old readings judged when t
   const result = activityRow(old, { reference: NOW, positionAt: NOW - 5000, stale: false });
   expect(result).toMatchObject({ word: i18nT('c069'), detail: '已 20 分鐘', at: stopped.at(-1).time });
   const model = card(dog(), { activity: old });
-  expect(row(model, 'activity').speech).toBe('活動量，休息中，已 20 分鐘，09:09');
+  // TalkBack: the minutes are the collar's low motion, not the 室內 minutes.
+  expect(row(model, 'activity').speech).toBe('活動量，休息中，活動量低已 20 分鐘，09:09');
 });
 
 test('the card falls back to the map blue dot when the recording service has no fix', () => {

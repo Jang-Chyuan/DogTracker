@@ -1,5 +1,7 @@
-import { createHoldTracker, fixQuality, HOLD_CONFIG } from './IndoorHold';
+import { createHoldTracker, fixQuality, holdFillStart, HOLD_CONFIG } from './IndoorHold';
 import { advanceRange, emptyRange } from '../tracking/ReceiverRange';
+import { advanceBattery, batteryReading } from '../tracking/BatteryPlausibility';
+import { configFor, samePlaceGap } from '../history/HistoryConfig';
 
 // How far back a cold start replays rows; older history only contributes its
 // last good fixes (the seeds), which is all a hold needs to know where it is.
@@ -16,6 +18,51 @@ const rangeRow = (row, held) => ({
   time: row.time, source: row.source, latitude: Number(row.latitude), longitude: Number(row.longitude),
   receiverLatitude: Number(row.master_latitude), receiverLongitude: Number(row.master_longitude), held,
 });
+
+const HISTORY_DOG = configFor('dog');
+
+/**
+ * One row through a dog's tracker, in time order (`rows[index]`), and what
+ * the same rows say beside the hold: the receiver range, the battery
+ * (BatteryPlausibility) and from which row the history would draw the hold.
+ *
+ * That row is where the card's 「室內・N 分」 starts, so it says what the
+ * history's 「室內・N 分」 says (HistoryStops.historyIndoorNodes): not the
+ * hold's `since` (the last good fix, a row the history does not draw held,
+ * possibly long before the collar spoke again) but the first row the hold
+ * covers (IndoorHold.holdFillStart), restarted after a break in the packets
+ * that the history would not bridge (samePlaceGap).
+ */
+function step(state, rows, index) {
+  const row = rows[index];
+  const { tracker, heldRows } = state;
+  const event = tracker.push(row);
+  if (event?.type === 'end' && event.departureSince != null) {
+    // As createHistoryHolds: the walk out is not part of the hold.
+    for (let back = index - 1; back >= 0 && rows[back].time >= event.departureSince; back -= 1) heldRows.delete(rows[back]);
+  }
+  if (event?.type === 'start') {
+    const from = holdFillStart(rows, index, event, state.config, earlier => heldRows.has(earlier));
+    for (let fill = from; fill < index; fill += 1) heldRows.add(rows[fill]);
+    state.timing = { since: event.since, from: rows[from].time, last: null };
+  }
+  const current = tracker.current(row.time);
+  if (current) {
+    heldRows.add(row);
+    const place = { time: row.time, latitude: current.coordinate.latitude, longitude: current.coordinate.longitude };
+    if (!state.timing || state.timing.since !== current.since) {
+      state.timing = { since: current.since, from: row.time, last: null };
+    } else if (state.timing.last && row.time - state.timing.last.time > HISTORY_DOG.gapMs
+      && !samePlaceGap(state.timing.last, place, HISTORY_DOG)) {
+      state.timing.from = row.time;
+    }
+    state.timing.last = place;
+  } else {
+    state.timing = null;
+  }
+  state.range = advanceRange(state.range, rangeRow(row, !!current));
+  state.battery = advanceBattery(state.battery, batteryReading(row, row.time));
+}
 
 /**
  * One tracker per dog for the live map. Rows arrive in batches from the BLE
@@ -35,7 +82,7 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
   function dog(slaveId) {
     if (!dogs.has(slaveId)) {
       dogs.set(slaveId, { tracker: createHoldTracker(config, options), rows: [], seeds: [], touched: 0,
-        range: emptyRange() });
+        range: emptyRange(), config, heldRows: new WeakSet(), timing: null, battery: null });
     }
     return dogs.get(slaveId);
   }
@@ -83,15 +130,15 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
           const from = state.rows[0]?.time ?? Infinity;
           const tracker = createHoldTracker(config, options);
           tracker.seed([...state.seeds, ...state.tracker.goodFixes()].filter(row => row.time < from));
-          for (const row of state.rows) {
-            tracker.push(row);
-            state.range = advanceRange(state.range, rangeRow(row, !!tracker.current(row.time)));
-          }
-          state.tracker = tracker;
+          Object.assign(state, { tracker, heldRows: new WeakSet(), timing: null, battery: null });
+          for (let index = 0; index < state.rows.length; index += 1) step(state, state.rows, index);
         } else {
+          const position = new Map(state.rows.map((row, index) => [row, index]));
           for (const row of batch.rows) {
-            state.tracker.push(row);
-            state.range = advanceRange(state.range, rangeRow(row, !!state.tracker.current(row.time)));
+            const index = position.get(row);
+            // A row the window already let go of (older than it keeps).
+            if (index === undefined) step(state, [row], 0);
+            else step(state, state.rows, index);
           }
         }
         if (batch.rows.length) state.touched = Math.max(state.touched, newest);
@@ -101,7 +148,19 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
       const result = {};
       for (const [slaveId, state] of dogs) {
         const current = state.tracker.current(now);
-        if (current) result[slaveId] = current;
+        // `from`: where the history's 室內 node of this hold starts (step).
+        if (current) {
+          result[slaveId] = state.timing?.since === current.since ? { ...current, from: state.timing.from } : current;
+        }
+      }
+      return result;
+    },
+    // Each dog's battery judgement (BatteryPlausibility.advanceBattery state)
+    // over the same rows, for DogMerge.
+    batteries() {
+      const result = {};
+      for (const [slaveId, state] of dogs) {
+        if (state.battery) result[slaveId] = state.battery;
       }
       return result;
     },

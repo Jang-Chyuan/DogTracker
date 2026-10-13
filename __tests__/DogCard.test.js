@@ -65,7 +65,7 @@ test('A3b on screen: name, 訊號源, headline, rows in order, red and amber 「
   const text = flatten(renderer.toJSON());
   expect(text).toContain('豆豆');
   expect(text).toContain('訊號源 4');
-  expect(text).toContain('845 m');
+  expect(text).toContain('850 m');
   expect(text).toContain('離手機・最後位置');
   const order = ['位置', '電量', '接收範圍', '活動量'].map(label => text.indexOf(label));
   expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -99,7 +99,7 @@ test('only 活動量, the pencil and 看軌跡 can be pressed; each reads out wh
   expect(onTrack).toHaveBeenCalledTimes(1);
   // The headline is a heading TalkBack reads as one.
   expect(renderer.root.findAll(node => node.props.accessibilityRole === 'header')[0].props.accessibilityLabel)
-    .toBe('豆豆，東北方 845 公尺，離手機，最後位置');
+    .toBe('豆豆，東北方 850 公尺，離手機，最後位置');
 });
 
 test('the arrow points at the dog on the map as drawn (turned by the map heading)', async () => {
@@ -145,6 +145,23 @@ test('a held dog\'s 位置 row is 64dp high (A7b); the address line shows once k
   expect(heights()).toContain(64);
 });
 
+test('held indoors: 位置 「室內・N 分」 and 活動量 「休息中・已 N 分鐘」, each saying what it counts', async () => {
+  const held = { heldReason: '室內', heldSource: 'good', heldFrom: NOW - 26 * 60000 - 5000, packetAt: NOW - 5000 };
+  const fresh = { freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW } };
+  const rows = [];
+  for (let time = NOW - 30 * 60000; time < NOW; time += 10000) {
+    rows.push({ time, activity: time < NOW - 12 * 60000 ? 0.3 : 0.02, activity_valid: 1, slave_id: 4 });
+  }
+  const activity = dogCardReadings({ local: rows }, NOW).activity;
+  await mount({ card: model(held, { ...fresh, activity, address: '桃園區中正路 1 號附近' }) });
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內・26 分桃園區中正路 1 號附近');
+  expect(flatten(byTestId('dog-card-row-activity')[0])).toContain('休息中・已 12 分鐘');
+  const labels = renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string', { deep: true })
+    .map(node => node.props.accessibilityLabel);
+  expect(labels).toContain('位置，室內，26 分，桃園區中正路 1 號附近');
+  expect(labels).toContain('活動量，休息中，活動量低已 12 分鐘');
+});
+
 test('the card\'s readings from SQLite: both tables, one copy per reading, the newest valid battery', async () => {
   const connection = createMemoryConnection();
   try {
@@ -178,6 +195,43 @@ test('the card\'s readings from SQLite: both tables, one copy per reading, the n
     expect(local.cloud).toEqual([]);
     expect(await cloud.dogCardRows('o', 4, NOW - 3600000)).toEqual(rows);
     await expect(readDogCardRows(connection, 'o', 0, NOW)).rejects.toThrow();
+  } finally {
+    connection.close();
+  }
+});
+
+// BatteryPlausibility on the card's own read: the SQL leaves out what can
+// never be believed (0% without an empty cell, over 100%), the JS keeps the
+// last believed reading through an unconfirmed sudden drop.
+test('the card\'s battery read: a 0% blip and a lone drop keep the last believed reading', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const cloud = createCloudDatabase(connection);
+    await cloud.initialize();
+    const insert = row => {
+      const keys = Object.keys(row);
+      return connection.executeAsync(`INSERT INTO dog_status(${keys.join(',')}) VALUES(${keys.map(() => '?').join(',')})`,
+        keys.map(key => row[key]));
+    };
+    const at = minutesAgo => NOW - minutesAgo * 60000;
+    // Fictional collar: 43% (3800 mV), then a 0% packet with no voltage, one
+    // with 255%, a lone 5% (3700 mV, a 38-point drop) and 0% at 4100 mV.
+    await insert({ received_at: at(6), slave_id: 4, battery_percentage: 43, battery_mv: 3800, battery_valid: 1 });
+    await insert({ received_at: at(5), slave_id: 4, battery_percentage: 0, battery_valid: 1 });
+    await insert({ received_at: at(4), slave_id: 4, battery_percentage: 255, battery_valid: 1 });
+    await insert({ received_at: at(3), slave_id: 4, battery_percentage: 5, battery_mv: 3700, battery_valid: 1 });
+    await insert({ received_at: at(2), slave_id: 4, battery_percentage: 0, battery_mv: 4100, battery_valid: 1 });
+    const rows = await readDogCardRows(connection, null, 4, NOW - 3600000);
+    expect(rows.battery.map(row => row.battery_percentage)).toEqual([5, 43]);
+    expect(dogCardReadings(rows, NOW).battery).toEqual({ percentage: 43, charging: false, at: at(6) });
+    // A second agreeing packet confirms the drop.
+    await insert({ received_at: at(1), slave_id: 4, battery_percentage: 4, battery_mv: 3690, battery_valid: 1 });
+    expect(dogCardReadings(await readDogCardRows(connection, null, 4, NOW - 3600000), NOW).battery)
+      .toEqual({ percentage: 4, charging: false, at: at(1) });
+    // A real empty cell (0% at 3300 mV) is believed after a gradual drain.
+    await insert({ received_at: at(0.5), slave_id: 4, battery_percentage: 0, battery_mv: 3300, battery_valid: 1 });
+    expect(dogCardReadings(await readDogCardRows(connection, null, 4, NOW - 3600000), NOW).battery.percentage).toBe(0);
   } finally {
     connection.close();
   }

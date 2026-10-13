@@ -209,3 +209,21 @@ test('going back to the background during the session wait releases the attempt 
   expect(cloud.net.rest).toEqual([]);
   expect(shownFailure()).toEqual([]);
 });
+
+// A slow 「masters」 stage after a long background is either the session
+// gate's wait or the membership request: the release log keeps them apart.
+test('the session wait is reported as sessionMs, not as the membership request (mastersMs)', async () => {
+  const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+  try {
+    await backgroundRefreshFailure();
+    await jest.advanceTimersByTimeAsync(48000);
+    await resume();
+    await jest.advanceTimersByTimeAsync(14000); await flush();
+    const published = info.mock.calls.filter(([name]) => name === '[CloudSync] latest-published');
+    expect(published).toHaveLength(1);
+    const timings = published[0][1];
+    expect(timings.sessionMs).toBeGreaterThanOrEqual(5000);
+    expect(timings.mastersMs).toBeLessThan(1000);
+    expect(timings.elapsedMs).toBeGreaterThanOrEqual(timings.sessionMs + timings.mastersMs);
+  } finally { info.mockRestore(); }
+});

@@ -652,12 +652,48 @@ export function useHistoryScreen({
   if (!exactModel.current) exactModel.current = createExactHistoryModelCache();
   const completedRangeModel = useRef(null);
   const completedScope = `${sessionKey}|${subject}|${day}|${idsKey}|${readKey}|${writeKey}|${owner ?? ''}|${cloud?.owner ?? ''}`;
+  // An open dog view (today or another day): each automatic archive pass
+  // publishes new material (the global data revision moves even when it only
+  // added another day's rows), so the day's proof and rows are read again;
+  // today's coverage cutoff also advances (its tail is downloaded). Keep
+  // showing the model last verified for this exact view (account, publisher
+  // scope/lineage, day, dogs and range) while that refresh runs, instead of
+  // blanking to loading every pass. The refresh itself decides: rows that
+  // read back unchanged keep the very same model (exact cache), changed rows
+  // replace it, and a withdrawn/failed proof (provenAt) shows loading. It
+  // stays only while the last physical proof read still covers the model's
+  // own cutoff: another owner/scope/lineage, a changed range or another day
+  // still shows loading.
+  // A foreground return starts a new sync generation whose fence stays shut
+  // until its first map ACK (often 10–20 s). The publisher's `lineage` only
+  // changes with an account switch, a deletion or a new engine, so the same
+  // lineage may keep this view across that resume until the new proof
+  // answers. Without a lineage, any generation change still shows loading.
+  const verifiedModel = useRef(null);
+  const shownPublication = cloud?.getPublication?.();
+  const verifiedIdentity = subject === 'dog' && cloud?.coverageRequired
+    ? `${sessionKey}|${day}|${idsKey}|${owner ?? ''}|${cloud.owner ?? ''}` : null;
+  const verifiedMatches = value => !!value && !!verifiedIdentity && value.identity === verifiedIdentity
+    && value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
+    && (Number.isSafeInteger(value.lineage) && value.lineage === shownPublication?.lineage
+      || value.generation === shownPublication?.generation) && value.manual === manual
+    && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
+  // A range drag never shows a retained model: it shows the busy state, then
+  // the released range (PR 115).
+  const verifiedView = !rangePending && verifiedMatches(verifiedModel.current)
+    && verifiedModel.current.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
+    ? verifiedModel.current : null;
+  // Several dogs re-reading their rows finish one by one: the verified view
+  // of all of them stays until every one is read, never a model without the
+  // dogs still reading (a dog just added has another identity: left out
+  // while it is read, as before).
+  const rereading = !!verifiedView && !allLoaded;
   const builtModel = useMemo(() => {
     // The busy render must stay cheap: neither a range request nor rows/clock
     // arriving during it may replay the model before the loading commit.
     if (rangePending) return completedRangeModel.current?.scope === completedScope
       ? completedRangeModel.current.model : null;
-    if (!subject || !subjects.length || waiting || !coverageReady) return null;
+    if (!subject || !subjects.length || waiting || !coverageReady || rereading) return null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
       : subjects[0].id;
@@ -715,36 +751,11 @@ export function useHistoryScreen({
     current.kept,
     waiting,
     coverageReady,
+    rereading,
   ]);
-  // Today's open dog view: each automatic archive pass publishes new material
-  // (its proof is re-read) and advances the coverage cutoff (its tail is
-  // downloaded). Keep showing the model last verified for this exact view
-  // (account, publisher scope/generation, day, dogs and range) while that
-  // refresh runs, instead of blanking to loading every pass. It stays only
-  // while the last physical proof read still covers the model's own cutoff:
-  // a withdrawn/failed proof, another generation/owner/scope, a changed
-  // range or another day still shows loading.
-  // A foreground return starts a new sync generation whose fence stays shut
-  // until its first map ACK (often 10–20 s). The publisher's `lineage` only
-  // changes with an account switch, a deletion or a new engine, so the same
-  // lineage may keep this view across that resume until the new proof
-  // answers. Without a lineage, any generation change still shows loading.
-  const verifiedModel = useRef(null);
-  const shownPublication = cloud?.getPublication?.();
-  const verifiedIdentity = subject === 'dog' && cloud?.coverageRequired && today
-    ? `${sessionKey}|${day}|${idsKey}|${owner ?? ''}|${cloud.owner ?? ''}` : null;
-  const verifiedMatches = value => !!value && !!verifiedIdentity && value.identity === verifiedIdentity
-    && value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
-    && (Number.isSafeInteger(value.lineage) && value.lineage === shownPublication?.lineage
-      || value.generation === shownPublication?.generation) && value.manual === manual
-    && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
   // Either blocker qualifies: the proof waiting for its re-read/tail, or the
-  // day's rows re-reading for the new material/cutoff (no dog loaded yet).
-  // A range drag never shows a retained model: it shows the busy state, then
-  // the released range (PR 115).
-  const retained = !rangePending && !builtModel && !waiting && verifiedMatches(verifiedModel.current)
-    && verifiedModel.current.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
-    ? verifiedModel.current : null;
+  // day's rows re-reading for the new material/cutoff.
+  const retained = !builtModel && !waiting ? verifiedView : null;
   useEffect(() => {
     // While a range drag holds the last completed model, its cutoff may lag
     // the current one: neither record nor drop the verified model then.
@@ -909,26 +920,40 @@ export function useHistoryScreen({
   if (active && !resumes.current.active) resumes.current = { active, count: resumes.current.count + 1 };
   else resumes.current.active = active;
   const autoTailResume = useRef(null);
-  useEffect(() => {
-    if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
-    const key = `${cloudDays.cloudScope}|${shownKey}|${coverageCutoff}|${publicationRevision}`;
+  // Whether the day's own automatic download is due now ({ key, explicit }),
+  // else null. Read by the render too: the commit in which the proof says
+  // 「not complete」 must already show 「下載 … 的紀錄」, never one frame of
+  // 「這天的紀錄還沒下載完　重試」 before the effect below starts it.
+  const ensureKey = `${cloudDays.cloudScope}|${shownKey}|${coverageCutoff}|${publicationRevision}`;
+  const ensureDue = () => {
+    if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return null;
     const explicit = ensureRequested.current === shownKey;
     if (cloudDays.download?.day === shownKey && cloudDays.download.status !== 'done') {
-      if (cloudDays.download.status === 'downloading') {
-        if (cloudDays.download.cutoff === coverageCutoff) ensured.current.add(key);
-        return;
-      }
+      if (cloudDays.download.status === 'downloading') return null;
       const interrupted = !explicitTail.current && autoTailResume.current != null
         && autoTailResume.current < resumes.current.count;
-      if (!explicit && !interrupted) { ensured.current.add(key); return; }
+      if (!explicit && !interrupted) return null;
     }
-    if (explicit) { ensured.current.delete(key); ensureRequested.current = null; }
-    if (ensured.current.has(key)) return;
-    ensured.current.add(key);
-    explicitTail.current = explicit;
-    autoTailResume.current = explicit ? null : resumes.current.count;
+    return explicit || !ensured.current.has(ensureKey) ? { key: ensureKey, explicit } : null;
+  };
+  const tailDue = ensureDue();
+  useEffect(() => {
+    if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
+    const due = ensureDue();
+    if (!due) {
+      // A running download for this cutoff, or one that ended (cancelled or
+      // failed) and stays actionable: this key is handled, never retried.
+      if (cloudDays.download?.day === shownKey && cloudDays.download.status !== 'done'
+        && (cloudDays.download.status !== 'downloading' || cloudDays.download.cutoff === coverageCutoff))
+        ensured.current.add(ensureKey);
+      return;
+    }
+    if (due.explicit) { ensured.current.delete(due.key); ensureRequested.current = null; }
+    ensured.current.add(due.key);
+    explicitTail.current = due.explicit;
+    autoTailResume.current = due.explicit ? null : resumes.current.count;
     startDownload(shownKey, reread);
-  }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope,
+  }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope, // eslint-disable-line react-hooks/exhaustive-deps
     cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);
   /** Cancel retains the last complete rows and marks the window incomplete. */
   const cancel = useCallback(() => {
@@ -953,7 +978,16 @@ export function useHistoryScreen({
       if (next !== shownKey) changeDay(next);
       if (choice.type === 'download') {
         if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, reread); }
-        else ensureRequested.current = next;
+        else if (cloudDays.completenessLoaded) {
+          // The proof just read already says this day needs a download (a
+          // day only the cloud holds, or 「部分」): show 「下載 … 的紀錄」 at
+          // once instead of a skeleton while the new day re-reads the same
+          // proof. The new day's coverage cutoff is fixed here, so the
+          // download and the day's proof check agree on it.
+          const at = clock();
+          coverageOpening.current = { key: `${sessionKey}|${dayBounds(next).dayStart}|${owner ?? ''}`, active, cutoff: at };
+          explicitTail.current = true; startDownload(next, reread, at);
+        } else ensureRequested.current = next;
       }
       return choice;
     },
@@ -968,6 +1002,11 @@ export function useHistoryScreen({
       startDownload,
       cloud,
       reread,
+      cloudDays.completenessLoaded,
+      clock,
+      sessionKey,
+      owner,
+      active,
     ],
   );
   const previousDay = useCallback(
@@ -999,9 +1038,20 @@ export function useHistoryScreen({
   const dayRecords = !!dayModel?.subjects.some(s => s.dayRecords);
   // A retained view's own background tail is not a user-visible download;
   // its failure/cancel still shows the incomplete notice and retry.
-  const quietTail = !!retained && !explicitTail.current && cloudDays.download?.day === shownKey
-    && cloudDays.download.status === 'downloading';
-  const download = quietTail ? null : downloadPanel(cloudDays.download?.status === 'done' && !coverageReady ? null : cloudDays.download, {
+  // The download the effect is about to start counts as started.
+  // A finished download stays 「下載 … 的紀錄」 until the day it downloaded is
+  // shown: its rows are read again, and a skeleton without the line in
+  // between read as one more loading screen (device, 0.3.179).
+  // Only until that first showing: a later re-read is not this download.
+  const finishedShown = useRef(null);
+  const finished = cloudDays.download?.day === shownKey && cloudDays.download.status === 'done' ? cloudDays.download : null;
+  if (finished && dayModel) finishedShown.current = finished;
+  const finishing = !!finished && finishedShown.current !== finished
+    && coverageReady && !dayModel && !slots.some(slot => slot.error);
+  const shownDownload = tailDue || finishing ? { day: shownKey, status: 'downloading' } : cloudDays.download;
+  const quietTail = !!retained && !(tailDue ? tailDue.explicit : explicitTail.current) && shownDownload?.day === shownKey
+    && shownDownload.status === 'downloading';
+  const download = quietTail ? null : downloadPanel(shownDownload?.status === 'done' && !coverageReady ? null : shownDownload, {
     day: shownKey,
     hasRows: dayRecords,
     // Unknown durable proof is still being read, not a failed download.
@@ -1217,7 +1267,9 @@ export function useHistoryScreen({
     rangePreviewDelay: Math.max(120, buildCost.current * 4),
     rangePreviewScope: `${sessionKey}|${day}|${idsKey}`,
     rangeActive: active,
-    asOf: retained ? (now - retained.cutoff >= 60000 ? retained.cutoff : null)
+    // 「截至 HH:mm」 only for today: another day's verified view is the whole
+    // day (its cutoff is just when it was opened).
+    asOf: retained ? (today && now - retained.cutoff >= 60000 ? retained.cutoff : null)
       : cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
     updateHistory,
     error: slots.find(slot => slot.error)?.error ?? '', previousDay, nextDay, changeDay, moveCursor, beginRangeDrag, dragRange,

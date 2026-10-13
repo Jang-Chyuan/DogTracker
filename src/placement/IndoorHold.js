@@ -737,6 +737,30 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
 }
 
 /**
+ * The first row a hold covers, for a hold that started at `rows[index]`
+ * (`event`: the tracker's start event): the drift right before it, after the
+ * last good fix (`event.since`), at most retroMaxMs back and never over a row
+ * already held or farther than farRadiusM from the anchor. The history draws
+ * these rows held (createHistoryHolds), and the live card times 「室內・N 分」
+ * from the same row (HoldStore), so both say the same minutes.
+ * @param isHeld whether an earlier row already belongs to a hold
+ * @returns the index of that row (`index` when nothing before it is covered)
+ */
+export function holdFillStart(rows, index, event, config = HOLD_CONFIG, isHeld = () => false) {
+  const point = rows[index];
+  let from = index;
+  for (let back = index - 1; back >= 0; back -= 1) {
+    const earlier = rows[back];
+    const rawPoint = rawCoordinate(earlier);
+    if (earlier.time <= event.since || isHeld(earlier)
+      || point.time - earlier.time > config.retroMaxMs) break;
+    if (hasFix(rawPoint) && distanceMeters(rawPoint, event.anchor) > config.farRadiusM) break;
+    from = back;
+  }
+  return from;
+}
+
+/**
  * History rows of one dog, oldest first, displayed through the same tracker
  * as the live map. Held rows are drawn at the anchor and carry `heldReason`;
  * the rows between the last good fix and the moment the hold started move
@@ -781,16 +805,7 @@ export function createHistoryHolds({ seed = [], config = HOLD_CONFIG, classify }
           }
         }
         if (event?.type === 'start') {
-          const anchor = event.anchor;
-          let from = index;
-          for (let back = index - 1; back >= 0; back -= 1) {
-            const earlier = output[back];
-            const rawPoint = rawCoordinate(earlier);
-            if (earlier.time <= event.since || earlier.heldReason
-              || point.time - earlier.time > config.retroMaxMs) break;
-            if (hasFix(rawPoint) && distanceMeters(rawPoint, anchor) > config.farRadiusM) break;
-            from = back;
-          }
+          const from = holdFillStart(output, index, event, config, earlier => !!earlier.heldReason);
           for (let fill = from; fill < index; fill += 1) hold(output[fill], tracker.current(point.time));
         }
         const current = tracker.current(point.time);

@@ -170,6 +170,7 @@ object AlertCodec {
       batteryPercentage = json.int("batteryPercentage"),
       charging = json.optBoolean("charging", false),
       range = readRange(json.optJSONObject("range")),
+      battery = BatteryPlausibility.read(json.optJSONObject("battery")),
     )
   }
 
@@ -182,6 +183,7 @@ object AlertCodec {
     put(json, "fixAt", dog.fixAt)
     put(json, "packetAt", dog.packetAt)
     put(json, "batteryPercentage", dog.batteryPercentage)
+    put(json, "battery", dog.battery?.let(BatteryPlausibility::write))
     return json
   }
 
@@ -226,6 +228,8 @@ object AlertCodec {
       rssi = number("rssi"), snr = number("snr"),
       // BLE packets send the speed as "spd" (DogStatusStore stores it as speed_kmh).
       speedKmh = (if (data.has("raw_speed_kmh")) number("raw_speed_kmh") else number("speed_kmh", "spd"))?.takeIf { it >= 0 && it.isFinite() },
+      // BatteryPlausibility: 0% is believed only with an empty cell's voltage.
+      batteryMillivolts = number("battery_mv", "bmv"),
     )
   }
 

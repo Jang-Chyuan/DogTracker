@@ -9,7 +9,9 @@
 `myLocationTracker` 位於既有 `files/databases/dogtracker.sqlite`，透過 `DogStatusStore` 同一原生 SQLite owner 寫入，與 BLE、雲端資料共用序列化交易。建表與寫入由 `android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt` 負責。首次進入頁面或開始取得定位時初始化。
 
 - 有可用 Google Play Services 時使用 Google Fused Location Provider；否則 Android 12+ 有 framework fused 時使用它，其餘依可用 GPS／network provider。這是來源選擇，並不保證 Google Maps 相同的室內推論。約每秒要求一次高精度定位；以 monotonic timestamp 排除重複或倒序樣本。SQLite 依原始 GPS 速度調整保存間隔：≤ 10 km/h 每 5 秒、> 10 且 ≤ 20 km/h 每 3 秒、> 20 km/h 每 1 秒；速度未知則每 5 秒。以最新速度與上次成功寫入時間判斷，不受靜止歸零影響。最多 80,000 筆，高速持續每秒保存約可保留 22.2 小時。
-- 無新定位不補空白筆數、不重複舊定位；超過 3 秒的定位丟棄。實際頻率受 Android、接收狀況及省電影響。
+- 無新定位不補空白筆數、不重複舊定位；定位本身（elapsedRealtimeNanos）超過 15 秒的丟棄，不早於上一筆已接受定位的也丟棄（duplicate）。原本 3 秒是只用 GPS provider、每秒一筆且都很新鮮時訂的；改用 fused 後，手機靜止、Samsung 停掉 GPS 時，Wi-Fi 定位數秒到數分鐘才來一筆，到達時已約 4.5–5 秒，幾乎全被當過期丟掉（實機一晚 1,004 筆 stale，多段 80–133 分鐘沒有保存任何一筆，被拒定位最舊只有 5.1 秒）。已接受但尚未保存的定位在同一個 15 秒內仍可保存。實際頻率受 Android、接收狀況及省電影響。
+- `recorded_at` 是定位本身的時間：以系統時鐘換算（寫入當下的時間減去定位的 monotonic 年齡），不是寫入時間，所以晚到幾秒的定位仍放在正確時間，歷史、今天路線與 PhoneMotion 回放的時間間隔和原生 MotionDetector 一致。新一次記錄的第一筆若是上一次已保存的快取定位（`location_at` 不晚於最新一列、差距 ≤ 15 秒）就略過，不重複寫入；時鐘被往回調超過 15 秒則照常記錄。
+- 即時快照的「最後位置已過期」與 motion unknown 同樣以 15 秒為界；地圖藍點動畫與顯示座標仍在 JS 端以 3 秒為界（`PhoneLocationOverlay`），只影響畫面。
 - 保存空窗診斷（PR 116）：拒收依原因計數（stale／duplicate／invalid／accuracy／jump）。超過 60 秒沒有保存任何一筆時，記下該段的起訖時間、收到／接受筆數、各原因拒收數、最舊過期定位秒數與最佳被拒精度（記憶體最多 300 段）。同樣的次數另存在 App 私有的 SharedPreferences（`phone_location_diagnostics`，最近 30 次記錄、200 段）：每分鐘存一次進行中的計數，程序被系統或使用者結束後，下次開始記錄時把上一次記為「程序結束、以最後一次存檔為準」，進行中的空窗也保留並標示。只含次數與時間，不含任何座標；正式版用 `adb shell dumpsys activity service com.dogtracker/.location.LocationTrackerService` 讀取，會列出本次程序的數字與保存下來的歷史。Samsung One UI 在手機靜止、螢幕關閉且未充電時會由系統停掉 GPS（NSFLP「GPS stop by sensor」），之後只剩 Wi-Fi／基地台定位，這段可能完全沒有合格新定位；這是系統行為，App 不能關閉。
 - 新定位必須具有有效、有限、非負的水平估計精度；原始速度 > 20 km/h 時要求 < 50 公尺，其餘情況要求 ≤ 30 公尺；未知或超過門檻時顯示等待提示，不寫入且不推進記錄時間限制。既有資料不刪除。
 - 最近 3 個有效樣本平均；速度 > 10 km/h 時，最新點權重為 90%。超過 3 秒的樣本間隔重設平滑視窗。平滑不代表實際精度提高；估計精度仍保留定位來源回報值。
@@ -18,7 +20,7 @@
 - 即時地圖由 `useLiveLocation` 每秒讀取原生記憶體快照；診斷記錄清單由 `useLocationTracker` 呼叫 `readPage` 讀取 SQLite，每次讀取完成後 10 秒再讀。歷史由 `HistoryDatabase.historyDayRows` 讀取 SQLite 的日期資料，不使用即時記憶體快照。
 - `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 3 分鐘間隔時分段。
 - `LocationTrackerScreen` 是設定 → 診斷 → 記錄清單的分頁清單；日期／時間範圍與匯出在 `src/mapHistory/HistoryScreen.js`。第三版手機 CSV／GPX 以 recorded route 為主座標，CSV 另保留 raw 欄位；裁切與時間用途見 `../mapHistory/ExportBuilders.md`。每秒樣本僅用於定位管線，不全部存入資料庫。
-- `recorded_at` 和 `location_at` 是 Unix 毫秒；緯經度為十進位度；速度由 m/s 轉為 km/h。無精度／海拔／速度／方向時為 NULL。
+- `recorded_at` 和 `location_at` 是 Unix 毫秒（`location_at` 是定位來源回報的時間）；緯經度為十進位度；速度由 m/s 轉為 km/h。無精度／海拔／速度／方向時為 NULL。
 - 每次寫入與修剪在同一交易，依 recorded_at、id 保留最新 80,000 筆。初始化也修剪舊資料。
 - 畫面使用 id 游標每頁 50 筆，前景每 10 秒更新，離開頁面不再輪詢；停止記錄不刪除資料。
 - 只存本機、不上傳 Supabase、不修改 dog_status 或 supabase_dog_status。
@@ -27,7 +29,7 @@
 
 靜止判定確認後速度歸零，顯示與儲存座標鎖定於確認當下的平滑位置；原始座標持續保留供移動判定。PhoneMotion 的 JS 歷史回放與 Kotlin 即時記錄維持相同判準：有有效速度精度時，低速證據要求位置精度 ≤ 30 m、速度 ≤ 1 m/s、速度精度 ≤ 1.5 m/s，且速度減誤差 ≤ 0.5 m/s；缺速度精度時只接受位置精度 ≤ 10 m、速度 ≤ 0.3 m/s。至少15秒疑似、20秒確認；高精度樣本另檢查3 m的單向進展，中精度樣本依精度放寬靜止視窗，避免室內小幅飄移冒充離開。
 
-可信速度持續3秒可解除停留。缺速度或錯誤零速不代表走路；須有足夠長、品質合格、持續同方向的幾何進展才能確認移動，高精度以20秒視窗，中精度使用2–10分鐘的有界視窗。離開後的重新停留也保留進展反例，不能一直把真正的慢走鎖回原地。超過30秒沒有連續觀測會重置這個 motion detector 的證據；定位 writer 仍只保存新鮮合格樣本，不補空白筆。失去低速證據超過3分鐘則回到未知。這些判準是保守啟發式，原始點不改寫，回放及模擬器結果不能代替實際室內／步行真值。
+可信速度持續3秒可解除停留。缺速度或錯誤零速不代表走路；須有足夠長、品質合格、持續同方向的幾何進展才能確認移動，高精度以20秒視窗，中精度使用2–10分鐘的有界視窗。離開後的重新停留也保留進展反例，不能一直把真正的慢走鎖回原地。超過30秒沒有連續觀測會重置這個 motion detector 的證據；定位 writer 仍只保存新鮮合格樣本，不補空白筆。失去低速證據超過3分鐘則回到未知。已鎖定的停留遇到 30–50 m 的粗定位（例如系統在手機靜止時停掉 GPS、只剩 Wi-Fi 定位）時，只要該筆速度 ≤ 0.3 m/s（有速度精度時 ≤ 1.5 m/s）且離鎖定錨點不超過 max(25 m, 1.5 × 兩者較大的精度)，就算維持靜止的證據；粗定位本身不能確認新的停留，速度 0.5–1 m/s 的慢走讀數也不能維持，離開這個範圍 3 分鐘、可信速度或幾何進展照常解除。手機定位 writer 仍只保存低速 ≤ 30 m 的定位（見上），所以即時記錄的 MotionDetector 只有在 ≤ 30 m 但沒有速度精度的定位上受這條影響；30–50 m 的情形出現在歷史回放的列。這些判準是保守啟發式，原始點不改寫，回放及模擬器結果不能代替實際室內／步行真值。
 
 歷史另外使用已確認停留的顯示錨點，让停留內的地圖游標與END共點；裁切完全在停留內時可保留不編號的顯示證據。原始訊號缺口、真正的短走與車程不得借用這個錨點掩蓋。手機motion不拿來判定狗項圈在室內。
 新欄位 raw_speed_kmh、speed_accuracy_mps、motion_state 保留原始速度、速度估計精度與狀態，包含於 CSV；舊資料為 NULL，不回填推測狀態。速度精度單位為 m/s，速度欄位為 km/h。

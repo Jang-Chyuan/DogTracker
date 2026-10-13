@@ -26,7 +26,7 @@ function random(seed) {
  * `foot`: walking and standing still only, recorded without a break — a day
  * with no edge that ends a run of walking (068 finding 5).
  */
-function simulatedDay(seed, { legs = 30, step = 1, start = 7 * 60, foot = false } = {}) {
+function simulatedDay(seed, { legs = 30, step = 1, start = 7 * 60, foot = false, coarseStays = false } = {}) {
   const r = random(seed);
   const rows = [];
   let time = DAY_START + start * MINUTE;
@@ -53,7 +53,9 @@ function simulatedDay(seed, { legs = 30, step = 1, start = 7 * 60, foot = false 
       if (odd < 0.004) push(0, 0, 5);
       else if (odd < 0.008) push(lat + 0.05, lon, 5); // a jump far beyond 50 m/s
       else if (odd < 0.015) push(lat, lon, 60 + r() * 100); // poor accuracy
-      else push(lat + ((r() - 0.5) * drift) / 110540, lon + ((r() - 0.5) * drift) / 111320, 3 + r() * 12);
+      // coarseStays: standing still on 30–49 m (Wi-Fi-like) fixes.
+      else push(lat + ((r() - 0.5) * drift) / 110540, lon + ((r() - 0.5) * drift) / 111320,
+        coarseStays && speed === 0 ? 30 + r() * 19 : 3 + r() * 12);
       if (odd > 0.995) push(lat, lon, 4); // the same time again
       time += step * SECOND;
     }
@@ -114,6 +116,11 @@ function compare(rows, seed, { pauses = false, clock = false } = {}) {
 describe('today\'s distance, carried on row by row (068)', () => {
   test.each([1, 2, 3, 4, 5, 6])('the same answer as the whole-day sum, simulated day %i', seed => {
     const rows = simulatedDay(seed, { legs: 18 });
+    expect(compare(rows, seed, { pauses: true })).toBeGreaterThan(5);
+  });
+
+  test.each([11, 12, 13])('the same answer with coarse stays, simulated day %i', seed => {
+    const rows = simulatedDay(seed, { legs: 18, coarseStays: true });
     expect(compare(rows, seed, { pauses: true })).toBeGreaterThan(5);
   });
 
@@ -345,4 +352,28 @@ test('a retained active car across a high-speed signal gap survives clock rollba
   // reaching those rows again; it must not keep an old active checkpoint.
   expectSame(engine.sum(beforeGap), reference(rows, beforeGap));
   expectSame(engine.sum(rows.at(-1).time), reference(rows, rows.at(-1).time));
+});
+
+// 判定表「出發偵測怎麼找」(2026-10): a day that leaves by car departs at the
+// drive. Fed in batches, today's distance gives the whole-day answer at every
+// poll (fictional rows: half an hour at A, a drive, a walk at B).
+test('a day that leaves by car: the same departure and distance as the whole-day sum', () => {
+  let time = DAY_START + 8 * 60 * MINUTE, metres = 0;
+  const rows = [];
+  const push = (speed, seconds = 5) => {
+    time += seconds * SECOND; metres += speed * seconds;
+    rows.push({ id: rows.length + 1, time, latitude: 25,
+      longitude: 121 + metres / (111320 * Math.cos(25 * Math.PI / 180)),
+      accuracy: 5, raw_speed_kmh: speed * 3.6, speed_accuracy_mps: 0.3 });
+  };
+  for (let i = 0; i < 360; i += 1) push(0);
+  for (let i = 0; i < 120; i += 1) push(14);
+  for (let i = 0; i < 180; i += 1) push(1.2);
+  expect(compare(rows, 11, { pauses: true })).toBeGreaterThan(1);
+  const whole = todayRouteDistance(rows, { now: time, dayStart: DAY_START });
+  expect(whole.status).toBe('confirmed');
+  // From the drive on: the walk at B counts, the morning at A is not "the whole day".
+  expect(whole.range.start).toBeGreaterThan(DAY_START + 8 * 60 * MINUTE + 25 * MINUTE);
+  expect(whole.range.start).toBeLessThanOrEqual(DAY_START + 8 * 60 * MINUTE + 30 * MINUTE);
+  expect(whole.metres).toBeGreaterThan(900);
 });

@@ -264,7 +264,10 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     && !incompleteOf(scope).has(day) && !(scopedDownload?.day === day && scopedDownload.status === 'downloading')),
   [enabled, ids, completeFor, scope, scopedDownload, incompleteRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   const partialLocal = localByDog ? local.filter(day => ids.some(id => !completeFor(id, day))) : [];
-  const startDownload = useCallback((day, onEnd) => {
+  // `at`: the cutoff of the day about to be shown, when the screen starts
+  // its download in the same press that changes the day (this render's
+  // `cutoff` is still the old day's).
+  const startDownload = useCallback((day, onEnd, at = cutoff) => {
     if (!enabled) return;
     // Incomplete until it has finished.
     markIncomplete(day, true);
@@ -274,10 +277,10 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     const id = downloadSeq.current + 1;
     downloadSeq.current = id;
     completenessEpoch.current += 1;
-    setDownload({ scope, day, cutoff, status: 'downloading', id });
+    setDownload({ scope, day, cutoff: at, status: 'downloading', id });
     const { dayStart, dayEnd } = dayBounds(day);
-    const coverage = historyCoverage(dayStart, dayEnd, cutoff);
-    const subjects = Array.isArray(slaveId) && localByDog ? slaveId.filter(dogId => !completeFor(dogId, day)) : slaveId;
+    const coverage = historyCoverage(dayStart, dayEnd, at);
+    const subjects = Array.isArray(slaveId) && localByDog ? slaveId.filter(dogId => !completeFor(dogId, day, at)) : slaveId;
     const requestedIds = Array.isArray(subjects) ? subjects : [subjects];
     setDurable(current => ({ scope, revision: publication.current, read: current.scope === scope ? current.read : null, states: [
       ...(current.scope === scope ? current.states.filter(row => !requestedIds.includes(row.slave_id) || row.day !== day) : []),
@@ -294,7 +297,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
         ] }));
       }
     };
-    Promise.resolve().then(() => cloud.download({ slaveId: subjects, dayStart, dayEnd, cutoff, signal: controller.signal, onDogEnd }))
+    Promise.resolve().then(() => cloud.download({ slaveId: subjects, dayStart, dayEnd, cutoff: at, signal: controller.signal, onDogEnd }))
       .then(() => {
         if (!alive.current || downloadSeq.current !== id) return;
         completenessEpoch.current += 1;
@@ -302,7 +305,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
           ...(current.scope === scope ? current.states.filter(row => !requestedIds.includes(row.slave_id) || row.day !== day) : []),
           ...requestedIds.map(dogId => ({ slave_id: dogId, day, complete: 1, ...coverage })),
         ] }));
-        setDownload({ scope, day, cutoff, status: 'done', id });
+        setDownload({ scope, day, cutoff: at, status: 'done', id });
         markIncomplete(day, false);
         // Downloaded (rows or not): the cloud was asked about this day.
         add([], [day]);
@@ -311,7 +314,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
       .catch(() => {
         if (!alive.current || downloadSeq.current !== id) return;
         completenessEpoch.current += 1;
-        setDownload({ scope, day, cutoff, status: controller.signal.aborted ? 'cancelled' : 'failed', id });
+        setDownload({ scope, day, cutoff: at, status: controller.signal.aborted ? 'cancelled' : 'failed', id });
         onEnd?.('failed');
       })
       .finally(() => { if (downloading.current === controller) {

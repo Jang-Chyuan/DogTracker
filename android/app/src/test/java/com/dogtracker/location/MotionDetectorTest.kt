@@ -13,6 +13,15 @@ class MotionDetectorTest {
       for (t in 1L..360L) assertEquals("unknown", detector.accept(point(t, t.toDouble(), null).copy(accuracy = accuracy)))
     }
   }
+  @Test fun coarseStillFixesKeepALockedStopButNotOneFarAway() {
+    for ((offset, kept) in listOf(20.0 to true, 90.0 to false)) {
+      val detector = MotionDetector()
+      for (t in 1L..21L) detector.accept(point(t, 0.0, 0f).copy(accuracy = 20f))
+      var state = ""
+      for (t in 22L..600L) state = detector.accept(point(t, offset + (t % 3), 0f).copy(accuracy = 40f))
+      assertEquals(if (kept) "stationary" else "unknown", state)
+    }
+  }
   @Test fun backwardElapsedTimeDiscardsStationaryAndTail() {
     val detector = MotionDetector()
     for (t in 1L..21L) detector.accept(point(t, 0.0, 0f))
@@ -35,10 +44,11 @@ class MotionDetectorTest {
     assertEquals(next.rawLatitude, pipe.latest!!.rawLatitude, 0.0)
     assertEquals(next.timestamp, pipe.latest!!.timestamp)
     val later = point(26, 2.0)
-    assertNull(pipe.candidate(later.elapsedNanos))
+    // The unsaved 4 s-old fix is still saved; past LocationPipeline.MAX_FIX_AGE_NANOS it is not.
+    assertNotNull(pipe.candidate(later.elapsedNanos))
+    assertNull(pipe.candidate(next.elapsedNanos + LocationPipeline.MAX_FIX_AGE_NANOS + 1))
     pipe.accept(later, later.elapsedNanos)
     // A fresh fix after a four-second callback gap does not discard a lock.
-    // candidate still refuses stale positions after three seconds.
     assertEquals("stationary", pipe.latest!!.motionState)
     assertEquals(before, pipe.latest!!.latitude, 0.0)
     assertEquals(0f, pipe.latest!!.speed)

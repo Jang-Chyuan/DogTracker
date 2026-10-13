@@ -11,7 +11,7 @@ const model = {
     { type: 'movement', start: 50 * minute, end: 60 * minute, countedDistanceM: 1000, mode: 'moving' }],
 };
 test('two-line labels for moving, stop, vehicle, indoor and phone', () => {
-  expect(cursorLabel(model, 5 * minute)[1]).toBe('已移動 0.5 km');
+  expect(cursorLabel(model, 5 * minute)[1]).toBe('已移動 500 m');
   expect(cursorLabel(model, 15 * minute)[1]).toBe('停留 10 分');
   expect(cursorLabel(model, 25 * minute)[1]).toBe(i18nT('c342'));
   expect(cursorLabel(model, 45 * minute)[1]).toBe('室內・10 分');
