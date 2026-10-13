@@ -78,6 +78,7 @@ internal class SaveGapHistory(private val store: Store, private val maxRuns: Int
       "rejected=${o.optJSONObject("rejectedBy") ?: "{}"} writeErrors=${o.optInt("writeErrors")}" +
       (if (o.has("maxStaleSeconds")) " maxStale=${"%.1f".format(o.getDouble("maxStaleSeconds"))}s" else "") +
       (if (o.has("bestRejectedAccuracy")) " bestRejectedAccuracy=${o.getDouble("bestRejectedAccuracy")}m" else "") +
+      (if (o.has("motionOnly")) " motionOnly=${o.optInt("motionOnly")}" else "") +
       (if (o.optBoolean("cutByProcessEnd")) " (process ended)" else "")
 
   private fun json(c: Counters) = JSONObject().put("received", c.received).put("accepted", c.accepted)
@@ -86,6 +87,7 @@ internal class SaveGapHistory(private val store: Store, private val maxRuns: Int
     if (s.endWallMs != null) put("endWallMs", s.endWallMs)
     if (s.maxStaleSeconds != null) put("maxStaleSeconds", s.maxStaleSeconds)
     if (s.bestRejectedAccuracy != null) put("bestRejectedAccuracy", s.bestRejectedAccuracy.toDouble())
+    if (s.motionOnly > 0) put("motionOnly", s.motionOnly)
   }.put("seconds", s.seconds).put("received", s.received).put("accepted", s.accepted)
     .put("rejectedBy", JSONObject(s.rejectedBy)).put("writeErrors", s.writeErrors)
 }
