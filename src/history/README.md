@@ -14,7 +14,7 @@
 | `replayHistoryHolds(packets, {since, ...holdOptions})` | 共用 `IndoorHold.applyHistoryHolds`，最多往前 24 小時；模型／seed 可透過 `holdOptions` 提供 |
 | `historyMovement(points, {subject, config})` | `edges`、`vehicles`、`switches`、計入距離；輸入為過濾後點 |
 | `historyVisits(points, options)` | 造訪起訖、圈內點、扣除缺口的時間；輸入為過濾後點 |
-| `historyStops(points, options)` | 路線／整天中位數、明顯停留、追加狀態 |
+| `historyStops(points, options)` | 路線／整天中位數、明顯停留、追加狀態（手機 2026-10-14 起不比中位數：`stayRatio: null`，≥ `stayMs` 就是停留） |
 | `historyIndoorNodes(points, options)` | 室內小房子節點；使用重算後封包，不用 GPS 去重結果判斷封包缺口 |
 | `historyDeparture(points, options)` | 確認狀態、自動範圍與手動範圍；輸入完整當天過濾後點，可提供完整交通分類 |
 | `historyTimeline(rows, options)` | 整合入口：共同資料流、範圍、地點列、交通／缺口列、編號、距離與追加狀態 |
@@ -58,6 +58,8 @@
 - 手機的旅行列不吸收靜止時間（`phoneStillTravel`，只看有速度／動作欄位的新資料；舊資料只看幾何，照舊）：開車段結尾連續 `stayMs` 以上、每一點都在第一點 `radiusM` + 精度內、沒有確認移動、沒有量到 `stillMps` 以上速度的時間（停車後坐在車上、手機留在車裡）是不編號停留，開車到停下那一刻為止（只限車段真的在那裡結束，範圍裁切出的紅燈不算）；旁邊沒有走路也沒有停留、1 分鐘以上、0 m、沒有確認移動、每點都在第一點 `stillPlaceM` 內的「走路」也是不編號停留。旁邊的切換點拿掉（停留本身就是分界），恢復記錄併成停留的開始。地圖的路線、距離、CSV、GPX 不變。
 - 開車走走停停（2026-10-14，使用者決定，只限手機：`vehicleMergeMs` 等設定在 `HistoryConfig`）：市區的機車／汽車在紅燈間只衝 10–30 秒，塞車時以走路的速度慢慢前進，原本前者湊不到 `enterMs`（30 秒）不會成為開車，後者 30 秒就被當成下車，兩段之間紅燈的 3 分鐘就成了停留。`stepVehicles` 的 `scan.chain` 記住剛看到的開車證據：剛結束的車段，或「衝刺」（連續快速邊至少 `vehicleBurstMs` 10 秒；快速＝幾何速度達 `vehicleSpeed`，或幾何速度達 `backtrackSpeed` 且手機自己量到的速度達 `vehicleSpeed`，一筆抖動不會切斷一段衝刺）。最後一段證據後 `vehicleMergeMs`（10 分）內又有衝刺、中間走路（量到 `stillMps`–`vehicleFootMaxMps` 2 m/s、沒有停住的邊）加起來不到 `vehicleFootMs`（90 秒），或還沒離開那裡 `vehicleFootM`（30 m）：同一趟車。剛結束的車段接著開（那次下車是紅燈、塞車或一筆弱訊號），衝刺加起來達 `enterMs` 就是從第一段衝刺開始的車段。停室內、換 session 時鏈斷掉。兩段之間的停留一定短於 10 分鐘，就成了開車的一部分；10 分以上的停留、真的下車走路（90 秒以上）照舊。狗不變。`TodayRouteEngine` 用同一個掃描：鏈還在時 `vehiclesSettledAt` 為 false，之後的邊還可能變成開車。
 - 已知限制：一直用走路速度爬行 90 秒以上的塞車，和下車走路分不出來，照舊是走路。同一趟車裡短於 `listGapMs` 的弱訊號，清單把前後兩段開車合成一列（`timelinePresentation`，和走路一樣）。
+- 手機不比「一般」（2026-10-14，使用者決定）：`HistoryConfig.phone.stayRatio` 為 `null`，`historyStops` 不跑中位數重播（`replayVisitDecisions`），扣掉中斷後 ≥ `stayMs`（3 分）的造訪就是停留；範圍整個在一個造訪裡時和 `alwaysStayMs` 一樣是「還在原地」，不編號。狗照舊 ≥ 3 分且 ≥ 中位數 3 倍（至少 5 次造訪）。原因：開車走走停停修好後，被誤判成走路的紅燈不再是造訪，真實記錄的「一般」從 0.2–2.6 分升到 4–16 分，狗散步途中 4–17 分的停留失去編號。`typicalMs` 對手機是 `null`。
+- 每一分鐘都有列的前提：`closeHoles` 只補短於 `gapMs` 的空洞，`stayMs` 以上的靜止段會成為停留，所以 `stayMs` 不能大於 `gapMs`（兩者都是 3 分）；試過 `stayMs` 5 分時，走路和開車之間 3.3 分的停頓不屬於任何列（`__tests__/PhoneStopAndGo.test.js` 檢查）。
 - 兩個停留之間幾秒的那一步（2026-10-14，`phoneStepCarry`）：停留裡算到的移動照「抵達後 `gapMs` 內算抵達那段，之後算下一段」，但那一段若只是兩個地點之間不到 1 分鐘的一步，原本會寫「走路 不到 1 分・112 m」。現在這些帶過來的距離（`carriedM`）再往後交給下一段 1 分鐘以上的走路（沒有就交給前一段），那一步只留自己算到的距離，沒有就照 0 m 走路拿掉，秒數歸旁邊的列。清單各列加起來仍等於摘要；地圖、CSV、GPX 不變。
 - 停留和換 session 的「沒有資料」之間 0 m 的走路，即使有確認移動（拿起手機重開記錄）也併進停留（`foldPhoneStayWalks` 的 `restart`）。
 - 偵測器靜止前幾秒（幾筆 `suspected_stationary`）才開始的靜止段，和出發合成「出發 · 停 N 分」，不再是同一分鐘的「出發」加「停 N 分」；這種段落或停留在恢復記錄後 `gapMs` 內開始時，不另加恢復記錄。

@@ -141,13 +141,17 @@ test('the last fix of a drive that runs to the end is not a visit', () => {
   expect(m.vehicles[0].exited).toBe(false);
   expect(historyVisits(drive, { subject: 'phone', vehicles: m.vehicles })).toHaveLength(0);
 });
-// Codex review #10 — minutes on foot without counted distance are still a
-// row, and the switch to the car stays (判定表「交通方式切換點」).
-test('a long slow stretch before the car keeps its row and the switch point', () => {
+// Codex review #10 — minutes without counted distance are still a row. 2026-
+// 10-14 (user): the phone has no 3× baseline, so five minutes at one place
+// before the car are a stay, and the stay separates the modes (no switch).
+test('a long slow stretch before the car keeps its minutes in a row', () => {
   const pairs = [...leg(0, 300, 0, 0.01), ...leg(310, 400, 3, 9)];
   const model = historyTimeline(path(pairs), { subject: 'phone', range: { start: 0, end: 400000 } });
   expect(model.nodes.map(n => (n.type === 'movement' ? n.mode : n.type))).toEqual(
-    ['departure', 'walking', 'switch', 'driving', 'end']);
+    ['departure', 'stop', 'driving', 'end']);
+  // A dog keeps the baseline: one visit is no stay, the minutes are a row on foot.
+  const dog = historyTimeline(path(pairs), { subject: 'dog', range: { start: 0, end: 400000 } });
+  expect(dog.nodes.some(n => n.type === 'stop')).toBe(false);
 });
 
 // 067 (user 2026-10-09): battery saving stops a phone overnight. A break whose
@@ -164,7 +168,11 @@ test('an overnight break at the same place is one stay; one that ends elsewhere 
   expect(stay.durationMs).toBeGreaterThanOrEqual((1200 + 130 * 60 + 1200) * 1000);
   const moved = historyTimeline(path([...leg(0, 1200, 0, 0), ...leg(1200 + 130 * 60, 1200 + 130 * 60 + 1200, 200, 0)]),
     { subject: 'phone', range: { start: 0, end: 20000000 } });
-  expect(moved.nodes.map(n => n.type)).toEqual(expect.arrayContaining(['gap', 'resume']));
+  // 2026-10-14: the 20 minutes at the new place are a stay (no 3× baseline on
+  // the phone); a 恢復記錄 where a stay starts is that stay's start.
+  expect(moved.nodes.map(n => n.type)).toEqual(expect.arrayContaining(['gap']));
+  const back = moved.nodes.find(n => n.type === 'gap');
+  expect(moved.nodes.some(n => n.type === 'resume' || (n.type === 'stop' && n.start === back.end))).toBe(true);
   // Longer than 16 hours: a break even at the same place.
   const days = historyTimeline(path([...leg(0, 1200, 0, 0), ...leg(1200 + 17 * 3600, 1200 + 17 * 3600 + 1200, 0, 0)]),
     { subject: 'phone', range: { start: 0, end: 70000000 } });

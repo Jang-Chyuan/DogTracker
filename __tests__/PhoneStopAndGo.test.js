@@ -1,5 +1,6 @@
 import { historyMovement } from '../src/history/HistoryMovement';
 import { historyTimeline, phoneStepCarry } from '../src/history/HistoryTimeline';
+import { historyStops } from '../src/history/HistoryStops';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { createTodayRouteEngine } from '../src/tracking/TodayRouteEngine';
 import { todayRouteDistance } from '../src/tracking/TodayDistance';
@@ -176,4 +177,52 @@ describe('metres counted inside a stay are not left on the seconds between two s
     phoneStepCarry(nodes);
     expect(nodes[1].countedDistanceM).toBe(112);
   });
+});
+
+// 2026-10-14 (user): the phone has no 「≥ 一般的 3 倍」 baseline; the dog keeps it.
+describe('phone stays without the 3× baseline', () => {
+  // Three long visits and a 4-minute stop on a walk between them.
+  const day = [[0, 3600], [1.3, 120], [0, 240], [1.3, 120], [0, 3600], [1.3, 120], [0, 3600], [1.3, 60]];
+  const numbered = model => stays(model).filter(n => !n.presentationOnly);
+  test('a 4-minute stop among hour-long stays is numbered', () => {
+    const model = timeline(route(day));
+    const short = numbered(model).filter(n => n.durationMs < 10 * 60000);
+    expect(short).toHaveLength(1);
+    expect(short[0].durationMs).toBeGreaterThanOrEqual(configFor('phone').stayMs);
+  });
+  test('with the baseline (the dog rule) the same stop is not numbered', () => {
+    // Places 200 m apart, one step of a minute between them (no walk to make
+    // short visits): seven of 40 minutes and one of 4 — the baseline is 40.
+    const start = Date.UTC(2026, 0, 5, 1);
+    const points = [];
+    let time = start;
+    [40, 40, 4, 40, 40, 40, 40, 40].forEach((minutes, place) => {
+      if (place) time += 60000;
+      for (let t = 0; t <= minutes * 60; t += 30, time += 30000) points.push({ time,
+        latitude: 24.989 + place * 200 / 111195, longitude: 121.313, accuracy: 8 });
+    });
+    const stopsWith = config => historyStops(points, { subject: 'phone', config }).stops;
+    const short = list => list.filter(n => n.durationMs < 10 * 60000);
+    expect(short(stopsWith(configFor('phone')))).toHaveLength(1);
+    expect(short(stopsWith({ ...configFor('phone'), stayRatio: 3 }))).toHaveLength(0);
+    expect(configFor('dog').stayRatio).toBe(3);
+    expect(configFor('phone').stayRatio).toBeNull();
+  });
+  test('a range wholly inside one stay is still 還在原地 (no numbered stay)', () => {
+    const model = timeline(route([[0, 600]]));
+    expect(numbered(model)).toHaveLength(0);
+  });
+});
+
+// Every minute belongs to a row: closeHoles fills holes shorter than gapMs,
+// and still runs of stayMs or more are stays, so stayMs must not exceed gapMs
+// (with stayMs 5 min, a 3.3-minute pause before a drive was in no row).
+test.each([174, 186, 216, 270])('a %s-second pause between a walk and a drive is in a row', seconds => {
+  const config = configFor('phone');
+  expect(config.stayMs).toBeLessThanOrEqual(config.gapMs);
+  const points = route([[1.2, 300], [0, seconds], [8, 60]]);
+  const listed = timelinePresentation(timeline(points).nodes).filter(n => n.end > n.start);
+  for (let i = 1; i < listed.length; i += 1) expect(listed[i].start - listed[i - 1].end).toBeLessThan(60000);
+  expect(listed[0].start).toBe(points[0].time);
+  expect(listed.at(-1).end).toBe(points.at(-1).time);
 });

@@ -31,7 +31,11 @@ export const HISTORY_CONFIG = Object.freeze({
   // a speed accuracy within stillSpeedAccuracyMps, was taken standing still
   // (067: indoors all day the position drifts 50–110 m for minutes while the
   // speed says 0–0.9 km/h; walking measures 1 m/s and more).
-  phone: Object.freeze({ ...common, maxSpeed: 50, vehicleSpeed: 5,
+  // 2026-10-14 (user): the phone has no 「≥ 一般的 3 倍」 baseline
+  // (stayRatio null): a visit of stayMs is a stay. On real days the baseline
+  // rose to 4–16 min once the red lights of misread drives were no visits,
+  // and 4–17 min stops of a dog walk lost their numbers. The dog keeps it.
+  phone: Object.freeze({ ...common, stayRatio: null, maxSpeed: 50, vehicleSpeed: 5,
     enterMs: 30000, exitMs: 30000, departureMaxSpeed: 3, backtrackSpeed: 4,
     stillMps: 0.3, stillSpeedAccuracyMps: 1.5, speedBudget: true,
     // samePlaceGap between two still fixes (IndoorHold's anchorCheckM).
