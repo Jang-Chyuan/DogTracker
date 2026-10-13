@@ -35,7 +35,13 @@ export const HISTORY_CONFIG = Object.freeze({
     enterMs: 30000, exitMs: 30000, departureMaxSpeed: 3, backtrackSpeed: 4,
     stillMps: 0.3, stillSpeedAccuracyMps: 1.5, speedBudget: true,
     // samePlaceGap between two still fixes (IndoorHold's anchorCheckM).
-    stillPlaceM: 100 }),
+    stillPlaceM: 100,
+    // 2026-10-13 (user): two stays at one place with a short real walk
+    // between them are one stay when the walk lasts at most excursionMs, and
+    // both its farthest fix and the second stay lie within the first stay's
+    // radius: excursionAccuracyFactor × its accuracy, clamped to
+    // [excursionMinM, excursionMaxM] (never the 100 m of stillPlaceM).
+    excursionMs: 5 * 60000, excursionAccuracyFactor: 2, excursionMinM: 30, excursionMaxM: 50 }),
   dog: Object.freeze({ ...common, maxSpeed: 15, vehicleSpeed: 9,
     enterMs: 60000, exitMs: 60000, departureMaxSpeed: 15, backtrackSpeed: null }),
 });
@@ -110,8 +116,28 @@ export function samePlaceGap(a, b, config, { acrossSessions = false } = {}) {
   if (!(apart > config.radiusM + 1e-8)) return true;
   // Both ends measured standing still (the phone's own speed): indoors the
   // position drifts tens of metres while the phone stays put; within
-  // stillPlaceM it is the same place.
-  return !!config.stillPlaceM && stillFix(a, config) && stillFix(b, config) && apart <= config.stillPlaceM;
+  // stillPlaceM it is the same place. 2026-10-13: an end without a measured
+  // speed (and without confirmed movement, checked above) says nothing of
+  // moving either, so it is as still as a measured one here.
+  return !!config.stillPlaceM && quietFix(a, config) && quietFix(b, config) && apart <= config.stillPlaceM;
+}
+
+/**
+ * 2026-10-13 (phone): a fix that shows no movement — no confirmed movement
+ * from the detector, and measured standing still (stillFix) or without any
+ * measured speed. Indoors many fixes come without a speed while the position
+ * drifts tens of metres: within stillPlaceM of a place they are still that
+ * place. A measured speed that is not stillFix (even an uncertain one) is
+ * not this: it may be a walk.
+ */
+export function quietFix(p, config) {
+  if (!config?.stillMps || !p || p.phoneConfirmedMovement) return false;
+  if (stillFix(p, config)) return true;
+  // Only a recorder that measures speed (and the motion replay) can say a
+  // fix came without one; older rows have no speed column at all, and their
+  // movement is told by geometry alone.
+  const recordsSpeed = 'raw_speed_kmh' in p || 'speed_kmh' in p || 'speed_accuracy_mps' in p;
+  return recordsSpeed && p.phoneMotionState != null && measuredSpeedMps(p) == null;
 }
 
 /**

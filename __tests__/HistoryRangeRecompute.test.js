@@ -75,3 +75,20 @@ test('an old-scope hold cannot cancel a new owner release', async () => {
   expect(publish).toHaveBeenCalledTimes(1);
   expect(state.pending).toBe(false);
 });
+
+// 2026-10-13 (CI, PR #146): the busy render itself took longer than the delay
+// on a slow runner, so the work ran and busy cleared before the skeleton was
+// committed. The delay now starts at the commit of the busy state.
+test('a busy render slower than the delay still commits busy before the work runs', async () => {
+  const publish = jest.fn();
+  await act(async () => {
+    state.request(publish);
+    // Time passes before React commits the busy state (a slow render).
+    jest.advanceTimersByTime(10 * RANGE_RECOMPUTE_DELAY_MS);
+  });
+  expect(publish).not.toHaveBeenCalled();
+  expect(state.pending).toBe(true);
+  await act(async () => jest.advanceTimersByTimeAsync(RANGE_RECOMPUTE_DELAY_MS));
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(state.pending).toBe(false);
+});

@@ -98,7 +98,13 @@ export function shownRowAt(nodes, time) {
 }
 
 // Presentation only: retained gaps/stops and the source model remain untouched.
-export function timelinePresentation(source = []) {
+export function timelinePresentation(all = []) {
+  // 2026-10-13: the rows of no data before the day's first fix and after its
+  // last (`dayBoundary`, phone) are set aside: the departure and the end keep
+  // their places in the rules below, and they join the list at the end.
+  const lead = all[0]?.dayBoundary === 'start' ? all[0] : null;
+  const tail = all.length > 1 && all[all.length - 1]?.dayBoundary === 'end' ? all[all.length - 1] : null;
+  const source = lead || tail ? all.slice(lead ? 1 : 0, tail ? -1 : all.length) : all;
   // A short same-session interruption inside a stay is the stay's time too.
   const nodes = source.some(n => n.type === 'stop' && n.gaps?.some(foldableInside)) ? source.map(foldInterior) : source;
   const first = nodes[0], initialStay = nodes[1];
@@ -115,7 +121,10 @@ export function timelinePresentation(source = []) {
   // breaks kept in `unobserved`, and the 0 m re-acquisition after a break):
   // its first edge starts at the departure fix, its last ends at the endpoint
   // fix, so time alone proves the endpoint is that run.
-  const stationaryRun = node => node?.presentationOnly === 'phone-stationary';
+  // A still-here stay (2026-10-13) is the range itself: it starts at the
+  // departure fix and ends at the endpoint fix by construction.
+  const stationaryRun = node => node?.presentationOnly === 'phone-stationary'
+    || node?.presentationOnly === 'still-here';
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
     && (initialStay.number === 1 || stationaryRun(initialStay)) && first.start === initialStay.start
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
@@ -175,12 +184,16 @@ export function timelinePresentation(source = []) {
     i = j;
   }
   // Raw holes (time no row has) of less than a gap beside a walk: the walk's.
+  // 2026-10-13: beside no walk, the stay's (a short stationary pause right
+  // after a stay that took the 0 m walk before it).
   for (let i = 1; i < shown.length; i++) {
     const a = shown[i - 1], b = shown[i];
     const hole = b.start - a.end;
     if (!(hole > 0 && hole < GAP_MS)) continue;
     if (walking(a)) shown[i - 1] = stretch(a, a.start, b.start, 0);
     else if (walking(b)) shown[i] = stretch(b, a.end, b.end, 0);
+    else if (stayRow(a)) shown[i - 1] = stretch(a, a.start, b.start, 0);
+    else if (stayRow(b)) shown[i] = stretch(b, a.end, b.end, 0);
   }
   // A terminal stay and its endpoint are one visual place. Inspect the original
   // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
@@ -204,7 +217,12 @@ export function timelinePresentation(source = []) {
   // The first 室內 row is that hold (only 0 m rows come before it), even when
   // a folded short break gave it a new object.
   const from = indoor ? shown.findIndex(n => n.type === 'indoor') : -1;
-  return (from > 0 ? shown.slice(from) : shown).map(node => {
+  // The day-boundary rows first: a carry-over they already start at 00:00
+  // (withDayBoundaries) leaves fromMidnight nothing to do; a 「沒有資料」 row
+  // before the first row (a session change) keeps it from reaching back.
+  const listed = withDayBoundaries(from > 0 ? shown.slice(from) : shown, lead, tail);
+  if (listed.length) listed[0] = fromMidnight(listed[0]);
+  return listed.map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
@@ -212,6 +230,62 @@ export function timelinePresentation(source = []) {
       ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
   });
+}
+
+/** The day-boundary rows (timelinePresentation). A same-session break at one
+ * place (`samePlace`: the stay goes on over midnight, 067) is always stay time,
+ * as the other day shows it (2026-10-13, user: the two days agree): the stay
+ * row beside it grows over it; with none there it is the stay itself — the
+ * day's first row 「接續前一天」 instead of a bare 出發, or the end row's
+ * 「停 N 分」 running on to midnight. A foldable short break goes, silently,
+ * to the stay row beside it. Otherwise it is a row of its own (a session
+ * change always, #135). */
+function withDayBoundaries(rows, lead, tail) {
+  if (!lead && !tail) return rows;
+  const out = [...rows];
+  const carried = gap => gap.samePlace === true && gap.sameSession === true && gap.sessionChange !== true;
+  const takes = gap => carried(gap) || foldable(gap);
+  // The stay over midnight on this side: unnumbered, display only.
+  const stayOf = (gap, side) => ({ type: 'stop', presentationOnly: 'carried-over', number: null,
+    id: `carried-over:${gap.start}`, start: gap.start, end: gap.end, durationMs: gap.end - gap.start,
+    interruptionMs: 0, gaps: [], latitude: gap.latitude, longitude: gap.longitude,
+    ...(side === 'start' ? { continuesPreviousDay: true } : { continuesNextDay: true }) });
+  if (lead) {
+    const host = out[0];
+    const beside = host && host.start === lead.end;
+    if (takes(lead) && stayRow(host) && beside) out[0] = stretch(host, lead.start, host.end, lead.end - lead.start);
+    else if (carried(lead) && beside && host.type === 'departure') out[0] = stayOf(lead, 'start');
+    else out.unshift(carried(lead) ? stayOf(lead, 'start') : lead);
+  }
+  if (tail) {
+    const host = out[out.length - 1];
+    const beside = host && host.end === tail.start;
+    if (takes(tail) && stayRow(host) && beside) out[out.length - 1] = stretch(host, host.start, tail.end, tail.end - tail.start);
+    else if (carried(tail) && beside && host.type === 'end') {
+      const stay = stayOf(tail, 'end');
+      out[out.length - 1] = { ...host, start: stay.start, end: stay.end, durationMs: stay.durationMs,
+        continuesNextDay: true, terminalStay: stay };
+    } else out.push(carried(tail) ? stayOf(tail, 'end') : tail);
+  }
+  return out;
+}
+
+/**
+ * 2026-10-13: a stay going on from the day before (「接續前一天」, a stop or a
+ * 室內 hold) begins its row at midnight, not at the day's first packet a
+ * minute or two later (「00:01 接續前一天」): the dog was already there. Its
+ * minutes count from midnight too, as the row's clocks say (every minute
+ * between two listed times belongs to a row). Only within a packet gap
+ * (GAP_MS) of midnight: a first packet long after it (the collar was off) is
+ * where the day's data begins, and the row keeps it. Presentation only: the
+ * model, the map, CSV and GPX keep the first packet.
+ */
+function fromMidnight(node) {
+  if (!['stop', 'indoor'].includes(node?.type) || !node.continuesPreviousDay) return node;
+  const midnight = new Date(node.start);
+  midnight.setHours(0, 0, 0, 0);
+  const early = node.start - midnight.getTime();
+  return early > 0 && early < GAP_MS ? stretch(node, midnight.getTime(), node.end, early) : node;
 }
 
 /**

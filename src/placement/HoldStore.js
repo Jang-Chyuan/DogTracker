@@ -36,6 +36,7 @@ const HISTORY_DOG = configFor('dog');
 function step(state, rows, index) {
   const row = rows[index];
   const { tracker, heldRows } = state;
+  if (state.firstAt == null) state.firstAt = row.time;
   const event = tracker.push(row);
   if (event?.type === 'end' && event.departureSince != null) {
     // As createHistoryHolds: the walk out is not part of the hold.
@@ -44,17 +45,21 @@ function step(state, rows, index) {
   if (event?.type === 'start') {
     const from = holdFillStart(rows, index, event, state.config, earlier => heldRows.has(earlier));
     for (let fill = from; fill < index; fill += 1) heldRows.add(rows[fill]);
-    state.timing = { since: event.since, from: rows[from].time, last: null };
+    // `clipped`: the hold's last good fix (`since`) is older than any row
+    // this tracker was fed (a cold start's seeds), so the hold may well have
+    // begun before the rows it can see: `from` is only where they begin.
+    state.timing = { since: event.since, from: rows[from].time, last: null, clipped: event.since < state.firstAt };
   }
   const current = tracker.current(row.time);
   if (current) {
     heldRows.add(row);
     const place = { time: row.time, latitude: current.coordinate.latitude, longitude: current.coordinate.longitude };
     if (!state.timing || state.timing.since !== current.since) {
-      state.timing = { since: current.since, from: row.time, last: null };
+      state.timing = { since: current.since, from: row.time, last: null, clipped: current.since < state.firstAt };
     } else if (state.timing.last && row.time - state.timing.last.time > HISTORY_DOG.gapMs
       && !samePlaceGap(state.timing.last, place, HISTORY_DOG)) {
       state.timing.from = row.time;
+      state.timing.clipped = false;
     }
     state.timing.last = place;
   } else {
@@ -82,7 +87,7 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
   function dog(slaveId) {
     if (!dogs.has(slaveId)) {
       dogs.set(slaveId, { tracker: createHoldTracker(config, options), rows: [], seeds: [], touched: 0,
-        range: emptyRange(), config, heldRows: new WeakSet(), timing: null, battery: null });
+        range: emptyRange(), config, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null });
     }
     return dogs.get(slaveId);
   }
@@ -130,8 +135,15 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
           const from = state.rows[0]?.time ?? Infinity;
           const tracker = createHoldTracker(config, options);
           tracker.seed([...state.seeds, ...state.tracker.goodFixes()].filter(row => row.time < from));
-          Object.assign(state, { tracker, heldRows: new WeakSet(), timing: null, battery: null });
+          const before = state.timing;
+          Object.assign(state, { tracker, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null });
           for (let index = 0; index < state.rows.length; index += 1) step(state, state.rows, index);
+          // The window may have let go of where a long hold began (it keeps at
+          // most HELD_LOOKBACK_MS): a hold that now begins with the window is
+          // the one held before the replay, and keeps the start it had.
+          if (state.timing?.clipped && before && before.from < state.timing.from) {
+            Object.assign(state.timing, { from: before.from, clipped: before.clipped });
+          }
         } else {
           const position = new Map(state.rows.map((row, index) => [row, index]));
           for (const row of batch.rows) {
@@ -149,8 +161,11 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
       for (const [slaveId, state] of dogs) {
         const current = state.tracker.current(now);
         // `from`: where the history's 室內 node of this hold starts (step).
+        // `fromClipped`: the rows it was fed begin inside the hold, so the
+        // hold may have begun before `from` (DogMerge `heldFromClipped`).
         if (current) {
-          result[slaveId] = state.timing?.since === current.since ? { ...current, from: state.timing.from } : current;
+          result[slaveId] = state.timing?.since === current.since
+            ? { ...current, from: state.timing.from, ...(state.timing.clipped ? { fromClipped: true } : {}) } : current;
         }
       }
       return result;

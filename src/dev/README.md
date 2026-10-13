@@ -83,6 +83,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-near-edge` | A3：豆豆 880 m，「接收範圍」琥珀「快離開接收範圍」 |
 | `card-problems` | A3b：豆豆 09:05 之後沒有新位置、15%、不在接收範圍，活動量「—」 |
 | `card-indoor` | A7b：小黑停在原處（室內・11 分，和歷史同一段的分鐘相同）、充電中 62%、休息中・已 40 分鐘（進門前就在外面休息），沒有「接收範圍」列；「位置」第二行「桃園區中正路 1 號附近」 |
+| `card-indoor-overnight` | 小黑從昨晚 21:09 起停在原處（每 30 秒一筆沒有定位的封包），冷啟動後打開卡片：即時的停住只重播最近 30 分鐘，卡片改從歷史的列找這段停留的開頭（`CardIndoorStay`），寫「室內・12 時 20 分」（跨過午夜算整段）；歷史今天那一列是「00:00 接續前一天」 |
 | `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」只寫「室內・11 分」、沒有第二行（列高照樣 64dp），不轉圈 |
 | `card-indoor-geocoder` | 同 `card-indoor`，地址用這支手機自己的 Geocoder 查（要網路＋Play services） |
 | `card-cloud-dog` | 小黑只從雲端來：沒有「接收範圍」列；劇烈活動 |
