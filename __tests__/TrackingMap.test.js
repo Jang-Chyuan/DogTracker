@@ -643,21 +643,18 @@ test('name tags that would overlap on screen merge into 「N 隻」; a source sw
 
 test('bottom tags keep the real dog coordinates through pan and zoom, without independent labels or leaders', async () => {
   let shift = 0;
-  // dp per degree of longitude: zoomed in the three dogs are 100dp apart on
-  // screen (each its own name); zoomed out 1dp (one 「3 隻」).
-  let scale = 10000000;
   const markers = [4, 6, 8].map((slaveId, index) => ({ ...slaveMarker, slaveId,
     name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, label: `狗 ${slaveId}`,
     coordinate: { latitude: 25.005, longitude: 121.002 + index * 0.00001 } }));
   const original = JSON.stringify(markers);
   const onDogPress = jest.fn();
   mockCamera.pointForCoordinate = jest.fn(async p => ({
-    x: 140 + (p.longitude - 121.002) * scale + shift, y: (25.01 - p.latitude) * 100000,
+    x: (p.longitude - 121) * 100000 + shift, y: (25.01 - p.latitude) * 100000,
   }));
   // A real native map has both directions. Leaving the reverse projection
   // absent would silently fall back to old markers and miss the regression.
   mockCamera.coordinateForPoint = jest.fn(async p => ({
-    latitude: 25.01 - p.y / 100000, longitude: 121.002 + (p.x - 140 - shift) / scale,
+    latitude: 25.01 - p.y / 100000, longitude: 121 + (p.x - shift) / 100000,
   }));
   mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 0, zoom: 19 });
   try {
@@ -682,7 +679,6 @@ test('bottom tags keep the real dog coordinates through pan and zoom, without in
       expect(tag[0].findByType(require('react-native').Text).props.children).toBe(markers[index].tag);
     });
     shift = 30;
-    scale = 100000;
     mockCamera.getCamera.mockResolvedValue({ center: markers[0].coordinate, heading: 35, zoom: 14 });
     await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, { isGesture: true }));
     for (let i = 0; i < 5; i++) await act(async () => jest.advanceTimersByTime(400));
@@ -766,12 +762,9 @@ describe('off-screen hints and the overlap menu', () => {
     expect(items.map(node => node.props.testID).sort()).toEqual(['marker-a11y-4', 'marker-a11y-6', 'marker-a11y-8']);
   });
 
-  test('zoomed in, dogs in one kennel still share 「3 隻・室內」; dogs apart on screen keep their names', async () => {
-    // A few metres apart (as GPS sees separate cages): at zoom 19 their names
-    // pile on each other, and one name on top would hide the other two (066
-    // kept every name zoomed in; the phone then showed only the top one).
+  test('066: zoomed in, every dog keeps its own name tag (no 「N 隻」)', async () => {
     const markers = [at(4, 25.005, 121.002, { indoor: true }), at(6, 25.00501, 121.0021, { indoor: true }),
-      at(8, 25.00499, 121.0019, { indoor: true }), at(10, 25.004, 121.003)];
+      at(8, 25.00499, 121.0019, { indoor: true })];
     mockCamera.getCamera.mockResolvedValue({ center: { latitude: 25, longitude: 121 }, heading: 0, zoom: 19 });
     try {
       await render({ presentation: { ...defaults.presentation, dogMarkers: markers } });
@@ -779,11 +772,10 @@ describe('off-screen hints and the overlap menu', () => {
       await readyMap();
       await act(async () => renderer.root.findByType(MapView).props.onRegionChangeComplete({}, {}));
       await act(async () => jest.advanceTimersByTime(5000));
-      const text = node => node.findByType(require('react-native').Text).props.children;
       const groups = renderer.root.findAll(node => node.props.testID === 'dog-group-tag' && typeof node.type === 'string');
-      expect(groups.map(text)).toEqual(['3 隻・室內']);
+      expect(groups).toHaveLength(0);
       expect(renderer.root.findAll(node => node.props.testID === 'dog-name-tag'
-        && typeof node.type === 'string').map(text)).toEqual(['狗 10']);
+        && typeof node.type === 'string')).toHaveLength(3);
     } finally {
       mockCamera.getCamera.mockResolvedValue(null);
     }

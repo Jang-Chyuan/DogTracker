@@ -55,7 +55,7 @@ import {
   uncrowded,
 } from '../history/screen/HistoryMapModel';
 import DogMarkerView, { markerFrame } from './DogMarkerView';
-import { dogAtPoint, nameTags } from './DogMarkers';
+import { dogAtPoint, groupsAtZoom, nameTags } from './DogMarkers';
 import {
   reportMapFramed,
   getSplashState,
@@ -995,8 +995,10 @@ function GoogleTrackingMapRenderer({
       );
     // Within one source a dog that moved keeps its last screen point until the
     // next read (a moment), so its tag does not blink on every new position.
-    return nameTags(dogMarkers, points || {}, PixelRatio.getFontScale?.() || 1);
-  }, [dogMarkers, dogPoints, source, projecting]);
+    return nameTags(dogMarkers, points || {}, PixelRatio.getFontScale?.() || 1, {
+      group: groupsAtZoom(metresPerDp),
+    });
+  }, [dogMarkers, dogPoints, source, projecting, metresPerDp]);
   useEffect(() => {
     onReadyChange?.(configured && usable);
   }, [configured, usable, onReadyChange]);

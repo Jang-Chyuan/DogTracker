@@ -136,6 +136,11 @@ describe('name tags that run into each other', () => {
     expect(Object.values(nameTags(list, points)).filter(Boolean)).toEqual([
       { text: '3 隻', group: 3, problem: false, members: [6, 8, 10] }]);
   });
+  test('without grouping (zoomed in) every dog keeps its own name', () => {
+    const list = unnamed(held(6), dog(8));
+    expect(nameTags(list, { 6: { x: 200, y: 300 }, 8: { x: 215, y: 342 } }, 1, { group: false })).toEqual({
+      6: { text: '狗 6・室內', group: 1, problem: false }, 8: { text: '狗 8', group: 1, problem: false } });
+  });
   test('tags grow with the font size', () => {
     expect(tagSize('小黑', 2).height).toBeGreaterThan(tagSize('小黑').height);
     expect(tagSize('小黑').width).toBeGreaterThan(tagSize('ab').width);
