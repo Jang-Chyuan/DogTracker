@@ -5,7 +5,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryCloud } from '../src/mapHistory/HistoryCloud';
 import { buildFixture } from '../src/dev/ScreenFixtures';
-import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { DAY_STEP_SETTLE_MAX_MS, historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import { historyCoverage } from '../src/cloud/HistoryCoverage';
 import { dayBounds, dayKey } from '../src/history/screen/HistoryScreenDates';
 import { ScrollView } from 'react-native';
@@ -178,6 +178,10 @@ test('‹ › to a day already known to be incomplete shows its download at once
     await act(async () => { choice = state.screen.previousDay(); });
     expect(choice.type).toBe('download');
     expect(state.screen.dayKey).toBe(yesterday);
+    expect(state.screen.download?.kind).toBe('downloading');
+    // Fetched once the taps settle on this day (another tap may still come).
+    expect(state.cloud.download).not.toHaveBeenCalled();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, DAY_STEP_SETTLE_MAX_MS + 20)); });
     expect(state.screen.download?.kind).toBe('downloading');
     expect(state.cloud.download).toHaveBeenCalledTimes(1);
     const { dayStart, dayEnd, cutoff } = state.cloud.download.mock.calls[0][0];

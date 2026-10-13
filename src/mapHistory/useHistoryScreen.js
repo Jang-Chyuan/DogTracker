@@ -69,6 +69,14 @@ const PAST_POLL_MS = 60000;
 const BUILD_COST_FACTOR = 20;
 // The clock moves on once a minute (「現在」, the range bar's right end).
 const CLOCK_MS = 60000;
+// ‹ › tapped several times quickly (device, 10/13): the date row and its tick
+// follow every tap at once, but the day's model, map, camera and download
+// wait until no tap came for this long, so the days passed through are never
+// built (a long day's build holds the JavaScript thread, and the taps after
+// it queued behind it). A day that took longer to build waits a little
+// longer, within these bounds. Its rows are already being read meanwhile.
+export const DAY_STEP_SETTLE_MS = 150;
+export const DAY_STEP_SETTLE_MAX_MS = 250;
 
 /**
  * One day's rows of one dog or my route, read in pages and followed while the
@@ -125,6 +133,9 @@ export function useHistoryDayRows({
     if (!active || !read || !key) return undefined;
     let alive = true,
       timer;
+    // Another day, dog or reader: the read in flight stops at its next query
+    // (‹ › tapped quickly would otherwise read every day passed to the end).
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
     let waitingForPublication = false, readPublication = null, signalledPublication = null;
     const cache = { rows: [], seed: [], after: {}, first: true };
     const identity = [subject, slaveId, day, owner, scope, read, getPublication,
@@ -189,6 +200,7 @@ export function useHistoryDayRows({
           end: dayEnd,
           owner,
           after: cache.after,
+          signal: controller?.signal ?? null,
         }));
         if (!alive) return;
         if (!fence.valid()) {
@@ -256,6 +268,7 @@ export function useHistoryDayRows({
     return () => {
       alive = false;
       clearTimeout(timer);
+      controller?.abort();
       if (publicationReader.current === reader) publicationReader.current = null;
     };
     // key stands for subject, slaveId, day and owner.
@@ -386,6 +399,17 @@ export function useHistoryScreen({
     value => setDayState({ key: sessionKey, day: value }),
     [sessionKey],
   );
+  // ‹ › taps not settled yet (DAY_STEP_SETTLE_MS): { key, ms }, a new object
+  // per tap. While held the day shows its skeleton; its rows are read, but
+  // nothing is built, framed or downloaded for it.
+  const [stepHold, setStepHold] = useState(null);
+  const held = !!stepHold && stepHold.key === sessionKey;
+  useEffect(() => {
+    if (!stepHold) return undefined;
+    // Counted from the commit of the tap's render: its skeleton is on screen.
+    const timer = setTimeout(() => setStepHold(current => (current === stepHold ? null : current)), stepHold.ms);
+    return () => clearTimeout(timer);
+  }, [stepHold]);
   const dayEnd = endOfDay(day);
   const today = day === todayStart;
   const coverageOpening = useRef({ key: null, active: false, cutoff: 0 });
@@ -487,6 +511,12 @@ export function useHistoryScreen({
   const [days, setDays] = useState([]);
   const [daysByDog, setDaysByDog] = useState({ key: null, value: {} });
   const anyLoaded = slots.some(slot => slot.version > 0);
+  // Asked again when today's first rows arrive (today may just have begun).
+  // Another day's rows never add a day: stepping through past days must not
+  // scan every stored row again (twice a day) for the list of days.
+  const todayRows = useRef(null);
+  if (today && anyLoaded && sessionKey) todayRows.current = `${sessionKey}|${todayStart}`;
+  const todayRowsKey = todayRows.current;
   useEffect(() => {
     if (!active || !readDays || !subject) return undefined;
     let alive = true;
@@ -517,15 +547,14 @@ export function useHistoryScreen({
     return () => {
       alive = false;
     };
-    // Asked again when the day's first rows arrive (today may just have begun)
-    // and after a download.
+    // Asked again when today's first rows arrive and after a download.
   }, [
     active,
     readDays,
     subject,
     idsKey,
     owner,
-    anyLoaded,
+    todayRowsKey,
     readRevision,
     baseKey,
     publicationRevision,
@@ -573,9 +602,10 @@ export function useHistoryScreen({
   });
   const { knowledge } = cloudDays;
   const coverageReady = !cloud?.coverageRequired || subject !== 'dog' || cloudDays.completeDay(shownKey);
+  const stepDays = useMemo(() => knownDays(knowledge), [knowledge]);
   const navigation = useMemo(
-    () => dateNavigation(shownKey, todayKey, knownDays(knowledge)),
-    [shownKey, todayKey, knowledge],
+    () => dateNavigation(shownKey, todayKey, stepDays),
+    [shownKey, todayKey, stepDays],
   );
   // ---- the range ----------------------------------------------------------
   // Remembered for the dog the screen was opened for while it is shown
@@ -689,6 +719,9 @@ export function useHistoryScreen({
   // while it is read, as before).
   const rereading = !!verifiedView && !allLoaded;
   const builtModel = useMemo(() => {
+    // A day ‹ › only passed through is never built (nor one the taps may
+    // still pass): its rows arriving during the hold keep the render cheap.
+    if (held) return null;
     // The busy render must stay cheap: neither a range request nor rows/clock
     // arriving during it may replay the model before the loading commit.
     if (rangePending) return completedRangeModel.current?.scope === completedScope
@@ -735,6 +768,7 @@ export function useHistoryScreen({
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    held,
     rangePending,
     completedScope,
     subject,
@@ -755,7 +789,7 @@ export function useHistoryScreen({
   ]);
   // Either blocker qualifies: the proof waiting for its re-read/tail, or the
   // day's rows re-reading for the new material/cutoff.
-  const retained = !builtModel && !waiting ? verifiedView : null;
+  const retained = !builtModel && !waiting && !held ? verifiedView : null;
   useEffect(() => {
     // While a range drag holds the last completed model, its cutoff may lag
     // the current one: neither record nor drop the verified model then.
@@ -766,7 +800,7 @@ export function useHistoryScreen({
       cutoff: coverageCutoff, model: builtModel };
     else if (!verifiedIdentity || !verifiedMatches(verifiedModel.current)) verifiedModel.current = null;
   });
-  const dayModel = builtModel ?? retained?.model ?? null;
+  const dayModel = held ? null : builtModel ?? retained?.model ?? null;
   useEffect(() => {
     if (!rangePending && builtModel) completedRangeModel.current = { scope: completedScope, model: builtModel };
   }, [builtModel, rangePending, completedScope]);
@@ -937,7 +971,24 @@ export function useHistoryScreen({
     return explicit || !ensured.current.has(ensureKey) ? { key: ensureKey, explicit } : null;
   };
   const tailDue = ensureDue();
+  // A download ‹ › chose for the day it went to (#141), started only once the
+  // taps settle there: { key, day, at }. 「下載 … 的紀錄」 shows at once.
+  const deferredDownload = useRef(null);
+  const deferredDue = deferredDownload.current?.key === sessionKey && deferredDownload.current.day === shownKey;
   useEffect(() => {
+    const job = deferredDownload.current;
+    if (held || !job) return;
+    deferredDownload.current = null;
+    if (job.key !== sessionKey || job.day !== shownKey || !active || !online) return;
+    // This day's own check below must not start it a second time.
+    ensured.current.add(ensureKey);
+    explicitTail.current = true;
+    autoTailResume.current = null;
+    startDownload(job.day, reread, job.at);
+  }, [held, sessionKey, shownKey, active, online, ensureKey, startDownload, reread]);
+  useEffect(() => {
+    // Rapid ‹ ›: the day the taps settle on starts it (the effect runs again then).
+    if (held) return;
     if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
     const due = ensureDue();
     if (!due) {
@@ -954,7 +1005,7 @@ export function useHistoryScreen({
     autoTailResume.current = due.explicit ? null : resumes.current.count;
     startDownload(shownKey, reread);
   }, [active, online, subject, cloud, cloudDays.completenessLoaded, cloudDays.cloudScope, // eslint-disable-line react-hooks/exhaustive-deps
-    cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread]);
+    cloudDays.download, coverageReady, shownKey, coverageCutoff, publicationRevision, startDownload, reread, held]);
   /** Cancel retains the last complete rows and marks the window incomplete. */
   const cancel = useCallback(() => {
     if (!cancelDownload()) return false;
@@ -967,17 +1018,32 @@ export function useHistoryScreen({
    * only the cloud holds needs the network — the day does not change — else
    * the day changes ('show') and a cloud day starts downloading ('download').
    * A running download stops first (下載中點 ‹ ›、換別天＝取消).
+   * `step`: ‹ ›, which may come quickly one after another: the date and its
+   * tick change at once, the rest waits for the taps to settle (stepHold).
    */
-  const goTo = useCallback(
-    next => {
+  // The day the last ‹ › went to, until a render shows it ({ key, base, day }):
+  // taps the JavaScript thread handles in one batch (queued behind other work)
+  // each step one more day instead of all landing on the same one.
+  const steppedTo = useRef(null);
+  const go = useCallback(
+    (next, step = false, from = shownKey) => {
       if (next == null) return { type: 'none' };
       const choice = chooseDay(next, { today: todayKey, knowledge, online });
       if (choice.type === 'none' || choice.type === 'offline') return choice;
       if (downloadingDay === next) return { type: 'show', day: next };
       cancel();
-      if (next !== shownKey) changeDay(next);
+      deferredDownload.current = null;
+      steppedTo.current = step ? { key: sessionKey, base: shownKey, day: next } : null;
+      if (next !== from) changeDay(next);
+      // A day chosen on the calendar is settled at once.
+      setStepHold(step ? { key: sessionKey,
+        ms: Math.min(DAY_STEP_SETTLE_MAX_MS, Math.max(DAY_STEP_SETTLE_MS, modelBuildCost.current)) } : null);
+      const begin = at => {
+        if (step) deferredDownload.current = { key: sessionKey, day: next, at };
+        else { explicitTail.current = true; startDownload(next, reread, at); }
+      };
       if (choice.type === 'download') {
-        if (!cloud?.coverageRequired || next === shownKey) { explicitTail.current = true; startDownload(next, reread); }
+        if (!cloud?.coverageRequired || next === from) begin(undefined);
         else if (cloudDays.completenessLoaded) {
           // The proof just read already says this day needs a download (a
           // day only the cloud holds, or 「部分」): show 「下載 … 的紀錄」 at
@@ -986,7 +1052,7 @@ export function useHistoryScreen({
           // download and the day's proof check agree on it.
           const at = clock();
           coverageOpening.current = { key: `${sessionKey}|${dayBounds(next).dayStart}|${owner ?? ''}`, active, cutoff: at };
-          explicitTail.current = true; startDownload(next, reread, at);
+          begin(at);
         } else ensureRequested.current = next;
       }
       return choice;
@@ -1009,14 +1075,14 @@ export function useHistoryScreen({
       active,
     ],
   );
-  const previousDay = useCallback(
-    () => goTo(navigation.previous),
-    [goTo, navigation.previous],
-  );
-  const nextDay = useCallback(
-    () => goTo(navigation.next),
-    [goTo, navigation.next],
-  );
+  const goTo = useCallback(next => go(next), [go]);
+  const stepTo = useCallback(side => {
+    const stepped = steppedTo.current;
+    const from = stepped?.key === sessionKey && stepped.base === shownKey ? stepped.day : shownKey;
+    return go(dateNavigation(from, todayKey, stepDays)[side], true, from);
+  }, [go, sessionKey, shownKey, todayKey, stepDays]);
+  const previousDay = useCallback(() => stepTo('previous'), [stepTo]);
+  const nextDay = useCallback(() => stepTo('next'), [stepTo]);
   /** 重試 after a cancelled or failed download of the day shown. */
   const retryDownload = useCallback(() => {
     if (!online)
@@ -1048,7 +1114,7 @@ export function useHistoryScreen({
   if (finished && dayModel) finishedShown.current = finished;
   const finishing = !!finished && finishedShown.current !== finished
     && coverageReady && !dayModel && !slots.some(slot => slot.error);
-  const shownDownload = tailDue || finishing ? { day: shownKey, status: 'downloading' } : cloudDays.download;
+  const shownDownload = tailDue || finishing || deferredDue ? { day: shownKey, status: 'downloading' } : cloudDays.download;
   const quietTail = !!retained && !(tailDue ? tailDue.explicit : explicitTail.current) && shownDownload?.day === shownKey
     && shownDownload.status === 'downloading';
   const download = quietTail ? null : downloadPanel(shownDownload?.status === 'done' && !coverageReady ? null : shownDownload, {
