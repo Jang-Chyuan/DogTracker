@@ -4,6 +4,7 @@ import { getSupabase } from '../services/supabase';
 import { NativeModules } from 'react-native';
 import { cancelBackgroundSync } from '../cloud/CloudSyncSlot';
 import { isNetworkFailure, refreshRefused } from '../cloud/CloudErrors';
+import { storedSignIn } from '../cloud/CloudSession';
 import { RESTORE_TIMEOUT_MS } from '../app/Launch';
 
 const AuthContext = createContext(null);
@@ -42,7 +43,7 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
 
   useEffect(() => {
     if (!client) return undefined;
-    let alive = true, eventSeen = false;
+    let alive = true, eventSeen = false, ownerEvent = 0;
     const finish = () => {
       if (!alive || opened.current) return;
       opened.current = true;
@@ -53,14 +54,26 @@ export function AuthProvider({ children, clientFactory = getSupabase, restoreTim
       // The sign-in cancelled with 「稍後再說」 landed anyway: not taken
       // (it is signed out again as soon as it resolves).
       if (next?.user && discarding.current) return;
+      const seen = ++ownerEvent;
       if (!next?.user) {
         // Background work stops here as well as in the sync/upload hooks, so
-        // it does not depend on them receiving one more render.
-        cancelBackgroundSync();
-        NativeModules.CloudBackgroundSync?.setOwner(null).catch(() => {});
-        NativeModules.BleBackground?.executeDatabase?.(
-          "UPDATE ble_upload_meta SET value='' WHERE key='owner'", '[]',
-        ).catch(() => {});
+        // it does not depend on them receiving one more render. Only a real
+        // sign-out ends it: no session while the stored sign-in waits for its
+        // refresh (offline after the access token expired) keeps the owner of
+        // background sync and BLE uploads (CloudSession.storedSignIn). The
+        // SDK removes the stored session before SIGNED_OUT, also when the
+        // refresh token is refused.
+        const end = () => {
+          cancelBackgroundSync();
+          NativeModules.CloudBackgroundSync?.setOwner(null).catch(() => {});
+          NativeModules.BleBackground?.executeDatabase?.(
+            "UPDATE ble_upload_meta SET value='' WHERE key='owner'", '[]',
+          ).catch(() => {});
+        };
+        if (event === 'SIGNED_OUT') end();
+        else storedSignIn(client.auth).then(stored => {
+          if (alive && seen === ownerEvent && !stored) end();
+        });
       }
       if (next?.user) {
         setExpired(false); setExpiredAtStart(false); setOffline(false);

@@ -145,6 +145,17 @@ test('A6 card: 連接接收器, and 登入 Supabase only when signed out; its �
   expect(gearReasons({ dismissed: { noDogs: true }, now: NOW })).toEqual([]);
 });
 
+test('A6 signed in but offline (a restore waiting for the network) never asks to sign in', () => {
+  const [offline] = topCards({ noDogs: true, signedIn: true, cloudOffline: true });
+  expect(offline).toMatchObject({ id: 'no-dogs', detail: i18nT('c1290') });
+  expect(offline.detail).not.toContain('Supabase');
+  expect(offline.actions.map(action => action.label)).toEqual([i18nT('c011')]);
+  // Signed out stays as it was, offline or not.
+  const [signedOut] = topCards({ noDogs: true, cloudOffline: true });
+  expect(signedOut.detail).toBe(i18nT('c110'));
+  expect(signedOut.actions.map(action => action.label)).toEqual([i18nT('c011'), i18nT('c111')]);
+});
+
 test('A6 dismissal is a stored preference', () => {
   expect(DEFAULT_TRACKING_PREFERENCES.noDataCardDismissed).toBe(false);
   expect(validateTrackingPreferences({ noDataCardDismissed: true }).noDataCardDismissed).toBe(true);

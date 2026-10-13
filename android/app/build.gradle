@@ -78,6 +78,20 @@ def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) localPropertiesFile.withInputStream { localProperties.load(it) }
 def googleMapsApiKey = (System.getenv('GOOGLE_MAPS_ANDROID_API_KEY') ?: localProperties.getProperty('GOOGLE_MAPS_ANDROID_API_KEY', '')).trim()
+// Without the key GOOGLE_MAPS_CONFIGURED is compiled false: that APK opens on
+// 「地圖打不開」 every time, online or not, and 重試 cannot help. A release
+// APK built in a fresh worktree or checkout without android/local.properties
+// looked exactly like an offline map failure. CI keeps building without the
+// secret (ci.yml); elsewhere a release build stops unless
+// ALLOW_MISSING_MAPS_KEY=true (environment or android/local.properties).
+def allowMissingMapsKey = System.getenv('CI') == 'true' ||
+        (System.getenv('ALLOW_MISSING_MAPS_KEY') ?: localProperties.getProperty('ALLOW_MISSING_MAPS_KEY', '')).trim() == 'true'
+def buildsReleaseApk = gradle.startParameter.taskNames.any { it ==~ /(?i).*(assemble|bundle|install|package)release/ }
+if (buildsReleaseApk && googleMapsApiKey.isEmpty() && !allowMissingMapsKey) {
+    throw new GradleException('GOOGLE_MAPS_ANDROID_API_KEY is empty: this release APK would never open its map ' +
+            '(「地圖打不開」). Copy android/local.properties from your main checkout, set the environment variable, ' +
+            'or set ALLOW_MISSING_MAPS_KEY=true to build it anyway.')
+}
 
 // scripts/app-version.js: CI uses the full HEAD commit count; local builds stop
 // at the merge-base with origin/main (see README). versionCode is that count

@@ -228,6 +228,32 @@ test('stationary locks immediately, stale shows last fix and inactive cancels ti
   cleared.mockRestore();
 });
 
+test('the dot follows its view until laid out once, then keeps one bitmap redrawn when the map is back', async () => {
+  const redraw = jest.fn();
+  const RefMarker = React.forwardRef((props, ref) => {
+    React.useImperativeHandle(ref, () => ({ redraw }));
+    return <Marker {...props} />;
+  });
+  const element = redrawKey => (
+    <PhoneLocationOverlay Circle={Circle} Marker={RefMarker} redrawKey={redrawKey}
+      location={{ position, ageSeconds: 0, running: true }} />
+  );
+  await act(async () => { renderer = Renderer.create(element(0)); });
+  const marker = () => renderer.root.findByType(Marker);
+  // A bitmap taken before layout was empty (no dot, no 「手機」) for good.
+  expect(marker().props.tracksViewChanges).toBe(true);
+  const container = renderer.root.findAll(node => typeof node.type === 'string' && node.props.collapsable === false)[0];
+  await act(async () => container.props.onLayout({ nativeEvent: { layout: { width: 80, height: 60 } } }));
+  await act(async () => { jest.runOnlyPendingTimers(); });
+  expect(marker().props.tracksViewChanges).toBe(false);
+  expect(redraw).toHaveBeenCalled();
+  redraw.mockClear();
+  // The map came back on screen (or a new instance loaded): one redraw.
+  await act(async () => renderer.update(element(1)));
+  expect(redraw).toHaveBeenCalledTimes(1);
+  expect(marker().props.tracksViewChanges).toBe(false);
+});
+
 test('phone name is a capsule and the expanded bitmap stays anchored on the dot', async () => {
   await render(position);
   const tag = renderer.root.findAllByProps({ testID: 'phone-name-tag' }).find(node => typeof node.type === 'string');

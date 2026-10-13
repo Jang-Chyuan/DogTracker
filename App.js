@@ -1367,6 +1367,10 @@ function TrackerApp({ resume = null, onRestart }) {
             onOpenSettings={() => open('settings')}
             // Restoring a saved sign-in counts: A6 offers no 「登入 Supabase」.
             signedIn={!!mapInputs.cloudSync.ownerId || !!mapInputs.restoring}
+            // Signed in, but Supabase cannot be reached (the saved sign-in is
+            // still being restored, or the last pass failed for the network):
+            // A6 says the cloud dogs come once online, never 「登入 Supabase」.
+            cloudOffline={!!mapInputs.restoring || (!!mapInputs.cloudSync.ownerId && !!mapInputs.cloudSync.offline)}
             cloudProblem={mapInputs.cloudProblem}
             signInExpired={mapInputs.signInExpired}
             notificationsDenied={mapInputs.permissions.notificationsDenied}

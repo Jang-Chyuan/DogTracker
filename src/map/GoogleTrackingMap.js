@@ -152,6 +152,14 @@ export function pointsSettled(previous, next) {
   return ids.every(id => previous[id] && Math.abs(previous[id].x - next[id].x) <= 1
     && Math.abs(previous[id].y - next[id].y) <= 1);
 }
+/**
+ * The camera a new map instance opens on: the last one read for this same
+ * source, else none (initialRegion). Nothing saved yet with an undefined
+ * source must not read `.camera` of null (a TypeError is 「地圖打不開」).
+ */
+export function savedCamera(saved, source) {
+  return saved && saved.source === source ? saved.camera ?? undefined : undefined;
+}
 // History framing: 24dp all round, the cursor label on top, 框住全部 below.
 // Coordinates are marker centres: reserve the complete stop circle above the panel.
 const HISTORY_FRAME = { top: space.l, right: space.xl,
@@ -1721,11 +1729,7 @@ function GoogleTrackingMapRenderer({
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_GOOGLE}
           initialRegion={initialRegion}
-          initialCamera={
-            savedView.current?.source === source
-              ? savedView.current.camera
-              : undefined
-          }
+          initialCamera={savedCamera(savedView.current, source)}
           // Without a base map (a fixture of a failed load) the dogs, the phone
           // and the ring are drawn on plain grey, as when no tile arrives.
           mapType="standard"
@@ -1861,6 +1865,7 @@ function GoogleTrackingMapRenderer({
           {!historyMode && livePhone?.running && livePhone.position && (
             <PhoneLocationOverlay
               feed={livePhoneFeed}
+              redrawKey={`${shownKey}:${instance}:${loaded}`}
               Circle={Circle}
               Marker={StyledMarker}
               location={livePhone}

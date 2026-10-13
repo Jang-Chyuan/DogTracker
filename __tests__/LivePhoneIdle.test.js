@@ -147,6 +147,22 @@ describe('the live map idle', () => {
     expect(tree.root.findAllByType(PhoneLocationOverlay)).toHaveLength(0);
   });
 
+  test('leaving the app keeps the phone dot mounted; coming back reuses that marker', async () => {
+    await start();
+    const props = tree.root.findByType(MapScreen).props;
+    const dot = () => tree.root.findAll(node => node.props.identifier === 'phone-timeline-live');
+    const before = dot()[0];
+    expect(before).toBeDefined();
+    // Away: no reads, but no null either — that removed the dot and circle at
+    // every pause and drew a new marker (a bitmap race) at every resume.
+    await act(async () => tree.update(<MapScreen {...props} tracking={{ ...props.tracking, foreground: false }} />));
+    await act(async () => jest.advanceTimersByTimeAsync(5000));
+    expect(tree.root.findAllByType(PhoneLocationOverlay)).toHaveLength(1);
+    await act(async () => tree.update(<MapScreen {...props} />));
+    await act(async () => jest.advanceTimersByTimeAsync(1000));
+    expect(dot()[0]).toBe(before);
+  });
+
   test('the map takes a newer fix time every LIVE_PHONE_REFRESH_MS while standing still', async () => {
     await start();
     const shown = map().livePhone;
