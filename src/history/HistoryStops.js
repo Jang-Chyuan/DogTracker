@@ -376,6 +376,16 @@ export function historyIndoorNodes(points, { start = -Infinity, end = Infinity, 
     const last = nodes[nodes.length - 1];
     last.continuesNextDay = last.heldSince === after.heldSince
       && (after.time - last.end <= config.gapMs || samePlaceGap({ ...last, time: last.end }, after, config));
+    // 2026-10-13: a hold going on past midnight is shown where it is held at
+    // midnight — the anchor good fixes refined during the hold — which is
+    // where the next day's 「接續前一天」 starts (its replay is seeded with
+    // those fixes), not where the hold began hours earlier: one place, one
+    // address, on both days.
+    const held = last.continuesNextDay
+      ? points.filter(p => p.heldReason && p.heldSince === last.heldSince && p.time <= last.end).pop() : null;
+    if (held && Number.isFinite(held.latitude) && Number.isFinite(held.longitude)) {
+      last.latitude = held.latitude; last.longitude = held.longitude;
+    }
   }
   return nodes;
 }

@@ -256,6 +256,57 @@ test('a dog day download: skeleton from the first frame, the download line stays
   } finally { finish.resolve(); await act(async () => renderer.unmount()); }
 });
 
+// 2026-10-13 (fixture download, 1 run in 2): one frame of 「這天沒有…的紀錄」
+// between 「下載…」 and the content. The download's end reads the day again;
+// until that read answers, the rows read before the download (none) are no
+// answer: the download line stays.
+test.each([true, false])('a downloaded day never flashes 「這天沒有…的紀錄」 before its re-read rows (coverage proof %s)', async coverageRequired => {
+  const fixture = buildFixture('history-dog');
+  const day = dayKey(new Date(fixture.now)), bounds = dayBounds(day);
+  const dog = historyTargetOf(fixture.history.preferences).slaveId;
+  let proof = [], downloaded = false;
+  const finish = deferred(), reread = deferred();
+  // Without a coverage proof (the screen fixtures' stand-in cloud) the re-read
+  // keeps the same rows key, so the rows read before the download stay
+  // loaded while it runs.
+  const cloud = { owner: 'owner-a', coverageRequired, downloadStates: async () => proof,
+    download: jest.fn(async () => { await finish.promise; downloaded = true;
+      proof = [{ slave_id: dog, day, complete: 1, ...historyCoverage(bounds.dayStart, bounds.dayEnd, fixture.now) }]; }) };
+  // Before the download this phone holds nothing of the day; the read after
+  // it is slow (the rows it finds are what the download stored).
+  const read = async args => {
+    if (!downloaded) return { rows: [], seed: [], after: {} };
+    await reread.promise;
+    return fixture.history.readDay(args);
+  };
+  const frames = [];
+  let screen, renderer;
+  const has = id => renderer.root.findAll(node => node.props.testID === id).length > 0;
+  function Probe() {
+    screen = useHistoryScreen({ target: historyTargetOf(fixture.history.preferences), owner: 'owner-a', cloud,
+      read, readDays: fixture.history.readDays, clock: () => fixture.now, online: true,
+      memoryScope: `no-empty-flash-${coverageRequired}` });
+    return <HistoryScreen screen={screen} top={24} bottomInset={0} name="QA" />;
+  }
+  const record = () => frames.push(has('history-empty') ? 'empty' : has('history-downloading') ? 'download'
+    : screen.model?.points.length ? 'content' : 'other');
+  try {
+    await act(async () => { renderer = Renderer.create(<Probe />); });
+    // Without a proof nothing asks for the download: 重試 / 更新 does.
+    if (!cloud.download.mock.calls.length) await act(async () => { screen.retryDownload(); });
+    expect(cloud.download).toHaveBeenCalledTimes(1);
+    record();
+    await act(async () => finish.resolve());
+    for (let i = 0; i < 5; i++) { record(); await act(async () => { await Promise.resolve(); }); }
+    await act(async () => reread.resolve());
+    for (let i = 0; i < 5 && !screen.model?.points.length; i++) { record(); await act(async () => { await Promise.resolve(); }); }
+    record();
+    const seen = frames.filter((frame, i) => frame !== frames[i - 1]);
+    expect(seen.at(-1)).toBe('content');
+    expect(seen).not.toContain('empty');
+  } finally { finish.resolve(); reread.resolve(); await act(async () => renderer.unmount()); }
+});
+
 test('another day starts its list at the top', async () => {
   const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => {});
   const fixture = buildFixture('history-dog');

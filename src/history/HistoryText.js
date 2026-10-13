@@ -78,14 +78,21 @@ export function sectionText(section) {
  * { text, tone } with tone 'stay' (route colour), 'plain',
  * 'closed' (warn) or 'indoor' (receiver); null for a switch point.
  */
+// A stay's shown minutes round to none (a manual range clipping it to
+// seconds): a merged 出發／終點 says only itself, never 「停 0 分」 (2026-10-13).
+const noMinutes = stay => stay.type === 'stop' && !stay.continuesPreviousDay
+  && Math.round(Math.max(0, stay.displayDurationMs ?? stay.durationMs ?? 0) / MINUTE) === 0;
+
 export function nodePill(node) {
   if (node.departureStay) {
     const departure = nodePill({ ...node, departureStay: null });
+    if (noMinutes(node.departureStay)) return departure;
     const stay = nodePill(node.departureStay);
     return { ...departure, text: `${departure.text} · ${stay.text}` };
   }
   if (node.terminalStay) {
     const endpoint = nodePill({ ...node, terminalStay: null });
+    if (endpoint && noMinutes(node.terminalStay)) return endpoint;
     const stay = nodePill(node.terminalStay);
     // An end that runs on past midnight has no capsule of its own: 「停 N 分」.
     return endpoint ? { ...endpoint, text: `${endpoint.text} · ${stay.text}` } : stay;
@@ -94,7 +101,8 @@ export function nodePill(node) {
     case 'departure':
       return { text: t('c124'), tone: 'plain' };
     case 'stop': {
-      const stay = t('c127', { duration: listDuration(node.displayDurationMs ?? node.durationMs) });
+      // Under half a minute shown on its own: 「停 不到 1 分」 (as c1276 on rows).
+      const stay = t('c127', { duration: noMinutes(node) ? t('c1276') : listDuration(node.displayDurationMs ?? node.durationMs) });
       return { text: node.continuesPreviousDay ? t('c332') : stay, tone: 'stay' };
     }
     case 'indoor': {

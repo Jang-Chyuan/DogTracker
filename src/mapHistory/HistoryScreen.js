@@ -637,7 +637,8 @@ ref) {
         {emptyText({ subject, today: screen.today, name: leadName })}
       </Text>
     );
-  else if (!hasRoute) body = <Text style={styles.empty}>{t('c318')}</Text>;
+  // A dog heard all day without a fix still has its 「收不到 GPS」 row (2026-10-13).
+  else if (!hasRoute && (downloading || !model?.nodes?.length)) body = <Text style={styles.empty}>{t('c318')}</Text>;
   else {
     body = (
       <View style={styles.list}>

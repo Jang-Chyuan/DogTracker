@@ -51,7 +51,7 @@ import { displayName } from '../dogs/DogName';
 import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
 import { liveSwitchOrder, switchOrder, switchTarget } from '../map/DogSwitch';
 import { useDogCardReadings } from '../map/useDogCardReadings';
-import { useCardIndoorStay } from '../map/CardIndoorStay';
+import { historyHoldCandidates, useCardIndoorStay, useHistoryHolds } from '../map/CardIndoorStay';
 import {
   cloudClock,
   dogFreshness,
@@ -407,6 +407,24 @@ export default function MapScreen({
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ride = useMemo(() => currentRide, [rideKey]);
+  // A dog the live tracker cannot hold from the rows it sees (a cold start's
+  // half hour, inside a stay that began last night) is held where and since
+  // the history holds it, so the map's 「室內」, the card's 位置 row and the
+  // history agree (CardIndoorStay.useHistoryHolds).
+  const historyHoldInput = useMemo(
+    () => (historical || fixture ? [] : historyHoldCandidates(cloudDogs?.statuses, cloudDogs?.holds)),
+    [historical, fixture, cloudDogs?.statuses, cloudDogs?.holds],
+  );
+  const historyHolds = useHistoryHolds(
+    historical || fixture ? null : history?.readDay ?? null,
+    historyHoldInput,
+    { owner: cloudOwner ?? null,
+      busy: cloudSync?.latestFirst ? !!cloudSync.publishedPending : !!cloudSync?.busy },
+  );
+  const liveHolds = useMemo(
+    () => (Object.keys(historyHolds).length ? { ...historyHolds, ...cloudDogs?.holds } : cloudDogs?.holds),
+    [historyHolds, cloudDogs?.holds],
+  );
   const mergedDogs = useMemo(
     () =>
       mergeDogMarkers({
@@ -414,7 +432,7 @@ export default function MapScreen({
         samples: positionSamples,
         cloudRows: cloudDogs?.rows,
         packetRows: cloudDogs?.packets,
-        holds: cloudDogs?.holds,
+        holds: liveHolds,
         statuses: cloudDogs?.statuses,
         batteries: cloudDogs?.batteries,
         ride,
@@ -426,7 +444,7 @@ export default function MapScreen({
       positionSamples,
       cloudDogs?.rows,
       cloudDogs?.packets,
-      cloudDogs?.holds,
+      liveHolds,
       cloudDogs?.statuses,
       cloudDogs?.batteries,
       ride,

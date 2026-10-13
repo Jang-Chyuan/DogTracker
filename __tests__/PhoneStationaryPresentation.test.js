@@ -99,7 +99,10 @@ test('existing list/address/PNG contracts accept the unnumbered stop while CSV a
   expect(buildCSV(after)).toBe(buildCSV(before));
   expect(buildGPX(after)).toBe(buildGPX(before));
   expect(after.subjects[0].stays).toEqual(before.subjects[0].stays);
-  expect(after.subjects[0].timeline.some(n => n.kind === 'place' && n.type === 'stop' && n.number === null)).toBe(true);
+  // 2026-10-13: the run starts once the detector settled, seconds after the
+  // first fix: it is the 出發's stay (「出發 · 停 N 分」), unnumbered.
+  expect(after.subjects[0].timeline.some(n => n.kind === 'place' && n.number === null
+    && (n.type === 'stop' || (n.type === 'departure' && n.pill.text.includes('停'))))).toBe(true);
   expect(after.subjects[0].map.lines).toEqual(before.subjects[0].map.lines);
   expect(after.subjects[0].map.places).toEqual(before.subjects[0].map.places);
 });
@@ -132,7 +135,8 @@ test('an existing qualified stop retains its number without a duplicate presenta
   const model = timeline([...firstRun, ...walkAway]);
   const stop = model.locations.find(n => n.type === 'stop');
   expect(stop).toBeDefined();
-  expect(stop.number).toBe(1);
+  // #154: it is the 出發 row's stay (「出發 · 停 N 分」): no number of its own.
+  expect(stop).toMatchObject({ number: null, listedWith: 'departure' });
   expect(model.nodes.filter(n => n.type === 'stop')).toHaveLength(1);
   expect(model.nodes.some(n => n.presentationOnly)).toBe(false);
 });
