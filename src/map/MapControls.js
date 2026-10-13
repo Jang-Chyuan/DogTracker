@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import Glyph from './Glyph';
+import { directionAngle } from './EdgeHints';
 import { useReduceMotion, moveDuration } from '../utils/reduceMotion';
 import { linesFor } from '../utils/textScale';
 import DogAvatar from '../dogs/DogAvatar';
@@ -315,13 +316,9 @@ export function CompassButton({ top, heading, onPress, onLayout }) {
 }
 
 const hint = sizes.edgeHint;
-const ARROW = { left: '‹', right: '›', top: '‹', bottom: '‹' };
-const ARROW_TURN = {
-  left: '0deg',
-  right: '0deg',
-  top: '90deg',
-  bottom: '-90deg',
-};
+// Where the arrow points, in screen degrees (0 = right, 90 = down); the
+// Glyph arrow itself points up.
+const hintAngle = value => (Number.isFinite(value.angle) ? value.angle : directionAngle(value.side));
 
 function HintFace({ marker, avatar, first }) {
   const styles = useStyles(getStyles);
@@ -343,19 +340,24 @@ function HintFace({ marker, avatar, first }) {
   );
 }
 
-/** One off-screen hint: faces, 「+N」 and the arrow pointing out of the screen. */
+/**
+ * One off-screen hint: faces, 「+N」 and the arrow pointing at the dogs (the
+ * card's direction arrow, §5.6: one icon for one meaning). The arrow sits at
+ * the end of the pill it points out of: the right end for right and right
+ * corner hints, else the left.
+ */
 export function EdgeHintView({ value, avatars = {}, onPress }) {
   const styles = useStyles(getStyles);
+  const { colors } = useTheme();
+  const angle = hintAngle(value);
+  const arrowLast = Math.cos((angle * Math.PI) / 180) > 0.38;
   const arrow = (
-    <Text
-      style={[
-        styles.arrow,
-        { transform: [{ rotate: ARROW_TURN[value.side] }] },
-      ]}
-      allowFontScaling={false}
+    <View
+      testID="edge-hint-arrow"
+      style={[styles.arrow, { transform: [{ rotate: `${angle + 90}deg` }] }]}
     >
-      {ARROW[value.side]}
-    </Text>
+      <Glyph name="arrow" color={colors.text} size={sizes.edgeHint.arrow} />
+    </View>
   );
 
   return (
@@ -371,7 +373,7 @@ export function EdgeHintView({ value, avatars = {}, onPress }) {
     >
       {({ pressed }) => (
         <>
-          {value.side !== 'right' && arrow}
+          {!arrowLast && arrow}
           <View style={styles.faces}>
             {value.faces.map((marker, index) => (
               <HintFace
@@ -387,7 +389,7 @@ export function EdgeHintView({ value, avatars = {}, onPress }) {
               +{value.extra}
             </Text>
           )}
-          {value.side === 'right' && arrow}
+          {arrowLast && arrow}
           <PressedOverlay visible={pressed} />
         </>
       )}
@@ -559,10 +561,8 @@ const getStyles = makeStyles(theme => {
       borderColor: colors.problemBadge,
     },
     arrow: {
-      ...type.value,
       width: sizes.edgeHint.arrow,
-      textAlign: 'center',
-      color: colors.text,
+      height: sizes.edgeHint.arrow,
     },
     extra: { ...type.value, color: colors.text },
     tip: {
