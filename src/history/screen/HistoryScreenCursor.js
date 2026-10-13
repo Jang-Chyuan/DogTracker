@@ -1,19 +1,27 @@
 import { t } from '../../i18n';
 import { clock, listDuration } from '../HistoryText';
 import { distanceText } from '../../utils/distanceText';
-import { presentationDurationMs } from '../HistoryTimelinePresentation';
+import { shownRowAt, shownStayDurationMs } from '../HistoryTimelinePresentation';
 import { snapToRoute } from '../../mapHistory/CursorGeometry';
 import { nearestRecord } from './HistoryScreenRange';
 import { phoneDisplayLocations, phoneStayAtTime } from '../PhoneStayDisplayAnchors';
 
 export function cursorLabel(model, time, subject = 'dog', gap = null) {
   if (gap) return [clock(time), t('c325', { time: clock(time) })];
+  const listed = subject === 'phone' ? shownRowAt(model.nodes, time) : null;
+  // A short break the list folded into a stay (beside it or inside it) is
+  // that stay's time on the cursor too (2026-10-13).
+  const listedStay = listed && (listed.terminalStay ?? listed.departureStay
+    ?? (['stop', 'indoor'].includes(listed.type) ? listed : null));
   const stay = subject === 'phone'
     ? phoneStayAtTime(phoneDisplayLocations(model), time) || model.locations.find(n => n.type === 'indoor' && time >= n.start && time <= n.end)
+      || listedStay
     : model.locations.find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end)
       || phoneStayAtTime(model.displayStays, time);
-  if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: listDuration(presentationDurationMs(stay)) })
-    : t('c136', { duration: listDuration(presentationDurationMs(stay)) })];
+  // The stay's minutes as its list row shows them (a folded short break counts).
+  const minutes = stay && listDuration(shownStayDurationMs(model.nodes, stay));
+  if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: minutes })
+    : t('c136', { duration: minutes })];
   // At a switch boundary the outgoing segment owns the label.
   const section = model.sections.find(n => n.start <= time && n.end > time)
     || model.sections.find(n => n.end === time);
@@ -25,7 +33,10 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
 }
 
 export function screenCursor(model, time, { subject = 'dog', action = 'drag', previous = null } = {}) {
-  const gap = model.sections.find(n => n.type === 'gap' && time >= n.start && time < n.end);
+  // A break the list folded into the row beside it is that row's time, not
+  // 「這段沒資料」 (2026-10-13); the map still draws it as a break.
+  const gap = model.sections.find(n => n.type === 'gap' && time >= n.start && time < n.end
+    && (subject !== 'phone' || !Array.isArray(model.nodes) || shownRowAt(model.nodes, time)?.type === 'gap'));
   const shared = action === 'shared';
   const hidden = !model.points.length || (shared && time < model.points[0].time);
   const stale = shared && (gap || time > model.points[model.points.length - 1]?.time);

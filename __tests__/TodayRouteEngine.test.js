@@ -346,3 +346,27 @@ test('a retained active car across a high-speed signal gap survives clock rollba
   expectSame(engine.sum(beforeGap), reference(rows, beforeGap));
   expectSame(engine.sum(rows.at(-1).time), reference(rows, rows.at(-1).time));
 });
+
+// 判定表「出發偵測怎麼找」(2026-10): a day that leaves by car departs at the
+// drive. Fed in batches, today's distance gives the whole-day answer at every
+// poll (fictional rows: half an hour at A, a drive, a walk at B).
+test('a day that leaves by car: the same departure and distance as the whole-day sum', () => {
+  let time = DAY_START + 8 * 60 * MINUTE, metres = 0;
+  const rows = [];
+  const push = (speed, seconds = 5) => {
+    time += seconds * SECOND; metres += speed * seconds;
+    rows.push({ id: rows.length + 1, time, latitude: 25,
+      longitude: 121 + metres / (111320 * Math.cos(25 * Math.PI / 180)),
+      accuracy: 5, raw_speed_kmh: speed * 3.6, speed_accuracy_mps: 0.3 });
+  };
+  for (let i = 0; i < 360; i += 1) push(0);
+  for (let i = 0; i < 120; i += 1) push(14);
+  for (let i = 0; i < 180; i += 1) push(1.2);
+  expect(compare(rows, 11, { pauses: true })).toBeGreaterThan(1);
+  const whole = todayRouteDistance(rows, { now: time, dayStart: DAY_START });
+  expect(whole.status).toBe('confirmed');
+  // From the drive on: the walk at B counts, the morning at A is not "the whole day".
+  expect(whole.range.start).toBeGreaterThan(DAY_START + 8 * 60 * MINUTE + 25 * MINUTE);
+  expect(whole.range.start).toBeLessThanOrEqual(DAY_START + 8 * 60 * MINUTE + 30 * MINUTE);
+  expect(whole.metres).toBeGreaterThan(900);
+});

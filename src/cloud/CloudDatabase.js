@@ -43,7 +43,7 @@ const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
 export function latestCloudStatusQuery(validFix, full = false) {
   const fix = validFix ? 'AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat=0 AND slave_lon=0)' : '';
   return `SELECT ${full ? '*, ' : ''}slave_id, master_id, CAST(COALESCE(track_at, received_at) AS INTEGER) AS track_at,
-    received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, usb_present, 'cloud' AS source
+    received_at, slave_lat, slave_lon, speed_kmh, battery_percentage, battery_valid, battery_mv, usb_present, 'cloud' AS source
     FROM supabase_dog_status WHERE id IN (
       SELECT (SELECT id FROM supabase_dog_status AS newest
         WHERE newest.owner_user_id=devices.owner AND newest.slave_id=devices.slave_id ${fix}
@@ -414,7 +414,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
         received_at AS track_at, received_at, slave_lat, slave_lon,
         (SELECT MIN(first.received_at) FROM dog_status first
           WHERE first.master_id = dog_status.master_id AND first.slave_id = dog_status.slave_id) AS first_received_at,
-        speed_kmh, battery_percentage, battery_valid, usb_present, distance_meters, 'ble' AS source
+        speed_kmh, battery_percentage, battery_valid, battery_mv, usb_present, distance_meters, 'ble' AS source
         FROM dog_status WHERE id IN (
           WITH RECURSIVE dogs(slave_id) AS (
             SELECT MIN(slave_id) FROM dog_status
@@ -464,8 +464,10 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       const reset = !!owner && !!cursors && cursors.repairs !== trackRepairs;
       if (reset) cursors = null;
       // speed_kmh: the stationary-tail check needs the collar's own speed.
+      // The battery columns: HoldStore judges each dog's battery over the
+      // same rows (BatteryPlausibility).
       const shared = `id, master_id, slave_id, slave_lat AS latitude, slave_lon AS longitude,
-        speed_kmh, satellites, hdop, rssi, snr, usb_present`;
+        speed_kmh, satellites, hdop, rssi, snr, usb_present, battery_percentage, battery_valid, battery_mv`;
       const read = async (table, clock, account) => {
         // Only this phone's own rows know where its receiver was (the receiver
         // range is judged against that); the cloud copy has no such column.

@@ -133,7 +133,8 @@ function StatusRow({ row, first, onPress }) {
           >
             {row.value}
             {row.key === 'activity' && row.detail ? (
-              <Text style={styles.detailInline}>{` ${row.detail}`}</Text>
+              // 「休息中・已 12 分鐘」 (DESIGN.md 摘要卡片).
+              <Text style={styles.detailInline}>{`・${row.detail}`}</Text>
             ) : null}
             {row.key === 'activity' && row.at ? (
               <Text style={styles.detailInline}>{`（${clock(row.at)}）`}</Text>
