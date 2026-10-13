@@ -7,11 +7,14 @@
 // still draw one "!"; which ones is written on the card. Charging and being
 // held indoors are states, not problems.
 import { RANGE_STATUS } from './ReceiverRange';
+import { batteryInRange } from './BatteryPlausibility';
 
 export const LOW_BATTERY_PERCENT = 20;
 
 /**
- * @param dog a merged dog (DogMerge): `batteryPercentage`, `charging`
+ * @param dog a merged dog (DogMerge): `batteryPercentage` (already judged by
+ *   BatteryPlausibility: one bad packet keeps the last believed reading),
+ *   `charging`
  * @param freshness DogFreshness.dogFreshness of the same dog
  * @param range the dog's receiver-range judgement (ReceiverRange), or null
  * @returns {{ outOfRange: boolean, lowBattery: boolean, stale: boolean, any: boolean }}
@@ -19,7 +22,9 @@ export const LOW_BATTERY_PERCENT = 20;
 export function dogProblems(dog, freshness, range) {
   const battery = dog?.batteryPercentage;
   const outOfRange = range?.status === RANGE_STATUS.OUT;
-  const lowBattery = Number.isFinite(battery) && battery <= LOW_BATTERY_PERCENT && !dog?.charging;
+  // Out of range is never a reading (DogMerge already drops it; a dog built
+  // elsewhere must not alert on 255% or -1% either).
+  const lowBattery = batteryInRange(battery) && battery <= LOW_BATTERY_PERCENT && !dog?.charging;
   const stale = !!freshness?.stale;
   return { outOfRange, lowBattery, stale, any: outOfRange || lowBattery || stale };
 }

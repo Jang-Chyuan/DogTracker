@@ -1,6 +1,7 @@
 import { t as i18nT } from '../src/i18n';
 import {
   ACTIVITY, activityMinutes, activityReadings, activityState, activityWords, durationText, readingKey,
+  REST_MAX_MISSING_MINUTES,
 } from '../src/activity/ActivityMinutes';
 
 const MINUTE = 60000;
@@ -83,6 +84,53 @@ test('rest tolerates a missing minute here and there (8 of 10), not three', () =
   expect(activityState(sparse, { end: lastFinished })).toEqual({ state: null, since: null, durationMinutes: null });
 });
 
+// 2026-10-13: going back, a rest is broken only by an active minute. Windows
+// that merely lack data (lost packets, fewer than 8 of 10 minutes) carry it on,
+// so 「已 N 分鐘」 does not restart after a few silent minutes.
+test('rest: minutes without data do not restart the run; an active minute does', () => {
+  // Calm 40–26 and 22–0 minutes ago, nothing at all in between (4 minutes).
+  const holed = activityMinutes([...readings(40, 26, 0.02), ...readings(22, 0, 0.02)], { now: NOW });
+  expect(activityState(holed, { end: lastFinished })).toEqual({ state: 'rest', since: at(40), durationMinutes: 40 });
+  // A longer silence (15 minutes, no window with 8 of 10 in it) does not end it either.
+  const silent = activityMinutes([...readings(40, 30, 0.02), ...readings(15, 0, 0.02)], { now: NOW });
+  expect(activityState(silent, { end: lastFinished })).toMatchObject({ state: 'rest', since: at(40) });
+  // Sparse data before the rest (every third minute missing) is still calm.
+  const sparse = activityMinutes([...readings(40, 12, 0.02).filter(item =>
+    Math.ceil((NOW - item.time) / MINUTE) % 3 !== 0), ...readings(12, 0, 0.02)], { now: NOW });
+  expect(activityState(sparse, { end: lastFinished }).since).toBe(at(40));
+  // One active minute ends it: the run starts at the first minute with data
+  // after it, even when the minutes right after it have none.
+  const active = activityMinutes([...readings(40, 25, 0.02), ...readings(25, 24, 0.3),
+    ...readings(20, 0, 0.02)], { now: NOW });
+  expect(activityState(active, { end: lastFinished })).toEqual({ state: 'rest', since: at(20), durationMinutes: 20 });
+  // Now still needs 8 of the last 10 minutes.
+  const stale = activityMinutes([...readings(40, 5, 0.02)], { now: NOW });
+  expect(activityState(stale, { end: lastFinished }).state).toBeNull();
+  // Vigorous is unchanged: a minute without data still breaks it.
+  const vigorous = activityMinutes([...readings(20, 3, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
+  expect(activityState(vigorous, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(2) });
+});
+
+// 2026-10-13 (#137): more than REST_MAX_MISSING_MINUTES (30) in a row without
+// any data (collar off, out of range) does end the rest; 30 or fewer do not.
+test('rest: a stretch without data longer than 30 minutes ends the run', () => {
+  expect(REST_MAX_MISSING_MINUTES).toBe(30);
+  expect(ACTIVITY.restMaxMissingMinutes).toBe(REST_MAX_MISSING_MINUTES);
+  // Calm 90–61 minutes ago, nothing for 31 minutes (60..30 ago), calm since.
+  const long = activityMinutes([...readings(90, 61, 0.02), ...readings(30, 0, 0.02)], { now: NOW });
+  expect(activityState(long, { end: lastFinished })).toEqual({ state: 'rest', since: at(30), durationMinutes: 30 });
+  // Exactly 30 minutes without data (60..31 ago): carried across.
+  const thirty = activityMinutes([...readings(90, 60, 0.02), ...readings(30, 0, 0.02)], { now: NOW });
+  expect(activityState(thirty, { end: lastFinished })).toEqual({ state: 'rest', since: at(90), durationMinutes: 90 });
+  // Two shorter silences add up to more than 30 but each is carried across.
+  const twice = activityMinutes([...readings(90, 70, 0.02), ...readings(50, 40, 0.02), ...readings(20, 0, 0.02)],
+    { now: NOW });
+  expect(activityState(twice, { end: lastFinished }).since).toBe(at(90));
+  // The cap is configurable (config.restMaxMissingMinutes).
+  expect(activityState(thirty, { end: lastFinished, config: { ...ACTIVITY, restMaxMissingMinutes: 10 } }).since)
+    .toBe(at(30));
+});
+
 test('rest ends at the first minute that is not calm', () => {
   const minutes = activityMinutes([...readings(30, 1, 0.02), ...readings(1, 0, 0.3)], { now: NOW });
   expect(activityState(minutes, { end: lastFinished }).state).toBe('normal');
@@ -115,8 +163,11 @@ test('no data, or judged where nothing was read: 「—」', () => {
 });
 
 test('the card words, and durations past an hour', () => {
-  expect(activityWords({ state: 'rest', durationMinutes: 18 })).toEqual({ word: i18nT('c069'), detail: '已 18 分鐘', tone: 'rest' });
-  expect(activityWords({ state: 'vigorous', durationMinutes: 3 })).toEqual({ word: i18nT('c350'), detail: '已 3 分鐘', tone: 'vigorous' });
+  // TalkBack says the minutes are the collar's motion (活動量), not 室內.
+  expect(activityWords({ state: 'rest', durationMinutes: 18 })).toEqual({ word: i18nT('c069'), detail: '已 18 分鐘',
+    speechDetail: '活動量低已 18 分鐘', tone: 'rest' });
+  expect(activityWords({ state: 'vigorous', durationMinutes: 3 })).toEqual({ word: i18nT('c350'), detail: '已 3 分鐘',
+    speechDetail: '活動量高已 3 分鐘', tone: 'vigorous' });
   expect(activityWords({ state: 'normal' })).toEqual({ word: i18nT("c434"), detail: null, tone: 'normal' });
   expect(activityWords(null)).toEqual({ word: '—', detail: null, tone: null });
   expect(durationText(59)).toBe('59 分鐘');

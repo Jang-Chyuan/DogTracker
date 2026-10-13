@@ -223,6 +223,65 @@ test('the same lone fix from BLE and from the cloud does not vouch for itself as
   expect(distanceMeters(tracker.current().coordinate, HOME)).toBeLessThan(1);
 });
 
+// 2026-10-13: the card's 「室內・N 分」 and the history's 「室內・N 分」 for the
+// same rows say the same minutes. The hold's `since` is the last good fix, a
+// row the history does not draw held (and possibly long before the collar
+// spoke again); the store hands the card the first row the history covers.
+describe('the card times a hold from where the history\'s 室內 node starts', () => {
+  const { historyIndoorNodes } = require('../src/history/HistoryStops');
+  const { presentationDurationMs } = require('../src/history/HistoryTimelinePresentation');
+  const { listDuration } = require('../src/history/HistoryText');
+  const { dogCard } = require('../src/map/DogCardModel');
+  const T = 1_800_000_000_000;
+  const shift = row => ({ ...row, time: T + row.time, source: 'ble' });
+  const compare = rows => {
+    const store = createHoldStore(HOLD_CONFIG, { classify: silent });
+    store.ingest({ rows: rows.map(row => ({ ...row })) });
+    const last = rows[rows.length - 1];
+    const hold = store.holds(last.time)[4];
+    const nodes = historyIndoorNodes(applyHistoryHolds(rows.map(row => ({ ...row })), { classify: silent }));
+    const node = nodes[nodes.length - 1];
+    const packet = { slave_id: 4, master_id: 7, received_at: last.time, slave_lat: 0, slave_lon: 0,
+      battery_percentage: 80, battery_valid: 1, source: 'ble' };
+    const dog = mergeDogMarkers({ packetRows: [packet], holds: { 4: hold }, now: last.time, windowMs: 180000 })[0];
+    const card = dogCard(dog, { freshness: { stale: false, basis: 'packet' }, now: last.time, name: '小黑' });
+    return { hold, node, dog, value: card.rows.find(row => row.key === 'position').value,
+      history: i18nT('c344', { duration: listDuration(presentationDurationMs(node)) }) };
+  };
+
+  test('silence after the last good fix: from the first packet after it, not the fix', () => {
+    const rows = [good(0), good(5000), good(10000)];
+    // The collar says nothing for 20 minutes, then packets without a fix.
+    for (let time = 20 * 60000; time <= 46 * 60000; time += 10000) rows.push(none(time));
+    const result = compare(rows.map(shift));
+    expect(result.hold.since).toBe(T + 10000);
+    expect(result.node.start).toBe(T + 20 * 60000);
+    expect(result.hold.from).toBe(result.node.start);
+    expect(result.dog.heldFrom).toBe(result.node.start);
+    expect(result.value).toBe('室內・26 分');
+    expect(result.value).toBe(result.history);
+  });
+
+  test('drift right after the last good fix: from the first drifting row, as the history draws it', () => {
+    const rows = [good(0), good(5000), good(10000)];
+    for (let time = 15000; time <= 30 * 60000 + 15000; time += 5000) rows.push(none(time));
+    const result = compare(rows.map(shift));
+    expect(result.hold.from).toBe(result.node.start);
+    expect(result.hold.from).toBeGreaterThan(result.hold.since);
+    expect(result.value).toBe(result.history);
+  });
+
+  test('a late row replays the window and keeps the same start', () => {
+    const rows = [good(0), good(5000), good(10000)];
+    for (let time = 20 * 60000; time <= 46 * 60000; time += 10000) rows.push(none(time));
+    const store = createHoldStore(HOLD_CONFIG, { classify: silent });
+    store.ingest({ rows: rows.map(shift) });
+    const before = store.holds(T + 46 * 60000)[4];
+    store.ingest({ rows: [{ ...shift(none(30 * 60000 + 3000)), master_id: 9 }] });
+    expect(store.holds(T + 46 * 60000)[4].from).toBe(before.from);
+  });
+});
+
 test('rows arriving late are replayed in order instead of dropped', () => {
   const store = createHoldStore(HOLD_CONFIG, { classify: silent });
   const early = [good(0), good(5000)];

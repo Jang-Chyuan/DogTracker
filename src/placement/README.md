@@ -10,7 +10,7 @@ GPS 在室內會失去定位，或定位一直飄（幾十到幾百公尺）。�
 | [HoldStore.js](HoldStore.js) | 即時地圖：每隻狗一個追蹤器，合併本機 BLE 與雲端同一隻狗的資料 |
 | [RideAlong.js](RideAlong.js) | 項圈在車上沒定位時，跟著領犬員的手機畫 |
 
-同一個 `HoldStore` 也用同一批列、同樣的順序算每隻狗的**接收範圍判定**（`src/tracking/ReceiverRange.js`，`ranges()`）：只有它知道每一筆當時狗是不是停住（停住期間不重新判定、不累積解除）。本機 BLE 列帶著當時接收器的位置（`master_latitude/longitude`）；雲端列沒有，不判定也不解除。
+同一個 `HoldStore` 也用同一批列、同樣的順序算每隻狗的**電量判定**（`src/tracking/BatteryPlausibility.js`，`batteries()`，給 `mergeDogMarkers`）、卡片「室內・N 分」的起點（`holds()` 的 `from`：歷史會畫成停住的第一筆，`IndoorHold.holdFillStart`），以及**接收範圍判定**（`src/tracking/ReceiverRange.js`，`ranges()`）：只有它知道每一筆當時狗是不是停住（停住期間不重新判定、不累積解除）。本機 BLE 列帶著當時接收器的位置（`master_latitude/longitude`）；雲端列沒有，不判定也不解除。
 
 資料來源：`CloudDatabase.holdRows()` 讀 `dog_status` 與 `supabase_dog_status`（冷啟動讀最近 30 分鐘，加上每隻狗最後 40 筆好定位，不限多久以前（在狗舍充好幾天電也停得住）；之後每 10 秒只讀新增的列）。`useCloudDogs` 把結果放在 `holds`，`mergeDogMarkers` 用它畫狗。歷史由 `HistoryDatabase.historyDayRows()` 讀一天（往前多讀 30 分鐘當脈絡，第一次讀時另附區間前最後 40 筆好定位當 `seed`），`useHistoryScreen` 用 `createHistoryHolds({ seed })` 套用同一套規則。匯出用原始定位，不套用。
 
@@ -56,7 +56,7 @@ RSSI 是 Master 收到項圈 LoRa 封包的強度，主要反映項圈離接收�
 ## 畫面
 
 - 地圖名稱牌下寫原因「室內」（或「窗邊」「充電中」「GPS 訊號弱」「GPS 沒有定位」）。
-- 狗的詳細資訊寫「位置：室內・10:12 起」（10:12 是進去前最後一次清楚定位的時間）；停住點是用弱定位估計的時，後面加「（位置是依訊號弱的定位估計的）」。不寫「停在…前的位置」，避免看起來像資料沒更新。TalkBack 會唸出停住狀態。
+- 狗的卡片位置列寫「室內・26 分」：從歷史會畫成停住的第一筆封包（不是進去前最後一次清楚定位）算到最新一筆封包，和歷史時間軸同一段的分鐘相同（DESIGN.md §6）。不寫「停在…前的位置」，避免看起來像資料沒更新。TalkBack 會唸出停住狀態。
 - 停住時不顯示速度與距離。通訊與「3 分鐘未收到封包」的規則不變；充電中收不到封包時照舊保留在原處。
 
 ## 坐車

@@ -17,6 +17,7 @@ import { t } from '../i18n';
 // - 接收器斷線 and 位置存不進手機 are TopAlerts' (the same as the top cards).
 import { dogFreshness, STALE_AFTER_MS } from '../tracking/DogFreshness';
 import { dogProblems, LOW_BATTERY_PERCENT } from '../tracking/DogProblems';
+import { batteryInRange } from '../tracking/BatteryPlausibility';
 import { receiverOutage, storageProblem, RECEIVER_BATTERY_LOW } from '../map/TopAlerts';
 import { receiverNumber } from '../map/ReceiverState';
 
@@ -128,7 +129,10 @@ export function updateAlertEvents(previous = {}, {
         ageMs: freshness.ageMs });
     }
     if (problems.outOfRange && (local || previous.active?.[alertKey('dog-out-of-range', dog.slaveId)])) add('dog-out-of-range', dog.slaveId, detail);
-    battery('dog-battery', dog.slaveId, dog.batteryPercentage, !!dog.charging, detail);
+    // DogMerge's judged reading (BatteryPlausibility), as the card and map:
+    // a single bad packet does not start a low-battery episode.
+    battery('dog-battery', dog.slaveId, batteryInRange(dog.batteryPercentage) ? dog.batteryPercentage : null,
+      !!dog.charging, detail);
   }
   const outage = receiverOutage(receiver, now);
   if (outage) {

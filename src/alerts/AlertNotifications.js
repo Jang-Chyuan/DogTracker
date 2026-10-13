@@ -99,6 +99,9 @@ export function alertSnapshot(dogs = [], preferences = null) {
       held: isIndoorHold(dog),
       indoorState: dog.indoorState ?? null,
       batteryPercentage: Number.isFinite(dog.batteryPercentage) ? dog.batteryPercentage : null,
+      // The judgement behind it (BatteryPlausibility), so the background
+      // check carries on with the same last believed reading and pending drop.
+      battery: dog.batteryState ?? null,
       charging: !!dog.charging,
       range: dog.range ?? null,
     })),
