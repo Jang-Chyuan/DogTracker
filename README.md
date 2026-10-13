@@ -32,7 +32,7 @@ npm install
 
 安裝完會自動跑 `patch-package`，套用 `patches/` 裡的修補：
 
-- `react-native-maps+1.28.2.patch`：Android 地圖標記在還沒有自己的畫面（剛加上、或畫面先被移除）時先隱藏，不讓 Google 畫出預設紅色圖釘（上游問題 react-native-maps#5756、#5778）。升級 react-native-maps 時要重新產生這個修補（`npx patch-package react-native-maps --exclude '^package\.json$|/build/|\.cxx/|/\.gradle/'`），`__tests__/ReactNativeMapsPatch.test.js` 會檢查版本和修補是否套上。
+- `react-native-maps+1.28.2.patch`：Android 地圖標記在還沒有自己的畫面（剛加上、或畫面先被移除）時先隱藏，不讓 Google 畫出預設紅色圖釘（上游問題 react-native-maps#5756、#5778）；新架構下標記建立後再改 zIndex 也會套到 Google 標記上（選中的狗浮到最上層，`__tests__/FabricMarkerZIndex.test.js`）。升級 react-native-maps 時要重新產生這個修補（`npx patch-package react-native-maps --exclude '^package\.json$|/build/|\.cxx/|/\.gradle/'`），`__tests__/ReactNativeMapsPatch.test.js` 會檢查版本和修補是否套上。
 
 ## 開發執行
 
@@ -112,6 +112,8 @@ Release APK 已包含 JavaScript bundle，可在沒有 USB 與 Metro 的情況�
 - **本機**：只數到 `HEAD` 與 `origin/main` 的 merge-base（沒有 `origin/main` 時改用本機 `main`，兩者都沒有才退回 `HEAD` 的 commit 數）。在 main 上建置與 CI 結果相同；feature branch／worktree 會得到 `0.3.<main 基準>+<本機多出的 commit 數>`，例如 `0.3.195+3`，`versionCode` 則是 1000 + 基準 195 = 1195。這樣 branch 的 commit 數再多也不會高過之後 main/CI 的 APK，之後 `adb install -r` 安裝 main 的 APK 不會出現 `INSTALL_FAILED_VERSION_DOWNGRADE`，也不必 `-d` 或清資料。本機 `origin/main` 太舊時基準也會偏舊，建置前先 `git fetch origin`。
 
 Gradle 設定階段就會執行 `node scripts/app-version.js`。從 Android Studio 等 IDE 啟動時 PATH 可能沒有 nvm／Homebrew 的 node，請把 `NODE_BINARY` 設成 node 的絕對路徑（環境變數，或寫在已被 git 忽略的 `android/local.properties`：`NODE_BINARY=/path/to/node`）。
+
+Google 地圖金鑰來自環境變數 `GOOGLE_MAPS_ANDROID_API_KEY` 或 `android/local.properties` 的同名設定（不要 commit）。沒有金鑰的 APK 每次都是「地圖打不開」，連上網路或按「重試」都不會好，所以本機建置 Release 時沒有金鑰會直接失敗；新的 worktree 記得從主要 checkout 複製 `android/local.properties`。CI（`CI=true`）照舊可以在沒有 secret 時建置；本機確實要建沒有地圖的 APK 時設 `ALLOW_MISSING_MAPS_KEY=true`。
 
 需要重建指定版本或從沒有 `.git` 的來源包建置時，必須一起提供 `APP_VERSION_NAME` 和 `APP_VERSION_CODE`；只提供一個會失敗。override 保留既有 CI 傳入已解析版本的方式：`APP_VERSION_CODE` 原樣使用，不會再加 offset（CI 傳入的已經是 `scripts/app-version.js` 加過 offset 的值）。手動 override 時記得自行使用 1000 + commit 數，發布時仍使用完整 HEAD 歷史的數值，不可任意降低 versionCode。設定頁顯示原生 APK 的 `BuildConfig.VERSION_NAME`，不另寫固定版本文字。
 

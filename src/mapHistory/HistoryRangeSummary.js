@@ -7,6 +7,7 @@ import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
+import PressedOverlay from '../components/PressedOverlay';
 import {
   clock,
   km,
@@ -425,16 +426,23 @@ export default function HistoryRangeSummary({
             accessibilityRole="button"
             accessibilityLabel={open ? t('c101') : t('c122')}
             hitSlop={space.s}
-            style={({ pressed }) => [styles.adjust, open && styles.adjustOpen, pressed && styles.pressed]}
+            // The capsule keeps its own fill (tonal while open) under the
+            // round pressed overlay.
+            style={[styles.adjust, open && styles.adjustOpen]}
           >
-            <Glyph
-              name="sliders"
-              color={open ? colors.tonalText : colors.text}
-              size={sizes.icon.adjust}
-            />
-            <Text style={[styles.adjustText, open && styles.adjustTextOpen]}>
-              {open ? t('c101') : t('c122')}
-            </Text>
+            {({ pressed }) => (
+              <>
+                <Glyph
+                  name="sliders"
+                  color={open ? colors.tonalText : colors.text}
+                  size={sizes.icon.adjust}
+                />
+                <Text style={[styles.adjustText, open && styles.adjustTextOpen]}>
+                  {open ? t('c101') : t('c122')}
+                </Text>
+                <PressedOverlay visible={pressed} />
+              </>
+            )}
           </Pressable>
         )}
       </Pressable>
@@ -465,8 +473,6 @@ export default function HistoryRangeSummary({
 const getStyles = makeStyles(theme => {
   const { colors } = theme;
   return StyleSheet.create({
-    // 設計稿「元件狀態」: the pressed state.
-    pressed: { backgroundColor: colors.pressedOverlay },
     // 設計稿「元件狀態」: the pressed state.
     pressedRow: { backgroundColor: colors.brandSoft },
     // Closed: no fill and no frame. Open: white, 1.5dp accent frame, radius 14.

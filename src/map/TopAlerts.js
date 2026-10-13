@@ -86,10 +86,12 @@ export function showsNoDogs({ receiverState, hasDogData, dataRead, dismissed }) 
  *  - outage: receiverOutage(); storage: storageProblem();
  *  - map: 'load-failed' | 'unavailable' | null, retrying: a retry is loading;
  *  - noDogs: showsNoDogs(); signedIn hides 「登入 Supabase」;
+ *    cloudOffline (signed in, Supabase unreachable): the detail says the
+ *    cloud's dogs come once online instead of asking to sign in;
  *  - dismissed: { receiver: outage key, storage: true }.
  */
 export function topCards({ outage = null, storage = null, map = null, retrying = false, noDogs = false,
-  signedIn = false, dismissed = {}, waitingSources = 0 }) {
+  signedIn = false, cloudOffline = false, dismissed = {}, waitingSources = 0 }) {
   const cards = [];
   if (outage && dismissed.receiver !== outage.key) {
     cards.push({
@@ -128,7 +130,7 @@ export function topCards({ outage = null, storage = null, map = null, retrying =
     cards.push({
       id: 'no-dogs', kind: 'info', icon: 'dog',
       title: t('c109'),
-      detail: t('c110'),
+      detail: signedIn && cloudOffline ? t('c1290') : t('c110'),
       actions: [
         { id: 'connect-receiver', label: t('c011') },
         ...(signedIn ? [] : [{ id: 'sign-in', label: t('c111'), quiet: true }]),

@@ -240,6 +240,7 @@ describe('DESIGN.md matches tokens.js', () => {
       // Code names in the prose (060), not tokens.
       'linesFor',
       'PressScale',
+      'PressedOverlay',
       'MarkerA11yLayer',
     ]);
     const unknown = referenced.filter(

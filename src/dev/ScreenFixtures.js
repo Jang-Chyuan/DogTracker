@@ -735,6 +735,22 @@ const FIXTURES = {
     ]),
     cloudRows: [],
   }),
+  // A face on another dog's name (fictional places): 狗 18 walks just below
+  // and right of 狗 16, held indoors, so its face sits on 「狗 16・室內」
+  // while the two names do not touch; 狗 108 does the same to 「狗 104・室內」,
+  // both held. Each pair merges into one 「2 隻」／「2 隻・室內」. 豆豆 far
+  // away keeps the map zoomed out.
+  'dogs-labels-touching': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
+    ble: inTimeOrder([
+      ...indoorBle(now, 16, [-20, 25]),
+      ...series(bleRow, now, { slave: 18, from: 10 * MINUTE, start: [-36, 31.5], step: [0, 0.001] }),
+      ...indoorBle(now, 104, [10, -30]),
+      ...indoorBle(now, 108, [-6, -37], { inside: 14 * MINUTE }),
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [35, 40], step: [0.01, 0.01] }),
+    ]),
+    cloudRows: [],
+  }),
   // Collar 9 talks to receiver 7 but has never had a fix: not drawn, no
   // marker (S2 lists it as 「還沒定位」). 豆豆 is drawn as usual.
   'dog-never-fixed': now => ({

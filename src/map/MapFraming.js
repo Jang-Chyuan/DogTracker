@@ -36,6 +36,25 @@ export function phoneFix(livePhone) {
   return plain(livePhone.position);
 }
 
+// The phone's last known position (LocationTracker.lastKnown) frames the cold
+// start only when it is about as good as a fix: a coarse cell/Wi-Fi guess
+// would frame the wrong streets at the one-point zoom (about 150 m around).
+export const LAST_KNOWN_MAX_ACCURACY_M = 100;
+
+/**
+ * The phone's last known position for the cold start's first framing, or
+ * null. `known`: { latitude, longitude, accuracy, ageSeconds, receivedAt } —
+ * ageSeconds as the native side read it at receivedAt (ms). Same 10 minute
+ * limit as a live fix (PHONE_FIX_MAX_AGE_S), counted on from receivedAt.
+ */
+export function lastKnownPhoneFix(known, now) {
+  if (!valid(known) || !Number.isFinite(known.ageSeconds) || known.ageSeconds < 0
+    || !Number.isFinite(known.receivedAt)) return null;
+  if (!(Number.isFinite(known.accuracy) && known.accuracy >= 0 && known.accuracy <= LAST_KNOWN_MAX_ACCURACY_M)) return null;
+  const ageSeconds = known.ageSeconds + Math.max(0, now - known.receivedAt) / 1000;
+  return ageSeconds <= PHONE_FIX_MAX_AGE_S ? plain(known) : null;
+}
+
 /** One point becomes a small square around it; more points stay as they are. */
 export function framedCoordinates(points) {
   if (points.length !== 1) return points;

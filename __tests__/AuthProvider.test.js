@@ -105,6 +105,75 @@ test('no network at the restore: the saved sign-in waits (restoring); a refusal 
   await act(async () => renderer.unmount());
 });
 
+// ---- background owners while the stored sign-in waits for its refresh ----
+describe('background sync and BLE upload owners', () => {
+  const { NativeModules } = require('react-native');
+  const stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires_at: 1,
+    user: { id: 'account-a' } });
+  let native;
+  beforeEach(() => {
+    native = {
+      sync: { setOwner: jest.fn(async () => {}) },
+      ble: { executeDatabase: jest.fn(async () => {}) },
+    };
+    NativeModules.CloudBackgroundSync = native.sync;
+    NativeModules.BleBackground = native.ble;
+  });
+  afterEach(() => {
+    delete NativeModules.CloudBackgroundSync;
+    delete NativeModules.BleBackground;
+  });
+  const cleared = () => native.sync.setOwner.mock.calls.some(call => call[0] === null)
+    || native.ble.executeDatabase.mock.calls.length > 0;
+  async function start(value) {
+    let notify;
+    const f = fixture();
+    f.auth.storageKey = 'sb-test-auth-token';
+    f.auth.storage = { getItem: async () => value };
+    f.auth.onAuthStateChange = callback => { notify = callback; return { data: { subscription: { unsubscribe: jest.fn() } } }; };
+    f.auth.getSession.mockResolvedValue({ data: { session: null },
+      error: { name: 'AuthRetryableFetchError', message: 'Network request failed', status: 0 } });
+    let renderer;
+    await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>
+      <AuthProbe onValue={() => {}} /></AuthProvider>); });
+    return { send: (...args) => notify(...args), notify: (...args) => act(async () => notify(...args)),
+      unmount: () => act(async () => renderer.unmount()) };
+  }
+
+  test('no session while the stored sign-in waits for the network keeps both owners', async () => {
+    const run = await start(stored);
+    await run.notify('INITIAL_SESSION', null);
+    await settle();
+    expect(cleared()).toBe(false);
+    // A real sign-out (or a refused refresh: the SDK signs out) ends them.
+    await run.notify('SIGNED_OUT', null);
+    expect(native.sync.setOwner).toHaveBeenLastCalledWith(null);
+    expect(native.ble.executeDatabase).toHaveBeenCalledWith(
+      "UPDATE ble_upload_meta SET value='' WHERE key='owner'", '[]');
+    await run.unmount();
+  });
+
+  test('nothing stored: no session still clears both owners', async () => {
+    const run = await start(null);
+    await run.notify('INITIAL_SESSION', null);
+    await settle();
+    expect(native.sync.setOwner).toHaveBeenLastCalledWith(null);
+    expect(native.ble.executeDatabase).toHaveBeenCalled();
+    await run.unmount();
+  });
+
+  test('a sign-in arriving while the stored session is read is not undone', async () => {
+    const run = await start(null);
+    await act(async () => {
+      run.send('INITIAL_SESSION', null);
+      run.send('SIGNED_IN', { user: { id: 'account-b' } });
+    });
+    await settle();
+    expect(cleared()).toBe(false);
+    await run.unmount();
+  });
+});
+
 test('nothing saved: the restore ends signed out, neither restoring nor expired', async () => {
   const f = fixture(); let value, renderer;
   await act(async () => { renderer = Renderer.create(<AuthProvider clientFactory={f.factory}>

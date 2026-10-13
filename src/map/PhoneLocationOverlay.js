@@ -24,6 +24,9 @@ export default function PhoneLocationOverlay({
   // The live map's feed of every snapshot (LivePhoneFeed): the dot follows
   // each fix without re-rendering the map around it.
   feed = null,
+  // Bumped each time the map comes back on screen (as DogMarker's shownKey):
+  // a bitmap taken while it was off screen can be empty, so it is redrawn.
+  redrawKey = 0,
 }) {
   const { colors, opacity, isDark, literalColors } = useTheme();
   const styles = useStyles(getStyles);
@@ -41,6 +44,25 @@ export default function PhoneLocationOverlay({
   const previousTime = useRef(null);
   const previousSession = useRef(location.sessionId);
   const marker = useRef(null);
+  // A marker bitmap taken before its view is laid out is empty or Google's
+  // default pin, and with tracksViewChanges off nothing replaces it: the dot
+  // and 「手機」 stayed missing after a cold start until some unrelated
+  // redraw. Like DogMarker (useSettledMarker), follow the view until it has
+  // been laid out once, then keep one fixed bitmap.
+  const [settling, setSettling] = useState(true);
+  const settleFrame = useRef(null);
+  useEffect(() => () => cancelAnimationFrame(settleFrame.current), []);
+  const laidOut = () => {
+    if (!settling) {
+      marker.current?.redraw?.();
+      return;
+    }
+    cancelAnimationFrame(settleFrame.current);
+    settleFrame.current = requestAnimationFrame(() => {
+      setSettling(false);
+      marker.current?.redraw?.();
+    });
+  };
   const publishDisplay = () => {
     if (
       historical ||
@@ -155,7 +177,7 @@ export default function PhoneLocationOverlay({
   ]);
   useEffect(() => {
     marker.current?.redraw?.();
-  }, [muted, colors]);
+  }, [muted, colors, redrawKey]);
   const height =
     sizes.phoneDot.canvas +
     sizes.marker.labelGap +
@@ -204,7 +226,7 @@ export default function PhoneLocationOverlay({
         identifier={historical ? 'phone-history-last' : 'phone-timeline-live'}
         coordinate={coordinate}
         anchor={{ x: 0.5, y: sizes.phoneDot.canvas / 2 / height }}
-        tracksViewChanges={false}
+        tracksViewChanges={settling}
         zIndex={historical ? 25 : 30}
         onPress={onPress}
         title={onPress ? undefined : title}
@@ -221,7 +243,7 @@ export default function PhoneLocationOverlay({
         <View
           collapsable={false}
           style={[styles.container, { height }]}
-          onLayout={() => marker.current?.redraw?.()}
+          onLayout={laidOut}
         >
           <View style={styles.dotArea}>
             <View testID="phone-location-dot" style={[styles.dot, muted && styles.stale]} />
@@ -231,7 +253,7 @@ export default function PhoneLocationOverlay({
             testID="phone-name-tag"
             color={colors.phone}
             maxWidth={MARKER_WIDTH - sizes.marker.labelSafety}
-            onLayout={() => marker.current?.redraw?.()}
+            onLayout={laidOut}
           />
         </View>
       </Marker>

@@ -79,6 +79,47 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
       } catch (e: Exception) { promise.reject("LOCATION_READ", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1140), e) }
     }
   }
+  /**
+   * The phone's last known position (no new request, nothing switched on), for
+   * the cold start's first framing only: a JSON string { latitude, longitude,
+   * accuracy, ageSeconds }, or null without precise permission, with location
+   * off, or when the phone has none. The newest of Play services' fused cache
+   * and the framework providers' caches.
+   */
+  @ReactMethod fun lastKnown(promise: Promise) {
+    var answered = false
+    fun answer(locations: List<android.location.Location?>) {
+      if (answered) return
+      answered = true
+      val location = locations.filterNotNull().maxByOrNull { it.elapsedRealtimeNanos }
+      if (location == null) { promise.resolve(null); return }
+      val age = (android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1e9
+      promise.resolve(org.json.JSONObject().put("latitude", location.latitude).put("longitude", location.longitude)
+        .put("accuracy", if (location.hasAccuracy()) location.accuracy.toDouble() else org.json.JSONObject.NULL)
+        .put("ageSeconds", age).toString())
+    }
+    try {
+      val precise = androidx.core.content.ContextCompat.checkSelfPermission(context,
+        android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+      val manager = context.getSystemService(android.location.LocationManager::class.java)
+      if (!precise || manager == null || !androidx.core.location.LocationManagerCompat.isLocationEnabled(manager)) {
+        promise.resolve(null); return
+      }
+      val framework = manager.getProviders(true).map { provider ->
+        try { manager.getLastKnownLocation(provider) } catch (_: Exception) { null }
+      }
+      val play = try {
+        com.google.android.gms.common.GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) ==
+          com.google.android.gms.common.ConnectionResult.SUCCESS
+      } catch (_: Throwable) { false }
+      if (!play) { answer(framework); return }
+      com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context).lastLocation
+        .addOnSuccessListener { fused -> answer(framework + fused) }
+        .addOnFailureListener { answer(framework) }
+    } catch (_: Exception) {
+      if (!answered) { answered = true; promise.resolve(null) }
+    }
+  }
   override fun invalidate() { executor.shutdown(); super.invalidate() }
 }
 

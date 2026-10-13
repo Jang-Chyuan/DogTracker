@@ -17,6 +17,7 @@ import Glyph from './Glyph';
 import { useReduceMotion, moveDuration } from '../utils/reduceMotion';
 import { linesFor } from '../utils/textScale';
 import DogAvatar from '../dogs/DogAvatar';
+import PressedOverlay from '../components/PressedOverlay';
 import {
   layout,
   motion,
@@ -35,10 +36,11 @@ const visibleOverflow = StyleSheet.create({ visible: { overflow: 'visible' } }).
 /**
  * Every button's press (DESIGN.md §5.8, 設計稿「元件狀態」): it shrinks to 0.97
  * for 120 ms (motion.press) with pressedOverlay laid over it. Under 減少動態效果
- * only the overlay shows (no shrinking).
+ * only the overlay shows (no shrinking). The overlay takes the button's own
+ * borderRadius from `style`; a style without one (a round or pill button
+ * whose shape is drawn by a child) gets a fully round overlay, never a square.
  */
 export function PressScale({ style, children, onPress, overlay = true, ...rest }) {
-  const { colors } = useTheme();
   const reduced = useReduceMotion();
   const scale = useRef(new Animated.Value(1)).current;
   const to = value =>
@@ -50,7 +52,7 @@ export function PressScale({ style, children, onPress, overlay = true, ...rest }
           easing: ease,
           useNativeDriver: true,
         }).start();
-  const corner = StyleSheet.flatten(style)?.borderRadius ?? 0;
+  const corner = StyleSheet.flatten(style)?.borderRadius ?? radius.full;
   return (
     <Pressable
       style={visibleOverflow}
@@ -65,15 +67,7 @@ export function PressScale({ style, children, onPress, overlay = true, ...rest }
           style={[style, visibleOverflow, { transform: [{ scale }] }]}
         >
           {children}
-          {overlay && pressed && (
-            <View
-              pointerEvents="none"
-              style={[
-                StyleSheet.absoluteFill,
-                { borderRadius: corner, backgroundColor: colors.pressedOverlay },
-              ]}
-            />
-          )}
+          <PressedOverlay visible={overlay && pressed} corner={corner} />
         </Animated.View>
       )}
     </Pressable>
@@ -371,25 +365,32 @@ export function EdgeHintView({ value, avatars = {}, onPress }) {
       accessibilityLabel={value.label}
       onPress={onPress}
       hitSlop={(sizes.floatingButton - hint.height) / 2}
-      style={({ pressed }) => [styles.hint, { left: value.x, top: value.y, width: value.width }, pressed && styles.pressed]}
+      // Floating over the map: the white pill stays opaque while pressed,
+      // with the round pressed overlay on top (DESIGN.md §2.5, §5.8).
+      style={[styles.hint, { left: value.x, top: value.y, width: value.width }]}
     >
-      {value.side !== 'right' && arrow}
-      <View style={styles.faces}>
-        {value.faces.map((marker, index) => (
-          <HintFace
-            key={marker.slaveId}
-            marker={marker}
-            avatar={avatars[marker.slaveId]}
-            first={index === 0}
-          />
-        ))}
-      </View>
-      {value.extra > 0 && (
-        <Text style={styles.extra} allowFontScaling={false}>
-          +{value.extra}
-        </Text>
+      {({ pressed }) => (
+        <>
+          {value.side !== 'right' && arrow}
+          <View style={styles.faces}>
+            {value.faces.map((marker, index) => (
+              <HintFace
+                key={marker.slaveId}
+                marker={marker}
+                avatar={avatars[marker.slaveId]}
+                first={index === 0}
+              />
+            ))}
+          </View>
+          {value.extra > 0 && (
+            <Text style={styles.extra} allowFontScaling={false}>
+              +{value.extra}
+            </Text>
+          )}
+          {value.side === 'right' && arrow}
+          <PressedOverlay visible={pressed} />
+        </>
       )}
-      {value.side === 'right' && arrow}
     </Pressable>
   );
 }

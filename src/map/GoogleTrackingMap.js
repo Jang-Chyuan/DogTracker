@@ -120,9 +120,8 @@ const getNO_BASE_MAP = makeStyles(theme => {
   ];
 });
 
-// The launch screen is released once the first framing has been drawn, or
-// this long after the map loaded when there is still nothing to frame (the
-// native side lets go after 10 s whatever happens).
+// The longest the handover waits for the dogs' screen places (the flying
+// artwork's targets) once the first framing is drawn; then a plain fade.
 export const FIRST_FRAME_WAIT_MS = 3000;
 // When there is nothing to frame, the most the launch screen is held from the
 // map's mount, whatever is still loading (the phone's first fix, tiles).
@@ -130,6 +129,10 @@ export const FRAMING_WAIT_MAX_MS = 9000;
 // A fit is drawn within a frame or two; release the launch screen after it
 // even if the map reports no camera change (the camera was already there).
 const AFTER_FIT_MS = 250;
+// Nothing to frame once everything it waits for is known (the map loaded,
+// the latest positions, the phone): release after the view is drawn. Its
+// wait for the phone is MapScreen's PHONE_ALONE_WAIT_MS, not more here.
+export const EMPTY_FRAME_SETTLE_MS = AFTER_FIT_MS;
 // The map's own padding at the sides (dp).
 const MAP_SIDE_PADDING = layout.floatingGap;
 // How long a map tap waits for a dog tap that came with it (066).
@@ -148,6 +151,14 @@ export function pointsSettled(previous, next) {
   if (ids.length !== Object.keys(previous).length) return false;
   return ids.every(id => previous[id] && Math.abs(previous[id].x - next[id].x) <= 1
     && Math.abs(previous[id].y - next[id].y) <= 1);
+}
+/**
+ * The camera a new map instance opens on: the last one read for this same
+ * source, else none (initialRegion). Nothing saved yet with an undefined
+ * source must not read `.camera` of null (a TypeError is 「地圖打不開」).
+ */
+export function savedCamera(saved, source) {
+  return saved && saved.source === source ? saved.camera ?? undefined : undefined;
 }
 // History framing: 24dp all round, the cursor label on top, 框住全部 below.
 // Coordinates are marker centres: reserve the complete stop circle above the panel.
@@ -880,13 +891,19 @@ function GoogleTrackingMapRenderer({
   // Android owns pause/resume. Replacing a healthy map on every resume retains
   // old SDK frame callbacks and duplicates all history overlays. Recentring
   // the phone only moves the camera; it never replaces the map surface.
+  // Mounted while the cold start's latest positions were still coming (the
+  // map loads under the launch screen meanwhile): its initialRegion was
+  // centred on what was there before them, which the first fit replaces.
+  const centredBeforeColdStart = useRef(false);
   useEffect(() => {
     if (!dataReady || mountedMap) return;
     // The first view is always one fit of what the presentation frames, made
     // under the launch screen (initialRegion only centres on the first point).
+    centredBeforeColdStart.current = !coldStartReady && positions.length > 0;
     setNeedsFirstPositionFit(true);
     setMountedMap(true);
     markStartupPhase('map-mounted');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataReady, mountedMap]);
   useEffect(() => {
     const map = mapRef.current;
@@ -1086,6 +1103,7 @@ function GoogleTrackingMapRenderer({
             },
       });
     sourceToFit.current = null;
+    centredBeforeColdStart.current = false;
     setFitCount(value => value + 1);
     if (needsFirstPositionFit) {
       setNeedsFirstPositionFit(false);
@@ -1110,14 +1128,19 @@ function GoogleTrackingMapRenderer({
     // native side still lets go after 10 s).
     if (positions.length) return undefined;
     // Nothing to frame yet. The launch screen waits for the map to load and
-    // for what it frames to be known (the phone's first fix, MapScreen's
-    // PHONE_ALONE_WAIT_MS), then 3 s more at most — and never past one
-    // deadline counted from the map's mount (FRAMING_WAIT_MAX_MS).
+    // for what it frames to be known (the latest positions, the phone's first
+    // fix or MapScreen's PHONE_ALONE_WAIT_MS), then a moment for the view to
+    // be drawn — and never past one deadline counted from the map's mount
+    // (FRAMING_WAIT_MAX_MS).
     const remaining = Math.max(0, splashDeadline.current - Date.now());
-    const wait =
-      loaded && framingReady
-        ? Math.min(FIRST_FRAME_WAIT_MS, remaining)
-        : remaining;
+    const settled = loaded && framingReady && coldStartReady;
+    if (settled && centredBeforeColdStart.current && getSplashState().phase === 'waiting') {
+      // Mounted on the positions from before the latest ones, which have
+      // none: the same default view a map mounted now would open on.
+      centredBeforeColdStart.current = false;
+      mapRef.current?.animateToRegion?.(EMPTY_REGION, 0);
+    }
+    const wait = settled ? Math.min(EMPTY_FRAME_SETTLE_MS, remaining) : remaining;
     const timer = setTimeout(releaseSplash, wait);
     return () => clearTimeout(timer);
   }, [configured, loaded, positions.length, releaseSplash, framingReady, coldStartReady]);
@@ -1706,11 +1729,7 @@ function GoogleTrackingMapRenderer({
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_GOOGLE}
           initialRegion={initialRegion}
-          initialCamera={
-            savedView.current?.source === source
-              ? savedView.current.camera
-              : undefined
-          }
+          initialCamera={savedCamera(savedView.current, source)}
           // Without a base map (a fixture of a failed load) the dogs, the phone
           // and the ring are drawn on plain grey, as when no tile arrives.
           mapType="standard"
@@ -1846,6 +1865,7 @@ function GoogleTrackingMapRenderer({
           {!historyMode && livePhone?.running && livePhone.position && (
             <PhoneLocationOverlay
               feed={livePhoneFeed}
+              redrawKey={`${shownKey}:${instance}:${loaded}`}
               Circle={Circle}
               Marker={StyledMarker}
               location={livePhone}

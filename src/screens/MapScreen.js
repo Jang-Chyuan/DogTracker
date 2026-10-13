@@ -42,7 +42,8 @@ import {
   receiverNumber,
 } from '../map/ReceiverState';
 import { dogMarkers, dogName } from '../map/DogMarkers';
-import { coldStartCoordinates, phoneFix, PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
+import { coldStartCoordinates, lastKnownPhoneFix, phoneFix, PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
+import { locationTrackerNative } from '../locationTracker/LocationTrackerService';
 import DogCard from '../map/DogCard';
 import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
@@ -75,9 +76,13 @@ import { behindSheet } from '../utils/a11yFocus';
 export const PHONE_WAIT_MS = 1500;
 // With no local dog to frame the phone is all the cold start frames (設計稿
 // 「冷啟動」: 都還沒定位就只框手機), and the launch screen stays until the map is
-// framed (「啟動畫面 → 地圖」): so it waits this long for the phone's first fix
-// instead (the native side lets go at 10 s whatever happens).
-export const PHONE_ALONE_WAIT_MS = 6000;
+// framed (「啟動畫面 → 地圖」). The phone's last known position (10 minutes at
+// most, LocationTracker.lastKnown) frames it at once; without one it waits
+// this long for a first fix. A fix that has not come by then is a cold GPS
+// start (often 10–30 s indoors), which a longer wait rarely catches: the map
+// opens on the default view and frames the phone when its fix comes (the
+// first fit after an empty start).
+export const PHONE_ALONE_WAIT_MS = 2000;
 
 export default function MapScreen({
   tracking,
@@ -136,6 +141,8 @@ export default function MapScreen({
   onOpenSettings,
   // Signed in to Supabase (A6 hides 「登入 Supabase」).
   signedIn = false,
+  // Signed in but Supabase unreachable (App): A6 says so instead of 登入.
+  cloudOffline = false,
   // The cloud upload failing (gear red dot); the download side is judged
   // from cloudSync.
   cloudProblem = false,
@@ -505,7 +512,7 @@ export default function MapScreen({
   const cards = topCards({
     map: mapState === 'retrying' ? 'load-failed' : mapState,
     retrying: mapState === 'retrying',
-    ...(historical ? {} : { outage, storage, noDogs, signedIn, dismissed, waitingSources }),
+    ...(historical ? {} : { outage, storage, noDogs, signedIn, cloudOffline, dismissed, waitingSources }),
   });
   const reasons = historical
     ? []
@@ -624,8 +631,31 @@ export default function MapScreen({
       || Math.abs(value.latitude) > 90 || Math.abs(value.longitude) > 180) return;
     setNativePhone({ ...value, receivedAt: Date.now() });
   }, []);
+  // The phone's last known position, read once as the map opens: the cold
+  // start frames it while the recorder waits for a fresh fix (it takes only
+  // fixes under 3 s old, so a cached one never counts there).
+  const [lastKnown, setLastKnown] = useState(null);
+  const lastKnownRead = useRef(false);
+  const mountedScreen = useRef(true);
+  useEffect(() => {
+    mountedScreen.current = true;
+    return () => { mountedScreen.current = false; };
+  }, []);
+  const phoneUsable = !!phone?.enabled;
+  useEffect(() => {
+    if (fixture || !phoneUsable || lastKnownRead.current || !locationTrackerNative?.lastKnown) return undefined;
+    lastKnownRead.current = true;
+    Promise.resolve().then(() => locationTrackerNative.lastKnown())
+      .then(value => {
+        const known = typeof value === 'string' ? JSON.parse(value) : null;
+        if (mountedScreen.current && known) setLastKnown({ ...known, receivedAt: Date.now() });
+      })
+      .catch(() => {});
+    return undefined;
+  }, [fixture, phoneUsable]);
   const phoneSpotValue = phoneFix(livePhone) ?? (!fixture && nativePhone
-    && now - nativePhone.receivedAt <= PHONE_FIX_MAX_AGE_S * 1000 ? nativePhone : null);
+    && now - nativePhone.receivedAt <= PHONE_FIX_MAX_AGE_S * 1000 ? nativePhone : null)
+    ?? (!fixture && phoneUsable ? lastKnownPhoneFix(lastKnown, now) : null);
   const receiverId = receiverState ? receiverNumber(receiverState) : null;
   const phoneKey = phoneSpotValue
     ? `${phoneSpotValue.latitude},${phoneSpotValue.longitude}`
@@ -663,17 +693,24 @@ export default function MapScreen({
       clearTimeout(alone);
     };
   }, []);
-  // Settled once the phone has a fix, or says it is not recording, or the
-  // wait is over; a report without a position yet keeps waiting — longer
-  // when there is no local dog to frame without it.
+  // Settled once the phone has a fix, or will not get one (位置記錄 switched
+  // off, or no location permission/service), or the wait is over; a report
+  // without a position yet keeps waiting — longer when there is no local dog
+  // to frame without it. At a cold start the recorder is not running yet
+  // when first read (App starts it a moment later): with 位置記錄 on that is
+  // not 「not recording」.
   const localToFrame =
     coldStartCoordinates(livePresentation.dogMarkers, null, receiverId)
       .length > 0;
+  const phoneOff = livePhone?.running === false && (livePhone.enabled === false || !phoneUsable);
   const phoneSettled =
     !!fixture ||
     !!phoneSpot ||
-    livePhone?.running === false ||
+    phoneOff ||
     (phoneWaitOver && (localToFrame || phoneAloneWaitOver));
+  useEffect(() => {
+    if (phoneSettled && !fixture) markStartupPhase('phone-settled');
+  }, [phoneSettled, fixture]);
   // ---- the history screen (055a) -----------------------------------------
   const target = historical ? historyTarget : null;
   const exportNative = useMemo(() => fixture?.exporter ?? nativeExporter(), [fixture]);
@@ -1097,8 +1134,12 @@ export default function MapScreen({
             ? !!screen.model
             : coldStartReady && receiverActive && receiverState !== undefined && phoneSettled
         }
+        // The map itself mounts and loads under the launch screen while the
+        // cold start's latest positions are still being fetched (the two used
+        // to run one after the other); only its framing, and so the launch
+        // screen's release, waits for them (framingReady above).
         dataReady={
-          coldStartReady && tracking.preferences.ready &&
+          tracking.preferences.ready &&
           (tracking.initialSnapshotReady === true || !!tracking.errors[mode]) &&
           // The first fit waits for the receiver's identity (one native read),
           // so another receiver's stored position is never framed as ours.

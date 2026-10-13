@@ -20,6 +20,13 @@ export const DOWNLOAD_AFTER_MS = 2 * 3600000;
 // A retained prefix may miss rows committed just before its cutoff but not yet
 // visible to that query; the tail re-reads this much (as the automatic sync).
 export const TAIL_OVERLAP_MS = 5 * 60000;
+// The night before: the day's rows start DOWNLOAD_BEFORE_MS before it, and the
+// hold pass is seeded with the last good fixes before that (HistoryDatabase
+// historyDayRows), so a stay carried over from the day before (「接續前一天」)
+// needs what was received before the window too. The automatic archive has
+// it once it has published past the window's start; until then a day's
+// download also fetches what the archive still lacks, at most this far back.
+export const CARRY_OVER_MS = 24 * 3600000;
 
 const iso = value => new Date(value).toISOString();
 
@@ -63,6 +70,9 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
   // One download at a time: a cancelled one keeps the sync's slot until it
   // has stopped, so the next waits for it instead of being refused.
   let previous = Promise.resolve();
+  // `${dog}:${window start}` whose night before was fetched and published
+  // (this process): a later tail of the same day does not fetch it again.
+  const carried = new Set();
   return {
     owner,
     coverageRequired: true,
@@ -116,6 +126,17 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           // material revision, so readers fully re-read twice per refresh.
           // Only a dog downloading its entire window loses its old proof.
           const restart = ids.filter(id => !prefixOf(id));
+          // What the automatic archive still lacks before the window (device
+          // 0.3.179: opened 01:28 after a long time away, the archive had not
+          // reached the evening before; 「01:21 出發」 instead of the 81-minute
+          // stay 「00:00 接續前一天」 the same day showed four minutes later).
+          const windowStart = dayStart - DOWNLOAD_BEFORE_MS;
+          let archived = null;
+          if (typeof database.readArchivePublication === 'function') {
+            try { archived = (await database.readArchivePublication(owner))?.cutoff ?? null; } catch { archived = null; }
+          }
+          const carryFrom = typeof database.readArchivePublication !== 'function' ? windowStart
+            : Math.max(windowStart - CARRY_OVER_MS, Number.isFinite(archived) ? archived - TAIL_OVERLAP_MS : -Infinity);
           const markIncomplete = async () => {
             for (const id of restart) await database.setHistoryDownloadState?.(owner, id, day, false);
           };
@@ -126,6 +147,10 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
             try {
               await database.beginManualScope?.(owner, id, day);
               if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
+              const carry = `${id}:${windowStart}`, carryStart = carried.has(carry) ? windowStart : carryFrom;
+              if (carryStart < windowStart) count += await downloadCloudHistory({ client, database, owner,
+                startAt: iso(carryStart), endBefore: iso(windowStart), slaveId: id,
+                signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
               count += await downloadCloudHistory({ client, database, owner,
                 startAt: iso(tailStart(id)), endBefore: iso(coverage.received_before), slaveId: id,
                 signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
@@ -144,6 +169,7 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
                 if (publishScoped) await publishScoped(commit);
                 else await commit();
               }
+              if (carryStart < windowStart) carried.add(carry);
               onDogEnd?.(id, 'done');
             } catch (error) {
               onDogEnd?.(id, abort.signal.aborted ? 'cancelled' : 'failed');

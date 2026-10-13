@@ -47,7 +47,8 @@ const startupPhases = new Set(['preferences', 'real-initialize', 'initial-latest
   'initial-position-context', 'initial-snapshot-publish', 'receiver-native',
   'receiver-publish', 'phone-native', 'history-real-wait', 'history-cloud-initialize', 'history-cloud-wait',
   'phone-day-read', 'phone-day-publish', 'phone-model', 'phone-model-commit',
-  'map-data-ready', 'map-mounted', 'map-loaded']);
+  'map-data-ready', 'map-mounted', 'map-loaded', 'phone-settled', 'cloud-latest-settled', 'map-framed',
+  'splash-handover']);
 export const isStartupPhase = phase => typeof phase === 'string' && startupPhases.has(phase);
 export function logStartupPhase(phase, sequence, event, atMs, durationMs) {
   if (globalThis.__DOGTRACKER_STARTUP_DIAGNOSTICS__ !== true || arguments.length !== 5
@@ -90,6 +91,10 @@ export function cloudSyncDiagnostic(event, fields) {
         // success event. Copy only these fixed nonnegative elapsed numbers.
         const timings = LATEST_TIMINGS.every(key => Number.isFinite(fields[key]) && fields[key] >= 0)
           ? Object.fromEntries(LATEST_TIMINGS.map(key => [key, fields[key]])) : {};
+        // The session gate's wait, kept apart from mastersMs (optional: the
+        // legacy engine has no gate); only alongside the complete timings.
+        if (Object.keys(timings).length && Number.isFinite(fields.sessionMs) && fields.sessionMs >= 0)
+          timings.sessionMs = fields.sessionMs;
         console.info('[CloudSync] latest-published', { attempt, elapsedMs, revision, ...timings });
       } else if (event === 'latest-applied') console.info('[CloudSync] latest-applied', { attempt, elapsedMs, revision });
       else console.info('[CloudSync] archive-published', { attempt, elapsedMs, revision });

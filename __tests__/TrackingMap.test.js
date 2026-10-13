@@ -11,6 +11,7 @@ import MapView, {
 } from 'react-native-maps';
 import NativePlatform from '../specs/NativeTrackingPlatform';
 import TrackingMap from '../src/map/TrackingMap';
+import { savedCamera } from '../src/map/GoogleTrackingMap';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import MapScreen from '../src/screens/MapScreen';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
@@ -263,6 +264,37 @@ test('no tiles within the load timeout is 地圖載入失敗; 重試 opens a new
   expect(defaults.onMapState).toHaveBeenLastCalledWith('retrying');
   await readyMap();
   expect(defaults.onMapState).toHaveBeenLastCalledWith('ok');
+});
+test('tiles arriving after the load timeout (the network came back) clear 地圖載入失敗 without 重試', async () => {
+  await render();
+  await act(async () => renderer.root.findByType(MapView).props.onMapReady());
+  await act(async () => { jest.advanceTimersByTime(15000); });
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('load-failed');
+  const map = renderer.root.findByType(MapView);
+  await act(async () => map.props.onMapLoaded());
+  expect(renderer.root.findByType(MapView)).toBe(map);
+  expect(defaults.onMapState).toHaveBeenLastCalledWith('ok');
+});
+test('no source yet and no saved camera opens the map instead of throwing (地圖打不開)', async () => {
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await render({ source: undefined });
+    expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+    expect(renderer.root.findByType(MapView).props.initialCamera).toBeUndefined();
+    expect(renderer.root.findAll(node => node.props.testID === 'map-unavailable')).toHaveLength(0);
+    // A retry (a new native instance) with still nothing saved.
+    await act(async () => renderer.update(<TrackingMap {...defaults} source={undefined} retryKey={1} />));
+    expect(renderer.root.findAllByType(MapView)).toHaveLength(1);
+    expect(defaults.onMapState).not.toHaveBeenCalledWith('unavailable');
+  } finally { error.mockRestore(); }
+});
+test('savedCamera: only a camera saved for the same source', () => {
+  const camera = { zoom: 14 };
+  expect(savedCamera(null, undefined)).toBeUndefined();
+  expect(savedCamera(undefined, 'real')).toBeUndefined();
+  expect(savedCamera({ source: 'real', camera }, 'real')).toBe(camera);
+  expect(savedCamera({ source: 'real', camera }, 'history')).toBeUndefined();
+  expect(savedCamera({ source: undefined }, undefined)).toBeUndefined();
 });
 test('a map that throws while opening is caught: grey and unavailable, and 重試 tries again', async () => {
   const Broken = () => { throw new Error('native map missing'); };
@@ -1579,5 +1611,52 @@ test('old cold projection timeout cannot frame a replacement scope; its new fram
   await act(async () => jest.advanceTimersByTime(250));
   expect(splash.getSplashState().phase).toBe('waiting');
   delete mockCamera.pointForCoordinate;
+  await act(async () => renderer.unmount()); renderer = null; splash.resetSplashGate();
+});
+
+test('cold start: the map mounts and loads under the launch screen while latest is still coming, and frames only once it is accepted', async () => {
+  const splash = require('../src/app/hideSplash');
+  splash.resetSplashGate(); const scope = {};
+  splash.reportInitialLatest(scope, 'waiting'); splash.launchInto('map');
+  await render({ coldStartReady: false, coldStartScope: scope, framingReady: false });
+  // Mounted at once (no longer after latest): tiles load in the meantime.
+  const map = renderer.root.findByType(MapView);
+  await readyMap();
+  await act(async () => map.props.onRegionChangeComplete({}, {}));
+  await act(async () => jest.advanceTimersByTime(9000));
+  // Nothing framed or released on the positions from before latest.
+  expect(mockCamera.fitToCoordinates).not.toHaveBeenCalled();
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => {
+    splash.reportInitialLatest(scope, 'accepted');
+    renderer.update(<TrackingMap {...defaults} coldStartReady coldStartScope={scope} />);
+  });
+  expect(renderer.root.findByType(MapView)).toBe(map);
+  expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
+  expect(mockCamera.fitToCoordinates.mock.calls[0][0]).toEqual(defaults.presentation.cameraPositions);
+  expect(splash.getSplashState().phase).toBe('waiting');
+  await act(async () => jest.advanceTimersByTime(250));
+  expect(splash.getSplashState().phase).toBe('handover');
+  await act(async () => renderer.unmount()); renderer = null; splash.resetSplashGate();
+});
+
+test('cold start: mounted on earlier positions, latest accepted with nothing to frame opens on the default view', async () => {
+  const splash = require('../src/app/hideSplash');
+  splash.resetSplashGate(); const scope = {};
+  splash.reportInitialLatest(scope, 'waiting'); splash.launchInto('map');
+  await render({ coldStartReady: false, coldStartScope: scope, framingReady: false });
+  expect(renderer.root.findByType(MapView).props.initialRegion).toMatchObject(master.coordinate);
+  await readyMap();
+  const empty = { ...defaults.presentation, cameraPositions: [], dogMarkers: [] };
+  await act(async () => {
+    splash.reportInitialLatest(scope, 'accepted');
+    renderer.update(<TrackingMap {...defaults} presentation={empty} coldStartReady coldStartScope={scope} />);
+  });
+  expect(mockCamera.animateToRegion).toHaveBeenCalledWith(
+    expect.objectContaining({ latitude: 23.7, longitude: 121, latitudeDelta: 4 }), 0);
+  expect(splash.getSplashState().phase).toBe('waiting');
+  // Everything it waits for is known: released once the view is drawn.
+  await act(async () => jest.advanceTimersByTime(250));
+  expect(splash.getSplashState()).toMatchObject({ phase: 'handover', mode: 'fade' });
   await act(async () => renderer.unmount()); renderer = null; splash.resetSplashGate();
 });

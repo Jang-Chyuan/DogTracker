@@ -122,8 +122,52 @@ function hasPressedChild(element, source) {
   });
 }
 
+// Rectangular by design: whole list rows and blocks, whose pressed fill is the
+// row (DESIGN.md §5.8 清單列按下 brandSoft 底). Every other button is round or
+// a capsule (D18), so its pressed state must be too.
+const RECTANGULAR = new Map([
+  ['src/locationTracker/LocationTrackerScreen.js:row', 'record list row'],
+  ['src/map/DogCard.js:rowTarget', 'card status row'],
+  ['src/mapHistory/HistoryPickers.js:choice', 'dog sheet row'],
+  ['src/mapHistory/HistoryPickers.js:row', 'dog sheet row'],
+  ['src/mapHistory/HistoryRangeSummary.js:summary', 'panel summary block'],
+  ['src/mapHistory/HistoryTimelineList.js:row', 'timeline row'],
+  ['src/onboarding/PairingScreen.js:nearby', 'nearby receiver row'],
+  ['src/settings/DataTable.js:row', 'diagnostics table row'],
+  ['src/settings/SettingsUI.js:homeRow', 'settings row'],
+  ['src/settings/SettingsUI.js:listRow', 'settings row'],
+]);
+
+const hasProperty = (entry, property) => entry.properties.some(item => item.key?.name === property);
+const floats = (entry, source) => entry.properties.some(item => item.type === 'SpreadElement'
+  && /shadow\.floating/.test(source.slice(item.start, item.end)));
+
+// The pressed state follows the button's shape: a background laid on while
+// pressed needs the button's borderRadius (a square grey box on a round
+// button otherwise), and never replaces a floating element's own opaque fill
+// (PressedOverlay goes over it instead). PressScale takes its overlay's corner
+// from its style.
+function shapeProblems({ name, where, relative, attrs, used, entries, source }) {
+  const problems = [];
+  const fill = used.filter(key => /pressed/i.test(key) && hasProperty(entries[key], 'backgroundColor'));
+  const base = used.filter(key => !fill.includes(key));
+  const round = base.some(key => hasProperty(entries[key], 'borderRadius'));
+  if (name === 'PressScale' && attrs.style && attrs.overlay?.expression?.value !== false && !round) {
+    problems.push(`${where} <PressScale> style without borderRadius`);
+  }
+  if (!fill.length) return problems;
+  const rectangular = base.some(key => RECTANGULAR.has(`${relative}:${key}`));
+  if (!round && !rectangular) problems.push(`${where} <${name}> pressed fill without borderRadius (${used.join(',')})`);
+  const seeThrough = fill.some(key => /pressedOverlay/.test(source.slice(entries[key].start, entries[key].end)));
+  if (seeThrough && base.some(key => floats(entries[key], source))) {
+    problems.push(`${where} <${name}> pressed fill replaces a floating element's own fill; use PressedOverlay`);
+  }
+  return problems;
+}
+
 function audit() {
   const problems = [];
+  const shapes = [];
   let count = 0;
   for (const file of [...files(path.join(root, 'src')), path.join(root, 'App.js')]) {
     const relative = path.relative(root, file);
@@ -164,8 +208,9 @@ function audit() {
           /\bpressed\b/.test(styleSource) ||
           hasPressedChild(p.node, source);
         if (!feedback) problems.push(`${where} <${name}> no pressed state`);
-        if (EXCEPTIONS.has(`${relative}:${component}`)) return;
         const used = [...styleSource.matchAll(/\b[a-zA-Z_]\w*\.(\w+)/g)].map(m => m[1]).filter(key => entries[key]);
+        shapes.push(...shapeProblems({ name, where, relative, attrs, used, entries, source }));
+        if (EXCEPTIONS.has(`${relative}:${component}`)) return;
         // The tallest height / minHeight the styles give (undefined: content-sized).
         let styleHeight;
         for (const key of used) {
@@ -201,7 +246,7 @@ function audit() {
       },
     });
   }
-  return { problems, count };
+  return { problems, count, shapes };
 }
 
 test('child render feedback requires using pressed in the visible child', () => {
@@ -213,6 +258,10 @@ test('child render feedback requires using pressed in the visible child', () => 
     const ast = parser.parseExpression(source, { plugins: ['jsx'] });
     expect(hasPressedChild(ast, source)).toBe(expected);
   }
+});
+
+test('pressed feedback has the button\'s shape: round and pill buttons never show a square box', () => {
+  expect(audit().shapes).toEqual([]);
 });
 
 test('every tappable element has a role, a label, a pressed state and a 48dp target', () => {

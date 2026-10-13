@@ -123,7 +123,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, DOWNLOAD_MS);
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t('c576')); };
     const timings = { slotWaitMs: 0, initializeMs: 0, archiveProofMs: 0, latestCacheReadMs: 0,
-      mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0 };
+      mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0, sessionMs: 0 };
     readback = null; readbackStartedAt = startedAt;
     catchUp.started(retryQueued || !initialStarted); retryQueued = false; initialStarted = true;
     publish({ busy: true, mode: manualRunning ? 'manual' : 'auto', error: '', authFailed: false,
@@ -144,7 +144,11 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       const fetchLatest = () => {
         networkPhase = 'masters';
         const network = (async () => {
+          // The session gate's wait (CloudSession) is its own number, not
+          // part of the membership request's: a slow 「masters」 stage is then
+          // either the request itself or this wait, never a guess.
           let at = now(); await session.ready();
+          timings.sessionMs += Math.max(0, now() - at); at = now();
           const masters = await session.retryRefused(() => listCloudMasters(client, userId, networkAbort.signal, networkCheck));
           timings.mastersMs += Math.max(0, now() - at); networkCheck();
           const cutoff = now(); networkPhase = 'download'; at = now();

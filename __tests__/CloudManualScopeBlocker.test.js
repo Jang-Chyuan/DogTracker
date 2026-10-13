@@ -92,7 +92,9 @@ test('one completed manual dog stays visible when the next dog fails and auto ha
     expect(await database.historyDownloadStates(owner, [9, 10])).toEqual(expect.arrayContaining([
       expect.objectContaining({ slave_id: 9, complete: 1 }), expect.objectContaining({ slave_id: 10, complete: 0 }),
     ]));
-    expect(calls.filter(call => call.phase === 'archive').map(call => call.params.get('slave_id'))).toEqual(['eq.9', 'eq.9', 'eq.10']);
+    // No archive publication yet: each dog first fetches the night before
+    // its window (CARRY_OVER_MS), then the window itself.
+    expect(calls.filter(call => call.phase === 'archive').map(call => call.params.get('slave_id'))).toEqual(['eq.9', 'eq.9', 'eq.9', 'eq.10']);
     expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 0 });
     expect(sync.historyPublication()).toMatchObject({ publishedPending: false, archiveCutoff: null, archiveRevision: 0 });
     expect(capturePageRead(() => sync.historyPublication(), owner, true).open).toBe(true);

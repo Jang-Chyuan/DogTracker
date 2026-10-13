@@ -85,13 +85,14 @@ const styles2 = StyleSheet.create({
 
 function Capsule({ children, onPress, testID, label, style, disabled, onLayout }) {
   const styles = useStyles(getStyles);
-  const body = <View style={[styles.capsule, style]}>{children}</View>;
   if (!onPress)
     return (
       <View testID={testID} accessible accessibilityLabel={label} onLayout={onLayout}>
-        {body}
+        <View style={[styles.capsule, style]}>{children}</View>
       </View>
     );
+  // The capsule is PressScale's own style, so the pressed overlay is the
+  // capsule's shape (a square grey box before).
   return (
     <PressScale
       testID={testID}
@@ -101,8 +102,9 @@ function Capsule({ children, onPress, testID, label, style, disabled, onLayout }
       onPress={onPress}
       disabled={disabled}
       hitSlop={(touch.min - sizes.chip.height) / 2}
+      style={[styles.capsule, style]}
     >
-      {body}
+      {children}
     </PressScale>
   );
 }
@@ -198,6 +200,7 @@ function DateRow({ day, todayStart, navigation, onPrevious, onNext, onOpen, comp
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const label = dateRowLabel(day, todayStart);
+  // A 48dp circle: it darkens in its own round shape when pressed.
   const arrow = (side, enabled, onPress) => (
     <Pressable
       testID={`history-day-${side}`}
@@ -594,14 +597,19 @@ ref) {
 
   // Reading the day (not a download): the shimmer, announced as 讀取中.
   const reading = !downloading && !model && !screen.error && download?.kind !== 'unfinished';
-  // Another day or dogs after a shown list (‹ ›, the calendar, 加入): the old
-  // list is gone at once, and the new day's build may hold the JavaScript
-  // thread past the skeleton's delay, so the panel showed nothing. Show the
-  // skeleton at once then; a first opening keeps the delay.
+  // The day's loading shows its skeleton on the first frame, also on a first
+  // opening: the day's read and build may hold the JavaScript thread past
+  // the skeleton's delay, and a blank panel before 「下載 … 的紀錄」 and the
+  // skeleton read as three different loading screens (device, 0.3.179).
+  // Another day or dogs start at the top of their list: the old list's
+  // scroll offset would hide the new first rows (device, 10/11, 10/10).
   const viewKey = `${screen.panelScope ?? ''}|${screen.day}|${(screen.dogs ?? []).map(dog => dog.id).join(',')}`;
-  const shownView = useRef(null);
-  if (model) shownView.current = viewKey;
-  const navigated = shownView.current != null && shownView.current !== viewKey;
+  const scrolledView = useRef(viewKey);
+  useEffect(() => {
+    if (scrolledView.current === viewKey) return;
+    scrolledView.current = viewKey;
+    list.current?.scrollTo({ y: 0, animated: false });
+  }, [viewKey]);
   let body;
   if (downloading || screen.rangePending) body = null;
   else if (download?.kind === 'unfinished' && !model?.dayRecords) {
@@ -681,7 +689,7 @@ ref) {
             // Explicit values both ways: Android keeps a removed label, and the
             // loaded timeline must never read as 讀取中.
             accessible={reading} accessibilityLabel={reading ? t('c835') : ''}>
-            <LoadingContent loading={downloading || reading} immediate={navigated}
+            <LoadingContent loading={downloading || reading} immediate
               shape="timeline" label={downloading ? download.title.replace('…', '') : t("c835")} skeletonTestID="history-skeleton">
               {body}
             </LoadingContent>
@@ -790,7 +798,8 @@ const getStyles = makeStyles(theme => {
     disabled: { opacity: opacity.disabled },
     asOf: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.s },
     asOfText: { color: colors.textMuted, fontSize: type.caption.fontSize },
-    updateTail: { minHeight: touch.min, minWidth: touch.min, justifyContent: 'center', alignItems: 'center' },
+    updateTail: { minHeight: touch.min, minWidth: touch.min, paddingHorizontal: space.s, borderRadius: radius.full,
+      justifyContent: 'center', alignItems: 'center' },
     updateTailText: { color: colors.phone, fontSize: type.caption.fontSize },
     headerColumns: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: space.s },
     dateColumn: { flex: 0.42, minWidth: 0 },
@@ -805,6 +814,7 @@ const getStyles = makeStyles(theme => {
     dayArrow: {
       width: touch.min,
       height: touch.min,
+      borderRadius: radius.full,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -848,10 +858,13 @@ const getStyles = makeStyles(theme => {
       color: colors.textMuted,
       marginTop: space.xs,
     },
+    // A text button presses as a capsule around its words.
     textButton: {
       minHeight: touch.min,
       minWidth: touch.min,
-      alignItems: 'flex-end',
+      paddingHorizontal: space.s,
+      borderRadius: radius.full,
+      alignItems: 'center',
       justifyContent: 'center',
     },
     textButtonText: { ...type.status, color: colors.tonalText },
