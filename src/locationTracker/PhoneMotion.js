@@ -13,6 +13,25 @@ const rawPhoneSpeed = p => p.raw_speed_kmh === undefined ? p.speed_kmh : p.raw_s
 // How far a still-speed fix may sit from the locked anchor and still keep the
 // stop: half again the larger accuracy, at least the 25 m place radius.
 const coarseHoldRadius = (anchor, p) => Math.max(25, 1.5 * Math.max(anchor.accuracy, p.accuracy));
+// A fix whose position or accuracy cannot be geometric evidence.
+const unusable = q => !Number.isFinite(q.accuracy) || q.accuracy < 0 || q.accuracy >= 50
+  || !Number.isFinite(q.latitude) || !Number.isFinite(q.longitude)
+  || Math.abs(q.latitude) > 90 || Math.abs(q.longitude) > 180;
+// steps[i] is dist(list[i - 1], list[i]); steps[0] is never read.
+const stepsOf = list => list.map((q, i) => (i ? dist(list[i - 1], q) : 0));
+const increasing = list => list.every((q, i) => Number.isFinite(q.time) && (!i || q.time > list[i - 1].time));
+
+// Performance contract (decisions are those of the plain filter/map/reduce
+// version, test-support/PhoneMotionReference.js, bit for bit):
+// - A sample's distance to its neighbour is computed once, when it joins
+//   `tail` or `entry` (`tailSteps` / `entrySteps`), not on every window.
+// - While `tail` holds strictly increasing finite times (always, for the
+//   history and live callers) each "the last W ms" window is a suffix found by
+//   binary search, and each 30 s departure slice a contiguous run.
+//   Otherwise (`tailOrdered` false) the window is filtered like before.
+// - Sums still add each window's steps from its first fix in time order, so
+//   no running total (whose rounding would differ) can flip a threshold.
+// Samples must not be mutated after `accept`: their distances are cached.
 export class PhoneMotion {
   constructor() {
     this.tail = [];
@@ -28,10 +47,14 @@ export class PhoneMotion {
     this.origin = null;
     this.movingProof = false;
     this.unconfirmedSince = null;
+    this.tailSteps = [];
+    this.tailOrdered = true;
+    this.entrySteps = [];
+    this.entryOrdered = true;
   }
   reset() {
-    this.tail = [];
-    this.entry = [];
+    this.setTail([], [], true);
+    this.clearEntry();
     this.state = 'moving';
     this.anchor = null;
     this.highAt = null;
@@ -41,6 +64,16 @@ export class PhoneMotion {
     this.lastGeometryAt = 0;
     this.movingProof = false;
     this.unconfirmedSince = null;
+  }
+  setTail(tail, steps = stepsOf(tail), ordered = increasing(tail)) {
+    this.tail = tail;
+    this.tailSteps = steps;
+    this.tailOrdered = ordered;
+  }
+  clearEntry() {
+    this.entry = [];
+    this.entrySteps = [];
+    this.entryOrdered = true;
   }
   confirmDeparture(since) {
     this.reset();
@@ -55,20 +88,41 @@ export class PhoneMotion {
     if (this.unconfirmedSince != null && p.time - this.unconfirmedSince >= 15000)
       this.departureSince = Math.max(this.unconfirmedSince, this.tail[0].time);
     this.unconfirmedSince = null;
-    this.entry = [];
+    this.clearEntry();
     this.state = 'moving';
     this.movingProof = true;
     return this.state;
   }
-  progress(p, points, qualityAware = false) {
-    if (points.length < 3 || p.time - points[0].time < 15000
-      || points.some(q => !Number.isFinite(q.accuracy) || q.accuracy < 0 || q.accuracy >= 50
-        || !Number.isFinite(q.latitude) || !Number.isFinite(q.longitude)
-        || Math.abs(q.latitude) > 90 || Math.abs(q.longitude) > 180)) return false;
-    const net = dist(points[0], p), steps = points.slice(1).map((q, i) => dist(points[i], q));
-    const path = steps.reduce((sum, step) => sum + step, 0);
-    const threshold = qualityAware ? Math.max(3, ...points.map(q => q.accuracy * 2)) : 3;
-    return net > threshold + 1e-8 && net / path > (qualityAware ? 0.85 : 0.75) && Math.max(...steps) < net * 0.5;
+  // The `tail` fixes with p.time - q.time <= width, as list[lo..] with steps.
+  window(p, width) {
+    const list = this.tail;
+    if (this.tailOrdered && Number.isFinite(p.time)) {
+      let lo = 0, hi = list.length;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (p.time - list[mid].time <= width) hi = mid;
+        else lo = mid + 1;
+      }
+      return { list, steps: this.tailSteps, lo, ordered: true };
+    }
+    const kept = list.filter(q => p.time - q.time <= width);
+    return { list: kept, steps: stepsOf(kept), lo: 0, ordered: increasing(kept) };
+  }
+  // Whether list[lo..] (ending at p) is sustained physical progress.
+  progress(p, list, steps, lo = 0, qualityAware = false) {
+    const end = list.length;
+    if (end - lo < 3 || p.time - list[lo].time < 15000) return false;
+    for (let i = lo; i < end; i += 1) if (unusable(list[i])) return false;
+    let threshold = 3;
+    if (qualityAware) for (let i = lo; i < end; i += 1) threshold = Math.max(threshold, list[i].accuracy * 2);
+    const net = dist(list[lo], p);
+    if (!(net > threshold + 1e-8)) return false;
+    let path = 0, longest = -Infinity;
+    for (let i = lo + 1; i < end; i += 1) {
+      path += steps[i];
+      longest = Math.max(longest, steps[i]);
+    }
+    return net / path > (qualityAware ? 0.85 : 0.75) && longest < net * 0.5;
   }
   movementStart() {
     // Search backwards for the most recent compact plateau in one pass.
@@ -87,19 +141,32 @@ export class PhoneMotion {
     }
     return this.tail[0].time;
   }
-  pushSample(list, point) {
+  // Keeps one sample per second; returns whether times still strictly increase.
+  pushSample(list, steps, point) {
     this.origin ??= point.time;
     const bucket = value => Math.floor((value.time - this.origin) / 1000);
     if (list.length && bucket(list.at(-1)) === bucket(point))
       list[list.length - 1] = point;
     else list.push(point);
+    const n = list.length;
+    steps[n - 1] = n > 1 ? dist(list[n - 2], point) : 0;
+    return Number.isFinite(point.time) && (n < 2 || point.time > list[n - 2].time);
   }
   accept(p) {
     this.departureSince = null;
     if (this.last && (p.time <= this.last || p.time - this.last > 30000)) this.reset();
     this.last = p.time;
-    this.pushSample(this.tail, p);
-    this.tail = this.tail.filter(q => p.time - q.time <= 600000).slice(-720);
+    if (!this.pushSample(this.tail, this.tailSteps, p)) this.tailOrdered = false;
+    if (this.tailOrdered) {
+      // Only the oldest fixes can have left the 10-minute window.
+      let drop = 0;
+      while (drop < this.tail.length && !(p.time - this.tail[drop].time <= 600000)) drop += 1;
+      drop = Math.max(drop, this.tail.length - 720);
+      if (drop > 0) {
+        this.tail.splice(0, drop);
+        this.tailSteps.splice(0, drop);
+      }
+    } else this.setTail(this.tail.filter(q => p.time - q.time <= 600000).slice(-720));
     // Strict reentry is a safety policy, not perpetual physical-motion proof.
     this.movingProof = false;
     const speed = rawPhoneSpeed(p) == null ? null : rawPhoneSpeed(p) / 3.6,
@@ -129,8 +196,10 @@ export class PhoneMotion {
     // Reliable measured walking already has finite speed credit. Reserve the
     // extra geometry pass for absent/contradictory/uncertain speed evidence.
     if (this.strictReentry && (!valid || speed < 0.3 || (spread && sacc > 1.5 && !high)
-      || (!spread && p.accuracy > 10 && speed <= 1)))
-      this.movingProof = this.progress(p, this.tail.filter(q => p.time - q.time <= 60000), true);
+      || (!spread && p.accuracy > 10 && speed <= 1))) {
+      const minute = this.window(p, 60000);
+      this.movingProof = this.progress(p, minute.list, minute.steps, minute.lo, true);
+    }
     if (speedGood) this.lowAt = p.time;
     if (this.state === 'stationary') {
       if (high) {
@@ -153,7 +222,7 @@ export class PhoneMotion {
       return this.state;
     }
     if (!speedGood) {
-      this.entry = [];
+      this.clearEntry();
       if (this.strictReentry && this.movingProof) return this.continueMoving(p);
       // Unknown speed is not walking proof. Retain a bounded raw window so
       // sustained physical progress can confirm movement without a speed.
@@ -166,17 +235,24 @@ export class PhoneMotion {
       else this.unconfirmedSince ??= p.time;
       return high ? 'moving' : 'unknown';
     }
-    this.pushSample(this.entry, p);
-    while (this.entry.length > 1 && p.time - this.entry[1].time >= 20000)
-      this.entry.shift();
-    const first = this.entry[0],
-      path = this.entry
-        .slice(1)
-        .reduce((a, q, i) => a + dist(this.entry[i], q), 0),
+    const entry = this.entry, entrySteps = this.entrySteps;
+    if (!this.pushSample(entry, entrySteps, p)) this.entryOrdered = false;
+    while (entry.length > 1 && p.time - entry[1].time >= 20000) {
+      entry.shift();
+      entrySteps.shift();
+    }
+    const first = entry[0],
       net = dist(first, p);
-    const fine = this.entry.every(q => q.accuracy <= 10),
-      threshold = fine ? 3 : Math.max(5, ...this.entry.map(q => q.accuracy * (this.strictReentry ? 2 : 1)));
-    const reentryProgress = this.strictReentry && this.progress(p, this.entry);
+    let path = 0;
+    for (let i = 1; i < entry.length; i += 1) path += entrySteps[i];
+    const fine = entry.every(q => q.accuracy <= 10);
+    let threshold = 3;
+    if (!fine) {
+      const scale = this.strictReentry ? 2 : 1;
+      threshold = 5;
+      for (const q of entry) threshold = Math.max(threshold, q.accuracy * scale);
+    }
+    const reentryProgress = this.strictReentry && this.progress(p, entry, entrySteps);
     // A 3m guard only rejects reentry. Backfilling further travel still needs
     // the original long, quality-aware proof, plus current progress.
     if (reentryProgress && p.time - this.lastGeometryAt >= 5000) {
@@ -184,11 +260,11 @@ export class PhoneMotion {
       if (this.departure(p)) return this.continueMoving(p);
     }
     if (
-      this.entry.some(q => dist(first, q) > threshold) ||
+      entry.some(q => dist(first, q) > threshold) ||
       (fine && net > 3 && net / path > 0.75) || reentryProgress
     ) {
-      this.entry = [];
-      if (!this.strictReentry) this.tail = [];
+      this.clearEntry();
+      if (!this.strictReentry) this.setTail([], [], true);
       this.state = 'moving';
       return 'moving';
     }
@@ -205,54 +281,81 @@ export class PhoneMotion {
       this.unconfirmedSince = null;
       // A new confirmed stop starts a new departure window. The preceding
       // genuine walk cannot be reused to release this stationary anchor.
-      this.tail = this.entry.slice();
-    } else if (!this.strictReentry) this.tail = this.entry.slice();
+      this.setTail(entry.slice(), entrySteps.slice(), this.entryOrdered);
+    } else if (!this.strictReentry) this.setTail(entry.slice(), entrySteps.slice(), this.entryOrdered);
     return this.state;
   }
   departure(p) {
-    const fine = this.tail
-      .filter(q => p.time - q.time <= 20000)
-      .every(q => q.accuracy <= 10);
+    const recent = this.window(p, 20000);
+    let fine = true;
+    for (let i = recent.lo; i < recent.list.length; i += 1)
+      if (!(recent.list[i].accuracy <= 10)) {
+        fine = false;
+        break;
+      }
+    // The wider windows contain the narrower ones (suffixes of the same
+    // ordered tail), so the largest accuracy and any unusable fix are
+    // extended downwards from the last window instead of rescanned.
+    let scanned = this.tail.length, accuracy = -Infinity, checked = scanned, usable = true;
     for (const width of fine
       ? [20000]
       : [120000, 180000, 240000, 300000, 600000]) {
-      const t = this.tail.filter(q => p.time - q.time <= width);
-      if (t.length < 3 || p.time - t[0].time < width - (fine ? 1000 : 20000))
+      const { list: t, steps, lo, ordered } = this.window(p, width), end = t.length;
+      if (end - lo < 3 || p.time - t[lo].time < width - (fine ? 1000 : 20000))
         continue;
-      const first = t[0],
+      const first = t[lo],
         net = dist(first, p);
-      const threshold = Math.max(
-        fine ? 3 : 12,
-        (fine ? 2 : 4) * Math.max(...t.map(q => q.accuracy)),
-      );
+      if (t !== this.tail) {
+        scanned = checked = end;
+        accuracy = -Infinity;
+        usable = true;
+      }
+      for (; scanned > lo; scanned -= 1) accuracy = Math.max(accuracy, t[scanned - 1].accuracy);
+      const threshold = Math.max(fine ? 3 : 12, (fine ? 2 : 4) * accuracy);
       if (net <= threshold) continue;
       // Guard before positive proof, after the cheap stationary rejection.
       // NaN cannot bypass this check and become confirmed movement.
-      if (t.some(q => !Number.isFinite(q.accuracy) || q.accuracy < 0 || q.accuracy >= 50
-        || !Number.isFinite(q.latitude) || !Number.isFinite(q.longitude)
-        || Math.abs(q.latitude) > 90 || Math.abs(q.longitude) > 180
-        || (q.latitude === 0 && q.longitude === 0))) continue;
-      const steps = t.slice(1).map((q, i) => dist(t[i], q));
-      const path = steps.reduce((a, b) => a + b, 0);
-      if (net / path < 0.85 || Math.max(...steps) >= net * 0.5) continue;
+      for (; usable && checked > lo; checked -= 1) {
+        const q = t[checked - 1];
+        usable = !unusable(q) && !(q.latitude === 0 && q.longitude === 0);
+      }
+      if (!usable) continue;
+      let path = 0, longest = -Infinity;
+      for (let i = lo + 1; i < end; i += 1) {
+        path += steps[i];
+        longest = Math.max(longest, steps[i]);
+      }
+      if (net / path < 0.85 || longest >= net * 0.5) continue;
       if (fine) return true;
       let valid = true;
-      for (let k = 0; k < width / 30000; k++) {
-        const part = t.filter(
-          q =>
-            q.time >= first.time + k * 30000 &&
-            q.time <= first.time + (k + 1) * 30000,
-        );
-        if (part.length < 3) {
+      for (let k = 0, from = lo; k < width / 30000; k++) {
+        // The fixes of slice k: from first.time + k·30 s to + (k + 1)·30 s,
+        // both ends included (a fix on the boundary belongs to both).
+        const low = first.time + k * 30000, high = first.time + (k + 1) * 30000;
+        let a = -1, b = -1, count = 0, partPath = 0;
+        if (ordered) {
+          while (from < end && !(t[from].time >= low)) from += 1;
+          for (let i = from; i < end && t[i].time <= high; i += 1) {
+            if (a < 0) a = i;
+            else partPath += steps[i];
+            b = i;
+            count += 1;
+          }
+        } else {
+          for (let i = lo; i < end; i += 1) {
+            const q = t[i];
+            if (!(q.time >= low && q.time <= high)) continue;
+            if (a < 0) a = i;
+            else partPath += b === i - 1 ? steps[i] : dist(t[b], q);
+            b = i;
+            count += 1;
+          }
+        }
+        if (count < 3) {
           valid = false;
           break;
         }
-        const a = part[0],
-          b = part.at(-1),
-          n = dist(a, b),
-          partPath = part
-            .slice(1)
-            .reduce((sum, q, i) => sum + dist(part[i], q), 0);
+        const n = dist(t[a], t[b]);
         if (n < 3 || n / partPath < 0.8) {
           valid = false;
           break;
@@ -260,8 +363,8 @@ export class PhoneMotion {
         const lon = Math.cos((first.latitude * Math.PI) / 180),
           dx = (p.longitude - first.longitude) * lon,
           dy = p.latitude - first.latitude,
-          px = (b.longitude - a.longitude) * lon,
-          py = b.latitude - a.latitude;
+          px = (t[b].longitude - t[a].longitude) * lon,
+          py = t[b].latitude - t[a].latitude;
         if (
           (dx * px + dy * py) / Math.hypot(dx, dy) / Math.hypot(px, py) <
           0.8
@@ -302,11 +405,15 @@ export function phoneMotionPoint(row, tracker) {
     tracker.lastGeometryAt = 0;
   }
   if (row.session_id != null) tracker.sessionId = row.session_id;
+  // Only the fields PhoneMotion reads: a whole row copy per fix is garbage.
   const point = {
-    ...row,
+    time: row.time,
     latitude: row.raw_latitude ?? row.latitude,
     longitude: row.raw_longitude ?? row.longitude,
     accuracy: row.accuracy ?? row.accuracy_meters,
+    raw_speed_kmh: row.raw_speed_kmh,
+    speed_kmh: row.speed_kmh,
+    speed_accuracy_mps: row.speed_accuracy_mps,
   };
   const state = tracker.accept(point);
   return {
