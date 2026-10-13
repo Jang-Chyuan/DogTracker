@@ -2,6 +2,7 @@ import { captureMapRead } from './CloudPublication';
 import { logger } from '../logger';
 import { useEffect, useRef, useState } from 'react';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
+import { distanceMeters, fixQuality, HOLD_CONFIG } from '../placement/IndoorHold';
 
 export const POLL_MS = 10000;
 // The latest rows are read from the start of what this phone stores.
@@ -22,11 +23,40 @@ function latestPairs(snapshot) {
   return Object.fromEntries((snapshot?.packets ?? []).map(packet => [packet.slave_id,
     JSON.stringify([packet, fixes.get(packet.slave_id) ?? null])]));
 }
-function retainedContext(values, before, after) {
+function retainedContext(values, before, after, continued = new Set()) {
   // IDs absent from both cloud sets belong to the independently read BLE
-  // context. New/changed cloud dogs cannot inherit another pair's anchor.
+  // context. New/changed cloud dogs cannot inherit another pair's anchor,
+  // except a held dog that only reported again (continuedHolds).
   return Object.fromEntries(Object.entries(values ?? {}).filter(([id]) =>
-    before != null && before[id] === after[id]));
+    before != null && (before[id] === after[id] || continued.has(id))));
+}
+const newer = (next, old) => !!next && !!old && next.event_id !== old.event_id
+  && next.track_at > old.track_at && next.master_id === old.master_id;
+const point = row => ({ latitude: row.slave_lat, longitude: row.slave_lon, satellites: row.satellites, hdop: row.hdop });
+// A dog held indoors keeps sending packets, so on every resume (and every
+// latest poll) its newest packet is new while the half-hour context that
+// places its anchor is read seconds later. Until then the house stays: the
+// tracker never lets go on one more weak or no-fix packet either. A newer
+// packet from the same Master whose fix is unchanged, or a weak/close new fix,
+// continues the hold. A sharp fix beyond the release radius is shown at once
+// (real movement); a repaired or other-Master pair never borrows the anchor.
+// The context reread then replaces this with the tracker's own judgement.
+function continuedHolds(holds, before, after) {
+  const continued = new Set();
+  if (before == null) return continued;
+  for (const [id, hold] of Object.entries(holds ?? {})) {
+    if (before[id] == null || after[id] == null || before[id] === after[id] || !hold?.coordinate) continue;
+    const [oldPacket, oldFix] = JSON.parse(before[id]), [packet, fix] = JSON.parse(after[id]);
+    if (!newer(packet, oldPacket)) continue;
+    if (JSON.stringify(fix) !== JSON.stringify(oldFix)) {
+      if (!fix || !(oldFix ? newer(fix, oldFix) : fix.master_id === packet.master_id)) continue;
+      const leaving = fixQuality(point(fix)) === 'good'
+        && distanceMeters(hold.coordinate, point(fix)) > HOLD_CONFIG.releaseRadiusM;
+      if (leaving) continue;
+    }
+    continued.add(id);
+  }
+  return continued;
 }
 export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinceMs = null,
   { active = true, contextEnabled = enabled, latestFirst = false, revision = 0, cloudBusy = false, cloudSuccess = null, getMapPublication = null } = {}) {
@@ -91,14 +121,17 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           if (!valid()) return current;
           const prior = current.owner === owner && current.database === database ? current.value : empty();
           // Identical accepted packet+fix content keeps its known indoor
-          // anchor even when a refresh increments SQLite revision. Changed
-          // content must not borrow that anchor before context is read.
+          // anchor even when a refresh increments SQLite revision. Repaired,
+          // other-Master or clearly departing content must not borrow that
+          // anchor before context is read; a held dog that only reported
+          // again keeps it (continuedHolds), so resume never jumps it.
           const pairs = latestPairs(snapshot);
+          const continued = continuedHolds(prior.holds, prior.contextPairs, pairs);
           return { owner, database, value: { ...prior, rows: snapshot.rows,
             packets: [...prior.packets.filter(row => row.source !== 'cloud'), ...snapshot.packets],
-            holds: retainedContext(prior.holds, prior.contextPairs, pairs),
-            statuses: retainedContext(prior.statuses, prior.contextPairs, pairs),
-            ranges: retainedContext(prior.ranges, prior.contextPairs, pairs), error: '', loaded: true,
+            holds: retainedContext(prior.holds, prior.contextPairs, pairs, continued),
+            statuses: retainedContext(prior.statuses, prior.contextPairs, pairs, continued),
+            ranges: retainedContext(prior.ranges, prior.contextPairs, pairs, continued), error: '', loaded: true,
             cloudCommit: cloudSuccess, cloudPublication: attempt.cloudPublication,
             cachedBaseline: false, acceptedReadback: supplied } };
         });
