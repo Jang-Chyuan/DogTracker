@@ -217,8 +217,14 @@ test.each(['walking', 'driving'])('PNG %s glyph leaves visible connecting line o
     expect(ops.some(op => op.t === 'circle' && op.cy < icon.y)).toBe(true);
     expect(ops.some(op => op.t === 'circle' && op.cy > icon.y + icon.size)).toBe(true);
   } else {
-    expect(ops.some(op => op.t === 'line' && op.y1 < icon.y && op.y2 > icon.y + icon.size)).toBe(true);
+    // The car line stops short of the glyph and goes on below it, never through it.
+    const lines = ops.filter(op => op.t === 'line');
+    expect(lines.some(op => op.y1 < icon.y && op.y2 <= icon.y)).toBe(true);
+    expect(lines.some(op => op.y1 >= icon.y + icon.size && op.y2 > icon.y + icon.size)).toBe(true);
+    expect(lines.some(op => op.y1 < icon.y + icon.size && op.y2 > icon.y)).toBe(false);
   }
+  // Like the screen's transportIcon: no dot or line inside the glyph.
+  expect(ops.some(op => op.t === 'circle' && op.cy + op.r > icon.y && op.cy - op.r < icon.y + icon.size)).toBe(false);
 });
 
 

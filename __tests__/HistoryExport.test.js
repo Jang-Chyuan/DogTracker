@@ -196,6 +196,34 @@ describe('the files', () => {
     expect(pages[0].ops.find(op => op.t === 'map').northColor).toBe(colors.critLine);
   });
 
+  // 匯出的走路人 icon 不能壓在路線的點點上（畫面上 transportIcon 有底色）：
+  // 每一段走路、坐車、沒有資料的 icon 上下各留 12px 空白，線在那裡斷開。
+  test('the track leaves the movement icon clear, as on the screen', () => {
+    const layout = buildPNGLayout(snapshot);
+    const pages = pngDrawPages(layout);
+    const pad = 12;
+    let checked = 0;
+    const kinds = new Set();
+    pages.forEach(({ ops }) => ops.filter(op => op.t === 'icon' && ['walk', 'paw', 'car', 'dots'].includes(op.name))
+      .forEach(icon => {
+        const top = icon.y - pad, bottom = icon.y + icon.size + pad;
+        const onTrack = ops.filter(op => (op.t === 'circle' && op.cx === icon.x + icon.size / 2 && op.r < 10)
+          || (op.t === 'line' && op.x1 === icon.x + icon.size / 2));
+        onTrack.forEach(op => {
+          const [from, to] = op.t === 'circle' ? [op.cy - op.r, op.cy + op.r] : [op.y1, op.y2];
+          expect(to <= top || from >= bottom).toBe(true);
+        });
+        // The line still runs on above and below the icon.
+        const lineAbove = onTrack.some(op => (op.t === 'circle' ? op.cy : op.y2) <= top && (op.t === 'circle' ? op.cy : op.y2) > top - 40);
+        const lineBelow = onTrack.some(op => (op.t === 'circle' ? op.cy : op.y1) >= bottom && (op.t === 'circle' ? op.cy : op.y1) < bottom + 40);
+        expect(lineAbove && lineBelow).toBe(true);
+        kinds.add(icon.name);
+        checked += 1;
+      }));
+    expect(checked).toBeGreaterThan(3);
+    expect([...kinds]).toEqual(expect.arrayContaining(['paw', 'car', 'dots']));
+  });
+
   test('a very long address is cut after 2 lines only when the row would not fit a page', () => {
     const long = { kind: 'place', type: 'stop', times: ['08:00', '08:20'], title: '很長的地址'.repeat(400),
       coordinates: '24.9900, 121.3100', missing: '', pill: { text: '停 20 分', tone: 'stay' }, note: '' };

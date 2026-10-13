@@ -26,15 +26,22 @@ const text = (value, x, y, height, size, color, { bold = false, align = 'left', 
   ({ t: 'text', text: value, x, y, h: height, size, bold, color, align, halo });
 
 // 判定表「PNG 時間軸的線」: dots 9px every 30px, a car 9px solid, no data 6px dashes 18/12.
-function trackOps(kind, color, from, to) {
+// `clear` ({ top, bottom }) is left empty: the movement icon sits on the line
+// with the page colour around it, as on the screen (transportIcon), so no dot
+// or dash runs through the 走路／開車 icon.
+function trackOps(kind, color, from, to, clear = null) {
   if (!kind || to <= from) return [];
+  if (kind !== 'dots' && clear && clear.bottom > from && clear.top < to)
+    return [...trackOps(kind, color, from, Math.min(to, clear.top)), ...trackOps(kind, color, Math.max(from, clear.bottom), to)];
   if (kind === 'solid') return [{ t: 'line', x1: TRACK_X, y1: from, x2: TRACK_X, y2: to, color, width: S.driveLine }];
   if (kind === 'gap') return [{ t: 'line', x1: TRACK_X, y1: from, x2: TRACK_X, y2: to, color: colors.noDataLine,
     width: S.gapLine.width, dash: S.gapLine.dash }];
   const ops = [];
-  const step = S.dottedLine.diameter + S.dottedLine.gap;
-  // On one grid down the page, so a row's dots run on into the next row's.
-  for (let y = Math.ceil((from - step / 2) / step) * step + step / 2; y < to; y += step) ops.push({ t: 'circle', cx: TRACK_X, cy: y, r: S.dottedLine.diameter / 2, fill: color });
+  const step = S.dottedLine.diameter + S.dottedLine.gap, r = S.dottedLine.diameter / 2;
+  // On one grid down the page, so a row's dots run on into the next row's;
+  // only whole dots, none cut by a cleared stretch.
+  for (let y = Math.ceil((from - step / 2) / step) * step + step / 2; y < to; y += step)
+    if (!clear || y + r <= clear.top || y - r >= clear.bottom) ops.push({ t: 'circle', cx: TRACK_X, cy: y, r, fill: color });
   return ops;
 }
 
@@ -70,10 +77,13 @@ function rowOps(block) {
   const { row, color, y } = block;
   const ops = [];
   if (row.kind === 'section') {
-    ops.push(...trackOps(row.line, color, y, y + block.height));
     const muted = row.type === 'gap';
     const textTop = y + (block.height - block.lines.length * S.detailLine) / 2;
-    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - tokenSize.export.glyphSize / 2, y: y + (block.height - tokenSize.export.glyphSize) / 2, size: tokenSize.export.glyphSize,
+    const iconTop = y + (block.height - tokenSize.export.glyphSize) / 2;
+    const pad = tokenSize.export.transportIconPadding;
+    ops.push(...trackOps(row.line, color, y, y + block.height,
+      { top: iconTop - pad, bottom: iconTop + tokenSize.export.glyphSize + pad }));
+    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - tokenSize.export.glyphSize / 2, y: iconTop, size: tokenSize.export.glyphSize,
       color: muted ? colors.iconMuted : color });
     // 「移動 28 分・1.4 km」: the duration bold and dark, the rest muted.
     block.lines.forEach((line, index) => ops.push({ t: 'runs', x: PLACE_X, y: textTop + index * S.detailLine,
