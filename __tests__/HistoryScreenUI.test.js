@@ -197,7 +197,9 @@ test('history-single-point (只有一筆): one point, no distance, no range bar'
 
 test.each([
   ['history-no-departure', 'not-departed', '06:30 – 現在'],
-  ['history-confirming', 'confirming', '09:22 – 現在'],
+  // 2026-10-13: 出發 is where the walk began (the stay ends 09:25), not the
+  // first fix of the stay that passed the three-minute gate (09:22).
+  ['history-confirming', 'confirming', '09:24 – 現在'],
 ])('%s: summary and TalkBack show only the selected time range', async (fixture, status, title) => {
   const s = await mountFixture(fixture);
   expect(s.screen.model.departure.status).toBe(status);

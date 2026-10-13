@@ -92,6 +92,10 @@ export function useHistoryDayRows({
   readEnd = null,
   requireFresh = false,
   diagnostic = null,
+  // { current: n }: shared by a screen's readers; each read from the start
+  // takes the next number (`pass`), so the screen can tell rows read after a
+  // moment (a download ending) from rows read before it.
+  passes = null,
 }) {
   const [result, setResult] = useState({
     key: null,
@@ -209,6 +213,7 @@ export function useHistoryDayRows({
           : { shown: answer.rows || [], future: [] };
         cache.future = future;
         const added = shown.length;
+        const pass = cache.first && passes ? ++passes.current : null;
         if (added)
           cache.rows = [...cache.rows, ...shown].sort(
             (a, b) => a.time - b.time,
@@ -235,6 +240,7 @@ export function useHistoryDayRows({
             version: recyclable ? version : (current.key === key ? current.version : 0) + 1,
             error: '',
             replayHolds,
+            pass: pass ?? (current.key === key ? current.pass ?? 0 : 0),
           }));
         } else {
           // A read that works again clears an earlier failure.
@@ -454,6 +460,7 @@ export function useHistoryScreen({
   // Each colour slot reads its own dog's day (hooks cannot be in a loop of
   // varying length: four readers, one per slot).
   const [readRevision, setReadRevision] = useState(0);
+  const readPasses = useRef(0);
   const buildCost = useRef(0);
   const modelBuildCost = useRef(0);
   const readDiagnostic = useRef({ key: null, value: null });
@@ -473,6 +480,7 @@ export function useHistoryScreen({
     clock,
     scope: memoryScope,
     revision: readRevision,
+    passes: readPasses,
     readEnd: subject === 'dog' && cloud?.coverageRequired ? Math.min(dayEnd, coverageCutoff) : null,
     requireFresh: subject === 'dog' && !!cloud?.coverageRequired,
     publicationRevision,
@@ -916,7 +924,15 @@ export function useHistoryScreen({
     [onDayChange, setDay],
   );
   const { startDownload, cancelDownload, downloadingDay } = cloudDays;
-  const reread = useCallback(() => setReadRevision(value => value + 1), []);
+  // A download's end ('done') reads the day again; until every dog shown has
+  // been read from the start after it, the old (empty) rows are no answer:
+  // the screen keeps 「下載 … 的紀錄」 (2026-10-13: one frame of 「這天沒有…的
+  // 紀錄」 flashed between the download and the rows).
+  const downloadRead = useRef(null);
+  const reread = useCallback(status => {
+    if (status === 'done') downloadRead.current = readPasses.current;
+    setReadRevision(value => value + 1);
+  }, []);
   // Ensure each selected cloud day once, including a day with only a recent
   // local slice. Failure/cancel stays actionable; it never loops retries.
   const ensured = useRef(new Set());
@@ -1055,9 +1071,12 @@ export function useHistoryScreen({
   // Only until that first showing: a later re-read is not this download.
   const finishedShown = useRef(null);
   const finished = cloudDays.download?.day === shownKey && cloudDays.download.status === 'done' ? cloudDays.download : null;
-  if (finished && dayModel) finishedShown.current = finished;
+  const readPending = downloadRead.current != null
+    && !(allLoaded && current.dogs.every(d => (rowsOf(d.id).pass ?? 0) > downloadRead.current));
+  if (!readPending) downloadRead.current = null;
+  if (finished && dayModel && !readPending) finishedShown.current = finished;
   const finishing = !!finished && finishedShown.current !== finished
-    && coverageReady && !dayModel && !slots.some(slot => slot.error);
+    && coverageReady && (!dayModel || readPending) && !slots.some(slot => slot.error);
   const shownDownload = tailDue || finishing ? { day: shownKey, status: 'downloading' } : cloudDays.download;
   const quietTail = !!retained && !(tailDue ? tailDue.explicit : explicitTail.current) && shownDownload?.day === shownKey
     && shownDownload.status === 'downloading';

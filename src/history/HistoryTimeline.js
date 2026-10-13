@@ -1,11 +1,12 @@
 import { t } from '../i18n';
-import { configFor, coordinateValid, distanceMeters, measuredSpeedMps, median, recordingSessionChanged,
+import { accuracyOf, configFor, coordinateValid, distanceMeters, measuredSpeedMps, median, recordingSessionChanged,
   samePlaceGap } from './HistoryConfig';
 import { historySourceStream, filterHistoryPoints, replayHistoryHolds } from './HistorySources';
 import { historyMovement } from './HistoryMovement';
 import { historyDeparture } from './HistoryDeparture';
 import { historyStops, historyIndoorNodes } from './HistoryStops';
 import { phoneStayDisplayCoordinate } from './PhoneStayDisplayAnchors';
+import { endpointStays } from './HistoryTimelinePresentation';
 
 /** Display only: retain observed stationary time that has no existing place row.
  * Never classify a gap, a red light in a drive, or uncertain fixes as a stay.
@@ -183,8 +184,13 @@ export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points 
     const accuracy = accuracies.length ? median(accuracies) : config.missingAccuracyM;
     return Math.min(config.excursionMaxM, Math.max(config.excursionMinM, config.excursionAccuracyFactor * accuracy));
   };
-  const zeroWalk = (w, s) => !!config.stillMps && foot(w) && !(Math.round(w.countedDistanceM) > 0) && w.end - w.start < config.listGapMs
-    && fixesIn(w.start, w.end).every(p => !p.phoneConfirmedMovement && within(s, p, config.stillPlaceM));
+  // Beside a recording-session change (#135) the recorder was about to stop
+  // or had just started: handling the phone there may read as movement, but
+  // with nothing counted it is still no trip (2026-10-13).
+  const zeroWalk = (w, s, restart = false) => !!config.stillMps && foot(w) && !(Math.round(w.countedDistanceM) > 0)
+    && w.end - w.start < config.listGapMs
+    && fixesIn(w.start, w.end).every(p => (restart || !p.phoneConfirmedMovement) && within(s, p, config.stillPlaceM));
+  const restartAt = (n, time) => n?.type === 'gap' && n.sessionChange === true && (n.start === time || n.end === time);
   // The excursion runs from the first stay's end until the phone has settled
   // again: leaveMs of fixes without movement (no confirmed movement, no
   // measured speed of stillMps or more) within the radius. A visit's circle
@@ -244,14 +250,92 @@ export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points 
         if (w.countedDistanceM > 0 && !host) continue;
         if (w.countedDistanceM > 0) host.countedDistanceM += w.countedDistanceM;
         replace(i, 3, [a, w, b], base); changed = true;
-      } else if (zeroWalk(w, a)) { replace(i, 2, [a, w], a); changed = true; }
+      } else if (zeroWalk(w, a, restartAt(b, w.end))) { replace(i, 2, [a, w], a); changed = true; }
     }
     for (let i = 1; i < out.length && !changed; i++) {
       const w = out[i - 1], b = out[i];
-      if (stay(b) && foot(w) && w.end === b.start && zeroWalk(w, b)) { replace(i - 1, 2, [w, b], b); changed = true; }
+      if (stay(b) && foot(w) && w.end === b.start && zeroWalk(w, b, restartAt(out[i - 2], w.start))) {
+        replace(i - 1, 2, [w, b], b); changed = true;
+      }
     }
   }
   return { nodes: out, replaced, removed };
+}
+
+/** 2026-10-13 (phone, display only): travel rows of a phone standing still.
+ * A still phone read 「走路 N 分・0 m」 between breaks, and a drive went on
+ * over the time after parking (「開車 12 分」) when the parked fixes carried
+ * no speed (network fixes indoors, an emulator): neither is travel.
+ * - A drive's tail in which every fix stays within radiusM + its accuracy of
+ *   the first one, with no confirmed movement and no measured speed of
+ *   stillMps or more, for stayMs or more, is an unnumbered stay; the drive
+ *   ends where it parked (a red light the drive went on from is no tail). A
+ *   drive that never left that spot is that stay.
+ * - A foot row of a minute or more with nothing counted, no confirmed
+ *   movement and every fix within stillPlaceM of its first, with no foot row
+ *   or stay on either side (it lies between breaks, ends or switch points),
+ *   is an unnumbered stay. Beside a stay #149's folding takes such a row.
+ * Rows of a recorder that measures no speed or motion (older rows) stay.
+ * Switch points touching such a stay go: the stay separates the modes (H1).
+ * The model's sections, the map, distances, CSV and GPX are unchanged. */
+export function phoneStillTravel(nodes, { config = configFor('phone'), points = [], vehicles = [] } = {}) {
+  if (!config.stillMps || !points.length) return nodes;
+  const firstAt = time => {
+    let lo = 0, hi = points.length;
+    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (points[mid].time < time) lo = mid + 1; else hi = mid; }
+    return lo;
+  };
+  const fixesIn = (start, end) => {
+    const out = [];
+    for (let i = firstAt(start); i < points.length && points[i].time <= end; i++) out.push(points[i]);
+    return out;
+  };
+  const raw = p => (Number.isFinite(p.raw_latitude) && Number.isFinite(p.raw_longitude)
+    ? { latitude: p.raw_latitude, longitude: p.raw_longitude } : p);
+  // Only a recorder that measures speed and motion can say a fix was still;
+  // older rows (geometry alone) keep their rows as they were.
+  const modern = p => p.phoneMotionState != null && ('raw_speed_kmh' in p || 'speed_kmh' in p || 'speed_accuracy_mps' in p);
+  const quiet = p => modern(p) && !p.phoneConfirmedMovement && !(measuredSpeedMps(p) >= config.stillMps);
+  const near = (anchor, p) => !(distanceMeters(raw(anchor), raw(p)) > config.radiusM + accuracyOf(p, config) + 1e-8);
+  const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
+  const placeOf = fixes => fixes.find(p => p.accuracy <= config.stayAccuracyM) ?? fixes[0];
+  const stayOf = (start, end, fixes, from) => {
+    const at = placeOf(fixes);
+    return { type: 'stop', id: `phone-${from}:${start}`, presentationOnly: 'phone-stationary', number: null,
+      start, end, durationMs: end - start, interruptionMs: 0, gaps: [], latitude: at.latitude, longitude: at.longitude };
+  };
+  const made = [];
+  const out = nodes.flatMap((n, i) => {
+    // Only where the vehicle itself ended (not a range clipping it at a red light).
+    if (n.type === 'movement' && n.mode === 'driving' && vehicles.some(v => v.end === n.end)) {
+      const fixes = fixesIn(n.start, n.end);
+      let k = fixes.length - 1;
+      while (k > 0 && quiet(fixes[k - 1]) && fixes.slice(k).every(p => quiet(p) && near(fixes[k - 1], p))) k--;
+      if (k < 0 || fixes.length < 2 || n.end - fixes[k].time < config.stayMs) return [n];
+      const stay = stayOf(fixes[k].time, n.end, fixes.slice(k), 'parked');
+      made.push(stay);
+      if (fixes[k].time <= n.start) return [stay];
+      let tail = 0;
+      for (let j = k + 1; j < fixes.length; j++) tail += distanceMeters(fixes[j - 1], fixes[j]);
+      return [{ ...n, end: stay.start, durationMs: stay.start - n.start,
+        endLatitude: fixes[k].latitude, endLongitude: fixes[k].longitude,
+        distanceM: Math.max(0, n.distanceM - tail) }, stay];
+    }
+    // Beside a stay, #149's folding gives the stay this time instead.
+    const beside = m => foot(m) || ['stop', 'indoor'].includes(m?.type);
+    if (!foot(n) || Math.round(n.countedDistanceM) > 0 || n.end - n.start < 60000
+      || beside(nodes[i - 1]) || beside(nodes[i + 1])) return [n];
+    const fixes = fixesIn(n.start, n.end);
+    if (fixes.length < 2 || !fixes.every(p => modern(p) && !p.phoneConfirmedMovement
+      && !(distanceMeters(fixes[0], p) > config.stillPlaceM + 1e-8))) return [n];
+    const stay = stayOf(n.start, n.end, fixes, 'still');
+    made.push(stay);
+    return [stay];
+  });
+  if (!made.length) return nodes;
+  // A 恢復記錄 where such a stay starts is that stay's start (as for any stay).
+  return out.filter(n => !(n.type === 'switch' && made.some(s => s.start === n.start || s.end === n.start))
+    && !(n.type === 'resume' && made.some(s => s.start === n.start)));
 }
 
 /** PR 116: phone foot rows with nothing counted that would read
@@ -370,7 +454,11 @@ export function historyTimeline(rows = [], options = {}) {
   // after it is a 恢復記錄 node (unless a stay or a hold already starts there).
   for (const e of sectionEdges) {
     if (e.mode !== 'gap' || e.durationMs <= config.resumeAfterMs || inStationary(e)) continue;
-    if (locations.some(n => n.start === e.end)) continue;
+    // A presentation stay starting there — or once the detector settled, a
+    // few seconds on — is that start too (2026-10-13; the list lets it begin
+    // at the first fix).
+    if (locations.some(n => n.start === e.end)
+      || stationary.some(n => n.start >= e.end && n.start - e.end < config.gapMs)) continue;
     locations.push({ type: 'resume', start: e.end, end: e.end, latitude: e.to.latitude, longitude: e.to.longitude });
   }
   locations.sort((a, b) => a.start - b.start);
@@ -534,6 +622,15 @@ export function historyTimeline(rows = [], options = {}) {
       && place(nodes[i - 1]) && place(nodes[i + 1])) drop.add(n);
   });
   nodes = nodes.filter(n => !drop.has(n));
+  // 2026-10-13 (phone): a parked tail of a drive and a 0 m 「走路」 standing
+  // alone are stationary time, not travel (display only).
+  if (subject === 'phone') {
+    const still = phoneStillTravel(nodes, { config, points, vehicles });
+    // The switch points and 恢復記錄 it set aside leave the map's places too.
+    const kept = new Set(still);
+    for (const n of nodes) if (!kept.has(n) && n.type !== 'movement') drop.add(n);
+    nodes = still;
+  }
   // PR 116 / 067: stays at one place joined by a same-session break are one.
   let replaced = new Map(), removed = new Set();
   if (subject === 'phone') ({ nodes, replaced, removed } = mergePhoneSamePlaceStays(nodes, { config }));
@@ -574,9 +671,19 @@ export function historyTimeline(rows = [], options = {}) {
   }
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.
+  // 2026-10-13 (user, #154): the numbers shown start at 1 and skip none. A
+  // stay the list shows inside 出發 or the end (「出發 · 停 N 分」「結束 ·
+  // 停 N 分」) has no number of its own (`listedWith`), and the map draws no
+  // marker for it; the stays and switch points after it count from 1.
+  const numbered = node => (node.type === 'stop' || node.type === 'switch') && !node.presentationOnly;
   let number = 0;
-  for (const node of nodes) {
-    if ((node.type === 'stop' || node.type === 'switch') && !node.presentationOnly) node.number = ++number;
+  for (const node of nodes) if (numbered(node)) node.number = ++number;
+  const merged = endpointStays(nodes);
+  if ((merged.departure && numbered(merged.departure)) || (merged.end && numbered(merged.end))) {
+    if (merged.departure && numbered(merged.departure)) merged.departure.listedWith = 'departure';
+    if (merged.end && numbered(merged.end)) merged.end.listedWith = 'end';
+    number = 0;
+    for (const node of nodes) if (numbered(node)) node.number = node.listedWith ? null : ++number;
   }
   const keptLocations = locations.filter(n => !drop.has(n) && !removed.has(n)).map(n => replaced.get(n) ?? n);
   const keptSections = sections.filter(n => !drop.has(n) && !removed.has(n));
@@ -584,6 +691,22 @@ export function historyTimeline(rows = [], options = {}) {
   // midnight does not count (判定表「停住期間的封包算不算『有紀錄』」: held
   // packets do).
   const dayRecords = stream.packets.some(p => p.time >= dayStart && p.time < dayEnd);
+  // 2026-10-13: a dog's day (or range) with packets but not one usable fix —
+  // the collar was heard, never located — is what the calendar's dot and
+  // ‹ › promised: one 「收不到 GPS」 row from its first packet to its last,
+  // not 「這段時間沒有紀錄」. Nothing to draw on the map.
+  if (subject === 'dog' && !points.length && dayRecords) {
+    const from = Number.isFinite(range.start) ? Math.max(range.start, dayStart) : dayStart;
+    const to = Number.isFinite(range.end) ? Math.min(range.end, dayEnd - 1) : dayEnd - 1;
+    const heard = stream.packets.filter(p => p.time >= from && p.time <= to);
+    if (heard.length > 1 && heard[heard.length - 1].time > heard[0].time) {
+      const a = heard[0], b = heard[heard.length - 1];
+      const row = { type: 'gap', mode: 'gap', reason: 'no-gps', start: a.time, end: b.time,
+        durationMs: b.time - a.time, latitude: null, longitude: null, endLatitude: null, endLongitude: null,
+        distanceM: 0, countedDistanceM: 0, excluded: true, line: 'long-dashed', unlocated: true };
+      nodes = [row];
+    }
+  }
   // dayPoints: the whole day's filtered fixes (the range bar snaps to them);
   // edges: the range's fix-to-fix steps (the history cursor's distance).
   return { ...stream, dayRecords, points, dayPoints,

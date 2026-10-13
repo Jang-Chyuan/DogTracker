@@ -99,6 +99,21 @@ export function shownRowAt(nodes, time) {
 
 // Presentation only: retained gaps/stops and the source model remain untouched.
 export function timelinePresentation(all = []) {
+  return presentationOf(all).listed;
+}
+
+/**
+ * The source stays the list shows inside 出發 (「出發 · 停 N 分」) and inside
+ * the end (「結束 · 停 N 分」, also 現在／最後), as the input's own objects,
+ * or null. historyTimeline numbers the stays without them (2026-10-13, #154:
+ * the numbers shown start at 1 and skip none).
+ */
+export function endpointStays(all = []) {
+  const { departureSource, endStay } = presentationOf(all);
+  return { departure: departureSource, end: endStay };
+}
+
+function presentationOf(all) {
   // 2026-10-13: the rows of no data before the day's first fix and after its
   // last (`dayBoundary`, phone) are set aside: the departure and the end keep
   // their places in the rules below, and they join the list at the end.
@@ -125,13 +140,23 @@ export function timelinePresentation(all = []) {
   // departure fix and ends at the endpoint fix by construction.
   const stationaryRun = node => node?.presentationOnly === 'phone-stationary'
     || node?.presentationOnly === 'still-here';
+  // 2026-10-13: a stationary run that begins a few seconds after the
+  // departure fix (the detector settles on its first fixes; nothing listed
+  // between them) is that departure's stay too, from the departure on — not
+  // 「出發」 and 「停 N 分」 at the same minute.
+  const settlingRun = stationaryRun(initialStay) && initialStay.start > first?.start
+    && initialStay.start - first.start < GAP_MS;
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
-    && (initialStay.number === 1 || stationaryRun(initialStay)) && first.start === initialStay.start
+    // The model's first stay: numbered 1, or (#154) left unnumbered because
+    // this row shows it.
+    && (initialStay.number === 1 || initialStay.listedWith === 'departure' || stationaryRun(initialStay))
+    && (first.start === initialStay.start || settlingRun)
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
     && (samePlace(first, initialStay) || firstBelongsToStay || stationaryRun(initialStay));
+  const departureStay = startsWithStay && settlingRun ? stretch(initialStay, first.start, initialStay.end, 0) : initialStay;
   const input = startsWithStay
-    ? [{ ...first, latitude: initialStay.latitude, longitude: initialStay.longitude,
-      end: initialStay.end, durationMs: initialStay.durationMs, departureStay: initialStay }, ...nodes.slice(2)]
+    ? [{ ...first, latitude: departureStay.latitude, longitude: departureStay.longitude,
+      end: departureStay.end, durationMs: departureStay.durationMs, departureStay }, ...nodes.slice(2)]
     : nodes;
   // Every minute between two listed times belongs to a row (2026-10-13; this
   // replaces #115's rule that a merged walk counts only its own legs). A break
@@ -183,23 +208,13 @@ export function timelinePresentation(all = []) {
     else for (const row of breaks) shown.push(unfolded(row));
     i = j;
   }
-  // Raw holes (time no row has) of less than a gap beside a walk: the walk's.
-  // 2026-10-13: beside no walk, the stay's (a short stationary pause right
-  // after a stay that took the 0 m walk before it).
-  for (let i = 1; i < shown.length; i++) {
-    const a = shown[i - 1], b = shown[i];
-    const hole = b.start - a.end;
-    if (!(hole > 0 && hole < GAP_MS)) continue;
-    if (walking(a)) shown[i - 1] = stretch(a, a.start, b.start, 0);
-    else if (walking(b)) shown[i] = stretch(b, a.end, b.end, 0);
-    else if (stayRow(a)) shown[i - 1] = stretch(a, a.start, b.start, 0);
-    else if (stayRow(b)) shown[i] = stretch(b, a.end, b.end, 0);
-  }
+  closeHoles(shown);
   // A terminal stay and its endpoint are one visual place. Inspect the original
   // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
   // takes the stay's own coordinate; a dog's is its last recorded fix, which
   // the confirmed visit itself recorded (membership and exact time prove it,
   // as for the departure), while the visit's coordinate is a mean.
+  let endStay = null;
   const end = nodes[nodes.length - 1], stay = nodes[nodes.length - 2];
   const endBelongsToStay = typeof stay?.id === 'string' && stay.id.startsWith('visit:')
     && stay.points?.some(point => point.time === end?.start && samePlace(point, end));
@@ -209,6 +224,7 @@ export function timelinePresentation(all = []) {
     && !stay.gaps?.length && !stay.displayRange?.gaps?.length
     && (samePlace(stay, end) || endBelongsToStay || stationaryRun(stay))) {
     // The shown stay: it may carry a folded break before it.
+    endStay = source[source.length - 2];
     shown.splice(shown.length - 2, 2, { ...end, start: shownStay.start,
       durationMs: shownStay.durationMs, terminalStay: shownStay, number: null,
       ...withUnlocated(shownStay, 0) });
@@ -220,16 +236,83 @@ export function timelinePresentation(all = []) {
   // The day-boundary rows first: a carry-over they already start at 00:00
   // (withDayBoundaries) leaves fromMidnight nothing to do; a 「沒有資料」 row
   // before the first row (a session change) keeps it from reaching back.
-  const listed = withDayBoundaries(from > 0 ? shown.slice(from) : shown, lead, tail);
+  // The 室內 row then starts where the range does (the summary's start): the
+  // few seconds before its first held packet are its time too (2026-10-13).
+  const indoorFirst = from > 0 ? [stretch(shown[from], Math.min(shown[0].start, shown[from].start),
+    shown[from].end, 0), ...shown.slice(from + 1)] : shown;
+  const listed = withDayBoundaries(indoorFirst, lead, tail);
   if (listed.length) listed[0] = fromMidnight(listed[0]);
-  return listed.map(node => {
+  return { departureSource: startsWithStay ? source[1] : null, endStay, listed: listed.map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
     return { ...node, displayDurationMs,
       ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
-  });
+  }) };
+}
+
+const gapRow = node => node?.type === 'gap';
+const pointRow = node => node && node.end === node.start;
+/**
+ * Every moment between two listed times belongs to a row (2026-10-13, #132
+ * extended to every shape): time no row has — a dropped 0 m foot row, still
+ * fixes no stay took, the steps into a hold before its first held packet, a
+ * few fixes between two breaks — goes to the row beside it, in place:
+ * - a walk (less than a gap of it), else a stay (stop, 室內, a departure or
+ *   end with its stay), else another movement (a dog's 移動, a drive; less
+ *   than a gap);
+ * - between breaks or ends only: under a minute, the break beside it (two
+ *   breaks of one kind with only that between them are one row); a minute or
+ *   more is a stay of its own, unnumbered (`presentationOnly: 'between-breaks'`:
+ *   the fixes were there, at one place) — the 出發 or the end beside it takes
+ *   it as their stay, and a 恢復記錄 there is that stay's start.
+ * Display only: the model, the map, CSV and GPX keep what was recorded.
+ */
+function closeHoles(shown) {
+  const out = [];
+  for (const node of shown) {
+    const a = last(out);
+    const hole = a ? node.start - a.end : 0;
+    if (!(hole > 0)) { out.push(node); continue; }
+    const short = hole < GAP_MS;
+    const growA = () => { out[out.length - 1] = stretch(a, a.start, node.start, 0); out.push(node); };
+    if (short && walking(a)) growA();
+    else if (short && walking(node)) out.push(stretch(node, a.end, node.end, 0));
+    else if (stayRow(a)) growA();
+    else if (stayRow(node)) out.push(stretch(node, a.end, node.end, 0));
+    else if (short && moving(a)) growA();
+    else if (short && moving(node)) out.push(stretch(node, a.end, node.end, 0));
+    else if (hole < MINUTE) {
+      if (gapRow(a) && gapRow(node) && (a.reason ?? null) === (node.reason ?? null)) {
+        const joined = { ...a, end: node.end, durationMs: node.end - a.start,
+          endLatitude: node.endLatitude, endLongitude: node.endLongitude,
+          ...(a.sessionChange || node.sessionChange ? { sessionChange: true } : {}) };
+        if (!node.sameSession) delete joined.sameSession;
+        out[out.length - 1] = joined;
+      } else if (gapRow(a)) {
+        out[out.length - 1] = { ...a, end: node.start, durationMs: node.start - a.start };
+        out.push(node);
+      } else if (gapRow(node)) out.push({ ...node, start: a.end, durationMs: node.end - a.end });
+      else out.push(node);
+    } else if (moving(a) || moving(node)) out.push(node);
+    else {
+      const from = pointRow(a) ? a : gapRow(a) ? { latitude: a.endLatitude, longitude: a.endLongitude } : node;
+      const stay = { type: 'stop', presentationOnly: 'between-breaks', number: null,
+        id: `between-breaks:${a.end}`, start: a.end, end: node.start, durationMs: hole,
+        interruptionMs: 0, gaps: [], latitude: from.latitude ?? node.latitude, longitude: from.longitude ?? node.longitude };
+      if (a.type === 'departure' && pointRow(a)) {
+        out[out.length - 1] = { ...a, end: stay.end, durationMs: hole, departureStay: stay };
+        out.push(node);
+      } else if (node.type === 'end' && pointRow(node)) {
+        out.push({ ...node, start: stay.start, durationMs: hole, terminalStay: stay, number: null });
+      } else {
+        if (a.type === 'resume' && pointRow(a)) out.pop();
+        out.push(stay, node);
+      }
+    }
+  }
+  shown.splice(0, shown.length, ...out);
 }
 
 /** The day-boundary rows (timelinePresentation). A same-session break at one
