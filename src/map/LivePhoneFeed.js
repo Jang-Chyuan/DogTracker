@@ -95,12 +95,19 @@ export function LivePhoneReader({ active, feed, onChange, onEvery }) {
   const live = useLiveLocation(active);
   const shown = useRef(undefined);
   useEffect(() => {
+    // Away (the app in the background, or a page over the map) the last copy
+    // stays: handing null removed the phone's dot and circle at every pause
+    // and drew a new marker at every resume, whose bitmap could be taken
+    // before the map was back on screen (no dot until an unrelated redraw),
+    // and whose deferred removal Fabric reported as MissingViewState. The
+    // next read (within a second of coming back) replaces it.
+    if (!active) return;
     feed.set(live);
     onEvery?.(live);
     if (shown.current !== undefined && !livePhoneChanged(shown.current, live))
       return;
     shown.current = live;
     onChange(live);
-  }, [live, feed, onChange, onEvery]);
+  }, [active, live, feed, onChange, onEvery]);
   return null;
 }

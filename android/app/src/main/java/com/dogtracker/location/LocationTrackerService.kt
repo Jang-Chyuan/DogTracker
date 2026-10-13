@@ -53,6 +53,11 @@ class LocationTrackerService : Service(), LocationListener {
     override fun run() {
       if (stopped) return
       val now = SystemClock.elapsedRealtimeNanos()
+      // Nothing arrived for a while: ask again (LocationResubscribe).
+      if (running && resubscribe?.due(now) == true) {
+        unsubscribe()
+        runCatching { subscribe() }
+      }
       val sample = pipeline.candidate(now)
       var writeFailed = false
       if (sample != null) {
@@ -131,21 +136,9 @@ class LocationTrackerService : Service(), LocationListener {
         androidx.core.location.LocationManagerCompat.isLocationEnabled(manager),
         manager.allProviders.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }.toSet())
       source = choice
-      when (choice) {
-        LocationSource.Choice.PlayFused -> {
-          val client = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
-          val request = com.google.android.gms.location.LocationRequest.Builder(
-            com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, LocationSource.INTERVAL_MS)
-            .setMinUpdateIntervalMillis(LocationSource.INTERVAL_MS).build()
-          client.requestLocationUpdates(request, fusedCallback, worker.looper)
-          fused = client
-        }
-        LocationSource.Choice.FrameworkFused -> if (Build.VERSION.SDK_INT >= 31)
-          manager.requestLocationUpdates(LocationManager.FUSED_PROVIDER, LocationSource.INTERVAL_MS, 0f, this, worker.looper)
-        is LocationSource.Choice.Framework -> for (provider in choice.providers)
-          manager.requestLocationUpdates(provider, LocationSource.INTERVAL_MS, 0f, this, worker.looper)
-        LocationSource.Choice.None -> error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1132))
-      }
+      if (choice == LocationSource.Choice.None) error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1132))
+      resubscribe = LocationResubscribe(SystemClock.elapsedRealtimeNanos())
+      subscribe()
       running = true
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
       startedAtMs = System.currentTimeMillis()
@@ -162,10 +155,41 @@ class LocationTrackerService : Service(), LocationListener {
   }
   private var source: LocationSource.Choice = LocationSource.Choice.None
   private var fused: com.google.android.gms.location.FusedLocationProviderClient? = null
-  private val fusedCallback = object : com.google.android.gms.location.LocationCallback() {
-    override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-      result.locations.forEach { onLocationChanged(it) }
+  @Volatile private var fusedCallback: com.google.android.gms.location.LocationCallback? = null
+  // Asks for updates again while none arrive (LocationResubscribe: a request
+  // made while Play services still drops a dead process's one can stay silent).
+  @Volatile private var resubscribe: LocationResubscribe? = null
+
+  /** Registers for updates from [source]; a fresh fused callback each time. */
+  private fun subscribe() {
+    when (val choice = source) {
+      LocationSource.Choice.PlayFused -> {
+        val client = fused ?: com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+        val request = com.google.android.gms.location.LocationRequest.Builder(
+          com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, LocationSource.INTERVAL_MS)
+          .setMinUpdateIntervalMillis(LocationSource.INTERVAL_MS).build()
+        val callback = object : com.google.android.gms.location.LocationCallback() {
+          override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+            if (fusedCallback !== this) return
+            result.locations.forEach { onLocationChanged(it) }
+          }
+        }
+        fusedCallback = callback
+        client.requestLocationUpdates(request, callback, worker.looper)
+        fused = client
+      }
+      LocationSource.Choice.FrameworkFused -> if (Build.VERSION.SDK_INT >= 31)
+        manager.requestLocationUpdates(LocationManager.FUSED_PROVIDER, LocationSource.INTERVAL_MS, 0f, this, worker.looper)
+      is LocationSource.Choice.Framework -> for (provider in choice.providers)
+        manager.requestLocationUpdates(provider, LocationSource.INTERVAL_MS, 0f, this, worker.looper)
+      LocationSource.Choice.None -> Unit
     }
+  }
+
+  private fun unsubscribe() {
+    runCatching { manager.removeUpdates(this) }
+    fusedCallback?.let { callback -> runCatching { fused?.removeLocationUpdates(callback) } }
+    fusedCallback = null
   }
   private fun playServicesAvailable() = try {
     com.google.android.gms.common.GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) ==
@@ -175,6 +199,7 @@ class LocationTrackerService : Service(), LocationListener {
   override fun onLocationChanged(location: Location) {
     if (stopped) return
     val now = SystemClock.elapsedRealtimeNanos()
+    resubscribe?.received(now)
     pipeline.accept(LocationSample(location.latitude, location.longitude,
       if (location.hasAccuracy()) location.accuracy else Float.NaN, location.elapsedRealtimeNanos, location.time,
       if (location.hasSpeed() && location.speed.isFinite() && location.speed >= 0) location.speed else null,
@@ -205,7 +230,8 @@ class LocationTrackerService : Service(), LocationListener {
     return buildString {
       appendLine("phone recording: started ${time.format(startedAtMs)} source=${LocationSource.label(source, null)}")
       appendLine("received=${pipeline.received} accepted=${pipeline.accepted} rejected=${pipeline.rejectedBy} " +
-        "saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds}")
+        "saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds} " +
+        "resubscribed=${resubscribe?.total ?: 0}")
       if (latest != null) appendLine("latest fix age=${"%.1f".format((now - latest.elapsedNanos) / 1e9)}s " +
         "accuracy=${latest.accuracy}m motion=${latest.motionState}")
       appendLine("stretches without a saved row (>= 60 s):")
@@ -227,8 +253,7 @@ class LocationTrackerService : Service(), LocationListener {
     if (running) handler.post { runCatching { gapHistory.end(System.currentTimeMillis(), counters()) } }
     liveJson = "{}"
     displayLocation = null
-    manager.removeUpdates(this)
-    fused?.removeLocationUpdates(fusedCallback)
+    unsubscribe()
     fused = null
     worker.quitSafely()
     if (running) status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1136)

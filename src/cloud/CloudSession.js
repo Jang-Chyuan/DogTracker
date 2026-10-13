@@ -22,6 +22,30 @@ export const SESSION_POLL_MS = 2000;
 const transient = failure => failure?.name === 'AuthRefreshDiscardedError' || !refreshRefused(failure);
 const unreached = () => new Error('Session refresh timed out');
 
+/**
+ * The sign-in the SDK still keeps in storage while it cannot hand out a
+ * session: a cold start offline after the access token expired. getSession
+ * then reports no session (the refresh needs the network), but nothing signed
+ * out — the stored session and its refresh token are intact, and the SDK
+ * refreshes it once Supabase is reachable. Returns { user: { id } } for that
+ * account, or null when nothing usable is stored (signed out: the SDK removes
+ * the stored session before it reports SIGNED_OUT, and a refused refresh
+ * removes it too). Never returns tokens.
+ */
+export async function storedSignIn(auth) {
+  try {
+    const storage = auth?.storage, key = auth?.storageKey;
+    if (typeof key !== 'string' || !key || typeof storage?.getItem !== 'function') return null;
+    const raw = await storage.getItem(key);
+    const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const id = value?.user?.id;
+    if (typeof id !== 'string' || !id || typeof value.refresh_token !== 'string' || !value.refresh_token) return null;
+    return { user: { id } };
+  } catch {
+    return null;
+  }
+}
+
 export function createCloudSessionGate({ auth, owner, signal, check, now = Date.now,
   waitMs = SESSION_WAIT_MS, pollMs = SESSION_POLL_MS }) {
   let reauthorized = false;

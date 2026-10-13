@@ -135,6 +135,8 @@ export default function MapScreen({
   onOpenSettings,
   // Signed in to Supabase (A6 hides 「登入 Supabase」).
   signedIn = false,
+  // Signed in but Supabase unreachable (App): A6 says so instead of 登入.
+  cloudOffline = false,
   // The cloud upload failing (gear red dot); the download side is judged
   // from cloudSync.
   cloudProblem = false,
@@ -504,7 +506,7 @@ export default function MapScreen({
   const cards = topCards({
     map: mapState === 'retrying' ? 'load-failed' : mapState,
     retrying: mapState === 'retrying',
-    ...(historical ? {} : { outage, storage, noDogs, signedIn, dismissed, waitingSources }),
+    ...(historical ? {} : { outage, storage, noDogs, signedIn, cloudOffline, dismissed, waitingSources }),
   });
   const reasons = historical
     ? []

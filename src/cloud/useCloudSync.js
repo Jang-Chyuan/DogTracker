@@ -4,6 +4,7 @@ import { AppState, NativeModules } from 'react-native';
 import { getCloudClient } from './CloudClient';
 import { createCloudSync } from './CloudSync';
 import { createCloudAuthRefreshLifecycle } from './CloudAuthRefreshLifecycle';
+import { storedSignIn } from './CloudSession';
 
 // Foreground uses the existing 30-second scheduler; Android WorkManager owns
 // bounded background passes. Do not cancel durable jobs on a React unmount.
@@ -45,14 +46,37 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
         if (!disposed) setStatus(current => ({ ...current, error: t("c595") }));
       });
     };
-    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+    // No session from the SDK is not always signed out: a cold start offline
+    // after the access token expired has none until the refresh reaches
+    // Supabase, though the sign-in is still stored. The map then keeps
+    // following that account (its downloaded dogs, read offline); the SDK's
+    // refresh later reports the same owner, and a sign-out or refused refresh
+    // removes the stored session first, so it still ends the owner.
+    let lookup = 0;
+    const receive = (event, session, failed = false) => {
+      const seen = ++lookup;
+      if (session?.user || event === 'SIGNED_OUT') { sessionChanged(session); return; }
+      storedSignIn(client.auth).then(stored => {
+        // A failed restore with nothing stored leaves the owner unknown, as before.
+        if (!disposed && seen === lookup && (stored || !failed)) sessionChanged(stored);
+      });
+    };
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
       eventSeen = true;
-      if (!disposed && !discarded.current?.(session)) sessionChanged(session);
+      if (!disposed && !discarded.current?.(session)) receive(event, session);
+    });
+    // Offline, the SDK's first answer waits for its refresh retries (about
+    // 30 s) before it reports anything. The stored account is read at once
+    // meanwhile, so its downloaded dogs are on the map from the start; any
+    // answer of the SDK (a refreshed session, a sign-out) replaces it.
+    const early = lookup;
+    storedSignIn(client.auth).then(stored => {
+      if (stored && !disposed && !eventSeen && early === lookup) sessionChanged(stored);
     });
     client.auth.getSession().then(({ data, error }) => {
       if (disposed || eventSeen) return;
       if (error) setStatus(current => ({ ...current, error: t("c597") }));
-      else sessionChanged(data.session);
+      receive('INITIAL_SESSION', error ? null : data.session, !!error);
     }).catch(() => { if (!disposed) setStatus(current => ({ ...current, error: t("c598") })); });
     // Continuous token refresh follows the UI. WorkManager restores/refreshes
     // the session only during its bounded task.
