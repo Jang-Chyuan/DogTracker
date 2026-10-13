@@ -57,7 +57,9 @@ export function phoneStayDisplayAnchors(visits, points, edges, config) {
     if (!prior.completed || prior.continuesPreviousDay || prior.continuesNextDay) continue;
     const index = lower(points, prior.end, p => p.time);
     const last = points[index];
-    if (last?.time !== prior.end || !samePlaceGap(last, b.first, config)) continue;
+    // Place identity only: two stays split by a recording session change at
+    // one place keep one marker/address (their times stay apart).
+    if (last?.time !== prior.end || !samePlaceGap(last, b.first, config, { acrossSessions: true })) continue;
     // Both visits and all intervening observations must lack actual departure
     // evidence, including a short measured walk with zero net displacement.
     const ps = lower(points, prior.start, p => p.time);

@@ -1,5 +1,6 @@
 import { t } from '../i18n';
-import { configFor, coordinateValid, distanceMeters, median, above, samePlaceGap, measuredSpeedMps } from './HistoryConfig';
+import { configFor, coordinateValid, distanceMeters, median, above, samePlaceGap, measuredSpeedMps,
+  recordingSessionChanged } from './HistoryConfig';
 import { isVehiclePoint } from './HistoryMovement';
 import { phoneReliableSpeed } from '../locationTracker/PhoneMotion';
 import { phoneStayDisplayAnchors } from './PhoneStayDisplayAnchors';
@@ -20,6 +21,7 @@ const settle = (visit, completed) => ({ ...visit, ...mean(visit.points), complet
 // A coarse gap endpoint can establish continuity without voting for the
 // representative position. Require the existing motion detector to confirm
 // a compact stationary return; a nearby endpoint alone never proves a stay.
+// samePlaceGap never bridges a recording session change (the recorder was off).
 function phoneGapContinuity(points, visits, config, vehicles) {
   if (!config.stillMps) return visits;
   const raw = p => ({ latitude: p.raw_latitude, longitude: p.raw_longitude });
@@ -144,8 +146,12 @@ export function historyVisits(points, { subject = 'dog', config = configFor(subj
     if (current && judged) {
       const dt = p.time - judged.time;
       // 067: a break whose two ends are at the same place stays one visit.
+      // Phone: only within one recording session. A break across a session
+      // change (the recorder was off) always ends the visit, however short:
+      // the list shows it as its own 「沒有資料」 row between two stays.
       if (dt > config.gapMs && !samePlaceGap(judged, p, config)
-        && (dt >= config.mergeGapMs || above(distanceMeters(judged, p), config.radiusM))) finish();
+        && (dt >= config.mergeGapMs || above(distanceMeters(judged, p), config.radiusM)
+          || (config.stillMps && recordingSessionChanged(judged, p)))) finish();
     }
     const judgedBefore = judged;
     judged = p;
@@ -279,7 +285,10 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
         && !inRange.some(p => p.phoneConfirmedMovement)
         && !edges.some(e => e.start >= first && e.end <= last
           && (e.countedDistanceM > 0 || e.mode === 'driving' || e.mode === 'ride'
-            || (e.gap && !e.uncertain && !e.bridged)))) unnumbered.add(v.id);
+            || (e.gap && !e.uncertain && !e.bridged)
+            // A same-place bridge across a recording session change is
+            // still a recording gap (the recorder was off).
+            || (e.bridged && recordingSessionChanged(e.from, e.to))))) unnumbered.add(v.id);
     }
   }
   if (ready && !following && fallback) {
