@@ -143,7 +143,12 @@ export function stepVehicles(scan, edges, i, config) {
   // the recorder was off (a session change).
   if (scan.chain && (edge.end - scan.chain.lastEnd > config.vehicleMergeMs || edge.mode === 'indoor'
     || recordingSessionChanged(edge.from, edge.to))) scan.chain = null;
-  if (edge.gap || edge.mode === 'indoor') {
+  // 2026-10-14 (phone): a same-place break longer than maxVehicleGapMs (the
+  // phone sat silent at one spot: parked) ends a vehicle like a gap; the
+  // drive went on over a whole evening parked otherwise, and the phone's
+  // wake-ups there read 「開車 1 分・16 m」.
+  const parkedBreak = !!config.stillMps && edge.bridged && edge.durationMs > config.maxVehicleGapMs;
+  if (edge.gap || edge.mode === 'indoor' || parkedBreak) {
     const closing = scan.active != null && (edge.mode === 'indoor' || edge.durationMs > config.maxVehicleGapMs
       || !atLeast(edge.speed, config.vehicleSpeed));
     if (scan.high != null && merging) registerBurst(scan, edges, i - 1, config);
@@ -273,7 +278,7 @@ export function vehiclesSettledAt(scan, edges, i, config) {
  * keeps one at the last edge that can no longer change, so a day of
  * uninterrupted walking is not added up again every poll.
  */
-export const countState = () => ({ anchor: null, budget: 0, unproven: false, since: null });
+export const countState = () => ({ anchor: null, budget: 0, unproven: false, since: null, trip: null, settled: null });
 
 // The step's speed for the budget: the speed measured at the fix it
 // reaches; a long step (over 10 s, sparse fixes) also takes the speed it
@@ -299,8 +304,85 @@ function stepSpeed(edge) {
   return Math.max(to ?? 0, from ?? 0);
 }
 
-/** countDistances below for one edge, carrying `state` (countState). */
+/**
+ * countDistances below for one edge, carrying `state` (countState). Returns
+ * the metres it took back from earlier edges (a drift trip, below), so a
+ * running sum can subtract them; 0 otherwise.
+ */
 export function countEdge(state, edge, config) {
+  countStep(state, edge, config);
+  return driftTrip(state, edge, config);
+}
+
+/**
+ * 2026-10-14 (user: a lift down and back up counted 「走路 4 分・240 m」 on a
+ * day at home): a drift trip counts nothing. A trip opens on the first
+ * counted step after the phone's detector had settled (a stationary fix, or
+ * the far end of a same-place break: `state.settled`). It is drift when the
+ * phone is stationary again within excursionMs of that step, never more than
+ * stillPlaceM from where it set off, and fewer than driftWalkFixes of its
+ * counted steps reached a fix of a walk (walkFix): its counted metres are
+ * taken back (the edges keep their actual distance). Lifts, stairs and
+ * indoor Wi-Fi fixes read 20–50 m and 15–35 km/h for a few fixes, then the
+ * phone stands still where it was; a real walk, even a short one to the
+ * letterbox, counts its steps on fine walking fixes, goes beyond
+ * stillPlaceM, or takes longer. A weak-GPS step of a few seconds (uncertain)
+ * does not end a trip; a vehicle, a hold or a real gap does, its metres
+ * counted, as does a trip that goes too far, too long, or proves a walk.
+ * Returns the metres taken back from the edges before this one (this edge
+ * reaches a stationary fix: it counts nothing itself). Phone only.
+ */
+function driftTrip(state, edge, config) {
+  if (!config.stillMps || !config.stillPlaceM || !config.excursionMs || !config.driftWalkFixes) return 0;
+  const foot = edge.mode === 'walking' || edge.mode === 'moving';
+  // A weak-GPS step of a few seconds (uncertain) is no break of the trip.
+  const weak = edge.mode === 'gap' && edge.uncertain && edge.durationMs <= config.gapMs;
+  if (edge.bridged) {
+    // Back at one place after a break (samePlaceGap: both ends quiet).
+    state.trip = null; state.settled = edge.to; return 0;
+  }
+  if (!foot && !weak) { state.trip = null; state.settled = null; return 0; }
+  let trip = state.trip;
+  if (!trip && edge.countedDistanceM > 0 && state.settled) {
+    trip = state.trip = { origin: state.settled, start: edge.start, edges: [], walk: 0, peak: 0 };
+  }
+  const away = trip ? distanceMeters(trip.origin, edge.to) : 0;
+  if (trip) {
+    // Walk evidence: a counted step onto a fix of a walk.
+    if (edge.countedDistanceM > 0) {
+      trip.edges.push(edge);
+      if (walkFix(edge.to, config)) trip.walk += 1;
+    }
+    trip.peak = Math.max(trip.peak, away);
+    if (trip.peak > config.stillPlaceM || trip.walk >= config.driftWalkFixes
+      || edge.end - trip.start > config.excursionMs) {
+      // A real move: nothing taken back, and no trip until the phone settles.
+      state.trip = null; state.settled = null; return 0;
+    }
+  }
+  if (!edge.to.phoneStationary) return 0;
+  state.settled = edge.to;
+  if (!trip) return 0;
+  state.trip = null;
+  let takenBack = 0;
+  for (const e of trip.edges) {
+    if (e !== edge) takenBack += e.countedDistanceM;
+    e.countedDistanceM = 0;
+  }
+  return takenBack;
+}
+
+// A fix of a walk: the detector's moving state at fine accuracy
+// (fineFix), measuring a walking speed of its own (fineMoveSpeedMps to
+// departureMaxSpeed: shuffling about a room at 1 km/h is no walk, nor 15 km/h
+// on foot). Its spread is not taken off: a dog walk of stops and starts reads
+// 4 km/h ± 2.6 km/h at 4 m.
+function walkFix(point, config) {
+  const speed = fineFix(point, config) ? phoneReliableSpeed(point) : null;
+  return speed != null && speed >= config.fineMoveSpeedMps && speed <= config.departureMaxSpeed;
+}
+
+function countStep(state, edge, config) {
   if (edge.mode !== 'walking' && edge.mode !== 'moving') {
     edge.countedDistanceM = 0; state.anchor = null; return;
   }

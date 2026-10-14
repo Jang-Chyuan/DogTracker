@@ -121,9 +121,10 @@ describe('words (copy deck)', () => {
     expect(`${gap.lead}${gap.rest}`).toBe('沒有資料 10:21–10:40');
   });
   test('pills', () => {
-    expect(nodePill({ type: 'departure' })).toEqual({ text: i18nT('c124'), tone: 'plain' });
-    expect(nodePill({ type: 'departure', manual: true })).toEqual({ text: i18nT('c124'), tone: 'plain' });
-    expect(nodePill({ type: 'departure', continuesPreviousDay: true }).text).toBe(i18nT('c124'));
+    // 2026-10-14 (user): no 「出發」 — the start row has no capsule.
+    expect(nodePill({ type: 'departure' })).toBeNull();
+    expect(nodePill({ type: 'departure', manual: true })).toBeNull();
+    expect(nodePill({ type: 'departure', continuesPreviousDay: true })).toBeNull();
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE })).toEqual({ text: '停 17 分', tone: 'stay' });
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('接續前一天');
     expect(nodePill({ type: 'indoor', start: 0, end: 40 * MINUTE })).toEqual({ text: '室內・40 分', tone: 'indoor' });
@@ -159,13 +160,17 @@ describe('fixtures', () => {
     // The hour at home before it is not counted.
     expect(model.range.start).toBeGreaterThan(DAY + 7 * 60 * MINUTE);
   });
-  test('history-no-departure: time range, the whole day is the range, no stays', async () => {
+  test('history-no-departure: time range, the whole day is the range', async () => {
     const { model, kinds } = await fixtureList('history-no-departure');
     expect(model.departure.status).toBe('not-departed');
     expect(summaryText(model, { subject: 'phone' })).toEqual({ title: '06:30 – 現在',
       detail: `走了 ${km(model.distanceM)}・${summaryDuration(model.durationMs)}` });
     expect(model.range.start).toBe(model.points[0].time);
-    expect(kinds).toEqual(['departure', 'walking', 'end']);
+    // 2026-10-14: the fixture's minute on foot claims a walking speed at 6 m
+    // and counts metres, so the visit that is the whole range is split there
+    // (historyStops): its two parts are the range's first and last rows.
+    expect(kinds).toEqual(['departure', 'stop', 'walking', 'stop', 'end']);
+    expect(model.nodes.filter(n => n.type === 'stop').map(n => n.number)).toEqual([null, null]);
   });
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');

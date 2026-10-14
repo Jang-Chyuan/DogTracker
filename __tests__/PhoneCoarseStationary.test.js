@@ -114,10 +114,11 @@ describe('history of a phone standing still on coarse fixes', () => {
     const still = model.edges.filter(e => e.start >= base + 305000 && e.end <= base + 1315000);
     expect(still.length).toBeGreaterThan(150);
     expect(still.every(e => e.mode === 'gap' && e.uncertain && e.stillUnplaced && e.countedDistanceM === 0)).toBe(true);
-    // The <30-minute fold must not make it 「走路 27 分」: it is an unnumbered stay.
+    // The <30-minute fold must not make it 「走路 27 分」: it is a stay (between
+    // two walks: numbered, 2026-10-14).
     const rowsShown = timelinePresentation(model.nodes);
     const stay = rowsShown.find(n => n.type === 'stop');
-    expect(stay).toMatchObject({ presentationOnly: 'phone-stationary', number: null, coarse: true });
+    expect(stay).toMatchObject({ presentationOnly: 'phone-stationary', number: 1, coarse: true });
     expect(stay.end - stay.start).toBeGreaterThanOrEqual(16 * 60000);
     const foot = rowsShown.filter(n => n.type === 'movement' && n.mode === 'walking');
     expect(foot).toHaveLength(2);

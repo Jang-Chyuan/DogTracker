@@ -19,18 +19,21 @@ const shortWalk = Array.from({ length: 25 }, (_, i) => point(4000 + i * 5,
 const timeline = rows => historyTimeline(rows, { subject: 'phone', dayStart: base, dayEnd: base + 86400000,
   manualRange: { start: rows[0].time, end: rows.at(-1).time } });
 
-test('an observed stationary minute span is not silently lost when the whole-range visit has travel and no numbered stay', () => {
+test('an observed stationary minute span is not silently lost when the whole-range visit has travel', () => {
   const rows = [...firstRun, ...shortWalk], raw = JSON.stringify(rows);
   const model = timeline(rows);
   const stationary = model.edges.filter(e => !e.gap && !e.bridged && e.mode === 'walking'
     && e.from.phoneStationary && e.to.phoneStationary && e.countedDistanceM === 0);
   expect(stationary.length).toBeGreaterThan(300);
   expect(model.edges.some(e => e.bridged)).toBe(true);
-  const pause = model.nodes.find(n => n.presentationOnly === 'phone-stationary');
-  expect(!!pause).toBe(true);
-  expect(pause.number).toBeNull();
-  expect(pause.durationMs).toBe(pause.end - pause.start);
-  expect(pause.durationMs).toBeGreaterThan(30 * 60000);
+  // 2026-10-14: the whole-range visit is split at the walk that counts
+  // metres (historyStops): its first part is a stay of the range, so the
+  // fallback has nothing left to claim.
+  const stay = model.nodes.find(n => n.type === 'stop');
+  expect(stay).toMatchObject({ start: rows[0].time, number: null, listedWith: 'start' });
+  expect(stay.durationMs).toBe(stay.end - stay.start);
+  expect(stay.durationMs).toBeGreaterThan(30 * 60000);
+  expect(model.nodes.some(n => n.presentationOnly === 'phone-stationary')).toBe(false);
   expect(JSON.stringify(rows)).toBe(raw);
 });
 
@@ -89,8 +92,11 @@ test('an unnumbered fallback uses the existing stop pill and readable address sp
 });
 
 
-test('existing list/address/PNG contracts accept the unnumbered stop while CSV and GPX raw exports remain identical', () => {
-  const model = timeline([...firstRun, ...shortWalk]);
+test('existing list/address/PNG contracts accept an unnumbered fallback stop while CSV and GPX raw exports remain identical', () => {
+  // Weak GPS indoors (fixes over the 25 m stay gate): no visit, only the
+  // fallback's coarse stationary run, then the short walk.
+  const coarse = [...firstRun.map(p => ({ ...p, accuracy: 30 })), ...shortWalk];
+  const model = timeline(coarse);
   expect(model.nodes.some(n => n.presentationOnly)).toBe(true);
   const baseline = { ...model, nodes: model.nodes.filter(n => !n.presentationOnly),
     displayStays: model.displayStays || [] };
@@ -100,8 +106,6 @@ test('existing list/address/PNG contracts accept the unnumbered stop while CSV a
   expect(buildCSV(after)).toBe(buildCSV(before));
   expect(buildGPX(after)).toBe(buildGPX(before));
   expect(after.subjects[0].stays).toEqual(before.subjects[0].stays);
-  // 2026-10-13: the run starts once the detector settled, seconds after the
-  // first fix: it is the 出發's stay (「出發 · 停 N 分」), unnumbered.
   expect(after.subjects[0].timeline.some(n => n.kind === 'place' && n.number === null
     && (n.type === 'stop' || (n.type === 'departure' && n.pill.text.includes('停'))))).toBe(true);
   expect(after.subjects[0].map.lines).toEqual(before.subjects[0].map.lines);
@@ -113,16 +117,20 @@ test('a sub-threshold pause does not manufacture a newly qualified stay', () => 
 });
 
 
-test('manual clipping keeps the stay from the clip start; the same-session same-place break stays unobserved', () => {
+test('manual clipping keeps the stay from the clip start; the same-session same-place break is in it', () => {
   const rows = [...firstRun, ...shortWalk];
   const start = point(600).time, end = rows.at(-1).time;
   const model = historyTimeline(rows, { subject: 'phone', dayStart: base, dayEnd: base + 86400000,
     manualRange: { start, end } });
-  const pause = model.nodes.find(n => n.presentationOnly);
-  // PR 116 / 067: the 35 min break at the same place, same session, is part
-  // of the stay, and is kept as unobserved time (export gaps).
-  expect(pause).toMatchObject({ start, end: point(4000).time, durationMs: 3400000, number: null,
-    unobserved: [{ start: point(1900).time, end: point(4000).time }] });
+  // 2026-10-14: the clipped range lies in the visit up to the walk that
+  // counts metres: the stay is the range's first row, from the clip start,
+  // over the 35 min break at the same place (067, same session).
+  const walkStart = model.edges.find(e => e.countedDistanceM > 0).start;
+  const stay = model.nodes.find(n => n.type === 'stop');
+  expect(stay).toMatchObject({ start, number: null, listedWith: 'start' });
+  expect(stay.end).toBeLessThanOrEqual(walkStart);
+  expect(stay.end).toBeGreaterThanOrEqual(point(4000).time);
+  expect(stay.durationMs).toBe(stay.end - stay.start);
   expect(model.nodes.some(n => n.type === 'gap' || n.type === 'resume')).toBe(false);
   expect(model.nodes.filter(n => n.type === 'stop')).toHaveLength(1);
   expect(model.points.every(p => p.time >= start && p.time <= end)).toBe(true);

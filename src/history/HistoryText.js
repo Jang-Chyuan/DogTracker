@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { distanceText } from '../utils/distanceText';
 // The words of the H1/H2 time-line list and its summary (copy deck c120,
-// c121, c124, c127, c130, c137, c140, c159, c306–c308, c315, c316, c331–c341,
+// c121, c127, c130, c137, c140, c159, c306–c308, c315, c316, c331–c341,
 // c344, c1276). Pure: the list component draws them, tests read them.
 
 const MINUTE = 60000;
@@ -83,19 +83,11 @@ export function sectionText(section) {
  * 'closed' (warn) or 'indoor' (receiver); null for a switch point.
  */
 // A stay's shown minutes round to none (a manual range clipping it to
-// seconds): a merged 出發／終點 says only itself, never 「停 0 分」 (2026-10-13).
+// seconds): never 「停 0 分」 (2026-10-13).
 const noMinutes = stay => stay.type === 'stop' && !stay.continuesPreviousDay
   && Math.round(Math.max(0, stay.displayDurationMs ?? stay.durationMs ?? 0) / MINUTE) === 0;
 
 export function nodePill(node) {
-  if (node.departureStay) {
-    const departure = nodePill({ ...node, departureStay: null });
-    // A range that begins moving says only 「出發」 (its stay is the
-    // seconds before setting off, 2026-10-14).
-    if (node.detected === true || noMinutes(node.departureStay)) return departure;
-    const stay = nodePill(node.departureStay);
-    return { ...departure, text: `${departure.text} · ${stay.text}` };
-  }
   if (node.terminalStay) {
     const endpoint = nodePill({ ...node, terminalStay: null });
     if (endpoint && noMinutes(node.terminalStay)) return endpoint;
@@ -104,8 +96,11 @@ export function nodePill(node) {
     return endpoint ? { ...endpoint, text: `${endpoint.text} · ${stay.text}` } : stay;
   }
   switch (node.type) {
+    // 2026-10-14 (user): no 「出發」 anywhere. A range that begins moving
+    // starts with its hollow start circle, its time and its address — no
+    // capsule (the seconds of a stay it set off from are the first move's).
     case 'departure':
-      return { text: t('c124'), tone: 'plain' };
+      return null;
     case 'stop': {
       // Under half a minute shown on its own: 「停 不到 1 分」 (as c1276 on rows).
       const stay = t('c127', { duration: noMinutes(node) ? t('c1276') : listDuration(node.displayDurationMs ?? node.durationMs) });

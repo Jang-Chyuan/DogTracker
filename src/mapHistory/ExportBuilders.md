@@ -13,7 +13,7 @@
 - 狗：有 `raw_latitude`／`raw_longitude` 時各自以該欄為準，包含明確的 null；未提供時使用 `latitude`／`longitude`，呼叫端須放項圈原始定位（`slave_lat`／`slave_lon`），不可放顯示座標或手機推導位置。
 - 手機：主座標使用 recorded route 的 `latitude`／`longitude`，與第三版歷史和「今天 x km」相同；允許定位管線處理後的座標。`raw_*` 只寫入 CSV 的 raw 欄位，不覆寫主座標。
 - `holds`、`stays`、`rides`、`gaps`：`{start,end}` 區間陣列。停住／坐車分類不含 end，放開／下車歸移動。gaps 是互不重疊的無資料區間。holds 使用代表位置 `latitude`、`longitude` 與可選 `address`；stays 另有共用時間軸 `number`（包含交通切換節點）。停留偵測與代表位置須依選定範圍重算；holds 保留偵測出的停住位置。
-- `timeline`：畫面依範圍計算的清單列，保留時間、編號與座標等欄位。PNG 使用 `exportTimelineRows` 的 title、pill、coordinates、不含中斷、movement lead/time/rest；終點列不寫字（畫面的「現在」「最後」不進匯出，「結束」已不用，2026-10-14）；停留下一列是移動時 `leave` 為真，畫向下箭頭，`leaveTime` 是旁邊的離開時刻；`rangeStart`／`rangeEnd` 為真的列（範圍從停留開始／在停留裡結束），節點畫起點空心圓／終點實心圓。
+- `timeline`：畫面依範圍計算的清單列，保留時間、編號與座標等欄位。PNG 使用 `exportTimelineRows` 的 title、pill、coordinates、不含中斷、movement lead/time/rest；起點列和終點列不寫字（畫面的「現在」「最後」不進匯出，「出發」「結束」已不用，2026-10-14）；停留下一列是移動時 `leave` 為真，畫向下箭頭，`leaveTime` 是旁邊的離開時刻；`rangeStart`／`rangeEnd` 為真的列（範圍從停留開始／在停留裡結束），節點畫起點空心圓／終點實心圓。
 
 是否有資料以範圍內的封包時間判斷，沒有有效 GPS 的停住封包仍算有資料。GPX 依封包時間選入（含兩端），GPS 時間用於排序、停住／坐車分類與 trkpt 時間；多個封包重複的同一定位只輸出一次。CSV 同樣依封包／記錄時間選入，但排除 `rawCoordinate(row, subject)` 無有效座標的列：狗檢查原始定位，手機檢查 recorded route。匯出不再插值、平滑或降採樣，不可傳入受繪圖額度裁切的幾何資料。
 

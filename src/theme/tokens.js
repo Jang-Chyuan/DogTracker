@@ -81,7 +81,7 @@ export const colors = {
   noDataLine: '#C9CFCC',
   // Grey map background when the base map cannot load.
   mapFallback: '#ECEEEC',
-  // History list pills (screen and exported PNG): 出發、結束、恢復記錄 on
+  // History list pills (screen and exported PNG): 恢復記錄、現在、最後 on
   // pillPlain, 室內 on pillIndoor (receiver text).
   pillPlain: '#F1EEEC',
   pillIndoor: '#E6EEF3',
