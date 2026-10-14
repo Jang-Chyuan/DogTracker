@@ -73,7 +73,8 @@ export async function downloadCloudHistory({ client, database, owner, startAt, e
     await check();
     cursor = { time: last.remote_received_at, id: last.event_id };
     processed += records.length;
-    onProgress(processed);
+    // The last saved row too: every row received before it is saved.
+    onProgress(processed, last);
   }
   // A budget limit is not end-of-window: leave the last committed row cursor.
   return processed;
