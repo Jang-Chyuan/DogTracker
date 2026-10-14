@@ -23,8 +23,8 @@ test.each(['indoor', 'stop', 'departure', 'end', 'switch'])('%s uses identical s
   const layout = layoutRow(row, defaultMeasure);
   expect(layout.titleLines).toEqual(['24.9378, 121.2954']);
   expect(row.coordinates).toBe('');
-  // 2026-10-14: the end has no capsule (no 「結束」), as a switch point.
-  const bare = type === 'switch' || type === 'end';
+  // 2026-10-14: the start and the end have no capsule (no 「出發」「結束」), as a switch point.
+  const bare = type === 'switch' || type === 'end' || type === 'departure';
   expect(layout.items.map(item => item.kind)).toEqual(bare ? [] : type === 'stop' ? ['pill', 'note'] : ['pill']);
   if (type === 'stop') expect(layout.items[1].text).toBe(row.note);
   expect(layout.secondLines).toBe(bare ? 0 : type === 'stop' ? 2 : 1);

@@ -24,7 +24,7 @@ import { t } from '../src/i18n';
 const MINUTE = 60000;
 const dayStart = new Date(2026, 9, 13).getTime();
 const dayEnd = dayStart + 24 * 60 * MINUTE;
-const DEPARTURE = t('c124');
+const DEPARTURE = '出發';
 const END = t('c330');
 
 // A fix every 5 s from `from`: still (a stay), walk (5 km/h east) or back (west).
@@ -56,7 +56,8 @@ const speechOf = shown => shown.map((n, i) => (isSection(n) ? sectionSpeech(n, i
 /** Nowhere a 出發 or a 結束: list rows and speech, the PNG list, GPX. */
 function expectNoEndWords(model, { departure = false } = {}) {
   const shown = timelinePresentation(model.nodes);
-  const words = departure ? [END] : [DEPARTURE, END];
+  // 2026-10-14: neither word anywhere, whether the range starts moving or not.
+  const words = [DEPARTURE, END];
   if (!departure) expect(shown.some(n => n.type === 'departure' || n.departureStay)).toBe(false);
   for (const word of words) {
     expect(shown.some(n => !isSection(n) && nodePill(n)?.text?.includes(word))).toBe(false);
@@ -142,12 +143,14 @@ test('every stay → movement leaves the stay: a chevron under the stay and 「�
   expect(leavesFrom({ type: 'indoor' }, { type: 'movement' })).toBe(true);
 });
 
-test('a day starting and ending with a walk keeps 出發 and a bare end row: time, solid node, address, no word', () => {
+test('a day starting and ending with a walk: a bare start row and a bare end row (time, circle, address, no word)', () => {
   const rows = day([['walk', 10 * 60], ['still', 20 * 60], ['back', 10 * 60]], dayStart + 8 * 60 * MINUTE);
   for (const model of [timeline(rows), whole(rows)]) {
     const { shown } = expectNoEndWords(model, { departure: true });
+    expect(placeSpeech(shown[0], '虛構起點')).toMatch(/^虛構起點，\d\d:\d\d$/u);
     expect(kinds(shown)).toEqual(['departure', 'movement', 'stop', 'movement', 'end']);
-    expect(nodePill(shown[0]).text).toBe(DEPARTURE);
+    // 2026-10-14: the start row is its hollow circle, time and place: no 「出發」.
+    expect(nodePill(shown[0])).toBeNull();
     expect(shown[2].number).toBe(1);
     expect(nodePill(shown.at(-1))).toBeNull();
     expect(placeSpeech(shown.at(-1), '虛構終點')).toBe('虛構終點，08:39');
@@ -188,7 +191,7 @@ describe('a day like 10/13: home from 00:00, a walk, a short stay, the walk home
     expectTiled(shown, dayStart, rows.at(-1).time);
   });
 
-  test('the range from the detected departure (今天的出發到現在) starts moving: 出發 then the walk', () => {
+  test('the range from the detected departure (今天的出發到現在) starts moving: the start row (no word) then the walk', () => {
     const now = rows.at(-1).time + 1000;
     for (const model of [timeline(rows), timeline(rows, { today: true, now })]) {
       expect(model.departure.status).toBe('confirmed');
@@ -198,7 +201,7 @@ describe('a day like 10/13: home from 00:00, a walk, a short stay, the walk home
       const shown = timelinePresentation(model.nodes);
       expect(kinds(shown)).toEqual(['departure+stay', 'movement', 'stop', 'movement', 'stop']);
       // Only 「出發」: the home stay's last seconds are that row's time, unnumbered.
-      expect(nodePill(shown[0]).text).toBe(DEPARTURE);
+      expect(nodePill(shown[0])).toBeNull();
       expect(shown[0].departureStay.number ?? null).toBeNull();
       expect(shown.filter(n => n.type === 'stop').map(n => n.number)).toEqual([1, null]);
       expect(rangeEndRows(shown)).toEqual({ start: null, end: 4 });

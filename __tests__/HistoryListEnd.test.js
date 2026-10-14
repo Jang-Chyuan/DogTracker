@@ -52,7 +52,8 @@ test('a dog without a fix for 17 minutes, following now: 「最後 09:13」', as
 
 test('only the end dragged back to 08:50: 「結束」 at that time, the start still 「出發」', async () => {
   const { last, screen } = await open('history-manual-end');
-  expect(nodePill(screen.model.nodes[0])).toEqual({ text: i18nT('c124'), tone: 'plain' });
+  // 2026-10-14: the start row has no 「出發」 capsule.
+  expect(nodePill(screen.model.nodes[0])).toBeNull();
   expect(last).toMatchObject({ type: 'end', label: i18nT('c330') });
   expect(clock(last.end)).toBe('08:50');
 });
