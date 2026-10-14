@@ -23,7 +23,8 @@ describe('a merged stay of no minutes says no 「停 0 分」', () => {
       stay(T0, T0 + 20000), { type: 'movement', mode: 'walking', start: T0 + 20000, end: T0 + 5 * MINUTE,
         durationMs: 5 * MINUTE - 20000, distanceM: 300, countedDistanceM: 300 }]);
     expect(shown[0].departureStay).toBeTruthy();
-    expect(nodePill(shown[0]).text).toBe(t('c124'));
+    // 2026-10-14: no 「出發」 capsule at all.
+    expect(nodePill(shown[0])).toBeNull();
   });
 
   // 2026-10-14: no stay goes into the end any more, and the end says no 「結束」.
@@ -144,7 +145,7 @@ test('the first and last stays are the range\'s start and end; the stays between
   // The PNG list is the screen's list, with no 出發 pill.
   const png = exportTimelineRows(model.nodes, () => '虛構地址');
   expect(png.filter(r => r.number != null).map(r => r.number)).toEqual([1]);
-  expect(png.some(r => r.type === 'departure' || r.pill?.text?.includes(t('c124')))).toBe(false);
+  expect(png.some(r => r.type === 'departure' || r.pill?.text?.includes('出發'))).toBe(false);
   // GPX: every stay is still a waypoint; the merged ones are named without a number.
   const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] },
     range: { start: rows[0].time, end: rows.at(-1).time }, subject: 'phone' });
@@ -155,5 +156,5 @@ test('the first and last stays are the range\'s start and end; the stays between
   expect(names[0]).toMatch(unnumbered);
   expect(names[1]).toMatch(numbered(1));
   expect(names[2]).toMatch(unnumbered);
-  expect(names.some(name => name.includes(t('c124')) || name.includes(t('c330')))).toBe(false);
+  expect(names.some(name => name.includes('出發') || name.includes(t('c330')))).toBe(false);
 });
