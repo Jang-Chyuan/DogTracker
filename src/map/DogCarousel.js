@@ -18,6 +18,8 @@ import { border, radius, size as sizes, space, touch, type } from '../theme/toke
 import { linesFor } from '../utils/textScale';
 
 const carousel = sizes.card.carousel;
+// When an unplaced row tries again to sit on the open dog.
+const PLACE_RETRY_MS = [0, 60, 200, 500, 1200];
 
 /** Which slot `x` (the row's scroll offset) has in the middle. */
 export const slotAt = (x, count) => Math.max(0, Math.min(count - 1, Math.round(x / carousel.slot)));
@@ -61,12 +63,21 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   // Android ignores contentOffset: whenever the row is laid out (before the
   // user has dragged it), it is put on the open dog without a move, a frame
   // later so the native view has its size.
+  // A busy phone can drop an early scrollTo: it is tried again a few times
+  // until the row reports it is there.
   const touched = useRef(false);
+  const lastX = useRef(0);
+  const timers = useRef([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const place = () => {
     if (touched.current) return;
-    requestAnimationFrame(() => {
-      if (!touched.current) list.current?.scrollTo({ x: at.current * slot, animated: false });
-    });
+    timers.current.forEach(clearTimeout);
+    timers.current = PLACE_RETRY_MS.map(ms => setTimeout(() => {
+      const target = at.current * slot;
+      if (!touched.current && Math.abs(lastX.current - target) > 1) {
+        list.current?.scrollTo({ x: target, animated: false });
+      }
+    }, ms));
   };
   // The middle name's line, measured (it grows with the system font).
   const [nameHeight, setNameHeight] = useState(0);
@@ -108,7 +119,10 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         onLayout={place}
         contentContainerStyle={{ paddingHorizontal: side }}
         scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+          useNativeDriver: true,
+          listener: event => { lastX.current = event.nativeEvent.contentOffset.x; },
+        })}
         onScrollBeginDrag={() => {
           dragging.current = true;
           touched.current = true;
