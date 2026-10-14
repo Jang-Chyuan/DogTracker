@@ -73,7 +73,7 @@ test('ignored-abort membership HTTP yields the independent latest slot on backgr
     return undefined;
   } });
   await start(network);
-  expect(state).toMatchObject({ mapAttempt: 1, snapshotPending: true, mapSuccessRevision: 0 });
+  expect(state).toMatchObject({ mapAttempt: 1, busy: true, snapshotPending: false, mapSuccessRevision: 0 });
   expect(applied()).toHaveLength(0);
   await act(async () => { engine.setForeground(false); await jest.advanceTimersByTimeAsync(1000); });
   expect(heldCall.signal.aborted).toBe(true);
@@ -99,7 +99,8 @@ test('120s HTTP deadline preserves the prior durable latest set; retry recovers 
   let hold = true;
   const network = latestArchiveRest({ events, beforeRead: call => hold && call.phase === 'packet' ? transport.promise : undefined });
   await start(network);
-  expect(state.snapshotPending).toBe(true);
+  // Waiting on the network is not a pending snapshot (the map keeps its dogs live).
+  expect(state).toMatchObject({ busy: true, snapshotPending: false });
   await advance(120000);
   expect(state).toMatchObject({ mapAttempt: 1, snapshotPending: false, mapSuccessRevision: 0, offline: true });
   expect(state.error).toBeTruthy();

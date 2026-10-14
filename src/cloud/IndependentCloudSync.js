@@ -127,7 +127,13 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     readback = null; readbackStartedAt = startedAt;
     catchUp.started(retryQueued || !initialStarted); retryQueued = false; initialStarted = true;
     publish({ busy: true, mode: manualRunning ? 'manual' : 'auto', error: '', authFailed: false,
-      snapshotPending: true, mapPending: true, mapAttempt: attempt });
+      mapAttempt: attempt });
+    // snapshotPending / mapPending mark only the moment the latest store
+    // changes (publish → readback), not the session wait or the HTTP: the map
+    // holds its cloud dogs while they are pending, and an attempt on a slow
+    // or dead network lasts up to DOWNLOAD_MS (the session wait alone up to
+    // 65 s). Until the publish the store still holds the accepted snapshot,
+    // so readers may keep reading it.
     latestRunning = withLatestSyncSlot(async () => {
       timings.slotWaitMs = Math.max(0, now() - startedAt);
       const networkAbort = new AbortController(), cancel = () => networkAbort.abort();
@@ -168,6 +174,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
         if (outcome.value && now() - outcome.value.cutoff >= 30000) { check(); outcome = await fetchLatest(); }
         if (Object.prototype.hasOwnProperty.call(outcome, 'error')) { phase = outcome.phase; throw outcome.error; }
         const { masters, cutoff, snapshot } = outcome.value; check(); phase = 'publish'; at = now();
+        publish({ snapshotPending: true, mapPending: true });
         const revision = await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
         const value = await database.readLatestSnapshot(userId, { positionsOnly: true }); check();
         if (!value?.verified || value.revision !== revision || value.cutoff !== cutoff) throw new Error(t('c588'));
