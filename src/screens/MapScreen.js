@@ -32,7 +32,7 @@ import {
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
-import { useAddress } from '../placement/AddressLookup';
+import { cardAddressLine, useAddress, usePlaceNames } from '../placement/AddressLookup';
 import { useMapClock } from '../map/useMapClock';
 
 import { useReceiverState } from '../map/useReceiverState';
@@ -949,8 +949,31 @@ export default function MapScreen({
     () => Object.fromEntries(livePresentation.dogMarkers.map(marker => [marker.slaveId, marker])),
     [livePresentation.dogMarkers],
   );
+  // The other dogs' first rows (2026-10-14: the card must not grow or shrink
+  // from dog to dog): what each would show, so the card keeps room for the
+  // tallest. Their addresses are asked too (the history's cache), their
+  // battery and activity rows are one line each at the normal font.
+  const switching = cardDogId != null && switchDogs.length > 1 && switchDogs.includes(cardDogId);
+  const otherDogs = useMemo(() => (switching
+    ? switchDogs.filter(id => id !== cardDogId).map(id => dogs.find(dog => dog.slaveId === id && dog.coordinate))
+      .filter(Boolean) : []), [switching, switchDogs, cardDogId, dogs]);
+  const otherPlaces = usePlaceNames(otherDogs.map(dog => (isIndoorHold(dog) ? dog.coordinate : null)));
+  const reserve = useMemo(() => otherDogs.map((dog, index) => {
+    const freshness = dogFreshness(dog, { now, cloud: cloudClockInput, pauses });
+    const place = otherPlaces[index];
+    const model = dogCard(dog, {
+      freshness,
+      range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
+      phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
+      now,
+      name: dogName(dog.slaveId, dogAliases),
+      address: isIndoorHold(dog) ? cardAddressLine(place?.state === 'found' ? place.text : null, dog.coordinate) : null,
+    });
+    return { key: dog.slaveId, row: model.rows[0], headline: model.headline };
+  }), [otherDogs, otherPlaces, now, cloudClockInput, pauses, cloudDogs?.ranges, livePhone, nativePhone, fixture,
+    dogAliases]);
   const switcher = useMemo(() => {
-    if (cardDogId == null || switchDogs.length < 2 || !switchDogs.includes(cardDogId)) return null;
+    if (!switching) return null;
     return {
       dogs: switchDogs.map(id => ({
         slaveId: id,
@@ -965,7 +988,7 @@ export default function MapScreen({
       onSelect: selectDog,
       onStep: stepDog,
     };
-  }, [cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
+  }, [switching, cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
   const [trackBusy, setTrackBusy] = useState(false);
   // 看軌跡: today's path of this dog. The query is stored first, so the
   // history page never opens on the previous one.
@@ -1358,6 +1381,7 @@ export default function MapScreen({
           onTrack={openTrackHistory}
           trackBusy={trackBusy}
           switcher={switcher}
+          reserve={reserve}
         />
       )}
       </View>

@@ -618,7 +618,9 @@ async function renderFixture(name, { edits = null, inspect = null, resume = null
   const liveCard = renderer.root.findAll(node => node.props.testID === 'dog-card' && typeof node.type === 'string')[0];
   const words = children => [].concat(children ?? []).flat(Infinity)
     .filter(item => typeof item === 'string' || typeof item === 'number').join('');
-  const cardText = liveCard ? JSON.stringify(liveCard.findAll(node => typeof node.type === 'string')
+  // What the card shows (not the other dogs' first rows it measures, unseen).
+  const cardText = liveCard ? JSON.stringify(liveCard.findAll(node => typeof node.type === 'string'
+    && !findAncestor(node, item => item.props.importantForAccessibility === 'no-hide-descendants'))
     .map(node => words(node.props.children)).filter(Boolean)) : '';
   // Every photo face drawn, where, and whether it is greyscale.
   const photos = renderer.root.findAll(node => node.props.testID === 'dog-avatar-photo' && typeof node.type === 'string')

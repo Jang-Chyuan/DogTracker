@@ -22,7 +22,6 @@ import {
   BackHandler,
   Easing,
   PanResponder,
-  PixelRatio,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -62,6 +61,8 @@ const CLOSE_MS = 180;
 // this, closes it; anything less springs back.
 const CLOSE_SHARE = 0.25;
 const CLOSE_VELOCITY = 0.5;
+// How long the rows' height must hold still before the card keeps it.
+const ROOM_SETTLE_MS = 300;
 // The card floats a little off the screen edges, as in the A3 mockups.
 const CARD_INSET = space.s;
 // 看軌跡 is 40dp drawn (2026-10-14: smaller, the rows get the room); the
@@ -85,19 +86,19 @@ const getACTIVITY_TONE = makeStyles(theme => {
   };
 });
 
-/** The 18dp round 「!」 in front of a problem (red) or a warning (amber) value. */
+/**
+ * The round 「!」 of a problem (red) or a warning (amber) row (2026-10-14):
+ * in front of the label, in the card's side margin, level with the label —
+ * it takes no width from the value or the address, and no height.
+ */
 function Mark({ tone }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const TONE = useStyles(getTONE);
-  // Level with the value's first line as the font grows (設計稿「卡片狀態列
-  // 的長字」: 「!」靠第一行對齊); the mark itself is a vector, always centred.
-  const grow =
-    (type.value.lineHeight * ((PixelRatio.getFontScale?.() || 1) - 1)) / 2;
   return (
-    <View style={[styles.mark, { marginTop: styles.mark.marginTop + grow }]}>
+    <View style={styles.mark} pointerEvents="none">
       <BangGlyph
-        size={sizes.card.warnIcon}
+        size={sizes.card.labelMark}
         background={TONE[tone].badge}
         color={tone === 'warn' ? colors.onWarnIcon : colors.avatarFrameMap}
         testID={`dog-card-mark-${tone}`}
@@ -181,11 +182,13 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
       ]}
       testID={`dog-card-row-${row.key}`}
     >
-      <Text style={[styles.rowLabel, { width: stacked ? undefined : labelWidth }]} accessible={false}>
-        {row.label}
-      </Text>
-      <View style={styles.rowValue}>
+      <View style={[styles.labelCell, { width: stacked ? undefined : labelWidth }]}>
         {markTone && <Mark tone={markTone} />}
+        <Text style={styles.rowLabel} accessible={false}>
+          {row.label}
+        </Text>
+      </View>
+      <View style={styles.rowValue}>
         <View style={styles.rowTexts}>
           {/* The first line: the value, and the distance beside it only. */}
           {headline ? (
@@ -321,6 +324,29 @@ function CardHeader({ card, avatar, switcher, onEdit, width }) {
   );
 }
 
+/** The rows' height to keep: see DogCard. */
+function useRowsRoom(reserve) {
+  const [heights, setHeights] = useState({});
+  const keys = new Set(['rows', 'first', ...reserve.map(item => `dog-${item.key}`)]);
+  const measure = (key, event) => {
+    const height = Math.round(event.nativeEvent.layout.height);
+    setHeights(current => (current[key] === height ? current : { ...current, [key]: height }));
+  };
+  const firsts = Object.entries(heights).filter(([key]) => key === 'first' || (key.startsWith('dog-') && keys.has(key)))
+    .map(([, height]) => height);
+  const want = heights.rows ? heights.rows - (heights.first ?? 0) + Math.max(0, ...firsts) : 0;
+  // Only a height that has settled (unchanged for ROOM_SETTLE_MS) is kept: a
+  // row measured once before its distance found its place must not keep
+  // the room it needed for a moment.
+  const [held, setHeld] = useState(0);
+  useEffect(() => {
+    if (want <= held) return undefined;
+    const timer = setTimeout(() => setHeld(current => Math.max(current, want)), ROOM_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [want, held]);
+  return { held, measure };
+}
+
 /**
  * @param card DogCardModel.dogCard()
  * @param avatar the dog's face (useDogAvatars), or null for the default
@@ -344,6 +370,7 @@ const DogCard = forwardRef(function DogCard(
     onTrack,
     trackBusy = false,
     switcher = null,
+    reserve = [],
   },
   ref,
 ) {
@@ -378,6 +405,11 @@ const DogCard = forwardRef(function DogCard(
     // Only a new dog, not every reading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.slaveId]);
+  // The card keeps one height from dog to dog (2026-10-14): the rows get
+  // room for the tallest first row any dog in the row of dogs shows (each
+  // measured, never seen), and never give back room once taken while the
+  // card is open — so neither the card nor the map buttons jump.
+  const room = useRowsRoom(reserve);
   // The close that is running (a slide, or the reduced-motion fade).
   const closingRun = useRef(null);
   const mounted = useRef(true);
@@ -499,23 +531,38 @@ const DogCard = forwardRef(function DogCard(
       <Animated.View style={[styles.body, { opacity: bodyFade }]}>
       <ScrollView
         style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         bounces={false}
         scrollEventThrottle={16}
         onScroll={event => {
           scrollTop.current = event.nativeEvent.contentOffset.y;
         }}
       >
-        <View style={styles.rows}>
-          {card.rows.map((row, index) => (
-            <StatusRow
-              key={row.key}
-              row={row}
-              first={index === 0}
-              onPress={row.key === 'activity' ? onActivity : undefined}
-              headline={index === 0 ? card.headline : null}
-              heading={heading}
-            />
-          ))}
+        <View style={[styles.rows, { minHeight: room.held }]}>
+          <View onLayout={event => room.measure('rows', event)}>
+            {card.rows.map((row, index) => (
+              <View key={row.key} onLayout={index === 0 ? event => room.measure('first', event) : undefined}>
+                <StatusRow
+                  row={row}
+                  first={index === 0}
+                  onPress={row.key === 'activity' ? onActivity : undefined}
+                  headline={index === 0 ? card.headline : null}
+                  heading={heading}
+                />
+              </View>
+            ))}
+          </View>
+          {/* The other dogs' first rows, never seen: the room they need. */}
+          {reserve.length ? (
+            <View style={styles.reserve} pointerEvents="none" accessible={false}
+              importantForAccessibility="no-hide-descendants">
+              {reserve.map(item => (
+                <View key={item.key} onLayout={event => room.measure(`dog-${item.key}`, event)}>
+                  <StatusRow row={item.row} first headline={item.headline} heading={heading} />
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
       <PressScale
@@ -597,7 +644,12 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     body: { flexShrink: 1 },
-    scroll: { flexGrow: 0, flexShrink: 1 },
+    // Laid out like the rows, under them, and never seen.
+    reserve: { position: 'absolute', left: 0, right: 0, top: 0, opacity: 0 },
+    // Out to the card's edges (the 「!」 in front of a label sits in the
+    // side margin, and a scroll view cuts off what is outside it).
+    scroll: { flexGrow: 0, flexShrink: 1, marginHorizontal: -layout.cardPadding },
+    scrollContent: { paddingHorizontal: layout.cardPadding },
     // 「↗ 320 m」 at the first row's right end; under its words at a large font.
     distanceEnd: { alignItems: 'flex-end', flexShrink: 0, marginLeft: space.s },
     distanceUnder: { alignSelf: 'flex-start', alignItems: 'flex-start', marginTop: space.xs },
@@ -620,16 +672,16 @@ const getStyles = makeStyles(theme => {
     rowTwoLine: { minHeight: sizes.card.rowTwoLine },
     rowTarget: { minHeight: touch.cardRow },
     rowLine: { borderTopWidth: border.hairline, borderTopColor: colors.line },
-    rowLabel: {
-      ...type.caption,
-      color: colors.textMuted,
-      // 72dp, wider when the system font makes the word longer (設計稿
-      // 「卡片狀態列在大字體」): the label never wraps, the value does.
+    // 72dp, wider when the system font makes the word longer (設計稿
+    // 「卡片狀態列在大字體」): the label never wraps, the value does.
+    labelCell: {
       minWidth: sizes.card.labelWidth,
       paddingLeft: space.s,
       paddingRight: space.s,
       flexShrink: 0,
+      justifyContent: 'center',
     },
+    rowLabel: { ...type.caption, color: colors.textMuted },
     rowValue: {
       flex: 1,
       flexDirection: 'row',
@@ -642,16 +694,15 @@ const getStyles = makeStyles(theme => {
     detailInline: { ...type.small, color: colors.textMuted, fontWeight: type.body.fontWeight },
     detailLine: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     alertLine: { ...type.small, fontWeight: type.value.fontWeight, marginTop: space.xs },
-    // A fixed 18dp column: it never grows or shrinks, the words wrap beside it.
+    // In front of the label text, mostly in the card's 16dp side margin
+    // (3dp from the label, 5dp from the card's edge), centred on the label.
     mark: {
-      width: sizes.card.warnIcon,
-      height: sizes.card.warnIcon,
-      flexGrow: 0,
-      flexShrink: 0,
-      borderRadius: sizes.card.warnIcon / 2,
-      alignItems: 'center',
+      position: 'absolute',
+      left: sizes.card.labelMarkLeft,
+      top: 0,
+      bottom: 0,
+      width: sizes.card.labelMark,
       justifyContent: 'center',
-      marginTop: space.xs,
     },
     track: {
       minHeight: sizes.card.track,

@@ -318,7 +318,11 @@ export const size = {
   card: {
     avatar: 40,
     labelWidth: 72,
-    warnIcon: 18,
+    // The 「!」 in front of a row's label, in the card's 16dp side margin:
+    // from 11dp left of the label cell, 3dp before the label's words (they
+    // start 8dp in), 5dp from the card's edge.
+    labelMark: 16,
+    labelMarkLeft: -11,
     // The direction arrow before the distance at the first row's right end.
     directionIcon: 16,
     // Status rows that are not buttons (活動量 stays touch.cardRow, 48dp).

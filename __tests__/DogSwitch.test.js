@@ -6,8 +6,8 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, StyleSheet } from 'react-native';
 import DogCard from '../src/map/DogCard';
-import { BOUNCE, FLICK_MAX_MS, FLING_MAX, FLING_VELOCITY, RUBBER, offsetOf, releaseTarget, rubberBand, slotAt,
-  snapDuration } from '../src/map/DogCarousel';
+import { BOUNCE, FLICK_MAX_MS, FLING_EXPONENT, FLING_VELOCITY, RUBBER, flingDistance, offsetOf, releaseTarget,
+  rubberBand, slotAt, snapDuration } from '../src/map/DogCarousel';
 import { dogCard } from '../src/map/DogCardModel';
 import { switchOrder, switchTarget } from '../src/map/DogSwitch';
 import { colors, size as sizes, touch } from '../src/theme/tokens';
@@ -63,21 +63,26 @@ describe('the order', () => {
       count: 8 })).toBe(2);
   });
 
-  test('let go moving (a fling): from where it began, as many dogs as the speed carries — 1 casual, 2–5 fast', () => {
-    const fling = velocity => releaseTarget({ from: 3, x: offsetOf(3) + 40 * Math.sign(velocity), velocity,
-      duration: 150, count: 12 }) - 3;
+  test('let go moving (a fling): from where it began, as far as OverScroller physics carries — 1 casual, 2–3 medium, a hard one to the end', () => {
+    const fling = velocity => releaseTarget({ from: 20, x: offsetOf(20) + 40 * Math.sign(velocity), velocity,
+      duration: 150, count: 60 }) - 20;
+    // Android's spline: distance grows with speed^1.74.
+    expect(FLING_EXPONENT).toBeCloseTo(1.736, 3);
+    expect(flingDistance(2) / flingDistance(1)).toBeCloseTo(2 ** FLING_EXPONENT, 6);
     // dp/ms (2 dp/ms = 2 000 dp/s).
     expect(fling(FLING_VELOCITY)).toBe(1);
     expect(fling(1)).toBe(1);
     expect(fling(1.9)).toBe(1);
     expect(fling(2.1)).toBe(2);
-    expect(fling(3.2)).toBe(2);
-    expect(fling(3.5)).toBe(3);
-    expect(fling(5)).toBe(4);
-    expect(fling(6.1)).toBe(FLING_MAX);
-    expect(fling(30)).toBe(FLING_MAX);
+    expect(fling(2.8)).toBe(3);
+    expect(fling(5)).toBe(7);
+    expect(fling(6)).toBe(10);
+    expect(fling(8)).toBe(17);
     expect(fling(-1.5)).toBe(-1);
-    expect(fling(-4)).toBe(-3);
+    expect(fling(-2.6)).toBe(-2);
+    // No cap: a hard flick from the middle of six reaches the end.
+    expect(releaseTarget({ from: 2, x: offsetOf(2), velocity: 5, duration: 80, count: 6 })).toBe(5);
+    expect(releaseTarget({ from: 3, x: offsetOf(3), velocity: -5, duration: 80, count: 6 })).toBe(0);
     // A casual swipe (300 ms, 0.35 dp/ms) that carried the row 1.8 cells
     // under the finger goes one dog, not two.
     expect(releaseTarget({ from: 3, x: offsetOf(3) + 1.8 * 64, velocity: 0.35, duration: 300, count: 12 })).toBe(4);
@@ -89,11 +94,10 @@ describe('the order', () => {
   });
 
   test('the slide starts at the release speed and slows to rest; past an end the row follows at half speed', () => {
-    expect(snapDuration(64, 0)).toBe(220);
-    expect(snapDuration(64, 0.3)).toBe(450);
+    expect(snapDuration(64, 0.3)).toBe(640);
     expect(snapDuration(64, 1)).toBe(192);
     expect(snapDuration(64, 4)).toBe(180);
-    expect(snapDuration(320, 1)).toBe(450);
+    expect(snapDuration(320, 1)).toBe(700);
     const low = offsetOf(0);
     expect(rubberBand(low - 40, 6)).toBe(low - 40 * RUBBER);
     expect(rubberBand(low - 1000, 6)).toBe(low - BOUNCE);
@@ -212,6 +216,22 @@ describe('the card', () => {
     // A tap on a side face picks it straight away.
     await act(async () => byTestId('dog-card-pick-8')[0].props.onPress());
     expect(value.onSelect.mock.calls.at(-1)).toEqual([8]);
+  });
+
+  test('the names grow, shrink and fade with their faces (the same position), and the row fits the tallest name', async () => {
+    await mount({ switcher: switcher() });
+    const names = renderer.root.findAll(node => node.props.children === '阿福' && Array.isArray(node.props.style)
+      && node.props.style.some(item => item?.transform));
+    expect(names.length).toBeGreaterThan(0);
+    const face = renderer.root.findAll(node => Array.isArray(node.props.style)
+      && node.props.style.some(item => item?.transform?.[0]?.scale) && node.findAll(item => item.props.children === '阿福').length === 0);
+    const nameScale = names[0].props.style.find(item => item?.transform).transform[0].scale;
+    // The same interpolation node as a face's scale.
+    expect(face.some(node => node.props.style.find(item => item?.transform)?.transform[0].scale === nameScale)).toBe(true);
+    // A hidden sample of every name sets the row's height.
+    const samples = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onLayout
+      && ['狗 12', '豆豆', '阿福'].includes(node.props.children));
+    expect(samples).toHaveLength(3);
   });
 
   test('pulled past an end, the row follows at half speed and, let go, slides back to the end dog', async () => {

@@ -89,6 +89,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-indoor-overnight` | 小黑從昨晚 21:09 起停在原處（每 30 秒一筆沒有定位的封包），冷啟動後打開卡片：即時的停住只重播最近 30 分鐘，卡片改從歷史的列找這段停留的開頭（`CardIndoorStay`），寫「室內・12 時 20 分」（跨過午夜算整段）；歷史今天那一列是「00:00 接續前一天」 |
 | `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」第一行「室內・11 分」，第二行寫停住點的座標（查不到地址，2026-10-14），不轉圈 |
 | `card-indoor-geocoder` | 同 `card-indoor`，地址用這支手機自己的 Geocoder 查（要網路＋Play services） |
+| `card-switch-mixed` | 四隻狗、四種第一列：豆豆在範圍內、狗 5 沒有新位置又不在接收範圍、小黑在 1.6 公里外停在原處（長地址）、阿福只從雲端來；換狗時卡片高度不變 |
 | `card-indoor-long-address` | 同 `card-indoor`，地址是虛構的長地址：在「室內・11 分」和距離下面用整列的寬，最多換成兩行 |
 | `card-indoor-silent` | 小黑停在原處、09:05 之後沒有新資料：「位置」紅字「沒有新資料・最後 09:05」＋地址 |
 | `card-indoor-out` | 小黑走到 1.6 公里外（不在接收範圍）後停在原處：「室內・N 分」＋地址＋紅字「不在接收範圍・最後確認 HH:MM」，一個紅色「!」 |

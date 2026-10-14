@@ -196,6 +196,67 @@ test('the distance stays beside the first line only while the value fits there o
   expect(under()).toBe(false);
 });
 
+test('the 「!」 sits in front of the label, not in the value column (no width or height taken)', async () => {
+  await mount();
+  const marks = renderer.root.findAll(node => /^dog-card-mark-/.test(node.props.testID ?? '') && node.props.background);
+  expect(marks.length).toBeGreaterThanOrEqual(2);
+  for (const mark of marks) {
+    let cell = mark.parent;
+    while (cell && !(cell.findAll(node => node.props.children === '位置' || node.props.children === '電量').length)) {
+      cell = cell.parent;
+    }
+    // Its own wrapper is out of the flow (absolute), inside the label cell.
+    let wrapper = mark.parent;
+    while (wrapper && StyleSheet.flatten(wrapper.props.style)?.position !== 'absolute') wrapper = wrapper.parent;
+    expect(StyleSheet.flatten(wrapper.props.style)).toMatchObject({ position: 'absolute' });
+    expect(StyleSheet.flatten(wrapper.props.style).left).toBeLessThan(0);
+    const value = wrapper.parent.parent.findAll(node => node.props.testID === 'dog-card-distance');
+    expect(value).toHaveLength(0);
+  }
+});
+
+test('the card keeps room for the tallest first row among the other dogs, and never gives it back while open', async () => {
+  const other = dogCard({ slaveId: 6, coordinate: { latitude: 24.9947, longitude: 121.3194 }, fixAt: NOW - 5000,
+    packetAt: NOW - 5000, batteryPercentage: 62, heldReason: '室內', heldSource: 'weak' }, {
+    freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW }, now: NOW, name: '小黑',
+    address: '桃園區中正路 1 號附近', phone: null });
+  const reserve = [{ key: 6, row: other.rows[0], headline: other.headline }];
+  await mount({ reserve });
+  const layout = height => ({ nativeEvent: { layout: { height } } });
+  const rowsBox = () => renderer.root.findAll(node => typeof node.type === 'string'
+    && StyleSheet.flatten(node.props.style)?.minHeight !== undefined
+    && node.findAll(item => item.props.testID === 'dog-card-row-position').length > 0
+    && StyleSheet.flatten(node.props.style)?.borderTopWidth)[0];
+  const measured = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onLayout
+    && !node.props.testID);
+  // The rows (all three), this dog's first row, and 小黑's (hidden) first row.
+  const [rows, first] = measured.filter(node => node.findAll(item => item.props.testID === 'dog-card-row-position'
+    && !findHidden(item)).length);
+  const sample = measured.find(node => findHidden(node));
+  await act(async () => rows.props.onLayout(layout(160)));
+  await act(async () => first.props.onLayout(layout(56)));
+  // A height held for a moment only is not kept (a row before its distance
+  // settled); one that holds still for 300 ms is.
+  await act(async () => sample.props.onLayout(layout(120)));
+  await act(async () => jest.advanceTimersByTime(100));
+  await act(async () => sample.props.onLayout(layout(80)));
+  await act(async () => jest.advanceTimersByTime(400));
+  expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(160 - 56 + 80);
+  // 小黑 back to one line: the room stays.
+  await act(async () => sample.props.onLayout(layout(40)));
+  expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(184);
+  // The hidden rows are never read out.
+  expect(renderer.root.findAll(node => node.props.importantForAccessibility === 'no-hide-descendants'
+    && node.props.accessible === false).length).toBeGreaterThan(0);
+});
+
+const findHidden = node => {
+  for (let item = node; item; item = item.parent) {
+    if (item.props?.importantForAccessibility === 'no-hide-descendants' && item.props?.pointerEvents === 'none') return true;
+  }
+  return false;
+};
+
 test('手機沒有定位 sits where the distance would', async () => {
   await mount({ card: model({}, { phone: null }) });
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe(`位置沒有新位置・最後 09:05不在接收範圍${i18nT('c726')}`);
@@ -378,7 +439,9 @@ test('E06: status labels reserve scaled width instead of wrapping at 1.3x', asyn
   await mount();
   const label = renderer.root.findAllByType(Text).find(node => node.props.children === '位置');
   const { size: sizes } = require('../src/theme/tokens');
-  expect(rn.StyleSheet.flatten(label.props.style).width).toBe(sizes.card.labelWidth * 1.3);
+  let cell = label.parent;
+  while (cell && !rn.StyleSheet.flatten(cell.props.style)?.width) cell = cell.parent;
+  expect(rn.StyleSheet.flatten(cell.props.style).width).toBe(sizes.card.labelWidth * 1.3);
   jest.restoreAllMocks();
 });
 

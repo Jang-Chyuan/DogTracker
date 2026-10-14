@@ -1052,6 +1052,20 @@ const FIXTURES = {
       ...indoorBle(now, 6, [-18, 24], { inside: 27 * MINUTE, until: 25 * MINUTE, battery: 62 })]),
     cloudRows: dog8Cloud(now),
   }),
+  // Four dogs, four kinds of first row, to see the card keep one height from
+  // dog to dog: 豆豆 in range (one line), 狗 5 silent since 09:05 and out of
+  // range (two lines), 小黑 indoors 1.6 km away with a long address (three
+  // or four lines), 阿福 only from the cloud (one line).
+  'card-switch-mixed': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [14, 9], step: [0.05, 0.08], battery: 62 }),
+      ...track(bleRow, now, { slave: 5, from: 40 * MINUTE, to: 25 * MINUTE, battery: 15,
+        dog: (progress, where) => awayFrom(where, 700 + 700 * progress, progress, 30) }),
+      ...heldFarAway(now, 12 * MINUTE, 8 * SECOND),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
   // 小黑 walked out to 1.6 km (out of range) and went indoors there 12
   // minutes ago: 「室內・N 分」, the address, and 「不在接收範圍・最後確認 HH:MM」
   // in red — two things in one row, one red 「!」.

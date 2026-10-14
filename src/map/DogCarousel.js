@@ -18,11 +18,14 @@ import { t } from '../i18n';
 //   still): the dog nearest where it was let go, however far that is; no
 //   momentum;
 // - a flick (short and still moving when let go): from the dog it began on,
-//   as many dogs as the release speed carries, at least one and at most
-//   five — a casual swipe is one however far the finger carried the row,
-//   only a clearly fast flick more;
-// - then a decelerating slide to that dog on the native driver; past an end,
-//   back to the end dog. No wrap-around.
+//   as far as the release speed carries under Android's own fling physics
+//   (OverScroller: distance grows with speed^1.74), in whole dogs, at least
+//   one — a casual swipe is one however far the finger carried the row, a
+//   medium flick two or three, a hard one to the end of the list;
+// - then, on the native driver, a decelerating slide that starts at the
+//   release speed, runs a few dp past the dog and settles back on a spring
+//   (a drag let go settles on the spring alone); past an end, back to the end
+//   dog. No wrap-around.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
@@ -49,20 +52,30 @@ export const SLOP = 8;
 // complaint; as flicks they go one. Drags across several cells last longer.
 export const FLICK_MAX_MS = 400;
 export const FLING_VELOCITY = 0.25;
-// The flick's reach: speed × this (ms) of travel, in dogs, rounded; at least
-// one, at most FLING_MAX. With a 64dp slot: under 2 dp/ms (2 000 dp/s — a
-// casual swipe stays well under) one dog; 2–3.3 two; 3.3–4.7 three; 4.7–6
-// four; above, five.
-export const FLING_REACH_MS = 48;
-export const FLING_MAX = 5;
+// The flick's reach (2026-10-14, the third phone try: a hard flick must reach
+// the end; no cap): Android's OverScroller spline, distance = k × speed^e
+// with e = r / (r − 1), r = ln 0.78 / ln 0.9 (its DECELERATION_RATE) — the
+// same curve as every Android list's fling, only with more friction (k) so a
+// whole dog is a bigger step than a list row. k puts the step from one dog to
+// two at 2 dp/ms (2 000 dp/s, the top of a casual swipe): in a 64dp slot, 1
+// dog below 2 dp/ms, 2 to 2.5, 3 to 3.1, 4–5 to 3.9, 7 at 5, 10 at 6, 17 at
+// 8 (Android's fastest fling) — a hard flick reaches the end of any list.
+const DECELERATION_RATE = Math.log(0.78) / Math.log(0.9);
+export const FLING_EXPONENT = DECELERATION_RATE / (DECELERATION_RATE - 1);
+export const FLING_K = (1.5 * carousel.slot) / 2 ** FLING_EXPONENT;
 // The velocity is the finger's over its last this many ms (like Android's
 // VelocityTracker), not over the whole gesture.
 const VELOCITY_WINDOW_MS = 100;
 // The slide to the chosen dog: it starts at the release speed and slows to
-// rest (ease-out cubic), between these durations.
+// rest (ease-out cubic), between these durations; it runs LANDING_OVERSHOOT
+// dp past the dog and settles back on LANDING_SPRING (damping ratio 0.68).
 const SNAP_MIN_MS = 180;
-const SNAP_MAX_MS = 450;
-const SNAP_DRAG_MS = 220;
+const SNAP_MAX_MS = 700;
+export const LANDING_OVERSHOOT = 6;
+const LANDING_SPRING = { stiffness: 320, damping: 24, mass: 1 };
+// A drag let go (or a tap, or the row following another pick): the spring
+// alone, from where it is (damping ratio 0.7: about 5% past, then back).
+const SETTLE_SPRING = { stiffness: 260, damping: 22.5, mass: 1 };
 
 /** The row's offset with dog `index` in the middle. */
 export const offsetOf = index => BOUNCE + index * carousel.slot;
@@ -84,14 +97,15 @@ export const isFlick = (velocity, duration) => duration <= FLICK_MAX_MS && Math.
  */
 export function releaseTarget({ from, x, velocity, duration, count }) {
   if (!isFlick(velocity, duration)) return slotAt(x, count);
-  const reach = Math.round((Math.abs(velocity) * FLING_REACH_MS) / carousel.slot);
-  const dogsAway = Math.max(1, Math.min(FLING_MAX, reach));
+  const dogsAway = Math.max(1, Math.round(flingDistance(velocity) / carousel.slot));
   return Math.max(0, Math.min(count - 1, from + Math.sign(velocity) * dogsAway));
 }
 
+/** How far (dp) a fling at `velocity` dp/ms carries (OverScroller's spline, more friction). */
+export const flingDistance = velocity => FLING_K * Math.abs(velocity) ** FLING_EXPONENT;
+
 /** The slide's duration: it begins at the release speed (ease-out cubic starts at 3× its mean speed). */
 export function snapDuration(distance, velocity) {
-  if (!velocity) return SNAP_DRAG_MS;
   return Math.max(SNAP_MIN_MS, Math.min(SNAP_MAX_MS, (3 * Math.abs(distance)) / Math.abs(velocity)));
 }
 
@@ -130,16 +144,25 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     const target = offsetOf(index);
     const from = here.current;
     here.current = target;
-    if (Math.abs(target - from) < 0.5) {
+    if (Math.abs(target - from) < 0.5 && !velocity) {
       position.setValue(target);
       return;
     }
-    const run = Animated.timing(position, {
-      toValue: target,
-      duration: snapDuration(target - from, velocity),
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    });
+    const settle = config => Animated.spring(position, { toValue: target, ...config, useNativeDriver: true });
+    // A fling: the slide keeps the release speed, runs a little past the dog,
+    // and the spring brings it back. Anything else: the spring from here.
+    const direction = Math.sign(target - from) || Math.sign(velocity);
+    const run = velocity && direction === Math.sign(velocity)
+      ? Animated.sequence([
+        Animated.timing(position, {
+          toValue: target + direction * LANDING_OVERSHOOT,
+          duration: snapDuration(target - from + direction * LANDING_OVERSHOOT, velocity),
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        settle(LANDING_SPRING),
+      ])
+      : settle(SETTLE_SPRING);
     sliding.current = run;
     run.start(({ finished }) => {
       if (finished && sliding.current === run) sliding.current = null;
@@ -217,8 +240,10 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     if (moved || !sliding.current) slideTo(index);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId, idsKey]);
-  // The middle name's line, measured (it grows with the system font).
-  const [nameHeight, setNameHeight] = useState(0);
+  // The names' lines, measured (they grow with the system font): the row is
+  // as tall as the tallest, so it never changes height from dog to dog.
+  const [nameHeights, setNameHeights] = useState({});
+  const nameHeight = Math.max(0, ...Object.values(nameHeights));
   // No room under the name: the rows start right below it (the card stays
   // no taller than before the row of dogs, 2026-10-14).
   const rowHeight = carousel.face[0] + space.xs + Math.ceil(nameHeight);
@@ -238,18 +263,29 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         outputRange: [carousel.opacity[2], carousel.opacity[1], 1, carousel.opacity[1], carousel.opacity[2]] }),
       middle: position.interpolate({ inputRange: [centre - slot / 2, centre, centre + slot / 2],
         outputRange: [0, 1, 0], extrapolate: 'clamp' }),
+      // The name grows and fades in with its face as it comes to the middle,
+      // and shrinks and fades out as it leaves (never larger than as drawn).
+      nameOpacity: position.interpolate({ inputRange: [centre - slot, centre, centre + slot],
+        outputRange: [0, 1, 0], extrapolate: 'clamp' }),
     };
   }), [dogs, slot, position]);
   return (
     <View style={[styles.row, { height: rowHeight }]}>
-      {/* A hidden sample of the middle name: the row's height at any font. */}
-      <Text style={[styles.name, styles.sample]} accessible={false}
-        onLayout={event => setNameHeight(event.nativeEvent.layout.height)}>
-        {dogs[at.current]?.name ?? ''}
-      </Text>
+      {/* Hidden samples of every name: the row's height at any font. */}
+      {dogs.map(dog => (
+        <Text key={dog.slaveId} style={[styles.name, styles.sample]} accessible={false}
+          numberOfLines={linesFor(1)}
+          onLayout={event => {
+            const height = event.nativeEvent.layout.height;
+            setNameHeights(current => (current[dog.slaveId] === height ? current
+              : { ...current, [dog.slaveId]: height }));
+          }}>
+          {dog.name}
+        </Text>
+      ))}
       <View testID="dog-card-carousel" style={[styles.window, { height: rowHeight }]} {...responder}>
         <Animated.View style={[styles.strip, { paddingLeft: side + BOUNCE, transform: [{ translateX: shift }] }]}>
-          {faces.map(({ dog, index, scale, opacity, middle }) => {
+          {faces.map(({ dog, index, scale, opacity, middle, nameOpacity }) => {
             const open = dog.slaveId === currentId;
             return (
               <Pressable
@@ -286,8 +322,8 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
                     <Glyph name="pencil" color={colors.textMuted} size={sizes.card.editBadgeIcon} />
                   </Animated.View>
                 </Animated.View>
-                <Animated.Text style={[styles.name, { opacity: middle }]} numberOfLines={linesFor(1)}
-                  accessible={false}>
+                <Animated.Text style={[styles.name, { opacity: nameOpacity, transform: [{ scale }] }]}
+                  numberOfLines={linesFor(1)} accessible={false}>
                   {dog.name}
                 </Animated.Text>
               </Pressable>
