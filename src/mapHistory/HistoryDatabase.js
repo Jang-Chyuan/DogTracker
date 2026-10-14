@@ -24,6 +24,20 @@ const NAME_TABLE = 'CREATE TABLE IF NOT EXISTS dog_names (slave_id INTEGER PRIMA
 const SETTINGS_TABLE = 'CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)';
 // One move of the old names per connection, even when two opens race.
 const namesMoved = new WeakMap();
+const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
+// A save's names: a name is written, an empty one removes that dog's name
+// (back to 狗 N). A dog left out of the map keeps the name it has, so a save
+// made from preferences that never loaded cannot delete the other names.
+function nameChanges(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value).filter(([id]) => /^[1-9]\d*$/.test(id)).flatMap(([id, alias]) => {
+    if (alias != null && typeof alias !== 'string') return [];
+    const name = normalizeDogAliases({ [id]: alias || '' })[id];
+    return name
+      ? [{ query: 'INSERT OR REPLACE INTO dog_names(slave_id,value) VALUES(?,?)', params: [Number(id), name] }]
+      : [{ query: 'DELETE FROM dog_names WHERE slave_id=?', params: [Number(id)] }];
+  });
+}
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
 export const HISTORY_DEFAULTS = { phone: true, client: true, source: 'ble', hours: 3,
@@ -71,20 +85,6 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
-const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
-// A save's names: a name is written, an empty one removes that dog's name
-// (back to 狗 N). A dog left out of the map keeps the name it has, so a save
-// made from preferences that never loaded cannot delete the other names.
-function nameChanges(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-  return Object.entries(value).filter(([id]) => /^[1-9]\d*$/.test(id)).flatMap(([id, alias]) => {
-    if (alias != null && typeof alias !== 'string') return [];
-    const name = normalizeDogAliases({ [id]: alias || '' })[id];
-    return name
-      ? [{ query: 'INSERT OR REPLACE INTO dog_names(slave_id,value) VALUES(?,?)', params: [Number(id), name] }]
-      : [{ query: 'DELETE FROM dog_names WHERE slave_id=?', params: [Number(id)] }];
-  });
-}
 // myLocationTracker's optional columns 「今天 x km」 reads (phoneRouteSince).
 const PHONE_ROUTE_COLUMNS = ['raw_speed_kmh', 'speed_accuracy_mps', 'session_id', 'odometer_m'];
 export function createHistoryDatabase(db) {
