@@ -15,8 +15,10 @@ import { t } from '../i18n';
 // - One from the cloud: last successful live download − its time, so the
 //   answer only changes when a download succeeds (a slow or background
 //   download does not turn every cloud dog grey). Before the first successful
-//   live download of this run, or once downloads have failed for more than
-//   10 minutes in a row, now − its time.
+//   live download of this run, once downloads have failed for more than
+//   10 minutes in a row, or once the last successful download is more than
+//   10 minutes old (back from a long background) and downloads have failed
+//   for more than a minute, now − its time.
 // - Stale after more than 10 minutes. It clears only when the same formula,
 //   run on the newer data, comes out at 10 minutes or less: a late upload of
 //   old rows does not clear it.
@@ -32,6 +34,13 @@ import { t } from '../i18n';
 export const STALE_AFTER_MS = 10 * 60000;
 // Cloud downloads failing for longer than this: judge cloud dogs by now.
 export const CLOUD_FAILING_FALLBACK_MS = 10 * 60000;
+// The last successful download older than this (the app was away, or the
+// downloads have hung): once a download has failed, judge by now too ...
+export const CLOUD_OLD_DOWNLOAD_MS = 10 * 60000;
+// ... but only after it has kept failing this long, so one failed attempt
+// (the network still waking up after a resume, a brief hiccup) does not
+// turn every cloud dog grey for the seconds until the next one succeeds.
+export const CLOUD_FAILING_GRACE_MS = 60000;
 
 // A hold that is the dog riding along with this phone (RideAlong) is not
 // indoors: it is drawn like any other dog and timed by its positions.
@@ -43,11 +52,23 @@ export const isIndoorHold = dog => !!dog?.heldReason && dog.heldSource !== 'ride
  *   live cloud sync: when the last successful download started, and since
  *   when downloads have been failing without a success in between.
  */
+//
+// F2 (2026-10-15): the last download survives the app going away, so after a
+// long background (or a run of hung attempts) it can be hours old. Judged by
+// it, a cloud dog last seen 2 hours ago was drawn as current for the first 10
+// minutes of failing downloads. Once that download is older than
+// CLOUD_OLD_DOWNLOAD_MS and downloads have been failing for more than
+// CLOUD_FAILING_GRACE_MS, cloud dogs are judged by now. While the first
+// attempt after a resume is still under way nothing changes (the map is
+// catching up meanwhile, ResumeCatchUp).
 export function cloudClock(cloud, now) {
   const last = cloud?.lastDownloadAt;
   if (!Number.isFinite(last)) return now;
   const failing = cloud?.failingSince;
-  if (Number.isFinite(failing) && now - failing > CLOUD_FAILING_FALLBACK_MS) return now;
+  if (Number.isFinite(failing)) {
+    if (now - failing > CLOUD_FAILING_FALLBACK_MS) return now;
+    if (now - last > CLOUD_OLD_DOWNLOAD_MS && now - failing > CLOUD_FAILING_GRACE_MS) return now;
+  }
   return last;
 }
 

@@ -1,5 +1,5 @@
 import {
-  cloudClock, dogFreshness, lastTimeText, STALE_AFTER_MS, staleSpeech, staleText,
+  CLOUD_FAILING_GRACE_MS, cloudClock, dogFreshness, lastTimeText, STALE_AFTER_MS, staleSpeech, staleText,
 } from '../src/tracking/DogFreshness';
 
 // 2026-10-07 09:30 in Taiwan (the tests run in the machine's zone; times are
@@ -37,11 +37,29 @@ test('cloud dogs are judged against the last successful download, not now', () =
 test('cloud dogs fall back to now before the first download and after 10 minutes of failures', () => {
   expect(cloudClock(null, NOW)).toBe(NOW);
   expect(dogFreshness(cloud(15), { now: NOW, cloud: { lastDownloadAt: null } }).stale).toBe(true);
-  const failing = since => ({ lastDownloadAt: NOW - 30 * MINUTE, failingSince: NOW - since * MINUTE });
-  expect(cloudClock(failing(10), NOW)).toBe(NOW - 30 * MINUTE);
+  // A recent last download (failing in front): 10 minutes of failures.
+  const failing = since => ({ lastDownloadAt: NOW - (since + 0.5) * MINUTE, failingSince: NOW - since * MINUTE });
+  expect(cloudClock(failing(9), NOW)).toBe(NOW - 9.5 * MINUTE);
   expect(cloudClock(failing(11), NOW)).toBe(NOW);
-  expect(dogFreshness(cloud(25), { now: NOW, cloud: failing(9) }).stale).toBe(false);
-  expect(dogFreshness(cloud(25), { now: NOW, cloud: failing(11) }).stale).toBe(true);
+  expect(dogFreshness(cloud(15), { now: NOW, cloud: failing(9) }).stale).toBe(false);
+  expect(dogFreshness(cloud(15), { now: NOW, cloud: failing(11) }).stale).toBe(true);
+});
+
+// F2: back after a long background, the last download is hours old.
+test('a last download older than 10 minutes: now, once downloads have failed for more than a minute', () => {
+  const away = since => ({ lastDownloadAt: NOW - 2 * 60 * MINUTE, failingSince: since == null ? null : NOW - since });
+  // The first attempt after the resume still under way, or failed just now.
+  expect(cloudClock(away(null), NOW)).toBe(NOW - 2 * 60 * MINUTE);
+  expect(cloudClock(away(30000), NOW)).toBe(NOW - 2 * 60 * MINUTE);
+  expect(dogFreshness(cloud(121), { now: NOW, cloud: away(30000) }).stale).toBe(false);
+  // Still failing after the grace minute: the 2-hour-old position is stale.
+  expect(cloudClock(away(CLOUD_FAILING_GRACE_MS + 1), NOW)).toBe(NOW);
+  expect(dogFreshness(cloud(121), { now: NOW, cloud: away(CLOUD_FAILING_GRACE_MS + 1) })).toMatchObject({
+    stale: true, ageMs: 121 * MINUTE });
+  // Exactly 10 minutes old is not "older than".
+  const edge = { lastDownloadAt: NOW - 10 * MINUTE, failingSince: NOW - 5 * MINUTE };
+  expect(cloudClock(edge, NOW)).toBe(NOW - 10 * MINUTE);
+  expect(cloudClock({ ...edge, lastDownloadAt: NOW - 10 * MINUTE - 1 }, NOW)).toBe(NOW);
 });
 
 test('a dog held indoors is timed by its packets, with the source of its newest packet', () => {
