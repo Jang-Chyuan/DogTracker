@@ -15,7 +15,13 @@ fallback preserve those events. Requests and device power management can
 increase actual latency.
 
 Each pass selects each Master/Slave's newest pending event first, then older
-events. The native queue stores `slave_id`; existing queue rows are migrated
+events: up to 120, six requests at a time, starting none after 18 s (the JS
+task stops at 25 s). A 401 is not charged to the row; a 403 records a refusal
+(`ble_upload_refusals`) so the receiver service stops queueing that Master
+and its waiting rows wait for 重試, a route change or a successful send.
+Refused (blocked) rows do not count toward the 20,000 cap and expire after 7
+days (at most 2,000 kept). At the cap the oldest waiting rows are thinned to
+one per dog per minute before any is dropped; new packets are always queued. The native queue stores `slave_id`; existing queue rows are migrated
 without deleting history. Offline events remain pending with their original
 UUIDs. Each request rechecks account, Master setting and queue membership.
 

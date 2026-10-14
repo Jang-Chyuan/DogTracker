@@ -32,7 +32,7 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null, c
   currentOwner.current = owner;
   const [revision, refresh] = useState(0);
   const [state, setState] = useState({ settings: [], settingsOwner: null, masters: [], counts: [],
-    pendingByMaster: {}, blockedByMaster: {}, lastByMaster: {}, wifiByMaster: {}, wifiOwner: null, phoneId: '', error: '' });
+    pendingByMaster: {}, blockedByMaster: {}, refusedMasters: [], lastByMaster: {}, wifiByMaster: {}, wifiOwner: null, phoneId: '', error: '' });
   const supported = Platform.OS === 'android' && !!NativeModules.BleBackground?.executeDatabase;
   useEffect(() => {
     if (!ready || !supported) return undefined;
@@ -49,7 +49,7 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null, c
     const database = db.current;
     // This update also controls native enqueue while the JS screen is suspended.
     setState(s => s.settingsOwner === owner ? s
-      : { ...s, settings: [], settingsOwner: null, counts: [], pendingByMaster: {}, blockedByMaster: {}, lastByMaster: {},
+      : { ...s, settings: [], settingsOwner: null, counts: [], pendingByMaster: {}, blockedByMaster: {}, refusedMasters: [], lastByMaster: {},
         last: null, error: '' });
     const binding = database.owner(owner);
     async function tick() {
@@ -139,6 +139,7 @@ export function useCloudUpload(ready, owner, foreground, onAuthFailure = null, c
   return { ...state, settings: settingsReady ? state.settings : [],
     pendingByMaster: settingsReady ? state.pendingByMaster || {} : {},
     blockedByMaster: settingsReady ? state.blockedByMaster || {} : {},
+    refusedMasters: settingsReady ? state.refusedMasters || [] : [],
     // Per-receiver answers are this account's: never another one's, not even
     // for the render before the account change has been read.
     lastByMaster: settingsReady ? state.lastByMaster || {} : {},
