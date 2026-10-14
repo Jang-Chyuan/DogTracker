@@ -217,6 +217,12 @@ jobs:
         # Includes PhoneMotionParityTest, AlertParityTest and the other JS/Kotlin
         # parity checks against the fixtures in app/src/test/resources.
         working-directory: android
+        env:
+          # A shallow checkout cannot count main's commits (scripts/app-version.js);
+          # the tests do not read the version, so a fixed override saves
+          # fetching the whole history.
+          APP_VERSION_NAME: 0.0.0
+          APP_VERSION_CODE: 1
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
       - name: Upload test report
