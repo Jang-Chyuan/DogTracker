@@ -717,37 +717,37 @@ async function askHistory(fixture, dog) {
   return stay ? { state: 'found', ...stay } : { state: 'unknown' };
 }
 
-test('card-ok: in range, 62%, resting 18 minutes; no 位置 row', async () => {
+test('card-ok: in range (with the distance), 62%, resting 18 minutes; three rows', async () => {
   const { model, rows, keys } = await card('card-ok');
   expect(model.name).toBe('豆豆');
   expect(model.sourceLabel).toBe('訊號源 4');
-  expect(keys).toEqual(['battery', 'range', 'activity']);
+  expect(keys).toEqual(['range', 'battery', 'activity']);
   expect(rows.battery).toMatchObject({ value: '62%', tone: null });
   expect(rows.range).toMatchObject({ value: i18nT('c348'), tone: null });
   expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 18 分鐘', activityTone: 'rest', at: null });
-  expect(model.headline).toMatchObject({ kind: 'distance', suffix: i18nT('c064') });
+  expect(model.headline).toMatchObject({ kind: 'distance', phoneAge: null });
 });
 
 test('card-near-edge (A3): 快離開接收範圍 in amber, no distance written', async () => {
   const { rows, keys, state } = await card('card-near-edge');
-  expect(keys).toEqual(['battery', 'range', 'activity']);
+  expect(keys).toEqual(['range', 'battery', 'activity']);
   expect(rows.range).toMatchObject({ value: i18nT('c067'), tone: 'warn' });
   // The marker itself does not change for 快離開.
   expect(state.marker(4)).toMatchObject({ problem: false });
   expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 18 分鐘' });
 });
 
-test('card-problems (A3b): every problem row red, 活動量 「—」, the distance is to the last position', async () => {
+test('card-problems (A3b): every problem red, 活動量 「—」, the distance is to the last position', async () => {
   const { model, rows, keys } = await card('card-problems');
-  expect(keys).toEqual(['position', 'battery', 'range', 'activity']);
-  expect(rows.position).toMatchObject({ value: '沒有新位置・最後 09:05', tone: 'crit' });
+  // Still three rows: 不在接收範圍 is the 位置 row's second line.
+  expect(keys).toEqual(['position', 'battery', 'activity']);
+  expect(rows.position).toMatchObject({ value: '沒有新位置・最後 09:05', tone: 'crit', alert: i18nT('c078'), twoLine: true });
   expect(rows.battery).toMatchObject({ value: '15%・偏低', tone: 'crit' });
-  expect(rows.range).toMatchObject({ value: i18nT('c078'), tone: 'crit' });
   expect(rows.activity).toMatchObject({ value: '—', tone: null });
-  expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・最後位置' });
+  expect(model.headline).toMatchObject({ kind: 'distance', phoneAge: null });
   expect(model.headline.distance).toMatch(/km$/);
   expect(model.rows.map(row => row.speech).join('；'))
-    .toBe('位置，沒有新位置，最後 09:05；電量 15%，偏低；接收範圍，不在接收範圍；活動量，沒有資料');
+    .toMatch(/^位置，沒有新位置，最後 09:05，不在接收範圍，.+方 [\d.]+ 公里，離手機；電量 15%，偏低；活動量，沒有資料$/);
 });
 
 // 2026-10-13: 室內・11 分 is the hold (GPS, as the history's node); 休息中・已
@@ -757,11 +757,11 @@ test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(keys).toEqual(['position', 'battery', 'activity']);
   expect(rows.position).toMatchObject({ value: '室內・11 分', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
-    speech: '位置，室內，11 分，桃園區中正路 1 號附近' });
+    speech: expect.stringMatching(/^位置，室內，11 分，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
   expect(rows.battery).toMatchObject({ value: '充電中 62%', tone: null });
   expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 40 分鐘',
     speech: '活動量，休息中，活動量低已 40 分鐘' });
-  expect(model.headline).toMatchObject({ kind: 'distance', suffix: '離手機・室內' });
+  expect(model.headline).toMatchObject({ kind: 'distance' });
 });
 
 // 2026-10-13: a stay begun last night, opened after a cold start (the live
@@ -770,7 +770,7 @@ test('card-indoor-overnight: 「室內・12 時 20 分」, not the live half hou
   const { rows, dog } = await card('card-indoor-overnight', { indoorStay: askHistory });
   expect(dog.heldFromClipped).toBe(true);
   expect(rows.position).toMatchObject({ value: '室內・12 時 20 分', detail: '桃園區中正路 1 號附近',
-    speech: '位置，室內，12 時 20 分，桃園區中正路 1 號附近' });
+    speech: expect.stringMatching(/^位置，室內，12 時 20 分，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
   // Without the history's answer it says only what it knows.
   const live = await card('card-indoor-overnight');
   expect(live.rows.position.value).toBe('室內・超過 29 分');
@@ -791,7 +791,7 @@ test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內・11
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(held(dog)).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
   expect(rows.position).toMatchObject({ value: '室內・11 分', detail: held(dog), twoLine: true,
-    speech: `位置，室內，11 分，${held(dog)}` });
+    speech: expect.stringMatching(new RegExp(`^位置，室內，11 分，${held(dog).replace(/\./g, '\\.')}，.+方 [\\d.]+ 公(尺|里)，離手機$`)) });
 });
 
 test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: the coordinates)', async () => {
@@ -799,10 +799,11 @@ test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: the
   expect(rows.position).toMatchObject({ value: '室內・11 分', detail: held(dog) });
 });
 
-test('card-cloud-dog: a cloud dog has no 接收範圍 row; running hard (劇烈活動)', async () => {
+test('card-cloud-dog: a cloud dog has no 接收範圍 row, 位置 says when its position is from; running hard', async () => {
   const { model, rows, keys } = await card('card-cloud-dog');
   expect(model.name).toBe('小黑');
-  expect(keys).toEqual(['battery', 'activity']);
+  expect(keys).toEqual(['position', 'battery', 'activity']);
+  expect(rows.position).toMatchObject({ value: expect.stringMatching(/^最後 \d\d:\d\d$/), tone: null, alert: null });
   expect(rows.battery.value).toBe('76%');
   expect(rows.activity).toMatchObject({ value: i18nT('c350'), activityTone: 'vigorous' });
   expect(rows.activity.detail).toMatch(/^已 \d+ 分鐘$/);
@@ -810,11 +811,11 @@ test('card-cloud-dog: a cloud dog has no 接收範圍 row; running hard (劇烈�
   expect(model.headline.kind).toBe('distance');
 });
 
-test('card-phone-no-fix: the headline says 手機沒有定位 instead of a direction', async () => {
+test('card-phone-no-fix: the first row says 手機沒有定位 instead of a direction', async () => {
   const { model, state } = await card('card-phone-no-fix');
   expect(phoneFix(state.fixture.livePhone)).toBeNull();
   expect(model.headline).toEqual({ kind: 'no-phone', text: i18nT("c726") });
-  expect(model.headlineSpeech).toBe('豆豆，手機沒有定位');
+  expect(model.rows[0].speech).toMatch(/，手機沒有定位$/);
 });
 
 test('card-readings-old: readings older than the position carry their time', async () => {
@@ -827,7 +828,7 @@ test('card-readings-old: readings older than the position carry their time', asy
 
 test('the real map opens a card fixture\'s card with its rows', async () => {
   const problems = await renderFixture('card-problems');
-  for (const words of ['豆豆', '沒有新位置・最後 09:05', '15%・偏低', '不在接收範圍', '看軌跡', '離手機・最後位置']) {
+  for (const words of ['豆豆', '沒有新位置・最後 09:05', '15%・偏低', '不在接收範圍', '看軌跡', ' km']) {
     expect(problems.text).toContain(words);
   }
   // No receiver row on a dog's card.

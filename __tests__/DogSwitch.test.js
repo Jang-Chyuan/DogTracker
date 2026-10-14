@@ -6,9 +6,9 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, StyleSheet } from 'react-native';
 import DogCard from '../src/map/DogCard';
-import { slotAt } from '../src/map/DogCarousel';
+import { BOUNCE, offsetOf, slotAt } from '../src/map/DogCarousel';
 import { dogCard } from '../src/map/DogCardModel';
-import { liveSwitchOrder, switchOrder, switchTarget } from '../src/map/DogSwitch';
+import { switchOrder, switchTarget } from '../src/map/DogSwitch';
 import { colors, size as sizes, touch } from '../src/theme/tokens';
 
 const dog = (slaveId, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `狗 ${slaveId}`, size: 40,
@@ -17,12 +17,12 @@ const dog = (slaveId, extra = {}) => ({ slaveId, name: `狗 ${slaveId}`, tag: `�
 describe('the order', () => {
   const markers = [dog(12), dog(5), dog(8, { problem: true }), dog(4), dog(6, { selected: true }), dog(9)];
 
-  test('every dog, the opening one first, then problems, then by signal-source number', () => {
-    // 6 was the open dog before; 4 opens now and comes first instead.
-    expect(switchOrder(markers, 4)).toEqual([4, 8, 5, 6, 9, 12]);
-    expect(switchOrder([...markers].reverse(), 4)).toEqual([4, 8, 5, 6, 9, 12]);
-    // However the card was opened (a dog, a 「N 隻」 tag, a notification).
-    expect(switchOrder(markers, 9)).toEqual([9, 8, 4, 5, 6, 12]);
+  test('every dog once, by signal-source number only: no problems first, the open dog in its own place', () => {
+    expect(switchOrder(markers)).toEqual([4, 5, 6, 8, 9, 12]);
+    expect(switchOrder([...markers].reverse())).toEqual([4, 5, 6, 8, 9, 12]);
+    // A dog getting a problem, or gone, or new: the others never move.
+    const now = [dog(4), dog(5, { problem: true }), dog(6), dog(9), dog(12), dog(3), dog(3)];
+    expect(switchOrder(now)).toEqual([3, 4, 5, 6, 9, 12]);
   });
 
   test('a plain list with ends: no wrap-around, nothing past the first or the last', () => {
@@ -36,21 +36,16 @@ describe('the order', () => {
     expect(switchTarget(order, 7, 1)).toBeNull();
   });
 
-  test('kept while stepping: a dog gone drops out, a new dog comes last, a new problem does not jump the queue', () => {
-    const taken = switchOrder(markers, 4);
-    const now = [dog(4), dog(5, { problem: true }), dog(6), dog(8), dog(9), dog(12), dog(3)];
-    expect(liveSwitchOrder(taken, now)).toEqual([4, 8, 5, 6, 9, 12, 3]);
-    expect(liveSwitchOrder(taken, now.filter(item => item.slaveId !== 8))).toEqual([4, 5, 6, 9, 12, 3]);
-  });
-
   test('the row lands on the slot nearest its offset, never past an end', () => {
     const slot = sizes.card.carousel.slot;
+    expect(offsetOf(0)).toBe(BOUNCE);
+    expect(slotAt(offsetOf(0), 6)).toBe(0);
+    expect(slotAt(offsetOf(0) + slot * 2.4, 6)).toBe(2);
+    expect(slotAt(offsetOf(0) + slot * 2.6, 6)).toBe(3);
+    // Pulled into the bounce's empty room past either end: the end dog.
+    expect(BOUNCE).toBeGreaterThanOrEqual(slot / 2);
     expect(slotAt(0, 6)).toBe(0);
-    expect(slotAt(slot * 2.4, 6)).toBe(2);
-    expect(slotAt(slot * 2.6, 6)).toBe(3);
-    // The platform's overscroll at either end lands on the end dog.
-    expect(slotAt(-40, 6)).toBe(0);
-    expect(slotAt(slot * 9, 6)).toBe(5);
+    expect(slotAt(offsetOf(5) + BOUNCE, 6)).toBe(5);
   });
 });
 
@@ -128,15 +123,14 @@ describe('the card', () => {
     const value = switcher();
     await mount({ switcher: value });
     const row = host('dog-card-carousel')[0];
-    const slot = sizes.card.carousel.slot;
     // The row placing itself on the open dog (no drag): nothing picked.
     await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0 } } }));
     expect(value.onSelect).not.toHaveBeenCalled();
     await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 2 * slot } } }));
+    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(2) } } }));
     expect(value.onSelect.mock.calls).toEqual([[8]]);
     await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: slot * 1.2 }, velocity: { x: 0 } } }));
+    await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: offsetOf(1.2) }, velocity: { x: 0 } } }));
     expect(value.onSelect.mock.calls).toEqual([[8]]);
     // A fling's drag end waits for its momentum end.
     await act(async () => row.props.onScrollBeginDrag());
@@ -147,6 +141,27 @@ describe('the card', () => {
     // A tap on a side face picks it straight away.
     await act(async () => byTestId('dog-card-pick-8')[0].props.onPress());
     expect(value.onSelect.mock.calls).toEqual([[8], [12], [8]]);
+  });
+
+  test('pulled into the empty room past an end and let go, the row springs back to the end dog', async () => {
+    const value = switcher();
+    await mount({ switcher: value });
+    const row = host('dog-card-carousel')[0];
+    const list = renderer.root.findAll(node => node.props.testID === 'dog-card-carousel'
+      && typeof node.instance?.scrollTo === 'function')[0].instance;
+    const scrollTo = jest.spyOn(list, 'scrollTo').mockImplementation(() => {});
+    await act(async () => row.props.onScrollBeginDrag());
+    await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 0 }, velocity: { x: 0 } } }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(0), animated: true });
+    // A fling that comes to rest past the last dog.
+    await act(async () => row.props.onScrollBeginDrag());
+    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(2) + BOUNCE } } }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(2), animated: true });
+    // On a dog: no extra move (the platform snaps it).
+    scrollTo.mockClear();
+    await act(async () => row.props.onScrollBeginDrag());
+    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(1) } } }));
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   test('TalkBack: 下一隻／上一隻 on the middle face, only where there is a dog that way', async () => {

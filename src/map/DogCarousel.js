@@ -4,8 +4,9 @@ import { t } from '../i18n';
 // stable order (DogSwitch). The open dog sits in the middle, largest, with
 // the pencil badge (the edit entry) and its name under it; the others get
 // smaller and fainter with distance. Swipe or fling the row (it snaps one dog
-// per slot, and stops with the platform's overscroll at either end: no
-// wrap-around) or tap a side face to pick that dog; the card below swaps its
+// per slot, and at either end it stretches into a short empty stretch and
+// springs back to the end dog: no wrap-around) or tap a side face to pick
+// that dog; the card below swaps its
 // content and the map centres on the new dog (MapScreen). Size and fade
 // follow the scroll position on the native driver.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -23,8 +24,18 @@ const carousel = sizes.card.carousel;
 const PLACE_RETRY_MS = [0, 60, 200, 500, 1200];
 const PLACE_SETTLE_MS = 500;
 
-/** Which slot `x` (the row's scroll offset) has in the middle. */
-export const slotAt = (x, count) => Math.max(0, Math.min(count - 1, Math.round(x / carousel.slot)));
+// The edge bounce (2026-10-14): Android's own overscroll (a glow, or a
+// stretch from Android 12) is hardly seen on a row this short, so the row
+// has this much empty room past each end dog. A drag runs on into it and,
+// let go, the row springs back to the end dog (only the dogs are snap
+// points). Clearly an end, never a wrap-around.
+export const BOUNCE = Math.round(carousel.slot * 0.75);
+
+/** The row's scroll offset with dog `index` in the middle. */
+export const offsetOf = index => BOUNCE + index * carousel.slot;
+
+/** Which slot `x` (the row's scroll offset) has in the middle; past an end, the end dog. */
+export const slotAt = (x, count) => Math.max(0, Math.min(count - 1, Math.round((x - BOUNCE) / carousel.slot)));
 
 /**
  * @param dogs the order (DogSwitch): [{ slaveId, name, avatar, problem, stale }]
@@ -41,12 +52,20 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   const count = dogs.length;
   const indexOf = id => Math.max(0, dogs.findIndex(dog => dog.slaveId === id));
   const at = useRef(indexOf(currentId));
-  const scrollX = useRef(new Animated.Value(at.current * slot)).current;
+  const scrollX = useRef(new Animated.Value(offsetOf(at.current))).current;
   const list = useRef(null);
   // Only the user's own drag picks a dog where the row lands: the row's own
   // moves (placing it on the open dog, following a pick) never do.
   const dragging = useRef(false);
+  // Let go (or come to rest) in the empty room past an end: spring back to
+  // the end dog. Only the dogs are snap points, and Android does not snap
+  // outside the first and last of them.
+  const springBack = x => {
+    const target = Math.max(offsetOf(0), Math.min(offsetOf(count - 1), x));
+    if (Math.abs(target - x) > 1) list.current?.scrollTo({ x: target, animated: true });
+  };
   const settle = x => {
+    springBack(x);
     if (!dragging.current) return;
     dragging.current = false;
     const index = slotAt(x, count);
@@ -67,12 +86,12 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     timers.current.forEach(clearTimeout);
     if (dragging.current) return;
     if (animated) {
-      list.current?.scrollTo({ x: at.current * slot, animated: true });
+      list.current?.scrollTo({ x: offsetOf(at.current), animated: true });
       slidingUntil.current = Date.now() + PLACE_SETTLE_MS;
     }
     const sliding = Date.now() < slidingUntil.current;
     timers.current = PLACE_RETRY_MS.filter(ms => !sliding || ms >= PLACE_SETTLE_MS).map(ms => setTimeout(() => {
-      const target = at.current * slot;
+      const target = offsetOf(at.current);
       if (!dragging.current && Math.abs(lastX.current - target) > 1) {
         list.current?.scrollTo({ x: target, animated: false });
       }
@@ -90,10 +109,13 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   }, [currentId, idsKey]);
   // The middle name's line, measured (it grows with the system font).
   const [nameHeight, setNameHeight] = useState(0);
-  const rowHeight = carousel.face[0] + space.xs * 2 + Math.ceil(nameHeight);
+  // No room under the name: the rows start right below it (the card stays
+  // no taller than before the row of dogs, 2026-10-14).
+  const rowHeight = carousel.face[0] + space.xs + Math.ceil(nameHeight);
   const side = Math.max(0, (width - slot) / 2);
+  const snaps = useMemo(() => dogs.map((_, index) => offsetOf(index)), [dogs]);
   const faces = useMemo(() => dogs.map((dog, index) => {
-    const centre = index * slot;
+    const centre = offsetOf(index);
     const range = [centre - 2 * slot, centre - slot, centre, centre + slot, centre + 2 * slot];
     const big = carousel.face[0];
     const ratio = value => value / big;
@@ -121,12 +143,14 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         horizontal
         style={{ height: rowHeight }}
         showsHorizontalScrollIndicator={false}
-        snapToInterval={slot}
+        snapToOffsets={snaps}
+        snapToStart={false}
+        snapToEnd={false}
         decelerationRate="fast"
-        contentOffset={{ x: at.current * slot, y: 0 }}
+        contentOffset={{ x: offsetOf(at.current), y: 0 }}
         onContentSizeChange={() => place()}
         onLayout={() => place()}
-        contentContainerStyle={{ paddingHorizontal: side }}
+        contentContainerStyle={{ paddingHorizontal: side + BOUNCE }}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
           useNativeDriver: true,
@@ -159,7 +183,7 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
                 }
                 // A tap picks at once; the row slides to it.
                 at.current = index;
-                list.current?.scrollTo({ x: index * slot, animated: true });
+                list.current?.scrollTo({ x: offsetOf(index), animated: true });
                 slidingUntil.current = Date.now() + PLACE_SETTLE_MS;
                 onSelect?.(dog.slaveId);
               }}
@@ -226,8 +250,10 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     // The middle dog's name: wider than its slot, centred under the face.
+    // Its line is no taller than the 20sp words need (24dp).
     name: {
       ...type.title,
+      lineHeight: type.title.fontSize + space.xs,
       color: colors.text,
       width: carousel.nameWidth,
       textAlign: 'center',

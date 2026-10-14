@@ -921,8 +921,9 @@ const FIXTURES = {
   // ---- switching dogs from the card (2026-10-14, the row of dogs) ---------
   // Six dogs on receiver 7: 豆豆, 小黑 and 阿福 walking together (one 「3 隻」
   // tag, 阿福 at 12% so it has the red 「!」), 狗 5, 狗 9 and 狗 12 on their own.
-  // 豆豆's card is open: its row of dogs goes 豆豆, 阿福 (problem), then 5,
-  // 6, 9, 12, and ends there (no wrap-around).
+  // 豆豆's card is open: its row of dogs goes by number only — 豆豆 (4), 5,
+  // 小黑 (6), 阿福 (8, its problem does not move it), 9, 12 — and ends there
+  // (no wrap-around; pulled past an end it springs back).
   'card-switch': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
@@ -981,8 +982,8 @@ const FIXTURES = {
   'dog-photo-stale': now => ({ ...FIXTURES['dogs-aged'](now), openDog: 8,
     avatars: { 8: { kind: 'photo', uri: FIXTURE_PHOTO } } }),
   // A3b: 豆豆 walked out to 1.4 km and has been silent since 09:05 (25
-  // minutes): no new position, battery 15%, out of range — every problem row
-  // at once, and 活動量 「—」.
+  // minutes): no new position, battery 15%, out of range — every problem at
+  // once (不在接收範圍 the 位置 row's second line), and 活動量 「—」.
   'card-problems': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
@@ -995,7 +996,7 @@ const FIXTURES = {
   }),
   // A7b: 小黑 held indoors (clear fixes, then packets without a fix for 12
   // minutes), collar on USB at 62%, resting for 40 minutes. 位置 「室內」 with
-  // the held place's address under it (053a), no 接收範圍 row.
+  // the held place's address under it (053a) is the first row.
   'card-indoor': now => ({
     geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
@@ -1029,8 +1030,9 @@ const FIXTURES = {
   // card-indoor named by this phone's own Geocoder (network + Play services;
   // the place is by Taoyuan station). Nothing is written to its cache.
   'card-indoor-geocoder': now => ({ ...FIXTURES['card-indoor'](now), geocoder: 'real' }),
-  // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 row at all;
-  // running hard for the last few minutes (劇烈活動).
+  // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 to write, so
+  // the first row is 位置 「最後 HH:MM」; running hard for the last few
+  // minutes (劇烈活動).
   'card-cloud-dog': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
     ble: dog4Ble(now),
@@ -1040,8 +1042,8 @@ const FIXTURES = {
       ...dog8Cloud(now),
     ],
   }),
-  // The phone's newest fix is 15 minutes old: the headline says 「手機沒有
-  // 定位」 instead of a direction and distance; 我的位置 turns grey.
+  // The phone's newest fix is 15 minutes old: the first row's right end says
+  // 「手機沒有定位」 instead of a direction and distance; 我的位置 turns grey.
   'card-phone-no-fix': now => ({
     receiver: receiving(now), cloud: synced(now), phone: stalePhone(now, 15 * MINUTE), openDog: 4,
     ble: dog4Ble(now), cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],

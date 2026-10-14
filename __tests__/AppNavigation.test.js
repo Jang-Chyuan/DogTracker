@@ -624,8 +624,7 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   });
   await mount();
   await advance(1000);
-  const { size: sizes } = require('../src/theme/tokens');
-  const slot = sizes.card.carousel.slot;
+  const { offsetOf } = require('../src/map/DogCarousel');
   const middle = () => renderer.root.find(node => node.props.testID === 'dog-card-edit'
     && typeof node.props.onPress === 'function');
   const open = () => middle().props.accessibilityLabel.replace(/^編輯(.*)的名字和頭像$/, '$1');
@@ -636,20 +635,21 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   await act(async () => card().props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
   await advance(100);
   expect(open()).toBe('豆豆');
-  // The order: 阿福 (problem), then by number; each once. The open 豆豆
-  // keeps its own place (second), with a dog on either side.
-  const order = ['阿福', '豆豆', '狗 5', '小黑', '狗 9', '狗 12'];
-  expect(middle().props.accessibilityActions).toEqual([{ name: 'next', label: '下一隻' }, { name: 'previous', label: '上一隻' }]);
+  // The order: by signal-source number only (4, 5, 6, 8, 9, 12), each
+  // once; 阿福's problem does not move it forward. The open 豆豆 (4) keeps
+  // its own place, the first: TalkBack has 下一隻 only.
+  const order = ['豆豆', '狗 5', '小黑', '阿福', '狗 9', '狗 12'];
+  expect(middle().props.accessibilityActions).toEqual([{ name: 'next', label: '下一隻' }]);
   const picks = renderer.root.findAll(node => /^dog-card-(pick-\d+|edit)$/.test(node.props.testID ?? '')
     && typeof node.props.onPress === 'function');
   expect(picks).toHaveLength(6);
   const land = async index => {
     await act(async () => strip().props.onScrollBeginDrag());
-    await act(async () => strip().props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: index * slot } } }));
+    await act(async () => strip().props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(index) } } }));
     await advance(300);
   };
   const keys = new Set();
-  for (const index of [0, 2, 3, 4, 5]) {
+  for (const index of [1, 2, 3, 4, 5]) {
     await land(index);
     expect(open()).toBe(order[index]);
     const shown = map().props;
@@ -666,9 +666,9 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   await advance(300);
   expect(open()).toBe('狗 9');
   expect(map().props.focusDog.always).toBe(true);
-  // Overscrolled past the first: lands on the first dog.
+  // Pulled past the first dog (into the bounce's empty room): lands on it.
   await land(-1);
-  expect(open()).toBe('阿福');
+  expect(open()).toBe('豆豆');
   expect(middle().props.accessibilityActions).toEqual([{ name: 'next', label: '下一隻' }]);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });

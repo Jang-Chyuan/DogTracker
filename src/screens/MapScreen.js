@@ -49,7 +49,7 @@ import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
 import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
-import { liveSwitchOrder, switchOrder, switchTarget } from '../map/DogSwitch';
+import { switchOrder, switchTarget } from '../map/DogSwitch';
 import { useDogCardReadings } from '../map/useDogCardReadings';
 import { historyHoldCandidates, useCardIndoorStay, useHistoryHolds } from '../map/CardIndoorStay';
 import {
@@ -198,9 +198,6 @@ export default function MapScreen({
   const selectHistoryDog = useRef(null);
   const cardClosing = useRef(false);
   const [cardKey, setCardKey] = useState(0);
-  // The card's ‹ › order (DogSwitch): taken once per opening (which dog
-  // opened it), from the dogs drawn then.
-  const [switchBase, setSwitchBase] = useState(null);
   const cardHeightChanged = useCallback(value => {
     if (!value) cardGeneration.current += 1;
     cardClosing.current = !value;
@@ -223,7 +220,6 @@ export default function MapScreen({
           ? current
           : { kind: 'dog', slaveId },
       );
-      setSwitchBase({ openId: slaveId });
       setCardPage(null);
       setFocusRequest({ slaveId, key: Date.now() });
     },
@@ -870,22 +866,11 @@ export default function MapScreen({
     [fixture?.readActivityEarliest, database, cloudOwner],
   );
   // ---- switching dogs from the card (its row of dogs, 下一隻／上一隻) -----------
-  // The order is taken from the dogs drawn when the card opened (or as soon
-  // as there are any: a fixture or notification can open it first) and kept
-  // while stepping; dogs gone since drop out, new ones come last. The row has
-  // ends, so the open dog is not moved to the front: it sits in its own
-  // place (problems first, then by signal-source number), with dogs on both
-  // sides.
-  const anyDrawn = livePresentation.dogMarkers.length > 0;
-  const takenOrder = useMemo(
-    () => (switchBase ? switchOrder(livePresentation.dogMarkers, null) : []),
-    // Taken once per opening; `anyDrawn` retakes it when the dogs first appear.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [switchBase, anyDrawn],
-  );
+  // Every drawn dog by signal-source number (DogSwitch): the open dog sits
+  // in its own place, with dogs on both sides; the row has ends.
   const switchDogs = useMemo(
-    () => liveSwitchOrder(takenOrder, livePresentation.dogMarkers),
-    [takenOrder, livePresentation.dogMarkers],
+    () => switchOrder(livePresentation.dogMarkers),
+    [livePresentation.dogMarkers],
   );
   const cardDogId = cardDog?.slaveId ?? null;
   const readings = useDogCardReadings(

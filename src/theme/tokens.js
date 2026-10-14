@@ -313,15 +313,18 @@ export const size = {
     avatar: 40,
     labelWidth: 72,
     warnIcon: 18,
-    // A3 direction arrow accompanying the headline distance.
-    directionIcon: 26,
+    // The direction arrow before the distance at the first row's right end.
+    directionIcon: 16,
+    // Status rows that are not buttons (活動量 stays touch.cardRow, 48dp).
+    row: 40,
+    rowTwoLine: 56,
     // The pencil badge on the card's face (the face opens the edit sheet).
     editBadge: 20,
     editBadgeIcon: 12,
     // The row of dogs at the card's top (DogCarousel): one slot per dog; the
     // middle face, then one and two slots away; their opacity; the middle
     // name's width.
-    carousel: { slot: 64, face: [56, 40, 32], opacity: [1, 0.5, 0.3], nameWidth: 200 },
+    carousel: { slot: 64, face: [52, 40, 32], opacity: [1, 0.5, 0.3], nameWidth: 200 },
     maxRatio: 0.75,
   },
   activity: {

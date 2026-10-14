@@ -38,7 +38,7 @@ import { PressScale } from './MapControls';
 import BangGlyph from '../components/BangGlyph';
 import { slideOrFade } from '../utils/reduceMotion';
 import DogCarousel from './DogCarousel';
-import { linesFor } from '../utils/textScale';
+import { isLargeFont, linesFor } from '../utils/textScale';
 import {
   layout,
   motion,
@@ -103,14 +103,54 @@ function Mark({ tone }) {
   );
 }
 
-function StatusRow({ row, first, onPress }) {
+/**
+ * The direction and distance from the phone (「↗ 320 m」) at the first row's
+ * right end, or 「手機沒有定位」; the phone's own old fix under it.
+ */
+function Distance({ headline, heading, under }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  if (headline?.kind === 'no-phone') {
+    return (
+      <Text style={[styles.noPhone, under && styles.distanceUnder]} accessible={false}>
+        {headline.text}
+      </Text>
+    );
+  }
+  if (headline?.kind !== 'distance') return null;
+  // The arrow points at the dog on the map as drawn: a rotated map turns it.
+  const turn = `${
+    (((headline.bearing - (heading || 0)) % 360) + 360) % 360
+  }deg`;
+  return (
+    <View style={under ? styles.distanceUnder : styles.distanceEnd} testID="dog-card-distance">
+      <View style={styles.distanceLine}>
+        <View style={{ transform: [{ rotate: turn }] }} testID="dog-card-arrow">
+          <Glyph name="arrow" color={colors.text} size={sizes.card.directionIcon} />
+        </View>
+        <Text style={styles.distance} accessible={false}>{headline.distance}</Text>
+      </View>
+      {headline.phoneAge ? (
+        <Text style={styles.phoneAge} accessible={false}>{headline.phoneAge}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
   const { fontScale, width } = useWindowDimensions();
   const labelWidth = sizes.card.labelWidth * Math.max(1, fontScale);
   const stacked = labelWidth > width * 0.4;
+  // At a large font the distance goes under the row's words, not beside them.
+  const under = isLargeFont();
+  const distance = headline ? <Distance headline={headline} heading={heading} under={under} /> : null;
   const { colors } = useTheme();
   const TONE = useStyles(getTONE);
   const ACTIVITY_TONE = useStyles(getACTIVITY_TONE);
   const styles = useStyles(getStyles);
+  // One 「!」 for the row: its value's, or the second problem's (不在接收範圍
+  // under 室內 or 沒有新位置).
+  const markTone = row.tone || (row.alert ? 'crit' : null);
   const tone = row.tone && TONE[row.tone];
   const valueColor = tone
     ? tone.text
@@ -123,7 +163,8 @@ function StatusRow({ row, first, onPress }) {
         styles.row,
         stacked && { flexDirection: 'column', alignItems: 'stretch', gap: space.xs },
         !first && styles.rowLine,
-        row.twoLine && styles.rowTwoLine,
+        !row.pressable && styles.rowStill,
+        !row.pressable && row.twoLine && styles.rowTwoLine,
       ]}
       testID={`dog-card-row-${row.key}`}
     >
@@ -131,7 +172,7 @@ function StatusRow({ row, first, onPress }) {
         {row.label}
       </Text>
       <View style={styles.rowValue}>
-        {tone && <Mark tone={row.tone} />}
+        {markTone && <Mark tone={markTone} />}
         <View style={styles.rowTexts}>
           <Text
             style={[styles.value, { color: valueColor }]}
@@ -155,8 +196,15 @@ function StatusRow({ row, first, onPress }) {
               {row.detail}
             </Text>
           ) : null}
+          {row.alert ? (
+            <Text style={[styles.alertLine, { color: TONE.crit.text }]} accessible={false}>
+              {row.alert}
+            </Text>
+          ) : null}
+          {distance && under ? distance : null}
         </View>
       </View>
+      {distance && !under ? distance : null}
       {row.pressable && (
         <Glyph name="chevron" color={colors.textMuted} size={sizes.icon.row} />
       )}
@@ -187,42 +235,6 @@ const clock = at => {
   const date = new Date(at);
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
-
-function Headline({ headline, speech, heading }) {
-  const { colors } = useTheme();
-  const styles = useStyles(getStyles);
-  if (headline.kind === 'no-phone') {
-    return (
-      <View
-        style={styles.headline}
-        accessible
-        accessibilityRole="header"
-        accessibilityLabel={speech}
-      >
-        <Text style={styles.noPhone}>{headline.text}</Text>
-      </View>
-    );
-  }
-  if (headline.kind !== 'distance') return null;
-  // The arrow points at the dog on the map as drawn: a rotated map turns it.
-  const turn = `${
-    (((headline.bearing - (heading || 0)) % 360) + 360) % 360
-  }deg`;
-  return (
-    <View
-      style={styles.headline}
-      accessible
-      accessibilityRole="header"
-      accessibilityLabel={speech}
-    >
-      <View style={{ transform: [{ rotate: turn }] }} testID="dog-card-arrow">
-        <Glyph name="arrow" color={colors.text} size={sizes.card.directionIcon} />
-      </View>
-      <Text style={styles.distance}>{headline.distance}</Text>
-      <Text style={styles.suffix}>{headline.suffix}</Text>
-    </View>
-  );
-}
 
 /**
  * The card's top: alone, the dog's face (the edit button, a pencil badge on
@@ -461,11 +473,6 @@ const DogCard = forwardRef(function DogCard(
           scrollTop.current = event.nativeEvent.contentOffset.y;
         }}
       >
-        <Headline
-          headline={card.headline}
-          speech={card.headlineSpeech}
-          heading={heading}
-        />
         <View style={styles.rows}>
           {card.rows.map((row, index) => (
             <StatusRow
@@ -473,6 +480,8 @@ const DogCard = forwardRef(function DogCard(
               row={row}
               first={index === 0}
               onPress={row.key === 'activity' ? onActivity : undefined}
+              headline={index === 0 ? card.headline : null}
+              heading={heading}
             />
           ))}
         </View>
@@ -507,7 +516,7 @@ const getStyles = makeStyles(theme => {
       backgroundColor: colors.surface,
       borderRadius: radius.sheet,
       paddingHorizontal: layout.cardPadding,
-      paddingBottom: layout.cardPadding,
+      paddingBottom: layout.cardPadding - space.xs,
       ...shadow.floating,
       ...theme.floatingBorder,
       elevation: 8,
@@ -520,7 +529,7 @@ const getStyles = makeStyles(theme => {
       borderRadius: sizes.sheet.handleThickness / 2,
       backgroundColor: HANDLE,
       marginTop: space.s,
-      marginBottom: space.xs,
+      marginBottom: 0,
     },
     // One dog: its face (the edit button) and name, side by side.
     header: {
@@ -556,25 +565,23 @@ const getStyles = makeStyles(theme => {
     },
     body: { flexShrink: 1 },
     scroll: { flexGrow: 0, flexShrink: 1 },
-    headline: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      minHeight: touch.min,
-      columnGap: space.xs,
-      paddingVertical: space.xs,
-    },
-    distance: { ...type.headline, color: colors.text },
-    suffix: { ...type.caption, color: colors.textMuted, marginTop: space.xs },
-    noPhone: { ...type.title, color: colors.textMuted },
-    rows: { borderTopWidth: border.hairline, borderTopColor: colors.line, marginTop: space.xs },
+    // 「↗ 320 m」 at the first row's right end; under its words at a large font.
+    distanceEnd: { alignItems: 'flex-end', flexShrink: 0, marginLeft: space.s },
+    distanceUnder: { alignItems: 'flex-start', marginTop: space.xs },
+    distanceLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+    distance: { ...type.status, color: colors.text },
+    phoneAge: { ...type.caption, color: colors.textMuted },
+    noPhone: { ...type.caption, color: colors.textMuted, marginLeft: space.s, flexShrink: 0 },
+    rows: {},
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: touch.cardRow,
       paddingVertical: space.s,
     },
-    rowTwoLine: { minHeight: touch.cardRowTwoLine },
+    // Rows that are not buttons: 40dp, 56dp with a second line (位置 indoors).
+    rowStill: { minHeight: sizes.card.row, paddingVertical: space.xs },
+    rowTwoLine: { minHeight: sizes.card.rowTwoLine },
     rowTarget: { minHeight: touch.cardRow },
     rowLine: { borderTopWidth: border.hairline, borderTopColor: colors.line },
     rowLabel: {
@@ -597,6 +604,7 @@ const getStyles = makeStyles(theme => {
     value: { ...type.value },
     detailInline: { ...type.small, color: colors.textMuted, fontWeight: type.body.fontWeight },
     detailLine: { ...type.small, color: colors.textMuted, marginTop: space.xs },
+    alertLine: { ...type.small, fontWeight: type.value.fontWeight, marginTop: space.xs },
     mark: {
       width: sizes.card.warnIcon,
       height: sizes.card.warnIcon,
@@ -612,7 +620,7 @@ const getStyles = makeStyles(theme => {
       backgroundColor: colors.tonal,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: space.m,
+      marginTop: space.s,
     },
     trackText: { ...type.status, color: colors.tonalText },
     pressed: { backgroundColor: colors.pressedOverlay },
