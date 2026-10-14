@@ -162,8 +162,10 @@ test('copy removed by D15 and the design decisions stays out of production resou
   // 「地址暫時無法取得」 (c1256).
   const retired = /上次用|出發（手動）|還沒出發|確認出發中…|沒辦法自動判斷出發|主角|資料來源|接續隔天|地址暫時無法取得/;
   expect(Object.entries(resources).filter(([key, value]) => !key.startsWith('dev.') && retired.test(value))).toEqual([]);
-  // The cursor retains the expressly specified c342/c343; no movement-row exclusion badge.
-  expect(Object.keys(resources).filter(key => resources[key].includes('不算距離') && !['c342', 'c343'].includes(key))).toEqual([]);
+  // 2026-10-14: the cursor label says 「坐車中」「開車中」 (c1336/c1337 supersede
+  // c342/c343); no screen writes 「不算距離」, nor a movement-row exclusion badge.
+  expect(Object.keys(resources).filter(key => !key.startsWith('dev.') && resources[key].includes('不算距離'))).toEqual([]);
+  expect(['c342', 'c343'].filter(key => key in resources)).toEqual([]);
 });
 
 test('translation imports are never assigned to or incremented', () => {
