@@ -643,6 +643,7 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
     && typeof node.props.onPress === 'function');
   expect(picks).toHaveLength(6);
   const land = async index => {
+    await act(async () => strip().props.onScrollBeginDrag());
     await act(async () => strip().props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: index * slot } } }));
     await advance(300);
   };

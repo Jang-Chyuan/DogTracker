@@ -47,11 +47,24 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     list.current?.scrollTo({ x: index * slot, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId, count]);
+  // Only the user's own drag picks a dog where the row lands: the row's own
+  // moves (placing it on the open dog, following a pick) never do.
+  const dragging = useRef(false);
   const settle = x => {
+    if (!dragging.current) return;
+    dragging.current = false;
     const index = slotAt(x, count);
     at.current = index;
     const dog = dogs[index];
     if (dog && dog.slaveId !== currentId) onSelect?.(dog.slaveId);
+  };
+  // Android ignores contentOffset: once laid out, the row is put on the open
+  // dog without a move.
+  const placed = useRef(false);
+  const place = () => {
+    if (placed.current) return;
+    placed.current = true;
+    list.current?.scrollTo({ x: at.current * slot, animated: false });
   };
   // The middle name's line, measured (it grows with the system font).
   const [nameHeight, setNameHeight] = useState(0);
@@ -89,9 +102,11 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         snapToInterval={slot}
         decelerationRate="fast"
         contentOffset={{ x: at.current * slot, y: 0 }}
+        onContentSizeChange={place}
         contentContainerStyle={{ paddingHorizontal: side }}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
+        onScrollBeginDrag={() => { dragging.current = true; }}
         onMomentumScrollEnd={event => settle(event.nativeEvent.contentOffset.x)}
         onScrollEndDrag={event => {
           // Let go without a fling: it still lands on a slot.
@@ -109,8 +124,14 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
               accessibilityActions={open ? actions : undefined}
               onAccessibilityAction={open ? onAction : undefined}
               onPress={() => {
-                if (open) onEdit?.();
-                else list.current?.scrollTo({ x: index * slot, animated: true });
+                if (open) {
+                  onEdit?.();
+                  return;
+                }
+                // A tap picks at once; the row slides to it.
+                at.current = index;
+                list.current?.scrollTo({ x: index * slot, animated: true });
+                onSelect?.(dog.slaveId);
               }}
               style={({ pressed }) => [styles.slot, pressed && !open && styles.pressed]}
             >

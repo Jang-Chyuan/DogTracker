@@ -124,18 +124,29 @@ describe('the card', () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
-  test('the row lands on a dog: that dog is picked; landing back on the open one picks nothing', async () => {
+  test('the user\'s drag lands on a dog: it is picked; the row\'s own moves pick nothing; a side tap picks at once', async () => {
     const value = switcher();
     await mount({ switcher: value });
     const row = host('dog-card-carousel')[0];
     const slot = sizes.card.carousel.slot;
+    // The row placing itself on the open dog (no drag): nothing picked.
+    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0 } } }));
+    expect(value.onSelect).not.toHaveBeenCalled();
+    await act(async () => row.props.onScrollBeginDrag());
     await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 2 * slot } } }));
     expect(value.onSelect.mock.calls).toEqual([[8]]);
+    await act(async () => row.props.onScrollBeginDrag());
     await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: slot * 1.2 }, velocity: { x: 0 } } }));
     expect(value.onSelect.mock.calls).toEqual([[8]]);
     // A fling's drag end waits for its momentum end.
+    await act(async () => row.props.onScrollBeginDrag());
     await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 0 }, velocity: { x: 2 } } }));
     expect(value.onSelect.mock.calls).toEqual([[8]]);
+    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0 } } }));
+    expect(value.onSelect.mock.calls).toEqual([[8], [12]]);
+    // A tap on a side face picks it straight away.
+    await act(async () => byTestId('dog-card-pick-8')[0].props.onPress());
+    expect(value.onSelect.mock.calls).toEqual([[8], [12], [8]]);
   });
 
   test('TalkBack: 下一隻／上一隻 on the middle face, only where there is a dog that way', async () => {
