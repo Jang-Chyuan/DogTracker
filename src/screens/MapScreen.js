@@ -874,7 +874,8 @@ export default function MapScreen({
   // half an hour): from where the history's stay begins, over midnight too.
   const indoorStay = useCardIndoorStay(cardOpen ? history?.readDay ?? null : null, cardDog,
     { owner: cloudOwner ?? null, busy: cardBusy, revision: cardSuccess });
-  // A7b: the held place's address under 「室內」 (none while asking/offline).
+  // A7b: the held place's address under 「室內」 (none while asking; its
+  // coordinates when none was found).
   const address = useAddress(
     cardDog && isIndoorHold(cardDog) ? cardDog.coordinate : null,
   );

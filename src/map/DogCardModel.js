@@ -170,8 +170,9 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
     // Two lines (64dp) held indoors: 「室內・26 分」 and the address under it
     // (A7b). The minutes are the history's for the same hold (GPS: since the
     // hold began), not the 活動量 row's rest (the collar's motion).
-    // No address yet, none found or offline: no second line and no spinner
-    // (edges「沒網路時查地址」), the row keeps its 64dp so nothing jumps.
+    // Still asking: no second line and no spinner, the row keeps its 64dp so
+    // nothing jumps. None found, offline or timed out: useAddress gives the
+    // place's coordinates instead (2026-10-14), read out the same.
     // A stay begun before the live rows (a cold start) is timed from where
     // the history's stay begins (`indoorStay`, CardIndoorStay).
     rows.push({ key: 'position', label: t('c073'), value: indoorText(indoorDuration(dog, indoorStay)),
