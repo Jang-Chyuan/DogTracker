@@ -81,7 +81,17 @@ export const HISTORY_CONFIG = Object.freeze({
     // whose 10 s creep ended the drive; an errand of 12.8 min between two
     // drives stays a stay.
     vehicleMergeMs: 10 * 60000, vehicleBurstMs: 10000, vehicleFootMs: 90000,
-    vehicleFootMaxMps: 2, vehicleFootM: 30 }),
+    vehicleFootMaxMps: 2, vehicleFootM: 30,
+    // 2026-10-14 (user, a slow car read as walking): a steady 15–18 km/h
+    // is a vehicle — a bike, or a car in slow traffic — not a walk or a run.
+    // Fast edges (vehicleSpeed, 18 km/h) start a vehicle after enterMs; a
+    // cruise does after cruiseMs: every edge at least cruiseSpeed (15 km/h,
+    // a 4:00 /km pace) by geometry, every fix within
+    // coarseConfirmedAccuracyM, and the run getting somewhere (from its first
+    // fix at least cruiseProgress of the path it drew). A brisk walk or a jog
+    // (6–12 km/h) is far below it; a sprint after the dog is over long before
+    // two minutes; drift (coarse, or wandering about one spot) gets nowhere.
+    cruiseSpeed: 15 / 3.6, cruiseMs: 2 * 60000, cruiseProgress: 0.5 }),
   dog: Object.freeze({ ...common, maxSpeed: 15, vehicleSpeed: 9,
     enterMs: 60000, exitMs: 60000, departureMaxSpeed: 15, backtrackSpeed: null }),
 });

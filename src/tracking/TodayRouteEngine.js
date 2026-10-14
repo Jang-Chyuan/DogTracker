@@ -85,7 +85,7 @@ export function createTodayRouteEngine({ dayStart }) {
   const departure = { fromTime: -Infinity, final: null };
   // Distance: summed up to `index` for the range starting at `rangeStart`,
   // with the counting state (countState) the next edge carries on from.
-  let counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0, unproven: false };
+  let counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0, unproven: false, since: null };
 
   function take(point) {
     // filterHistoryPoints (phone): fixes over 50 m accuracy are dropped,
@@ -112,7 +112,7 @@ export function createTodayRouteEngine({ dayStart }) {
         }
         settled = -1; settledScan = vehicleScan();
         departure.fromTime = -Infinity; departure.final = null;
-        counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0, unproven: false };
+        counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0, unproven: false, since: null };
       }
       edges.push(historyEdge(previous, point, 'phone', config));
     }
@@ -152,7 +152,7 @@ export function createTodayRouteEngine({ dayStart }) {
         settledScan = vehicleScan();
         departure.fromTime = -Infinity;
         departure.final = null;
-        counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0, unproven: false };
+        counted = { rangeStart: null, index: -1, sum: 0, anchor: null, budget: 0, unproven: false, since: null };
         // Replaying only the reached raw rows revokes any future-confirmed
         // departure backfill when the clock moves backwards.
         for (const point of recorded.slice(0, taken)) take(point);
@@ -208,20 +208,20 @@ export function createTodayRouteEngine({ dayStart }) {
       // edges after the checkpoint, counted on from the state it saved.
       const rangeStart = found.range.start ?? -Infinity;
       if (counted.rangeStart !== rangeStart) {
-        counted = { rangeStart, index: firstEdgeFrom(edges, rangeStart) - 1, sum: 0, anchor: null, budget: 0, unproven: false };
+        counted = { rangeStart, index: firstEdgeFrom(edges, rangeStart) - 1, sum: 0, anchor: null, budget: 0, unproven: false, since: null };
       }
       // The checkpoint moves to the last settled edge, whatever its mode: a
       // day of walking and standing still never reaches a non-foot edge, so
       // the anchor and the speed budget of the run carry it across instead
       // (otherwise every poll added the whole day up again).
-      const state = { anchor: counted.anchor, budget: counted.budget, unproven: counted.unproven };
+      const state = { anchor: counted.anchor, budget: counted.budget, unproven: counted.unproven, since: counted.since };
       const checkpoint = Math.min(settled, edges.length - 1);
       let metres = counted.sum;
       for (let i = counted.index + 1; i < edges.length; i += 1) {
         countEdge(state, edges[i], config);
         metres += edges[i].countedDistanceM;
         if (i === checkpoint) {
-          counted = { rangeStart, index: i, sum: metres, anchor: state.anchor, budget: state.budget, unproven: state.unproven };
+          counted = { rangeStart, index: i, sum: metres, anchor: state.anchor, budget: state.budget, unproven: state.unproven, since: state.since };
         }
       }
       return { count, metres, status: found.status };

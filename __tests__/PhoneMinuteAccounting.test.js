@@ -368,11 +368,15 @@ test('a drive does not go on over the time after parking: the parked minutes are
   const drive = rows.find(n => n.mode === 'driving');
   expect(drive.end - drive.start).toBeLessThan(11 * MINUTE);
   const parked = rows[rows.indexOf(drive) + 1];
-  expect(parked).toMatchObject({ type: 'stop', presentationOnly: 'phone-stationary', number: null });
+  // 2026-10-14: parked a stay's length before walking off, the drive ends
+  // where it parked: a stay of its own, numbered like any other (it was an
+  // unnumbered display stay cut from the drive's tail).
+  expect(parked).toMatchObject({ type: 'stop', number: 2 });
+  expect(parked.presentationOnly).toBeUndefined();
   expect(parked.end - parked.start).toBeGreaterThanOrEqual(11 * MINUTE);
-  // The drive keeps its metres; the map keeps its line to where it was left.
+  // The drive keeps its metres; the map's drive ends where it parked.
   expect(drive.distanceM).toBeGreaterThan(8000);
-  expect(model.sections.find(n => n.mode === 'driving').end).toBe(parked.end);
+  expect(model.sections.find(n => n.mode === 'driving').end).toBeLessThanOrEqual(parked.start);
   // A red light the drive went on from stays in the drive.
   const light = timeline(day([['walk', 300], ['drive', 300], ['still', 200], ['drive', 300], ['walk', 200]]));
   expect(expectAccounted(light).rows.filter(n => n.mode === 'driving')).toHaveLength(1);

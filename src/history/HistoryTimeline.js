@@ -635,12 +635,19 @@ export function historyTimeline(rows = [], options = {}) {
   const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
   const place = n => n && !['movement', 'gap', 'switch'].includes(n.type);
   const drop = new Set();
+  // 2026-10-14: likewise a switch with the place itself right beside it —
+  // a stay, then the car at once (the seconds between them were still
+  // fixes, no foot row) — was a 0-minute numbered 「切換」 node between the
+  // stay and the drive: the stay lost its leave chevron (#168) and the
+  // numbers counted a place nobody stopped at.
+  const touches = (row, at, before) => (before ? at.start - row.end : row.start - at.start) <= 60000;
   nodes.forEach((n, i) => {
     if (n.type !== 'switch') return;
-    for (const [side, beyond] of [[nodes[i - 1], nodes[i - 2]], [nodes[i + 1], nodes[i + 2]]]) {
+    for (const [side, beyond, before] of [[nodes[i - 1], nodes[i - 2], true], [nodes[i + 1], nodes[i + 2], false]]) {
       if (foot(side) && side.countedDistanceM === 0 && side.durationMs <= 60000 && place(beyond) && !drop.has(beyond)) {
         drop.add(n); drop.add(side); return;
       }
+      if (place(side) && !drop.has(side) && touches(side, n, before)) { drop.add(n); return; }
     }
   });
   // The fallback must not affect existing switch cleanup; it is a place for
