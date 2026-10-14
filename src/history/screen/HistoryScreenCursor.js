@@ -25,7 +25,7 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   // At a switch boundary the outgoing segment owns the label.
   const section = model.sections.find(n => n.start <= time && n.end > time)
     || model.sections.find(n => n.end === time);
-  if (['ride', 'driving'].includes(section?.mode)) return [clock(time), ((section.mode === 'ride') ? t('c1336') : t('c1337'))];
+  if (['ride', 'driving'].includes(section?.mode)) return [clock(time), ((section.mode === 'ride') ? t('c1340') : t('c1341'))];
   const distance = (model.distanceEdges ?? model.sections).reduce((sum, n) => sum + (n.countedDistanceM || 0)
     * (time >= n.end ? 1 : time <= n.start ? 0 : (time - n.start) / (n.end - n.start)), 0);
   // One distance as everywhere (utils/distanceText): 「已移動 40 m」.
