@@ -110,11 +110,14 @@ test('withdrawing an anchor invalidates native marker geometry, including in-pla
   const locations = s.visits.map((v, i) => ({ ...v, ...anchors.get(v.id), number: i + 1 }));
   const model = { points: [], dayPoints: [], locations, edges: [] };
   const before = historyMapPresentation(model, { color: '#123456', subject: 'phone' }).places;
-  Object.assign(locations[1], coordinate(20));
+  // (60 m: past the stay radius, so two markers; within it they would share one.)
+  Object.assign(locations[1], coordinate(60));
   const after = historyMapPresentation(model, { color: '#123456', subject: 'phone' }).places;
   expect(after).not.toBe(before);
-  expect(after[1].coordinate).toEqual(coordinate(20));
-  expect(before[1].coordinate).toEqual(coordinate(0));
+  expect(after[1].coordinate).toEqual(coordinate(60));
+  // Before: both stays shared one place, so one marker carries both numbers.
+  expect(before).toHaveLength(1);
+  expect(before[0]).toMatchObject({ coordinate: coordinate(0), numbers: [1, 2] });
 });
 
 test('unconfirmed recovery visits cannot hide a real short walk between two confirmations', () => {
@@ -177,7 +180,8 @@ test('production GPX/CSV retain calculated coordinates while PNG chooses the sha
   expect(buildCSV(afterExport)).toBe(buildCSV(beforeExport));
   expect(afterExport.subjects[0].stays[1]).toMatchObject({ ...coordinate(0),
     gpxCoordinate: coordinate(20), address: '地點 A', gpxAddress: '地點 B' });
-  expect(afterExport.subjects[0].map.places[1]).toMatchObject(coordinate(0));
+  // Both stays at the shared display place: one PNG marker 「1・2」 there.
+  expect(afterExport.subjects[0].map.places).toEqual([expect.objectContaining({ ...coordinate(0), number: '1・2' })]);
   expect(afterExport.subjects[0].timeline[1]).toMatchObject({ ...coordinate(0), title: '地點 A' });
   expect(exportPlaces(after).some(p => placeKey(p) === placeKey(coordinate(20)))).toBe(true);
 });

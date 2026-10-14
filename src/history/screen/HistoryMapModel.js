@@ -317,7 +317,9 @@ export function outsideLines(dayPoints, range, { color, subject = 'dog',
 }
 
 /**
- * Time markers: the range's first and last fix always (9dp), and in between
+ * Time markers: the range's first and last fix always (9dp; the last one,
+ * the end, `last`: solid in the route colour with an outer ring, as the
+ * list's end node), and in between
  * on round times at a step that keeps them few (7dp). None inside a break,
  * none in a stay, none on a route that is one indoor hold all day (判定表「整天都停在原處的地圖」).
  */
@@ -371,6 +373,7 @@ export function timeMarkers(
       time: last.time,
       label: clock(last.time),
       end: true,
+      last: true,
       coordinate: (subject === 'phone' ? phoneStayDisplayCoordinate(stays, last.time) : null) || coordinateOf(last),
     });
   return markers;
@@ -412,7 +415,6 @@ function hiddenPresentationStays(nodes) {
   if (!hiddenBoundaryStays.has(nodes)) {
     const shown = timelinePresentation(nodes), hidden = new Set();
     if (shown[0]?.departureStay) hidden.add(nodes[1]);
-    if (shown[shown.length - 1]?.terminalStay) hidden.add(nodes[nodes.length - 2]);
     hiddenBoundaryStays.set(nodes, hidden);
   }
   return hiddenBoundaryStays.get(nodes);
@@ -424,11 +426,47 @@ function stablePlaceMarkers(locations, nodes) {
     && locations.every((node, i) => markerFields.every((key, j) =>
       Object.is(node[key], cached.snapshot[i][j]))
       && Object.is(shownStayDurationMs(nodes, node), cached.snapshot[i][markerFields.length]))) return cached.places;
-  const places = placeMarkers(hidden?.size ? locations.filter(node => !hidden.has(node)) : locations, nodes)
-    .filter(place => place.kind === 'indoor' || place.number != null);
+  const places = groupSamePlaceStays(placeMarkers(hidden?.size ? locations.filter(node => !hidden.has(node)) : locations, nodes)
+    .filter(place => place.kind === 'indoor' || place.number != null));
   markerProjections.set(locations, { places, hidden,
     snapshot: locations.map(node => [...markerFields.map(key => node[key]), shownStayDurationMs(nodes, node)]) });
   return places;
+}
+
+/**
+ * 2026-10-14 (user, #163 round 3): the range's start and end are always the
+ * hollow and the solid time marker — the stays a range begins and ends with
+ * have no number, so no numbered marker sits on them. A start and an end at
+ * one place (home → home) are one marker, `first` and `last`: the solid end
+ * inside the start's hollow ring, 「00:00–09:25」, both visible, not two
+ * markers and labels on each other.
+ */
+export function listedTimeMarkers(markers, radiusM = configFor('phone').radiusM) {
+  const head = markers.find(marker => marker.end && !marker.last), tail = markers.find(marker => marker.last);
+  if (!head || !tail || distanceMeters(head.coordinate, tail.coordinate) > radiusM) return markers;
+  return markers.filter(marker => marker !== head).map(marker => (marker === tail
+    ? { ...tail, first: true, label: `${head.label}–${tail.label}` } : marker));
+}
+
+/**
+ * 2026-10-14: numbered stays at one place (the start and the end of a day at
+ * home, a café visited twice) are one marker with all their numbers
+ * (「1・3」), not numbers drawn on top of each other. One place: within the
+ * stay radius (HistoryConfig radiusM) of the group's first stay. The marker
+ * keeps the first stay's key, time and coordinate (a tap goes to it); `group`
+ * holds every stay for TalkBack (stopSpeech).
+ */
+export function groupSamePlaceStays(places, radiusM = configFor('phone').radiusM) {
+  const out = [];
+  for (const place of places) {
+    const host = place.kind === 'number' && place.type === 'stop' && out.find(other => other.kind === 'number'
+      && other.type === 'stop' && distanceMeters(other.coordinate, place.coordinate) <= radiusM);
+    if (!host) { out.push(place); continue; }
+    const group = [...(host.group || [host]), place];
+    out[out.indexOf(host)] = { ...host, group, numbers: group.map(p => p.number),
+      label: group.map(p => p.number).join('・') };
+  }
+  return out;
 }
 
 // Metres between two coordinates (equirectangular: the history is a few km).
@@ -495,12 +533,12 @@ export function historyMapPresentation(
     // a middle time only where the cursor has been; one too close to a number or another time is left
     // out (its label would sit on theirs).
     times: uncrowded(
-      timeMarkers(points, {
+      listedTimeMarkers(timeMarkers(points, {
         subject, allIndoor,
         stays: displayLocations.filter(n =>
           ['stop', 'indoor', 'switch'].includes(n.type),
         ),
-      })
+      }))
         // 途中的時間標記只畫走過的部分（游標之前）; the ends always.
         .filter(marker =>
           marker.end

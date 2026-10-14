@@ -10,7 +10,7 @@ const walking = node => node?.type === 'movement' && node.mode === 'walking';
 const moving = node => node?.type === 'movement';
 const driving = node => node?.type === 'movement' && node.mode === 'driving';
 // A row that is a stay: a stop, a hold, or a departure / end carrying one.
-const stayRow = node => ['stop', 'indoor'].includes(node?.type) || !!node?.departureStay || !!node?.terminalStay;
+const stayRow = node => ['stop', 'indoor'].includes(node?.type) || !!node?.departureStay;
 // The phone's 「沒有資料」 / 「GPS 訊號弱」 inside one recording session. A
 // recording-session change (`sessionChange`, PR #135) is always its own row.
 const foldable = node => node.type === 'gap' && (node.reason == null || node.reason === 'uncertain')
@@ -49,17 +49,24 @@ function stretch(node, start, end, unlocated) {
     ...withUnlocated(node, unlocated) };
   if (node.departureStay) grown.departureStay = { ...node.departureStay, end,
     durationMs: node.departureStay.durationMs + extra, ...withUnlocated(node.departureStay, unlocated) };
-  if (node.terminalStay) grown.terminalStay = { ...node.terminalStay, start,
-    durationMs: node.terminalStay.durationMs + extra, ...withUnlocated(node.terminalStay, unlocated) };
   return grown;
 }
 const alignedDuration = node => {
   const duration = node.durationMs ?? node.end - node.start;
+  if (!Number.isFinite(node.start) || !Number.isFinite(node.end) || !Number.isFinite(duration)) return null;
+  const span = Math.max(0, Math.floor(node.end / MINUTE) - Math.floor(node.start / MINUTE)) * MINUTE;
   // Displayed clocks have minute precision; never turn a gap into observed time.
-  const complete = Number.isFinite(node.start) && Number.isFinite(node.end)
-    && Number.isFinite(duration) && Math.abs(duration - (node.end - node.start)) < 1
+  const complete = Math.abs(duration - (node.end - node.start)) < 1
     && !node.gaps?.length && !node.displayRange?.gaps?.length && !(node.interruptionMs > 0);
-  return complete ? Math.max(0, Math.floor(node.end / MINUTE) - Math.floor(node.start / MINUTE)) * MINUTE : null;
+  if (complete) return span;
+  // 2026-10-14 (#163, the times add up): a stay interrupted inside shows its
+  // clocks less the 「不含中斷 N 分」 it notes, so 到 + 停 + 不含中斷 = 離開
+  // to the minute; still the observed time within a minute.
+  const breakMs = node.type === 'stop' && node.interruptionMs > 0 ? node.interruptionMs : 0;
+  if (breakMs && Math.abs(duration + breakMs - (node.end - node.start)) < 1) {
+    return Math.max(0, span - Math.round(breakMs / MINUTE) * MINUTE);
+  }
+  return null;
 };
 
 /** Shared display copy only: visible pills, marker speech and cursor labels. */
@@ -82,7 +89,7 @@ const sameStay = (n, stay) => n === stay || (n.type === stay.type && (n.number ?
  */
 export function shownStayDurationMs(nodes, stay) {
   if (!Array.isArray(nodes) || !stay) return presentationDurationMs(stay);
-  const row = presentedOf(nodes).map(n => n.terminalStay ?? n.departureStay ?? n).find(n => sameStay(n, stay));
+  const row = presentedOf(nodes).map(n => n.departureStay ?? n).find(n => sameStay(n, stay));
   return presentationDurationMs(row ?? stay);
 }
 
@@ -104,14 +111,43 @@ export function timelinePresentation(all = []) {
 }
 
 /**
- * The source stays the list shows inside 出發 (「出發 · 停 N 分」) and inside
- * the end (「結束 · 停 N 分」, also 現在／最後), as the input's own objects,
- * or null. historyTimeline numbers the stays without them (2026-10-13, #154:
- * the numbers shown start at 1 and skip none).
+ * 2026-10-14 (user, #163 round 3): the range's start and end stay on the
+ * track even without a 出發 / end row: the first row's node is the hollow
+ * start circle and the last row's the solid end circle (a day of one stay:
+ * both on one row), with the row's own minutes and address and no number.
+ * The rows (timelinePresentation's) that carry them: { start, end } indexes,
+ * or null where a 出發 / end row (or a movement or a break) is there instead.
+ * The first row after a day-boundary 「沒有資料」 counts as the first,
+ * likewise at the end.
+ */
+export function rangeEndRows(rows = []) {
+  const place = row => row && !['movement', 'gap', 'departure', 'end'].includes(row.type) && !row.departureStay;
+  const first = rows[0]?.dayBoundary === 'start' ? 1 : 0;
+  const final = rows.length > 1 && rows[rows.length - 1]?.dayBoundary === 'end' ? rows.length - 2 : rows.length - 1;
+  return { start: place(rows[first]) ? first : null, end: final >= 0 && place(rows[final]) ? final : null };
+}
+
+/**
+ * The source stays (the input's own objects, or null) that are the range's
+ * ends rather than numbered stays: `departure`, the seconds of the stay a
+ * range that begins moving set off from (shown inside 出發); `start` and
+ * `end`, the stays the range begins and ends with — their rows keep their
+ * minutes and address, and their track node is the range's hollow start /
+ * solid end circle instead of a number (2026-10-14, user, #163 round 3).
+ * historyTimeline numbers the stays without them (#154: the numbers shown
+ * start at 1 and skip none).
  */
 export function endpointStays(all = []) {
-  const { departureSource, endStay } = presentationOf(all);
-  return { departure: departureSource, end: endStay };
+  const { departureSource, listed } = presentationOf(all);
+  const ends = rangeEndRows(listed);
+  // The source stay a row shows: inside its span (a row may have grown over
+  // the seconds beside it).
+  const sourceOf = (row, fromEnd) => {
+    if (row?.type !== 'stop') return null;
+    const inside = all.filter(n => n.type === 'stop' && n.start >= row.start && n.end <= row.end);
+    return (fromEnd ? inside[inside.length - 1] : inside[0]) ?? null;
+  };
+  return { departure: departureSource, start: sourceOf(listed[ends.start], false), end: sourceOf(listed[ends.end], true) };
 }
 
 function presentationOf(all) {
@@ -150,15 +186,23 @@ function presentationOf(all) {
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
     // The model's first stay: numbered 1, or (#154) left unnumbered because
     // this row shows it.
-    && (initialStay.number === 1 || initialStay.listedWith === 'departure' || stationaryRun(initialStay))
+    && (initialStay.number === 1 || ['departure', 'start'].includes(initialStay.listedWith) || stationaryRun(initialStay))
     && (first.start === initialStay.start || settlingRun)
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
     && (samePlace(first, initialStay) || firstBelongsToStay || stationaryRun(initialStay));
   const departureStay = startsWithStay && settlingRun ? stretch(initialStay, first.start, initialStay.end, 0) : initialStay;
-  const input = startsWithStay
+  // 2026-10-14 (user): a day (or range) that begins with a stay has no 出發:
+  // that stay is the first row, numbered like any other (startingStay
+  // below). A range that begins moving keeps 出發, and the end of a stay
+  // clipped into it is that row's time, unnumbered (「出發」 only): the
+  // detected departure (`detected`: the range starts where the walk or the
+  // drive set off, often at the stay's last fix), or a stay clipped to
+  // seconds (a manual range from its last fix).
+  const sliver = startsWithStay && (first.detected === true || noMinutes(departureStay));
+  const input = sliver
     ? [{ ...first, latitude: departureStay.latitude, longitude: departureStay.longitude,
       end: departureStay.end, durationMs: departureStay.durationMs, departureStay }, ...nodes.slice(2)]
-    : nodes;
+    : startsWithStay ? [departureStay, ...nodes.slice(2)] : nodes;
   // Every minute between two listed times belongs to a row (2026-10-13; this
   // replaces #115's rule that a merged walk counts only its own legs). A break
   // inside one recording session shorter than listGapMs (「沒有資料」 or
@@ -211,26 +255,9 @@ function presentationOf(all) {
     i = j;
   }
   closeHoles(shown);
-  // A terminal stay and its endpoint are one visual place. Inspect the original
-  // adjacency: a hidden weak-GPS row must still veto it. The phone's endpoint
-  // takes the stay's own coordinate; a dog's is its last recorded fix, which
-  // the confirmed visit itself recorded (membership and exact time prove it,
-  // as for the departure), while the visit's coordinate is a mean.
-  let endStay = null;
-  const end = nodes[nodes.length - 1], stay = nodes[nodes.length - 2];
-  const endBelongsToStay = typeof stay?.id === 'string' && stay.id.startsWith('visit:')
-    && stay.points?.some(point => point.time === end?.start && samePlace(point, end));
-  const shownStay = shown[shown.length - 2];
-  if (end?.type === 'end' && stay?.type === 'stop' && shownStay?.type === 'stop'
-    && stay.end === end.start
-    && !stay.gaps?.length && !stay.displayRange?.gaps?.length
-    && (samePlace(stay, end) || endBelongsToStay || stationaryRun(stay))) {
-    // The shown stay: it may carry a folded break before it.
-    endStay = source[source.length - 2];
-    shown.splice(shown.length - 2, 2, { ...end, start: shownStay.start,
-      durationMs: shownStay.durationMs, terminalStay: shownStay, number: null,
-      ...withUnlocated(shownStay, 0) });
-  }
+  startingStay(shown);
+  endingStay(shown);
+  departingMove(shown);
   const indoor = indoorAtDeparture(nodes);
   // The first 室內 row is that hold (only 0 m rows come before it), even when
   // a folded short break gave it a new object.
@@ -244,14 +271,60 @@ function presentationOf(all) {
     shown[from].end, 0), ...shown.slice(from + 1)] : shown;
   const listed = withDayBoundaries(indoorFirst, lead, tail);
   if (listed.length) listed[0] = fromMidnight(listed[0]);
-  return { departureSource: startsWithStay ? source[1] : null, endStay, listed: listed.map(node => {
+  return { departureSource: sliver ? source[1] : null, listed: listed.map(node => {
     const duration = node.durationMs ?? node.end - node.start;
     const displayDurationMs = alignedDuration(node);
     if (displayDurationMs == null || displayDurationMs === Math.round(Math.max(0, duration) / MINUTE) * MINUTE) return node;
     return { ...node, displayDurationMs,
-      ...(node.terminalStay ? { terminalStay: { ...node.terminalStay, displayDurationMs } } : {}),
       ...(node.departureStay ? { departureStay: { ...node.departureStay, displayDurationMs } } : {}) };
   }) };
+}
+
+// A stay whose shown minutes round to none (a range clipping it to seconds).
+const noMinutes = stay => Math.round(Math.max(0, presentationDurationMs(stay)) / MINUTE) === 0;
+
+/**
+ * 2026-10-14 (user decision, replaces merging the initial stay into 出發): a
+ * range that begins with a stay has no 出發 row. A bare 出發 with a stay
+ * starting at its very time next (the rows above already gave that stay the
+ * seconds before it) goes: the stay is the first row, with its own number,
+ * minutes and address. A stay of no shown minutes is no start (出發 stays).
+ * 出發 is the start of a range that begins moving. Display only: the model's
+ * departure node, the map's first time marker, CSV and GPX rows are kept.
+ */
+function startingStay(shown) {
+  const [first, next] = shown;
+  if (first?.type === 'departure' && pointRow(first) && !first.departureStay && first.detected !== true
+    && next?.type === 'stop' && next.start === first.start && !noMinutes(next)) shown.shift();
+}
+
+/**
+ * 2026-10-14 (user decision, replaces merging the last stay into the end,
+ * 「結束 · 停 N 分」): a range that ends in a stay ends with that stay — a
+ * numbered row of its own, its minutes and address — and no end row: the end
+ * is the stay itself (the map draws no end marker there either:
+ * HistoryMapModel). The end row stays only where the range ends moving (or in
+ * a break), and where it says the recording was switched off (「記錄已關閉
+ * 10:20」). Display only: the model's end node, CSV and GPX rows are kept.
+ */
+function endingStay(shown) {
+  const end = shown[shown.length - 1], stay = shown[shown.length - 2];
+  if (end?.type === 'end' && pointRow(end) && end.closedAt == null
+    && ['stop', 'indoor'].includes(stay?.type) && stay.end === end.start) shown.pop();
+}
+
+/**
+ * 2026-10-14 (#163 round 3, the times add up): 出發 shows no minutes, so the
+ * seconds of the stay it set off from (a detected departure, `departureStay`)
+ * are the first movement's time: 「06:59 出發」「走路 20 分」「07:19 …」, not
+ * 走路 19 分 with a minute nobody can see. 出發 is a moment again; the source
+ * stay is still unnumbered (endpointStays). Display only.
+ */
+function departingMove(shown) {
+  const [first, next] = shown;
+  if (first?.type !== 'departure' || !(first.end > first.start) || next?.type !== 'movement' || next.start !== first.end) return;
+  shown[1] = stretch(next, first.start, next.end, 0);
+  shown[0] = { ...first, end: first.start, durationMs: 0 };
 }
 
 const gapRow = node => node?.type === 'gap';
@@ -303,15 +376,11 @@ function closeHoles(shown) {
       const stay = { type: 'stop', presentationOnly: 'between-breaks', number: null,
         id: `between-breaks:${a.end}`, start: a.end, end: node.start, durationMs: hole,
         interruptionMs: 0, gaps: [], latitude: from.latitude ?? node.latitude, longitude: from.longitude ?? node.longitude };
-      if (a.type === 'departure' && pointRow(a)) {
-        out[out.length - 1] = { ...a, end: stay.end, durationMs: hole, departureStay: stay };
-        out.push(node);
-      } else if (node.type === 'end' && pointRow(node)) {
-        out.push({ ...node, start: stay.start, durationMs: hole, terminalStay: stay, number: null });
-      } else {
-        if (a.type === 'resume' && pointRow(a)) out.pop();
-        out.push(stay, node);
-      }
+      // A 恢復記錄 there is that stay's start; a 出發 there goes too (a
+      // range that begins with a stay has no 出發: startingStay), and so does
+      // the end after it (endingStay).
+      if (['resume', 'departure'].includes(a.type) && pointRow(a)) out.pop();
+      out.push(stay, node);
     }
   }
   shown.splice(0, shown.length, ...out);
@@ -346,11 +415,9 @@ function withDayBoundaries(rows, lead, tail) {
     const host = out[out.length - 1];
     const beside = host && host.end === tail.start;
     if (takes(tail) && stayRow(host) && beside) out[out.length - 1] = stretch(host, host.start, tail.end, tail.end - tail.start);
-    else if (carried(tail) && beside && host.type === 'end') {
-      const stay = stayOf(tail, 'end');
-      out[out.length - 1] = { ...host, start: stay.start, end: stay.end, durationMs: stay.durationMs,
-        continuesNextDay: true, terminalStay: stay };
-    } else out.push(carried(tail) ? stayOf(tail, 'end') : tail);
+    // The stay going on over midnight: the end is that stay (endingStay).
+    else if (carried(tail) && beside && host.type === 'end' && host.closedAt == null) out[out.length - 1] = stayOf(tail, 'end');
+    else out.push(carried(tail) ? stayOf(tail, 'end') : tail);
   }
   return out;
 }

@@ -12,13 +12,16 @@ import { size as sizes, border as borders, type, space, radius } from '../theme/
 
 const LABEL_LINE = type.mapLabel.lineHeight;
 
-/** A numbered stay or switch point: white, a 2dp ring and number in the route colour. */
-export function StopMarkerView({ number, color }) {
+/**
+ * A numbered stay or switch point: white, a 2dp ring and number in the route
+ * colour. Stays at one place share one marker (`label` 「1・3」): a capsule.
+ */
+export function StopMarkerView({ number, label = null, color }) {
   const styles = useStyles(getStyles);
   return (
-    <View style={[styles.stop, { borderColor: color }]}>
+    <View style={[styles.stop, label != null && styles.stopGroup, { borderColor: color }]}>
       <Text allowFontScaling={false} style={[styles.stopNumber, { color }]}>
-        {number}
+        {label ?? number}
       </Text>
     </View>
   );
@@ -37,27 +40,48 @@ export function IndoorMarkerView() {
 
 /**
  * A time marker: a hollow ring (7dp, 1.6dp; the range's ends 9dp, 2.4dp) and
- * its time under it, 13sp bold with a white halo. An empty block of the
- * label's height above keeps the ring in the middle.
+ * its time under it, 13sp bold with a white halo. The end (`last`) is solid
+ * like the list's end node: a 9dp route-colour dot in a 2.4dp ring of the
+ * route colour at opacity.endRing. An empty block of the label's height
+ * above keeps the ring in the middle.
  */
-export function TimeMarkerView({ label, end, color }) {
-  const { colors } = useTheme();
+export function TimeMarkerView({ label, end, last = false, first = false, color }) {
+  const { colors, opacity } = useTheme();
   const styles = useStyles(getStyles);
   const ring = end ? sizes.timeMarker.endSize : sizes.timeMarker.size;
   const border = end ? sizes.timeMarker.endBorder : sizes.timeMarker.border;
+  const outer = ring + border * 2;
   return (
     <View style={styles.time}>
       <View style={styles.timeSpacer} />
-      <View
-        style={{
-          width: ring + border * 2,
-          height: ring + border * 2,
-          borderRadius: ring,
-          borderWidth: border,
-          borderColor: color,
-          backgroundColor: colors.surface,
-        }}
-      />
+      {last ? (
+        // Two views: a translucent border would show the fill under it. A
+        // range wholly at one place (`first` too): inside the start's ring.
+        <View style={first ? [styles.centred, styles.bothEnds, { borderColor: color }] : null}>
+        <View
+          testID="time-marker-end"
+          style={[{
+            width: outer,
+            height: outer,
+            borderRadius: outer / 2,
+            backgroundColor: withAlpha(color, opacity.endRing),
+          }, styles.centred]}
+        >
+          <View style={{ width: ring, height: ring, borderRadius: ring / 2, backgroundColor: color }} />
+        </View>
+        </View>
+      ) : (
+        <View
+          style={{
+            width: outer,
+            height: outer,
+            borderRadius: ring,
+            borderWidth: border,
+            borderColor: color,
+            backgroundColor: colors.surface,
+          }}
+        />
+      )}
       <Text allowFontScaling={false} style={styles.timeLabel}>
         {label}
       </Text>
@@ -223,9 +247,13 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    stopGroup: { width: 'auto', minWidth: sizes.stopMarker.size + borders.strong * 2, paddingHorizontal: space.xs },
     stopNumber: { ...type.stopNumber,   },
     indoor: { backgroundColor: colors.receiver, borderColor: colors.surface },
     time: { alignItems: 'center' },
+    centred: { alignItems: 'center', justifyContent: 'center' },
+    bothEnds: { padding: sizes.timeMarker.endBorder / 2, borderWidth: sizes.timeMarker.endBorder,
+      borderRadius: sizes.timeMarker.endSize * 2, backgroundColor: theme.colors.surface },
     timeSpacer: { height: LABEL_LINE + sizes.marker.labelGap },
     timeLabel: {
       marginTop: sizes.marker.labelGap,

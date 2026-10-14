@@ -6,7 +6,7 @@ import { PAW_STROKE } from '../map/PawGeometry';
 // icons and the map block. Pure: everything is placed here so the Kotlin side
 // only paints, and a test can read what each page holds. Colours come from
 // the theme tokens only.
-import { exportColors as colors } from '../theme/exportPalette';
+import { exportColors as colors, exportLightTheme } from '../theme/exportPalette';
 import lightMapStyle from '../theme/light-map-style.json';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { PLACE_X, PNG_STYLE as S } from './ExportPNG';
@@ -19,6 +19,8 @@ export const EXPORT_ICONS = {
   car: { stroke: 'M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7M7.8 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0M18.3 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0' },
   dots: { fill: 'M6.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M13.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M20.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0' },
   house: { stroke: 'M4 11l8-7 8 7M6.5 9.5V20h11V9.5' },
+  // Leaving a stay: Glyph 'leave', filled.
+  leave: { fill: 'M2.76 9.24L5.24 6.76L12 13.53L18.76 6.76L21.24 9.24L12 18.47Z' },
 };
 
 const TRACK_X = S.timeColumn + S.trackColumn / 2;
@@ -49,6 +51,15 @@ function trackOps(kind, color, from, to, clear = null) {
 // 停留和停在原處節點 64px).
 function nodeOps(row, color, cy) {
   const cx = TRACK_X;
+  // 2026-10-14 (#163 round 3): the range's first / last row is its start /
+  // end circle, whatever the row (as on screen); both on one row: the solid
+  // end inside the start's ring.
+  if (row.rangeStart && row.rangeEnd) {
+    return [{ t: 'circle', cx, cy, r: S.nodeSize / 2, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.departureBorder },
+      { t: 'circle', cx, cy, r: S.nodeSize / 2 - tokenSize.export.departureBorder * 2, fill: color }];
+  }
+  if (row.rangeStart) return nodeOps({ type: 'departure' }, color, cy);
+  if (row.rangeEnd) return nodeOps({ type: 'end' }, color, cy);
   switch (row.type) {
     case 'departure':
       return [{ t: 'circle', cx, cy, r: tokenSize.export.departureRadius, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.departureBorder }];
@@ -62,7 +73,7 @@ function nodeOps(row, color, cy) {
     case 'resume':
       return [{ t: 'circle', cx, cy, r: tokenSize.export.resumeRadius, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.nodeBorder }];
     default:
-      return [{ t: 'circle', cx, cy, r: tokenSize.export.endRadius, fill: color, stroke: withAlpha(color, 0.33), strokeWidth: tokenSize.export.endBorder }];
+      return [{ t: 'circle', cx, cy, r: tokenSize.export.endRadius, fill: color, stroke: withAlpha(color, exportLightTheme.opacity.endRing), strokeWidth: tokenSize.export.endBorder }];
   }
 }
 
@@ -79,11 +90,12 @@ function rowOps(block) {
   if (row.kind === 'section') {
     const muted = row.type === 'gap';
     const textTop = y + (block.height - block.lines.length * S.detailLine) / 2;
-    const iconTop = y + (block.height - tokenSize.export.glyphSize) / 2;
+    const glyph = tokenSize.export.transportGlyph;
+    const iconTop = y + (block.height - glyph) / 2;
     const pad = tokenSize.export.transportIconPadding;
     ops.push(...trackOps(row.line, color, y, y + block.height,
-      { top: iconTop - pad, bottom: iconTop + tokenSize.export.glyphSize + pad }));
-    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - tokenSize.export.glyphSize / 2, y: iconTop, size: tokenSize.export.glyphSize,
+      { top: iconTop - pad, bottom: iconTop + glyph + pad }));
+    ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - glyph / 2, y: iconTop, size: glyph,
       color: muted ? colors.iconMuted : color });
     // 「移動 28 分・1.4 km」: the duration bold and dark, the rest muted.
     block.lines.forEach((line, index) => ops.push({ t: 'runs', x: PLACE_X, y: textTop + index * S.detailLine,
@@ -93,8 +105,19 @@ function rowOps(block) {
   const nodeY = y + tokenSize.export.rowInset + S.addressLine / 2;
   // The line under a node starts below it: no dot half hidden by the node's edge.
   const nodeRadius = Math.max(...nodeOps(row, color, nodeY).filter(op => op.t === 'circle').map(op => op.r));
-  ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: nodeY + nodeRadius }));
+  // Leaving a stay (2026-10-14): the down chevron right under the node, the
+  // line cleared around it as around the movement icons.
+  const leave = tokenSize.export.leaveGlyph, leaveTop = nodeY + nodeRadius + tokenSize.export.leaveInset;
+  const cleared = row.leave ? leaveTop + leave + tokenSize.export.transportIconPadding : nodeY + nodeRadius;
+  ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: cleared }));
   ops.push(...nodeOps(row, color, nodeY));
+  if (row.leave) {
+    ops.push({ t: 'icon', name: 'leave', icon: EXPORT_ICONS.leave, x: TRACK_X - leave / 2, y: leaveTop, size: leave, color });
+    // When it left: smaller and muted, in the time column beside the chevron.
+    if (row.leaveTime) ops.push(text(row.leaveTime, S.timeColumn - tokenSize.export.timeInset, leaveTop,
+      tokenSize.export.endTimeLine, tokenSize.export.endTimeFont, colors.textMuted, { align: 'right' }));
+  }
+
   // Timeline times show only the start.
   ops.push(text(row.times[0], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
   block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X + block.titleX, y + tokenSize.export.rowInset + block.titleY + index * S.addressLine, S.addressLine,
@@ -194,7 +217,7 @@ export function measuredCharacters(snapshot) {
   for (const subject of snapshot.subjects) {
     add(subject.name); add(subject.distanceKm);
     for (const row of subject.timeline || []) [row.title, row.coordinates, row.missing, row.note, row.pill?.text,
-      row.lead, row.time, row.rest].forEach(add);
+      row.lead, row.time, row.rest, row.leaveTime].forEach(add);
   }
   add(t("c786"));
   return [...all].join('');

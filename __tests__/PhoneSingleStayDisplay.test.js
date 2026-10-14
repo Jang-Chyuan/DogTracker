@@ -45,7 +45,12 @@ test.each([[true, true], [true, false], [false, false]])('single confirmed stay 
     ? { ...n, ...position(model.points.at(-1)), originalRepresentative: undefined } : n) };
   const snapshot = m => buildExportSnapshot({ subject: 'phone', range: m.range, day: { subjects: [{ id: 'phone', model: m }] } });
   expect(snapshot(model).subjects[0].timeline.at(-1)).toMatchObject(position(stop));
-  expect(snapshot(model).subjects[0].map.times.at(-1)).toMatchObject(position(stop));
+  // 2026-10-14 (round 3): the range ends in that stay: the solid end time
+  // marker is at the stay's representative, and no numbered marker on it.
+  const times = snapshot(model).subjects[0].map.times;
+  expect(times.filter(marker => marker.last)).toHaveLength(1);
+  expect(times.find(marker => marker.last)).toMatchObject(position(stop));
+  expect(historyMapPresentation(model, { color: '#123456', subject: 'phone' }).places).toEqual([]);
   expect(buildGPX(snapshot(model))).toBe(buildGPX(snapshot(plainSource)));
   expect(buildCSV(snapshot(model))).toBe(buildCSV(snapshot(plainSource)));
   expect(JSON.stringify(rows)).toBe(before);

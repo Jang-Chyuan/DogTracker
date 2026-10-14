@@ -108,10 +108,18 @@ describe('在室內就不要出發了: a day that begins indoors has no 出發 r
     ['a vehicle before it', [departure, move('ride', T0, T0 + 30000, 300), indoor(T0 + 30000)]],
     ['a signal break before it', [departure, { type: 'gap', mode: 'gap', reason: 'no-signal', start: T0, end: T0 + 30000 },
       indoor(T0 + 30000)]],
-    ['a stay first', [departure, { type: 'stop', number: 1, start: T0 + 30000, end: T0 + 10 * MINUTE,
-      latitude: 24.98922, longitude: 121.3132 }, indoor(T0 + 10 * MINUTE)]],
   ])('other days still start with 出發: %s', (_, nodes) => {
     expect(timelinePresentation(nodes)[0]).toMatchObject({ type: 'departure', latitude: departure.latitude });
+  });
+
+  // 2026-10-14 (user): a day that begins with a stay starts with that stay,
+  // 停留 1, not 出發 (the seconds before it are its time).
+  test('a stay first: no 出發, the stay is the first row', () => {
+    const nodes = [departure, { type: 'stop', number: 1, start: T0 + 30000, end: T0 + 10 * MINUTE,
+      durationMs: 10 * MINUTE - 30000, latitude: 24.98922, longitude: 121.3132 }, indoor(T0 + 10 * MINUTE)];
+    const shown = timelinePresentation(nodes);
+    expect(shown.map(n => n.type)).toEqual(['stop', 'indoor']);
+    expect(shown[0]).toMatchObject({ number: 1, start: T0, end: T0 + 10 * MINUTE, latitude: 24.98922 });
   });
 
   test('a dog history: first fix 4 m off, then a hold — the model keeps its departure, the list starts indoors', () => {
@@ -137,9 +145,10 @@ describe('no 「接續隔天」 capsule', () => {
   const end = { type: 'end', start: T0 + 25 * MINUTE, end: T0 + 25 * MINUTE, latitude: 24.9892,
     longitude: 121.3132, label: i18nT('c330'), continuesNextDay: true };
 
-  test('a terminal stay running past midnight shows only its minutes', () => {
+  // 2026-10-14: the last stay is the last row (no end row), its minutes only.
+  test('a last stay running past midnight shows only its minutes', () => {
     const shown = timelinePresentation([move('walking', T0 - 5 * MINUTE, T0, 300), stay, end]);
-    expect(shown.at(-1).terminalStay).toBeDefined();
+    expect(shown.at(-1)).toMatchObject({ type: 'stop', number: 2 });
     expect(nodePill(shown.at(-1))).toEqual({ text: '停 25 分', tone: 'stay' });
     // The PNG row is the same capsule.
     const rows = exportTimelineRows([move('walking', T0 - 5 * MINUTE, T0, 300), stay, end], () => '虛構地址');
