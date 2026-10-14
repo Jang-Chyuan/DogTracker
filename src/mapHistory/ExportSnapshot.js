@@ -97,7 +97,7 @@ export function exportTimelineRows(nodes, addressOf) {
  */
 export function exportMapLayer(model, color, { multi = false, subject = 'dog' } = {}) {
   // Light, whatever the phone's theme (the PNG is a fixed-light file).
-  const lines = routeLines(model.edges || [], { color, theme: exportLightTheme, chunkEdges: Infinity });
+  const lines = routeLines(model.edges || [], { color, theme: exportLightTheme, chunkEdges: Infinity, dotted: false });
   const presentation = historyMapPresentation(model, { color, subject, cursor: null, theme: exportLightTheme });
   const places = (presentation?.places || []).length ? presentation.places : placeMarkers(model.locations || []);
   const allIndoor = model.points.length > 0 && model.points.every(p => p.heldReason);

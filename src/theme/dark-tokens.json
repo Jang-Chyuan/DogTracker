@@ -91,9 +91,9 @@
     "rangeRingFill": 0.1,
     "phoneAccuracy": 0.2,
     "cursorHalo": 0.25,
-    "routeUpcoming": 0.6,
-    "routeBeforeCursor": 0.75,
-    "routeAfterCursor": 0.6,
+    "routeLine": 0.75,
+    "routeSelected": 1,
+    "routeOther": 0.75,
     "disabled": 0.4,
     "catchingUp": 0.6
   },

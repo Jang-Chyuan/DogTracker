@@ -3,7 +3,7 @@
 // indoor house, time markers and the cursor. Pure; GoogleTrackingMap draws it.
 import { getTheme } from '../../theme/ThemeProvider';
 import { size as sizes, space, layout } from '../../theme/tokens';
-import { clock } from '../HistoryText';
+import { clock, movementGlyph } from '../HistoryText';
 import { presentationDurationMs, shownStayDurationMs, timelinePresentation } from '../HistoryTimelinePresentation';
 import { configFor, coordinateValid, distanceMeters } from '../HistoryConfig';
 import { historyMovement } from '../HistoryMovement';
@@ -62,25 +62,35 @@ export function withAlpha(hex, alpha) {
 }
 
 /**
- * The route inside the range as lines: on foot 4dp before the cursor and 3dp
- * at 30% after it; a car or ride 2dp solid in the route colour (also 30%
- * after the cursor); nothing across a break. Consecutive edges of the same
- * look join into one line.
+ * The route inside the range as lines (2026-10-14, the list's own styles): on
+ * foot (and a dog's movement) a round-dotted line 4dp wide, a car or ride a
+ * 3dp solid line, all in the route colour at one strength — nothing before or
+ * after the cursor; nothing across a break. `selection` (the selected list
+ * row): a movement row's segment is drawn selectedExtra wider on a casing
+ * (routeCasing), at opacity.routeSelected (dark: full, the rest stays at
+ * routeLine 75%; nothing is faded). Consecutive edges of the same look join
+ * into one line.
+ * `dotted: false` (the PNG's map): walking solid 4dp, a car 2dp.
  */
 // A long day is drawn in pieces of at most this many edges, cut at the same
-// edges wherever the cursor is: a cursor move changes the piece it is in
-// (and the look of the pieces it passed), never the coordinates of the rest,
-// so the map does not send thousands of points to the native line again
-// (067: a tap on a long route froze the app).
+// edges whatever is selected: a new selection changes only the pieces it
+// touches, never the look or coordinates of the others, so the map does not
+// send thousands of points to the native
+// line again (067: a tap on a long route froze the app). An unchanged piece
+// keeps its very coordinate array (stableCoordinates).
 export const ROUTE_CHUNK_EDGES = 200;
 
 export function routeLines(
   edges,
-  { color, cursorTime = Infinity, theme = getTheme(), chunkEdges = ROUTE_CHUNK_EDGES },
+  { color, selection = null, theme = getTheme(), chunkEdges = ROUTE_CHUNK_EDGES, dotted = true } = {},
 ) {
-  const { opacity } = theme;
+  const { opacity, colors } = theme;
   const lines = [];
   let current = null;
+  const chosenSpan = selection?.type === 'movement' ? selection : null;
+  const strength = alpha => (alpha === 1 ? color : withAlpha(color, alpha));
+  const base = strength(opacity.routeLine);
+  const bright = strength(opacity.routeSelected);
   for (let index = 0; index < edges.length; index += 1) {
     const edge = edges[index];
     if (edge.gap || ['gap', 'indoor'].includes(edge.mode) || edge.bridged) {
@@ -88,42 +98,56 @@ export function routeLines(
       continue;
     }
     const vehicle = isVehicle(edge.mode);
-    const after = edge.start >= cursorTime;
-    const width = vehicle
-      ? sizes.route.drive
-      : after
-      ? sizes.route.upcoming
-      : sizes.route.walk;
-    const stroke = after
-      ? withAlpha(color, opacity.routeUpcoming)
-      : theme.isDark
-      ? withAlpha(color, opacity.routeBeforeCursor)
-      : color;
-    const key = `${width}:${stroke}`;
+    const chosen = !!chosenSpan && edge.start >= chosenSpan.start && edge.end <= chosenSpan.end;
+    const dots = dotted && !vehicle;
+    const width = (vehicle ? (dotted ? sizes.route.vehicle : sizes.route.drive) : sizes.route.walk)
+      + (chosen ? sizes.route.selectedExtra : 0);
+    const stroke = chosen ? bright : base;
+    const casing = chosen ? colors.routeCasing : null;
+    const key = `${width}:${stroke}:${dots}:${casing}`;
     if (current && current.key === key && current.end === edge.start && index % chunkEdges !== 0) {
       current.coordinates.push(coordinateOf(edge.to));
       current.end = edge.end;
       continue;
     }
     current = {
-      key,
-      width,
-      color: stroke,
-      dashed: theme.isDark && after,
-      vehicle,
-      end: edge.end,
-      start: edge.start,
+      key, width, color: stroke, dashed: false, dotted: dots, casing, selected: chosen,
+      vehicle, end: edge.end, start: edge.start,
       coordinates: [coordinateOf(edge.from), coordinateOf(edge.to)],
     };
     lines.push(current);
   }
-  return lines.map(({ key, ...line }) => ({ ...line, id: lineId(line) }));
+  return lines.map(({ key, ...line }) => drawnLine(line));
+}
+
+// The same piece of route (times and coordinates) keeps one coordinate array
+// across presentations: React Native compares it by reference first, so a
+// piece that only changed colour sends the colour, not its points again.
+const stableCoordinateArrays = new Map();
+const STABLE_COORDINATES_MAX = 4000;
+function stableCoordinates(line, geometry) {
+  const key = `${line.start}:${line.end}:${line.coordinates.length}:${geometry}`;
+  const known = stableCoordinateArrays.get(key);
+  if (known) return known;
+  if (stableCoordinateArrays.size >= STABLE_COORDINATES_MAX) stableCoordinateArrays.clear();
+  stableCoordinateArrays.set(key, line.coordinates);
+  return line.coordinates;
+}
+
+/** A line with its stable coordinates, React key (`owner`: whose line) and id. */
+export function drawnLine(line, owner = '') {
+  const geometry = geometryId(line.coordinates);
+  const points = stableCoordinates(line, geometry);
+  const style = line.dashed ? 'dashed' : line.dotted ? 'dotted' : 'solid';
+  const shaped = { ...line, coordinates: points };
+  return { ...shaped, key: `${owner}:${style}:${line.start}`, id: lineId(shaped, geometry) };
 }
 
 // What a drawn line is: the same id, the same coordinates and look (the map
 // leaves a line with an unchanged id alone).
-const lineId = line =>
-  `${line.start}-${line.end}-${geometryId(line.coordinates)}-${line.width}-${line.color}-${line.dashed ? 1 : 0}`;
+const lineId = (line, geometry = geometryId(line.coordinates)) =>
+  `${line.start}-${line.end}-${geometry}-${line.width}-${line.color}-${line.dashed ? 1 : 0}`
+  + `-${line.dotted ? 1 : 0}-${line.casing ?? ''}`;
 
 // Hash exact coordinate text so reconciliation invalidates only changed pieces.
 function geometryId(points) {
@@ -310,10 +334,8 @@ export function outsideLines(dayPoints, range, { color, subject = 'dog',
   const movement = edges || dayDrawing(dayPoints, subject).edges;
   const outside = movement.filter(e => e.end - e.start <= breakMs
     && (e.end <= range.start || e.start >= range.end));
-  return routeLines(outside, { color }).map(line => {
-    const faded = { ...line, width: sizes.route.faded, color, dashed: true };
-    return { ...faded, id: lineId(faded) };
-  });
+  return routeLines(outside, { color, dotted: false }).map(({ id, key, ...line }) =>
+    drawnLine({ ...line, width: sizes.route.faded, color, dashed: true }));
 }
 
 /**
@@ -499,7 +521,7 @@ export function uncrowded(times, places, apartM = 150) {
  */
 export function historyMapPresentation(
   model,
-  { color, cursor = null, theme = getTheme(), subject = null } = {},
+  { color, cursor = null, theme = getTheme(), subject = null, selection = null } = {},
 ) {
   const { colors } = theme;
   if (!model) return null;
@@ -525,10 +547,12 @@ export function historyMapPresentation(
         first ? { start: first.time, end: last.time } : null,
         { color: colors.routeFaded, subject, edges: subject === 'dog' ? model.dayEdges ?? drawing.edges : drawing.edges },
       ),
-      ...routeLines(rangeEdges, { color, cursorTime, theme }),
+      ...routeLines(rangeEdges, { color, selection, theme }),
     ],
 
-    places,
+    places: selection ? selectedPlaces(places, selection) : places,
+    // The selected movement row's glyph at its middle fix (2026-10-14, 5a).
+    icon: selection?.type === 'movement' ? segmentIcon(points, selection) : null,
     // The cursor's label already says its time: no marker under it (H1);
     // a middle time only where the cursor has been; one too close to a number or another time is left
     // out (its label would sit on theirs).
@@ -539,12 +563,9 @@ export function historyMapPresentation(
           ['stop', 'indoor', 'switch'].includes(n.type),
         ),
       }))
-        // 途中的時間標記只畫走過的部分（游標之前）; the ends always.
-        .filter(marker =>
-          marker.end
-            ? marker.time !== cursor?.point?.time
-            : marker.time <= cursorTime,
-        ),
+        // The cursor's label says its own time (2026-10-14: every middle
+        // time is drawn, there is no before / after the cursor any more).
+        .filter(marker => marker.time !== cursorTime),
       places,
     ),
     cursor: cursor?.point
@@ -561,6 +582,25 @@ export function historyMapPresentation(
     camera: (points.length ? points : dayPoints).map(coordinateOf),
     points: projectedRoute(points),
   };
+}
+
+/** The selected stay's (or switch point's, or indoor hold's) marker is drawn solid. */
+export function selectedPlaces(places, selection) {
+  if (!['stop', 'switch', 'indoor'].includes(selection?.type)) return places;
+  return places.map(place => ((place.group || [place]).some(p => p.start === selection.start && p.type === selection.type)
+    ? { ...place, selected: true } : place));
+}
+
+/** The movement glyph at the fix nearest the middle of the selected row's time. */
+export function segmentIcon(points, selection) {
+  let middle = null;
+  const at = (selection.start + selection.end) / 2;
+  for (const p of points) {
+    if (p.time < selection.start || p.time > selection.end) continue;
+    if (!middle || Math.abs(p.time - at) < Math.abs(middle.time - at)) middle = p;
+  }
+  return middle ? { key: `icon${selection.start}`, glyph: movementGlyph(selection.mode),
+    coordinate: coordinateOf(middle) } : null;
 }
 
 /**

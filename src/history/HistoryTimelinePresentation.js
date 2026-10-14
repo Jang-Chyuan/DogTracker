@@ -105,6 +105,21 @@ export function shownRowAt(nodes, time) {
     ?? (rows.length && time === rows[rows.length - 1].end ? rows[rows.length - 1] : null);
 }
 
+/**
+ * The number the listed row at `time` shows on its node (the cursor label
+ * says the same, 2026-10-14): null for an unnumbered row, and for the stays a
+ * range begins or ends with (their node is the start / end circle, #163).
+ */
+const listedEnds = new WeakMap();
+export function shownNumberAt(nodes, time) {
+  const row = shownRowAt(nodes, time);
+  if (row?.number == null) return null;
+  if (!listedEnds.has(nodes)) listedEnds.set(nodes, rangeEndRows(presentedOf(nodes)));
+  const ends = listedEnds.get(nodes);
+  const index = presentedOf(nodes).indexOf(row);
+  return index === ends.start || index === ends.end ? null : row.number;
+}
+
 // Presentation only: retained gaps/stops and the source model remain untouched.
 export function timelinePresentation(all = []) {
   return presentationOf(all).listed;

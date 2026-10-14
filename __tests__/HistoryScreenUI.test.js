@@ -70,13 +70,15 @@ test('history-my-route (H1 我的路線): no title header, no ＋ 加入, the li
       'timeline-movement-walking', 'timeline-stop', 'timeline-movement-walking', 'timeline-stop',
       'timeline-movement-driving', 'timeline-switch', 'timeline-movement-walking', 'timeline-stop',
       'timeline-movement-walking', 'timeline-end']);
-    // The cursor on the newest fix: 「09:29」「已走 x km」, and its marker on the map.
+    // The cursor on the newest fix: 「09:29」「走路・已走 x km」, and its marker on the map.
     expect(s.screen.cursor.label[0]).toBe('09:29');
-    expect(s.screen.cursor.label[1]).toMatch(/^已走 \d+\.\d km$/);
+    expect(s.screen.cursor.label[1]).toMatch(/^走路・已走 \d+\.\d km$/);
     const map = s.screen.map;
     expect(map.color).toBe('#1A73E8');
     expect(map.places.map(place => place.number)).toEqual([1, 2, 3, 4]);
-    expect(map.lines.some(line => line.width === 2 && !line.dashed)).toBe(true);
+    // The car: 3dp solid (2026-10-14); on foot dotted.
+    expect(map.lines.some(line => line.width === 3 && !line.dashed && !line.dotted)).toBe(true);
+    expect(map.lines.some(line => line.width === 4 && line.dotted)).toBe(true);
     expect(map.times[0]).toMatchObject({ time: s.screen.model.points[0].time, end: true });
     expect(map.cursor.lines).toEqual(s.screen.cursor.label);
     const frame = s.renderer.root.findAllByProps({ testID: 'history-frame-all' })[0];
@@ -97,7 +99,7 @@ test('history-dog (H1 狗的歷史): the dog capsule, ＋ 加入, 移動 and 坐
   expect(s.text()).toContain('豆豆');
   expect(s.ids('history-dogs-pill')).toEqual(['history-dogs-pill']);
   expect(s.ids('timeline-movement-ride')).toHaveLength(1);
-  expect(s.screen.cursor.label[1]).toMatch(/^已移動 /);
+  expect(s.screen.cursor.label[1]).toMatch(/^移動中・/);
   expect(s.screen.map.color).toBe('#D9604F');
   await unmount(s);
 });
@@ -168,7 +170,7 @@ test('a tap on a stay row: the cursor to its start, the row lit, a double haptic
   NativePlatform.performHaptic.mockClear();
   await act(async () => pressable(r, 'timeline-stop').props.onPress());
   expect(r.screen.cursor.point.time).toBe(stop.start);
-  expect(r.screen.cursor.label[1]).toMatch(/^停留 \d+ 分$/);
+  expect(r.screen.cursor.label[1]).toMatch(/^停留 \d+・\d+ 分$/);
   expect(r.screen.focus).toMatchObject({ action: 'node' });
   expect(r.ids('timeline-selected')).toHaveLength(1);
   expect(NativePlatform.performHaptic).toHaveBeenCalledWith('EFFECT_DOUBLE_CLICK');
@@ -191,7 +193,7 @@ test('history-single-point (只有一筆): one point, no distance, no range bar'
   expect(s.ids('history-adjust')).toEqual([]);
   expect(s.screen.map.lines).toEqual([]);
   // 2026-10-13: the cursor's running distance under 100 m is in metres.
-  expect(s.screen.cursor.label[1]).toBe('已移動 0 m');
+  expect(s.screen.cursor.label[1]).toBe('移動中・0 m');
   await unmount(s);
 });
 

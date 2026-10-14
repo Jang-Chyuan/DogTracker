@@ -28,6 +28,7 @@ import {
   clock,
 } from '../history/HistoryText';
 import { usePlaceNames } from '../placement/AddressLookup';
+import { rowKey } from '../history/screen/HistoryScreenCursor';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 
 // 判定表「時間軸清單」: time column 54dp, track 36dp, then the place.
@@ -139,7 +140,7 @@ const lineOf = section =>
     ? 'solid'
     : 'dots';
 
-function Node({ node, color, centered = false, rangeStart = false, rangeEnd = false }) {
+function Node({ node, color, centered = false, rangeStart = false, rangeEnd = false, selected = false }) {
   const { colors, opacity } = useTheme();
   const styles = useStyles(getStyles);
   const centeredStyle = centered ? { marginTop: 0 } : null;
@@ -160,10 +161,23 @@ function Node({ node, color, centered = false, rangeStart = false, rangeEnd = fa
       return <View style={[styles.departure, centeredStyle, { borderColor: color }]} />;
     case 'stop':
     case 'switch':
+      // 2026-10-14 (user): as the map's stop marker — white, a 2dp ring and
+      // the number in the route colour; solid (white number) only while its
+      // row is the selected one, with its map marker. A stay without a number
+      // never gets an empty numbered circle: a small plain dot.
+      if (node.number == null) {
+        return (
+          <View style={[styles.plainStopBox, centeredStyle]} testID="node-plain-stop">
+            <View style={[styles.plainStop, { backgroundColor: color }]} />
+          </View>
+        );
+      }
       return (
-        <View style={[styles.numbered, centeredStyle, { backgroundColor: color }]}>
-          {/* A number in a fixed 24dp circle: it does not grow with the font. */}
-          <Text style={styles.number} allowFontScaling={false}>{node.number}</Text>
+        <View style={[styles.numbered, centeredStyle]} testID={`node-number-${node.number}`}>
+          <View style={[styles.numberedRing, { borderColor: color }, selected && { backgroundColor: color }]}>
+            {/* A number in a fixed 24dp circle: it does not grow with the font. */}
+            <Text style={[styles.number, { color: selected ? colors.onRoute : color }]} allowFontScaling={false}>{node.number}</Text>
+          </View>
         </View>
       );
 
@@ -206,13 +220,17 @@ function Pill({ pill, color }) {
   );
 }
 
-function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout, rangeStart = false, rangeEnd = false }) {
+function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout, onRowBox, rangeStart = false, rangeEnd = false }) {
   const styles = useStyles(getStyles);
   const { fontScale: scale = 1 } = useWindowDimensions();
   const firstLine = { height: Math.ceil(type.cardTitle.lineHeight * scale) };
   const tap = useTap(onPress, node);
-  const onLayout = onRowLayout
-    ? event => onRowLayout(node.start, event.nativeEvent.layout.y)
+  const onLayout = onRowLayout || onRowBox
+    ? event => {
+      const { y, height } = event.nativeEvent.layout;
+      onRowLayout?.(node.start, y);
+      onRowBox?.(rowKey(node), y, height);
+    }
     : undefined;
   const [start] = nodeTimes(node);
   const lines = placeLines(node, place);
@@ -252,7 +270,7 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
         <Track kind={lineOf(next)} color={color} clears={track.clears} />
         <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line">
-          <Node node={node} color={color} centered rangeStart={rangeStart} rangeEnd={rangeEnd} />
+          <Node node={node} color={color} centered rangeStart={rangeStart} rangeEnd={rangeEnd} selected={!!selected} />
         </View>
         {/* Leaving this stay (2026-10-14, moved onto the line 2026-10-14): a
             down chevron on the next row's line, line above and below it. */}
@@ -263,11 +281,13 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
         )}
       </View>
       <View style={styles.placeOuter}>
-        {/* The row the cursor is on: a pale fill of the route colour (H2). */}
+        {/* The selected row (2026-10-14, any row): a pale fill of the route
+            colour and a 4dp route-colour edge on its left. */}
         <View
           style={[styles.place, selected && { backgroundColor: `${color}1A` }]}
           testID={selected ? 'timeline-selected' : undefined}
         >
+          {selected && <View style={[styles.selectedEdge, { backgroundColor: color }]} testID="selected-row-edge" />}
           <View style={styles.placeHeading}>
             {pill && <View style={[styles.firstLineCenter, firstLine]} testID="place-pill-first-line"><Pill pill={pill} color={color} /></View>}
             {pending ? <View style={[styles.address, styles.firstLineCenter, firstLine]}>
@@ -290,10 +310,11 @@ const samePlace = (a, b) => a === b || (a?.state === b?.state && a?.text === b?.
 const PlaceRow = React.memo(PlaceRowView, (before, after) =>
   before.node === after.node && before.next === after.next && before.color === after.color
   && before.selected === after.selected && before.onPress === after.onPress
-  && before.onRowLayout === after.onRowLayout && samePlace(before.place, after.place)
+  && before.onRowLayout === after.onRowLayout && before.onRowBox === after.onRowBox
+  && samePlace(before.place, after.place)
   && before.rangeStart === after.rangeStart && before.rangeEnd === after.rangeEnd);
 
-function SectionRowView({ section, from = null, color, onPress }) {
+function SectionRowView({ section, from = null, color, onPress, selected = false, onRowBox }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const text = sectionText(section);
@@ -305,8 +326,11 @@ function SectionRowView({ section, from = null, color, onPress }) {
       hitSlop={ROW_SLOP}
       testID={`timeline-${section.type}-${section.mode}`}
       {...tap}
+      onLayout={onRowBox ? event => onRowBox(rowKey(section), event.nativeEvent.layout.y,
+        event.nativeEvent.layout.height) : undefined}
       accessibilityRole="button"
       accessibilityLabel={sectionSpeech(section, from)}
+      accessibilityState={{ selected: !!selected }}
     >
       <View style={[styles.timeColumn, timeWidth()]} />
       <View style={[styles.trackColumn, styles.transportTrack]}>
@@ -319,7 +343,9 @@ function SectionRowView({ section, from = null, color, onPress }) {
           />
         </View>
       </View>
-      <View style={styles.sectionText}>
+      <View style={[styles.sectionText, selected && [styles.sectionSelected, { backgroundColor: `${color}1A` }]]}
+        testID={selected ? 'timeline-selected' : undefined}>
+        {selected && <View style={[styles.selectedEdge, { backgroundColor: color }]} testID="selected-row-edge" />}
         <Text style={styles.movement}>
           {text.lead}
           {text.time ? ' ' : ''}
@@ -335,16 +361,18 @@ const SectionRow = React.memo(SectionRowView);
 /**
  * The time-line list of one dog or my route (H1/H2, 判定表「時間軸清單」):
  * places (出發, numbered stays and switch points, holds, 恢復記錄, the end)
- * with the movement and 沒有資料 rows between them. `selected` is the start
- * of the place row the cursor is on; a tap on a row calls `onPressNode` with
- * its node; `onRowLayout(start, y)` says where each place row sits.
+ * with the movement and 沒有資料 rows between them. `selectedKey` is the
+ * selected row's `${type}:${start}` (any row, HistoryScreenCursor.rowKey);
+ * a tap on a row calls `onPressNode` with its node; `onRowLayout(start, y)`
+ * says where each place row sits, `onRowBox(key, y, height)` every row.
  */
 function HistoryTimelineList({
   model,
   color,
-  selected = null,
+  selectedKey = null,
   onPressNode,
   onRowLayout,
+  onRowBox,
 }) {
   const nodes = useMemo(() => timelinePresentation(model.nodes), [model.nodes]);
   const ends = useMemo(() => rangeEndRows(nodes), [nodes]);
@@ -369,6 +397,8 @@ function HistoryTimelineList({
             from={isSection(nodes[index - 1]) ? null : nodes[index - 1] ?? null}
             color={color}
             onPress={onPressNode}
+            selected={selectedKey != null && rowKey(node) === selectedKey}
+            onRowBox={onRowBox}
           />
         ) : (
           <PlaceRow
@@ -376,9 +406,10 @@ function HistoryTimelineList({
             node={node}
             color={color}
             place={places[index]}
-            selected={selected != null && node.start === selected}
+            selected={selectedKey != null && rowKey(node) === selectedKey}
             onPress={onPressNode}
             onRowLayout={onRowLayout}
+            onRowBox={onRowBox}
             next={isSection(nodes[index + 1]) ? nodes[index + 1] : null}
             rangeStart={ends.start === index}
             rangeEnd={ends.end === index}
@@ -485,15 +516,38 @@ const getStyles = makeStyles(theme => {
       backgroundColor: colors.elevated,
       marginTop: sizes.timeline.node.departureDrop,
     },
+    // A 3dp ring of the page colour around the 24dp marker cuts the track.
     numbered: {
       width: sizes.timeline.node.stop + border.heavy * 2,
       height: sizes.timeline.node.stop + border.heavy * 2,
       borderRadius: (sizes.timeline.node.stop + border.heavy * 2) / 2,
-      borderWidth: border.heavy,
-      borderColor: colors.elevated,
+      backgroundColor: colors.elevated,
       alignItems: 'center',
       justifyContent: 'center',
       marginTop: -sizes.timeline.node.stayLift,
+    },
+    numberedRing: {
+      width: sizes.timeline.node.stop,
+      height: sizes.timeline.node.stop,
+      borderRadius: sizes.timeline.node.stop / 2,
+      borderWidth: border.strong,
+      backgroundColor: colors.elevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    plainStopBox: {
+      width: sizes.timeline.node.plainStop + border.heavy * 2,
+      height: sizes.timeline.node.plainStop + border.heavy * 2,
+      borderRadius: (sizes.timeline.node.plainStop + border.heavy * 2) / 2,
+      backgroundColor: colors.elevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: space.xs,
+    },
+    plainStop: {
+      width: sizes.timeline.node.plainStop,
+      height: sizes.timeline.node.plainStop,
+      borderRadius: sizes.timeline.node.plainStop / 2,
     },
     number: { color: colors.onRoute, fontSize: type.small.fontSize, fontWeight: type.stopNumber.fontWeight,
       lineHeight: type.stopNumber.lineHeight, includeFontPadding: false, textAlign: 'center', textAlignVertical: 'center' },
@@ -582,6 +636,10 @@ const getStyles = makeStyles(theme => {
       paddingLeft: space.s,
     },
     movement: { color: colors.textMuted, fontSize: type.caption.fontSize, flexShrink: 1 },
+    // The selected row's left edge, clipped by the row's 12 corners; a
+    // movement row gets the same fill and corners as a place row.
+    selectedEdge: { position: 'absolute', left: 0, top: 0, bottom: 0, width: border.emphasis },
+    sectionSelected: { borderRadius: radius.input, overflow: 'hidden', paddingRight: space.s },
     bold: { color: colors.text, fontWeight: type.status.fontWeight },
   });
 });

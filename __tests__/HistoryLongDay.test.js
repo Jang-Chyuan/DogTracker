@@ -3,6 +3,7 @@
 // whole day: the list re-renders only the rows that changed, the map keeps
 // the route pieces the cursor did not touch, and the tracking state does not
 // change on every one-second refresh.
+import { darkTheme, lightTheme } from '../src/theme/ThemeProvider';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { buildFixture } from '../src/dev/ScreenFixtures';
@@ -38,23 +39,24 @@ test('the long-day fixture is a long day', async () => {
   expect(screen.model.points.length).toBeGreaterThan(5000);
 });
 
-test('a cursor move re-renders only the rows it lights and unlights', async () => {
+test('a new selection re-renders only the rows it lights and unlights', async () => {
   const { model } = await longDay();
   const stays = model.nodes.filter(node => node.type === 'stop');
+  const key = node => `${node.type}:${node.start}`;
   expect(stays.length).toBeGreaterThan(4);
   const spy = jest.spyOn(HistoryText, 'placeLines');
   const press = () => {};
   const layout = () => {};
   let renderer;
   await act(async () => {
-    renderer = Renderer.create(<HistoryTimelineList model={model} color="#2a6fdb" selected={stays[1].start}
+    renderer = Renderer.create(<HistoryTimelineList model={model} color="#2a6fdb" selectedKey={key(stays[1])}
       onPressNode={press} onRowLayout={layout} />);
   });
   const rows = spy.mock.calls.length;
   expect(rows).toBeGreaterThan(stays.length);
   spy.mockClear();
   await act(async () => {
-    renderer.update(<HistoryTimelineList model={model} color="#2a6fdb" selected={stays[3].start}
+    renderer.update(<HistoryTimelineList model={model} color="#2a6fdb" selectedKey={key(stays[3])}
       onPressNode={press} onRowLayout={layout} />);
   });
   // The row unlit and the row lit.
@@ -62,7 +64,7 @@ test('a cursor move re-renders only the rows it lights and unlights', async () =
   spy.mockClear();
   // The parent re-rendering with the same props: nothing.
   await act(async () => {
-    renderer.update(<HistoryTimelineList model={model} color="#2a6fdb" selected={stays[3].start}
+    renderer.update(<HistoryTimelineList model={model} color="#2a6fdb" selectedKey={key(stays[3])}
       onPressNode={press} onRowLayout={layout} />);
   });
   expect(spy.mock.calls.length).toBe(0);
@@ -70,17 +72,20 @@ test('a cursor move re-renders only the rows it lights and unlights', async () =
   await act(async () => renderer.unmount());
 });
 
-test('a cursor move keeps the route pieces it did not reach', async () => {
+// 2026-10-14: selecting a row (light or dark) changes only the pieces of its
+// segment; every other piece keeps its id and its very coordinate array, so
+// the map sends no points again (067).
+test.each([['light', lightTheme], ['dark', darkTheme]])('a new selection keeps the route pieces it does not touch (%s)', async (_, theme) => {
   const { model } = await longDay();
   const edges = model.edges;
-  const early = edges[Math.floor(edges.length * 0.6)].start;
-  const late = edges[Math.floor(edges.length * 0.7)].start;
-  const before = routeLines(edges, { color: '#2a6fdb', cursorTime: early });
-  const after = routeLines(edges, { color: '#2a6fdb', cursorTime: late });
-  const ids = new Set(after.map(line => line.id));
-  const kept = before.filter(line => ids.has(line.id));
-  // Everything outside the stretch the cursor moved over is the same piece.
-  expect(kept.length).toBeGreaterThan(before.length * 0.7);
+  const walks = model.sections.filter(n => n.type === 'movement');
+  const row = walks[Math.floor(walks.length * 0.6)];
+  const before = routeLines(edges, { color: '#2a6fdb', theme });
+  const after = routeLines(edges, { color: '#2a6fdb', theme,
+    selection: { type: 'movement', mode: row.mode, start: row.start, end: row.end } });
+  const kept = before.filter(line => after.some(other => other.id === line.id && other.coordinates === line.coordinates));
+  expect(kept.length).toBeGreaterThan(before.length * 0.9);
+  expect(after.some(line => line.selected)).toBe(true);
   for (const line of after) expect(line.coordinates.length).toBeLessThanOrEqual(201);
 });
 

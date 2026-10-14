@@ -15,9 +15,26 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   controlScope = scopeKey, onControlRects }, ref) {
   const styles = useStyles(getStyles);
   const scroller = useRef(null);
+  // Where the list is and when the viewer last scrolled it (a drag, or the
+  // fling after it), so the cursor's own scrolling never fights the viewer's.
+  const scrollState = useRef({ offset: 0, height: 0, manualAt: 0, dragging: false, fling: false });
   // Timeline rows report positions relative to the independently scrolling list.
   useImperativeHandle(scrollRef, () => ({
     scrollTo: options => scroller.current?.scrollTo(options),
+    scrollState: () => scrollState.current,
+  }), []);
+  const scrollHandlers = useMemo(() => ({
+    onLayout: event => { scrollState.current.height = event.nativeEvent.layout.height; },
+    onScroll: event => { scrollState.current.offset = event.nativeEvent.contentOffset.y; },
+    // A finger resting on the list counts too.
+    onTouchStart: () => { scrollState.current.dragging = true; },
+    onTouchEnd: () => { scrollState.current.dragging = false; },
+    onTouchCancel: () => { scrollState.current.dragging = false; },
+    onScrollBeginDrag: () => Object.assign(scrollState.current, { dragging: true, fling: false, manualAt: Date.now() }),
+    onScrollEndDrag: () => Object.assign(scrollState.current, { dragging: false, fling: true, manualAt: Date.now() }),
+    onMomentumScrollEnd: () => {
+      if (scrollState.current.fling) Object.assign(scrollState.current, { fling: false, manualAt: Date.now() });
+    },
   }), []);
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   // At large fonts the fixed header leaves a shorter list viewport. Avoid
@@ -148,6 +165,7 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
         <View style={styles.sheet}>
           <View testID="history-panel-header" style={styles.header}>{shownHeader}</View>
           {!collapsed && <ScrollView ref={scroller} style={styles.list} nestedScrollEnabled
+            scrollEventThrottle={SCROLL_THROTTLE_MS} {...scrollHandlers}
             contentContainerStyle={{ paddingBottom: bottomInset + tailGap }}>
             <View testID="history-panel-content">
               {children}
@@ -159,6 +177,8 @@ const HistoryPanel = forwardRef(function HistoryPanel({ header, children,
   );
 });
 export default HistoryPanel;
+// The list's offset is read only when the cursor moves to another row.
+const SCROLL_THROTTLE_MS = 32;
 const getStyles = makeStyles(theme => ({
   panel: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 40, elevation: 12 },
   sheet: { flex: 1, backgroundColor: theme.colors.elevated,
