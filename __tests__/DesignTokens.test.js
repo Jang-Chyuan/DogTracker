@@ -303,6 +303,7 @@ test('the original light palette is unchanged', () => {
   // 2026-10-14: the history route's opacities replaced before/after-cursor.
   delete originalOpacity.routeLine;
   delete originalOpacity.routeSelected;
+  delete originalOpacity.routeHalo;
   delete originalOpacity.routeOther;
   Object.entries(baseline).forEach(([group, value]) =>
     expect(group === 'opacity' ? originalOpacity : group === 'colors' ? originalColors : tokens[group]).toEqual(value),

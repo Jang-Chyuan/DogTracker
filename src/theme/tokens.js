@@ -134,6 +134,8 @@ export const opacity = {
   // brightens the selected segment instead.
   routeLine: 1,
   routeSelected: 1,
+  // The selected segment's glow under it (2026-10-15), like a map app's chosen route.
+  routeHalo: 0.28,
   routeOther: 0.5,
   // The protagonist's face glow among several dogs (H7), in its route colour.
   faceGlow: 0.28,
@@ -397,12 +399,13 @@ export const size = {
     // The history map (2026-10-14, the list's own line styles): on foot a
     // round-dotted line (dots as wide as the line, a gap dotGapScale times
     // that), a car or ride solid `vehicle`; the selected row's segment
-    // `selectedExtra` wider on a `casing` each side. The other dogs
-    // `secondary`, solid. `drive` is the PNG's car line.
+    // `selected` wide on a `halo` of its route colour (opacity.routeHalo,
+    // 2026-10-15: a white casing vanished among the light map's white roads).
+    // The other dogs `secondary`, solid. `drive` is the PNG's car line.
     walk: 4,
     vehicle: 3,
-    selectedExtra: 2,
-    casing: 2,
+    selected: 6,
+    halo: 14,
     dotGapScale: 1.25,
     secondary: 3,
     drive: 2,
