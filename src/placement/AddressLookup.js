@@ -15,8 +15,15 @@ export const ADDRESS_CONFIG = Object.freeze({
   tooFarM: 300,
   cacheSize: 500,
   retryAfterMs: 60000,
-  // A geocoder that never answers must not stall the places after it.
+  // A geocoder that never answers must not stall the places after it: one
+  // place gets at most this long, and when it runs out the places still
+  // waiting behind it fall back too (asked again later).
   timeoutMs: 15000,
+  // Places asked at once. One at a time, a busy day's 16 stays took 73 s on
+  // the emulator (1.4–17 s each, 2026-10-14).
+  parallel: 3,
+  // The export waits this long in all for the places still being asked.
+  exportWaitMs: 20000,
 });
 
 // Google's data sometimes answers in simplified characters.
@@ -245,7 +252,7 @@ export function describePlace(anchor, results, config = ADDRESS_CONFIG) {
   return district ? t('c384', { district: district }) : null;
 }
 
-/** One lookup at a time, cached by anchored place; never waits on the map. */
+/** A few lookups at a time, cached by anchored place; never waits on the map. */
 export function createAddressLookup({
   store = null,
   now = Date.now,
@@ -293,90 +300,132 @@ export function createAddressLookup({
       cache.delete(oldest[0]);
     }
   }
-  let running = false;
-  async function drain() {
-    if (running) return;
-    running = true;
-    while (queue.length) {
-      const [name, anchor] = queue[0];
-      try {
-        // Offline the geocoder has nothing to say: do not wait on it.
-        if (native.isOnline && !(await native.isOnline().catch(() => false)))
-          throw new Error('offline');
-        let timer;
-        const answer = await Promise.race([
-          native.reverseGeocode(anchor.latitude, anchor.longitude),
-          new Promise((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error('timeout')),
-              config.timeoutMs,
-            );
-          }),
-        ]).finally(() => clearTimeout(timer));
-        const results = JSON.parse(answer);
-        // No answer at all is what Android gives offline: ask again later.
-        if (!Array.isArray(results) || !results.length)
-          throw new Error('empty');
-        const value = describePlace(anchor, results, config);
-        put(name, { anchor, value, ...(value ? {} : { failedAt: now() }) });
-      } catch (_) {
-        put(name, { anchor, value: null, failedAt: now() });
-      } finally {
-        const entry = cache.get(name);
-        try {
-          await store?.save(entry);
-        } catch (_) {
-          /* Memory cache still works. */
-        }
-        queue.shift();
-        for (const listener of listeners) listener(name);
+  const notify = name => {
+    for (const listener of listeners) listener(name);
+  };
+  // Settles with `promise`, or rejects with 'timeout' after `ms`.
+  const timed = (promise, ms) => {
+    let timer;
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), ms);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+  const fail = (name, anchor) => put(name, { anchor, value: null, failedAt: now() });
+  async function ask(name, anchor) {
+    let timedOut = false;
+    try {
+      // Offline the geocoder has nothing to say: do not wait on it. The
+      // connectivity check counts towards the place's time.
+      const answer = await timed(
+        (async () => {
+          if (native.isOnline && !(await native.isOnline().catch(() => false)))
+            throw new Error('offline');
+          return native.reverseGeocode(anchor.latitude, anchor.longitude);
+        })(),
+        config.timeoutMs,
+      );
+      const results = JSON.parse(answer);
+      // No answer at all is what Android gives offline: ask again later.
+      if (!Array.isArray(results) || !results.length) throw new Error('empty');
+      const value = describePlace(anchor, results, config);
+      if (value) put(name, { anchor, value });
+      else fail(name, anchor);
+    } catch (error) {
+      timedOut = error?.message === 'timeout';
+      fail(name, anchor);
+    }
+    notify(name);
+    // A geocoder that did not answer in time will not answer the places
+    // waiting behind it either: they fall back now and are asked again later.
+    if (timedOut) {
+      for (const [waiting, place] of queue.splice(0)) {
+        fail(waiting, place);
+        notify(waiting);
       }
     }
-    running = false;
+    try {
+      await store?.save(cache.get(name));
+    } catch (_) {
+      /* Memory cache still works. */
+    }
+  }
+  let asking = 0;
+  function drain() {
+    while (asking < Math.max(1, config.parallel || 1) && queue.length) {
+      const [name, anchor] = queue.shift();
+      asking += 1;
+      ask(name, anchor).finally(() => {
+        asking -= 1;
+        drain();
+      });
+    }
+  }
+  /**
+   * Where a place stands: { value, pending }. `value` is the words, or null
+   * (none found, offline, no geocoder; also while a place that had none is
+   * asked again). `pending` while the place is still being asked.
+   */
+  function request(anchor, retry = false) {
+    if (!valid(anchor) || !native?.reverseGeocode)
+      return { value: null, pending: false };
+    const nearby = nearestCached(anchor);
+    const name = nearby ? nearby[0] : key(anchor);
+    const entry = cache.get(name);
+    if (entry?.pending) return { value: null, pending: true, again: entry.again };
+    if (
+      entry &&
+      !(
+        entry.failedAt !== undefined &&
+        (retry || now() - entry.failedAt >= config.retryAfterMs)
+      )
+    ) {
+      put(name, entry);
+      return { value: entry.value, pending: false };
+    }
+    // A place asked again keeps showing that it had no answer until one comes.
+    const again = Boolean(entry);
+    put(name, { pending: true, anchor, again });
+    // The phone's saved addresses are read outside the geocoder's queue, so
+    // a slow answer never holds up places already known.
+    const saved = store
+      ? timed(Promise.resolve().then(() => store.find(anchor)), config.timeoutMs).catch(() => null)
+      : Promise.resolve(null);
+    saved.then(found => {
+      if (
+        found &&
+        (found.value ||
+          (!retry && now() - found.failedAt < config.retryAfterMs))
+      ) {
+        put(name, { ...found, value: withoutExtraNumberMark(found.value) });
+        notify(name);
+        return;
+      }
+      queue.push([name, anchor]);
+      drain();
+    });
+    return { value: null, pending: true, again };
   }
   return {
     /**
      * The words for a place: a string, null (none found, offline, no
-     * geocoder) or undefined (still asking). `retry` asks again at once about
-     * a place that had no answer (the card opened again: 下次打開卡片再查).
+     * geocoder) or undefined (still asking, the first time). `retry` asks
+     * again at once about a place that had no answer (the card opened again:
+     * 下次打開卡片再查); while it is asked again it stays null.
      */
     lookup(anchor, { retry = false } = {}) {
-      if (!valid(anchor) || !native?.reverseGeocode) return null;
-      const nearby = nearestCached(anchor);
-      const name = nearby ? nearby[0] : key(anchor);
-      const entry = cache.get(name);
-      if (entry?.pending) return undefined;
-      if (
-        entry &&
-        !(
-          entry.failedAt !== undefined &&
-          (retry || now() - entry.failedAt >= config.retryAfterMs)
-        )
-      ) {
-        put(name, entry);
-        return entry.value;
-      }
-      put(name, { pending: true, anchor });
-      // The phone's saved addresses are read outside the geocoder's queue, so
-      // a slow answer never holds up places already known.
-      Promise.resolve(store ? store.find(anchor).catch(() => null) : null).then(
-        saved => {
-          if (
-            saved &&
-            (saved.value ||
-              (!retry && now() - saved.failedAt < config.retryAfterMs))
-          ) {
-            put(name, { ...saved, value: withoutExtraNumberMark(saved.value) });
-            for (const listener of listeners) listener(name);
-            return;
-          }
-          queue.push([name, anchor]);
-          drain();
-        },
-      );
-      return undefined;
+      const state = request(anchor, retry);
+      return state.pending && !state.again ? undefined : state.value;
     },
-    async lookupAddresses(points, { timeoutMs = 5000 } = {}) {
+    /**
+     * The export's addresses, in the order of `points`: waits while places are
+     * still being asked (also those asked again), at most `timeoutMs` in all;
+     * a place without an answer by then is null (the export writes its
+     * coordinates). Offline it uses the saved addresses at once.
+     */
+    async lookupAddresses(points, { timeoutMs = config.exportWaitMs } = {}) {
       let timer;
       let unsubscribe;
       let active = true;
@@ -405,12 +454,13 @@ export function createAddressLookup({
               );
             return new Promise(resolve => {
               const check = () => {
-                const result = points.map((point, index) => {
-                  if (resolved[index] === undefined)
-                    resolved[index] = this.lookup(point);
-                  return resolved[index];
+                if (!active) return;
+                points.forEach((point, index) => {
+                  if (resolved[index] !== undefined) return;
+                  const state = request(point);
+                  if (!state.pending) resolved[index] = state.value;
                 });
-                if (result.every(value => value !== undefined)) resolve(result);
+                if (resolved.every(value => value !== undefined)) resolve([...resolved]);
               };
               unsubscribe = this.subscribe(check);
               check();
@@ -424,7 +474,7 @@ export function createAddressLookup({
                     (point, index) => resolved[index] ?? cached(point),
                   ),
                 ),
-              Math.min(5000, Math.max(0, timeoutMs)),
+              Math.max(0, timeoutMs),
             );
           }),
         ]);
@@ -495,36 +545,31 @@ export function useAddress(point) {
 
 /**
  * The history list's place names (判定表「清單節點的內容」): one
- * { state, text } per point — 'pending' while asking (「查地址中…」),
- * 'found', or 'none'. A place still unanswered after waitMs (5 s) counts as
- * not found (coordinates above the pill); an answer arriving later still
- * shows.
+ * { state, text } per point — 'pending' while the place waits its turn or
+ * is being asked (the shimmer), 'found', or 'none' only once the lookup
+ * really failed (no address, geocoder empty, offline, timed out): the row
+ * shows the coordinates. A place asked again stays 'none' while asked; an
+ * answer arriving later replaces the coordinates.
  */
-export function usePlaceNames(points, { waitMs = 5000 } = {}) {
+export function usePlaceNames(points) {
   const lookup = useContext(AddressLookupContext);
   const keys = points.map(pointKey).join('|');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const stable = useMemo(() => points, [keys]);
   const [, setTick] = useState(0);
-  const [expired, setExpired] = useState(false);
   useEffect(() => {
-    setExpired(false);
     const unsubscribe = lookup.subscribe(() => setTick(tick => tick + 1));
-    const timer = setTimeout(() => setExpired(true), waitMs);
     setTick(tick => tick + 1);
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
-  }, [lookup, keys, waitMs]);
+    return unsubscribe;
+  }, [lookup, keys]);
   return stable.map(point => {
     const value = point ? lookup.lookup(point) : null;
     if (typeof value === 'string') return { state: 'found', text: value };
-    if (value === undefined && !expired) return { state: 'pending', text: null };
+    if (value === undefined) return { state: 'pending', text: null };
     return { state: 'none', text: null };
   });
 }
 
-/** Results preserve input order; missing/pending labels are null. */
+/** Results preserve input order; labels missing at the end are null. */
 export const lookupAddresses = (points, options) =>
   addressLookup.lookupAddresses(points, options);

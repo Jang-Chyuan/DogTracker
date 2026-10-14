@@ -20,7 +20,9 @@ import java.util.Locale
 class PlaceLookupModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
   override fun getName() = "PlaceLookup"
 
-  private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+  // Three requests at once, as AddressLookup asks (ADDRESS_CONFIG.parallel);
+  // any more wait their turn here, also those whose JS caller timed out.
+  private val worker = java.util.concurrent.Executors.newFixedThreadPool(3)
 
   @ReactMethod
   fun isOnline(promise: Promise) {
@@ -54,7 +56,6 @@ class PlaceLookupModule(context: ReactApplicationContext) : ReactContextBaseJava
     if (!latitude.isFinite() || !longitude.isFinite() || latitude !in -90.0..90.0 || longitude !in -180.0..180.0) {
       promise.resolve("[]"); return
     }
-    // A single worker also serializes requests whose JS caller has timed out.
     worker.execute {
       try {
         if (!Geocoder.isPresent()) { promise.resolve("[]"); return@execute }
