@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { size as tokenSize } from '../theme/tokens';
 import { PAW_STROKE } from '../map/PawGeometry';
+import { LEAVE_SHAPE } from '../map/LeaveGeometry';
 // The PNG pages as drawing operations for the native renderer
 // (HistoryExportPackage.kt): text lines, circles, rectangles, lines, the list
 // icons and the map block. Pure: everything is placed here so the Kotlin side
@@ -19,8 +20,8 @@ export const EXPORT_ICONS = {
   car: { stroke: 'M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7M7.8 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0M18.3 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0' },
   dots: { fill: 'M6.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M13.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M20.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0' },
   house: { stroke: 'M4 11l8-7 8 7M6.5 9.5V20h11V9.5' },
-  // Leaving a stay: Glyph 'leave', filled.
-  leave: { fill: 'M2.76 9.24L5.24 6.76L12 13.53L18.76 6.76L21.24 9.24L12 18.47Z' },
+  // Leaving a stay: Glyph 'leave', filled (LeaveGeometry).
+  leave: { fill: LEAVE_SHAPE.path },
 };
 
 const TRACK_X = S.timeColumn + S.trackColumn / 2;
@@ -28,23 +29,43 @@ const text = (value, x, y, height, size, color, { bold = false, align = 'left', 
   ({ t: 'text', text: value, x, y, h: height, size, bold, color, align, halo });
 
 // 判定表「PNG 時間軸的線」: dots 9px every 30px, a car 9px solid, no data 6px dashes 18/12.
-// `clear` ({ top, bottom }) is left empty: the movement icon sits on the line
-// with the page colour around it, as on the screen (transportIcon), so no dot
-// or dash runs through the 走路／開車 icon.
-function trackOps(kind, color, from, to, clear = null) {
+// `clears` ([{ top, bottom }]) are left empty: the movement icon, a node and
+// the leave chevron sit on the line with the page colour around them, as on
+// the screen, so no dot or dash runs through them.
+const DOT_STEP = S.dottedLine.diameter + S.dottedLine.gap;
+// The dots' grid down the page (centres), so a row's dots run on into the next row's.
+const firstDot = from => Math.ceil((from - DOT_STEP / 2) / DOT_STEP) * DOT_STEP + DOT_STEP / 2;
+function trackOps(kind, color, from, to, clears = []) {
   if (!kind || to <= from) return [];
-  if (kind !== 'dots' && clear && clear.bottom > from && clear.top < to)
-    return [...trackOps(kind, color, from, Math.min(to, clear.top)), ...trackOps(kind, color, Math.max(from, clear.bottom), to)];
+  const clear = kind === 'dots' ? null : clears.find(c => c.bottom > from && c.top < to);
+  if (clear)
+    return [...trackOps(kind, color, from, Math.min(to, clear.top), clears), ...trackOps(kind, color, Math.max(from, clear.bottom), to, clears)];
   if (kind === 'solid') return [{ t: 'line', x1: TRACK_X, y1: from, x2: TRACK_X, y2: to, color, width: S.driveLine }];
   if (kind === 'gap') return [{ t: 'line', x1: TRACK_X, y1: from, x2: TRACK_X, y2: to, color: colors.noDataLine,
     width: S.gapLine.width, dash: S.gapLine.dash }];
   const ops = [];
-  const step = S.dottedLine.diameter + S.dottedLine.gap, r = S.dottedLine.diameter / 2;
-  // On one grid down the page, so a row's dots run on into the next row's;
-  // only whole dots, none cut by a cleared stretch.
-  for (let y = Math.ceil((from - step / 2) / step) * step + step / 2; y < to; y += step)
-    if (!clear || y + r <= clear.top || y - r >= clear.bottom) ops.push({ t: 'circle', cx: TRACK_X, cy: y, r, fill: color });
+  const r = S.dottedLine.diameter / 2;
+  // Only whole dots, none cut by a cleared stretch.
+  for (let y = firstDot(from); y < to; y += DOT_STEP)
+    if (clears.every(c => y + r <= c.top || y - r >= c.bottom)) ops.push({ t: 'circle', cx: TRACK_X, cy: y, r, fill: color });
   return ops;
+}
+
+/**
+ * Where a leaving stay's chevron goes in the PNG (2026-10-14, as on screen,
+ * 3×): 12px clear under the node, the line (two whole dots, or 39px of a
+ * car's line), 12px clear, the chevron, 12px clear, then the line again. On a
+ * dotted line its centre is a dot of the grid, so the dots above and below it
+ * keep the dots' spacing. Returns its centre and drawn height.
+ */
+export function leaveChevron(nodeBottom, kind) {
+  const { leaveGap: gap, leaveLine } = tokenSize.export;
+  const height = (tokenSize.export.leaveGlyph * (LEAVE_SHAPE.to - LEAVE_SHAPE.from)) / 24;
+  const lineTop = nodeBottom + gap;
+  if (kind !== 'dots') return { lineTop, center: lineTop + leaveLine + gap + height / 2, height };
+  // Two whole dots between lineTop and the chevron, then the chevron on the next grid dot.
+  const r = S.dottedLine.diameter / 2;
+  return { lineTop, center: firstDot(lineTop + r) + 2 * DOT_STEP, height };
 }
 
 // The list's nodes three times the screen's size (判定表「時間軸清單（匯出 PNG）」:
@@ -94,7 +115,7 @@ function rowOps(block) {
     const iconTop = y + (block.height - glyph) / 2;
     const pad = tokenSize.export.transportIconPadding;
     ops.push(...trackOps(row.line, color, y, y + block.height,
-      { top: iconTop - pad, bottom: iconTop + glyph + pad }));
+      [{ top: iconTop - pad, bottom: iconTop + glyph + pad }]));
     ops.push({ t: 'icon', name: row.icon, icon: EXPORT_ICONS[row.icon], x: TRACK_X - glyph / 2, y: iconTop, size: glyph,
       color: muted ? colors.iconMuted : color });
     // 「移動 28 分・1.4 km」: the duration bold and dark, the rest muted.
@@ -105,17 +126,22 @@ function rowOps(block) {
   const nodeY = y + tokenSize.export.rowInset + S.addressLine / 2;
   // The line under a node starts below it: no dot half hidden by the node's edge.
   const nodeRadius = Math.max(...nodeOps(row, color, nodeY).filter(op => op.t === 'circle').map(op => op.r));
-  // Leaving a stay (2026-10-14): the down chevron right under the node, the
-  // line cleared around it as around the movement icons.
-  const leave = tokenSize.export.leaveGlyph, leaveTop = nodeY + nodeRadius + tokenSize.export.leaveInset;
-  const cleared = row.leave ? leaveTop + leave + tokenSize.export.transportIconPadding : nodeY + nodeRadius;
-  ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: cleared }));
+  // Leaving a stay (2026-10-14, the user: the chevron read as part of the
+  // node): the chevron on the line leaving it, line above and below, the line
+  // cleared around it as around the movement icons.
+  const leave = tokenSize.export.leaveGlyph, gap = tokenSize.export.leaveGap;
+  const chevron = leaveChevron(nodeY + nodeRadius, row.line);
+  const clears = [{ top: nodeY, bottom: chevron.lineTop }];
+  if (row.leave) clears.push({ top: chevron.center - chevron.height / 2 - gap, bottom: chevron.center + chevron.height / 2 + gap });
+  ops.push(...trackOps(row.line, color, nodeY, y + block.height, clears));
   ops.push(...nodeOps(row, color, nodeY));
   if (row.leave) {
-    ops.push({ t: 'icon', name: 'leave', icon: EXPORT_ICONS.leave, x: TRACK_X - leave / 2, y: leaveTop, size: leave, color });
-    // When it left: smaller and muted, in the time column beside the chevron.
-    if (row.leaveTime) ops.push(text(row.leaveTime, S.timeColumn - tokenSize.export.timeInset, leaveTop,
-      tokenSize.export.endTimeLine, tokenSize.export.endTimeFont, colors.textMuted, { align: 'right' }));
+    const glyphTop = chevron.center - (leave * (LEAVE_SHAPE.from + LEAVE_SHAPE.to)) / 48;
+    ops.push({ t: 'icon', name: 'leave', icon: EXPORT_ICONS.leave, x: TRACK_X - leave / 2, y: glyphTop, size: leave, color });
+    // When it left: smaller and muted, in the time column level with the chevron.
+    const line = tokenSize.export.endTimeLine;
+    if (row.leaveTime) ops.push(text(row.leaveTime, S.timeColumn - tokenSize.export.timeInset, chevron.center - line / 2,
+      line, tokenSize.export.endTimeFont, colors.textMuted, { align: 'right' }));
   }
 
   // Timeline times show only the start.

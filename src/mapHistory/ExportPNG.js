@@ -1,5 +1,6 @@
 import { t } from '../i18n';
 import { size as tokenSize } from '../theme/tokens';
+import { LEAVE_SHAPE } from '../map/LeaveGeometry';
 // The PNG layout (H10a/H10b; 判定表「PNG 尺寸」「PNG 內容」「PNG 分頁」
 // 「時間軸清單（匯出 PNG）」): pages 1080px wide of title, legend (several
 // dogs), the 1080×1080 map (page 1 only), the list rows and the footer, with
@@ -71,6 +72,20 @@ export function pngTitle(snapshot, subjects) {
   return { title: t('c1156', { name: displayName(one) }), subtitle: t('c1157', { date, movement: one.distanceWord || t('c125'), distance: one.distanceKm, exclusion: one.distanceExclusion || '' }) };
 }
 
+// A stay the next row leaves is tall enough for the chevron on the line
+// under its node (ExportDraw leaveChevron): the node, the line, the chevron
+// and the line again before the row ends (3 × the screen's). On dots the
+// chevron sits on the page's dot grid, so up to one dot step more.
+function leavingRowHeight(kind) {
+  const e = tokenSize.export;
+  const lineTop = e.rowInset + S.addressLine / 2 + S.nodeSize / 2 + e.leaveGap;
+  const chevron = (e.leaveGlyph * (LEAVE_SHAPE.to - LEAVE_SHAPE.from)) / 24;
+  const step = S.dottedLine.diameter + S.dottedLine.gap;
+  // The chevron's centre at the latest: two dots and the grid's next one (dots), or the car's line.
+  const center = kind === 'dots' ? S.dottedLine.diameter / 2 + 3 * step : e.leaveLine + e.leaveGap + chevron / 2;
+  return Math.ceil(lineTop + center + chevron / 2 + e.leaveGap + e.leaveBelow);
+}
+
 /** One list row laid out: its height and lines (判定表「時間軸清單（匯出 PNG）」). */
 export function layoutRow(row, measure, { truncate = false } = {}) {
   if (row.kind === 'section') {
@@ -98,7 +113,8 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
     }
   }
   const secondLines = placed.length;
-  const height = Math.max(S.placeMin, tokenSize.export.rowInset * 2 + contentHeight + S.rowGap);
+  const height = Math.max(S.placeMin, tokenSize.export.rowInset * 2 + contentHeight + S.rowGap,
+    row.leave ? leavingRowHeight(row.line) : 0);
   return { titleLines, titleX, titleY, items: placed, secondLines, height };
 }
 

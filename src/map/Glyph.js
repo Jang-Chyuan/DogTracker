@@ -1,5 +1,6 @@
 import { size as sizes } from '../theme/tokens';
 import { PAW_STROKE } from './PawGeometry';
+import { LEAVE_SHAPE } from './LeaveGeometry';
 import { useTheme } from '../theme/ThemeProvider';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
@@ -155,7 +156,7 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
       {name === 'leave' && (
         // History list: leaving a stay (2026-10-14), a filled down chevron on
         // the line under the stay; ExportDraw's EXPORT_ICONS.leave is the same.
-        <Path d="M2.76 9.24L5.24 6.76L12 13.53L18.76 6.76L21.24 9.24L12 18.47Z" fill={color} stroke="none" />
+        <Path d={LEAVE_SHAPE.path} fill={color} stroke="none" />
       )}
       {name === 'back' && <Path d="M15 5l-7 7 7 7" {...stroke} />}
       {name === 'clock' && (
