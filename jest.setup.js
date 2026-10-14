@@ -37,3 +37,9 @@ jest.mock('./specs/NativeAlertNotifications', () => {
     },
   };
 });
+
+// Each test is a new start of the app: the launch link can be read again
+// (src/app/launchLink.js hands it out once per JavaScript start).
+beforeEach(() => {
+  require('./src/app/launchLink').resetLaunchLink();
+});

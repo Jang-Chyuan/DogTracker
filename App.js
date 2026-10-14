@@ -27,6 +27,7 @@ import { StableInsets } from './src/app/StableInsets';
 import { handleRootBack } from './src/app/handleRootBack';
 import MapScreen from './src/screens/MapScreen';
 import { useFixtureEdits, useScreenFixture } from './src/dev/useScreenFixture';
+import { takeLaunchLink } from './src/app/launchLink';
 import { applyScreenFixture } from './src/dev/ScreenFixtures';
 import {
   AddressLookupContext,
@@ -587,8 +588,8 @@ function TrackerApp({ resume = null, onRestart }) {
     // The launch screen's handover waits for this link (a notification's
     // destination decides fly or fade, and to which dog).
     awaitInitialLink();
-    Promise.resolve()
-      .then(() => Linking.getInitialURL())
+    // Read once per start: a remount (刪除全部狗資料) does not open it again.
+    takeLaunchLink('notification')
       .then(url => alive && take(url))
       .catch(() => {})
       .finally(initialLinkRead);

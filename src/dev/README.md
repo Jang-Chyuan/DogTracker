@@ -10,6 +10,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 
 - 只有 `__DEV__` 會監聽（`useScreenFixture.js`），只有 `android/app/src/debug/AndroidManifest.xml` 宣告 `dogtracker` scheme；release 版收不到這個連結。
 - 情境開著時，真實的 SQLite／BLE／雲端照常在背景跑，只是地圖不讀它們（雲端讀取暫停）；情境不寫入任何資料。
+- 打開 App 的連結每次啟動只讀一次（`src/app/launchLink.js`）。系統在背景關掉 App 後從「最近使用」叫回來，Android 會把當初的連結再給一次，`MainActivity` 會丟掉它（`LaunchLink.kt`）：用情境連結冷啟動過的 App，之後被系統關掉再叫回來是真實資料，不會又是那個情境（以前會又開在 `onboarding-first-launch` 的 D1）。
 
 ## 情境換掉哪些輸入
 

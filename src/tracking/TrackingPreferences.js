@@ -124,8 +124,10 @@ export function createTrackingPreferences(database, onChange) {
       run(() => startupPhase('preferences', async () => {
         await database.initialize();
         const stored = await database.load();
-        // Nothing saved and no data from before: the first launch.
-        const fresh = firstLaunch(stored) && !(await Promise.resolve(database.usedBefore?.()).catch(() => false));
+        // Nothing saved and no data from before: the first launch. When the
+        // check itself fails it is not one (fail safe: the map, never D1 for
+        // a phone that may have passed the guide).
+        const fresh = firstLaunch(stored) && !(await Promise.resolve(database.usedBefore?.()).catch(() => true));
         return validateTrackingPreferences(fresh ? { onboarding: ONBOARDING_SIGN_IN } : stored);
       }), true),
     save: function save(patch) {

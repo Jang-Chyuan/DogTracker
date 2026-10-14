@@ -262,3 +262,47 @@ test('the first-launch guide: nothing saved starts at D1; it is kept until passe
     connection.close();
   }
 });
+
+test('a slow or failed start never sends a phone back to D1: only a sure first launch opens the guide', async () => {
+  // Nothing saved and no dog data: the first launch.
+  const fresh = setup();
+  fresh.database.usedBefore = jest.fn(async () => false);
+  await fresh.controller.load();
+  expect(fresh.state().value.onboarding).toBe('signIn');
+  // Nothing saved, and whether the phone was used before cannot be read
+  // (busy, timed out): not a first launch.
+  const unknown = setup();
+  unknown.database.usedBefore = jest.fn(async () => { throw new Error('database is locked'); });
+  await unknown.controller.load();
+  expect(unknown.state()).toMatchObject({ ready: true, value: { onboarding: 'done' } });
+  // The saved preferences cannot be read: an error, never the guide's D1
+  // (App then opens the map: Launch.launchScreen).
+  const failed = setup();
+  failed.database.load.mockRejectedValueOnce(new Error('timed out'));
+  failed.database.usedBefore = jest.fn(async () => false);
+  expect(await failed.controller.load()).toBe(false);
+  expect(failed.state()).toMatchObject({ ready: false, error: 'timed out' });
+  expect(failed.database.usedBefore).not.toHaveBeenCalled();
+  // A read that only answers late still answers what was saved; nothing is
+  // ready before it.
+  const slow = setup();
+  let answer;
+  slow.database.load.mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));
+  const loading = slow.controller.load();
+  for (let turn = 0; !answer && turn < 20; turn += 1) await Promise.resolve();
+  expect(slow.changed.mock.calls.some(([state]) => state.ready)).toBe(false);
+  answer({ mode: 'real', windowMinutes: 2, onboarding: 'done' });
+  await loading;
+  expect(slow.state()).toMatchObject({ ready: true, value: { onboarding: 'done' } });
+});
+
+test('usedBefore: a table not created yet is nothing there; any other failure counts as used', async () => {
+  const query = jest.fn();
+  const database = createSettingsDatabase({ executeAsync: query });
+  query.mockRejectedValue(new Error('no such table: dog_status (code 1 SQLITE_ERROR)'));
+  await expect(database.usedBefore()).resolves.toBe(false);
+  query.mockReset().mockResolvedValueOnce({ results: [] }).mockResolvedValueOnce({ results: [{ found: 1 }] });
+  await expect(database.usedBefore()).resolves.toBe(true);
+  query.mockReset().mockRejectedValue(new Error('database is locked (code 5 SQLITE_BUSY)'));
+  await expect(database.usedBefore()).resolves.toBe(true);
+});
