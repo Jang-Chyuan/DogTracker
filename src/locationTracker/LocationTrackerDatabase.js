@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { NativeModules } from 'react-native';
 import { forgetRanges } from '../history/screen/RangeMemory';
+import { forgetAddresses } from '../placement/AddressLookup';
 import { locationTrackerNative } from './LocationTrackerService';
 
 export const LOCATION_PAGE_SIZE = 50;
@@ -21,5 +22,7 @@ export async function deletePhoneRoutes() {
   if (!locationTrackerNative) throw new Error(t("c699"));
   await locationTrackerNative.deleteAll();
   forgetRanges();
+  // The saved stay addresses name where this phone stayed (home too).
+  await forgetAddresses();
   await NativeModules.HistoryExport?.clearExports?.();
 }
