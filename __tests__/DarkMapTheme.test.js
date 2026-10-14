@@ -7,24 +7,18 @@ const edges = [
   { start: 0, end: 10, from, to, mode: 'walking' },
   { start: 10, end: 20, from: to, to: from, mode: 'walking' },
 ];
-test('dark routes use before/after opacity and upcoming dashes without changing light output', () => {
-  const dark = routeLines(edges, {
-    color: darkTheme.colors.route1,
-    cursorTime: 10,
-    theme: darkTheme,
-  });
+// 2026-10-14: one strength all along (no before / after the cursor); a
+// selected segment is full strength on the dark casing, never a fade.
+test('dark routes are 75% all along and the selected segment full; light stays full', () => {
+  const selection = { type: 'movement', mode: 'walking', start: 10, end: 20 };
+  const dark = routeLines(edges, { color: darkTheme.colors.route1, theme: darkTheme, selection });
   expect(dark[0].color).toBe(withAlpha(darkTheme.colors.route1, 0.75));
-  expect(dark[1].color).toBe(withAlpha(darkTheme.colors.route1, 0.6));
-  expect(dark[0].dashed).toBe(false);
-  expect(dark[1].dashed).toBe(true);
-  const light = routeLines(edges, {
-    color: lightTheme.colors.route1,
-    cursorTime: 10,
-    theme: lightTheme,
-  });
-  expect(light[0].color).toBe(lightTheme.colors.route1);
-  expect(light[1].color).toBe(withAlpha(lightTheme.colors.route1, 0.3));
-  expect(light[1].dashed).toBe(false);
+  expect(dark[1].color).toBe(darkTheme.colors.route1);
+  expect(dark[1].casing).toBe(darkTheme.colors.routeCasing);
+  expect(dark.every(line => !line.dashed && line.dotted)).toBe(true);
+  const light = routeLines(edges, { color: lightTheme.colors.route1, theme: lightTheme, selection });
+  expect(light.map(line => line.color)).toEqual([lightTheme.colors.route1, lightTheme.colors.route1]);
+  expect(light[1].casing).toBe(lightTheme.colors.routeCasing);
 });
 test('the PNG is fixed light: export builders read only the light palette', () => {
   const fs = require('fs');

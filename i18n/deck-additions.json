@@ -9015,5 +9015,39 @@
     "kind": "定稿",
     "supersedes": "c343",
     "supersede_note": "2026-10-14 使用者決定：游標標籤拿掉「・不算距離」（和坐車中一致）"
+  },
+  {
+    "id": "c1342",
+    "tpl": "停留 {number}・{duration}",
+    "area": "歷史／游標標籤",
+    "screens": [
+      "H1"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1343",
+    "tpl": "走路・已走 {distance}",
+    "area": "歷史／游標標籤",
+    "screens": [
+      "H1"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿",
+    "supersedes": "c131",
+    "supersede_note": "2026-10-14 使用者決定：游標標籤用清單的字（走路・已走）"
+  },
+  {
+    "id": "c1344",
+    "tpl": "移動中・{distance}",
+    "area": "歷史／游標標籤",
+    "screens": [
+      "H1"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿",
+    "supersedes": "c116",
+    "supersede_note": "2026-10-14 使用者決定：狗的游標標籤寫「移動中・1.2 km」"
   }
 ]

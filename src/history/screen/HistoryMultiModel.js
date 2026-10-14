@@ -11,7 +11,7 @@ import { size as sizes } from '../../theme/tokens';
 import { protagonist as pickProtagonist } from './HistoryScreenDogs';
 import { screenCursor } from './HistoryScreenCursor';
 import { nearestRecord } from './HistoryScreenRange';
-import { historyMapPresentation, stayAwareModelEdges, withAlpha } from './HistoryMapModel';
+import { drawnLine, historyMapPresentation, stayAwareModelEdges, withAlpha } from './HistoryMapModel';
 
 /** A held packet counts as a day record, across both sources. */
 export function dayHasRecords(rows = [], { dayStart = -Infinity, dayEnd = Infinity } = {}) {
@@ -217,12 +217,12 @@ export function multiCursors(
 /**
  * What the map draws for the day: the protagonist's route, numbers and
  * times (historyMapPresentation), and for each other dog with a fix in the
- * range a thinner line (3dp; 50% before the cursor, 20% after; rides 2dp)
+ * range a thinner line (3dp solid at opacity.routeOther, rides too)
  * and its face at its cursor point. The camera frames the protagonist's
  * route only (判定表「多隻狗的 PNG 地圖」: 不照 App 裡只框主角).
  * `look[id]`: { color, name, avatar }.
  */
-export function multiMapPresentation(day, cursors, look, theme = getTheme()) {
+export function multiMapPresentation(day, cursors, look, theme = getTheme(), selection = null) {
   const { colors } = theme;
   const main = day.subjects.find(s => s.id === day.protagonist);
   if (!main?.model) return null;
@@ -232,16 +232,16 @@ export function multiMapPresentation(day, cursors, look, theme = getTheme()) {
     cursor,
     theme,
     subject: main.subject,
+    selection,
   });
   if (day.subjects.length === 1) return base;
-  const cursorTime = cursor?.time ?? cursor?.point?.time ?? Infinity;
   const others = day.subjects.filter(s => s.id !== main.id && s.hasData);
   const lines = others.flatMap(s =>
     otherLines(
       stayAwareModelEdges(s.model),
       look[s.id]?.color ?? colors.route2,
-      cursorTime,
       theme,
+      s.id,
     ),
   );
   const faces = others
@@ -280,37 +280,32 @@ export function multiMapPresentation(day, cursors, look, theme = getTheme()) {
   };
 }
 
-// 多隻狗非主角的路線: 3dp, 50% before the cursor and 20% after; a ride 2dp
-// at the same opacities; nothing across a break, nothing outside the range.
-function otherLines(edges, color, cursorTime, theme = getTheme()) {
+// 多隻狗非主角的路線 (2026-10-14): 3dp solid lines (a ride too) at
+// opacity.routeOther, the same all along (no before / after the cursor);
+// nothing across a break, nothing outside the range. Each line has its id and
+// key (`owner`: the dog) like the protagonist's, so a changed line is redrawn.
+export function otherLines(edges, color, theme = getTheme(), owner = '') {
   const { opacity } = theme;
+  const stroke = withAlpha(color, opacity.routeOther);
   const lines = [];
   let current = null;
   for (const edge of edges) {
-    if (edge.gap || edge.mode === 'gap') {
+    if (edge.gap || ['gap', 'indoor'].includes(edge.mode) || edge.bridged) {
       current = null;
       continue;
     }
     const vehicle = edge.mode === 'driving' || edge.mode === 'ride';
-    const width = vehicle ? sizes.route.drive : sizes.route.secondary;
-    const stroke = withAlpha(
-      color,
-      edge.start >= cursorTime
-        ? opacity.routeAfterCursor
-        : opacity.routeBeforeCursor,
-    );
-    const key = `${width}:${stroke}`;
     const coordinate = p => ({ latitude: p.latitude, longitude: p.longitude });
-    if (current && current.key === key && current.end === edge.start) {
+    if (current && current.end === edge.start) {
       current.coordinates.push(coordinate(edge.to));
       current.end = edge.end;
       continue;
     }
     current = {
-      key,
-      width,
+      width: sizes.route.secondary,
       color: stroke,
-      dashed: theme.isDark && edge.start >= cursorTime,
+      dashed: false,
+      dotted: false,
       vehicle,
       start: edge.start,
       end: edge.end,
@@ -318,7 +313,7 @@ function otherLines(edges, color, cursorTime, theme = getTheme()) {
     };
     lines.push(current);
   }
-  return lines.map(({ key, end, ...line }) => line);
+  return lines.map(line => drawnLine(line, `other${owner}`));
 }
 
 // 多隻狗時的游標點 (non-protagonist): a 32dp face and its name.

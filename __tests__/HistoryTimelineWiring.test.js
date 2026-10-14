@@ -388,8 +388,9 @@ describe('the history screen shows the list', () => {
     const ids = renderer.root.findAll(node => typeof node.type === 'string' && /^timeline-/.test(node.props.testID || ''))
       .map(node => node.props.testID);
     expect(ids).toEqual(['timeline-departure', 'timeline-movement-walking', 'timeline-switch', 'timeline-movement-driving',
-      // The cursor opens inside the last stay, the last row (no end row): that row is lit.
-      'timeline-switch', 'timeline-movement-walking', 'timeline-stop', 'timeline-selected']);
+      // 2026-10-14: nothing is selected on opening (the cursor inside the last
+      // stay lights no row until the viewer moves it or taps one).
+      'timeline-switch', 'timeline-movement-walking', 'timeline-stop']);
     const text = JSON.stringify(renderer.toJSON());
     expect(text).toContain(i18nT('c135'));
     expect(text).not.toContain('不算距離');

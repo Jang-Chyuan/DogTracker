@@ -14,15 +14,33 @@ const LABEL_LINE = type.mapLabel.lineHeight;
 
 /**
  * A numbered stay or switch point: white, a 2dp ring and number in the route
- * colour. Stays at one place share one marker (`label` 「1・3」): a capsule.
+ * colour; `selected` (its list row is the selected one): solid route colour,
+ * white number and ring. Stays at one place share one marker (`label`
+ * 「1・3」): a capsule.
  */
-export function StopMarkerView({ number, label = null, color }) {
+export function StopMarkerView({ number, label = null, color, selected = false }) {
   const styles = useStyles(getStyles);
+  const { colors } = useTheme();
   return (
-    <View style={[styles.stop, label != null && styles.stopGroup, { borderColor: color }]}>
-      <Text allowFontScaling={false} style={[styles.stopNumber, { color }]}>
+    <View style={[styles.stop, label != null && styles.stopGroup, { borderColor: color },
+      selected && { backgroundColor: color, borderColor: colors.surface }]}>
+      <Text allowFontScaling={false} style={[styles.stopNumber, { color: selected ? colors.onRoute : color }]}>
         {label ?? number}
       </Text>
+    </View>
+  );
+}
+
+/**
+ * The selected movement row's glyph (走路, 開車／坐車, a dog's paw) at the middle
+ * of its segment (2026-10-14): 24dp, a white disc with a ring and glyph in the
+ * route colour, as the list's track icon.
+ */
+export function MovementIconView({ glyph, color }) {
+  const styles = useStyles(getStyles);
+  return (
+    <View style={[styles.movementIcon, { borderColor: color }]} testID="segment-icon">
+      <Glyph name={glyph} color={color} size={sizes.historyMovementIcon.glyph} />
     </View>
   );
 }
@@ -243,6 +261,15 @@ const getStyles = makeStyles(theme => {
       height: sizes.stopMarker.size + borders.strong * 2,
       borderRadius: (sizes.stopMarker.size + borders.strong * 2) / 2,
       borderWidth: borders.strong,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    movementIcon: {
+      width: sizes.historyMovementIcon.size,
+      height: sizes.historyMovementIcon.size,
+      borderRadius: sizes.historyMovementIcon.size / 2,
+      borderWidth: borders.regular,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',

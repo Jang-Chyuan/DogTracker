@@ -1411,6 +1411,14 @@ const FIXTURES = {
     phone: routePhone(homeDay(now), now), openRoute: 'history', history: historyPage(now),
     historyView: { manual: { start: now - 570 * MINUTE, end: now - 5 * MINUTE, following: false }, cursorAgo: 135 * MINUTE },
     geocoder: { names: HISTORY_NAMES } }),
+  // 2026-10-14 (the map and the list by row): my route walk → drive → stay →
+  // walk, out at about 08:02; tap the car row to see its segment framed and
+  // emphasised, drag the cursor to see the list follow.
+  'history-walk-drive-stay': now => ({ ...FIXTURES['all-good'](now),
+    phone: routePhone(legsPath(now, 95 * MINUTE, at(-60, -120), [{ stay: 8 }, { walk: 18, bearing: 30, speed: 0.8 },
+      { drive: 3, speed: 8, bearing: 100 }, { drive: 3, speed: 8, bearing: 340 }, { stay: 22 },
+      { walk: 20, bearing: 220, speed: 0.8 }, { stay: 6 }]), now),
+    openRoute: 'history', history: historyPage(now), geocoder: { names: HISTORY_NAMES } }),
   'history-starts-with-stay-auto': now => ({ ...FIXTURES['history-starts-with-stay'](now), historyView: {} }),
   // H1 我的路線 with the cursor an hour back: the map's end time marker (solid,
   // 2026-10-14) is not under the cursor.

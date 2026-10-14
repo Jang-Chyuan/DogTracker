@@ -300,6 +300,10 @@ test('the original light palette is unchanged', () => {
   const originalOpacity = { ...tokens.opacity };
   delete originalOpacity.mapHeaderBacking;
   delete originalOpacity.endRing;
+  // 2026-10-14: the history route's opacities replaced before/after-cursor.
+  delete originalOpacity.routeLine;
+  delete originalOpacity.routeSelected;
+  delete originalOpacity.routeOther;
   Object.entries(baseline).forEach(([group, value]) =>
     expect(group === 'opacity' ? originalOpacity : group === 'colors' ? originalColors : tokens[group]).toEqual(value),
   );
@@ -340,14 +344,20 @@ describe('dark text and graphic contrast', () => {
     ['success tick in a dialog', c.successIcon, c.elevated, 4.5],
     ...darkTheme.routeColors.flatMap((color, i) => [
       [
-        `route${i + 1} upcoming over land`,
-        composite(color, darkTheme.opacity.routeUpcoming, c.mapBase),
+        `route${i + 1} line over land`,
+        composite(color, darkTheme.opacity.routeLine, c.mapBase),
         c.mapBase,
         3,
       ],
       [
-        `route${i + 1} before cursor over highway`,
-        composite(color, darkTheme.opacity.routeBeforeCursor, '#4A423E'),
+        `route${i + 1} other dog over highway`,
+        composite(color, darkTheme.opacity.routeOther, '#4A423E'),
+        '#4A423E',
+        3,
+      ],
+      [
+        `route${i + 1} line over highway`,
+        composite(color, darkTheme.opacity.routeLine, '#4A423E'),
         '#4A423E',
         3,
       ],
