@@ -2,7 +2,7 @@
 // row. Any row can be the selected one (a drag or a tap on the route picks
 // the row the cursor is in; a tap on a row picks it and frames a movement /
 // 沒有資料 row's segment); nothing is selected on opening; the map draws the
-// selected movement row's segment wider on a casing with its glyph, and a
+// selected movement row's segment wider on a halo with its glyph, and a
 // selected stay's number solid.
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
@@ -47,7 +47,7 @@ test('nothing is selected on opening: no lit row, an even route, no segment glyp
   const s = await mount('history-mode-switch');
   expect(s.screen.selected).toBeNull();
   expect(s.selectedRows()).toHaveLength(0);
-  expect(s.screen.map.lines.some(line => line.selected || line.casing)).toBe(false);
+  expect(s.screen.map.lines.some(line => line.selected || line.halo)).toBe(false);
   expect(s.screen.map.icon).toBeNull();
   expect(s.screen.map.places.some(place => place.selected)).toBe(false);
   await unmount(s);
@@ -62,7 +62,7 @@ test('a drag into the car lights that row (fill and edge) and emphasises its seg
   expect(s.edges()).toHaveLength(1);
   const chosen = s.screen.map.lines.filter(line => line.selected);
   expect(chosen.length).toBeGreaterThan(0);
-  expect(chosen.every(line => line.width === 5 && !line.dotted && line.casing)).toBe(true);
+  expect(chosen.every(line => line.width === 6 && !line.dotted && line.halo)).toBe(true);
   expect(s.screen.map.icon).toMatchObject({ glyph: 'car' });
   expect(s.screen.cursor.label[1]).toBe('開車中');
   // A drag frames nothing: the map stays where the viewer has it.

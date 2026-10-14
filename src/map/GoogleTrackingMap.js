@@ -479,7 +479,8 @@ const TIME_APART_DP = 48;
 // Dots (the list's walking track, 2026-10-14): round caps with a pattern,
 // which react-native-maps turns into Google's Dot (a circle as wide as the
 // line) and Gap items; the pattern is in pixels, so the dots keep their size
-// at every zoom. The selected segment has its own solid casing above the rest.
+// at every zoom. The selected segment has its own wide halo (route.halo, its
+// colour at opacity.routeHalo) under it, above the rest of the route.
 export const sameHistoryLine = (before, after) =>
   before.line.id != null &&
   before.line.id === after.line.id &&
@@ -488,21 +489,30 @@ export const sameHistoryLine = (before, after) =>
 const HistoryLine = React.memo(
   function HistoryLine({ line, casing, dashed }) {
     const dots = line.dotted ? dottedPattern(line.width) : undefined;
-    const ownCasing = line.casing;
     return (
       <>
-        {(ownCasing || casing) && (
+        {line.halo ? (
           <Polyline
             coordinates={line.coordinates}
-            strokeColor={ownCasing || casing}
-            strokeWidth={line.width + (ownCasing ? sizes.route.casing * 2 : 2)}
-            zIndex={ownCasing ? Z.route + 0.4 : Z.route - 0.6}
+            strokeColor={line.halo}
+            strokeWidth={sizes.route.halo}
+            zIndex={Z.route + 0.4}
+            lineCap="round"
+            lineJoin="round"
+            tappable={false}
+          />
+        ) : casing ? (
+          <Polyline
+            coordinates={line.coordinates}
+            strokeColor={casing}
+            strokeWidth={line.width + 2}
+            zIndex={Z.route - 0.6}
             lineDashPattern={line.dashed ? dashed : undefined}
             lineCap={line.dashed ? 'butt' : 'round'}
             lineJoin="round"
             tappable={false}
           />
-        )}
+        ) : null}
         <Polyline
           coordinates={line.coordinates}
           geodesic={false}

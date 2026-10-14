@@ -21,7 +21,10 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   // that stay's time on the cursor too (2026-10-13).
   const listedStay = listed && (listed.terminalStay ?? listed.departureStay
     ?? (['stop', 'indoor'].includes(listed.type) ? listed : null));
-  const stay = subject === 'phone'
+  // The first fix of a movement row is also its stay's last one: the cursor
+  // there (a tapped walk row) names the row it lit, as the list does (2026-10-15).
+  const leaving = row?.type === 'movement' && time === row.start;
+  const stay = leaving ? null : subject === 'phone'
     ? phoneStayAtTime(phoneDisplayLocations(model), time) || model.locations.find(n => n.type === 'indoor' && time >= n.start && time <= n.end)
       || listedStay
     : model.locations.find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end)

@@ -8,17 +8,17 @@ const edges = [
   { start: 10, end: 20, from: to, to: from, mode: 'walking' },
 ];
 // 2026-10-14: one strength all along (no before / after the cursor); a
-// selected segment is full strength on the dark casing, never a fade.
+// selected segment is full strength on its halo, never a fade.
 test('dark routes are 75% all along and the selected segment full; light stays full', () => {
   const selection = { type: 'movement', mode: 'walking', start: 10, end: 20 };
   const dark = routeLines(edges, { color: darkTheme.colors.route1, theme: darkTheme, selection });
   expect(dark[0].color).toBe(withAlpha(darkTheme.colors.route1, 0.75));
   expect(dark[1].color).toBe(darkTheme.colors.route1);
-  expect(dark[1].casing).toBe(darkTheme.colors.routeCasing);
+  expect(dark[1].halo).toBe(withAlpha(darkTheme.colors.route1, darkTheme.opacity.routeHalo));
   expect(dark.every(line => !line.dashed && line.dotted)).toBe(true);
   const light = routeLines(edges, { color: lightTheme.colors.route1, theme: lightTheme, selection });
   expect(light.map(line => line.color)).toEqual([lightTheme.colors.route1, lightTheme.colors.route1]);
-  expect(light[1].casing).toBe(lightTheme.colors.routeCasing);
+  expect(light[1].halo).toBe(withAlpha(lightTheme.colors.route1, 0.28));
 });
 test('the PNG is fixed light: export builders read only the light palette', () => {
   const fs = require('fs');
