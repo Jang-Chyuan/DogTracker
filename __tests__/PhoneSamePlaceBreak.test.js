@@ -19,18 +19,27 @@ const shortWalk = (extra = {}) => Array.from({ length: 25 }, (_, i) => point(400
 const timeline = rows => historyTimeline(rows, { subject: 'phone', dayStart: base, dayEnd: base + 86400000,
   manualRange: { start: rows[0].time, end: rows.at(-1).time } });
 
-test('a same-session same-place break is part of the stay, not 「沒有資料」, and stays unobserved in exports', () => {
+test('a same-session same-place break is part of the stay, not 「沒有資料」', () => {
   const rows = [...firstRun, ...shortWalk()], raw = JSON.stringify(rows);
   const model = timeline(rows);
   expect(model.edges.some(e => e.bridged)).toBe(true);
   expect(model.nodes.some(n => n.type === 'gap' || n.type === 'resume')).toBe(false);
-  const stay = model.nodes.find(n => n.presentationOnly);
-  expect(stay.start).toBeLessThanOrEqual(point(30).time); // after the detector's own confirmation
-  expect(stay).toMatchObject({ end: point(4000).time, number: null,
-    unobserved: [{ start: point(1900).time, end: point(4000).time }] });
+  // 2026-10-14: the visit is the whole range, and the walk at its end counts
+  // metres: it is split there (historyStops), so the stay before the walk is
+  // a stay of its own — the range's first row — over the break, not PR 116's
+  // unnumbered fallback.
+  const walkStart = model.edges.find(e => e.countedDistanceM > 0).start;
+  const stays = model.nodes.filter(n => n.type === 'stop');
+  expect(stays).toHaveLength(1);
+  expect(stays[0]).toMatchObject({ start: rows[0].time, number: null, listedWith: 'start' });
+  // It ends where the walk set off (2026-10-14: not on its walking fixes).
+  expect(stays[0].end).toBeLessThanOrEqual(walkStart);
+  expect(stays[0].end).toBeGreaterThanOrEqual(point(4000).time);
+  expect(stays[0].durationMs).toBe(stays[0].end - stays[0].start);
+  expect(stays[0].presentationOnly).toBeUndefined();
+  expect(timelinePresentation(model.nodes).map(n => n.type)).toEqual(['stop', 'movement', 'end']);
   const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] }, range: model.range, subject: 'phone' });
-  expect(snapshot.subjects[0].gaps).toEqual(stay.unobserved);
-  expect(snapshot.subjects[0].stays).toEqual([]);
+  expect(snapshot.subjects[0].stays).toHaveLength(1);
   expect(JSON.stringify(rows)).toBe(raw);
 });
 

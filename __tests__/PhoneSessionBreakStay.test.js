@@ -87,7 +87,8 @@ test('(b) a same-session break at one place is one stay, unchanged (PR 116)', ()
   const [stay] = model.nodes.filter(n => n.type === 'stop');
   expect(stay).toMatchObject({ number: 1, interruptionMs: 0, gaps: [] });
   expect(stay.durationMs).toBe(stay.end - stay.start);
-  expect(stay.durationMs).toBeGreaterThan(2 * 60 * MINUTE);
+  // (2026-10-14: from where the walk in stopped to where the walk out began.)
+  expect(stay.durationMs).toBeGreaterThan(2 * 60 * MINUTE - MINUTE);
   expect(model.edges.some(e => e.bridged && e.samePlaceBreak)).toBe(false); // contained in the stay
   expect(model.sections.some(n => n.sessionChange)).toBe(false);
 });

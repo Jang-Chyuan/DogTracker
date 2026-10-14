@@ -159,13 +159,17 @@ describe('fixtures', () => {
     // The hour at home before it is not counted.
     expect(model.range.start).toBeGreaterThan(DAY + 7 * 60 * MINUTE);
   });
-  test('history-no-departure: time range, the whole day is the range, no stays', async () => {
+  test('history-no-departure: time range, the whole day is the range', async () => {
     const { model, kinds } = await fixtureList('history-no-departure');
     expect(model.departure.status).toBe('not-departed');
     expect(summaryText(model, { subject: 'phone' })).toEqual({ title: '06:30 – 現在',
       detail: `走了 ${km(model.distanceM)}・${summaryDuration(model.durationMs)}` });
     expect(model.range.start).toBe(model.points[0].time);
-    expect(kinds).toEqual(['departure', 'walking', 'end']);
+    // 2026-10-14: the fixture's minute on foot claims a walking speed at 6 m
+    // and counts metres, so the visit that is the whole range is split there
+    // (historyStops): its two parts are the range's first and last rows.
+    expect(kinds).toEqual(['departure', 'stop', 'walking', 'stop', 'end']);
+    expect(model.nodes.filter(n => n.type === 'stop').map(n => n.number)).toEqual([null, null]);
   });
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');

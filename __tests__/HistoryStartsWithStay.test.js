@@ -184,7 +184,9 @@ describe('a day like 10/13: home from 00:00, a walk, a short stay, the walk home
     expect(rangeEndRows(shown)).toEqual({ start: 0, end: 4 });
     expect(shown[0]).toMatchObject({ start: dayStart });
     expect(Math.round(presentationDurationMs(shown[0]) / MINUTE)).toBe(7 * 60);
-    expect(nodePill(shown.at(-1)).text).toBe(t('c127', { duration: '1 時' }));
+    // 2026-10-14: home from where the walk home stopped (its last seconds
+    // inside the circle are the walk's).
+    expect(nodePill(shown.at(-1)).text).toBe(t('c127', { duration: '59 分' }));
     expectTiled(shown, dayStart, rows.at(-1).time);
   });
 

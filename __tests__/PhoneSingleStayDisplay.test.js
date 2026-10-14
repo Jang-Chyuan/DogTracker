@@ -211,10 +211,16 @@ test('a true gap inside the available visit cannot establish continuous still-he
   expect(model.displayStays).toBeUndefined();
   const middle = (gap.start + gap.end) / 2;
   expect(phoneStayDisplayCoordinate(model.locations, middle)).toBeNull();
-  // 2026-10-13 (user): a same-session break under 30 min inside a stay is the
-  // stay's time in the list and on the cursor label (no 「這段沒資料」, no
-  // 「不含中斷」); it still places nothing (above) and the map draws the break.
-  expect(cursorLabel(model, middle, 'phone')[1]).toMatch(/^停留 /);
+  // 2026-10-14 (user: the summary is the sum of the rows): the step back from
+  // the far end counts metres, and no walk of the range lies outside the
+  // visit, so the visit is split there (historyStops): those metres are a
+  // walk row — the break folded into it (same session, under 30 min) — not
+  // the summary's alone. The cursor in the break is on that walk.
+  const walk = model.nodes.find(n => n.type === 'movement');
+  expect(walk).toMatchObject({ mode: 'walking', start: rows[25].time });
+  expect(walk.countedDistanceM).toBeCloseTo(model.distanceM, 6);
+  expect(model.distanceM).toBeGreaterThan(10);
+  expect(cursorLabel(model, middle, 'phone')[1]).toMatch(/^已走 /);
 });
 
 

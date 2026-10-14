@@ -275,12 +275,34 @@ function clippedVisit(visit, start, end, dayBoundary = false, limit = Infinity) 
  */
 export function historyStops(points, { start = -Infinity, end = Infinity,
   dayStart = start, dayEnd = end, subject = 'dog', config = configFor(subject),
-  vehicles = [], edges = [], following = false, identity = '' } = {}) {
-  const visits = historyVisits(points, { subject, config, vehicles, following });
+  vehicles = [], edges = [], rangeEdges = null, following = false, identity = '' } = {}) {
+  // 2026-10-14 (phone): a visit begins where the phone stood still and ends
+  // where it set off, not on the fine walking fixes at its edges. Its circle
+  // follows its first fix, so a walk out and back of a minute right after a
+  // stay (4 km/h at 4 m, 50 m out) was the next visit's first fixes, and the
+  // list read 「走路 不到 1 分・6 m」 between two stays.
+  const walkingFix = p => p.phoneMotionState === 'moving' && !p.phoneStationary
+    && p.accuracy <= config.fineMoveAccuracyM && (speed => speed != null
+      && speed >= config.fineMoveSpeedMps && speed <= config.departureMaxSpeed)(phoneReliableSpeed(p));
+  // Only a walk of leaveMs or more: the fix it set off on stays the stay's.
+  const trimmed = v => {
+    const pts = v.points;
+    let first = pts.findIndex(p => !walkingFix(p));
+    let last = pts.length - 1;
+    while (last > first && walkingFix(pts[last])) last -= 1;
+    if (first < 0) return v;
+    if (pts[first].time - pts[0].time < config.leaveMs) first = 0;
+    if (pts[pts.length - 1].time - pts[last].time < config.leaveMs) last = pts.length - 1;
+    if (first === 0 && last === pts.length - 1) return v;
+    const kept = clippedVisit(v, pts[first].time, pts[last].time, false, config.stayAccuracyM);
+    return kept ? { ...kept, completed: v.completed } : v;
+  };
+  const visits = historyVisits(points, { subject, config, vehicles, following })
+    .map(v => (subject === 'phone' && config.fineMoveAccuracyM != null ? trimmed(v) : v));
   const day = visits.map(v => clippedVisit(v, dayStart, dayEnd, true, config.stayAccuracyM)).filter(Boolean);
   const anchors = subject === 'phone' && edges.length
     ? phoneStayDisplayAnchors(day, points, edges, config) : new Map();
-  const selected = day.map(v => clippedVisit(v, start, end, false, config.stayAccuracyM)).filter(Boolean)
+  let selected = day.map(v => clippedVisit(v, start, end, false, config.stayAccuracyM)).filter(Boolean)
     .map(v => anchors.has(v.id) ? { ...v,
       originalRepresentative: { latitude: v.latitude, longitude: v.longitude },
       ...anchors.get(v.id) } : v);
@@ -314,6 +336,51 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
         && !observed.gaps.some(g => g.start < last && g.end > first)
       : v.start <= first && v.end >= last;
   };
+  // 2026-10-14 (user: a day at home listed as five unnumbered pieces): a
+  // phone visit that is the whole range always gives a row. Its time is
+  // still-here (below) unless the phone really moved inside it — a counted
+  // walk (drift trips count nothing: countEdge), a drive, or confirmed
+  // movement beyond stillPlaceM of it: then it is split there, and the parts
+  // are stays of their own (the range's first and last), with that movement
+  // between them. Without this neither applied, and PR 116's fallback cut
+  // the day into unnumbered pieces wherever the detector wavered.
+  // Likewise every visit when no walk of the range lies outside the visits:
+  // the metres counted inside a stay go to a walk row (historyTimeline), and
+  // with no walk at all they would be in the summary only (2026-10-14, user:
+  // the summary is the sum of the rows).
+  // The metres are the range's own (`rangeEdges`, what the summary adds up:
+  // counting starts again at the range's first fix), so the rows can show
+  // them.
+  const travel = subject === 'phone' && rangeEdges ? rangeEdges : edges;
+  const outside = e => (e.mode === 'walking' || e.mode === 'moving') && !e.gap
+    && !selected.some(v => e.start >= v.start && e.end <= v.end);
+  const walkOutside = first != null && travel.some(e => e.start >= first && e.end <= last && outside(e));
+  if (subject === 'phone' && first != null) {
+    selected = selected.flatMap(v => (coversRange(v) || !walkOutside ? splitAtMoves(v) : [v]));
+  }
+  function splitAtMoves(v) {
+    const from = Math.max(v.start, first), to = Math.min(v.end, last);
+    const spans = [];
+    for (const e of travel) {
+      if (e.start < from || e.end > to || !phoneMoved(e, v)) continue;
+      const span = spans[spans.length - 1];
+      if (span && e.start <= span.end) span.end = Math.max(span.end, e.end);
+      else spans.push({ start: e.start, end: e.end });
+    }
+    if (!spans.length) return [v];
+    const cuts = [from, ...spans.flatMap(span => [span.start, span.end]), to];
+    const parts = [];
+    for (let i = 0; i < cuts.length; i += 2) {
+      const part = cuts[i + 1] > cuts[i] ? clippedVisit(v, cuts[i], cuts[i + 1], false, config.stayAccuracyM) : null;
+      if (part && part.end > part.start) parts.push({ ...part, id: `${v.id}:${part.start}` });
+    }
+    return parts;
+  }
+  function phoneMoved(e, v) {
+    if (e.mode === 'driving' || e.mode === 'ride') return true;
+    if ((e.mode === 'walking' || e.mode === 'moving') && e.countedDistanceM > 0) return true;
+    return !!e.to.phoneConfirmedMovement && distanceMeters(v, e.to) > config.stillPlaceM + 1e-8;
+  }
   if (noBaseline) for (const v of selected) if (qualifies(v) && !coversRange(v)) marked.add(v.id);
   // 067: a visit of alwaysStayMs or more is a stay whatever the baseline —
   // unless it is the whole range: that is 還在原地 (only the time range, no
@@ -328,9 +395,13 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
       // unnumbered still-here presentation. Never promote an unconfirmed
       // interval or hide a measured short walk, ride or actual gap.
       const displayConfirmed = (original?.durationMs ?? 0) >= config.alwaysStayMs;
+      // A phone's confirmed movement within stillPlaceM of the visit (a lift,
+      // a few steps indoors; the visit kept it inside) is no departure.
+      const departed = p => p.phoneConfirmedMovement
+        && (subject !== 'phone' || distanceMeters(v, p) > config.stillPlaceM + 1e-8);
       if (displayConfirmed && coversRange(v) && (subject === 'phone' || edges.length > 0)
-        && !inRange.some(p => p.phoneConfirmedMovement)
-        && !edges.some(e => e.start >= first && e.end <= last
+        && !inRange.some(departed)
+        && !travel.some(e => e.start >= first && e.end <= last
           && (e.countedDistanceM > 0 || e.mode === 'driving' || e.mode === 'ride'
             || (e.gap && !e.uncertain && !e.bridged)
             // A same-place bridge across a recording session change is
