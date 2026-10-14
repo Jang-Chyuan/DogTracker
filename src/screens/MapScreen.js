@@ -30,6 +30,7 @@ import {
   receiverRangeRing,
 } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
+import { cloudRowsOnPhoneClock, serverClock } from '../cloud/ServerClock';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
 import { cardAddressLine, useAddress, usePlaceNames } from '../placement/AddressLookup';
@@ -423,13 +424,25 @@ export default function MapScreen({
     () => (Object.keys(historyHolds).length ? { ...historyHolds, ...cloudDogs?.holds } : cloudDogs?.holds),
     [historyHolds, cloudDogs?.holds],
   );
+  // Downloaded rows on this phone's clock before they meet the BLE rows
+  // (ServerClock): a skewed server or teammate clock must not make an old
+  // fix look current or let it beat a newer BLE fix.
+  const serverOffset = serverClock.offset();
+  const phoneClockRows = useMemo(
+    () => cloudRowsOnPhoneClock(cloudDogs?.rows, serverOffset),
+    [cloudDogs?.rows, serverOffset],
+  );
+  const phoneClockPackets = useMemo(
+    () => cloudRowsOnPhoneClock(cloudDogs?.packets, serverOffset),
+    [cloudDogs?.packets, serverOffset],
+  );
   const mergedDogs = useMemo(
     () =>
       mergeDogMarkers({
         point,
         samples: positionSamples,
-        cloudRows: cloudDogs?.rows,
-        packetRows: cloudDogs?.packets,
+        cloudRows: phoneClockRows,
+        packetRows: phoneClockPackets,
         holds: liveHolds,
         statuses: cloudDogs?.statuses,
         batteries: cloudDogs?.batteries,
@@ -440,8 +453,8 @@ export default function MapScreen({
     [
       point,
       positionSamples,
-      cloudDogs?.rows,
-      cloudDogs?.packets,
+      phoneClockRows,
+      phoneClockPackets,
       liveHolds,
       cloudDogs?.statuses,
       cloudDogs?.batteries,
