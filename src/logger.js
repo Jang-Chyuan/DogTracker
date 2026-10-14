@@ -163,22 +163,3 @@ export function historyModelDiagnostic(fields) {
     // A refused diagnostic sink cannot change a model or its publication.
   }
 }
-
-// TEMPORARY (2026-10-14, #151): one line per release of the dog card's row of
-// dogs, to measure real flicks on the phone. Numbers only (speeds, distances,
-// cells): no dog, place or account. Read with
-//   adb logcat -s ReactNativeJS | grep DogCarousel
-// Remove this, its test and the one call in DogCarousel before merging #151.
-export const CAROUSEL_RELEASE_LOG = true;
-const CAROUSEL_RELEASE_FIELDS = Object.freeze(['vx', 'dt', 'drag', 'startCell', 'releaseCell', 'glide', 'target',
-  'count']);
-export function logCarouselRelease(fields) {
-  try {
-    if (!CAROUSEL_RELEASE_LOG || !fields || typeof fields !== 'object') return;
-    const result = Object.fromEntries(CAROUSEL_RELEASE_FIELDS.map(key => [key, fields[key]]));
-    if (!Object.values(result).every(value => typeof value === 'number' && Number.isFinite(value))) return;
-    console.info('DogCarousel', JSON.stringify(result));
-  } catch {
-    // A refused log sink never changes the row of dogs.
-  }
-}
