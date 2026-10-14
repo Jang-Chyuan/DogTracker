@@ -70,7 +70,12 @@ describe('confirmed movement on coarse fixes with no walking speed', () => {
 
   test('count nothing (and before this rule they did)', () => {
     expect(count([...home, ...junk, ...back])).toBe(0);
-    expect(count([...home, ...junk, ...back], { ...config, coarseConfirmedAccuracyM: null })).toBeGreaterThan(20);
+    // 2026-10-14: back home within minutes, never 100 m away, no fine walk:
+    // a drift trip as well (countEdge), so each rule alone counts nothing.
+    expect(count([...home, ...junk, ...back], { ...config, coarseConfirmedAccuracyM: null })).toBe(0);
+    expect(count([...home, ...junk, ...back], { ...config, driftWalkFixes: null })).toBe(0);
+    expect(count([...home, ...junk, ...back], { ...config, coarseConfirmedAccuracyM: null, driftWalkFixes: null }))
+      .toBeGreaterThan(20);
   });
 
   test('a real walk after them is counted from home', () => {

@@ -46,6 +46,12 @@ export const HISTORY_CONFIG = Object.freeze({
     // radius: excursionAccuracyFactor × its accuracy, clamped to
     // [excursionMinM, excursionMaxM] (never the 100 m of stillPlaceM).
     excursionMs: 5 * 60000, excursionAccuracyFactor: 2, excursionMinM: 30, excursionMaxM: 50,
+    // 2026-10-14 (user: a lift ride counted 240 m on a day at home): a
+    // counted trip from a stationary fix that is stationary again within
+    // excursionMs and stillPlaceM of where it set off is drift (countEdge),
+    // unless this many of its counted steps reach a fine walking fix
+    // (walkFix). One: on the 14 real days every trip with one was a walk.
+    driftWalkFixes: 1,
     // 2026-10-13 (user, distance): 「距離怎麼加」 on a walk the detector
     // confirms. Between two fixes both in the moving state, both within
     // fineMoveAccuracyM and both measuring at least fineMoveSpeedMps, a move

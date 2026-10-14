@@ -103,38 +103,71 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
  * 2026-10-13: likewise a `coarse` stationary run (fixes over 25 m) touching
  * a stay within the run's own accuracy of it: its minutes are the stay's, the
  * stay keeps its coordinate, and no second numbered stay is absorbed for it.
+ * 2026-10-14 (user: one day at home in five pieces): likewise an unnumbered
+ * stay (presentationOnly) at one place with the stay before it when no more
+ * than gapMs lies between them and nothing is listed there — the seconds the
+ * detector wavered on a GPS jump, or a recording session change shorter than
+ * gapMs (an app install): such a break folds into the stay, as the visits do
+ * (historyVisits ends a visit only on a break over gapMs); longer breaks and
+ * every 「沒有資料」 row (#135) still separate the stays.
  * Returns the new node list and the replaced/removed source nodes. */
 export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } = {}) {
   const stay = n => n?.type === 'stop';
   const zeroFoot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving')
     && n.countedDistanceM === 0 && n.end - n.start <= config.gapMs;
-  // A coarse run's footprint (its worst accuracy) must reach the stay.
+  // A coarse run's footprint (its worst accuracy) must reach the stay. An
+  // unnumbered stay is the phone's stationary time beside it with nothing
+  // listed between: within stillPlaceM it is that place (2026-10-14; the
+  // same distance a 0 m walk between two stays folds at, foldPhoneStayWalks).
   const near = (a, b) => Number.isFinite(a?.latitude) && Number.isFinite(b?.latitude)
-    && !(distanceMeters(a, b) > config.radiusM + Math.max(a.accuracyM || 0, b.accuracyM || 0) + 1e-8);
-  const joins = n => n.unobserved?.length || n.coarse;
+    && !(distanceMeters(a, b) > ((a.presentationOnly || b.presentationOnly) && config.stillPlaceM
+      ? config.stillPlaceM : config.radiusM + Math.max(a.accuracyM || 0, b.accuracyM || 0)) + 1e-8);
+  const joins = n => n.unobserved?.length || n.coarse || n.presentationOnly;
+  // A weak-GPS step or a break inside one recording session, short enough
+  // for the list to fold (2026-10-14): nothing happened there but the GPS.
+  const briefBreak = n => n?.type === 'gap' && n.sameSession === true && n.sessionChange !== true
+    && n.end - n.start <= config.gapMs;
   const out = [], replaced = new Map(), removed = new Set();
   for (let i = 0; i < nodes.length; i++) {
     if (!stay(nodes[i])) { out.push(nodes[i]); continue; }
     // Grow a chain stop (0 m foot)* stop … while each part touches the last.
     let j = i, last = i;
     let real = nodes[i].presentationOnly ? 0 : 1;
+    let reach = nodes[i].end;
+    const within = new Set();
     for (let k = i + 1; k < nodes.length; k++) {
       const n = nodes[k];
-      if (n.start !== nodes[k - 1].end) break;
-      // Coarse fixes alone never join two numbered stays (their numbers stay).
-      if (stay(n) && !n.presentationOnly && real
+      // A break row inside a stay of the chain (its own interruption) stays
+      // a row as it was; it neither joins nor parts them.
+      if (n.type === 'gap' && n.start >= nodes[i].start && n.end <= reach) { within.add(n); continue; }
+      // Nothing listed between two stays (or a stay and a 0 m foot row or a
+      // brief break): seconds without a row of their own.
+      const part = m => stay(m) || zeroFoot(m) || briefBreak(m);
+      const hole = n.start - reach;
+      if (hole !== 0 && !(hole > 0 && hole <= config.gapMs && part(n) && part(nodes[k - 1]))) break;
+      reach = Math.max(reach, n.end);
+      // Coarse fixes alone never join two numbered stays (their numbers stay)
+      // — but two at one place with no more than excursionMs of nothing
+      // between them (weak-GPS breaks and 0 m foot rows: a lift ride whose
+      // metres were drift) are one stay (2026-10-14).
+      const brief = stay(n) && n.start - nodes[last].end <= config.excursionMs
+        && nodes.slice(last + 1, k).every(m => zeroFoot(m) || briefBreak(m) || within.has(m));
+      if (stay(n) && !n.presentationOnly && real && !brief
         && !nodes.slice(i, k + 1).some(m => m.unobserved?.length)) break;
       if (stay(n) && near(nodes[i], n)) { last = k; real += n.presentationOnly ? 0 : 1; continue; }
-      if (zeroFoot(n)) continue;
+      if (zeroFoot(n) || briefBreak(n)) continue;
       break;
     }
     j = last;
-    const chain = nodes.slice(i, j + 1);
-    if (j === i || !chain.some(joins)) { out.push(nodes[i]); continue; }
+    const chain = nodes.slice(i, j + 1).filter(n => !within.has(n));
+    const kept = nodes.slice(i, j + 1).filter(n => within.has(n));
+    if (j === i || !(chain.some(joins) || chain.some(briefBreak) || real > 1)) { out.push(nodes[i]); continue; }
     const stops = chain.filter(stay);
     const base = stops.find(n => !n.presentationOnly) ?? stops[0];
+    // The seconds between parts with no row are the stay's time too.
+    const holes = chain.slice(1).reduce((sum, n, k) => sum + n.start - chain[k].end, 0);
     const merged = { ...base, start: chain[0].start, end: chain[chain.length - 1].end,
-      durationMs: chain.reduce((sum, n) => sum + (n.durationMs ?? n.end - n.start), 0),
+      durationMs: chain.reduce((sum, n) => sum + (n.durationMs ?? n.end - n.start), 0) + holes,
       interruptionMs: stops.reduce((sum, n) => sum + (n.interruptionMs || 0), 0),
       gaps: stops.flatMap(n => n.gaps || []),
       unobserved: stops.flatMap(n => n.unobserved || []),
@@ -143,7 +176,7 @@ export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } 
       mergedStays: stops };
     for (const n of chain) if (n !== base) removed.add(n);
     replaced.set(base, merged);
-    out.push(merged);
+    out.push(merged, ...kept);
     i = j;
   }
   return { nodes: out, replaced, removed };
@@ -161,6 +194,10 @@ export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } 
  *   distance stays in the list: it goes to the foot row that arrived at the
  *   stay, else the next foot row (as moves inside a stay always do); with no
  *   such row the walk stays a row.
+ * - A step between two stays within stillPlaceM of each other (on foot for
+ *   no shown minute, radiusM or less counted: the stays cut the walk to
+ *   seconds) is one stay with them; its metres go to the next foot row of a
+ *   minute or more, else the last one before; with neither the step stays.
  * Recording session changes are 「沒有資料」 rows, never inside these: only
  * directly adjacent rows join. The first real stop keeps its identity and
  * number. Returns the new node list and the replaced/removed source nodes. */
@@ -191,6 +228,20 @@ export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points 
     && w.end - w.start < config.listGapMs
     && fixesIn(w.start, w.end).every(p => (restart || !p.phoneConfirmedMovement) && within(s, p, config.stillPlaceM));
   const restartAt = (n, time) => n?.type === 'gap' && n.sessionChange === true && (n.start === time || n.end === time);
+  // The phone stayed by the first stay until it stood still again in the
+  // second, within excursionMs: a visit's circle follows its first fix, so a
+  // walk the second stay holds would be cut to a step too (and is no step).
+  const stillThere = (a, b) => {
+    const radius = radiusOf(a);
+    for (const p of fixesIn(a.end, b.end)) {
+      if (!within(a, p, radius) || p.time - a.end > config.excursionMs) return false;
+      if (p.phoneStationary) return true;
+    }
+    return false;
+  };
+  // A step: on foot for no shown minute, no farther than radiusM of its own.
+  const step = w => foot(w) && ((w.durationMs ?? w.end - w.start) < 60000
+    || Math.floor(w.end / 60000) === Math.floor(w.start / 60000)) && !(w.countedDistanceM > config.radiusM);
   // The excursion runs from the first stay's end until the phone has settled
   // again: leaveMs of fixes without movement (no confirmed movement, no
   // measured speed of stillMps or more) within the radius. A visit's circle
@@ -249,6 +300,18 @@ export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points 
         const host = foot(before) && before.end === a.start ? before : after;
         if (w.countedDistanceM > 0 && !host) continue;
         if (w.countedDistanceM > 0) host.countedDistanceM += w.countedDistanceM;
+        replace(i, 3, [a, w, b], base); changed = true;
+      } else if (pair && step(w) && within(a, b, config.stillPlaceM) && stillThere(a, b)) {
+        // 2026-10-14: the few seconds between two stays at one place, a few
+        // metres of its own (「走路 不到 1 分・5 m」): the stays are one; the
+        // metres go on to a walk of a minute or more (as phoneStepCarry's).
+        const host = out.slice(i + 3).find(m => foot(m) && !step(m))
+          ?? out.slice(0, i).reverse().find(m => foot(m) && !step(m));
+        if (w.countedDistanceM > 0 && !host) continue;
+        if (w.countedDistanceM > 0) {
+          host.countedDistanceM += w.countedDistanceM;
+          host.carriedM = (host.carriedM || 0) + w.countedDistanceM;
+        }
         replace(i, 3, [a, w, b], base); changed = true;
       } else if (zeroWalk(w, a, restartAt(b, w.end))) { replace(i, 2, [a, w], a); changed = true; }
     }
@@ -438,7 +501,7 @@ export function historyTimeline(rows = [], options = {}) {
   const identity = JSON.stringify([subject, range.start, following ? 'following' : range.end,
     dayStart, dayEnd, timezone, !!manualRange]);
   const stays = measured('stops', context.length, () => historyStops(context, { subject, config, start: range.start, end: range.end,
-    dayStart, dayEnd: dayEnd - 1, vehicles, edges: contextMovement.edges, following, identity, state }));
+    dayStart, dayEnd: dayEnd - 1, vehicles, edges: contextMovement.edges, rangeEdges: movement.edges, following, identity, state }));
   const held = measured('indoor', context.length, () => historyIndoorNodes(context, { start: Math.max(range.start, dayStart),
     end: Math.min(range.end, dayEnd - 1), dayStart, dayEnd: dayEnd - 1, config }));
   // 067: a hold the dog walked on out of (its next real fix more than
@@ -585,6 +648,15 @@ export function historyTimeline(rows = [], options = {}) {
     const row = sections[sections.length - 1];
     if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; row.carriedM = (row.carriedM || 0) + carried; carried = 0; }
   }
+  // 2026-10-14 (user: 10/13 summed 4.519 km over rows of 4.459 km): metres
+  // still held for a next walk that never came go to the last foot row, so
+  // the rows always add up to the summary (and 「今天 x km」, which sums the
+  // edges). A drift trip counted nothing (countEdge), and with no walk at all
+  // historyStops split the stay at these metres, so there is one.
+  if (carried) {
+    const row = [...sections].reverse().find(n => n.type === 'movement' && isFoot(n.mode));
+    if (row) { row.countedDistanceM += carried; row.carriedM = (row.carriedM || 0) + carried; carried = 0; }
+  }
   // A phone break inside one recording session (the list folds a short one
   // into the row beside it, 2026-10-13); a session change is always its own
   // row. A short weak-GPS step had fixes on both sides (the recorder ran)
@@ -652,15 +724,24 @@ export function historyTimeline(rows = [], options = {}) {
   });
   // The fallback must not affect existing switch cleanup; it is a place for
   // the empty-foot-row cleanup below (PR 116).
+  // A switch where such a stay begins or ends goes: the stay separates the
+  // modes (H1), as for any stay (2026-10-14: 「開車 → 切換 → 停」 at 21:35).
+  for (const n of nodes) {
+    if (n.type === 'switch' && stationary.some(s => n.start >= s.start && n.start <= s.end)) drop.add(n);
+  }
   nodes = [...nodes.filter(n => !drop.has(n)), ...stationary]
     .sort((a, b) => a.start - b.start || rank(a) - rank(b));
   // Likewise a few seconds on foot with nothing counted between two places
   // (a stay, then the dog goes inside; a stay that runs into the end): the
   // places are adjacent (判定表「停在原處節點的前後」: 3 分鐘以內…停在原處
-  // 節點不算移動段).
+  // 節點不算移動段). 2026-10-14: on the phone, not between two stays: there
+  // the row tells the same-place merge and fold below that the two are one
+  // stay (a GPS jump, a recording restarted); emptyPhoneFootRows drops it
+  // after them when they are not.
+  const twoStays = i => subject === 'phone' && nodes[i - 1]?.type === 'stop' && nodes[i + 1]?.type === 'stop';
   nodes.forEach((n, i) => {
     if (foot(n) && n.countedDistanceM === 0 && n.durationMs <= 60000
-      && place(nodes[i - 1]) && place(nodes[i + 1])) drop.add(n);
+      && place(nodes[i - 1]) && place(nodes[i + 1]) && !twoStays(i)) drop.add(n);
   });
   nodes = nodes.filter(n => !drop.has(n));
   // 2026-10-13 (phone): a parked tail of a drive and a 0 m 「走路」 standing
@@ -672,6 +753,11 @@ export function historyTimeline(rows = [], options = {}) {
     for (const n of nodes) if (!kept.has(n) && n.type !== 'movement') drop.add(n);
     nodes = still;
   }
+  // 2026-10-14: the few seconds between two stays hold only their own
+  // metres before the stays are joined (phoneStepCarry, again below): the
+  // metres carried onto them made a step of 5 s a walk that kept two stays at
+  // one place apart.
+  if (subject === 'phone') phoneStepCarry(nodes);
   // PR 116 / 067: stays at one place joined by a same-session break are one.
   let replaced = new Map(), removed = new Set();
   if (subject === 'phone') ({ nodes, replaced, removed } = mergePhoneSamePlaceStays(nodes, { config }));
@@ -683,6 +769,13 @@ export function historyTimeline(rows = [], options = {}) {
     for (const n of fold.removed) removed.add(original.get(n) ?? n);
     for (const [from, to] of fold.replaced) replaced.set(original.get(from) ?? from, to);
     nodes = fold.nodes;
+    // 2026-10-14: the folds can leave two stays at one place side by side
+    // (a 0 m walk of five minutes taken into the second): join them too.
+    const again = mergePhoneSamePlaceStays(nodes, { config });
+    const before = new Map([...replaced].map(([from, to]) => [to, from]));
+    for (const n of again.removed) removed.add(before.get(n) ?? n);
+    for (const [from, to] of again.replaced) replaced.set(before.get(from) ?? from, to);
+    nodes = again.nodes;
   }
   if (subject === 'phone') {
     phoneStepCarry(nodes);
@@ -717,7 +810,15 @@ export function historyTimeline(rows = [], options = {}) {
   // stay that is the range's start or end (the seconds inside 出發, or the
   // first / last row: 2026-10-14) has no number of its own (`listedWith`),
   // and the map draws its time marker, not a number; the others count from 1.
-  const numbered = node => (node.type === 'stop' || node.type === 'switch') && !node.presentationOnly;
+  // 2026-10-14 (user: middle stays drawn with no number): PR 116's
+  // stationary stays (presentationOnly 'phone-stationary': stayMs or more of
+  // detector-held stillness the visits could not place, a parked tail, a
+  // still 「走路」) are stays of the list like any other and take their number;
+  // only still-here, the carried-over day boundary and the list's own
+  // between-breaks time (timelinePresentation) stay unnumbered, and those are
+  // the range's ends or shorter than a stay.
+  const numbered = node => (node.type === 'stop' || node.type === 'switch')
+    && (!node.presentationOnly || node.presentationOnly === 'phone-stationary');
   let number = 0;
   for (const node of nodes) if (numbered(node)) node.number = ++number;
   // 2026-10-14 (user, #163 round 3): the stays a range begins and ends with
