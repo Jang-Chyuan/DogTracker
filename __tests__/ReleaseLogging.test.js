@@ -230,3 +230,17 @@ test('history read/model diagnostics stay silent unless the private flag is enab
     expect(spy.mock.calls.map(([tag]) => tag)).toEqual(['[HistoryRead]', '[HistoryModel]']);
   } finally { delete global.__DOGTRACKER_PRIVATE_HISTORY_DIAGNOSTICS__; spy.mockRestore(); }
 });
+
+// TEMPORARY (#151, remove with logCarouselRelease): numbers only, its fixed fields.
+test('the row of dogs logs only its fixed numeric fields', () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  const { logCarouselRelease } = require('../src/logger');
+  const fields = { vx: 2.5, dt: 120, drag: -150, startCell: 1, releaseCell: 3.3, glide: 98, target: 5, count: 6 };
+  logCarouselRelease({ ...fields, name: 'private', latitude: 24.99 });
+  expect(spy.mock.calls).toEqual([['DogCarousel', JSON.stringify(fields)]]);
+  spy.mockClear();
+  logCarouselRelease({ ...fields, vx: 'fast' });
+  logCarouselRelease(null);
+  expect(spy).not.toHaveBeenCalled();
+  spy.mockRestore();
+});

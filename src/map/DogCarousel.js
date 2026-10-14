@@ -33,6 +33,7 @@ import Glyph from './Glyph';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { border, radius, size as sizes, space, touch, type } from '../theme/tokens';
 import { linesFor } from '../utils/textScale';
+import { logCarouselRelease } from '../logger';
 
 const carousel = sizes.card.carousel;
 
@@ -234,6 +235,16 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     const samples = [...current.samples, { x: pageX, t: timestamp }];
     const velocity = releaseVelocity(samples);
     const index = releaseTarget({ from: current.from, x: here.current, velocity, count });
+    logCarouselRelease({
+      vx: Math.round(velocity * 100) / 100,
+      dt: timestamp - (current.t0 ?? samples[0].t),
+      drag: Math.round(here.current - current.base),
+      startCell: current.from,
+      releaseCell: Math.round(((here.current - BOUNCE) / carousel.slot) * 10) / 10,
+      glide: Math.round(flingDistance(velocity)),
+      target: index,
+      count,
+    });
     at.current = index;
     slideTo(index, Math.abs(velocity) >= FLING_VELOCITY ? velocity : 0);
     const dog = dogs[index];
