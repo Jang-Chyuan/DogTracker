@@ -872,10 +872,13 @@ export default function MapScreen({
   // ---- switching dogs from the card (its row of dogs, 下一隻／上一隻) -----------
   // The order is taken from the dogs drawn when the card opened (or as soon
   // as there are any: a fixture or notification can open it first) and kept
-  // while stepping; dogs gone since drop out, new ones come last.
+  // while stepping; dogs gone since drop out, new ones come last. The row has
+  // ends, so the open dog is not moved to the front: it sits in its own
+  // place (problems first, then by signal-source number), with dogs on both
+  // sides.
   const anyDrawn = livePresentation.dogMarkers.length > 0;
   const takenOrder = useMemo(
-    () => (switchBase ? switchOrder(livePresentation.dogMarkers, switchBase.openId) : []),
+    () => (switchBase ? switchOrder(livePresentation.dogMarkers, null) : []),
     // Taken once per opening; `anyDrawn` retakes it when the dogs first appear.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [switchBase, anyDrawn],

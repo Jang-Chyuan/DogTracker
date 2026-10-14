@@ -3,10 +3,11 @@
 // through one order of every dog on the map. Pure: MapScreen keeps the order
 // taken when the card opened.
 //
-// - The order is DogOrder.compareDogOrder (the open dog, dogs with a
+// - The order is DogOrder.compareDogOrder without an open dog (dogs with a
 //   problem, then by signal-source number), taken once when a card opens,
 //   so picking never reshuffles it (a dog getting a problem meanwhile does
-//   not jump the queue).
+//   not jump the queue). The open dog keeps its own place in it: with ends,
+//   putting it first would leave nothing to its left.
 // - A plain list with ends: no wrap-around (two dogs look like two).
 import { compareDogOrder } from './DogOrder';
 

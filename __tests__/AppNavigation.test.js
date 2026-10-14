@@ -635,8 +635,10 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   await act(async () => card().props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
   await advance(100);
   expect(open()).toBe('豆豆');
-  // The order: 豆豆 (open), 阿福 (problem), then by number; each once.
-  const order = ['豆豆', '阿福', '狗 5', '小黑', '狗 9', '狗 12'];
+  // The order: 阿福 (problem), then by number; each once. The open 豆豆
+  // keeps its own place (second), with a dog on either side.
+  const order = ['阿福', '豆豆', '狗 5', '小黑', '狗 9', '狗 12'];
+  expect(middle().props.accessibilityActions).toEqual([{ name: 'next', label: '下一隻' }, { name: 'previous', label: '上一隻' }]);
   const picks = renderer.root.findAll(node => /^dog-card-(pick-\d+|edit)$/.test(node.props.testID ?? '')
     && typeof node.props.onPress === 'function');
   expect(picks).toHaveLength(6);
@@ -645,7 +647,7 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
     await advance(300);
   };
   const keys = new Set();
-  for (let index = 1; index < order.length; index += 1) {
+  for (const index of [0, 2, 3, 4, 5]) {
     await land(index);
     expect(open()).toBe(order[index]);
     const shown = map().props;
@@ -664,7 +666,7 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   expect(map().props.focusDog.always).toBe(true);
   // Overscrolled past the first: lands on the first dog.
   await land(-1);
-  expect(open()).toBe('豆豆');
+  expect(open()).toBe('阿福');
   expect(middle().props.accessibilityActions).toEqual([{ name: 'next', label: '下一隻' }]);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
