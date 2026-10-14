@@ -139,9 +139,10 @@ describe('TalkBack sentences of the timeline (060, 設計稿「無障礙」時�
     expect(placeSpeech({ type: 'stop', number: 2, start: at(9, 41), end: at(10, 9), durationMs: 28 * 60000 },
       '大湳森林公園東側入口')).toBe('停留 2，大湳森林公園東側入口，09:41 到 10:09，28 分鐘');
   });
-  test('a departure and the end say what they are', () => {
+  // 2026-10-14 (user): no 「出發」 — the start row reads its place and time.
+  test('the start reads its place and time; the end says 現在 when live', () => {
     expect(placeSpeech({ type: 'departure', start: at(7, 2), end: at(7, 2) }, '桃園區中正路 50 號附近'))
-      .toBe('出發，桃園區中正路 50 號附近，07:02');
+      .toBe('桃園區中正路 50 號附近，07:02');
     expect(placeSpeech({ type: 'end', label: i18nT('c130'), start: at(9, 29), end: at(9, 29) }, '24.9742, 121.3073'))
       .toBe('現在，24.9742, 121.3073，09:29');
   });

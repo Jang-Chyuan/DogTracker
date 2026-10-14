@@ -166,6 +166,10 @@ test('copy removed by D15 and the design decisions stays out of production resou
   // c342/c343); no screen writes 「不算距離」, nor a movement-row exclusion badge.
   expect(Object.keys(resources).filter(key => !key.startsWith('dev.') && resources[key].includes('不算距離'))).toEqual([]);
   expect(['c342', 'c343'].filter(key => key in resources)).toEqual([]);
+  // 2026-10-14 (user): no 「出發」 anywhere — the range's first row is its
+  // hollow start circle, time and address (c124 retired, no replacement).
+  expect('c124' in resources).toBe(false);
+  expect(Object.entries(resources).filter(([key, value]) => !key.startsWith('dev.') && value === '出發')).toEqual([]);
 });
 
 test('translation imports are never assigned to or incremented', () => {

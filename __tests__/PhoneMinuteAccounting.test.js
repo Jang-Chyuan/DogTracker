@@ -262,14 +262,16 @@ test('coarse stationary time after a stay is that stay\'s minutes: same number, 
   expect(model.distanceM).toBeCloseTo(fineOnly.distanceM, 6);
 });
 
-test('coarse stationary time with no stay beside it is an unnumbered stay; numbered stays keep their numbers', () => {
+test('coarse stationary time with no stay beside it is a stay of its own, numbered in its place', () => {
   const model = timeline(day([['walk', 300], ['still', 300], ['walk', 300], ['coarse', 900], ['walk', 300],
     ['still', 300], ['walk', 300]]));
   const stays = model.nodes.filter(n => n.type === 'stop');
-  expect(stays.map(n => n.number)).toEqual([1, null, 2]);
+  // 2026-10-14 (user: middle stays drawn with no number): PR 116's stationary
+  // stay is numbered like the visits beside it.
+  expect(stays.map(n => n.number)).toEqual([1, 2, 3]);
   expect(stays[1]).toMatchObject({ presentationOnly: 'phone-stationary', coarse: true });
   expect(stays[1].end - stays[1].start).toBeGreaterThanOrEqual(14 * MINUTE);
-  expect(model.locations.filter(n => n.type === 'stop').map(n => n.number)).toEqual([1, 2]);
+  expect(model.locations.filter(n => n.type === 'stop').map(n => n.number)).toEqual([1, 3]);
   expectAccounted(model);
 });
 
@@ -291,9 +293,11 @@ test('CSV rows and GPX track points are the raw rows, whatever the list folds', 
   expect((gpx.match(/<trkpt /g) || []).length).toBe(rows.length);
   // Every break, folded in the list or not, still splits the GPX track.
   expect(snapshot.subjects[0].gaps.length).toBeGreaterThanOrEqual(model.nodes.filter(n => n.type === 'gap').length);
-  // The display-only coarse stay is not a GPX stay waypoint; every waypoint
-  // has a name (a stay shown inside 出發 or the end has no number, #154).
-  expect(snapshot.subjects[0].stays).toHaveLength(model.nodes.filter(n => n.type === 'stop' && !n.presentationOnly).length);
+  // A display-only coarse stay is a GPX stay waypoint only when the list
+  // numbers it (2026-10-14); every waypoint has a name (a stay shown inside
+  // 出發 or the end has no number, #154).
+  expect(snapshot.subjects[0].stays).toHaveLength(model.nodes.filter(n => n.type === 'stop'
+    && (!n.presentationOnly || n.number != null)).length);
   expect(gpx).not.toMatch(/null|undefined/);
 });
 
@@ -368,11 +372,15 @@ test('a drive does not go on over the time after parking: the parked minutes are
   const drive = rows.find(n => n.mode === 'driving');
   expect(drive.end - drive.start).toBeLessThan(11 * MINUTE);
   const parked = rows[rows.indexOf(drive) + 1];
-  expect(parked).toMatchObject({ type: 'stop', presentationOnly: 'phone-stationary', number: null });
+  // 2026-10-14: parked a stay's length before walking off, the drive ends
+  // where it parked: a stay of its own, numbered like any other (it was an
+  // unnumbered display stay cut from the drive's tail).
+  expect(parked).toMatchObject({ type: 'stop', number: 2 });
+  expect(parked.presentationOnly).toBeUndefined();
   expect(parked.end - parked.start).toBeGreaterThanOrEqual(11 * MINUTE);
-  // The drive keeps its metres; the map keeps its line to where it was left.
+  // The drive keeps its metres; the map's drive ends where it parked.
   expect(drive.distanceM).toBeGreaterThan(8000);
-  expect(model.sections.find(n => n.mode === 'driving').end).toBe(parked.end);
+  expect(model.sections.find(n => n.mode === 'driving').end).toBeLessThanOrEqual(parked.start);
   // A red light the drive went on from stays in the drive.
   const light = timeline(day([['walk', 300], ['drive', 300], ['still', 200], ['drive', 300], ['walk', 200]]));
   expect(expectAccounted(light).rows.filter(n => n.mode === 'driving')).toHaveLength(1);

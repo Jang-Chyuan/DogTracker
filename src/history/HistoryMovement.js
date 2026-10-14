@@ -23,7 +23,7 @@ function detectVehicles(edges, config) {
  * of scanning the whole day again. `scan` is { high, active, low, vehicles }.
  */
 export const vehicleScan = () => ({ high: null, active: null, low: null,
-  footLow: null, parked: null, chain: null, vehicles: [] });
+  footLow: null, footParked: null, parked: null, chain: null, cruise: null, vehicles: [] });
 
 // 2026-10-14 (phone, config.vehicleMergeMs): stop-and-go traffic. A car or
 // scooter in town moves in bursts of 10–30 s between lights and crawls in
@@ -80,7 +80,8 @@ function reopenVehicle(scan) {
   const vehicle = scan.vehicles[scan.vehicles.length - 1];
   scan.vehicles = scan.vehicles.slice(0, -1);
   scan.active = vehicle.firstEdge;
-  scan.chain = null; scan.high = null; scan.low = null; scan.footLow = null; scan.parked = null;
+  scan.chain = null; scan.high = null; scan.low = null; scan.footLow = null; scan.footParked = null;
+  scan.parked = null; scan.cruise = null;
 }
 function backtrack(edges, index, config) {
   let start = index;
@@ -99,7 +100,40 @@ function closeVehicle(scan, edges, endIndex, exited = false) {
   scan.vehicles = [...scan.vehicles, { start: edges[scan.active].start, end: edges[endIndex].end,
     firstEdge: scan.active, lastEdge: endIndex, exited }];
   scan.active = null; scan.low = null; scan.high = null;
-  scan.footLow = null; scan.parked = null; scan.chain = null;
+  scan.footLow = null; scan.footParked = null; scan.parked = null; scan.chain = null; scan.cruise = null;
+}
+
+// 2026-10-14 (phone, config.cruiseMs): a steady cruise below vehicleSpeed —
+// a bike, a car in slow traffic at 15–18 km/h. `scan.cruise` is the run of
+// cruise edges going while no vehicle is ({ first, path }: its first edge
+// and the path it drew), replaced, never changed. A cruise edge is at least
+// cruiseSpeed by geometry between two fixes within
+// coarseConfirmedAccuracyM, the phone not held still. The run is a vehicle
+// once it lasted cruiseMs and got from its first fix at least
+// cruiseProgress of its path.
+function cruiseEdge(edge, config) {
+  return atLeast(edge.speed, config.cruiseSpeed) && !edge.to.phoneStationary
+    && accuracyOf(edge.from, config) <= config.coarseConfirmedAccuracyM
+    && accuracyOf(edge.to, config) <= config.coarseConfirmedAccuracyM;
+}
+function cruising(scan, edges, i, config) {
+  const edge = edges[i];
+  if (!config.cruiseMs || !cruiseEdge(edge, config)) { scan.cruise = null; return false; }
+  scan.cruise = scan.cruise ? { first: scan.cruise.first, path: scan.cruise.path + edge.distanceM }
+    : { first: i, path: edge.distanceM };
+  const first = edges[scan.cruise.first];
+  return edge.end - first.start >= config.cruiseMs
+    && distanceMeters(first.from, edge.to) >= config.cruiseProgress * scan.cruise.path;
+}
+
+// A vehicle from edge `from` on (fast edges for enterMs, or a cruise): an
+// earlier piece of the chain is the same trip.
+function startVehicle(scan, edges, from, config) {
+  const chain = scan.chain;
+  scan.active = backtrack(edges, from, config);
+  scan.high = null; scan.cruise = null;
+  if (chain?.vehicle) reopenVehicle(scan);
+  else if (chain) { scan.active = Math.min(scan.active, chain.first); scan.chain = null; }
 }
 
 export function stepVehicles(scan, edges, i, config) {
@@ -109,7 +143,12 @@ export function stepVehicles(scan, edges, i, config) {
   // the recorder was off (a session change).
   if (scan.chain && (edge.end - scan.chain.lastEnd > config.vehicleMergeMs || edge.mode === 'indoor'
     || recordingSessionChanged(edge.from, edge.to))) scan.chain = null;
-  if (edge.gap || edge.mode === 'indoor') {
+  // 2026-10-14 (phone): a same-place break longer than maxVehicleGapMs (the
+  // phone sat silent at one spot: parked) ends a vehicle like a gap; the
+  // drive went on over a whole evening parked otherwise, and the phone's
+  // wake-ups there read 「開車 1 分・16 m」.
+  const parkedBreak = !!config.stillMps && edge.bridged && edge.durationMs > config.maxVehicleGapMs;
+  if (edge.gap || edge.mode === 'indoor' || parkedBreak) {
     const closing = scan.active != null && (edge.mode === 'indoor' || edge.durationMs > config.maxVehicleGapMs
       || !atLeast(edge.speed, config.vehicleSpeed));
     if (scan.high != null && merging) registerBurst(scan, edges, i - 1, config);
@@ -119,19 +158,17 @@ export function stepVehicles(scan, edges, i, config) {
       if (merging && edge.mode !== 'indoor' && edge.durationMs <= config.maxVehicleGapMs
         && !recordingSessionChanged(edge.from, edge.to)) scan.chain = chainAfter(edges, i - 1, null, i, config);
     }
-    scan.high = null; scan.low = null; scan.footLow = null; scan.parked = null; return;
+    scan.high = null; scan.low = null; scan.footLow = null; scan.footParked = null; scan.parked = null;
+    scan.cruise = null; return;
   }
   if (scan.active == null) {
+    if (cruising(scan, edges, i, config)) { startVehicle(scan, edges, scan.cruise.first, config); return; }
     if (merging ? fastEdge(edge, config) : atLeast(edge.speed, config.vehicleSpeed)) {
       if (scan.high == null) scan.high = i;
       const run = edge.end - edges[scan.high].start;
       const chain = scan.chain;
-      if (run >= config.enterMs) {
-        scan.active = backtrack(edges, scan.high, config);
-        scan.high = null;
-        if (chain?.vehicle) reopenVehicle(scan);
-        else if (chain) { scan.active = Math.min(scan.active, chain.first); scan.chain = null; }
-      } else if (chain && run >= config.vehicleBurstMs) {
+      if (run >= config.enterMs) startVehicle(scan, edges, scan.high, config);
+      else if (chain && run >= config.vehicleBurstMs) {
         if (chain.vehicle) reopenVehicle(scan);
         else if (chain.highMs + run >= config.enterMs) {
           scan.active = chain.first; scan.chain = null; scan.high = null;
@@ -163,7 +200,9 @@ export function stepVehicles(scan, edges, i, config) {
         : freshProgress && edge.speed >= config.stillMps
           && edge.speed <= config.departureMaxSpeed);
       if (walking) {
-        if (scan.footLow == null) scan.footLow = i;
+        // A parked stretch right before the walk (scan.parked still holds it
+        // on the walk's first edge): where the car stopped.
+        if (scan.footLow == null) { scan.footLow = i; scan.footParked = scan.parked; }
         const first = edges[scan.footLow].from;
         const raw = p => Number.isFinite(p.raw_latitude) && Number.isFinite(p.raw_longitude)
           ? { latitude: p.raw_latitude, longitude: p.raw_longitude } : p;
@@ -171,12 +210,19 @@ export function stepVehicles(scan, edges, i, config) {
           > Math.max(config.minMoveM, accuracyOf(first, config), accuracyOf(edge.to, config));
         if (departure || edge.end - edges[scan.footLow].start >= config.exitMs) {
           const footFrom = scan.footLow;
-          closeVehicle(scan, edges, footFrom - 1, true);
+          // 2026-10-14: parked a stay's length (stayMs) before getting out,
+          // the car ended where it parked: that time is a stay of its own,
+          // numbered, not the drive's (a 15-minute stop read as driving
+          // until the walk, then as an unnumbered parked tail).
+          const parked = scan.footParked;
+          const last = parked != null && parked > scan.active && edges[footFrom].start - edges[parked].start >= config.stayMs
+            ? parked - 1 : footFrom - 1;
+          closeVehicle(scan, edges, last, true);
           // A crawl in a jam reads as this walk: the trip may go on.
-          scan.chain = chainAfter(edges, footFrom - 1, footFrom, i, config);
+          scan.chain = chainAfter(edges, last, footFrom, i, config);
           return;
         }
-      } else scan.footLow = null;
+      } else { scan.footLow = null; scan.footParked = null; }
       // Keep a pending long light; cap its lifetime at the existing vehicle
       // interruption bound. finishVehicles can display terminal parking sooner.
       if (edge.to.phoneStationary && measured != null && measured < config.stillMps) {
@@ -185,7 +231,7 @@ export function stepVehicles(scan, edges, i, config) {
           closeVehicle(scan, edges, scan.parked - 1, true);
       } else scan.parked = null;
     }
-  } else { scan.low = null; scan.footLow = null; scan.parked = null; }
+  } else { scan.low = null; scan.footLow = null; scan.footParked = null; scan.parked = null; }
 }
 
 // A run of fast edges (scan.high to endIndex) that ended before enterMs: a
@@ -219,7 +265,7 @@ export function finishVehicles(scan, edges, config = configFor('phone')) {
 export function vehiclesSettledAt(scan, edges, i, config) {
   const edge = edges[i];
   // A chain may still turn the edges since its last piece into a drive.
-  if (scan.active != null || scan.high != null || scan.chain != null) return false;
+  if (scan.active != null || scan.high != null || scan.chain != null || scan.cruise != null) return false;
   if (edge.gap || edge.mode === 'indoor') return true;
   return config.backtrackSpeed == null ? true : !atLeast(edge.speed, config.backtrackSpeed);
 }
@@ -232,7 +278,7 @@ export function vehiclesSettledAt(scan, edges, i, config) {
  * keeps one at the last edge that can no longer change, so a day of
  * uninterrupted walking is not added up again every poll.
  */
-export const countState = () => ({ anchor: null, budget: 0, unproven: false });
+export const countState = () => ({ anchor: null, budget: 0, unproven: false, since: null, trip: null, settled: null });
 
 // The step's speed for the budget: the speed measured at the fix it
 // reaches; a long step (over 10 s, sparse fixes) also takes the speed it
@@ -258,26 +304,104 @@ function stepSpeed(edge) {
   return Math.max(to ?? 0, from ?? 0);
 }
 
-/** countDistances below for one edge, carrying `state` (countState). */
+/**
+ * countDistances below for one edge, carrying `state` (countState). Returns
+ * the metres it took back from earlier edges (a drift trip, below), so a
+ * running sum can subtract them; 0 otherwise.
+ */
 export function countEdge(state, edge, config) {
+  countStep(state, edge, config);
+  return driftTrip(state, edge, config);
+}
+
+/**
+ * 2026-10-14 (user: a lift down and back up counted 「走路 4 分・240 m」 on a
+ * day at home): a drift trip counts nothing. A trip opens on the first
+ * counted step after the phone's detector had settled (a stationary fix, or
+ * the far end of a same-place break: `state.settled`). It is drift when the
+ * phone is stationary again within excursionMs of that step, never more than
+ * stillPlaceM from where it set off, and fewer than driftWalkFixes of its
+ * counted steps reached a fix of a walk (walkFix): its counted metres are
+ * taken back (the edges keep their actual distance). Lifts, stairs and
+ * indoor Wi-Fi fixes read 20–50 m and 15–35 km/h for a few fixes, then the
+ * phone stands still where it was; a real walk, even a short one to the
+ * letterbox, counts its steps on fine walking fixes, goes beyond
+ * stillPlaceM, or takes longer. A weak-GPS step of a few seconds (uncertain)
+ * does not end a trip; a vehicle, a hold or a real gap does, its metres
+ * counted, as does a trip that goes too far, too long, or proves a walk.
+ * Returns the metres taken back from the edges before this one (this edge
+ * reaches a stationary fix: it counts nothing itself). Phone only.
+ */
+function driftTrip(state, edge, config) {
+  if (!config.stillMps || !config.stillPlaceM || !config.excursionMs || !config.driftWalkFixes) return 0;
+  const foot = edge.mode === 'walking' || edge.mode === 'moving';
+  // A weak-GPS step of a few seconds (uncertain) is no break of the trip.
+  const weak = edge.mode === 'gap' && edge.uncertain && edge.durationMs <= config.gapMs;
+  if (edge.bridged) {
+    // Back at one place after a break (samePlaceGap: both ends quiet).
+    state.trip = null; state.settled = edge.to; return 0;
+  }
+  if (!foot && !weak) { state.trip = null; state.settled = null; return 0; }
+  let trip = state.trip;
+  if (!trip && edge.countedDistanceM > 0 && state.settled) {
+    trip = state.trip = { origin: state.settled, start: edge.start, edges: [], walk: 0, peak: 0 };
+  }
+  const away = trip ? distanceMeters(trip.origin, edge.to) : 0;
+  if (trip) {
+    // Walk evidence: a counted step onto a fix of a walk.
+    if (edge.countedDistanceM > 0) {
+      trip.edges.push(edge);
+      if (walkFix(edge.to, config)) trip.walk += 1;
+    }
+    trip.peak = Math.max(trip.peak, away);
+    if (trip.peak > config.stillPlaceM || trip.walk >= config.driftWalkFixes
+      || edge.end - trip.start > config.excursionMs) {
+      // A real move: nothing taken back, and no trip until the phone settles.
+      state.trip = null; state.settled = null; return 0;
+    }
+  }
+  if (!edge.to.phoneStationary) return 0;
+  state.settled = edge.to;
+  if (!trip) return 0;
+  state.trip = null;
+  let takenBack = 0;
+  for (const e of trip.edges) {
+    if (e !== edge) takenBack += e.countedDistanceM;
+    e.countedDistanceM = 0;
+  }
+  return takenBack;
+}
+
+// A fix of a walk: the detector's moving state at fine accuracy
+// (fineFix), measuring a walking speed of its own (fineMoveSpeedMps to
+// departureMaxSpeed: shuffling about a room at 1 km/h is no walk, nor 15 km/h
+// on foot). Its spread is not taken off: a dog walk of stops and starts reads
+// 4 km/h ± 2.6 km/h at 4 m.
+function walkFix(point, config) {
+  const speed = fineFix(point, config) ? phoneReliableSpeed(point) : null;
+  return speed != null && speed >= config.fineMoveSpeedMps && speed <= config.departureMaxSpeed;
+}
+
+function countStep(state, edge, config) {
   if (edge.mode !== 'walking' && edge.mode !== 'moving') {
     edge.countedDistanceM = 0; state.anchor = null; return;
   }
-  if (!state.anchor) { state.anchor = edge.from; state.budget = 0; state.unproven = false; }
+  if (!state.anchor) { state.anchor = edge.from; state.budget = 0; state.unproven = false; state.since = null; }
   if (edge.from.phoneStationary && !edge.to.phoneStationary) {
-    state.anchor = edge.from; state.budget = 0;
+    state.anchor = edge.from; state.budget = 0; state.since = null;
   }
   // Confirmed phone stationarity spends no old speed budget. A missing speed
   // earlier in the run must not turn a later stationary fix into movement.
   if (edge.to.phoneStationary) {
-    edge.countedDistanceM = 0; state.anchor = edge.to; state.budget = 0; state.unproven = false; return;
+    edge.countedDistanceM = 0; state.anchor = edge.to; state.budget = 0; state.unproven = false; state.since = null;
+    return;
   }
   // A break at one place (samePlaceGap) is no walk. Phone (2026-10-13): the
   // run goes on from where the phone was seen again (the place may span
   // stillPlaceM), so the drift across the break never counts later either.
   if (edge.bridged) {
     edge.countedDistanceM = 0;
-    if (config.stillMps) { state.anchor = edge.to; state.budget = 0; state.unproven = false; }
+    if (config.stillMps) { state.anchor = edge.to; state.budget = 0; state.unproven = false; state.since = null; }
     return;
   }
   // 2026-10-13: confirmed movement on a coarse fix claiming no walking
@@ -317,8 +441,24 @@ export function countEdge(state, edge, config) {
   const limit = state.budget * 1.5 + config.minMoveM;
   if (moved > threshold && moved <= limit) {
     edge.countedDistanceM = odometerStep(state.anchor, edge.to, moved, limit, config);
-    state.anchor = edge.to; state.budget = 0;
-  } else edge.countedDistanceM = 0;
+    state.anchor = edge.to; state.budget = 0; state.since = null;
+    return;
+  }
+  edge.countedDistanceM = 0;
+  // 2026-10-14 (user: each row's metres are its own): a move beyond what
+  // the speeds cover waits for them (drift that comes back counts nothing;
+  // a walk the detector confirms late counts when it does) — but not past a
+  // stay. Once the phone has kept within radiusM of one fix for stayMs while
+  // the move waits, it is at a place: the move is not counted and counting
+  // goes on from there. Left waiting, the speeds measured at the place added
+  // up until the jump of a whole trip before it (a slow car whose fixes said
+  // walking speed) counted minutes into the stay, on the next walk.
+  if (!(moved > threshold) || !config.speedBudget) { state.since = null; return; }
+  const settled = state.since && distanceMeters(state.since.at, edge.to) <= config.radiusM;
+  state.since = settled ? state.since : { at: edge.to, time: edge.end };
+  if (edge.end - state.since.time >= config.stayMs) {
+    state.anchor = edge.to; state.budget = 0; state.since = null;
+  }
 }
 
 // A fix coarser than config.coarseConfirmedAccuracyM (phone only), and

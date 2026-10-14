@@ -288,7 +288,8 @@ test('a range that begins moving keeps 出發; the seconds of the stay a detecte
   // times add up: HistoryTimeClocks).
   expect(shown[0]).toMatchObject({ start: 0, end: 0, departureStay: stay });
   expect(shown[1]).toMatchObject({ start: 0, end: 400000 });
-  expect(nodePill(shown[0]).text).toBe('出發');
+  // 2026-10-14: no 「出發」 — the start row is its time and place only.
+  expect(nodePill(shown[0])).toBeNull();
 });
 
 test('minute precision aligns consecutive displayed clocks without changing observed duration or a stay\'s interruptions', () => {
