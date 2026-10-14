@@ -18,8 +18,10 @@ import { border, radius, size as sizes, space, touch, type } from '../theme/toke
 import { linesFor } from '../utils/textScale';
 
 const carousel = sizes.card.carousel;
-// When an unplaced row tries again to sit on the open dog.
+// When the row checks again that it sits on the open dog; after a slide to
+// another dog, from PLACE_SETTLE_MS on.
 const PLACE_RETRY_MS = [0, 60, 200, 500, 1200];
+const PLACE_SETTLE_MS = 500;
 
 /** Which slot `x` (the row's scroll offset) has in the middle. */
 export const slotAt = (x, count) => Math.max(0, Math.min(count - 1, Math.round(x / carousel.slot)));
@@ -41,14 +43,6 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   const at = useRef(indexOf(currentId));
   const scrollX = useRef(new Animated.Value(at.current * slot)).current;
   const list = useRef(null);
-  // The dog opened another way (a tap on the map, TalkBack): the row follows.
-  useEffect(() => {
-    const index = indexOf(currentId);
-    if (index === at.current) return;
-    at.current = index;
-    list.current?.scrollTo({ x: index * slot, animated: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentId, count]);
   // Only the user's own drag picks a dog where the row lands: the row's own
   // moves (placing it on the open dog, following a pick) never do.
   const dragging = useRef(false);
@@ -60,25 +54,40 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     const dog = dogs[index];
     if (dog && dog.slaveId !== currentId) onSelect?.(dog.slaveId);
   };
-  // Android ignores contentOffset: whenever the row is laid out (before the
-  // user has dragged it), it is put on the open dog without a move, a frame
-  // later so the native view has its size.
-  // A busy phone can drop an early scrollTo: it is tried again a few times
-  // until the row reports it is there.
-  const touched = useRef(false);
+  // The row sits on the open dog. Android ignores contentOffset, and a busy
+  // phone can drop an early scrollTo, so after every layout and every change
+  // of dog or of the dogs (not while the user drags) it is put there again,
+  // a few times, until the row reports it has arrived.
   const lastX = useRef(0);
   const timers = useRef([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
-  const place = () => {
-    if (touched.current) return;
+  // Until then a slide the row was asked for is still on its way.
+  const slidingUntil = useRef(0);
+  const place = (animated = false) => {
     timers.current.forEach(clearTimeout);
-    timers.current = PLACE_RETRY_MS.map(ms => setTimeout(() => {
+    if (dragging.current) return;
+    if (animated) {
+      list.current?.scrollTo({ x: at.current * slot, animated: true });
+      slidingUntil.current = Date.now() + PLACE_SETTLE_MS;
+    }
+    const sliding = Date.now() < slidingUntil.current;
+    timers.current = PLACE_RETRY_MS.filter(ms => !sliding || ms >= PLACE_SETTLE_MS).map(ms => setTimeout(() => {
       const target = at.current * slot;
-      if (!touched.current && Math.abs(lastX.current - target) > 1) {
+      if (!dragging.current && Math.abs(lastX.current - target) > 1) {
         list.current?.scrollTo({ x: target, animated: false });
       }
     }, ms));
   };
+  // The dog opened another way (a tap on the map, TalkBack), or the dogs
+  // changed: the row follows, sliding when it moves to another dog.
+  const idsKey = dogs.map(dog => dog.slaveId).join(',');
+  useEffect(() => {
+    const index = indexOf(currentId);
+    const moved = index !== at.current;
+    at.current = index;
+    place(moved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentId, idsKey]);
   // The middle name's line, measured (it grows with the system font).
   const [nameHeight, setNameHeight] = useState(0);
   const rowHeight = carousel.face[0] + space.xs * 2 + Math.ceil(nameHeight);
@@ -115,8 +124,8 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         snapToInterval={slot}
         decelerationRate="fast"
         contentOffset={{ x: at.current * slot, y: 0 }}
-        onContentSizeChange={place}
-        onLayout={place}
+        onContentSizeChange={() => place()}
+        onLayout={() => place()}
         contentContainerStyle={{ paddingHorizontal: side }}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
@@ -124,8 +133,8 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
           listener: event => { lastX.current = event.nativeEvent.contentOffset.x; },
         })}
         onScrollBeginDrag={() => {
+          timers.current.forEach(clearTimeout);
           dragging.current = true;
-          touched.current = true;
         }}
         onMomentumScrollEnd={event => settle(event.nativeEvent.contentOffset.x)}
         onScrollEndDrag={event => {
@@ -151,6 +160,7 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
                 // A tap picks at once; the row slides to it.
                 at.current = index;
                 list.current?.scrollTo({ x: index * slot, animated: true });
+                slidingUntil.current = Date.now() + PLACE_SETTLE_MS;
                 onSelect?.(dog.slaveId);
               }}
               style={({ pressed }) => [styles.slot, pressed && !open && styles.pressed]}
