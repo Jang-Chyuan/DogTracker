@@ -6,7 +6,8 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, StyleSheet } from 'react-native';
 import DogCard from '../src/map/DogCard';
-import { BOUNCE, offsetOf, slotAt } from '../src/map/DogCarousel';
+import { BOUNCE, FLICK_MAX_MS, FLING_MAX, FLING_VELOCITY, RUBBER, offsetOf, releaseTarget, rubberBand, slotAt,
+  snapDuration } from '../src/map/DogCarousel';
 import { dogCard } from '../src/map/DogCardModel';
 import { switchOrder, switchTarget } from '../src/map/DogSwitch';
 import { colors, size as sizes, touch } from '../src/theme/tokens';
@@ -46,6 +47,58 @@ describe('the order', () => {
     expect(BOUNCE).toBeGreaterThanOrEqual(slot / 2);
     expect(slotAt(0, 6)).toBe(0);
     expect(slotAt(offsetOf(5) + BOUNCE, 6)).toBe(5);
+  });
+
+  // 2026-10-14, the second phone try: a drag follows the finger, a fling goes
+  // as far as its speed carries, a casual swipe one dog.
+  test('a drag (long, or let go nearly still): the dog nearest where it was let go, however many cells away', () => {
+    const slot = sizes.card.carousel.slot;
+    // Dragged across three cells and let go still: three dogs on.
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 3.1, velocity: 0.1, duration: 2000, count: 8 })).toBe(4);
+    // Still moving but the finger was down a long time: a drag too.
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 3.1, velocity: 0.7, duration: 900, count: 8 })).toBe(4);
+    // A little, back: the same dog.
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 0.4, velocity: -0.2, duration: 200, count: 8 })).toBe(1);
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 0.6, velocity: FLING_VELOCITY - 0.01, duration: 200,
+      count: 8 })).toBe(2);
+  });
+
+  test('let go moving (a fling): from where it began, as many dogs as the speed carries — 1 casual, 2–5 fast', () => {
+    const fling = velocity => releaseTarget({ from: 3, x: offsetOf(3) + 40 * Math.sign(velocity), velocity,
+      duration: 150, count: 12 }) - 3;
+    // dp/ms (2 dp/ms = 2 000 dp/s).
+    expect(fling(FLING_VELOCITY)).toBe(1);
+    expect(fling(1)).toBe(1);
+    expect(fling(1.9)).toBe(1);
+    expect(fling(2.1)).toBe(2);
+    expect(fling(3.2)).toBe(2);
+    expect(fling(3.5)).toBe(3);
+    expect(fling(5)).toBe(4);
+    expect(fling(6.1)).toBe(FLING_MAX);
+    expect(fling(30)).toBe(FLING_MAX);
+    expect(fling(-1.5)).toBe(-1);
+    expect(fling(-4)).toBe(-3);
+    // A casual swipe (300 ms, 0.35 dp/ms) that carried the row 1.8 cells
+    // under the finger goes one dog, not two.
+    expect(releaseTarget({ from: 3, x: offsetOf(3) + 1.8 * 64, velocity: 0.35, duration: 300, count: 12 })).toBe(4);
+    expect(releaseTarget({ from: 3, x: offsetOf(3) + 1.8 * 64, velocity: 0.35, duration: FLICK_MAX_MS + 1,
+      count: 12 })).toBe(5);
+    // Never past an end.
+    expect(releaseTarget({ from: 10, x: offsetOf(10), velocity: 8, duration: 80, count: 12 })).toBe(11);
+    expect(releaseTarget({ from: 1, x: offsetOf(1), velocity: -8, duration: 80, count: 12 })).toBe(0);
+  });
+
+  test('the slide starts at the release speed and slows to rest; past an end the row follows at half speed', () => {
+    expect(snapDuration(64, 0)).toBe(220);
+    expect(snapDuration(64, 0.3)).toBe(450);
+    expect(snapDuration(64, 1)).toBe(192);
+    expect(snapDuration(64, 4)).toBe(180);
+    expect(snapDuration(320, 1)).toBe(450);
+    const low = offsetOf(0);
+    expect(rubberBand(low - 40, 6)).toBe(low - 40 * RUBBER);
+    expect(rubberBand(low - 1000, 6)).toBe(low - BOUNCE);
+    expect(rubberBand(offsetOf(5) + 30, 6)).toBe(offsetOf(5) + 30 * RUBBER);
+    expect(rubberBand(offsetOf(2), 6)).toBe(offsetOf(2));
   });
 });
 
@@ -119,69 +172,63 @@ describe('the card', () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
-  test('the user\'s drag lands on a dog: it is picked; the row\'s own moves pick nothing; a side tap picks at once', async () => {
-    const value = switcher();
+  // A finger on the row: down at `x`, moved `dx` dp over `ms`, let go.
+  const swipe = async (row, { dx, ms, x = 200, y = 100, steps = 8 }) => {
+    const at = (step, t) => ({ nativeEvent: { pageX: x + (dx * step) / steps, pageY: y, timestamp: t } });
+    await act(async () => row.props.onTouchStart(at(0, 1000)));
+    const taken = row.props.onMoveShouldSetResponderCapture(at(1, 1000 + ms / steps));
+    if (!taken) return false;
+    await act(async () => row.props.onResponderGrant(at(1, 1000 + ms / steps)));
+    for (let step = 2; step <= steps; step += 1) {
+      await act(async () => row.props.onResponderMove(at(step, 1000 + (ms * step) / steps)));
+    }
+    await act(async () => row.props.onResponderRelease(at(steps, 1000 + ms)));
+    await act(async () => jest.advanceTimersByTime(500));
+    return true;
+  };
+
+  test('a drag follows the finger; a fling goes by its speed; a tap on a side face picks at once', async () => {
+    const slot = sizes.card.carousel.slot;
+    // 狗 12, 豆豆 (open), 阿福, 狗 15, 狗 16, 狗 17, 狗 18.
+    const many = [...dogs, ...[15, 16, 17, 18].map(slaveId => ({ slaveId, name: `狗 ${slaveId}`, avatar: null,
+      problem: false, stale: false }))];
+    const value = switcher({ dogs: many });
     await mount({ switcher: value });
     const row = host('dog-card-carousel')[0];
-    // The row placing itself on the open dog (no drag): nothing picked.
-    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0 } } }));
-    expect(value.onSelect).not.toHaveBeenCalled();
-    await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(2) } } }));
-    expect(value.onSelect.mock.calls).toEqual([[8]]);
-    await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: offsetOf(1.2) }, velocity: { x: 0 } } }));
-    expect(value.onSelect.mock.calls).toEqual([[8]]);
-    // A fling's drag end waits for its momentum end.
-    await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 0 }, velocity: { x: 2 } } }));
-    expect(value.onSelect.mock.calls).toEqual([[8]]);
-    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0 } } }));
-    expect(value.onSelect.mock.calls).toEqual([[8], [12]]);
+    // Up and down is the card's (it closes the card), and a short move a tap.
+    await act(async () => row.props.onTouchStart({ nativeEvent: { pageX: 200, pageY: 100, timestamp: 0 } }));
+    expect(row.props.onMoveShouldSetResponderCapture({ nativeEvent: { pageX: 203, pageY: 140, timestamp: 50 } })).toBe(false);
+    expect(row.props.onMoveShouldSetResponderCapture({ nativeEvent: { pageX: 205, pageY: 101, timestamp: 50 } })).toBe(false);
+    // A slow drag three cells left (the finger stops before it lifts): three dogs on.
+    expect(await swipe(row, { dx: -slot * 3, ms: 3000 })).toBe(true);
+    expect(value.onSelect.mock.calls.at(-1)).toEqual([16]);
+    // A casual swipe (1.5 dp/ms) from there back: one dog, though the finger
+    // carried the row further.
+    await swipe(row, { dx: slot * 2, ms: (slot * 2) / 1.5 });
+    expect(value.onSelect.mock.calls.at(-1)).toEqual([15]);
+    // A fast flick (4 dp/ms): three dogs.
+    await swipe(row, { dx: slot * 1.2, ms: (slot * 1.2) / 4 });
+    expect(value.onSelect.mock.calls.at(-1)).toEqual([12]);
     // A tap on a side face picks it straight away.
     await act(async () => byTestId('dog-card-pick-8')[0].props.onPress());
-    expect(value.onSelect.mock.calls).toEqual([[8], [12], [8]]);
+    expect(value.onSelect.mock.calls.at(-1)).toEqual([8]);
   });
 
-  test('one swipe moves one dog however fast (a pager): while dragging only the dog and its neighbours snap', async () => {
-    const value = switcher({ dogs: [...dogs, { slaveId: 15, name: '狗 15', avatar: null, problem: false, stale: false }] });
-    await mount({ switcher: value });
-    const row = () => host('dog-card-carousel')[0];
-    expect(row().props.disableIntervalMomentum).toBe(true);
-    expect(row().props.snapToOffsets).toEqual([0, 1, 2, 3].map(offsetOf));
-    // 豆豆 (index 1) dragged: 狗 12, 豆豆 and 阿福 only.
-    await act(async () => row().props.onScrollBeginDrag());
-    expect(row().props.snapToOffsets).toEqual([0, 1, 2].map(offsetOf));
-    // Flung across three dogs: still only the next one.
-    await act(async () => row().props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(3) } } }));
-    expect(value.onSelect.mock.calls).toEqual([[8]]);
-    expect(row().props.snapToOffsets).toEqual([0, 1, 2, 3].map(offsetOf));
-  });
-
-  test('pulled into the empty room past an end and let go, the row springs back to the end dog', async () => {
+  test('pulled past an end, the row follows at half speed and, let go, slides back to the end dog', async () => {
     const value = switcher();
     await mount({ switcher: value });
     const row = host('dog-card-carousel')[0];
-    const list = renderer.root.findAll(node => node.props.testID === 'dog-card-carousel'
-      && typeof node.instance?.scrollTo === 'function')[0].instance;
-    const scrollTo = jest.spyOn(list, 'scrollTo').mockImplementation(() => {});
-    await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 0 }, velocity: { x: 0 } } }));
-    expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(0), animated: true });
-    // Now on 狗 12 (the first): a fling to rest far past the last dog ends on
-    // 12's neighbour, one dog on (a pager), springing back to it.
-    await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(2) + BOUNCE } } }));
-    expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(1), animated: true });
-    // From 豆豆 (the middle), past the last dog: the last dog.
-    await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(2) + BOUNCE } } }));
-    expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(2), animated: true });
-    // On a dog: no extra move (the platform snaps it).
-    scrollTo.mockClear();
-    await act(async () => row.props.onScrollBeginDrag());
-    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(1) } } }));
-    expect(scrollTo).not.toHaveBeenCalled();
+    const strip = () => row.findAll(node => typeof node.type === 'string' && node.props.style
+      && StyleSheet.flatten(node.props.style)?.flexDirection === 'row')[0];
+    // From 豆豆 (the middle) a slow drag far right: one dog back to 狗 12,
+    // then the room past it, then back to 狗 12.
+    await swipe(row, { dx: 400, ms: 4000 });
+    expect(value.onSelect.mock.calls).toEqual([[12]]);
+    expect(strip()).toBeTruthy();
+    // The open dog on the card is still 豆豆 here (the switcher is a mock):
+    // flinging toward the start from it, never past 狗 12.
+    await swipe(row, { dx: 300, ms: 30 });
+    expect(value.onSelect.mock.calls.at(-1)).toEqual([12]);
   });
 
   test('TalkBack: 下一隻／上一隻 on the middle face, only where there is a dog that way', async () => {

@@ -624,12 +624,11 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   });
   await mount();
   await advance(1000);
-  const { offsetOf } = require('../src/map/DogCarousel');
   const middle = () => renderer.root.find(node => node.props.testID === 'dog-card-edit'
     && typeof node.props.onPress === 'function');
   const open = () => middle().props.accessibilityLabel.replace(/^編輯(.*)的名字和頭像$/, '$1');
   const strip = () => renderer.root.findAll(node => node.props.testID === 'dog-card-carousel'
-    && typeof node.props.onMomentumScrollEnd === 'function')[0];
+    && typeof node.props.onResponderRelease === 'function')[0];
   const card = () => renderer.root.findAll(node => node.props.testID === 'dog-card' && node.props.onLayout)[0];
   const map = () => renderer.root.findAll(node => node.props.focusDog !== undefined && node.props.presentation, { deep: true })[0];
   await act(async () => card().props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
@@ -643,14 +642,23 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   const picks = renderer.root.findAll(node => /^dog-card-(pick-\d+|edit)$/.test(node.props.testID ?? '')
     && typeof node.props.onPress === 'function');
   expect(picks).toHaveLength(6);
-  const land = async index => {
-    await act(async () => strip().props.onScrollBeginDrag());
-    await act(async () => strip().props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(index) } } }));
+  // A slow drag of the row by `cells` (negative: back), let go still.
+  const { size: sizes } = require('../src/theme/tokens');
+  const drag = async cells => {
+    const dx = -cells * sizes.card.carousel.slot;
+    const event = (fraction, t) => ({ nativeEvent: { pageX: 200 + dx * fraction, pageY: 100, timestamp: t } });
+    await act(async () => strip().props.onTouchStart(event(0, 0)));
+    expect(strip().props.onMoveShouldSetResponderCapture(event(0.25, 500))).toBe(true);
+    await act(async () => strip().props.onResponderGrant(event(0.25, 500)));
+    await act(async () => strip().props.onResponderMove(event(0.5, 1000)));
+    await act(async () => strip().props.onResponderMove(event(1, 2000)));
+    await act(async () => strip().props.onResponderRelease(event(1, 2400)));
     await advance(300);
   };
+
   const keys = new Set();
   for (const index of [1, 2, 3, 4, 5]) {
-    await land(index);
+    await drag(1);
     expect(open()).toBe(order[index]);
     const shown = map().props;
     const selected = shown.presentation.dogMarkers.find(marker => marker.selected);
@@ -666,10 +674,12 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   await advance(300);
   expect(open()).toBe('狗 9');
   expect(map().props.focusDog.always).toBe(true);
-  // One gesture, one dog: a long drag back past the first dog from 狗 9
-  // stops at 狗 9's neighbour.
-  await land(-1);
-  expect(open()).toBe('阿福');
+  // A long drag back from 狗 9 follows the finger: three dogs, to 狗 5; and
+  // past the first, 豆豆 (the row springs back to it).
+  await drag(-3);
+  expect(open()).toBe('狗 5');
+  await drag(-4);
+  expect(open()).toBe('豆豆');
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 
