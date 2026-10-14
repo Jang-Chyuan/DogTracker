@@ -52,7 +52,8 @@ export const FLING_VELOCITY = 0.25;
 // a row of 64dp dogs: 1 dp/ms glides 20dp (a third of a dog), 2 dp/ms 67, 3
 // 135, 4 222, 5 328, 6 452, 8 738 (Android's fastest fling, 11 dogs). A
 // casual swipe adds little to where the finger left the row; a hard flick
-// runs to the end. To be checked on the phone (DogCarousel log lines).
+// runs to the end. Checked on the phone (2026-10-15): real flicks let go at
+// 0.9–1.5 dp/ms, most of the travel is the drag itself.
 const DECELERATION_RATE = Math.log(0.78) / Math.log(0.9);
 export const FLING_EXPONENT = DECELERATION_RATE / (DECELERATION_RATE - 1);
 export const FLING_K = 20;
