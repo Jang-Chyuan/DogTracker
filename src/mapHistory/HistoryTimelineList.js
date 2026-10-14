@@ -1,7 +1,7 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { isReduceMotion } from '../utils/reduceMotion';
 import { touch, size as sizes, space, type, border, radius, fontScale } from '../theme/tokens';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   PixelRatio,
@@ -12,6 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Glyph from '../map/Glyph';
+import { LEAVE_SHAPE } from '../map/LeaveGeometry';
 import Skeleton from '../components/Skeleton';
 import { rangeEndRows, timelinePresentation } from '../history/HistoryTimelinePresentation';
 
@@ -41,8 +42,9 @@ const timeWidth = () => ({
   ),
 });
 const TRACK_WIDTH = sizes.timeline.track;
-// Enough dots or dashes for the tallest row; the row clips the rest.
-const MARKS = 40;
+// The departure time's box, centred on the chevron: tall enough for the
+// caption at the largest font the time column allows (a shorter box clips it).
+const LEAVE_TIME_BOX = Math.ceil(type.caption.lineHeight * TIME_MAX_SCALE * 2);
 
 const isVehicle = mode => mode === 'driving' || mode === 'ride';
 
@@ -73,22 +75,57 @@ export function useTap(onPress, value) {
   };
 }
 
-function Track({ kind, color, from = 0 }) {
+/**
+ * Where a row's track draws, top to bottom ({ top, height } in dp, from the
+ * row's top): only whole dots or dashes (判定表「時間軸清單」), none cut by
+ * the row's edges or by a cleared stretch (`clears`: [{ top, bottom }], a
+ * node, the leave chevron, the movement icon, each with its gap), as the
+ * PNG's trackOps. A solid line runs right up to each cleared stretch.
+ */
+export function trackMarks(kind, height, clears = []) {
+  if (!kind || !(height > 0)) return [];
+  const segments = [];
+  let top = 0, openTop = true;
+  for (const clear of [...clears].sort((a, b) => a.top - b.top)) {
+    if (clear.top > top) segments.push({ top, bottom: Math.min(clear.top, height), openTop, openBottom: false });
+    if (clear.bottom > top) { top = clear.bottom; openTop = false; }
+  }
+  segments.push({ top, bottom: height, openTop, openBottom: true });
+  const marks = [];
+  for (const segment of segments) {
+    if (segment.bottom <= segment.top) continue;
+    if (kind === 'solid') {
+      // To the row's bottom edge (`toEnd`): no hairline where the next row's line goes on.
+      marks.push({ top: segment.top, height: segment.bottom - segment.top, ...(segment.openBottom && { toEnd: true }) });
+      continue;
+    }
+    const [mark, gap] = kind === 'gap' ? sizes.timeline.noDataDash : [sizes.timeline.dot, sizes.timeline.dotGap];
+    // At the row's edges half a gap, so the next row's marks keep the spacing.
+    const from = segment.top + (segment.openTop ? gap / 2 : 0);
+    const room = segment.bottom - (segment.openBottom ? gap / 2 : 0) - from;
+    const count = Math.floor((room + gap) / (mark + gap));
+    if (count <= 0) continue;
+    const start = from + (room + gap - count * (mark + gap)) / 2;
+    for (let i = 0, at = start; i < count; i += 1, at += mark + gap) marks.push({ top: at, height: mark });
+  }
+  return marks;
+}
+
+const NO_CLEARS = [];
+// The movement icon in the middle of a movement row and its gap above and below.
+const iconClear = height => [{ top: height / 2 - sizes.timeline.icon / 2 - space.xs, bottom: height / 2 + sizes.timeline.icon / 2 + space.xs }];
+
+function Track({ kind, color, clears = NO_CLEARS, icon = false }) {
   const styles = useStyles(getStyles);
+  const [height, setHeight] = useState(0);
   if (!kind) return null;
-  const style = [styles.track, { top: from }];
-  if (kind === 'solid')
-    return (
-      <View style={[...style, styles.solid, { backgroundColor: color }]} />
-    );
-  const dash = kind === 'gap';
+  const marks = trackMarks(kind, height, icon ? iconClear(height) : clears);
+  const look = kind === 'solid' ? [styles.solid, { backgroundColor: color }]
+    : kind === 'gap' ? styles.dash : [styles.dot, { backgroundColor: color }];
   return (
-    <View style={[...style, styles.marks]}>
-      {Array.from({ length: MARKS }, (_, index) => (
-        <View
-          key={index}
-          style={dash ? styles.dash : [styles.dot, { backgroundColor: color }]}
-        />
+    <View style={styles.track} onLayout={event => setHeight(event.nativeEvent.layout.height)} testID="track-line">
+      {marks.map(mark => (
+        <View key={mark.top} style={[look, styles.mark, mark.toEnd ? [styles.toEnd, { top: mark.top }] : { top: mark.top, height: mark.height }]} />
       ))}
     </View>
   );
@@ -182,16 +219,13 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
   const note = interruptionText(node);
   const pill = nodePill(node);
   const pending = place?.state === 'pending';
-  // Its chevron reaches into the movement row below: drawn over that row's line.
   const leaving = leavesFrom(node, next);
-  // Below the node: the chevron (with the small departure time beside it in
-  // the time column).
-  const below = firstLine.height / 2 + sizes.timeline.node.stop / 2;
+  const track = useMemo(() => placeTrack(firstLine.height, leaving), [firstLine.height, leaving]);
   // No address (not found, offline, timed out): the place's coordinates.
   const title = lines.title;
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, leaving && styles.leavingRow, pressed && styles.pressedRow]}
+      style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
       hitSlop={ROW_SLOP}
       testID={`timeline-${node.type}`}
       {...tap}
@@ -204,22 +238,26 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
         <Text style={styles.time} maxFontSizeMultiplier={TIME_MAX_SCALE}>
           {start}
         </Text>
-        {/* When it left (2026-10-14): smaller, beside the chevron. */}
+        {/* When it left (2026-10-14): smaller, level with the chevron. */}
         {leaving && (
-          <Text style={[styles.leaveTime, { top: below }]} maxFontSizeMultiplier={TIME_MAX_SCALE} testID="leave-time">
-            {clock(node.end)}
-          </Text>
+          <View style={[styles.leaveTimeBox, { top: track.chevron.top + track.chevron.height / 2 - LEAVE_TIME_BOX / 2 }]}
+            testID="leave-time-box">
+            <Text style={styles.leaveTime} maxFontSizeMultiplier={TIME_MAX_SCALE} testID="leave-time">
+              {clock(node.end)}
+            </Text>
+          </View>
         )}
       </View>
-      <View style={styles.trackColumn}>
+      <View style={[styles.trackColumn, { minHeight: track.minHeight }]}>
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
-        <Track kind={lineOf(next)} color={color} from={12} />
+        <Track kind={lineOf(next)} color={color} clears={track.clears} />
         <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line">
           <Node node={node} color={color} centered rangeStart={rangeStart} rangeEnd={rangeEnd} />
         </View>
-        {/* Leaving this stay (2026-10-14): a down chevron on the line under the node. */}
+        {/* Leaving this stay (2026-10-14, moved onto the line 2026-10-14): a
+            down chevron on the next row's line, line above and below it. */}
         {leaving && (
-          <View style={[styles.leave, { top: below }]} testID="leave-chevron">
+          <View style={[styles.leave, { top: track.glyphTop }]} testID="leave-chevron">
             <Glyph name="leave" color={color} size={sizes.timeline.leave} />
           </View>
         )}
@@ -272,7 +310,7 @@ function SectionRowView({ section, from = null, color, onPress }) {
     >
       <View style={[styles.timeColumn, timeWidth()]} />
       <View style={[styles.trackColumn, styles.transportTrack]}>
-        <Track kind={lineOf(section)} color={color} />
+        <Track kind={lineOf(section)} color={color} icon />
         <View style={styles.transportIcon}>
           <Glyph
             name={text.icon}
@@ -357,6 +395,28 @@ const ROW_SLOP = { top: space.xs, bottom: space.xs };
 
 const isSection = node => ['movement', 'gap'].includes(node?.type);
 
+/**
+ * A place row's track (dp from the row's top): the line under the node is
+ * the next row's and starts a gap below the node. Leaving a stay (2026-10-14,
+ * the user: the chevron read as part of the node): a short stretch of that
+ * line, then the chevron with a gap above and below, then the line goes on
+ * to the movement icon. The row is at least tall enough for that.
+ */
+export function placeTrack(firstLineHeight, leaving) {
+  const { leaveGap: gap, leaveLine, leaveBelow, leave } = sizes.timeline;
+  const lineTop = firstLineHeight / 2 + sizes.timeline.node.stop / 2 + gap;
+  if (!leaving) return { clears: [{ top: 0, bottom: lineTop }], minHeight: 0, chevron: null, glyphTop: 0 };
+  const top = lineTop + leaveLine + gap;
+  const height = (leave * (LEAVE_SHAPE.to - LEAVE_SHAPE.from)) / 24;
+  return {
+    clears: [{ top: 0, bottom: lineTop }, { top: top - gap, bottom: top + height + gap }],
+    minHeight: Math.ceil(top + height + gap + leaveBelow),
+    // The chevron's drawn shape (not its 24-unit box): the time is level with it.
+    chevron: { top, height },
+    glyphTop: top - (leave * LEAVE_SHAPE.from) / 24,
+  };
+}
+
 // Addresses fade in where they land and the rows below slide (180 ms).
 const ADDRESS_MOTION = LayoutAnimation.create(
   180,
@@ -376,7 +436,6 @@ const getStyles = makeStyles(theme => {
     // The 12dp between rows is inside the place column, so the track column
     // runs the full row and the line has no breaks.
     row: { flexDirection: 'row' },
-    leavingRow: { zIndex: 1 },
     // A range wholly in one stay: the solid end inside the start's ring.
     bothEnds: {
       width: sizes.timeline.node.stop,
@@ -387,10 +446,8 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    leaveTimeBox: { position: 'absolute', right: space.xs, height: LEAVE_TIME_BOX, justifyContent: 'center' },
     leaveTime: {
-      position: 'absolute',
-      right: space.xs,
-      paddingTop: border.strong,
       color: colors.textMuted,
       ...type.caption,
       fontVariant: ['tabular-nums'],
@@ -406,25 +463,18 @@ const getStyles = makeStyles(theme => {
     },
     trackColumn: { width: TRACK_WIDTH, alignItems: 'center' },
     transportTrack: { justifyContent: 'center' },
-    transportIcon: { backgroundColor: colors.elevated, paddingVertical: space.xs },
-    // The page colour around it: no dot of the line shows through.
-    leave: { position: 'absolute', backgroundColor: colors.elevated, paddingTop: border.strong, paddingBottom: space.xs },
-    track: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      alignItems: 'center',
-      overflow: 'hidden',
-    },
-    solid: { left: TRACK_WIDTH / 2 - sizes.timeline.driveLine / 2, right: undefined, width: sizes.timeline.driveLine },
-    marks: { flexDirection: 'column' },
+    // The line stops short of it (trackMarks): no dot or dash runs through it.
+    transportIcon: { paddingVertical: space.xs },
+    leave: { position: 'absolute' },
+    track: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 },
+    mark: { position: 'absolute' },
+    toEnd: { bottom: 0 },
+    solid: { left: TRACK_WIDTH / 2 - sizes.timeline.driveLine / 2, width: sizes.timeline.driveLine },
     // 判定表「時間軸清單」: 3dp dots, 7dp apart.
-    dot: { width: sizes.timeline.dot, height: sizes.timeline.dot, borderRadius: sizes.timeline.dot / 2, marginBottom: sizes.timeline.dotGap },
+    dot: { left: TRACK_WIDTH / 2 - sizes.timeline.dot / 2, width: sizes.timeline.dot, borderRadius: sizes.timeline.dot / 2 },
     dash: {
+      left: TRACK_WIDTH / 2 - sizes.timeline.noDataLine / 2,
       width: sizes.timeline.noDataLine,
-      height: sizes.timeline.noDataDash[0],
-      marginBottom: sizes.timeline.noDataDash[1],
       backgroundColor: colors.noDataLine,
     },
     departure: {
