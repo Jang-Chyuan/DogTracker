@@ -58,13 +58,15 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     const dog = dogs[index];
     if (dog && dog.slaveId !== currentId) onSelect?.(dog.slaveId);
   };
-  // Android ignores contentOffset: once laid out, the row is put on the open
-  // dog without a move.
-  const placed = useRef(false);
+  // Android ignores contentOffset: whenever the row is laid out (before the
+  // user has dragged it), it is put on the open dog without a move, a frame
+  // later so the native view has its size.
+  const touched = useRef(false);
   const place = () => {
-    if (placed.current) return;
-    placed.current = true;
-    list.current?.scrollTo({ x: at.current * slot, animated: false });
+    if (touched.current) return;
+    requestAnimationFrame(() => {
+      if (!touched.current) list.current?.scrollTo({ x: at.current * slot, animated: false });
+    });
   };
   // The middle name's line, measured (it grows with the system font).
   const [nameHeight, setNameHeight] = useState(0);
@@ -103,10 +105,14 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         decelerationRate="fast"
         contentOffset={{ x: at.current * slot, y: 0 }}
         onContentSizeChange={place}
+        onLayout={place}
         contentContainerStyle={{ paddingHorizontal: side }}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
-        onScrollBeginDrag={() => { dragging.current = true; }}
+        onScrollBeginDrag={() => {
+          dragging.current = true;
+          touched.current = true;
+        }}
         onMomentumScrollEnd={event => settle(event.nativeEvent.contentOffset.x)}
         onScrollEndDrag={event => {
           // Let go without a fling: it still lands on a slot.
