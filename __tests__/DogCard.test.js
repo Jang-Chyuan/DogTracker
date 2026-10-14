@@ -196,23 +196,28 @@ test('the distance stays beside the first line only while the value fits there o
   expect(under()).toBe(false);
 });
 
-test('the 「!」 sits in front of the label, not in the value column (no width or height taken)', async () => {
+test('the 「!」 sits after the label, at the label column\'s right edge, not in the value column', async () => {
+  const { size: sizes } = require('../src/theme/tokens');
+  const { PixelRatio } = require('react-native');
+  jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
   await mount();
   const marks = renderer.root.findAll(node => /^dog-card-mark-/.test(node.props.testID ?? '') && node.props.background);
   expect(marks.length).toBeGreaterThanOrEqual(2);
   for (const mark of marks) {
+    expect(mark.props.size ?? mark.props.width).toBe(sizes.card.labelMark);
+    // Its cell is the label's: the label first, then the 「!」, the cell the
+    // label column's width, the 「!」 pushed to its right edge.
     let cell = mark.parent;
-    while (cell && !(cell.findAll(node => node.props.children === '位置' || node.props.children === '電量').length)) {
+    while (cell && !(typeof cell.type === 'string' && StyleSheet.flatten(cell.props.style)?.justifyContent === 'space-between')) {
       cell = cell.parent;
     }
-    // Its own wrapper is out of the flow (absolute), inside the label cell.
-    let wrapper = mark.parent;
-    while (wrapper && StyleSheet.flatten(wrapper.props.style)?.position !== 'absolute') wrapper = wrapper.parent;
-    expect(StyleSheet.flatten(wrapper.props.style)).toMatchObject({ position: 'absolute' });
-    expect(StyleSheet.flatten(wrapper.props.style).left).toBeLessThan(0);
-    const value = wrapper.parent.parent.findAll(node => node.props.testID === 'dog-card-distance');
-    expect(value).toHaveLength(0);
+    const style = StyleSheet.flatten(cell.props.style);
+    expect(style).toMatchObject({ flexDirection: 'row' });
+    expect(style.width).toBeGreaterThanOrEqual(sizes.card.labelWidth);
+    expect(cell.findAll(node => node.props.testID === 'dog-card-distance')).toHaveLength(0);
+    expect(['位置', '電量']).toContain(flatten(cell.children[0]));
   }
+  expect(sizes.card.labelWidth).toBe(80);
 });
 
 test('the card keeps room for the tallest first row among the other dogs, and never gives it back while open', async () => {

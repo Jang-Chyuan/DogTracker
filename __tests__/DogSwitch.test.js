@@ -6,7 +6,7 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { BackHandler, StyleSheet } from 'react-native';
 import DogCard from '../src/map/DogCard';
-import { BOUNCE, FLICK_MAX_MS, FLING_EXPONENT, FLING_VELOCITY, RUBBER, flingDistance, offsetOf, releaseTarget,
+import { BOUNCE, FLING_EXPONENT, FLING_VELOCITY, RUBBER, flingDistance, offsetOf, releaseTarget, releaseVelocity,
   rubberBand, slotAt, snapDuration } from '../src/map/DogCarousel';
 import { dogCard } from '../src/map/DogCardModel';
 import { switchOrder, switchTarget } from '../src/map/DogSwitch';
@@ -51,46 +51,47 @@ describe('the order', () => {
 
   // 2026-10-14, the second phone try: a drag follows the finger, a fling goes
   // as far as its speed carries, a casual swipe one dog.
-  test('a drag (long, or let go nearly still): the dog nearest where it was let go, however many cells away', () => {
+  // 2026-10-14, the fourth phone try: the glide is counted from where the
+  // row is when let go, never from where the drag began.
+  test('let go nearly still: the dog nearest where it was let go, however many cells away', () => {
     const slot = sizes.card.carousel.slot;
-    // Dragged across three cells and let go still: three dogs on.
-    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 3.1, velocity: 0.1, duration: 2000, count: 8 })).toBe(4);
-    // Still moving but the finger was down a long time: a drag too.
-    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 3.1, velocity: 0.7, duration: 900, count: 8 })).toBe(4);
-    // A little, back: the same dog.
-    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 0.4, velocity: -0.2, duration: 200, count: 8 })).toBe(1);
-    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 0.6, velocity: FLING_VELOCITY - 0.01, duration: 200,
-      count: 8 })).toBe(2);
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 3.1, velocity: 0.1, count: 8 })).toBe(4);
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 0.4, velocity: -0.2, count: 8 })).toBe(1);
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 0.6, velocity: FLING_VELOCITY - 0.01, count: 8 })).toBe(2);
   });
 
-  test('let go moving (a fling): from where it began, as far as OverScroller physics carries — 1 casual, 2–3 medium, a hard one to the end', () => {
-    const fling = velocity => releaseTarget({ from: 20, x: offsetOf(20) + 40 * Math.sign(velocity), velocity,
-      duration: 150, count: 60 }) - 20;
-    // Android's spline: distance grows with speed^1.74.
+  test('let go moving: it glides on from where it is by OverScroller physics, to the nearest dog; never back past the release', () => {
+    const slot = sizes.card.carousel.slot;
+    // Android's spline: distance grows with speed^1.74; 20dp at 1 dp/ms.
     expect(FLING_EXPONENT).toBeCloseTo(1.736, 3);
+    expect(flingDistance(1)).toBeCloseTo(20, 6);
     expect(flingDistance(2) / flingDistance(1)).toBeCloseTo(2 ** FLING_EXPONENT, 6);
-    // dp/ms (2 dp/ms = 2 000 dp/s).
-    expect(fling(FLING_VELOCITY)).toBe(1);
-    expect(fling(1)).toBe(1);
-    expect(fling(1.9)).toBe(1);
-    expect(fling(2.1)).toBe(2);
-    expect(fling(2.8)).toBe(3);
-    expect(fling(5)).toBe(7);
-    expect(fling(6)).toBe(10);
-    expect(fling(8)).toBe(17);
-    expect(fling(-1.5)).toBe(-1);
-    expect(fling(-2.6)).toBe(-2);
-    // No cap: a hard flick from the middle of six reaches the end.
-    expect(releaseTarget({ from: 2, x: offsetOf(2), velocity: 5, duration: 80, count: 6 })).toBe(5);
-    expect(releaseTarget({ from: 3, x: offsetOf(3), velocity: -5, duration: 80, count: 6 })).toBe(0);
-    // A casual swipe (300 ms, 0.35 dp/ms) that carried the row 1.8 cells
-    // under the finger goes one dog, not two.
-    expect(releaseTarget({ from: 3, x: offsetOf(3) + 1.8 * 64, velocity: 0.35, duration: 300, count: 12 })).toBe(4);
-    expect(releaseTarget({ from: 3, x: offsetOf(3) + 1.8 * 64, velocity: 0.35, duration: FLICK_MAX_MS + 1,
-      count: 12 })).toBe(5);
-    // Never past an end.
-    expect(releaseTarget({ from: 10, x: offsetOf(10), velocity: 8, duration: 80, count: 12 })).toBe(11);
-    expect(releaseTarget({ from: 1, x: offsetOf(1), velocity: -8, duration: 80, count: 12 })).toBe(0);
+    expect(Math.round(flingDistance(4))).toBe(222);
+    expect(flingDistance(FLING_VELOCITY - 0.01)).toBe(0);
+    // A casual swipe (1 dp/ms) that carried the row 0.9 cells: one dog.
+    expect(releaseTarget({ from: 3, x: offsetOf(3) + slot * 0.9, velocity: 1, count: 12 })).toBe(4);
+    // A fast flick let go 3.4 cells on: it goes on from there, never back.
+    expect(releaseTarget({ from: 3, x: offsetOf(3) + slot * 3.4, velocity: 1.5, count: 12 })).toBe(7);
+    expect(releaseTarget({ from: 3, x: offsetOf(3) + slot * 3.4, velocity: 4, count: 12 })).toBe(10);
+    // A short flick past the slop moves at least one dog.
+    expect(releaseTarget({ from: 3, x: offsetOf(3) + slot * 0.1, velocity: 0.3, count: 12 })).toBe(4);
+    expect(releaseTarget({ from: 3, x: offsetOf(3) - slot * 0.1, velocity: -0.3, count: 12 })).toBe(2);
+    // A hard flick reaches the end, and never goes past it.
+    expect(releaseTarget({ from: 2, x: offsetOf(2) + slot * 0.5, velocity: 5, count: 6 })).toBe(5);
+    expect(releaseTarget({ from: 1, x: offsetOf(1) + slot * 0.5, velocity: 8, count: 12 })).toBe(11);
+    expect(releaseTarget({ from: 3, x: offsetOf(3) - slot, velocity: -5, count: 6 })).toBe(0);
+  });
+
+  test('the release speed: the finger over its last 50 ms; a lift at the last move is not a stop, a pause is', () => {
+    // Moving left 16dp every 8ms (2 dp/ms), lifted a frame later in place.
+    const moves = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(step => ({ x: 400 - 16 * step, t: 1000 + 8 * step }));
+    expect(releaseVelocity([...moves, { x: moves.at(-1).x, t: moves.at(-1).t + 8 }])).toBeCloseTo(2, 6);
+    // Speeding up to the lift: the end speed, not the average.
+    const flick = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(step => ({ x: 400 - step * step * 2, t: 1000 + 8 * step }));
+    expect(releaseVelocity(flick)).toBeGreaterThan((flick[0].x - flick.at(-1).x) / (flick.at(-1).t - flick[0].t));
+    // Held still 200 ms before lifting: no speed.
+    expect(releaseVelocity([...moves, { x: moves.at(-1).x, t: moves.at(-1).t + 200 }])).toBe(0);
+    expect(releaseVelocity([{ x: 100, t: 0 }])).toBe(0);
   });
 
   test('the slide starts at the release speed and slows to rest; past an end the row follows at half speed', () => {
@@ -206,11 +207,11 @@ describe('the card', () => {
     // A slow drag three cells left (the finger stops before it lifts): three dogs on.
     expect(await swipe(row, { dx: -slot * 3, ms: 3000 })).toBe(true);
     expect(value.onSelect.mock.calls.at(-1)).toEqual([16]);
-    // A casual swipe (1.5 dp/ms) from there back: one dog, though the finger
-    // carried the row further.
-    await swipe(row, { dx: slot * 2, ms: (slot * 2) / 1.5 });
-    expect(value.onSelect.mock.calls.at(-1)).toEqual([15]);
-    // A fast flick (4 dp/ms): three dogs.
+    // A casual swipe back (1.5 dp/ms) that carried the row one cell: it
+    // glides 40dp on from there, to the nearest dog — two back from 狗 16.
+    await swipe(row, { dx: slot, ms: slot / 1.5, steps: 4 });
+    expect(value.onSelect.mock.calls.at(-1)).toEqual([8]);
+    // A hard flick back (4 dp/ms): past the first, to 狗 12.
     await swipe(row, { dx: slot * 1.2, ms: (slot * 1.2) / 4 });
     expect(value.onSelect.mock.calls.at(-1)).toEqual([12]);
     // A tap on a side face picks it straight away.
@@ -249,6 +250,23 @@ describe('the card', () => {
     // flinging toward the start from it, never past 狗 12.
     await swipe(row, { dx: 300, ms: 30 });
     expect(value.onSelect.mock.calls.at(-1)).toEqual([12]);
+  });
+
+  test('‹ › at the two ends move one dog, read as 上一隻／下一隻, and are gone at an end', async () => {
+    const value = switcher();
+    await mount({ switcher: value });
+    const previous = byTestId('dog-card-step-previous');
+    const next = byTestId('dog-card-step-next');
+    expect(previous[0].props.accessibilityLabel).toBe('上一隻');
+    expect(next[0].props.accessibilityLabel).toBe('下一隻');
+    // 48dp targets.
+    expect(StyleSheet.flatten(next[0].props.style({ pressed: false }))).toMatchObject({ width: touch.min, height: touch.min });
+    await act(async () => next[0].props.onPress());
+    expect(value.onSelect.mock.calls.at(-1)).toEqual([8]);
+    // On the first dog: no ‹.
+    await act(async () => renderer.update(<DogCard card={model(12, '狗 12')} switcher={value} />));
+    expect(byTestId('dog-card-step-previous')).toHaveLength(0);
+    expect(byTestId('dog-card-step-next')).toHaveLength(1);
   });
 
   test('TalkBack: 下一隻／上一隻 on the middle face, only where there is a dog that way', async () => {

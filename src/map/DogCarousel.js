@@ -10,22 +10,21 @@ import { t } from '../i18n';
 //
 // The row moves itself (a responder and one Animated value), not a
 // ScrollView (2026-10-14, tried on a phone): Android's own fling and snap
-// could not be told how far to go — a normal swipe went two dogs, and holding
-// it to one dog made a fast flick go one too. Here (releaseTarget):
+// could not be told how far to go. Here (releaseTarget):
 // - while the finger is down the row follows it 1:1; past an end it goes on
 //   at half the finger's speed (the edge bounce);
-// - a drag (the finger down longer than FLICK_MAX_MS, or let go nearly
-//   still): the dog nearest where it was let go, however far that is; no
-//   momentum;
-// - a flick (short and still moving when let go): from the dog it began on,
-//   as far as the release speed carries under Android's own fling physics
-//   (OverScroller: distance grows with speed^1.74), in whole dogs, at least
-//   one — a casual swipe is one however far the finger carried the row, a
-//   medium flick two or three, a hard one to the end of the list;
-// - then, on the native driver, a decelerating slide that starts at the
-//   release speed, runs a few dp past the dog and settles back on a spring
-//   (a drag let go settles on the spring alone); past an end, back to the end
-//   dog. No wrap-around.
+// - let go, the row glides on from where it is by the momentum it has — the
+//   release speed (the finger's over its last 50 ms) under Android's own
+//   fling curve (OverScroller: distance grows with speed^1.74), with more
+//   friction — and stops on the dog nearest that point. Let go nearly still:
+//   no glide, the nearest dog. The glide is counted from where the row is,
+//   never from where the drag began, so the row never runs on and then comes
+//   back past where it was let go (2026-10-14, the fourth phone try). A flick
+//   past the slop moves at least one dog; a hard one reaches the end;
+// - the slide starts at the release speed and slows to that dog on the
+//   native driver, runs a few dp past and settles back on a spring (let go
+//   still: the spring alone); past an end, back to the end dog. No
+//   wrap-around. ‹ › at the two ends move one dog at a time.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
@@ -45,27 +44,23 @@ export const BOUNCE = Math.round(carousel.slot * 0.75);
 export const RUBBER = 0.5;
 // A horizontal move this long (dp) makes it a drag of the row, not a tap.
 export const SLOP = 8;
-// A flick: the finger down no longer than this (ms) and still moving at
-// least this fast (dp/ms) when it lifts. Measured on emulator-5562: casual
-// swipes of 200–400 ms let go at 0.25–0.4 dp/ms and had carried the row 1.3–
-// 1.8 cells — by position alone that is often two dogs, the phone's
-// complaint; as flicks they go one. Drags across several cells last longer.
-export const FLICK_MAX_MS = 400;
+// Let go slower than this (dp/ms) the row does not glide on.
 export const FLING_VELOCITY = 0.25;
-// The flick's reach (2026-10-14, the third phone try: a hard flick must reach
-// the end; no cap): Android's OverScroller spline, distance = k × speed^e
-// with e = r / (r − 1), r = ln 0.78 / ln 0.9 (its DECELERATION_RATE) — the
-// same curve as every Android list's fling, only with more friction (k) so a
-// whole dog is a bigger step than a list row. k puts the step from one dog to
-// two at 2 dp/ms (2 000 dp/s, the top of a casual swipe): in a 64dp slot, 1
-// dog below 2 dp/ms, 2 to 2.5, 3 to 3.1, 4–5 to 3.9, 7 at 5, 10 at 6, 17 at
-// 8 (Android's fastest fling) — a hard flick reaches the end of any list.
+// The glide (2026-10-14): Android's OverScroller spline, distance = k ×
+// speed^e with e = r / (r − 1), r = ln 0.78 / ln 0.9 (its
+// DECELERATION_RATE) — the curve every Android list flings by — with k for
+// a row of 64dp dogs: 1 dp/ms glides 20dp (a third of a dog), 2 dp/ms 67, 3
+// 135, 4 222, 5 328, 6 452, 8 738 (Android's fastest fling, 11 dogs). A
+// casual swipe adds little to where the finger left the row; a hard flick
+// runs to the end. To be checked on the phone (DogCarousel log lines).
 const DECELERATION_RATE = Math.log(0.78) / Math.log(0.9);
 export const FLING_EXPONENT = DECELERATION_RATE / (DECELERATION_RATE - 1);
-export const FLING_K = (1.5 * carousel.slot) / 2 ** FLING_EXPONENT;
-// The velocity is the finger's over its last this many ms (like Android's
-// VelocityTracker), not over the whole gesture.
-const VELOCITY_WINDOW_MS = 100;
+export const FLING_K = 20;
+// The release speed is the finger's over its last this many ms (the last
+// two moves at least): a flick speeds up to the end, a longer average reads
+// it slow.
+export const VELOCITY_WINDOW_MS = 50;
+const LIFT_FRAME_MS = 20;
 // The slide to the chosen dog: it starts at the release speed and slows to
 // rest (ease-out cubic), between these durations; it runs LANDING_OVERSHOOT
 // dp past the dog and settles back on LANDING_SPRING (damping ratio 0.68).
@@ -83,26 +78,48 @@ export const offsetOf = index => BOUNCE + index * carousel.slot;
 /** Which slot `x` (the row's offset) has in the middle; past an end, the end dog. */
 export const slotAt = (x, count) => Math.max(0, Math.min(count - 1, Math.round((x - BOUNCE) / carousel.slot)));
 
-/** A flick, not a drag: short, and still moving when let go. */
-export const isFlick = (velocity, duration) => duration <= FLICK_MAX_MS && Math.abs(velocity) >= FLING_VELOCITY;
+/** How far (dp) the row glides on after a release at `velocity` dp/ms. */
+export const flingDistance = velocity => (Math.abs(velocity) < FLING_VELOCITY ? 0
+  : FLING_K * Math.abs(velocity) ** FLING_EXPONENT);
 
 /**
- * Where a drag or flick let go lands (pure).
+ * Where a release lands (pure): the dog nearest where the row glides to
+ * from where it is. A flick that would stay on the dog it began on moves
+ * one on.
  * @param from the dog (index) in the middle when the finger went down
  * @param x the row's offset when let go
  * @param velocity dp/ms, positive toward later dogs (the finger moving left)
- * @param duration ms from the finger down to up
  * @param count how many dogs
  * @returns the index to slide to
  */
-export function releaseTarget({ from, x, velocity, duration, count }) {
-  if (!isFlick(velocity, duration)) return slotAt(x, count);
-  const dogsAway = Math.max(1, Math.round(flingDistance(velocity) / carousel.slot));
-  return Math.max(0, Math.min(count - 1, from + Math.sign(velocity) * dogsAway));
+export function releaseTarget({ from, x, velocity, count }) {
+  const glide = Math.sign(velocity) * flingDistance(velocity);
+  const index = slotAt(x + glide, count);
+  if (glide && index === from) return Math.max(0, Math.min(count - 1, from + Math.sign(velocity)));
+  return index;
 }
 
-/** How far (dp) a fling at `velocity` dp/ms carries (OverScroller's spline, more friction). */
-export const flingDistance = velocity => FLING_K * Math.abs(velocity) ** FLING_EXPONENT;
+/**
+ * The finger's speed when it lifted (dp/ms, positive toward later dogs: the
+ * finger moving left), over its last VELOCITY_WINDOW_MS (at least the last
+ * two moves).
+ * @param samples [{ x: pageX dp, t: ms }] in order
+ */
+export function releaseVelocity(samples) {
+  const points = [...samples];
+  // The lift comes a frame after the last move, at its place: that is not a
+  // stop. A finger held still longer before it lifts is.
+  if (points.length > 2 && points.at(-1).x === points.at(-2).x
+    && points.at(-1).t - points.at(-2).t <= LIFT_FRAME_MS) points.pop();
+  if (points.length < 2) return 0;
+  const last = points[points.length - 1];
+  let first = points[points.length - 2];
+  for (let index = points.length - 2; index >= 0 && last.t - points[index].t <= VELOCITY_WINDOW_MS; index -= 1) {
+    first = points[index];
+  }
+  const elapsed = last.t - first.t;
+  return elapsed > 0 ? -(last.x - first.x) / elapsed || 0 : 0;
+}
 
 /** The slide's duration: it begins at the release speed (ease-out cubic starts at 3× its mean speed). */
 export function snapDuration(distance, velocity) {
@@ -202,7 +219,7 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
       here.current = x;
       position.setValue(x);
       current.samples.push({ x: pageX, t: timestamp });
-      while (current.samples.length > 2 && timestamp - current.samples[0].t > VELOCITY_WINDOW_MS) {
+      while (current.samples.length > 8 && timestamp - current.samples[1].t > VELOCITY_WINDOW_MS) {
         current.samples.shift();
       }
     },
@@ -215,20 +232,23 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     if (!current) return;
     const { pageX, timestamp } = event.nativeEvent;
     const samples = [...current.samples, { x: pageX, t: timestamp }];
-    const first = samples[0];
-    const last = samples[samples.length - 1];
-    const elapsed = last.t - first.t;
-    // The finger moving left brings later dogs: the row's offset grows.
-    const velocity = elapsed > 0 ? -(last.x - first.x) / elapsed : 0;
-    const duration = timestamp - (current.t0 ?? first.t);
-    const flick = isFlick(velocity, duration);
-    const index = releaseTarget({ from: current.from, x: here.current, velocity, duration, count });
+    const velocity = releaseVelocity(samples);
+    const index = releaseTarget({ from: current.from, x: here.current, velocity, count });
     at.current = index;
-    slideTo(index, flick ? velocity : 0);
+    slideTo(index, Math.abs(velocity) >= FLING_VELOCITY ? velocity : 0);
     const dog = dogs[index];
     if (dog && dog.slaveId !== currentId) onSelect?.(dog.slaveId);
   };
   useEffect(() => () => sliding.current?.stop(), []);
+  // ‹ ›: the dog before or after the open one, with the same landing.
+  const openIndex = indexOf(currentId);
+  const step = direction => {
+    const index = Math.max(0, Math.min(count - 1, at.current + direction));
+    if (index === at.current) return;
+    at.current = index;
+    slideTo(index);
+    onSelect?.(dogs[index].slaveId);
+  };
   // The dog opened another way (a tap on the map, TalkBack), or the dogs
   // changed: the row follows, sliding when it moves to another dog.
   const idsKey = dogs.map(dog => dog.slaveId).join(',');
@@ -330,8 +350,33 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
             );
           })}
         </Animated.View>
+        {/* ‹ › at the two ends: one dog at a time (2026-10-14), none past an end. */}
+        {openIndex > 0 && (
+          <Step side="previous" onPress={() => step(-1)} styles={styles} colors={colors} />
+        )}
+        {openIndex < count - 1 && (
+          <Step side="next" onPress={() => step(1)} styles={styles} colors={colors} />
+        )}
       </View>
     </View>
+  );
+}
+
+/** A small muted ‹ or › at one end of the row, a 48dp target. */
+function Step({ side, onPress, styles, colors }) {
+  const next = side === 'next';
+  return (
+    <Pressable
+      testID={`dog-card-step-${side}`}
+      accessibilityRole="button"
+      accessibilityLabel={next ? t('c1291') : t('c1292')}
+      onPress={onPress}
+      style={({ pressed }) => [styles.step, next ? styles.stepNext : styles.stepPrevious, pressed && styles.pressed]}
+    >
+      <View style={next ? null : styles.flip}>
+        <Glyph name="chevron" color={colors.textMuted} size={sizes.card.carousel.stepIcon} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -383,5 +428,18 @@ const getStyles = makeStyles(theme => {
     // A side face pressed dims (no square overlay on a round face; the row
     // then slides to it).
     pressed: { opacity: 0.6 },
+    // ‹ ›: 48dp targets at the row's two ends, level with the faces.
+    step: {
+      position: 'absolute',
+      top: space.xs + (carousel.face[0] - touch.min) / 2,
+      width: touch.min,
+      height: touch.min,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.full,
+    },
+    stepPrevious: { left: 0 },
+    stepNext: { right: 0 },
+    flip: { transform: [{ rotate: '180deg' }] },
   });
 });

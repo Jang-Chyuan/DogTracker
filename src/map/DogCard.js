@@ -88,7 +88,7 @@ const getACTIVITY_TONE = makeStyles(theme => {
 
 /**
  * The round 「!」 of a problem (red) or a warning (amber) row (2026-10-14):
- * in front of the label, in the card's side margin, level with the label —
+ * after the label, at the label column's right edge, just before the value —
  * it takes no width from the value or the address, and no height.
  */
 function Mark({ tone }) {
@@ -96,7 +96,7 @@ function Mark({ tone }) {
   const styles = useStyles(getStyles);
   const TONE = useStyles(getTONE);
   return (
-    <View style={styles.mark} pointerEvents="none">
+    <View style={styles.mark}>
       <BangGlyph
         size={sizes.card.labelMark}
         background={TONE[tone].badge}
@@ -182,11 +182,11 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
       ]}
       testID={`dog-card-row-${row.key}`}
     >
-      <View style={[styles.labelCell, { width: stacked ? undefined : labelWidth }]}>
-        {markTone && <Mark tone={markTone} />}
+      <View style={[styles.labelCell, stacked ? styles.labelCellStacked : { width: labelWidth }]}>
         <Text style={styles.rowLabel} accessible={false}>
           {row.label}
         </Text>
+        {markTone && <Mark tone={markTone} />}
       </View>
       <View style={styles.rowValue}>
         <View style={styles.rowTexts}>
@@ -531,7 +531,6 @@ const DogCard = forwardRef(function DogCard(
       <Animated.View style={[styles.body, { opacity: bodyFade }]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
         bounces={false}
         scrollEventThrottle={16}
         onScroll={event => {
@@ -646,10 +645,7 @@ const getStyles = makeStyles(theme => {
     body: { flexShrink: 1 },
     // Laid out like the rows, under them, and never seen.
     reserve: { position: 'absolute', left: 0, right: 0, top: 0, opacity: 0 },
-    // Out to the card's edges (the 「!」 in front of a label sits in the
-    // side margin, and a scroll view cuts off what is outside it).
-    scroll: { flexGrow: 0, flexShrink: 1, marginHorizontal: -layout.cardPadding },
-    scrollContent: { paddingHorizontal: layout.cardPadding },
+    scroll: { flexGrow: 0, flexShrink: 1 },
     // 「↗ 320 m」 at the first row's right end; under its words at a large font.
     distanceEnd: { alignItems: 'flex-end', flexShrink: 0, marginLeft: space.s },
     distanceUnder: { alignSelf: 'flex-start', alignItems: 'flex-start', marginTop: space.xs },
@@ -672,15 +668,21 @@ const getStyles = makeStyles(theme => {
     rowTwoLine: { minHeight: sizes.card.rowTwoLine },
     rowTarget: { minHeight: touch.cardRow },
     rowLine: { borderTopWidth: border.hairline, borderTopColor: colors.line },
-    // 72dp, wider when the system font makes the word longer (設計稿
-    // 「卡片狀態列在大字體」): the label never wraps, the value does.
+    // 80dp, wider when the system font makes the word longer (設計稿
+    // 「卡片狀態列在大字體」): the label never wraps, the value does. The
+    // label at its left (8dp in), the 「!」 at its right edge (4dp before
+    // the value): 「接收範圍」 (52dp) and the 14dp 「!」 fit side by side.
     labelCell: {
       minWidth: sizes.card.labelWidth,
       paddingLeft: space.s,
-      paddingRight: space.s,
+      paddingRight: space.xs,
       flexShrink: 0,
-      justifyContent: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
     },
+    // Label over the value (the largest fonts): the 「!」 right after the label.
+    labelCellStacked: { justifyContent: 'flex-start', gap: space.xs },
     rowLabel: { ...type.caption, color: colors.textMuted },
     rowValue: {
       flex: 1,
@@ -694,16 +696,7 @@ const getStyles = makeStyles(theme => {
     detailInline: { ...type.small, color: colors.textMuted, fontWeight: type.body.fontWeight },
     detailLine: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     alertLine: { ...type.small, fontWeight: type.value.fontWeight, marginTop: space.xs },
-    // In front of the label text, mostly in the card's 16dp side margin
-    // (3dp from the label, 5dp from the card's edge), centred on the label.
-    mark: {
-      position: 'absolute',
-      left: sizes.card.labelMarkLeft,
-      top: 0,
-      bottom: 0,
-      width: sizes.card.labelMark,
-      justifyContent: 'center',
-    },
+    mark: { width: sizes.card.labelMark, flexShrink: 0, marginLeft: border.hairline * 2 },
     track: {
       minHeight: sizes.card.track,
       paddingVertical: space.xs,
