@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import Glyph from '../map/Glyph';
 import Skeleton from '../components/Skeleton';
-import { t } from '../i18n';
 import { timelinePresentation } from '../history/HistoryTimelinePresentation';
 
 import {
@@ -169,7 +168,8 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
   const note = interruptionText(node);
   const pill = nodePill(node);
   const pending = place?.state === 'pending';
-  const title = place?.state === 'found' || pending ? lines.title : t('c1256');
+  // No address (not found, offline, timed out): the place's coordinates.
+  const title = lines.title;
   return (
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
