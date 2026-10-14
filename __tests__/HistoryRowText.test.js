@@ -45,9 +45,9 @@ describe('one distance formatter', () => {
   test('the cursor reads like a row; the summary total stays km', () => {
     const model = { points: [{ time: T0 }, { time: T0 + 10 * MINUTE }], locations: [],
       sections: [move('moving', T0, T0 + 10 * MINUTE, 80)], distanceM: 80, durationMs: 10 * MINUTE, nodes: [] };
-    expect(cursorLabel(model, T0 + 5 * MINUTE)[1]).toBe('已移動 40 m');
-    expect(cursorLabel(model, T0)[1]).toBe('已移動 0 m');
-    expect(cursorLabel(model, T0 + 10 * MINUTE, 'phone')[1]).toBe('已走 80 m');
+    expect(cursorLabel(model, T0 + 5 * MINUTE)[1]).toBe('移動中・40 m');
+    expect(cursorLabel(model, T0)[1]).toBe('移動中・0 m');
+    expect(cursorLabel(model, T0 + 10 * MINUTE, 'phone')[1]).toBe('走路・已走 80 m');
     expect(movementSummary(model, 'dog')).toContain(km(80));
     expect(km(80)).toBe('0.1 km');
   });

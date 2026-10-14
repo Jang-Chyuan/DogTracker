@@ -220,7 +220,7 @@ test('a true gap inside the available visit cannot establish continuous still-he
   expect(walk).toMatchObject({ mode: 'walking', start: rows[25].time });
   expect(walk.countedDistanceM).toBeCloseTo(model.distanceM, 6);
   expect(model.distanceM).toBeGreaterThan(10);
-  expect(cursorLabel(model, middle, 'phone')[1]).toMatch(/^已走 /);
+  expect(cursorLabel(model, middle, 'phone')[1]).toMatch(/^走路・已走 /);
 });
 
 

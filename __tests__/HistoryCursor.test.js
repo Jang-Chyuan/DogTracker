@@ -34,6 +34,24 @@ describe('the cursor handle', () => {
   } });
   const props = { width: 400, height: 800, top: 100, bottom: 100, revision: 0 };
 
+  // 2026-10-14: a projection that fails (a busy map after a camera move) is
+  // asked again, so the label (which waits for it) is not left out for good.
+  test('a failed projection is asked again until the point is known', async () => {
+    const ref = mapRef();
+    const real = ref.current.pointForCoordinate.getMockImplementation();
+    ref.current.pointForCoordinate.mockImplementationOnce(async () => { throw new Error('busy'); });
+    ref.current.pointForCoordinate.mockImplementation(real);
+    const onProjection = jest.fn();
+    let renderer;
+    await Renderer.act(async () => { renderer = Renderer.create(<HistoryCursor {...props} mapRef={ref}
+      cursor={cursorAt(points[1])} points={points} onProjection={onProjection} />); });
+    await Renderer.act(async () => {});
+    expect(ref.current.pointForCoordinate.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(onProjection).toHaveBeenCalledTimes(1);
+    expect(onProjection.mock.calls[0][0].point.x).toBeCloseTo(150);
+    await Renderer.act(async () => renderer.unmount());
+  });
+
   test('sits over the cursor point and says its two lines to TalkBack', async () => {
     let renderer;
     await Renderer.act(async () => { renderer = Renderer.create(<HistoryCursor {...props} mapRef={mapRef()}

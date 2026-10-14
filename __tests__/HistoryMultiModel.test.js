@@ -1,7 +1,7 @@
 // 055b: one day of several dogs (H7) — the protagonist, the shared range,
 // the shared cursor and what the map draws for the others.
 import {
-  dayHasRecords, multiCursors, multiDayModel, multiMapPresentation, sharedCursorTime,
+  dayHasRecords, multiCursors, multiDayModel, multiMapPresentation, otherLines, sharedCursorTime,
 } from '../src/history/screen/HistoryMultiModel';
 import { historyMapPresentation } from '../src/history/screen/HistoryMapModel';
 import { historyTimeline } from '../src/history/HistoryTimeline';
@@ -125,12 +125,24 @@ describe('the map of several dogs', () => {
     expect(map.color).toBe(colors.route1);
   });
 
-  test('the others: 3dp, 50% before the cursor and 20% after, never dashed', () => {
+  // 2026-10-14: no before / after the cursor; solid, never dotted.
+  test('the others: 3dp solid at 50% all along, never dashed or dotted', () => {
     const others = map.lines.filter(line => line.color.startsWith(withAlpha(colors.route2, 1).slice(0, 14)));
     expect(others.length).toBeGreaterThan(0);
-    expect(others.every(line => line.width === 3 && !line.dashed)).toBe(true);
-    expect(others.some(line => line.color === withAlpha(colors.route2, opacity.routeBeforeCursor))).toBe(true);
-    expect(others.some(line => line.color === withAlpha(colors.route2, opacity.routeAfterCursor))).toBe(true);
+    expect(others.every(line => line.width === 3 && !line.dashed && !line.dotted)).toBe(true);
+    expect(others.every(line => line.color === withAlpha(colors.route2, opacity.routeOther))).toBe(true);
+  });
+
+  // The HistoryLine memo redraws a line only when its id changes: every line
+  // has an id that changes with its coordinates, and a key of its own dog.
+  test('every line has an id and a key; the others’ ids follow their coordinates', () => {
+    expect(map.lines.every(line => typeof line.id === 'string' && typeof line.key === 'string')).toBe(true);
+    expect(new Set(map.lines.map(line => line.key)).size).toBe(map.lines.length);
+    const edges = [{ start: at(0), end: at(1), mode: 'moving', from: { latitude: 25, longitude: 121 },
+      to: { latitude: 25, longitude: 121.001 } }];
+    const moved = [{ ...edges[0], to: { latitude: 25, longitude: 121.002 } }];
+    expect(otherLines(edges, colors.route2, undefined, 6)[0].id).not.toBe(otherLines(moved, colors.route2, undefined, 6)[0].id);
+    expect(otherLines(edges, colors.route2, undefined, 6)[0].key).toBe(`other6:solid:${at(0)}`);
   });
 
   test('a face for every other dog at its cursor point; the protagonist’s cursor carries its name', () => {
@@ -138,13 +150,14 @@ describe('the map of several dogs', () => {
     expect(map.cursor.face).toMatchObject({ name: '小黑' });
   });
 
-  test('middle time markers only where the cursor has been; both ends always', () => {
+  // 2026-10-14: the middle times do not depend on the cursor any more.
+  test('every middle time marker wherever the cursor is; both ends always', () => {
     const long = multiDayModel([subject(4, walk(4, 0, 240))], { ...options, protagonist: 4 });
     const time = long.range.start + 50 * MINUTE;
     const full = historyMapPresentation(long.main, { color: colors.route1 });
     const early = historyMapPresentation(long.main, { color: colors.route1, cursor: multiCursors(long, time)[4] });
     expect(full.times.some(marker => !marker.end && marker.time > time)).toBe(true);
-    expect(early.times.every(marker => marker.end || marker.time <= time)).toBe(true);
+    expect(early.times.map(marker => marker.time)).toEqual(full.times.map(marker => marker.time).filter(t => t !== time));
     expect(early.times.filter(marker => marker.end)).toHaveLength(2);
   });
 

@@ -13,7 +13,8 @@ import { useTheme, getTheme, resolveStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createHistoryHolds } from '../placement/IndoorHold';
 import { endOfDay, splitFutureRows, startOfToday } from '../tracking/TodayDistance';
-import { cursorHaptic } from '../history/screen/HistoryScreenCursor';
+import { cursorHaptic, rowKey, rowSelection } from '../history/screen/HistoryScreenCursor';
+import { shownRowAt, timelinePresentation } from '../history/HistoryTimelinePresentation';
 import { nearestRecord } from '../history/screen/HistoryScreenRange';
 import {
   dateNavigation,
@@ -895,7 +896,13 @@ export function useHistoryScreen({
   // A 沒有資料 row was tapped: the cursor waits at the fix before the break
   // (判定表「游標在沒資料的時段」: grey dashed ring, 「這段沒資料（最後 10:29）」).
   const [inGap, setInGap] = useState(false);
-  const [pressed, setPressed] = useState(null);
+  // The selected list row (2026-10-14, DESIGN.md「時間軸清單」): the row the
+  // cursor was dragged or tapped into on the map (source 'map', or 'stop' for
+  // a stop number), or the row tapped in the list ('list'); null until the
+  // viewer picks one (the map draws the route evenly). HistoryScreenCursor.rowSelection.
+  const [selected, setSelected] = useState(null);
+  // A tapped movement / 沒有資料 row's segment for the map to frame.
+  const [segmentFrame, setSegmentFrame] = useState(null);
   const [focus, setFocus] = useState(null);
   const time = dayModel ? sharedCursorTime(dayModel, cursorTime) : null;
   const cursors = useMemo(
@@ -928,14 +935,38 @@ export function useHistoryScreen({
       const last = points[points.length - 1].time;
       setCursorTime(snapped === last && !gap ? null : snapped);
       setInGap(gap);
-      setPressed(node && !gap ? node.start : null);
+      // A tapped row is that row; otherwise the row the cursor landed in.
+      const row = node?.type ? node : shownRowAt(model.nodes, snapped);
+      const source = node?.type ? 'list' : action === 'stop' ? 'stop' : 'map';
+      setSelected(previous => (previous?.key === rowKey(row) && previous.source === source && source !== 'stop'
+        ? previous : rowSelection(row, source)));
+      // A tapped movement / 沒有資料 row frames its segment (a break: the fixes
+      // on both sides of it) instead of only moving to the cursor.
+      if (source === 'list' && ['movement', 'gap'].includes(row.type)) {
+        const ends = row.type === 'gap'
+          ? [points.filter(p => p.time <= row.start).pop(), points.find(p => p.time >= row.end)].filter(Boolean)
+          : points.filter(p => p.time >= row.start && p.time <= row.end);
+        if (ends.length) {
+          setSegmentFrame({ key: Date.now(), coordinates: ends.map(p => ({ latitude: p.latitude, longitude: p.longitude })) });
+          return;
+        }
+      }
       // A node or a stop number moves the map there (220 ms); a tap on the
-      // route or a movement row only when the cursor would be out of sight.
+      // route only when the cursor would be out of sight.
       if (action !== 'drag')
         setFocus({ key: Date.now(), time: snapped, action });
     },
     [model, cursor],
   );
+  // A new range or day rebuilds the list: a selected row that is gone is let go.
+  const listedNodes = model?.nodes;
+  useEffect(() => {
+    if (!selected) return;
+    if (!Array.isArray(listedNodes) || !timelinePresentation(listedNodes).some(row => rowKey(row) === selected.key)) {
+      setSelected(null);
+      setSegmentFrame(null);
+    }
+  }, [listedNodes]); // eslint-disable-line react-hooks/exhaustive-deps
   // ---- the day ------------------------------------------------------------
   const changeDay = useCallback(
     next => {
@@ -951,7 +982,8 @@ export function useHistoryScreen({
       setDraft(null);
       setCursorTime(null);
       setInGap(false);
-      setPressed(null);
+      setSelected(null);
+      setSegmentFrame(null);
       haptic('tick');
       onDayChange?.(start);
     },
@@ -1190,7 +1222,8 @@ export function useHistoryScreen({
       setInGap(restored.inGap);
     } else setCursorTime(presetCursor != null ? clock() - presetCursor : null);
     if (!restored) setInGap(false);
-    setPressed(null);
+    setSelected(null);
+    setSegmentFrame(null);
     setDraft(null);
     // Once per opening.
   }, [sessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1218,12 +1251,12 @@ export function useHistoryScreen({
     () => {
       if (rangePending || !dayModel) return null;
       const started = Date.now();
-      const build = () => multiMapPresentation(dayModel, cursors, look, theme);
+      const build = () => multiMapPresentation(dayModel, cursors, look, theme, selected);
       const presentation = diagnostic ? diagnostic.measure('map-presentation', dayModel.main?.points.length ?? 0, build) : build();
       buildCost.current = modelBuildCost.current + Date.now() - started;
       return presentation;
     },
-    [dayModel, cursors, look, theme, diagnostic, rangePending],
+    [dayModel, cursors, look, theme, diagnostic, rangePending, selected],
   );
   const anyData = !!dayModel?.subjects.some(s => s.hasData);
   /** The chips (上方膠囊): every dog shown, the protagonist outlined. */
@@ -1267,7 +1300,8 @@ export function useHistoryScreen({
       setSelection(state => ({ ...state, protagonist: id }));
       // 換主角時的共用時刻: the time stays (it no longer follows the newest fix).
       if (cursorTime == null && time != null) setCursorTime(time);
-      setPressed(null);
+      setSelected(null);
+      setSegmentFrame(null);
       setInGap(false);
       // 換主角時的地圖: always to the new protagonist's cursor (a chosen move).
       setFocus({ key: Date.now(), time: null, action: 'protagonist', id });
@@ -1356,7 +1390,7 @@ export function useHistoryScreen({
     // The export (H9) captures the whole day's model and the dogs' looks.
     dayModel: rangePending ? null : dayModel, look,
     target, subject, entryId, day, dayEnd, today, now, todayStart, navigation, model, range, track, manual: !!manual,
-    following, cursor, cursors, pressed, focus, map: rangePending ? null : map, color, loading: loading || rangePending,
+    following, cursor, cursors, selected, segmentFrame, focus, map: rangePending ? null : map, color, loading: loading || rangePending,
     rangePending,
     panelScope: `${sessionKey}|${owner ?? ''}|${cloud?.owner ?? ''}`,
     rangePreviewDelay: Math.max(120, buildCost.current * 4),

@@ -126,9 +126,15 @@ export const opacity = {
   // The outer ring of the end: the history list's end node, the map's end
   // time marker and the PNG's (route colour at this opacity).
   endRing: 0.33,
-  routeUpcoming: 0.3,
-  routeBeforeCursor: 0.5,
-  routeAfterCursor: 0.2,
+  // The history route (2026-10-14, no before/after the cursor): the subject's
+  // line; the selected movement row's segment; the other dogs' lines. Nothing
+  // is faded below routeLine when a row is selected: light route1 is only
+  // 3.2:1 on the map's land at full strength, and dark lines under 75% fall
+  // below 3:1 over a highway (DesignTokens.test.js), so the dark theme
+  // brightens the selected segment instead.
+  routeLine: 1,
+  routeSelected: 1,
+  routeOther: 0.5,
   // The protagonist's face glow among several dogs (H7), in its route colour.
   faceGlow: 0.28,
   // 070「正在更新狗的位置」: the dogs' faces while a return to the app catches
@@ -403,8 +409,16 @@ export const size = {
   },
   rangeRing: { radiusM: 1000 },
   route: {
+    // The history map (2026-10-14, the list's own line styles): on foot a
+    // round-dotted line (dots as wide as the line, a gap dotGapScale times
+    // that), a car or ride solid `vehicle`; the selected row's segment
+    // `selectedExtra` wider on a `casing` each side. The other dogs
+    // `secondary`, solid. `drive` is the PNG's car line.
     walk: 4,
-    upcoming: 3,
+    vehicle: 3,
+    selectedExtra: 2,
+    casing: 2,
+    dotGapScale: 1.25,
     secondary: 3,
     drive: 2,
     faded: 2,
@@ -412,6 +426,8 @@ export const size = {
     breakAfterMs: 180000,
   },
   stopMarker: { size: 22, border: border.strong },
+  // The selected movement row's glyph at the middle of its segment (2026-10-14).
+  historyMovementIcon: { size: 24, glyph: 16 },
   timeMarker: {
     size: 7,
     border: border.graphicFine,
@@ -474,6 +490,8 @@ export const size = {
     node: {
       start: 16,
       stop: 24,
+      // A stay the list shows without a number (2026-10-14): a small dot.
+      plainStop: 10,
       end: 18,
       resume: 12,
       hold: 24,

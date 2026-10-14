@@ -38,13 +38,14 @@ import {
 import { MAP_LOAD_TIMEOUT_MS } from './TrackingMap';
 import PhoneLocationOverlay from './PhoneLocationOverlay';
 import HistoryCursor from '../mapHistory/HistoryCursor';
-import { cursorProjectionKey, cursorLabelPlacement, cursorCameraTarget, measuredCursorFrame } from '../mapHistory/CursorLabelPlacement';
+import { cursorProjectionKey, cursorLabelPlacement, cursorCameraTarget, measuredCursorFrame, labelBoxAround, timeUnderLabel } from '../mapHistory/CursorLabelPlacement';
 import {
   CursorFaceView,
   CursorMarkerView,
   cursorAnchor,
   cursorLabelFootprint,
   IndoorMarkerView,
+  MovementIconView,
   StopMarkerView,
   TimeMarkerView,
 } from '../mapHistory/HistoryMapMarkers';
@@ -471,19 +472,34 @@ function CursorMarker({ cursor, color, labelHidden = false, measurementKey, onLa
 const TIME_APART_DP = 48;
 
 // One drawn piece of the history route. Re-rendered only when the piece
-// itself changed (its id: times, length, width, colour, dash), so a cursor
-// move leaves every other piece's thousands of points alone (067).
+// itself changed (its id: times, coordinates, width, colour, dash, dots,
+// casing; HistoryMapModel.drawnLine), so a cursor move or a new selection
+// leaves every other piece's thousands of points alone (067). A line without
+// an id is always redrawn (the other dogs' lines had none and went stale).
+// Dots (the list's walking track, 2026-10-14): round caps with a pattern,
+// which react-native-maps turns into Google's Dot (a circle as wide as the
+// line) and Gap items; the pattern is in pixels, so the dots keep their size
+// at every zoom. The selected segment has its own solid casing above the rest.
+export const sameHistoryLine = (before, after) =>
+  before.line.id != null &&
+  before.line.id === after.line.id &&
+  before.casing === after.casing &&
+  before.dashed === after.dashed;
 const HistoryLine = React.memo(
   function HistoryLine({ line, casing, dashed }) {
+    const dots = line.dotted ? dottedPattern(line.width) : undefined;
+    const ownCasing = line.casing;
     return (
       <>
-        {casing && (
+        {(ownCasing || casing) && (
           <Polyline
             coordinates={line.coordinates}
-            strokeColor={casing}
-            strokeWidth={line.width + 2}
-            zIndex={Z.route - 0.6}
+            strokeColor={ownCasing || casing}
+            strokeWidth={line.width + (ownCasing ? sizes.route.casing * 2 : 2)}
+            zIndex={ownCasing ? Z.route + 0.4 : Z.route - 0.6}
             lineDashPattern={line.dashed ? dashed : undefined}
+            lineCap={line.dashed ? 'butt' : 'round'}
+            lineJoin="round"
             tappable={false}
           />
         )}
@@ -492,8 +508,8 @@ const HistoryLine = React.memo(
           geodesic={false}
           strokeColor={line.color}
           strokeWidth={line.width}
-          zIndex={line.dashed ? Z.route - 0.5 : Z.route}
-          lineDashPattern={line.dashed ? dashed : undefined}
+          zIndex={line.selected ? Z.route + 0.5 : line.dashed ? Z.route - 0.5 : Z.route}
+          lineDashPattern={line.dashed ? dashed : dots}
           lineCap={line.dashed ? 'butt' : 'round'}
           lineJoin="round"
           tappable={false}
@@ -501,15 +517,16 @@ const HistoryLine = React.memo(
       </>
     );
   },
-  (before, after) =>
-    before.line.id === after.line.id &&
-    before.casing === after.casing &&
-    before.dashed === after.dashed,
+  sameHistoryLine,
 );
+
+// A dotted line's pattern: a Dot (its length is ignored) and a gap of
+// dotGapScale line widths, in pixels.
+const dottedPattern = width => [1, PixelRatio.getPixelSizeForLayoutSize(Math.round(width * sizes.route.dotGapScale))];
 
 // Live snapshot age still updates the map controls. Reuse unchanged history
 // geometry until its route, stop handler, zoom or theme context changes.
-const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false, cursorLabelHidden = false, measurementKey, onLabelMetrics }) {
+const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false, cursorLabelHidden = false, measurementKey, onLabelMetrics, labelBox = null, heading = 0 }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
     () => [4, 4].map(length => PixelRatio.getPixelSizeForLayoutSize(length)),
@@ -520,7 +537,7 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
   const apartM = metresPerDp * TIME_APART_DP;
   // Until the map has told its zoom, only the ends (a middle time drawn and
   // then taken away again flickers).
-  const times = useMemo(
+  const spaced = useMemo(
     () =>
       !metresPerDp
         ? route.times.filter(marker => marker.end)
@@ -529,13 +546,22 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
         : route.times,
     [route.times, route.places, apartM, metresPerDp],
   );
+  // A time marker under the cursor's label is left out until the label moves
+  // on (2026-10-14: 「09:00」 sat under 「09:00 走路・已走 1.4 km」).
+  const cursorAt = route.cursor?.coordinate;
+  const times = useMemo(
+    () => (labelBox && cursorAt && metresPerDp
+      ? spaced.filter(marker => !timeUnderLabel(marker.coordinate, cursorAt, labelBox, metresPerDp, heading))
+      : spaced),
+    [spaced, labelBox, cursorAt, metresPerDp, heading],
+  );
   return (
     <>
       {route.lines.map(line => (
         // A dashed line and a solid one are never the same native line: the
         // SDK keeps an old dash pattern when it is taken away.
         <HistoryLine
-          key={`route-${line.dashed ? 'dashed' : 'solid'}-${line.start}`}
+          key={line.key ?? `route-${line.dashed ? 'dashed' : line.dotted ? 'dotted' : 'solid'}-${line.start}`}
           line={line}
           casing={isDark ? colors.routeCasing : null}
           dashed={dashed}
@@ -561,7 +587,7 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
         <RouteMarker
           key={place.key}
           coordinate={place.coordinate}
-          look={`${place.kind}:${place.label ?? place.number}`}
+          look={`${place.kind}:${place.label ?? place.number}:${!!place.selected}`}
           zIndex={place.kind === 'indoor' ? 26 : 25}
           label={place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.label ?? place.number })}
           onPress={onStopPress ? event => onStopPress(place, event) : undefined}
@@ -569,10 +595,15 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
           {place.kind === 'indoor' ? (
             <IndoorMarkerView />
           ) : (
-            <StopMarkerView number={place.number} label={place.label ?? null} color={route.color} />
+            <StopMarkerView number={place.number} label={place.label ?? null} color={route.color} selected={!!place.selected} />
           )}
         </RouteMarker>
       ))}
+      {route.icon && (
+        <RouteMarker key={route.icon.key} coordinate={route.icon.coordinate} look={route.icon.glyph} zIndex={22}>
+          <MovementIconView glyph={route.icon.glyph} color={route.color} />
+        </RouteMarker>
+      )}
       {route.cursor && (
         <CursorMarker cursor={route.cursor} color={route.color} labelHidden={cursorDragging || cursorLabelHidden}
           measurementKey={measurementKey} onLabelMetrics={onLabelMetrics} />
@@ -684,6 +715,9 @@ function GoogleTrackingMapRenderer({
   onCursorMove,
   onStopPress,
   historyFocus = null,
+  // A tapped movement / 沒有資料 row's segment ({ key, coordinates }): framed
+  // once per key, with the room the route framing leaves (2026-10-14).
+  historySegmentFrame = null,
   historyFrame = null,
   historyControls = [],
   supported,
@@ -1205,6 +1239,11 @@ function GoogleTrackingMapRenderer({
     : { hidden: true, box: null, pinSafe: true };
   const shownCursorPlacement = historyCameraMoving && cursorPlacement.box
     ? { ...cursorPlacement, box: null } : cursorPlacement;
+  // The label's box around the cursor point, the same object while it does
+  // not move: HistoryRoute (every marker of a long day) re-renders only then.
+  const labelAround = labelBoxAround(currentProjection, cursorSize, shownCursorPlacement);
+  const labelBoxKey = labelAround ? [labelAround.x, labelAround.y, labelAround.width, labelAround.height].map(Math.round).join(':') : '';
+  const labelBox = useMemo(() => labelAround, [labelBoxKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const hints = useMemo(
     () =>
       live && screenPoints
@@ -1537,8 +1576,9 @@ function GoogleTrackingMapRenderer({
     if (active()) onMapPress?.();
   };
   const routeCamera = historyRoute?.camera;
-  const frameRoute = (animated = true) => {
-    if (!usable || !routeCamera?.length) return;
+  const frameRoute = (animated = true, camera = routeCamera, segment = false) => {
+    if (!usable || !camera?.length) return;
+    const routeCamera = camera; // eslint-disable-line no-shadow
     const originalRoom = historyFramePadding(routeCamera, historyRoute?.cursor?.coordinate, HISTORY_FRAME);
     // A short map (a phone in landscape at half height) may not fit the whole
     // pin+label below the top band, or at all. 框住全部 still frames the route
@@ -1552,7 +1592,11 @@ function GoogleTrackingMapRenderer({
         ?? (viewRoom ? originalRoom : null)
       : originalRoom;
     if (!room) return;
-    const framing = overlayFramePadding(room, { topInset, bottomInset, overlayTop, overlayBottom });
+    // A segment keeps clear of 框住全部 at the lower right too: it can end in
+    // that corner, where a whole route rarely does.
+    const framing = overlayFramePadding(segment
+      ? { ...room, right: Math.max(room.right, touch.min + space.l + space.s) } : room,
+    { topInset, bottomInset, overlayTop, overlayBottom });
     // Held days retain many identical fixes; framedCoordinates only expands
     // a single point. Preserve street context for every tiny history span,
     // while keeping the half-screen padding/centering and larger routes intact.
@@ -1581,6 +1625,17 @@ function GoogleTrackingMapRenderer({
     // Once per press of 框住全部.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyFrame?.key, usable, measuredHistoryUI, controlsReady, cursorSize]);
+  const segmentFramed = useRef(null);
+  useEffect(() => {
+    if (!historySegmentFrame || segmentFramed.current === historySegmentFrame.key || !usable
+      || (measuredHistoryUI && (!controlsReady || !cursorSize)))
+      return;
+    segmentFramed.current = historySegmentFrame.key;
+    takeCamera();
+    frameRoute(true, historySegmentFrame.coordinates, true);
+    // Once per tapped row.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historySegmentFrame?.key, usable, measuredHistoryUI, controlsReady, cursorSize]);
   // A node of the list or a stop number: the cursor point comes into the
   // middle of the map above the panel (220 ms, motion.cursorJump).
   // 判定表「使用者拖過地圖之後的游標」: otherwise the map moves only when the
@@ -1945,6 +2000,8 @@ function GoogleTrackingMapRenderer({
               onLabelMetrics={setCursorMeasurement}
               onStopPress={onStopPress ? pressHistoryStop : undefined}
               metresPerDp={metresPerDp}
+              labelBox={cursorDragging ? null : labelBox}
+              heading={heading}
             />
           )}
           {slaveSegments.map((segment, index) => (

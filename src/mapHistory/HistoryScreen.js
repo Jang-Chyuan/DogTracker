@@ -51,6 +51,24 @@ import { isReduceMotion } from '../utils/reduceMotion';
 import { behindSheet } from '../utils/a11yFocus';
 import { fontScaleAtLeast } from '../utils/textScale';
 
+// After the viewer scrolls the list, the cursor does not scroll it for this long.
+export const HISTORY_LIST_SCROLL_PAUSE_MS = 3000;
+
+/**
+ * Where the list scrolls for the selected row (2026-10-14), or null: only
+ * for a row chosen on the map (a drag, a tap on the route, a stop number)
+ * that is not wholly in view; not while a finger is on the list or within
+ * HISTORY_LIST_SCROLL_PAUSE_MS of the viewer's own scroll (a stop number
+ * always). `box`: the row's { y, height } in the list; `state`: HistoryPanel's
+ * scrollState.
+ */
+export function followRowOffset(row, box, state, now = Date.now()) {
+  if (!row || row.source === 'list' || !box || !state) return null;
+  if (row.source !== 'stop' && (state.dragging || now - state.manualAt < HISTORY_LIST_SCROLL_PAUSE_MS)) return null;
+  if (box.y >= state.offset && box.y + box.height <= state.offset + state.height) return null;
+  return Math.max(0, box.y - space.s);
+}
+
 const OPEN_MOTION = LayoutAnimation.create(
   motion.rangeExpand.duration,
   LayoutAnimation.Types.easeOut,
@@ -368,7 +386,7 @@ ref) {
     onSheetOpen?.(sheetOpen);
   }, [sheetOpen, onSheetOpen]);
   const sheetRef = useRef(null);
-  const { model, subject, cursor, download } = screen;
+  const { model, subject, download } = screen;
   const downloading = download?.kind === 'downloading';
   const empty = !!model && !model.dayRecords;
   const hasRoute = !!model?.points.length && !downloading;
@@ -472,15 +490,19 @@ ref) {
     if (result?.type === 'offline') showTip(result.message);
   }, [screen, showTip]);
   // A new day, or a day without a route, closes the bar.
-  // The row of a stop number tapped on the map scrolls into view.
+  // The selected row follows the cursor (2026-10-14): a drag or a tap on the
+  // route scrolls the list to the row the cursor is in when that row is out
+  // of view — unless the viewer has a finger on the list or scrolled it in
+  // the last 3 s (HISTORY_LIST_SCROLL_PAUSE_MS); a stop number tapped on the
+  // map always brings its row into view. A row tapped in the list stays put.
   const focusKey = screen.focus?.key;
+  const rowBoxes = useRef({});
+  const rowBox = useCallback((key, y, height) => { rowBoxes.current[key] = { y, height }; }, []);
   useEffect(() => {
-    if (!focusKey || screen.focus.action !== 'stop') return;
-    const y = rows.current[screen.pressed];
-    if (y != null)
-      list.current?.scrollTo({ y: Math.max(0, y - 8), animated: !isReduceMotion() });
-    // Once per tap.
-  }, [focusKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const row = screen.selected;
+    const y = followRowOffset(row, row && rowBoxes.current[row.key], list.current?.scrollState?.());
+    if (y != null) list.current?.scrollTo({ y, animated: !isReduceMotion() });
+  }, [screen.selected]);
   // 換主角時清單捲到哪: to the stay the cursor is in, or the place before the
   // movement it is on, or the nearest place (unlit when it has no data then).
   useEffect(() => {
@@ -506,19 +528,8 @@ ref) {
     return () => clearTimeout(timer);
     // Once per switch.
   }, [focusKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The row the cursor is on: a pressed row, else the stay it is in (none
-  // while the protagonist has no data at the cursor's time).
-  const cursorTime = cursor?.stale ? null : cursor?.point?.time;
-  const stay =
-    cursorTime == null
-      ? null
-      : model?.locations.find(
-          n =>
-            ['stop', 'indoor'].includes(n.type) &&
-            cursorTime >= n.start &&
-            cursorTime <= n.end,
-        );
-  const selected = screen.pressed ?? stay?.start ?? null;
+  // The selected row (any type; none on opening): `${type}:${start}`.
+  const selectedKey = screen.selected?.key ?? null;
   // Stable row callbacks use the current screen without rerendering a long list.
   const latest = useRef({ screen, closeRange });
   latest.current = { screen, closeRange };
@@ -526,8 +537,8 @@ ref) {
     const { screen: current, closeRange: close } = latest.current;
     close();
     const action = ['movement', 'gap'].includes(node.type) ? 'route' : 'node';
-    current.moveCursor(node.start, action,
-      action === 'node' || node.type === 'gap' ? node : null);
+    // The row itself, so it is the selected one (and a movement row's segment is framed).
+    current.moveCursor(node.start, action, node);
   }, []);
   const rowLayout = useCallback((start, y) => {
     rows.current[start] = y;
@@ -645,9 +656,10 @@ ref) {
         <HistoryTimelineList
           model={model}
           color={screen.color}
-          selected={selected}
+          selectedKey={selectedKey}
           onPressNode={pressNode}
           onRowLayout={rowLayout}
+          onRowBox={rowBox}
         />
       </View>
     );

@@ -1246,6 +1246,7 @@ export default function MapScreen({
             : null
         }
         historyFrame={historyFrame}
+        historySegmentFrame={historical ? screen.segmentFrame ?? null : null}
         onHeading={setHeading}
         focusDog={focusDog}
         frameRequest={historical ? null : mapFrameRequest}

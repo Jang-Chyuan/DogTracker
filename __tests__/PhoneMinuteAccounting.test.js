@@ -208,7 +208,8 @@ test('the stay is preferred over the walk; the cursor and the list say the same 
   const pill = nodePill(stay).text;
   expect(pill).toBe(t('c127', { duration: listDuration(presentationDurationMs(stay)) }));
   const label = cursorLabel(model, source.start + 60000, 'phone')[1];
-  expect(label).toBe(t('c136', { duration: listDuration(presentationDurationMs(stay)) }));
+  // Its number too, as its row (2026-10-14: the cursor names the row).
+  expect(label).toBe(t('c1342', { number: stay.number, duration: listDuration(presentationDurationMs(stay)) }));
   // GPX keeps the stay's own observed span.
   const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] },
     range: { start: model.points[0].time, end: model.points.at(-1).time }, subject: 'phone' });

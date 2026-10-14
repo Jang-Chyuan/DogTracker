@@ -16,7 +16,7 @@ import { HAPTIC_EFFECTS, haptic } from '../src/utils/haptics';
 import NativeTrackingPlatform from '../specs/NativeTrackingPlatform';
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { phoneHistoryRow } from '../src/history/HistoryRows';
-import { colors, opacity } from '../src/theme/tokens';
+import { colors } from '../src/theme/tokens';
 import indoorAnchorGeometry from './fixtures/invented-indoor-anchor-geometry.json';
 
 const MINUTE = 60000;
@@ -26,13 +26,57 @@ const edge = (start, end, mode, extra = {}) => ({ start: at(start), end: at(end)
   from: { latitude: 25, longitude: 121 + start / 1000 }, to: { latitude: 25, longitude: 121 + end / 1000 }, ...extra });
 
 describe('the route on the map', () => {
-  test('on foot 4dp up to the cursor, 3dp at 30% after it; a car 2dp; nothing across a break', () => {
+  // 2026-10-14: the list's styles, one strength, no before / after the cursor.
+  test('on foot a 4dp dotted line, a car 3dp solid, all one strength; nothing across a break', () => {
     const lines = routeLines([edge(0, 1, 'walking'), edge(1, 2, 'walking'), edge(2, 3, 'driving'), edge(3, 10, 'gap'),
-      edge(10, 11, 'walking'), edge(11, 12, 'walking')], { color: colors.phone, cursorTime: at(11) });
-    expect(lines.map(line => [line.width, line.color, line.coordinates.length])).toEqual([
-      [4, colors.phone, 3], [2, colors.phone, 2], [4, colors.phone, 2],
-      [3, withAlpha(colors.phone, opacity.routeUpcoming), 2],
+      edge(10, 11, 'walking'), edge(11, 12, 'walking')], { color: colors.phone });
+    expect(lines.map(line => [line.width, line.color, line.dotted, line.casing, line.coordinates.length])).toEqual([
+      [4, colors.phone, true, null, 3], [3, colors.phone, false, null, 2], [4, colors.phone, true, null, 3],
     ]);
+    expect(new Set(lines.map(line => line.key)).size).toBe(lines.length);
+  });
+
+  test('the selected movement row: its segment 2dp wider on a casing; the rest unchanged', () => {
+    const edges = [edge(0, 1, 'walking'), edge(1, 2, 'walking'), edge(2, 3, 'driving'), edge(3, 4, 'driving'),
+      edge(4, 5, 'walking')];
+    const plain = routeLines(edges, { color: colors.phone });
+    const lines = routeLines(edges, { color: colors.phone,
+      selection: { type: 'movement', mode: 'driving', start: at(2), end: at(4) } });
+    expect(lines.map(line => [line.start, line.width, line.color, line.casing, line.selected])).toEqual([
+      [at(0), 4, colors.phone, null, false], [at(2), 5, colors.phone, colors.routeCasing ?? '#FFFFFF', true],
+      [at(4), 4, colors.phone, null, false],
+    ]);
+    // Pieces the selection does not touch keep their id and their very coordinates.
+    expect(lines[0].id).toBe(plain[0].id);
+    expect(lines[0].coordinates).toBe(plain[0].coordinates);
+    // A stay row emphasises no line.
+    expect(routeLines(edges, { color: colors.phone, selection: { type: 'stop', start: at(2), end: at(4) } })
+      .map(line => line.id)).toEqual(plain.map(line => line.id));
+  });
+
+  test('the dark theme never fades a segment: the selected one is brighter', () => {
+    const dark = { isDark: true, colors: { routeCasing: '#171211' }, opacity: { routeLine: 0.75, routeSelected: 1 } };
+    const edges = [edge(0, 1, 'walking'), edge(1, 2, 'driving')];
+    const lines = routeLines(edges, { color: '#FF8A78', theme: dark,
+      selection: { type: 'movement', mode: 'driving', start: at(1), end: at(2) } });
+    expect(lines.map(line => [line.color, line.casing])).toEqual([
+      [withAlpha('#FF8A78', 0.75), null], ['#FF8A78', '#171211']]);
+  });
+
+  test('a long day keeps its pieces when a row is selected far away (067)', () => {
+    const edges = Array.from({ length: 1000 }, (_, i) => edge(i, i + 1, 'walking'));
+    const plain = routeLines(edges, { color: colors.phone });
+    const lines = routeLines(edges, { color: colors.phone,
+      selection: { type: 'movement', mode: 'walking', start: at(950), end: at(960) } });
+    const kept = lines.filter(line => plain.some(other => other.id === line.id && other.coordinates === line.coordinates));
+    expect(plain).toHaveLength(5);
+    // Only the last piece (800–1000) is cut up by the selection.
+    expect(kept).toHaveLength(4);
+  });
+
+  test('the PNG keeps its solid lines: walking 4dp, a car 2dp', () => {
+    const lines = routeLines([edge(0, 1, 'walking'), edge(1, 2, 'driving')], { color: colors.phone, dotted: false });
+    expect(lines.map(line => [line.width, line.dotted])).toEqual([[4, false], [2, false]]);
   });
 
   test('indoor anchor relocation breaks drawn lines without hiding short walks or vehicles', () => {

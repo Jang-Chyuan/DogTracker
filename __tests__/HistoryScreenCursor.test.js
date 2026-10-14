@@ -9,15 +9,26 @@ const model = {
     { type: 'gap', start: 30 * minute, end: 40 * minute },
     { type: 'movement', start: 50 * minute, end: 60 * minute, countedDistanceM: 1000, mode: 'moving' }],
 };
+// 2026-10-14: the second line names the row in the list's words.
 test('two-line labels for moving, stop, vehicle, indoor and phone', () => {
-  expect(cursorLabel(model, 5 * minute)[1]).toBe('已移動 500 m');
+  expect(cursorLabel(model, 5 * minute)[1]).toBe('移動中・500 m');
   expect(cursorLabel(model, 15 * minute)[1]).toBe('停留 10 分');
   // 2026-10-14: the vehicle label no longer adds 「・不算距離」.
   expect(cursorLabel(model, 25 * minute)[1]).toBe('坐車中');
   expect(cursorLabel(model, 45 * minute)[1]).toBe('室內・10 分');
-  expect(cursorLabel(model, 60 * minute, 'phone')[1]).toBe('已走 2.0 km');
+  expect(cursorLabel(model, 60 * minute, 'phone')[1]).toBe('走路・已走 2.0 km');
   const driving = { ...model, sections: [{ start: 0, end: 10 * minute, mode: 'driving' }] };
   expect(cursorLabel(driving, 0, 'phone')[1]).toBe('開車中');
+});
+test('a numbered stay says its number as its list row does', () => {
+  const stop = { type: 'stop', number: 2, start: 10 * minute, end: 20 * minute, durationMs: 10 * minute,
+    latitude: 25, longitude: 121 };
+  const nodes = [{ type: 'departure', start: 0, end: 0, latitude: 25, longitude: 121 },
+    { ...model.sections[0] }, stop, { ...model.sections[1] },
+    { type: 'end', start: 30 * minute, end: 30 * minute, latitude: 25, longitude: 121 }];
+  const numbered = { ...model, locations: [stop, model.locations[1]], nodes };
+  expect(cursorLabel(numbered, 15 * minute)[1]).toBe('停留 2・10 分');
+  expect(cursorLabel(numbered, 5 * minute)[1]).toBe('移動中・500 m');
 });
 test('drag gaps skips nearest edge; gap row selects preceding fix and stale label', () => {
   expect(screenCursor(model, 34 * minute).time).toBe(30 * minute);

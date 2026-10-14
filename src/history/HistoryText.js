@@ -41,6 +41,10 @@ export function coordinates(node) {
 
 const MODE_WORD = { walking: t('c134'), driving: t('c135'), moving: t('c125'), ride: t('c128') };
 
+/** A movement row's glyph (the list's track icon, the map's segment icon). */
+export const movementGlyph = mode => (mode === 'driving' || mode === 'ride' ? 'car'
+  : mode === 'walking' ? 'walk' : 'paw');
+
 /**
  * A movement row (判定表「移動段的文字」): { icon, lead, time, rest } —
  * 「走路 28 分・1.4 km」, 「開車 12 分・6.3 km」, 「移動 …」,
@@ -66,7 +70,7 @@ export function sectionText(section) {
   const moved = distance !== distanceText(0);
   const lessThanMinute = moved && Math.round(Math.max(0, duration || 0) / MINUTE) === 0;
   return {
-    icon: vehicle ? 'car' : section.mode === 'walking' ? 'walk' : 'paw',
+    icon: movementGlyph(section.mode),
     lead: MODE_WORD[section.mode] || t('c125'),
     time: lessThanMinute ? t('c1276') : listDuration(duration),
     rest: `・${distance}`,

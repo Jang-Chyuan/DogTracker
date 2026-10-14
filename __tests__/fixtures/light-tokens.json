@@ -98,9 +98,6 @@
     "rangeRingFill": 0.06,
     "phoneAccuracy": 0.15,
     "cursorHalo": 0.18,
-    "routeUpcoming": 0.3,
-    "routeBeforeCursor": 0.5,
-    "routeAfterCursor": 0.2,
     "faceGlow": 0.28,
     "catchingUp": 0.5
   },

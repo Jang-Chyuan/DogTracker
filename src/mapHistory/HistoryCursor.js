@@ -15,6 +15,10 @@ import { nearestRouteSpot } from '../history/screen/HistoryMapModel';
 
 const TOUCH = touch.min;
 
+// A cursor projection that fails or takes longer than this is asked again (up to PROJECTION_RETRIES times).
+const PROJECTION_WAIT_MS = 3000;
+const PROJECTION_RETRIES = 4;
+
 export default function HistoryCursor({ mapRef, cursor, points, revision, width, height, top, bottom,
   hidden = false, onMove, onDraggingChange, onProjection, labelPlacement, projectionScope = '' }) {
   const [placeSnapshot, setPlace] = useState(null);
@@ -37,17 +41,39 @@ export default function HistoryCursor({ mapRef, cursor, points, revision, width,
   const projectionReceiver = useRef(onProjection);
   projectionReceiver.current = onProjection;
   // Where the cursor point is on screen: after it moved, and after the map did.
+  // The label waits for this point (CursorLabelPlacement): a read that fails,
+  // or has had no answer after PROJECTION_WAIT_MS (a busy map right after a
+  // camera move), is asked again a few times, so the label is never left out
+  // for good (2026-10-14: a tap on the first row of several dogs left the
+  // cursor without its label). A slow answer still lands.
+  const [retry, setRetry] = useState({ key: null, count: 0 });
+  const attempt = retry.key === projectionKey ? retry.count : 0;
+  const currentKey = useRef(projectionKey);
+  const answeredKey = useRef(null);
+  currentKey.current = hidden ? null : projectionKey;
   useEffect(() => {
     let alive = true;
-    if (hidden || !cursor || !mapRef.current?.pointForCoordinate) { setPlace(null); return undefined; }
+    if (hidden || !cursor || !mapRef.current?.pointForCoordinate) { answeredKey.current = null; setPlace(null); return undefined; }
+    const asked = projectionKey;
+    const again = () => {
+      if (alive && attempt < PROJECTION_RETRIES) setRetry({ key: asked, count: attempt + 1 });
+    };
+    let answered = false;
+    const late = setTimeout(() => { if (!answered && answeredKey.current !== asked) again(); }, PROJECTION_WAIT_MS);
     mapRef.current.pointForCoordinate(cursor.coordinate)
       .then(point => {
-        if (alive) { setPlace({ key: projectionKey, point }); projectionReceiver.current?.({ key: projectionKey, point }); }
+        answered = true;
+        clearTimeout(late);
+        // A slow answer still counts while its key is current, once per key.
+        if (currentKey.current === asked && answeredKey.current !== asked) {
+          answeredKey.current = asked;
+          setPlace({ key: asked, point }); projectionReceiver.current?.({ key: asked, point });
+        }
       })
-      .catch(() => {});
-    return () => { alive = false; };
+      .catch(() => { clearTimeout(late); again(); });
+    return () => { alive = false; clearTimeout(late); };
     // coordinateKey stands for the cursor's coordinate.
-  }, [coordinateKey, revision, width, height, top, bottom, mapRef, projectionKey, hidden]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coordinateKey, revision, width, height, top, bottom, mapRef, projectionKey, hidden, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const live = useRef({});
   live.current = { cursor, points, onMove, place, scene, mapRef, hidden, visible: visible(place) };
   // Each gesture has its own generation. The released final read may land;
