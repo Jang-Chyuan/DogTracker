@@ -232,6 +232,8 @@ const getStyles = makeStyles(theme => {
       width: carousel.nameWidth,
       textAlign: 'center',
     },
-    pressed: { backgroundColor: colors.pressedOverlay },
+    // A side face pressed dims (no square overlay on a round face; the row
+    // then slides to it).
+    pressed: { opacity: 0.6 },
   });
 });
