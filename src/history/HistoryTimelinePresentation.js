@@ -213,7 +213,13 @@ function presentationOf(all) {
   // detected departure (`detected`: the range starts where the walk or the
   // drive set off, often at the stay's last fix), or a stay clipped to
   // seconds (a manual range from its last fix).
-  const sliver = startsWithStay && (first.detected === true || noMinutes(departureStay));
+  // 2026-10-15: not a still-here stay. While a departure is still being
+  // confirmed the range starts at its candidate; when the phone has stood
+  // still there ever since, the stay is the whole range (還在原地), not the
+  // seconds the walk set off from: one 出發 row spanning those minutes with
+  // none shown, then the end, did not add up.
+  const sliver = startsWithStay && ((first.detected === true && initialStay.presentationOnly !== 'still-here')
+    || noMinutes(departureStay));
   const input = sliver
     ? [{ ...first, latitude: departureStay.latitude, longitude: departureStay.longitude,
       end: departureStay.end, durationMs: departureStay.durationMs, departureStay }, ...nodes.slice(2)]
@@ -352,11 +358,14 @@ const pointRow = node => node && node.end === node.start;
  * - a walk (less than a gap of it), else a stay (stop, 室內, a departure or
  *   end with its stay), else another movement (a dog's 移動, a drive; less
  *   than a gap);
- * - between breaks or ends only: under a minute, the break beside it (two
- *   breaks of one kind with only that between them are one row); a minute or
- *   more is a stay of its own, unnumbered (`presentationOnly: 'between-breaks'`:
- *   the fixes were there, at one place) — the 出發 or the end beside it takes
- *   it as their stay, and a 恢復記錄 there is that stay's start.
+ * - between breaks or ends only: under a minute beside a break, that break
+ *   (two breaks of one kind with only that between them are one row); a
+ *   minute or more, or any time between two moments with no break beside it
+ *   (2026-10-15: the seconds between 恢復記錄 and the live end belonged to no
+ *   row), is a stay of its own, unnumbered (`presentationOnly:
+ *   'between-breaks'`: the fixes were there, at one place) — the 出發 or the
+ *   end beside it takes it as their stay, and a 恢復記錄 there is that
+ *   stay's start.
  * Display only: the model, the map, CSV and GPX keep what was recorded.
  */
 function closeHoles(shown) {
@@ -373,7 +382,7 @@ function closeHoles(shown) {
     else if (stayRow(node)) out.push(stretch(node, a.end, node.end, 0));
     else if (short && moving(a)) growA();
     else if (short && moving(node)) out.push(stretch(node, a.end, node.end, 0));
-    else if (hole < MINUTE) {
+    else if (hole < MINUTE && (gapRow(a) || gapRow(node))) {
       if (gapRow(a) && gapRow(node) && (a.reason ?? null) === (node.reason ?? null)) {
         const joined = { ...a, end: node.end, durationMs: node.end - a.start,
           endLatitude: node.endLatitude, endLongitude: node.endLongitude,
@@ -383,8 +392,7 @@ function closeHoles(shown) {
       } else if (gapRow(a)) {
         out[out.length - 1] = { ...a, end: node.start, durationMs: node.start - a.start };
         out.push(node);
-      } else if (gapRow(node)) out.push({ ...node, start: a.end, durationMs: node.end - a.end });
-      else out.push(node);
+      } else out.push({ ...node, start: a.end, durationMs: node.end - a.end });
     } else if (moving(a) || moving(node)) out.push(node);
     else {
       const from = pointRow(a) ? a : gapRow(a) ? { latitude: a.endLatitude, longitude: a.endLongitude } : node;
