@@ -169,11 +169,13 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
   const note = interruptionText(node);
   const pill = nodePill(node);
   const pending = place?.state === 'pending';
+  // Its chevron reaches into the movement row below: drawn over that row's line.
+  const leaving = leavesFrom(node, next);
   // No address (not found, offline, timed out): the place's coordinates.
   const title = lines.title;
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
+      style={({ pressed }) => [styles.row, leaving && styles.leavingRow, pressed && styles.pressedRow]}
       hitSlop={ROW_SLOP}
       testID={`timeline-${node.type}`}
       {...tap}
@@ -193,7 +195,7 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
         <Track kind={lineOf(next)} color={color} from={12} />
         <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line"><Node node={node} color={color} centered /></View>
         {/* Leaving this stay (2026-10-14): a down chevron on the line under the node. */}
-        {leavesFrom(node, next) && (
+        {leaving && (
           <View style={[styles.leave, { top: firstLine.height / 2 + sizes.timeline.node.stop / 2 }]} testID="leave-chevron">
             <Glyph name="leave" color={color} size={sizes.timeline.leave} />
           </View>
@@ -347,6 +349,7 @@ const getStyles = makeStyles(theme => {
     // The 12dp between rows is inside the place column, so the track column
     // runs the full row and the line has no breaks.
     row: { flexDirection: 'row' },
+    leavingRow: { zIndex: 1 },
     sectionRow: { minHeight: sizes.timeline.sectionHeight },
     timeColumn: { width: TIME_WIDTH, alignItems: 'flex-end', paddingRight: space.xs },
     time: {
@@ -360,7 +363,7 @@ const getStyles = makeStyles(theme => {
     transportTrack: { justifyContent: 'center' },
     transportIcon: { backgroundColor: colors.elevated, paddingVertical: space.xs },
     // The page colour around it: no dot of the line shows through.
-    leave: { position: 'absolute', backgroundColor: colors.elevated, paddingVertical: border.strong },
+    leave: { position: 'absolute', backgroundColor: colors.elevated, paddingTop: border.strong, paddingBottom: space.xs },
     track: {
       position: 'absolute',
       bottom: 0,

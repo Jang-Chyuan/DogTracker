@@ -99,7 +99,7 @@ function rowOps(block) {
   // Leaving a stay (2026-10-14): the down chevron right under the node, the
   // line cleared around it as around the movement icons.
   const leave = tokenSize.export.leaveGlyph, leaveTop = nodeY + nodeRadius + tokenSize.export.leaveInset;
-  const cleared = row.leave ? leaveTop + leave + tokenSize.export.leaveInset : nodeY + nodeRadius;
+  const cleared = row.leave ? leaveTop + leave + tokenSize.export.transportIconPadding : nodeY + nodeRadius;
   ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: cleared }));
   ops.push(...nodeOps(row, color, nodeY));
   if (row.leave) ops.push({ t: 'icon', name: 'leave', icon: EXPORT_ICONS.leave, x: TRACK_X - leave / 2, y: leaveTop,
