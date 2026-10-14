@@ -278,7 +278,9 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   // No room under the name: the rows start right below it (the card stays
   // no taller than before the row of dogs, 2026-10-14).
   const rowHeight = carousel.face[0] + space.xs + Math.ceil(nameHeight);
-  const side = Math.max(0, (width - slot) / 2);
+  // The track between the two ‹ › zones (48dp each, never over a face).
+  const track = Math.max(slot, width - 2 * carousel.stepZone);
+  const side = Math.max(0, (track - slot) / 2);
   const shift = useMemo(() => Animated.multiply(position, -1), [position]);
   const faces = useMemo(() => dogs.map((dog, index) => {
     const centre = offsetOf(index);
@@ -361,19 +363,23 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
             );
           })}
         </Animated.View>
-        {/* ‹ › at the two ends: one dog at a time (2026-10-14), none past an end. */}
-        {openIndex > 0 && (
-          <Step side="previous" onPress={() => step(-1)} styles={styles} colors={colors} />
-        )}
-        {openIndex < count - 1 && (
-          <Step side="next" onPress={() => step(1)} styles={styles} colors={colors} />
-        )}
       </View>
+      {/* ‹ › in their own zones at the two ends: one dog at a time, none past an end. */}
+      {openIndex > 0 && (
+        <Step side="previous" onPress={() => step(-1)} styles={styles} colors={colors} />
+      )}
+      {openIndex < count - 1 && (
+        <Step side="next" onPress={() => step(1)} styles={styles} colors={colors} />
+      )}
     </View>
   );
 }
 
-/** A small muted ‹ or › at one end of the row, a 48dp target. */
+/**
+ * A small ‹ or › in its own zone at one end of the row (2026-10-14, option
+ * (b) of three: a 32dp round `surface` face with a 1dp `line` ring and a
+ * `textMuted` chevron — light, like the pencil badge), a 48dp target.
+ */
 function Step({ side, onPress, styles, colors }) {
   const next = side === 'next';
   return (
@@ -384,8 +390,10 @@ function Step({ side, onPress, styles, colors }) {
       onPress={onPress}
       style={({ pressed }) => [styles.step, next ? styles.stepNext : styles.stepPrevious, pressed && styles.pressed]}
     >
-      <View style={next ? null : styles.flip}>
-        <Glyph name="chevron" color={colors.textMuted} size={sizes.card.carousel.stepIcon} />
+      <View style={styles.stepFace}>
+        <View style={next ? null : styles.flip}>
+          <Glyph name="chevron" color={colors.textMuted} size={sizes.card.carousel.stepIcon} />
+        </View>
       </View>
     </Pressable>
   );
@@ -396,8 +404,8 @@ const getStyles = makeStyles(theme => {
   return StyleSheet.create({
     // Edge to edge across the card (its 16dp side padding).
     row: { marginHorizontal: -space.l },
-    // The row's window: the faces outside it are cut off at the card's edge.
-    window: { overflow: 'hidden' },
+    // The row's window between the ‹ › zones: the faces outside it are cut off.
+    window: { overflow: 'hidden', marginHorizontal: carousel.stepZone },
     strip: { flexDirection: 'row', alignItems: 'flex-start' },
     sample: { position: 'absolute', opacity: 0 },
     slot: {
@@ -440,14 +448,26 @@ const getStyles = makeStyles(theme => {
     // then slides to it).
     pressed: { opacity: 0.6 },
     // ‹ ›: 48dp targets at the row's two ends, level with the faces.
+    // ‹ ›: a 48dp target filling its zone, level with the faces; a 32dp
+    // round face inside it.
     step: {
       position: 'absolute',
       top: space.xs + (carousel.face[0] - touch.min) / 2,
-      width: touch.min,
+      width: carousel.stepZone,
       height: touch.min,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: radius.full,
+    },
+    stepFace: {
+      width: carousel.stepFace,
+      height: carousel.stepFace,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: border.hairline,
+      borderColor: colors.line,
     },
     stepPrevious: { left: 0 },
     stepNext: { right: 0 },

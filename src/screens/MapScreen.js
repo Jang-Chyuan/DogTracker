@@ -33,6 +33,8 @@ import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
 import { cardAddressLine, useAddress, usePlaceNames } from '../placement/AddressLookup';
+// An indoor dog's address being asked: the room it may need.
+const ADDRESS_RESERVE_LINES = 2;
 import { useMapClock } from '../map/useMapClock';
 
 import { useReceiverState } from '../map/useReceiverState';
@@ -958,20 +960,32 @@ export default function MapScreen({
     ? switchDogs.filter(id => id !== cardDogId).map(id => dogs.find(dog => dog.slaveId === id && dog.coordinate))
       .filter(Boolean) : []), [switching, switchDogs, cardDogId, dogs]);
   const otherPlaces = usePlaceNames(otherDogs.map(dog => (isIndoorHold(dog) ? dog.coordinate : null)));
-  const reserve = useMemo(() => otherDogs.map((dog, index) => {
-    const freshness = dogFreshness(dog, { now, cloud: cloudClockInput, pauses });
-    const place = otherPlaces[index];
-    const model = dogCard(dog, {
-      freshness,
-      range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
-      phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
-      now,
-      name: dogName(dog.slaveId, dogAliases),
-      address: isIndoorHold(dog) ? cardAddressLine(place?.state === 'found' ? place.text : null, dog.coordinate) : null,
+  // An address still being asked gets the room of two lines (it may come
+  // back long), so its answer never makes the card taller; the open dog's
+  // own too.
+  const reserve = useMemo(() => {
+    const others = otherDogs.map((dog, index) => {
+      const freshness = dogFreshness(dog, { now, cloud: cloudClockInput, pauses });
+      const place = otherPlaces[index];
+      const asking = isIndoorHold(dog) && place?.state === 'pending';
+      const model = dogCard(dog, {
+        freshness,
+        range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
+        phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
+        now,
+        name: dogName(dog.slaveId, dogAliases),
+        address: isIndoorHold(dog) && !asking
+          ? cardAddressLine(place?.state === 'found' ? place.text : null, dog.coordinate) : null,
+      });
+      const row = asking ? { ...model.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : model.rows[0];
+      return { key: dog.slaveId, row, headline: model.headline };
     });
-    return { key: dog.slaveId, row: model.rows[0], headline: model.headline };
-  }), [otherDogs, otherPlaces, now, cloudClockInput, pauses, cloudDogs?.ranges, livePhone, nativePhone, fixture,
-    dogAliases]);
+    if (!cardModel) return others;
+    const asking = isIndoorHold(cardDog) && !address;
+    const own = asking ? { ...cardModel.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : cardModel.rows[0];
+    return [{ key: cardModel.slaveId, row: own, headline: cardModel.headline }, ...others];
+  }, [otherDogs, otherPlaces, now, cloudClockInput, pauses, cloudDogs?.ranges, livePhone, nativePhone, fixture,
+    dogAliases, cardModel, cardDog, address]);
   const switcher = useMemo(() => {
     if (!switching) return null;
     return {

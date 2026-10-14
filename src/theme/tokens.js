@@ -317,10 +317,11 @@ export const size = {
   },
   card: {
     avatar: 40,
-    // The label column (2026-10-14: 8dp wider, the 「!」 now sits in it).
-    labelWidth: 80,
-    // The 「!」 after a row's label, at the label column's right edge.
-    labelMark: 14,
+    // The status rows' columns (2026-10-14): the label, a lane only for the
+    // 「!」 (on every row), then the value.
+    labelWidth: 68,
+    markLane: 22,
+    labelMark: 16,
     // The direction arrow before the distance at the first row's right end.
     directionIcon: 16,
     // Status rows that are not buttons (活動量 stays touch.cardRow, 48dp).
@@ -337,7 +338,10 @@ export const size = {
     // The row of dogs at the card's top (DogCarousel): one slot per dog; the
     // middle face, then one and two slots away; their opacity; the middle
     // name's width.
-    carousel: { slot: 64, face: [52, 40, 32], opacity: [1, 0.5, 0.3], nameWidth: 200, stepIcon: 16 },
+    carousel: { slot: 64, face: [52, 40, 32], opacity: [1, 0.5, 0.3], nameWidth: 200,
+      // ‹ › (2026-10-14): a 48dp zone at each end, the track between them;
+      // a 32dp round face, a 16dp chevron.
+      stepZone: 48, stepFace: 32, stepIcon: 16 },
     maxRatio: 0.75,
   },
   activity: {

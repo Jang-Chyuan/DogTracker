@@ -259,8 +259,14 @@ describe('the card', () => {
     const next = byTestId('dog-card-step-next');
     expect(previous[0].props.accessibilityLabel).toBe('上一隻');
     expect(next[0].props.accessibilityLabel).toBe('下一隻');
-    // 48dp targets.
-    expect(StyleSheet.flatten(next[0].props.style({ pressed: false }))).toMatchObject({ width: touch.min, height: touch.min });
+    // 48dp targets in their own zones: the faces' track stops short of them,
+    // and the arrows are not inside it (no shared touches).
+    expect(StyleSheet.flatten(next[0].props.style({ pressed: false }))).toMatchObject({
+      width: sizes.card.carousel.stepZone, height: touch.min, right: 0 });
+    expect(sizes.card.carousel.stepZone).toBeGreaterThanOrEqual(touch.min);
+    const track = host('dog-card-carousel')[0];
+    expect(StyleSheet.flatten(track.props.style).marginHorizontal).toBe(sizes.card.carousel.stepZone);
+    expect(track.findAll(node => node.props.testID === 'dog-card-step-next')).toHaveLength(0);
     await act(async () => next[0].props.onPress());
     expect(value.onSelect.mock.calls.at(-1)).toEqual([8]);
     // On the first dog: no ‹.

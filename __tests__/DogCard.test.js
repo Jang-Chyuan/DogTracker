@@ -196,63 +196,108 @@ test('the distance stays beside the first line only while the value fits there o
   expect(under()).toBe(false);
 });
 
-test('the 「!」 sits after the label, at the label column\'s right edge, not in the value column', async () => {
+test('three columns: the label, a lane only for the 「!」 (on every row), the value — values line up', async () => {
   const { size: sizes } = require('../src/theme/tokens');
   const { PixelRatio } = require('react-native');
   jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
+  const rn = require('react-native');
+  jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 411, height: 900, scale: 3.5, fontScale: 1 });
   await mount();
-  const marks = renderer.root.findAll(node => /^dog-card-mark-/.test(node.props.testID ?? '') && node.props.background);
-  expect(marks.length).toBeGreaterThanOrEqual(2);
-  for (const mark of marks) {
-    expect(mark.props.size ?? mark.props.width).toBe(sizes.card.labelMark);
-    // Its cell is the label's: the label first, then the 「!」, the cell the
-    // label column's width, the 「!」 pushed to its right edge.
-    let cell = mark.parent;
-    while (cell && !(typeof cell.type === 'string' && StyleSheet.flatten(cell.props.style)?.justifyContent === 'space-between')) {
-      cell = cell.parent;
-    }
-    const style = StyleSheet.flatten(cell.props.style);
-    expect(style).toMatchObject({ flexDirection: 'row' });
-    expect(style.width).toBeGreaterThanOrEqual(sizes.card.labelWidth);
-    expect(cell.findAll(node => node.props.testID === 'dog-card-distance')).toHaveLength(0);
-    expect(['位置', '電量']).toContain(flatten(cell.children[0]));
+  const lanes = renderer.root.findAll(node => node.props.testID === 'dog-card-mark-lane' && typeof node.type === 'string');
+  // One per row: 位置 and 電量 with their 「!」, 活動量 without — the same width.
+  expect(lanes).toHaveLength(3);
+  for (const lane of lanes) expect(StyleSheet.flatten(lane.props.style).width).toBe(sizes.card.markLane);
+  expect(lanes.map(lane => lane.findAll(node => /^dog-card-mark-(crit|warn)$/.test(node.props.testID ?? '')
+    && node.props.background).length)).toEqual([1, 1, 0]);
+  // The lane sits between the label and the value: label first, value last.
+  for (const key of ['position', 'battery', 'activity']) {
+    const row = jsonNode(renderer.toJSON(), node => node.props?.testID === `dog-card-row-${key}`);
+    const index = row.children.findIndex(node => node.props?.testID === 'dog-card-mark-lane');
+    expect(index).toBe(1);
+    expect(flatten(row.children[0])).toMatch(/^(位置|電量|活動量)$/);
+    expect(StyleSheet.flatten(row.children[0].props.style).width).toBe(sizes.card.labelWidth);
   }
-  expect(sizes.card.labelWidth).toBe(80);
 });
 
-test('the card keeps room for the tallest first row among the other dogs, and never gives it back while open', async () => {
+const jsonNode = (node, test) => {
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node)) return node.map(item => jsonNode(item, test)).find(Boolean) ?? null;
+  if (test(node)) return node;
+  return jsonNode(node.children, test);
+};
+
+test('label over value (a large font on a narrow phone): the lane first, the label and value stacked beside it', async () => {
+  const rn = require('react-native');
+  jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 360, height: 780, scale: 3, fontScale: 2 });
+  await mount();
+  const row = jsonNode(renderer.toJSON(), node => node.props?.testID === 'dog-card-row-position');
+  expect(row.children[0].props.testID).toBe('dog-card-mark-lane');
+  expect(flatten(row.children[1])).toMatch(/^位置/);
+  expect(StyleSheet.flatten(row.children[0].props.style).alignSelf).toBe('flex-start');
+});
+
+// 2026-10-14 (the card grew once after it had risen): it stays hidden until
+// every dog's first row is measured and still, then rises at its final height
+// and does not change after.
+const reserveFor = () => {
   const other = dogCard({ slaveId: 6, coordinate: { latitude: 24.9947, longitude: 121.3194 }, fixAt: NOW - 5000,
     packetAt: NOW - 5000, batteryPercentage: 62, heldReason: '室內', heldSource: 'weak' }, {
     freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW }, now: NOW, name: '小黑',
     address: '桃園區中正路 1 號附近', phone: null });
-  const reserve = [{ key: 6, row: other.rows[0], headline: other.headline }];
-  await mount({ reserve });
-  const layout = height => ({ nativeEvent: { layout: { height } } });
-  const rowsBox = () => renderer.root.findAll(node => typeof node.type === 'string'
-    && StyleSheet.flatten(node.props.style)?.minHeight !== undefined
-    && node.findAll(item => item.props.testID === 'dog-card-row-position').length > 0
-    && StyleSheet.flatten(node.props.style)?.borderTopWidth)[0];
+  return [{ key: 6, row: other.rows[0], headline: other.headline }];
+};
+const layout = height => ({ nativeEvent: { layout: { height } } });
+const rowsBox = () => renderer.root.findAll(node => typeof node.type === 'string'
+  && StyleSheet.flatten(node.props.style)?.minHeight !== undefined
+  && node.findAll(item => item.props.testID === 'dog-card-row-position').length > 0
+  && StyleSheet.flatten(node.props.style)?.borderTopWidth)[0];
+const measuredRows = () => {
   const measured = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onLayout
     && !node.props.testID);
-  // The rows (all three), this dog's first row, and 小黑's (hidden) first row.
   const [rows, first] = measured.filter(node => node.findAll(item => item.props.testID === 'dog-card-row-position'
     && !findHidden(item)).length);
-  const sample = measured.find(node => findHidden(node));
+  return { rows, first, sample: measured.find(node => findHidden(node)) };
+};
+
+test('the card opens at its final height: hidden until every dog is measured, then never changes', async () => {
+  const { onHeight } = await mount({ reserve: reserveFor() });
+  // Laid out, but not shown yet: the other dogs are not measured.
+  expect(onHeight).not.toHaveBeenCalled();
+  const { rows, first, sample } = measuredRows();
   await act(async () => rows.props.onLayout(layout(160)));
   await act(async () => first.props.onLayout(layout(56)));
-  // A height held for a moment only is not kept (a row before its distance
-  // settled); one that holds still for 300 ms is.
+  // A size held for a moment only (a row before its distance settled) is
+  // not the one it opens with.
   await act(async () => sample.props.onLayout(layout(120)));
-  await act(async () => jest.advanceTimersByTime(100));
+  await act(async () => jest.advanceTimersByTime(16));
   await act(async () => sample.props.onLayout(layout(80)));
-  await act(async () => jest.advanceTimersByTime(400));
   expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(160 - 56 + 80);
-  // 小黑 back to one line: the room stays.
+  // The card's own layout with that room, then it rises.
+  await act(async () => byTestId('dog-card')[0].props.onLayout(layout(444)));
+  await act(async () => jest.advanceTimersByTime(100));
+  expect(onHeight.mock.calls).toEqual([[452]]);
+  // After the rise: 小黑 shorter or taller, nothing changes.
+  await act(async () => jest.advanceTimersByTime(1000));
   await act(async () => sample.props.onLayout(layout(40)));
+  await act(async () => jest.advanceTimersByTime(1000));
   expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(184);
+  expect(onHeight.mock.calls).toEqual([[452]]);
   // The hidden rows are never read out.
   expect(renderer.root.findAll(node => node.props.importantForAccessibility === 'no-hide-descendants'
     && node.props.accessible === false).length).toBeGreaterThan(0);
+});
+
+test('measuring slower than 150 ms: it rises at the height it has and adds no room later', async () => {
+  const { onHeight } = await mount({ reserve: reserveFor() });
+  await act(async () => jest.advanceTimersByTime(200));
+  expect(onHeight.mock.calls).toEqual([[428]]);
+  const { rows, first, sample } = measuredRows();
+  await act(async () => rows.props.onLayout(layout(160)));
+  await act(async () => first.props.onLayout(layout(56)));
+  await act(async () => sample.props.onLayout(layout(120)));
+  await act(async () => jest.advanceTimersByTime(1000));
+  expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(0);
+  expect(onHeight.mock.calls).toEqual([[428]]);
 });
 
 const findHidden = node => {
