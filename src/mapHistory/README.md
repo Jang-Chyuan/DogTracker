@@ -9,7 +9,7 @@
 - 日期列「‹ 10/03（六）今天 ▾ ›」：‹ › 跳到前一個／後一個有紀錄的日子（`HistoryDatabase.historyDays`，本機＋帳號下載過的雲端列；只在雲端的日子、月曆與 ▾ 是 054b）。
 - 摘要「08:03 – 現在 ▾」＋距離時間；「調整範圍」打開範圍條（`HistoryRangeSummary`），拖兩端的圓點改開始、結束，對到那天的實測點，不到 1 分鐘彈回；改過的範圍這一天記住（`RangeMemory`，App 開著時）。
 - 時間軸清單（`HistoryTimelineList`）：點節點游標跳過去、那一列淡色底、地圖移過去（220 ms）、震兩下；點「沒有資料」游標停在缺口前最後一筆（灰色虛線外圈、「這段沒資料（最後 10:29）」）。
-- 地圖（`HistoryMapModel` → `GoogleTrackingMap`）：範圍裡的路線（游標之後 3dp 30%、開車／坐車 2dp 實線、中斷不連線）、範圍外 2dp 虛線 routeFaded、停留／切換點編號、停在原處的小房子、時間標記、游標點＋兩行標籤；拖游標（`HistoryCursor`）、點路線（24dp 內）換游標時刻；點空白處收起範圍條。
+- 地圖（`HistoryMapModel` → `GoogleTrackingMap`）：範圍裡的路線（游標之後 3dp 30%、開車／坐車 2dp 實線、中斷不連線）、範圍外 2dp 虛線 routeFaded、停留／切換點編號（同一地方的停留合成一個「1・3」）、停在原處的小房子、時間標記（起點空心、終點實心；同一地方時合成一個「00:00–09:25」）、游標點＋兩行標籤；拖游標（`HistoryCursor`）、點路線（24dp 內）換游標時刻；點空白處收起範圍條。
 - 返回鍵：範圍條 → 離開歷史。
 - 震動（`src/utils/haptics.js`，Android 的 haptic feedback）：每 10 分 tick、整點 click、進停留／點節點 double、拖到頭 heavy、放開範圍 tick、換日期 tick。
 

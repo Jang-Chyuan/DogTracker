@@ -86,7 +86,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-problems` | A3b：豆豆 09:05 之後沒有新位置、15%、不在接收範圍，活動量「—」 |
 | `card-indoor` | A7b：小黑停在原處（室內・11 分，和歷史同一段的分鐘相同）、充電中 62%、休息中・已 40 分鐘（進門前就在外面休息），沒有「接收範圍」列；「位置」第二行「桃園區中正路 1 號附近」 |
 | `card-indoor-overnight` | 小黑從昨晚 21:09 起停在原處（每 30 秒一筆沒有定位的封包），冷啟動後打開卡片：即時的停住只重播最近 30 分鐘，卡片改從歷史的列找這段停留的開頭（`CardIndoorStay`），寫「室內・12 時 20 分」（跨過午夜算整段）；歷史今天那一列是「00:00 接續前一天」 |
-| `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」只寫「室內・11 分」、沒有第二行（列高照樣 64dp），不轉圈 |
+| `dog-indoor-no-address` | 同 `card-indoor` 但沒網路：「位置」第一行「室內・11 分」，第二行寫停住點的座標（查不到地址，2026-10-14），不轉圈 |
 | `card-indoor-geocoder` | 同 `card-indoor`，地址用這支手機自己的 Geocoder 查（要網路＋Play services） |
 | `card-cloud-dog` | 小黑只從雲端來：沒有「接收範圍」列；劇烈活動 |
 | `card-phone-no-fix` | 手機最後定位 15 分鐘前：方向距離改寫「手機沒有定位」 |
@@ -158,6 +158,9 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-confirming` | 我的路線：原地後開始走路 → 暫定時間範圍，確認失敗回全天 |
 | `history-no-departure` | 我的路線：06:30 起一直在家附近 →「06:30 – 現在」，範圍＝今天全部記錄，沒有停留 |
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
+| `history-starts-with-stay` | 我的路線像 10/13：00:00 起在家、07:00 走路、短暫停留、走回家、在家；範圍拖成整天（到 09:25 放手）→ 第一列是「停留 1」（從 00:00 起），沒有「出發」；地圖的終點是實心圓 |
+| `history-starts-with-stay-auto` | 同上，範圍是自動偵測的出發（07:00 的走路）→ 第一列「出發」，接著走路 |
+| `history-end-marker` | `history-my-route`，游標在一小時前 → 地圖起點是空心圈、終點是實心圓（路線色＋外圈） |
 | `history-ends-in-stay` | 我的路線：走路、停留、走路，之後停在原地到現在 → 最後一列只有「現在 · 停 N 分」，沒有重複的編號停留列 |
 | `history-dog-ends-in-stay` | 同上，小黑的歷史（狗的終點是最後一筆定位，停留座標是平均） |
 | `history-ends-in-stay-finished`、`history-dog-ends-in-stay-finished` | 同上兩個，範圍放手在 1 分鐘前（不跟著現在）→「結束 · 停 N 分」 |

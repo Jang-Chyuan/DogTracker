@@ -9,6 +9,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
@@ -452,6 +453,14 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     return android.graphics.Color.parseColor(value)
   }
 
+  // How far a numbered marker grows each side past its 27px circle for its
+  // text (stays at one place: 「1・3」); 0 for one number or a house.
+  private fun placeHalfWidth(place: JSONObject): Float {
+    if (place.optString("kind") == "indoor" || place.isNull("number")) return 0f
+    val text = place.get("number").toString()
+    return maxOf(0f, textPaint(34f, true, 0).measureText(text) / 2f - 18f)
+  }
+
   private fun textPaint(size: Float, bold: Boolean, colour: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textSize = size; typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT; color = colour
   }
@@ -727,10 +736,24 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         val marker = times.getJSONObject(i)
         val (px, py) = projector.toPixel(marker.getDouble("latitude"), marker.getDouble("longitude"))
         val end = marker.optBoolean("end")
-        val r = if (end) 20f else 15f
-        canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
-        canvas.drawCircle(px, py, r - (if (end) 3.6f else 2.4f), Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.STROKE; strokeWidth = if (end) 7.2f else 4.8f; color = colour })
+        val r = if (marker.optBoolean("first") && marker.optBoolean("last")) 31f else if (end) 20f else 15f
+        if (marker.optBoolean("last") && marker.optBoolean("first")) {
+          // A range wholly at one place: the end inside the start's ring.
+          canvas.drawCircle(px, py, 31f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
+          canvas.drawCircle(px, py, 27.4f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = 7.2f; color = colour })
+        }
+        if (marker.optBoolean("last")) {
+          // The end: solid in the route colour inside a ring of it at
+          // opacity.endRing (0.33), as the list's end node and the map's.
+          canvas.drawCircle(px, py, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(84, Color.red(colour), Color.green(colour), Color.blue(colour)) })
+          canvas.drawCircle(px, py, 12.8f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colour })
+        } else {
+          canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
+          canvas.drawCircle(px, py, r - (if (end) 3.6f else 2.4f), Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = if (end) 7.2f else 4.8f; color = colour })
+        }
         // A thinned time (several dogs' crowded ends, ExportSnapshot) keeps its ring only.
         val label = marker.optString("label")
         if (label.isNotEmpty()) labels.add(Triple(label, px to py, r))
@@ -745,7 +768,8 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
       for (i in 0 until places.length()) {
         val place = places.getJSONObject(i)
         val (px, py) = projector.toPixel(place.getDouble("latitude"), place.getDouble("longitude"))
-        placeRects.add(LabelBox(px - 33f, py - 33f, px + 33f, py + 33f))
+        val half = placeHalfWidth(place)
+        placeRects.add(LabelBox(px - 33f - half, py - 33f, px + 33f + half, py + 33f))
       }
     }
     val scale = if (op.optBoolean("scale")) ExportLabelLayout.scale(projector.metresPerPixel) else null
@@ -775,9 +799,13 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         val place = places.getJSONObject(i)
         val (px, py) = projector.toPixel(place.getDouble("latitude"), place.getDouble("longitude"))
         val indoor = place.optString("kind") == "indoor"
-        canvas.drawCircle(px, py, 33f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
-        canvas.drawCircle(px, py, 27f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          color = if (indoor) color(op.getString("indoor")) else colour })
+        // Stays at one place share a marker (「1・3」): a capsule as wide as
+        // its numbers; one number stays a circle.
+        val half = placeHalfWidth(place)
+        canvas.drawRoundRect(RectF(px - 33f - half, py - 33f, px + 33f + half, py + 33f), 33f, 33f,
+          Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
+        canvas.drawRoundRect(RectF(px - 27f - half, py - 27f, px + 27f + half, py + 27f), 27f, 27f,
+          Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (indoor) color(op.getString("indoor")) else colour })
         if (indoor) drawIcon(canvas, op.getJSONObject("house"), px - 21f, py - 21f, 42f, color(op.getString("onRoute")))
         else drawText(canvas, if (place.isNull("number")) "" else place.get("number").toString(), px, py - 22f, 44f, 34f,
           true, color(op.getString("onRoute")), "center")

@@ -299,9 +299,17 @@ test('the original light palette is unchanged', () => {
   delete originalColors.activityMissing;
   const originalOpacity = { ...tokens.opacity };
   delete originalOpacity.mapHeaderBacking;
+  delete originalOpacity.endRing;
   Object.entries(baseline).forEach(([group, value]) =>
     expect(group === 'opacity' ? originalOpacity : group === 'colors' ? originalColors : tokens[group]).toEqual(value),
   );
+});
+
+// 2026-10-14: the end's outer ring (list node, map end marker, PNG), one
+// alpha in both themes (the list node draws `${color}55`, about the same).
+test('the end ring uses one alpha in both themes', () => {
+  expect(tokens.opacity.endRing).toBe(0.33);
+  expect(darkTheme.opacity.endRing).toBe(0.33);
 });
 
 test('map-header backing uses the same explicit alpha in both themes', () => {

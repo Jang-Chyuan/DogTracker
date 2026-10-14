@@ -99,7 +99,8 @@ const reported = breakNode => [
   stayNode(94 + 40 / 60, 134, { number: 2, id: 'visit:after' }),
   { type: 'end', start: base + 134 * minute, end: base + 134 * minute, latitude: 1, longitude: 1 }];
 
-test('the reported stay / break / 0 m walk / stay ending shape is one stay merged into the end row', () => {
+// 2026-10-14: a range that ends in a stay ends with that stay (no end row).
+test('the reported stay / break / 0 m walk / stay ending shape is one stay, the last row', () => {
   const brkStay = { type: 'stop', id: 'phone-stationary:x', presentationOnly: 'phone-stationary', number: null,
     start: base + 81 * minute, end: base + 94 * minute, durationMs: 13 * minute, interruptionMs: 0, gaps: [],
     unobserved: [{ start: base + 81 * minute, end: base + 94 * minute }], latitude: 1, longitude: 1 };
@@ -111,8 +112,8 @@ test('the reported stay / break / 0 m walk / stay ending shape is one stay merge
     durationMs: 129 * minute, unobserved: brkStay.unobserved });
   expect(removed.size).toBe(3);
   const shown = timelinePresentation(merged);
-  expect(shown.map(n => n.type)).toEqual(['departure', 'movement', 'end']);
-  expect(shown[2]).toMatchObject({ start: base + 5 * minute, durationMs: 129 * minute, terminalStay: stay });
+  expect(shown.map(n => n.type)).toEqual(['departure', 'movement', 'stop']);
+  expect(shown[2]).toMatchObject({ id: 'visit:5', start: base + 5 * minute, durationMs: 129 * minute });
   expect(nodes[2].end).toBe(base + 81 * minute); // the source stay is not mutated
 });
 
@@ -137,8 +138,8 @@ test('a phone list never shows 「走路 0 分 · 0.0 km」 next to a break, a p
   expect(emptyPhoneFootRows([nodes[1], nodes[4], { ...nodes[1], mode: 'driving' }]).size).toBe(0);
 });
 
-// With #115: a break stay that reaches the endpoint is one 現在／結束 row.
-test('a same-place break stay ending at the last fix merges into the end row without double counting', () => {
+// A break stay that reaches the endpoint is the last row (2026-10-14: no end row).
+test('a same-place break stay ending at the last fix is the last row without double counting', () => {
   // Walk 0–300 s, stay, a 70 min break, stay to the last fix at 4800 s.
   const [stay] = phoneStationaryPresentationStops([edge(300, 600), brk(600, 4500),
     edge(4500, 4505, {}, moving, moving), edge(4505, 4800)], { config });
@@ -148,9 +149,9 @@ test('a same-place break stay ending at the last fix merges into the end row wit
     stay, { type: 'end', start: base + 4800000, end: base + 4800000, latitude: 1, longitude: 1 }];
   const end = nodes[3];
   const shown = timelinePresentation(nodes);
-  expect(shown.some(n => n.type === 'gap' || (n.type === 'stop' && n.id === stay.id))).toBe(false);
+  expect(shown.some(n => n.type === 'gap' || n.type === 'end')).toBe(false);
   const last = shown[shown.length - 1];
-  expect(last).toMatchObject({ type: 'end', start: stay.start, end: end.start, terminalStay: stay,
+  expect(last).toMatchObject({ type: 'stop', id: stay.id, start: stay.start, end: end.start,
     durationMs: stay.durationMs, number: null });
   expect(last.durationMs).toBe(last.end - last.start);
   // Every shown minute once: no row overlaps another.

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import Glyph from '../map/Glyph';
 import Skeleton from '../components/Skeleton';
-import { timelinePresentation } from '../history/HistoryTimelinePresentation';
+import { rangeEndRows, timelinePresentation } from '../history/HistoryTimelinePresentation';
 
 import {
   interruptionText,
@@ -23,8 +23,11 @@ import {
   placeSpeech,
   sectionSpeech,
   sectionText,
+  leavesFrom,
+  clock,
 } from '../history/HistoryText';
 import { usePlaceNames } from '../placement/AddressLookup';
+import { withAlpha } from '../history/screen/HistoryMapModel';
 
 // 判定表「時間軸清單」: time column 54dp, track 36dp, then the place.
 const TIME_WIDTH = sizes.timeline.timeColumn;
@@ -99,10 +102,22 @@ const lineOf = section =>
     ? 'solid'
     : 'dots';
 
-function Node({ node, color, centered = false }) {
-  const { colors } = useTheme();
+function Node({ node, color, centered = false, rangeStart = false, rangeEnd = false }) {
+  const { colors, opacity } = useTheme();
   const styles = useStyles(getStyles);
   const centeredStyle = centered ? { marginTop: 0 } : null;
+  // 2026-10-14 (user, #163 round 3): the range's first / last row is its
+  // start / end — the hollow 出發 circle, the solid end circle — whatever
+  // the row is (a stay keeps its minutes and address, but no number).
+  if (rangeStart && rangeEnd) {
+    return (
+      <View style={[styles.bothEnds, centeredStyle, { borderColor: color }]} testID="range-both-node">
+        <View style={[styles.endCore, styles.bothEndsCore, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+  if (rangeStart) return <Node node={{ type: 'departure' }} color={color} centered={centered} />;
+  if (rangeEnd) return <Node node={{ type: 'end' }} color={color} centered={centered} />;
   switch (node.type) {
     case 'departure':
       return <View style={[styles.departure, centeredStyle, { borderColor: color }]} />;
@@ -124,13 +139,15 @@ function Node({ node, color, centered = false }) {
     case 'resume':
       return <View style={[styles.resume, centeredStyle, { borderColor: color }]} />;
     default:
+      // 18dp solid with a ring of the route colour (opacity.endRing) around
+      // it, as the PNG's: two views, since a translucent border would only
+      // show the fill under it (2026-10-14: the ring never showed).
       return (
-        <View
-          style={[
-            styles.end, centeredStyle,
-            { backgroundColor: color, borderColor: `${color}55` },
-          ]}
-        />
+        <View style={[styles.end, centeredStyle]}>
+          <View style={[styles.endRing, { backgroundColor: withAlpha(color, opacity.endRing) }]}>
+            <View style={[styles.endCore, { backgroundColor: color }]} />
+          </View>
+        </View>
       );
   }
 }
@@ -152,7 +169,7 @@ function Pill({ pill, color }) {
   );
 }
 
-function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout }) {
+function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout, rangeStart = false, rangeEnd = false }) {
   const styles = useStyles(getStyles);
   const { fontScale: scale = 1 } = useWindowDimensions();
   const firstLine = { height: Math.ceil(type.cardTitle.lineHeight * scale) };
@@ -165,11 +182,16 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
   const note = interruptionText(node);
   const pill = nodePill(node);
   const pending = place?.state === 'pending';
+  // Its chevron reaches into the movement row below: drawn over that row's line.
+  const leaving = leavesFrom(node, next);
+  // Below the node: the chevron (with the small departure time beside it in
+  // the time column).
+  const below = firstLine.height / 2 + sizes.timeline.node.stop / 2;
   // No address (not found, offline, timed out): the place's coordinates.
   const title = lines.title;
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.pressedRow]}
+      style={({ pressed }) => [styles.row, leaving && styles.leavingRow, pressed && styles.pressedRow]}
       hitSlop={ROW_SLOP}
       testID={`timeline-${node.type}`}
       {...tap}
@@ -182,12 +204,25 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
         <Text style={styles.time} maxFontSizeMultiplier={TIME_MAX_SCALE}>
           {start}
         </Text>
-
+        {/* When it left (2026-10-14): smaller, beside the chevron. */}
+        {leaving && (
+          <Text style={[styles.leaveTime, { top: below }]} maxFontSizeMultiplier={TIME_MAX_SCALE} testID="leave-time">
+            {clock(node.end)}
+          </Text>
+        )}
       </View>
       <View style={styles.trackColumn}>
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
         <Track kind={lineOf(next)} color={color} from={12} />
-        <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line"><Node node={node} color={color} centered /></View>
+        <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line">
+          <Node node={node} color={color} centered rangeStart={rangeStart} rangeEnd={rangeEnd} />
+        </View>
+        {/* Leaving this stay (2026-10-14): a down chevron on the line under the node. */}
+        {leaving && (
+          <View style={[styles.leave, { top: below }]} testID="leave-chevron">
+            <Glyph name="leave" color={color} size={sizes.timeline.leave} />
+          </View>
+        )}
       </View>
       <View style={styles.placeOuter}>
         {/* The row the cursor is on: a pale fill of the route colour (H2). */}
@@ -217,9 +252,10 @@ const samePlace = (a, b) => a === b || (a?.state === b?.state && a?.text === b?.
 const PlaceRow = React.memo(PlaceRowView, (before, after) =>
   before.node === after.node && before.next === after.next && before.color === after.color
   && before.selected === after.selected && before.onPress === after.onPress
-  && before.onRowLayout === after.onRowLayout && samePlace(before.place, after.place));
+  && before.onRowLayout === after.onRowLayout && samePlace(before.place, after.place)
+  && before.rangeStart === after.rangeStart && before.rangeEnd === after.rangeEnd);
 
-function SectionRowView({ section, color, onPress }) {
+function SectionRowView({ section, from = null, color, onPress }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const text = sectionText(section);
@@ -232,7 +268,7 @@ function SectionRowView({ section, color, onPress }) {
       testID={`timeline-${section.type}-${section.mode}`}
       {...tap}
       accessibilityRole="button"
-      accessibilityLabel={sectionSpeech(section)}
+      accessibilityLabel={sectionSpeech(section, from)}
     >
       <View style={[styles.timeColumn, timeWidth()]} />
       <View style={[styles.trackColumn, styles.transportTrack]}>
@@ -273,6 +309,7 @@ function HistoryTimelineList({
   onRowLayout,
 }) {
   const nodes = useMemo(() => timelinePresentation(model.nodes), [model.nodes]);
+  const ends = useMemo(() => rangeEndRows(nodes), [nodes]);
   const places = usePlaceNames(
     nodes.map(node => (isSection(node) ? null : node)),
   );
@@ -291,6 +328,7 @@ function HistoryTimelineList({
           <SectionRow
             key={`s${node.start}-${index}`}
             section={node}
+            from={isSection(nodes[index - 1]) ? null : nodes[index - 1] ?? null}
             color={color}
             onPress={onPressNode}
           />
@@ -304,6 +342,8 @@ function HistoryTimelineList({
             onPress={onPressNode}
             onRowLayout={onRowLayout}
             next={isSection(nodes[index + 1]) ? nodes[index + 1] : null}
+            rangeStart={ends.start === index}
+            rangeEnd={ends.end === index}
           />
         ),
       )}
@@ -336,6 +376,25 @@ const getStyles = makeStyles(theme => {
     // The 12dp between rows is inside the place column, so the track column
     // runs the full row and the line has no breaks.
     row: { flexDirection: 'row' },
+    leavingRow: { zIndex: 1 },
+    // A range wholly in one stay: the solid end inside the start's ring.
+    bothEnds: {
+      width: sizes.timeline.node.stop,
+      height: sizes.timeline.node.stop,
+      borderRadius: sizes.timeline.node.stop / 2,
+      borderWidth: border.heavy,
+      backgroundColor: colors.elevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    leaveTime: {
+      position: 'absolute',
+      right: space.xs,
+      paddingTop: border.strong,
+      color: colors.textMuted,
+      ...type.caption,
+      fontVariant: ['tabular-nums'],
+    },
     sectionRow: { minHeight: sizes.timeline.sectionHeight },
     timeColumn: { width: TIME_WIDTH, alignItems: 'flex-end', paddingRight: space.xs },
     time: {
@@ -348,6 +407,8 @@ const getStyles = makeStyles(theme => {
     trackColumn: { width: TRACK_WIDTH, alignItems: 'center' },
     transportTrack: { justifyContent: 'center' },
     transportIcon: { backgroundColor: colors.elevated, paddingVertical: space.xs },
+    // The page colour around it: no dot of the line shows through.
+    leave: { position: 'absolute', backgroundColor: colors.elevated, paddingTop: border.strong, paddingBottom: space.xs },
     track: {
       position: 'absolute',
       bottom: 0,
@@ -408,9 +469,26 @@ const getStyles = makeStyles(theme => {
     end: {
       width: sizes.timeline.node.end,
       height: sizes.timeline.node.end,
-      borderRadius: sizes.timeline.node.end / 2,
-      borderWidth: border.emphasis,
       marginTop: sizes.timeline.node.endDrop,
+    },
+    // The ring reaches border.strong past the 18dp node: the layout keeps 18dp.
+    endRing: {
+      width: sizes.timeline.node.end + border.strong * 2,
+      height: sizes.timeline.node.end + border.strong * 2,
+      margin: -border.strong,
+      borderRadius: sizes.timeline.node.end / 2 + border.strong,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    endCore: {
+      width: sizes.timeline.node.end,
+      height: sizes.timeline.node.end,
+      borderRadius: sizes.timeline.node.end / 2,
+    },
+    bothEndsCore: {
+      width: sizes.timeline.node.stop - border.heavy * 4,
+      height: sizes.timeline.node.stop - border.heavy * 4,
+      borderRadius: sizes.timeline.node.stop / 2,
     },
     // 12dp between rows, outside the selected fill (radius.stayRow 12).
     placeOuter: { flex: 1, paddingBottom: space.xs },

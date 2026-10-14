@@ -29,10 +29,11 @@ test('gap splits different transport modes without switch point', () => {
 test('stops and switches share chronological numbering', () => {
   const points = [...visitsFixture(), point(640, 460), point(650, 520), point(660, 580), point(670, 590), point(680, 600), point(690, 610)];
   const model = historyTimeline(points, { subject: 'phone', range: { start: 0, end: 690000 } });
-  // #154: the stay at the start is the 出發 row's stay (「出發 · 停 N 分」),
-  // unnumbered; the numbers shown start at 1.
+  // 2026-10-14 (user, #163 round 3): the range begins with that stay, so it
+  // is the first row with the start circle and no number (no 出發); the
+  // numbers shown start at 1 (#154).
   expect(model.locations.filter(n => n.number).map(n => [n.type, n.number])).toEqual([['switch', 1], ['switch', 2]]);
-  expect(model.locations.find(n => n.type === 'stop')).toMatchObject({ number: null, listedWith: 'departure' });
+  expect(model.locations.find(n => n.type === 'stop')).toMatchObject({ number: null, listedWith: 'start' });
   expect(model.locations.find(n => n.type === 'stop').durationMs).toBe(240000);
 });
 // cases.txt「沒有明顯停留點…清單仍有出發、終點和中間移動段」。

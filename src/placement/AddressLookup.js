@@ -3,6 +3,7 @@ import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createAddressCache } from './AddressCache';
 import { NativeModules, Platform } from 'react-native';
 import { distanceMeters } from './IndoorHold';
+import { coordinates } from '../history/HistoryText';
 
 // Where a held dog is, in words: Android's built-in geocoder (free, no key)
 // names the nearest address. The address only labels the place; the dog stays
@@ -503,9 +504,20 @@ const pointKey = point =>
   point ? `${point.latitude},${point.longitude}` : '';
 
 /**
- * A7b's second line: the label or null. Not found, offline and still asking
- * all read null (no spinner); asked again every minute and whenever the card
- * opens. A held point may drift 50 m from where it was first named.
+ * The card's second line for a lookup answer about `point`: the words; null
+ * while still asking (undefined: no line); the coordinates when none was
+ * found (null).
+ */
+export const cardAddressLine = (value, point) =>
+  value === undefined ? null : value === null ? coordinates(point) : value;
+
+/**
+ * A7b's second line: the label, or null while still asking the first time (no
+ * line, no spinner). When the lookup really failed (no answer, offline, timed
+ * out, no geocoder) it is the place's coordinates (「24.9892, 121.3138」, as
+ * the history list); an answer arriving later replaces them. Asked again
+ * every minute and whenever the card opens. A held point may drift 50 m from
+ * where it was first named.
  */
 export function useAddress(point) {
   const lookup = useContext(AddressLookupContext);
@@ -525,7 +537,7 @@ export function useAddress(point) {
       setState({
         latitude,
         longitude,
-        value: lookup.lookup(held, { retry }) ?? null,
+        value: held ? cardAddressLine(lookup.lookup(held, { retry }), held) : null,
       });
     const unsubscribe = lookup.subscribe(() => refresh(false));
     refresh(true);

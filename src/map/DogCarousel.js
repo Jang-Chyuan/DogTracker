@@ -149,7 +149,7 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
               key={dog.slaveId}
               testID={open ? 'dog-card-edit' : `dog-card-pick-${dog.slaveId}`}
               accessibilityRole="button"
-              accessibilityLabel={open ? t('c378', { dogName: dog.name }) : t('c1340', { name: dog.name })}
+              accessibilityLabel={open ? t('c378', { dogName: dog.name }) : t('c1350', { name: dog.name })}
               accessibilityActions={open ? actions : undefined}
               onAccessibilityAction={open ? onAction : undefined}
               onPress={() => {

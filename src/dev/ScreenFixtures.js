@@ -416,6 +416,12 @@ const endsInStay = now => legsPath(now, 100 * MINUTE, at(-10, -100), [
   { stay: 10 }, { walk: 20, bearing: 35, speed: 0.6 }, { stay: 15 }, { walk: 20, bearing: 95, speed: 0.6 },
   { stay: 35 },
 ]);
+// A day like 10/13 (2026-10-14): at home from 00:00 until 07:00, a walk, a
+// short stay, the walk home, at home again until about 09:25.
+const homeDay = now => legsPath(now, 570 * MINUTE, at(-10, -100), [
+  { stay: 420 }, { walk: 20, bearing: 35, speed: 0.8 }, { stay: 15 }, { walk: 20, bearing: 215, speed: 0.8 },
+  { stay: 110 },
+]);
 // 小黑's morning like H1 狗的歷史: out at about 07:00, stays, a ride, now.
 const dogMorning = now => legsPath(now, 158 * MINUTE, at(0, -80), [
   { stay: 12 }, { walk: 24, bearing: 30, speed: 0.7 }, { stay: 17 }, { walk: 30, bearing: 100, speed: 0.7 },
@@ -1018,7 +1024,7 @@ const FIXTURES = {
     cloudRows: dog8Cloud(now),
   }),
   // 小黑 held indoors with no network: no address is asked, the 位置 row is
-  // 「室內」 alone (still 64dp), no spinner (edges「沒網路時查地址」).
+  // 「室內」 over the held place's coordinates (2026-10-14), no spinner.
   'dog-indoor-no-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: { offline: true } }),
   // card-indoor named by this phone's own Geocoder (network + Play services;
   // the place is by Taoyuan station). Nothing is written to its cache.
@@ -1421,6 +1427,18 @@ const FIXTURES = {
   'history-ends-in-stay': now => ({ ...FIXTURES['all-good'](now),
     phone: routePhone(endsInStay(now), now), openRoute: 'history', history: historyPage(now),
     geocoder: { names: HISTORY_NAMES } }),
+  // 2026-10-14: a range that begins with a stay has no 出發 — the whole day
+  // from 00:00: 停留 1 (home since midnight), a walk, 停留 2, the walk home,
+  // and 「結束 · 停 N 分」 (home again). Without the dragged range (-auto) the
+  // range starts at the detected departure: 出發 then the walk.
+  'history-starts-with-stay': now => ({ ...FIXTURES['all-good'](now),
+    phone: routePhone(homeDay(now), now), openRoute: 'history', history: historyPage(now),
+    historyView: { manual: { start: now - 570 * MINUTE, end: now - 5 * MINUTE, following: false }, cursorAgo: 135 * MINUTE },
+    geocoder: { names: HISTORY_NAMES } }),
+  'history-starts-with-stay-auto': now => ({ ...FIXTURES['history-starts-with-stay'](now), historyView: {} }),
+  // H1 我的路線 with the cursor an hour back: the map's end time marker (solid,
+  // 2026-10-14) is not under the cursor.
+  'history-end-marker': now => ({ ...FIXTURES['history-my-route'](now), historyView: { cursorAgo: 60 * MINUTE } }),
   'history-dog-ends-in-stay': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: endsInStay(now).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix })) }),
     geocoder: { names: HISTORY_NAMES } }),
