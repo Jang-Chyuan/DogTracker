@@ -9,7 +9,7 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
-import { useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { KEPT_ROWS_WAIT_MS, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import * as models from '../src/history/screen/HistoryMultiModel';
 
 const DAY_MS = 86400000;
@@ -70,12 +70,15 @@ afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 const TODAY_ROWS = Math.floor((NOW - 60000 - FIRST_FIX) / EVERY_MS);
 
 const build = models.multiDayModel;
-async function screenOf(db) {
+async function screenOf(db, { readDelayMs = 0 } = {}) {
   const counts = { builds: 0, reads: 0, verified: 0 };
+  const frames = [];
   jest.spyOn(models, 'multiDayModel').mockImplementation((...args) => { counts.builds += 1; return build(...args); });
   const read = request => {
     counts.reads += 1;
     if (request.verify) counts.verified += 1;
+    if (readDelayMs && request.verify)
+      return new Promise(resolve => setTimeout(resolve, readDelayMs)).then(() => db.history.historyDayRows(request));
     return db.history.historyDayRows(request);
   };
   const phone = { subject: 'phone', slaveId: null };
@@ -83,6 +86,7 @@ async function screenOf(db) {
   function Probe({ open, active }) {
     screen = useHistoryScreen({ target: open ? phone : null, read, readDays: db.history.historyDays,
       clock: Date.now, active: open && active, memoryScope: 'reopen:', recording: true });
+    frames.push(screen.model);
     return null;
   }
   const show = async ({ open = true, active = true } = {}) => {
@@ -94,15 +98,16 @@ async function screenOf(db) {
   const settle = async (ms = 600) => { await act(async () => { await jest.advanceTimersByTimeAsync(ms); }); };
   const reset = () => {
     for (const key of Object.keys(counts)) counts[key] = 0;
+    frames.length = 0;
     for (const key of Object.keys(db.stats)) db.stats[key] = 0;
   };
-  return { counts, show, settle, reset, get screen() { return screen; },
+  return { counts, frames, show, settle, reset, get screen() { return screen; },
     unmount: async () => { await act(async () => renderer.unmount()); } };
 }
 
 const summary = model => ({ points: model.points.length, nodes: model.nodes.map(n => `${n.type}:${n.start}:${n.end}`) });
 
-test('opened again after more fixes: only the new fixes are read, the day is built once more', async () => {
+test('opened again after more fixes: only the new fixes are read, the day is built once, with them', async () => {
   const db = await database();
   db.add(0, TODAY_ROWS - 120);
   const s = await screenOf(db);
@@ -127,8 +132,8 @@ test('opened again after more fixes: only the new fixes are read, the day is bui
     expect(db.stats.pageRows).toBe(120);
     // The day list jumps along the time index instead of scanning every row.
     expect(db.stats.dayScans).toBe(0);
-    // Shown at once from the kept rows, then with the new fixes: never more.
-    expect(s.counts.builds).toBeLessThanOrEqual(2);
+    // Built once, when the new fixes are in (not once without them first).
+    expect(s.counts.builds).toBe(1);
     const reopened = summary(s.screen.model);
     // The same day as a reader that read it all from the start.
     const fresh = await screenOf(db);
@@ -156,6 +161,8 @@ test('back from the background with no new fixes: nothing is read again, the day
     jest.setSystemTime(NOW + 10 * 60000);
     await s.show({ active: true });
     await s.settle();
+    // The view shown before stays while its rows are read on.
+    expect(s.frames.every(Boolean)).toBe(true);
     expect(s.counts.reads).toBe(1);
     expect(db.stats.pages).toBe(1);
     expect(db.stats.pageRows).toBe(0);
@@ -199,4 +206,26 @@ test('historyDays for my route: the same days as a scan of every row', async () 
     expect(scan).toHaveLength(5);
     expect(db.stats.dayScans).toBe(0);
   } finally { db.connection.close(); }
+});
+
+test('a slow read of the new fixes: the kept rows are shown after the wait, the new ones follow', async () => {
+  const db = await database();
+  db.add(0, TODAY_ROWS - 60);
+  const s = await screenOf(db, { readDelayMs: 3000 });
+  try {
+    await s.show();
+    await s.settle();
+    await s.show({ open: false });
+    db.add(TODAY_ROWS - 60, TODAY_ROWS);
+    s.reset();
+    await s.show();
+    await s.settle(KEPT_ROWS_WAIT_MS - 50);
+    expect(s.screen.model).toBeNull();
+    await s.settle(100);
+    expect(s.counts.builds).toBe(1);
+    const kept = s.screen.model.points.length;
+    await s.settle(3000);
+    expect(s.counts.builds).toBe(2);
+    expect(s.screen.model.points.length).toBeGreaterThan(kept);
+  } finally { await s.unmount(); db.connection.close(); }
 });

@@ -77,6 +77,12 @@ const CLOCK_MS = 60000;
 // it queued behind it). A day that took longer to build waits a little
 // longer, within these bounds. Its rows are already being read meanwhile.
 export const DAY_STEP_SETTLE_MS = 150;
+// Coming back to my route's kept rows (reopened, or back from the
+// background): the view waits this long at most for the small read of the
+// fixes added since, so the day is built once with them rather than once
+// without them and again a moment later (2026-10-15). Past it, the kept
+// rows are shown and the new ones follow.
+export const KEPT_ROWS_WAIT_MS = 400;
 export const DAY_STEP_SETTLE_MAX_MS = 250;
 
 /**
@@ -127,6 +133,10 @@ export function useHistoryDayRows({
   // the app was away). One day only; `revision` (read again from the start)
   // never continues.
   const keptRows = useRef(null);
+  // The running reader: `pending` while its kept rows wait for their first
+  // read (at most KEPT_ROWS_WAIT_MS).
+  const liveRun = useRef(null);
+  const [, setRunTick] = useState(0);
   const rowIdentity = useRef({ read, scope: publicationState?.scope, generation: publicationState?.generation, epoch: 0 });
   if (rowIdentity.current.read !== read || rowIdentity.current.scope !== publicationState?.scope
     || rowIdentity.current.generation !== publicationState?.generation)
@@ -159,6 +169,15 @@ export function useHistoryDayRows({
     if (subject === 'phone') keptRows.current = { key, revision, cache };
     // The kept rows are checked once, on the first read of this reader.
     let verify = !!kept;
+    const run = { key, pending: !!kept && !kept.first };
+    liveRun.current = run;
+    const settled = () => {
+      if (!run.pending) return;
+      run.pending = false;
+      clearTimeout(keptWait);
+      if (alive) setRunTick(tick => tick + 1);
+    };
+    const keptWait = run.pending ? setTimeout(settled, KEPT_ROWS_WAIT_MS) : null;
     const identity = [subject, slaveId, day, owner, scope, read, getPublication,
       publicationState?.scope, publicationState?.generation];
     // The hold pass (IndoorHold) is the costly part of a day: today's rows
@@ -233,6 +252,7 @@ export function useHistoryDayRows({
         if (cache.first) cache.seed = answer.seed || [];
         cache.after = answer.after || {};
         verify = false;
+        settled();
         // The kept rows are no longer the table's: these rows are the day.
         const replaced = !!answer.replaced;
         if (replaced) { cache.rows = []; cache.future = []; }
@@ -286,6 +306,7 @@ export function useHistoryDayRows({
           : PAST_POLL_MS);
       } catch (error) {
         if (!alive) return;
+        settled();
         if (!fence.valid()) {
           diagnostic?.emit('row', 'rejected', began, historyPublicationFlags(getPublication?.(), owner, before, false));
           retryPublication(); return;
@@ -303,6 +324,8 @@ export function useHistoryDayRows({
     return () => {
       alive = false;
       clearTimeout(timer);
+      clearTimeout(keptWait);
+      if (liveRun.current === run) liveRun.current = null;
       controller?.abort();
       if (publicationReader.current === reader) publicationReader.current = null;
     };
@@ -318,9 +341,15 @@ export function useHistoryDayRows({
     result.key === key
       ? result
       : { rows: [], version: 0, error: '', replayHolds: null };
+  // Kept rows about to be read on (the reader starts after this render) or
+  // being read on, within KEPT_ROWS_WAIT_MS.
+  const resumable = subject === 'phone' && active && !!read && !!key && result.key === key
+    && keptRows.current?.key === key && keptRows.current.revision === revision && !keptRows.current.cache.first;
+  const refreshing = resumable && (liveRun.current?.key !== key || liveRun.current.pending);
   return {
     ...current,
     loaded: !!key && result.key === key && result.version > 0,
+    refreshing,
   };
 }
 
@@ -732,6 +761,11 @@ export function useHistoryScreen({
   // protagonist once); a dog added later is left out while it is read.
   const allLoaded =
     current.dogs.length > 0 && current.dogs.every(d => rowsOf(d.id).loaded);
+  // My route's kept rows being read on (KEPT_ROWS_WAIT_MS): the view shown
+  // stays (back from the background), or the skeleton (opened again), and
+  // the day is built once the fixes added since are in.
+  const refreshing = current.dogs.some(d => rowsOf(d.id).refreshing);
+  const lastBuilt = useRef(null);
   const shownOnce = useRef(null);
   if (allLoaded && sessionKey)
     shownOnce.current = `${sessionKey}|${day}`;
@@ -789,6 +823,7 @@ export function useHistoryScreen({
     if (rangePending) return completedRangeModel.current?.scope === completedScope
       ? completedRangeModel.current.model : null;
     if (!subject || !subjects.length || waiting || !coverageReady || rereading) return null;
+    if (refreshing) return lastBuilt.current?.scope === completedScope ? lastBuilt.current.model : null;
     const main = subjects.find(s => s.id === current.protagonist)
       ? current.protagonist
       : subjects[0].id;
@@ -826,6 +861,7 @@ export function useHistoryScreen({
       rowsLoaded: allLoaded, completenessLoaded: cloudDays.completenessLoaded, coverageReady, modelReady: true });
     diagnosticModelFinished.current = { diagnostic, model: built.main, at: Date.now(),
       count: built.main?.points.length ?? 0 };
+    lastBuilt.current = { scope: completedScope, model: built };
     return built;
     // versions stands for the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -848,6 +884,7 @@ export function useHistoryScreen({
     waiting,
     coverageReady,
     rereading,
+    refreshing,
   ]);
   // Either blocker qualifies: the proof waiting for its re-read/tail, or the
   // day's rows re-reading for the new material/cutoff.
