@@ -141,7 +141,6 @@ export const fontWeight = { medium: '500' };
 
 export const type = {
   headline: { fontSize: 24, lineHeight: 32, fontWeight: '700' },
-  nameEdit: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
   title: { fontSize: 20, lineHeight: 28, fontWeight: '700' },
   body: { fontSize: 16, lineHeight: 24, fontWeight: '400' },
   status: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
@@ -359,16 +358,10 @@ export const size = {
   listRow: { avatar: 32 },
   // 判定表「載入中、產生中」: the small spinner (export, downloads).
   spinner: 20,
+  // A5, the dog's edit sheet: the face picker under the name.
   edit: {
-    avatar: 96,
-    camera: 36,
-    pencil: 16,
     choice: 48,
     colorDot: 32,
-    // A5 camera overlap and minimum editable dog-name field.
-    cameraOverhang: 2,
-    nameMinimum: 64,
-
     // edit preview in its illustration/layout specification.
     preview: 80,
     // edit choice ring clearance in its illustration/layout specification.

@@ -1,5 +1,7 @@
 // Test-only reference: src/locationTracker/PhoneMotion.js as it was before
-// its windows became incremental (main c824590), kept verbatim so
+// its windows became incremental (main c824590), kept verbatim (apart from
+// later rule changes, made here in the same plain style: the reached-back
+// sparse fine window of the slow-walk fix) so
 // __tests__/PhoneMotionReplayEquivalence.test.js can prove the faster
 // implementation decides exactly the same. Never import this from src/.
 // Raw phone evidence. Coordinates are preserved separately from the display lock.
@@ -214,14 +216,21 @@ export class PhoneMotion {
     return this.state;
   }
   departure(p) {
-    const fine = this.tail
-      .filter(q => p.time - q.time <= 20000)
-      .every(q => q.accuracy <= 10);
+    const recent = this.tail.filter(q => p.time - q.time <= 20000);
+    const fine = recent.every(q => q.accuracy <= 10);
+    // Fewer than 19 s of fixes in the last 20 s (saved rows 5 s apart): reach
+    // back to the newest fix older than 20 s, at most 30 s old.
+    let fineWidth = 20000;
+    if (!(recent.length && p.time - recent[0].time >= 19000)) {
+      const older = this.tail.map(q => p.time - q.time).filter(a => a > 20000);
+      const age = older.length ? Math.min(...older) : Infinity;
+      if (age <= 30000) fineWidth = age;
+    }
     for (const width of fine
-      ? [20000]
+      ? [fineWidth]
       : [120000, 180000, 240000, 300000, 600000]) {
       const t = this.tail.filter(q => p.time - q.time <= width);
-      if (t.length < 3 || p.time - t[0].time < width - (fine ? 1000 : 20000))
+      if (t.length < 3 || p.time - t[0].time < (fine ? 19000 : width - 20000))
         continue;
       const first = t[0],
         net = dist(first, p);
@@ -239,7 +248,12 @@ export class PhoneMotion {
       const steps = t.slice(1).map((q, i) => dist(t[i], q));
       const path = steps.reduce((a, b) => a + b, 0);
       if (net / path < 0.85 || Math.max(...steps) >= net * 0.5) continue;
-      if (fine) return true;
+      // The reached-back window must also measure walking (0.5–3 m/s) on
+      // more than half of its fixes.
+      if (fine) return width === 20000 || 2 * t.filter(q => {
+        const kmh = rawPhoneSpeed(q), speed = kmh == null ? NaN : kmh / 3.6;
+        return speed >= 0.5 && speed <= 3;
+      }).length > t.length;
       let valid = true;
       for (let k = 0; k < width / 30000; k++) {
         const part = t.filter(

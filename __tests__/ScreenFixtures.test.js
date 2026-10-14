@@ -894,15 +894,20 @@ test('the real map: the pencil opens the page, a new name and face show on the c
       && typeof node.props.onPress === 'function')[0];
     await act(async () => pencil.props.onPress());
     expect(renderer.root.findAll(node => node.props.testID === 'dog-profile')).not.toHaveLength(0);
-    const name = renderer.root.findAll(node => node.props.testID === 'dog-profile-name'
-      && typeof node.props.onPress === 'function')[0];
-    await act(async () => name.props.onPress());
+    // One sheet: the name and the face, both stored by its 完成.
+    const pressId = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
+      && typeof node.props.onPress === 'function')[0].props.onPress());
     const { TextInput } = require('react-native');
     await act(async () => renderer.root.findByType(TextInput).props.onChangeText('小白'));
-    await act(async () => renderer.root.findByType(TextInput).props.onSubmitEditing());
+    await pressId('avatar-art-curly');
+    expect(state.aliases).toBeNull();
+    expect(state.avatars).toBeNull();
+    await pressId('dog-profile-done');
     expect(live.history.save).not.toHaveBeenCalled();
+    expect(live.dogAvatars.save).not.toHaveBeenCalled();
   } });
   expect(state.aliases).toEqual({ 4: '小白', 6: '小黑', 8: '阿福' });
+  expect(state.avatars).toEqual({ 4: { kind: 'art', art: 'curly', color: 'coral' } });
   const face = { kind: 'photo', uri: 'data:image/jpeg;base64,AAAA' };
   const after = await renderFixture('card-ok', { edits: { ...edits, aliases: state.aliases, avatars: { 4: face } } });
   expect(after.text).toContain('小白');

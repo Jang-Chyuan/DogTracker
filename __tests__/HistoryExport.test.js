@@ -13,7 +13,7 @@ import { buildGPX } from '../src/mapHistory/ExportGPX';
 import { buildCSV, CSV_COLUMNS } from '../src/mapHistory/ExportCSV';
 import { buildExportFilename } from '../src/mapHistory/ExportFiles';
 import { cleanExports, makeExportFiles, useHistoryExport } from '../src/mapHistory/useHistoryExport';
-import { AddressLookupContext } from '../src/placement/AddressLookup';
+import { ADDRESS_CONFIG, AddressLookupContext } from '../src/placement/AddressLookup';
 import { colors, routeColors } from '../src/theme/tokens';
 import { withAlpha } from '../src/history/screen/HistoryMapModel';
 
@@ -79,11 +79,12 @@ describe('the snapshot of the day shown', () => {
       .toEqual(model.nodes.map(n => (n.type === 'movement' || n.type === 'gap' ? expect.any(String) : n.type)));
   });
 
-  test('list rows: an address found is the title; otherwise no coordinates; the end says 結束', () => {
+  test('list rows: an address found is the title; otherwise the coordinates (as the list); the end says 結束', () => {
     const places = subject.timeline.filter(row => row.kind === 'place');
     expect(places[0]).toMatchObject({ title: '桃園區中正路 50 號附近', missing: '' });
-    expect(places[1].title).toBe('');
+    expect(places[1].title).toBe(`${places[1].latitude.toFixed(4)}, ${places[1].longitude.toFixed(4)}`);
     expect(places[1]).toMatchObject({ missing: '', coordinates: '' });
+    expect(places.every(row => row.title)).toBe(true);
     expect(places[places.length - 1].pill.text).toBe(i18nT('c330'));
     expect(JSON.stringify(subject.timeline)).not.toContain(i18nT('c130'));
   });
@@ -322,7 +323,7 @@ describe('the export window (useHistoryExport)', () => {
     act(() => { running = state.start('gpx'); });
     expect(state.phase).toBe('generating');
     await act(async () => running);
-    expect(lookup.lookupAddresses).toHaveBeenCalledWith(expect.any(Array), { timeoutMs: 5000 });
+    expect(lookup.lookupAddresses).toHaveBeenCalledWith(expect.any(Array), { timeoutMs: ADDRESS_CONFIG.exportWaitMs });
     expect(exporter.calls.share[0]).toMatchObject({ mime: 'application/gpx+xml' });
     expect(exporter.calls.removeExports).not.toContainEqual([`history_exports/${DAY + 5000}-1`]);
     expect(state.phase).toBe('closed');

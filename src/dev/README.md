@@ -29,8 +29,8 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 歷史畫面開成什麼樣子 | `historyView`：`rangeOpen`（範圍條打開）、`manual`（已經拖過的範圍 `{ start, end, following }`）、`calendar`（`'month'` 月曆／`'months'` 選月份打開）、`goTo`（開在別天，只在雲端的日子會開始下載）、`dogs`（再加哪幾隻狗，055b）、`protagonist`、`sheet`（`'dogs'` 選狗小視窗開著）、`cursorAgo`（游標在多久以前）；情境拖的範圍只記在情境自己的記憶（`fixture:<名稱>:`），不混進真實的範圍 | `useHistoryScreen`（`memoryScope`、`preset`）、`HistoryScreen`（`initialRangeOpen`） |
 | 雲端的日子、下載（054b） | `historyCloud`：`fixtureHistoryCloud` 照 `HistoryCloud` 的介面回答（`newestBefore`、`earliest`、`download`），資料是情境自己的「雲端」列；下載把那天的列放進情境的 `supabase_dog_status`；`online: false` 沒網路；`seed` 是開頭就知道的雲端日子 | `useHistoryCloud` → 月曆的點、‹ ›、H3c／H3d；情境從不連 Supabase |
 | 匯出（056） | `historyExport`：`'hang'`（產生中一直不結束）、`'fail'`、`'fail-once'`（第一次失敗、重試成功）；沒給就是真的原生匯出（檔案寫進這支手機的 cache、打開 Android 分享）。`historyView.export`：`{ phase: 'choose' \| 'generating' \| 'failed', format }` 開著匯出小視窗 | `useHistoryExport` → `HistoryExportSheet`、`HistoryExportPackage.kt` |
-| 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、個人頁（A5） |
-| 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、個人頁 |
+| 狗的名字 | `dogAliases`（4 豆豆、6 小黑、8 阿福） | 名稱牌、卡片、編輯小視窗（A5） |
+| 狗的頭像 | `avatars`（訊號源編號 → 頭像；沒給就是預設插圖）；`src/dev/fixturePhoto.js` 是腳本畫的假照片 | 地圖標記、卡片、編輯小視窗 |
 | 時鐘 | 固定 `FIXTURE_NOW` = 2026-10-07 09:30（台灣） | 地圖的 `now`（取代 `useMapClock`） |
 | 提醒（058a） | 情境自己的提醒引擎（`useAlertEngine`，不存進手機）跑在情境的假時鐘上；`alertPause: { since, until }` 開的時候已經暫停；`&page=alertPreview` 的「+N 分」把假時鐘往前移、「App 在背景」模擬背景，看合併通知的內容、`notify`／`update`／收起、震動節奏和 N3 卡片；「App 在背景」時情境的假問題會發出真的系統通知（058b），可以拉下通知欄看、按按鈕 | `AlertEvents` → `AlertScheduler` → `AlertContent`、`AlertEffects` → `AlertNotifications`（原生） |
 | 背景提醒（058b） | 沒有接收器時用 `DebugAlertFeed`（debug 版才有的廣播）餵假封包給原生的背景提醒判斷：`. scripts/app-package.sh; adb shell am broadcast -n "$PACKAGE/com.dogtracker.DebugAlertFeed" -a com.dogtracker.debug.ALERT_PACKET --ei sid 4 --ef lat … --ef lon … --ef mlat … --ef mlon … [--ei bp 15] [--el at <ms>]`，再 `-a com.dogtracker.debug.ALERT_STEP [--ez connected false --el disconnectedAt <ms>] [--el at <ms>]` 跑一步（App 在畫面上時不跑，輪到 App 自己判斷）；`ALERT_RESET` 全部清掉。座標只用桃園站附近的假位置 | `BackgroundAlerts.evaluate`（和 App 同一份規則的 Kotlin 版，`AlertParityTest`）→ `AlertPoster` |
@@ -39,13 +39,13 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | 接收器 Wi-Fi | `wifi`（接收器存的網路，預設「家裡、辦公室」、使用中「家裡」）；新增、刪除只改記憶體 | `useReceiverWifi` → S7 第二行、Wi-Fi 頁 |
 | 刪除全部狗資料 | `deletion: { unsent, open }`：還沒上傳的筆數、確認框一打開就出現；情境裡「先上傳」一律沒網路、「一起刪除」不刪任何東西 | `useDeleteDogData` → S7 確認框 |
 | 啟動 | `launch`：冷啟動時 `Launch.launchScreen` 讀的輸入（資料庫打開了沒／錯誤、設定讀完沒、引導走到哪一步、恢復登入結束或超過 10 秒、登入了沒、恢復時登入已失效）；`restoring`：恢復登入還在等 Supabase | `launchScreen` → App 開在地圖、D1（第一次／登入失效）或 D0 啟動失敗；S3「暫時連不上，會自動重試」 |
-| 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的個人頁（A5） | `MapScreen` 開那隻狗的摘要卡片（A3），‹ › 的順序照 `DogSwitch.switchOrder` |
+| 打開的卡片 | `openDog`（訊號源編號）；`openPage: 'edit'` 再打開牠的編輯小視窗（A5） | `MapScreen` 開那隻狗的摘要卡片（A3），換狗的順序照 `DogSwitch.switchOrder` |
 | 初次使用 D2–D4 | `permissionsGuide`（D2 每列的允許狀態 `grants`、問過了沒 `asked`）、`pairing`（D3 的畫面：`view`、`camera`、`dialog`、`target`、`nearby`、`input`）；開在引導的那一頁（有進度條）。情境不問任何權限、不掃描、不連線，掃描框裡不開相機 | `permissionsPage` → D2；`usePairing` → D3；D4 用 `pairedPage` 讀同一批本機列 |
 | 地址 | `geocoder`：沒給＝每個地方都查不到；`{ names: [...] }` 照畫面問的順序給假答案（`{ line, awayM }`、`{ district }` 或 `null`）；`{ offline: true }` 沒網路；`'real'` 用這支手機的 Geocoder。情境用自己的 lookup，不寫進手機的地址快取 | `AddressLookup`（`describePlace` 的 50 m／300 m／區規則）→ 卡片「位置」第二行、歷史清單的節點 |
 | 卡片的讀數 | 同一批列的 `activity`／`activity_valid`／`battery_valid`／`battery_mv`，`readCardRows` 照 `CloudDatabase.dogCardRows` 的查法交出 | `DogCardReadings`（活動量每分鐘、最新可信電量 `BatteryPlausibility`）→ `DogCardModel` |
 | 活動量頁（A4） | `activityView`（開在哪個分頁、哪一天 `{ mode, date }`）、`readActivity`／`readActivityEarliest` 照 `CloudDatabase.activityPeriod`／`activityEarliest` 的介面回答小黑（6）的讀數（日：每分鐘兩筆原始讀數；週／月／年：每分鐘平均）；`activityNow`：只給 A4 的時鐘（`activity-today` 在 09:30:40，還沒結束的那一分鐘讀數 0.95） | `useActivityView` → `buildActivityView`／`combineYearView` → `ActivityScreen` |
 
-第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的個人頁（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
+第三版沒有隱藏的狗、跟隨；情境裡卡片的「看軌跡」不會寫進這支手機的歷史查詢。在情境裡的編輯小視窗（A5）改名字、換頭像只記在記憶體（`useFixtureEdits`），畫面照樣更新，換情境或關掉就忘記，不會寫進這支手機的狗名和 `dog_avatars`。所有座標都是桃園車站附近捏造的位置，不要用真實資料的區域。
 
 ## 現有情境
 
@@ -93,7 +93,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `card-readings-old` | 豆豆位置是新的，但電量、活動量 09:11 之後沒有讀數：「62%（09:11）」「休息中・已 12 分鐘（09:11）」 |
 | `card-long-name` | 同 `card-switch`，豆豆改成虛構的 15 字長名字：標題列 100% 字一行、結尾「…」，200% 字換行 |
 | `card-switch` | 六隻狗（豆豆、小黑、阿福走在一起合成「3 隻」，阿福 12% 有紅色「!」；狗 5、9、12 各自走），開著豆豆的卡片：‹ ›、左右滑換狗，順序豆豆 → 阿福（有問題）→ 狗 5 → 小黑 → 狗 9 → 狗 12，循環 |
-| `dog-edit` | `card-ok` 再按鉛筆：豆豆的個人頁（A5）蓋在卡片上 |
+| `dog-edit` | `card-ok` 再按鉛筆：豆豆的編輯小視窗（A5：名字＋頭像）蓋在卡片上 |
 | `activity-card` | 小黑的卡片（A3）；點「活動量」進 A4（今天），讀數和下面的情境同一套 |
 | `activity-day` | A4 日：10/6（二）整天有資料：夜裡休息、早上跑步（劇烈）、午睡、下午玩 |
 | `activity-day-gap` | 同一天四段沒有資料：列出三段＋「另外 1 段」＋「合計 1 小時 12 分」，曲線在缺口斷開 |
@@ -154,7 +154,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-range-open` | H2b：同 `history-my-route`，範圍條打開、開始已拖到 07:50（「出發」），結束跟著現在（`historyView`） |
 | `history-single-point` | 只有一筆：豆豆今天只有 09:10 一筆 → 一個點、距離 0、沒有「調整範圍」 |
 | `history-empty-day` | H8：我的路線今天沒有紀錄（昨天有）→「今天還沒有路線」、右上匯出變淡、‹ 跳到昨天 |
-| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（第一行座標、第二行膠囊）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
+| `history-today` | 歷史頁、我的路線（H1/H2）：06:50 在家、約 07:05 出發、兩個停留、走到現在；出發、停留 1、現在有地址（停留 1 是「約 120 m」），停留 2 查不到（膠囊後面寫座標）；`&page=map` 看右下「今天 x km」＝摘要的距離 |
 | `history-confirming` | 我的路線：原地後開始走路 → 暫定時間範圍，確認失敗回全天 |
 | `history-no-departure` | 我的路線：06:30 起一直在家附近 →「06:30 – 現在」，範圍＝今天全部記錄，沒有停留 |
 | `history-mode-switch` | 我的路線：走路 → 開車 12 分 → 走路，換方式的地方各一個編號點（交通方式切換點），最後停留 |
@@ -184,6 +184,9 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-export-fail-once` | 第一次匯出失敗、重試成功（同一份快照） |
 | `history-export-multi` | H10b：小黑＋豆豆＋阿福（雲端）＋狗 5，匯出小視窗打開（多隻狗 PNG） |
 | `history-export-day` | H10a：小黑一天有停留、坐車、沒有資料、室內，匯出小視窗打開 |
+| `history-busy-day` | 小黑很忙的一天：約 06:25 出發、16 個停留（相隔約 200 m）；捏造的地址（示範路）每筆要 1.5 秒，後面的列 shimmer 久一點，第 6、13 個地方查不到（寫座標） |
+| `history-busy-day-geocoder` | 同上，地址用這支手機自己的 Geocoder 查（要網路＋Play services；看真的查詢時間） |
+| `history-busy-day-export`、`history-busy-day-geocoder-export` | 同上兩個，匯出小視窗打開（清單還沒查完就匯出 PNG） |
 | `db-open-failed` | 手機裡的資料庫打不開 → D0 啟動失敗「手機裡的資料打不開」＋「重試」「診斷」；「診斷」最上面寫原因 |
 
 ## 新增情境（之後每個 PR）

@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-// A dog's name as edited on its page (design v3 A5a, 判定表「A5a 名字輸入」
+// A dog's name as edited in its sheet (A5; design v3 判定表「A5a 名字輸入」
 // 「A5a 名字清空時」): at most 20 characters; a name that is empty or only
 // spaces is never saved — the dog keeps the name it had (「狗 4」 if it never
 // had one), with no error.

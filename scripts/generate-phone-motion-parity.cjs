@@ -186,6 +186,36 @@ run('coarse-slow-walk-2d', [
   ...series(1, 30, 1, t => [...jitter(t, 1), 14, 0, 0.3]),
   ...series(31, 700, 1, t => [(t - 30) * 0.42, (t - 30) * 0.56, 45, 2.52, 0.3]),
 ]);
+// Saved rows (5 or 6 s apart) at ≤ 10 m: the fine window reaches back past
+// 20 s. Rows alternate 5 and 6 s from `from`; row(t, i) gives the rest.
+const sparse = (from, count, row) => {
+  const rows = [];
+  for (let i = 0, t = from; i < count; i += 1, t += i % 2 ? 5 : 6) rows.push([t, ...row(t, i)]);
+  return rows;
+};
+// Still, then a 3.6 km/h walk measured ± 0.72 m/s (inside its uncertainty):
+// it leaves within half a minute; stop-and-go rounds after it.
+run('fine-sparse-slow-walk', [
+  ...sparse(1, 30, t => [...jitter(t, 0.3), 3.8, 0, 0.07]),
+  ...sparse(166, 60, (t, i) => [(t - 166) * 0.96, (t - 166) * 0.28 + (i % 2) * 0.6, 3.8, 3.6, 0.72]),
+  ...sparse(497, 80, (t, i) => {
+    const walked = Math.min((t - 497) % 60, 40) + 40 * Math.floor((t - 497) / 60);
+    return [316 + walked * 0.9, 92 + walked * 0.4, 3.8, (t - 497) % 60 < 40 ? 3.6 : 0, (t - 497) % 60 < 40 ? 0.72 : 0.07];
+  }),
+]);
+// Still, then indoor runs of 5–6 m a row at a confident zero speed: kept.
+run('fine-sparse-drift', [
+  ...sparse(1, 30, t => [...jitter(t, 0.3), 3.8, 0, 0.07]),
+  ...sparse(166, 120, (t, i) => {
+    const burst = Math.floor(i / 20), k = Math.min(i % 20, 4);
+    return [burst * 3 + k * 5.5 * Math.cos(burst), k * 5.5 * Math.sin(burst), 3.8, 0, 0.1];
+  }),
+]);
+// A car at 7 m/s every 3 s, then fixes 6 s apart at 1.15 ± 0.76 m/s.
+run('fine-sparse-car', [
+  ...series(1, 61, 3, t => [t * 7, 0, 4, 25.2, 0.8]),
+  ...series(67, 127, 6, t => [427 + (t - 61) * 1.15, 0, 4, 4.14, 0.76]),
+]);
 // Coarse fixes from the start never confirm a stop.
 run('coarse-from-start', series(1, 400, 1, t => [...jitter(t, 15), coarse(t), 0, 0.3]));
 
