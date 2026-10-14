@@ -19,6 +19,11 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 class MainActivity : ReactActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // Made again after the system closed the app (Recents, or back from
+    // another app): the link that first opened it is not opened again.
+    if (LaunchLink.isReplayed(intent?.flags ?: 0, savedInstanceState != null)) {
+      intent?.let { setIntent(LaunchLink.withoutLink(it)) }
+    }
     // Must run before super.onCreate: it swaps Theme.App.Starting for AppTheme.
     // Warm start (already handed over in this process): no launch screen to
     // wait for.

@@ -26,14 +26,17 @@ export function createSettingsDatabase(connection) {
     },
     // Whether this phone used the app before (dog positions received or
     // downloaded), for a phone that never saved preferences: such an update
-    // is not a first launch (Launch.js).
+    // is not a first launch (Launch.js). A read that fails for another reason
+    // (busy, timed out under load) cannot tell: it counts as used, so a phone
+    // that passed the guide never sees D1 again because of a slow start.
     async usedBefore() {
       for (const table of ['dog_status', 'supabase_dog_status']) {
         try {
           const result = await connection.executeAsync(`SELECT 1 AS found FROM ${table} LIMIT 1`);
           if ((result.results || result.rows?._array || []).length) return true;
-        } catch {
+        } catch (error) {
           // Not created yet: nothing there.
+          if (!/no such table/i.test(String(error?.message ?? error))) return true;
         }
       }
       return false;
