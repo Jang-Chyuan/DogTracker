@@ -16,6 +16,14 @@ const DAY_PAGE = 2000;
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar',
   'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
+// Each dog's name by collar number, on this phone only. The names used to sit
+// inside the history query's JSON row (map_history_settings), so one field
+// of the query failing validateHistory hid every name, and the next rename
+// wrote the defaults plus that one name back, deleting the others.
+const NAME_TABLE = 'CREATE TABLE IF NOT EXISTS dog_names (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
+const SETTINGS_TABLE = 'CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)';
+// One move of the old names per connection, even when two opens race.
+const namesMoved = new WeakMap();
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
 export const HISTORY_DEFAULTS = { phone: true, client: true, source: 'ble', hours: 3,
@@ -63,17 +71,61 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
+const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
+// A save's names: a name is written, an empty one removes that dog's name
+// (back to 狗 N). A dog left out of the map keeps the name it has, so a save
+// made from preferences that never loaded cannot delete the other names.
+function nameChanges(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value).filter(([id]) => /^[1-9]\d*$/.test(id)).flatMap(([id, alias]) => {
+    if (alias != null && typeof alias !== 'string') return [];
+    const name = normalizeDogAliases({ [id]: alias || '' })[id];
+    return name
+      ? [{ query: 'INSERT OR REPLACE INTO dog_names(slave_id,value) VALUES(?,?)', params: [Number(id), name] }]
+      : [{ query: 'DELETE FROM dog_names WHERE slave_id=?', params: [Number(id)] }];
+  });
+}
 // myLocationTracker's optional columns 「今天 x km」 reads (phoneRouteSince).
 const PHONE_ROUTE_COLUMNS = ['raw_speed_kmh', 'speed_accuracy_mps', 'session_id', 'odometer_m'];
 export function createHistoryDatabase(db) {
   // myLocationTracker's speed columns, read once per open database.
   let phoneSpeedColumns = null;
+  // The names' own table. The first open after the upgrade creates it
+  // together with the names the history row held, in one transaction, so a
+  // crash in between leaves the old row to move again next time.
+  function ensureNames() {
+    if (!namesMoved.has(db)) {
+      namesMoved.set(db, (async () => {
+        await db.executeAsync(SETTINGS_TABLE);
+        if (rows(await db.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='dog_names'")).length) return;
+        const saved = rows(await db.executeAsync('SELECT value FROM map_history_settings WHERE id=1'))[0];
+        const old = normalizeDogAliases(saved ? parseJson(saved.value)?.dogAliases : null);
+        await db.executeBatchAsync([{ query: NAME_TABLE, params: [] }, ...nameChanges(old)]);
+      })().catch(error => { namesMoved.delete(db); throw error; }));
+    }
+    return namesMoved.get(db);
+  }
+  async function loadNames() {
+    await ensureNames();
+    return normalizeDogAliases(Object.fromEntries(
+      rows(await db.executeAsync('SELECT slave_id, value FROM dog_names')).map(row => [String(row.slave_id), row.value])));
+  }
   return {
+    // The history query plus every dog's name (`dogAliases`, from dog_names).
     async load() {
-      await db.executeAsync('CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
+      await db.executeAsync(SETTINGS_TABLE);
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_history_client ON dog_status(master_id, slave_id, received_at, id)');
+      const dogAliases = await loadNames();
       const saved = rows(await db.executeAsync('SELECT value FROM map_history_settings WHERE id=1'))[0];
-      return validateHistory(saved ? JSON.parse(saved.value) : {});
+      // The names the row held before dog_names existed are not read again.
+      const query = { ...((saved && parseJson(saved.value)) || {}) };
+      delete query.dogAliases;
+      // A stored query that no longer validates (a damaged row, a field from
+      // another version) falls back to the defaults; the v3 screen takes its
+      // target from the route, and the names do not depend on it.
+      let settings;
+      try { settings = validateHistory(query); } catch { settings = validateHistory({}); }
+      return { ...settings, dogAliases };
     },
     /**
      * Each dog's face, by collar number, on this phone only (like its name).
@@ -98,10 +150,16 @@ export function createHistoryDatabase(db) {
       else await db.executeAsync('DELETE FROM dog_avatars WHERE slave_id=?', [slaveId]);
       return value;
     },
+    // `dogAliases`, when given, writes the names it carries (an empty one
+    // removes that name); the dogs it leaves out keep theirs.
     async save(value) {
-      const settings = validateHistory(value);
-      await db.executeAsync('INSERT OR REPLACE INTO map_history_settings(id,value) VALUES(1,?)', [JSON.stringify(settings)]);
-      return settings;
+      const { dogAliases, ...query } = value || {};
+      const settings = validateHistory(query);
+      await ensureNames();
+      await db.executeBatchAsync([
+        { query: 'INSERT OR REPLACE INTO map_history_settings(id,value) VALUES(1,?)', params: [JSON.stringify(settings)] },
+        ...nameChanges(dogAliases)]);
+      return { ...settings, dogAliases: await loadNames() };
     },
     /**
      * This phone's own recorded positions from `since` on, after the cursor

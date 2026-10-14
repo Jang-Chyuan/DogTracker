@@ -15,8 +15,8 @@ import { executeHistoryMaterialBatch } from '../cloud/HistoryMaterialPublication
 //                         the sent ones always (already in the cloud); the
 //                         ones not sent yet only with 「一起刪除」
 // Kept:
-//   myLocationTracker (手機路線), dog_avatars and map_history_settings (names,
-//   faces, history choices), app_settings, ble_upload_settings and
+//   myLocationTracker (手機路線), dog_names, dog_avatars and
+//   map_history_settings (names, faces, history choices), app_settings, ble_upload_settings and
 //   ble_upload_meta (upload routes, this phone's upload ID; the last upload
 //   time is kept there for S3), cloud_sync_state and cloud_sync_buckets
 //   (how far the download got: without them the next sync would download
