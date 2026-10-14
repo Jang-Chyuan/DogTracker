@@ -155,3 +155,9 @@
 ## 不寫「出發」（2026-10-14，使用者決定）
 
 範圍從移動開始時，第一列（`departure` 節點）照舊是起點的空心圓，但 `nodePill` 回傳 `null`：只有時間和地址，沒有膠囊，和終點一樣不寫字；TalkBack（`placeSpeech`）唸「地址，07:02」。匯出 PNG 的起點列相同；GPX 沒有起點航點（軌跡從那裡開始），地圖起點是空心的時間標記，都沒有字。c124「出發」退休（`I18nArchitecture` 檢查它不在資源裡）。程式、模型和註解裡的 `departure`／「出發偵測」照舊，只是畫面不再寫這兩個字；範圍條的「開始／結束時間」不變。
+
+## 「今天 x km」和摘要是同一個數字（2026-10-15）
+
+`TodayRouteEngine`（「今天 x km」）和 `historyTimeline`（歷史摘要）跑同一套規則，但以前讀的欄位不同：`HistoryDatabase.phoneRouteSince` 沒讀 `raw_latitude`／`raw_longitude`。`PhoneMotion` 用 `raw_latitude ?? latitude`，原生記錄器在手機靜止時把 `latitude`／`longitude` 釘在錨點上，所以藥丸的動作偵測看的是釘住的座標，歷史看的是原始定位，靜止／移動判斷不同，算到的距離也不同。在本機唯讀重播使用者真實的 14 天（每 10 分鐘一個檢查點，共 1,444 個），有 334 個檢查點不一致，最多差 100 m；藥丸和摘要有時差 0.1 km。
+
+現在兩邊讀同一份欄位清單 `PHONE_MODEL_COLUMNS`（原始定位、速度、偵測器狀態、工作階段、里程）：`phoneRouteSince` 和 `historyDayRows`（手機）都從它選欄位，表格有的欄位每一列都有這個鍵（沒有值時為 `null`），和 `historyDayRows` 的列一樣。同樣的重播現在 0 個不一致。`__tests__/TodayRouteColumns.test.js` 用虛構、像原生那樣釘住座標的一天，經過真的 `phoneRouteSince` 和 `historyDayRows`，檢查每 10 分鐘藥丸都等於摘要。
