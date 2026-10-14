@@ -776,6 +776,23 @@ test('card-indoor-overnight: 「室內・12 時 20 分」, not the live half hou
   expect(live.rows.position.value).toBe('室內・超過 29 分');
 });
 
+// 2026-10-14 (tried on a phone): the first row's harder cases.
+test('card-indoor-long-address / -silent / -out / -silent-out: one first row, every problem in it', async () => {
+  const long = await card('card-indoor-long-address');
+  expect(long.rows.position.detail.length).toBeGreaterThan(20);
+  const silent = await card('card-indoor-silent');
+  expect(silent.keys).toEqual(['position', 'battery', 'activity']);
+  expect(silent.rows.position).toMatchObject({ value: '沒有新資料・最後 09:05', tone: 'crit', alert: null,
+    detail: long.rows.position.detail });
+  const out = await card('card-indoor-out');
+  expect(out.keys).toEqual(['position', 'battery', 'activity']);
+  expect(out.rows.position).toMatchObject({ value: expect.stringMatching(/^室內・\d+ 分$/), tone: null,
+    alert: expect.stringMatching(/^不在接收範圍・最後確認 \d\d:\d\d$/) });
+  const both = await card('card-indoor-silent-out');
+  expect(both.rows.position).toMatchObject({ value: '沒有新資料・最後 09:05', tone: 'crit',
+    alert: expect.stringMatching(/^不在接收範圍/), detail: long.rows.position.detail });
+});
+
 test('card-battery-blip: one 0% packet without a voltage keeps 43%, no red 「!」', async () => {
   const { rows, state } = await card('card-battery-blip');
   expect(rows.battery).toMatchObject({ value: '43%', tone: null });

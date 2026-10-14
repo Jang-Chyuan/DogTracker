@@ -318,6 +318,11 @@ export const size = {
     // Status rows that are not buttons (活動量 stays touch.cardRow, 48dp).
     row: 40,
     rowTwoLine: 56,
+    // 看軌跡 as drawn (hitSlop makes the target 48dp).
+    track: 40,
+    // The first row measures its value on one line in a box this wide (never
+    // seen), to see whether the distance fits beside it.
+    measureWidth: 2000,
     // The pencil badge on the card's face (the face opens the edit sheet).
     editBadge: 20,
     editBadgeIcon: 12,

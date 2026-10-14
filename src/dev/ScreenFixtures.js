@@ -254,6 +254,16 @@ const indoorBle = (now, slave, spot, { inside = 12 * MINUTE, until = 8 * SECOND,
 
 
 
+// A long, fictional address (the card's address line wraps to two lines).
+const LONG_PLACE = { names: [{ line: '330台灣桃園市桃園區虛構里示範路一段一百二十八巷六十四弄三十二號' }] };
+// 小黑 walking out of range to 1.6 km, then held indoors there (packets
+// without a fix) from `inside` to `until` ago.
+const heldFarAway = (now, inside, until) => [
+  ...track(bleRow, now, { slave: 6, from: inside + 15 * MINUTE, to: inside + 10 * SECOND, battery: 62,
+    dog: (progress, where) => awayFrom(where, 700 + 900 * Math.min(1, progress * 1.5), progress, 200) }),
+  ...series(bleRow, now, { slave: 6, from: inside, to: until, rssi: -96, snr: -4, battery: 62 }),
+];
+
 // ---- history (054a): one day of one dog or my route ------------------------
 
 // A day's path as legs from `fromAgo` ms before now, one fix every `every` ms:
@@ -1030,6 +1040,33 @@ const FIXTURES = {
   // card-indoor named by this phone's own Geocoder (network + Play services;
   // the place is by Taoyuan station). Nothing is written to its cache.
   'card-indoor-geocoder': now => ({ ...FIXTURES['card-indoor'](now), geocoder: 'real' }),
+  // ---- the first row's harder cases (2026-10-14, tried on a phone) --------
+  // card-indoor with a long fictional address: under 「室內・11 分」 and the
+  // distance, across the row's whole width, wrapping to two lines.
+  'card-indoor-long-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: LONG_PLACE }),
+  // 小黑 went indoors at 09:03 and has sent nothing since 09:05: 「沒有新資料・
+  // 最後 09:05」 in red over the address.
+  'card-indoor-silent': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([...dog4Ble(now),
+      ...indoorBle(now, 6, [-18, 24], { inside: 27 * MINUTE, until: 25 * MINUTE, battery: 62 })]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 小黑 walked out to 1.6 km (out of range) and went indoors there 12
+  // minutes ago: 「室內・N 分」, the address, and 「不在接收範圍・最後確認 HH:MM」
+  // in red — two things in one row, one red 「!」.
+  'card-indoor-out': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([...dog4Ble(now), ...heldFarAway(now, 12 * MINUTE, 8 * SECOND)]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // The same, silent since 09:05: 「沒有新資料・最後 09:05」, the address and
+  // 不在接收範圍 — three lines in the first row.
+  'card-indoor-silent-out': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([...dog4Ble(now), ...heldFarAway(now, 28 * MINUTE, 25 * MINUTE)]),
+    cloudRows: dog8Cloud(now),
+  }),
   // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 to write, so
   // the first row is 位置 「最後 HH:MM」; running hard for the last few
   // minutes (劇烈活動).

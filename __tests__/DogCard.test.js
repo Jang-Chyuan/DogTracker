@@ -42,6 +42,8 @@ const flatten = node => {
   if (node == null || typeof node === 'boolean') return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(flatten).join('');
+  // The first row's off-screen measuring copy of its value is never seen.
+  if (node.props?.importantForAccessibility === 'no-hide-descendants') return '';
   return flatten(node.children);
 };
 const byTestId = id => renderer.root.findAll(node => node.props.testID === id, { deep: true });
@@ -75,7 +77,8 @@ test('A3b on screen: name, three rows in order, the distance in the first, red a
   expect(text).not.toContain(i18nT('c075'));
   expect(text).toContain(i18nT('c071'));
   // Problem values: dark red bold behind a red 「!」; 快離開: amber behind an amber 「!」.
-  const value = words => renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === words);
+  const value = words => renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === words
+    && node.props.importantForAccessibility !== 'no-hide-descendants');
   expect(value('沒有新位置・最後 09:05').props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
   // The second problem, on the row's own line: red too, one 「!」 for both.
   expect(value(i18nT('c078')).props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
@@ -118,19 +121,79 @@ test('at a large font the distance goes under the first row\'s words; an old pho
   const scale = jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
   await mount({ card: model({}, { phone: old }) });
   const distance = () => byTestId('dog-card-distance').find(node => typeof node.type === 'string');
-  const inWords = () => {
-    for (let node = distance().parent; node; node = node.parent) {
-      if (node.props?.testID === 'dog-card-row-position') return false;
-      if ([node.props?.style].flat(3).some(item => item?.flex === 1 && !item.flexDirection)) return true;
-    }
-    return false;
+  // Beside the first line (on its line, at its right end), or under the words.
+  const inWords = () => StyleSheet.flatten(distance().props.style).alignItems === 'flex-start';
+  const besideFirstLine = () => {
+    let host = distance().parent;
+    while (host && typeof host.type !== 'string') host = host.parent;
+    return StyleSheet.flatten(host.props.style)?.flexDirection === 'row';
   };
   expect(flatten(distance())).toBe('850 m手機位置 3 分鐘前');
   expect(inWords()).toBe(false);
+  expect(besideFirstLine()).toBe(true);
   await act(async () => renderer.unmount());
   scale.mockReturnValue(2);
   await mount({ card: model({}, { phone: old }) });
   expect(inWords()).toBe(true);
+  expect(besideFirstLine()).toBe(false);
+});
+
+test('看軌跡 is 40dp drawn with a 48dp target; the rows sit 12dp under the top, behind a 1dp line', async () => {
+  const { size: sizes, space, touch, border } = require('../src/theme/tokens');
+  await mount();
+  const track = byTestId('dog-card-track').find(node => node.props.hitSlop);
+  const style = StyleSheet.flatten(track.props.style);
+  expect(style.minHeight).toBe(sizes.card.track);
+  expect(sizes.card.track).toBe(40);
+  expect(style.minHeight + track.props.hitSlop.top + track.props.hitSlop.bottom).toBe(touch.min);
+  let host = byTestId('dog-card-row-position')[0].parent;
+  while (host && !(StyleSheet.flatten(host.props.style)?.borderTopWidth)) host = host.parent;
+  expect(StyleSheet.flatten(host.props.style)).toMatchObject({ marginTop: space.m, borderTopWidth: border.hairline,
+    borderTopColor: colors.line });
+});
+
+test('the address takes the row\'s whole width under the value and the distance, two lines at most', async () => {
+  const { PixelRatio } = require('react-native');
+  jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
+  const held = { heldReason: '室內', heldSource: 'weak' };
+  const address = '330台灣桃園市桃園區武陵里中正路一段很長很長的巷弄 1 號附近';
+  await mount({ card: model(held, { freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW },
+    range: null, address }) });
+  const line = renderer.root.findAllByType(Text).find(node => node.props.children === address);
+  expect(line.props.numberOfLines).toBe(2);
+  // Not on the first line: the value and the distance share only that one.
+  let firstLine = byTestId('dog-card-distance').find(node => typeof node.type === 'string').parent;
+  while (typeof firstLine.type !== 'string') firstLine = firstLine.parent;
+  expect(StyleSheet.flatten(firstLine.props.style).flexDirection).toBe('row');
+  expect(firstLine.findAll(node => node.props.children === address)).toHaveLength(0);
+  expect(flatten(firstLine.children)).toBe('室內850 m');
+});
+
+test('the distance stays beside the first line only while the value fits there on one line', async () => {
+  const { PixelRatio } = require('react-native');
+  jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
+  await mount();
+  const distance = () => byTestId('dog-card-distance').find(node => typeof node.type === 'string');
+  const under = () => StyleSheet.flatten(distance().props.style).alignItems === 'flex-start';
+  const sample = renderer.root.findAll(node => node.props.importantForAccessibility === 'no-hide-descendants'
+    && node.props.onTextLayout)[0];
+  const firstLine = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onLayout
+    && StyleSheet.flatten(node.props.style)?.flexDirection === 'row'
+    && node.findAll(item => item.props.testID === 'dog-card-distance').length > 0)[0];
+  // Not measured yet: beside (the normal font).
+  expect(under()).toBe(false);
+  const layout = async ({ value, room, width = 70 }) => {
+    await act(async () => sample.props.onTextLayout({ nativeEvent: { lines: [{ width: value }] } }));
+    await act(async () => firstLine.props.onLayout({ nativeEvent: { layout: { width: room } } }));
+    await act(async () => distance().props.onLayout({ nativeEvent: { layout: { width } } }));
+  };
+  // A 360dp phone: 「沒有新位置・最後 09:05」 (about 175dp) and 「↗ 1.4 km」
+  // (70dp) do not fit in 214dp: the distance goes under, the value stays one line.
+  await layout({ value: 175, room: 214 });
+  expect(under()).toBe(true);
+  // Room for both: beside again.
+  await layout({ value: 175, room: 300 });
+  expect(under()).toBe(false);
 });
 
 test('手機沒有定位 sits where the distance would', async () => {

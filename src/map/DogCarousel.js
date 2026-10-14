@@ -57,18 +57,32 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   // Only the user's own drag picks a dog where the row lands: the row's own
   // moves (placing it on the open dog, following a pick) never do.
   const dragging = useRef(false);
-  // Let go (or come to rest) in the empty room past an end: spring back to
-  // the end dog. Only the dogs are snap points, and Android does not snap
-  // outside the first and last of them.
-  const springBack = x => {
-    const target = Math.max(offsetOf(0), Math.min(offsetOf(count - 1), x));
+  // One gesture moves one dog at most, like a pager (2026-10-14: on a phone a
+  // normal swipe went two dogs). While a drag lasts, only the dog it began
+  // on and its two neighbours are snap points (`band`); with
+  // disableIntervalMomentum Android goes to the next of them from where the
+  // finger let go, however fast. A long drag, slow or not, still ends on a
+  // neighbour: the row springs back to it.
+  const [band, setBand] = useState(null);
+  // The same for the handlers (a quick fling ends before a re-render).
+  const from = useRef(null);
+  const bounds = start => (start == null ? [0, count - 1]
+    : [Math.max(0, start - 1), Math.min(count - 1, start + 1)]);
+  // Let go (or come to rest) outside the snap points — the empty room past an
+  // end, or past a neighbour — and the row springs back to the nearest one:
+  // Android does not snap outside the first and last snap point.
+  const springBack = (x, start) => {
+    const [low, high] = bounds(start);
+    const target = Math.max(offsetOf(low), Math.min(offsetOf(high), x));
     if (Math.abs(target - x) > 1) list.current?.scrollTo({ x: target, animated: true });
   };
   const settle = x => {
-    springBack(x);
+    springBack(x, from.current);
     if (!dragging.current) return;
     dragging.current = false;
-    const index = slotAt(x, count);
+    const [low, high] = bounds(from.current);
+    setBand(null);
+    const index = Math.max(low, Math.min(high, slotAt(x, count)));
     at.current = index;
     const dog = dogs[index];
     if (dog && dog.slaveId !== currentId) onSelect?.(dog.slaveId);
@@ -85,6 +99,8 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   const place = (animated = false) => {
     timers.current.forEach(clearTimeout);
     if (dragging.current) return;
+    // The row's own move: no gesture's bounds hold it back.
+    from.current = null;
     if (animated) {
       list.current?.scrollTo({ x: offsetOf(at.current), animated: true });
       slidingUntil.current = Date.now() + PLACE_SETTLE_MS;
@@ -113,7 +129,11 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
   // no taller than before the row of dogs, 2026-10-14).
   const rowHeight = carousel.face[0] + space.xs + Math.ceil(nameHeight);
   const side = Math.max(0, (width - slot) / 2);
-  const snaps = useMemo(() => dogs.map((_, index) => offsetOf(index)), [dogs]);
+  const snaps = useMemo(() => {
+    const [low, high] = bounds(band);
+    return dogs.map((_, index) => index).filter(index => index >= low && index <= high).map(offsetOf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dogs, band]);
   const faces = useMemo(() => dogs.map((dog, index) => {
     const centre = offsetOf(index);
     const range = [centre - 2 * slot, centre - slot, centre, centre + slot, centre + 2 * slot];
@@ -146,6 +166,8 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         snapToOffsets={snaps}
         snapToStart={false}
         snapToEnd={false}
+        // Like a pager: from where it is let go, the next snap point only.
+        disableIntervalMomentum
         decelerationRate="fast"
         contentOffset={{ x: offsetOf(at.current), y: 0 }}
         onContentSizeChange={() => place()}
@@ -159,6 +181,8 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
         onScrollBeginDrag={() => {
           timers.current.forEach(clearTimeout);
           dragging.current = true;
+          from.current = at.current;
+          setBand(at.current);
         }}
         onMomentumScrollEnd={event => settle(event.nativeEvent.contentOffset.x)}
         onScrollEndDrag={event => {
@@ -182,6 +206,7 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
                   return;
                 }
                 // A tap picks at once; the row slides to it.
+                from.current = null;
                 at.current = index;
                 list.current?.scrollTo({ x: offsetOf(index), animated: true });
                 slidingUntil.current = Date.now() + PLACE_SETTLE_MS;

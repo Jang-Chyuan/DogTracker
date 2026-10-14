@@ -666,10 +666,10 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   await advance(300);
   expect(open()).toBe('狗 9');
   expect(map().props.focusDog.always).toBe(true);
-  // Pulled past the first dog (into the bounce's empty room): lands on it.
+  // One gesture, one dog: a long drag back past the first dog from 狗 9
+  // stops at 狗 9's neighbour.
   await land(-1);
-  expect(open()).toBe('豆豆');
-  expect(middle().props.accessibilityActions).toEqual([{ name: 'next', label: '下一隻' }]);
+  expect(open()).toBe('阿福');
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 

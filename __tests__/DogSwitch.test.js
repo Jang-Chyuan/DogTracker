@@ -143,6 +143,21 @@ describe('the card', () => {
     expect(value.onSelect.mock.calls).toEqual([[8], [12], [8]]);
   });
 
+  test('one swipe moves one dog however fast (a pager): while dragging only the dog and its neighbours snap', async () => {
+    const value = switcher({ dogs: [...dogs, { slaveId: 15, name: '狗 15', avatar: null, problem: false, stale: false }] });
+    await mount({ switcher: value });
+    const row = () => host('dog-card-carousel')[0];
+    expect(row().props.disableIntervalMomentum).toBe(true);
+    expect(row().props.snapToOffsets).toEqual([0, 1, 2, 3].map(offsetOf));
+    // 豆豆 (index 1) dragged: 狗 12, 豆豆 and 阿福 only.
+    await act(async () => row().props.onScrollBeginDrag());
+    expect(row().props.snapToOffsets).toEqual([0, 1, 2].map(offsetOf));
+    // Flung across three dogs: still only the next one.
+    await act(async () => row().props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(3) } } }));
+    expect(value.onSelect.mock.calls).toEqual([[8]]);
+    expect(row().props.snapToOffsets).toEqual([0, 1, 2, 3].map(offsetOf));
+  });
+
   test('pulled into the empty room past an end and let go, the row springs back to the end dog', async () => {
     const value = switcher();
     await mount({ switcher: value });
@@ -153,7 +168,12 @@ describe('the card', () => {
     await act(async () => row.props.onScrollBeginDrag());
     await act(async () => row.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 0 }, velocity: { x: 0 } } }));
     expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(0), animated: true });
-    // A fling that comes to rest past the last dog.
+    // Now on 狗 12 (the first): a fling to rest far past the last dog ends on
+    // 12's neighbour, one dog on (a pager), springing back to it.
+    await act(async () => row.props.onScrollBeginDrag());
+    await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(2) + BOUNCE } } }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(1), animated: true });
+    // From 豆豆 (the middle), past the last dog: the last dog.
     await act(async () => row.props.onScrollBeginDrag());
     await act(async () => row.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: offsetOf(2) + BOUNCE } } }));
     expect(scrollTo).toHaveBeenLastCalledWith({ x: offsetOf(2), animated: true });

@@ -64,6 +64,9 @@ const CLOSE_SHARE = 0.25;
 const CLOSE_VELOCITY = 0.5;
 // The card floats a little off the screen edges, as in the A3 mockups.
 const CARD_INSET = space.s;
+// 看軌跡 is 40dp drawn (2026-10-14: smaller, the rows get the room); the
+// finger still gets 48dp.
+const TRACK_SLOP = (touch.min - sizes.card.track) / 2;
 
 const getTONE = makeStyles(theme => {
   const { colors } = theme;
@@ -107,12 +110,13 @@ function Mark({ tone }) {
  * The direction and distance from the phone (「↗ 320 m」) at the first row's
  * right end, or 「手機沒有定位」; the phone's own old fix under it.
  */
-function Distance({ headline, heading, under }) {
+function Distance({ headline, heading, under, onWidth }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
+  const measure = event => onWidth?.(event.nativeEvent.layout.width);
   if (headline?.kind === 'no-phone') {
     return (
-      <Text style={[styles.noPhone, under && styles.distanceUnder]} accessible={false}>
+      <Text style={[styles.noPhone, under && styles.distanceUnder]} accessible={false} onLayout={measure}>
         {headline.text}
       </Text>
     );
@@ -123,7 +127,7 @@ function Distance({ headline, heading, under }) {
     (((headline.bearing - (heading || 0)) % 360) + 360) % 360
   }deg`;
   return (
-    <View style={under ? styles.distanceUnder : styles.distanceEnd} testID="dog-card-distance">
+    <View style={under ? styles.distanceUnder : styles.distanceEnd} testID="dog-card-distance" onLayout={measure}>
       <View style={styles.distanceLine}>
         <View style={{ transform: [{ rotate: turn }] }} testID="dog-card-arrow">
           <Glyph name="arrow" color={colors.text} size={sizes.card.directionIcon} />
@@ -141,9 +145,18 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
   const { fontScale, width } = useWindowDimensions();
   const labelWidth = sizes.card.labelWidth * Math.max(1, fontScale);
   const stacked = labelWidth > width * 0.4;
-  // At a large font the distance goes under the row's words, not beside them.
-  const under = isLargeFont();
-  const distance = headline ? <Distance headline={headline} heading={heading} under={under} /> : null;
+  // The distance sits beside the first line when the value fits there on one
+  // line with it; otherwise (a narrow phone, a large font, a long value) it
+  // goes under the row's words, rather than squeezing the value into a
+  // narrow column that wraps 「沒有新位置・最後 / 09:05」. Until measured: beside,
+  // except at a large font.
+  const [fit, setFit] = useState({ value: 0, distance: 0, room: 0 });
+  const measured = fit.value > 0 && fit.distance > 0 && fit.room > 0;
+  const under = headline ? (measured ? fit.value + space.s + fit.distance > fit.room : isLargeFont()) : false;
+  const keep = key => value => setFit(current =>
+    (Math.abs(current[key] - value) < 0.5 ? current : { ...current, [key]: value }));
+  const distance = headline
+    ? <Distance headline={headline} heading={heading} under={under} onWidth={keep('distance')} /> : null;
   const { colors } = useTheme();
   const TONE = useStyles(getTONE);
   const ACTIVITY_TONE = useStyles(getACTIVITY_TONE);
@@ -174,23 +187,43 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
       <View style={styles.rowValue}>
         {markTone && <Mark tone={markTone} />}
         <View style={styles.rowTexts}>
-          <Text
-            style={[styles.value, { color: valueColor }]}
-            accessible={false}
-          >
-            {row.value}
-            {row.key === 'activity' && row.detail ? (
-              // 「休息中・已 12 分鐘」 (DESIGN.md 摘要卡片).
-              <Text style={styles.detailInline}>{`・${row.detail}`}</Text>
-            ) : null}
-            {row.key === 'activity' && row.at ? (
-              <Text style={styles.detailInline}>{`（${clock(row.at)}）`}</Text>
-            ) : null}
-          </Text>
+          {/* The first line: the value, and the distance beside it only. */}
+          {headline ? (
+            // The value's own width on one line, to see whether it fits.
+            <Text
+              style={[styles.value, styles.sample]}
+              numberOfLines={1}
+              accessible={false}
+              importantForAccessibility="no-hide-descendants"
+              onTextLayout={event => keep('value')(Math.max(0,
+                ...event.nativeEvent.lines.map(line => line.width)))}
+            >
+              {row.value}
+            </Text>
+          ) : null}
+          <View style={styles.firstLine}
+            onLayout={headline ? event => keep('room')(event.nativeEvent.layout.width) : undefined}>
+            <Text
+              style={[styles.value, { color: valueColor }]}
+              accessible={false}
+            >
+              {row.value}
+              {row.key === 'activity' && row.detail ? (
+                // 「休息中・已 12 分鐘」 (DESIGN.md 摘要卡片).
+                <Text style={styles.detailInline}>{`・${row.detail}`}</Text>
+              ) : null}
+              {row.key === 'activity' && row.at ? (
+                <Text style={styles.detailInline}>{`（${clock(row.at)}）`}</Text>
+              ) : null}
+            </Text>
+            {distance && !under ? distance : null}
+          </View>
+          {/* Under it, the whole width (under the distance too): the
+              address or coordinates, two lines at most; the second problem. */}
           {row.key !== 'activity' && row.detail ? (
             <Text
               style={styles.detailLine}
-              numberOfLines={1}
+              numberOfLines={linesFor(2)}
               accessible={false}
             >
               {row.detail}
@@ -204,7 +237,6 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
           {distance && under ? distance : null}
         </View>
       </View>
-      {distance && !under ? distance : null}
       {row.pressable && (
         <Glyph name="chevron" color={colors.textMuted} size={sizes.icon.row} />
       )}
@@ -493,6 +525,7 @@ const DogCard = forwardRef(function DogCard(
         accessibilityState={{ disabled: trackBusy }}
         disabled={trackBusy}
         onPress={onTrack}
+        hitSlop={{ top: TRACK_SLOP, bottom: TRACK_SLOP }}
         style={styles.track}
       >
         <Text style={styles.trackText}>{t('c071')}</Text>
@@ -567,12 +600,15 @@ const getStyles = makeStyles(theme => {
     scroll: { flexGrow: 0, flexShrink: 1 },
     // 「↗ 320 m」 at the first row's right end; under its words at a large font.
     distanceEnd: { alignItems: 'flex-end', flexShrink: 0, marginLeft: space.s },
-    distanceUnder: { alignItems: 'flex-start', marginTop: space.xs },
+    distanceUnder: { alignSelf: 'flex-start', alignItems: 'flex-start', marginTop: space.xs },
+    // Measured off screen: no wrapping, never seen.
+    sample: { position: 'absolute', left: 0, top: 0, width: sizes.card.measureWidth, opacity: 0, flex: 0 },
     distanceLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
     distance: { ...type.status, color: colors.text },
     phoneAge: { ...type.caption, color: colors.textMuted },
     noPhone: { ...type.caption, color: colors.textMuted, marginLeft: space.s, flexShrink: 0 },
-    rows: {},
+    // Set apart from the row of dogs (or the face and name) above.
+    rows: { marginTop: space.m, borderTopWidth: border.hairline, borderTopColor: colors.line },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -600,29 +636,33 @@ const getStyles = makeStyles(theme => {
       alignItems: 'flex-start',
       gap: space.s,
     },
-    rowTexts: { flex: 1 },
-    value: { ...type.value },
+    rowTexts: { flex: 1, minWidth: 0 },
+    firstLine: { flexDirection: 'row', alignItems: 'flex-start' },
+    value: { ...type.value, flex: 1, flexShrink: 1 },
     detailInline: { ...type.small, color: colors.textMuted, fontWeight: type.body.fontWeight },
     detailLine: { ...type.small, color: colors.textMuted, marginTop: space.xs },
     alertLine: { ...type.small, fontWeight: type.value.fontWeight, marginTop: space.xs },
+    // A fixed 18dp column: it never grows or shrinks, the words wrap beside it.
     mark: {
       width: sizes.card.warnIcon,
       height: sizes.card.warnIcon,
+      flexGrow: 0,
+      flexShrink: 0,
       borderRadius: sizes.card.warnIcon / 2,
       alignItems: 'center',
       justifyContent: 'center',
       marginTop: space.xs,
     },
     track: {
-      minHeight: touch.primary,
-      paddingVertical: space.s,
+      minHeight: sizes.card.track,
+      paddingVertical: space.xs,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: space.s,
+      marginTop: space.m,
     },
-    trackText: { ...type.status, color: colors.tonalText },
+    trackText: { ...type.cardTitle, color: colors.tonalText },
     pressed: { backgroundColor: colors.pressedOverlay },
   });
 });
