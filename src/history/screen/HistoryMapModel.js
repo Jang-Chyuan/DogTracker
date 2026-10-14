@@ -66,8 +66,10 @@ export function withAlpha(hex, alpha) {
  * foot (and a dog's movement) a round-dotted line 4dp wide, a car or ride a
  * 3dp solid line, all in the route colour at one strength — nothing before or
  * after the cursor; nothing across a break. `selection` (the selected list
- * row): a movement row's segment is drawn selectedExtra wider on a casing
- * (routeCasing), at opacity.routeSelected (dark: full, the rest stays at
+ * row): a movement row's segment is drawn route.selected (6dp) wide on a
+ * route.halo (14dp) glow of its colour at opacity.routeHalo (2026-10-15: a
+ * white casing vanished among the light map's white roads), at
+ * opacity.routeSelected (dark: full, the rest stays at
  * routeLine 75%; nothing is faded). Consecutive edges of the same look join
  * into one line.
  * `dotted: false` (the PNG's map): walking solid 4dp, a car 2dp.
@@ -84,13 +86,14 @@ export function routeLines(
   edges,
   { color, selection = null, theme = getTheme(), chunkEdges = ROUTE_CHUNK_EDGES, dotted = true } = {},
 ) {
-  const { opacity, colors } = theme;
+  const { opacity } = theme;
   const lines = [];
   let current = null;
   const chosenSpan = selection?.type === 'movement' ? selection : null;
   const strength = alpha => (alpha === 1 ? color : withAlpha(color, alpha));
   const base = strength(opacity.routeLine);
   const bright = strength(opacity.routeSelected);
+  const glow = chosenSpan ? withAlpha(color, opacity.routeHalo) : null;
   for (let index = 0; index < edges.length; index += 1) {
     const edge = edges[index];
     if (edge.gap || ['gap', 'indoor'].includes(edge.mode) || edge.bridged) {
@@ -100,18 +103,17 @@ export function routeLines(
     const vehicle = isVehicle(edge.mode);
     const chosen = !!chosenSpan && edge.start >= chosenSpan.start && edge.end <= chosenSpan.end;
     const dots = dotted && !vehicle;
-    const width = (vehicle ? (dotted ? sizes.route.vehicle : sizes.route.drive) : sizes.route.walk)
-      + (chosen ? sizes.route.selectedExtra : 0);
+    const width = chosen ? sizes.route.selected
+      : vehicle ? (dotted ? sizes.route.vehicle : sizes.route.drive) : sizes.route.walk;
     const stroke = chosen ? bright : base;
-    const casing = chosen ? colors.routeCasing : null;
-    const key = `${width}:${stroke}:${dots}:${casing}`;
+    const key = `${width}:${stroke}:${dots}:${chosen}`;
     if (current && current.key === key && current.end === edge.start && index % chunkEdges !== 0) {
       current.coordinates.push(coordinateOf(edge.to));
       current.end = edge.end;
       continue;
     }
     current = {
-      key, width, color: stroke, dashed: false, dotted: dots, casing, selected: chosen,
+      key, width, color: stroke, dashed: false, dotted: dots, halo: chosen ? glow : null, selected: chosen,
       vehicle, end: edge.end, start: edge.start,
       coordinates: [coordinateOf(edge.from), coordinateOf(edge.to)],
     };
@@ -147,7 +149,7 @@ export function drawnLine(line, owner = '') {
 // leaves a line with an unchanged id alone).
 const lineId = (line, geometry = geometryId(line.coordinates)) =>
   `${line.start}-${line.end}-${geometry}-${line.width}-${line.color}-${line.dashed ? 1 : 0}`
-  + `-${line.dotted ? 1 : 0}-${line.casing ?? ''}`;
+  + `-${line.dotted ? 1 : 0}-${line.halo ?? ''}`;
 
 // Hash exact coordinate text so reconciliation invalidates only changed pieces.
 function geometryId(points) {

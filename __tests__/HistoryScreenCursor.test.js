@@ -68,3 +68,12 @@ test('node selection jumps to its start; gap row at boundary still gets stale la
   expect(selectCursorNode(model, model.locations[0])).toMatchObject({ time: 10 * minute, haptics: ['double'] });
   expect(selectCursorNode(model, model.sections[2])).toMatchObject({ time: 30 * minute, stale: true });
 });
+test("at the first fix of a movement row (the stay's last too) the label names the movement, as the lit row", () => {
+  const stop = { type: 'stop', number: 1, start: 10 * minute, end: 20 * minute, durationMs: 10 * minute, latitude: 25, longitude: 121 };
+  const walk = { type: 'movement', mode: 'moving', start: 20 * minute, end: 30 * minute, countedDistanceM: 500 };
+  const nodes = [{ type: 'departure', start: 0, end: 0, latitude: 25, longitude: 121 }, { ...model.sections[0] }, stop, walk,
+    { type: 'end', start: 30 * minute, end: 30 * minute, latitude: 25, longitude: 121 }];
+  const m = { ...model, locations: [stop], sections: [model.sections[0], walk], nodes };
+  expect(cursorLabel(m, 20 * minute)[1]).toBe('移動中・1.0 km');
+  expect(cursorLabel(m, 15 * minute)[1]).toBe('停留 1・10 分');
+});
