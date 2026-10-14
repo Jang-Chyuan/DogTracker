@@ -536,3 +536,51 @@ test('a saved miss is skipped when the card reopens; saved addresses never wait 
   await flush();
   expect(lookup.lookup(DOG_4)).toBe('蘆竹區大竹北路 630 巷 21 號附近');
 });
+
+// 2026-10-14 (the user's decision): the card's second line while asking is
+// nothing; when the lookup really failed, the held place's coordinates; an
+// answer that comes later replaces them.
+test('useAddress: nothing while asking, the coordinates after a real failure, the address when it comes', async () => {
+  jest.useFakeTimers();
+  let tree;
+  try {
+    const answers = [];
+    const native = { reverseGeocode: jest.fn(() => new Promise(resolve => answers.push(resolve))) };
+    const lookup = createAddressLookup({ native });
+    let value;
+    function Card() { value = useAddress(DOG_4); return null; }
+    await act(async () => { tree = create(<AddressLookupContext.Provider value={lookup}><Card /></AddressLookupContext.Provider>); });
+    expect(value).toBeNull();
+    // Still asked 10 s on: still nothing (no line, nothing jumps).
+    await act(async () => { await jest.advanceTimersByTimeAsync(10000); });
+    expect(value).toBeNull();
+    // The geocoder has nothing: the coordinates.
+    await act(async () => { answers[0]('[]'); await jest.advanceTimersByTimeAsync(1); });
+    expect(value).toBe('25.0436, 121.2454');
+    // The card's next minute check past a minute since the miss asks again
+    // (the coordinates stay meanwhile), then the answer comes.
+    await act(async () => { await jest.advanceTimersByTimeAsync(2 * ADDRESS_CONFIG.retryAfterMs); });
+    expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
+    expect(value).toBe('25.0436, 121.2454');
+    await act(async () => { answers[1](JSON.stringify(nearDog4)); await jest.advanceTimersByTimeAsync(1); });
+    expect(value).toBe('蘆竹區大竹北路 630 巷 21 號附近');
+  } finally {
+    act(() => tree?.unmount());
+    jest.useRealTimers();
+  }
+});
+
+test('useAddress: offline the coordinates at once; no point, no line', async () => {
+  const native = { reverseGeocode: jest.fn(), isOnline: jest.fn(async () => false) };
+  const lookup = createAddressLookup({ native });
+  let value;
+  function Card({ point }) { value = useAddress(point); return null; }
+  let tree;
+  await act(async () => { tree = create(<AddressLookupContext.Provider value={lookup}><Card point={DOG_4} /></AddressLookupContext.Provider>); });
+  await act(async () => { await flush(); await flush(); });
+  expect(value).toBe('25.0436, 121.2454');
+  expect(native.reverseGeocode).not.toHaveBeenCalled();
+  await act(async () => tree.update(<AddressLookupContext.Provider value={lookup}><Card point={null} /></AddressLookupContext.Provider>));
+  expect(value).toBeNull();
+  act(() => tree.unmount());
+});
