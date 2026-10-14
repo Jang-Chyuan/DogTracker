@@ -8,6 +8,7 @@ const LIST_GAP_MS = configFor('phone').listGapMs;
 const last = list => list[list.length - 1];
 const walking = node => node?.type === 'movement' && node.mode === 'walking';
 const moving = node => node?.type === 'movement';
+const driving = node => node?.type === 'movement' && node.mode === 'driving';
 // A row that is a stay: a stop, a hold, or a departure / end carrying one.
 const stayRow = node => ['stop', 'indoor'].includes(node?.type) || !!node?.departureStay || !!node?.terminalStay;
 // The phone's 「沒有資料」 / 「GPS 訊號弱」 inside one recording session. A
@@ -172,8 +173,9 @@ function presentationOf(all) {
     const prior = out[at];
     // Consecutive walking legs with only folded breaks or short unlisted time
     // between them are one walk: its minutes are its span, its distance the
-    // legs' sum; the breaks in it are counted in it.
-    if (walking(node) && walking(prior) && node.start >= prior.end
+    // legs' sum; the breaks in it are counted in it. Likewise two legs of one
+    // drive (2026-10-14: a weak fix at a light inside a stop-and-go trip).
+    if ((walking(node) ? walking(prior) : driving(node) && driving(prior)) && node.start >= prior.end
       && unlistedBetween(out.slice(at + 1), prior, node) < GAP_MS) {
       const unlocated = out.slice(at + 1).reduce((sum, n) => sum + n.end - n.start, 0);
       out.splice(at + 1);

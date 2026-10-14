@@ -36,7 +36,7 @@ const timeline = (rows, config) => historyTimeline(rows.map(phoneHistoryRow), { 
 // The rules as they were: no measured-speed check, no same-place breaks, no
 // long-visit stays, no short excursions inside a stay (2026-10-13).
 const BEFORE = { ...HISTORY_CONFIG.phone, speedBudget: false, stillMps: 0, stillPlaceM: 0,
-  samePlaceGapMaxMs: 0, alwaysStayMs: 0, excursionMs: 0 };
+  samePlaceGapMaxMs: 0, alwaysStayMs: 0, excursionMs: 0, stayRatio: 3 };
 
 test('a whole day indoors: little distance, a few long stays, the overnight breaks inside them', () => {
   const rows = stationaryDay();
@@ -52,14 +52,21 @@ test('a whole day indoors: little distance, a few long stays, the overnight brea
   expect(after.distanceM).toBeLessThan(250);
   expect(count(after, 'stop')).toBeGreaterThanOrEqual(1);
   expect(count(after, 'stop')).toBeLessThanOrEqual(3);
-  expect(after.nodes.filter(n => n.type === 'stop').every(n => n.durationMs >= 3 * 3600000)).toBe(true);
+  // 2026-10-14: the phone has no 3× baseline, so the first 3 minutes before
+  // the day's first break are a short stay of their own; the rest are long.
+  const stops = after.nodes.filter(n => n.type === 'stop');
+  expect(stops.every(n => n.durationMs >= 3 * 60000)).toBe(true);
+  expect(stops.filter(n => n.durationMs >= 3 * 3600000)).toHaveLength(2);
   // Preserve both actual recording gaps and uncertain boundary observations.
   // The 18:47→19:04 bridge has no confirmed compact stationary return:
   // it is an interruption, never a zero-distance walking section.
   const gaps = after.nodes.filter(n => n.type === 'gap');
   expect(gaps.map(n => ({ start: n.start - START, end: n.end - START,
     reason: n.reason, countedDistanceM: n.countedDistanceM }))).toEqual([
-    { start: 0, end: 357051, reason: 'uncertain', countedDistanceM: 0 },
+    // 2026-10-14: the 3.5 minutes of fixes inside the first weak GPS are that
+    // short stay (no 3× baseline on the phone).
+    { start: 0, end: 11030, reason: 'uncertain', countedDistanceM: 0 },
+    { start: 218063, end: 357051, reason: 'uncertain', countedDistanceM: 0 },
     { start: 357051, end: 4707330, reason: undefined, countedDistanceM: 0 },
     { start: 46046458, end: 47085377, reason: undefined, countedDistanceM: 0 },
     { start: 47085377, end: 47091108, reason: 'uncertain', countedDistanceM: 0 },
